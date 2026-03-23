@@ -20,8 +20,3 @@
 1. 在扩展页面填写学号并登录。
 2. 选择需要启用的平台。
 3. 等待课程与作业加载完成后进行查看和跳转。
-
-## 发布版本
-
-- 当前发布标签：`v4.5.1`
-- Release 页面：<https://github.com/s1y4x1/BJTU-course-assistant/releases/tag/v4.5.1>
