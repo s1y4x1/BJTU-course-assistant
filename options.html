@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BJTU 上传助手 - 设置</title>
+  <style>
+    body { font-family: Segoe UI, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
+    h2 { margin-top: 0; }
+    label { display: block; margin: 12px 0 6px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+    button { margin-top: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
+    .tip { margin-top: 12px; color: #666; font-size: 13px; }
+    .ok { color: #2e7d32; margin-top: 8px; }
+    .err { color: #c62828; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h2>BJTU 上传助手 - 设置</h2>
+  <label style="display:flex; align-items:center; gap:8px; margin-top: 12px;">
+    <input type="checkbox" id="autoOcrCaptcha" style="width:auto;" />
+    自动识别验证码（实验性）
+  </label>
+  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div style="font-weight:600; margin-bottom:8px;">平台显示与加载</div>
+    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="enableVe" style="width:auto;" />
+      智慧课程平台
+    </label>
+    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="enableYkt" style="width:auto;" />
+      雨课堂
+    </label>
+    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="enableMrzy" style="width:auto;" />
+      每日交作业
+    </label>
+    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="enableJlgj" style="width:auto;" />
+      接龙管家
+    </label>
+    <div style="margin-top:6px; font-size:12px; color:#6b7280;">说明：仅选中的平台会在打开扩展页面时异步加载一次；从未选中改为选中时会重新加载该平台。</div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button id="saveBtn">保存</button>
+    <button id="resetBtn" style="background:#6b7280;">恢复默认</button>
+  </div>
+  <div id="msg"></div>
+  <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>
+  <script src="options.js"></script>
+</body>
+</html>

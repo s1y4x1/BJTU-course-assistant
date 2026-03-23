@@ -1,0 +1,71 @@
+﻿{
+  "manifest_version": 3,
+  "name": "BJTU 课程助手",
+  "description": "把智慧课程平台当网盘用，上传下载不限速。支持智慧课程平台查看作业数据、提交作业、下载回放视频；查看雨课堂、每日交作业、接龙管家。",
+  "version": "4.5.1",
+  "icons": {
+    "16": "icons/icon.png",
+    "32": "icons/icon.png",
+    "48": "icons/icon.png",
+    "128": "icons/icon.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "cookies",
+    "webRequest",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://123.121.147.7:88/*",
+    "https://www.yuketang.cn/*",
+    "https://examination.xuetangx.com/*",
+    "https://lulu.lulufind.com/*",
+    "https://zuoye.lulufind.com/*",
+    "https://i-api.jielong.com/*",
+    "https://www.jielong.com/*",
+    "https://i.jielong.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vendor/tesseract/tesseract.min.js",
+        "vendor/tesseract/worker.min.js",
+        "vendor/tesseract/tesseract-core-simd.wasm.js",
+        "vendor/tesseract/tesseract-core-simd.wasm",
+        "vendor/tesseract/eng.traineddata.gz"
+      ],
+      "matches": [
+        "http://123.121.147.7:88/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_title": "BJTU 课程助手",
+    "default_icon": {
+      "16": "icons/icon.png",
+      "32": "icons/icon.png",
+      "48": "icons/icon.png",
+      "128": "icons/icon.png"
+    }
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://i.jielong.com/*"
+      ],
+      "js": [
+        "jlgj-capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}

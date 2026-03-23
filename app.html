@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件上传</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; font-size: 14px; }
+
+        /* Toast Notifications */
+        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10000; }
+        .toast { min-width: 250px; padding: 12px 20px; margin-bottom: 10px; border-radius: 8px; background-color: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; animation: toastEnter 0.25s ease-out; font-size: 14px; color: #333; opacity: 1; }
+        .toast.success { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
+        .toast.error { background-color: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }
+        .toast.warning { background-color: #FFF8E1; color: #F57F17; border: 1px solid #FFECB3; }
+        .toast.info { background-color: #E3F2FD; color: #1976D2; border: 1px solid #BBDEFB; }
+        .toast-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.1); border-radius: 50%; border-top-color: currentColor; animation: spin 1s linear infinite; margin-left: 10px; vertical-align: -2px; }
+        @keyframes toastEnter { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeOutUp { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-12px); opacity: 0; } }
+
+        #drop-zone { border: 2px dashed #ccc; border-radius: 20px; width: 100%; padding: 40px; text-align: center; box-sizing: border-box; margin-bottom: 20px; transition: border-color 0.3s; cursor: pointer; }
+        #drop-zone.dragover { border-color: #4CAF50; background-color: #f0f9f0; }
+        #file-input { display: none; }
+        .btn { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn:hover { background-color: #45a049; }
+        .file-item { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; background:#fff; }
+        .progress-bar-container { width: 100%; background-color: #f1f1f1; height: 20px; border-radius: 10px; margin-top: 5px; overflow: hidden; }
+        .progress-bar { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.2s; text-align: center; line-height: 20px; color: white; font-size: 12px; }
+        .status { margin-top: 5px; font-size: 14px; }
+        .success { color: green; }
+        .error { color: red; }
+        .url-link { word-break: break-all; }
+        .config-area { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 8px; }
+        input[type="text"], input[type="number"], input[type="password"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            min-width: 12px;
+            min-height: 12px;
+            aspect-ratio: 1 / 1;
+            box-sizing: border-box;
+            flex: 0 0 auto;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .layout-container { display: flex; gap: 20px; align-items: flex-start; margin: 0; }
+        .left-column { flex: 1; min-width: 0; }
+        .right-column {
+            width: clamp(500px, 32vw, 640px);
+            min-width: 420px;
+            max-width: 760px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 20px;
+            background: #f9f9f9;
+            padding: 15px;
+            padding-left: 12px;
+            border-radius: 8px;
+            max-height: none;
+            overflow: visible;
+            box-sizing: border-box;
+        }
+        .right-column-resizer {
+            position: absolute;
+            left: 3px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            border-radius: 0;
+            background: rgba(148,163,184,0.9);
+            cursor: col-resize;
+            z-index: 2;
+        }
+        .right-column-resizer:hover { background: rgba(59,130,246,0.9); }
+        .right-column.dragging { user-select: none; }
+        @media (max-width: 900px) {
+            .layout-container { flex-direction: column; }
+            .right-column { width: 100%; min-width: 0; max-width: 100%; position: static; max-height: none; padding-left: 15px; }
+            .right-column-resizer { display: none; }
+        }
+
+        /* Course action buttons: keep same height */
+        .course-actions .btn {
+            padding: 0 10px;
+            font-size: 12px;
+            height: 26px;
+            line-height: 26px;
+        }
+
+        .upload-link-row { margin-top: 5px; word-break: break-all; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .upload-link-row .url-link { color: #4CAF50; text-decoration: none; font-weight: bold; flex: 1; }
+        .upload-link-row .url-link:hover { text-decoration: underline; }
+
+        .btn.replay-list-loading,
+        .btn.replay-list-loading:hover {
+            background: #dba7e6 !important;
+            color: #fff !important;
+        }
+
+        .btn.replay-link-progress,
+        .btn.replay-link-progress:hover {
+            background: linear-gradient(
+                90deg,
+                #9c27b0 0 var(--replay-progress, 0%),
+                #dba7e6 var(--replay-progress, 0%) 100%
+            ) !important;
+            color: #fff !important;
+            transition: background 0.25s ease;
+        }
+
+        .expandable-box {
+            position: relative;
+            margin-top: 8px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: var(--expand-base, rgba(255,255,255,0.35));
+            overflow: hidden;
+        }
+        .expandable-body {
+            padding: 8px;
+            font-size: 13px;
+            color: #374151;
+            line-height: 1.5;
+            max-height: calc(1.5em * 3 + 2px);
+            overflow: auto;
+            white-space: normal;
+            transition: max-height 0.2s ease;
+            background: var(--expand-base, rgba(255,255,255,0.35));
+        }
+        .expandable-box.expanded .expandable-body {
+            max-height: none;
+            overflow: visible;
+        }
+        .expandable-box.expanded {
+            overflow: visible;
+        }
+        .expandable-box.no-toggle .expandable-body {
+            max-height: none;
+            overflow: visible;
+        }
+        .expandable-box.no-toggle .expandable-toggle {
+            display: none;
+        }
+        .expandable-body img {
+            max-width: 100% !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain;
+        }
+        .expandable-fade {
+            display: none;
+        }
+        .expandable-box.expanded .expandable-fade {
+            display: none;
+        }
+        .expandable-toggle {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #4b5563;
+            cursor: pointer;
+            user-select: none;
+            background: linear-gradient(180deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.46) 100%);
+        }
+        .expandable-toggle:hover {
+            background: linear-gradient(180deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.56) 100%);
+            color: #1f2937;
+        }
+        .expandable-box.expanded .expandable-toggle {
+            position: static;
+            height: 24px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.22) 100%);
+            margin-top: 2px;
+        }
+
+        .homework-toggle-row {
+            margin-top: 1px;
+            margin-bottom: 0;
+            text-align: center;
+        }
+        .homework-toggle-btn {
+            border: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.32) 100%);
+            color: #0369a1;
+            font-size: 12px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 0 8px;
+            border-radius: 999px;
+        }
+        .homework-toggle-btn::before,
+        .homework-toggle-btn::after {
+            content: '';
+            display: inline-block;
+            width: 56px;
+            height: 1px;
+            background: rgba(3, 105, 161, 0.45);
+        }
+        .homework-toggle-btn:hover {
+            background: linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.42) 100%);
+        }
+
+        .homework-items-enter {
+            animation: hwExpandIn 0.18s ease-out;
+            transform-origin: top center;
+        }
+        @keyframes hwExpandIn {
+            from { opacity: 0; transform: translateY(-4px) scaleY(0.985); }
+            to { opacity: 1; transform: translateY(0) scaleY(1); }
+        }
+
+        .hw-card-item.hw-done-enter {
+            animation: hwDoneEnter 0.2s ease-out;
+        }
+        .hw-card-item.hw-done-leave {
+            animation: hwDoneLeave 0.18s ease-in forwards;
+        }
+        @keyframes hwDoneEnter {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes hwDoneLeave {
+            from { opacity: 1; transform: translateY(0); max-height: 220px; margin-top: 8px; }
+            to { opacity: 0; transform: translateY(-4px); max-height: 0; margin-top: 0; }
+        }
+
+        .submit-panel {
+            margin-top: 8px;
+            border-top: 1px dashed rgba(0,0,0,0.12);
+            padding-top: 8px;
+        }
+        .submit-panel textarea {
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 82px;
+            resize: vertical;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 13px;
+        }
+        .submit-panel .hint {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .submit-panel .actions {
+            margin-top: 8px;
+            display: flex;
+            justify-content: flex-start;
+            gap: 8px;
+        }
+        .submit-panel .actions .cancel-submit-btn {
+            flex: 0 0 auto;
+        }
+        .submit-panel .actions .confirm-submit-btn {
+            flex: 1 1 auto;
+            width: 100%;
+        }
+
+        .upload-select-wrap {
+            margin-right: 6px;
+            display: none;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #4b5563;
+        }
+
+        .course-header {
+            margin-top: 0;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .platform-status-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+        .platform-status-btn {
+            border: 0;
+            border-radius: 999px;
+            padding: 3px 6px;
+            font-size: 11px;
+            color: #fff;
+            background: #9ca3af;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: opacity 0.2s ease;
+            white-space: nowrap;
+        }
+        .platform-status-btn:hover { opacity: 0.9; }
+        .platform-status-btn.unselected {
+            opacity: 1;
+            background: #fff;
+            color: #111827;
+            border: 1px solid #d1d5db;
+        }
+        .platform-status-btn.unselected.unselected-checked-online {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+        .platform-status-btn.unselected.unselected-checked-offline {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+        .platform-status-btn.unselected.unselected-checked-checking {
+            background: #f3f4f6;
+            color: #374151;
+            border: 1px solid #d1d5db;
+        }
+        .platform-status-btn.checking { background: #9ca3af; }
+        .platform-status-btn.offline { background: #dc2626; }
+        .platform-status-btn.online { background: #16a34a; }
+        .platform-status-btn .dot {
+            width: 14px;
+            height: 14px;
+            min-width: 14px;
+            min-height: 14px;
+            flex: 0 0 14px;
+            aspect-ratio: 1 / 1;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.9);
+            display: inline-block;
+            border: 1px solid rgba(255,255,255,0.8);
+            box-sizing: border-box;
+            cursor: pointer;
+            position: relative;
+            padding: 0;
+            line-height: 0;
+        }
+        .platform-status-btn .dot::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 26px;
+            height: 26px;
+            transform: translate(-50%, -50%);
+        }
+        .platform-status-btn .platform-link {
+            color: #fff;
+            text-decoration: none;
+            display: inline-block;
+            line-height: 1.2;
+            font-size: 11px;
+        }
+        .platform-status-btn.unselected .platform-link {
+            color: #111827;
+        }
+        .platform-status-btn.unselected.unselected-checked-online .platform-link { color: #166534; }
+        .platform-status-btn.unselected.unselected-checked-offline .platform-link { color: #991b1b; }
+        .platform-status-btn.unselected.unselected-checked-checking .platform-link { color: #374151; }
+        .platform-status-btn .platform-link:hover {
+            text-decoration: underline;
+        }
+        .platform-status-btn.unselected .dot {
+            background: transparent;
+            border-color: #374151;
+        }
+        .platform-status-btn.checking .dot {
+            width: 14px;
+            height: 14px;
+            min-width: 14px;
+            min-height: 14px;
+            flex: 0 0 14px;
+            border: 2px solid rgba(255,255,255,0.45);
+            border-top-color: rgba(255,255,255,1);
+            background: transparent;
+            animation: spin 0.9s linear infinite;
+        }
+        .platform-status-btn.unselected .dot,
+        .platform-status-btn.unselected.checking .dot {
+            width: 14px;
+            height: 14px;
+            border: 1.5px solid #374151;
+            background: transparent;
+            animation: none;
+        }
+        .platform-status-btn.unselected.unselected-checked-online .dot { border-color: #16a34a; }
+        .platform-status-btn.unselected.unselected-checked-offline .dot { border-color: #dc2626; }
+        .platform-status-btn.unselected.unselected-checked-checking .dot { border-color: #6b7280; }
+
+        /* Login modal (modern extension-like) */
+        #login-modal .login-panel {
+            background: #fff;
+            width: min(640px, 92vw);
+            margin: 8vh auto;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 18px 42px rgba(0,0,0,0.25);
+            text-align: left;
+            border: 1px solid #e8edf5;
+        }
+        #login-modal .login-panel h3 { margin: 0 0 10px; color: #1f2937; }
+        .login-status-line {
+            min-height: 22px;
+            margin: 6px 0 10px;
+            font-size: 13px;
+            color: #0f766e;
+            background: #ecfeff;
+            border: 1px solid #a5f3fc;
+            border-radius: 8px;
+            padding: 4px 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .login-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .captcha-main-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 10px;
+            background: #f8fafc;
+            text-align: center;
+        }
+        .captcha-main-card img {
+            cursor: pointer;
+            height: 42px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #fff;
+        }
+        .captcha-history {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 8px;
+            background: #fff;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        .captcha-history-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px dashed #e5e7eb;
+            padding: 6px 2px;
+            font-size: 12px;
+        }
+        .captcha-history-item:last-child { border-bottom: none; }
+        .captcha-history-item img {
+            width: 80px;
+            height: 32px;
+            object-fit: contain;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            background: #fff;
+        }
+        @media (max-width: 860px) {
+            .login-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Make small text slightly larger than before */
+        .right-column, .config-area, .status { font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="toast-container"></div>
+
+    <div class="layout-container">
+        <div class="left-column">
+            <h1 style="margin-top: 0;">多文件上传</h1>
+
+            <div class="config-area" style="padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <label for="parallel-limit">并行上传限制：</label>
+                    <input type="number" id="parallel-limit" value="3" min="1" style="width: 60px; padding: 5px;">
+
+                    <label for="username-input" style="margin-left: 10px;">账号：</label>
+                    <input type="text" id="username-input" value="" style="width: 120px; padding: 5px;">
+
+                    <label for="jsessionid-input" style="margin-left: 10px;">JSESSIONID：</label>
+                    <input type="text" id="jsessionid-input" placeholder="自动获取" style="flex: 1; padding: 5px;">
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; width: 100%;">
+                    <div id="welcome-msg" style="color: #4CAF50; font-weight: bold;"></div>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div id="total-size-info" style="font-size: 14px; color: #666; font-weight: bold;">0 B / 0 B</div>
+                        <div id="total-percent" style="font-size: 14px; color: #666; font-weight: bold;">0%</div>
+                        <div id="total-speed" style="font-weight: bold; color: #2196F3;">总速度: 0 KB/s</div>
+                        <div id="total-eta" style="font-weight: bold; color: #6b7280;"></div>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                    <div class="progress-bar-container" style="flex: 1; margin-top: 0; position: relative; background-color: #f1f1f1;">
+                        <div id="total-server-bar" class="progress-bar" style="width: 0%; background-color: #4CAF50; position: absolute; top: 0; left: 0; z-index: 2;"></div>
+                    </div>
+                    <button id="copy-all-btn" class="btn" style="padding: 5px 10px; font-size: 12px; white-space: nowrap; background-color: #2196F3;">复制全部链接</button>
+                </div>
+            </div>
+
+            <div id="drop-zone">
+                <p>拖拽文件到此处 或 点击上传</p>
+                <button class="btn">选择文件</button>
+                <input type="file" id="file-input" multiple>
+            </div>
+
+            <div id="file-list"></div>
+        </div>
+
+        <div class="right-column" id="right-column">
+            <div class="right-column-resizer" id="right-column-resizer" title="拖动调整课程助手宽度"></div>
+            <h2 class="course-header">
+                <span>课程助手</span>
+                <span class="platform-status-actions">
+                    <span id="ve-status-btn" class="platform-status-btn checking" title="智慧课程平台加载中">
+                        <button type="button" class="dot" data-action="toggle-platform" data-platform="ve" aria-label="切换智慧课程平台"></button>
+                        <a class="platform-link" href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer">智慧课程平台</a>
+                    </span>
+                    <span id="ykt-status-btn" class="platform-status-btn checking" title="雨课堂登录状态检测中">
+                        <button type="button" class="dot" data-action="toggle-platform" data-platform="ykt" aria-label="切换雨课堂"></button>
+                        <a class="platform-link" href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer">雨课堂</a>
+                    </span>
+                    <span id="mrzy-status-btn" class="platform-status-btn checking" title="每日交作业登录状态检测中">
+                        <button type="button" class="dot" data-action="toggle-platform" data-platform="mrzy" aria-label="切换每日交作业"></button>
+                        <a class="platform-link" href="https://zuoye.lulufind.com/" target="_blank" rel="noopener noreferrer">每日交作业</a>
+                    </span>
+                    <span id="jlgj-status-btn" class="platform-status-btn checking" title="接龙管家登录状态检测中">
+                        <button type="button" class="dot" data-action="toggle-platform" data-platform="jlgj" aria-label="切换接龙管家"></button>
+                        <a class="platform-link" href="https://i.jielong.com/my-class" target="_blank" rel="noopener noreferrer">接龙管家</a>
+                    </span>
+                </span>
+            </h2>
+            <div id="course-list"></div>
+        </div>
+    </div>
+
+    <!-- 登录弹窗 -->
+    <div id="login-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.45); z-index: 1000;">
+        <div class="login-panel">
+            <h3>登录已失效</h3>
+            <p id="login-welcome-msg" style="color: #4CAF50; font-weight: bold; margin-bottom: 10px; min-height: 1.2em;"></p>
+            <p id="login-instruction" style="margin: 10px 0;">请输入验证码重新登录</p>
+            <div id="login-progress-text" class="login-status-line">等待登录</div>
+
+            <div class="login-grid">
+                <div class="captcha-main-card">
+                    <img id="captcha-img" src="" alt="验证码" title="点击刷新">
+                    <div style="margin-top: 8px;">
+                        <input type="text" id="captcha-input" placeholder="验证码" maxlength="4" style="width: 120px; text-align: center; letter-spacing: 2px; margin-bottom: 5px;">
+                    </div>
+                </div>
+                <div class="captcha-history">
+                    <div style="font-size:12px; color:#475569; margin-bottom:6px;">本次登录验证码记录（图片 + 识别结果）</div>
+                    <div id="captcha-history-list"></div>
+                </div>
+            </div>
+
+            <div id="aux-login-container" style="margin-bottom: 5px; text-align: center; display: none;">
+                <label style="font-size: 12px; color: #666; cursor: pointer; display: inline-flex; align-items: center;">
+                    <input type="checkbox" id="aux-login-checkbox" style="margin: 0 4px 0 0; cursor: pointer;">
+                    不使用默认密码，先登录辅助账号
+                </label>
+            </div>
+
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+                <button id="cancel-btn" class="btn" style="background-color: #64748b;">取消</button>
+                <button id="login-btn" class="btn" style="background-color:#2563eb;">登录</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="vendor/tesseract/tesseract.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
