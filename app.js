@@ -762,6 +762,7 @@ function renderExpandableHtml(contentHtml, {
   collapseText = '点击收起',
   hideWhenEmpty = false,
   baseBg = 'rgba(255,255,255,0.3)',
+  flatDisplay = false,
   courseId = '',
   expandKey = '',
   expanded = false
@@ -774,8 +775,9 @@ function renderExpandableHtml(contentHtml, {
   const cid = escapeHtml(String(courseId || ''));
   const key = escapeHtml(String(expandKey || ''));
   const expandedNow = !!expanded;
+  const modeClass = flatDisplay ? ' borderless' : '';
   return `
-    <div class="expandable-box${expandedNow ? ' expanded' : ''}" data-expanded="${expandedNow ? '1' : '0'}" data-course-id="${cid}" data-expand-key="${key}" style="--expand-base:${baseBg};">
+    <div class="expandable-box${modeClass}${expandedNow ? ' expanded' : ''}" data-expanded="${expandedNow ? '1' : '0'}" data-course-id="${cid}" data-expand-key="${key}" style="--expand-base:${baseBg};">
       <div class="expandable-body">${raw}</div>
       <div class="expandable-fade"></div>
       <div class="expandable-toggle" data-action="toggle-expand" data-open-text="${escapeHtml(expandText)}" data-close-text="${escapeHtml(collapseText)}">${escapeHtml(expandedNow ? collapseText : expandText)}</div>
@@ -2932,6 +2934,7 @@ function renderYktHomeworkItems(courseId, items) {
           expandText: '点击查看作业详情',
           collapseText: '点击收起作业详情',
           baseBg: done ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)',
+          flatDisplay: true,
           courseId,
           expandKey,
           expanded
@@ -4831,6 +4834,7 @@ function renderHomeworkList(courseId) {
       expandText: '点击查看作业详情',
       collapseText: '点击收起作业详情',
       baseBg: isDone ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)',
+      flatDisplay: true,
       courseId,
       expandKey,
       expanded
