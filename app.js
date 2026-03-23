@@ -657,9 +657,10 @@ function updateJsessionidState() {
 }
 
 function promptLoginIfPossible(message) {
-  // If username is empty, do not pop modal; allow user to input JSESSIONID instead.
+  const defaultNeedLoginMsg = '如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录';
+  // If username is empty, do not pop modal; direct user to platform login entry.
   if (!usernameInput.value.trim()) {
-    showToast(message || '登录已失效：请填写 JSESSIONID 或输入账号登录', 'warning', 3500);
+    showToast(message || defaultNeedLoginMsg, 'warning', 3500, true);
     return;
   }
   if (shouldUsePortalPageLogin()) {
@@ -1058,6 +1059,13 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
   return false;
 }
 
+function isSessionEndedHtml(html) {
+  const t = String(html || '');
+  return /<title>\s*会话结束\s*<\/title>/i.test(t)
+    || /会话结束,?请退出系统/i.test(t)
+    || /重新登录/i.test(t);
+}
+
 function isCaptchaErrorMessage(msg = '') {
   return /验证码|驗證碼|passcode|请输入正确的验证码|請輸入正確的驗證碼/i.test(msg);
 }
@@ -1322,6 +1330,11 @@ async function fetchPasswordMd5FromServer(userId) {
   const urls = (infoText || '').includes('学生') ? [studentUrl, teacherUrl] : [teacherUrl, studentUrl];
   for (const u of urls) {
     const { text } = await fetchText(u);
+    if (isSessionEndedHtml(text)) {
+      forcePortalLoginInPage = true;
+      await ensurePortalLoginTab(false);
+      return null;
+    }
     const m = String(text || '').match(/(?:id|name)=["']oldpassword["'][^>]*value=["']([^"']+)["']/i)
       || String(text || '').match(/value=["']([^"']+)["'][^>]*(?:id|name)=["']oldpassword["']/i);
     if (m?.[1]) return m[1];
@@ -1366,10 +1379,11 @@ function isInitialLoginWithoutSwitching() {
 function shouldUsePortalPageLogin() {
   // Keep login in extension context to avoid captcha/session mismatch.
   // Opening portal page can trigger a new captcha and invalidate extension-fetched code.
-  return false;
+  return !!forcePortalLoginInPage;
 }
 
 let portalLoginTabId = null;
+let forcePortalLoginInPage = false;
 async function ensurePortalLoginTab(active = false) {
   try {
     if (portalLoginTabId) {
@@ -1445,6 +1459,136 @@ async function waitTabComplete(tabId, timeoutMs = 15000) {
     await new Promise(r => setTimeout(r, 150));
   }
   return false;
+}
+
+async function capturePortalCaptchaDataUrl(tabId) {
+  try {
+    const injected = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async () => {
+        const waitForImage = async (img, timeoutMs = 8000) => {
+          if (!img) return false;
+          if (img.complete && img.naturalWidth > 0) return true;
+          return await new Promise((resolve) => {
+            let done = false;
+            const finish = (v) => {
+              if (done) return;
+              done = true;
+              cleanup();
+              resolve(v);
+            };
+            const cleanup = () => {
+              img.removeEventListener('load', onLoad);
+              img.removeEventListener('error', onError);
+              clearTimeout(timer);
+            };
+            const onLoad = () => finish(true);
+            const onError = () => finish(false);
+            const timer = setTimeout(() => finish(false), timeoutMs);
+            img.addEventListener('load', onLoad, { once: true });
+            img.addEventListener('error', onError, { once: true });
+          });
+        };
+
+        const passcodeInput = document.querySelector('input[name="passcode"], input#passcode');
+        const form = passcodeInput?.closest('form');
+        const root = form || document;
+        let img = root.querySelector('img[src*="GetImg"], img[src*="getimg"], img[src*="checkcode"], img[id*="passcode" i], img[name*="passcode" i]');
+        if (!img) {
+          img = document.querySelector('img[src*="GetImg"], img[src*="getimg"], img[src*="checkcode"], img[id*="passcode" i], img[name*="passcode" i]');
+        }
+        if (!img) return { ok: false, reason: 'captcha-image-not-found' };
+
+        const srcRaw = String(img.getAttribute('src') || img.src || '/ve/GetImg').trim();
+        const noHash = srcRaw.split('#')[0];
+        const sep = noHash.includes('?') ? '&' : '?';
+        img.src = `${noHash}${sep}_ts=${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+        const loaded = await waitForImage(img, 8000);
+        if (!loaded) return { ok: false, reason: 'captcha-image-load-failed' };
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width || 120;
+        canvas.height = img.naturalHeight || img.height || 40;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return { ok: false, reason: 'captcha-canvas-failed' };
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        return { ok: true, dataUrl: canvas.toDataURL('image/png') };
+      }
+    });
+    return injected?.[0]?.result || { ok: false, reason: 'captcha-capture-empty' };
+  } catch {
+    return { ok: false, reason: 'captcha-capture-exception' };
+  }
+}
+
+async function resolvePortalCaptchaPasscode(tabId, fallbackCode = '', autoOcrEnabled = true) {
+  const fallback = String(fallbackCode || '').replace(/\D/g, '').slice(0, 4);
+  if (!autoOcrEnabled) return fallback;
+
+  const capture = await capturePortalCaptchaDataUrl(tabId);
+  const dataUrl = String(capture?.dataUrl || '').trim();
+  if (!dataUrl) return fallback;
+
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('portal-captcha-timeout')), 5000);
+      img.onload = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      img.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error('portal-captcha-error'));
+      };
+      img.src = dataUrl;
+    });
+    const { text } = await ocrCaptchaWithTesseract(img);
+    if (/^\d{4}$/.test(String(text || ''))) return String(text);
+  } catch {
+    // fallback to manual input below
+  }
+  return fallback;
+}
+
+async function submitPortalLoginWithCaptchaRetries(username, passwordMd5, fallbackCode, autoOcrEnabled) {
+  let lastResult = { ok: false, reason: 'other', message: '登录失败', tabId: null };
+  for (let attempt = 0; attempt <= MAX_CAPTCHA_ERROR_RETRIES; attempt++) {
+    if (loginCancelRequested) {
+      return { ok: false, reason: 'cancelled', message: '已取消', tabId: null };
+    }
+
+    const portalTab = await ensurePortalLoginTab(false);
+    if (!portalTab?.id) {
+      return { ok: false, reason: 'other', message: '无法打开课程平台页面', tabId: null };
+    }
+    await waitTabComplete(portalTab.id, 15000);
+
+    const passcode = await resolvePortalCaptchaPasscode(portalTab.id, fallbackCode, autoOcrEnabled);
+    if (!/^\d{4}$/.test(passcode)) {
+      showToast('验证码识别失败，请手动输入后重试', 'warning', 1800);
+      return { ok: false, reason: 'captcha', message: '验证码识别失败', tabId: null };
+    }
+
+    setLoginProgress(`验证码已同步（第 ${attempt + 1} 次提交）`);
+    lastResult = await openPortalAndSubmitLoginInPage(username, passwordMd5, passcode);
+    if (lastResult.ok || lastResult.reason !== 'captcha') return lastResult;
+
+    captchaErrorRetryCount++;
+    if (captchaErrorRetryCount <= MAX_CAPTCHA_ERROR_RETRIES) {
+      showToast(`验证码错误，自动重试 (${captchaErrorRetryCount}/${MAX_CAPTCHA_ERROR_RETRIES})`, 'warning', 1200);
+      setLoginProgress(`验证码错误，重试 ${captchaErrorRetryCount}/${MAX_CAPTCHA_ERROR_RETRIES}`, 'warning');
+      lastLoginFailedByCaptcha = false;
+      continue;
+    }
+
+    showToast('验证码错误次数过多，请手动输入', 'warning', 2500);
+    setLoginProgress('验证码重试已达上限，请手动输入', 'warning');
+    lastLoginFailedByCaptcha = true;
+    return lastResult;
+  }
+  return lastResult;
 }
 
 async function openPortalAndSubmitLoginInPage(username, passwordMd5, passcode) {
@@ -1602,7 +1746,86 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
     }
     await new Promise(r => setTimeout(r, 2000));
   }
+  await closePortalLoginTab();
+  if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
   return false;
+}
+
+async function runPortalLoginFlow(username, code, autoOcrEnabled) {
+  const defaultPwd = md5(`Bjtu@${username}`);
+  let portalResult = await submitPortalLoginWithCaptchaRetries(username, defaultPwd, code, autoOcrEnabled);
+
+  if (loginCancelRequested && !portalResult.ok) {
+    setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+    showToast('已取消登录：失败后不再重试', 'warning', 1800);
+    return;
+  }
+
+  if (!portalResult.ok && portalResult.reason !== 'captcha') {
+    if (portalResult.reason === 'locked') {
+      showToast(portalResult.message || '账号已临时锁定，请稍后再试', 'error', 4500);
+      setLoginProgress(portalResult.message || '账号已临时锁定，请稍后再试', 'error');
+      return;
+    }
+    await setLocal('portalPendingSwitchAfterAux', { targetUsername: username });
+    const auxPwd = md5('Bjtu@8888');
+    const auxRes = await submitPortalLoginWithCaptchaRetries('8888', auxPwd, code, autoOcrEnabled);
+
+    if (loginCancelRequested && !auxRes.ok) {
+      setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+      showToast('已取消登录：失败后不再重试', 'warning', 1800);
+      return;
+    }
+
+    if (!auxRes.ok) {
+      if (auxRes.reason === 'locked') {
+        showToast(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error', 4500);
+        setLoginProgress(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error');
+        return;
+      }
+      if (auxRes.reason === 'captcha') {
+        captchaInput.value = '';
+        if (loginCancelRequested) {
+          setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+          return;
+        }
+        return;
+      }
+      showToast('8888 登录失败: ' + (auxRes.message || '未知错误'), 'error');
+      return;
+    }
+
+    const ok = await waitAndSyncLoginFromPortal(auxRes.tabId, 120000);
+    if (!ok) {
+      showToast('辅助账号登录后状态同步失败，请重试', 'error');
+    }
+    return;
+  }
+
+  if (!portalResult.ok) {
+    if (portalResult.reason === 'locked') {
+      showToast(portalResult.message || '账号已临时锁定，请稍后再试', 'error', 4500);
+      setLoginProgress(portalResult.message || '账号已临时锁定，请稍后再试', 'error');
+      return;
+    }
+    if (portalResult.reason === 'captcha') {
+      captchaInput.value = '';
+      if (loginCancelRequested) return;
+      return;
+    }
+    showToast(portalResult.message || '登录失败', 'error');
+    setLoginProgress(portalResult.message || '登录失败', 'error');
+    if (loginCancelRequested) {
+      setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+      return;
+    }
+    return;
+  }
+
+  const ok = await waitAndSyncLoginFromPortal(portalResult.tabId, 120000);
+  if (!ok) {
+    showToast('登录成功但状态同步失败，请重试', 'warning', 2000);
+  }
 }
 
 async function loginPost(username, passwordMd5, passcode) {
@@ -1683,97 +1906,7 @@ async function doLoginFlow() {
     const isPortalFlow = shouldUsePortalPageLogin();
 
     if (isPortalFlow) {
-      const defaultPwd = md5(`Bjtu@${username}`);
-      let portalResult = await openPortalAndSubmitLoginInPage(username, defaultPwd, code);
-
-      if (loginCancelRequested && !portalResult.ok) {
-        setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-        showToast('已取消登录：失败后不再重试', 'warning', 1800);
-        return;
-      }
-
-      if (!portalResult.ok && portalResult.reason !== 'captcha') {
-        if (portalResult.reason === 'locked') {
-          showToast(portalResult.message || '账号已临时锁定，请稍后再试', 'error', 4500);
-          setLoginProgress(portalResult.message || '账号已临时锁定，请稍后再试', 'error');
-          return;
-        }
-        await setLocal('portalPendingSwitchAfterAux', { targetUsername: username });
-        const auxPwd = md5('Bjtu@8888');
-        const auxRes = await openPortalAndSubmitLoginInPage('8888', auxPwd, code);
-
-        if (loginCancelRequested && !auxRes.ok) {
-          setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-          showToast('已取消登录：失败后不再重试', 'warning', 1800);
-          return;
-        }
-
-        if (!auxRes.ok) {
-          if (auxRes.reason === 'locked') {
-            showToast(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error', 4500);
-            setLoginProgress(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error');
-            return;
-          }
-          if (auxRes.reason === 'captcha') {
-            captchaInput.value = '';
-            captchaErrorRetryCount++;
-            showToast(`验证码错误，自动重试 (${captchaErrorRetryCount})`, 'warning', 1200);
-            setLoginProgress(`验证码错误，自动重试 ${captchaErrorRetryCount}`, 'warning');
-            lastLoginFailedByCaptcha = false;
-            autoOcrAttemptCount = 0;
-            autoOcrAutoSubmitUsed = false;
-            if (loginCancelRequested) {
-              setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-              return;
-            }
-            await refreshCaptcha();
-            return;
-          }
-          showToast('8888 登录失败: ' + (auxRes.message || '未知错误'), 'error');
-          await refreshCaptcha();
-          return;
-        }
-
-        const ok = await waitAndSyncLoginFromPortal(auxRes.tabId, 120000);
-        if (!ok) {
-          showToast('辅助账号登录后状态同步失败，请重试', 'error');
-          await refreshCaptcha();
-        }
-        return;
-      }
-
-      if (!portalResult.ok) {
-        if (portalResult.reason === 'locked') {
-          showToast(portalResult.message || '账号已临时锁定，请稍后再试', 'error', 4500);
-          setLoginProgress(portalResult.message || '账号已临时锁定，请稍后再试', 'error');
-          return;
-        }
-        if (portalResult.reason === 'captcha') {
-          captchaInput.value = '';
-          captchaErrorRetryCount++;
-          showToast(`验证码错误，自动重试 (${captchaErrorRetryCount})`, 'warning', 1200);
-          setLoginProgress(`验证码错误，自动重试 ${captchaErrorRetryCount}`, 'warning');
-          lastLoginFailedByCaptcha = false;
-          autoOcrAttemptCount = 0;
-          autoOcrAutoSubmitUsed = false;
-          if (loginCancelRequested) return;
-          await refreshCaptcha();
-          return;
-        }
-        showToast(portalResult.message || '登录失败', 'error');
-        setLoginProgress(portalResult.message || '登录失败', 'error');
-        if (loginCancelRequested) {
-          setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-          return;
-        }
-        await refreshCaptcha();
-        return;
-      }
-
-      const ok = await waitAndSyncLoginFromPortal(portalResult.tabId, 120000);
-      if (!ok) {
-        showToast('登录成功但状态同步失败，请重试', 'warning', 2000);
-      }
+      await runPortalLoginFlow(username, code, autoOcrEnabled);
       return;
     }
 
@@ -1781,6 +1914,12 @@ async function doLoginFlow() {
     const forceAux = !!(auxCheckbox && auxCheckbox.checked);
     let pwdMd5 = await getLocal(`pwd:${username}`, '');
     if (!pwdMd5) pwdMd5 = await fetchPasswordMd5FromServer(username);
+
+    if (shouldUsePortalPageLogin()) {
+      await runPortalLoginFlow(username, code, autoOcrEnabled);
+      return;
+    }
+
     if (!pwdMd5) pwdMd5 = md5(`Bjtu@${username}`);
 
     let result = await loginPost(username, pwdMd5, code);
@@ -1929,6 +2068,7 @@ async function doLoginFlow() {
     }
 
   } finally {
+    forcePortalLoginInPage = false;
     isLoginInProgress = false;
     loginBtn.disabled = false;
     loginBtn.style.opacity = '1';
@@ -2155,6 +2295,7 @@ function removeYktLoginSection() {
 function clearYktStandaloneCards() {
   const cards = courseListDiv.querySelectorAll('.ykt-standalone-card');
   cards.forEach((n) => n.remove());
+  updateCourseListEmptyPlaceholder();
 }
 
 function ensureMrzyLoginTip() {
@@ -2167,12 +2308,17 @@ function removeMrzyLoginTip() {
 
 function showPlatformNeedLoginToast(platform) {
   const p = String(platform || '').trim();
-  if (!['ykt', 'mrzy', 'jlgj'].includes(p)) return;
+  if (!['ve', 'ykt', 'mrzy', 'jlgj'].includes(p)) return;
   if (!window.__platformOfflineToastById) window.__platformOfflineToastById = {};
   const now = Date.now();
   const lastAt = Number(window.__platformOfflineToastById[p] || 0);
   if (now - lastAt < 6000) return;
   window.__platformOfflineToastById[p] = now;
+
+  if (p === 've') {
+    showToast('如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录', 'warning', 3200, true);
+    return;
+  }
 
   if (p === 'ykt') {
     showToast('如需查看<a href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">雨课堂</a>作业，请前往登录', 'warning', 3200, true);
@@ -2213,14 +2359,17 @@ function refreshPlatformLoginTip() {
       ? 've'
       : (id.includes('mrzy-status-btn') ? 'mrzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : 'ykt'));
     const enabled = isPlatformEnabled(platform);
-    if (enabled) {
+    const treatAsUnselected = !enabled || state === 'offline';
+    if (!treatAsUnselected) {
       btn.classList.add(state);
     } else if (window.platformLoginChecked?.[platform]) {
       const key = state === 'online' ? 'online' : (state === 'offline' ? 'offline' : 'checking');
       btn.classList.add(`unselected-checked-${key}`);
+    } else {
+      btn.classList.add('unselected-checked-offline');
     }
-    btn.classList.toggle('unselected', !enabled);
-    const stateText = !enabled
+    btn.classList.toggle('unselected', treatAsUnselected);
+    const stateText = treatAsUnselected
       ? '未启用'
       : (state === 'online' ? '已登录' : (state === 'offline' ? '未登录' : '登录检查中'));
     btn.title = `${label}${stateText}`;
@@ -2237,11 +2386,48 @@ function refreshPlatformLoginTip() {
 function clearMrzyStandaloneCards() {
   const cards = courseListDiv.querySelectorAll('.mrzy-standalone-card');
   cards.forEach((n) => n.remove());
+  updateCourseListEmptyPlaceholder();
 }
 
 function clearJlgjStandaloneCards() {
   const cards = courseListDiv.querySelectorAll('.jlgj-standalone-card');
   cards.forEach((n) => n.remove());
+  updateCourseListEmptyPlaceholder();
+}
+
+function shouldShowNoCoursePlaceholder() {
+  if (!courseListDiv) return false;
+  if (courseListDiv.querySelector('.file-item')) return false;
+
+  const selected = ['ve', 'ykt', 'mrzy', 'jlgj'].filter((p) => isPlatformEnabled(p));
+  if (!selected.length) return true;
+
+  const allOffline = selected.every((p) => (window.platformLoginState?.[p] || 'checking') === 'offline');
+  if (allOffline) return true;
+
+  const allSettled = selected.every((p) => {
+    const state = window.platformLoginState?.[p] || 'checking';
+    if (state === 'offline') return true;
+    return !!window.platformLoadedOnce?.[p];
+  });
+  return allSettled;
+}
+
+function updateCourseListEmptyPlaceholder() {
+  if (!courseListDiv) return;
+  const existing = courseListDiv.querySelector('#course-list-empty-placeholder');
+  const shouldShow = shouldShowNoCoursePlaceholder();
+  if (shouldShow) {
+    if (existing) return;
+    const empty = document.createElement('div');
+    empty.id = 'course-list-empty-placeholder';
+    empty.style.color = '#666';
+    empty.style.padding = '6px 0';
+    empty.textContent = '暂无课程';
+    courseListDiv.appendChild(empty);
+    return;
+  }
+  if (existing) existing.remove();
 }
 
 function ensureYktSection() {
@@ -2786,20 +2972,27 @@ function renderJlgjHomeworkItems(items) {
   if (!list.length) return '';
   return list.map((it) => {
     const done = isJlgjHomeworkDone(it);
+    const isLoadingMeta = !!it?.loadingMeta;
     const bgColor = done ? '#e8f5e9' : '#fff3e0';
     const borderColor = done ? '#4caf50' : '#ff9800';
     const titleColor = done ? '#2e7d32' : '#e65100';
-    const detail = normalizeHomeworkContent(String(it?.content || '').trim());
-    const contentHtml = detail || '<span style="color:#999;">无作业详情</span>';
+    const detail = isLoadingMeta ? '' : normalizeHomeworkContent(String(it?.content || '').trim());
+    const contentHtml = isLoadingMeta
+      ? '正在加载详情…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      : (detail || '<span style="color:#999;">无作业详情</span>');
     const link = String(it?.link || JLGJ_WEB_BASE);
     const actionText = done ? '去接龙管家查看' : '去接龙管家提交';
     const detailBtnColor = done ? '#2E7D32' : '#E65100';
+    const endText = isLoadingMeta ? '正在加载……' : formatYktDateTime(it.end);
+    const endSuffix = isLoadingMeta
+      ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      : '';
     return `
       <div class="hw-card-item" data-homework-done="${done ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '接龙作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${done ? '(已完成)' : ''}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已完成)' : ''}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -2854,7 +3047,10 @@ function renderYktStandaloneCourses() {
   removeYktLoginSection();
   clearYktStandaloneCards();
   const courses = window.yktStandaloneCourses || [];
-  if (!courses.length) return;
+  if (!courses.length) {
+    updateCourseListEmptyPlaceholder();
+    return;
+  }
 
   const baseOrder = Number(courseListDiv.dataset.orderBase || 100000);
   courses.forEach((c, idx) => {
@@ -2894,12 +3090,16 @@ function renderYktStandaloneCourses() {
 
     renderHomeworkList(courseId);
   });
+  updateCourseListEmptyPlaceholder();
 }
 
 function renderMrzyStandaloneCourses() {
   clearMrzyStandaloneCards();
   const courses = window.mrzyStandaloneCourses || [];
-  if (!courses.length) return;
+  if (!courses.length) {
+    updateCourseListEmptyPlaceholder();
+    return;
+  }
 
   const baseOrder = Number(courseListDiv.dataset.orderBase || 100000) + 50000;
   courses.forEach((c, idx) => {
@@ -2939,16 +3139,27 @@ function renderMrzyStandaloneCourses() {
 
     renderHomeworkList(courseId);
   });
+  updateCourseListEmptyPlaceholder();
 }
 
 function renderJlgjStandaloneCourses() {
   clearJlgjStandaloneCards();
   const courses = window.jlgjStandaloneCourses || [];
-  if (!courses.length) return;
+  if (!courses.length) {
+    updateCourseListEmptyPlaceholder();
+    return;
+  }
 
   const baseOrder = Number(courseListDiv.dataset.orderBase || 100000) + 80000;
   courses.forEach((c, idx) => {
     const courseId = `jlgj-${String(c.groupId || idx)}`;
+    const loadingMeta = !!c.loadingMeta;
+    const titleHtml = loadingMeta
+      ? '正在加载…… <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:1px; border-color:#0f766e; border-top-color:transparent;"></span>'
+      : escapeHtml(c.name || '接龙管家课程');
+    const teacherHtml = loadingMeta
+      ? '正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      : escapeHtml(String(c.teacherName || ''));
     const card = document.createElement('div');
     card.className = 'file-item jlgj-standalone-card';
     card.style.backgroundColor = '#fff';
@@ -2959,8 +3170,8 @@ function renderJlgjStandaloneCourses() {
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
-          <div class="course-card-title"><strong><a href="${JLGJ_WEB_BASE}" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; line-height:1.3;">${escapeHtml(c.name || '接龙管家课程')}</a></strong></div>
-          <div style="font-size:12px; color:#666; line-height:1.35;">${escapeHtml(String(c.teacherName || ''))}</div>
+          <div class="course-card-title"><strong><a href="${JLGJ_WEB_BASE}" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; line-height:1.3;">${titleHtml}</a></strong></div>
+          <div style="font-size:12px; color:#666; line-height:1.35;">${teacherHtml}</div>
         </div>
         <div class="course-actions" style="display:flex; gap:8px;">
           <button class="btn" style="background:#9C27B0; display:none;" data-action="videos">回放下载</button>
@@ -2978,6 +3189,7 @@ function renderJlgjStandaloneCourses() {
 
     renderHomeworkList(courseId);
   });
+  updateCourseListEmptyPlaceholder();
 }
 
 function setCourseReplayState(courseId, hasReplay) {
@@ -3999,6 +4211,35 @@ async function loadJlgjCoursesAndHomework(courses = []) {
     setPlatformLoginState('jlgj', 'online');
     window.platformLoadedOnce.jlgj = true;
 
+    const rebuildJlgjRender = () => {
+      window.jlgjMatchedHomeworkByCourseId = {};
+      window.jlgjStandaloneCourses = [];
+      for (const cg of (window.jlgjCourseGroupsSnapshot || [])) {
+        const matched = matchMap.get(String(cg?.token || ''));
+        if (matched?.courseId) {
+          const cid = String(matched.courseId);
+          if (!window.jlgjMatchedHomeworkByCourseId[cid]) window.jlgjMatchedHomeworkByCourseId[cid] = [];
+          window.jlgjMatchedHomeworkByCourseId[cid].push(...(Array.isArray(cg.homeworks) ? cg.homeworks : []));
+        } else {
+          window.jlgjStandaloneCourses.push({
+            name: cg.name,
+            groupId: cg.groupId,
+            teacherName: cg.teacherName,
+            loadingMeta: !!cg.loadingMeta,
+            homeworks: Array.isArray(cg.homeworks) ? cg.homeworks : []
+          });
+        }
+      }
+      (courses || []).forEach((course) => {
+        const cid = String(course?.id || course?.cId || course?.courseId || course?.course_id || '').trim();
+        if (cid) renderHomeworkList(cid);
+      });
+      Object.keys(window.jlgjMatchedHomeworkByCourseId).forEach((courseId) => {
+        renderHomeworkList(courseId);
+      });
+      renderJlgjStandaloneCourses();
+    };
+
     for (const g of groups) {
       if (isStale()) return;
       const groupId = String(g?.Id || '').trim();
@@ -4023,12 +4264,44 @@ async function loadJlgjCoursesAndHomework(courses = []) {
       }
       if (!threads.length) continue;
 
-      const homeworks = [];
       const teacherSet = new Set();
-      for (const t of threads) {
-        if (isStale()) return;
+      const homeworks = threads.map((t) => {
         const threadId = String(t?.ThreadStrId || '').trim();
-        if (!threadId) continue;
+        const teacherName0 = String(t?.Author || '').trim();
+        if (teacherName0) teacherSet.add(teacherName0);
+        const isAttend0 = t?.IsAttend;
+        const done0 = isAttend0 === true || isAttend0 === 1 || isAttend0 === '1' || String(isAttend0 || '').toLowerCase() === 'true';
+        return {
+          threadId,
+          title: String(t?.Subject || t?.GroupName || '接龙作业').trim(),
+          end: '',
+          content: '',
+          done: done0,
+          link: `https://i.jielong.com/h/${threadId}`,
+          loadingMeta: true
+        };
+      });
+
+      const courseGroup = {
+        token: normalizeCourseNameToken(name),
+        name,
+        groupId,
+        teacherName: Array.from(teacherSet).join(' / '),
+        loadingMeta: true,
+        homeworks
+      };
+      window.jlgjCourseGroupsSnapshot.push(courseGroup);
+      rebuildJlgjRender();
+
+      for (let i = 0; i < threads.length; i++) {
+        if (isStale()) return;
+        const t = threads[i];
+        const threadId = String(t?.ThreadStrId || '').trim();
+        if (!threadId) {
+          if (homeworks[i]) homeworks[i].loadingMeta = false;
+          rebuildJlgjRender();
+          continue;
+        }
 
         let detail = null;
         if (captureData) {
@@ -4042,13 +4315,21 @@ async function loadJlgjCoursesAndHomework(courses = []) {
           const detailUrl = `${JLGJ_API_BASE}/api/Homework/HomeworkDetail?threadId=${encodeURIComponent(threadId)}`;
           const detailResp = await doFetch(detailUrl);
           if (isStale()) return;
-          if (detailResp?.unauthorized) continue;
+          if (detailResp?.unauthorized) {
+            if (homeworks[i]) homeworks[i].loadingMeta = false;
+            rebuildJlgjRender();
+            continue;
+          }
           if (detailResp?.ok) {
             const detailPayload = detailResp.data;
             detail = detailPayload?.Data?.Data || detailPayload?.Data || null;
           }
         }
-        if (!detail) continue;
+        if (!detail) {
+          if (homeworks[i]) homeworks[i].loadingMeta = false;
+          rebuildJlgjRender();
+          continue;
+        }
 
         const homework = detail?.Homework || {};
         const threadData = detail?.Thread || {};
@@ -4063,35 +4344,23 @@ async function loadJlgjCoursesAndHomework(courses = []) {
         if (teacherName) teacherSet.add(teacherName);
         const isAttend = t?.IsAttend;
         const done = isAttend === true || isAttend === 1 || isAttend === '1' || String(isAttend || '').toLowerCase() === 'true';
-        
-        homeworks.push({
+
+        homeworks[i] = {
           threadId,
           title: String(t?.Subject || t?.GroupName || '接龙作业').trim(),
           end: homework?.EndTime || '',
           content,
           done,
-          link: `https://i.jielong.com/h/${threadId}`
-        });
+          link: `https://i.jielong.com/h/${threadId}`,
+          loadingMeta: false
+        };
+        courseGroup.teacherName = Array.from(teacherSet).join(' / ');
+        rebuildJlgjRender();
       }
 
-      const teacherName = Array.from(teacherSet).join(' / ');
-
-      const token = normalizeCourseNameToken(name);
-      window.jlgjCourseGroupsSnapshot.push({ token, name, groupId, teacherName, homeworks });
-      const matched = matchMap.get(token);
-      if (matched?.courseId) {
-        const cid = String(matched.courseId);
-        if (!window.jlgjMatchedHomeworkByCourseId[cid]) window.jlgjMatchedHomeworkByCourseId[cid] = [];
-        window.jlgjMatchedHomeworkByCourseId[cid].push(...homeworks);
-      } else {
-        window.jlgjStandaloneCourses.push({ name, groupId, teacherName, homeworks });
-      }
+      courseGroup.loadingMeta = false;
+      rebuildJlgjRender();
     }
-
-    Object.keys(window.jlgjMatchedHomeworkByCourseId).forEach((courseId) => {
-      renderHomeworkList(courseId);
-    });
-    renderJlgjStandaloneCourses();
   } finally {
     if (bgTab?.id) {
       try { await chrome.tabs.remove(bgTab.id); } catch { /* ignore */ }
@@ -4129,8 +4398,10 @@ async function loadCourses() {
     try { data = JSON.parse(text); } catch {
       // probably redirected / html
       isLoginSessionValid = false;
-      showToast('课程加载失败：登录可能失效', 'warning');
-      promptLoginIfPossible('登录已失效：请重新登录或填写 JSESSIONID');
+      setPlatformLoginState('ve', 'offline');
+      if (usernameInput.value.trim()) {
+        promptLoginIfPossible('请输入验证码重新登录');
+      }
       renderCourseList([]);
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
@@ -4145,8 +4416,9 @@ async function loadCourses() {
       if (String(msg).includes('不合法') || String(msg).includes('登录')) {
         isLoginSessionValid = false;
         setPlatformLoginState('ve', 'offline');
-        showToast('登录已失效，请重新登录', 'warning');
-        promptLoginIfPossible('登录已失效：请重新登录或填写 JSESSIONID');
+        if (usernameInput.value.trim()) {
+          promptLoginIfPossible('请输入验证码重新登录');
+        }
         renderCourseList([]);
         rematchExternalByVeCourses();
         rerenderAllHomeworkAreas();
@@ -4224,12 +4496,7 @@ function scheduleJlgjLoad(courses, loadVersion = 0) {
 function renderCourseList(courses) {
   courseListDiv.innerHTML = '';
   if (!courses || !courses.length) {
-    if (!isPlatformEnabled('ve')) {
-      courseListDiv.innerHTML = '';
-      return;
-    }
-    const anyExternalEnabled = isPlatformEnabled('ykt') || isPlatformEnabled('mrzy') || isPlatformEnabled('jlgj');
-    courseListDiv.innerHTML = anyExternalEnabled ? '' : '暂无课程';
+    updateCourseListEmptyPlaceholder();
     return;
   }
 
@@ -4280,6 +4547,7 @@ function renderCourseList(courses) {
     }
 
     // Prioritize homework fetching before replay link prefetch.
+  updateCourseListEmptyPlaceholder();
     const hwPromise = checkHomework(courseId);
     if (btnVideos) {
       hwPromise.finally(() => {
@@ -4675,7 +4943,7 @@ async function prefetchCourseScores(courseId) {
   window.homeworkScorePendingByCourse[courseId] = false;
 
   if (hasLoginRequired) {
-    handleLoginRequired(() => prefetchCourseScores(courseId), null, '登录已失效：请重新登录或填写 JSESSIONID');
+    handleLoginRequired(() => prefetchCourseScores(courseId), null, '如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录');
     return;
   }
   renderHomeworkList(courseId);
@@ -4838,7 +5106,7 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
     const data = JSON.parse(text);
     if (data?.flag === false || (data?.STATUS === '1' && String(data?.ERRMSG || '').includes('不合法'))) {
       span.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-      span.onclick = () => promptLoginIfPossible('登录已失效，请重新登录');
+      span.onclick = () => promptLoginIfPossible('如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录');
       promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
       return;
     }
@@ -5461,7 +5729,7 @@ courseListDiv.addEventListener('click', async (e) => {
         handleLoginRequired(() => {
           btn.removeAttribute('disabled');
           btn.textContent = oldText || '确定';
-        }, null, '登录已失效，请重新登录后提交作业');
+        }, null, '如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录');
         return;
       }
       if (!res.ok) {
