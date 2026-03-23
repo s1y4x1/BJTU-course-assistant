@@ -2365,8 +2365,6 @@ function refreshPlatformLoginTip() {
     } else if (window.platformLoginChecked?.[platform]) {
       const key = state === 'online' ? 'online' : (state === 'offline' ? 'offline' : 'checking');
       btn.classList.add(`unselected-checked-${key}`);
-    } else {
-      btn.classList.add('unselected-checked-offline');
     }
     btn.classList.toggle('unselected', treatAsUnselected);
     const stateText = treatAsUnselected
