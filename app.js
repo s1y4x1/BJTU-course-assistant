@@ -36,6 +36,17 @@ const totalSizeInfoDiv = document.getElementById('total-size-info');
 const totalPercentDiv = document.getElementById('total-percent');
 const totalEtaDiv = document.getElementById('total-eta');
 const copyAllBtn = document.getElementById('copy-all-btn');
+const resourceSpaceSection = document.getElementById('resource-space-section');
+const resourceSpaceStatus = document.getElementById('resource-space-status');
+const resourceSpaceList = document.getElementById('resource-space-list');
+const resourceCopySelectedBtn = document.getElementById('resource-copy-selected-btn');
+const resourceDownloadSelectedBtn = document.getElementById('resource-download-selected-btn');
+const resourceSpaceCount = document.getElementById('resource-space-count');
+const resourceTotalBar = document.getElementById('resource-download-total-bar');
+const resourceTotalSizeInfo = document.getElementById('resource-download-total-size');
+const resourceTotalPercent = document.getElementById('resource-download-total-percent');
+const resourceTotalSpeed = document.getElementById('resource-download-total-speed');
+const resourceTotalEta = document.getElementById('resource-download-total-eta');
 const courseListDiv = document.getElementById('course-list');
 const courseLoadingStatus = document.getElementById('course-loading-status');
 const rightColumn = document.getElementById('right-column');
@@ -103,6 +114,19 @@ window.courseShowAllById = {}; // {courseId: boolean}
 window.yktDetailCacheByKey = {}; // {detailKey: {state,title,exam_problems,problem_results,promise}}
 window.externalPlatformLoadVersion = 0;
 window.courseListLoadVersion = 0;
+window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded}}
+window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
+window.resourceSpaceSelected = new Set();
+window.resourceSpaceLoadVersion = 0;
+window.resourceDownloadTasks = {}; // {resourceId: {active,loaded,total,speed,samples,lastUiTs,abortController,xhr,cancelled,chromeDownloadId}}
+window.resourceDownloadBatch = {
+  active: false,
+  totalFiles: 0,
+  totalBytes: 0,
+  knownTotal: true,
+  completedFiles: 0,
+  completedBytes: 0
+};
 
 function isPlatformEnabled(platform) {
   const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
@@ -1524,13 +1548,53 @@ async function capturePortalCaptchaDataUrl(tabId) {
   }
 }
 
+async function syncPortalCaptchaToExtension(dataUrl, recognizedText = '', confidence = null) {
+  const src = String(dataUrl || '').trim();
+  if (!src) return null;
+
+  captchaNonce++;
+  const nonce = String(captchaNonce);
+  captchaImg.dataset.nonce = nonce;
+
+  if (lastCaptchaObjectUrl && String(lastCaptchaObjectUrl).startsWith('blob:')) {
+    try { URL.revokeObjectURL(lastCaptchaObjectUrl); } catch { /* ignore */ }
+  }
+  lastCaptchaObjectUrl = '';
+  captchaImg.src = src;
+
+  try {
+    const blobRes = await fetch(src);
+    const blob = await blobRes.blob();
+    pushCaptchaHistory(blob, nonce);
+    markCaptchaHistoryResult(nonce, recognizedText, confidence);
+  } catch {
+    // If conversion to blob fails, keep preview sync only.
+  }
+
+  if (/^\d{4}$/.test(String(recognizedText || ''))) {
+    captchaInput.value = String(recognizedText);
+    captchaInput.style.backgroundColor = '#e8f5e9';
+    setTimeout(() => {
+      captchaInput.style.backgroundColor = '';
+    }, 350);
+  }
+
+  return nonce;
+}
+
 async function resolvePortalCaptchaPasscode(tabId, fallbackCode = '', autoOcrEnabled = true) {
   const fallback = String(fallbackCode || '').replace(/\D/g, '').slice(0, 4);
-  if (!autoOcrEnabled) return fallback;
-
   const capture = await capturePortalCaptchaDataUrl(tabId);
   const dataUrl = String(capture?.dataUrl || '').trim();
   if (!dataUrl) return fallback;
+
+  if (!autoOcrEnabled) {
+    await syncPortalCaptchaToExtension(dataUrl, '', null);
+    return fallback;
+  }
+
+  let recognized = '';
+  let confidence = null;
 
   try {
     const img = new Image();
@@ -1546,11 +1610,16 @@ async function resolvePortalCaptchaPasscode(tabId, fallbackCode = '', autoOcrEna
       };
       img.src = dataUrl;
     });
-    const { text } = await ocrCaptchaWithTesseract(img);
-    if (/^\d{4}$/.test(String(text || ''))) return String(text);
+    const ocr = await ocrCaptchaWithTesseract(img);
+    recognized = String(ocr?.text || '').trim();
+    confidence = Number.isFinite(ocr?.confidence) ? Number(ocr.confidence) : null;
   } catch {
-    // fallback to manual input below
+    recognized = '';
+    confidence = null;
   }
+
+  await syncPortalCaptchaToExtension(dataUrl, recognized, confidence);
+  if (/^\d{4}$/.test(recognized)) return recognized;
   return fallback;
 }
 
@@ -2068,6 +2137,7 @@ async function doLoginFlow() {
     if (shouldReloadCourses && isPlatformEnabled('ve')) {
       await loadCourses();
     }
+    await loadResourceSpaceForCurrentAccount();
 
   } finally {
     forcePortalLoginInPage = false;
@@ -2169,6 +2239,790 @@ function parseDeadlineToTs(v) {
 function isDeadlinePassed(v) {
   const ts = parseDeadlineToTs(v);
   return !!(ts && ts < Date.now());
+}
+
+function sortHomeworkItemsByDeadline(items, pickDeadline) {
+  const list = Array.isArray(items) ? items.slice() : [];
+  return list
+    .map((it, idx) => {
+      const raw = pickDeadline ? pickDeadline(it) : '';
+      const ts = parseDeadlineToTs(raw);
+      return {
+        it,
+        idx,
+        ts: ts > 0 ? ts : Number.MAX_SAFE_INTEGER
+      };
+    })
+    .sort((a, b) => {
+      if (a.ts !== b.ts) return a.ts - b.ts;
+      return a.idx - b.idx;
+    })
+    .map((x) => x.it);
+}
+
+function setResourceSpaceStatus(text = '', tone = 'normal') {
+  if (!resourceSpaceStatus) return;
+  resourceSpaceStatus.textContent = String(text || '');
+  if (tone === 'error') {
+    resourceSpaceStatus.style.color = '#b91c1c';
+  } else if (tone === 'success') {
+    resourceSpaceStatus.style.color = '#166534';
+  } else if (tone === 'warning') {
+    resourceSpaceStatus.style.color = '#92400e';
+  } else {
+    resourceSpaceStatus.style.color = '#64748b';
+  }
+}
+
+function setResourceSpaceCount(count = 0) {
+  if (!resourceSpaceCount) return;
+  const n = Math.max(0, Number(count) || 0);
+  resourceSpaceCount.textContent = `共 ${n} 个资源文件`;
+}
+
+function normalizeResourceUrl(v) {
+  const raw = String(v || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${BASE}${raw}`;
+  return `${BASE_VE}${raw}`;
+}
+
+function formatResourceSizeMb(rpSize) {
+  const n = Number(rpSize);
+  if (!Number.isFinite(n) || n < 0) return '未知';
+  return `${n.toFixed(2)}MB`;
+}
+
+function sanitizeDownloadFileName(name, fallback = 'download') {
+  const src = String(name || '').trim();
+  const cleaned = src
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || fallback;
+}
+
+function normalizeResourceExt(ext) {
+  const raw = String(ext || '').trim();
+  if (!raw) return '';
+  return raw
+    .replace(/^\.+/, '')
+    .replace(/[?#].*$/, '')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .trim();
+}
+
+function inferResourceExtFromUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    const seg = String(u.pathname || '').split('/').pop() || '';
+    const m = seg.match(/\.([a-zA-Z0-9_-]{1,16})$/);
+    return normalizeResourceExt(m?.[1] || '');
+  } catch {
+    const m = String(url || '').match(/\.([a-zA-Z0-9_-]{1,16})(?:[?#]|$)/);
+    return normalizeResourceExt(m?.[1] || '');
+  }
+}
+
+function ensureResourceDownloadFileName(item, rawUrl) {
+  const baseName = sanitizeDownloadFileName(item?.name || 'resource-file');
+  const preferredExt = normalizeResourceExt(item?.extName || item?.rpPrix || '');
+  const existingExt = normalizeResourceExt((String(baseName).match(/\.([a-zA-Z0-9_-]{1,16})$/)?.[1]) || '');
+  const finalExt = preferredExt || existingExt || inferResourceExtFromUrl(rawUrl);
+  if (!finalExt) return baseName;
+  if (existingExt && existingExt.toLowerCase() === finalExt.toLowerCase()) return baseName;
+  if (existingExt && preferredExt) {
+    return baseName.replace(/\.[a-zA-Z0-9_-]{1,16}$/, `.${finalExt}`);
+  }
+  return `${baseName}.${finalExt}`;
+}
+
+function findResourceItemElementById(resourceId) {
+  const rid = String(resourceId || '').trim();
+  if (!rid || !resourceSpaceList) return null;
+  const rows = resourceSpaceList.querySelectorAll('.file-item[data-resource-id]');
+  for (const row of rows) {
+    if (!(row instanceof HTMLElement)) continue;
+    if (String(row.dataset.resourceId || '').trim() === rid) return row;
+  }
+  return null;
+}
+
+function getResourceItemSizeBytes(item) {
+  const mb = Number(item?.sizeMbRaw ?? item?.rpSize ?? NaN);
+  if (!Number.isFinite(mb) || mb < 0) return 0;
+  return Math.round(mb * 1024 * 1024);
+}
+
+function resetResourceDownloadBatch() {
+  window.resourceDownloadBatch = {
+    active: false,
+    totalFiles: 0,
+    totalBytes: 0,
+    knownTotal: true,
+    completedFiles: 0,
+    completedBytes: 0
+  };
+}
+
+function startResourceDownloadBatch(items) {
+  const list = Array.isArray(items) ? items : [];
+  let totalBytes = 0;
+  let knownTotal = true;
+  list.forEach((it) => {
+    const b = getResourceItemSizeBytes(it);
+    if (b > 0) totalBytes += b;
+    else knownTotal = false;
+  });
+  window.resourceDownloadBatch = {
+    active: true,
+    totalFiles: list.length,
+    totalBytes,
+    knownTotal,
+    completedFiles: 0,
+    completedBytes: 0
+  };
+  updateResourceDownloadTotals();
+}
+
+function markResourceDownloadBatchDone(item, success = true) {
+  const batch = window.resourceDownloadBatch;
+  if (!batch || !batch.active) return;
+  batch.completedFiles += 1;
+  if (success) {
+    const guess = getResourceItemSizeBytes(item);
+    if (guess > 0) batch.completedBytes += guess;
+  }
+  updateResourceDownloadTotals();
+}
+
+function getResourceDownloadTask(resourceId) {
+  const rid = String(resourceId || '').trim();
+  if (!rid) return null;
+  return window.resourceDownloadTasks?.[rid] || null;
+}
+
+function isResourceDownloadActive(resourceId) {
+  return !!getResourceDownloadTask(resourceId)?.active;
+}
+
+function setResourceItemDownloadingState(resourceId, downloading) {
+  const row = findResourceItemElementById(resourceId);
+  if (!row) return;
+  const checkbox = row.querySelector('input[data-action="resource-check"]');
+  const downloadBtn = row.querySelector('button.resource-download-btn');
+
+  if (checkbox instanceof HTMLInputElement) {
+    checkbox.disabled = !!downloading;
+    if (downloading) {
+      checkbox.checked = false;
+      window.resourceSpaceSelected.delete(String(resourceId || '').trim());
+    }
+  }
+
+  if (downloadBtn instanceof HTMLButtonElement) {
+    if (downloading) {
+      downloadBtn.dataset.action = 'resource-cancel-download';
+      downloadBtn.textContent = '取消';
+      downloadBtn.classList.add('is-cancel');
+    } else {
+      downloadBtn.dataset.action = 'resource-download';
+      downloadBtn.textContent = '下载';
+      downloadBtn.classList.remove('is-cancel');
+      downloadBtn.disabled = false;
+    }
+  }
+}
+
+function updateResourceDownloadTotals() {
+  if (!resourceTotalBar || !resourceTotalSizeInfo || !resourceTotalPercent || !resourceTotalSpeed || !resourceTotalEta) return;
+  const tasks = Object.values(window.resourceDownloadTasks || {}).filter((t) => t && t.active);
+  const batch = window.resourceDownloadBatch || {};
+  if (!tasks.length && !batch.active) {
+    resourceTotalBar.style.width = '0%';
+    resourceTotalBar.textContent = '0%';
+    resourceTotalSizeInfo.textContent = '0 B / 0 B';
+    resourceTotalPercent.textContent = '0%';
+    resourceTotalSpeed.textContent = '总速度: 0 KB/s';
+    resourceTotalEta.textContent = '';
+    return;
+  }
+
+  const batchActive = !!batch.active;
+  let totalLoaded = batchActive ? Math.max(0, Number(batch.completedBytes) || 0) : 0;
+  let totalSize = batchActive ? Math.max(0, Number(batch.totalBytes) || 0) : 0;
+  let hasKnownTotal = batchActive ? (batch.knownTotal !== false) : true;
+  let totalSpeed = 0;
+  tasks.forEach((t) => {
+    const loaded = Math.max(0, Number(t.loaded) || 0);
+    const total = Math.max(0, Number(t.total) || 0);
+    const speed = Math.max(0, Number(t.speed) || 0);
+    totalLoaded += loaded;
+    totalSpeed += speed;
+    if (!batchActive) {
+      if (total > 0) {
+        totalSize += total;
+      } else {
+        hasKnownTotal = false;
+      }
+    }
+  });
+
+  const percent = hasKnownTotal && totalSize > 0 ? Math.round((totalLoaded / totalSize) * 100) : 0;
+  resourceTotalBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  resourceTotalBar.textContent = `${Math.max(0, Math.min(100, percent))}%`;
+  resourceTotalSizeInfo.textContent = hasKnownTotal && totalSize > 0
+    ? `${formatSize(totalLoaded)} / ${formatSize(totalSize)}`
+    : `${formatSize(totalLoaded)} / --`;
+  resourceTotalPercent.textContent = hasKnownTotal && totalSize > 0 ? `${percent}%` : '--';
+  resourceTotalSpeed.textContent = `总速度: ${formatSpeed(totalSpeed)}`;
+
+  if (hasKnownTotal && totalSize > totalLoaded && totalSpeed > 0) {
+    resourceTotalEta.textContent = `总剩余: ${formatEta((totalSize - totalLoaded) / totalSpeed)}`;
+  } else if (tasks.length || batchActive) {
+    resourceTotalEta.textContent = hasKnownTotal ? '' : '总剩余: --';
+  } else {
+    resourceTotalEta.textContent = '';
+  }
+}
+
+function cancelResourceDownload(resourceId) {
+  const rid = String(resourceId || '').trim();
+  const task = getResourceDownloadTask(rid);
+  if (!task || !task.active) return false;
+  task.cancelled = true;
+  try { task.abortController?.abort(); } catch { /* ignore */ }
+  try { task.xhr?.abort(); } catch { /* ignore */ }
+  if (Number.isFinite(Number(task.chromeDownloadId)) && chrome?.downloads?.cancel) {
+    try { chrome.downloads.cancel(Number(task.chromeDownloadId), () => {}); } catch { /* ignore */ }
+  }
+  return true;
+}
+
+function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '' } = {}) {
+  const row = findResourceItemElementById(resourceId);
+  if (!row) return;
+  const wrap = row.querySelector('.resource-download-progress');
+  const bar = row.querySelector('.resource-download-progress .progress-bar');
+  const statusEl = row.querySelector('.resource-dl-status');
+  const sizeEl = row.querySelector('.resource-dl-size');
+  const speedEl = row.querySelector('.resource-dl-speed');
+  const etaEl = row.querySelector('.resource-dl-eta');
+  if (!(wrap instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
+
+  wrap.style.display = active ? 'block' : 'none';
+
+  const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+  bar.style.width = `${pct}%`;
+  bar.textContent = `${pct}%`;
+
+  if (statusEl instanceof HTMLElement) statusEl.textContent = String(status || '');
+
+  if (sizeEl instanceof HTMLElement) {
+    const loadedSafe = Math.max(0, Number(loaded) || 0);
+    const totalSafe = Math.max(0, Number(total) || 0);
+    if (totalSafe > 0) {
+      sizeEl.textContent = `(${formatSize(loadedSafe)} / ${formatSize(totalSafe)})`;
+    } else if (loadedSafe > 0) {
+      sizeEl.textContent = `(${formatSize(loadedSafe)})`;
+    } else {
+      sizeEl.textContent = '';
+    }
+  }
+
+  if (speedEl instanceof HTMLElement) {
+    speedEl.textContent = active ? formatSpeed(Math.max(0, Number(speed) || 0)) : '';
+  }
+  if (etaEl instanceof HTMLElement) {
+    if (active && Number.isFinite(Number(etaSec)) && Number(etaSec) > 0) {
+      etaEl.textContent = `剩余: ${formatEta(Number(etaSec))}`;
+    } else if (active && total > 0 && loaded >= total) {
+      etaEl.textContent = '剩余: 0秒';
+    } else if (active) {
+      etaEl.textContent = '剩余: --';
+    } else {
+      etaEl.textContent = '';
+    }
+  }
+
+  const task = getResourceDownloadTask(resourceId);
+  if (task) {
+    task.loaded = Math.max(0, Number(loaded) || 0);
+    task.total = Math.max(0, Number(total) || 0);
+    task.speed = Math.max(0, Number(speed) || 0);
+  }
+  updateResourceDownloadTotals();
+}
+
+async function downloadResourceItemWithProgress(item) {
+  const id = String(item?.id || '').trim();
+  const rawUrl = String(item?.url || '').trim();
+  const fileName = ensureResourceDownloadFileName(item, rawUrl);
+  if (!id || !rawUrl) throw new Error('资源链接无效');
+
+  if (isResourceDownloadActive(id)) {
+    throw new Error('该文件正在下载中');
+  }
+
+  const url = (() => {
+    try {
+      return encodeURI(rawUrl);
+    } catch {
+      return rawUrl;
+    }
+  })();
+
+  const PROGRESS_INTERVAL_MS = 180;
+  const task = {
+    active: true,
+    loaded: 0,
+    total: 0,
+    speed: 0,
+    samples: [],
+    lastUiTs: 0,
+    abortController: null,
+    xhr: null,
+    cancelled: false,
+    chromeDownloadId: null
+  };
+  window.resourceDownloadTasks[id] = task;
+  setResourceItemDownloadingState(id, true);
+  setResourceDownloadUi(id, {
+    active: true,
+    percent: 0,
+    loaded: 0,
+    total: 0,
+    speed: 0,
+    etaSec: null,
+    status: '下载中...'
+  });
+
+  const updateProgress = (loaded, total, status = '下载中...', force = false) => {
+    const now = Date.now();
+    const loadedSafe = Math.max(0, Number(loaded) || 0);
+    const totalSafe = Math.max(0, Number(total) || 0);
+    task.loaded = loadedSafe;
+    task.total = totalSafe;
+
+    const speed = pushAndCalcRecentSpeed(task.samples, loadedSafe, now);
+    task.speed = speed;
+
+    if (!force && now - task.lastUiTs < PROGRESS_INTERVAL_MS) return;
+    task.lastUiTs = now;
+
+    const percent = totalSafe > 0 ? Math.round((loadedSafe / totalSafe) * 100) : 0;
+    const etaSec = (totalSafe > 0 && speed > 0) ? ((totalSafe - loadedSafe) / speed) : null;
+    setResourceDownloadUi(id, {
+      active: true,
+      percent,
+      loaded: loadedSafe,
+      total: totalSafe,
+      speed,
+      etaSec,
+      status
+    });
+  };
+
+  const finalizeSuccessUi = (loaded, total, status = '已保存') => {
+    setResourceDownloadUi(id, {
+      active: true,
+      percent: 100,
+      loaded,
+      total,
+      speed: 0,
+      etaSec: 0,
+      status
+    });
+  };
+
+  const finalizeCancelledUi = () => {
+    setResourceDownloadUi(id, {
+      active: true,
+      percent: 0,
+      loaded: 0,
+      total: 0,
+      speed: 0,
+      etaSec: null,
+      status: '已取消'
+    });
+  };
+
+  const cleanup = () => {
+    task.active = false;
+    task.speed = 0;
+    task.abortController = null;
+    task.xhr = null;
+    task.chromeDownloadId = null;
+    setResourceItemDownloadingState(id, false);
+    updateResourceDownloadTotals();
+    setTimeout(() => {
+      const latest = getResourceDownloadTask(id);
+      if (latest && latest.active) return;
+      setResourceDownloadUi(id, { active: false, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '' });
+    }, 1800);
+  };
+
+  const saveBlobToFile = (blob, loaded = 0, total = 0) => {
+    if (task.cancelled) throw new Error('下载已取消');
+    const finalTotal = total > 0 ? total : (blob?.size || loaded);
+    const finalLoaded = blob?.size || loaded;
+    finalizeSuccessUi(finalLoaded, finalTotal, '下载完成，准备保存...');
+
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = fileName;
+    a.rel = 'noopener noreferrer';
+    a.click();
+    setTimeout(() => {
+      try { URL.revokeObjectURL(objectUrl); } catch { /* ignore */ }
+    }, 1500);
+
+    finalizeSuccessUi(finalLoaded, finalTotal, '已保存');
+  };
+
+  const tryDownloadByXhr = () => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    task.xhr = xhr;
+    xhr.open('GET', url, true);
+    xhr.responseType = 'blob';
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+    xhr.onprogress = (e) => {
+      updateProgress(Number(e.loaded || 0), Number(e.total || 0), '下载中...');
+    };
+
+    xhr.onload = () => {
+      task.xhr = null;
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`HTTP ${xhr.status}`));
+        return;
+      }
+      const blob = xhr.response;
+      if (!(blob instanceof Blob)) {
+        reject(new Error('返回内容无效'));
+        return;
+      }
+      const loaded = Number(blob.size || 0);
+      const total = Number(xhr.getResponseHeader('content-length') || loaded || 0);
+      updateProgress(loaded, total, '下载中...', true);
+      resolve({ blob, loaded, total });
+    };
+
+    xhr.onerror = () => reject(new Error('网络请求失败'));
+    xhr.onabort = () => reject(new Error(task.cancelled ? '下载已取消' : '下载已中止'));
+    xhr.send();
+  });
+
+  const fallbackToBrowserDirectDownload = () => {
+    if (task.cancelled) throw new Error('下载已取消');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+    finalizeSuccessUi(0, 0, '已转为浏览器下载');
+  };
+
+  const tryChromeDownloadsApi = () => new Promise((resolve, reject) => {
+    if (!chrome?.downloads?.download) {
+      reject(new Error('downloads-api-unavailable'));
+      return;
+    }
+    chrome.downloads.download(
+      {
+        url,
+        filename: fileName,
+        conflictAction: 'uniquify',
+        saveAs: false
+      },
+      (downloadId) => {
+        const err = chrome.runtime?.lastError;
+        if (err) {
+          reject(new Error(String(err.message || 'downloads-api-failed')));
+          return;
+        }
+        if (!Number.isFinite(Number(downloadId)) || Number(downloadId) <= 0) {
+          reject(new Error('downloads-api-invalid-id'));
+          return;
+        }
+        task.chromeDownloadId = Number(downloadId);
+        resolve(downloadId);
+      }
+    );
+  });
+
+  try {
+    task.abortController = new AbortController();
+    const res = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      signal: task.abortController.signal
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const total = Number(res.headers.get('content-length') || 0);
+    let loaded = 0;
+    let blob;
+
+    if (res.body?.getReader) {
+      const reader = res.body.getReader();
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          if (task.cancelled) throw new Error('下载已取消');
+          chunks.push(value);
+          loaded += value.byteLength;
+          updateProgress(loaded, total, '下载中...');
+        }
+      }
+      blob = new Blob(chunks, { type: res.headers.get('content-type') || 'application/octet-stream' });
+    } else {
+      blob = await res.blob();
+      loaded = blob.size;
+      updateProgress(loaded, total || loaded, '下载中...', true);
+    }
+
+    saveBlobToFile(blob, loaded, total);
+    cleanup();
+  } catch (fetchErr) {
+    if (task.cancelled || String(fetchErr?.name || '').toLowerCase() === 'aborterror') {
+      finalizeCancelledUi();
+      cleanup();
+      throw new Error('下载已取消');
+    }
+    try {
+      setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: task.speed, etaSec: null, status: 'Fetch失败，正在重试...' });
+      const xhrResult = await tryDownloadByXhr();
+      saveBlobToFile(xhrResult.blob, xhrResult.loaded, xhrResult.total);
+      cleanup();
+    } catch (xhrErr) {
+      if (task.cancelled) {
+        finalizeCancelledUi();
+        cleanup();
+        throw new Error('下载已取消');
+      }
+      try {
+        setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: task.speed, etaSec: null, status: '页面下载失败，转浏览器下载...' });
+        await tryChromeDownloadsApi();
+        finalizeSuccessUi(0, 0, '已转为浏览器下载');
+        cleanup();
+      } catch {
+        try {
+          fallbackToBrowserDirectDownload();
+          cleanup();
+        } catch {
+          setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '下载失败' });
+          cleanup();
+          throw new Error(`下载失败: ${String(fetchErr?.message || fetchErr)}; ${String(xhrErr?.message || xhrErr)}`);
+        }
+      }
+    }
+  }
+}
+
+function renderResourceSpaceList() {
+  if (!resourceSpaceList) return;
+  const list = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
+  if (!list.length) {
+    resourceSpaceList.innerHTML = '<div style="font-size:12px; color:#999;">暂无资源文件</div>';
+    return;
+  }
+
+  resourceSpaceList.innerHTML = list.map((it) => {
+    const id = String(it.id || '').trim();
+    const checked = window.resourceSpaceSelected.has(id) ? 'checked' : '';
+    const name = String(it.name || '未命名文件').trim();
+    const uploadTime = String(it.inputTime || '未知').trim();
+    const sizeMb = String(it.sizeMb || '未知').trim();
+    const url = String(it.url || '').trim();
+    return `
+      <div class="file-item" data-resource-id="${escapeHtml(id)}">
+        <div class="resource-row-main">
+          <div class="resource-row-left">
+            <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin-top:2px;">
+            <div style="min-width:0; flex:1;">
+              <div class="resource-row-title">
+                <span class="resource-name">${escapeHtml(name)}</span>
+                <span class="resource-time-inline">${escapeHtml(sizeMb)}</span>
+                <span class="resource-time-inline">上传时间: ${escapeHtml(uploadTime)}</span>
+              </div>
+              <div class="resource-link-row">
+                <a class="resource-url" href="${escapeHtml(url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
+                <button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="resource-download-progress" style="display:none;">
+          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="resource-download-meta">
+            <span class="resource-dl-status"></span>
+            <span class="resource-dl-size"></span>
+            <span class="resource-dl-speed"></span>
+            <span class="resource-dl-eta"></span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  updateResourceDownloadTotals();
+}
+
+async function fetchResourceSpaceListRaw(rows = 100) {
+  const url = `${BASE_VE}back/resourceSpace.shtml?method=resourceSpaceList`;
+  const body = new URLSearchParams({ type: '1', rows: String(Math.max(1, Number(rows) || 100)) });
+  const { text, res } = await fetchText(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: body.toString()
+  });
+  if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, total: 0, result: [] };
+  let data = null;
+  try { data = JSON.parse(String(text || '{}')); } catch { data = null; }
+  if (!data || typeof data !== 'object') return { loginRequired: true, total: 0, result: [] };
+  const total = Number(data.total || 0);
+  const result = Array.isArray(data.result) ? data.result : [];
+  return { loginRequired: false, total, result };
+}
+
+async function loadResourceSpaceForCurrentAccount() {
+  if (!resourceSpaceSection || !resourceSpaceList) return;
+  const loadVersion = ++window.resourceSpaceLoadVersion;
+  const isStale = () => loadVersion !== window.resourceSpaceLoadVersion;
+
+  setResourceSpaceStatus('资源空间加载中...');
+  resourceSpaceList.innerHTML = '';
+  window.resourceDownloadTasks = {};
+  resetResourceDownloadBatch();
+  updateResourceDownloadTotals();
+
+  try {
+    let payload = await fetchResourceSpaceListRaw(100);
+    if (isStale()) return;
+
+    if (payload.loginRequired) {
+      window.resourceSpaceItems = [];
+      window.resourceSpaceSelected = new Set();
+      window.resourceDownloadTasks = {};
+      resetResourceDownloadBatch();
+      setResourceSpaceCount(0);
+      setResourceSpaceStatus('未登录或登录已失效，请先登录智慧课程平台', 'warning');
+      renderResourceSpaceList();
+      return;
+    }
+
+    if (payload.total > 100) {
+      payload = await fetchResourceSpaceListRaw(payload.total);
+      if (isStale()) return;
+    }
+
+    const normalized = (Array.isArray(payload.result) ? payload.result : []).map((it, idx) => {
+      const rpId = String(it?.rpId || it?.id || `${idx}-${it?.rpName || ''}`).trim();
+      return {
+        id: rpId || String(idx),
+        name: String(it?.rpName || it?.name || '未命名文件').trim(),
+        extName: String(it?.extName || it?.rpPrix || '').trim(),
+        url: normalizeResourceUrl(it?.resUrl || it?.downloadUrl || ''),
+        inputTime: String(it?.inputTime || it?.createTime || '').trim(),
+        sizeMb: formatResourceSizeMb(it?.rpSize),
+        sizeMbRaw: Number(it?.rpSize)
+      };
+    }).filter((it) => !!it.url);
+
+    window.resourceSpaceItems = normalized;
+    window.resourceSpaceSelected = new Set();
+    window.resourceDownloadTasks = {};
+    resetResourceDownloadBatch();
+    setResourceSpaceCount(normalized.length);
+    setResourceSpaceStatus('');
+    renderResourceSpaceList();
+  } catch (err) {
+    if (isStale()) return;
+    window.resourceSpaceItems = [];
+    window.resourceSpaceSelected = new Set();
+    window.resourceDownloadTasks = {};
+    resetResourceDownloadBatch();
+    setResourceSpaceCount(0);
+    setResourceSpaceStatus(`资源空间加载失败: ${String(err?.message || err)}`, 'error');
+    renderResourceSpaceList();
+  }
+}
+
+async function fetchVeTeacherIdByCourse(courseNum, fzId) {
+  const courseIdPart = String(courseNum || '').trim();
+  const xkhIdPart = String(fzId || '').trim();
+  if (!courseIdPart || !xkhIdPart) return '';
+  const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10434&courseId=${encodeURIComponent(courseIdPart)}&dataSource=1&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(XQ_CODE)}`;
+  const { text, res } = await fetchText(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
+  if (isLikelyLoginPageHtml(text, res?.url)) return '';
+  const m = String(text || '').match(/<input[^>]*id=["']teacherId["'][^>]*value=["']([^"']+)["']/i)
+    || String(text || '').match(/<input[^>]*value=["']([^"']+)["'][^>]*id=["']teacherId["']/i);
+  return String(m?.[1] || '').trim();
+}
+
+function updateVeTeacherMetaUi(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const meta = window.veTeacherMetaByCourseId?.[cid] || {};
+  const teacherId = String(meta.teacherId || '').trim();
+  const idText = teacherId || (meta.loading ? '加载中...' : '未获取');
+  document.querySelectorAll('.ve-teacher-id').forEach((el) => {
+    if (!(el instanceof HTMLElement)) return;
+    if (String(el.dataset.courseId || '').trim() !== cid) return;
+    el.textContent = idText;
+  });
+  document.querySelectorAll('.ve-switch-teacher-btn').forEach((btn) => {
+    if (!(btn instanceof HTMLButtonElement)) return;
+    if (String(btn.dataset.courseId || '').trim() !== cid) return;
+    btn.disabled = !teacherId;
+    btn.style.opacity = teacherId ? '1' : '0.6';
+    btn.dataset.teacherId = teacherId;
+  });
+}
+
+async function hydrateVeTeacherMeta(courseId, courseNum, fzId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const existing = window.veTeacherMetaByCourseId[cid] || {};
+  if (existing.loading) return;
+  if (existing.loaded && existing.teacherId) {
+    updateVeTeacherMetaUi(cid);
+    return;
+  }
+  window.veTeacherMetaByCourseId[cid] = { ...existing, loading: true };
+  updateVeTeacherMetaUi(cid);
+  try {
+    const teacherId = await fetchVeTeacherIdByCourse(courseNum, fzId);
+    window.veTeacherMetaByCourseId[cid] = { teacherId, loading: false, loaded: true };
+  } catch {
+    window.veTeacherMetaByCourseId[cid] = { teacherId: '', loading: false, loaded: true };
+  }
+  updateVeTeacherMetaUi(cid);
+}
+
+async function switchToTeacherAccount(teacherId) {
+  const tid = String(teacherId || '').trim();
+  if (!tid) {
+    showToast('老师工号为空，无法切换', 'warning', 1600);
+    return;
+  }
+  if (usernameInput.value.trim() === tid) {
+    showToast('当前已是该教师账号', 'info', 1200);
+    return;
+  }
+  usernameInput.value = tid;
+  usernameInput.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function isNativeHomeworkDone(hw) {
@@ -4512,6 +5366,7 @@ function renderCourseList(courses) {
     const xqCode = course.xq_code || course.xqCode || XQ_CODE;
     const courseName = course.name || course.NAME || course.courseName || course.title || '未知课程';
     const teacherName = course.teacher_name || course.teacherName || '';
+    const teacherLabel = String(teacherName || '').trim() || '教师';
     const coursePlatformUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10460&courseId=${encodeURIComponent(courseNumRaw || '')}&cId=${encodeURIComponent(courseId || '')}&xknId=${encodeURIComponent(fzId || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || XQ_CODE)}`;
 
     card.id = `course-${courseId}`;
@@ -4522,7 +5377,17 @@ function renderCourseList(courses) {
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
           <div class="course-card-title"><strong><a href="${coursePlatformUrl}" target="_blank" rel="noopener noreferrer" style="color:#1565c0; text-decoration:none;">${escapeHtml(courseName)}</a></strong></div>
-          <div style="font-size:12px; color:#666;">${teacherName ? `${teacherName} · ` : ''}${courseNum || ''}</div>
+          <div style="font-size:12px; color:#666; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span class="ve-teacher-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
+              <span class="ve-teacher-name">${escapeHtml(teacherLabel)}</span>
+              <span class="ve-teacher-pop">
+                <div style="font-size:12px; color:#374151;">工号 <span class="ve-teacher-id" data-course-id="${escapeHtml(String(courseId || ''))}">加载中...</span></div>
+                <button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-course-id="${escapeHtml(String(courseId || ''))}">切换至教师账号</button>
+              </span>
+            </span>
+            <span>·</span>
+            <span>${escapeHtml(String(courseNum || ''))}</span>
+          </div>
         </div>
         <div class="course-actions" style="display:flex; gap:8px;">
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
@@ -4546,6 +5411,8 @@ function renderCourseList(courses) {
       btnVideos.style.setProperty('--replay-progress', '0%');
       btnVideos.innerHTML = '回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;"></span>';
     }
+
+    hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
 
     // Prioritize homework fetching before replay link prefetch.
   updateCourseListEmptyPlaceholder();
@@ -4653,6 +5520,13 @@ function renderHomeworkList(courseId) {
     && ((window.platformLoginState?.jlgj || 'checking') === 'checking')
     && !window.platformLoadedOnce?.jlgj;
   let jlgjDisplayItems = data.showAll ? jlgjItems : jlgjItems.filter(isJlgjHomeworkPending);
+
+  if (!data.showAll) {
+    displayList = sortHomeworkItemsByDeadline(displayList, (hw) => hw?.end_time ?? hw?.endTime ?? '');
+    yktDisplayItems = sortHomeworkItemsByDeadline(yktDisplayItems, (hw) => hw?.end ?? hw?.endTime ?? '');
+    mrzyDisplayItems = sortHomeworkItemsByDeadline(mrzyDisplayItems, (hw) => hw?.end ?? hw?.endTime ?? '');
+    jlgjDisplayItems = sortHomeworkItemsByDeadline(jlgjDisplayItems, (hw) => hw?.end ?? hw?.endTime ?? '');
+  }
   const isYktStandalone = String(courseId).startsWith('ykt-');
   const isMrzyStandalone = String(courseId).startsWith('mrzy-');
   const isJlgjStandalone = String(courseId).startsWith('jlgj-');
@@ -5535,6 +6409,100 @@ copyAllBtn.addEventListener('click', () => {
   });
 });
 
+if (resourceCopySelectedBtn) {
+  resourceCopySelectedBtn.addEventListener('click', () => {
+    const selected = (window.resourceSpaceItems || []).filter((it) => window.resourceSpaceSelected.has(String(it.id || '')));
+    if (!selected.length) {
+      showToast('请先选择资源文件', 'warning', 1200);
+      return;
+    }
+    let text = '';
+    if (selected.length === 1) {
+      text = String(selected[0]?.url || '').trim();
+    } else {
+      text = selected
+        .map((it) => {
+          const name = String(it?.name || '未命名文件').trim();
+          const link = String(it?.url || '').trim();
+          if (!link) return '';
+          return `${name}\n${link}`;
+        })
+        .filter(Boolean)
+        .join('\n\n');
+    }
+    if (!text) {
+      showToast('选中项没有可复制链接', 'warning', 1200);
+      return;
+    }
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('已复制选中链接', 'success', 1200);
+    });
+  });
+}
+
+if (resourceDownloadSelectedBtn) {
+  resourceDownloadSelectedBtn.addEventListener('click', async () => {
+    const selected = (window.resourceSpaceItems || []).filter((it) => {
+      const rid = String(it.id || '').trim();
+      return window.resourceSpaceSelected.has(rid) && !isResourceDownloadActive(rid);
+    });
+    if (!selected.length) {
+      showToast('请先选择资源文件', 'warning', 1200);
+      return;
+    }
+    if (resourceDownloadSelectedBtn instanceof HTMLButtonElement) {
+      resourceDownloadSelectedBtn.disabled = true;
+    }
+    startResourceDownloadBatch(selected);
+    const concurrency = Math.max(1, Math.min(Number(maxParallelUploads) || 1, selected.length));
+    let successCount = 0;
+    let failCount = 0;
+    let cancelCount = 0;
+    let cursor = 0;
+
+    const worker = async () => {
+      while (true) {
+        const idx = cursor;
+        cursor += 1;
+        if (idx >= selected.length) return;
+        const item = selected[idx];
+        setResourceSpaceStatus(`下载中 ${Math.min(selected.length, idx + 1)}/${selected.length}: ${String(item?.name || '未命名文件')}`);
+        try {
+          await downloadResourceItemWithProgress(item);
+          successCount++;
+          markResourceDownloadBatchDone(item, true);
+        } catch (err) {
+          const msg = String(err?.message || err || '');
+          if (msg.includes('下载已取消')) {
+            cancelCount++;
+            showToast(`已取消: ${String(item?.name || '未命名文件')}`, 'info', 1200);
+          } else {
+            failCount++;
+            showToast(`下载失败: ${String(item?.name || '未命名文件')} (${msg})`, 'error', 2200);
+          }
+          markResourceDownloadBatchDone(item, false);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    resetResourceDownloadBatch();
+    updateResourceDownloadTotals();
+    if (resourceDownloadSelectedBtn instanceof HTMLButtonElement) {
+      resourceDownloadSelectedBtn.disabled = false;
+    }
+    if (successCount === selected.length) {
+      setResourceSpaceStatus(`共 ${selected.length} 个资源文件，已完成批量下载`, 'success');
+      showToast(`已完成 ${successCount} 个文件下载`, 'success', 1500);
+    } else {
+      const summary = `下载完成 ${successCount}/${selected.length}，失败 ${failCount}，取消 ${cancelCount}`;
+      setResourceSpaceStatus(summary, 'warning');
+      showToast(summary, 'warning', 2000);
+    }
+  });
+}
+
 captchaImg.addEventListener('click', () => {
   if (isLoginInProgress) return;
   refreshCaptcha();
@@ -5679,6 +6647,13 @@ courseListDiv.addEventListener('click', async (e) => {
     return;
   }
 
+  if (t.dataset.action === 'switch-teacher-account') {
+    const courseId = String(t.dataset.courseId || '').trim();
+    const teacherId = String(window.veTeacherMetaByCourseId?.[courseId]?.teacherId || '').trim();
+    await switchToTeacherAccount(teacherId);
+    return;
+  }
+
   if (t.dataset.action === 'open-submit') {
     courseListDiv.querySelectorAll('.submit-panel[data-submit-panel="1"]').forEach((p) => {
       if (p instanceof HTMLElement) p.style.display = 'none';
@@ -5745,6 +6720,7 @@ courseListDiv.addEventListener('click', async (e) => {
       showToast('作业提交成功', 'success', 1600);
       renderHomeworkList(courseId);
       recomputeCourseHomeworkState(courseId);
+      await checkHomework(courseId);
       refreshUploadSelectVisibility();
     } catch (err) {
       showToast(`提交失败: ${String(err?.message || err)}`, 'error', 2500);
@@ -5755,6 +6731,68 @@ courseListDiv.addEventListener('click', async (e) => {
     }
   }
 });
+
+if (resourceSpaceList) {
+  resourceSpaceList.addEventListener('click', async (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLElement)) return;
+    const action = String(t.dataset.action || '').trim();
+    const id = String(t.dataset.resourceId || '').trim();
+    if (!action || !id) return;
+    const item = (window.resourceSpaceItems || []).find((x) => String(x.id) === id);
+    if (!item) return;
+
+    if (action === 'resource-check' && t instanceof HTMLInputElement) {
+      if (t.checked) window.resourceSpaceSelected.add(id);
+      else window.resourceSpaceSelected.delete(id);
+      return;
+    }
+
+    if (action === 'resource-copy') {
+      navigator.clipboard.writeText(String(item.url || '')).then(() => {
+        showToast('链接已复制', 'success', 1200);
+      });
+      return;
+    }
+
+    if (action === 'resource-cancel-download') {
+      const cancelled = cancelResourceDownload(id);
+      if (cancelled) {
+        showToast('已取消下载', 'info', 1000);
+      }
+      return;
+    }
+
+    if (action === 'resource-download') {
+      try {
+        await downloadResourceItemWithProgress(item);
+        showToast('下载完成', 'success', 1200);
+      } catch (err) {
+        const msg = String(err?.message || err || '');
+        if (msg.includes('下载已取消')) {
+          showToast('下载已取消', 'info', 1000);
+        } else {
+          showToast(`下载失败: ${msg}`, 'error', 1800);
+        }
+      }
+      return;
+    }
+  });
+
+  resourceSpaceList.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLInputElement)) return;
+    if (String(t.dataset.action || '') !== 'resource-check') return;
+    const id = String(t.dataset.resourceId || '').trim();
+    if (!id) return;
+    if (isResourceDownloadActive(id)) {
+      t.checked = false;
+      return;
+    }
+    if (t.checked) window.resourceSpaceSelected.add(id);
+    else window.resourceSpaceSelected.delete(id);
+  });
+}
 
 courseListDiv.addEventListener('wheel', (e) => {
   const target = e.target;
@@ -5800,6 +6838,7 @@ usernameInput.addEventListener('change', async () => {
     // keep jsessionid for manual mode; do not force modal
     isLoginSessionValid = false;
     showToast('账号已清空：可直接填写 JSESSIONID', 'info', 2500);
+    await loadResourceSpaceForCurrentAccount();
     return;
   }
 
@@ -5832,6 +6871,7 @@ usernameInput.addEventListener('change', async () => {
       await syncJsessionidToUi();
       showToast('该账号登录处于有效状态', 'success');
       if (isPlatformEnabled('ve')) loadCourses();
+      await loadResourceSpaceForCurrentAccount();
     } else if (detected) {
       // Existing valid login session: switch account inside extension flow only.
       pendingUsernameChange = { from: detected, to: u };
@@ -5861,6 +6901,7 @@ usernameInput.addEventListener('change', async () => {
     isLoginSessionValid = true;
     showToast('已保存 JSESSIONID，正在验证...', 'info', 1500);
     if (isPlatformEnabled('ve')) loadCourses();
+    await loadResourceSpaceForCurrentAccount();
   });
 
 // -------------------- Init --------------------
@@ -5919,4 +6960,5 @@ usernameInput.addEventListener('change', async () => {
   }
 
   triggerInitialPlatformLoads();
+  await loadResourceSpaceForCurrentAccount();
 })();
