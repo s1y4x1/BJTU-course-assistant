@@ -147,6 +147,75 @@
         .ve-switch-teacher-btn:hover {
             background: #1d4ed8;
         }
+        .ve-course-num-wrap {
+            position: relative;
+            display: inline-block;
+        }
+        .ve-course-num-wrap::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 100%;
+            height: 8px;
+        }
+        .ve-course-num-text {
+            text-decoration: underline dotted;
+            text-underline-offset: 2px;
+            cursor: help;
+        }
+        .ve-course-teacher-pop {
+            position: absolute;
+            left: 0;
+            top: calc(100% + 6px);
+            min-width: 0;
+            width: max-content;
+            max-width: min(92vw, 720px);
+            background: #fff;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+            z-index: 16;
+            display: none;
+            color: #111827;
+        }
+        .ve-course-num-wrap:hover .ve-course-teacher-pop {
+            display: block;
+        }
+        .ve-course-teacher-table {
+            border-collapse: collapse;
+            font-size: 12px;
+            width: max-content;
+            table-layout: auto;
+        }
+        .ve-course-teacher-table th,
+        .ve-course-teacher-table td {
+            border: 1px solid #e5e7eb;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        .ve-course-teacher-table th {
+            background: #f8fafc;
+            color: #334155;
+            font-weight: 700;
+        }
+        .ve-course-teacher-table td:last-child {
+            white-space: nowrap;
+        }
+        .ve-course-teacher-loading {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #374151;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .ve-course-teacher-loading.warning {
+            color: #b45309;
+        }
 
         .resource-space-section {
             margin-top: 16px;
@@ -236,9 +305,6 @@
             flex-wrap: wrap;
             justify-content: flex-end;
             font-weight: 700;
-        }
-        .resource-total-progress-wrap .resource-total-meta {
-            display: none;
         }
         #resource-download-total-speed {
             color: #2196F3;
@@ -376,6 +442,47 @@
             gap: 10px;
             flex-wrap: wrap;
         }
+        .version-info {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 6px;
+            font-size: 12px;
+            color: #334155;
+            white-space: nowrap;
+        }
+        .version-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+        }
+        .version-pill.latest {
+            border-color: #93c5fd;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+        .version-latest-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid #93c5fd;
+            background: #eff6ff;
+            color: #1d4ed8;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .version-latest-btn:hover {
+            text-decoration: underline;
+        }
+        .version-latest-wrap {
+            display: none;
+        }
         .top-inline-controls #welcome-msg {
             color: #111827;
             font-weight: 600;
@@ -385,10 +492,47 @@
             margin-bottom: 15px;
             padding: 0;
             display: flex;
-            flex-direction: column;
+            align-items: center;
             gap: 10px;
             background: transparent;
             border-radius: 0;
+        }
+        .upload-total-progress-wrap {
+            flex: 1;
+            min-width: 0;
+        }
+        .upload-total-meta {
+            margin-bottom: 4px;
+            font-size: 14px;
+            color: #64748b;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            font-weight: 700;
+        }
+        .upload-total-progress-wrap .progress-bar-container {
+            margin-top: 0;
+            position: relative;
+            background-color: #f1f1f1;
+        }
+        .upload-total-progress-wrap .progress-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            background-color: #4CAF50;
+            width: 0%;
+        }
+        #total-speed {
+            color: #2196F3;
+            font-weight: 700;
+        }
+        #copy-all-btn {
+            padding: 5px 10px;
+            font-size: 12px;
+            white-space: nowrap;
+            background-color: #2196F3;
         }
         .welcome-msg-top {
             color: #4CAF50;
@@ -804,6 +948,11 @@
 
     <div class="page-top-config">
                 <div class="top-inline-controls">
+                    <div id="version-info" class="version-info">
+                        <span id="current-version-pill" class="version-pill">当前版本: --</span>
+                        <span id="latest-version-wrap" class="version-latest-wrap"></span>
+                    </div>
+
                     <label for="parallel-limit">并行限制：</label>
                     <input type="number" id="parallel-limit" value="3" min="1" style="width: 60px; padding: 5px;">
 
@@ -821,21 +970,18 @@
             <h1 style="margin-top: 0;">多文件上传</h1>
 
             <div class="upload-summary-area">
-                <div style="display: flex; align-items: center; justify-content: flex-end; width: 100%;">
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <div id="total-size-info" style="font-size: 14px; color: #666; font-weight: bold;">0 B / 0 B</div>
-                        <div id="total-percent" style="font-size: 14px; color: #666; font-weight: bold;">0%</div>
-                        <div id="total-speed" style="font-weight: bold; color: #2196F3;">总速度: 0 KB/s</div>
-                        <div id="total-eta" style="font-weight: bold; color: #6b7280;"></div>
+                <div class="upload-total-progress-wrap">
+                    <div class="upload-total-meta">
+                        <div id="total-size-info">0 B / 0 B</div>
+                        <div id="total-percent">0%</div>
+                        <div id="total-speed">总速度: 0 KB/s</div>
+                        <div id="total-eta"></div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="total-server-bar" class="progress-bar"></div>
                     </div>
                 </div>
-
-                <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
-                    <div class="progress-bar-container" style="flex: 1; margin-top: 0; position: relative; background-color: #f1f1f1;">
-                        <div id="total-server-bar" class="progress-bar" style="width: 0%; background-color: #4CAF50; position: absolute; top: 0; left: 0; z-index: 2;"></div>
-                    </div>
-                    <button id="copy-all-btn" class="btn" style="padding: 5px 10px; font-size: 12px; white-space: nowrap; background-color: #2196F3;">复制全部链接</button>
-                </div>
+                <button id="copy-all-btn" class="btn">复制全部链接</button>
             </div>
 
             <div id="drop-zone">
@@ -851,7 +997,6 @@
                     <span class="resource-space-title">资源空间</span>
                     <span id="resource-space-count" class="resource-space-count">共 0 个资源文件</span>
                 </div>
-                <div id="resource-space-status" class="resource-space-status">等待加载...</div>
                 <div class="resource-space-footer">
                     <div class="resource-total-progress-wrap">
                         <div class="resource-total-meta">
@@ -869,6 +1014,7 @@
                         <button id="resource-download-selected-btn" class="btn">下载选中文件</button>
                     </div>
                 </div>
+                <div id="resource-space-status" class="resource-space-status">等待加载...</div>
                 <div id="resource-space-list" class="resource-space-list"></div>
             </div>
         </div>

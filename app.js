@@ -55,6 +55,8 @@ const veStatusBtn = document.getElementById('ve-status-btn');
 const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrzyStatusBtn = document.getElementById('mrzy-status-btn');
 const jlgjStatusBtn = document.getElementById('jlgj-status-btn');
+const currentVersionPill = document.getElementById('current-version-pill');
+const latestVersionWrap = document.getElementById('latest-version-wrap');
 
 // Login modal
 const loginModal = document.getElementById('login-modal');
@@ -115,6 +117,7 @@ window.yktDetailCacheByKey = {}; // {detailKey: {state,title,exam_problems,probl
 window.externalPlatformLoadVersion = 0;
 window.courseListLoadVersion = 0;
 window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded}}
+window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
 window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
 window.resourceSpaceLoadVersion = 0;
@@ -171,6 +174,75 @@ function bumpPlatformLoadVersion(platform) {
   return next;
 }
 
+function normalizeVersionText(v) {
+  return String(v || '').trim().replace(/^v/i, '');
+}
+
+function compareVersionText(a, b) {
+  const pa = normalizeVersionText(a).split('.').map((x) => Number(x) || 0);
+  const pb = normalizeVersionText(b).split('.').map((x) => Number(x) || 0);
+  const n = Math.max(pa.length, pb.length);
+  for (let i = 0; i < n; i += 1) {
+    const av = pa[i] || 0;
+    const bv = pb[i] || 0;
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+  }
+  return 0;
+}
+
+function setCurrentVersionUi(versionText) {
+  if (!currentVersionPill) return;
+  currentVersionPill.textContent = `当前版本: ${String(versionText || '--')}`;
+}
+
+function setLatestVersionUi(latestTag, releaseUrl) {
+  if (!latestVersionWrap) return;
+  const latest = String(latestTag || '').trim();
+  const url = String(releaseUrl || '').trim();
+  if (!latest || !url) {
+    latestVersionWrap.style.display = 'none';
+    latestVersionWrap.innerHTML = '';
+    return;
+  }
+  latestVersionWrap.style.display = 'inline-flex';
+  latestVersionWrap.innerHTML = `<a class="version-latest-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">最新版本: ${escapeHtml(latest)}</a>`;
+}
+
+function pickReleaseDownloadUrl(releaseData) {
+  const assets = Array.isArray(releaseData?.assets) ? releaseData.assets : [];
+  const valid = assets.filter((x) => String(x?.browser_download_url || '').trim());
+  if (!valid.length) return '';
+  const crx = valid.find((x) => /\.crx$/i.test(String(x?.name || '').trim()));
+  const target = crx || valid[0];
+  return String(target?.browser_download_url || '').trim();
+}
+
+async function loadVersionInfo() {
+  // Current version is sourced from manifest.json at runtime.
+  const localVersion = String(chrome.runtime.getManifest().version || '').trim();
+  setCurrentVersionUi(localVersion || '--');
+  setLatestVersionUi('', '');
+
+  try {
+    const res = await fetch('https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const latestTag = String(data?.tag_name || '').trim();
+    const latestDownloadUrl = pickReleaseDownloadUrl(data);
+    if (!latestTag || !latestDownloadUrl) return;
+
+    const cmp = compareVersionText(latestTag, localVersion);
+    if (cmp !== 0) {
+      setLatestVersionUi(latestTag, latestDownloadUrl);
+    }
+  } catch {
+    // Ignore version-check failures silently.
+  }
+}
+
 function clearPlatformData(platform) {
   if (platform === 'ykt') {
     window.yktMatchedHomeworkByCourseId = {};
@@ -178,6 +250,7 @@ function clearPlatformData(platform) {
     window.yktMatchedCourseLinkByCourseId = {};
     window.yktCourseGroupsSnapshot = [];
     window.yktHomeworkLoadingByCourse = {};
+    window.yktDetailCacheByKey = {};
     clearYktStandaloneCards();
   } else if (platform === 'mrzy') {
     window.mrzyMatchedHomeworkByCourseId = {};
@@ -2274,9 +2347,13 @@ function setResourceSpaceStatus(text = '', tone = 'normal') {
   }
 }
 
-function setResourceSpaceCount(count = 0) {
+function setResourceSpaceCount(count = 0, mode = 'total') {
   if (!resourceSpaceCount) return;
   const n = Math.max(0, Number(count) || 0);
+  if (String(mode) === 'loaded') {
+    resourceSpaceCount.textContent = `已加载 ${n} 个资源文件`;
+    return;
+  }
   resourceSpaceCount.textContent = `共 ${n} 个资源文件`;
 }
 
@@ -2875,9 +2952,9 @@ function renderResourceSpaceList() {
   updateResourceDownloadTotals();
 }
 
-async function fetchResourceSpaceListRaw(rows = 100) {
+async function fetchResourceSpaceListRaw(rows = 10) {
   const url = `${BASE_VE}back/resourceSpace.shtml?method=resourceSpaceList`;
-  const body = new URLSearchParams({ type: '1', rows: String(Math.max(1, Number(rows) || 100)) });
+  const body = new URLSearchParams({ type: '1', rows: String(Math.max(1, Number(rows) || 10)) });
   const { text, res } = await fetchText(url, {
     method: 'POST',
     headers: {
@@ -2908,7 +2985,8 @@ async function loadResourceSpaceForCurrentAccount() {
   updateResourceDownloadTotals();
 
   try {
-    let payload = await fetchResourceSpaceListRaw(100);
+    const firstRows = 10;
+    let payload = await fetchResourceSpaceListRaw(firstRows);
     if (isStale()) return;
 
     if (payload.loginRequired) {
@@ -2922,12 +3000,7 @@ async function loadResourceSpaceForCurrentAccount() {
       return;
     }
 
-    if (payload.total > 100) {
-      payload = await fetchResourceSpaceListRaw(payload.total);
-      if (isStale()) return;
-    }
-
-    const normalized = (Array.isArray(payload.result) ? payload.result : []).map((it, idx) => {
+    const normalizeResourceItems = (result) => (Array.isArray(result) ? result : []).map((it, idx) => {
       const rpId = String(it?.rpId || it?.id || `${idx}-${it?.rpName || ''}`).trim();
       return {
         id: rpId || String(idx),
@@ -2939,6 +3012,22 @@ async function loadResourceSpaceForCurrentAccount() {
         sizeMbRaw: Number(it?.rpSize)
       };
     }).filter((it) => !!it.url);
+
+    let normalized = normalizeResourceItems(payload.result);
+
+    if (payload.total > firstRows) {
+      window.resourceSpaceItems = normalized;
+      window.resourceSpaceSelected = new Set();
+      window.resourceDownloadTasks = {};
+      resetResourceDownloadBatch();
+      setResourceSpaceCount(normalized.length, 'loaded');
+      setResourceSpaceStatus(`已加载 ${normalized.length} 个资源文件，正在继续加载...`);
+      renderResourceSpaceList();
+
+      payload = await fetchResourceSpaceListRaw(payload.total);
+      if (isStale()) return;
+      normalized = normalizeResourceItems(payload.result);
+    }
 
     window.resourceSpaceItems = normalized;
     window.resourceSpaceSelected = new Set();
@@ -3009,6 +3098,171 @@ async function hydrateVeTeacherMeta(courseId, courseNum, fzId) {
     window.veTeacherMetaByCourseId[cid] = { teacherId: '', loading: false, loaded: true };
   }
   updateVeTeacherMetaUi(cid);
+}
+
+function formatVeClassNumber(n) {
+  const num = Math.max(1, Math.min(99, Number(n) || 1));
+  return String(num).padStart(2, '0');
+}
+
+function buildVeXkhPrefix(courseNum, fzId) {
+  const raw = String(fzId || '').trim();
+  if (raw.length > 2) return raw.slice(0, -2);
+  const seq = String(courseNum || '').trim();
+  return `2025-2026-2-2${seq}`;
+}
+
+async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null) {
+  const courseIdPart = String(courseNum || '').trim();
+  if (!courseIdPart) return [];
+
+  const prefix = buildVeXkhPrefix(courseIdPart, fzId);
+  let classNo = 1;
+  const rows = [];
+  const seen = new Set();
+
+  while (classNo <= 99) {
+    const xkhId = `${prefix}${formatVeClassNumber(classNo)}`;
+    const url = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhId)}`;
+    let text = '';
+    let res = null;
+    try {
+      ({ text, res } = await fetchText(url, {
+        headers: {
+          Accept: 'application/json, text/javascript, */*; q=0.01',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      }));
+    } catch {
+      break;
+    }
+    if (isLikelyLoginPageHtml(text, res?.url)) break;
+
+    let data = null;
+    try {
+      data = JSON.parse(String(text || '{}'));
+    } catch {
+      break;
+    }
+    if (String(data?.STATUS) !== '0') break;
+
+    const item = Array.isArray(data?.result) && data.result.length ? data.result[0] : null;
+    if (item) {
+      const teacherName = String(item?.teacherName || '').trim();
+      const teacherId = String(item?.teacherId || '').trim();
+      const roomName = String(item?.roomName || '').trim();
+      const key = `${teacherId}__${teacherName}__${roomName}`;
+      if ((teacherName || teacherId || roomName) && !seen.has(key)) {
+        seen.add(key);
+        rows.push({ teacherName, teacherId, roomName, xkhId });
+        if (typeof onUpdate === 'function') {
+          onUpdate([...rows], { done: false, error: false });
+        }
+      }
+    }
+    classNo += 1;
+  }
+  if (typeof onUpdate === 'function') {
+    onUpdate([...rows], { done: true, error: false });
+  }
+  return rows;
+}
+
+function renderVeCourseTeachersPopHtml(meta) {
+  const rows = Array.isArray(meta.rows) ? meta.rows : [];
+  const tableHtml = rows.length
+    ? (() => {
+      const body = rows.map((it) => {
+        const teacherName = escapeHtml(String(it?.teacherName || '')) || '-';
+        const teacherId = escapeHtml(String(it?.teacherId || '')) || '-';
+        const roomName = escapeHtml(String(it?.roomName || '')) || '-';
+        const teacherIdRaw = String(it?.teacherId || '').trim();
+        const action = teacherIdRaw
+          ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdRaw)}">切换至教师账号</button>`
+          : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至教师账号</button>';
+        return `<tr><td>${teacherName}</td><td>${teacherId}</td><td>${roomName}</td><td>${action}</td></tr>`;
+      }).join('');
+
+      return `
+        <table class="ve-course-teacher-table">
+          <thead><tr><th>教师姓名</th><th>工号</th><th>教室</th><th>操作</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      `;
+    })()
+    : '';
+
+  if (meta.loading) {
+    if (tableHtml) {
+      return `${tableHtml}<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取更多同课教师...</span></div>`;
+    }
+    return '<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取同课教师...</span></div>';
+  }
+
+  if (meta.error) {
+    if (tableHtml) {
+      return `${tableHtml}<div class="ve-course-teacher-loading warning">获取同课教师失败，已显示部分结果</div>`;
+    }
+    return '<div class="ve-course-teacher-loading warning">获取同课教师失败，请稍后重试</div>';
+  }
+
+  if (!tableHtml) {
+    return '<div style="font-size:12px; color:#64748b;">未查询到同课其他教师</div>';
+  }
+  return tableHtml;
+}
+
+function updateVeCourseTeachersPopUi(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const meta = window.veCourseTeachersMetaByCourseId?.[cid] || { rows: [], loading: false, loaded: false, error: false };
+  document.querySelectorAll('.ve-course-teacher-pop').forEach((el) => {
+    if (!(el instanceof HTMLElement)) return;
+    if (String(el.dataset.courseId || '').trim() !== cid) return;
+    el.innerHTML = renderVeCourseTeachersPopHtml(meta);
+  });
+}
+
+async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const existing = window.veCourseTeachersMetaByCourseId?.[cid] || {};
+  if (existing.loading) {
+    updateVeCourseTeachersPopUi(cid);
+    return existing.promise || Promise.resolve();
+  }
+  if (existing.loaded) {
+    updateVeCourseTeachersPopUi(cid);
+    return Promise.resolve();
+  }
+
+  const loadingMeta = { ...existing, rows: Array.isArray(existing.rows) ? existing.rows : [], loading: true, loaded: false, error: false, promise: null };
+  window.veCourseTeachersMetaByCourseId[cid] = loadingMeta;
+  updateVeCourseTeachersPopUi(cid);
+
+  const p = fetchVeCourseTeachersByCourseNum(courseNum, fzId, (rows, state) => {
+    const latest = window.veCourseTeachersMetaByCourseId?.[cid] || {};
+    window.veCourseTeachersMetaByCourseId[cid] = {
+      ...latest,
+      rows: Array.isArray(rows) ? rows : [],
+      loading: state?.done !== true,
+      loaded: state?.done === true,
+      error: !!state?.error,
+      promise: latest.promise || null
+    };
+    updateVeCourseTeachersPopUi(cid);
+  })
+    .then((rows) => {
+      window.veCourseTeachersMetaByCourseId[cid] = { rows: Array.isArray(rows) ? rows : [], loading: false, loaded: true, error: false, promise: null };
+      updateVeCourseTeachersPopUi(cid);
+    })
+    .catch(() => {
+      window.veCourseTeachersMetaByCourseId[cid] = { rows: [], loading: false, loaded: true, error: true, promise: null };
+      updateVeCourseTeachersPopUi(cid);
+    });
+
+  window.veCourseTeachersMetaByCourseId[cid] = { ...loadingMeta, promise: p };
+  return p;
 }
 
 async function switchToTeacherAccount(teacherId) {
@@ -5386,7 +5640,10 @@ function renderCourseList(courses) {
               </span>
             </span>
             <span>·</span>
-            <span>${escapeHtml(String(courseNum || ''))}</span>
+            <span class="ve-course-num-wrap" data-course-id="${escapeHtml(String(courseId || ''))}" data-course-num="${escapeHtml(String(courseNumRaw || ''))}" data-fz-id="${escapeHtml(String(fzId || ''))}">
+              <span class="ve-course-num-text">${escapeHtml(String(courseNum || ''))}</span>
+              <span class="ve-course-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载同课教师...</div></span>
+            </span>
           </div>
         </div>
         <div class="course-actions" style="display:flex; gap:8px;">
@@ -6588,15 +6845,32 @@ cancelBtn.addEventListener('click', () => {
 });
 
 // Delegated handlers (extension CSP blocks inline onclick)
+courseListDiv.addEventListener('mouseover', (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  const wrap = t.closest('.ve-course-num-wrap');
+  if (!(wrap instanceof HTMLElement)) return;
+  const from = e.relatedTarget;
+  if (from instanceof Node && wrap.contains(from)) return;
+  const courseId = String(wrap.dataset.courseId || '').trim();
+  const courseNum = String(wrap.dataset.courseNum || '').trim();
+  const fzId = String(wrap.dataset.fzId || '').trim();
+  if (!courseId || !courseNum) return;
+  hydrateVeCourseTeachersMeta(courseId, courseNum, fzId).catch(() => {});
+});
+
 courseListDiv.addEventListener('click', async (e) => {
   const t = e.target;
-  if (!(t instanceof HTMLElement)) return;
+  if (!(t instanceof Element)) return;
+  const actionEl = t.closest('[data-action]');
+  if (!(actionEl instanceof HTMLElement)) return;
+  const action = String(actionEl.dataset.action || '').trim();
 
-  if (t.dataset.action === 'toggle-expand') {
-    const box = t.closest('.expandable-box');
+  if (action === 'toggle-expand') {
+    const box = actionEl.closest('.expandable-box');
     if (!box) return;
-    const openText = t.dataset.openText || '点击展开详情';
-    const closeText = t.dataset.closeText || '点击收起';
+    const openText = actionEl.dataset.openText || '点击展开详情';
+    const closeText = actionEl.dataset.closeText || '点击收起';
     const body = box.querySelector('.expandable-body');
     const isExpanded = box.classList.contains('expanded');
 
@@ -6632,7 +6906,7 @@ courseListDiv.addEventListener('click', async (e) => {
     }
 
     const expandedNow = box.classList.contains('expanded');
-    t.textContent = expandedNow ? closeText : openText;
+    actionEl.textContent = expandedNow ? closeText : openText;
     box.dataset.expanded = expandedNow ? '1' : '0';
     const courseId = String(box.dataset.courseId || '').trim();
     const expandKey = String(box.dataset.expandKey || '').trim();
@@ -6640,25 +6914,25 @@ courseListDiv.addEventListener('click', async (e) => {
     return;
   }
 
-  if (t.dataset.action === 'toggle-homework') {
-    const courseId = String(t.dataset.courseId || '').trim();
+  if (action === 'toggle-homework') {
+    const courseId = String(actionEl.dataset.courseId || '').trim();
     if (!courseId) return;
     window.toggleHomeworkView(courseId);
     return;
   }
 
-  if (t.dataset.action === 'switch-teacher-account') {
-    const courseId = String(t.dataset.courseId || '').trim();
-    const teacherId = String(window.veTeacherMetaByCourseId?.[courseId]?.teacherId || '').trim();
+  if (action === 'switch-teacher-account') {
+    const courseId = String(actionEl.dataset.courseId || '').trim();
+    const teacherId = String(actionEl.dataset.teacherId || window.veTeacherMetaByCourseId?.[courseId]?.teacherId || '').trim();
     await switchToTeacherAccount(teacherId);
     return;
   }
 
-  if (t.dataset.action === 'open-submit') {
+  if (action === 'open-submit') {
     courseListDiv.querySelectorAll('.submit-panel[data-submit-panel="1"]').forEach((p) => {
       if (p instanceof HTMLElement) p.style.display = 'none';
     });
-    const block = t.closest('.hw-card-item');
+    const block = actionEl.closest('.hw-card-item');
     if (!block) return;
     const panel = block.querySelector('.submit-panel[data-submit-panel="1"]');
     if (!panel) return;
@@ -6669,17 +6943,17 @@ courseListDiv.addEventListener('click', async (e) => {
     return;
   }
 
-  if (t.dataset.action === 'cancel-submit') {
-    const panel = t.closest('.submit-panel[data-submit-panel="1"]');
+  if (action === 'cancel-submit') {
+    const panel = actionEl.closest('.submit-panel[data-submit-panel="1"]');
     if (!panel) return;
     panel.style.display = 'none';
     refreshUploadSelectVisibility();
     return;
   }
 
-  if (t.dataset.action === 'confirm-submit') {
-    const courseId = String(t.dataset.courseId || '').trim();
-    const idx = Number(t.dataset.hwIndex || -1);
+  if (action === 'confirm-submit') {
+    const courseId = String(actionEl.dataset.courseId || '').trim();
+    const idx = Number(actionEl.dataset.hwIndex || -1);
     if (!courseId || idx < 0) return;
 
     const data = window.courseHomeworkData[courseId] || { list: [], showAll: false };
@@ -6696,7 +6970,7 @@ courseListDiv.addEventListener('click', async (e) => {
     const content = textarea instanceof HTMLTextAreaElement ? textarea.value : '';
     const fileList = getSelectedUploadedFileList();
 
-    const btn = t;
+    const btn = actionEl;
     const oldText = btn.textContent;
     btn.textContent = '提交中...';
     btn.setAttribute('disabled', 'disabled');
@@ -6908,6 +7182,7 @@ usernameInput.addEventListener('change', async () => {
 (async function init() {
   setupRightColumnResizer();
   await loadPlatformEnabledFromStorage();
+  await loadVersionInfo();
   refreshPlatformLoginTip();
 
   // 不默认使用本地保存账号。
