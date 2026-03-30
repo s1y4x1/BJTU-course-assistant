@@ -370,6 +370,19 @@
         .resource-link-row .resource-copy-btn:hover {
             background: #45a049;
         }
+        .resource-link-row .resource-download-btn {
+            padding: 5px 10px;
+            font-size: 12px;
+            white-space: nowrap;
+            background: #1e3a8a;
+        }
+        .resource-link-row .resource-download-btn:hover {
+            background: #1e40af;
+        }
+        .resource-link-row .resource-download-btn.is-cancel,
+        .resource-link-row .resource-download-btn.is-cancel:hover {
+            background: #dc2626;
+        }
         .resource-url:hover {
             text-decoration: underline;
         }
@@ -445,43 +458,63 @@
         .version-info {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
             margin-right: 6px;
-            font-size: 12px;
-            color: #334155;
             white-space: nowrap;
         }
-        .version-pill {
+        .version-btn {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
+            gap: 6px;
+            padding: 4px 10px;
             border-radius: 999px;
             border: 1px solid #cbd5e1;
             background: #f8fafc;
-        }
-        .version-pill.latest {
-            border-color: #93c5fd;
-            background: #eff6ff;
-            color: #1d4ed8;
-        }
-        .version-latest-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
-            border-radius: 999px;
-            border: 1px solid #93c5fd;
-            background: #eff6ff;
-            color: #1d4ed8;
-            text-decoration: none;
+            color: #334155;
+            font-size: 12px;
             font-weight: 600;
+            line-height: 1;
+            cursor: default;
         }
-        .version-latest-btn:hover {
-            text-decoration: underline;
+        .version-btn.loading {
+            background: #f3f4f6;
+            border-color: #d1d5db;
+            color: #6b7280;
         }
-        .version-latest-wrap {
-            display: none;
+        .version-btn.failure {
+            background: #fee2e2;
+            border-color: #fecaca;
+            color: #991b1b;
+            cursor: pointer;
+        }
+        .version-btn.latest {
+            background: #dcfce7;
+            border-color: #86efac;
+            color: #166534;
+        }
+        .version-btn.outdated {
+            background: #ffedd5;
+            border-color: #fdba74;
+            color: #9a3412;
+            cursor: pointer;
+        }
+        .version-btn.ahead {
+            background: #dbeafe;
+            border-color: #93c5fd;
+            color: #1d4ed8;
+        }
+        .version-btn:disabled {
+            opacity: 1;
+        }
+        .version-btn-spinner {
+            width: 12px;
+            height: 12px;
+            min-width: 12px;
+            min-height: 12px;
+            border-radius: 50%;
+            border: 2px solid rgba(107,114,128,0.35);
+            border-top-color: rgba(107,114,128,1);
+            animation: spin 0.9s linear infinite;
+            box-sizing: border-box;
         }
         .top-inline-controls #welcome-msg {
             color: #111827;
@@ -949,8 +982,10 @@
     <div class="page-top-config">
                 <div class="top-inline-controls">
                     <div id="version-info" class="version-info">
-                        <span id="current-version-pill" class="version-pill">当前版本: --</span>
-                        <span id="latest-version-wrap" class="version-latest-wrap"></span>
+                        <button id="version-btn" type="button" class="version-btn loading" disabled>
+                            <span class="version-btn-spinner"></span>
+                            <span>获取最新版本中...</span>
+                        </button>
                     </div>
 
                     <label for="parallel-limit">并行限制：</label>

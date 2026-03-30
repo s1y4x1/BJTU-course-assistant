@@ -55,8 +55,7 @@ const veStatusBtn = document.getElementById('ve-status-btn');
 const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrzyStatusBtn = document.getElementById('mrzy-status-btn');
 const jlgjStatusBtn = document.getElementById('jlgj-status-btn');
-const currentVersionPill = document.getElementById('current-version-pill');
-const latestVersionWrap = document.getElementById('latest-version-wrap');
+const versionBtn = document.getElementById('version-btn');
 
 // Login modal
 const loginModal = document.getElementById('login-modal');
@@ -130,6 +129,9 @@ window.resourceDownloadBatch = {
   completedFiles: 0,
   completedBytes: 0
 };
+window.resourceDownloadQueue = []; // [{id,item,resolve,reject,cancelled,started,promise}]
+window.resourceDownloadQueueById = {}; // {resourceId: queueEntry}
+window.resourceDownloadQueueRunning = 0;
 
 function isPlatformEnabled(platform) {
   const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
@@ -191,22 +193,38 @@ function compareVersionText(a, b) {
   return 0;
 }
 
-function setCurrentVersionUi(versionText) {
-  if (!currentVersionPill) return;
-  currentVersionPill.textContent = `当前版本: ${String(versionText || '--')}`;
-}
+let versionButtonMode = 'loading';
+let versionButtonDownloadUrl = '';
 
-function setLatestVersionUi(latestTag, releaseUrl) {
-  if (!latestVersionWrap) return;
-  const latest = String(latestTag || '').trim();
-  const url = String(releaseUrl || '').trim();
-  if (!latest || !url) {
-    latestVersionWrap.style.display = 'none';
-    latestVersionWrap.innerHTML = '';
+function setVersionButtonState(mode, { localVersion = '', latestVersion = '', downloadUrl = '' } = {}) {
+  if (!versionBtn) return;
+  versionButtonMode = String(mode || 'loading').trim();
+  versionButtonDownloadUrl = String(downloadUrl || '').trim();
+
+  versionBtn.className = `version-btn ${versionButtonMode}`;
+  versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated');
+
+  if (versionButtonMode === 'loading') {
+    versionBtn.innerHTML = '<span class="version-btn-spinner"></span><span>获取最新版本中...</span>';
     return;
   }
-  latestVersionWrap.style.display = 'inline-flex';
-  latestVersionWrap.innerHTML = `<a class="version-latest-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">最新版本: ${escapeHtml(latest)}</a>`;
+  if (versionButtonMode === 'failure') {
+    versionBtn.innerHTML = `<span>当前版本：${escapeHtml(localVersion || '--')}</span>`;
+    return;
+  }
+  if (versionButtonMode === 'latest') {
+    versionBtn.innerHTML = `<span>已是最新版本：${escapeHtml(latestVersion || localVersion || '--')}</span>`;
+    return;
+  }
+  if (versionButtonMode === 'outdated') {
+    versionBtn.innerHTML = `<span>最新版本：${escapeHtml(latestVersion || '--')}</span>`;
+    return;
+  }
+  if (versionButtonMode === 'ahead') {
+    versionBtn.innerHTML = `<span>开发版本：${escapeHtml(localVersion || '--')}</span>`;
+    return;
+  }
+  versionBtn.innerHTML = `<span>当前版本：${escapeHtml(localVersion || '--')}</span>`;
 }
 
 function pickReleaseDownloadUrl(releaseData) {
@@ -221,26 +239,45 @@ function pickReleaseDownloadUrl(releaseData) {
 async function loadVersionInfo() {
   // Current version is sourced from manifest.json at runtime.
   const localVersion = String(chrome.runtime.getManifest().version || '').trim();
-  setCurrentVersionUi(localVersion || '--');
-  setLatestVersionUi('', '');
+  setVersionButtonState('loading', { localVersion });
 
   try {
     const res = await fetch('https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest', {
       headers: { Accept: 'application/vnd.github+json' }
     });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error('GitHub request failed');
     const data = await res.json();
     const latestTag = String(data?.tag_name || '').trim();
     const latestDownloadUrl = pickReleaseDownloadUrl(data);
-    if (!latestTag || !latestDownloadUrl) return;
+    if (!latestTag) throw new Error('Missing latest tag');
 
     const cmp = compareVersionText(latestTag, localVersion);
-    if (cmp !== 0) {
-      setLatestVersionUi(latestTag, latestDownloadUrl);
+    if (cmp === 0) {
+      setVersionButtonState('latest', { localVersion, latestVersion: latestTag });
+      return;
     }
+    if (cmp > 0) {
+      if (!latestDownloadUrl) throw new Error('Missing release download url');
+      setVersionButtonState('outdated', { localVersion, latestVersion: latestTag, downloadUrl: latestDownloadUrl });
+      return;
+    }
+    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag });
   } catch {
-    // Ignore version-check failures silently.
+    setVersionButtonState('failure', { localVersion });
+    showToast('获取新版本失败：无法连接到Github', 'error', 2200);
   }
+}
+
+if (versionBtn) {
+  versionBtn.addEventListener('click', () => {
+    if (versionButtonMode === 'failure') {
+      loadVersionInfo().catch(() => {});
+      return;
+    }
+    if (versionButtonMode === 'outdated' && versionButtonDownloadUrl) {
+      window.open(versionButtonDownloadUrl, '_blank', 'noopener');
+    }
+  });
 }
 
 function clearPlatformData(platform) {
@@ -2443,6 +2480,76 @@ function resetResourceDownloadBatch() {
   };
 }
 
+function processResourceDownloadQueue() {
+  const limit = Math.max(1, Number(maxParallelUploads) || 1);
+  while (window.resourceDownloadQueueRunning < limit && window.resourceDownloadQueue.length > 0) {
+    const entry = window.resourceDownloadQueue.shift();
+    if (!entry || entry.cancelled) continue;
+    entry.started = true;
+    window.resourceDownloadQueueRunning += 1;
+    (async () => {
+      try {
+        await downloadResourceItemWithProgress(entry.item);
+        entry.resolve();
+      } catch (err) {
+        entry.reject(err);
+      } finally {
+        window.resourceDownloadQueueRunning = Math.max(0, Number(window.resourceDownloadQueueRunning || 0) - 1);
+        const rid = String(entry?.id || '').trim();
+        if (rid && window.resourceDownloadQueueById[rid] === entry) {
+          delete window.resourceDownloadQueueById[rid];
+        }
+        processResourceDownloadQueue();
+      }
+    })();
+  }
+}
+
+function enqueueResourceDownload(item) {
+  const id = String(item?.id || '').trim();
+  if (!id) return Promise.reject(new Error('资源链接无效'));
+  if (isResourceDownloadActive(id)) return Promise.reject(new Error('该文件正在下载中'));
+  const expectedBytes = getResourceItemSizeBytes(item);
+
+  const existing = window.resourceDownloadQueueById?.[id];
+  if (existing?.promise) return existing.promise;
+
+  let resolveRef;
+  let rejectRef;
+  const promise = new Promise((resolve, reject) => {
+    resolveRef = resolve;
+    rejectRef = reject;
+  });
+
+  const entry = {
+    id,
+    item,
+    expectedBytes,
+    resolve: resolveRef,
+    reject: rejectRef,
+    cancelled: false,
+    started: false,
+    promise
+  };
+
+  window.resourceDownloadQueue.push(entry);
+  window.resourceDownloadQueueById[id] = entry;
+
+  setResourceItemDownloadingState(id, true);
+  setResourceDownloadUi(id, {
+    active: true,
+    percent: 0,
+    loaded: 0,
+    total: expectedBytes,
+    speed: 0,
+    etaSec: null,
+    status: '排队等待...'
+  });
+
+  processResourceDownloadQueue();
+  return promise;
+}
+
 function startResourceDownloadBatch(items) {
   const list = Array.isArray(items) ? items : [];
   let totalBytes = 0;
@@ -2515,8 +2622,9 @@ function setResourceItemDownloadingState(resourceId, downloading) {
 function updateResourceDownloadTotals() {
   if (!resourceTotalBar || !resourceTotalSizeInfo || !resourceTotalPercent || !resourceTotalSpeed || !resourceTotalEta) return;
   const tasks = Object.values(window.resourceDownloadTasks || {}).filter((t) => t && t.active);
+  const queuedEntries = (window.resourceDownloadQueue || []).filter((q) => q && !q.cancelled && !q.started);
   const batch = window.resourceDownloadBatch || {};
-  if (!tasks.length && !batch.active) {
+  if (!tasks.length && !batch.active && !queuedEntries.length) {
     resourceTotalBar.style.width = '0%';
     resourceTotalBar.textContent = '0%';
     resourceTotalSizeInfo.textContent = '0 B / 0 B';
@@ -2546,6 +2654,18 @@ function updateResourceDownloadTotals() {
     }
   });
 
+  if (!batchActive) {
+    queuedEntries.forEach((q) => {
+      const expected = Math.max(0, Number(q?.expectedBytes) || 0);
+      if (expected > 0) {
+        totalSize += expected;
+      } else {
+        hasKnownTotal = false;
+      }
+      // queued items contribute 0 speed by design
+    });
+  }
+
   const percent = hasKnownTotal && totalSize > 0 ? Math.round((totalLoaded / totalSize) * 100) : 0;
   resourceTotalBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
   resourceTotalBar.textContent = `${Math.max(0, Math.min(100, percent))}%`;
@@ -2557,8 +2677,10 @@ function updateResourceDownloadTotals() {
 
   if (hasKnownTotal && totalSize > totalLoaded && totalSpeed > 0) {
     resourceTotalEta.textContent = `总剩余: ${formatEta((totalSize - totalLoaded) / totalSpeed)}`;
-  } else if (tasks.length || batchActive) {
-    resourceTotalEta.textContent = hasKnownTotal ? '' : '总剩余: --';
+  } else if (hasKnownTotal && totalSize > totalLoaded) {
+    resourceTotalEta.textContent = '总剩余: 计算中...';
+  } else if (tasks.length || batchActive || queuedEntries.length) {
+    resourceTotalEta.textContent = hasKnownTotal ? '' : '总剩余: 计算中...';
   } else {
     resourceTotalEta.textContent = '';
   }
@@ -2567,14 +2689,38 @@ function updateResourceDownloadTotals() {
 function cancelResourceDownload(resourceId) {
   const rid = String(resourceId || '').trim();
   const task = getResourceDownloadTask(rid);
-  if (!task || !task.active) return false;
-  task.cancelled = true;
-  try { task.abortController?.abort(); } catch { /* ignore */ }
-  try { task.xhr?.abort(); } catch { /* ignore */ }
-  if (Number.isFinite(Number(task.chromeDownloadId)) && chrome?.downloads?.cancel) {
-    try { chrome.downloads.cancel(Number(task.chromeDownloadId), () => {}); } catch { /* ignore */ }
+  if (task && task.active) {
+    task.cancelled = true;
+    try { task.abortController?.abort(); } catch { /* ignore */ }
+    try { task.xhr?.abort(); } catch { /* ignore */ }
+    if (Number.isFinite(Number(task.chromeDownloadId)) && chrome?.downloads?.cancel) {
+      try { chrome.downloads.cancel(Number(task.chromeDownloadId), () => {}); } catch { /* ignore */ }
+    }
+    return true;
   }
-  return true;
+
+  const queued = window.resourceDownloadQueueById?.[rid];
+  if (queued && !queued.started) {
+    queued.cancelled = true;
+    window.resourceDownloadQueue = (window.resourceDownloadQueue || []).filter((it) => it !== queued);
+    delete window.resourceDownloadQueueById[rid];
+    try { queued.reject(new Error('下载已取消')); } catch { /* ignore */ }
+    setResourceDownloadUi(rid, {
+      active: true,
+      percent: 0,
+      loaded: 0,
+      total: 0,
+      speed: 0,
+      etaSec: null,
+      status: '已取消'
+    });
+    setTimeout(() => {
+      setResourceDownloadUi(rid, { active: false, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '' });
+      setResourceItemDownloadingState(rid, false);
+    }, 1200);
+    return true;
+  }
+  return false;
 }
 
 function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '' } = {}) {
@@ -2636,6 +2782,7 @@ async function downloadResourceItemWithProgress(item) {
   const id = String(item?.id || '').trim();
   const rawUrl = String(item?.url || '').trim();
   const fileName = ensureResourceDownloadFileName(item, rawUrl);
+  const expectedBytes = getResourceItemSizeBytes(item);
   if (!id || !rawUrl) throw new Error('资源链接无效');
 
   if (isResourceDownloadActive(id)) {
@@ -2654,7 +2801,7 @@ async function downloadResourceItemWithProgress(item) {
   const task = {
     active: true,
     loaded: 0,
-    total: 0,
+    total: expectedBytes,
     speed: 0,
     samples: [],
     lastUiTs: 0,
@@ -2669,7 +2816,7 @@ async function downloadResourceItemWithProgress(item) {
     active: true,
     percent: 0,
     loaded: 0,
-    total: 0,
+    total: expectedBytes,
     speed: 0,
     etaSec: null,
     status: '下载中...'
@@ -2933,6 +3080,7 @@ function renderResourceSpaceList() {
               <div class="resource-link-row">
                 <a class="resource-url" href="${escapeHtml(url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
                 <button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>
+                <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(id)}">下载</button>
               </div>
             </div>
           </div>
@@ -5793,14 +5941,6 @@ function renderHomeworkList(courseId) {
     || yktItems.some(isYktHomeworkDone)
     || mrzyItems.some(isMrzyHomeworkDone)
     || jlgjItems.some(isJlgjHomeworkDone);
-  if (!hasSubmittedHomework && data.showAll) {
-    data.showAll = false;
-    window.courseShowAllById[courseId] = false;
-    displayList = list.filter(isNativeHomeworkPending);
-    yktDisplayItems = yktItems.filter(isYktHomeworkPending);
-    mrzyDisplayItems = mrzyItems.filter(isMrzyHomeworkPending);
-    jlgjDisplayItems = jlgjItems.filter(isJlgjHomeworkPending);
-  }
 
   const yktCourseLink = window.yktMatchedCourseLinkByCourseId[courseId] || '';
   const yktHeaderHtml = isYktStandalone
@@ -5865,7 +6005,8 @@ function renderHomeworkList(courseId) {
 
   const totalHomeworkCount = list.length + yktItems.length + mrzyItems.length + jlgjItems.length;
   const currentDisplayCount = displayList.length + yktDisplayItems.length + mrzyDisplayItems.length + jlgjDisplayItems.length;
-  const toggleRowHtml = totalHomeworkCount > 0 && hasSubmittedHomework
+  const hasHiddenHomework = totalHomeworkCount > currentDisplayCount;
+  const toggleRowHtml = totalHomeworkCount > 0 && (data.showAll || hasHiddenHomework)
     ? `<div class="homework-toggle-row"><button class="homework-toggle-btn" data-action="toggle-homework" data-course-id="${escapeHtml(String(courseId))}">${data.showAll ? '收起' : '查看全部作业'}</button></div>`
     : '';
 
@@ -6604,6 +6745,7 @@ document.getElementById('parallel-limit').addEventListener('change', (e) => {
   if (v > 0) {
     maxParallelUploads = v;
     processQueue();
+    processResourceDownloadQueue();
   }
 });
 
@@ -6711,38 +6853,29 @@ if (resourceDownloadSelectedBtn) {
       resourceDownloadSelectedBtn.disabled = true;
     }
     startResourceDownloadBatch(selected);
-    const concurrency = Math.max(1, Math.min(Number(maxParallelUploads) || 1, selected.length));
     let successCount = 0;
     let failCount = 0;
     let cancelCount = 0;
-    let cursor = 0;
+    setResourceSpaceStatus(`已加入下载队列: ${selected.length} 个文件（并行 ${Math.max(1, Number(maxParallelUploads) || 1)}）`);
 
-    const worker = async () => {
-      while (true) {
-        const idx = cursor;
-        cursor += 1;
-        if (idx >= selected.length) return;
-        const item = selected[idx];
-        setResourceSpaceStatus(`下载中 ${Math.min(selected.length, idx + 1)}/${selected.length}: ${String(item?.name || '未命名文件')}`);
-        try {
-          await downloadResourceItemWithProgress(item);
-          successCount++;
-          markResourceDownloadBatchDone(item, true);
-        } catch (err) {
-          const msg = String(err?.message || err || '');
-          if (msg.includes('下载已取消')) {
-            cancelCount++;
-            showToast(`已取消: ${String(item?.name || '未命名文件')}`, 'info', 1200);
-          } else {
-            failCount++;
-            showToast(`下载失败: ${String(item?.name || '未命名文件')} (${msg})`, 'error', 2200);
-          }
-          markResourceDownloadBatchDone(item, false);
+    await Promise.all(selected.map(async (item, idx) => {
+      setResourceSpaceStatus(`下载队列 ${Math.min(selected.length, idx + 1)}/${selected.length}: ${String(item?.name || '未命名文件')}`);
+      try {
+        await enqueueResourceDownload(item);
+        successCount++;
+        markResourceDownloadBatchDone(item, true);
+      } catch (err) {
+        const msg = String(err?.message || err || '');
+        if (msg.includes('下载已取消')) {
+          cancelCount++;
+          showToast(`已取消: ${String(item?.name || '未命名文件')}`, 'info', 1200);
+        } else {
+          failCount++;
+          showToast(`下载失败: ${String(item?.name || '未命名文件')} (${msg})`, 'error', 2200);
         }
+        markResourceDownloadBatchDone(item, false);
       }
-    };
-
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    }));
 
     resetResourceDownloadBatch();
     updateResourceDownloadTotals();
@@ -7039,7 +7172,7 @@ if (resourceSpaceList) {
 
     if (action === 'resource-download') {
       try {
-        await downloadResourceItemWithProgress(item);
+        await enqueueResourceDownload(item);
         showToast('下载完成', 'success', 1200);
       } catch (err) {
         const msg = String(err?.message || err || '');
