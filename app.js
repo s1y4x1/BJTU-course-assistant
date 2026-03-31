@@ -5173,7 +5173,6 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
-  const shouldRenderReplayUi = () => String(card.dataset.resultView || '').trim() !== 'courseware';
 
   btn.disabled = true;
   btn.style.opacity = '1';
@@ -5183,10 +5182,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   btn.style.setProperty('--replay-progress', '0%');
   btn.innerHTML = '回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;"></span>';
 
-  if (shouldRenderReplayUi()) {
-    resultArea.style.display = 'none';
-    resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在自动获取回放...</span>';
-  }
+  resultArea.style.display = 'none';
   setCourseReplayLoading(courseIdInt, true);
 
   try {
@@ -5231,56 +5227,28 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
       `;
     }).join('');
 
-    if (shouldRenderReplayUi()) {
-      resultArea.innerHTML = replayListHtml;
-    }
+    window.videoReplayCacheByCourseId[courseIdInt] = {
+      html: replayListHtml,
+      list,
+      loaded: true,
+      linksFetched: false,
+      linksFetching: false
+    };
+    // Keep list DOM ready (hidden) so link placeholders can auto-update in background.
+    resultArea.innerHTML = replayListHtml;
 
     // List is ready: allow users to open/close replay panel immediately.
     btn.disabled = false;
     btn.style.opacity = '1';
     btn.style.pointerEvents = 'auto';
     btn.classList.remove('replay-list-loading');
-    btn.classList.add('replay-link-progress');
-    btn.style.setProperty('--replay-progress', '0%');
+    btn.classList.remove('replay-link-progress');
+    btn.style.removeProperty('--replay-progress');
     btn.textContent = '回放下载';
     setCourseReplayState(courseIdInt, true);
 
-    const totalLinks = list.length;
-    let doneLinks = 0;
-    const onOneLinkDone = () => {
-      doneLinks += 1;
-      const p = Math.max(0, Math.min(100, Math.round((doneLinks / totalLinks) * 100)));
-      btn.style.setProperty('--replay-progress', `${p}%`);
-      if (doneLinks >= totalLinks) {
-        btn.classList.remove('replay-link-progress');
-        btn.style.removeProperty('--replay-progress');
-      }
-    };
-
-    let results = [];
-    if (shouldRenderReplayUi()) {
-      results = await Promise.allSettled(list.map((item, index) => {
-        const linkContainerId = `video-link-${courseIdInt}-${index}`;
-        return fetchVideoLinkInternal(linkContainerId, item.videoId, courseNum, fzId, item.teacherId || '')
-          .finally(onOneLinkDone);
-      }));
-    } else {
-      // Skip DOM patching when courseware panel is active; replay will load on demand when clicked.
-      list.forEach(() => onOneLinkDone());
-    }
-
-    const hasAnyOk = results.some((r) => r.status === 'fulfilled' && r.value === true);
-    if (shouldRenderReplayUi()) {
-      window.videoReplayCacheByCourseId[courseIdInt] = {
-        html: resultArea.innerHTML,
-        loaded: true
-      };
-    }
-
-    if (!hasAnyOk) {
-      // Keep the button and list visible for user inspection/retry context.
-      setCourseReplayState(courseIdInt, true);
-    }
+    // Start resolving each replay link automatically after list is ready.
+    startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId).catch(() => {});
   } catch {
     btn.classList.remove('replay-list-loading');
     btn.classList.remove('replay-link-progress');
@@ -5289,6 +5257,41 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     resultArea.style.display = 'none';
     setCourseReplayState(courseIdInt, false);
   }
+}
+
+async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
+  const card = btn?.closest('.file-item');
+  const resultArea = card?.querySelector('.result-area');
+  if (!btn || !card || !resultArea) return;
+  const cache = window.videoReplayCacheByCourseId?.[courseIdInt];
+  const list = Array.isArray(cache?.list) ? cache.list : [];
+  if (!cache || !list.length || cache.linksFetched || cache.linksFetching) return;
+
+  cache.linksFetching = true;
+  btn.classList.add('replay-link-progress');
+  btn.style.setProperty('--replay-progress', '0%');
+
+  const totalLinks = list.length;
+  let doneLinks = 0;
+  const onOneLinkDone = () => {
+    doneLinks += 1;
+    const p = Math.max(0, Math.min(100, Math.round((doneLinks / totalLinks) * 100)));
+    btn.style.setProperty('--replay-progress', `${p}%`);
+    if (doneLinks >= totalLinks) {
+      btn.classList.remove('replay-link-progress');
+      btn.style.removeProperty('--replay-progress');
+    }
+  };
+
+  await Promise.allSettled(list.map((item, index) => {
+    const linkContainerId = `video-link-${courseIdInt}-${index}`;
+    return fetchVideoLinkInternal(linkContainerId, item.videoId, courseNum, fzId, item.teacherId || '')
+      .finally(onOneLinkDone);
+  }));
+
+  cache.linksFetching = false;
+  cache.linksFetched = true;
+  cache.html = resultArea.innerHTML;
 }
 
 function toggleReplayFromCache(btn, courseIdInt) {
@@ -5307,20 +5310,22 @@ function toggleReplayFromCache(btn, courseIdInt) {
   }
 
   if (!cache?.html) {
-    const courseNum = String(btn.dataset.courseNum || '').trim();
-    const fzId = String(btn.dataset.fzId || '').trim();
-    card.dataset.resultView = 'replay';
-    syncCourseActionButtonText(card, 'replay');
-    autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId).catch(() => {});
+    if (btn.disabled) return;
     return;
   }
 
-  if (cache?.html) {
+  // Avoid re-rendering while links are being resolved, otherwise pending async
+  // callbacks may write to detached nodes and appear as "not replaced".
+  if (cache?.html && !cache?.linksFetching) {
     resultArea.innerHTML = cache.html;
   }
   resultArea.style.display = 'block';
   card.dataset.resultView = 'replay';
   syncCourseActionButtonText(card, 'replay');
+
+  const courseNum = String(btn.dataset.courseNum || '').trim();
+  const fzId = String(btn.dataset.fzId || '').trim();
+  startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId).catch(() => {});
 }
 
 function collectCourseMatchMap(courses) {
@@ -7016,8 +7021,8 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
 };
 
 async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId) {
-  const linksDiv = document.getElementById(containerId);
-  if (!linksDiv) return false;
+  const getLinksDiv = () => document.getElementById(containerId);
+  if (!getLinksDiv()) return false;
 
   try {
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
@@ -7038,6 +7043,8 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
     const detailData = JSON.parse(text);
 
     if (detailData.flag === false || (String(detailData.STATUS) === '1' && String(detailData.ERRMSG || '').includes('不合法'))) {
+      const linksDiv = getLinksDiv();
+      if (!linksDiv) return false;
       linksDiv.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
       const sp = linksDiv.querySelector('span');
       if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
@@ -7048,6 +7055,8 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
     // New/alt format: {flag:true, html:"<a...>"}
     const html = (detailData.html || '').trim();
     if (html && (detailData.flag === true || String(detailData.STATUS) === '0')) {
+      const linksDiv = getLinksDiv();
+      if (!linksDiv) return false;
       linksDiv.style.color = '#9C27B0';
       linksDiv.style.fontWeight = 'bold';
       linksDiv.innerHTML = html;
@@ -7067,12 +7076,15 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       return true;
     }
 
+    const linksDiv = getLinksDiv();
+    if (!linksDiv) return false;
     linksDiv.style.color = '#9C27B0';
     linksDiv.style.fontWeight = 'bold';
     linksDiv.innerHTML = `<span style="color:#999; font-weight: normal;">${detailData.message || detailData.ERRMSG || '无数据'}</span>`;
     return false;
   } catch (e) {
-    linksDiv.innerHTML = '<span style="color: #f44336;">Err</span>';
+    const linksDiv = getLinksDiv();
+    if (linksDiv) linksDiv.innerHTML = '<span style="color: #f44336;">Err</span>';
     return false;
   }
 }
