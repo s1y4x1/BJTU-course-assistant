@@ -4249,7 +4249,7 @@ function renderJlgjHomeworkItems(items) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '接龙作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已完成)' : ''}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已提交)' : ''}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -5946,16 +5946,19 @@ function renderHomeworkList(courseId) {
   const yktHeaderHtml = isYktStandalone
     ? ''
     : `<div style="font-size:12px;color:#0369a1; margin-bottom:4px;">${yktCourseLink ? `<a href="${yktCourseLink}" target="_blank" rel="noopener noreferrer" style="color:#0369a1; text-decoration:none;">雨课堂作业</a>` : '雨课堂作业'}</div>`;
+  const yktWrapperStyle = isYktStandalone
+    ? ''
+    : 'margin-top:6px; padding-top:6px; border-top:1px dashed #b3e5fc;';
   const yktHtml = yktItems.length && yktDisplayItems.length
-    ? `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #b3e5fc;">${yktHeaderHtml}${renderYktHomeworkItems(courseId, yktDisplayItems)}</div>`
+    ? `<div style="${yktWrapperStyle}">${yktHeaderHtml}${renderYktHomeworkItems(courseId, yktDisplayItems)}</div>`
     : '';
   const mrzyHeaderHtml = isMrzyStandalone ? '' : '<div style="font-size:12px;color:#3730a3; margin-bottom:4px;">每日交作业</div>';
   const mrzyHtml = mrzyItems.length && mrzyDisplayItems.length
-    ? `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #c7d2fe;">${mrzyHeaderHtml}${renderMrzyHomeworkItems(mrzyDisplayItems)}</div>`
+    ? `<div>${mrzyHeaderHtml}${renderMrzyHomeworkItems(mrzyDisplayItems)}</div>`
     : '';
   const jlgjHeaderHtml = isJlgjStandalone ? '' : '<div style="font-size:12px;color:#0f766e; margin-bottom:4px;">接龙管家</div>';
   const jlgjHtml = jlgjItems.length && jlgjDisplayItems.length
-    ? `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #99f6e4;">${jlgjHeaderHtml}${renderJlgjHomeworkItems(jlgjDisplayItems)}</div>`
+    ? `<div>${jlgjHeaderHtml}${renderJlgjHomeworkItems(jlgjDisplayItems)}</div>`
     : '';
 
   const applyDoneEnterAnimation = () => {
