@@ -53,8 +53,8 @@
         .layout-container { display: flex; gap: 20px; align-items: flex-start; margin: 0; }
         .left-column { flex: 1; min-width: 0; font-size: 14px; }
         .right-column {
-            width: clamp(500px, 32vw, 640px);
-            min-width: 420px;
+            width: clamp(560px, 38vw, 760px);
+            min-width: 460px;
             max-width: 760px;
             flex-shrink: 0;
             position: sticky;
@@ -63,9 +63,8 @@
             padding: 15px;
             padding-left: 12px;
             border-radius: 8px;
-            max-height: calc(100vh - 40px);
-            overflow-y: auto;
-            overflow-x: hidden;
+            max-height: none;
+            overflow: visible;
             box-sizing: border-box;
         }
         .right-column-resizer {
@@ -81,9 +80,20 @@
         }
         .right-column-resizer:hover { background: rgba(59,130,246,0.9); }
         .right-column.dragging { user-select: none; }
-        @media (max-width: 900px) {
+        @media (max-width: 900px), (orientation: portrait) {
+            body { padding: 12px; }
             .layout-container { flex-direction: column; }
-            .right-column { width: 100%; min-width: 0; max-width: 100%; position: static; max-height: none; overflow: visible; padding-left: 15px; }
+            .left-column,
+            .right-column,
+            #drop-zone,
+            #resource-space-section,
+            #course-list {
+                width: 100%;
+                min-width: 0;
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+            .right-column { position: static; padding-left: 15px; }
             .right-column-resizer { display: none; }
         }
 
@@ -93,6 +103,10 @@
             font-size: 12px;
             height: 26px;
             line-height: 26px;
+        }
+        .course-actions .btn[data-action="courseware"],
+        .course-actions .btn[data-action="videos"] {
+            white-space: nowrap;
         }
 
         .ve-teacher-wrap {
@@ -811,6 +825,7 @@
             align-items: center;
             justify-content: space-between;
             gap: 8px;
+            flex-wrap: nowrap;
         }
         .platform-status-actions {
             display: flex;

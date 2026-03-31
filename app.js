@@ -198,13 +198,284 @@ function compareVersionText(a, b) {
 
 let versionButtonMode = 'loading';
 let versionButtonDownloadUrl = '';
-const VERSION_DOWNLOAD_URL = 'https://github.com/s1y4x1/BJTU-course-assistant/archive/refs/heads/master.zip';
-const VERSION_DOWNLOAD_FILE_NAME = 'BJTU 课程助手.zip';
+let versionButtonLatestVersion = '';
+let versionDownloadInProgress = false;
+const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
+const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
+
+function ensureVersionDownloadModal() {
+  let modal = document.getElementById('version-download-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'version-download-modal';
+  modal.style.position = 'fixed';
+  modal.style.inset = '0';
+  modal.style.background = 'rgba(15,23,42,0.45)';
+  modal.style.display = 'none';
+  modal.style.alignItems = 'center';
+  modal.style.justifyContent = 'center';
+  modal.style.zIndex = '10001';
+
+  modal.innerHTML = `
+    <div style="width:min(560px,92vw);background:#fff;border-radius:12px;padding:16px 16px 14px;box-shadow:0 18px 42px rgba(0,0,0,0.25);border:1px solid #e8edf5;">
+      <div id="version-download-title" style="font-size:18px;font-weight:700;color:#111827;margin-bottom:6px;">正在下载</div>
+      <div id="version-download-body" style="font-size:13px;color:#334155;margin-bottom:8px;">请稍候，正在准备下载...</div>
+      <div id="version-download-source" style="font-size:12px;color:#475569;margin-bottom:6px;word-break:break-all;">下载源：https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master</div>
+      <div id="version-download-meta" style="margin-bottom:4px;font-size:12px;color:#64748b;display:flex;gap:10px;flex-wrap:wrap;font-weight:700;">
+        <span id="version-download-status">准备下载...</span>
+        <span id="version-download-size">0 B / --</span>
+        <span id="version-download-speed" style="color:#2196F3;">0 KB/s</span>
+        <span id="version-download-eta">剩余: --</span>
+      </div>
+      <div class="progress-bar-container" style="margin-top:0;position:relative;">
+        <div id="version-download-bar" class="progress-bar" style="position:absolute;top:0;left:0;z-index:2;width:0%;"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function setVersionDownloadProgressUi({
+  visible = true,
+  sourceUrl = VERSION_DOWNLOAD_URL,
+  status = '下载中...',
+  title = '正在下载',
+  body = '请稍候，正在下载更新文件...',
+  loaded = 0,
+  total = 0,
+  speed = 0,
+  etaSec = null,
+  percent = 0
+} = {}) {
+  const modal = ensureVersionDownloadModal();
+  if (!modal) return;
+  modal.style.display = visible ? 'flex' : 'none';
+  if (!visible) return;
+
+  const titleEl = document.getElementById('version-download-title');
+  const bodyEl = document.getElementById('version-download-body');
+  const sourceEl = document.getElementById('version-download-source');
+  const statusEl = document.getElementById('version-download-status');
+  const sizeEl = document.getElementById('version-download-size');
+  const speedEl = document.getElementById('version-download-speed');
+  const etaEl = document.getElementById('version-download-eta');
+  const barEl = document.getElementById('version-download-bar');
+
+  if (titleEl) titleEl.textContent = String(title || '正在下载');
+  if (bodyEl) bodyEl.textContent = String(body || '请稍候，正在下载更新文件...');
+  if (sourceEl) sourceEl.textContent = `下载源：${String(sourceUrl || '').trim() || '--'}`;
+  if (statusEl) statusEl.textContent = String(status || '下载中...');
+  if (sizeEl) {
+    const loadedSafe = Math.max(0, Number(loaded) || 0);
+    const totalSafe = Math.max(0, Number(total) || 0);
+    sizeEl.textContent = totalSafe > 0
+      ? `${formatSize(loadedSafe)} / ${formatSize(totalSafe)}`
+      : `${formatSize(loadedSafe)} / --`;
+  }
+  if (speedEl) speedEl.textContent = formatSpeed(Math.max(0, Number(speed) || 0));
+  if (etaEl) {
+    if (Number.isFinite(Number(etaSec)) && Number(etaSec) > 0) {
+      etaEl.textContent = `剩余: ${formatEta(Number(etaSec))}`;
+    } else if (Math.max(0, Number(total) || 0) > 0 && Math.max(0, Number(loaded) || 0) >= Math.max(0, Number(total) || 0)) {
+      etaEl.textContent = '剩余: 0秒';
+    } else {
+      etaEl.textContent = '剩余: --';
+    }
+  }
+  if (barEl) {
+    const p = Math.max(0, Math.min(100, Number(percent) || 0));
+    barEl.style.width = `${p}%`;
+    barEl.textContent = `${Math.round(p)}%`;
+  }
+}
+
+async function downloadVersionByUrlWithProgress(url, fileName) {
+  const finalUrl = String(url || '').trim();
+  if (!finalUrl) throw new Error('下载链接为空');
+
+  setVersionDownloadProgressUi({
+    visible: true,
+    sourceUrl: finalUrl,
+    status: '下载中...',
+    title: '正在下载',
+    body: '请稍候，正在下载更新文件...',
+    loaded: 0,
+    total: 0,
+    speed: 0,
+    etaSec: null,
+    percent: 0
+  });
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
+  let res;
+  try {
+    res = await fetch(finalUrl, {
+      cache: 'no-store',
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  const total = Math.max(0, Number(res.headers.get('content-length') || 0));
+  if (!res.body || !res.body.getReader) {
+    const blob = await res.blob();
+    const loaded = Number(blob.size || 0);
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: `${sourceLabel}下载完成，准备保存...`,
+      loaded,
+      total: total || loaded,
+      speed: 0,
+      etaSec: 0,
+      percent: 100
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = fileName;
+    a.rel = 'noopener noreferrer';
+    a.click();
+    setTimeout(() => {
+      try { URL.revokeObjectURL(objectUrl); } catch { /* ignore */ }
+    }, 1500);
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  const samples = [];
+  let lastUiTs = 0;
+  const UI_INTERVAL_MS = 180;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      loaded += value.length;
+    }
+
+    const now = Date.now();
+    if (now - lastUiTs < UI_INTERVAL_MS) continue;
+    lastUiTs = now;
+    const speed = pushAndCalcRecentSpeed(samples, loaded, now);
+    const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+    const etaSec = total > 0 && speed > 0 ? (total - loaded) / speed : null;
+    setVersionDownloadProgressUi({
+      visible: true,
+      sourceUrl: finalUrl,
+      status: '下载中...',
+      title: '正在下载',
+      body: '请稍候，正在下载更新文件...',
+      loaded,
+      total,
+      speed,
+      etaSec,
+      percent
+    });
+  }
+
+  const blob = new Blob(chunks, { type: 'application/zip' });
+  const finalLoaded = Number(blob.size || loaded || 0);
+  const finalTotal = total > 0 ? total : finalLoaded;
+  setVersionDownloadProgressUi({
+    visible: true,
+    sourceUrl: finalUrl,
+    status: '下载完成，准备保存...',
+    title: '正在下载',
+    body: '文件已下载完成，正在保存...',
+    loaded: finalLoaded,
+    total: finalTotal,
+    speed: 0,
+    etaSec: 0,
+    percent: 100
+  });
+
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = fileName;
+  a.rel = 'noopener noreferrer';
+  a.click();
+  setTimeout(() => {
+    try { URL.revokeObjectURL(objectUrl); } catch { /* ignore */ }
+  }, 1500);
+}
+
+function buildVersionDownloadFileName(versionText = '') {
+  const normalized = normalizeVersionText(versionText).replace(/[^0-9.]/g, '');
+  if (normalized) return `BJTU 课程助手 ${normalized}.zip`;
+  return 'BJTU 课程助手.zip';
+}
+
+async function startVersionDownloadWithFallback() {
+  if (versionDownloadInProgress) {
+    return;
+  }
+
+  setVersionDownloadProgressUi({
+    visible: true,
+    sourceUrl: versionButtonDownloadUrl || VERSION_DOWNLOAD_URL,
+    status: '准备下载...',
+    title: '正在下载',
+    body: '请稍候，正在下载更新文件...',
+    loaded: 0,
+    total: 0,
+    speed: 0,
+    etaSec: null,
+    percent: 0
+  });
+
+  versionDownloadInProgress = true;
+  const fileName = buildVersionDownloadFileName(versionButtonLatestVersion);
+  const primaryUrl = VERSION_DOWNLOAD_URL;
+
+  try {
+    await downloadVersionByUrlWithProgress(primaryUrl, fileName);
+    setVersionDownloadProgressUi({
+      visible: true,
+      sourceUrl: primaryUrl,
+      status: '已完成',
+      title: '下载成功',
+      body: '请前往解压覆盖扩展目录并重新加载扩展以完成更新。',
+      loaded: 0,
+      total: 0,
+      speed: 0,
+      etaSec: 0,
+      percent: 100
+    });
+  } catch (err) {
+    setVersionDownloadProgressUi({
+      visible: true,
+      sourceUrl: primaryUrl,
+      status: `下载失败：${String(err?.message || '未知错误')}`,
+      title: '正在下载',
+      body: '下载失败，请检查网络后重试。',
+      loaded: 0,
+      total: 0,
+      speed: 0,
+      etaSec: null,
+      percent: 0
+    });
+    showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
+  }
+  versionDownloadInProgress = false;
+}
 
 function setVersionButtonState(mode, { localVersion = '', latestVersion = '', downloadUrl = '', body = '' } = {}) {
   if (!versionBtn) return;
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
+  versionButtonLatestVersion = String(latestVersion || '').trim();
 
   versionBtn.className = `version-btn ${versionButtonMode}`;
   versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated');
@@ -245,10 +516,31 @@ async function loadVersionInfo() {
   setVersionButtonState('loading', { localVersion });
 
   try {
-    const res = await fetch('https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json' }
-    });
-    if (!res.ok) throw new Error('GitHub request failed');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    let res;
+    try {
+      res = await fetch(VERSION_LATEST_API_URL, {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    if (!res.ok) {
+      let apiMessage = '';
+      try {
+        const failData = await res.json();
+        apiMessage = String(failData?.message || '').trim();
+      } catch {
+        try {
+          apiMessage = String(await res.text()).trim();
+        } catch {
+          apiMessage = '';
+        }
+      }
+      throw new Error(apiMessage || `GitHub request failed (${res.status})`);
+    }
     const data = await res.json();
     const latestTag = String(data?.tag_name || '').trim();
     if (!latestTag) throw new Error('Missing latest tag');
@@ -268,9 +560,12 @@ async function loadVersionInfo() {
       return;
     }
     setVersionButtonState('ahead', { localVersion, latestVersion: latestTag });
-  } catch {
+  } catch (err) {
     setVersionButtonState('failure', { localVersion });
-    showToast('获取新版本失败：无法连接到Github', 'error', 2200);
+    const msg = String(err?.message || '').trim();
+    const base = '获取新版本失败：无法连接到 Github';
+    const text = msg ? `${base}\n${msg}` : base;
+    showToast(text, 'error', 2600);
   }
 }
 
@@ -281,16 +576,10 @@ if (versionBtn) {
       return;
     }
     if (versionButtonMode === 'outdated' && versionButtonDownloadUrl) {
-      if (chrome?.downloads?.download) {
-        chrome.downloads.download({
-          url: versionButtonDownloadUrl,
-          filename: VERSION_DOWNLOAD_FILE_NAME,
-          conflictAction: 'uniquify',
-          saveAs: false
-        }, () => {});
-        return;
-      }
-      window.open(versionButtonDownloadUrl, '_blank', 'noopener');
+      startVersionDownloadWithFallback().catch(() => {
+        versionDownloadInProgress = false;
+        showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
+      });
     }
   });
 }
@@ -488,25 +777,50 @@ function refreshUploadSelectVisibility() {
 function setupRightColumnResizer() {
   if (!rightColumn || !rightColumnResizer) return;
   const STORAGE_KEY = 'courseHelperWidthPx';
-  const MIN_W = 420;
-  const MAX_W = 760;
+  const BASE_MIN_W = 460;
+  const BASE_MAX_W = 760;
 
-  try {
-    const saved = Number(localStorage.getItem(STORAGE_KEY) || 0);
-    if (Number.isFinite(saved) && saved >= MIN_W && saved <= MAX_W) {
-      rightColumn.style.width = `${saved}px`;
+  const isAdaptiveLayout = () => window.matchMedia('(max-width: 900px), (orientation: portrait)').matches;
+
+  const getBounds = () => {
+    const vw = Math.max(0, Number(window.innerWidth || 0));
+    const minW = BASE_MIN_W;
+    const maxByViewport = Math.max(minW + 20, vw - 48);
+    const maxW = Math.max(minW, Math.min(BASE_MAX_W, maxByViewport));
+    return { minW, maxW };
+  };
+
+  const applyResponsiveWidth = () => {
+    if (isAdaptiveLayout()) {
+      rightColumn.style.width = '';
+      rightColumn.style.minWidth = '0';
+      return;
     }
-  } catch {
-    // ignore
-  }
+    rightColumn.style.minWidth = '';
+    const { minW, maxW } = getBounds();
+    let target = Math.round((minW + maxW) / 2);
+    try {
+      const saved = Number(localStorage.getItem(STORAGE_KEY) || 0);
+      if (Number.isFinite(saved)) {
+        target = saved;
+      }
+    } catch {
+      // ignore
+    }
+    const clamped = Math.max(minW, Math.min(maxW, Math.round(target)));
+    rightColumn.style.width = `${clamped}px`;
+  };
+
+  applyResponsiveWidth();
 
   let dragging = false;
 
   const onMove = (e) => {
     if (!dragging || !rightColumn) return;
-    const vw = Math.max(800, window.innerWidth || 0);
+    const { minW, maxW } = getBounds();
+    const vw = Math.max(0, window.innerWidth || 0);
     const w = vw - Number(e.clientX || 0) - 24;
-    const clamped = Math.max(MIN_W, Math.min(MAX_W, Math.round(w)));
+    const clamped = Math.max(minW, Math.min(maxW, Math.round(w)));
     rightColumn.style.width = `${clamped}px`;
   };
 
@@ -519,8 +833,9 @@ function setupRightColumnResizer() {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     try {
+      const { minW, maxW } = getBounds();
       const current = parseInt(String(rightColumn.style.width || '0').replace('px', ''), 10);
-      if (Number.isFinite(current) && current >= MIN_W && current <= MAX_W) {
+      if (Number.isFinite(current) && current >= minW && current <= maxW) {
         localStorage.setItem(STORAGE_KEY, String(current));
       }
     } catch {
@@ -529,7 +844,7 @@ function setupRightColumnResizer() {
   };
 
   rightColumnResizer.addEventListener('mousedown', (e) => {
-    if (window.matchMedia('(max-width: 900px)').matches) return;
+    if (isAdaptiveLayout()) return;
     e.preventDefault();
     dragging = true;
     rightColumn.classList.add('dragging');
@@ -537,6 +852,13 @@ function setupRightColumnResizer() {
     document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+  });
+
+  window.addEventListener('resize', () => {
+    if (dragging && isAdaptiveLayout()) {
+      onUp();
+    }
+    applyResponsiveWidth();
   });
 }
 
@@ -828,6 +1150,7 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
   const text = String(message || '');
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
+  toast.style.whiteSpace = 'pre-line';
   if (allowHtml) {
     toast.innerHTML = text;
   } else {
@@ -6419,7 +6742,7 @@ function renderHomeworkList(courseId) {
         : '';
       const hasAnyExternalHomework = totalHomeworkCount > 0;
       const allExternalSubmittedTip = (!data.showAll && hasAnyExternalHomework && currentDisplayCount === 0)
-        ? '<div style="color:#4CAF50; margin-top:2px;">✓ 所有作业已提交</div>'
+        ? '<div style="color:#4CAF50; margin-top:2px;">✓ 全部作业已提交</div>'
         : '';
       const emptyExternalTip = (!hasAnyExternalHomework && !standaloneSyncing)
         ? '<span style="color:#999;">没有作业数据</span>'
@@ -6432,7 +6755,7 @@ function renderHomeworkList(courseId) {
     }
     const native = totalHomeworkCount === 0
       ? '<span style="color:#999;">没有作业数据</span>'
-      : (data.showAll ? '<span style="color:#999;">暂无任何作业</span>' : '<span style="color:#4CAF50;">✓ 所有作业已提交</span>');
+      : (data.showAll ? '<span style="color:#999;">暂无任何作业</span>' : '<span style="color:#4CAF50;">✓ 全部作业已提交</span>');
     const extHtml = `${yktDisplayItems.length ? yktHtml : ''}${mrzyDisplayItems.length ? mrzyHtml : ''}${jlgjDisplayItems.length ? jlgjHtml : ''}`;
     if (extHtml) {
       area.innerHTML = `${native}${extHtml}${toggleRowHtml}`;
@@ -7766,7 +8089,8 @@ usernameInput.addEventListener('change', async () => {
 (async function init() {
   setupRightColumnResizer();
   await loadPlatformEnabledFromStorage();
-  await loadVersionInfo();
+  // Run update check in background to avoid blocking other startup requests.
+  loadVersionInfo().catch(() => {});
   refreshPlatformLoginTip();
 
   // 不默认使用本地保存账号。
