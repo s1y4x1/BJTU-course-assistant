@@ -99,6 +99,7 @@ window.jlgjCourseGroupsSnapshot = []; // [{token,name,groupId,homeworks}]
 window.jlgjRequestHeaders = {}; // {authorization,xApiRequestPayload}
 window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomeworkCount,hasReplay}}
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
+window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.platformNeedLogin = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformLoginState = { ve: 'checking', ykt: 'checking', mrzy: 'checking', jlgj: 'checking' }; // checking|offline|online
 window.platformLoginChecked = { ve: false, ykt: false, mrzy: false, jlgj: false };
@@ -119,6 +120,8 @@ window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded}}
 window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
 window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
+window.coursewareItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
+window.coursewareItemsByCourseId = {}; // {courseId: CoursewareItem[]}
 window.resourceSpaceLoadVersion = 0;
 window.resourceDownloadTasks = {}; // {resourceId: {active,loaded,total,speed,samples,lastUiTs,abortController,xhr,cancelled,chromeDownloadId}}
 window.resourceDownloadBatch = {
@@ -195,8 +198,10 @@ function compareVersionText(a, b) {
 
 let versionButtonMode = 'loading';
 let versionButtonDownloadUrl = '';
+const VERSION_DOWNLOAD_URL = 'https://github.com/s1y4x1/BJTU-course-assistant/archive/refs/heads/master.zip';
+const VERSION_DOWNLOAD_FILE_NAME = 'BJTU 课程助手.zip';
 
-function setVersionButtonState(mode, { localVersion = '', latestVersion = '', downloadUrl = '' } = {}) {
+function setVersionButtonState(mode, { localVersion = '', latestVersion = '', downloadUrl = '', body = '' } = {}) {
   if (!versionBtn) return;
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
@@ -217,7 +222,10 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', do
     return;
   }
   if (versionButtonMode === 'outdated') {
-    versionBtn.innerHTML = `<span>最新版本：${escapeHtml(latestVersion || '--')}</span>`;
+    const bodyHtml = String(body || '').trim()
+      ? `<span class="version-btn-body">${escapeHtml(String(body || '').trim()).replace(/\r?\n/g, '<br>')}</span>`
+      : '';
+    versionBtn.innerHTML = `<span class="version-btn-stack"><span>发现新版本：${escapeHtml(latestVersion || '--')}</span>${bodyHtml}</span>`;
     return;
   }
   if (versionButtonMode === 'ahead') {
@@ -228,12 +236,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', do
 }
 
 function pickReleaseDownloadUrl(releaseData) {
-  const assets = Array.isArray(releaseData?.assets) ? releaseData.assets : [];
-  const valid = assets.filter((x) => String(x?.browser_download_url || '').trim());
-  if (!valid.length) return '';
-  const crx = valid.find((x) => /\.crx$/i.test(String(x?.name || '').trim()));
-  const target = crx || valid[0];
-  return String(target?.browser_download_url || '').trim();
+  return VERSION_DOWNLOAD_URL;
 }
 
 async function loadVersionInfo() {
@@ -248,7 +251,6 @@ async function loadVersionInfo() {
     if (!res.ok) throw new Error('GitHub request failed');
     const data = await res.json();
     const latestTag = String(data?.tag_name || '').trim();
-    const latestDownloadUrl = pickReleaseDownloadUrl(data);
     if (!latestTag) throw new Error('Missing latest tag');
 
     const cmp = compareVersionText(latestTag, localVersion);
@@ -257,8 +259,12 @@ async function loadVersionInfo() {
       return;
     }
     if (cmp > 0) {
-      if (!latestDownloadUrl) throw new Error('Missing release download url');
-      setVersionButtonState('outdated', { localVersion, latestVersion: latestTag, downloadUrl: latestDownloadUrl });
+      setVersionButtonState('outdated', {
+        localVersion,
+        latestVersion: latestTag,
+        downloadUrl: VERSION_DOWNLOAD_URL,
+        body: String(data?.body || '').trim()
+      });
       return;
     }
     setVersionButtonState('ahead', { localVersion, latestVersion: latestTag });
@@ -275,6 +281,15 @@ if (versionBtn) {
       return;
     }
     if (versionButtonMode === 'outdated' && versionButtonDownloadUrl) {
+      if (chrome?.downloads?.download) {
+        chrome.downloads.download({
+          url: versionButtonDownloadUrl,
+          filename: VERSION_DOWNLOAD_FILE_NAME,
+          conflictAction: 'uniquify',
+          saveAs: false
+        }, () => {});
+        return;
+      }
       window.open(versionButtonDownloadUrl, '_blank', 'noopener');
     }
   });
@@ -982,7 +997,7 @@ async function submitNativeHomework(courseId, hw, content, fileList) {
 
   const body = new URLSearchParams({
     method: 'sendStuHomeWorks',
-    content: String(content || ''),
+    content: encodeURIComponent(String(content || '')),
     groupName: '',
     groupId: '',
     courseId: String(courseId || ''),
@@ -2408,6 +2423,26 @@ function formatResourceSizeMb(rpSize) {
   return `${n.toFixed(2)}MB`;
 }
 
+function buildResourceSizeEmphasisStyle(rpSize) {
+  const mb = Number(rpSize);
+  if (!Number.isFinite(mb) || mb <= 0) {
+    return 'font-size:10px; font-weight:500; color:#94a3b8; text-shadow:none;';
+  }
+
+  // Log scale keeps very large files from exploding while preserving contrast.
+  const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
+  const fontPx = (10 + ratio * 6).toFixed(2); // 10px -> 16px
+  const colorLight = Math.round(148 - ratio * 118); // lighter start -> deep end
+  const g = Math.max(18, colorLight + 8);
+  const b = Math.max(28, colorLight + 20);
+  const weight = Math.round(500 + ratio * 320); // 500 -> 820
+  // Keep low-end clean (no shadow), gradually add emphasis for larger files.
+  const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
+  const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35).toFixed(2);
+  const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha})`;
+  return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${colorLight},${g},${b}); text-shadow:${shadow};`;
+}
+
 function sanitizeDownloadFileName(name, fallback = 'download') {
   const src = String(name || '').trim();
   const cleaned = src
@@ -2454,13 +2489,27 @@ function ensureResourceDownloadFileName(item, rawUrl) {
 
 function findResourceItemElementById(resourceId) {
   const rid = String(resourceId || '').trim();
-  if (!rid || !resourceSpaceList) return null;
-  const rows = resourceSpaceList.querySelectorAll('.file-item[data-resource-id]');
+  if (!rid) return null;
+  const rows = document.querySelectorAll('.file-item[data-resource-id]');
   for (const row of rows) {
     if (!(row instanceof HTMLElement)) continue;
     if (String(row.dataset.resourceId || '').trim() === rid) return row;
   }
   return null;
+}
+
+function getSelectableDownloadItems() {
+  const native = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
+  const courseware = Object.values(window.coursewareItemsById || {});
+  return [...native, ...courseware];
+}
+
+function findSelectableDownloadItemById(resourceId) {
+  const rid = String(resourceId || '').trim();
+  if (!rid) return null;
+  const native = (window.resourceSpaceItems || []).find((x) => String(x?.id || '').trim() === rid);
+  if (native) return native;
+  return window.coursewareItemsById?.[rid] || null;
 }
 
 function getResourceItemSizeBytes(item) {
@@ -3065,6 +3114,7 @@ function renderResourceSpaceList() {
     const name = String(it.name || '未命名文件').trim();
     const uploadTime = String(it.inputTime || '未知').trim();
     const sizeMb = String(it.sizeMb || '未知').trim();
+    const sizeStyle = buildResourceSizeEmphasisStyle(it?.sizeMbRaw);
     const url = String(it.url || '').trim();
     return `
       <div class="file-item" data-resource-id="${escapeHtml(id)}">
@@ -3074,7 +3124,7 @@ function renderResourceSpaceList() {
             <div style="min-width:0; flex:1;">
               <div class="resource-row-title">
                 <span class="resource-name">${escapeHtml(name)}</span>
-                <span class="resource-time-inline">${escapeHtml(sizeMb)}</span>
+                <span class="resource-time-inline" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>
                 <span class="resource-time-inline">上传时间: ${escapeHtml(uploadTime)}</span>
               </div>
               <div class="resource-link-row">
@@ -3460,7 +3510,9 @@ function ensureCourseCardState(courseId) {
       pendingHomeworkCount: 0,
       pendingEarliestTs: 0,
       hasReplay: false,
-      replayListLoading: false
+      replayListLoading: false,
+      hasCourseware: false,
+      coursewareListLoading: false
     };
   }
   return window.courseCardStateById[courseId];
@@ -3469,9 +3521,15 @@ function ensureCourseCardState(courseId) {
 function calcCourseRank(state) {
   if ((state?.pendingHomeworkCount || 0) > 0) return 0;
   if ((state?.allHomeworkCount || 0) > 0) return 1;
-  if (state?.hasReplay) return 2;
-  if (state?.replayListLoading) return 3;
-  return 4;
+
+  // For no-homework courses: treat loading as "has" for grouping.
+  const replayLike = !!state?.hasReplay || !!state?.replayListLoading;
+  const coursewareLike = !!state?.hasCourseware || !!state?.coursewareListLoading;
+
+  if (replayLike && coursewareLike) return 2; // 有回放且有课件
+  if (replayLike && !coursewareLike) return 3; // 有回放无课件
+  if (!replayLike && coursewareLike) return 4; // 有课件无回放
+  return 5; // 无回放无课件
 }
 
 function sortCourseCards() {
@@ -4462,6 +4520,300 @@ function setCourseReplayLoading(courseId, isLoading) {
   updateCourseCardRank(courseId);
 }
 
+function setCourseCoursewareState(courseId, hasCourseware) {
+  const state = ensureCourseCardState(courseId);
+  state.hasCourseware = !!hasCourseware;
+  state.coursewareListLoading = false;
+  updateCourseCardRank(courseId);
+}
+
+function setCourseCoursewareLoading(courseId, isLoading) {
+  const state = ensureCourseCardState(courseId);
+  state.coursewareListLoading = !!isLoading;
+  updateCourseCardRank(courseId);
+}
+
+function setCoursewareButtonLoading(btn, isLoading) {
+  if (!btn) return;
+  if (isLoading) {
+    btn.disabled = true;
+    btn.style.pointerEvents = 'none';
+    btn.classList.add('courseware-list-loading');
+    btn.innerHTML = '课件下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;"></span>';
+    return;
+  }
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
+  btn.classList.remove('courseware-list-loading');
+}
+
+function syncCourseActionButtonText(card, activeView = '') {
+  if (!card) return;
+  const replayBtn = card.querySelector('button[data-action="videos"]');
+  const coursewareBtn = card.querySelector('button[data-action="courseware"]');
+
+  if (replayBtn && !replayBtn.classList.contains('replay-list-loading')) {
+    replayBtn.textContent = activeView === 'replay' ? '收起' : '回放下载';
+  }
+  if (coursewareBtn && !coursewareBtn.classList.contains('courseware-list-loading')) {
+    coursewareBtn.textContent = activeView === 'courseware' ? '收起' : '课件下载';
+  }
+}
+
+function syncCoursewareItemsIndex(courseId, items) {
+  const cid = String(courseId || '').trim();
+  const prevList = Array.isArray(window.coursewareItemsByCourseId?.[cid]) ? window.coursewareItemsByCourseId[cid] : [];
+  prevList.forEach((it) => {
+    const id = String(it?.id || '').trim();
+    if (!id) return;
+    delete window.coursewareItemsById[id];
+    window.resourceSpaceSelected.delete(id);
+  });
+
+  const nextList = Array.isArray(items) ? items : [];
+  window.coursewareItemsByCourseId[cid] = nextList;
+  nextList.forEach((it) => {
+    const id = String(it?.id || '').trim();
+    if (!id) return;
+    window.coursewareItemsById[id] = it;
+  });
+}
+
+function buildCoursewareListHtml(items) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    return '<div style="font-size:12px; color:#999;">暂无课件资源</div>';
+  }
+
+  return list.map((item, index) => {
+    const name = String(item?.name || `课件-${index + 1}`).trim();
+    const fileName = ensureResourceDownloadFileName(item, item?.url || '');
+    const url = String(item?.url || '').trim();
+    const id = String(item?.id || '').trim();
+    const checked = window.resourceSpaceSelected.has(id) ? 'checked' : '';
+    const sizeMb = String(item?.sizeMb || '').trim();
+    const sizeStyle = buildResourceSizeEmphasisStyle(item?.sizeMbRaw ?? item?.rpSize);
+    return `
+      <div class="file-item" data-resource-id="${escapeHtml(id)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #4CAF50; background:#f8fff9; border-radius:4px;">
+        <div class="resource-row-title" style="margin-bottom:4px;">
+          <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin:0 4px 0 0;">
+          <span class="resource-name">${escapeHtml(fileName || name)}</span>
+          ${sizeMb ? `<span class="resource-time-inline" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>` : ''}
+        </div>
+        <div class="resource-link-row">
+          <a class="resource-url" href="${escapeHtml(url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(url || '')}</a>
+          <button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>
+          <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(id)}">下载</button>
+        </div>
+        <div class="resource-download-progress" style="display:none;">
+          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="resource-download-meta">
+            <span class="resource-dl-status"></span>
+            <span class="resource-dl-size"></span>
+            <span class="resource-dl-speed"></span>
+            <span class="resource-dl-eta"></span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function fetchCoursewareItems(courseNum, fzId) {
+  const courseIdPart = String(courseNum || '').trim();
+  const xkhIdPart = String(fzId || '').trim();
+  if (!courseIdPart || !xkhIdPart) return { loginRequired: false, items: [] };
+
+  const buildCoursewareUrl = (useQuestionMark = true) => {
+    const sep = useQuestionMark ? '?' : '&';
+    return `${BASE_VE}back/coursePlatform/courseResource.shtml${sep}method=stuQueryUploadResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&cId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(XQ_CODE)}&docType=1`;
+  };
+
+  let text = '';
+  let res = null;
+  try {
+    ({ text, res } = await fetchText(buildCoursewareUrl(true), {
+      method: 'GET',
+      headers: {
+        Accept: '*/*',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache'
+      }
+    }));
+  } catch (e) {
+    // Keep existing behavior for non-HTTP errors.
+    throw e;
+  }
+
+  if (Number(res?.status || 0) === 404) {
+    ({ text, res } = await fetchText(buildCoursewareUrl(false), {
+      method: 'GET',
+      headers: {
+        Accept: '*/*',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache'
+      }
+    }));
+  }
+
+  if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, items: [] };
+
+  let data = null;
+  try { data = JSON.parse(String(text || '{}')); } catch { data = null; }
+  if (!data || typeof data !== 'object') return { loginRequired: false, items: [] };
+
+  const response = (data?.response && typeof data.response === 'object') ? data.response : data;
+  const list = Array.isArray(response?.resList) ? response.resList : [];
+
+  const items = list.map((item, index) => {
+    const rpName = String(item?.rpName || `课件-${index + 1}`).trim();
+    const extName = normalizeResourceExt(String(item?.extName || '').trim());
+    const urlRaw = String(item?.res_url || item?.resUrl || '').trim();
+    const urlNorm = normalizeResourceUrl(urlRaw);
+    const sizeMbRaw = Number(item?.rpSize);
+    const name = extName && !/\.[a-zA-Z0-9_-]{1,16}$/.test(rpName) ? `${rpName}.${extName}` : rpName;
+    return {
+      id: `cw-${String(item?.rpId || `${courseIdPart}-${xkhIdPart}-${index}`).trim()}`,
+      name,
+      extName,
+      url: urlNorm,
+      courseId: String(courseIdPart || '').trim(),
+      sizeMb: formatResourceSizeMb(sizeMbRaw),
+      sizeMbRaw
+    };
+  }).filter((it) => !!it.url);
+
+  return { loginRequired: false, items };
+}
+
+async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
+  const card = btn?.closest('.file-item');
+  const resultArea = card?.querySelector('.result-area');
+  if (!btn || !card || !resultArea) return;
+  const shouldRender = () => String(card.dataset.resultView || '').trim() === 'courseware';
+
+  setCoursewareButtonLoading(btn, true);
+  setCourseCoursewareLoading(courseIdInt, true);
+  resultArea.style.display = 'block';
+  card.dataset.resultView = 'courseware';
+  resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取课件...</span>';
+  syncCourseActionButtonText(card, 'courseware');
+
+  try {
+    const payload = await fetchCoursewareItems(courseNum, fzId);
+    if (payload.loginRequired) {
+      setCourseCoursewareLoading(courseIdInt, false);
+      if (shouldRender()) {
+        resultArea.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
+        const sp = resultArea.querySelector('span');
+        if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
+      }
+      promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+      return;
+    }
+
+    const html = buildCoursewareListHtml(payload.items);
+    syncCoursewareItemsIndex(courseIdInt, payload.items);
+    window.coursewareCacheByCourseId[courseIdInt] = {
+      html,
+      items: payload.items,
+      loaded: true
+    };
+    if (!payload.items.length) {
+      btn.style.display = 'none';
+      setCourseCoursewareState(courseIdInt, false);
+      if (shouldRender()) {
+        resultArea.style.display = 'none';
+        card.dataset.resultView = '';
+      }
+      return;
+    }
+
+    btn.style.display = '';
+    setCourseCoursewareState(courseIdInt, true);
+    if (shouldRender()) {
+      resultArea.innerHTML = html;
+    }
+  } catch (e) {
+    setCourseCoursewareLoading(courseIdInt, false);
+    if (shouldRender()) {
+      resultArea.innerHTML = `<span class="error">课件加载失败: ${escapeHtml(String(e?.message || e))}</span>`;
+    }
+  } finally {
+    setCoursewareButtonLoading(btn, false);
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
+  }
+}
+
+async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
+  const card = btn?.closest('.file-item');
+  if (!btn || !card) return;
+  setCoursewareButtonLoading(btn, true);
+  setCourseCoursewareLoading(courseIdInt, true);
+
+  try {
+    const payload = await fetchCoursewareItems(courseNum, fzId);
+    if (payload.loginRequired) {
+      setCourseCoursewareLoading(courseIdInt, false);
+      return;
+    }
+
+    const html = buildCoursewareListHtml(payload.items);
+    syncCoursewareItemsIndex(courseIdInt, payload.items);
+    window.coursewareCacheByCourseId[courseIdInt] = {
+      html,
+      items: payload.items,
+      loaded: true
+    };
+
+    if (!payload.items.length) {
+      btn.style.display = 'none';
+      setCourseCoursewareState(courseIdInt, false);
+      return;
+    }
+
+    btn.style.display = '';
+    setCourseCoursewareState(courseIdInt, true);
+  } catch {
+    setCourseCoursewareLoading(courseIdInt, false);
+  } finally {
+    setCoursewareButtonLoading(btn, false);
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
+  }
+}
+
+function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
+  const card = btn?.closest('.file-item');
+  const resultArea = card?.querySelector('.result-area');
+  if (!btn || !card || !resultArea) return;
+
+  const currentView = String(card.dataset.resultView || '').trim();
+  const isOpen = resultArea.style.display === 'block';
+  const cache = window.coursewareCacheByCourseId[courseIdInt];
+
+  if (isOpen && currentView === 'courseware') {
+    resultArea.style.display = 'none';
+    card.dataset.resultView = '';
+    syncCourseActionButtonText(card, '');
+    return;
+  }
+
+  if (cache?.loaded && cache?.html) {
+    syncCoursewareItemsIndex(courseIdInt, cache.items || []);
+    resultArea.innerHTML = cache.html;
+    resultArea.style.display = 'block';
+    card.dataset.resultView = 'courseware';
+    syncCourseActionButtonText(card, 'courseware');
+    return;
+  }
+
+  loadCoursewareList(btn, courseIdInt, courseNum, fzId).catch(() => {
+    syncCourseActionButtonText(card, 'courseware');
+  });
+}
+
 function recomputeCourseHomeworkState(courseId) {
   const nativeList = (window.courseHomeworkData[courseId]?.list || []);
   const yktList = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId[courseId] || []) : [];
@@ -4498,6 +4850,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
+  const shouldRenderReplayUi = () => String(card.dataset.resultView || '').trim() !== 'courseware';
 
   btn.disabled = true;
   btn.style.opacity = '1';
@@ -4507,8 +4860,10 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   btn.style.setProperty('--replay-progress', '0%');
   btn.innerHTML = '回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;"></span>';
 
-  resultArea.style.display = 'none';
-  resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在自动获取回放...</span>';
+  if (shouldRenderReplayUi()) {
+    resultArea.style.display = 'none';
+    resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在自动获取回放...</span>';
+  }
   setCourseReplayLoading(courseIdInt, true);
 
   try {
@@ -4532,7 +4887,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
       return;
     }
 
-    resultArea.innerHTML = list.map((item, index) => {
+    const replayListHtml = list.map((item, index) => {
       const title = `${item.classRoom || ''} ${item.courseBetween || '未知时间'}`;
       const contentText = String(item.content || '').trim();
       const detailHtml = renderExpandableHtml(
@@ -4552,6 +4907,10 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
         </div>
       `;
     }).join('');
+
+    if (shouldRenderReplayUi()) {
+      resultArea.innerHTML = replayListHtml;
+    }
 
     // List is ready: allow users to open/close replay panel immediately.
     btn.disabled = false;
@@ -4575,17 +4934,25 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
       }
     };
 
-    const results = await Promise.allSettled(list.map((item, index) => {
-      const linkContainerId = `video-link-${courseIdInt}-${index}`;
-      return fetchVideoLinkInternal(linkContainerId, item.videoId, courseNum, fzId, item.teacherId || '')
-        .finally(onOneLinkDone);
-    }));
+    let results = [];
+    if (shouldRenderReplayUi()) {
+      results = await Promise.allSettled(list.map((item, index) => {
+        const linkContainerId = `video-link-${courseIdInt}-${index}`;
+        return fetchVideoLinkInternal(linkContainerId, item.videoId, courseNum, fzId, item.teacherId || '')
+          .finally(onOneLinkDone);
+      }));
+    } else {
+      // Skip DOM patching when courseware panel is active; replay will load on demand when clicked.
+      list.forEach(() => onOneLinkDone());
+    }
 
     const hasAnyOk = results.some((r) => r.status === 'fulfilled' && r.value === true);
-    window.videoReplayCacheByCourseId[courseIdInt] = {
-      html: resultArea.innerHTML,
-      loaded: true
-    };
+    if (shouldRenderReplayUi()) {
+      window.videoReplayCacheByCourseId[courseIdInt] = {
+        html: resultArea.innerHTML,
+        loaded: true
+      };
+    }
 
     if (!hasAnyOk) {
       // Keep the button and list visible for user inspection/retry context.
@@ -4604,20 +4971,33 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
 function toggleReplayFromCache(btn, courseIdInt) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
-  if (!btn || !resultArea) return;
+  if (!btn || !card || !resultArea) return;
   const cache = window.videoReplayCacheByCourseId[courseIdInt];
+  const currentView = String(card.dataset.resultView || '').trim();
+  const isOpen = resultArea.style.display === 'block';
 
-  if (resultArea.style.display === 'block') {
+  if (isOpen && currentView === 'replay') {
     resultArea.style.display = 'none';
-    btn.textContent = '回放下载';
+    card.dataset.resultView = '';
+    syncCourseActionButtonText(card, '');
     return;
   }
 
-  if (!resultArea.innerHTML && cache?.html) {
+  if (!cache?.html) {
+    const courseNum = String(btn.dataset.courseNum || '').trim();
+    const fzId = String(btn.dataset.fzId || '').trim();
+    card.dataset.resultView = 'replay';
+    syncCourseActionButtonText(card, 'replay');
+    autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId).catch(() => {});
+    return;
+  }
+
+  if (cache?.html) {
     resultArea.innerHTML = cache.html;
   }
   resultArea.style.display = 'block';
-  btn.textContent = '收起';
+  card.dataset.resultView = 'replay';
+  syncCourseActionButtonText(card, 'replay');
 }
 
 function collectCourseMatchMap(courses) {
@@ -5795,6 +6175,7 @@ function renderCourseList(courses) {
           </div>
         </div>
         <div class="course-actions" style="display:flex; gap:8px;">
+          <button class="btn" style="background:#1e3a8a;" data-action="courseware">课件下载</button>
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
         </div>
       </div>
@@ -5804,8 +6185,15 @@ function renderCourseList(courses) {
     courseListDiv.appendChild(card);
 
     // bind actions
+    const btnCourseware = card.querySelector('button[data-action="courseware"]');
     const btnVideos = card.querySelector('button[data-action="videos"]');
+    if (btnCourseware) {
+      btnCourseware.addEventListener('click', () => toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId));
+      setCoursewareButtonLoading(btnCourseware, true);
+    }
     if (btnVideos) {
+      btnVideos.dataset.courseNum = String(courseNum || '');
+      btnVideos.dataset.fzId = String(fzId || '');
       btnVideos.addEventListener('click', () => toggleReplayFromCache(btnVideos, courseId));
       // Show replay-loading animation immediately after card renders.
       btnVideos.disabled = true;
@@ -5822,6 +6210,11 @@ function renderCourseList(courses) {
     // Prioritize homework fetching before replay link prefetch.
   updateCourseListEmptyPlaceholder();
     const hwPromise = checkHomework(courseId);
+    if (btnCourseware) {
+      hwPromise.finally(() => {
+        autoLoadCourseware(btnCourseware, courseId, courseNumRaw, fzId).catch(() => {});
+      });
+    }
     if (btnVideos) {
       hwPromise.finally(() => {
         autoLoadVideoLinks(btnVideos, courseId, courseNum, fzId);
@@ -6813,9 +7206,9 @@ copyAllBtn.addEventListener('click', () => {
 
 if (resourceCopySelectedBtn) {
   resourceCopySelectedBtn.addEventListener('click', () => {
-    const selected = (window.resourceSpaceItems || []).filter((it) => window.resourceSpaceSelected.has(String(it.id || '')));
+    const selected = getSelectableDownloadItems().filter((it) => window.resourceSpaceSelected.has(String(it.id || '')));
     if (!selected.length) {
-      showToast('请先选择资源文件', 'warning', 1200);
+      showToast('请先选择文件', 'warning', 1200);
       return;
     }
     let text = '';
@@ -6844,12 +7237,12 @@ if (resourceCopySelectedBtn) {
 
 if (resourceDownloadSelectedBtn) {
   resourceDownloadSelectedBtn.addEventListener('click', async () => {
-    const selected = (window.resourceSpaceItems || []).filter((it) => {
+    const selected = getSelectableDownloadItems().filter((it) => {
       const rid = String(it.id || '').trim();
       return window.resourceSpaceSelected.has(rid) && !isResourceDownloadActive(rid);
     });
     if (!selected.length) {
-      showToast('请先选择资源文件', 'warning', 1200);
+      showToast('请先选择文件', 'warning', 1200);
       return;
     }
     if (resourceDownloadSelectedBtn instanceof HTMLButtonElement) {
@@ -6886,7 +7279,7 @@ if (resourceDownloadSelectedBtn) {
       resourceDownloadSelectedBtn.disabled = false;
     }
     if (successCount === selected.length) {
-      setResourceSpaceStatus(`共 ${selected.length} 个资源文件，已完成批量下载`, 'success');
+      setResourceSpaceStatus(`共 ${selected.length} 个文件，已完成批量下载`, 'success');
       showToast(`已完成 ${successCount} 个文件下载`, 'success', 1500);
     } else {
       const summary = `下载完成 ${successCount}/${selected.length}，失败 ${failCount}，取消 ${cancelCount}`;
@@ -7149,7 +7542,7 @@ if (resourceSpaceList) {
     const action = String(t.dataset.action || '').trim();
     const id = String(t.dataset.resourceId || '').trim();
     if (!action || !id) return;
-    const item = (window.resourceSpaceItems || []).find((x) => String(x.id) === id);
+    const item = findSelectableDownloadItemById(id);
     if (!item) return;
 
     if (action === 'resource-check' && t instanceof HTMLInputElement) {
@@ -7203,6 +7596,61 @@ if (resourceSpaceList) {
     else window.resourceSpaceSelected.delete(id);
   });
 }
+
+courseListDiv.addEventListener('click', async (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLElement)) return;
+  const action = String(t.dataset.action || '').trim();
+  if (!['resource-check', 'resource-copy', 'resource-download', 'resource-cancel-download'].includes(action)) return;
+  const id = String(t.dataset.resourceId || '').trim();
+  if (!id) return;
+  const item = findSelectableDownloadItemById(id);
+  if (!item) return;
+
+  if (action === 'resource-check' && t instanceof HTMLInputElement) {
+    if (t.checked) window.resourceSpaceSelected.add(id);
+    else window.resourceSpaceSelected.delete(id);
+    return;
+  }
+
+  if (action === 'resource-copy') {
+    navigator.clipboard.writeText(String(item.url || '')).then(() => {
+      showToast('链接已复制', 'success', 1200);
+    });
+    return;
+  }
+
+  if (action === 'resource-cancel-download') {
+    const cancelled = cancelResourceDownload(id);
+    if (cancelled) showToast('已取消下载', 'info', 1000);
+    return;
+  }
+
+  if (action === 'resource-download') {
+    try {
+      await enqueueResourceDownload(item);
+      showToast('下载完成', 'success', 1200);
+    } catch (err) {
+      const msg = String(err?.message || err || '');
+      if (msg.includes('下载已取消')) showToast('下载已取消', 'info', 1000);
+      else showToast(`下载失败: ${msg}`, 'error', 1800);
+    }
+  }
+});
+
+courseListDiv.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement)) return;
+  if (String(t.dataset.action || '') !== 'resource-check') return;
+  const id = String(t.dataset.resourceId || '').trim();
+  if (!id) return;
+  if (isResourceDownloadActive(id)) {
+    t.checked = false;
+    return;
+  }
+  if (t.checked) window.resourceSpaceSelected.add(id);
+  else window.resourceSpaceSelected.delete(id);
+});
 
 courseListDiv.addEventListener('wheel', (e) => {
   const target = e.target;
