@@ -69,15 +69,15 @@
             box-sizing: border-box;
         }
         .right-column-resizer {
-            position: absolute;
-            left: 3px;
+            position: fixed;
+            left: 0;
             top: 0;
-            height: var(--resizer-height, 100%);
+            height: 0;
             width: 2px;
             border-radius: 0;
             background: rgba(148,163,184,0.9);
             cursor: col-resize;
-            z-index: 2;
+            z-index: 10000;
         }
         .right-column-resizer:hover { background: rgba(59,130,246,0.9); }
         .right-column.dragging { user-select: none; }

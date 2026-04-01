@@ -205,9 +205,139 @@ function compareVersionText(a, b) {
 let versionButtonMode = 'loading';
 let versionButtonDownloadUrl = '';
 let versionButtonLatestVersion = '';
+let versionButtonLatestBodyMarkdown = '';
+let versionNoticeShownVersion = '';
 let versionDownloadInProgress = false;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
+
+function parseInlineMarkdown(text) {
+  let html = escapeHtml(String(text || ''));
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none;">$1</a>');
+  html = html.replace(/`([^`]+)`/g, '<code style="background:#f1f5f9; border:1px solid #e2e8f0; border-radius:4px; padding:0 4px;">$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return html;
+}
+
+function renderMarkdownBasic(markdownText) {
+  const src = String(markdownText || '').replace(/\r\n/g, '\n');
+  if (!src.trim()) {
+    return '<p style="margin:0; color:#475569; line-height:1.6;">此版本暂无更新说明。</p>';
+  }
+
+  const lines = src.split('\n');
+  const out = [];
+  let inList = false;
+
+  const closeList = () => {
+    if (inList) {
+      out.push('</ul>');
+      inList = false;
+    }
+  };
+
+  lines.forEach((line) => {
+    const raw = String(line || '');
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      closeList();
+      out.push('<div style="height:6px;"></div>');
+      return;
+    }
+
+    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      const level = Math.min(6, heading[1].length);
+      out.push(`<h${level} style="margin:0 0 8px; color:#0f172a; font-size:${Math.max(14, 22 - level * 2)}px;">${parseInlineMarkdown(heading[2])}</h${level}>`);
+      return;
+    }
+
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!inList) {
+        out.push('<ul style="margin:0 0 6px 18px; padding:0; color:#334155; line-height:1.6;">');
+        inList = true;
+      }
+      out.push(`<li style="margin:2px 0;">${parseInlineMarkdown(bullet[1])}</li>`);
+      return;
+    }
+
+    closeList();
+    out.push(`<p style="margin:0 0 6px; color:#334155; line-height:1.6;">${parseInlineMarkdown(trimmed)}</p>`);
+  });
+
+  closeList();
+  return out.join('');
+}
+
+function ensureVersionNoticeModal() {
+  let modal = document.getElementById('version-notice-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'version-notice-modal';
+  modal.style.position = 'fixed';
+  modal.style.inset = '0';
+  modal.style.background = 'rgba(15,23,42,0.45)';
+  modal.style.display = 'none';
+  modal.style.alignItems = 'center';
+  modal.style.justifyContent = 'center';
+  modal.style.zIndex = '10002';
+
+  modal.innerHTML = `
+    <div style="width:min(680px,94vw); max-height:min(78vh,740px); overflow:auto; background:#fff; border-radius:12px; padding:16px; box-shadow:0 20px 44px rgba(0,0,0,0.25); border:1px solid #e8edf5;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
+        <div id="version-notice-title" style="font-size:20px; font-weight:800; color:#0f172a;">发现新版本：v--</div>
+        <button id="version-notice-close" class="btn" style="background:#64748b; padding:4px 10px; font-size:12px;">关闭</button>
+      </div>
+      <div id="version-notice-body" style="font-size:13px; color:#334155; margin-bottom:12px;"></div>
+      <div style="display:block; width:100%;">
+        <button id="version-notice-download" class="btn" style="background:#1e3a8a; width:100%; padding:8px 14px; font-size:13px;">下载更新</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const closeBtn = modal.querySelector('#version-notice-close');
+  if (closeBtn instanceof HTMLButtonElement) {
+    closeBtn.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+  }
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+
+  const downloadBtn = modal.querySelector('#version-notice-download');
+  if (downloadBtn instanceof HTMLButtonElement) {
+    downloadBtn.addEventListener('click', () => {
+      modal.style.display = 'none';
+      startVersionDownloadWithFallback().catch(() => {
+        versionDownloadInProgress = false;
+        showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
+      });
+    });
+  }
+
+  return modal;
+}
+
+function openVersionNoticeModal() {
+  if (versionButtonMode !== 'outdated') return;
+  const modal = ensureVersionNoticeModal();
+  const titleEl = modal.querySelector('#version-notice-title');
+  const bodyEl = modal.querySelector('#version-notice-body');
+  if (titleEl instanceof HTMLElement) {
+    titleEl.textContent = `发现新版本：${versionButtonLatestVersion || '--'}`;
+  }
+  if (bodyEl instanceof HTMLElement) {
+    bodyEl.innerHTML = renderMarkdownBasic(versionButtonLatestBodyMarkdown);
+  }
+  modal.style.display = 'flex';
+}
 
 function ensureVersionDownloadModal() {
   let modal = document.getElementById('version-download-modal');
@@ -237,10 +367,30 @@ function ensureVersionDownloadModal() {
       <div class="progress-bar-container" style="margin-top:0;position:relative;">
         <div id="version-download-bar" class="progress-bar" style="position:absolute;top:0;left:0;z-index:2;width:0%;"></div>
       </div>
+      <div id="version-download-actions" style="display:none; margin-top:10px;">
+        <button id="version-download-retry" class="btn" style="background:#1e3a8a; width:100%; padding:8px 14px; font-size:13px;">重试下载</button>
+      </div>
     </div>
   `;
   document.body.appendChild(modal);
+
+  const retryBtn = document.getElementById('version-download-retry');
+  if (retryBtn instanceof HTMLButtonElement) {
+    retryBtn.addEventListener('click', () => {
+      startVersionDownloadWithFallback().catch(() => {
+        versionDownloadInProgress = false;
+        showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
+      });
+    });
+  }
   return modal;
+}
+
+function setVersionDownloadRetryVisible(visible) {
+  const actions = document.getElementById('version-download-actions');
+  if (actions instanceof HTMLElement) {
+    actions.style.display = visible ? 'block' : 'none';
+  }
 }
 
 function setVersionDownloadProgressUi({
@@ -258,6 +408,7 @@ function setVersionDownloadProgressUi({
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
   modal.style.display = visible ? 'flex' : 'none';
+  setVersionDownloadRetryVisible(false);
   if (!visible) return;
 
   const titleEl = document.getElementById('version-download-title');
@@ -313,6 +464,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
     etaSec: null,
     percent: 0
   });
+  setVersionDownloadRetryVisible(false);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -472,6 +624,7 @@ async function startVersionDownloadWithFallback() {
       etaSec: null,
       percent: 0
     });
+    setVersionDownloadRetryVisible(true);
     showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
   }
   versionDownloadInProgress = false;
@@ -482,6 +635,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', do
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
   versionButtonLatestVersion = String(latestVersion || '').trim();
+  versionButtonLatestBodyMarkdown = String(body || '').trim();
 
   versionBtn.className = `version-btn ${versionButtonMode}`;
   versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated');
@@ -499,10 +653,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', do
     return;
   }
   if (versionButtonMode === 'outdated') {
-    const bodyHtml = String(body || '').trim()
-      ? `<span class="version-btn-body">${escapeHtml(String(body || '').trim()).replace(/\r?\n/g, '<br>')}</span>`
-      : '';
-    versionBtn.innerHTML = `<span class="version-btn-stack"><span>发现新版本：${escapeHtml(latestVersion || '--')}</span>${bodyHtml}</span>`;
+    versionBtn.innerHTML = `<span class="version-btn-stack"><span>发现新版本：${escapeHtml(latestVersion || '--')}</span></span>`;
     return;
   }
   if (versionButtonMode === 'ahead') {
@@ -563,6 +714,10 @@ async function loadVersionInfo() {
         downloadUrl: VERSION_DOWNLOAD_URL,
         body: String(data?.body || '').trim()
       });
+      if (versionNoticeShownVersion !== latestTag) {
+        versionNoticeShownVersion = latestTag;
+        openVersionNoticeModal();
+      }
       return;
     }
     setVersionButtonState('ahead', { localVersion, latestVersion: latestTag });
@@ -581,11 +736,8 @@ if (versionBtn) {
       loadVersionInfo().catch(() => {});
       return;
     }
-    if (versionButtonMode === 'outdated' && versionButtonDownloadUrl) {
-      startVersionDownloadWithFallback().catch(() => {
-        versionDownloadInProgress = false;
-        showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
-      });
+    if (versionButtonMode === 'outdated') {
+      openVersionNoticeModal();
     }
   });
 }
@@ -817,17 +969,20 @@ function setupRightColumnResizer() {
     rightColumn.style.width = `${clamped}px`;
   };
 
-  const syncResizerHeight = () => {
-    const h = Math.max(
-      Number(rightColumn.scrollHeight || 0),
-      Number(rightColumn.clientHeight || 0),
-      Number(window.innerHeight || 0)
-    );
-    rightColumn.style.setProperty('--resizer-height', `${Math.max(0, Math.round(h))}px`);
+  const syncResizerGeometry = () => {
+    if (isAdaptiveLayout()) {
+      rightColumnResizer.style.display = 'none';
+      return;
+    }
+    rightColumnResizer.style.display = 'block';
+    const rect = rightColumn.getBoundingClientRect();
+    rightColumnResizer.style.left = `${Math.round(rect.left + 3)}px`;
+    rightColumnResizer.style.top = `${Math.round(rect.top)}px`;
+    rightColumnResizer.style.height = `${Math.max(0, Math.round(rect.height))}px`;
   };
 
   applyResponsiveWidth();
-  syncResizerHeight();
+  syncResizerGeometry();
 
   let dragging = false;
 
@@ -838,7 +993,7 @@ function setupRightColumnResizer() {
     const w = vw - Number(e.clientX || 0) - 24;
     const clamped = Math.max(minW, Math.min(maxW, Math.round(w)));
     rightColumn.style.width = `${clamped}px`;
-    syncResizerHeight();
+    syncResizerGeometry();
   };
 
   const onUp = () => {
@@ -876,12 +1031,12 @@ function setupRightColumnResizer() {
       onUp();
     }
     applyResponsiveWidth();
-    syncResizerHeight();
+    syncResizerGeometry();
   });
 
-  rightColumn.addEventListener('scroll', syncResizerHeight);
+  window.addEventListener('scroll', syncResizerGeometry, true);
   if (typeof ResizeObserver !== 'undefined') {
-    const ro = new ResizeObserver(() => syncResizerHeight());
+    const ro = new ResizeObserver(() => syncResizerGeometry());
     ro.observe(rightColumn);
   }
 }
