@@ -63,15 +63,16 @@
             padding: 15px;
             padding-left: 12px;
             border-radius: 8px;
-            max-height: none;
-            overflow: visible;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            overflow-x: hidden;
             box-sizing: border-box;
         }
         .right-column-resizer {
             position: absolute;
             left: 3px;
             top: 0;
-            bottom: 0;
+            height: var(--resizer-height, 100%);
             width: 2px;
             border-radius: 0;
             background: rgba(148,163,184,0.9);
@@ -93,7 +94,7 @@
                 max-width: 100%;
                 box-sizing: border-box;
             }
-            .right-column { position: static; padding-left: 15px; }
+            .right-column { position: static; padding-left: 15px; max-height: none; overflow: visible; }
             .right-column-resizer { display: none; }
         }
 
@@ -343,6 +344,7 @@
             gap: 6px;
             flex-wrap: wrap;
             min-width: 0;
+            cursor: pointer;
         }
         .resource-name {
             font-weight: bold;
@@ -1045,7 +1047,7 @@
 
     <div class="layout-container">
         <div class="left-column">
-            <h1 style="margin-top: 0;">多文件上传</h1>
+            <h1 style="margin-top: 0;">文件上传</h1>
 
             <div class="upload-summary-area">
                 <div class="upload-total-progress-wrap">

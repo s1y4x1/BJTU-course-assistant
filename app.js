@@ -1,8 +1,11 @@
 // Native extension page implementing upload.html-like UI without Python backend.
 // NOTE: Captcha OCR is not available in pure extension mode.
 
-const BASE = 'http://123.121.147.7:88';
-const BASE_VE = `${BASE}/ve/`;
+const PLATFORM_BASE_URL = 'http://123.121.147.7:88/';
+const BASE = PLATFORM_BASE_URL.replace(/\/$/, '');
+const BASE_VE = `${PLATFORM_BASE_URL}ve/`;
+const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
+const VE_LOGIN_REQUIRED_HTML = `如需查看${VE_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_BASE = 'https://www.yuketang.cn';
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
 const YKT_COURSE_LIST_API = `${YKT_BASE}/v2/api/web/courses/list?identity=2`;
@@ -110,6 +113,7 @@ window.platformLoadVersion = { ve: 0, ykt: 0, mrzy: 0, jlgj: 0 };
 window.currentVeCourseList = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
+window.homeworkNoteAttachmentCacheByKey = {}; // {"noteId|courseId|teacherId": {loading,loaded,picList}}
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
 window.courseShowAllById = {}; // {courseId: boolean}
@@ -122,6 +126,8 @@ window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
 window.coursewareItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
 window.coursewareItemsByCourseId = {}; // {courseId: CoursewareItem[]}
+window.homeworkAttachmentItemsById = {}; // {resourceId: {id,name,url,extName,courseId,sizeMbRaw,sizeMb}}
+window.homeworkAttachmentItemsByCourseId = {}; // {courseId: HomeworkAttachmentItem[]}
 window.resourceSpaceLoadVersion = 0;
 window.resourceDownloadTasks = {}; // {resourceId: {active,loaded,total,speed,samples,lastUiTs,abortController,xhr,cancelled,chromeDownloadId}}
 window.resourceDownloadBatch = {
@@ -811,7 +817,17 @@ function setupRightColumnResizer() {
     rightColumn.style.width = `${clamped}px`;
   };
 
+  const syncResizerHeight = () => {
+    const h = Math.max(
+      Number(rightColumn.scrollHeight || 0),
+      Number(rightColumn.clientHeight || 0),
+      Number(window.innerHeight || 0)
+    );
+    rightColumn.style.setProperty('--resizer-height', `${Math.max(0, Math.round(h))}px`);
+  };
+
   applyResponsiveWidth();
+  syncResizerHeight();
 
   let dragging = false;
 
@@ -822,6 +838,7 @@ function setupRightColumnResizer() {
     const w = vw - Number(e.clientX || 0) - 24;
     const clamped = Math.max(minW, Math.min(maxW, Math.round(w)));
     rightColumn.style.width = `${clamped}px`;
+    syncResizerHeight();
   };
 
   const onUp = () => {
@@ -859,7 +876,14 @@ function setupRightColumnResizer() {
       onUp();
     }
     applyResponsiveWidth();
+    syncResizerHeight();
   });
+
+  rightColumn.addEventListener('scroll', syncResizerHeight);
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => syncResizerHeight());
+    ro.observe(rightColumn);
+  }
 }
 
 // speed aggregation
@@ -1128,7 +1152,7 @@ function updateJsessionidState() {
 }
 
 function promptLoginIfPossible(message) {
-  const defaultNeedLoginMsg = '如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录';
+  const defaultNeedLoginMsg = VE_LOGIN_REQUIRED_HTML;
   // If username is empty, do not pop modal; direct user to platform login entry.
   if (!usernameInput.value.trim()) {
     showToast(message || defaultNeedLoginMsg, 'warning', 3500, true);
@@ -1177,6 +1201,81 @@ function formatSize(bytes) {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function buildHomeworkAttachmentKey(noteId, courseId, teacherId) {
+  return `${String(noteId || '').trim()}|${String(courseId || '').trim()}|${String(teacherId || '').trim()}`;
+}
+
+function stripFileExtension(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  const dot = raw.lastIndexOf('.');
+  if (dot <= 0) return raw;
+  return raw.slice(0, dot);
+}
+
+function buildHomeworkAttachmentSizeStyle(bytes) {
+  return buildResourceSizeEmphasisStyle((Number(bytes) || 0) / (1024 * 1024));
+}
+
+function normalizeHomeworkAttachmentUrl(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (/^https?:\/\//i.test(text)) return text;
+  const normalized = text.startsWith('/') ? text : `/${text}`;
+  return `${BASE}${normalized}`;
+}
+
+function triggerHomeworkAttachmentDownload(url, fileName) {
+  const safeUrl = String(url || '').trim();
+  if (!safeUrl) return;
+  const safeName = sanitizeDownloadFileName(fileName || '作业附件');
+  if (chrome?.downloads?.download) {
+    chrome.downloads.download(
+      { url: safeUrl, filename: safeName, conflictAction: 'uniquify', saveAs: false },
+      () => {
+        if (chrome.runtime?.lastError) {
+          window.open(safeUrl, '_blank', 'noopener,noreferrer');
+        }
+      }
+    );
+    return;
+  }
+  window.open(safeUrl, '_blank', 'noopener,noreferrer');
+}
+
+function syncHomeworkAttachmentItemsIndex(courseId, items) {
+  const cid = String(courseId || '').trim();
+  const prevList = Array.isArray(window.homeworkAttachmentItemsByCourseId?.[cid])
+    ? window.homeworkAttachmentItemsByCourseId[cid]
+    : [];
+  prevList.forEach((it) => {
+    const id = String(it?.id || '').trim();
+    if (!id) return;
+    delete window.homeworkAttachmentItemsById[id];
+    window.resourceSpaceSelected.delete(id);
+  });
+
+  const nextList = Array.isArray(items) ? items : [];
+  window.homeworkAttachmentItemsByCourseId[cid] = nextList;
+  nextList.forEach((it) => {
+    const id = String(it?.id || '').trim();
+    if (!id) return;
+    window.homeworkAttachmentItemsById[id] = it;
+  });
+}
+
+function registerHomeworkAttachmentItem(courseId, item) {
+  const cid = String(courseId || '').trim();
+  if (!cid || !item) return;
+  const id = String(item.id || '').trim();
+  if (!id) return;
+  if (!Array.isArray(window.homeworkAttachmentItemsByCourseId[cid])) {
+    window.homeworkAttachmentItemsByCourseId[cid] = [];
+  }
+  window.homeworkAttachmentItemsByCourseId[cid].push(item);
+  window.homeworkAttachmentItemsById[id] = item;
 }
 
 function formatSpeed(bytesPerSecond) {
@@ -2824,7 +2923,8 @@ function findResourceItemElementById(resourceId) {
 function getSelectableDownloadItems() {
   const native = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
   const courseware = Object.values(window.coursewareItemsById || {});
-  return [...native, ...courseware];
+  const attachments = Object.values(window.homeworkAttachmentItemsById || {});
+  return [...native, ...courseware, ...attachments];
 }
 
 function findSelectableDownloadItemById(resourceId) {
@@ -2832,7 +2932,7 @@ function findSelectableDownloadItemById(resourceId) {
   if (!rid) return null;
   const native = (window.resourceSpaceItems || []).find((x) => String(x?.id || '').trim() === rid);
   if (native) return native;
-  return window.coursewareItemsById?.[rid] || null;
+  return window.coursewareItemsById?.[rid] || window.homeworkAttachmentItemsById?.[rid] || null;
 }
 
 function getResourceItemSizeBytes(item) {
@@ -3955,7 +4055,7 @@ function showPlatformNeedLoginToast(platform) {
   window.__platformOfflineToastById[p] = now;
 
   if (p === 've') {
-    showToast('如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录', 'warning', 3200, true);
+    showToast(VE_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
     return;
   }
 
@@ -6337,6 +6437,9 @@ async function loadJlgjCoursesAndHomework(courses = []) {
 async function loadCourses() {
   const courseLoadVersion = bumpPlatformLoadVersion('ve');
   window.courseListLoadVersion = courseLoadVersion;
+  window.homeworkNoteAttachmentCacheByKey = {};
+  window.homeworkAttachmentItemsById = {};
+  window.homeworkAttachmentItemsByCourseId = {};
 
   if (courseLoadingStatus) courseLoadingStatus.style.display = 'none';
   setPlatformLoginState('ve', isPlatformEnabled('ve') ? 'checking' : 'checking');
@@ -6590,6 +6693,144 @@ window.toggleHomeworkView = function(courseId) {
   }, 180);
 };
 
+function getHomeworkTeacherId(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return '';
+  const cached = String(window.veTeacherMetaByCourseId?.[cid]?.teacherId || '').trim();
+  if (cached) return cached;
+  const list = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+  const found = list.find((it) => String(it?.id || it?.cId || it?.courseId || it?.course_id || '').trim() === cid) || null;
+  return String(found?.teacher_id || found?.teacherId || found?.teacherid || '').trim();
+}
+
+async function ensureHomeworkTeacherId(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return '';
+  let teacherId = getHomeworkTeacherId(cid);
+  if (teacherId) return teacherId;
+
+  const card = document.getElementById(`course-${cid}`);
+  const wrap = card?.querySelector('.ve-course-num-wrap');
+  const courseNum = String(wrap?.dataset?.courseNum || '').trim();
+  const fzId = String(wrap?.dataset?.fzId || '').trim();
+  if (!courseNum) return '';
+
+  teacherId = await fetchVeTeacherIdByCourse(courseNum, fzId);
+  if (teacherId) {
+    window.veTeacherMetaByCourseId[cid] = { teacherId, loading: false, loaded: true };
+    updateVeTeacherMetaUi(cid);
+  }
+  return teacherId;
+}
+
+function renderHomeworkAttachments(hw, borderColor = '#ff9800') {
+  const key = String(hw?.__attachmentKey || '').trim();
+  if (!key) return '';
+  const cache = window.homeworkNoteAttachmentCacheByKey?.[key] || null;
+  const list = Array.isArray(cache?.picList) ? cache.picList : [];
+  if (!list.length) return '';
+
+  const courseId = String(hw?.__courseId || '').trim();
+  const softBg = String(borderColor || '').toLowerCase().includes('4caf50')
+    ? 'rgba(232,245,233,0.72)'
+    : 'rgba(255,243,224,0.72)';
+
+  const rows = list.map((it, idx) => {
+    const fileNameNoExt = String(it?.fileNameNoExt || '').trim() || `附件${idx + 1}`;
+    const sizeBytes = Math.max(0, Number(it?.sizeBytes || 0) || 0);
+    const sizeText = formatSize(sizeBytes);
+    const sizeStyle = buildHomeworkAttachmentSizeStyle(sizeBytes);
+    const url = String(it?.url || '').trim();
+    if (!url) return '';
+    const resourceId = `hwatt-${encodeURIComponent(key)}-${idx}`;
+    const checked = window.resourceSpaceSelected.has(resourceId) ? 'checked' : '';
+    const item = {
+      id: resourceId,
+      name: fileNameNoExt,
+      extName: '',
+      url,
+      courseId,
+      sizeMbRaw: sizeBytes / (1024 * 1024),
+      sizeMb: sizeText
+    };
+    registerHomeworkAttachmentItem(courseId, item);
+    return `
+      <div class="file-item" data-resource-id="${escapeHtml(resourceId)}" style="padding:6px 8px; border:1px solid ${borderColor}; border-radius:6px; background:${softBg}; margin-top:6px;">
+        <div class="resource-row-title" style="margin-bottom:4px; cursor:pointer;">
+          <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(resourceId)}" ${checked} style="margin:0 4px 0 0;">
+          <span style="color:#111827; font-weight:700;">${escapeHtml(fileNameNoExt)}</span>
+          <span style="${sizeStyle}">${escapeHtml(sizeText)}</span>
+        </div>
+        <div class="resource-link-row">
+          <a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
+          <div style="display:flex; align-items:center; gap:6px; margin-left:auto;">
+            <button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(resourceId)}">复制</button>
+            <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(resourceId)}">下载</button>
+          </div>
+        </div>
+        <div class="resource-download-progress" style="display:none;">
+          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="resource-download-meta">
+            <span class="resource-dl-status"></span>
+            <span class="resource-dl-size"></span>
+            <span class="resource-dl-speed"></span>
+            <span class="resource-dl-eta"></span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).filter(Boolean).join('');
+
+  if (!rows) return '';
+  return `<div style="margin-top:6px;">${rows}</div>`;
+}
+
+async function prefetchHomeworkAttachments(courseId, list) {
+  const items = Array.isArray(list) ? list : [];
+  if (!items.length) return;
+
+  const teacherId = await ensureHomeworkTeacherId(courseId);
+  if (!teacherId) return;
+  let changed = false;
+
+  await Promise.all(items.map(async (hw) => {
+    const noteId = String(hw?.id ?? hw?.noteId ?? hw?.courseNoteId ?? '').trim();
+    const noteCourseId = String(hw?.course_id ?? hw?.courseId ?? hw?.cId ?? courseId).trim();
+    const noteTeacherId = String(hw?.teacher_id ?? hw?.teacherId ?? teacherId).trim();
+    if (!noteId || !noteCourseId || !noteTeacherId) return;
+
+    const key = buildHomeworkAttachmentKey(noteId, noteCourseId, noteTeacherId);
+    hw.__attachmentKey = key;
+
+    const cached = window.homeworkNoteAttachmentCacheByKey[key];
+    if (cached?.loading || cached?.loaded) return;
+    window.homeworkNoteAttachmentCacheByKey[key] = { loading: true, loaded: false, picList: [] };
+
+    const detailUrl = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=queryStudentCourseNote&id=${encodeURIComponent(noteId)}&courseId=${encodeURIComponent(noteCourseId)}&teacherId=${encodeURIComponent(noteTeacherId)}`;
+    try {
+      const { text } = await fetchText(detailUrl, {
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+      });
+      let detailData = null;
+      try { detailData = JSON.parse(String(text || '{}')); } catch { detailData = null; }
+      const picListRaw = Array.isArray(detailData?.picList) ? detailData.picList : [];
+      const picList = picListRaw.map((it) => {
+        const fileNameRaw = String(it?.file_name || it?.name || '').trim();
+        const fileNameNoExt = stripFileExtension(fileNameRaw) || fileNameRaw || '附件';
+        const sizeBytes = Math.max(0, Number(it?.pic_size || 0) || 0);
+        const url = normalizeHomeworkAttachmentUrl(it?.url || '');
+        return { fileName: fileNameRaw || fileNameNoExt, fileNameNoExt, sizeBytes, url };
+      }).filter((it) => !!it.url);
+      window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList };
+      if (picList.length > 0) changed = true;
+    } catch {
+      window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList: [] };
+    }
+  }));
+
+  if (changed) renderHomeworkList(courseId);
+}
+
 async function checkHomework(courseId) {
   const area = document.getElementById(`homework-area-${courseId}`);
   if (!area) return;
@@ -6611,6 +6852,7 @@ async function checkHomework(courseId) {
     const list = data.courseNoteList || data.list || [];
     window.courseHomeworkData[courseId] = { list, showAll: !!window.courseShowAllById[courseId] };
     renderHomeworkList(courseId);
+    await prefetchHomeworkAttachments(courseId, list);
     prefetchCourseScores(courseId);
     recomputeCourseHomeworkState(courseId);
   } catch (e) {
@@ -6629,6 +6871,7 @@ function renderHomeworkList(courseId) {
   }
   if (!area) return;
   const list = data.list || [];
+  syncHomeworkAttachmentItemsIndex(courseId, []);
   let displayList = data.showAll ? list : list.filter(isNativeHomeworkPending);
   const yktItems = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId[courseId] || []) : [];
   const yktLoading = !!window.yktHomeworkLoadingByCourse?.[courseId];
@@ -6822,13 +7065,16 @@ function renderHomeworkList(courseId) {
 
     const rawContent = hw.content || hw.content_clean || hw.workContent || '';
     const contentHtml = normalizeHomeworkContent(rawContent);
+    hw.__courseId = String(courseId || '').trim();
     const nativeKeySeed = String(upId || snId || hw.id || hw.upId || hw.noteId || hw.courseNoteId || '').trim();
     const expandKey = `native:${nativeKeySeed || `idx-${idx}`}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
+    const attachmentHtml = renderHomeworkAttachments(hw, borderColor);
     const expandable = renderExpandableHtml(contentHtml, {
       emptyHtml: '<span style="color:#999;">无内容</span>',
       expandText: '点击查看作业详情',
       collapseText: '点击收起作业详情',
+      hideWhenEmpty: true,
       baseBg: isDone ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)',
       flatDisplay: true,
       courseId,
@@ -6853,7 +7099,8 @@ function renderHomeworkList(courseId) {
           </div>
         </div>
 
-        <div style="margin-top:6px; border-top:1px dashed ${borderColor}40; padding-top:6px;">${expandable}</div>
+  ${attachmentHtml}
+        ${expandable ? `<div style="margin-top:6px; border-top:1px dashed ${borderColor}40; padding-top:6px;">${expandable}</div>` : ''}
 
         <div class="submit-panel" data-submit-panel="1" style="display:none;">
           <textarea data-submit-content="1" placeholder="请输入作业内容（可为空）"></textarea>
@@ -6941,7 +7188,7 @@ async function prefetchCourseScores(courseId) {
   window.homeworkScorePendingByCourse[courseId] = false;
 
   if (hasLoginRequired) {
-    handleLoginRequired(() => prefetchCourseScores(courseId), null, '如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录');
+    handleLoginRequired(() => prefetchCourseScores(courseId), null, VE_LOGIN_REQUIRED_HTML);
     return;
   }
   renderHomeworkList(courseId);
@@ -7111,7 +7358,7 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
     const data = JSON.parse(text);
     if (data?.flag === false || (data?.STATUS === '1' && String(data?.ERRMSG || '').includes('不合法'))) {
       span.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-      span.onclick = () => promptLoginIfPossible('如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录');
+      span.onclick = () => promptLoginIfPossible(VE_LOGIN_REQUIRED_HTML);
       promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
       return;
     }
@@ -7155,7 +7402,7 @@ function uploadFile(file, fileId) {
   const item = document.createElement('div');
   item.className = 'file-item';
   item.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
       <div>
         <label class="upload-select-wrap">
           <input type="checkbox" class="submit-file-check" data-file-id="${fileId}">
@@ -7387,7 +7634,6 @@ function uploadFile(file, fileId) {
               const row = document.createElement('div');
               row.className = 'upload-link-row';
               const a = document.createElement('a');
-              a.className = 'url-link';
               a.href = convertedUrl;
               a.target = '_blank';
               a.textContent = convertedUrl;
@@ -7490,6 +7736,18 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 fileInput.addEventListener('change', handleFiles);
+
+fileList.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLElement)) return;
+  const row = t.closest('.upload-file-head-row');
+  if (!(row instanceof HTMLElement)) return;
+  if (t.closest('button,a,input,textarea,select,label')) return;
+  const cb = row.querySelector('input.submit-file-check');
+  if (!(cb instanceof HTMLInputElement)) return;
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change', { bubbles: true }));
+});
 
 function handleFiles(e) {
   const files = e.target.files || e.dataTransfer.files;
@@ -7844,7 +8102,7 @@ courseListDiv.addEventListener('click', async (e) => {
         handleLoginRequired(() => {
           btn.removeAttribute('disabled');
           btn.textContent = oldText || '确定';
-        }, null, '如需查看<a href="http://123.121.147.7:88/ve/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>作业，请前往登录');
+        }, null, VE_LOGIN_REQUIRED_HTML);
         return;
       }
       if (!res.ok) {
@@ -7874,6 +8132,17 @@ if (resourceSpaceList) {
   resourceSpaceList.addEventListener('click', async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
+
+    const titleRow = t.closest('.resource-row-title');
+    if (titleRow instanceof HTMLElement && !t.closest('a,button,input,textarea,select,label')) {
+      const cb = titleRow.querySelector('input[data-action="resource-check"][data-resource-id]');
+      if (cb instanceof HTMLInputElement) {
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return;
+    }
+
     const action = String(t.dataset.action || '').trim();
     const id = String(t.dataset.resourceId || '').trim();
     if (!action || !id) return;
@@ -7935,6 +8204,17 @@ if (resourceSpaceList) {
 courseListDiv.addEventListener('click', async (e) => {
   const t = e.target;
   if (!(t instanceof HTMLElement)) return;
+
+  const titleRow = t.closest('.resource-row-title');
+  if (titleRow instanceof HTMLElement && !t.closest('a,button,input,textarea,select,label')) {
+    const cb = titleRow.querySelector('input[data-action="resource-check"][data-resource-id]');
+    if (cb instanceof HTMLInputElement) {
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    return;
+  }
+
   const action = String(t.dataset.action || '').trim();
   if (!['resource-check', 'resource-copy', 'resource-download', 'resource-cancel-download'].includes(action)) return;
   const id = String(t.dataset.resourceId || '').trim();
