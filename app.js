@@ -5564,6 +5564,21 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   const currentView = String(card.dataset.resultView || '').trim();
   const isOpen = isResultAreaOpen(resultArea);
   const cache = window.coursewareCacheByCourseId[courseIdInt];
+  const replayCache = window.videoReplayCacheByCourseId?.[courseIdInt];
+  const replayShadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
+
+  const moveVisibleReplayToShadowIfNeeded = () => {
+    if (currentView !== 'replay') return;
+    if (!replayCache?.linksFetching) return;
+    if (!(replayShadowArea instanceof HTMLElement)) return;
+    if (replayShadowArea.firstChild) return;
+    if (!resultArea.firstChild) return;
+    const frag = document.createDocumentFragment();
+    while (resultArea.firstChild) {
+      frag.appendChild(resultArea.firstChild);
+    }
+    replayShadowArea.appendChild(frag);
+  };
 
   if (isOpen && currentView === 'courseware') {
     toggleResultAreaAnimated(resultArea, false);
@@ -5573,6 +5588,8 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   }
 
   if (cache?.loaded && cache?.html) {
+    // If replay links are still resolving, preserve live replay DOM in shadow before replacing visible area.
+    moveVisibleReplayToShadowIfNeeded();
     syncCoursewareItemsIndex(courseIdInt, cache.items || []);
     resultArea.innerHTML = cache.html;
     toggleResultAreaAnimated(resultArea, true);
@@ -5581,6 +5598,8 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
     return;
   }
 
+  // Ensure replay live DOM is not lost while loading when switching views.
+  moveVisibleReplayToShadowIfNeeded();
   loadCoursewareList(btn, courseIdInt, courseNum, fzId).catch(() => {
     syncCourseActionButtonText(card, 'courseware');
   });
@@ -5763,14 +5782,15 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
 
   cache.linksFetching = false;
   cache.linksFetched = true;
+  const currentView = String(card.dataset.resultView || '').trim();
   const visibleHtml = String(resultArea.innerHTML || '').trim();
   const shadowHtml = (shadowArea instanceof HTMLElement) ? String(shadowArea.innerHTML || '').trim() : '';
   const workingHtml = String(workingArea.innerHTML || '').trim();
-  // Prefer visible replay html when user has already opened replay during link fetching.
-  const finalHtml = visibleHtml || shadowHtml || workingHtml || String(cache.html || '');
+  // Only prefer visible area when replay view is active; otherwise visible area may be courseware content.
+  const visibleReplayHtml = currentView === 'replay' ? visibleHtml : '';
+  const finalHtml = visibleReplayHtml || shadowHtml || workingHtml || String(cache.html || '');
   cache.html = finalHtml;
 
-  const currentView = String(card.dataset.resultView || '').trim();
   if (currentView === 'replay' && finalHtml) {
     resultArea.innerHTML = cache.html;
     toggleResultAreaAnimated(resultArea, true, { immediate: true });
@@ -5785,6 +5805,17 @@ function toggleReplayFromCache(btn, courseIdInt) {
   const currentView = String(card.dataset.resultView || '').trim();
   const isOpen = isResultAreaOpen(resultArea);
   const shadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
+  const moveShadowNodesToVisible = () => {
+    if (!(shadowArea instanceof HTMLElement)) return false;
+    if (!shadowArea.firstChild) return false;
+    const frag = document.createDocumentFragment();
+    while (shadowArea.firstChild) {
+      frag.appendChild(shadowArea.firstChild);
+    }
+    resultArea.innerHTML = '';
+    resultArea.appendChild(frag);
+    return true;
+  };
 
   if (isOpen && currentView === 'replay') {
     toggleResultAreaAnimated(resultArea, false);
@@ -5801,12 +5832,13 @@ function toggleReplayFromCache(btn, courseIdInt) {
   if (cache?.linksFetching) {
     const shadowHtml = (shadowArea instanceof HTMLElement) ? String(shadowArea.innerHTML || '') : '';
     if (shadowHtml.trim()) {
-      resultArea.innerHTML = shadowHtml;
-      // Move live link containers to visible area so in-flight callbacks continue updating visible list.
-      if (shadowArea instanceof HTMLElement) shadowArea.innerHTML = '';
+      // Move live DOM nodes to avoid race windows where late updates are written into shadow then lost.
+      moveShadowNodesToVisible();
     } else if (cache?.html) {
       resultArea.innerHTML = cache.html;
     }
+  } else if (!cache?.linksFetched && moveShadowNodesToVisible()) {
+    // If list is ready but link fetching just started, prefer moving shadow nodes to avoid duplicate IDs.
   } else if (cache?.html) {
     resultArea.innerHTML = cache.html;
   }
@@ -8025,9 +8057,14 @@ function uploadFile(file, fileId) {
               const row = document.createElement('div');
               row.className = 'upload-link-row';
               const a = document.createElement('a');
+              a.className = 'url-link';
               a.href = convertedUrl;
               a.target = '_blank';
+              a.rel = 'noopener noreferrer';
               a.textContent = convertedUrl;
+              a.style.color = '#4CAF50';
+              a.style.fontWeight = '700';
+              a.style.textDecoration = 'none';
               const btn = document.createElement('button');
               btn.className = 'btn';
               btn.style.padding = '5px 10px';
@@ -8129,8 +8166,11 @@ dropZone.addEventListener('drop', (e) => {
 fileInput.addEventListener('change', handleFiles);
 
 fileList.addEventListener('click', (e) => {
-  const t = e.target;
-  if (!(t instanceof HTMLElement)) return;
+  const rawTarget = e.target;
+  const t = rawTarget instanceof Element
+    ? rawTarget
+    : (rawTarget && rawTarget.nodeType === Node.TEXT_NODE ? rawTarget.parentElement : null);
+  if (!(t instanceof Element)) return;
   const row = t.closest('.upload-file-head-row');
   if (!(row instanceof HTMLElement)) return;
   if (t.closest('button,a,input,textarea,select,label')) return;
