@@ -745,6 +745,7 @@ async function loadVersionInfo() {
     let res;
     try {
       res = await fetch(VERSION_LATEST_API_URL, {
+        cache: 'no-store',
         headers: { Accept: 'application/vnd.github+json' },
         signal: controller.signal
       });
