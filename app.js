@@ -213,6 +213,23 @@ let versionDownloadMinimized = false;
 let versionDownloadPhase = 'downloading';
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
+function isVersionDownloadingNow() {
+  return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
+}
+
+function syncVersionNoticeDownloadButton() {
+  const btn = document.getElementById('version-notice-download');
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const downloading = isVersionDownloadingNow();
+  btn.textContent = downloading ? '后台下载中...' : '下载更新';
+}
+
+function openVersionDownloadProgressModal() {
+  const modal = ensureVersionDownloadModal();
+  if (!modal) return;
+  versionDownloadMinimized = false;
+  modal.style.display = 'flex';
+}
 
 function parseInlineMarkdown(text) {
   let html = escapeHtml(String(text || ''));
@@ -318,8 +335,13 @@ function ensureVersionNoticeModal() {
   if (downloadBtn instanceof HTMLButtonElement) {
     downloadBtn.addEventListener('click', () => {
       modal.style.display = 'none';
+      if (isVersionDownloadingNow()) {
+        openVersionDownloadProgressModal();
+        return;
+      }
       startVersionDownloadWithFallback().catch(() => {
         versionDownloadInProgress = false;
+        syncVersionNoticeDownloadButton();
         showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
       });
     });
@@ -340,6 +362,7 @@ function openVersionNoticeModal() {
     bodyEl.innerHTML = renderMarkdownBasic(versionButtonLatestBodyMarkdown);
   }
   modal.style.display = 'flex';
+  syncVersionNoticeDownloadButton();
 }
 
 function ensureVersionDownloadModal() {
@@ -431,6 +454,7 @@ function setVersionDownloadProgressUi({
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
   versionDownloadPhase = String(phase || 'downloading').trim() || 'downloading';
+  syncVersionNoticeDownloadButton();
   const forceShow = phase !== 'downloading';
   const shouldShow = visible && (forceShow || !versionDownloadMinimized);
   modal.style.display = shouldShow ? 'flex' : 'none';
@@ -613,6 +637,7 @@ function buildVersionDownloadFileName(versionText = '') {
 
 async function startVersionDownloadWithFallback() {
   if (versionDownloadInProgress) {
+    openVersionDownloadProgressModal();
     return;
   }
   versionDownloadMinimized = false;
@@ -632,6 +657,7 @@ async function startVersionDownloadWithFallback() {
   });
 
   versionDownloadInProgress = true;
+  syncVersionNoticeDownloadButton();
   const fileName = buildVersionDownloadFileName(versionButtonLatestVersion);
   const primaryUrl = VERSION_DOWNLOAD_URL;
 
@@ -668,6 +694,7 @@ async function startVersionDownloadWithFallback() {
     showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
   }
   versionDownloadInProgress = false;
+  syncVersionNoticeDownloadButton();
 }
 
 function setVersionButtonState(mode, { localVersion = '', latestVersion = '', downloadUrl = '', body = '' } = {}) {
