@@ -62,6 +62,7 @@ const versionBtn = document.getElementById('version-btn');
 
 // Login modal
 const loginModal = document.getElementById('login-modal');
+const loginModalTitle = document.getElementById('login-modal-title');
 const captchaImg = document.getElementById('captcha-img');
 const captchaInput = document.getElementById('captcha-input');
 const loginBtn = document.getElementById('login-btn');
@@ -289,7 +290,7 @@ function ensureVersionNoticeModal() {
   modal.style.zIndex = '10002';
 
   modal.innerHTML = `
-    <div style="width:min(680px,94vw); max-height:min(78vh,740px); overflow:auto; background:#fff; border-radius:12px; padding:16px; box-shadow:0 20px 44px rgba(0,0,0,0.25); border:1px solid #e8edf5;">
+    <div style="width:min(560px,92vw); max-height:min(78vh,740px); overflow:auto; background:#fff; border-radius:12px; padding:16px; box-shadow:0 20px 44px rgba(0,0,0,0.25); border:1px solid #e8edf5;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
         <div id="version-notice-title" style="font-size:20px; font-weight:800; color:#0f172a;">发现新版本：v--</div>
         <button id="version-notice-close" class="btn" style="background:#64748b; padding:4px 10px; font-size:12px;">关闭</button>
@@ -974,7 +975,7 @@ function refreshUploadSelectVisibility() {
 function setupRightColumnResizer() {
   if (!rightColumn || !rightColumnResizer) return;
   const STORAGE_KEY = 'courseHelperWidthPx';
-  const BASE_MIN_W = 460;
+  const BASE_MIN_W = 480;
   const BASE_MAX_W = 760;
 
   const isAdaptiveLayout = () => window.matchMedia('(max-width: 900px), (orientation: portrait)').matches;
@@ -1020,8 +1021,14 @@ function setupRightColumnResizer() {
     rightColumnResizer.style.height = `${Math.max(0, Math.round(rect.height))}px`;
   };
 
+  const scheduleResizerSync = () => {
+    syncResizerGeometry();
+    requestAnimationFrame(() => syncResizerGeometry());
+    setTimeout(() => syncResizerGeometry(), 120);
+  };
+
   applyResponsiveWidth();
-  syncResizerGeometry();
+  scheduleResizerSync();
 
   let dragging = false;
 
@@ -1032,7 +1039,7 @@ function setupRightColumnResizer() {
     const w = vw - Number(e.clientX || 0) - 24;
     const clamped = Math.max(minW, Math.min(maxW, Math.round(w)));
     rightColumn.style.width = `${clamped}px`;
-    syncResizerGeometry();
+    scheduleResizerSync();
   };
 
   const onUp = () => {
@@ -1070,13 +1077,24 @@ function setupRightColumnResizer() {
       onUp();
     }
     applyResponsiveWidth();
-    syncResizerGeometry();
+    scheduleResizerSync();
   });
 
-  window.addEventListener('scroll', syncResizerGeometry, true);
+  window.addEventListener('scroll', scheduleResizerSync, true);
   if (typeof ResizeObserver !== 'undefined') {
-    const ro = new ResizeObserver(() => syncResizerGeometry());
+    const ro = new ResizeObserver(() => scheduleResizerSync());
     ro.observe(rightColumn);
+    if (courseListDiv) ro.observe(courseListDiv);
+  }
+  if (typeof MutationObserver !== 'undefined') {
+    const mo = new MutationObserver(() => scheduleResizerSync());
+    if (courseListDiv) {
+      mo.observe(courseListDiv, { childList: true, subtree: true });
+    }
+    if (loginModal) {
+      mo.observe(loginModal, { attributes: true, attributeFilter: ['style', 'class'] });
+    }
+    mo.observe(document.body, { attributes: true, attributeFilter: ['style', 'class'] });
   }
 }
 
@@ -2120,6 +2138,11 @@ function showLoginModal(message = '请输入验证码重新登录') {
   }
   const instruction = document.getElementById('login-instruction');
   if (instruction) instruction.textContent = message;
+  if (loginModalTitle) {
+    const msg = String(message || '');
+    const isSwitchContext = !!pendingUsernameChange || /切换账号|有效登录状态|目标账号/.test(msg);
+    loginModalTitle.textContent = isSwitchContext ? '切换账号' : '登录已失效';
+  }
   loginModal.style.display = 'block';
   captchaInput.value = '';
   setLoginProgress('等待登录');
@@ -2700,9 +2723,11 @@ async function doLoginFlow() {
     showToast('当前配置为原页面登录模式', 'info', 1200);
   }
 
-  loginBtn.disabled = true;
-  loginBtn.style.opacity = '0.7';
-  loginBtn.innerHTML = '登录中… <span class="spinner"></span>';
+  if (loginBtn) {
+    loginBtn.disabled = true;
+    loginBtn.style.opacity = '0.7';
+    loginBtn.innerHTML = '登录中… <span class="spinner"></span>';
+  }
   setLoginProgress('登录中…');
   showToast('正在登录...', 'info', 0);
   isLoginInProgress = true;
@@ -2883,9 +2908,11 @@ async function doLoginFlow() {
   } finally {
     forcePortalLoginInPage = false;
     isLoginInProgress = false;
-    loginBtn.disabled = false;
-    loginBtn.style.opacity = '1';
-    loginBtn.innerHTML = '登录';
+    if (loginBtn) {
+      loginBtn.disabled = false;
+      loginBtn.style.opacity = '1';
+      loginBtn.innerHTML = '登录';
+    }
   }
 }
 
@@ -5164,6 +5191,107 @@ function setCoursewareButtonLoading(btn, isLoading) {
   btn.classList.remove('courseware-list-loading');
 }
 
+function isResultAreaOpen(resultArea) {
+  if (!(resultArea instanceof HTMLElement)) return false;
+  if (resultArea.dataset.animOpen === '1') return true;
+  if (resultArea.style.display === 'none') return false;
+  return !!resultArea.offsetHeight;
+}
+
+function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } = {}) {
+  if (!(resultArea instanceof HTMLElement)) return;
+
+  const transition = 'max-height 220ms ease, opacity 180ms ease';
+  const clearTransitionHandlers = () => {
+    if (resultArea.__resultAnimCleanup) {
+      resultArea.__resultAnimCleanup();
+      resultArea.__resultAnimCleanup = null;
+    }
+  };
+  const finishNow = () => {
+    clearTransitionHandlers();
+    resultArea.style.transition = '';
+    resultArea.style.maxHeight = '';
+    resultArea.style.opacity = '';
+    resultArea.style.overflow = '';
+  };
+
+  if (immediate) {
+    finishNow();
+    resultArea.style.display = shouldOpen ? 'block' : 'none';
+    resultArea.dataset.animOpen = shouldOpen ? '1' : '0';
+    return;
+  }
+
+  clearTransitionHandlers();
+  resultArea.style.willChange = 'max-height, opacity';
+
+  if (shouldOpen) {
+    resultArea.style.display = 'block';
+    resultArea.style.overflow = 'hidden';
+    resultArea.style.opacity = '0';
+    resultArea.style.maxHeight = '0px';
+    // Force style flush so transition can run from collapsed state.
+    void resultArea.offsetHeight;
+
+    const targetHeight = Math.max(resultArea.scrollHeight, 1);
+    resultArea.style.transition = transition;
+    resultArea.style.opacity = '1';
+    resultArea.style.maxHeight = `${targetHeight}px`;
+
+    const onEnd = (ev) => {
+      if (ev.target !== resultArea || ev.propertyName !== 'max-height') return;
+      clearTransitionHandlers();
+      resultArea.style.transition = '';
+      resultArea.style.maxHeight = '';
+      resultArea.style.opacity = '';
+      resultArea.style.overflow = '';
+      resultArea.style.willChange = '';
+      resultArea.dataset.animOpen = '1';
+    };
+    resultArea.addEventListener('transitionend', onEnd);
+    resultArea.__resultAnimCleanup = () => {
+      resultArea.removeEventListener('transitionend', onEnd);
+      resultArea.style.willChange = '';
+    };
+    return;
+  }
+
+  if (resultArea.style.display === 'none') {
+    resultArea.dataset.animOpen = '0';
+    return;
+  }
+
+  const currentHeight = Math.max(resultArea.scrollHeight, resultArea.offsetHeight, 1);
+  resultArea.style.display = 'block';
+  resultArea.style.overflow = 'hidden';
+  resultArea.style.maxHeight = `${currentHeight}px`;
+  resultArea.style.opacity = '1';
+  // Force style flush so transition can run to collapsed state.
+  void resultArea.offsetHeight;
+
+  resultArea.style.transition = transition;
+  resultArea.style.maxHeight = '0px';
+  resultArea.style.opacity = '0';
+
+  const onEnd = (ev) => {
+    if (ev.target !== resultArea || ev.propertyName !== 'max-height') return;
+    clearTransitionHandlers();
+    resultArea.style.display = 'none';
+    resultArea.style.transition = '';
+    resultArea.style.maxHeight = '';
+    resultArea.style.opacity = '';
+    resultArea.style.overflow = '';
+    resultArea.style.willChange = '';
+    resultArea.dataset.animOpen = '0';
+  };
+  resultArea.addEventListener('transitionend', onEnd);
+  resultArea.__resultAnimCleanup = () => {
+    resultArea.removeEventListener('transitionend', onEnd);
+    resultArea.style.willChange = '';
+  };
+}
+
 function syncCourseActionButtonText(card, activeView = '') {
   if (!card) return;
   const replayBtn = card.querySelector('button[data-action="videos"]');
@@ -5313,7 +5441,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
 
   setCoursewareButtonLoading(btn, true);
   setCourseCoursewareLoading(courseIdInt, true);
-  resultArea.style.display = 'block';
+  toggleResultAreaAnimated(resultArea, true);
   card.dataset.resultView = 'courseware';
   resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取课件...</span>';
   syncCourseActionButtonText(card, 'courseware');
@@ -5342,7 +5470,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
       btn.style.display = 'none';
       setCourseCoursewareState(courseIdInt, false);
       if (shouldRender()) {
-        resultArea.style.display = 'none';
+        toggleResultAreaAnimated(resultArea, false);
         card.dataset.resultView = '';
       }
       return;
@@ -5407,11 +5535,11 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   if (!btn || !card || !resultArea) return;
 
   const currentView = String(card.dataset.resultView || '').trim();
-  const isOpen = resultArea.style.display === 'block';
+  const isOpen = isResultAreaOpen(resultArea);
   const cache = window.coursewareCacheByCourseId[courseIdInt];
 
   if (isOpen && currentView === 'courseware') {
-    resultArea.style.display = 'none';
+    toggleResultAreaAnimated(resultArea, false);
     card.dataset.resultView = '';
     syncCourseActionButtonText(card, '');
     return;
@@ -5420,7 +5548,7 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   if (cache?.loaded && cache?.html) {
     syncCoursewareItemsIndex(courseIdInt, cache.items || []);
     resultArea.innerHTML = cache.html;
-    resultArea.style.display = 'block';
+    toggleResultAreaAnimated(resultArea, true);
     card.dataset.resultView = 'courseware';
     syncCourseActionButtonText(card, 'courseware');
     return;
@@ -5491,7 +5619,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   btn.innerHTML = '回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;"></span>';
 
   if (shouldTouchVisibleArea) {
-    resultArea.style.display = 'none';
+    toggleResultAreaAnimated(resultArea, false, { immediate: true });
   }
   setCourseReplayLoading(courseIdInt, true);
 
@@ -5502,7 +5630,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     if (String(data.STATUS) !== '0') {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
-      if (shouldTouchVisibleArea) resultArea.style.display = 'none';
+      if (shouldTouchVisibleArea) toggleResultAreaAnimated(resultArea, false, { immediate: true });
       setCourseReplayState(courseIdInt, false);
       return;
     }
@@ -5511,7 +5639,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     if (!list.length) {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
-      if (shouldTouchVisibleArea) resultArea.style.display = 'none';
+      if (shouldTouchVisibleArea) toggleResultAreaAnimated(resultArea, false, { immediate: true });
       setCourseReplayState(courseIdInt, false);
       return;
     }
@@ -5567,7 +5695,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     btn.classList.remove('replay-link-progress');
     btn.style.removeProperty('--replay-progress');
     btn.style.display = 'none';
-    if (shouldTouchVisibleArea) resultArea.style.display = 'none';
+    if (shouldTouchVisibleArea) toggleResultAreaAnimated(resultArea, false, { immediate: true });
     setCourseReplayState(courseIdInt, false);
   }
 }
@@ -5618,7 +5746,7 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   const currentView = String(card.dataset.resultView || '').trim();
   if (currentView === 'replay' && finalHtml) {
     resultArea.innerHTML = cache.html;
-    resultArea.style.display = 'block';
+    toggleResultAreaAnimated(resultArea, true, { immediate: true });
   }
 }
 
@@ -5628,11 +5756,11 @@ function toggleReplayFromCache(btn, courseIdInt) {
   if (!btn || !card || !resultArea) return;
   const cache = window.videoReplayCacheByCourseId[courseIdInt];
   const currentView = String(card.dataset.resultView || '').trim();
-  const isOpen = resultArea.style.display === 'block';
+  const isOpen = isResultAreaOpen(resultArea);
   const shadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
 
   if (isOpen && currentView === 'replay') {
-    resultArea.style.display = 'none';
+    toggleResultAreaAnimated(resultArea, false);
     card.dataset.resultView = '';
     syncCourseActionButtonText(card, '');
     return;
@@ -5655,7 +5783,7 @@ function toggleReplayFromCache(btn, courseIdInt) {
   } else if (cache?.html) {
     resultArea.innerHTML = cache.html;
   }
-  resultArea.style.display = 'block';
+  toggleResultAreaAnimated(resultArea, true);
   card.dataset.resultView = 'replay';
   syncCourseActionButtonText(card, 'replay');
 
@@ -7436,14 +7564,14 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
   const resultArea = card.querySelector('.result-area');
   if (!resultArea) return;
 
-  if (resultArea.style.display === 'block') {
-    resultArea.style.display = 'none';
+  if (isResultAreaOpen(resultArea)) {
+    toggleResultAreaAnimated(resultArea, false);
     resultArea.innerHTML = '';
     btn.textContent = '回放下载';
     return;
   }
 
-  resultArea.style.display = 'block';
+  toggleResultAreaAnimated(resultArea, true);
   resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取大纲...</span>';
   btn.textContent = '收起';
 
@@ -8173,7 +8301,7 @@ captchaInput.addEventListener('input', (e) => {
     doLoginFlow();
   }
 });
-loginBtn.addEventListener('click', doLoginFlow);
+if (loginBtn) loginBtn.addEventListener('click', doLoginFlow);
 captchaInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') doLoginFlow();
 });
