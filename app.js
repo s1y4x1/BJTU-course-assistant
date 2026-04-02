@@ -208,6 +208,8 @@ let versionButtonLatestVersion = '';
 let versionButtonLatestBodyMarkdown = '';
 let versionNoticeShownVersion = '';
 let versionDownloadInProgress = false;
+let versionDownloadMinimized = false;
+let versionDownloadPhase = 'downloading';
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
 
@@ -355,7 +357,10 @@ function ensureVersionDownloadModal() {
 
   modal.innerHTML = `
     <div style="width:min(560px,92vw);background:#fff;border-radius:12px;padding:16px 16px 14px;box-shadow:0 18px 42px rgba(0,0,0,0.25);border:1px solid #e8edf5;">
-      <div id="version-download-title" style="font-size:18px;font-weight:700;color:#111827;margin-bottom:6px;">正在下载</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+        <div id="version-download-title" style="font-size:18px;font-weight:700;color:#111827;">正在下载</div>
+        <button id="version-download-minimize" class="btn" style="background:#64748b; padding:4px 10px; font-size:12px;">最小化</button>
+      </div>
       <div id="version-download-body" style="font-size:13px;color:#334155;margin-bottom:8px;">请稍候，正在准备下载...</div>
       <div id="version-download-source" style="font-size:12px;color:#475569;margin-bottom:6px;word-break:break-all;">下载源：https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master</div>
       <div id="version-download-meta" style="margin-bottom:4px;font-size:12px;color:#64748b;display:flex;gap:10px;flex-wrap:wrap;font-weight:700;">
@@ -383,6 +388,22 @@ function ensureVersionDownloadModal() {
       });
     });
   }
+  const minBtn = document.getElementById('version-download-minimize');
+  if (minBtn instanceof HTMLButtonElement) {
+    minBtn.addEventListener('click', () => {
+      if (versionDownloadPhase !== 'downloading') return;
+      versionDownloadMinimized = true;
+      modal.style.display = 'none';
+      showToast('已最小化，后台静默下载中...', 'info', 1400);
+    });
+  }
+  modal.addEventListener('click', (e) => {
+    if (e.target !== modal) return;
+    if (versionDownloadPhase !== 'downloading') return;
+    versionDownloadMinimized = true;
+    modal.style.display = 'none';
+    showToast('已最小化，后台静默下载中...', 'info', 1400);
+  });
   return modal;
 }
 
@@ -403,11 +424,16 @@ function setVersionDownloadProgressUi({
   total = 0,
   speed = 0,
   etaSec = null,
-  percent = 0
+  percent = 0,
+  phase = 'downloading'
 } = {}) {
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
-  modal.style.display = visible ? 'flex' : 'none';
+  versionDownloadPhase = String(phase || 'downloading').trim() || 'downloading';
+  const forceShow = phase !== 'downloading';
+  const shouldShow = visible && (forceShow || !versionDownloadMinimized);
+  modal.style.display = shouldShow ? 'flex' : 'none';
+  if (forceShow) versionDownloadMinimized = false;
   setVersionDownloadRetryVisible(false);
   if (!visible) return;
 
@@ -419,6 +445,11 @@ function setVersionDownloadProgressUi({
   const speedEl = document.getElementById('version-download-speed');
   const etaEl = document.getElementById('version-download-eta');
   const barEl = document.getElementById('version-download-bar');
+  const minBtn = document.getElementById('version-download-minimize');
+
+  if (minBtn instanceof HTMLButtonElement) {
+    minBtn.style.display = versionDownloadPhase === 'downloading' ? 'inline-block' : 'none';
+  }
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
   if (bodyEl) bodyEl.textContent = String(body || '请稍候，正在下载更新文件...');
@@ -462,7 +493,8 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
     total: 0,
     speed: 0,
     etaSec: null,
-    percent: 0
+    percent: 0,
+    phase: 'downloading'
   });
   setVersionDownloadRetryVisible(false);
 
@@ -493,7 +525,8 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
       total: total || loaded,
       speed: 0,
       etaSec: 0,
-      percent: 100
+      percent: 100,
+      phase: 'downloading'
     });
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -538,7 +571,8 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
       total,
       speed,
       etaSec,
-      percent
+      percent,
+      phase: 'downloading'
     });
   }
 
@@ -555,7 +589,8 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
     total: finalTotal,
     speed: 0,
     etaSec: 0,
-    percent: 100
+    percent: 100,
+    phase: 'downloading'
   });
 
   const objectUrl = URL.createObjectURL(blob);
@@ -579,6 +614,7 @@ async function startVersionDownloadWithFallback() {
   if (versionDownloadInProgress) {
     return;
   }
+  versionDownloadMinimized = false;
 
   setVersionDownloadProgressUi({
     visible: true,
@@ -590,7 +626,8 @@ async function startVersionDownloadWithFallback() {
     total: 0,
     speed: 0,
     etaSec: null,
-    percent: 0
+    percent: 0,
+    phase: 'downloading'
   });
 
   versionDownloadInProgress = true;
@@ -609,7 +646,8 @@ async function startVersionDownloadWithFallback() {
       total: 0,
       speed: 0,
       etaSec: 0,
-      percent: 100
+      percent: 100,
+      phase: 'finished'
     });
   } catch (err) {
     setVersionDownloadProgressUi({
@@ -622,7 +660,8 @@ async function startVersionDownloadWithFallback() {
       total: 0,
       speed: 0,
       etaSec: null,
-      percent: 0
+      percent: 0,
+      phase: 'failed'
     });
     setVersionDownloadRetryVisible(true);
     showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
@@ -5428,6 +5467,20 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
+  const currentView = String(card.dataset.resultView || '').trim();
+  const shouldTouchVisibleArea = !currentView || currentView === 'replay';
+
+  const ensureReplayShadowArea = () => {
+    let shadow = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
+    if (shadow instanceof HTMLElement) return shadow;
+    shadow = document.createElement('div');
+    shadow.className = 'replay-shadow-area';
+    shadow.dataset.courseId = String(courseIdInt);
+    shadow.style.display = 'none';
+    card.appendChild(shadow);
+    return shadow;
+  };
+  const replayShadowArea = ensureReplayShadowArea();
 
   btn.disabled = true;
   btn.style.opacity = '1';
@@ -5437,7 +5490,9 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   btn.style.setProperty('--replay-progress', '0%');
   btn.innerHTML = '回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;"></span>';
 
-  resultArea.style.display = 'none';
+  if (shouldTouchVisibleArea) {
+    resultArea.style.display = 'none';
+  }
   setCourseReplayLoading(courseIdInt, true);
 
   try {
@@ -5447,7 +5502,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     if (String(data.STATUS) !== '0') {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
-      resultArea.style.display = 'none';
+      if (shouldTouchVisibleArea) resultArea.style.display = 'none';
       setCourseReplayState(courseIdInt, false);
       return;
     }
@@ -5456,7 +5511,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     if (!list.length) {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
-      resultArea.style.display = 'none';
+      if (shouldTouchVisibleArea) resultArea.style.display = 'none';
       setCourseReplayState(courseIdInt, false);
       return;
     }
@@ -5489,8 +5544,11 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
       linksFetched: false,
       linksFetching: false
     };
-    // Keep list DOM ready (hidden) so link placeholders can auto-update in background.
-    resultArea.innerHTML = replayListHtml;
+    // Keep replay list DOM in hidden shadow area so background parsing/updating won't override current visible view.
+    replayShadowArea.innerHTML = replayListHtml;
+    if (shouldTouchVisibleArea && currentView === 'replay') {
+      resultArea.innerHTML = replayListHtml;
+    }
 
     // List is ready: allow users to open/close replay panel immediately.
     btn.disabled = false;
@@ -5509,7 +5567,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     btn.classList.remove('replay-link-progress');
     btn.style.removeProperty('--replay-progress');
     btn.style.display = 'none';
-    resultArea.style.display = 'none';
+    if (shouldTouchVisibleArea) resultArea.style.display = 'none';
     setCourseReplayState(courseIdInt, false);
   }
 }
@@ -5525,6 +5583,10 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   cache.linksFetching = true;
   btn.classList.add('replay-link-progress');
   btn.style.setProperty('--replay-progress', '0%');
+
+  const shadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
+  const shadowHasContent = (shadowArea instanceof HTMLElement) && !!String(shadowArea.innerHTML || '').trim();
+  const workingArea = shadowHasContent ? shadowArea : resultArea;
 
   const totalLinks = list.length;
   let doneLinks = 0;
@@ -5546,7 +5608,18 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
 
   cache.linksFetching = false;
   cache.linksFetched = true;
-  cache.html = resultArea.innerHTML;
+  const visibleHtml = String(resultArea.innerHTML || '').trim();
+  const shadowHtml = (shadowArea instanceof HTMLElement) ? String(shadowArea.innerHTML || '').trim() : '';
+  const workingHtml = String(workingArea.innerHTML || '').trim();
+  // Prefer visible replay html when user has already opened replay during link fetching.
+  const finalHtml = visibleHtml || shadowHtml || workingHtml || String(cache.html || '');
+  cache.html = finalHtml;
+
+  const currentView = String(card.dataset.resultView || '').trim();
+  if (currentView === 'replay' && finalHtml) {
+    resultArea.innerHTML = cache.html;
+    resultArea.style.display = 'block';
+  }
 }
 
 function toggleReplayFromCache(btn, courseIdInt) {
@@ -5556,6 +5629,7 @@ function toggleReplayFromCache(btn, courseIdInt) {
   const cache = window.videoReplayCacheByCourseId[courseIdInt];
   const currentView = String(card.dataset.resultView || '').trim();
   const isOpen = resultArea.style.display === 'block';
+  const shadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
 
   if (isOpen && currentView === 'replay') {
     resultArea.style.display = 'none';
@@ -5569,9 +5643,16 @@ function toggleReplayFromCache(btn, courseIdInt) {
     return;
   }
 
-  // Avoid re-rendering while links are being resolved, otherwise pending async
-  // callbacks may write to detached nodes and appear as "not replaced".
-  if (cache?.html && !cache?.linksFetching) {
+  if (cache?.linksFetching) {
+    const shadowHtml = (shadowArea instanceof HTMLElement) ? String(shadowArea.innerHTML || '') : '';
+    if (shadowHtml.trim()) {
+      resultArea.innerHTML = shadowHtml;
+      // Move live link containers to visible area so in-flight callbacks continue updating visible list.
+      if (shadowArea instanceof HTMLElement) shadowArea.innerHTML = '';
+    } else if (cache?.html) {
+      resultArea.innerHTML = cache.html;
+    }
+  } else if (cache?.html) {
     resultArea.innerHTML = cache.html;
   }
   resultArea.style.display = 'block';
