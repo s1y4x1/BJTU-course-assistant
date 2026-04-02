@@ -8636,6 +8636,36 @@ courseListDiv.addEventListener('change', (e) => {
   else window.resourceSpaceSelected.delete(id);
 });
 
+courseListDiv.addEventListener('wheel', (e) => {
+  const target = e.target;
+  if (!(target instanceof Element)) return;
+  const body = target.closest('.expandable-body');
+  if (!(body instanceof HTMLElement)) return;
+  const box = body.closest('.expandable-box');
+  if (!(box instanceof HTMLElement)) return;
+  if (box.classList.contains('expanded')) return;
+
+  // Keep horizontal wheel/trackpad gestures untouched.
+  if (e.shiftKey) return;
+  const deltaX = Number(e.deltaX || 0);
+  const deltaY = Number(e.deltaY || 0);
+  if (!deltaY || Math.abs(deltaX) > Math.abs(deltaY)) return;
+
+  const maxScroll = body.scrollHeight - body.clientHeight;
+  if (maxScroll <= 0) return;
+
+  const atTop = body.scrollTop <= 0;
+  const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+  if ((deltaY < 0 && atTop) || (deltaY > 0 && atBottom)) {
+    // Let page scroll continue naturally when inner area reaches the edge.
+    return;
+  }
+
+  e.preventDefault();
+  const step = Math.max(8, Math.min(18, Math.abs(deltaY) * 0.18));
+  body.scrollTop += deltaY > 0 ? step : -step;
+}, { passive: false });
+
 document.addEventListener('click', (e) => {
   const t = e.target;
   if (!(t instanceof HTMLElement)) return;
