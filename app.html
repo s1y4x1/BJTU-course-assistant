@@ -650,7 +650,8 @@
             color: #374151;
             line-height: 1.5;
             max-height: calc(1.5em * 3 + 2px);
-            overflow: auto;
+            overflow-x: auto;
+            overflow-y: hidden;
             scroll-behavior: auto;
             white-space: normal;
             overflow-wrap: anywhere;
@@ -673,18 +674,22 @@
         .expandable-box.expanded .expandable-body {
             max-height: none;
             overflow-x: auto;
-            overflow-y: visible;
+            overflow-y: hidden !important;
+            height: auto;
         }
         .expandable-box.expanded {
-            overflow: visible;
+            overflow-x: hidden;
+            overflow-y: hidden;
         }
         .expandable-box.no-toggle .expandable-body {
             max-height: none;
             overflow-x: auto;
-            overflow-y: visible;
+            overflow-y: hidden !important;
+            height: auto;
         }
         .expandable-box.no-toggle {
-            overflow: visible;
+            overflow-x: hidden;
+            overflow-y: hidden;
         }
         .expandable-body a {
             word-break: break-all;

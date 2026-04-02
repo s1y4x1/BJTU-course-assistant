@@ -8371,8 +8371,11 @@ courseListDiv.addEventListener('click', async (e) => {
           body.style.maxHeight = `${to}px`;
         });
         setTimeout(() => {
-          body.style.maxHeight = 'none';
-          body.style.overflow = 'visible';
+          // Clear inline limits so expanded CSS state fully controls overflow behavior.
+          body.style.maxHeight = '';
+          body.style.overflow = '';
+          body.style.overflowX = '';
+          body.style.overflowY = '';
         }, 220);
       } else {
         const collapsed = body.getBoundingClientRect().height;
@@ -8384,7 +8387,9 @@ courseListDiv.addEventListener('click', async (e) => {
         });
         setTimeout(() => {
           body.style.maxHeight = '';
-          body.style.overflow = 'auto';
+          body.style.overflowX = '';
+          body.style.overflowY = '';
+          body.style.overflow = '';
         }, 220);
       }
     } else {
@@ -8630,27 +8635,6 @@ courseListDiv.addEventListener('change', (e) => {
   if (t.checked) window.resourceSpaceSelected.add(id);
   else window.resourceSpaceSelected.delete(id);
 });
-
-courseListDiv.addEventListener('wheel', (e) => {
-  const target = e.target;
-  if (!(target instanceof Element)) return;
-  const body = target.closest('.expandable-body');
-  if (!(body instanceof HTMLElement)) return;
-  const box = body.closest('.expandable-box');
-  if (!(box instanceof HTMLElement)) return;
-  if (box.classList.contains('expanded')) return;
-
-  const maxScroll = body.scrollHeight - body.clientHeight;
-  if (maxScroll <= 0) return;
-
-  const dy = Number(e.deltaY || 0);
-  if (!dy) return;
-  e.preventDefault();
-
-  // Keep collapsed-detail wheel movement gentle (about 1 line per notch).
-  const step = Math.max(10, Math.min(22, Math.abs(dy) * 0.2));
-  body.scrollTop += dy > 0 ? step : -step;
-}, { passive: false });
 
 document.addEventListener('click', (e) => {
   const t = e.target;
