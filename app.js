@@ -215,6 +215,7 @@ let versionDownloadPhase = 'downloading';
 let versionIgnoredTag = '';
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
+const VERSION_RELEASES_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases?per_page=100';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
@@ -274,6 +275,12 @@ function renderMarkdownBasic(markdownText) {
       closeList();
       const level = Math.min(6, heading[1].length);
       out.push(`<h${level} style="margin:0 0 8px; color:#0f172a; font-size:${Math.max(14, 22 - level * 2)}px;">${parseInlineMarkdown(heading[2])}</h${level}>`);
+      return;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      closeList();
+      out.push('<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">');
       return;
     }
 
@@ -698,6 +705,29 @@ function pickReleaseDownloadUrl(releaseData) {
   return VERSION_DOWNLOAD_URL;
 }
 
+function pickLatestStableRelease(releases = []) {
+  const list = Array.isArray(releases) ? releases : [];
+  return list.find((r) => !r?.draft && !r?.prerelease && String(r?.tag_name || '').trim())
+    || list.find((r) => !r?.draft && String(r?.tag_name || '').trim())
+    || null;
+}
+
+function buildAggregatedReleaseNotes(releases = [], localVersion = '', latestVersion = '') {
+  const list = Array.isArray(releases) ? releases : [];
+  const items = list.filter((r) => {
+    if (!r || r.draft) return false;
+    const tag = String(r.tag_name || '').trim();
+    if (!tag) return false;
+    return compareVersionText(tag, localVersion) > 0 && compareVersionText(tag, latestVersion) <= 0;
+  });
+  if (!items.length) return '';
+  return items.map((r) => {
+    const tag = String(r.tag_name || '').trim();
+    const body = String(r.body || '').trim() || '此版本暂无更新说明。';
+    return `## ${tag}\n${body}`;
+  }).join('\n\n---\n\n');
+}
+
 async function loadVersionInfo() {
   // Current version is sourced from manifest.json at runtime.
   const localVersion = String(chrome.runtime.getManifest().version || '').trim();
@@ -707,9 +737,9 @@ async function loadVersionInfo() {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4500);
-    let res;
+    let releasesRes;
     try {
-      res = await fetch(VERSION_LATEST_API_URL, {
+      releasesRes = await fetch(VERSION_RELEASES_API_URL, {
         cache: 'no-store',
         headers: { Accept: 'application/vnd.github+json' },
         signal: controller.signal
@@ -717,22 +747,27 @@ async function loadVersionInfo() {
     } finally {
       clearTimeout(timeoutId);
     }
-    if (!res.ok) {
+    if (!releasesRes.ok) {
       let apiMessage = '';
       try {
-        const failData = await res.json();
+        const failData = await releasesRes.json();
         apiMessage = String(failData?.message || '').trim();
       } catch {
         try {
-          apiMessage = String(await res.text()).trim();
+          apiMessage = String(await releasesRes.text()).trim();
         } catch {
           apiMessage = '';
         }
       }
-      throw new Error(apiMessage || `GitHub request failed (${res.status})`);
+      throw new Error(apiMessage || `GitHub request failed (${releasesRes.status})`);
     }
-    const data = await res.json();
-    const latestTag = String(data?.tag_name || '').trim();
+
+    const releases = await releasesRes.json();
+    if (!Array.isArray(releases) || !releases.length) {
+      throw new Error('Missing releases');
+    }
+    const latestRelease = pickLatestStableRelease(releases);
+    const latestTag = String(latestRelease?.tag_name || '').trim();
     if (!latestTag) throw new Error('Missing latest tag');
 
     const cmp = compareVersionText(latestTag, localVersion);
@@ -741,11 +776,13 @@ async function loadVersionInfo() {
       return;
     }
     if (cmp > 0) {
+      const mergedBody = buildAggregatedReleaseNotes(releases, localVersion, latestTag)
+        || String(latestRelease?.body || '').trim();
       setVersionButtonState('outdated', {
         localVersion,
         latestVersion: latestTag,
-        downloadUrl: VERSION_DOWNLOAD_URL,
-        body: String(data?.body || '').trim()
+        downloadUrl: pickReleaseDownloadUrl(latestRelease),
+        body: mergedBody
       });
       const ignoredSameVersion = normalizeVersionText(versionIgnoredTag) === normalizeVersionText(latestTag);
       if (!ignoredSameVersion && versionNoticeShownVersion !== latestTag) {

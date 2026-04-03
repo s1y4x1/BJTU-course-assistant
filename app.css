@@ -567,7 +567,9 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         .version-notice-modal .version-modal-card {
             max-height: min(78vh, 740px);
-            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         .version-download-modal .version-modal-card {
             padding: 16px 16px 14px;
@@ -596,7 +598,19 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .version-notice-body {
             font-size: 13px;
             color: #334155;
-            margin-bottom: 12px;
+            margin-bottom: 0;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+            padding-right: 2px;
+        }
+        .version-notice-footer {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            width: 100%;
+            flex: 0 0 auto;
+            background: #fff;
         }
         .version-download-body {
             font-size: 13px;
