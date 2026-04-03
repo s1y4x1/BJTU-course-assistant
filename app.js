@@ -211,8 +211,10 @@ let versionNoticeShownVersion = '';
 let versionDownloadInProgress = false;
 let versionDownloadMinimized = false;
 let versionDownloadPhase = 'downloading';
+let versionIgnoredTag = '';
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
+const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
 }
@@ -293,33 +295,10 @@ function renderMarkdownBasic(markdownText) {
 }
 
 function ensureVersionNoticeModal() {
-  let modal = document.getElementById('version-notice-modal');
-  if (modal) return modal;
-
-  modal = document.createElement('div');
-  modal.id = 'version-notice-modal';
-  modal.style.position = 'fixed';
-  modal.style.inset = '0';
-  modal.style.background = 'rgba(15,23,42,0.45)';
-  modal.style.display = 'none';
-  modal.style.alignItems = 'center';
-  modal.style.justifyContent = 'center';
-  modal.style.zIndex = '10002';
-
-  modal.innerHTML = `
-    <div style="width:min(560px,92vw); max-height:min(78vh,740px); overflow:auto; background:#fff; border-radius:12px; padding:16px; box-shadow:0 20px 44px rgba(0,0,0,0.25); border:1px solid #e8edf5;">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
-        <div id="version-notice-title" style="font-size:20px; font-weight:800; color:#0f172a;">发现新版本：v--</div>
-        <button id="version-notice-close" class="btn" style="background:#64748b; padding:4px 10px; font-size:12px;">关闭</button>
-      </div>
-      <div id="version-notice-body" style="font-size:13px; color:#334155; margin-bottom:12px;"></div>
-      <div style="display:block; width:100%;">
-        <button id="version-notice-download" class="btn" style="background:#1e3a8a; width:100%; padding:8px 14px; font-size:13px;">下载更新</button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
+  const modal = document.getElementById('version-notice-modal');
+  if (!(modal instanceof HTMLElement)) return null;
+  if (modal.dataset.bound === '1') return modal;
+  modal.dataset.bound = '1';
 
   const closeBtn = modal.querySelector('#version-notice-close');
   if (closeBtn instanceof HTMLButtonElement) {
@@ -347,12 +326,28 @@ function ensureVersionNoticeModal() {
     });
   }
 
+  const ignoreBtn = modal.querySelector('#version-notice-ignore');
+  if (ignoreBtn instanceof HTMLButtonElement) {
+    ignoreBtn.addEventListener('click', async () => {
+      const tag = String(versionButtonLatestVersion || '').trim();
+      if (!tag) {
+        modal.style.display = 'none';
+        return;
+      }
+      versionIgnoredTag = tag;
+      await setLocal(VERSION_IGNORE_KEY, tag);
+      modal.style.display = 'none';
+      showToast(`已忽略 ${tag} 的更新提示`, 'info', 1600);
+    });
+  }
+
   return modal;
 }
 
 function openVersionNoticeModal() {
   if (versionButtonMode !== 'outdated') return;
   const modal = ensureVersionNoticeModal();
+  if (!modal) return;
   const titleEl = modal.querySelector('#version-notice-title');
   const bodyEl = modal.querySelector('#version-notice-body');
   if (titleEl instanceof HTMLElement) {
@@ -366,42 +361,10 @@ function openVersionNoticeModal() {
 }
 
 function ensureVersionDownloadModal() {
-  let modal = document.getElementById('version-download-modal');
-  if (modal) return modal;
-
-  modal = document.createElement('div');
-  modal.id = 'version-download-modal';
-  modal.style.position = 'fixed';
-  modal.style.inset = '0';
-  modal.style.background = 'rgba(15,23,42,0.45)';
-  modal.style.display = 'none';
-  modal.style.alignItems = 'center';
-  modal.style.justifyContent = 'center';
-  modal.style.zIndex = '10001';
-
-  modal.innerHTML = `
-    <div style="width:min(560px,92vw);background:#fff;border-radius:12px;padding:16px 16px 14px;box-shadow:0 18px 42px rgba(0,0,0,0.25);border:1px solid #e8edf5;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
-        <div id="version-download-title" style="font-size:18px;font-weight:700;color:#111827;">正在下载</div>
-        <button id="version-download-minimize" class="btn" style="background:#64748b; padding:4px 10px; font-size:12px;">最小化</button>
-      </div>
-      <div id="version-download-body" style="font-size:13px;color:#334155;margin-bottom:8px;">请稍候，正在准备下载...</div>
-      <div id="version-download-source" style="font-size:12px;color:#475569;margin-bottom:6px;word-break:break-all;">下载源：https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master</div>
-      <div id="version-download-meta" style="margin-bottom:4px;font-size:12px;color:#64748b;display:flex;gap:10px;flex-wrap:wrap;font-weight:700;">
-        <span id="version-download-status">准备下载...</span>
-        <span id="version-download-size">0 B / --</span>
-        <span id="version-download-speed" style="color:#2196F3;">0 KB/s</span>
-        <span id="version-download-eta">剩余: --</span>
-      </div>
-      <div class="progress-bar-container" style="margin-top:0;position:relative;">
-        <div id="version-download-bar" class="progress-bar" style="position:absolute;top:0;left:0;z-index:2;width:0%;"></div>
-      </div>
-      <div id="version-download-actions" style="display:none; margin-top:10px;">
-        <button id="version-download-retry" class="btn" style="background:#1e3a8a; width:100%; padding:8px 14px; font-size:13px;">重试下载</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
+  const modal = document.getElementById('version-download-modal');
+  if (!(modal instanceof HTMLElement)) return null;
+  if (modal.dataset.bound === '1') return modal;
+  modal.dataset.bound = '1';
 
   const retryBtn = document.getElementById('version-download-retry');
   if (retryBtn instanceof HTMLButtonElement) {
@@ -737,6 +700,7 @@ function pickReleaseDownloadUrl(releaseData) {
 async function loadVersionInfo() {
   // Current version is sourced from manifest.json at runtime.
   const localVersion = String(chrome.runtime.getManifest().version || '').trim();
+  versionIgnoredTag = String(await getLocal(VERSION_IGNORE_KEY, '') || '').trim();
   setVersionButtonState('loading', { localVersion });
 
   try {
@@ -782,11 +746,16 @@ async function loadVersionInfo() {
         downloadUrl: VERSION_DOWNLOAD_URL,
         body: String(data?.body || '').trim()
       });
-      if (versionNoticeShownVersion !== latestTag) {
+      const ignoredSameVersion = normalizeVersionText(versionIgnoredTag) === normalizeVersionText(latestTag);
+      if (!ignoredSameVersion && versionNoticeShownVersion !== latestTag) {
         versionNoticeShownVersion = latestTag;
         openVersionNoticeModal();
       }
       return;
+    }
+    if (versionIgnoredTag) {
+      versionIgnoredTag = '';
+      await setLocal(VERSION_IGNORE_KEY, '');
     }
     setVersionButtonState('ahead', { localVersion, latestVersion: latestTag });
   } catch (err) {
@@ -4939,7 +4908,7 @@ function renderYktHomeworkItems(courseId, items) {
           <a class="btn" href="${it.link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
         </div>
       </div>
-      ${detailExpandable ? `<div style="margin-top:6px; border-top:1px dashed ${borderColor}40; padding-top:6px;">${detailExpandable}</div>` : ''}
+      ${detailExpandable ? `<div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0;">${detailExpandable}</div>` : ''}
       ${detailStatusHtml}
     </div>
   `;
@@ -4985,7 +4954,7 @@ function renderJlgjHomeworkItems(items) {
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
           </div>
         </div>
-        <div style="margin-top:6px; border-top:1px dashed ${borderColor}40; padding-top:6px; font-size:12px; color:#374151; line-height:1.45;">${contentHtml}</div>
+        <div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0; font-size:12px; color:#374151; line-height:1.45;">${contentHtml}</div>
       </div>
     `;
   }).join('');
@@ -5208,6 +5177,11 @@ function setCourseCoursewareLoading(courseId, isLoading) {
 function setCoursewareButtonLoading(btn, isLoading) {
   if (!btn) return;
   if (isLoading) {
+    if (btn.classList.contains('courseware-list-loading')) {
+      btn.disabled = true;
+      btn.style.pointerEvents = 'none';
+      return;
+    }
     btn.disabled = true;
     btn.style.pointerEvents = 'none';
     btn.classList.add('courseware-list-loading');
@@ -7524,7 +7498,7 @@ function renderHomeworkList(courseId) {
         </div>
 
   ${attachmentHtml}
-        ${expandable ? `<div style="margin-top:6px; border-top:1px dashed ${borderColor}40; padding-top:6px;">${expandable}</div>` : ''}
+        ${expandable ? `<div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0;">${expandable}</div>` : ''}
 
         <div class="submit-panel" data-submit-panel="1" style="display:none;">
           <textarea data-submit-content="1" placeholder="请输入作业内容（可为空）"></textarea>
