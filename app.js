@@ -85,6 +85,7 @@ if (usernameInput) {
 const uploadQueue = [];
 let activeUploads = 0;
 let maxParallelUploads = 3;
+const PARALLEL_LIMIT_KEY = 'parallelLimit';
 let pendingLoginCallbacks = [];
 let isLoginSessionValid = true;
 window.filesData = {}; // {fileId: {size, uploaded}}
@@ -1758,7 +1759,7 @@ function setWelcomeMessage(info) {
     if (loginMsgEl) loginMsgEl.textContent = '';
     return;
   }
-  const msg = `欢迎您！${info.roleName || ''}${info.userName || ''}`;
+  const msg = `${info.roleName || ''}${info.userName || ''}`;
   if (msgEl) msgEl.textContent = msg;
   if (loginMsgEl) loginMsgEl.textContent = msg;
 }
@@ -2568,6 +2569,10 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
         
         if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
 
+        if (!(switchTarget && detected === '8888')) {
+          runPendingLoginCallbacks();
+        }
+
         if (!(switchTarget && detected === '8888') && isPlatformEnabled('ve')) {
           await loadCourses();
         }
@@ -2888,15 +2893,11 @@ async function doLoginFlow() {
     } catch {}
 
     // run pending callbacks
-    const cbs = pendingLoginCallbacks;
-    pendingLoginCallbacks = [];
-    cbs.forEach(fn => {
-      try { fn(); } catch {}
-    });
+    const cbCount = runPendingLoginCallbacks();
 
     // Account switching should trigger a VE course/homework refresh.
     // Retry-callback logins should not force an additional full reload.
-    const shouldReloadCourses = wasSwitchingAccount || (cbs.length === 0 && userBeforeLogin === finalUser);
+    const shouldReloadCourses = wasSwitchingAccount || (cbCount === 0 && userBeforeLogin === finalUser);
     if (shouldReloadCourses && isPlatformEnabled('ve')) {
       await loadCourses();
     }
@@ -7930,6 +7931,15 @@ function processQueue() {
   }
 }
 
+function runPendingLoginCallbacks() {
+  const cbs = pendingLoginCallbacks;
+  pendingLoginCallbacks = [];
+  cbs.forEach(fn => {
+    try { fn(); } catch {}
+  });
+  return cbs.length;
+}
+
 function handleLoginRequired(retryCallback, cancelCallback, message) {
   if (retryCallback) {
     pendingLoginCallbacks.push(retryCallback);
@@ -7977,6 +7987,7 @@ function uploadFile(file, fileId) {
   let isRunning = false;
   let cancelRequested = false;
   let xhrRef = null;
+  let autoRetryQueuedByLogin = false;
 
   const showRetry = () => {
     cancelBtn.style.display = 'none';
@@ -8017,7 +8028,29 @@ function uploadFile(file, fileId) {
     }
   };
 
+  const queueAutoRetryAfterLogin = () => {
+    if (autoRetryQueuedByLogin) return;
+    autoRetryQueuedByLogin = true;
+    handleLoginRequired(() => {
+      autoRetryQueuedByLogin = false;
+      if (cancelRequested) return;
+      retryBtn.style.display = 'none';
+      cancelBtn.style.display = 'inline-block';
+      setInlineStatus('登录恢复，自动重试中...', 'warning');
+      if (etaDisplay) etaDisplay.textContent = '';
+      isRunning = false;
+      xhrRef = null;
+      if (!window.filesData[fileId]) {
+        window.filesData[fileId] = { size: file.size, uploaded: 0 };
+        updateTotalProgress();
+      }
+      uploadQueue.push(performUpload);
+      processQueue();
+    }, null, '登录已失效，请输入验证码重新登录');
+  };
+
   retryBtn.onclick = () => {
+    autoRetryQueuedByLogin = false;
     retryBtn.style.display = 'none';
     cancelBtn.style.display = 'inline-block';
     setInlineStatus('准备重试...', 'warning');
@@ -8035,7 +8068,9 @@ function uploadFile(file, fileId) {
 
   // Single cancel handler that works for both queued and uploading states
   cancelBtn.onclick = () => {
+    autoRetryQueuedByLogin = false;
     if (!isRunning) {
+      cancelRequested = true;
       const idx = uploadQueue.indexOf(performUpload);
       if (idx >= 0) uploadQueue.splice(idx, 1);
       doCancelUiAndAccounting();
@@ -8057,7 +8092,7 @@ function uploadFile(file, fileId) {
     if (manualJsessionMode && !jsid) {
       setInlineStatus('等待登录...', 'warning');
       if (etaDisplay) etaDisplay.textContent = '';
-      handleLoginRequired(performUpload, null, '登录已失效，请输入验证码重新登录');
+      queueAutoRetryAfterLogin();
       showRetry();
       isRunning = false;
       xhrRef = null;
@@ -8213,7 +8248,7 @@ function uploadFile(file, fileId) {
             progressBar.style.backgroundColor = '#f44336';
             if (String(msg).includes('不合法') || String(msg).includes('登录')) {
               isLoginSessionValid = false;
-              handleLoginRequired(performUpload, null, '登录已失效，请输入验证码重新登录');
+              queueAutoRetryAfterLogin();
             }
             showRetry();
           }
@@ -8264,14 +8299,33 @@ function uploadFile(file, fileId) {
 }
 
 // -------------------- Events --------------------
-document.getElementById('parallel-limit').addEventListener('change', (e) => {
-  const v = parseInt(e.target.value, 10);
-  if (v > 0) {
-    maxParallelUploads = v;
-    processQueue();
-    processResourceDownloadQueue();
-  }
-});
+const parallelLimitInput = document.getElementById('parallel-limit');
+
+function adjustParallelLimitWidth() {
+  if (!(parallelLimitInput instanceof HTMLInputElement)) return;
+  const text = String(parallelLimitInput.value || parallelLimitInput.placeholder || '');
+  const digits = Math.max(1, text.length);
+  parallelLimitInput.style.width = `${digits + 3}ch`;
+}
+
+if (parallelLimitInput instanceof HTMLInputElement) {
+  adjustParallelLimitWidth();
+  parallelLimitInput.addEventListener('input', () => {
+    adjustParallelLimitWidth();
+  });
+  parallelLimitInput.addEventListener('change', (e) => {
+    const v = parseInt(e.target.value, 10);
+    if (v > 0) {
+      maxParallelUploads = v;
+      setLocal(PARALLEL_LIMIT_KEY, String(v)).catch(() => {});
+      processQueue();
+      processResourceDownloadQueue();
+    } else {
+      parallelLimitInput.value = String(Math.max(1, Number(maxParallelUploads) || 1));
+    }
+    adjustParallelLimitWidth();
+  });
+}
 
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -8954,6 +9008,14 @@ usernameInput.addEventListener('change', async () => {
   let welcomeInfoUserId = '';
   let welcomeInfo = null;
   usernameInput.value = lastValidUsername;
+  const savedParallelLimit = parseInt(await getLocal(PARALLEL_LIMIT_KEY, String(maxParallelUploads)), 10);
+  if (savedParallelLimit > 0) {
+    maxParallelUploads = savedParallelLimit;
+    if (parallelLimitInput instanceof HTMLInputElement) {
+      parallelLimitInput.value = String(savedParallelLimit);
+    }
+  }
+  adjustParallelLimitWidth();
   if (lastValidUsername) {
     try {
       welcomeInfo = await fetchUserInfoRemote(lastValidUsername);

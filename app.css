@@ -688,7 +688,9 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .top-inline-controls #welcome-msg {
             color: #111827;
             font-weight: 600;
-            margin-left: auto;
+            margin-left: 4px;
+            margin-right: 4px;
+            white-space: nowrap;
         }
         .upload-summary-area {
             margin-bottom: 15px;
