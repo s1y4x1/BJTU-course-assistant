@@ -3956,55 +3956,122 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
   if (!courseIdPart) return [];
 
   const prefix = buildVeXkhPrefix(courseIdPart, fzId);
-  let classNo = 1;
-  const rows = [];
+  const rows = []; // [{teacherName,teacherId,roomName,xkhId,classNo}]
   const seen = new Set();
+  const controllers = new Map();
+  let stopAt = Number.POSITIVE_INFINITY;
+  let nextClassNo = 1;
+  const MAX_CLASS_NO = 99;
+  const WORKERS = 6;
 
-  while (classNo <= 99) {
+  const emitUpdate = (done = false) => {
+    if (typeof onUpdate !== 'function') return;
+    const sorted = rows
+      .slice()
+      .sort((a, b) => Number(a.classNo || 0) - Number(b.classNo || 0))
+      .map((it) => ({
+        teacherName: it.teacherName,
+        teacherId: it.teacherId,
+        roomName: it.roomName,
+        xkhId: it.xkhId
+      }));
+    onUpdate(sorted, { done, error: false });
+  };
+
+  const markStop = (classNo) => {
+    if (!Number.isFinite(Number(classNo))) return;
+    const n = Number(classNo);
+    if (n >= stopAt) return;
+    stopAt = n;
+    controllers.forEach((ctrl, key) => {
+      if (Number(key) > stopAt) {
+        try { ctrl.abort(); } catch { /* ignore */ }
+      }
+    });
+  };
+
+  const fetchOne = async (classNo) => {
+    if (classNo > stopAt) return;
     const xkhId = `${prefix}${formatVeClassNumber(classNo)}`;
     const url = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhId)}`;
-    let text = '';
-    let res = null;
+    const controller = new AbortController();
+    controllers.set(classNo, controller);
+
     try {
-      ({ text, res } = await fetchText(url, {
+      const { text, res } = await fetchText(url, {
+        signal: controller.signal,
         headers: {
           Accept: 'application/json, text/javascript, */*; q=0.01',
           'X-Requested-With': 'XMLHttpRequest'
         }
-      }));
-    } catch {
-      break;
-    }
-    if (isLikelyLoginPageHtml(text, res?.url)) break;
+      });
 
-    let data = null;
-    try {
-      data = JSON.parse(String(text || '{}'));
-    } catch {
-      break;
-    }
-    if (String(data?.STATUS) !== '0') break;
+      if (isLikelyLoginPageHtml(text, res?.url)) {
+        markStop(classNo);
+        return;
+      }
 
-    const item = Array.isArray(data?.result) && data.result.length ? data.result[0] : null;
-    if (item) {
+      let data = null;
+      try {
+        data = JSON.parse(String(text || '{}'));
+      } catch {
+        markStop(classNo);
+        return;
+      }
+      if (String(data?.STATUS) !== '0') {
+        markStop(classNo);
+        return;
+      }
+
+      const item = Array.isArray(data?.result) && data.result.length ? data.result[0] : null;
       const teacherName = String(item?.teacherName || '').trim();
       const teacherId = String(item?.teacherId || '').trim();
       const roomName = String(item?.roomName || '').trim();
-      const key = `${teacherId}__${teacherName}__${roomName}`;
-      if ((teacherName || teacherId || roomName) && !seen.has(key)) {
-        seen.add(key);
-        rows.push({ teacherName, teacherId, roomName, xkhId });
-        if (typeof onUpdate === 'function') {
-          onUpdate([...rows], { done: false, error: false });
-        }
+      const hasContent = !!(teacherName || teacherId || roomName);
+      if (!hasContent) {
+        markStop(classNo);
+        return;
       }
+
+      const key = `${teacherId}__${teacherName}__${roomName}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        rows.push({ teacherName, teacherId, roomName, xkhId, classNo });
+        emitUpdate(false);
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      markStop(classNo);
+    } finally {
+      controllers.delete(classNo);
     }
-    classNo += 1;
-  }
+  };
+
+  const worker = async () => {
+    while (true) {
+      const classNo = nextClassNo;
+      nextClassNo += 1;
+      if (classNo > MAX_CLASS_NO) return;
+      if (classNo > stopAt) return;
+      await fetchOne(classNo);
+    }
+  };
+
+  const workerCount = Math.max(1, Math.min(WORKERS, MAX_CLASS_NO));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
   if (typeof onUpdate === 'function') {
-    onUpdate([...rows], { done: true, error: false });
+    emitUpdate(true);
   }
-  return rows;
+  return rows
+    .slice()
+    .sort((a, b) => Number(a.classNo || 0) - Number(b.classNo || 0))
+    .map((it) => ({
+      teacherName: it.teacherName,
+      teacherId: it.teacherId,
+      roomName: it.roomName,
+      xkhId: it.xkhId
+    }));
 }
 
 function renderVeCourseTeachersPopHtml(meta) {
@@ -4051,14 +4118,88 @@ function renderVeCourseTeachersPopHtml(meta) {
   return tableHtml;
 }
 
+function renderVeCourseTeacherRowsHtml(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list.map((it) => {
+    const teacherName = escapeHtml(String(it?.teacherName || '')) || '-';
+    const teacherId = escapeHtml(String(it?.teacherId || '')) || '-';
+    const roomName = escapeHtml(String(it?.roomName || '')) || '-';
+    const teacherIdRaw = String(it?.teacherId || '').trim();
+    const action = teacherIdRaw
+      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdRaw)}">切换至教师账号</button>`
+      : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至教师账号</button>';
+    return `<tr><td>${teacherName}</td><td>${teacherId}</td><td>${roomName}</td><td>${action}</td></tr>`;
+  }).join('');
+}
+
 function updateVeCourseTeachersPopUi(courseId) {
   const cid = String(courseId || '').trim();
   if (!cid) return;
   const meta = window.veCourseTeachersMetaByCourseId?.[cid] || { rows: [], loading: false, loaded: false, error: false };
+  const rows = Array.isArray(meta.rows) ? meta.rows : [];
+  const rowsHash = rows.map((it) => `${String(it?.teacherId || '')}|${String(it?.teacherName || '')}|${String(it?.roomName || '')}|${String(it?.xkhId || '')}`).join('||');
+
   document.querySelectorAll('.ve-course-teacher-pop').forEach((el) => {
     if (!(el instanceof HTMLElement)) return;
     if (String(el.dataset.courseId || '').trim() !== cid) return;
-    el.innerHTML = renderVeCourseTeachersPopHtml(meta);
+
+    let tableWrap = el.querySelector('.ve-course-teacher-table-wrap');
+    let statusLine = el.querySelector('.ve-course-teacher-status-line');
+    let statusSpinner = el.querySelector('.ve-course-teacher-status-spinner');
+    let statusText = el.querySelector('.ve-course-teacher-status-text');
+    if (!(tableWrap instanceof HTMLElement) || !(statusLine instanceof HTMLElement) || !(statusText instanceof HTMLElement)) {
+      el.innerHTML = `
+        <div class="ve-course-teacher-table-wrap"></div>
+        <div class="ve-course-teacher-loading ve-course-teacher-status-line" style="display:none;">
+          <span class="spinner ve-course-teacher-status-spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span>
+          <span class="ve-course-teacher-status-text"></span>
+        </div>
+      `;
+      tableWrap = el.querySelector('.ve-course-teacher-table-wrap');
+      statusLine = el.querySelector('.ve-course-teacher-status-line');
+      statusSpinner = el.querySelector('.ve-course-teacher-status-spinner');
+      statusText = el.querySelector('.ve-course-teacher-status-text');
+      el.dataset.rowsHash = '';
+    }
+    if (!(tableWrap instanceof HTMLElement) || !(statusLine instanceof HTMLElement) || !(statusText instanceof HTMLElement)) return;
+
+    const prevHash = String(el.dataset.rowsHash || '');
+    if (prevHash !== rowsHash) {
+      if (!rows.length) {
+        tableWrap.innerHTML = '';
+      } else {
+        const tbody = renderVeCourseTeacherRowsHtml(rows);
+        tableWrap.innerHTML = `
+          <table class="ve-course-teacher-table">
+            <thead><tr><th>教师姓名</th><th>工号</th><th>教室</th><th>操作</th></tr></thead>
+            <tbody>${tbody}</tbody>
+          </table>
+        `;
+      }
+      el.dataset.rowsHash = rowsHash;
+    }
+
+    statusLine.classList.remove('warning');
+    statusLine.style.display = 'none';
+    if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'inline-block';
+
+    if (meta.loading) {
+      statusLine.style.display = 'flex';
+      statusText.textContent = rows.length ? '正在获取更多同课教师...' : '正在获取同课教师...';
+      return;
+    }
+    if (meta.error) {
+      statusLine.style.display = 'flex';
+      statusLine.classList.add('warning');
+      if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
+      statusText.textContent = rows.length ? '获取同课教师失败，已显示部分结果' : '获取同课教师失败，请稍后重试';
+      return;
+    }
+    if (!rows.length) {
+      statusLine.style.display = 'flex';
+      if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
+      statusText.textContent = '未查询到同课其他教师';
+    }
   });
 }
 
@@ -4175,7 +4316,7 @@ function calcCourseRank(state) {
 
 function sortCourseCards() {
   const cards = Array.from(courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]'));
-  cards.sort((a, b) => {
+  const sortedCards = cards.slice().sort((a, b) => {
     const ra = Number(a.dataset.rank || 3);
     const rb = Number(b.dataset.rank || 3);
     if (ra !== rb) return ra - rb;
@@ -4194,7 +4335,10 @@ function sortCourseCards() {
     const ob = Number(b.dataset.order || 0);
     return oa - ob;
   });
-  cards.forEach((c) => courseListDiv.appendChild(c));
+
+  const unchanged = cards.length === sortedCards.length && cards.every((c, idx) => c === sortedCards[idx]);
+  if (unchanged) return;
+  sortedCards.forEach((c) => courseListDiv.appendChild(c));
 }
 
 function updateCourseCardRank(courseId) {
