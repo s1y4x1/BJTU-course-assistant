@@ -70,7 +70,6 @@ const captchaImg = document.getElementById('captcha-img');
 const captchaInput = document.getElementById('captcha-input');
 const loginBtn = document.getElementById('login-btn');
 const cancelBtn = document.getElementById('cancel-btn');
-const loginProgressText = document.getElementById('login-progress-text');
 const captchaHistoryList = document.getElementById('captcha-history-list');
 const auxContainer = document.getElementById('aux-login-container');
 const auxCheckbox = document.getElementById('aux-login-checkbox');
@@ -146,6 +145,7 @@ window.resourceDownloadBatch = {
 window.resourceDownloadQueue = []; // [{id,item,resolve,reject,cancelled,started,promise}]
 window.resourceDownloadQueueById = {}; // {resourceId: queueEntry}
 window.resourceDownloadQueueRunning = 0;
+window.trackedFetchControllers = new Set();
 let resourceSpaceSearchKeyword = '';
 
 function isPlatformEnabled(platform) {
@@ -1208,11 +1208,10 @@ let highPrioritySwitchTarget = '';
 
 function prioritizeAccountSwitch() {
   window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
-  window.externalPlatformLoadVersion = Number(window.externalPlatformLoadVersion || 0) + 1;
   window.resourceSpaceLoadVersion = Number(window.resourceSpaceLoadVersion || 0) + 1;
-  ['ve', 'ykt', 'mrzy', 'jlgj'].forEach((p) => {
-    bumpPlatformLoadVersion(p);
-  });
+  bumpPlatformLoadVersion('ve');
+  abortTrackedFetchRequests();
+  cancelAllResourceDownloadsForAccountSwitch();
 }
 
 function updateTotalSpeed() {
@@ -1487,7 +1486,7 @@ function promptLoginIfPossible(message) {
 function showToast(message, type = 'success', duration = 3000, allowHtml = false) {
   const container = document.getElementById('toast-container');
   // clear existing info toasts
-  container.querySelectorAll('.toast.info').forEach(el => el.remove());
+  container.querySelectorAll('.toast.info:not([data-sticky="1"])').forEach(el => el.remove());
 
   const text = String(message || '');
   const toast = document.createElement('div');
@@ -1511,6 +1510,33 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
       toast.addEventListener('animationend', () => toast.remove());
     }, duration);
   }
+}
+
+function showBackgroundPortalLoginPendingToast() {
+  const container = document.getElementById('toast-container');
+  if (!(container instanceof HTMLElement)) return;
+
+  const existed = container.querySelector('.toast[data-sticky-toast="bg-login"]');
+  if (existed instanceof HTMLElement) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'toast info';
+  toast.dataset.sticky = '1';
+  toast.dataset.stickyToast = 'bg-login';
+  toast.style.whiteSpace = 'pre-line';
+  toast.textContent = '正在后台登录中…';
+  const spinner = document.createElement('span');
+  spinner.className = 'toast-spinner';
+  toast.appendChild(spinner);
+  container.appendChild(toast);
+}
+
+function hideBackgroundPortalLoginPendingToast() {
+  const container = document.getElementById('toast-container');
+  if (!(container instanceof HTMLElement)) return;
+  container.querySelectorAll('.toast[data-sticky-toast="bg-login"]').forEach((el) => {
+    if (el instanceof HTMLElement) el.remove();
+  });
 }
 
 function formatSize(bytes) {
@@ -1936,7 +1962,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
 function adjustAccountHistorySelectWidth() {
   if (!(accountHistorySelect instanceof HTMLSelectElement)) return;
   const selectedText = String(accountHistorySelect.selectedOptions?.[0]?.text || accountHistorySelect.value || '').trim();
-  const scaledChars = Math.ceil(selectedText.length * 1.6);
+  const scaledChars = Math.ceil(selectedText.length * 1.6)+1;
   accountHistorySelect.style.width = `calc(${scaledChars}ch + 36px)`;
 }
 
@@ -1944,7 +1970,7 @@ function getAccountDisplayName(userId) {
   const uid = String(userId || '').trim();
   if (!uid) return '';
   const hit = loginAccountHistory.find((it) => String(it?.userId || '').trim() === uid);
-  if (!hit) return uid;
+  if (!hit) return '';
   const userName = String(hit.userName || uid).trim();
   const roleName = String(hit.roleName || '').trim();
   return `${roleName}${userName}`;
@@ -1984,6 +2010,24 @@ async function rememberLoggedInAccount(userId, info = null) {
 
 // -------------------- Network helpers --------------------
 async function fetchText(url, options = {}) {
+  const { signal: externalSignal, ...restOptions } = options || {};
+  const controller = new AbortController();
+  const externalAbortHandler = () => {
+    try { controller.abort(); } catch { /* ignore */ }
+  };
+  if (externalSignal instanceof AbortSignal) {
+    if (externalSignal.aborted) {
+      try { controller.abort(); } catch { /* ignore */ }
+    } else {
+      externalSignal.addEventListener('abort', externalAbortHandler, { once: true });
+    }
+  }
+
+  if (!(window.trackedFetchControllers instanceof Set)) {
+    window.trackedFetchControllers = new Set();
+  }
+  window.trackedFetchControllers.add(controller);
+
   const omitSessionId = !!options.omitSessionId;
   const sid = omitSessionId ? '' : await getPlatformSessionId();
   const headers = {
@@ -1994,12 +2038,23 @@ async function fetchText(url, options = {}) {
     headers.sessionId = sid;
   }
 
-  const res = await fetch(url, {
-    credentials: 'include',
-    cache: 'no-store',
-    ...options,
-    headers
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      credentials: 'include',
+      cache: 'no-store',
+      ...restOptions,
+      headers,
+      signal: controller.signal
+    });
+  } finally {
+    if (externalSignal instanceof AbortSignal) {
+      try { externalSignal.removeEventListener('abort', externalAbortHandler); } catch { /* ignore */ }
+    }
+    if (window.trackedFetchControllers instanceof Set) {
+      window.trackedFetchControllers.delete(controller);
+    }
+  }
 
   // auto-refresh runtime sessionId if server provides it
   maybeUpdatePlatformSessionIdFromResponse(res);
@@ -2128,26 +2183,39 @@ let tessInitErrorNotified = false;
 let lastAutoOcrCaptchaText = '';
 const captchaHistoryByNonce = new Map();
 
+function setCaptchaInputHint(message = '') {
+  if (!(captchaInput instanceof HTMLInputElement)) return;
+  const text = String(message || '').trim();
+  captchaInput.placeholder = text || '验证码';
+}
+
 function setLoginProgress(message = '', tone = 'normal') {
-  if (!loginProgressText) return;
-  loginProgressText.textContent = message || '等待登录';
-  if (tone === 'error') {
-    loginProgressText.style.color = '#b91c1c';
-    loginProgressText.style.background = '#fef2f2';
-    loginProgressText.style.borderColor = '#fecaca';
-  } else if (tone === 'warning') {
-    loginProgressText.style.color = '#92400e';
-    loginProgressText.style.background = '#fffbeb';
-    loginProgressText.style.borderColor = '#fde68a';
-  } else if (tone === 'success') {
-    loginProgressText.style.color = '#166534';
-    loginProgressText.style.background = '#f0fdf4';
-    loginProgressText.style.borderColor = '#bbf7d0';
-  } else {
-    loginProgressText.style.color = '#0f766e';
-    loginProgressText.style.background = '#ecfeff';
-    loginProgressText.style.borderColor = '#a5f3fc';
+  const msg = String(message || '').trim();
+  if (!msg || /^等待登录|登录中|登录成功/.test(msg)) {
+    setCaptchaInputHint('');
+    return;
   }
+  if (/识别/.test(msg)) {
+    setCaptchaInputHint('识别中…');
+    return;
+  }
+  if (/验证码获取中/.test(msg)) {
+    setCaptchaInputHint('验证码加载中…');
+  }
+}
+
+function refreshCaptchaWhenIdle(maxWaitMs = 1500) {
+  const start = Date.now();
+  const tryRefresh = async () => {
+    if (!isLoginInProgress || Date.now() - start >= maxWaitMs) {
+      await refreshCaptcha();
+      return;
+    }
+    setTimeout(() => {
+      tryRefresh().catch(() => {});
+    }, 50);
+  };
+  tryRefresh().catch(() => {});
 }
 
 function resetCaptchaHistory() {
@@ -2191,6 +2259,14 @@ function markCaptchaHistoryResult(nonce, text, confidence = null) {
     resultEl.textContent = '识别失败';
     resultEl.style.color = '#b45309';
   }
+}
+
+function normalizeOcrConfidence(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return null;
+  if (n > 100) return null;
+  return Math.max(0, Math.min(1, n / 100));
 }
 
 function preprocessCaptchaToCanvas(imgEl) {
@@ -2271,7 +2347,7 @@ async function ensureTesseractWorker() {
 }
 
 async function ocrCaptchaWithTesseract(imgEl) {
-  if (tessOcrInProgress) return { text: '', confidence: 0 };
+  if (tessOcrInProgress) return { text: '', confidence: null };
   tessOcrInProgress = true;
   try {
     const worker = await ensureTesseractWorker();
@@ -2279,7 +2355,7 @@ async function ocrCaptchaWithTesseract(imgEl) {
     const { data } = await worker.recognize(canvas);
     const digits = String(data?.text || '').replace(/\D/g, '');
     const text = digits.slice(0, 4);
-    const confidence = Math.max(0, Math.min(1, (Number(data?.confidence ?? 0) / 100)));
+    const confidence = normalizeOcrConfidence(data?.confidence);
     if (!/^\d{4}$/.test(text)) return { text: '', confidence };
     return { text, confidence };
   } catch (e) {
@@ -2287,7 +2363,7 @@ async function ocrCaptchaWithTesseract(imgEl) {
       tessInitErrorNotified = true;
       showToast('OCR 初始化失败：' + (e?.message || String(e)), 'error', 4000);
     }
-    return { text: '', confidence: 0 };
+    return { text: '', confidence: null };
   } finally {
     tessOcrInProgress = false;
   }
@@ -2295,6 +2371,7 @@ async function ocrCaptchaWithTesseract(imgEl) {
 async function refreshCaptcha() {
   try {
     lastAutoOcrCaptchaText = '';
+    setCaptchaInputHint('');
     captchaNonce++;
     captchaImg.dataset.nonce = String(captchaNonce);
     setLoginProgress('验证码获取中…');
@@ -2390,6 +2467,7 @@ function shouldUsePortalPageLogin() {
 
 let portalLoginTabId = null;
 let forcePortalLoginInPage = false;
+
 async function ensurePortalLoginTab(active = false) {
   try {
     if (portalLoginTabId) {
@@ -2431,13 +2509,29 @@ async function openPortalLoginForInvalidSession() {
   showLoginModal('登录状态已失效：请在插件中输入验证码重新登录');
 }
 
-async function routeLoginBySessionValidityForSwitch(targetUsername, modalMessage) {
+async function routeLoginBySessionValidityForSwitch(targetUsername, modalMessage, targetInfo = null) {
   jsessionidInput.value = '';
   isLoginSessionValid = true;
   const switchHintEl = document.getElementById('login-welcome-msg');
   if (switchHintEl instanceof HTMLElement) {
-    const displayName = getAccountDisplayName(targetUsername);
-    switchHintEl.textContent = `正在切换至 ${displayName || String(targetUsername || '').trim()}`;
+    let displayName = '';
+    if (targetInfo && typeof targetInfo === 'object') {
+      const roleName = String(targetInfo.roleName || '').trim();
+      const userName = String(targetInfo.userName || '').trim();
+      displayName = `${roleName}${userName}`.trim();
+    }
+    if (!displayName) {
+      displayName = getAccountDisplayName(targetUsername);
+    }
+    if (!displayName) {
+      try {
+        const info = await fetchUserInfoRemote(targetUsername);
+        displayName = info ? `${String(info.roleName || '').trim()}${String(info.userName || '').trim()}` : '';
+      } catch {
+        displayName = '';
+      }
+    }
+    switchHintEl.textContent = displayName ? `正在切换至 ${displayName}` : '正在切换账号';
   }
 
   let pwdMd5 = '';
@@ -2454,7 +2548,6 @@ async function routeLoginBySessionValidityForSwitch(targetUsername, modalMessage
     return;
   }
 
-  showToast('切换账号需要重新校验，正在扩展页内处理', 'warning', 2200);
   showLoginModal(modalMessage || '需要验证码完成账号切换');
 }
 
@@ -2628,7 +2721,12 @@ async function submitPortalLoginWithCaptchaRetries(username, passwordMd5, fallba
     }
 
     setLoginProgress(`验证码已同步（第 ${attempt + 1} 次提交）`);
-    lastResult = await openPortalAndSubmitLoginInPage(username, passwordMd5, passcode);
+    showBackgroundPortalLoginPendingToast();
+    try {
+      lastResult = await openPortalAndSubmitLoginInPage(username, passwordMd5, passcode);
+    } finally {
+      hideBackgroundPortalLoginPendingToast();
+    }
     if (lastResult.ok || lastResult.reason !== 'captcha') return lastResult;
 
     captchaErrorRetryCount++;
@@ -3029,17 +3127,17 @@ async function doLoginFlow() {
                 setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
                 return;
               }
-              await refreshCaptcha();
+              refreshCaptchaWhenIdle();
               return;
             }
             showToast('验证码错误次数过多，请手动输入', 'warning', 2500);
             setLoginProgress('验证码重试已达上限，请手动输入', 'warning');
             lastLoginFailedByCaptcha = true;
-            await refreshCaptcha();
+            refreshCaptchaWhenIdle();
             return;
           }
           showToast('辅助账号登录失败: ' + (auxRes.message || '未知错误'), 'error');
-          await refreshCaptcha();
+          refreshCaptchaWhenIdle();
           return;
         }
 
@@ -3067,7 +3165,7 @@ async function doLoginFlow() {
           lastLoginFailedByCaptcha = false;
           autoOcrAutoSubmitUsed = false;
           if (loginCancelRequested) return;
-          await refreshCaptcha();
+          refreshCaptchaWhenIdle();
           return;
         }
         showToast('验证码错误次数过多，请手动输入', 'warning', 2500);
@@ -3082,7 +3180,7 @@ async function doLoginFlow() {
         setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
         return;
       }
-      await refreshCaptcha();
+      refreshCaptchaWhenIdle();
       return;
     }
 
@@ -3135,6 +3233,12 @@ async function doLoginFlow() {
     await loadResourceSpaceForCurrentAccount();
 
   } finally {
+    if (wasSwitchingAccount && pendingUsernameChange) {
+      if (isPlatformEnabled('ve')) {
+        try { await loadCourses(); } catch { /* ignore */ }
+      }
+      try { await loadResourceSpaceForCurrentAccount(); } catch { /* ignore */ }
+    }
     forcePortalLoginInPage = false;
     isLoginInProgress = false;
     if (loginBtn) {
@@ -3684,6 +3788,30 @@ function cancelResourceDownload(resourceId) {
     return true;
   }
   return false;
+}
+
+function cancelAllResourceDownloadsForAccountSwitch() {
+  const taskIds = Object.keys(window.resourceDownloadTasks || {});
+  taskIds.forEach((rid) => {
+    cancelResourceDownload(rid);
+  });
+
+  const queuedIds = Object.keys(window.resourceDownloadQueueById || {});
+  queuedIds.forEach((rid) => {
+    cancelResourceDownload(rid);
+  });
+
+  resetResourceDownloadBatch();
+  updateResourceDownloadTotals();
+}
+
+function abortTrackedFetchRequests() {
+  if (!(window.trackedFetchControllers instanceof Set)) return;
+  const ctrls = Array.from(window.trackedFetchControllers);
+  ctrls.forEach((ctrl) => {
+    try { ctrl.abort(); } catch { /* ignore */ }
+  });
+  window.trackedFetchControllers.clear();
 }
 
 function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '' } = {}) {
@@ -5603,7 +5731,11 @@ function setCourseCoursewareLoading(courseId, isLoading) {
 
 function setCoursewareButtonLoading(btn, isLoading) {
   if (!btn) return;
+  const currentCountRaw = Number(btn.dataset.coursewareLoadingCount || 0);
+  const currentCount = Number.isFinite(currentCountRaw) ? Math.max(0, currentCountRaw) : 0;
   if (isLoading) {
+    const nextCount = currentCount + 1;
+    btn.dataset.coursewareLoadingCount = String(nextCount);
     if (btn.classList.contains('courseware-list-loading')) {
       btn.disabled = true;
       btn.style.pointerEvents = 'none';
@@ -5615,6 +5747,15 @@ function setCoursewareButtonLoading(btn, isLoading) {
     btn.innerHTML = '课件下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;"></span>';
     return;
   }
+
+  const nextCount = Math.max(0, currentCount - 1);
+  btn.dataset.coursewareLoadingCount = String(nextCount);
+  if (nextCount > 0) {
+    btn.disabled = true;
+    btn.style.pointerEvents = 'none';
+    return;
+  }
+
   btn.disabled = false;
   btn.style.pointerEvents = 'auto';
   btn.classList.remove('courseware-list-loading');
@@ -7518,6 +7659,8 @@ function renderCourseList(courses) {
     const hwPromise = checkHomework(courseId);
     if (btnCourseware) {
       hwPromise.finally(() => {
+        // Balance the initial preloading spinner before entering actual auto-load phase.
+        setCoursewareButtonLoading(btnCourseware, false);
         autoLoadCourseware(btnCourseware, courseId, courseNumRaw, fzId).catch(() => {});
       });
     }
@@ -8858,6 +9001,7 @@ captchaImg.addEventListener('load', async () => {
     if (!captchaImg.naturalWidth) return;
 
     const nonce = captchaImg.dataset.nonce || '';
+    setCaptchaInputHint('识别中…');
 
     const { text, confidence } = await ocrCaptchaWithTesseract(captchaImg);
     // captcha might have been refreshed while OCR was running
@@ -8865,6 +9009,7 @@ captchaImg.addEventListener('load', async () => {
     if (!text) {
       markCaptchaHistoryResult(nonce, '', confidence);
       setLoginProgress('验证码识别失败，正在刷新…', 'warning');
+      setCaptchaInputHint('识别失败，正在刷新…');
       if (!isLoginInProgress) {
         autoOcrAutoSubmitUsed = false;
         await refreshCaptcha();
@@ -8878,8 +9023,7 @@ captchaImg.addEventListener('load', async () => {
     captchaInput.value = text;
     captchaInput.style.backgroundColor = '#e8f5e9';
     setTimeout(() => captchaInput.style.backgroundColor = '', 400);
-    setLoginProgress(`识别验证码: ${text}`);
-    showToast(`验证码识别: ${text}（置信度 ${(confidence * 100).toFixed(0)}%）`, 'info', 1200);
+    setCaptchaInputHint('');
 
     // Auto-submit: allow retry when captcha is wrong (bounded by MAX_AUTO_SUBMITS_PER_MODAL).
     const canAutoSubmit = !isLoginInProgress && !autoOcrAutoSubmitUsed && autoOcrAttemptCount < MAX_AUTO_SUBMITS_PER_MODAL;
@@ -8895,6 +9039,7 @@ captchaImg.addEventListener('load', async () => {
   }
 });
 captchaInput.addEventListener('input', (e) => {
+  setCaptchaInputHint('');
   e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
   if (e.target.value.length === 4) {
     doLoginFlow();
@@ -8918,6 +9063,9 @@ cancelBtn.addEventListener('click', () => {
     usernameInput.value = backTo;
     lastValidUsername = backTo;
     setLocal('username', backTo);
+    renderLoginAccountHistorySelect(backTo);
+    if (isPlatformEnabled('ve')) loadCourses();
+    loadResourceSpaceForCurrentAccount().catch(() => {});
     (async () => {
       try {
         setWelcomeMessage(backTo ? await fetchUserInfoRemote(backTo) : null);
@@ -9098,12 +9246,14 @@ courseListDiv.addEventListener('click', async (e) => {
 
 if (resourceSpaceList) {
   resourceSpaceList.addEventListener('click', async (e) => {
-    const t = e.target;
+    const rawTarget = e.target;
+    const t = rawTarget instanceof Element ? rawTarget : rawTarget?.parentElement;
     if (!(t instanceof HTMLElement)) return;
 
     const titleRow = t.closest('.resource-row-title');
     if (titleRow instanceof HTMLElement && !t.closest('a,button,input,textarea,select,label')) {
-      const cb = titleRow.querySelector('input[data-action="resource-check"][data-resource-id]');
+      const rowScope = titleRow.closest('.file-item') || titleRow;
+      const cb = rowScope.querySelector('input[data-action="resource-check"][data-resource-id]');
       if (cb instanceof HTMLInputElement) {
         cb.checked = !cb.checked;
         cb.dispatchEvent(new Event('change', { bubbles: true }));
@@ -9301,11 +9451,30 @@ usernameInput.addEventListener('change', async () => {
   if (isHighPrioritySwitch || isManualSwitch) {
     highPrioritySwitchTarget = '';
     prioritizeAccountSwitch();
+    const validResult = await validateUserIdRemote(u);
+    if (!validResult.ok && validResult.status === '4') {
+      showToast('该账号不存在，已恢复原账号', 'error');
+      usernameInput.value = lastValidUsername;
+      setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
+      renderLoginAccountHistorySelect(lastValidUsername);
+      if (isPlatformEnabled('ve')) loadCourses();
+      await loadResourceSpaceForCurrentAccount();
+      return;
+    }
+    if (!validResult.ok) {
+      showToast('无法验证账号有效性，请稍后重试', 'warning');
+      usernameInput.value = lastValidUsername;
+      setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
+      renderLoginAccountHistorySelect(lastValidUsername);
+      if (isPlatformEnabled('ve')) loadCourses();
+      await loadResourceSpaceForCurrentAccount();
+      return;
+    }
     pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: u } : null;
     isLoginSessionValid = true;
-    setWelcomeMessage(null);
+    setWelcomeMessage(validResult.ok ? validResult.info : null);
     renderLoginAccountHistorySelect(u);
-    await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号');
+    await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号', validResult.ok ? validResult.info : null);
     return;
   }
   const isFirstLogin = !lastValidUsername;
@@ -9333,11 +9502,17 @@ usernameInput.addEventListener('change', async () => {
       usernameInput.value = lastValidUsername;
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
       renderLoginAccountHistorySelect(lastValidUsername);
+      if (isPlatformEnabled('ve')) loadCourses();
+      await loadResourceSpaceForCurrentAccount();
       return;
     }
-    showToast('无法验证账号有效性，将继续尝试登录', 'warning');
-    pendingUsernameChange = isFirstLogin ? null : { from: lastValidUsername, to: u };
-    setWelcomeMessage(null);
+    showToast('无法验证账号有效性，请稍后重试', 'warning');
+    usernameInput.value = lastValidUsername;
+    setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
+    renderLoginAccountHistorySelect(lastValidUsername);
+    if (isPlatformEnabled('ve')) loadCourses();
+    await loadResourceSpaceForCurrentAccount();
+    return;
   } else {
     // valid
     pendingUsernameChange = isFirstLogin ? null : { from: lastValidUsername, to: u };
@@ -9370,7 +9545,7 @@ usernameInput.addEventListener('change', async () => {
       // Existing valid login session: switch account inside extension flow only.
       pendingUsernameChange = { from: detected, to: u };
       isLoginSessionValid = true;
-      await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号');
+      await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号', result.ok ? result.info : null);
     } else {
       if (isFirstLogin) {
         isLoginSessionValid = false;

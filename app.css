@@ -1167,19 +1167,6 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             position: relative;
         }
         #login-modal .login-panel h3 { margin: 0 0 10px; color: #1f2937; }
-        .login-status-line {
-            min-height: 22px;
-            margin: 6px 0 10px;
-            font-size: 13px;
-            color: #0f766e;
-            background: #ecfeff;
-            border: 1px solid #a5f3fc;
-            border-radius: 8px;
-            padding: 4px 8px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
         .login-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
