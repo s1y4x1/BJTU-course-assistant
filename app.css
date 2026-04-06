@@ -736,12 +736,11 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .version-min-btn:hover {
             background: #475569;
         }
-        .top-inline-controls #welcome-msg {
-            color: #111827;
-            font-weight: 600;
+        .top-inline-controls #account-history-select {
             margin-left: 4px;
             margin-right: 4px;
-            white-space: nowrap;
+            color: #111827;
+            font-weight: 600;
         }
         .upload-summary-area {
             margin-bottom: 15px;

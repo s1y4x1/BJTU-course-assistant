@@ -33,6 +33,7 @@ const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const fileList = document.getElementById('file-list');
 const usernameInput = document.getElementById('username-input');
+const accountHistorySelect = document.getElementById('account-history-select');
 const jsessionidInput = document.getElementById('jsessionid-input');
 const totalServerBar = document.getElementById('total-server-bar');
 const totalSizeInfoDiv = document.getElementById('total-size-info');
@@ -996,7 +997,26 @@ function isPlatformChecking(platform) {
 function togglePlatformSelection(platform) {
   if (!platform || !['ve', 'ykt', 'mrzy', 'jlgj'].includes(platform)) return;
   if (isPlatformChecking(platform)) {
-    showToast('平台正在加载中，请稍后再试', 'warning', 1200);
+    window.platformEnabled[platform] = false;
+    window.platformLoadedOnce[platform] = false;
+    bumpPlatformLoadVersion(platform);
+    setPlatformLoginState(platform, 'offline');
+    savePlatformEnabledToStorage().catch(() => {});
+    refreshPlatformLoginTip();
+
+    if (platform === 've') {
+      window.currentVeCourseList = [];
+      window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
+      renderCourseList([]);
+      rematchExternalByVeCourses();
+      rerenderAllHomeworkAreas();
+      if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
+      if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+      if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
+    } else {
+      clearPlatformData(platform);
+      rerenderAllHomeworkAreas();
+    }
     return;
   }
 
@@ -1181,6 +1201,19 @@ let lastValidUsername = '';
 let pendingUsernameChange = null; // { from: string, to: string } | null
 let isLoginInProgress = false;
 let loginCancelRequested = false;
+const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
+let loginAccountHistory = []; // [{userId,userName,roleName,lastLoginAt}]
+let isSyncingAccountHistorySelect = false;
+let highPrioritySwitchTarget = '';
+
+function prioritizeAccountSwitch() {
+  window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
+  window.externalPlatformLoadVersion = Number(window.externalPlatformLoadVersion || 0) + 1;
+  window.resourceSpaceLoadVersion = Number(window.resourceSpaceLoadVersion || 0) + 1;
+  ['ve', 'ykt', 'mrzy', 'jlgj'].forEach((p) => {
+    bumpPlatformLoadVersion(p);
+  });
+}
 
 function updateTotalSpeed() {
   let total = 0;
@@ -1827,16 +1860,126 @@ async function validateUserIdRemote(userId) {
 }
 
 function setWelcomeMessage(info) {
-  const msgEl = document.getElementById('welcome-msg');
   const loginMsgEl = document.getElementById('login-welcome-msg');
-  if (!info) {
-    if (msgEl) msgEl.textContent = '';
-    if (loginMsgEl) loginMsgEl.textContent = '';
+  const msg = info ? `${info.roleName || ''}${info.userName || ''}` : '';
+  if (loginMsgEl) loginMsgEl.textContent = msg;
+}
+
+function normalizeLoginAccountHistoryList(rawList) {
+  const list = Array.isArray(rawList) ? rawList : [];
+  return list
+    .map((it) => {
+      const userId = String(it?.userId || '').trim();
+      if (!userId) return null;
+      const userName = String(it?.userName || '').trim();
+      const roleName = String(it?.roleName || '').trim();
+      const lastLoginAt = Number(it?.lastLoginAt || 0);
+      return {
+        userId,
+        userName,
+        roleName,
+        lastLoginAt: Number.isFinite(lastLoginAt) ? lastLoginAt : 0
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number(b.lastLoginAt || 0) - Number(a.lastLoginAt || 0));
+}
+
+function renderLoginAccountHistorySelect(currentUserId = '') {
+  if (!(accountHistorySelect instanceof HTMLSelectElement)) return;
+  const current = String(currentUserId || usernameInput?.value || '').trim();
+  isSyncingAccountHistorySelect = true;
+  accountHistorySelect.innerHTML = '';
+
+  const list = normalizeLoginAccountHistoryList(loginAccountHistory);
+  if (!list.length) {
+    const emptyOpt = document.createElement('option');
+    emptyOpt.value = '';
+    emptyOpt.textContent = '';
+    accountHistorySelect.appendChild(emptyOpt);
+    accountHistorySelect.value = '';
+    isSyncingAccountHistorySelect = false;
     return;
   }
-  const msg = `${info.roleName || ''}${info.userName || ''}`;
-  if (msgEl) msgEl.textContent = msg;
-  if (loginMsgEl) loginMsgEl.textContent = msg;
+
+  let selectedUserId = current;
+  if (!list.some((it) => it.userId === selectedUserId)) {
+    selectedUserId = String(list[0]?.userId || '').trim();
+  }
+
+  const selectedRecord = list.find((it) => it.userId === selectedUserId) || list[0];
+  if (selectedRecord) {
+    const opt = document.createElement('option');
+    opt.value = selectedRecord.userId;
+    const selectedName = String(selectedRecord.userName || selectedRecord.userId || '未知用户').trim();
+    const selectedRole = String(selectedRecord.roleName || '').trim();
+    opt.textContent = `${selectedRole}${selectedName}`;
+    accountHistorySelect.appendChild(opt);
+  }
+
+  list
+    .filter((it) => it.userId !== selectedUserId)
+    .forEach((it) => {
+      const opt = document.createElement('option');
+      opt.value = it.userId;
+      const userName = String(it.userName || it.userId || '未知用户').trim();
+      const roleName = String(it.roleName || '').trim();
+      opt.textContent = `${roleName}${userName} (${it.userId})`;
+      accountHistorySelect.appendChild(opt);
+    });
+
+  accountHistorySelect.value = selectedUserId;
+  adjustAccountHistorySelectWidth();
+  isSyncingAccountHistorySelect = false;
+}
+
+function adjustAccountHistorySelectWidth() {
+  if (!(accountHistorySelect instanceof HTMLSelectElement)) return;
+  const selectedText = String(accountHistorySelect.selectedOptions?.[0]?.text || accountHistorySelect.value || '').trim();
+  const scaledChars = Math.ceil(selectedText.length * 1.6);
+  accountHistorySelect.style.width = `calc(${scaledChars}ch + 36px)`;
+}
+
+function getAccountDisplayName(userId) {
+  const uid = String(userId || '').trim();
+  if (!uid) return '';
+  const hit = loginAccountHistory.find((it) => String(it?.userId || '').trim() === uid);
+  if (!hit) return uid;
+  const userName = String(hit.userName || uid).trim();
+  const roleName = String(hit.roleName || '').trim();
+  return `${roleName}${userName}`;
+}
+
+async function loadLoginAccountHistory() {
+  try {
+    const raw = await getLocal(LOGIN_ACCOUNT_HISTORY_KEY, []);
+    loginAccountHistory = normalizeLoginAccountHistoryList(raw);
+  } catch {
+    loginAccountHistory = [];
+  }
+}
+
+async function saveLoginAccountHistory() {
+  loginAccountHistory = normalizeLoginAccountHistoryList(loginAccountHistory);
+  await setLocal(LOGIN_ACCOUNT_HISTORY_KEY, loginAccountHistory);
+}
+
+async function rememberLoggedInAccount(userId, info = null) {
+  const uid = String(userId || '').trim();
+  if (!uid) return;
+  const nextInfo = info && typeof info === 'object' ? info : {};
+  const idx = loginAccountHistory.findIndex((it) => String(it?.userId || '').trim() === uid);
+  const prev = idx >= 0 ? loginAccountHistory[idx] : null;
+  const record = {
+    userId: uid,
+    userName: String(nextInfo.userName || prev?.userName || '').trim(),
+    roleName: String(nextInfo.roleName || prev?.roleName || '').trim(),
+    lastLoginAt: Date.now()
+  };
+  if (idx >= 0) loginAccountHistory.splice(idx, 1);
+  loginAccountHistory.unshift(record);
+  await saveLoginAccountHistory();
+  renderLoginAccountHistorySelect(uid);
 }
 
 // -------------------- Network helpers --------------------
@@ -2291,6 +2434,11 @@ async function openPortalLoginForInvalidSession() {
 async function routeLoginBySessionValidityForSwitch(targetUsername, modalMessage) {
   jsessionidInput.value = '';
   isLoginSessionValid = true;
+  const switchHintEl = document.getElementById('login-welcome-msg');
+  if (switchHintEl instanceof HTMLElement) {
+    const displayName = getAccountDisplayName(targetUsername);
+    switchHintEl.textContent = `正在切换至 ${displayName || String(targetUsername || '').trim()}`;
+  }
 
   let pwdMd5 = '';
   try {
@@ -2614,10 +2762,13 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
           isLoginSessionValid = true;
           updateJsessionidState();
           try {
-            setWelcomeMessage(await fetchUserInfoRemote(switchTarget));
+            const info = await fetchUserInfoRemote(switchTarget);
+            setWelcomeMessage(info);
+            await rememberLoggedInAccount(switchTarget, info);
           } catch {
             setWelcomeMessage(null);
           }
+          renderLoginAccountHistorySelect(switchTarget);
 
           hideLoginModal();
           showLoginModal('已用 8888 登录成功，正在扩展页切回目标账号');
@@ -2634,10 +2785,13 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
           isLoginSessionValid = true;
           updateJsessionidState();
           try {
-            setWelcomeMessage(await fetchUserInfoRemote(detected));
+            const info = await fetchUserInfoRemote(detected);
+            setWelcomeMessage(info);
+            await rememberLoggedInAccount(detected, info);
           } catch {
             setWelcomeMessage(null);
           }
+          renderLoginAccountHistorySelect(detected);
           hideLoginModal();
           showToast('检测到已在原页面登录成功', 'success', 1800);
         }
@@ -2965,7 +3119,9 @@ async function doLoginFlow() {
     try {
       const info = await fetchUserInfoRemote(finalUser);
       setWelcomeMessage(info);
+      await rememberLoggedInAccount(finalUser, info);
     } catch {}
+    renderLoginAccountHistorySelect(finalUser);
 
     // run pending callbacks
     const cbCount = runPendingLoginCallbacks();
@@ -9137,12 +9293,28 @@ document.addEventListener('click', (e) => {
 
 usernameInput.addEventListener('change', async () => {
   const u = usernameInput.value.trim();
+  const isManualSwitch = !!u && !!lastValidUsername && u !== String(lastValidUsername || '').trim();
+  const isHighPrioritySwitch = !!u && String(highPrioritySwitchTarget || '').trim() === u;
+  if (!isHighPrioritySwitch && highPrioritySwitchTarget && String(highPrioritySwitchTarget).trim() !== u) {
+    highPrioritySwitchTarget = '';
+  }
+  if (isHighPrioritySwitch || isManualSwitch) {
+    highPrioritySwitchTarget = '';
+    prioritizeAccountSwitch();
+    pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: u } : null;
+    isLoginSessionValid = true;
+    setWelcomeMessage(null);
+    renderLoginAccountHistorySelect(u);
+    await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号');
+    return;
+  }
   const isFirstLogin = !lastValidUsername;
   updateJsessionidState();
   if (!u) {
     // treat as cleared
     await setLocal('username', '');
     setWelcomeMessage(null);
+    renderLoginAccountHistorySelect('');
     lastValidUsername = '';
     pendingUsernameChange = null;
     // keep jsessionid for manual mode; do not force modal
@@ -9160,6 +9332,7 @@ usernameInput.addEventListener('change', async () => {
       showToast('该账号不存在，已恢复原账号', 'error');
       usernameInput.value = lastValidUsername;
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
+      renderLoginAccountHistorySelect(lastValidUsername);
       return;
     }
     showToast('无法验证账号有效性，将继续尝试登录', 'warning');
@@ -9179,6 +9352,17 @@ usernameInput.addEventListener('change', async () => {
       await setLocal('username', u);
       pendingUsernameChange = null;
       await syncJsessionidToUi();
+      let info = result.ok ? result.info : null;
+      if (!info) {
+        try {
+          info = await fetchUserInfoRemote(u);
+        } catch {
+          info = null;
+        }
+      }
+      setWelcomeMessage(info);
+      await rememberLoggedInAccount(u, info);
+      renderLoginAccountHistorySelect(u);
       showToast('该账号登录处于有效状态', 'success');
       if (isPlatformEnabled('ve')) loadCourses();
       await loadResourceSpaceForCurrentAccount();
@@ -9202,6 +9386,19 @@ usernameInput.addEventListener('change', async () => {
   }
 });
 
+if (accountHistorySelect instanceof HTMLSelectElement) {
+  accountHistorySelect.addEventListener('change', () => {
+    if (isSyncingAccountHistorySelect) return;
+    const picked = String(accountHistorySelect.value || '').trim();
+    if (!picked) return;
+    const current = String(usernameInput.value || '').trim();
+    if (picked === current) return;
+    highPrioritySwitchTarget = picked;
+    usernameInput.value = picked;
+    usernameInput.dispatchEvent(new Event('change'));
+  });
+}
+
   jsessionidInput.addEventListener('change', async () => {
     if (jsessionidInput.readOnly) return;
     const v = jsessionidInput.value.trim();
@@ -9221,6 +9418,7 @@ usernameInput.addEventListener('change', async () => {
   // Run update check in background to avoid blocking other startup requests.
   loadVersionInfo().catch(() => {});
   refreshPlatformLoginTip();
+  await loadLoginAccountHistory();
 
   // 不默认使用本地保存账号。
   lastValidUsername = (await getLocal('username', '')).trim();
@@ -9240,12 +9438,14 @@ usernameInput.addEventListener('change', async () => {
       welcomeInfo = await fetchUserInfoRemote(lastValidUsername);
       welcomeInfoUserId = lastValidUsername;
       setWelcomeMessage(welcomeInfo);
+      await rememberLoggedInAccount(lastValidUsername, welcomeInfo);
     } catch {
       setWelcomeMessage(null);
     }
   } else {
     setWelcomeMessage(null);
   }
+  renderLoginAccountHistorySelect(lastValidUsername);
   updateJsessionidState();
 
   await syncJsessionidToUi();
@@ -9260,13 +9460,17 @@ usernameInput.addEventListener('change', async () => {
       updateJsessionidState();
       if (welcomeInfoUserId === detected && welcomeInfo) {
         setWelcomeMessage(welcomeInfo);
+        await rememberLoggedInAccount(detected, welcomeInfo);
       } else {
         try {
-          setWelcomeMessage(await fetchUserInfoRemote(detected));
+          const info = await fetchUserInfoRemote(detected);
+          setWelcomeMessage(info);
+          await rememberLoggedInAccount(detected, info);
         } catch {
           // ignore
         }
       }
+      renderLoginAccountHistorySelect(detected);
     }
   } catch {
     // ignore
