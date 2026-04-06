@@ -241,6 +241,12 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             gap: 8px;
             margin-bottom: 6px;
         }
+        .resource-space-header-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
         .resource-space-title {
             font-size: 24px;
             font-weight: 700;
@@ -248,16 +254,47 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         .resource-space-count {
             font-size: 13px;
+        #resource-search-input {
+            width: 160px;
+            min-width: 120px;
+            padding: 5px 8px;
+            font-size: 12px;
+        }
             color: #6b7280;
         }
         .resource-space-actions {
             display: flex;
+        #resource-select-all-btn {
+            background: #1e3a8a !important;
+            padding: 3px 8px !important;
+            font-size: 11px !important;
+            line-height: 1.2 !important;
+        }
+        #resource-select-all-btn:hover {
+            background: #1e40af !important;
+        }
             align-items: center;
             gap: 6px;
             flex-wrap: wrap;
             flex-shrink: 0;
         }
         .resource-space-actions .btn {
+        .courseware-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            margin-bottom: 6px;
+        }
+        .courseware-select-all-btn {
+            padding: 3px 8px !important;
+            font-size: 11px !important;
+            line-height: 1.2 !important;
+            white-space: nowrap;
+            background: #1e3a8a !important;
+        }
+        .courseware-select-all-btn:hover {
+            background: #1e40af !important;
+        }
             padding: 5px 10px;
             font-size: 12px;
         }

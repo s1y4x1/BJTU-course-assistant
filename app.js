@@ -42,6 +42,8 @@ const copyAllBtn = document.getElementById('copy-all-btn');
 const resourceSpaceSection = document.getElementById('resource-space-section');
 const resourceSpaceStatus = document.getElementById('resource-space-status');
 const resourceSpaceList = document.getElementById('resource-space-list');
+const resourceSearchInput = document.getElementById('resource-search-input');
+const resourceSelectAllBtn = document.getElementById('resource-select-all-btn');
 const resourceCopySelectedBtn = document.getElementById('resource-copy-selected-btn');
 const resourceDownloadSelectedBtn = document.getElementById('resource-download-selected-btn');
 const resourceSpaceCount = document.getElementById('resource-space-count');
@@ -143,6 +145,7 @@ window.resourceDownloadBatch = {
 window.resourceDownloadQueue = []; // [{id,item,resolve,reject,cancelled,started,promise}]
 window.resourceDownloadQueueById = {}; // {resourceId: queueEntry}
 window.resourceDownloadQueueRunning = 0;
+let resourceSpaceSearchKeyword = '';
 
 function isPlatformEnabled(platform) {
   const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
@@ -353,16 +356,28 @@ function ensureVersionNoticeModal() {
 }
 
 function openVersionNoticeModal() {
-  if (versionButtonMode !== 'outdated') return;
+  if (versionButtonMode !== 'outdated' && versionButtonMode !== 'latest') return;
   const modal = ensureVersionNoticeModal();
   if (!modal) return;
   const titleEl = modal.querySelector('#version-notice-title');
   const bodyEl = modal.querySelector('#version-notice-body');
+  const downloadBtn = modal.querySelector('#version-notice-download');
+  const ignoreBtn = modal.querySelector('#version-notice-ignore');
   if (titleEl instanceof HTMLElement) {
-    titleEl.textContent = `发现新版本：${versionButtonLatestVersion || '--'}`;
+    if (versionButtonMode === 'latest') {
+      titleEl.textContent = `已是最新版本：${versionButtonLatestVersion || '--'}`;
+    } else {
+      titleEl.textContent = `发现新版本：${versionButtonLatestVersion || '--'}`;
+    }
   }
   if (bodyEl instanceof HTMLElement) {
     bodyEl.innerHTML = renderMarkdownBasic(versionButtonLatestBodyMarkdown);
+  }
+  if (downloadBtn instanceof HTMLButtonElement) {
+    downloadBtn.style.display = versionButtonMode === 'outdated' ? 'block' : 'none';
+  }
+  if (ignoreBtn instanceof HTMLButtonElement) {
+    ignoreBtn.style.display = versionButtonMode === 'outdated' ? 'flex' : 'none';
   }
   modal.style.display = 'flex';
   syncVersionNoticeDownloadButton();
@@ -676,7 +691,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', do
   versionButtonLatestBodyMarkdown = String(body || '').trim();
 
   versionBtn.className = `version-btn ${versionButtonMode}`;
-  versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated');
+  versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated' || versionButtonMode === 'latest');
 
   if (versionButtonMode === 'loading') {
     versionBtn.innerHTML = '<span class="version-btn-spinner"></span><span>获取最新版本中...</span>';
@@ -720,6 +735,17 @@ function buildAggregatedReleaseNotes(releases = [], localVersion = '', latestVer
     if (!tag) return false;
     return compareVersionText(tag, localVersion) > 0 && compareVersionText(tag, latestVersion) <= 0;
   });
+  if (!items.length) return '';
+  return items.map((r) => {
+    const tag = String(r.tag_name || '').trim();
+    const body = String(r.body || '').trim() || '此版本暂无更新说明。';
+    return `## ${tag}\n${body}`;
+  }).join('\n\n---\n\n');
+}
+
+function buildAllReleaseNotes(releases = []) {
+  const list = Array.isArray(releases) ? releases : [];
+  const items = list.filter((r) => !r?.draft && String(r?.tag_name || '').trim());
   if (!items.length) return '';
   return items.map((r) => {
     const tag = String(r.tag_name || '').trim();
@@ -772,7 +798,12 @@ async function loadVersionInfo() {
 
     const cmp = compareVersionText(latestTag, localVersion);
     if (cmp === 0) {
-      setVersionButtonState('latest', { localVersion, latestVersion: latestTag });
+      const historyBody = buildAllReleaseNotes(releases);
+      setVersionButtonState('latest', {
+        localVersion,
+        latestVersion: latestTag,
+        body: historyBody
+      });
       return;
     }
     if (cmp > 0) {
@@ -806,9 +837,16 @@ async function loadVersionInfo() {
 }
 
 if (versionBtn) {
-  versionBtn.addEventListener('click', () => {
+  versionBtn.addEventListener('click', async () => {
     if (versionButtonMode === 'failure') {
       loadVersionInfo().catch(() => {});
+      return;
+    }
+    if (versionButtonMode === 'latest') {
+      await loadVersionInfo().catch(() => {});
+      if (versionButtonMode === 'latest' || versionButtonMode === 'outdated') {
+        openVersionNoticeModal();
+      }
       return;
     }
     if (versionButtonMode === 'outdated') {
@@ -3087,6 +3125,47 @@ function setResourceSpaceCount(count = 0, mode = 'total') {
   resourceSpaceCount.textContent = `共 ${n} 个资源文件`;
 }
 
+function normalizeResourceSearchKeyword(v) {
+  return String(v || '').trim();
+}
+
+function getResourceSpaceSelectableIds() {
+  const list = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
+  return list
+    .map((it) => String(it?.id || '').trim())
+    .filter((id) => id && !isResourceDownloadActive(id));
+}
+
+function refreshResourceSelectAllButton() {
+  if (!(resourceSelectAllBtn instanceof HTMLButtonElement)) return;
+  const ids = getResourceSpaceSelectableIds();
+  resourceSelectAllBtn.textContent = '反选';
+  if (!ids.length) {
+    resourceSelectAllBtn.disabled = true;
+    return;
+  }
+  resourceSelectAllBtn.disabled = false;
+}
+
+function invertResourceSpaceSelectionByVisibleItems() {
+  const ids = getResourceSpaceSelectableIds();
+  ids.forEach((id) => {
+    if (window.resourceSpaceSelected.has(id)) window.resourceSpaceSelected.delete(id);
+    else window.resourceSpaceSelected.add(id);
+  });
+
+  if (resourceSpaceList instanceof HTMLElement) {
+    const cbs = resourceSpaceList.querySelectorAll('input[data-action="resource-check"][data-resource-id]');
+    cbs.forEach((el) => {
+      if (!(el instanceof HTMLInputElement)) return;
+      const id = String(el.dataset.resourceId || '').trim();
+      if (!id || isResourceDownloadActive(id)) return;
+      el.checked = window.resourceSpaceSelected.has(id);
+    });
+  }
+  refreshResourceSelectAllButton();
+}
+
 function normalizeResourceUrl(v) {
   const raw = String(v || '').trim();
   if (!raw) return '';
@@ -3784,6 +3863,7 @@ function renderResourceSpaceList() {
   const list = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
   if (!list.length) {
     resourceSpaceList.innerHTML = '<div style="font-size:12px; color:#999;">暂无资源文件</div>';
+    refreshResourceSelectAllButton();
     return;
   }
 
@@ -3826,12 +3906,15 @@ function renderResourceSpaceList() {
       </div>
     `;
   }).join('');
+  refreshResourceSelectAllButton();
   updateResourceDownloadTotals();
 }
 
-async function fetchResourceSpaceListRaw(rows = 10) {
+async function fetchResourceSpaceListRaw(rows = 10, searchName = '') {
   const url = `${BASE_VE}back/resourceSpace.shtml?method=resourceSpaceList`;
-  const body = new URLSearchParams({ type: '1', rows: String(Math.max(1, Number(rows) || 10)) });
+  const safeRows = String(Math.max(1, Number(rows) || 10));
+  const encodedSearch = encodeURIComponent(encodeURIComponent(normalizeResourceSearchKeyword(searchName)));
+  const body = `type=1&rows=${safeRows}&searchName=${encodedSearch}`;
   const { text, res } = await fetchText(url, {
     method: 'POST',
     headers: {
@@ -3839,7 +3922,7 @@ async function fetchResourceSpaceListRaw(rows = 10) {
       Accept: 'application/json, text/javascript, */*; q=0.01',
       'X-Requested-With': 'XMLHttpRequest'
     },
-    body: body.toString()
+    body
   });
   if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, total: 0, result: [] };
   let data = null;
@@ -3850,12 +3933,17 @@ async function fetchResourceSpaceListRaw(rows = 10) {
   return { loginRequired: false, total, result };
 }
 
-async function loadResourceSpaceForCurrentAccount() {
+async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSearchKeyword) {
   if (!resourceSpaceSection || !resourceSpaceList) return;
+  const keyword = normalizeResourceSearchKeyword(searchName);
+  resourceSpaceSearchKeyword = keyword;
+  if (resourceSearchInput instanceof HTMLInputElement && resourceSearchInput.value !== keyword) {
+    resourceSearchInput.value = keyword;
+  }
   const loadVersion = ++window.resourceSpaceLoadVersion;
   const isStale = () => loadVersion !== window.resourceSpaceLoadVersion;
 
-  setResourceSpaceStatus('资源空间加载中...');
+  setResourceSpaceStatus(keyword ? `资源空间加载中（搜索：${keyword}）...` : '资源空间加载中...');
   resourceSpaceList.innerHTML = '';
   window.resourceDownloadTasks = {};
   resetResourceDownloadBatch();
@@ -3863,7 +3951,7 @@ async function loadResourceSpaceForCurrentAccount() {
 
   try {
     const firstRows = 10;
-    let payload = await fetchResourceSpaceListRaw(firstRows);
+    let payload = await fetchResourceSpaceListRaw(firstRows, keyword);
     if (isStale()) return;
 
     if (payload.loginRequired) {
@@ -3901,7 +3989,7 @@ async function loadResourceSpaceForCurrentAccount() {
       setResourceSpaceStatus(`已加载 ${normalized.length} 个资源文件，正在继续加载...`);
       renderResourceSpaceList();
 
-      payload = await fetchResourceSpaceListRaw(payload.total);
+      payload = await fetchResourceSpaceListRaw(payload.total, keyword);
       if (isStale()) return;
       normalized = normalizeResourceItems(payload.result);
     }
@@ -5200,6 +5288,7 @@ function renderYktStandaloneCourses() {
     card.className = 'file-item ykt-standalone-card';
     card.style.backgroundColor = '#fff';
     card.id = `course-${courseId}`;
+    card.dataset.courseId = String(courseId || '');
     card.dataset.courseRankable = '1';
     card.dataset.order = String(baseOrder + idx);
     card.dataset.rank = '4';
@@ -5508,13 +5597,61 @@ function syncCoursewareItemsIndex(courseId, items) {
   });
 }
 
-function buildCoursewareListHtml(items) {
+function syncCoursewareSelectAllButton(card) {
+  if (!(card instanceof HTMLElement)) return;
+  const btn = card.querySelector('button[data-action="courseware-select-all"]');
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const scope = btn.closest('.result-area') || card;
+  const ids = Array.from(scope.querySelectorAll('input[data-action="resource-check"][data-resource-id]'))
+    .map((el) => (el instanceof HTMLInputElement ? String(el.dataset.resourceId || '').trim() : ''))
+    .filter((id) => id && !isResourceDownloadActive(id));
+  if (!ids.length) {
+    btn.textContent = '反选';
+    btn.disabled = true;
+    return;
+  }
+  btn.textContent = '反选';
+  btn.disabled = false;
+}
+
+function toggleCoursewareSelectionForCard(card) {
+  if (!(card instanceof HTMLElement)) return;
+  const btn = card.querySelector('button[data-action="courseware-select-all"]');
+  const scope = (btn instanceof HTMLButtonElement ? (btn.closest('.result-area') || card) : card);
+  const ids = Array.from(scope.querySelectorAll('input[data-action="resource-check"][data-resource-id]'))
+    .map((el) => (el instanceof HTMLInputElement ? String(el.dataset.resourceId || '').trim() : ''))
+    .filter((id) => id && !isResourceDownloadActive(id));
+  if (!ids.length) return;
+
+  ids.forEach((id) => {
+    if (window.resourceSpaceSelected.has(id)) window.resourceSpaceSelected.delete(id);
+    else window.resourceSpaceSelected.add(id);
+  });
+
+  const cbs = scope.querySelectorAll('input[data-action="resource-check"][data-resource-id]');
+  cbs.forEach((el) => {
+    if (!(el instanceof HTMLInputElement)) return;
+    const id = String(el.dataset.resourceId || '').trim();
+    if (!id || !ids.includes(id) || isResourceDownloadActive(id)) return;
+    el.checked = window.resourceSpaceSelected.has(id);
+  });
+
+  syncCoursewareSelectAllButton(card);
+  refreshResourceSelectAllButton();
+}
+
+function buildCoursewareListHtml(courseId, items) {
   const list = Array.isArray(items) ? items : [];
   if (!list.length) {
     return '<div style="font-size:12px; color:#999;">暂无课件资源</div>';
   }
 
-  return list.map((item, index) => {
+  const currentCourseId = String(courseId || '').trim();
+  const selectAllToolbar = currentCourseId
+    ? `<div class="courseware-toolbar"><button class="btn courseware-select-all-btn" data-action="courseware-select-all" data-course-id="${escapeHtml(currentCourseId)}" style="background:#1e3a8a; padding:3px 8px; font-size:11px; line-height:1.2;">反选</button></div>`
+    : '';
+
+  const rowsHtml = list.map((item, index) => {
     const name = String(item?.name || `课件-${index + 1}`).trim();
     const fileName = ensureResourceDownloadFileName(item, item?.url || '');
     const url = String(item?.url || '').trim();
@@ -5546,6 +5683,8 @@ function buildCoursewareListHtml(items) {
       </div>
     `;
   }).join('');
+
+  return `${selectAllToolbar}${rowsHtml}`;
 }
 
 async function fetchCoursewareItems(courseNum, fzId) {
@@ -5643,7 +5782,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
       return;
     }
 
-    const html = buildCoursewareListHtml(payload.items);
+    const html = buildCoursewareListHtml(courseIdInt, payload.items);
     syncCoursewareItemsIndex(courseIdInt, payload.items);
     window.coursewareCacheByCourseId[courseIdInt] = {
       html,
@@ -5689,7 +5828,7 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
       return;
     }
 
-    const html = buildCoursewareListHtml(payload.items);
+    const html = buildCoursewareListHtml(courseIdInt, payload.items);
     syncCoursewareItemsIndex(courseIdInt, payload.items);
     window.coursewareCacheByCourseId[courseIdInt] = {
       html,
@@ -8469,6 +8608,33 @@ if (resourceCopySelectedBtn) {
   });
 }
 
+if (resourceSelectAllBtn) {
+  resourceSelectAllBtn.addEventListener('click', () => {
+    const ids = getResourceSpaceSelectableIds();
+    if (!ids.length) {
+      showToast('当前资源空间无可选文件', 'warning', 1200);
+      return;
+    }
+    invertResourceSpaceSelectionByVisibleItems();
+  });
+}
+
+if (resourceSearchInput instanceof HTMLInputElement) {
+  const submitSearch = () => {
+    const keyword = normalizeResourceSearchKeyword(resourceSearchInput.value);
+    if (keyword === resourceSpaceSearchKeyword) return;
+    loadResourceSpaceForCurrentAccount(keyword).catch(() => {});
+  };
+  resourceSearchInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    submitSearch();
+  });
+  resourceSearchInput.addEventListener('blur', () => {
+    submitSearch();
+  });
+}
+
 if (resourceDownloadSelectedBtn) {
   resourceDownloadSelectedBtn.addEventListener('click', async () => {
     const selected = getSelectableDownloadItems().filter((it) => {
@@ -8840,10 +9006,12 @@ if (resourceSpaceList) {
     if (!id) return;
     if (isResourceDownloadActive(id)) {
       t.checked = false;
+      refreshResourceSelectAllButton();
       return;
     }
     if (t.checked) window.resourceSpaceSelected.add(id);
     else window.resourceSpaceSelected.delete(id);
+    refreshResourceSelectAllButton();
   });
 }
 
@@ -8862,6 +9030,11 @@ courseListDiv.addEventListener('click', async (e) => {
   }
 
   const action = String(t.dataset.action || '').trim();
+  if (action === 'courseware-select-all') {
+    const card = t.closest('[id^="course-"]');
+    toggleCoursewareSelectionForCard(card);
+    return;
+  }
   if (!['resource-check', 'resource-copy', 'resource-download', 'resource-cancel-download'].includes(action)) return;
   const id = String(t.dataset.resourceId || '').trim();
   if (!id) return;
@@ -8871,6 +9044,9 @@ courseListDiv.addEventListener('click', async (e) => {
   if (action === 'resource-check' && t instanceof HTMLInputElement) {
     if (t.checked) window.resourceSpaceSelected.add(id);
     else window.resourceSpaceSelected.delete(id);
+    const card = t.closest('[id^="course-"]');
+    syncCoursewareSelectAllButton(card);
+    refreshResourceSelectAllButton();
     return;
   }
 
@@ -8907,10 +9083,16 @@ courseListDiv.addEventListener('change', (e) => {
   if (!id) return;
   if (isResourceDownloadActive(id)) {
     t.checked = false;
+    const card = t.closest('[id^="course-"]');
+    syncCoursewareSelectAllButton(card);
+    refreshResourceSelectAllButton();
     return;
   }
   if (t.checked) window.resourceSpaceSelected.add(id);
   else window.resourceSpaceSelected.delete(id);
+  const card = t.closest('[id^="course-"]');
+  syncCoursewareSelectAllButton(card);
+  refreshResourceSelectAllButton();
 });
 
 courseListDiv.addEventListener('wheel', (e) => {
