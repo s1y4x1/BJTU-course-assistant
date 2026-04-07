@@ -145,6 +145,9 @@ window.resourceDownloadBatch = {
 window.resourceDownloadQueue = []; // [{id,item,resolve,reject,cancelled,started,promise}]
 window.resourceDownloadQueueById = {}; // {resourceId: queueEntry}
 window.resourceDownloadQueueRunning = 0;
+window.resourceDownloadQueueStatus = { totalFiles: 0, savedFiles: 0 };
+window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
+window.resourceDownloadQueueClearTimer = null;
 window.trackedFetchControllers = new Set();
 let resourceSpaceSearchKeyword = '';
 
@@ -3233,7 +3236,8 @@ async function doLoginFlow() {
     await loadResourceSpaceForCurrentAccount();
 
   } finally {
-    if (wasSwitchingAccount && pendingUsernameChange) {
+    const switchModalClosed = !loginModal || loginModal.style.display === 'none';
+    if (wasSwitchingAccount && pendingUsernameChange && switchModalClosed) {
       if (isPlatformEnabled('ve')) {
         try { await loadCourses(); } catch { /* ignore */ }
       }
@@ -3372,6 +3376,55 @@ function setResourceSpaceStatus(text = '', tone = 'normal') {
     resourceSpaceStatus.style.color = '#92400e';
   } else {
     resourceSpaceStatus.style.color = '#64748b';
+  }
+}
+
+function formatResourceQueueFileWithSize(item, fallbackId = '') {
+  const name = ensureResourceDownloadFileName(item, String(item?.url || '').trim()) || String(fallbackId || '未命名文件');
+  const rawSize = getResourceItemSizeBytes(item);
+  const sizeText = rawSize > 0
+    ? formatSize(rawSize)
+    : (String(item?.sizeMb || '').trim() || '未知大小');
+  return `${name}（${sizeText}）`;
+}
+
+function refreshResourceQueueStatusText() {
+  const stat = window.resourceDownloadQueueStatus || { totalFiles: 0, savedFiles: 0 };
+  const totalFiles = Math.max(0, Number(stat.totalFiles) || 0);
+  if (!totalFiles) {
+    const activeCount = Object.values(window.resourceDownloadTasks || {}).filter((t) => !!t?.active).length;
+    const queuedCount = (window.resourceDownloadQueue || []).filter((q) => q && !q.cancelled).length;
+    if (!activeCount && !queuedCount) {
+      const text = String(resourceSpaceStatus?.textContent || '').trim();
+      if (/^\(\d+\+\d+\)\s*\/\s*\d+/.test(text)) {
+        setResourceSpaceStatus('');
+      }
+    }
+    return;
+  }
+
+  const activeIds = Object.entries(window.resourceDownloadTasks || {})
+    .filter(([, task]) => !!task?.active)
+    .map(([rid]) => String(rid || '').trim())
+    .filter(Boolean);
+  const downloadingCount = activeIds.length;
+  const savedFiles = Math.max(0, Math.min(totalFiles, Number(stat.savedFiles) || 0));
+
+  const names = activeIds.map((rid) => {
+    const item = findSelectableDownloadItemById(rid)
+      || window.resourceDownloadQueueById?.[rid]?.item
+      || window.resourceDownloadTasks?.[rid]?.item
+      || null;
+    return formatResourceQueueFileWithSize(item, rid);
+  });
+  const nameText = names.length ? names.join('；') : '等待下载中';
+
+  setResourceSpaceStatus(`(${savedFiles}+${downloadingCount}) / ${totalFiles} ${nameText}`, 'normal');
+
+  const queuedCount = (window.resourceDownloadQueue || []).filter((q) => q && !q.cancelled).length;
+  if (savedFiles >= totalFiles && downloadingCount === 0 && queuedCount === 0) {
+    setResourceSpaceStatus(`(${savedFiles}+0) / ${totalFiles} 下载完成`, 'success');
+    window.resourceDownloadQueueStatus = { totalFiles: 0, savedFiles: 0 };
   }
 }
 
@@ -3691,19 +3744,44 @@ function updateResourceDownloadTotals() {
   const tasks = Object.values(window.resourceDownloadTasks || {}).filter((t) => t && t.active);
   const queuedEntries = (window.resourceDownloadQueue || []).filter((q) => q && !q.cancelled && !q.started);
   const batch = window.resourceDownloadBatch || {};
-  if (!tasks.length && !batch.active && !queuedEntries.length) {
+  const hasActiveOrQueued = !!tasks.length || !!batch.active || !!queuedEntries.length;
+
+  const completedLoaded = Math.max(0, Number(window.resourceDownloadCompletedContribution?.loadedBytes) || 0);
+  const completedTotal = Math.max(0, Number(window.resourceDownloadCompletedContribution?.totalBytes) || 0);
+
+  if (hasActiveOrQueued) {
+    if (window.resourceDownloadQueueClearTimer) {
+      clearTimeout(window.resourceDownloadQueueClearTimer);
+      window.resourceDownloadQueueClearTimer = null;
+    }
+  } else {
+    const hasResidual = completedLoaded > 0
+      || completedTotal > 0
+      || Math.max(0, Number(window.resourceDownloadQueueStatus?.totalFiles || 0)) > 0;
+    if (hasResidual && !window.resourceDownloadQueueClearTimer) {
+      window.resourceDownloadQueueClearTimer = setTimeout(() => {
+        window.resourceDownloadQueueClearTimer = null;
+        window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
+        window.resourceDownloadQueueStatus = { totalFiles: 0, savedFiles: 0 };
+        updateResourceDownloadTotals();
+      }, 3000);
+    }
+  }
+
+  if (!tasks.length && !batch.active && !queuedEntries.length && completedLoaded <= 0 && completedTotal <= 0) {
     resourceTotalBar.style.width = '0%';
     resourceTotalBar.textContent = '0%';
     resourceTotalSizeInfo.textContent = '0 B / 0 B';
     resourceTotalPercent.textContent = '0%';
     resourceTotalSpeed.textContent = '总速度: 0 KB/s';
     resourceTotalEta.textContent = '';
+    refreshResourceQueueStatusText();
     return;
   }
 
   const batchActive = !!batch.active;
-  let totalLoaded = batchActive ? Math.max(0, Number(batch.completedBytes) || 0) : 0;
-  let totalSize = batchActive ? Math.max(0, Number(batch.totalBytes) || 0) : 0;
+  let totalLoaded = completedLoaded + (batchActive ? Math.max(0, Number(batch.completedBytes) || 0) : 0);
+  let totalSize = completedTotal + (batchActive ? Math.max(0, Number(batch.totalBytes) || 0) : 0);
   let hasKnownTotal = batchActive ? (batch.knownTotal !== false) : true;
   let totalSpeed = 0;
   tasks.forEach((t) => {
@@ -3751,6 +3829,18 @@ function updateResourceDownloadTotals() {
   } else {
     resourceTotalEta.textContent = '';
   }
+
+  refreshResourceQueueStatusText();
+}
+
+function addResourceDownloadCompletedContribution(loaded = 0, total = 0) {
+  const loadedSafe = Math.max(0, Number(loaded) || 0);
+  const totalSafe = Math.max(0, Number(total) || 0);
+  if (!window.resourceDownloadCompletedContribution || typeof window.resourceDownloadCompletedContribution !== 'object') {
+    window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
+  }
+  window.resourceDownloadCompletedContribution.loadedBytes = Math.max(0, Number(window.resourceDownloadCompletedContribution.loadedBytes) || 0) + loadedSafe;
+  window.resourceDownloadCompletedContribution.totalBytes = Math.max(0, Number(window.resourceDownloadCompletedContribution.totalBytes) || 0) + Math.max(totalSafe, loadedSafe);
 }
 
 function cancelResourceDownload(resourceId) {
@@ -3982,6 +4072,7 @@ async function downloadResourceItemWithProgress(item) {
     if (task.cancelled) throw new Error('下载已取消');
     const finalTotal = total > 0 ? total : (blob?.size || loaded);
     const finalLoaded = blob?.size || loaded;
+    addResourceDownloadCompletedContribution(finalLoaded, finalTotal);
     finalizeSuccessUi(finalLoaded, finalTotal, '下载完成，准备保存...');
 
     const objectUrl = URL.createObjectURL(blob);
@@ -8935,7 +9026,7 @@ if (resourceSearchInput instanceof HTMLInputElement) {
 }
 
 if (resourceDownloadSelectedBtn) {
-  resourceDownloadSelectedBtn.addEventListener('click', async () => {
+  resourceDownloadSelectedBtn.addEventListener('click', () => {
     const selected = getSelectableDownloadItems().filter((it) => {
       const rid = String(it.id || '').trim();
       return window.resourceSpaceSelected.has(rid) && !isResourceDownloadActive(rid);
@@ -8944,46 +9035,42 @@ if (resourceDownloadSelectedBtn) {
       showToast('请先选择文件', 'warning', 1200);
       return;
     }
-    if (resourceDownloadSelectedBtn instanceof HTMLButtonElement) {
-      resourceDownloadSelectedBtn.disabled = true;
-    }
-    startResourceDownloadBatch(selected);
-    let successCount = 0;
-    let failCount = 0;
-    let cancelCount = 0;
-    setResourceSpaceStatus(`已加入下载队列: ${selected.length} 个文件（并行 ${Math.max(1, Number(maxParallelUploads) || 1)}）`);
 
-    await Promise.all(selected.map(async (item, idx) => {
+    const hasActiveOrQueued = Object.values(window.resourceDownloadTasks || {}).some((t) => !!t?.active)
+      || (window.resourceDownloadQueue || []).some((q) => q && !q.cancelled);
+    if (!hasActiveOrQueued) {
+      window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
+      window.resourceDownloadQueueStatus = { totalFiles: 0, savedFiles: 0 };
+    }
+
+    let queuedCount = 0;
+    selected.forEach((item, idx) => {
+      const rid = String(item?.id || '').trim();
+      if (!rid) return;
+      queuedCount++;
       setResourceSpaceStatus(`下载队列 ${Math.min(selected.length, idx + 1)}/${selected.length}: ${String(item?.name || '未命名文件')}`);
-      try {
-        await enqueueResourceDownload(item);
-        successCount++;
-        markResourceDownloadBatchDone(item, true);
-      } catch (err) {
+      enqueueResourceDownload(item).then(() => {
+        window.resourceDownloadQueueStatus.savedFiles = Math.max(0, Number(window.resourceDownloadQueueStatus?.savedFiles || 0) + 1);
+        refreshResourceQueueStatusText();
+      }).catch((err) => {
         const msg = String(err?.message || err || '');
         if (msg.includes('下载已取消')) {
-          cancelCount++;
           showToast(`已取消: ${String(item?.name || '未命名文件')}`, 'info', 1200);
-        } else {
-          failCount++;
-          showToast(`下载失败: ${String(item?.name || '未命名文件')} (${msg})`, 'error', 2200);
+          refreshResourceQueueStatusText();
+          return;
         }
-        markResourceDownloadBatchDone(item, false);
-      }
-    }));
+        showToast(`下载失败: ${String(item?.name || '未命名文件')} (${msg})`, 'error', 2200);
+        refreshResourceQueueStatusText();
+      });
+      window.resourceSpaceSelected.delete(rid);
+    });
 
-    resetResourceDownloadBatch();
-    updateResourceDownloadTotals();
-    if (resourceDownloadSelectedBtn instanceof HTMLButtonElement) {
-      resourceDownloadSelectedBtn.disabled = false;
-    }
-    if (successCount === selected.length) {
-      setResourceSpaceStatus(`共 ${selected.length} 个文件，已完成批量下载`, 'success');
-      showToast(`已完成 ${successCount} 个文件下载`, 'success', 1500);
-    } else {
-      const summary = `下载完成 ${successCount}/${selected.length}，失败 ${failCount}，取消 ${cancelCount}`;
-      setResourceSpaceStatus(summary, 'warning');
-      showToast(summary, 'warning', 2000);
+    refreshResourceSelectAllButton();
+    if (queuedCount > 0) {
+      const prevTotal = Math.max(0, Number(window.resourceDownloadQueueStatus?.totalFiles || 0));
+      window.resourceDownloadQueueStatus.totalFiles = prevTotal + queuedCount;
+      refreshResourceQueueStatusText();
+      showToast(`已加入队列 ${queuedCount} 个文件`, 'success', 1200);
     }
   });
 }
