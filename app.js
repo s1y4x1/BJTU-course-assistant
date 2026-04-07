@@ -4771,6 +4771,11 @@ function isNativeHomeworkPending(hw) {
   return !isNativeHomeworkDone(hw) && !isDeadlinePassed(deadline);
 }
 
+function isNativeHomeworkOverdue(hw) {
+  const deadline = hw?.end_time ?? hw?.endTime ?? '';
+  return !isNativeHomeworkDone(hw) && isDeadlinePassed(deadline);
+}
+
 function isYktHomeworkDone(hw) {
   const progress = Number(hw?.progress ?? 0);
   const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
@@ -4784,6 +4789,10 @@ function isYktHomeworkDone(hw) {
 
 function isYktHomeworkPending(hw) {
   return !isYktHomeworkDone(hw) && !isDeadlinePassed(hw?.end);
+}
+
+function isYktHomeworkOverdue(hw) {
+  return !isYktHomeworkDone(hw) && isDeadlinePassed(hw?.end);
 }
 
 function ensureCourseCardState(courseId) {
@@ -5482,6 +5491,7 @@ function renderYktHomeworkItems(courseId, items) {
   if (!list.length) return '';
   return list.map((it, idx) => {
     const done = isYktHomeworkDone(it);
+    const overdue = !done && isYktHomeworkOverdue(it);
     const progress = Number(it?.progress ?? 0);
     const problemCount = Number(it?.problem_count ?? 0);
     const progressText = problemCount > 0 ? `${progress}/${problemCount}` : '';
@@ -5502,10 +5512,10 @@ function renderYktHomeworkItems(courseId, items) {
       : (derivedHasScore
           ? `${sumGot}/${sumFull > 0 ? sumFull : (Number.isFinite(totalScoreFromItem) ? totalScoreFromItem : '')}`
           : '');
-    const bgColor = done ? '#e8f5e9' : '#fff3e0';
-    const borderColor = done ? '#4caf50' : '#ff9800';
-    const titleColor = done ? '#2e7d32' : '#e65100';
-    const detailBtnColor = done ? '#2E7D32' : '#E65100';
+    const bgColor = done ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
+    const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
+    const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
+    const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const actionText = done ? '去雨课堂查看' : '去雨课堂提交';
     const titleScoreBadge = scoreText ? `<span style="font-weight:bold; color:#E91E63; white-space:nowrap;">[${escapeHtml(scoreText)}]</span>` : '';
     const yktIdSeed = String(it?.id || it?.courseware_id || it?.classroom_id || idx).trim();
@@ -5545,7 +5555,7 @@ function renderYktHomeworkItems(courseId, items) {
       <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
         <div>
           <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '雨课堂作业')}</div>
-          <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${done ? '(已提交)' : ''}</div>
+          <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${done ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
           <div style="font-size:12px; color:#666;">${progressText ? `进度: ${escapeHtml(progressText)}` : ''}</div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
@@ -5568,22 +5578,27 @@ function isJlgjHomeworkPending(hw) {
   return !isJlgjHomeworkDone(hw) && !isDeadlinePassed(hw?.end);
 }
 
+function isJlgjHomeworkOverdue(hw) {
+  return !isJlgjHomeworkDone(hw) && isDeadlinePassed(hw?.end);
+}
+
 function renderJlgjHomeworkItems(items) {
   const list = items || [];
   if (!list.length) return '';
   return list.map((it) => {
     const done = isJlgjHomeworkDone(it);
+    const overdue = !done && isJlgjHomeworkOverdue(it);
     const isLoadingMeta = !!it?.loadingMeta;
-    const bgColor = done ? '#e8f5e9' : '#fff3e0';
-    const borderColor = done ? '#4caf50' : '#ff9800';
-    const titleColor = done ? '#2e7d32' : '#e65100';
+    const bgColor = done ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
+    const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
+    const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
     const detail = isLoadingMeta ? '' : normalizeHomeworkContent(String(it?.content || '').trim());
     const contentHtml = isLoadingMeta
       ? '正在加载详情…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : (detail || '<span style="color:#999;">无作业详情</span>');
     const link = String(it?.link || JLGJ_WEB_BASE);
     const actionText = done ? '去接龙管家查看' : '去接龙管家提交';
-    const detailBtnColor = done ? '#2E7D32' : '#E65100';
+    const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const endText = isLoadingMeta ? '正在加载……' : formatYktDateTime(it.end);
     const endSuffix = isLoadingMeta
       ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
@@ -5593,7 +5608,7 @@ function renderJlgjHomeworkItems(items) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '接龙作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已提交)' : ''}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -5613,15 +5628,20 @@ function isMrzyHomeworkPending(hw) {
   return !isMrzyHomeworkDone(hw) && !isDeadlinePassed(hw?.end);
 }
 
+function isMrzyHomeworkOverdue(hw) {
+  return !isMrzyHomeworkDone(hw) && isDeadlinePassed(hw?.end);
+}
+
 function renderMrzyHomeworkItems(items) {
   const list = items || [];
   if (!list.length) return '';
   return list.map((it) => {
     const done = isMrzyHomeworkDone(it);
-    const bgColor = done ? '#e8f5e9' : '#fff3e0';
-    const borderColor = done ? '#4caf50' : '#ff9800';
-    const titleColor = done ? '#2e7d32' : '#e65100';
-    const detailBtnColor = done ? '#2E7D32' : '#E65100';
+    const overdue = !done && isMrzyHomeworkOverdue(it);
+    const bgColor = done ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
+    const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
+    const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
+    const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const actionText = done ? '去每日交作业查看' : '去每日交作业提交';
     const isLoadingMeta = !!it?.loadingMeta;
     const endText = isLoadingMeta ? '正在加载……' : String(it.end || '无');
@@ -5633,7 +5653,7 @@ function renderMrzyHomeworkItems(items) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '每日交作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已提交)' : ''}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${it.link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -6295,10 +6315,10 @@ function recomputeCourseHomeworkState(courseId) {
   const mrzyList = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId[courseId] || []) : [];
   const jlgjList = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId[courseId] || []) : [];
   const allHomeworkCount = nativeList.length + yktList.length + mrzyList.length + jlgjList.length;
-  const nativePendingList = nativeList.filter(isNativeHomeworkPending);
-  const yktPendingList = yktList.filter(isYktHomeworkPending);
-  const mrzyPendingList = mrzyList.filter(isMrzyHomeworkPending);
-  const jlgjPendingList = jlgjList.filter(isJlgjHomeworkPending);
+  const nativePendingList = nativeList.filter((hw) => !isNativeHomeworkDone(hw));
+  const yktPendingList = yktList.filter((hw) => !isYktHomeworkDone(hw));
+  const mrzyPendingList = mrzyList.filter((hw) => !isMrzyHomeworkDone(hw));
+  const jlgjPendingList = jlgjList.filter((hw) => !isJlgjHomeworkDone(hw));
   const nativePending = nativePendingList.length;
   const yktPending = yktPendingList.length;
   const mrzyPending = mrzyPendingList.length;
@@ -7981,23 +8001,23 @@ function renderHomeworkList(courseId) {
   if (!area) return;
   const list = data.list || [];
   syncHomeworkAttachmentItemsIndex(courseId, []);
-  let displayList = data.showAll ? list : list.filter(isNativeHomeworkPending);
+  let displayList = data.showAll ? list : list.filter((hw) => !isNativeHomeworkDone(hw));
   const yktItems = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId[courseId] || []) : [];
   const yktLoading = !!window.yktHomeworkLoadingByCourse?.[courseId];
   const yktSyncing = isPlatformEnabled('ykt')
     && ((window.platformLoginState?.ykt || 'checking') === 'checking')
     && !window.platformLoadedOnce?.ykt;
-  let yktDisplayItems = data.showAll ? yktItems : yktItems.filter(isYktHomeworkPending);
+  let yktDisplayItems = data.showAll ? yktItems : yktItems.filter((hw) => !isYktHomeworkDone(hw));
   const mrzyItems = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId[courseId] || []) : [];
   const mrzySyncing = isPlatformEnabled('mrzy')
     && ((window.platformLoginState?.mrzy || 'checking') === 'checking')
     && !window.platformLoadedOnce?.mrzy;
-  let mrzyDisplayItems = data.showAll ? mrzyItems : mrzyItems.filter(isMrzyHomeworkPending);
+  let mrzyDisplayItems = data.showAll ? mrzyItems : mrzyItems.filter((hw) => !isMrzyHomeworkDone(hw));
   const jlgjItems = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId[courseId] || []) : [];
   const jlgjSyncing = isPlatformEnabled('jlgj')
     && ((window.platformLoginState?.jlgj || 'checking') === 'checking')
     && !window.platformLoadedOnce?.jlgj;
-  let jlgjDisplayItems = data.showAll ? jlgjItems : jlgjItems.filter(isJlgjHomeworkPending);
+  let jlgjDisplayItems = data.showAll ? jlgjItems : jlgjItems.filter((hw) => !isJlgjHomeworkDone(hw));
 
   if (!data.showAll) {
     displayList = sortHomeworkItemsByDeadline(displayList, (hw) => hw?.end_time ?? hw?.endTime ?? '');
@@ -8132,10 +8152,11 @@ function renderHomeworkList(courseId) {
     const subStatus = hw.subStatus ?? hw.sub_status ?? '';
     const subTime = hw.subTime ?? hw.sub_time ?? '';
     const isDone = isNativeHomeworkDone(hw);
-    const bgColor = isDone ? '#e8f5e9' : '#fff3e0';
-    const borderColor = isDone ? '#4caf50' : '#ff9800';
-    const titleColor = isDone ? '#2e7d32' : '#e65100';
-    const detailBtnColor = isDone ? '#2E7D32' : '#E65100';
+    const overdue = !isDone && isNativeHomeworkOverdue(hw);
+    const bgColor = isDone ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
+    const borderColor = isDone ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
+    const titleColor = isDone ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
+    const detailBtnColor = isDone ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const title = hw.title || hw.workTitle || hw.courseNoteTitle || '作业';
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
@@ -8197,7 +8218,7 @@ function renderHomeworkList(courseId) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${title}</div>
-            <div style="font-size:12px; color:#666;">截止: ${hw.end_time || hw.endTime || '无'} ${isDone ? '(已提交)' : ''}</div>
+            <div style="font-size:12px; color:#666;">截止: ${hw.end_time || hw.endTime || '无'} ${isDone ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             ${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}
@@ -9282,7 +9303,7 @@ courseListDiv.addEventListener('click', async (e) => {
     if (!courseId || idx < 0) return;
 
     const data = window.courseHomeworkData[courseId] || { list: [], showAll: false };
-    const nativeList = data.showAll ? (data.list || []) : (data.list || []).filter(isNativeHomeworkPending);
+    const nativeList = data.showAll ? (data.list || []) : (data.list || []).filter((item) => !isNativeHomeworkDone(item));
     const hw = nativeList[idx];
     if (!hw) {
       showToast('未找到作业数据，请刷新后重试', 'warning', 1800);
