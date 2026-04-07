@@ -902,6 +902,10 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
 }
 
 function triggerInitialPlatformLoads() {
+  // Keep startup priority consistent across all enabled platforms.
+  if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
+  if (isPlatformEnabled('mrzy')) triggerExternalPlatformLoad('mrzy', false);
+  if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
   if (isPlatformEnabled('ve')) {
     loadCourses();
   } else {
@@ -5690,7 +5694,7 @@ function renderYktStandaloneCourses() {
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
-          <div class="course-card-title"><strong><a href="${courseLink}" target="_blank" rel="noopener noreferrer" style="color:#0369a1; text-decoration:none; line-height:1.3;">${escapeHtml(c.course_name || c.name || '雨课堂课程')}</a></strong></div>
+          <div class="course-card-title"><strong><a href="${courseLink}" target="_blank" rel="noopener noreferrer" style="color:#5096f5; text-decoration:none; line-height:1.3;">${escapeHtml(c.course_name || c.name || '雨课堂课程')}</a></strong></div>
           <div style="font-size:12px; color:#666; line-height:1.35;">${escapeHtml(subText)}</div>
         </div>
         <div class="course-actions" style="display:flex; gap:8px;">
@@ -5729,7 +5733,7 @@ function renderMrzyStandaloneCourses() {
     const loadingMeta = !!c.loadingMeta;
     const titleHtml = loadingMeta
       ? '正在加载…… <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:1px; border-color:#6366f1; border-top-color:transparent;"></span>'
-      : escapeHtml(c.divClass || '每日交作业课程');
+      : `<a href="${MRZY_WEB_BASE}/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none;">${escapeHtml(c.divClass || '每日交作业课程')}</a>`;
     const teacherHtml = loadingMeta
       ? '正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : escapeHtml(c.teacherName || '');
@@ -5792,7 +5796,7 @@ function renderJlgjStandaloneCourses() {
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
-          <div class="course-card-title"><strong><a href="${JLGJ_WEB_BASE}" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; line-height:1.3;">${titleHtml}</a></strong></div>
+          <div class="course-card-title"><strong><a href="${JLGJ_WEB_BASE}" target="_blank" rel="noopener noreferrer" style="color:#ffd243; text-decoration:none; line-height:1.3;">${titleHtml}</a></strong></div>
           <div style="font-size:12px; color:#666; line-height:1.35;">${teacherHtml}</div>
         </div>
         <div class="course-actions" style="display:flex; gap:8px;">
@@ -7305,9 +7309,9 @@ async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
   await closeMrzyRuntimeTab();
 }
 
-async function loadJlgjCoursesAndHomework(courses = []) {
-  const loadVersion = bumpPlatformLoadVersion('jlgj');
-  const isStale = () => !!(loadVersion && loadVersion !== (window.platformLoadVersion?.jlgj || 0));
+async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
+  const activeVersion = loadVersion || bumpPlatformLoadVersion('jlgj');
+  const isStale = () => !!(activeVersion && activeVersion !== (window.platformLoadVersion?.jlgj || 0));
   if (isStale()) return;
   if (!isPlatformEnabled('jlgj')) {
     clearPlatformData('jlgj');
@@ -9701,6 +9705,10 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   // Run update check in background to avoid blocking other startup requests.
   loadVersionInfo().catch(() => {});
   refreshPlatformLoginTip();
+
+  // Do not wait for user-info/personal-center requests before starting platform loading.
+  triggerInitialPlatformLoads();
+
   await loadLoginAccountHistory();
 
   // 不默认使用本地保存账号。
@@ -9766,6 +9774,5 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     if (usernameInput.value.trim()) showLoginModal('登录已失效，请输入验证码');
   }
 
-  triggerInitialPlatformLoads();
   await loadResourceSpaceForCurrentAccount();
 })();
