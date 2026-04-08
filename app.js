@@ -4,7 +4,7 @@
 const PLATFORM_BASE_URL = 'http://123.121.147.7:88/';
 const BASE = PLATFORM_BASE_URL.replace(/\/$/, '');
 const BASE_VE = `${PLATFORM_BASE_URL}ve/`;
-const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
+const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#567abd; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
 const VE_LOGIN_REQUIRED_HTML = `如需查看${VE_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_BASE = 'https://www.yuketang.cn';
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
@@ -2206,8 +2206,8 @@ function setLoginProgress(message = '', tone = 'normal') {
     setCaptchaInputHint('识别中…');
     return;
   }
-  if (/验证码获取中/.test(msg)) {
-    setCaptchaInputHint('验证码加载中…');
+  if (/验证码获取中|加载中/.test(msg)) {
+    setCaptchaInputHint('加载中…');
   }
 }
 
@@ -2398,6 +2398,7 @@ async function refreshCaptcha() {
     lastCaptchaObjectUrl = URL.createObjectURL(blob);
     captchaImg.src = lastCaptchaObjectUrl;
     setLoginProgress('验证码已获取，等待识别…');
+    setCaptchaInputHint('识别中…');
   } catch (e) {
     setLoginProgress('验证码获取失败', 'error');
     showToast('验证码获取失败: ' + e.message, 'error');
