@@ -1944,6 +1944,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
   if (selectedRecord) {
     const opt = document.createElement('option');
     opt.value = selectedRecord.userId;
+    opt.hidden = true;
     const selectedName = String(selectedRecord.userName || selectedRecord.userId || '未知用户').trim();
     const selectedRole = String(selectedRecord.roleName || '').trim();
     opt.textContent = `${selectedRole}${selectedName}`;
