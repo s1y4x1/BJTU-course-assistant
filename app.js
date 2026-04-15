@@ -4857,12 +4857,40 @@ function sortCourseCards() {
   sortedCards.forEach((c) => courseListDiv.appendChild(c));
 }
 
-function updateCourseCardRank(courseId) {
+function hasCourseActionButtonAnimationActive() {
+  return !!courseListDiv.querySelector('button[data-action="videos"].replay-list-loading, button[data-action="videos"].replay-link-progress, button[data-action="courseware"].courseware-list-loading');
+}
+
+function sortCourseCardsWithGuard({ deferWhileActionAnimating = false } = {}) {
+  if (deferWhileActionAnimating && hasCourseActionButtonAnimationActive()) {
+    window.courseCardSortPending = true;
+    return;
+  }
+  window.courseCardSortPending = false;
+  sortCourseCards();
+}
+
+function flushPendingCourseCardSortIfIdle() {
+  if (!window.courseCardSortPending) return;
+  if (hasCourseActionButtonAnimationActive()) return;
+  window.courseCardSortPending = false;
+  sortCourseCards();
+}
+
+function updateCourseCardRank(courseId, { deferWhileActionAnimating = false } = {}) {
   const card = document.getElementById(`course-${courseId}`);
   if (!card) return;
   const state = ensureCourseCardState(courseId);
   card.dataset.rank = String(calcCourseRank(state));
-  sortCourseCards();
+  sortCourseCardsWithGuard({ deferWhileActionAnimating });
+}
+
+function isAnyExternalPlatformChecking() {
+  return !!(
+    isPlatformEnabled('ykt') && window.platformLoginState?.ykt === 'checking'
+    || isPlatformEnabled('mrzy') && window.platformLoginState?.mrzy === 'checking'
+    || isPlatformEnabled('jlgj') && window.platformLoginState?.jlgj === 'checking'
+  );
 }
 
 function suffixAfterDash(v) {
@@ -4963,6 +4991,9 @@ function setPlatformLoginState(platform, state) {
     showPlatformNeedLoginToast(p);
   }
   refreshPlatformLoginTip();
+  if (!isAnyExternalPlatformChecking()) {
+    flushPendingCourseCardSortIfIdle();
+  }
 }
 
 function refreshPlatformLoginTip() {
@@ -5825,25 +5856,27 @@ function setCourseReplayState(courseId, hasReplay) {
   state.hasReplay = !!hasReplay;
   state.replayListLoading = false;
   updateCourseCardRank(courseId);
+  flushPendingCourseCardSortIfIdle();
 }
 
 function setCourseReplayLoading(courseId, isLoading) {
   const state = ensureCourseCardState(courseId);
   state.replayListLoading = !!isLoading;
   updateCourseCardRank(courseId);
+  if (!state.replayListLoading) flushPendingCourseCardSortIfIdle();
 }
 
 function setCourseCoursewareState(courseId, hasCourseware) {
   const state = ensureCourseCardState(courseId);
   state.hasCourseware = !!hasCourseware;
   state.coursewareListLoading = false;
-  updateCourseCardRank(courseId);
+  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
 }
 
 function setCourseCoursewareLoading(courseId, isLoading) {
   const state = ensureCourseCardState(courseId);
   state.coursewareListLoading = !!isLoading;
-  updateCourseCardRank(courseId);
+  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
 }
 
 function setCoursewareButtonLoading(btn, isLoading) {
@@ -5876,6 +5909,7 @@ function setCoursewareButtonLoading(btn, isLoading) {
   btn.disabled = false;
   btn.style.pointerEvents = 'auto';
   btn.classList.remove('courseware-list-loading');
+  flushPendingCourseCardSortIfIdle();
 }
 
 function isResultAreaOpen(resultArea) {
@@ -6339,7 +6373,7 @@ function recomputeCourseHomeworkState(courseId) {
   state.allHomeworkCount = allHomeworkCount;
   state.pendingHomeworkCount = nativePending + yktPending + mrzyPending + jlgjPending;
   state.pendingEarliestTs = validPendingTs.length ? Math.min(...validPendingTs) : 0;
-  updateCourseCardRank(courseId);
+  updateCourseCardRank(courseId, { deferWhileActionAnimating: isAnyExternalPlatformChecking() });
 }
 
 function updateHomeworkToggleButton(courseId) {
@@ -6462,7 +6496,10 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   if (!btn || !card || !resultArea) return;
   const cache = window.videoReplayCacheByCourseId?.[courseIdInt];
   const list = Array.isArray(cache?.list) ? cache.list : [];
-  if (!cache || !list.length || cache.linksFetched || cache.linksFetching) return;
+  if (!cache || !list.length || cache.linksFetched || cache.linksFetching) {
+    flushPendingCourseCardSortIfIdle();
+    return;
+  }
 
   cache.linksFetching = true;
   btn.classList.add('replay-link-progress');
@@ -6505,6 +6542,7 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
     resultArea.innerHTML = cache.html;
     toggleResultAreaAnimated(resultArea, true, { immediate: true });
   }
+  flushPendingCourseCardSortIfIdle();
 }
 
 function toggleReplayFromCache(btn, courseIdInt) {
