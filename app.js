@@ -230,6 +230,8 @@ const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-ass
 const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
 const VERSION_RELEASES_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases?per_page=100';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
+const VERSION_DOWNLOAD_FALLBACK_TOTAL_BYTES = 5 * 1024 * 1024;
+const VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT = '未获取到更新包大小，预估约5MB';
 function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
 }
@@ -442,6 +444,7 @@ function setVersionDownloadProgressUi({
   body = '请稍候，正在下载更新文件...',
   loaded = 0,
   total = 0,
+  isTotalEstimated = false,
   speed = 0,
   etaSec = null,
   percent = 0,
@@ -479,9 +482,13 @@ function setVersionDownloadProgressUi({
   if (sizeEl) {
     const loadedSafe = Math.max(0, Number(loaded) || 0);
     const totalSafe = Math.max(0, Number(total) || 0);
-    sizeEl.textContent = totalSafe > 0
-      ? `${formatSize(loadedSafe)} / ${formatSize(totalSafe)}`
-      : `${formatSize(loadedSafe)} / --`;
+    if (isTotalEstimated && totalSafe > 0) {
+      sizeEl.textContent = `${formatSize(loadedSafe)} / ${VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT}`;
+    } else {
+      sizeEl.textContent = totalSafe > 0
+        ? `${formatSize(loadedSafe)} / ${formatSize(totalSafe)}`
+        : `${formatSize(loadedSafe)} / --`;
+    }
   }
   if (speedEl) speedEl.textContent = formatSpeed(Math.max(0, Number(speed) || 0));
   if (etaEl) {
@@ -535,15 +542,19 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
     throw new Error(`HTTP ${res.status}`);
   }
 
-  const total = Math.max(0, Number(res.headers.get('content-length') || 0));
+  const headerTotal = Math.max(0, Number(res.headers.get('content-length') || 0));
+  // When server doesn't return content-length, use a fixed 5MB baseline for UI display/progress.
+  const total = headerTotal > 0 ? headerTotal : VERSION_DOWNLOAD_FALLBACK_TOTAL_BYTES;
+  const isTotalEstimated = headerTotal <= 0;
   if (!res.body || !res.body.getReader) {
     const blob = await res.blob();
     const loaded = Number(blob.size || 0);
     setVersionDownloadProgressUi({
       visible: true,
-      status: `${sourceLabel}下载完成，准备保存...`,
+      status: '下载完成，准备保存...',
       loaded,
-      total: total || loaded,
+      total,
+      isTotalEstimated,
       speed: 0,
       etaSec: 0,
       percent: 100,
@@ -590,6 +601,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
       body: '请稍候，正在下载更新文件...',
       loaded,
       total,
+      isTotalEstimated,
       speed,
       etaSec,
       percent,
@@ -608,6 +620,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
     body: '文件已下载完成，正在保存...',
     loaded: finalLoaded,
     total: finalTotal,
+    isTotalEstimated,
     speed: 0,
     etaSec: 0,
     percent: 100,
