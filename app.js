@@ -759,10 +759,11 @@ function buildAggregatedReleaseNotes(releases = [], localVersion = '', latestVer
     return compareVersionText(tag, localVersion) > 0 && compareVersionText(tag, latestVersion) <= 0;
   });
   if (!items.length) return '';
-  return items.map((r) => {
+  return items.map((r, idx) => {
     const tag = String(r.tag_name || '').trim();
     const body = String(r.body || '').trim() || '此版本暂无更新说明。';
-    return `## ${tag}\n${body}`;
+    // The modal title already shows the latest version; avoid repeating it at the top.
+    return idx === 0 ? body : `## ${tag}\n${body}`;
   }).join('\n\n---\n\n');
 }
 
