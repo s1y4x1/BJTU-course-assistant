@@ -4,8 +4,14 @@
 const PLATFORM_BASE_URL = 'http://123.121.147.7:88/';
 const BASE = PLATFORM_BASE_URL.replace(/\/$/, '');
 const BASE_VE = `${PLATFORM_BASE_URL}ve/`;
-const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#567abd; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
+const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#1565c0; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
 const VE_LOGIN_REQUIRED_HTML = `如需查看${VE_LOGIN_LINK_HTML}作业，请前往登录`;
+const YKT_LOGIN_LINK_HTML = '<a href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer" style="color:#5096f5; text-decoration:none; font-weight:600;">雨课堂</a>';
+const YKT_LOGIN_REQUIRED_HTML = `如需查看${YKT_LOGIN_LINK_HTML}作业，请前往登录`;
+const MRZY_LOGIN_LINK_HTML = '<a href="https://zuoye.lulufind.com/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none; font-weight:600;">每日交作业</a>';
+const MRZY_LOGIN_REQUIRED_HTML = `如需查看${MRZY_LOGIN_LINK_HTML}作业，请前往登录`;
+const JLGJ_LOGIN_LINK_HTML = '<a href="https://i.jielong.com/my-class" target="_blank" rel="noopener noreferrer" style="color:#ffd243; text-decoration:none; font-weight:600;">接龙管家</a>';
+const JLGJ_LOGIN_REQUIRED_HTML = `如需查看${JLGJ_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_BASE = 'https://www.yuketang.cn';
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
 const YKT_COURSE_LIST_API = `${YKT_BASE}/v2/api/web/courses/list?identity=2`;
@@ -2917,7 +2923,7 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
     } catch {
       // ignore
     }
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 100));
   }
   await closePortalLoginTab();
   if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
@@ -4966,14 +4972,14 @@ function showPlatformNeedLoginToast(platform) {
   }
 
   if (p === 'ykt') {
-    showToast('如需查看<a href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">雨课堂</a>作业，请前往登录', 'warning', 3200, true);
+    showToast(YKT_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
     return;
   }
   if (p === 'mrzy') {
-    showToast('如需查看<a href="https://zuoye.lulufind.com/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">每日交作业</a>作业，请前往登录', 'warning', 3200, true);
+    showToast(MRZY_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
     return;
   }
-  showToast('如需查看<a href="https://i.jielong.com/my-class" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none; font-weight:600;">接龙管家</a>作业，请前往登录', 'warning', 3200, true);
+  showToast(JLGJ_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
 }
 
 function setPlatformLoginState(platform, state) {
@@ -7690,7 +7696,16 @@ async function loadCourses() {
     if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
   } catch (e) {
     setPlatformLoginState('ve', 'offline');
-    showToast('课程加载失败: ' + e.message, 'error');
+    const errMsg = String(e?.message || '');
+    const likelyLoginInvalid = /Failed to fetch/i.test(errMsg);
+    if (likelyLoginInvalid) {
+      isLoginSessionValid = false;
+      if (usernameInput.value.trim()) {
+        promptLoginIfPossible('请输入验证码重新登录');
+      }
+    } else {
+      showToast('课程加载失败: ' + errMsg, 'error');
+    }
     renderCourseList([]);
     rematchExternalByVeCourses();
     rerenderAllHomeworkAreas();
