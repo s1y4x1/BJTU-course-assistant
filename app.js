@@ -125,7 +125,7 @@ window.platformNeedLogin = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformLoginState = { ve: 'checking', ykt: 'checking', mrzy: 'checking', jlgj: 'checking' }; // checking|offline|online
 window.platformLoginChecked = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformInteractiveLoginPending = { ykt: false, mrzy: false, jlgj: false };
-const DEFAULT_PLATFORM_ENABLED = { ve: true, ykt: true, mrzy: true, jlgj: true };
+const DEFAULT_PLATFORM_ENABLED = { ve: true, ykt: false, mrzy: false, jlgj: false };
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
 window.platformLoadedOnce = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformLoadVersion = { ve: 0, ykt: 0, mrzy: 0, jlgj: 0 };
@@ -964,9 +964,6 @@ function triggerInitialPlatformLoads() {
     window.currentVeCourseList = [];
     renderCourseList([]);
   }
-  if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
-  if (isPlatformEnabled('mrzy')) triggerExternalPlatformLoad('mrzy', false);
-  if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
 }
 
 function rematchExternalByVeCourses() {
