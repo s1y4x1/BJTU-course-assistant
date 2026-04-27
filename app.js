@@ -28,6 +28,14 @@ const MRZY_WORK_DETAIL_API = `${MRZY_API_BASE}/mrzy/mrzypc/getWorkDetail`;
 const JLGJ_API_BASE = 'https://i-api.jielong.com';
 const JLGJ_WEB_BASE = 'https://i.jielong.com/my-class';
 const JLGJ_GROUP_LIST_API = `${JLGJ_API_BASE}/api/UserGroup/UserGroupPages`;
+const JLGJ_LOGIN_ASSIST_URL = 'https://i.jielong.com/login?redirectTo=https://i.jielong.com/my-class';
+const JLGJ_LOGIN_SUCCESS_URL_PREFIX = 'https://i.jielong.com/my-class';
+const YKT_WECHAT_QR_LOGIN_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=wxda8c70bb118d342b&scope=snsapi_login&redirect_uri=https://www.yuketang.cn/api/v3/user/login/wechat-web-callback';
+const YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX = 'https://www.yuketang.cn/authorize/wx-qrlogin?success=1';
+const MRZY_QR_GEN_API = 'https://api-prod.lulufind.com/api/v1/auth/genQrCode';
+const MRZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCode';
+const MRZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
+const PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS = 1000;
 const XQ_CODE = '2025202602';
 const DEFAULT_PLATFORM_SESSION_ID = 'D571D57D255EA0BECF299C45D4C0468A';
 
@@ -116,6 +124,7 @@ window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: bool
 window.platformNeedLogin = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformLoginState = { ve: 'checking', ykt: 'checking', mrzy: 'checking', jlgj: 'checking' }; // checking|offline|online
 window.platformLoginChecked = { ve: false, ykt: false, mrzy: false, jlgj: false };
+window.platformInteractiveLoginPending = { ykt: false, mrzy: false, jlgj: false };
 const DEFAULT_PLATFORM_ENABLED = { ve: true, ykt: true, mrzy: true, jlgj: true };
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
 window.platformLoadedOnce = { ve: false, ykt: false, mrzy: false, jlgj: false };
@@ -156,6 +165,22 @@ window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 }
 window.resourceDownloadQueueClearTimer = null;
 window.trackedFetchControllers = new Set();
 let resourceSpaceSearchKeyword = '';
+let yktLoginAssistRetryTimer = null;
+let yktLoginAssistPollTimer = null;
+let yktLoginAssistChecking = false;
+let yktLoginAssistPopupWindowId = null;
+let yktLoginAssistPopupTabId = null;
+let yktLoginIframeLoadCount = 0;
+let yktLoginIframeOpenedAt = 0;
+let mrzyLoginAssistPollTimer = null;
+let mrzyLoginAssistRetryTimer = null;
+let mrzyLoginAssistPolling = false;
+let mrzyLoginAssistCurrentCode = '';
+let mrzyLoginAssistCodeSerial = 0;
+let jlgjLoginAssistRetryTimer = null;
+let jlgjLoginAssistPollTimer = null;
+let jlgjLoginAssistPopupWindowId = null;
+let jlgjLoginAssistPopupTabId = null;
 
 function isPlatformEnabled(platform) {
   const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
@@ -1024,6 +1049,18 @@ function isPlatformChecking(platform) {
 function togglePlatformSelection(platform) {
   if (!platform || !['ve', 'ykt', 'mrzy', 'jlgj'].includes(platform)) return;
   if (isPlatformChecking(platform)) {
+    if (platform === 'ykt') {
+      window.platformInteractiveLoginPending.ykt = false;
+      closeYktLoginAssistPopup(true);
+    }
+    if (platform === 'mrzy') {
+      window.platformInteractiveLoginPending.mrzy = false;
+      closeMrzyLoginAssistPopup(true);
+    }
+    if (platform === 'jlgj') {
+      window.platformInteractiveLoginPending.jlgj = false;
+      closeJlgjLoginAssistPopup(true);
+    }
     window.platformEnabled[platform] = false;
     window.platformLoadedOnce[platform] = false;
     bumpPlatformLoadVersion(platform);
@@ -1053,6 +1090,18 @@ function togglePlatformSelection(platform) {
   refreshPlatformLoginTip();
 
   if (!enabled) {
+    if (platform === 'ykt') {
+      window.platformInteractiveLoginPending.ykt = false;
+      closeYktLoginAssistPopup(true);
+    }
+    if (platform === 'mrzy') {
+      window.platformInteractiveLoginPending.mrzy = false;
+      closeMrzyLoginAssistPopup(true);
+    }
+    if (platform === 'jlgj') {
+      window.platformInteractiveLoginPending.jlgj = false;
+      closeJlgjLoginAssistPopup(true);
+    }
     window.platformLoadedOnce[platform] = false;
     if (platform === 've') {
       window.currentVeCourseList = [];
@@ -1073,6 +1122,10 @@ function togglePlatformSelection(platform) {
     window.platformLoadedOnce.ve = false;
     if (isPlatformEnabled('ve')) loadCourses();
     return;
+  }
+
+  if (platform === 'ykt' || platform === 'mrzy' || platform === 'jlgj') {
+    window.platformInteractiveLoginPending[platform] = true;
   }
 
   clearPlatformData(platform);
@@ -4971,6 +5024,551 @@ function removeMrzyLoginTip() {
   // no-op: use toast messages instead of fixed top tip.
 }
 
+function buildQrImageUrl(content, size = 220) {
+  const text = String(content || '').trim();
+  if (!text) return '';
+  const safeSize = Math.max(120, Number(size) || 220);
+  if (typeof qrcode !== 'function') {
+    throw new Error('本地二维码库未加载');
+  }
+
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+
+  const moduleCount = Number(qr.getModuleCount() || 0);
+  if (!moduleCount) {
+    throw new Error('二维码数据无效');
+  }
+
+  const marginModules = 2;
+  const pixelPerModule = Math.max(2, Math.floor(safeSize / (moduleCount + marginModules * 2)));
+  const canvasSize = (moduleCount + marginModules * 2) * pixelPerModule;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasSize;
+  canvas.height = canvasSize;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('二维码画布创建失败');
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvasSize, canvasSize);
+  ctx.fillStyle = '#000000';
+
+  for (let row = 0; row < moduleCount; row += 1) {
+    for (let col = 0; col < moduleCount; col += 1) {
+      if (!qr.isDark(row, col)) continue;
+      const x = (col + marginModules) * pixelPerModule;
+      const y = (row + marginModules) * pixelPerModule;
+      ctx.fillRect(x, y, pixelPerModule, pixelPerModule);
+    }
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
+function scheduleYktLoginAssistRecheck(delayMs = 500) {
+  if (yktLoginAssistRetryTimer) {
+    clearTimeout(yktLoginAssistRetryTimer);
+    yktLoginAssistRetryTimer = null;
+  }
+  yktLoginAssistRetryTimer = setTimeout(() => {
+    yktLoginAssistRetryTimer = null;
+    if (!isPlatformEnabled('ykt')) return;
+    if (!window.platformInteractiveLoginPending?.ykt) return;
+    triggerExternalPlatformLoad('ykt', true);
+  }, Math.max(120, Number(delayMs) || 500));
+}
+
+function stopYktLoginAssistWatcher() {
+  if (yktLoginAssistPollTimer) {
+    clearInterval(yktLoginAssistPollTimer);
+    yktLoginAssistPollTimer = null;
+  }
+  yktLoginAssistChecking = false;
+}
+
+function isYktLoginSuccessUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return false;
+  return u.startsWith(YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX);
+}
+
+async function checkYktLoginAssistPopupUrl() {
+  if (!window.platformInteractiveLoginPending?.ykt) return false;
+  if (!yktLoginAssistPopupTabId) return false;
+  try {
+    const tab = await chrome.tabs.get(Number(yktLoginAssistPopupTabId));
+    const currentUrl = String(tab?.url || '').trim();
+    if (isYktLoginSuccessUrl(currentUrl)) {
+      closeYktLoginAssistPopup(false);
+      scheduleYktLoginAssistRecheck(250);
+      return true;
+    }
+  } catch {
+    // popup may be closed by user
+    yktLoginAssistPopupWindowId = null;
+    yktLoginAssistPopupTabId = null;
+    if (!window.platformInteractiveLoginPending?.ykt) {
+      stopYktLoginAssistWatcher();
+    }
+  }
+  return false;
+}
+
+async function checkYktLoginAssistStatus() {
+  if (yktLoginAssistChecking) return false;
+  if (!isPlatformEnabled('ykt')) return false;
+  if (!window.platformInteractiveLoginPending?.ykt) return false;
+  yktLoginAssistChecking = true;
+  try {
+    const resp = await fetchYktJson(YKT_COURSE_LIST_API);
+    const ok = Number(resp?.errcode) === 0;
+    if (ok) {
+      closeYktLoginAssistPopup(false);
+      scheduleYktLoginAssistRecheck(300);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    yktLoginAssistChecking = false;
+  }
+}
+
+function startYktLoginAssistWatcher() {
+  stopYktLoginAssistWatcher();
+  yktLoginAssistPollTimer = setInterval(() => {
+    void checkYktLoginAssistStatus();
+    void checkYktLoginAssistPopupUrl();
+  }, PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS);
+  void checkYktLoginAssistStatus();
+  void checkYktLoginAssistPopupUrl();
+}
+
+function closeYktLoginAssistPopup(cancelPending = false) {
+  const mask = document.getElementById('ykt-login-assist-mask');
+  if (mask instanceof HTMLElement) {
+    mask.style.display = 'none';
+  }
+  if (yktLoginAssistPopupWindowId) {
+    chrome.windows.remove(Number(yktLoginAssistPopupWindowId)).catch(() => {});
+  }
+  yktLoginAssistPopupWindowId = null;
+  yktLoginAssistPopupTabId = null;
+  stopYktLoginAssistWatcher();
+  if (cancelPending) {
+    window.platformInteractiveLoginPending.ykt = false;
+  }
+}
+
+function ensureYktLoginAssistPopup() {
+  let mask = document.getElementById('ykt-login-assist-mask');
+  if (mask instanceof HTMLElement) return mask;
+
+  mask = document.createElement('div');
+  mask.id = 'ykt-login-assist-mask';
+  mask.style.cssText = [
+    'display:none',
+    'position:fixed',
+    'inset:0',
+    'z-index:1200',
+    'background:rgba(15,23,42,0.45)',
+    'align-items:center',
+    'justify-content:center',
+    'padding:12px'
+  ].join(';');
+  mask.innerHTML = `
+    <div style="width:min(360px, 92vw); height:min(520px, 88vh); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
+      <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
+        <div style="font-size:14px; font-weight:700; color:#0f172a;">登录雨课堂</div>
+        <button type="button" data-action="close-ykt-login-assist" style="border:0; background:transparent; color:#475569; font-size:18px; line-height:1; cursor:pointer;">×</button>
+      </div>
+      <div style="flex:1; padding:8px; background:#f8fafc;">
+        <iframe id="ykt-login-assist-frame" title="登录雨课堂" referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-same-origin allow-popups" style="width:100%; height:100%; border:0; border-radius:8px; background:#fff;"></iframe>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  const closeBtn = mask.querySelector('button[data-action="close-ykt-login-assist"]');
+  if (closeBtn instanceof HTMLButtonElement) {
+    closeBtn.addEventListener('click', () => closeYktLoginAssistPopup(true));
+  }
+  mask.addEventListener('click', (e) => {
+    if (e.target === mask) closeYktLoginAssistPopup(true);
+  });
+
+  const frame = mask.querySelector('#ykt-login-assist-frame');
+  if (frame instanceof HTMLIFrameElement) {
+    frame.addEventListener('load', () => {
+      if (mask.style.display === 'none') return;
+      yktLoginIframeLoadCount += 1;
+      void checkYktLoginAssistStatus();
+    });
+  }
+
+  return mask;
+}
+
+function openYktLoginAssistPopup() {
+  if (!isPlatformEnabled('ykt')) return;
+  if (yktLoginAssistPopupWindowId && yktLoginAssistPopupTabId) {
+    chrome.windows.update(Number(yktLoginAssistPopupWindowId), { focused: true }).catch(() => {});
+    startYktLoginAssistWatcher();
+    return;
+  }
+  const openPopup = async () => {
+    const popupWidth = 360;
+    const popupHeight = 520;
+    let left;
+    let top;
+    try {
+      const currentWin = await chrome.windows.getCurrent();
+      if (Number.isFinite(Number(currentWin?.left)) && Number.isFinite(Number(currentWin?.top)) && Number.isFinite(Number(currentWin?.width)) && Number.isFinite(Number(currentWin?.height))) {
+        left = Math.max(0, Number(currentWin.left) + Math.round((Number(currentWin.width) - popupWidth) / 2));
+        top = Math.max(0, Number(currentWin.top) + Math.round((Number(currentWin.height) - popupHeight) / 2));
+      }
+    } catch {
+      left = undefined;
+      top = undefined;
+    }
+
+    const created = await chrome.windows.create({
+      url: YKT_WECHAT_QR_LOGIN_URL,
+      type: 'popup',
+      focused: true,
+      width: popupWidth,
+      height: popupHeight,
+      left,
+      top
+    });
+    yktLoginAssistPopupWindowId = Number(created?.id || 0) || null;
+    const tab = Array.isArray(created?.tabs) && created.tabs.length ? created.tabs[0] : null;
+    yktLoginAssistPopupTabId = Number(tab?.id || 0) || null;
+    yktLoginIframeLoadCount = 0;
+    yktLoginIframeOpenedAt = Date.now();
+    startYktLoginAssistWatcher();
+  };
+  openPopup().catch(() => {
+    showToast('打开雨课堂登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
+  });
+}
+
+function scheduleJlgjLoginAssistRecheck(delayMs = 500) {
+  if (jlgjLoginAssistRetryTimer) {
+    clearTimeout(jlgjLoginAssistRetryTimer);
+    jlgjLoginAssistRetryTimer = null;
+  }
+  jlgjLoginAssistRetryTimer = setTimeout(() => {
+    jlgjLoginAssistRetryTimer = null;
+    if (!isPlatformEnabled('jlgj')) return;
+    if (!window.platformInteractiveLoginPending?.jlgj) return;
+    triggerExternalPlatformLoad('jlgj', true);
+  }, Math.max(120, Number(delayMs) || 500));
+}
+
+function stopJlgjLoginAssistWatcher() {
+  if (jlgjLoginAssistPollTimer) {
+    clearInterval(jlgjLoginAssistPollTimer);
+    jlgjLoginAssistPollTimer = null;
+  }
+}
+
+function isJlgjLoginSuccessUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return false;
+  return u.startsWith(JLGJ_LOGIN_SUCCESS_URL_PREFIX);
+}
+
+async function checkJlgjLoginAssistPopupUrl() {
+  if (!window.platformInteractiveLoginPending?.jlgj) return false;
+  if (!jlgjLoginAssistPopupTabId) return false;
+  try {
+    const tab = await chrome.tabs.get(Number(jlgjLoginAssistPopupTabId));
+    const currentUrl = String(tab?.url || '').trim();
+    if (isJlgjLoginSuccessUrl(currentUrl)) {
+      stopJlgjLoginAssistWatcher();
+      scheduleJlgjLoginAssistRecheck(180);
+      return true;
+    }
+  } catch {
+    jlgjLoginAssistPopupWindowId = null;
+    jlgjLoginAssistPopupTabId = null;
+    stopJlgjLoginAssistWatcher();
+  }
+  return false;
+}
+
+function startJlgjLoginAssistWatcher() {
+  stopJlgjLoginAssistWatcher();
+  jlgjLoginAssistPollTimer = setInterval(() => {
+    void checkJlgjLoginAssistPopupUrl();
+  }, PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS);
+  void checkJlgjLoginAssistPopupUrl();
+}
+
+function closeJlgjLoginAssistPopup(cancelPending = false) {
+  if (jlgjLoginAssistPopupWindowId) {
+    chrome.windows.remove(Number(jlgjLoginAssistPopupWindowId)).catch(() => {});
+  }
+  jlgjLoginAssistPopupWindowId = null;
+  jlgjLoginAssistPopupTabId = null;
+  stopJlgjLoginAssistWatcher();
+  if (cancelPending) {
+    window.platformInteractiveLoginPending.jlgj = false;
+  }
+}
+
+function openJlgjLoginAssistPopup() {
+  if (!isPlatformEnabled('jlgj')) return;
+  if (jlgjLoginAssistPopupWindowId && jlgjLoginAssistPopupTabId) {
+    chrome.windows.update(Number(jlgjLoginAssistPopupWindowId), { focused: true }).catch(() => {});
+    startJlgjLoginAssistWatcher();
+    return;
+  }
+
+  const openPopup = async () => {
+    const popupWidth = 980;
+    const popupHeight = 760;
+    let left;
+    let top;
+    try {
+      const currentWin = await chrome.windows.getCurrent();
+      if (Number.isFinite(Number(currentWin?.left)) && Number.isFinite(Number(currentWin?.top)) && Number.isFinite(Number(currentWin?.width)) && Number.isFinite(Number(currentWin?.height))) {
+        left = Math.max(0, Number(currentWin.left) + Math.round((Number(currentWin.width) - popupWidth) / 2));
+        top = Math.max(0, Number(currentWin.top) + Math.round((Number(currentWin.height) - popupHeight) / 2));
+      }
+    } catch {
+      left = undefined;
+      top = undefined;
+    }
+
+    const created = await chrome.windows.create({
+      url: JLGJ_LOGIN_ASSIST_URL,
+      type: 'popup',
+      focused: true,
+      width: popupWidth,
+      height: popupHeight,
+      left,
+      top
+    });
+    jlgjLoginAssistPopupWindowId = Number(created?.id || 0) || null;
+    const tab = Array.isArray(created?.tabs) && created.tabs.length ? created.tabs[0] : null;
+    jlgjLoginAssistPopupTabId = Number(tab?.id || 0) || null;
+    startJlgjLoginAssistWatcher();
+  };
+
+  openPopup().catch(() => {
+    showToast('打开接龙管家登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
+  });
+}
+
+function stopMrzyLoginAssistPolling() {
+  if (mrzyLoginAssistPollTimer) {
+    clearInterval(mrzyLoginAssistPollTimer);
+    mrzyLoginAssistPollTimer = null;
+  }
+  mrzyLoginAssistPolling = false;
+}
+
+function scheduleMrzyLoginAssistRecheck(delayMs = 500) {
+  if (mrzyLoginAssistRetryTimer) {
+    clearTimeout(mrzyLoginAssistRetryTimer);
+    mrzyLoginAssistRetryTimer = null;
+  }
+  mrzyLoginAssistRetryTimer = setTimeout(() => {
+    mrzyLoginAssistRetryTimer = null;
+    if (!isPlatformEnabled('mrzy')) return;
+    if (!window.platformInteractiveLoginPending?.mrzy) return;
+    triggerExternalPlatformLoad('mrzy', true);
+  }, Math.max(120, Number(delayMs) || 500));
+}
+
+function closeMrzyLoginAssistPopup(cancelPending = false) {
+  const mask = document.getElementById('mrzy-login-assist-mask');
+  if (mask instanceof HTMLElement) {
+    mask.style.display = 'none';
+  }
+  stopMrzyLoginAssistPolling();
+  if (cancelPending) {
+    window.platformInteractiveLoginPending.mrzy = false;
+  }
+}
+
+function ensureMrzyLoginAssistPopup() {
+  let mask = document.getElementById('mrzy-login-assist-mask');
+  if (mask instanceof HTMLElement) return mask;
+
+  mask = document.createElement('div');
+  mask.id = 'mrzy-login-assist-mask';
+  mask.style.cssText = [
+    'display:none',
+    'position:fixed',
+    'inset:0',
+    'z-index:1200',
+    'background:rgba(15,23,42,0.45)',
+    'align-items:center',
+    'justify-content:center',
+    'padding:12px'
+  ].join(';');
+  mask.innerHTML = `
+    <div style="width:min(360px, 92vw); height:min(520px, 88vh); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
+      <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
+        <div style="font-size:14px; font-weight:700; color:#0f172a;">登录每日交作业</div>
+        <button type="button" data-action="close-mrzy-login-assist" style="border:0; background:transparent; color:#475569; font-size:18px; line-height:1; cursor:pointer;">×</button>
+      </div>
+      <div style="flex:1; padding:14px 14px 16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">
+        <img id="mrzy-login-assist-qr" alt="登录二维码" title="点击刷新二维码" style="width:220px; height:220px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; cursor:pointer;" />
+        <div style="font-size:13px; color:#334155; text-align:center;">使用微信扫一扫登录</div>
+        <div id="mrzy-login-assist-status" style="min-height:18px; font-size:12px; color:#64748b; text-align:center;"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  const closeBtn = mask.querySelector('button[data-action="close-mrzy-login-assist"]');
+  if (closeBtn instanceof HTMLButtonElement) {
+    closeBtn.addEventListener('click', () => closeMrzyLoginAssistPopup(true));
+  }
+  mask.addEventListener('click', (e) => {
+    if (e.target === mask) closeMrzyLoginAssistPopup(true);
+  });
+
+  const qr = mask.querySelector('#mrzy-login-assist-qr');
+  if (qr instanceof HTMLImageElement) {
+    qr.addEventListener('click', () => {
+      void refreshMrzyLoginAssistQrCode(true);
+    });
+  }
+
+  return mask;
+}
+
+async function requestMrzyLoginAssistQrCode() {
+  const res = await fetch(MRZY_QR_GEN_API, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json, text/plain, */*',
+      'Content-Type': 'application/json'
+    },
+    body: '{}'
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { data = null; }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const code = String(data?.data?.code || '').trim();
+  if (!code) throw new Error(String(data?.msg || data?.message || '二维码生成失败'));
+  return code;
+}
+
+async function checkMrzyLoginAssistToken(code) {
+  const qrCode = String(code || '').trim();
+  if (!qrCode) return '';
+  const res = await fetch(MRZY_QR_CHECK_API, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json, text/plain, */*',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ code: qrCode })
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { data = null; }
+  if (!res.ok) return '';
+  const token = data?.data?.token;
+  if (token === null || token === undefined) return '';
+  const tokenText = String(token).trim();
+  return tokenText && tokenText.toLowerCase() !== 'null' ? tokenText : '';
+}
+
+async function persistMrzyTeacherTokenCookie(token) {
+  const v = String(token || '').trim();
+  if (!v) return false;
+  try {
+    await chrome.cookies.set({
+      url: 'https://zuoye.lulufind.com/',
+      name: 'Teacher-Token',
+      value: v,
+      path: '/'
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pollMrzyLoginAssistToken() {
+  if (mrzyLoginAssistPolling) return;
+  if (!isPlatformEnabled('mrzy')) return;
+  if (!mrzyLoginAssistCurrentCode) return;
+  mrzyLoginAssistPolling = true;
+  try {
+    const token = await checkMrzyLoginAssistToken(mrzyLoginAssistCurrentCode);
+    if (token) {
+      await persistMrzyTeacherTokenCookie(token);
+      closeMrzyLoginAssistPopup(false);
+      scheduleMrzyLoginAssistRecheck(350);
+    }
+  } catch {
+    // keep polling
+  } finally {
+    mrzyLoginAssistPolling = false;
+  }
+}
+
+function startMrzyLoginAssistPolling() {
+  stopMrzyLoginAssistPolling();
+  mrzyLoginAssistPollTimer = setInterval(() => {
+    void pollMrzyLoginAssistToken();
+  }, PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS);
+  void pollMrzyLoginAssistToken();
+}
+
+async function refreshMrzyLoginAssistQrCode(fromUserClick = false) {
+  const mask = ensureMrzyLoginAssistPopup();
+  const qrImg = mask.querySelector('#mrzy-login-assist-qr');
+  const statusEl = mask.querySelector('#mrzy-login-assist-status');
+  if (!(qrImg instanceof HTMLImageElement)) return;
+
+  const serial = ++mrzyLoginAssistCodeSerial;
+  if (statusEl instanceof HTMLElement) {
+    statusEl.textContent = '正在生成二维码...';
+  }
+  try {
+    const code = await requestMrzyLoginAssistQrCode();
+    if (serial !== mrzyLoginAssistCodeSerial) return;
+    mrzyLoginAssistCurrentCode = code;
+    const qrUrl = `${MRZY_QR_SCAN_LINK_BASE}${code}`;
+    qrImg.src = buildQrImageUrl(qrUrl, 220);
+    if (statusEl instanceof HTMLElement) {
+      statusEl.textContent = '';
+    }
+    startMrzyLoginAssistPolling();
+  } catch (e) {
+    if (serial !== mrzyLoginAssistCodeSerial) return;
+    if (statusEl instanceof HTMLElement) {
+      statusEl.textContent = `二维码获取失败：${String(e?.message || '未知错误')}`;
+    }
+  }
+}
+
+function openMrzyLoginAssistPopup() {
+  if (!isPlatformEnabled('mrzy')) return;
+  const mask = ensureMrzyLoginAssistPopup();
+  mask.style.display = 'flex';
+  mrzyLoginAssistCurrentCode = '';
+  void refreshMrzyLoginAssistQrCode(false);
+}
+
 function showPlatformNeedLoginToast(platform) {
   const p = String(platform || '').trim();
   if (!['ve', 'ykt', 'mrzy', 'jlgj'].includes(p)) return;
@@ -5003,6 +5601,18 @@ function setPlatformLoginState(platform, state) {
   const prev = String(window.platformLoginState?.[p] || '').trim();
   const s = (state === 'online' || state === 'offline') ? state : 'checking';
   window.platformLoginState[p] = s;
+  if (p === 'ykt' && s === 'online') {
+    window.platformInteractiveLoginPending.ykt = false;
+    closeYktLoginAssistPopup(false);
+  }
+  if (p === 'mrzy' && s === 'online') {
+    window.platformInteractiveLoginPending.mrzy = false;
+    closeMrzyLoginAssistPopup(false);
+  }
+  if (p === 'jlgj' && s === 'online') {
+    window.platformInteractiveLoginPending.jlgj = false;
+    closeJlgjLoginAssistPopup(false);
+  }
   if (s === 'online' || s === 'offline') {
     window.platformLoginChecked[p] = true;
   }
@@ -5102,30 +5712,60 @@ function ensureYktSection() {
 
 function renderYktNeedLoginMessage() {
   removeYktLoginSection();
-  window.platformEnabled.ykt = false;
+  const interactiveLogin = !!window.platformInteractiveLoginPending?.ykt && isPlatformEnabled('ykt');
   window.platformLoadedOnce.ykt = false;
-  savePlatformEnabledToStorage().catch(() => {});
   clearPlatformData('ykt');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('ykt', 'offline');
+
+  if (interactiveLogin) {
+    openYktLoginAssistPopup();
+    return;
+  }
+
+  closeYktLoginAssistPopup(true);
+  window.platformEnabled.ykt = false;
+  window.platformNeedLogin.ykt = false;
+  savePlatformEnabledToStorage().catch(() => {});
+  refreshPlatformLoginTip();
 }
 
 function renderMrzyNeedLoginMessage() {
-  window.platformEnabled.mrzy = false;
+  const interactiveLogin = !!window.platformInteractiveLoginPending?.mrzy && isPlatformEnabled('mrzy');
   window.platformLoadedOnce.mrzy = false;
-  savePlatformEnabledToStorage().catch(() => {});
   clearPlatformData('mrzy');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('mrzy', 'offline');
+
+  if (interactiveLogin) {
+    openMrzyLoginAssistPopup();
+    return;
+  }
+
+  closeMrzyLoginAssistPopup(true);
+  window.platformEnabled.mrzy = false;
+  window.platformNeedLogin.mrzy = false;
+  savePlatformEnabledToStorage().catch(() => {});
+  refreshPlatformLoginTip();
 }
 
 function renderJlgjNeedLoginMessage() {
-  window.platformEnabled.jlgj = false;
+  const interactiveLogin = !!window.platformInteractiveLoginPending?.jlgj && isPlatformEnabled('jlgj');
   window.platformLoadedOnce.jlgj = false;
-  savePlatformEnabledToStorage().catch(() => {});
   clearPlatformData('jlgj');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('jlgj', 'offline');
+
+  if (interactiveLogin) {
+    openJlgjLoginAssistPopup();
+    return;
+  }
+
+  closeJlgjLoginAssistPopup(true);
+  window.platformEnabled.jlgj = false;
+  window.platformNeedLogin.jlgj = false;
+  savePlatformEnabledToStorage().catch(() => {});
+  refreshPlatformLoginTip();
 }
 
 async function getJlgjAuthHeaders() {
