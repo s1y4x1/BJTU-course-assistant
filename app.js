@@ -461,6 +461,13 @@ function setVersionDownloadRetryVisible(visible) {
   }
 }
 
+function renderVersionDownloadBodyHtml(bodyText) {
+  const safe = escapeHtml(String(bodyText || ''));
+  const linkLabel = 'about:extensions';
+  const linkHtml = '<a href="chrome://extensions/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; font-weight:700; text-decoration:underline;">about:extensions</a>';
+  return safe.replaceAll(escapeHtml(linkLabel), linkHtml);
+}
+
 function setVersionDownloadProgressUi({
   visible = true,
   sourceUrl = VERSION_DOWNLOAD_URL,
@@ -501,7 +508,7 @@ function setVersionDownloadProgressUi({
   }
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
-  if (bodyEl) bodyEl.textContent = String(body || '请稍候，正在下载更新文件...');
+  if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件...');
   if (sourceEl) sourceEl.textContent = `下载源：${String(sourceUrl || '').trim() || '--'}`;
   if (statusEl) statusEl.textContent = String(status || '下载中...');
   if (sizeEl) {
@@ -702,7 +709,7 @@ async function startVersionDownloadWithFallback() {
       sourceUrl: primaryUrl,
       status: '已完成',
       title: '下载成功',
-      body: '请前往解压覆盖扩展目录并重新加载扩展以完成更新。',
+      body: '请打开下载目录，解压覆盖更新扩展目录并到 about:extensions 扩展管理页面重新加载扩展以完成更新。',
       loaded: 0,
       total: 0,
       speed: 0,
@@ -5110,9 +5117,8 @@ async function checkYktLoginAssistPopupUrl() {
     // popup may be closed by user
     yktLoginAssistPopupWindowId = null;
     yktLoginAssistPopupTabId = null;
-    if (!window.platformInteractiveLoginPending?.ykt) {
-      stopYktLoginAssistWatcher();
-    }
+    window.platformInteractiveLoginPending.ykt = false;
+    stopYktLoginAssistWatcher();
   }
   return false;
 }
@@ -5181,7 +5187,7 @@ function ensureYktLoginAssistPopup() {
     'padding:12px'
   ].join(';');
   mask.innerHTML = `
-    <div style="width:min(360px, 92vw); height:min(520px, 88vh); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
+    <div style="width:min(360px, 92vw); max-height:min(88vh, 560px); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
       <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
         <div style="font-size:14px; font-weight:700; color:#0f172a;">登录雨课堂</div>
         <button type="button" data-action="close-ykt-login-assist" style="border:0; background:transparent; color:#475569; font-size:18px; line-height:1; cursor:pointer;">×</button>
@@ -5331,8 +5337,10 @@ function openJlgjLoginAssistPopup() {
   }
 
   const openPopup = async () => {
-    const popupWidth = 980;
-    const popupHeight = 760;
+    const screenW = Number(globalThis.screen?.availWidth || globalThis.screen?.width || 0);
+    const screenH = Number(globalThis.screen?.availHeight || globalThis.screen?.height || 0);
+    const popupWidth = Math.max(980, Math.min(1320, Math.round(screenW * 0.9) || 980));
+    const popupHeight = Math.max(640, Math.min(860, Math.round(screenH * 0.82) || 760));
     let left;
     let top;
     try {
@@ -5415,7 +5423,7 @@ function ensureMrzyLoginAssistPopup() {
     'padding:12px'
   ].join(';');
   mask.innerHTML = `
-    <div style="width:min(360px, 92vw); height:min(520px, 88vh); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
+    <div style="width:min(360px, 92vw); max-height:min(88vh, 560px); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
       <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
         <div style="font-size:14px; font-weight:700; color:#0f172a;">登录每日交作业</div>
         <button type="button" data-action="close-mrzy-login-assist" style="border:0; background:transparent; color:#475569; font-size:18px; line-height:1; cursor:pointer;">×</button>
@@ -5541,7 +5549,7 @@ async function refreshMrzyLoginAssistQrCode(fromUserClick = false) {
 
   const serial = ++mrzyLoginAssistCodeSerial;
   if (statusEl instanceof HTMLElement) {
-    statusEl.textContent = '正在生成二维码...';
+    statusEl.textContent = '正在刷新二维码…';
   }
   try {
     const code = await requestMrzyLoginAssistQrCode();
