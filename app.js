@@ -88,6 +88,27 @@ const captchaHistoryList = document.getElementById('captcha-history-list');
 const auxContainer = document.getElementById('aux-login-container');
 const auxCheckbox = document.getElementById('aux-login-checkbox');
 
+function renderDirectOpenNotice() {
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:linear-gradient(135deg,#f8fafc 0%,#eef2ff 55%,#e0f2fe 100%);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+      <div style="max-width:720px;width:100%;background:#fff;border:1px solid #dbeafe;border-radius:20px;box-shadow:0 18px 45px rgba(15,23,42,0.12);padding:32px 28px;color:#0f172a;">
+        <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#2563eb;margin-bottom:12px;">BJTU 课程助手</div>
+        <h1 style="margin:0 0 14px;font-size:28px;line-height:1.25;">请到 about:extensions 页面加载已解压的扩展，而非直接打开 app.html</h1>
+        <p style="margin:0 0 18px;font-size:16px;line-height:1.8;color:#334155;">这个页面是扩展的工作台，只能在浏览器扩展环境中使用。请先打开 <span style="font-weight:700;color:#0f172a;">about:extensions</span>，再点击“加载已解压的扩展程序”载入本目录。</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+          <a href="about:extensions" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;">打开 about:extensions</a>
+          <span style="color:#64748b;font-size:13px;">通过扩展入口打开时不会显示这条提示。</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+const extensionRuntimeId = typeof chrome !== 'undefined' && chrome?.runtime ? String(chrome.runtime.id || '').trim() : '';
+if (location.protocol !== 'chrome-extension:' || !extensionRuntimeId) {
+  renderDirectOpenNotice();
+  throw new Error('Direct app.html open is not supported outside the extension runtime.');
+}
+
 if (usernameInput) {
   usernameInput.setAttribute('inputmode', 'numeric');
   usernameInput.setAttribute('pattern', '[0-9]*');
@@ -189,13 +210,13 @@ function isPlatformEnabled(platform) {
   return window.platformEnabled?.[p] !== false;
 }
 
-function sanitizePlatformEnabled(raw) {
-  const src = (raw && typeof raw === 'object') ? raw : {};
+function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
+  const src = (raw && typeof raw === 'object') ? raw : null;
   return {
-    ve: src.ve !== false,
-    ykt: src.ykt !== false,
-    mrzy: src.mrzy !== false,
-    jlgj: src.jlgj !== false
+    ve: src ? src.ve !== false : fallback.ve !== false,
+    ykt: src ? src.ykt !== false : fallback.ykt !== false,
+    mrzy: src ? src.mrzy !== false : fallback.mrzy !== false,
+    jlgj: src ? src.jlgj !== false : fallback.jlgj !== false
   };
 }
 
@@ -204,7 +225,7 @@ async function loadPlatformEnabledFromStorage() {
     const localData = await chrome.storage.local.get(['platformEnabled']);
     const syncData = await chrome.storage.sync.get(['platformEnabled']);
     const saved = localData?.platformEnabled ?? syncData?.platformEnabled ?? null;
-    window.platformEnabled = sanitizePlatformEnabled(saved);
+    window.platformEnabled = sanitizePlatformEnabled(saved, DEFAULT_PLATFORM_ENABLED);
   } catch {
     window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
   }
@@ -5717,59 +5738,50 @@ function ensureYktSection() {
 
 function renderYktNeedLoginMessage() {
   removeYktLoginSection();
-  const interactiveLogin = !!window.platformInteractiveLoginPending?.ykt && isPlatformEnabled('ykt');
   window.platformLoadedOnce.ykt = false;
   clearPlatformData('ykt');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('ykt', 'offline');
 
-  if (interactiveLogin) {
+  if (isPlatformEnabled('ykt')) {
     openYktLoginAssistPopup();
     return;
   }
 
   closeYktLoginAssistPopup(true);
-  window.platformEnabled.ykt = false;
   window.platformNeedLogin.ykt = false;
-  savePlatformEnabledToStorage().catch(() => {});
   refreshPlatformLoginTip();
 }
 
 function renderMrzyNeedLoginMessage() {
-  const interactiveLogin = !!window.platformInteractiveLoginPending?.mrzy && isPlatformEnabled('mrzy');
   window.platformLoadedOnce.mrzy = false;
   clearPlatformData('mrzy');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('mrzy', 'offline');
 
-  if (interactiveLogin) {
+  if (isPlatformEnabled('mrzy')) {
     openMrzyLoginAssistPopup();
     return;
   }
 
   closeMrzyLoginAssistPopup(true);
-  window.platformEnabled.mrzy = false;
   window.platformNeedLogin.mrzy = false;
-  savePlatformEnabledToStorage().catch(() => {});
   refreshPlatformLoginTip();
 }
 
 function renderJlgjNeedLoginMessage() {
-  const interactiveLogin = !!window.platformInteractiveLoginPending?.jlgj && isPlatformEnabled('jlgj');
   window.platformLoadedOnce.jlgj = false;
   clearPlatformData('jlgj');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('jlgj', 'offline');
 
-  if (interactiveLogin) {
+  if (isPlatformEnabled('jlgj')) {
     openJlgjLoginAssistPopup();
     return;
   }
 
   closeJlgjLoginAssistPopup(true);
-  window.platformEnabled.jlgj = false;
   window.platformNeedLogin.jlgj = false;
-  savePlatformEnabledToStorage().catch(() => {});
   refreshPlatformLoginTip();
 }
 
