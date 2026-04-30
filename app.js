@@ -115,6 +115,13 @@ if (usernameInput) {
   usernameInput.addEventListener('input', () => {
     const normalized = String(usernameInput.value || '').replace(/\D/g, '');
     if (usernameInput.value !== normalized) usernameInput.value = normalized;
+    const current = String(lastValidUsername || '').trim();
+    const value = String(normalized || '').trim();
+    if (value && value !== current) {
+      beginAccountSwitchInterruption();
+    } else if (!value || value === current) {
+      resetAccountSwitchInterruption();
+    }
   });
 }
 
@@ -820,14 +827,14 @@ function buildAggregatedReleaseNotes(releases = [], localVersion = '', latestVer
   }).join('\n\n---\n\n');
 }
 
-function buildAllReleaseNotes(releases = []) {
+function buildAllReleaseNotes(releases = [], latestVersion = '') {
   const list = Array.isArray(releases) ? releases : [];
   const items = list.filter((r) => !r?.draft && String(r?.tag_name || '').trim());
   if (!items.length) return '';
   return items.map((r) => {
     const tag = String(r.tag_name || '').trim();
     const body = String(r.body || '').trim() || '此版本暂无更新说明。';
-    return `## ${tag}\n${body}`;
+    return compareVersionText(tag, latestVersion) === 0 ? body : `## ${tag}\n${body}`;
   }).join('\n\n---\n\n');
 }
 
@@ -875,7 +882,7 @@ async function loadVersionInfo() {
 
     const cmp = compareVersionText(latestTag, localVersion);
     if (cmp === 0) {
-      const historyBody = buildAllReleaseNotes(releases);
+      const historyBody = buildAllReleaseNotes(releases, latestTag);
       setVersionButtonState('latest', {
         localVersion,
         latestVersion: latestTag,
@@ -1310,13 +1317,29 @@ const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
 let loginAccountHistory = []; // [{userId,userName,roleName,lastLoginAt}]
 let isSyncingAccountHistorySelect = false;
 let highPrioritySwitchTarget = '';
+let accountSwitchInterruptionArmed = false;
+
+function stopAccountScopedFetches() {
+  abortTrackedFetchRequests();
+  cancelAllResourceDownloadsForAccountSwitch();
+}
 
 function prioritizeAccountSwitch() {
   window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
   window.resourceSpaceLoadVersion = Number(window.resourceSpaceLoadVersion || 0) + 1;
   bumpPlatformLoadVersion('ve');
-  abortTrackedFetchRequests();
-  cancelAllResourceDownloadsForAccountSwitch();
+  stopAccountScopedFetches();
+}
+
+function beginAccountSwitchInterruption() {
+  if (accountSwitchInterruptionArmed) return false;
+  accountSwitchInterruptionArmed = true;
+  prioritizeAccountSwitch();
+  return true;
+}
+
+function resetAccountSwitchInterruption() {
+  accountSwitchInterruptionArmed = false;
 }
 
 function updateTotalSpeed() {
@@ -2987,6 +3010,7 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
           await setLocal('username', detected);
           lastValidUsername = detected;
           pendingUsernameChange = null;
+          resetAccountSwitchInterruption();
           isLoginSessionValid = true;
           updateJsessionidState();
           try {
@@ -3333,7 +3357,10 @@ async function doLoginFlow() {
 
     // Account switching should trigger a VE course/homework refresh.
     // Retry-callback logins should not force an additional full reload.
-    const shouldReloadCourses = wasSwitchingAccount || (cbCount === 0 && userBeforeLogin === finalUser);
+    const shouldReloadCourses = wasSwitchingAccount || finalUser !== userBeforeLogin || (cbCount === 0 && userBeforeLogin === finalUser);
+    if (shouldReloadCourses) {
+      resetAccountSwitchInterruption();
+    }
     if (shouldReloadCourses && isPlatformEnabled('ve')) {
       await loadCourses();
     }
@@ -5848,7 +5875,7 @@ async function fetchJlgjJson(url) {
 }
 
 async function openJlgjBackgroundTab() {
-  const tab = await chrome.tabs.create({ url: 'https://i.jielong.com/my-class', active: false });
+  const tab = await chrome.tabs.create({ url: 'https://i.jielong.com/my-class#bjtu-bg', active: false });
   return tab;
 }
 
@@ -5939,10 +5966,9 @@ async function fetchJlgjJsonFromPageContext(url, existingTabId = null) {
 async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
   const start = Date.now();
   let ownedTabId = null;
-  let reloadedOwnedTab = false;
 
   const pickReadyTab = async () => {
-    const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*'] });
+    const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*#bjtu-bg'] });
     const existing = (tabs || []).find((t) => Number.isFinite(Number(t?.id)) && t.status === 'complete');
     if (existing?.id) return existing;
 
@@ -5956,6 +5982,7 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
       const ready = await chrome.tabs.get(ownedTabId);
       return ready?.id ? ready : null;
     } catch {
+      ownedTabId = null;
       return null;
     }
   };
@@ -6852,6 +6879,16 @@ async function fetchCoursewareItems(courseNum, fzId) {
   }
 
   if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, items: [] };
+  const alertMsg = parseAlertMsg(text);
+  if (alertMsg && alertMsg.includes('登录')) return { loginRequired: true, items: [] };
+  
+  if (parseAlertMsg(text) || String(text).includes('不合法') || String(text).includes('无权')) {
+    // Possibly switched user or lost access
+    const currentUser = await detectUserIdFromPersonalCenter();
+    if (currentUser && currentUser !== String(lastValidUsername).trim()) {
+      return { loginRequired: true, accountSwitched: currentUser, items: [] };
+    }
+  }
 
   let data = null;
   try { data = JSON.parse(String(text || '{}')); } catch { data = null; }
@@ -6881,11 +6918,21 @@ async function fetchCoursewareItems(courseNum, fzId) {
   return { loginRequired: false, items };
 }
 
+function getCourseListLoadVersionSnapshot() {
+  return Number(window.courseListLoadVersion || 0);
+}
+
+function isCourseListLoadStale(snapshotVersion) {
+  return Number(snapshotVersion || 0) !== Number(window.courseListLoadVersion || 0);
+}
+
 async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
   const shouldRender = () => String(card.dataset.resultView || '').trim() === 'courseware';
+  const courseListVersion = getCourseListLoadVersionSnapshot();
+  const isStale = () => isCourseListLoadStale(courseListVersion);
 
   setCoursewareButtonLoading(btn, true);
   setCourseCoursewareLoading(courseIdInt, true);
@@ -6896,8 +6943,28 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
 
   try {
     const payload = await fetchCoursewareItems(courseNum, fzId);
+    if (isStale()) {
+      setCourseCoursewareLoading(courseIdInt, false);
+      return;
+    }
     if (payload.loginRequired) {
       setCourseCoursewareLoading(courseIdInt, false);
+      if (payload.accountSwitched) {
+        showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载', 'info', 3000);
+        usernameInput.value = payload.accountSwitched;
+        await setLocal('username', payload.accountSwitched);
+        lastValidUsername = payload.accountSwitched;
+        resetAccountSwitchInterruption();
+        isLoginSessionValid = true;
+        renderLoginAccountHistorySelect(payload.accountSwitched);
+        try {
+          const info = await fetchUserInfoRemote(payload.accountSwitched);
+          setWelcomeMessage(info);
+          await rememberLoggedInAccount(payload.accountSwitched, info);
+        } catch { /* ignore */ }
+        if (isPlatformEnabled('ve')) loadCourses();
+        return;
+      }
       if (shouldRender()) {
         resultArea.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
         const sp = resultArea.querySelector('span');
@@ -6943,13 +7010,34 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
 async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   if (!btn || !card) return;
+  const courseListVersion = getCourseListLoadVersionSnapshot();
+  const isStale = () => isCourseListLoadStale(courseListVersion);
   setCoursewareButtonLoading(btn, true);
   setCourseCoursewareLoading(courseIdInt, true);
 
   try {
     const payload = await fetchCoursewareItems(courseNum, fzId);
+    if (isStale()) {
+      setCourseCoursewareLoading(courseIdInt, false);
+      return;
+    }
     if (payload.loginRequired) {
       setCourseCoursewareLoading(courseIdInt, false);
+      if (payload.accountSwitched) {
+        showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载', 'info', 3000);
+        usernameInput.value = payload.accountSwitched;
+        await setLocal('username', payload.accountSwitched);
+        lastValidUsername = payload.accountSwitched;
+        resetAccountSwitchInterruption();
+        isLoginSessionValid = true;
+        renderLoginAccountHistorySelect(payload.accountSwitched);
+        try {
+          const info = await fetchUserInfoRemote(payload.accountSwitched);
+          setWelcomeMessage(info);
+          await rememberLoggedInAccount(payload.accountSwitched, info);
+        } catch { /* ignore */ }
+        if (isPlatformEnabled('ve')) loadCourses();
+      }
       return;
     }
 
@@ -7064,6 +7152,8 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   if (!btn || !card || !resultArea) return;
   const currentView = String(card.dataset.resultView || '').trim();
   const shouldTouchVisibleArea = !currentView || currentView === 'replay';
+  const courseListVersion = getCourseListLoadVersionSnapshot();
+  const isStale = () => isCourseListLoadStale(courseListVersion);
 
   const ensureReplayShadowArea = () => {
     let shadow = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
@@ -7093,6 +7183,13 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   try {
     const calUrl = `${BASE_VE}back/rp/common/teachCalendar.shtml?method=toDisplyTeachCourses&courseId=${encodeURIComponent(courseIdInt)}`;
     const { text: calText } = await fetchText(calUrl, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+    if (isStale()) {
+      btn.classList.remove('replay-list-loading');
+      btn.classList.remove('replay-link-progress');
+      btn.style.removeProperty('--replay-progress');
+      setCourseReplayLoading(courseIdInt, false);
+      return;
+    }
     const data = JSON.parse(calText);
     if (String(data.STATUS) !== '0') {
       btn.classList.remove('replay-list-loading');
@@ -7139,6 +7236,13 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
       linksFetched: false,
       linksFetching: false
     };
+    if (isStale()) {
+      btn.classList.remove('replay-list-loading');
+      btn.classList.remove('replay-link-progress');
+      btn.style.removeProperty('--replay-progress');
+      setCourseReplayLoading(courseIdInt, false);
+      return;
+    }
     // Keep replay list DOM in hidden shadow area so background parsing/updating won't override current visible view.
     replayShadowArea.innerHTML = replayListHtml;
     if (shouldTouchVisibleArea && currentView === 'replay') {
@@ -7171,9 +7275,18 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
+  const courseListVersion = getCourseListLoadVersionSnapshot();
+  const isStale = () => isCourseListLoadStale(courseListVersion);
   const cache = window.videoReplayCacheByCourseId?.[courseIdInt];
   const list = Array.isArray(cache?.list) ? cache.list : [];
   if (!cache || !list.length || cache.linksFetched || cache.linksFetching) {
+    flushPendingCourseCardSortIfIdle();
+    return;
+  }
+
+  if (isStale()) {
+    cache.linksFetching = false;
+    setCourseReplayLoading(courseIdInt, false);
     flushPendingCourseCardSortIfIdle();
     return;
   }
@@ -7203,6 +7316,15 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
     return fetchVideoLinkInternal(linkContainerId, item.videoId, courseNum, fzId, item.teacherId || '')
       .finally(onOneLinkDone);
   }));
+
+  if (isStale()) {
+    cache.linksFetching = false;
+    setCourseReplayLoading(courseIdInt, false);
+    btn.classList.remove('replay-link-progress');
+    btn.style.removeProperty('--replay-progress');
+    flushPendingCourseCardSortIfIdle();
+    return;
+  }
 
   cache.linksFetching = false;
   cache.linksFetched = true;
@@ -8038,6 +8160,18 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
   setPlatformLoginState('jlgj', 'checking');
 
   let bgTab = null;
+  // Cleanup orphaned background tabs from previous popup sessions
+  try {
+    const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*'] });
+    for (const t of tabs) {
+      if (t.active === false && t.id && t.url && t.url.includes('#bjtu-bg')) {
+        try { await chrome.tabs.remove(t.id); } catch { /* ignore */ }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   try {
     const matchMap = collectCourseNameMatchMap(courses);
 
@@ -8285,6 +8419,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
 async function loadCourses() {
   const courseLoadVersion = bumpPlatformLoadVersion('ve');
   window.courseListLoadVersion = courseLoadVersion;
+  stopAccountScopedFetches();
   window.homeworkNoteAttachmentCacheByKey = {};
   window.homeworkAttachmentItemsById = {};
   window.homeworkAttachmentItemsByCourseId = {};
@@ -8902,7 +9037,7 @@ function renderHomeworkList(courseId) {
     const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? '';
     const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? '';
     const scoreViewUrl = (upId && snId)
-      ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=1`
+      ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=1&score=100`
       : '';
     const scoreKey = buildHomeworkScoreKey(upId, snId);
     const cachedScore = window.homeworkScoreCacheByKey[scoreKey];
@@ -9129,6 +9264,8 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
 
 async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId) {
   const getLinksDiv = () => document.getElementById(containerId);
+  const courseListVersion = getCourseListLoadVersionSnapshot();
+  const isStale = () => isCourseListLoadStale(courseListVersion);
   if (!getLinksDiv()) return false;
 
   try {
@@ -9147,11 +9284,14 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       body: postBody.toString()
     });
 
+    if (isStale()) return false;
+
     const detailData = JSON.parse(text);
 
     if (detailData.flag === false || (String(detailData.STATUS) === '1' && String(detailData.ERRMSG || '').includes('不合法'))) {
       const linksDiv = getLinksDiv();
       if (!linksDiv) return false;
+      if (isStale()) return false;
       linksDiv.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
       const sp = linksDiv.querySelector('span');
       if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
@@ -9164,6 +9304,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
     if (html && (detailData.flag === true || String(detailData.STATUS) === '0')) {
       const linksDiv = getLinksDiv();
       if (!linksDiv) return false;
+      if (isStale()) return false;
       linksDiv.style.color = '#9C27B0';
       linksDiv.style.fontWeight = 'bold';
       linksDiv.innerHTML = html;
@@ -9185,6 +9326,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
 
     const linksDiv = getLinksDiv();
     if (!linksDiv) return false;
+    if (isStale()) return false;
     linksDiv.style.color = '#9C27B0';
     linksDiv.style.fontWeight = 'bold';
     linksDiv.innerHTML = `<span style="color:#999; font-weight: normal;">${detailData.message || detailData.ERRMSG || '无数据'}</span>`;
@@ -9199,6 +9341,8 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
 window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btnEl) {
   const container = btnEl.closest('div');
   const span = container.querySelector('.video-link');
+  const courseListVersion = getCourseListLoadVersionSnapshot();
+  const isStale = () => isCourseListLoadStale(courseListVersion);
   span.textContent = '获取中...';
   try {
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
@@ -9215,8 +9359,11 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
       body: postBody.toString()
     });
 
+    if (isStale()) return;
+
     const data = JSON.parse(text);
     if (data?.flag === false || (data?.STATUS === '1' && String(data?.ERRMSG || '').includes('不合法'))) {
+      if (isStale()) return;
       span.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
       span.onclick = () => promptLoginIfPossible(VE_LOGIN_REQUIRED_HTML);
       promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
@@ -9224,17 +9371,21 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
     }
     const html = data?.html || '';
     if (!html) {
+      if (isStale()) return;
       span.textContent = '未返回链接';
       return;
     }
     // Best-effort: find first http(s) link
     const m = html.match(/https?:\/\/[^\s"']+/);
     if (m?.[0]) {
+      if (isStale()) return;
       span.innerHTML = `<a class="url-link" href="${m[0]}" target="_blank">${m[0]}</a>`;
     } else {
+      if (isStale()) return;
       span.textContent = '已返回 HTML（未解析出直链）';
     }
   } catch (e) {
+    if (isStale()) return;
     span.textContent = 'Err: ' + e.message;
   }
 };
@@ -9900,6 +10051,7 @@ cancelBtn.addEventListener('click', () => {
     pendingUsernameChange = null;
     usernameInput.value = backTo;
     lastValidUsername = backTo;
+    resetAccountSwitchInterruption();
     setLocal('username', backTo);
     renderLoginAccountHistorySelect(backTo);
     if (isPlatformEnabled('ve')) loadCourses();
@@ -10288,13 +10440,16 @@ usernameInput.addEventListener('change', async () => {
   }
   if (isHighPrioritySwitch || isManualSwitch) {
     highPrioritySwitchTarget = '';
-    prioritizeAccountSwitch();
+    if (!accountSwitchInterruptionArmed) {
+      prioritizeAccountSwitch();
+    }
     const validResult = await validateUserIdRemote(u);
     if (!validResult.ok && validResult.status === '4') {
       showToast('该账号不存在，已恢复原账号', 'error');
       usernameInput.value = lastValidUsername;
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
       renderLoginAccountHistorySelect(lastValidUsername);
+      resetAccountSwitchInterruption();
       if (isPlatformEnabled('ve')) loadCourses();
       await loadResourceSpaceForCurrentAccount();
       return;
@@ -10304,6 +10459,7 @@ usernameInput.addEventListener('change', async () => {
       usernameInput.value = lastValidUsername;
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
       renderLoginAccountHistorySelect(lastValidUsername);
+      resetAccountSwitchInterruption();
       if (isPlatformEnabled('ve')) loadCourses();
       await loadResourceSpaceForCurrentAccount();
       return;
@@ -10324,6 +10480,7 @@ usernameInput.addEventListener('change', async () => {
     renderLoginAccountHistorySelect('');
     lastValidUsername = '';
     pendingUsernameChange = null;
+    resetAccountSwitchInterruption();
     // keep jsessionid for manual mode; do not force modal
     isLoginSessionValid = false;
     showToast('账号已清空：可直接填写 JSESSIONID', 'info', 2500);
@@ -10364,6 +10521,7 @@ usernameInput.addEventListener('change', async () => {
       lastValidUsername = u;
       await setLocal('username', u);
       pendingUsernameChange = null;
+      resetAccountSwitchInterruption();
       await syncJsessionidToUi();
       let info = result.ok ? result.info : null;
       if (!info) {
