@@ -163,7 +163,8 @@ window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
 window.homeworkNoteAttachmentCacheByKey = {}; // {"noteId|courseId|teacherId": {loading,loaded,picList}}
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
-window.courseShowAllById = {}; // {courseId: boolean}
+window.courseShowOverdueById = {};
+window.courseShowDoneById = {};
 window.yktDetailCacheByKey = {}; // {detailKey: {state,title,exam_problems,problem_results,promise}}
 window.externalPlatformLoadVersion = 0;
 window.courseListLoadVersion = 0;
@@ -4932,6 +4933,8 @@ function ensureCourseCardState(courseId) {
       allHomeworkCount: 0,
       pendingHomeworkCount: 0,
       pendingEarliestTs: 0,
+      overdueHomeworkCount: 0,
+      overdueEarliestTs: 0,
       hasReplay: false,
       replayListLoading: false,
       hasCourseware: false,
@@ -4943,23 +4946,20 @@ function ensureCourseCardState(courseId) {
 
 function calcCourseRank(state) {
   if ((state?.pendingHomeworkCount || 0) > 0) return 0;
-  if ((state?.allHomeworkCount || 0) > 0) return 1;
-
-  // For no-homework courses: treat loading as "has" for grouping.
-  const replayLike = !!state?.hasReplay || !!state?.replayListLoading;
-  const coursewareLike = !!state?.hasCourseware || !!state?.coursewareListLoading;
-
-  if (replayLike && coursewareLike) return 2; // 有回放且有课件
-  if (replayLike && !coursewareLike) return 3; // 有回放无课件
-  if (!replayLike && coursewareLike) return 4; // 有课件无回放
-  return 5; // 无回放无课件
+  if ((state?.overdueHomeworkCount || 0) > 0) return 1;
+  if ((state?.allHomeworkCount || 0) > 0) return 2;
+  if (state?.hasReplay) return 3;
+  if (state?.hasCourseware) return 4;
+  if (state?.replayListLoading) return 5;
+  if (state?.coursewareListLoading) return 6;
+  return 7;
 }
 
 function sortCourseCards() {
   const cards = Array.from(courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]'));
   const sortedCards = cards.slice().sort((a, b) => {
-    const ra = Number(a.dataset.rank || 3);
-    const rb = Number(b.dataset.rank || 3);
+    const ra = Number(a.dataset.rank || 7);
+    const rb = Number(b.dataset.rank || 7);
     if (ra !== rb) return ra - rb;
 
     if (ra === 0 && rb === 0) {
@@ -4967,6 +4967,16 @@ function sortCourseCards() {
       const idb = String(b.id || '').startsWith('course-') ? String(b.id).slice(7) : '';
       const tsa = Number(window.courseCardStateById?.[ida]?.pendingEarliestTs || 0);
       const tsb = Number(window.courseCardStateById?.[idb]?.pendingEarliestTs || 0);
+      const va = tsa > 0 ? tsa : Number.MAX_SAFE_INTEGER;
+      const vb = tsb > 0 ? tsb : Number.MAX_SAFE_INTEGER;
+      if (va !== vb) return va - vb;
+    }
+
+    if (ra === 1 && rb === 1) {
+      const ida = String(a.id || '').startsWith('course-') ? String(a.id).slice(7) : '';
+      const idb = String(b.id || '').startsWith('course-') ? String(b.id).slice(7) : '';
+      const tsa = Number(window.courseCardStateById?.[ida]?.overdueEarliestTs || 0);
+      const tsb = Number(window.courseCardStateById?.[idb]?.overdueEarliestTs || 0);
       const va = tsa > 0 ? tsa : Number.MAX_SAFE_INTEGER;
       const vb = tsb > 0 ? tsb : Number.MAX_SAFE_INTEGER;
       if (va !== vb) return va - vb;
@@ -5966,6 +5976,7 @@ async function fetchJlgjJsonFromPageContext(url, existingTabId = null) {
 async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
   const start = Date.now();
   let ownedTabId = null;
+  let reloadedOwnedTab = false;
 
   const pickReadyTab = async () => {
     const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*#bjtu-bg'] });
@@ -6258,6 +6269,7 @@ function renderYktHomeworkItems(courseId, items) {
     const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const actionText = done ? '去雨课堂查看' : '去雨课堂提交';
+    const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
     const titleScoreBadge = scoreText ? `<span style="font-weight:bold; color:#E91E63; white-space:nowrap;">[${escapeHtml(scoreText)}]</span>` : '';
     const yktIdSeed = String(it?.id || it?.courseware_id || it?.classroom_id || idx).trim();
     const expandKey = `ykt:${yktIdSeed}`;
@@ -6296,7 +6308,7 @@ function renderYktHomeworkItems(courseId, items) {
       <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
         <div>
           <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '雨课堂作业')}</div>
-          <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${done ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
+          <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${statusHtml}</div>
           <div style="font-size:12px; color:#666;">${progressText ? `进度: ${escapeHtml(progressText)}` : ''}</div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
@@ -6340,6 +6352,7 @@ function renderJlgjHomeworkItems(items) {
     const link = String(it?.link || JLGJ_WEB_BASE);
     const actionText = done ? '去接龙管家查看' : '去接龙管家提交';
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
+    const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
     const endText = isLoadingMeta ? '正在加载……' : formatYktDateTime(it.end);
     const endSuffix = isLoadingMeta
       ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
@@ -6349,7 +6362,7 @@ function renderJlgjHomeworkItems(items) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '接龙作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -6384,6 +6397,7 @@ function renderMrzyHomeworkItems(items) {
     const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const actionText = done ? '去每日交作业查看' : '去每日交作业提交';
+    const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
     const isLoadingMeta = !!it?.loadingMeta;
     const endText = isLoadingMeta ? '正在加载……' : String(it.end || '无');
     const endSuffix = isLoadingMeta
@@ -6394,7 +6408,7 @@ function renderMrzyHomeworkItems(items) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '每日交作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${done ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${it.link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -6427,7 +6441,7 @@ function renderYktStandaloneCourses() {
     card.dataset.courseId = String(courseId || '');
     card.dataset.courseRankable = '1';
     card.dataset.order = String(baseOrder + idx);
-    card.dataset.rank = '4';
+    card.dataset.rank = '7';
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
@@ -6444,11 +6458,11 @@ function renderYktStandaloneCourses() {
     courseListDiv.appendChild(card);
 
     if (!window.courseHomeworkData[courseId]) {
-      window.courseHomeworkData[courseId] = { list: [], showAll: !!window.courseShowAllById[courseId] };
+      window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     }
     renderHomeworkList(courseId);
 
-    window.courseHomeworkData[courseId] = { list: [], showAll: !!window.courseShowAllById[courseId] };
+    window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     window.yktMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
 
     renderHomeworkList(courseId);
@@ -6480,7 +6494,7 @@ function renderMrzyStandaloneCourses() {
     card.id = `course-${courseId}`;
     card.dataset.courseRankable = '1';
     card.dataset.order = String(baseOrder + idx);
-    card.dataset.rank = '4';
+    card.dataset.rank = '7';
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
@@ -6496,7 +6510,7 @@ function renderMrzyStandaloneCourses() {
     `;
     courseListDiv.appendChild(card);
 
-    window.courseHomeworkData[courseId] = { list: [], showAll: !!window.courseShowAllById[courseId] };
+    window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     window.yktMatchedHomeworkByCourseId[courseId] = [];
     window.mrzyMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
 
@@ -6529,7 +6543,7 @@ function renderJlgjStandaloneCourses() {
     card.id = `course-${courseId}`;
     card.dataset.courseRankable = '1';
     card.dataset.order = String(baseOrder + idx);
-    card.dataset.rank = '4';
+    card.dataset.rank = '7';
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
@@ -6545,7 +6559,7 @@ function renderJlgjStandaloneCourses() {
     `;
     courseListDiv.appendChild(card);
 
-    window.courseHomeworkData[courseId] = { list: [], showAll: !!window.courseShowAllById[courseId] };
+    window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     window.yktMatchedHomeworkByCourseId[courseId] = [];
     window.mrzyMatchedHomeworkByCourseId[courseId] = [];
     window.jlgjMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
@@ -6566,7 +6580,7 @@ function setCourseReplayState(courseId, hasReplay) {
 function setCourseReplayLoading(courseId, isLoading) {
   const state = ensureCourseCardState(courseId);
   state.replayListLoading = !!isLoading;
-  updateCourseCardRank(courseId);
+  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
   if (!state.replayListLoading) flushPendingCourseCardSortIfIdle();
 }
 
@@ -6574,13 +6588,18 @@ function setCourseCoursewareState(courseId, hasCourseware) {
   const state = ensureCourseCardState(courseId);
   state.hasCourseware = !!hasCourseware;
   state.coursewareListLoading = false;
-  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
+  updateCourseCardRank(courseId);
 }
 
 function setCourseCoursewareLoading(courseId, isLoading) {
   const state = ensureCourseCardState(courseId);
   state.coursewareListLoading = !!isLoading;
   updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
+}
+
+function spinnerPhaseDelayStyle(periodMs = 1000) {
+  const period = Math.max(1, Number(periodMs || 1000));
+  return ` animation-delay:-${Date.now() % period}ms;`;
 }
 
 function setCoursewareButtonLoading(btn, isLoading) {
@@ -6598,7 +6617,7 @@ function setCoursewareButtonLoading(btn, isLoading) {
     btn.disabled = true;
     btn.style.pointerEvents = 'none';
     btn.classList.add('courseware-list-loading');
-    btn.innerHTML = '课件下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;"></span>';
+    btn.innerHTML = `课件下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
     return;
   }
 
@@ -6878,16 +6897,16 @@ async function fetchCoursewareItems(courseNum, fzId) {
     }));
   }
 
-  if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, items: [] };
+  const isLoginRedirect = isLikelyLoginPageHtml(text, res?.url);
   const alertMsg = parseAlertMsg(text);
-  if (alertMsg && alertMsg.includes('登录')) return { loginRequired: true, items: [] };
-  
-  if (parseAlertMsg(text) || String(text).includes('不合法') || String(text).includes('无权')) {
-    // Possibly switched user or lost access
+  const hasLoginKeywords = alertMsg?.includes('登录') || alertMsg?.includes('不合法') || String(text).includes('不合法') || String(text).includes('无权');
+
+  if (isLoginRedirect || hasLoginKeywords) {
     const currentUser = await detectUserIdFromPersonalCenter();
     if (currentUser && currentUser !== String(lastValidUsername).trim()) {
       return { loginRequired: true, accountSwitched: currentUser, items: [] };
     }
+    return { loginRequired: true, items: [] };
   }
 
   let data = null;
@@ -7120,10 +7139,14 @@ function recomputeCourseHomeworkState(courseId) {
   const mrzyList = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId[courseId] || []) : [];
   const jlgjList = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId[courseId] || []) : [];
   const allHomeworkCount = nativeList.length + yktList.length + mrzyList.length + jlgjList.length;
-  const nativePendingList = nativeList.filter((hw) => !isNativeHomeworkDone(hw));
-  const yktPendingList = yktList.filter((hw) => !isYktHomeworkDone(hw));
-  const mrzyPendingList = mrzyList.filter((hw) => !isMrzyHomeworkDone(hw));
-  const jlgjPendingList = jlgjList.filter((hw) => !isJlgjHomeworkDone(hw));
+  const nativePendingList = nativeList.filter(isNativeHomeworkPending);
+  const yktPendingList = yktList.filter(isYktHomeworkPending);
+  const mrzyPendingList = mrzyList.filter(isMrzyHomeworkPending);
+  const jlgjPendingList = jlgjList.filter(isJlgjHomeworkPending);
+  const nativeOverdueList = nativeList.filter(isNativeHomeworkOverdue);
+  const yktOverdueList = yktList.filter(isYktHomeworkOverdue);
+  const mrzyOverdueList = mrzyList.filter(isMrzyHomeworkOverdue);
+  const jlgjOverdueList = jlgjList.filter(isJlgjHomeworkOverdue);
   const nativePending = nativePendingList.length;
   const yktPending = yktPendingList.length;
   const mrzyPending = mrzyPendingList.length;
@@ -7134,17 +7157,130 @@ function recomputeCourseHomeworkState(courseId) {
   mrzyPendingList.forEach((hw) => pendingTs.push(parseDeadlineToTs(hw?.end)));
   jlgjPendingList.forEach((hw) => pendingTs.push(parseDeadlineToTs(hw?.end)));
   const validPendingTs = pendingTs.filter((n) => Number.isFinite(n) && n > 0);
+  const overdueTs = [];
+  nativeOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end_time ?? hw?.endTime ?? '')));
+  yktOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end)));
+  mrzyOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end)));
+  jlgjOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end)));
+  const validOverdueTs = overdueTs.filter((n) => Number.isFinite(n) && n > 0);
   const state = ensureCourseCardState(courseId);
   state.allHomeworkCount = allHomeworkCount;
   state.pendingHomeworkCount = nativePending + yktPending + mrzyPending + jlgjPending;
   state.pendingEarliestTs = validPendingTs.length ? Math.min(...validPendingTs) : 0;
-  updateCourseCardRank(courseId, { deferWhileActionAnimating: isAnyExternalPlatformChecking() });
+  state.overdueHomeworkCount = nativeOverdueList.length + yktOverdueList.length + mrzyOverdueList.length + jlgjOverdueList.length;
+  state.overdueEarliestTs = validOverdueTs.length ? Math.min(...validOverdueTs) : 0;
+  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
 }
 
 function updateHomeworkToggleButton(courseId) {
   // Kept for compatibility with existing call sites.
   void courseId;
 }
+
+function setHomeworkVisibility(courseId, key, value) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const store = key === 'showOverdue' ? window.courseShowOverdueById : window.courseShowDoneById;
+  const nextValue = typeof value === 'boolean' ? value : !store[cid];
+  store[cid] = nextValue;
+
+  const data = window.courseHomeworkData[cid];
+  if (data) {
+    data[key] = nextValue;
+  }
+
+  if (!toggleHomeworkGroupDom(cid, key, nextValue)) {
+    renderHomeworkList(cid);
+  }
+}
+
+function toggleHomeworkGroupDom(courseId, key, expanded) {
+  const kind = key === 'showOverdue' ? 'overdue' : 'done';
+  const area = document.getElementById(`homework-area-${courseId}`);
+  if (!(area instanceof HTMLElement)) return false;
+  const btn = area.querySelector(`.homework-toggle-btn[data-homework-toggle-kind="${kind}"]`);
+  if (!(btn instanceof HTMLElement)) return false;
+
+  const group = area.querySelector(`.homework-group[data-homework-group="${kind}"]`);
+  if (!(group instanceof HTMLElement)) return false;
+
+  const count = String(btn.dataset.count || '').trim();
+  const collapsedText = String(btn.dataset.collapsedText || '').trim();
+  const expandedText = String(btn.dataset.expandedText || '').trim();
+  const label = btn.querySelector('.homework-toggle-label');
+  if (label) label.textContent = `${expanded ? expandedText : collapsedText}${count ? ` (${count})` : ''}`;
+
+  btn.classList.toggle('is-expanded', expanded);
+  btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  btn.classList.remove('homework-toggle-btn--up', 'homework-toggle-btn--down');
+  btn.classList.add(kind === 'overdue'
+    ? (expanded ? 'homework-toggle-btn--down' : 'homework-toggle-btn--up')
+    : (expanded ? 'homework-toggle-btn--up' : 'homework-toggle-btn--down'));
+
+  group.dataset.expanded = expanded ? '1' : '0';
+  group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+  animateHomeworkGroupVisibility(group, expanded);
+  return true;
+}
+
+function animateHomeworkGroupVisibility(group, expanded) {
+  if (!(group instanceof HTMLElement)) return;
+  group.classList.remove('homework-group-animating');
+  group.style.overflow = 'hidden';
+
+  if (expanded) {
+    group.classList.remove('is-hidden');
+    group.style.maxHeight = '0px';
+    group.style.opacity = '0';
+    group.style.transform = 'translateY(-3px)';
+    void group.offsetHeight;
+    group.classList.add('homework-group-animating');
+    requestAnimationFrame(() => {
+      group.style.maxHeight = `${Math.max(1, group.scrollHeight)}px`;
+      group.style.opacity = '1';
+      group.style.transform = 'translateY(0)';
+    });
+    setTimeout(() => {
+      group.classList.remove('homework-group-animating');
+      group.style.maxHeight = '';
+      group.style.opacity = '';
+      group.style.transform = '';
+      group.style.overflow = '';
+    }, 230);
+    return;
+  }
+
+  group.style.maxHeight = `${Math.max(1, group.scrollHeight)}px`;
+  group.style.opacity = '1';
+  group.style.transform = 'translateY(0)';
+  void group.offsetHeight;
+  group.classList.add('homework-group-animating');
+  requestAnimationFrame(() => {
+    group.style.maxHeight = '0px';
+    group.style.opacity = '0';
+    group.style.transform = 'translateY(-3px)';
+  });
+  setTimeout(() => {
+    group.classList.add('is-hidden');
+    group.classList.remove('homework-group-animating');
+    group.style.maxHeight = '';
+    group.style.opacity = '';
+    group.style.transform = '';
+    group.style.overflow = '';
+  }, 230);
+}
+
+window.toggleOverdueView = function(courseId) {
+  setHomeworkVisibility(courseId, 'showOverdue');
+};
+
+window.toggleDoneView = function(courseId) {
+  setHomeworkVisibility(courseId, 'showDone');
+};
+
+window.toggleHomeworkView = function(courseId) {
+  window.toggleDoneView(courseId);
+};
 
 async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
@@ -7173,7 +7309,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   btn.classList.remove('replay-link-progress');
   btn.classList.add('replay-list-loading');
   btn.style.setProperty('--replay-progress', '0%');
-  btn.innerHTML = '回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;"></span>';
+  btn.innerHTML = `回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
 
   if (shouldTouchVisibleArea) {
     toggleResultAreaAnimated(resultArea, false, { immediate: true });
@@ -8577,7 +8713,7 @@ function renderCourseList(courses) {
     card.id = `course-${courseId}`;
     card.dataset.courseRankable = '1';
     card.dataset.order = String(courses.indexOf(course));
-    card.dataset.rank = '4';
+    card.dataset.rank = '7';
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <div>
@@ -8625,7 +8761,7 @@ function renderCourseList(courses) {
       btnVideos.classList.remove('replay-link-progress');
       btnVideos.classList.add('replay-list-loading');
       btnVideos.style.setProperty('--replay-progress', '0%');
-      btnVideos.innerHTML = '回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;"></span>';
+      btnVideos.innerHTML = `回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
     }
 
     hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
@@ -8648,44 +8784,6 @@ function renderCourseList(courses) {
   });
 
 }
-
-window.toggleHomeworkView = function(courseId) {
-  const data = window.courseHomeworkData[courseId];
-  if (!data) return;
-  if (!window.homeworkToggleAnimatingByCourse) window.homeworkToggleAnimatingByCourse = {};
-  if (window.homeworkToggleAnimatingByCourse[courseId]) return;
-
-  if (!data.showAll) {
-    data.showAll = true;
-    window.courseShowAllById[courseId] = true;
-    data.justExpanded = true;
-    data.justCollapsed = false;
-    renderHomeworkList(courseId);
-    return;
-  }
-
-  const area = document.getElementById(`homework-area-${courseId}`);
-  const doneCards = area ? Array.from(area.querySelectorAll('.hw-card-item[data-homework-done="1"]')) : [];
-  if (!doneCards.length) {
-    data.showAll = false;
-    window.courseShowAllById[courseId] = false;
-    data.justCollapsed = true;
-    data.justExpanded = false;
-    renderHomeworkList(courseId);
-    return;
-  }
-
-  window.homeworkToggleAnimatingByCourse[courseId] = true;
-  doneCards.forEach((el) => el.classList.add('hw-done-leave'));
-  setTimeout(() => {
-    data.showAll = false;
-    window.courseShowAllById[courseId] = false;
-    data.justCollapsed = true;
-    data.justExpanded = false;
-    renderHomeworkList(courseId);
-    window.homeworkToggleAnimatingByCourse[courseId] = false;
-  }, 180);
-};
 
 function getHomeworkTeacherId(courseId) {
   const cid = String(courseId || '').trim();
@@ -8839,103 +8937,100 @@ async function checkHomework(courseId) {
     const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
     const data = JSON.parse(text);
     if (String(data.STATUS) !== '0') {
-      window.courseHomeworkData[courseId] = { list: [], showAll: !!window.courseShowAllById[courseId] };
+      window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
       renderHomeworkList(courseId);
       return;
     }
     const list = data.courseNoteList || data.list || [];
-    window.courseHomeworkData[courseId] = { list, showAll: !!window.courseShowAllById[courseId] };
+    window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
     await prefetchHomeworkAttachments(courseId, list);
     prefetchCourseScores(courseId);
     recomputeCourseHomeworkState(courseId);
   } catch (e) {
     console.error(`[VE] fetch error for ${courseId}: ${e.message}`);
-    window.courseHomeworkData[courseId] = { list: [], showAll: !!window.courseShowAllById[courseId] };
+    window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
   }
 }
 
 function renderHomeworkList(courseId) {
   const area = document.getElementById(`homework-area-${courseId}`);
-  const fallbackShowAll = !!window.courseShowAllById[courseId];
-  const data = window.courseHomeworkData[courseId] || { list: [], showAll: fallbackShowAll };
-  if (window.courseHomeworkData[courseId]) {
-    window.courseHomeworkData[courseId].showAll = !!window.courseHomeworkData[courseId].showAll || fallbackShowAll;
-  }
   if (!area) return;
+  const fallbackShowOverdue = !!window.courseShowOverdueById[courseId];
+  const fallbackShowDone = !!window.courseShowDoneById[courseId];
+  const data = window.courseHomeworkData[courseId] || { list: [], showOverdue: fallbackShowOverdue, showDone: fallbackShowDone };
+  if (window.courseHomeworkData[courseId]) {
+    window.courseHomeworkData[courseId].showOverdue = fallbackShowOverdue;
+    window.courseHomeworkData[courseId].showDone = fallbackShowDone;
+  }
   const list = data.list || [];
   syncHomeworkAttachmentItemsIndex(courseId, []);
-  let displayList = data.showAll ? list : list.filter((hw) => !isNativeHomeworkDone(hw));
-  const yktItems = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId[courseId] || []) : [];
-  const yktLoading = !!window.yktHomeworkLoadingByCourse?.[courseId];
-  const yktSyncing = isPlatformEnabled('ykt')
-    && ((window.platformLoginState?.ykt || 'checking') === 'checking')
-    && !window.platformLoadedOnce?.ykt;
-  let yktDisplayItems = data.showAll ? yktItems : yktItems.filter((hw) => !isYktHomeworkDone(hw));
-  const mrzyItems = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId[courseId] || []) : [];
-  const mrzySyncing = isPlatformEnabled('mrzy')
-    && ((window.platformLoginState?.mrzy || 'checking') === 'checking')
-    && !window.platformLoadedOnce?.mrzy;
-  let mrzyDisplayItems = data.showAll ? mrzyItems : mrzyItems.filter((hw) => !isMrzyHomeworkDone(hw));
-  const jlgjItems = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId[courseId] || []) : [];
-  const jlgjSyncing = isPlatformEnabled('jlgj')
-    && ((window.platformLoginState?.jlgj || 'checking') === 'checking')
-    && !window.platformLoadedOnce?.jlgj;
-  let jlgjDisplayItems = data.showAll ? jlgjItems : jlgjItems.filter((hw) => !isJlgjHomeworkDone(hw));
 
-  if (!data.showAll) {
-    displayList = sortHomeworkItemsByDeadline(displayList, (hw) => hw?.end_time ?? hw?.endTime ?? '');
-    yktDisplayItems = sortHomeworkItemsByDeadline(yktDisplayItems, (hw) => hw?.end ?? hw?.endTime ?? '');
-    mrzyDisplayItems = sortHomeworkItemsByDeadline(mrzyDisplayItems, (hw) => hw?.end ?? hw?.endTime ?? '');
-    jlgjDisplayItems = sortHomeworkItemsByDeadline(jlgjDisplayItems, (hw) => hw?.end ?? hw?.endTime ?? '');
-  }
+  const classify = (items, isDoneFn, isOverdueFn) => {
+    const pending = [], overdue = [], done = [];
+    items.forEach((hw) => {
+      if (isDoneFn(hw)) done.push(hw);
+      else if (isOverdueFn(hw)) overdue.push(hw);
+      else pending.push(hw);
+    });
+    return { pending, overdue, done };
+  };
+
+  const nativeCls = classify(list, isNativeHomeworkDone, isNativeHomeworkOverdue);
+  const yktItems = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId[courseId] || []) : [];
+  const yktCls = classify(yktItems, isYktHomeworkDone, isYktHomeworkOverdue);
+  const mrzyItems = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId[courseId] || []) : [];
+  const mrzyCls = classify(mrzyItems, isMrzyHomeworkDone, isMrzyHomeworkOverdue);
+  const jlgjItems = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId[courseId] || []) : [];
+  const jlgjCls = classify(jlgjItems, isJlgjHomeworkDone, isJlgjHomeworkOverdue);
+
+  const sortNativeGroup = (items) => sortHomeworkItemsByDeadline(items, (hw) => hw?.end_time ?? hw?.endTime ?? '');
+  const sortExternalGroup = (items) => sortHomeworkItemsByDeadline(items, (hw) => hw?.end ?? hw?.endTime ?? '');
+  const nativePendingItems = sortNativeGroup(nativeCls.pending);
+  const nativeOverdueItems = sortNativeGroup(nativeCls.overdue);
+  const nativeDoneItems = sortNativeGroup(nativeCls.done);
+  const yktPendingItems = sortExternalGroup(yktCls.pending);
+  const yktOverdueItems = sortExternalGroup(yktCls.overdue);
+  const yktDoneItems = sortExternalGroup(yktCls.done);
+  const mrzyPendingItems = sortExternalGroup(mrzyCls.pending);
+  const mrzyOverdueItems = sortExternalGroup(mrzyCls.overdue);
+  const mrzyDoneItems = sortExternalGroup(mrzyCls.done);
+  const jlgjPendingItems = sortExternalGroup(jlgjCls.pending);
+  const jlgjOverdueItems = sortExternalGroup(jlgjCls.overdue);
+  const jlgjDoneItems = sortExternalGroup(jlgjCls.done);
+
   const isYktStandalone = String(courseId).startsWith('ykt-');
   const isMrzyStandalone = String(courseId).startsWith('mrzy-');
   const isJlgjStandalone = String(courseId).startsWith('jlgj-');
   const isExternalStandalone = isYktStandalone || isMrzyStandalone || isJlgjStandalone;
-
-  const hasSubmittedHomework = list.some(isNativeHomeworkDone)
-    || yktItems.some(isYktHomeworkDone)
-    || mrzyItems.some(isMrzyHomeworkDone)
-    || jlgjItems.some(isJlgjHomeworkDone);
+  const yktLoading = !!window.yktHomeworkLoadingByCourse?.[courseId];
+  const yktSyncing = isPlatformEnabled('ykt') && ((window.platformLoginState?.ykt || 'checking') === 'checking') && !window.platformLoadedOnce?.ykt;
+  const mrzySyncing = isPlatformEnabled('mrzy') && ((window.platformLoginState?.mrzy || 'checking') === 'checking') && !window.platformLoadedOnce?.mrzy;
+  const jlgjSyncing = isPlatformEnabled('jlgj') && ((window.platformLoginState?.jlgj || 'checking') === 'checking') && !window.platformLoadedOnce?.jlgj;
 
   const yktCourseLink = window.yktMatchedCourseLinkByCourseId[courseId] || '';
-  const yktHeaderHtml = isYktStandalone
-    ? ''
-    : `<div style="font-size:12px;color:#0369a1; margin-bottom:4px;">${yktCourseLink ? `<a href="${yktCourseLink}" target="_blank" rel="noopener noreferrer" style="color:#0369a1; text-decoration:none;">雨课堂作业</a>` : '雨课堂作业'}</div>`;
-  const yktWrapperStyle = isYktStandalone
-    ? ''
-    : 'margin-top:6px; padding-top:6px; border-top:1px dashed #b3e5fc;';
-  const yktHtml = yktItems.length && yktDisplayItems.length
-    ? `<div style="${yktWrapperStyle}">${yktHeaderHtml}${renderYktHomeworkItems(courseId, yktDisplayItems)}</div>`
-    : '';
+  const yktHeaderHtml = isYktStandalone ? '' : `<div style="font-size:12px;color:#0369a1; margin-bottom:4px;">${yktCourseLink ? `<a href="${yktCourseLink}" target="_blank" rel="noopener noreferrer" style="color:#0369a1; text-decoration:none;">雨课堂作业</a>` : '雨课堂作业'}</div>`;
+  const yktWrapperStyle = isYktStandalone ? '' : 'margin-top:6px; padding-top:6px; border-top:1px dashed #b3e5fc;';
+  const renderYktSection = (items) => yktItems.length && items.length ? `<div style="${yktWrapperStyle}">${yktHeaderHtml}${renderYktHomeworkItems(courseId, items)}</div>` : '';
   const mrzyHeaderHtml = isMrzyStandalone ? '' : '<div style="font-size:12px;color:#3730a3; margin-bottom:4px;">每日交作业</div>';
-  const mrzyHtml = mrzyItems.length && mrzyDisplayItems.length
-    ? `<div>${mrzyHeaderHtml}${renderMrzyHomeworkItems(mrzyDisplayItems)}</div>`
-    : '';
+  const renderMrzySection = (items) => mrzyItems.length && items.length ? `<div>${mrzyHeaderHtml}${renderMrzyHomeworkItems(items)}</div>` : '';
   const jlgjHeaderHtml = isJlgjStandalone ? '' : '<div style="font-size:12px;color:#0f766e; margin-bottom:4px;">接龙管家</div>';
-  const jlgjHtml = jlgjItems.length && jlgjDisplayItems.length
-    ? `<div>${jlgjHeaderHtml}${renderJlgjHomeworkItems(jlgjDisplayItems)}</div>`
-    : '';
+  const renderJlgjSection = (items) => jlgjItems.length && items.length ? `<div>${jlgjHeaderHtml}${renderJlgjHomeworkItems(items)}</div>` : '';
 
   const applyDoneEnterAnimation = () => {
     if (data.justExpanded) {
       const doneCards = area.querySelectorAll('.hw-card-item[data-homework-done="1"]');
       doneCards.forEach((el) => {
         el.classList.remove('hw-done-enter');
-        // Reflow to ensure re-adding class triggers animation only for this render.
         void el.offsetWidth;
         el.classList.add('hw-done-enter');
-        setTimeout(() => {
-          el.classList.remove('hw-done-enter');
-        }, 220);
+        setTimeout(() => el.classList.remove('hw-done-enter'), 220);
       });
     }
     data.justExpanded = false;
     data.justCollapsed = false;
   };
-
   const applyExpandableAutoToggle = () => {
     const boxes = area.querySelectorAll('.expandable-box');
     boxes.forEach((box) => {
@@ -8964,56 +9059,23 @@ function renderHomeworkList(courseId) {
 
   recomputeCourseHomeworkState(courseId);
 
+  const totalOverdueCount = nativeCls.overdue.length + yktCls.overdue.length + mrzyCls.overdue.length + jlgjCls.overdue.length;
+  const totalDoneCount = nativeCls.done.length + yktCls.done.length + mrzyCls.done.length + jlgjCls.done.length;
+  const totalPendingCount = nativeCls.pending.length + yktCls.pending.length + mrzyCls.pending.length + jlgjCls.pending.length;
   const totalHomeworkCount = list.length + yktItems.length + mrzyItems.length + jlgjItems.length;
-  const currentDisplayCount = displayList.length + yktDisplayItems.length + mrzyDisplayItems.length + jlgjDisplayItems.length;
-  const hasHiddenHomework = totalHomeworkCount > currentDisplayCount;
-  const toggleRowHtml = totalHomeworkCount > 0 && (data.showAll || hasHiddenHomework)
-    ? `<div class="homework-toggle-row"><button class="homework-toggle-btn" data-action="toggle-homework" data-course-id="${escapeHtml(String(courseId))}">${data.showAll ? '收起' : '查看全部作业'}</button></div>`
-    : '';
 
-  if (!displayList.length) {
-    if (isExternalStandalone) {
-      const loadingText = isYktStandalone
-        ? '正在同步雨课堂作业...'
-        : (isMrzyStandalone ? '正在同步每日交作业...' : '正在同步接龙管家作业...');
-      const standaloneSyncing = isYktStandalone
-        ? (yktLoading || yktSyncing)
-        : (isMrzyStandalone ? mrzySyncing : jlgjSyncing);
-      const loadingHtml = standaloneSyncing
-        ? `<div style="font-size:12px; color:#64748b; margin-top:4px;">${loadingText}</div>`
-        : '';
-      const hasAnyExternalHomework = totalHomeworkCount > 0;
-      const allExternalSubmittedTip = (!data.showAll && hasAnyExternalHomework && currentDisplayCount === 0)
-        ? '<div style="color:#4CAF50; margin-top:2px;">✓ 全部作业已提交</div>'
-        : '';
-      const emptyExternalTip = (!hasAnyExternalHomework && !standaloneSyncing)
-        ? '<span style="color:#999;">没有作业数据</span>'
-        : '';
-      area.innerHTML = `${loadingHtml}${allExternalSubmittedTip}${emptyExternalTip}${yktHtml}${mrzyHtml}${jlgjHtml}${toggleRowHtml}`;
-      applyExpandableAutoToggle();
-      applyDoneEnterAnimation();
-      refreshUploadSelectVisibility();
-      return;
-    }
-    const native = totalHomeworkCount === 0
-      ? '<span style="color:#999;">没有作业数据</span>'
-      : (data.showAll ? '<span style="color:#999;">暂无任何作业</span>' : '<span style="color:#4CAF50;">✓ 全部作业已提交</span>');
-    const extHtml = `${yktDisplayItems.length ? yktHtml : ''}${mrzyDisplayItems.length ? mrzyHtml : ''}${jlgjDisplayItems.length ? jlgjHtml : ''}`;
-    if (extHtml) {
-      area.innerHTML = `${native}${extHtml}${toggleRowHtml}`;
-      applyExpandableAutoToggle();
-      applyDoneEnterAnimation();
-      refreshUploadSelectVisibility();
-      return;
-    }
-    area.innerHTML = `${native}${toggleRowHtml}`;
-    applyExpandableAutoToggle();
-    applyDoneEnterAnimation();
-    refreshUploadSelectVisibility();
-    return;
-  }
+  const renderHomeworkToggle = (kind, action, isExpanded, count, collapsedText, expandedText, collapsedDirection, expandedDirection) => {
+    const direction = isExpanded ? expandedDirection : collapsedDirection;
+    const label = `${isExpanded ? expandedText : collapsedText} (${count})`;
+    return `<button class="btn homework-toggle-btn ${isExpanded ? 'is-expanded' : ''} homework-toggle-btn--${direction}" data-action="${action}" data-course-id="${escapeHtml(String(courseId))}" data-homework-toggle-kind="${kind}" data-count="${escapeHtml(String(count))}" data-collapsed-text="${escapeHtml(collapsedText)}" data-expanded-text="${escapeHtml(expandedText)}" aria-expanded="${isExpanded ? 'true' : 'false'}"><span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span><span class="homework-toggle-label">${escapeHtml(label)}</span><span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span></button>`;
+  };
 
-  const nativeHtml = displayList.map((hw, idx) => {
+  const overdueToggleRowHtml = totalOverdueCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, totalOverdueCount, '查看逾期作业', '收起逾期作业', 'up', 'down')}</div>` : '';
+  const doneToggleRowHtml = totalDoneCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--done">${renderHomeworkToggle('done', 'toggle-done', data.showDone, totalDoneCount, '查看已交作业', '收起已交作业', 'down', 'up')}</div>` : '';
+
+  const renderNativeHomeworkItems = (items) => (items || []).map((hw) => {
+    const originalIdx = list.indexOf(hw);
+    const idx = originalIdx >= 0 ? originalIdx : 0;
     const subStatus = hw.subStatus ?? hw.sub_status ?? '';
     const subTime = hw.subTime ?? hw.sub_time ?? '';
     const isDone = isNativeHomeworkDone(hw);
@@ -9025,20 +9087,15 @@ function renderHomeworkList(courseId) {
     const title = hw.title || hw.workTitle || hw.courseNoteTitle || '作业';
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
+    const deadline = hw.end_time || hw.endTime || '';
+    const statusHtml = isDone ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
 
-    // Score fields: on this platform, `hw.score` is usually full score, NOT obtained score.
-    // Obtained score is typically `hw.lastScore` (or `oldScore` from detail page).
     const scoreStatus = hw.lastScore ?? hw.last_score ?? hw.scoreStatus ?? hw.score_status ?? hw.lastScoreText ?? hw.last_score_text ?? '';
     const obtainedScore = hw.lastScore ?? hw.oldScore ?? hw.old_score ?? hw.finalScore ?? hw.final_score ?? '';
     const fullScore = hw.score ?? hw.fullScore ?? hw.maxScore ?? hw.totalScore ?? '';
-
-    // ids for async score fetch
-    // IMPORTANT: Align with upload.html: upId == hw.id, snId == hw.snId
     const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? '';
     const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? '';
-    const scoreViewUrl = (upId && snId)
-      ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=1&score=100`
-      : '';
+    const scoreViewUrl = (upId && snId) ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=1&score=100` : '';
     const scoreKey = buildHomeworkScoreKey(upId, snId);
     const cachedScore = window.homeworkScoreCacheByKey[scoreKey];
 
@@ -9077,13 +9134,14 @@ function renderHomeworkList(courseId) {
       expanded
     });
     const viewBtnColor = isDone ? '#2E7D32' : '#0ea5e9';
+    const countdownSpan = (!isDone && !overdue && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
 
     return `
       <div class="hw-card-item" data-homework-done="${isDone ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${title}</div>
-            <div style="font-size:12px; color:#666;">截止: ${hw.end_time || hw.endTime || '无'} ${isDone ? '(已提交)' : (overdue ? '(已逾期)' : '')}</div>
+            <div style="font-size:12px; color:#666;">截止: ${deadline || '无'} ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             ${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}
@@ -9109,12 +9167,36 @@ function renderHomeworkList(courseId) {
     `;
   }).join('');
 
-  const extHtml = `${yktDisplayItems.length ? yktHtml : ''}${mrzyDisplayItems.length ? mrzyHtml : ''}${jlgjDisplayItems.length ? jlgjHtml : ''}`;
-  area.innerHTML = `<div>${nativeHtml}${extHtml}</div>${toggleRowHtml}`;
+  const renderHomeworkGroup = (kind) => {
+    if (kind === 'overdue') {
+      return `${renderNativeHomeworkItems(nativeOverdueItems)}${renderYktSection(yktOverdueItems)}${renderMrzySection(mrzyOverdueItems)}${renderJlgjSection(jlgjOverdueItems)}`;
+    }
+    if (kind === 'done') {
+      return `${renderNativeHomeworkItems(nativeDoneItems)}${renderYktSection(yktDoneItems)}${renderMrzySection(mrzyDoneItems)}${renderJlgjSection(jlgjDoneItems)}`;
+    }
+    return `${renderNativeHomeworkItems(nativePendingItems)}${renderYktSection(yktPendingItems)}${renderMrzySection(mrzyPendingItems)}${renderJlgjSection(jlgjPendingItems)}`;
+  };
+
+  const overdueHtml = renderHomeworkGroup('overdue');
+  const pendingHtml = renderHomeworkGroup('pending');
+  const doneHtml = renderHomeworkGroup('done');
+  const loadingText = isYktStandalone ? '正在同步雨课堂作业...' : (isMrzyStandalone ? '正在同步每日交作业...' : '正在同步接龙管家作业...');
+  const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrzyStandalone ? mrzySyncing : jlgjSyncing);
+  const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div style="font-size:12px; color:#64748b; margin-top:4px;">${loadingText}</div>` : '';
+  const emptyExternalTip = isExternalStandalone && totalHomeworkCount === 0 && !standaloneSyncing ? '<span style="color:#999;">没有作业数据</span>' : '';
+  const noPendingTip = totalHomeworkCount > 0 && totalPendingCount === 0
+    ? `<div class="homework-empty-tip" style="color:#4CAF50; margin-top:2px;">${totalOverdueCount > 0 ? '✓ 无未交作业' : '✓ 所有作业已提交'}</div>`
+    : '';
+  const noRelatedTip = !pendingHtml && totalHomeworkCount > 0 && !noPendingTip ? '<span class="homework-empty-tip" style="color:#999;">无未交作业</span>' : '';
+  const noDataTip = !isExternalStandalone && totalHomeworkCount === 0 ? '<span style="color:#999;">没有作业数据</span>' : '';
+
+  area.innerHTML = `${loadingHtml}${emptyExternalTip}${noDataTip}${overdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${overdueHtml}</div>` : ''}${overdueToggleRowHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
   applyExpandableAutoToggle();
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
+  setTimeout(() => typeof updateAllCountdowns === 'function' && updateAllCountdowns(), 0);
 }
+
 
 async function fetchHomeworkScore(upId, snId) {
   if (!upId || !snId) return null;
@@ -9292,6 +9374,25 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       const linksDiv = getLinksDiv();
       if (!linksDiv) return false;
       if (isStale()) return false;
+
+      const currentUser = await detectUserIdFromPersonalCenter();
+      if (currentUser && currentUser !== String(lastValidUsername).trim()) {
+        showToast('检测到当前账号已变更为 ' + currentUser + '，正在切换并重新加载', 'info', 3000);
+        usernameInput.value = currentUser;
+        await setLocal('username', currentUser);
+        lastValidUsername = currentUser;
+        resetAccountSwitchInterruption();
+        isLoginSessionValid = true;
+        renderLoginAccountHistorySelect(currentUser);
+        try {
+          const info = await fetchUserInfoRemote(currentUser);
+          setWelcomeMessage(info);
+          await rememberLoggedInAccount(currentUser, info);
+        } catch { /* ignore */ }
+        if (isPlatformEnabled('ve')) loadCourses();
+        return false;
+      }
+
       linksDiv.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
       const sp = linksDiv.querySelector('span');
       if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
@@ -9534,7 +9635,6 @@ function uploadFile(file, fileId) {
     processQueue();
   };
 
-  // Single cancel handler that works for both queued and uploading states
   cancelBtn.onclick = () => {
     autoRetryQueuedByLogin = false;
     if (!isRunning) {
@@ -9549,7 +9649,6 @@ function uploadFile(file, fileId) {
     if (xhrRef) {
       try { xhrRef.abort(); } catch {}
     }
-    // UI + accounting will be finalized in onabort/onerror/onload handlers
   };
 
   const performUpload = async () => {
@@ -10142,6 +10241,18 @@ courseListDiv.addEventListener('click', async (e) => {
     return;
   }
 
+  if (action === 'toggle-overdue') {
+    const courseId = String(actionEl.dataset.courseId || '').trim();
+    if (!courseId) return;
+    window.toggleOverdueView(courseId);
+    return;
+  }
+  if (action === 'toggle-done') {
+    const courseId = String(actionEl.dataset.courseId || '').trim();
+    if (!courseId) return;
+    window.toggleDoneView(courseId);
+    return;
+  }
   if (action === 'toggle-homework') {
     const courseId = String(actionEl.dataset.courseId || '').trim();
     if (!courseId) return;
@@ -10184,9 +10295,8 @@ courseListDiv.addEventListener('click', async (e) => {
     const idx = Number(actionEl.dataset.hwIndex || -1);
     if (!courseId || idx < 0) return;
 
-    const data = window.courseHomeworkData[courseId] || { list: [], showAll: false };
-    const nativeList = data.showAll ? (data.list || []) : (data.list || []).filter((item) => !isNativeHomeworkDone(item));
-    const hw = nativeList[idx];
+    const data = window.courseHomeworkData[courseId] || { list: [] };
+    const hw = (data.list || [])[idx];
     if (!hw) {
       showToast('未找到作业数据，请刷新后重试', 'warning', 1800);
       return;
@@ -10660,3 +10770,63 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   await loadResourceSpaceForCurrentAccount();
 })();
+
+const SEVEN_SEGMENT_MAP = {
+  0: 'abcdef',
+  1: 'bc',
+  2: 'abged',
+  3: 'abgcd',
+  4: 'fgbc',
+  5: 'afgcd',
+  6: 'afgcde',
+  7: 'abc',
+  8: 'abcdefg',
+  9: 'abfgcd'
+};
+
+function renderSevenSegmentChar(ch) {
+  if (ch === ':') return '<span class="seven-seg-colon" aria-hidden="true"></span>';
+  const active = SEVEN_SEGMENT_MAP[ch] || '';
+  const segments = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+  return `<span class="seven-seg-digit" aria-hidden="true">${segments.map((seg) => `<span class="seg seg-${seg}${active.includes(seg) ? ' on' : ''}"></span>`).join('')}</span>`;
+}
+
+function renderSevenSegmentTime(text) {
+  const value = String(text || '');
+  return `<span class="deadline-countdown-label">剩</span><span class="seven-seg-display" role="img" aria-label="${escapeHtml(value)}">${value.split('').map(renderSevenSegmentChar).join('')}</span>`;
+}
+
+function updateAllCountdowns() {
+  document.querySelectorAll('.deadline-countdown').forEach((span) => {
+    const d = span.dataset.deadline;
+    if (!d) return;
+    const ts = parseDeadlineToTs(d);
+    if (!ts) return;
+    const now = Date.now();
+    const diff = ts - now;
+    if (diff <= 0) {
+      if (span.innerHTML !== '') {
+        span.innerHTML = '';
+        span.style.fontFamily = 'inherit';
+        span.style.fontSize = 'inherit';
+      }
+      span.style.display = 'none';
+      return;
+    }
+    span.style.display = '';
+    const dDays = Math.floor(diff / 86400000);
+    const dHours = Math.floor(diff / 3600000) % 24;
+    const dMins = Math.floor(diff / 60000) % 60;
+    const dSecs = Math.floor(diff / 1000) % 60;
+
+    const pad = (n) => String(n).padStart(2, '0');
+    // Format dd:hh:mm:ss
+    const s = `${pad(dDays)}:${pad(dHours)}:${pad(dMins)}:${pad(dSecs)}`;
+
+    const newHtml = renderSevenSegmentTime(s);
+    if (span.innerHTML !== newHtml) {
+      span.innerHTML = newHtml;
+    }
+  });
+}
+setInterval(updateAllCountdowns, 1000);

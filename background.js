@@ -1,6 +1,35 @@
 const APP_URL = chrome.runtime.getURL('app.html');
 const portalLoginCtxByTab = new Map(); // tabId -> { username, passcode, passwordMd5, autoCode, fromExtension }
 const portalHandledByTab = new Map(); // tabId -> { url, ts }
+const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
+
+function normalizePortalLoginAccountHistory(rawList) {
+  const list = Array.isArray(rawList) ? rawList : [];
+  return list
+    .map((it) => {
+      const userId = String(it?.userId || '').trim();
+      if (!userId) return null;
+      const lastLoginAt = Number(it?.lastLoginAt || 0);
+      return {
+        userId,
+        userName: String(it?.userName || '').trim(),
+        roleName: String(it?.roleName || '').trim(),
+        lastLoginAt: Number.isFinite(lastLoginAt) ? lastLoginAt : 0
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number(b.lastLoginAt || 0) - Number(a.lastLoginAt || 0));
+}
+
+async function getPortalLoginAccountHistory() {
+  try {
+    const raw = await chrome.storage.local.get(LOGIN_ACCOUNT_HISTORY_KEY);
+    return normalizePortalLoginAccountHistory(raw?.[LOGIN_ACCOUNT_HISTORY_KEY]);
+  } catch {
+    return [];
+  }
+}
+
 async function ensureTesseractInjected(tabId) {
   try {
     const res = await chrome.scripting.executeScript({
@@ -34,6 +63,11 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
     await ensureTesseractInjected(tabId);
   } catch {
     // fallback to non-tesseract OCR path
+  }
+
+  const enrichedCtx = ctx && typeof ctx === 'object' ? { ...ctx } : {};
+  if (!Array.isArray(enrichedCtx.accountHistory)) {
+    enrichedCtx.accountHistory = await getPortalLoginAccountHistory();
   }
 
   return new Promise((resolve) => {
@@ -85,11 +119,28 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
         const autoCode = String(context?.autoCode || '').trim();
         const fromExtension = !!context?.fromExtension;
         const originalRequestedUsername = String(context?.username || '').trim();
+        const accountHistory = (Array.isArray(context?.accountHistory) ? context.accountHistory : [])
+          .map((it) => ({
+            userId: String(it?.userId || '').trim(),
+            userName: String(it?.userName || '').trim(),
+            roleName: String(it?.roleName || '').trim()
+          }))
+          .filter((it) => it.userId);
         const LAST_DEFAULT_TRY_USER_KEY = '__bjtu_last_default_try_user__';
         const LAST_LOGIN_USERNAME_KEY = '__bjtu_last_login_username__';
         const FLOW_STATE_KEY = '__bjtu_portal_login_flow_state__';
         const SUPPRESS_AUTO_START_ONCE_KEY = '__bjtu_suppress_auto_start_once__';
         const MAX_AUTO_RETRY_ROUNDS = 3;
+
+        function escapeHtml(value) {
+          return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+          }[ch]));
+        }
 
         function readFlowState() {
           try {
@@ -429,15 +480,19 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
         if (!username || !passcode) {
           const mask = document.createElement('div');
           mask.id = '__bjtu_login_modal__';
-          mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:2147483646;display:flex;align-items:center;justify-content:center;';
+          mask.style.cssText = 'position:fixed;inset:0;background:transparent;z-index:2147483646;display:flex;align-items:center;justify-content:center;pointer-events:none;';
           mask.innerHTML = `
-            <div style="width:min(640px,92vw);background:#fff;border:1px solid #e8edf5;border-radius:14px;box-shadow:0 18px 42px rgba(0,0,0,.25);padding:18px;">
+            <div style="width:min(860px,94vw);background:#fff;border:1px solid #e8edf5;border-radius:14px;box-shadow:0 18px 42px rgba(0,0,0,.25);padding:18px;pointer-events:auto;">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
                 <div style="font-size:16px;font-weight:700;color:#1f2937;">课程助手登录</div>
                 <button id="__bjtu_close__" aria-label="关闭" title="关闭" style="border:1px solid #cbd5e1;background:#fff;border-radius:999px;width:24px;height:24px;line-height:20px;font-size:16px;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;">×</button>
               </div>
               <div style="font-size:13px;color:#0f766e;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:4px 8px;" id="__bjtu_status__">检测到登录页，请输入账号并登录</div>
-              <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div style="margin-top:10px;display:grid;grid-template-columns:minmax(150px,190px) minmax(240px,1fr) minmax(180px,220px);gap:12px;align-items:start;">
+                <div style="border:1px solid #e5e7eb;border-radius:10px;padding:8px;max-height:220px;overflow:auto;background:#fff;">
+                  <div style="font-size:12px;color:#475569;margin-bottom:6px;">快速登录</div>
+                  <div id="__bjtu_quick__"></div>
+                </div>
                 <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc;">
                   <input id="__bjtu_u" placeholder="账号" style="width:100%;padding:8px;box-sizing:border-box;margin-bottom:8px;" />
                   <input id="__bjtu_c" placeholder="验证码(可留空自动识别)" maxlength="4" style="width:100%;padding:8px;box-sizing:border-box;margin-bottom:8px;" />
@@ -462,6 +517,7 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
           const btnClose = mask.querySelector('#__bjtu_close__');
           const statusEl = mask.querySelector('#__bjtu_status__');
           const histEl = mask.querySelector('#__bjtu_hist__');
+          const quickEl = mask.querySelector('#__bjtu_quick__');
 
           const existingUser = document.querySelector('input[name="username"], input#username, input[name="userId"]');
           const savedUser = String(sessionStorage.getItem(LAST_LOGIN_USERNAME_KEY) || '').trim();
@@ -475,6 +531,34 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
           normalizeUserInput();
           username = String(userInput.value || '').trim();
           userInput.addEventListener('input', normalizeUserInput);
+
+          const renderQuickLoginList = () => {
+            if (!quickEl) return;
+            quickEl.innerHTML = '';
+            if (!accountHistory.length) {
+              const empty = document.createElement('div');
+              empty.textContent = '暂无登录记录';
+              empty.style.cssText = 'font-size:12px;color:#94a3b8;line-height:1.6;';
+              quickEl.appendChild(empty);
+              return;
+            }
+            accountHistory.forEach((account) => {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              const title = `${account.roleName || ''}${account.userName || account.userId}`.trim();
+              btn.innerHTML = `<span style="font-weight:700;color:#0f172a;">${escapeHtml(title || account.userId)}</span><span style="font-size:11px;color:#64748b;">${escapeHtml(account.userId)}</span>`;
+              btn.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:1px solid #dbeafe;background:#eff6ff;border-radius:8px;padding:7px 8px;margin-bottom:6px;cursor:pointer;text-align:left;';
+              btn.addEventListener('click', () => {
+                userInput.value = account.userId;
+                normalizeUserInput();
+                username = String(userInput.value || '').trim();
+                statusEl.textContent = `已选择 ${title || account.userId}，正在登录…`;
+                btnGo.click();
+              });
+              quickEl.appendChild(btn);
+            });
+          };
+          renderQuickLoginList();
 
           let tryCount = 0;
           const maxTry = MAX_AUTO_RETRY_ROUNDS;
@@ -636,10 +720,10 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
             : `${recognizedConfidence.toFixed(0)}%`;
           const safeImg = recognizedImageSrc ? `<img src="${recognizedImageSrc}" style="width:140px;height:50px;object-fit:contain;border:1px solid #d1d5db;border-radius:6px;background:#fff;">` : '<div style="font-size:12px;color:#64748b;">未捕获验证码图片</div>';
 
-const amask = document.createElement('div');
-          amask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:2147483647;display:flex;align-items:center;justify-content:center;';
+          const amask = document.createElement('div');
+          amask.style.cssText = 'position:fixed;inset:0;background:transparent;z-index:2147483647;display:flex;align-items:center;justify-content:center;pointer-events:none;';
           amask.innerHTML = `
-            <div style="width:min(520px,88vw);background:#fff;border:1px solid #e8edf5;border-radius:14px;box-shadow:0 18px 42px rgba(0,0,0,.25);padding:14px;">
+            <div style="width:min(520px,88vw);background:#fff;border:1px solid #e8edf5;border-radius:14px;box-shadow:0 18px 42px rgba(0,0,0,.25);padding:14px;pointer-events:auto;">
               <div style="font-size:16px;font-weight:700;color:#1f2937;margin-bottom:10px;">正在自动登录</div>
               <div style="font-size:13px;color:#0f766e;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;margin-bottom:10px;">
                 <svg style="width:16px;height:16px;color:#0f766e;animation:__bjtu_spin 1s linear infinite;flex:0 0 auto;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-opacity="0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -734,7 +818,7 @@ const amask = document.createElement('div');
             : null
         };
       },
-      args: [ctx || null]
+      args: [enrichedCtx]
     }, (results) => {
       const err = chrome.runtime.lastError;
       if (err) {
