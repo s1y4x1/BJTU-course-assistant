@@ -1155,7 +1155,16 @@ function togglePlatformSelection(platform) {
     window.platformLoadedOnce.ve = false;
     setPlatformLoginState('ve', 'checking');
     if (isPlatformEnabled('ve')) {
-      syncAccountInfoAndReloadVeCourses({ detectFromPortal: true, reloadCourses: true, reloadResourceSpace: true }).catch(() => {});
+      loadCourses().catch(() => {});
+      const knownUserId = String(usernameInput.value || lastValidUsername || '').trim();
+      if (knownUserId) {
+        syncAccountInfoAndReloadVeCourses({
+          userId: knownUserId,
+          detectFromPortal: false,
+          reloadCourses: false,
+          reloadResourceSpace: true
+        }).catch(() => {});
+      }
     }
     return;
   }
@@ -7390,9 +7399,7 @@ function toggleHomeworkGroupDom(courseId, key, expanded) {
   btn.classList.toggle('is-expanded', expanded);
   btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
   btn.classList.remove('homework-toggle-btn--up', 'homework-toggle-btn--down');
-  btn.classList.add(kind === 'overdue'
-    ? (expanded ? 'homework-toggle-btn--down' : 'homework-toggle-btn--up')
-    : (expanded ? 'homework-toggle-btn--up' : 'homework-toggle-btn--down'));
+  btn.classList.add(expanded ? 'homework-toggle-btn--up' : 'homework-toggle-btn--down');
 
   group.dataset.expanded = expanded ? '1' : '0';
   group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
@@ -9247,7 +9254,7 @@ function renderHomeworkList(courseId) {
     return `<button class="btn homework-toggle-btn ${isExpanded ? 'is-expanded' : ''} homework-toggle-btn--${direction}" data-action="${action}" data-course-id="${escapeHtml(String(courseId))}" data-homework-toggle-kind="${kind}" data-count="${escapeHtml(String(count))}" data-collapsed-text="${escapeHtml(collapsedText)}" data-expanded-text="${escapeHtml(expandedText)}" aria-expanded="${isExpanded ? 'true' : 'false'}"><span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span><span class="homework-toggle-label">${escapeHtml(label)}</span><span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span></button>`;
   };
 
-  const overdueToggleRowHtml = totalOverdueCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, totalOverdueCount, '查看逾期作业', '收起逾期作业', 'up', 'down')}</div>` : '';
+  const overdueToggleRowHtml = totalOverdueCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, totalOverdueCount, '查看逾期作业', '收起逾期作业', 'down', 'up')}</div>` : '';
   const doneToggleRowHtml = totalDoneCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--done">${renderHomeworkToggle('done', 'toggle-done', data.showDone, totalDoneCount, '查看已交作业', '收起已交作业', 'down', 'up')}</div>` : '';
 
   const renderNativeHomeworkItems = (items) => (items || []).map((hw) => {
