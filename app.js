@@ -1,4 +1,4 @@
-// Native extension page implementing upload.html-like UI without Python backend.
+﻿// Native extension page implementing upload.html-like UI without Python backend.
 // NOTE: Captcha OCR is not available in pure extension mode.
 
 const PLATFORM_BASE_URL = 'http://123.121.147.7:88/';
@@ -36,7 +36,6 @@ const MRZY_QR_GEN_API = 'https://api-prod.lulufind.com/api/v1/auth/genQrCode';
 const MRZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCode';
 const MRZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
 const PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS = 1000;
-const XQ_CODE = '2025202602';
 const DEFAULT_PLATFORM_SESSION_ID = 'D571D57D255EA0BECF299C45D4C0468A';
 
 // Platform header `sessionId` is maintained at runtime (NOT saved in settings).
@@ -48,6 +47,7 @@ const fileInput = document.getElementById('file-input');
 const fileList = document.getElementById('file-list');
 const usernameInput = document.getElementById('username-input');
 const accountHistorySelect = document.getElementById('account-history-select');
+const xqSelect = document.getElementById('xq-select');
 const jsessionidInput = document.getElementById('jsessionid-input');
 const totalServerBar = document.getElementById('total-server-bar');
 const totalSizeInfoDiv = document.getElementById('total-size-info');
@@ -915,7 +915,7 @@ async function loadVersionInfo() {
   } catch (err) {
     setVersionButtonState('failure', { localVersion });
     const msg = String(err?.message || '').trim();
-    const base = '获取新版本失败：无法连接到 Github';
+    const base = '检查更新失败：无法连接到 Github';
     const text = msg ? `${base}\n${msg}` : base;
     showToast(text, 'error', 2600);
   }
@@ -1315,6 +1315,10 @@ let pendingUsernameChange = null; // { from: string, to: string } | null
 let isLoginInProgress = false;
 let loginCancelRequested = false;
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
+const CURRENT_XQ_CODE_KEY = 'selectedXqCode';
+let currentXqOptions = []; // [{xqId,xqCode,xqName,currentFlag,beginDate,endDate}]
+let currentXqCode = '';
+let currentXqLoadPromise = null;
 let loginAccountHistory = []; // [{userId,userName,roleName,lastLoginAt}]
 let isSyncingAccountHistorySelect = false;
 let highPrioritySwitchTarget = '';
@@ -2094,6 +2098,152 @@ function adjustAccountHistorySelectWidth() {
   const selectedText = String(accountHistorySelect.selectedOptions?.[0]?.text || accountHistorySelect.value || '').trim();
   const scaledChars = Math.ceil(selectedText.length * 1.6)+1;
   accountHistorySelect.style.width = `calc(${scaledChars}ch + 36px)`;
+}
+
+function normalizeCurrentXqOptions(rawList) {
+  const list = Array.isArray(rawList) ? rawList : [];
+  return list
+    .map((item) => {
+      const xqCode = String(item?.xqCode || item?.xq_code || item?.XQ_CODE || item?.XQCODE || '').trim();
+      if (!xqCode) return null;
+      const xqName = String(item?.xqName || item?.CNAME || item?.xq_name || item?.name || xqCode).trim() || xqCode;
+      const beginDate = String(item?.beginDate || item?.begin_date || '').trim();
+      const endDate = String(item?.endDate || item?.end_date || '').trim();
+      const currentFlag = Number(item?.currentFlag || item?.current_flag || 0);
+      return {
+        xqId: String(item?.xqId || item?.xq_id || '').trim(),
+        xqCode,
+        xqName,
+        currentFlag: Number.isFinite(currentFlag) ? currentFlag : 0,
+        beginDate,
+        endDate
+      };
+    })
+    .filter(Boolean);
+}
+
+function chooseCurrentXqCode(list, preferredCode = '') {
+  const normalizedList = Array.isArray(list) ? list : [];
+  const preferred = String(preferredCode || '').trim();
+  if (preferred && normalizedList.some((item) => String(item?.xqCode || '').trim() === preferred)) {
+    return preferred;
+  }
+  const current = normalizedList.find((item) => Number(item?.currentFlag || 0) === 2);
+  if (current) return String(current.xqCode || '').trim();
+  return String(normalizedList[0]?.xqCode || '').trim();
+}
+
+function adjustXqSelectWidth() {
+  if (!(xqSelect instanceof HTMLSelectElement)) return;
+  const selectedText = String(xqSelect.selectedOptions?.[0]?.text || xqSelect.value || '').trim();
+  const scaledChars = Math.max(10, Math.ceil(selectedText.length * 1.25));
+  xqSelect.style.width = `calc(${scaledChars}ch + 36px)`;
+}
+
+function renderCurrentXqSelect(list = currentXqOptions, preferredCode = currentXqCode) {
+  if (!(xqSelect instanceof HTMLSelectElement)) return;
+  const normalizedList = Array.isArray(list) ? list : [];
+  xqSelect.innerHTML = '';
+
+  if (!normalizedList.length) {
+    const empty = document.createElement('option');
+    empty.value = String(preferredCode || '').trim();
+    empty.textContent = empty.value ? `已保存学期（${empty.value}）` : '暂无学期';
+    empty.disabled = !empty.value;
+    empty.selected = true;
+    xqSelect.appendChild(empty);
+    xqSelect.disabled = !empty.value;
+    xqSelect.title = empty.value ? `已保存学期：${empty.value}` : '未获取到学期列表';
+    adjustXqSelectWidth();
+    return;
+  }
+
+  normalizedList.forEach((item) => {
+    const opt = document.createElement('option');
+    opt.value = String(item.xqCode || '').trim();
+    opt.textContent = String(item.xqName || item.xqCode || '').trim();
+    opt.title = [item.xqName, item.xqCode, item.beginDate && `开始 ${item.beginDate}`, item.endDate && `结束 ${item.endDate}`].filter(Boolean).join(' · ');
+    xqSelect.appendChild(opt);
+  });
+
+  const selected = chooseCurrentXqCode(normalizedList, preferredCode);
+  xqSelect.disabled = false;
+  xqSelect.value = selected;
+  currentXqCode = selected;
+  xqSelect.title = normalizedList.find((item) => String(item.xqCode || '').trim() === selected)?.title || normalizedList.find((item) => String(item.xqCode || '').trim() === selected)?.xqName || '学期选择';
+  adjustXqSelectWidth();
+}
+
+function getCurrentXqCode() {
+  const selectValue = xqSelect instanceof HTMLSelectElement ? String(xqSelect.value || '').trim() : '';
+  return String(currentXqCode || selectValue || '').trim();
+}
+
+async function loadCurrentXqOptions(forceReload = false) {
+  if (currentXqLoadPromise && !forceReload) return currentXqLoadPromise;
+  const task = (async () => {
+    let savedCode = '';
+    try {
+      savedCode = String(await getLocal(CURRENT_XQ_CODE_KEY, '') || '').trim();
+    } catch {
+      savedCode = '';
+    }
+
+    try {
+      const url = `${BASE_VE}back/rp/common/teachCalendar.shtml?method=queryCurrentXq`;
+      const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+      const data = JSON.parse(text);
+      const rawList = Array.isArray(data?.result) ? data.result : Array.isArray(data?.RESULT) ? data.RESULT : [];
+      currentXqOptions = normalizeCurrentXqOptions(rawList);
+      currentXqCode = chooseCurrentXqCode(currentXqOptions, savedCode || currentXqCode);
+      renderCurrentXqSelect(currentXqOptions, currentXqCode);
+      if (currentXqCode) {
+        await setLocal(CURRENT_XQ_CODE_KEY, currentXqCode);
+      }
+      return currentXqOptions;
+    } catch {
+      if (currentXqOptions.length) {
+        currentXqCode = chooseCurrentXqCode(currentXqOptions, savedCode || currentXqCode);
+        renderCurrentXqSelect(currentXqOptions, currentXqCode);
+        return currentXqOptions;
+      }
+
+      currentXqCode = String(savedCode || '').trim();
+      renderCurrentXqSelect([], currentXqCode);
+      return currentXqOptions;
+    } finally {
+      currentXqLoadPromise = null;
+    }
+  })();
+  currentXqLoadPromise = task;
+  return task;
+}
+
+async function ensureCurrentXqCode() {
+  const existing = getCurrentXqCode();
+  if (existing) return existing;
+  await loadCurrentXqOptions();
+  return getCurrentXqCode();
+}
+
+if (xqSelect instanceof HTMLSelectElement) {
+  xqSelect.addEventListener('change', async () => {
+    const picked = String(xqSelect.value || '').trim();
+    currentXqCode = picked;
+    try {
+      await setLocal(CURRENT_XQ_CODE_KEY, picked);
+    } catch {
+      // ignore
+    }
+    adjustXqSelectWidth();
+    if (isPlatformEnabled('ve')) {
+      try {
+        await loadCourses();
+      } catch {
+        // ignore
+      }
+    }
+  });
 }
 
 function getAccountDisplayName(userId) {
@@ -2979,6 +3129,7 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
         const switchTarget = String(pendingPortalSwitch?.targetUsername || '').trim();
 
         await syncJsessionidToUi();
+        await loadCurrentXqOptions(true);
         if (switchTarget && detected === '8888') {
           await setLocal('portalPendingSwitchAfterAux', null);
           await closePortalLoginTab();
@@ -3023,7 +3174,7 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
           }
           renderLoginAccountHistorySelect(detected);
           hideLoginModal();
-          showToast('检测到已在原页面登录成功', 'success', 1800);
+          showToast('登录成功', 'success', 1800);
         }
         
         if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
@@ -3323,6 +3474,7 @@ async function doLoginFlow() {
     showToast('登录成功', 'success');
     await forceSyncJsessionidAfterLogin();
     await syncJsessionidToUi();
+    await loadCurrentXqOptions(true);
 
     // Verify account identity after login (personalCenter -> 学号/工号)
     let finalUser = username;
@@ -3358,7 +3510,7 @@ async function doLoginFlow() {
 
     // Account switching should trigger a VE course/homework refresh.
     // Retry-callback logins should not force an additional full reload.
-    const shouldReloadCourses = wasSwitchingAccount || finalUser !== userBeforeLogin || (cbCount === 0 && userBeforeLogin === finalUser);
+    const shouldReloadCourses = wasSwitchingAccount || finalUser !== userBeforeLogin || (cbCount === 0 && userBeforeLogin === finalUser) || loginCancelRequested;
     if (shouldReloadCourses) {
       resetAccountSwitchInterruption();
     }
@@ -4524,7 +4676,7 @@ async function fetchVeTeacherIdByCourse(courseNum, fzId) {
   const courseIdPart = String(courseNum || '').trim();
   const xkhIdPart = String(fzId || '').trim();
   if (!courseIdPart || !xkhIdPart) return '';
-  const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10434&courseId=${encodeURIComponent(courseIdPart)}&dataSource=1&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(XQ_CODE)}`;
+  const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10434&courseId=${encodeURIComponent(courseIdPart)}&dataSource=1&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(getCurrentXqCode())}`;
   const { text, res } = await fetchText(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
   if (isLikelyLoginPageHtml(text, res?.url)) return '';
   const m = String(text || '').match(/<input[^>]*id=["']teacherId["'][^>]*value=["']([^"']+)["']/i)
@@ -6452,8 +6604,8 @@ function renderYktStandaloneCourses() {
           <button class="btn" style="background:#9C27B0; display:none;" data-action="videos">回放下载</button>
         </div>
       </div>
-      <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
+        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
     `;
     courseListDiv.appendChild(card);
 
@@ -6505,8 +6657,8 @@ function renderMrzyStandaloneCourses() {
           <button class="btn" style="background:#9C27B0; display:none;" data-action="videos">回放下载</button>
         </div>
       </div>
-      <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
+        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
     `;
     courseListDiv.appendChild(card);
 
@@ -6554,8 +6706,8 @@ function renderJlgjStandaloneCourses() {
           <button class="btn" style="background:#9C27B0; display:none;" data-action="videos">回放下载</button>
         </div>
       </div>
-      <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
+        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
     `;
     courseListDiv.appendChild(card);
 
@@ -6865,7 +7017,7 @@ async function fetchCoursewareItems(courseNum, fzId) {
 
   const buildCoursewareUrl = (useQuestionMark = true) => {
     const sep = useQuestionMark ? '?' : '&';
-    return `${BASE_VE}back/coursePlatform/courseResource.shtml${sep}method=stuQueryUploadResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&cId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(XQ_CODE)}&docType=1`;
+    return `${BASE_VE}back/coursePlatform/courseResource.shtml${sep}method=stuQueryUploadResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&cId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&docType=1`;
   };
 
   let text = '';
@@ -8576,7 +8728,7 @@ async function loadCourses() {
       return;
     }
 
-    const url = `${BASE_VE}back/coursePlatform/course.shtml?method=getCourseList&pagesize=100&page=1&xqCode=${encodeURIComponent(XQ_CODE)}`;
+    const url = `${BASE_VE}back/coursePlatform/course.shtml?method=getCourseList&pagesize=100&page=1&xqCode=${encodeURIComponent(await ensureCurrentXqCode())}`;
     const { text } = await fetchText(url, {
       headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
     });
@@ -8704,11 +8856,11 @@ function renderCourseList(courses) {
     const courseNumRaw = course.course_num || course.courseNum || course.courseNo || course.course_id || courseId;
     const courseNum = getVeCourseSeq10(course) || String(courseNumRaw || '');
     const fzId = course.fz_id || course.fzId || course.xkhId || course.xkh_id || '';
-    const xqCode = course.xq_code || course.xqCode || XQ_CODE;
+    const xqCode = course.xq_code || course.xqCode || getCurrentXqCode();
     const courseName = course.name || course.NAME || course.courseName || course.title || '未知课程';
     const teacherName = course.teacher_name || course.teacherName || '';
     const teacherLabel = String(teacherName || '').trim() || '教师';
-    const coursePlatformUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10460&courseId=${encodeURIComponent(courseNumRaw || '')}&cId=${encodeURIComponent(courseId || '')}&xknId=${encodeURIComponent(fzId || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || XQ_CODE)}`;
+    const coursePlatformUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10460&courseId=${encodeURIComponent(courseNumRaw || '')}&cId=${encodeURIComponent(courseId || '')}&xknId=${encodeURIComponent(fzId || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || getCurrentXqCode())}`;
 
     card.id = `course-${courseId}`;
     card.dataset.courseRankable = '1';
@@ -8738,8 +8890,8 @@ function renderCourseList(courses) {
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
         </div>
       </div>
-      <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
+        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
     `;
     courseListDiv.appendChild(card);
 
@@ -9353,7 +9505,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
   try {
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
     const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: String(videoId) });
-    const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480&courseId=${encodeURIComponent(courseNum)}&dataSource=1&cId=122618&xkhId=${encodeURIComponent(fzId)}&xqCode=${encodeURIComponent(XQ_CODE)}&teacherId=${encodeURIComponent(teacherId)}`;
+    const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480&courseId=${encodeURIComponent(courseNum)}&dataSource=1&cId=122618&xkhId=${encodeURIComponent(fzId)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&teacherId=${encodeURIComponent(teacherId)}`;
 
     const { text } = await fetchText(postUrl, {
       method: 'POST',
@@ -9448,7 +9600,7 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
   try {
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
     const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: rpId });
-    const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480&courseId=${encodeURIComponent(courseId)}&dataSource=1&cId=122618&xkhId=${encodeURIComponent(xkhId)}&xqCode=${encodeURIComponent(XQ_CODE)}&teacherId=${encodeURIComponent(teacherId)}`;
+    const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480&courseId=${encodeURIComponent(courseId)}&dataSource=1&cId=122618&xkhId=${encodeURIComponent(xkhId)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&teacherId=${encodeURIComponent(teacherId)}`;
     const { text } = await fetchText(postUrl, {
       method: 'POST',
       headers: {
@@ -10704,6 +10856,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   triggerInitialPlatformLoads();
 
   await loadLoginAccountHistory();
+  await loadCurrentXqOptions().catch(() => {});
 
   // 不默认使用本地保存账号。
   lastValidUsername = (await getLocal('username', '')).trim();
@@ -10830,3 +10983,6 @@ function updateAllCountdowns() {
   });
 }
 setInterval(updateAllCountdowns, 1000);
+
+
+
