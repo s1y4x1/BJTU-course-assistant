@@ -1153,7 +1153,10 @@ function togglePlatformSelection(platform) {
 
   if (platform === 've') {
     window.platformLoadedOnce.ve = false;
-    if (isPlatformEnabled('ve')) loadCourses();
+    setPlatformLoginState('ve', 'checking');
+    if (isPlatformEnabled('ve')) {
+      syncAccountInfoAndReloadVeCourses({ detectFromPortal: true, reloadCourses: true, reloadResourceSpace: true }).catch(() => {});
+    }
     return;
   }
 
@@ -2022,6 +2025,59 @@ function setWelcomeMessage(info) {
   const loginMsgEl = document.getElementById('login-welcome-msg');
   const msg = info ? `${info.roleName || ''}${info.userName || ''}` : '';
   if (loginMsgEl) loginMsgEl.textContent = msg;
+}
+
+async function syncAccountInfoAndReloadVeCourses({
+  userId = '',
+  detectFromPortal = false,
+  reloadCourses = true,
+  reloadResourceSpace = true
+} = {}) {
+  let finalUser = String(userId || '').trim();
+  if (detectFromPortal) {
+    try {
+      const detected = String(await detectUserIdFromPersonalCenter() || '').trim();
+      if (detected) finalUser = detected;
+    } catch {
+      // ignore
+    }
+  }
+  if (!finalUser) {
+    finalUser = String(usernameInput.value || '').trim() || String(lastValidUsername || '').trim();
+  }
+
+  let info = null;
+  if (finalUser) {
+    try {
+      info = await fetchUserInfoRemote(finalUser);
+    } catch {
+      info = null;
+    }
+  }
+
+  if (finalUser) {
+    usernameInput.value = finalUser;
+    await setLocal('username', finalUser);
+    lastValidUsername = finalUser;
+    isLoginSessionValid = true;
+  }
+  pendingUsernameChange = null;
+  setWelcomeMessage(info);
+  if (finalUser) {
+    await rememberLoggedInAccount(finalUser, info);
+  }
+  renderLoginAccountHistorySelect(finalUser);
+  updateJsessionidState();
+  await syncJsessionidToUi();
+  resetAccountSwitchInterruption();
+
+  if (reloadCourses && isPlatformEnabled('ve')) {
+    await loadCourses();
+  }
+  if (reloadResourceSpace) {
+    await loadResourceSpaceForCurrentAccount();
+  }
+  return { userId: finalUser, info };
 }
 
 function normalizeLoginAccountHistoryList(rawList) {
@@ -3125,55 +3181,39 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
     try {
       const detected = await detectUserIdFromPersonalCenter();
       if (detected) {
+        const wasLoginCancelled = loginCancelRequested;
         const pendingPortalSwitch = await getLocal('portalPendingSwitchAfterAux', null);
         const switchTarget = String(pendingPortalSwitch?.targetUsername || '').trim();
 
         await syncJsessionidToUi();
-        await loadCurrentXqOptions(true);
+        loginCancelRequested = false;
         if (switchTarget && detected === '8888') {
           await setLocal('portalPendingSwitchAfterAux', null);
           await closePortalLoginTab();
 
-          await setLocal('username', detected);
-          lastValidUsername = detected;
-          pendingUsernameChange = { from: detected, to: switchTarget };
-
-          usernameInput.value = switchTarget;
-          isLoginSessionValid = true;
-          updateJsessionidState();
-          try {
-            const info = await fetchUserInfoRemote(switchTarget);
-            setWelcomeMessage(info);
-            await rememberLoggedInAccount(switchTarget, info);
-          } catch {
-            setWelcomeMessage(null);
-          }
-          renderLoginAccountHistorySelect(switchTarget);
-
           hideLoginModal();
           showLoginModal('已用 8888 登录成功，正在扩展页切回目标账号');
-          showToast('8888 登录成功，页面已自动关闭，正在切回目标账号', 'warning', 2600);
+          try {
+            await syncAccountInfoAndReloadVeCourses({ userId: switchTarget, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
+          } catch {
+            // ignore
+          }
+          if (wasLoginCancelled) {
+            showToast('登录成功', 'success', 1800);
+          } else {
+            showToast('登录成功，正在切回目标账号', 'success', 2600);
+          }
         } else {
           if (switchTarget && detected !== '8888') {
             await setLocal('portalPendingSwitchAfterAux', null);
           }
           await closePortalLoginTab();
-          usernameInput.value = detected;
-          await setLocal('username', detected);
-          lastValidUsername = detected;
-          pendingUsernameChange = null;
-          resetAccountSwitchInterruption();
-          isLoginSessionValid = true;
-          updateJsessionidState();
-          try {
-            const info = await fetchUserInfoRemote(detected);
-            setWelcomeMessage(info);
-            await rememberLoggedInAccount(detected, info);
-          } catch {
-            setWelcomeMessage(null);
-          }
-          renderLoginAccountHistorySelect(detected);
           hideLoginModal();
+          try {
+            await syncAccountInfoAndReloadVeCourses({ userId: detected, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
+          } catch {
+            // ignore
+          }
           showToast('登录成功', 'success', 1800);
         }
         
@@ -3469,12 +3509,11 @@ async function doLoginFlow() {
 
     // Success
     isLoginSessionValid = true;
+    loginCancelRequested = false;
     setLoginProgress('登录成功，正在关闭页面…', 'success');
     hideLoginModal();
     showToast('登录成功', 'success');
     await forceSyncJsessionidAfterLogin();
-    await syncJsessionidToUi();
-    await loadCurrentXqOptions(true);
 
     // Verify account identity after login (personalCenter -> 学号/工号)
     let finalUser = username;
@@ -3494,30 +3533,16 @@ async function doLoginFlow() {
     usernameInput.value = finalUser;
     updateJsessionidState();
 
-    await setLocal('username', finalUser);
-    lastValidUsername = finalUser;
-    pendingUsernameChange = null;
-    // refresh welcome text
-    try {
-      const info = await fetchUserInfoRemote(finalUser);
-      setWelcomeMessage(info);
-      await rememberLoggedInAccount(finalUser, info);
-    } catch {}
-    renderLoginAccountHistorySelect(finalUser);
-
     // run pending callbacks
-    const cbCount = runPendingLoginCallbacks();
+    runPendingLoginCallbacks();
 
-    // Account switching should trigger a VE course/homework refresh.
-    // Retry-callback logins should not force an additional full reload.
-    const shouldReloadCourses = wasSwitchingAccount || finalUser !== userBeforeLogin || (cbCount === 0 && userBeforeLogin === finalUser) || loginCancelRequested;
-    if (shouldReloadCourses) {
-      resetAccountSwitchInterruption();
+    // Login success should always refresh account identity and VE courses so the UI
+    // does not stay stale after cancel/retry/switch flows.
+    try {
+      await syncAccountInfoAndReloadVeCourses({ userId: finalUser, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
+    } catch {
+      // ignore
     }
-    if (shouldReloadCourses && isPlatformEnabled('ve')) {
-      await loadCourses();
-    }
-    await loadResourceSpaceForCurrentAccount();
 
   } finally {
     const switchModalClosed = !loginModal || loginModal.style.display === 'none';
@@ -9247,7 +9272,8 @@ function renderHomeworkList(courseId) {
     const fullScore = hw.score ?? hw.fullScore ?? hw.maxScore ?? hw.totalScore ?? '';
     const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? '';
     const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? '';
-    const scoreViewUrl = (upId && snId) ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=1&score=100` : '';
+    const scoreParam = String(fullScore ?? '').trim() || String(obtainedScore ?? '').trim();
+    const scoreViewUrl = (upId && snId) ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=1&score=${encodeURIComponent(scoreParam || '100')}` : '';
     const scoreKey = buildHomeworkScoreKey(upId, snId);
     const cachedScore = window.homeworkScoreCacheByKey[scoreKey];
 
@@ -10296,25 +10322,16 @@ cancelBtn.addEventListener('click', () => {
     loginCancelRequested = true;
   }
 
-  // Only on explicit cancel: revert pending username change
   if (pendingUsernameChange) {
-    const backTo = pendingUsernameChange.from || '';
-    pendingUsernameChange = null;
-    usernameInput.value = backTo;
-    lastValidUsername = backTo;
-    resetAccountSwitchInterruption();
-    setLocal('username', backTo);
-    renderLoginAccountHistorySelect(backTo);
-    if (isPlatformEnabled('ve')) loadCourses();
-    loadResourceSpaceForCurrentAccount().catch(() => {});
-    (async () => {
-      try {
-        setWelcomeMessage(backTo ? await fetchUserInfoRemote(backTo) : null);
-      } catch {
-        setWelcomeMessage(null);
-      }
-    })();
-    showToast('登录未成功，已回退原账号', 'warning');
+    const backTo = String(pendingUsernameChange.from || '').trim();
+    if (backTo) {
+      syncAccountInfoAndReloadVeCourses({
+        userId: backTo,
+        detectFromPortal: false,
+        reloadCourses: false,
+        reloadResourceSpace: true
+      }).catch(() => {});
+    }
   }
 });
 
@@ -10887,32 +10904,6 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   updateJsessionidState();
 
   await syncJsessionidToUi();
-
-  // 若当前已登录（Cookie 有效），从“个人中心”页面提取学号/工号作为账号
-  try {
-    const detected = await detectUserIdFromPersonalCenter();
-    if (detected) {
-      usernameInput.value = detected;
-      lastValidUsername = detected;
-      await setLocal('username', detected);
-      updateJsessionidState();
-      if (welcomeInfoUserId === detected && welcomeInfo) {
-        setWelcomeMessage(welcomeInfo);
-        await rememberLoggedInAccount(detected, welcomeInfo);
-      } else {
-        try {
-          const info = await fetchUserInfoRemote(detected);
-          setWelcomeMessage(info);
-          await rememberLoggedInAccount(detected, info);
-        } catch {
-          // ignore
-        }
-      }
-      renderLoginAccountHistorySelect(detected);
-    }
-  } catch {
-    // ignore
-  }
 
   // If no session, show login modal
   const jsid = jsessionidInput.value.trim();

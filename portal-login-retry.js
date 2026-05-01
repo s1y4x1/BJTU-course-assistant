@@ -398,17 +398,23 @@ async function portalLoginAutoLoginInjected(context) {
     mask.innerHTML = `
         <style>
           .__bjtu_login_grid {
-            display: grid;
-            grid-template-columns: minmax(160px, 200px) minmax(200px, 240px) minmax(160px, 200px);
-            gap: 12px;
+            display: inline-grid;
+            width: fit-content;
+            grid-template-columns: minmax(144px, 176px) minmax(228px, 256px) minmax(144px, 176px);
+            gap: 10px;
             align-items: start;
             min-height: 380px;
+            justify-content: start;
           }
           @media(max-width: 720px) {
-            .__bjtu_login_grid { grid-template-columns: 1fr; }
+            .__bjtu_login_grid {
+              display: grid;
+              width: 100%;
+              grid-template-columns: 1fr;
+            }
           }
         </style>
-        <div style="width:fit-content; max-width:min(92vw, 680px); max-height:90vh; display:flex; flex-direction:column; background:#fff; border:1px solid #e8edf5; border-radius:14px; box-shadow:0 18px 42px rgba(0,0,0,.25); padding:16px 16px 14px; pointer-events:auto;">
+        <div style="width:fit-content; max-width:min(92vw, 620px); max-height:90vh; display:flex; flex-direction:column; background:#fff; border:1px solid #e8edf5; border-radius:14px; box-shadow:0 18px 42px rgba(0,0,0,.25); padding:14px 14px 12px; pointer-events:auto;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-shrink:0;">
             <div style="font-size:16px;font-weight:700;color:#1f2937;">课程助手登录</div>
             <button id="__bjtu_close__" aria-label="关闭" title="关闭" style="border:1px solid #cbd5e1;background:#fff;border-radius:999px;width:24px;height:24px;line-height:20px;font-size:16px;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;">×</button>
@@ -588,8 +594,12 @@ async function portalLoginAutoLoginInjected(context) {
           while (tryCount < maxTry && !passcode) {
             tryCount++;
             const currentRound = Math.min(maxTry, baseRetry + tryCount);
-            statusEl.textContent = `正在识别验证码 (${currentRound}/${maxTry})…`;
-            const img = refreshCaptchaInPage() || document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+            statusEl.textContent = `正在识别当前验证码 (${currentRound}/${maxTry})…`;
+            const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+            if (!img) {
+              statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
+              return;
+            }
             await waitImageReady(img, 2800);
             await new Promise(r => setTimeout(r, 160));
             const ocrRes = await autoRecognizeCaptchaCode();
