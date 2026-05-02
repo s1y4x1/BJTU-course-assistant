@@ -5,6 +5,7 @@
   const dataStore = {
     complete: false,
     userGroupPages: { ok: false, status: 0, data: null },
+    partialGroups: [],
     threads: {},
     details: {},
     ts: Date.now()
@@ -30,6 +31,15 @@
     } catch {
       return null;
     }
+  };
+
+  const isUserGroupPagesUrl = (u) => {
+    if (!u) return false;
+    if (u.pathname !== '/api/UserGroup/UserGroupPages') return false;
+    const pageIndex = String(u.searchParams.get('pageIndex') || '').trim();
+    const pageSize = String(u.searchParams.get('pageSize') || '').trim();
+    if (!pageIndex && !pageSize) return true;
+    return pageIndex === '1' && pageSize === '20';
   };
 
   const parseJsonSafe = (text) => {
@@ -96,6 +106,12 @@
     }
 
     const groups = getGroupsFromPayload(groupPagesPayload);
+    dataStore.partialGroups = groups.map((g) => ({
+      Id: String(g && g.Id || '').trim(),
+      Name: String(g && g.Name || '').trim(),
+      token: String(g && (g.Token || g.TokenStr || g.GroupToken || '')).trim()
+    })).filter((g) => g.Id || g.Name || g.token);
+    touch();
     if (!groups.length) {
       dataStore.complete = true;
       touch();
@@ -165,7 +181,7 @@
       this.addEventListener('loadend', function() {
         try {
           const u = toAbsUrl(this.__bjtuReqUrl || '');
-          if (!u || u.pathname !== '/api/UserGroup/UserGroupPages') return;
+          if (!isUserGroupPagesUrl(u)) return;
           onUserGroupPagesResponse(String(u.href || this.__bjtuReqUrl || ''), Number(this.status || 0), String(this.responseText || ''));
         } catch {
           // ignore
@@ -183,7 +199,7 @@
       try {
         const reqUrl = String(args && args[0] && (args[0].url || args[0]) || '');
         const u = toAbsUrl(reqUrl);
-        if (u && u.pathname === '/api/UserGroup/UserGroupPages') {
+        if (isUserGroupPagesUrl(u)) {
           const text = await res.clone().text();
           onUserGroupPagesResponse(String(u.href || reqUrl), Number(res.status || 0), text);
         }

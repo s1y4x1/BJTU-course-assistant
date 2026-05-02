@@ -696,7 +696,7 @@ async function portalLoginAutoLoginInjected(context) {
       </div>
     `;
     root.appendChild(amask);
-    const cancelSubmit = await new Promise((resolve) => {
+      const cancelSubmit = await new Promise((resolve) => {
       const t = setTimeout(() => resolve(false), 700);
       const btnCancel = amask.querySelector('#__bjtu_cancel_submit__');
       if (btnCancel) {
@@ -714,6 +714,15 @@ async function portalLoginAutoLoginInjected(context) {
       return { ok: false, reason: 'back-to-input' };
     }
   }
+
+      const cleanupOverlays = () => {
+        try { const m = document.getElementById('__bjtu_login_modal__'); if (m) m.remove(); } catch {}
+        try { const a = amask; if (a && a.remove) a.remove(); } catch {}
+        try { window.removeEventListener('beforeunload', cleanupOverlays); } catch {}
+        try { window.removeEventListener('pagehide', cleanupOverlays); } catch {}
+      };
+      try { window.addEventListener('beforeunload', cleanupOverlays, { once: true }); } catch {}
+      try { window.addEventListener('pagehide', cleanupOverlays, { once: true }); } catch {}
 
   if (!username) return { ok: false, reason: 'empty-username' };
   if (!passcode) {
@@ -756,6 +765,7 @@ async function portalLoginAutoLoginInjected(context) {
   add('password', passwordMd5);
   add('passcode', passcode);
   root.appendChild(form);
+  try { if (typeof cleanupOverlays === 'function') cleanupOverlays(); } catch {}
   form.submit();
 
   flowState.currentUsername = username;

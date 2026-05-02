@@ -27,7 +27,7 @@ const MRZY_WORK_LIST_API = `${MRZY_API_BASE}/mrzy/mrzypc/findWorkNewVersion`;
 const MRZY_WORK_DETAIL_API = `${MRZY_API_BASE}/mrzy/mrzypc/getWorkDetail`;
 const JLGJ_API_BASE = 'https://i-api.jielong.com';
 const JLGJ_WEB_BASE = 'https://i.jielong.com/my-class';
-const JLGJ_GROUP_LIST_API = `${JLGJ_API_BASE}/api/UserGroup/UserGroupPages`;
+const JLGJ_GROUP_LIST_API = `${JLGJ_API_BASE}/api/UserGroup/UserGroupPages?pageIndex=1&pageSize=20`;
 const JLGJ_LOGIN_ASSIST_URL = 'https://i.jielong.com/login?redirectTo=https://i.jielong.com/my-class';
 const JLGJ_LOGIN_SUCCESS_URL_PREFIX = 'https://i.jielong.com/my-class';
 const YKT_WECHAT_QR_LOGIN_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=wxda8c70bb118d342b&scope=snsapi_login&redirect_uri=https://www.yuketang.cn/api/v3/user/login/wechat-web-callback';
@@ -2000,10 +2000,11 @@ function convertVisitNameToUrl(visitName) {
   return `${BASE}${path}`.replace(/([^:]\/\/+)\/\/+?/g, '$1/');
 }
 
-async function fetchUserInfoRemote(userId) {
-  if (!userId) return null;
+async function fetchUserInfoRemote(userId = '') {
   try {
-    const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(userId)}`;
+    const url = String(userId || '').trim()
+      ? `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(userId)}`
+      : `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo`;
     const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
     const data = JSON.parse(text);
     if (String(data.STATUS) === '0' && data.result) {
@@ -2043,7 +2044,17 @@ async function syncAccountInfoAndReloadVeCourses({
   reloadResourceSpace = true
 } = {}) {
   let finalUser = String(userId || '').trim();
-  if (detectFromPortal) {
+  let info = null;
+  try {
+    info = await fetchUserInfoRemote();
+  } catch {
+    info = null;
+  }
+
+  const detectedUser = String(info?.userId || info?.userID || info?.USERID || info?.stuId || info?.teacherId || '').trim();
+  if (detectedUser) {
+    finalUser = detectedUser;
+  } else if (!finalUser && detectFromPortal) {
     try {
       const detected = String(await detectUserIdFromPersonalCenter() || '').trim();
       if (detected) finalUser = detected;
@@ -2055,8 +2066,7 @@ async function syncAccountInfoAndReloadVeCourses({
     finalUser = String(usernameInput.value || '').trim() || String(lastValidUsername || '').trim();
   }
 
-  let info = null;
-  if (finalUser) {
+  if (!info && finalUser) {
     try {
       info = await fetchUserInfoRemote(finalUser);
     } catch {
@@ -3524,16 +3534,15 @@ async function doLoginFlow() {
     showToast('登录成功', 'success');
     await forceSyncJsessionidAfterLogin();
 
-    // Verify account identity after login (personalCenter -> 学号/工号)
-    let finalUser = username;
-    try {
-      const detected = await detectUserIdFromPersonalCenter();
-      if (detected && detected !== username) {
-        finalUser = detected;
-        showToast(`检测到当前账号为 ${detected}，已同步更新`, 'warning', 2500);
+    // Login success already knows the target account from the input.
+    // Only fall back to personal-center detection if the username is missing.
+    let finalUser = String(username || '').trim();
+    if (!finalUser) {
+      try {
+        finalUser = String(await detectUserIdFromPersonalCenter() || '').trim();
+      } catch {
+        finalUser = '';
       }
-    } catch {
-      // ignore
     }
 
     const userBeforeLogin = String(lastValidUsername || '').trim();
@@ -5537,6 +5546,7 @@ async function checkJlgjLoginAssistPopupUrl() {
     const tab = await chrome.tabs.get(Number(jlgjLoginAssistPopupTabId));
     const currentUrl = String(tab?.url || '').trim();
     if (isJlgjLoginSuccessUrl(currentUrl)) {
+      closeJlgjLoginAssistPopup(false);
       stopJlgjLoginAssistWatcher();
       scheduleJlgjLoginAssistRecheck(180);
       return true;
@@ -6229,11 +6239,8 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
 
         if (state.hasData && state.isComplete) {
           const snap = state.dataSnap;
-          if (ownedTabId) {
-            try { await chrome.tabs.remove(ownedTabId); } catch { /* ignore */ }
-            ownedTabId = null;
-          }
           return {
+            tabId: Number(tab.id || ownedTabId || 0) || null,
             ok: snap.userGroupPages.ok,
             status: snap.userGroupPages.status,
             unauthorized: snap.userGroupPages.status == 401,
@@ -6241,14 +6248,29 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
             __fullCapture: snap || {}
           };
         }
+
+        if (state.hasData && !state.isComplete) {
+          const snap = state.dataSnap || {};
+          if (Array.isArray(snap.partialGroups) && snap.partialGroups.length) {
+            return {
+              tabId: Number(tab.id || ownedTabId || 0) || null,
+              ok: Boolean(snap.userGroupPages && snap.userGroupPages.ok),
+              status: Number(snap.userGroupPages ? snap.userGroupPages.status : 0),
+              unauthorized: Number(snap.userGroupPages ? snap.userGroupPages.status : 0) === 401,
+              data: snap,
+              __fullCapture: snap || {},
+              __partialCapture: true
+            };
+          }
+        }
       } catch (e) {
          // ignore
       }
       await new Promise((r) => setTimeout(r, 600));
     }
-    if (ownedTabId) chrome.tabs.remove(ownedTabId).catch(()=>{}); return { ok: false, status: 0, data: null, unauthorized: false, timeout: true };
+    if (ownedTabId) chrome.tabs.remove(ownedTabId).catch(()=>{}); return { tabId: ownedTabId, ok: false, status: 0, data: null, unauthorized: false, timeout: true };
   } catch {
-    return { ok: false, status: 0, data: null, unauthorized: true };
+    return { tabId: ownedTabId, ok: false, status: 0, data: null, unauthorized: true };
   }
 }
 
@@ -6457,6 +6479,8 @@ function renderYktHomeworkItems(courseId, items) {
     const actionText = done ? '去雨课堂查看' : '去雨课堂提交';
     const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
     const titleScoreBadge = scoreText ? `<span style="font-weight:bold; color:#E91E63; white-space:nowrap;">[${escapeHtml(scoreText)}]</span>` : '';
+    const deadline = it?.end || it?.deadline || '';
+    const countdownSpan = (!done && !overdue && !Number(it?.__loading) && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     const yktIdSeed = String(it?.id || it?.courseware_id || it?.classroom_id || idx).trim();
     const expandKey = `ykt:${yktIdSeed}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
@@ -6494,7 +6518,7 @@ function renderYktHomeworkItems(courseId, items) {
       <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
         <div>
           <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '雨课堂作业')}</div>
-          <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${statusHtml}</div>
+          <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${statusHtml}${countdownSpan}</div>
           <div style="font-size:12px; color:#666;">${progressText ? `进度: ${escapeHtml(progressText)}` : ''}</div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
@@ -6539,16 +6563,18 @@ function renderJlgjHomeworkItems(items) {
     const actionText = done ? '去接龙管家查看' : '去接龙管家提交';
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
+    const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : formatYktDateTime(it.end);
     const endSuffix = isLoadingMeta
       ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : '';
+    const countdownSpan = (!done && !overdue && !isLoadingMeta && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     return `
       <div class="hw-card-item" data-homework-done="${done ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '接龙作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -6585,16 +6611,18 @@ function renderMrzyHomeworkItems(items) {
     const actionText = done ? '去每日交作业查看' : '去每日交作业提交';
     const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
     const isLoadingMeta = !!it?.loadingMeta;
+    const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : String(it.end || '无');
     const endSuffix = isLoadingMeta
       ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : '';
+    const countdownSpan = (!done && !overdue && !isLoadingMeta && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     return `
       <div class="hw-card-item" data-homework-done="${done ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '每日交作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}</div>
+            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${it.link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -6717,9 +6745,7 @@ function renderJlgjStandaloneCourses() {
   courses.forEach((c, idx) => {
     const courseId = `jlgj-${String(c.groupId || idx)}`;
     const loadingMeta = !!c.loadingMeta;
-    const titleHtml = loadingMeta
-      ? '正在加载…… <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:1px; border-color:#0f766e; border-top-color:transparent;"></span>'
-      : escapeHtml(c.name || '接龙管家课程');
+    const titleHtml = escapeHtml(c.name || '接龙管家课程');
     const teacherHtml = loadingMeta
       ? '正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : escapeHtml(String(c.teacherName || ''));
@@ -6741,7 +6767,9 @@ function renderJlgjStandaloneCourses() {
         </div>
       </div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
-        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
+        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;">
+          ${loadingMeta && !(c.homeworks || []).length ? '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业…' : ''}
+        </div>
     `;
     courseListDiv.appendChild(card);
 
@@ -8523,12 +8551,21 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     };
 
     const doFetch = async (u) => {
-      if (bgTab?.id) return fetchJlgjJsonFromPageContext(u, bgTab.id);
-      return fetchJlgjJson(u);
+      if (!bgTab?.id) {
+        const ready = await ensureBgTabAndAuth();
+        if (!ready?.ok || !bgTab?.id) {
+          return { ok: false, status: 0, data: null, unauthorized: true };
+        }
+      }
+      return fetchJlgjJsonFromPageContext(u, bgTab.id);
     };
 
     let listResp = await waitAndFetchJlgjGroupListFromBrowser(30000);
     if (isStale()) return;
+
+    if (listResp?.tabId && Number.isFinite(Number(listResp.tabId))) {
+      bgTab = { id: Number(listResp.tabId) };
+    }
 
     if (listResp?.unauthorized) {
       window.platformLoadedOnce.jlgj = true;
@@ -8538,6 +8575,9 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
 
     let captureData = listResp?.__fullCapture || null;
     let groups = pickArr(captureData?.userGroupPages?.data || null);
+    if (!groups.length && Array.isArray(captureData?.partialGroups) && captureData.partialGroups.length) {
+      groups = captureData.partialGroups;
+    }
 
     // Capture path may intermittently miss data; fallback to direct API fetch.
     if ((!listResp?.ok || !groups.length) && !listResp?.unauthorized) {
@@ -8575,6 +8615,23 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     window.jlgjStandaloneCourses = [];
     window.jlgjCourseGroupsSnapshot = [];
 
+    const placeholderGroups = groups.map((g) => {
+      const groupId = String(g?.Id || '').trim();
+      const name = String(g?.Name || '接龙管家课程').trim();
+      return {
+        token: normalizeCourseNameToken(name),
+        name,
+        groupId,
+        teacherName: '',
+        loadingMeta: true,
+        homeworks: [],
+        __early: !!listResp && !!listResp.__partialCapture
+      };
+    }).filter((g) => g.groupId || g.name);
+    if (placeholderGroups.length) {
+      window.jlgjCourseGroupsSnapshot = placeholderGroups;
+    }
+
     setPlatformLoginState('jlgj', 'online');
     window.platformLoadedOnce.jlgj = true;
 
@@ -8582,6 +8639,19 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       window.jlgjMatchedHomeworkByCourseId = {};
       window.jlgjStandaloneCourses = [];
       for (const cg of (window.jlgjCourseGroupsSnapshot || [])) {
+        // If this group is an early partial-capture placeholder, show it immediately
+        // instead of matching to VE courses. This ensures course names are visible
+        // in the popup as soon as they are captured.
+        if (cg && cg.__early) {
+          window.jlgjStandaloneCourses.push({
+            name: cg.name,
+            groupId: cg.groupId,
+            teacherName: cg.teacherName,
+            loadingMeta: !!cg.loadingMeta,
+            homeworks: Array.isArray(cg.homeworks) ? cg.homeworks : []
+          });
+          continue;
+        }
         const matched = matchMap.get(String(cg?.token || ''));
         if (matched?.courseId) {
           const cid = String(matched.courseId);
@@ -8607,11 +8677,29 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       renderJlgjStandaloneCourses();
     };
 
+    if (placeholderGroups.length) {
+      rebuildJlgjRender();
+    }
+
     for (const g of groups) {
       if (isStale()) return;
       const groupId = String(g?.Id || '').trim();
       const name = String(g?.Name || '接龙管家课程').trim();
       if (!groupId) continue;
+
+      let courseGroup = window.jlgjCourseGroupsSnapshot.find((item) => String(item?.groupId || '') === groupId);
+      if (!courseGroup) {
+        courseGroup = {
+          token: normalizeCourseNameToken(name),
+          name,
+          groupId,
+          teacherName: '',
+          loadingMeta: true,
+          homeworks: []
+        };
+        window.jlgjCourseGroupsSnapshot.push(courseGroup);
+        rebuildJlgjRender();
+      }
 
       let threads = [];
       if (captureData) {
@@ -8629,7 +8717,11 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
           threads = pickArr(threadsResp.data);
         }
       }
-      if (!threads.length) continue;
+      if (!threads.length) {
+        courseGroup.loadingMeta = false;
+        rebuildJlgjRender();
+        continue;
+      }
 
       const teacherSet = new Set();
       const homeworks = threads.map((t) => {
@@ -8649,15 +8741,9 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
         };
       });
 
-      const courseGroup = {
-        token: normalizeCourseNameToken(name),
-        name,
-        groupId,
-        teacherName: Array.from(teacherSet).join(' / '),
-        loadingMeta: true,
-        homeworks
-      };
-      window.jlgjCourseGroupsSnapshot.push(courseGroup);
+      courseGroup.teacherName = Array.from(teacherSet).join(' / ');
+      courseGroup.loadingMeta = true;
+      courseGroup.homeworks = homeworks;
       rebuildJlgjRender();
 
       for (let i = 0; i < threads.length; i++) {
@@ -9191,7 +9277,8 @@ function renderHomeworkList(courseId) {
   const yktLoading = !!window.yktHomeworkLoadingByCourse?.[courseId];
   const yktSyncing = isPlatformEnabled('ykt') && ((window.platformLoginState?.ykt || 'checking') === 'checking') && !window.platformLoadedOnce?.ykt;
   const mrzySyncing = isPlatformEnabled('mrzy') && ((window.platformLoginState?.mrzy || 'checking') === 'checking') && !window.platformLoadedOnce?.mrzy;
-  const jlgjSyncing = isPlatformEnabled('jlgj') && ((window.platformLoginState?.jlgj || 'checking') === 'checking') && !window.platformLoadedOnce?.jlgj;
+  const jlgjHasEarlyLoadingGroups = Array.isArray(window.jlgjCourseGroupsSnapshot) && window.jlgjCourseGroupsSnapshot.some((g) => !!g?.loadingMeta);
+  const jlgjSyncing = isPlatformEnabled('jlgj') && (((window.platformLoginState?.jlgj || 'checking') === 'checking') && !window.platformLoadedOnce?.jlgj || jlgjHasEarlyLoadingGroups);
 
   const yktCourseLink = window.yktMatchedCourseLinkByCourseId[courseId] || '';
   const yktHeaderHtml = isYktStandalone ? '' : `<div style="font-size:12px;color:#0369a1; margin-bottom:4px;">${yktCourseLink ? `<a href="${yktCourseLink}" target="_blank" rel="noopener noreferrer" style="color:#0369a1; text-decoration:none;">雨课堂作业</a>` : '雨课堂作业'}</div>`;
@@ -9365,12 +9452,12 @@ function renderHomeworkList(courseId) {
   const overdueHtml = renderHomeworkGroup('overdue');
   const pendingHtml = renderHomeworkGroup('pending');
   const doneHtml = renderHomeworkGroup('done');
-  const loadingText = isYktStandalone ? '正在同步雨课堂作业...' : (isMrzyStandalone ? '正在同步每日交作业...' : '正在同步接龙管家作业...');
+  const loadingText = isYktStandalone ? '正在同步雨课堂作业...' : (isMrzyStandalone ? '正在同步每日交作业...' : '正在获取作业…');
   const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrzyStandalone ? mrzySyncing : jlgjSyncing);
-  const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div style="font-size:12px; color:#64748b; margin-top:4px;">${loadingText}</div>` : '';
+  const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> ${loadingText}` : '';
   const emptyExternalTip = isExternalStandalone && totalHomeworkCount === 0 && !standaloneSyncing ? '<span style="color:#999;">没有作业数据</span>' : '';
   const noPendingTip = totalHomeworkCount > 0 && totalPendingCount === 0
-    ? `<div class="homework-empty-tip" style="color:#4CAF50; margin-top:2px;">${totalOverdueCount > 0 ? '✓ 无未交作业' : '✓ 所有作业已提交'}</div>`
+    ? `<div class="homework-empty-tip" style="color:#4CAF50; margin-top:2px;">${totalOverdueCount > 0 ? '✓ 无待交作业' : '✓ 所有作业已提交'}</div>`
     : '';
   const noRelatedTip = !pendingHtml && totalHomeworkCount > 0 && !noPendingTip ? '<span class="homework-empty-tip" style="color:#999;">无未交作业</span>' : '';
   const noDataTip = !isExternalStandalone && totalHomeworkCount === 0 ? '<span style="color:#999;">没有作业数据</span>' : '';
