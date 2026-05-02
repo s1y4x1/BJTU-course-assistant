@@ -967,6 +967,11 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   if (!isPlatformEnabled(platform)) return;
   if (!forceReload && window.platformLoadedOnce?.[platform]) return;
 
+  if (platform === 'jlgj') {
+    clearPlatformData('jlgj');
+    rerenderAllHomeworkAreas();
+  }
+
   const version = bumpPlatformLoadVersion(platform);
   const veCourses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
 
@@ -6794,7 +6799,7 @@ function setCourseReplayState(courseId, hasReplay) {
 function setCourseReplayLoading(courseId, isLoading) {
   const state = ensureCourseCardState(courseId);
   state.replayListLoading = !!isLoading;
-  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
+  updateCourseCardRank(courseId);
   if (!state.replayListLoading) flushPendingCourseCardSortIfIdle();
 }
 
@@ -6808,7 +6813,7 @@ function setCourseCoursewareState(courseId, hasCourseware) {
 function setCourseCoursewareLoading(courseId, isLoading) {
   const state = ensureCourseCardState(courseId);
   state.coursewareListLoading = !!isLoading;
-  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
+  updateCourseCardRank(courseId);
 }
 
 function spinnerPhaseDelayStyle(periodMs = 1000) {
@@ -8579,42 +8584,6 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       groups = captureData.partialGroups;
     }
 
-    // Capture path may intermittently miss data; fallback to direct API fetch.
-    if ((!listResp?.ok || !groups.length) && !listResp?.unauthorized) {
-      const ready = await ensureBgTabAndAuth();
-      if (ready?.unauthorized) {
-        window.platformLoadedOnce.jlgj = true;
-        renderJlgjNeedLoginMessage();
-        return;
-      }
-      if (ready?.ok) {
-        const directListResp = await doFetch(JLGJ_GROUP_LIST_API);
-        if (isStale()) return;
-        if (directListResp?.unauthorized) {
-          window.platformLoadedOnce.jlgj = true;
-          renderJlgjNeedLoginMessage();
-          return;
-        }
-        if (directListResp?.ok) {
-          listResp = directListResp;
-          captureData = null;
-          groups = pickArr(directListResp.data);
-        }
-      }
-    }
-
-    if (!listResp?.ok && !groups.length) {
-      window.platformLoadedOnce.jlgj = true;
-      setPlatformLoginState('jlgj', 'online');
-      clearPlatformData('jlgj');
-      rerenderAllHomeworkAreas();
-      return;
-    }
-
-    window.jlgjMatchedHomeworkByCourseId = {};
-    window.jlgjStandaloneCourses = [];
-    window.jlgjCourseGroupsSnapshot = [];
-
     const placeholderGroups = groups.map((g) => {
       const groupId = String(g?.Id || '').trim();
       const name = String(g?.Name || '接龙管家课程').trim();
@@ -8628,12 +8597,6 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
         __early: !!listResp && !!listResp.__partialCapture
       };
     }).filter((g) => g.groupId || g.name);
-    if (placeholderGroups.length) {
-      window.jlgjCourseGroupsSnapshot = placeholderGroups;
-    }
-
-    setPlatformLoginState('jlgj', 'online');
-    window.platformLoadedOnce.jlgj = true;
 
     const rebuildJlgjRender = () => {
       window.jlgjMatchedHomeworkByCourseId = {};
@@ -8678,7 +8641,87 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     };
 
     if (placeholderGroups.length) {
+      window.jlgjMatchedHomeworkByCourseId = {};
+      window.jlgjStandaloneCourses = [];
+      window.jlgjCourseGroupsSnapshot = placeholderGroups;
+      setPlatformLoginState('jlgj', 'online');
+      window.platformLoadedOnce.jlgj = true;
       rebuildJlgjRender();
+    }
+
+    if (listResp?.__partialCapture && listResp?.tabId && groups.length) {
+      const captureTabId = Number(listResp.tabId);
+      const waitForCompleteCapture = async (tabId, timeoutMs = 20000) => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          if (isStale()) return null;
+          try {
+            const stateRes = await chrome.scripting.executeScript({
+              target: { tabId },
+              world: 'MAIN',
+              func: () => {
+                const data = globalThis.__bjtuJlgjData;
+                return {
+                  hasData: !!data,
+                  isComplete: data ? data.complete : false,
+                  dataSnap: data || null
+                };
+              }
+            });
+            const state = stateRes?.[0]?.result || {};
+            if (state.hasData && state.isComplete) return state.dataSnap || null;
+          } catch {
+            return null;
+          }
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        return null;
+      };
+
+      const completeCapture = await waitForCompleteCapture(captureTabId, 20000);
+      if (isStale()) return;
+      if (completeCapture?.userGroupPages?.ok) {
+        captureData = completeCapture;
+        groups = pickArr(completeCapture.userGroupPages?.data || null);
+      }
+    }
+
+    // Capture path may intermittently miss data; fallback to direct API fetch.
+    if ((!listResp?.ok || !groups.length) && !listResp?.unauthorized) {
+      const ready = await ensureBgTabAndAuth();
+      if (ready?.unauthorized) {
+        window.platformLoadedOnce.jlgj = true;
+        renderJlgjNeedLoginMessage();
+        return;
+      }
+      if (ready?.ok) {
+        const directListResp = await doFetch(JLGJ_GROUP_LIST_API);
+        if (isStale()) return;
+        if (directListResp?.unauthorized) {
+          window.platformLoadedOnce.jlgj = true;
+          renderJlgjNeedLoginMessage();
+          return;
+        }
+        if (directListResp?.ok) {
+          listResp = directListResp;
+          captureData = null;
+          groups = pickArr(directListResp.data);
+        }
+      }
+    }
+
+    if (!listResp?.ok && !groups.length) {
+      window.platformLoadedOnce.jlgj = true;
+      setPlatformLoginState('jlgj', 'online');
+      clearPlatformData('jlgj');
+      rerenderAllHomeworkAreas();
+      return;
+    }
+
+    if (!placeholderGroups.length) {
+      window.jlgjMatchedHomeworkByCourseId = {};
+      window.jlgjStandaloneCourses = [];
+      window.jlgjCourseGroupsSnapshot = [];
     }
 
     for (const g of groups) {
