@@ -627,6 +627,26 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             font-size: 20px;
             font-weight: 800;
             color: #0f172a;
+            display: flex;
+            flex-direction: row;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: nowrap;
+            line-height: 1.2;
+        }
+        .version-notice-title-main {
+            font-size: 20px;
+            font-weight: 800;
+            color: inherit;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .version-notice-title-time {
+            font-size: 12px;
+            font-weight: 500;
+            color: #64748b;
+            line-height: 1.2;
+            white-space: nowrap;
         }
         .version-download-title {
             font-size: 18px;

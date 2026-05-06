@@ -270,6 +270,7 @@ function compareVersionText(a, b) {
 let versionButtonMode = 'loading';
 let versionButtonDownloadUrl = '';
 let versionButtonLatestVersion = '';
+let versionButtonLatestPublishedAt = '';
 let versionButtonLatestBodyMarkdown = '';
 let versionNoticeShownVersion = '';
 let versionDownloadInProgress = false;
@@ -332,6 +333,15 @@ function renderMarkdownBasic(markdownText) {
     if (!trimmed) {
       closeList();
       out.push('<div style="height:6px;"></div>');
+      return;
+    }
+
+    const releaseHeader = trimmed.match(/^@@release\|(.+)\|(.+)$/);
+    if (releaseHeader) {
+      closeList();
+      const versionText = parseInlineMarkdown(releaseHeader[1]);
+      const timeText = parseInlineMarkdown(releaseHeader[2]);
+      out.push(`<div style="display:flex; align-items:baseline; gap:8px; margin:0 0 6px; color:#0f172a; line-height:1.25;"><span style="font-size:16px; font-weight:700;">${versionText}</span><span style="font-size:12px; font-weight:500; color:#64748b;">${timeText}</span></div>`);
       return;
     }
 
@@ -426,10 +436,13 @@ function openVersionNoticeModal() {
   const downloadBtn = modal.querySelector('#version-notice-download');
   const ignoreBtn = modal.querySelector('#version-notice-ignore');
   if (titleEl instanceof HTMLElement) {
+    const versionLabel = escapeHtml(String(versionButtonLatestVersion || '').trim() || '--');
+    const publishedText = escapeHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
+    const timeHtml = publishedText ? `<span class="version-notice-title-time">${publishedText}</span>` : '';
     if (versionButtonMode === 'latest') {
-      titleEl.textContent = `已是最新版本：${versionButtonLatestVersion || '--'}`;
+      titleEl.innerHTML = `<span class="version-notice-title-main">已是最新版本：${versionLabel}</span>${timeHtml}`;
     } else {
-      titleEl.textContent = `发现新版本：${versionButtonLatestVersion || '--'}`;
+      titleEl.innerHTML = `<span class="version-notice-title-main">发现新版本：${versionLabel}</span>${timeHtml}`;
     }
   }
   if (bodyEl instanceof HTMLElement) {
@@ -763,11 +776,12 @@ async function startVersionDownloadWithFallback() {
   syncVersionNoticeDownloadButton();
 }
 
-function setVersionButtonState(mode, { localVersion = '', latestVersion = '', downloadUrl = '', body = '' } = {}) {
+function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestPublishedAt = '', downloadUrl = '', body = '' } = {}) {
   if (!versionBtn) return;
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
   versionButtonLatestVersion = String(latestVersion || '').trim();
+  versionButtonLatestPublishedAt = String(latestPublishedAt || '').trim();
   versionButtonLatestBodyMarkdown = String(body || '').trim();
 
   versionBtn.className = `version-btn ${versionButtonMode}`;
@@ -819,8 +833,9 @@ function buildAggregatedReleaseNotes(releases = [], localVersion = '', latestVer
   return items.map((r, idx) => {
     const tag = String(r.tag_name || '').trim();
     const body = String(r.body || '').trim() || '此版本暂无更新说明。';
+    const publishedText = formatReleasePublishedAt(r?.published_at);
     // The modal title already shows the latest version; avoid repeating it at the top.
-    return idx === 0 ? body : `## ${tag}\n${body}`;
+    return idx === 0 ? `${body}` : `@@release|${tag}|${publishedText}\n${body}`;
   }).join('\n\n---\n\n');
 }
 
@@ -831,8 +846,52 @@ function buildAllReleaseNotes(releases = [], latestVersion = '') {
   return items.map((r) => {
     const tag = String(r.tag_name || '').trim();
     const body = String(r.body || '').trim() || '此版本暂无更新说明。';
-    return compareVersionText(tag, latestVersion) === 0 ? body : `## ${tag}\n${body}`;
+    const publishedText = formatReleasePublishedAt(r?.published_at);
+    return compareVersionText(tag, latestVersion) === 0 ? `${body}` : `@@release|${tag}|${publishedText}\n${body}`;
   }).join('\n\n---\n\n');
+}
+
+function formatReleasePublishedAt(publishedAt) {
+  const rawText = String(publishedAt || '').trim();
+  if (!rawText) return '';
+  const publishedDate = new Date(rawText);
+  if (Number.isNaN(publishedDate.getTime())) return '';
+
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(publishedDate);
+  const lookup = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+  const absoluteText = `${lookup.year || '0000'}-${lookup.month || '00'}-${lookup.day || '00'} ${lookup.hour || '00'}:${lookup.minute || '00'}:${lookup.second || '00'}`;
+
+  const diffMs = Date.now() - publishedDate.getTime();
+  if (diffMs < 0) {
+    return absoluteText;
+  }
+
+  const diffSec = Math.floor(diffMs / 1000);
+  let relativeText = '';
+  if (diffSec <= 60) {
+    relativeText = `${diffSec}秒前`;
+  } else if (diffSec <= 60 * 60) {
+    relativeText = `${Math.floor(diffSec / 60)}分钟前`;
+  } else if (diffSec <= 24 * 60 * 60) {
+    const hours = Math.floor(diffSec / 3600);
+    const minutes = Math.floor((diffSec % 3600) / 60);
+    relativeText = hours > 0 ? `${hours}小时${minutes}分钟前` : `${minutes}分钟前`;
+  } else if (diffSec <= 7 * 24 * 60 * 60) {
+    const days = Math.floor(diffSec / 86400);
+    const hours = Math.floor((diffSec % 86400) / 3600);
+    relativeText = hours > 0 ? `${days}天${hours}小时前` : `${days}天前`;
+  }
+
+  return relativeText ? `${absoluteText}（${relativeText}）` : absoluteText;
 }
 
 async function loadVersionInfo() {
@@ -883,6 +942,7 @@ async function loadVersionInfo() {
       setVersionButtonState('latest', {
         localVersion,
         latestVersion: latestTag,
+        latestPublishedAt: latestRelease?.published_at || '',
         body: historyBody
       });
       return;
@@ -893,6 +953,7 @@ async function loadVersionInfo() {
       setVersionButtonState('outdated', {
         localVersion,
         latestVersion: latestTag,
+        latestPublishedAt: latestRelease?.published_at || '',
         downloadUrl: pickReleaseDownloadUrl(latestRelease),
         body: mergedBody
       });
@@ -907,7 +968,7 @@ async function loadVersionInfo() {
       versionIgnoredTag = '';
       await setLocal(VERSION_IGNORE_KEY, '');
     }
-    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag });
+    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestPublishedAt: latestRelease?.published_at || '' });
   } catch (err) {
     setVersionButtonState('failure', { localVersion });
     const msg = String(err?.message || '').trim();
@@ -6555,7 +6616,7 @@ function renderYktHomeworkItems(courseId, items) {
       <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
         <div>
           <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '雨课堂作业')}</div>
-          <div style="font-size:12px; color:#666;">截止: ${escapeHtml(formatYktDateTime(it.end))} ${statusHtml}${countdownSpan}</div>
+          <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div>
           <div style="font-size:12px; color:#666;">${progressText ? `进度: ${escapeHtml(progressText)}` : ''}</div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
@@ -6611,7 +6672,7 @@ function renderJlgjHomeworkItems(items) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '接龙作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}${countdownSpan}</div>
+            <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -6659,7 +6720,7 @@ function renderMrzyHomeworkItems(items) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '每日交作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: ${escapeHtml(endText)}${endSuffix} ${statusHtml}${countdownSpan}</div>
+            <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             <a class="btn" href="${it.link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
@@ -9490,7 +9551,7 @@ function renderHomeworkList(courseId) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${title}</div>
-            <div style="font-size:12px; color:#666;">截止: ${deadline || '无'} ${statusHtml}${countdownSpan}</div>
+            <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             ${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}
