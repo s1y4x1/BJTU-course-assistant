@@ -983,13 +983,13 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   }
 }
 
-function triggerInitialPlatformLoads() {
+async function triggerInitialPlatformLoads() {
   // Keep startup priority consistent across all enabled platforms.
   if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
   if (isPlatformEnabled('mrzy')) triggerExternalPlatformLoad('mrzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
   if (isPlatformEnabled('ve')) {
-    loadCourses();
+    await loadCourses();
   } else {
     window.currentVeCourseList = [];
     renderCourseList([]);
@@ -1004,21 +1004,21 @@ function rematchExternalByVeCourses() {
     window.yktMatchedHomeworkByCourseId = {};
     window.yktMatchedCourseLinkByCourseId = {};
     window.yktStandaloneCourses = [];
-    window.yktCourseGroupsSnapshot.forEach((g) => {
-      const strictToken = String(g?.strictToken || g?.token || '').trim();
+    window.yktCourseGroupsSnapshot.forEach((group) => {
+      const strictToken = String(group?.strictToken || group?.token || '').trim();
       const matched = strictToken ? yktStrictMap.get(strictToken) : null;
       if (matched?.courseId) {
         const cid = String(matched.courseId);
         if (!window.yktMatchedHomeworkByCourseId[cid]) window.yktMatchedHomeworkByCourseId[cid] = [];
-        window.yktMatchedHomeworkByCourseId[cid].push(...(g?.homeworks || []));
-        window.yktMatchedCourseLinkByCourseId[cid] = yktCourseLink(g?.classroom_id);
+        window.yktMatchedHomeworkByCourseId[cid].push(...(group?.homeworks || []));
+        window.yktMatchedCourseLinkByCourseId[cid] = yktCourseLink(group?.classroom_id);
       } else {
         window.yktStandaloneCourses.push({
-          name: g?.name || '',
-          teacher_name: g?.teacher_name || '',
-          classroom_id: g?.classroom_id,
-          course_name: g?.course_name || g?.name || '雨课堂课程',
-          homeworks: Array.isArray(g?.homeworks) ? g.homeworks : []
+          name: group?.name || '',
+          teacher_name: group?.teacher_name || '',
+          classroom_id: group?.classroom_id,
+          course_name: group?.course_name || group?.name || '雨课堂课程',
+          homeworks: Array.isArray(group?.homeworks) ? group.homeworks : []
         });
       }
     });
@@ -1028,18 +1028,18 @@ function rematchExternalByVeCourses() {
     const mrzyMatchMap = collectCourseNameMatchMap(veCourses);
     window.mrzyMatchedHomeworkByCourseId = {};
     window.mrzyStandaloneCourses = [];
-    window.mrzyCourseGroupsSnapshot.forEach((g) => {
-      const matched = mrzyMatchMap.get(String(g?.token || ''));
+    window.mrzyCourseGroupsSnapshot.forEach((group) => {
+      const matched = mrzyMatchMap.get(String(group?.token || ''));
       if (matched?.courseId) {
         const cid = String(matched.courseId);
         if (!window.mrzyMatchedHomeworkByCourseId[cid]) window.mrzyMatchedHomeworkByCourseId[cid] = [];
-        window.mrzyMatchedHomeworkByCourseId[cid].push(...(g?.homeworks || []));
+        window.mrzyMatchedHomeworkByCourseId[cid].push(...(group?.homeworks || []));
       } else {
         window.mrzyStandaloneCourses.push({
-          divClass: g?.divClass || '每日交作业课程',
-          classNum: g?.classNum,
-          teacherName: g?.teacherName || '',
-          homeworks: Array.isArray(g?.homeworks) ? g.homeworks : []
+          divClass: group?.divClass || '每日交作业课程',
+          classNum: group?.classNum,
+          teacherName: group?.teacherName || '',
+          homeworks: Array.isArray(group?.homeworks) ? group.homeworks : []
         });
       }
     });
@@ -1049,18 +1049,18 @@ function rematchExternalByVeCourses() {
     const jlgjMatchMap = collectCourseNameMatchMap(veCourses);
     window.jlgjMatchedHomeworkByCourseId = {};
     window.jlgjStandaloneCourses = [];
-    window.jlgjCourseGroupsSnapshot.forEach((g) => {
-      const matched = jlgjMatchMap.get(String(g?.token || ''));
+    window.jlgjCourseGroupsSnapshot.forEach((group) => {
+      const matched = jlgjMatchMap.get(String(group?.token || ''));
       if (matched?.courseId) {
         const cid = String(matched.courseId);
         if (!window.jlgjMatchedHomeworkByCourseId[cid]) window.jlgjMatchedHomeworkByCourseId[cid] = [];
-        window.jlgjMatchedHomeworkByCourseId[cid].push(...(g?.homeworks || []));
+        window.jlgjMatchedHomeworkByCourseId[cid].push(...(group?.homeworks || []));
       } else {
         window.jlgjStandaloneCourses.push({
-          name: g?.name || '接龙管家课程',
-          groupId: g?.groupId,
-          teacherName: g?.teacherName || '',
-          homeworks: Array.isArray(g?.homeworks) ? g.homeworks : []
+          name: group?.name || '接龙管家课程',
+          groupId: group?.groupId,
+          teacherName: group?.teacherName || '',
+          homeworks: Array.isArray(group?.homeworks) ? group.homeworks : []
         });
       }
     });
@@ -1358,6 +1358,16 @@ function beginAccountSwitchInterruption() {
 
 function resetAccountSwitchInterruption() {
   accountSwitchInterruptionArmed = false;
+}
+
+async function resumeVeAfterAccountSwitchFailure() {
+  resetAccountSwitchInterruption();
+  if (!isPlatformEnabled('ve')) return;
+  try {
+    await loadCourses();
+  } catch {
+    // ignore
+  }
 }
 
 function updateTotalSpeed() {
@@ -2305,6 +2315,9 @@ async function ensureCurrentXqCode() {
 if (xqSelect instanceof HTMLSelectElement) {
   xqSelect.addEventListener('change', async () => {
     const picked = String(xqSelect.value || '').trim();
+    if (picked && picked !== currentXqCode) {
+      prioritizeAccountSwitch();
+    }
     currentXqCode = picked;
     try {
       await setLocal(CURRENT_XQ_CODE_KEY, picked);
@@ -3270,6 +3283,7 @@ async function runPortalLoginFlow(username, code, autoOcrEnabled) {
   if (loginCancelRequested && !portalResult.ok) {
     setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
     showToast('已取消登录：失败后不再重试', 'warning', 1800);
+    await resumeVeAfterAccountSwitchFailure();
     return;
   }
 
@@ -3286,6 +3300,7 @@ async function runPortalLoginFlow(username, code, autoOcrEnabled) {
     if (loginCancelRequested && !auxRes.ok) {
       setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
       showToast('已取消登录：失败后不再重试', 'warning', 1800);
+      await resumeVeAfterAccountSwitchFailure();
       return;
     }
 
@@ -3299,6 +3314,7 @@ async function runPortalLoginFlow(username, code, autoOcrEnabled) {
         captchaInput.value = '';
         if (loginCancelRequested) {
           setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+          await resumeVeAfterAccountSwitchFailure();
           return;
         }
         return;
@@ -3322,13 +3338,17 @@ async function runPortalLoginFlow(username, code, autoOcrEnabled) {
     }
     if (portalResult.reason === 'captcha') {
       captchaInput.value = '';
-      if (loginCancelRequested) return;
+      if (loginCancelRequested) {
+        await resumeVeAfterAccountSwitchFailure();
+        return;
+      }
       return;
     }
     showToast(portalResult.message || '登录失败', 'error');
     setLoginProgress(portalResult.message || '登录失败', 'error');
     if (loginCancelRequested) {
       setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+      await resumeVeAfterAccountSwitchFailure();
       return;
     }
     return;
@@ -3440,6 +3460,7 @@ async function doLoginFlow() {
     if (loginCancelRequested && !result.ok) {
       setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
       showToast('已取消登录：失败后不再重试', 'warning', 1800);
+      await resumeVeAfterAccountSwitchFailure();
       return;
     }
     if (!result.ok && result.reason !== 'captcha') {
@@ -3455,6 +3476,7 @@ async function doLoginFlow() {
         if (loginCancelRequested && !auxRes.ok) {
           setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
           showToast('已取消登录：失败后不再重试', 'warning', 1800);
+          await resumeVeAfterAccountSwitchFailure();
           return;
         }
         if (!auxRes.ok) {
@@ -3473,6 +3495,7 @@ async function doLoginFlow() {
               autoOcrAutoSubmitUsed = false;
               if (loginCancelRequested) {
                 setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+                await resumeVeAfterAccountSwitchFailure();
                 return;
               }
               refreshCaptchaWhenIdle();
@@ -3512,7 +3535,10 @@ async function doLoginFlow() {
           setLoginProgress(`验证码错误，重试 ${captchaErrorRetryCount}/${MAX_CAPTCHA_ERROR_RETRIES}`, 'warning');
           lastLoginFailedByCaptcha = false;
           autoOcrAutoSubmitUsed = false;
-          if (loginCancelRequested) return;
+          if (loginCancelRequested) {
+            await resumeVeAfterAccountSwitchFailure();
+            return;
+          }
           refreshCaptchaWhenIdle();
           return;
         }
@@ -3526,6 +3552,7 @@ async function doLoginFlow() {
       }
       if (loginCancelRequested) {
         setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
+        await resumeVeAfterAccountSwitchFailure();
         return;
       }
       refreshCaptchaWhenIdle();
@@ -5149,11 +5176,13 @@ function calcCourseRank(state) {
   if ((state?.pendingHomeworkCount || 0) > 0) return 0;
   if ((state?.overdueHomeworkCount || 0) > 0) return 1;
   if ((state?.allHomeworkCount || 0) > 0) return 2;
-  if (state?.hasReplay) return 3;
-  if (state?.hasCourseware) return 4;
-  if (state?.replayListLoading) return 5;
-  if (state?.coursewareListLoading) return 6;
-  return 7;
+  if (state?.hasReplay && state?.hasCourseware) return 3;
+  if (state?.hasReplay) return 4;
+  if (state?.hasCourseware) return 5;
+  if (state?.replayListLoading && state?.coursewareListLoading) return 6;
+  if (state?.replayListLoading) return 7;
+  if (state?.coursewareListLoading) return 8;
+  return 9;
 }
 
 function sortCourseCards() {
@@ -7391,7 +7420,8 @@ function recomputeCourseHomeworkState(courseId) {
   state.pendingEarliestTs = validPendingTs.length ? Math.min(...validPendingTs) : 0;
   state.overdueHomeworkCount = nativeOverdueList.length + yktOverdueList.length + mrzyOverdueList.length + jlgjOverdueList.length;
   state.overdueEarliestTs = validOverdueTs.length ? Math.min(...validOverdueTs) : 0;
-  updateCourseCardRank(courseId, { deferWhileActionAnimating: true });
+  const hasAnyHomework = state.allHomeworkCount > 0 || state.pendingHomeworkCount > 0 || state.overdueHomeworkCount > 0;
+  updateCourseCardRank(courseId, { deferWhileActionAnimating: !hasAnyHomework });
 }
 
 function updateHomeworkToggleButton(courseId) {
@@ -8587,9 +8617,9 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       groups = captureData.partialGroups;
     }
 
-    const placeholderGroups = groups.map((g) => {
-      const groupId = String(g?.Id || '').trim();
-      const name = String(g?.Name || '接龙管家课程').trim();
+    const placeholderGroups = groups.map((group) => {
+      const groupId = String(group?.Id || '').trim();
+      const name = String(group?.Name || '接龙管家课程').trim();
       return {
         token: normalizeCourseNameToken(name),
         name,
@@ -8599,7 +8629,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
         homeworks: [],
         __early: !!listResp && !!listResp.__partialCapture
       };
-    }).filter((g) => g.groupId || g.name);
+    }).filter((group) => group.groupId || group.name);
 
     const rebuildJlgjRender = () => {
       window.jlgjMatchedHomeworkByCourseId = {};
@@ -8727,10 +8757,10 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       window.jlgjCourseGroupsSnapshot = [];
     }
 
-    for (const g of groups) {
+    for (const group of groups) {
       if (isStale()) return;
-      const groupId = String(g?.Id || '').trim();
-      const name = String(g?.Name || '接龙管家课程').trim();
+      const groupId = String(group?.Id || '').trim();
+      const name = String(group?.Name || '接龙管家课程').trim();
       if (!groupId) continue;
 
       let courseGroup = window.jlgjCourseGroupsSnapshot.find((item) => String(item?.groupId || '') === groupId);
@@ -9324,7 +9354,7 @@ function renderHomeworkList(courseId) {
   const yktLoading = !!window.yktHomeworkLoadingByCourse?.[courseId];
   const yktSyncing = isPlatformEnabled('ykt') && ((window.platformLoginState?.ykt || 'checking') === 'checking') && !window.platformLoadedOnce?.ykt;
   const mrzySyncing = isPlatformEnabled('mrzy') && ((window.platformLoginState?.mrzy || 'checking') === 'checking') && !window.platformLoadedOnce?.mrzy;
-  const jlgjHasEarlyLoadingGroups = Array.isArray(window.jlgjCourseGroupsSnapshot) && window.jlgjCourseGroupsSnapshot.some((g) => !!g?.loadingMeta);
+  const jlgjHasEarlyLoadingGroups = Array.isArray(window.jlgjCourseGroupsSnapshot) && window.jlgjCourseGroupsSnapshot.some((group) => !!group?.loadingMeta);
   const jlgjSyncing = isPlatformEnabled('jlgj') && (((window.platformLoginState?.jlgj || 'checking') === 'checking') && !window.platformLoadedOnce?.jlgj || jlgjHasEarlyLoadingGroups);
 
   const yktCourseLink = window.yktMatchedCourseLinkByCourseId[courseId] || '';
