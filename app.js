@@ -1,9 +1,5 @@
-﻿// Native extension page implementing upload.html-like UI without Python backend.
-// NOTE: Captcha OCR is not available in pure extension mode.
-
-const PLATFORM_BASE_URL = 'http://123.121.147.7:88/';
-const BASE = PLATFORM_BASE_URL.replace(/\/$/, '');
-const BASE_VE = `${PLATFORM_BASE_URL}ve/`;
+﻿const BASE = 'http://123.121.147.7:88';
+const BASE_VE = `${BASE}/ve/`;
 const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#1565c0; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
 const VE_LOGIN_REQUIRED_HTML = `如需查看${VE_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_LOGIN_LINK_HTML = '<a href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer" style="color:#5096f5; text-decoration:none; font-weight:600;">雨课堂</a>';
@@ -493,7 +489,7 @@ function setVersionDownloadRetryVisible(visible) {
 function renderVersionDownloadBodyHtml(bodyText) {
   const safe = escapeHtml(String(bodyText || ''));
   const linkLabel = 'about:extensions';
-  const linkHtml = '<a href="chrome://extensions/" target="_blank" rel="noopener noreferrer" style="color:#0f766e; font-weight:700; text-decoration:underline;">about:extensions</a>';
+  const linkHtml = '<a href="about:extensions" target="_blank" rel="noopener noreferrer" style="color:#0f766e; font-weight:700; text-decoration:underline;">about:extensions</a>';
   return safe.replaceAll(escapeHtml(linkLabel), linkHtml);
 }
 
