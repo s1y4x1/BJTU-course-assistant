@@ -3185,17 +3185,17 @@ async function openPortalAndSubmitLoginInPage(username, passwordMd5, passcode) {
     const alertMsg = parseAlertMsg(text);
 
     if (alertMsg && isCaptchaErrorMessage(alertMsg)) {
-      return { ok: false, reason: 'captcha', message: alertMsg, tabId: null };
+      return { ok: false, reason: 'captcha', message: alertMsg, tabId: Number(tab?.id || 0) || null };
     }
     if (alertMsg && isAccountLockedMessage(alertMsg)) {
-      return { ok: false, reason: 'locked', message: alertMsg, tabId: null };
+      return { ok: false, reason: 'locked', message: alertMsg, tabId: Number(tab?.id || 0) || null };
     }
     if (looksLikeLoginSuccess(text) || /个人中心|退出登录|跳转首页|top\.location/i.test(text)) {
-      return { ok: true, tabId: null };
+      return { ok: true, tabId: Number(tab?.id || 0) || null };
     }
-    return { ok: false, reason: 'other', message: alertMsg || '登录失败', tabId: null };
+    return { ok: false, reason: 'other', message: alertMsg || '登录失败', tabId: Number(tab?.id || 0) || null };
   } catch (e) {
-    return { ok: false, reason: 'other', message: e?.message || '登录失败', tabId: null };
+    return { ok: false, reason: 'other', message: e?.message || '登录失败', tabId: Number(tab?.id || 0) || null };
   }
 }
 
@@ -3239,6 +3239,11 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
             // ignore
           }
           showToast('登录成功', 'success', 1800);
+        }
+
+        if (isPlatformEnabled('jlgj') || window.platformInteractiveLoginPending?.jlgj) {
+          closeJlgjLoginAssistPopup(false);
+          scheduleJlgjLoginAssistRecheck(180);
         }
         
         if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
@@ -5586,6 +5591,7 @@ function closeJlgjLoginAssistPopup(cancelPending = false) {
 
 function openJlgjLoginAssistPopup() {
   if (!isPlatformEnabled('jlgj')) return;
+  window.platformInteractiveLoginPending.jlgj = true;
   if (jlgjLoginAssistPopupWindowId && jlgjLoginAssistPopupTabId) {
     chrome.windows.update(Number(jlgjLoginAssistPopupWindowId), { focused: true }).catch(() => {});
     startJlgjLoginAssistWatcher();
@@ -6012,6 +6018,7 @@ function renderJlgjNeedLoginMessage() {
   clearPlatformData('jlgj');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('jlgj', 'offline');
+  window.platformInteractiveLoginPending.jlgj = true;
 
   if (isPlatformEnabled('jlgj')) {
     openJlgjLoginAssistPopup();
