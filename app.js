@@ -9260,8 +9260,9 @@ async function checkHomework(courseId) {
     const list = data.courseNoteList || data.list || [];
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
-    await prefetchHomeworkAttachments(courseId, list);
-    prefetchCourseScores(courseId);
+    const attachmentPrefetchPromise = prefetchHomeworkAttachments(courseId, list);
+    await prefetchCourseScores(courseId);
+    await attachmentPrefetchPromise;
     recomputeCourseHomeworkState(courseId);
   } catch (e) {
     console.error(`[VE] fetch error for ${courseId}: ${e.message}`);
