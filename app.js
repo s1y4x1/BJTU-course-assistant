@@ -8244,10 +8244,35 @@ async function postMrzyForm(url, paramsObj, runtimeCtx = null) {
 
       if (!tab) {
         if (ctx) {
-          tab = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
-          created = true;
-          ctx.tabId = Number(tab?.id || 0) || null;
-          ctx.createdTab = true;
+          // Ensure only one concurrent creator opens a tab for this ctx.
+          if (ctx.creatingTabPromise) {
+            try { await ctx.creatingTabPromise; } catch { /* ignore */ }
+            try {
+              const existingTab = ctx.tabId ? await chrome.tabs.get(Number(ctx.tabId)) : null;
+              if (existingTab?.id) tab = existingTab;
+            } catch {
+              tab = null;
+            }
+          }
+
+          if (!tab) {
+            // create and record on ctx so subsequent callers reuse the same tab
+            ctx.creatingTabPromise = (async () => {
+              const t = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
+              ctx.tabId = Number(t?.id || 0) || null;
+              ctx.createdTab = true;
+              return ctx.tabId;
+            })();
+            try {
+              const newTabId = await ctx.creatingTabPromise;
+              if (newTabId) {
+                try { tab = await chrome.tabs.get(Number(newTabId)); } catch { tab = null; }
+              }
+            } finally {
+              ctx.creatingTabPromise = null;
+            }
+            created = !!tab?.id;
+          }
         } else {
           const exists = await chrome.tabs.query({ url: ['https://zuoye.lulufind.com/*'] });
           if (exists && exists.length > 0) {
