@@ -11168,7 +11168,6 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   // VE enabled startup must always dispatch these 3 requests concurrently:
   // getUserInfo + getCourseList + resourceSpaceList.
-  const veStartupAccountInfoPromise = startVeStartupAccountInfoLoad();
   const startupPlatformLoadPromise = triggerInitialPlatformLoads();
   const startupResourceSpacePromise = loadResourceSpaceForCurrentAccount().catch(() => {});
 
@@ -11188,11 +11187,14 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     }
   }
   adjustParallelLimitWidth();
-  const startupAccountInfo = await veStartupAccountInfoPromise.catch(() => null);
+  // start getUserInfo after we've loaded the saved username so the call mirrors
+  // the re-enable flow (which reads current username before calling getUserInfo).
+  const veStartupAccountInfoPromise = startVeStartupAccountInfoLoad();
+  const settled = await Promise.allSettled([veStartupAccountInfoPromise, startupPlatformLoadPromise, startupResourceSpacePromise]);
+  const startupAccountInfo = (settled[0] && settled[0].status === 'fulfilled') ? settled[0].value : null;
   if (startupAccountInfo?.info) {
     setWelcomeMessage(startupAccountInfo.info);
-  }
-  if (!startupAccountInfo?.info) {
+  } else {
     setWelcomeMessage(null);
   }
   renderLoginAccountHistorySelect(lastValidUsername);
@@ -11207,7 +11209,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     if (usernameInput.value.trim()) showLoginModal('登录已失效，请输入验证码');
   }
 
-  await Promise.allSettled([startupPlatformLoadPromise, startupResourceSpacePromise]);
+  // startupPlatformLoadPromise and startupResourceSpacePromise already awaited above via `settled`
 })();
 
 const SEVEN_SEGMENT_MAP = {
@@ -11269,6 +11271,3 @@ function updateAllCountdowns() {
   });
 }
 setInterval(updateAllCountdowns, 1000);
-
-
-

@@ -145,6 +145,8 @@ async function portalLoginAutoLoginInjected(context) {
     ? Math.max(0, Number(flowState.retryCount))
     : 0;
   flowState.retryCount = Math.min(MAX_AUTO_RETRY_ROUNDS, flowState.retryCount);
+  // lastAttemptTs: timestamp of last automatic/manual submit attempt (ms)
+  flowState.lastAttemptTs = Number(flowState.lastAttemptTs || 0) || 0;
   if (originalRequestedUsername && !flowState.originalUsername) {
     flowState.originalUsername = originalRequestedUsername;
   }
@@ -652,7 +654,11 @@ async function portalLoginAutoLoginInjected(context) {
           if (suppressAutoStartOnce) sessionStorage.removeItem(SUPPRESS_AUTO_START_ONCE_KEY);
         } catch {}
         const canAutoRetry = Number(flowState.retryCount || 0) < maxTry;
-        const shouldAutoStart = !suppressAutoStartOnce && canAutoRetry && (fromExtension || !!flowState.forceRetry || Number(flowState.retryCount || 0) > 0) && String(userInput.value || '').trim();
+        // Consider recent attempts or a referrer from a login POST as valid triggers.
+        const refIsFromLoginPost = String(document.referrer || '').includes('/ve/s.shtml');
+        const lastAttemptRecent = !flowState.lastAttemptTs || (Date.now() - Number(flowState.lastAttemptTs || 0) <= 60 * 1000);
+        const extensionTrigger = fromExtension && refIsFromLoginPost;
+        const shouldAutoStart = !suppressAutoStartOnce && canAutoRetry && (extensionTrigger || !!flowState.forceRetry || (Number(flowState.retryCount || 0) > 0 && lastAttemptRecent)) && String(userInput.value || '').trim();
         if (shouldAutoStart) {
           const nextRound = Math.min(maxTry, Number(flowState.retryCount || 0) + 1);
           statusEl.textContent = `检测到自动重试，开始登录 (${nextRound}/${maxTry})...`;
@@ -786,6 +792,8 @@ async function portalLoginAutoLoginInjected(context) {
   flowState.currentUsername = username;
   if (username === '8888') flowState.useAux = true;
   flowState.retryCount = Math.min(MAX_AUTO_RETRY_ROUNDS, Number(flowState.retryCount || 0) + 1);
+  // record timestamp of this submit attempt so subsequent loads can decide recency
+  flowState.lastAttemptTs = Date.now();
   flowState.forceRetry = flowState.retryCount < MAX_AUTO_RETRY_ROUNDS;
   writeFlowState(flowState);
 
