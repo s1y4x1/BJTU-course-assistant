@@ -46,6 +46,30 @@ async function ensureTesseractInjected(tabId) {
   } catch (e) {}
 }
 
+// Manage action popup according to openMode ('popup' or 'page')
+let currentOpenMode = 'popup';
+async function refreshActionPopupFromStorage() {
+  try {
+    const r = await chrome.storage.local.get('openMode');
+    const mode = String(r.openMode || 'popup');
+    currentOpenMode = mode;
+    if (mode === 'page') {
+      try { await chrome.action.setPopup({ popup: '' }); } catch (e) {}
+    } else {
+      try { await chrome.action.setPopup({ popup: 'popup.html' }); } catch (e) {}
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.openMode) {
+    refreshActionPopupFromStorage().catch(() => {});
+  }
+});
+
 function isPortalLoginUrl(url) {
   const u = String(url || '');
   return /^http:\/\/123\.121\.147\.7:88\/ve\/?(?:[#?].*)?$/i.test(u)
@@ -158,7 +182,35 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 chrome.action.onClicked.addListener(async () => {
-  chrome.tabs.create({ url: APP_URL });
+  try {
+    const mode = currentOpenMode || (await chrome.storage.local.get('openMode')).openMode || 'popup';
+    if (mode === 'page') {
+      try {
+        const tabs = await chrome.tabs.query({ url: APP_URL });
+        if (Array.isArray(tabs) && tabs.length) {
+          const t = tabs[0];
+          try { await chrome.tabs.update(t.id, { active: true }); } catch (e) {}
+          try { await chrome.windows.update(t.windowId, { focused: true }); } catch (e) {}
+          return;
+        }
+      } catch (e) {}
+      chrome.tabs.create({ url: APP_URL });
+      return;
+    }
+    // In popup mode if popup is unset, fall back to opening the app page
+    try {
+      if (chrome.action.getPopup) {
+        const popup = await chrome.action.getPopup({});
+        if (!popup) {
+          chrome.tabs.create({ url: APP_URL });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  } catch (e) {
+    try { chrome.tabs.create({ url: APP_URL }); } catch (e2) {}
+  }
 });
 
 function extractJsessionidFromSetCookie(value) {
