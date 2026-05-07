@@ -488,6 +488,65 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             margin-bottom: 6px;
         }
 
+        body.popup-mode {
+            padding: 10px;
+            overflow-x: hidden;
+        }
+        body.popup-mode .layout-container {
+            display: block;
+        }
+        body.popup-mode .left-column {
+            display: none;
+        }
+        body.popup-mode .right-column {
+            width: 100%;
+            min-width: 0;
+            max-width: none;
+            position: static;
+            top: auto;
+            max-height: none;
+            overflow: visible;
+            padding: 0;
+            background: transparent;
+            border-radius: 0;
+            box-shadow: none;
+        }
+        body.popup-mode .right-column-resizer {
+            display: none !important;
+        }
+        body.popup-mode .page-top-config {
+            margin-bottom: 8px;
+        }
+        body.popup-mode .top-inline-controls {
+            gap: 8px;
+            flex-wrap: nowrap;
+        }
+        .popup-fullscreen-btn {
+            display: none;
+            background: #0f172a;
+            padding: 6px 10px;
+            font-size: 12px;
+            line-height: 1.2;
+        }
+        .popup-fullscreen-btn:hover {
+            background: #1e293b;
+        }
+        body.popup-mode .popup-fullscreen-btn {
+            display: inline-flex;
+            margin-left: auto;
+            align-items: center;
+            justify-content: center;
+        }
+        body.popup-mode #parallel-limit,
+        body.popup-mode #username-input,
+        body.popup-mode #jsessionid-input,
+        body.popup-mode #xq-select {
+            display: none !important;
+        }
+        body.popup-mode #course-list {
+            margin-top: 8px;
+        }
+
         .upload-link-row { margin-top: 5px; word-break: break-all; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .upload-link-row .url-link { color: #4CAF50; text-decoration: none; font-weight: bold; font-size: 14px; flex: 1; }
         .upload-link-row .url-link:hover { text-decoration: underline; }

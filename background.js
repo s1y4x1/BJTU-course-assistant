@@ -57,7 +57,8 @@ function shouldSkipRecent(tabId, url) {
   if (!rec) return false;
   const same = rec.url === url;
   const recent = (Date.now() - rec.ts) < 4000;
-  return same && recent;
+  if (!same || !recent) return false;
+  return !portalLoginCtxByTab.has(tabId);
 }
 
 async function injectPortalAutoLogin(tabId, ctx = null) {

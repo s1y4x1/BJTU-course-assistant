@@ -72,6 +72,7 @@ const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrzyStatusBtn = document.getElementById('mrzy-status-btn');
 const jlgjStatusBtn = document.getElementById('jlgj-status-btn');
 const versionBtn = document.getElementById('version-btn');
+const popupOpenFullscreenBtn = document.getElementById('popup-open-fullscreen');
 
 // Login modal
 const loginModal = document.getElementById('login-modal');
@@ -103,6 +104,11 @@ const extensionRuntimeId = typeof chrome !== 'undefined' && chrome?.runtime ? St
 if (location.protocol !== 'chrome-extension:' || !extensionRuntimeId) {
   renderDirectOpenNotice();
   throw new Error('Direct app.html open is not supported outside the extension runtime.');
+}
+
+const popupMode = new URLSearchParams(String(location.search || '')).get('popup') === '1';
+if (popupMode) {
+  document.body.classList.add('popup-mode');
 }
 
 if (usernameInput) {
@@ -1132,6 +1138,7 @@ function rerenderAllHomeworkAreas() {
   Object.keys(window.courseHomeworkData || {}).forEach((cid) => {
     renderHomeworkList(cid);
   });
+  syncCourseActionLoadingSpinnerPhase();
 }
 
 function isPlatformChecking(platform) {
@@ -2169,6 +2176,14 @@ async function syncAccountInfoAndReloadVeCourses({
     await loadResourceSpaceForCurrentAccount();
   }
   return { userId: finalUser, info };
+}
+
+function startVeStartupAccountInfoLoad() {
+  if (!isPlatformEnabled('ve')) return Promise.resolve(null);
+  return syncAccountInfoAndReloadVeCourses({
+    reloadCourses: false,
+    reloadResourceSpace: false
+  }).catch(() => null);
 }
 
 function normalizeLoginAccountHistoryList(rawList) {
@@ -5281,6 +5296,7 @@ function sortCourseCards() {
   const unchanged = cards.length === sortedCards.length && cards.every((c, idx) => c === sortedCards[idx]);
   if (unchanged) return;
   sortedCards.forEach((c) => courseListDiv.appendChild(c));
+  syncCourseActionLoadingSpinnerPhase();
 }
 
 function hasCourseActionButtonAnimationActive() {
@@ -6912,6 +6928,16 @@ function setCourseCoursewareLoading(courseId, isLoading) {
 function spinnerPhaseDelayStyle(periodMs = 1000) {
   const period = Math.max(1, Number(periodMs || 1000));
   return ` animation-delay:-${Date.now() % period}ms;`;
+}
+
+function syncCourseActionLoadingSpinnerPhase(scope = courseListDiv) {
+  if (!(scope instanceof HTMLElement)) return;
+  const delay = `-${Date.now() % 1000}ms`;
+  scope.querySelectorAll('button[data-action="videos"].replay-list-loading .spinner, button[data-action="courseware"].courseware-list-loading .spinner').forEach((el) => {
+    if (el instanceof HTMLElement) {
+      el.style.animationDelay = delay;
+    }
+  });
 }
 
 function setCoursewareButtonLoading(btn, isLoading) {
@@ -10515,6 +10541,17 @@ captchaImg.addEventListener('click', () => {
   if (isLoginInProgress) return;
   refreshCaptcha();
 });
+
+if (popupOpenFullscreenBtn instanceof HTMLButtonElement) {
+  popupOpenFullscreenBtn.addEventListener('click', () => {
+    try {
+      chrome.tabs.create({ url: chrome.runtime.getURL('app.html') });
+    } catch {
+      window.open('app.html', '_blank');
+    }
+  });
+}
+
 captchaImg.addEventListener('load', async () => {
   try {
     const enabled = await getAutoOcrCaptchaEnabled();
@@ -11122,12 +11159,18 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 (async function init() {
   setupRightColumnResizer();
   await loadPlatformEnabledFromStorage();
+  if (popupMode) {
+    window.platformEnabled = { ve: true, ykt: false, mrzy: false, jlgj: false };
+  }
   // Run update check in background to avoid blocking other startup requests.
   loadVersionInfo().catch(() => {});
   refreshPlatformLoginTip();
 
-  // Do not wait for user-info/personal-center requests before starting platform loading.
-  triggerInitialPlatformLoads();
+  // VE enabled startup must always dispatch these 3 requests concurrently:
+  // getUserInfo + getCourseList + resourceSpaceList.
+  const veStartupAccountInfoPromise = startVeStartupAccountInfoLoad();
+  const startupPlatformLoadPromise = triggerInitialPlatformLoads();
+  const startupResourceSpacePromise = loadResourceSpaceForCurrentAccount().catch(() => {});
 
   await loadLoginAccountHistory();
   await loadCurrentXqOptions().catch(() => {});
@@ -11145,16 +11188,11 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     }
   }
   adjustParallelLimitWidth();
-  if (lastValidUsername) {
-    try {
-      welcomeInfo = await fetchUserInfoRemote(lastValidUsername);
-      welcomeInfoUserId = lastValidUsername;
-      setWelcomeMessage(welcomeInfo);
-      await rememberLoggedInAccount(lastValidUsername, welcomeInfo);
-    } catch {
-      setWelcomeMessage(null);
-    }
-  } else {
+  const startupAccountInfo = await veStartupAccountInfoPromise.catch(() => null);
+  if (startupAccountInfo?.info) {
+    setWelcomeMessage(startupAccountInfo.info);
+  }
+  if (!startupAccountInfo?.info) {
     setWelcomeMessage(null);
   }
   renderLoginAccountHistorySelect(lastValidUsername);
@@ -11169,7 +11207,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     if (usernameInput.value.trim()) showLoginModal('登录已失效，请输入验证码');
   }
 
-  await loadResourceSpaceForCurrentAccount();
+  await Promise.allSettled([startupPlatformLoadPromise, startupResourceSpacePromise]);
 })();
 
 const SEVEN_SEGMENT_MAP = {

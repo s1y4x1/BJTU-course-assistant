@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>课程助手</title>
+  <link rel="stylesheet" href="app.css">
+  <style>
+    :root { --popup-width:480px; }
+    html,body{margin:0;padding:0;width:var(--popup-width);height:620px;font-family:system-ui,Segoe UI,Roboto,'Noto Sans SC',sans-serif}
+    #popup-frame{width:100%;height:100%;border:0}
+  </style>
+</head>
+<body>
+  <iframe id="popup-frame" src="app.html?popup=1" title="课程助手窗口" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+  <script src="popup.js"></script>
+</body>
+</html>

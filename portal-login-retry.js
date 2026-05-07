@@ -354,8 +354,7 @@ async function portalLoginAutoLoginInjected(context) {
     const lastDefaultTryUser = String(sessionStorage.getItem(LAST_DEFAULT_TRY_USER_KEY) || '').trim();
     if (alertMsg && isCaptchaErrorMessage(alertMsg)) {
       passcode = '';
-      flowState.retryCount = Math.min(MAX_AUTO_RETRY_ROUNDS, Number(flowState.retryCount || 0) + 1);
-      flowState.forceRetry = flowState.retryCount < MAX_AUTO_RETRY_ROUNDS;
+      flowState.forceRetry = Number(flowState.retryCount || 0) < MAX_AUTO_RETRY_ROUNDS;
     }
     if (
       fromExtension
@@ -371,8 +370,7 @@ async function portalLoginAutoLoginInjected(context) {
       passwordMd5 = md5('Bjtu@8888');
       flowState.currentUsername = '8888';
       flowState.useAux = true;
-      flowState.retryCount = Math.min(MAX_AUTO_RETRY_ROUNDS, Number(flowState.retryCount || 0) + 1);
-      flowState.forceRetry = flowState.retryCount < MAX_AUTO_RETRY_ROUNDS;
+      flowState.forceRetry = Number(flowState.retryCount || 0) < MAX_AUTO_RETRY_ROUNDS;
       try { sessionStorage.removeItem(LAST_DEFAULT_TRY_USER_KEY); } catch {}
     } else if (alertMsg && isCredentialErrorMessage(alertMsg)) {
       const current = String(flowState.currentUsername || username || '').trim();
@@ -382,8 +380,7 @@ async function portalLoginAutoLoginInjected(context) {
         passwordMd5 = md5('Bjtu@8888');
         flowState.currentUsername = '8888';
         flowState.useAux = true;
-        flowState.retryCount = Math.min(MAX_AUTO_RETRY_ROUNDS, Number(flowState.retryCount || 0) + 1);
-        flowState.forceRetry = flowState.retryCount < MAX_AUTO_RETRY_ROUNDS;
+        flowState.forceRetry = Number(flowState.retryCount || 0) < MAX_AUTO_RETRY_ROUNDS;
       }
     }
     writeFlowState(flowState);
@@ -498,7 +495,7 @@ async function portalLoginAutoLoginInjected(context) {
 
     let tryCount = 0;
     const maxTry = MAX_AUTO_RETRY_ROUNDS;
-    const baseRetry = Math.max(0, Number(flowState.retryCount || 0));
+    let autoStartPending = false;
     let lastRecognizedCode = '';
     let lastRecognizedConfidence = null;
     let lastRecognizedImageSrc = '';
@@ -556,7 +553,9 @@ async function portalLoginAutoLoginInjected(context) {
 
       btnGo.addEventListener('click', async () => {
         username = String(userInput.value || '').trim();
-        passcode = String(codeInput.value || passcode || '').replace(/\D/g, '').slice(0, 4);
+        passcode = String(codeInput.value || '').replace(/\D/g, '').slice(0, 4);
+        const isAutoStart = autoStartPending;
+        autoStartPending = false;
         if (!username) {
           statusEl.textContent = '请先输入账号';
           return;
@@ -590,7 +589,16 @@ async function portalLoginAutoLoginInjected(context) {
         btnGo.disabled = false;
         btnGo.textContent = origText;
 
+        // Manual click without passcode starts a fresh no-code auto-retry round.
+        if (!isAutoStart && !passcode) {
+          tryCount = 0;
+          flowState.retryCount = 0;
+          flowState.forceRetry = false;
+          writeFlowState(flowState);
+        }
+
         if (!passcode) {
+          const baseRetry = Math.max(0, Number(flowState.retryCount || 0));
           while (tryCount < maxTry && !passcode) {
             tryCount++;
             const currentRound = Math.min(maxTry, baseRetry + tryCount);
@@ -614,6 +622,12 @@ async function portalLoginAutoLoginInjected(context) {
               break;
             }
             pushHist(img?.src || '', '识别失败');
+            if (tryCount < maxTry) {
+              statusEl.textContent = `验证码识别失败，正在刷新 (${tryCount}/${maxTry})…`;
+              refreshCaptchaInPage();
+              await waitImageReady(img, 2800);
+              await new Promise((r) => setTimeout(r, 180));
+            }
           }
         }
 
@@ -642,6 +656,7 @@ async function portalLoginAutoLoginInjected(context) {
         if (shouldAutoStart) {
           const nextRound = Math.min(maxTry, Number(flowState.retryCount || 0) + 1);
           statusEl.textContent = `检测到自动重试，开始登录 (${nextRound}/${maxTry})...`;
+          autoStartPending = true;
           setTimeout(() => btnGo.click(), 300);
           flowState.forceRetry = false;
           writeFlowState(flowState);
@@ -770,7 +785,8 @@ async function portalLoginAutoLoginInjected(context) {
 
   flowState.currentUsername = username;
   if (username === '8888') flowState.useAux = true;
-  flowState.retryCount = 0;
+  flowState.retryCount = Math.min(MAX_AUTO_RETRY_ROUNDS, Number(flowState.retryCount || 0) + 1);
+  flowState.forceRetry = flowState.retryCount < MAX_AUTO_RETRY_ROUNDS;
   writeFlowState(flowState);
 
   return {
