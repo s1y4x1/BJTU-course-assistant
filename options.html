@@ -41,9 +41,14 @@
     </label>
     <div style="margin-top:6px; font-size:12px; color:#6b7280;">说明：仅选中的平台会在打开扩展页面时异步加载一次；从未选中改为选中时会重新加载该平台。</div>
   </div>
-  <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button id="saveBtn">保存</button>
-    <button id="resetBtn" style="background:#6b7280;">恢复默认</button>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <label style="display:flex; align-items:center; gap:8px;">
+      <input type="radio" name="openMode" id="openModePopup" value="popup" checked style="width:auto;"> 弹出窗口
+    </label>
+    <label style="display:flex; align-items:center; gap:8px;">
+      <input type="radio" name="openMode" id="openModePage" value="page" style="width:auto;"> 打开新页面
+    </label>
+    <button id="resetBtn" style="background:#6b7280;margin-left:auto;">恢复默认</button>
   </div>
   <div id="msg"></div>
   <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>

@@ -525,6 +525,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             display: none;
             background: #0f172a;
             padding: 6px 10px;
+            height: 32px;
             font-size: 12px;
             line-height: 1.2;
         }
@@ -536,6 +537,22 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             margin-left: auto;
             align-items: center;
             justify-content: center;
+        }
+        /* Settings/options button: square, same height as fullscreen, gray background */
+        #open-options-btn { display: none; }
+        body.popup-mode #open-options-btn {
+            display: inline-flex;
+            width: 32px;
+            height: 32px;
+            margin-left: 6px;
+            align-items: center;
+            justify-content: center;
+            background: #6b7280;
+            color: #fff;
+            padding: 0;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1;
         }
         body.popup-mode #parallel-limit,
         body.popup-mode #username-input,

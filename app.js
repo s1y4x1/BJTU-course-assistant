@@ -297,7 +297,13 @@ function syncVersionNoticeDownloadButton() {
   const btn = document.getElementById('version-notice-download');
   if (!(btn instanceof HTMLButtonElement)) return;
   const downloading = isVersionDownloadingNow();
-  btn.textContent = downloading ? '后台下载中...' : '下载更新';
+  if (downloading) {
+    btn.textContent = '后台下载中...';
+  } else if (typeof popupMode !== 'undefined' && popupMode) {
+    btn.textContent = '请全屏后下载更新';
+  } else {
+    btn.textContent = '下载更新';
+  }
 }
 
 function openVersionDownloadProgressModal() {
@@ -403,6 +409,13 @@ function ensureVersionNoticeModal() {
   if (downloadBtn instanceof HTMLButtonElement) {
     downloadBtn.addEventListener('click', () => {
       modal.style.display = 'none';
+      if (popupMode) {
+        // In popup mode, prompt user to open full extension page to download updates
+        try {
+          chrome.tabs.create({ url: chrome.runtime.getURL('app.html') });
+        } catch (e) {}
+        return;
+      }
       if (isVersionDownloadingNow()) {
         openVersionDownloadProgressModal();
         return;
@@ -455,10 +468,30 @@ function openVersionNoticeModal() {
     bodyEl.innerHTML = renderMarkdownBasic(versionButtonLatestBodyMarkdown);
   }
   if (downloadBtn instanceof HTMLButtonElement) {
-    downloadBtn.style.display = versionButtonMode === 'outdated' ? 'block' : 'none';
+    if (versionButtonMode === 'outdated') {
+      downloadBtn.style.display = 'block';
+      if (popupMode) {
+        downloadBtn.textContent = '请全屏后下载更新';
+      } else {
+        downloadBtn.textContent = '下载更新';
+      }
+    } else {
+      downloadBtn.style.display = 'none';
+    }
   }
   if (ignoreBtn instanceof HTMLButtonElement) {
-    ignoreBtn.style.display = versionButtonMode === 'outdated' ? 'flex' : 'none';
+    // Hide ignore button when not outdated or when this version is already ignored
+    if (versionButtonMode === 'outdated') {
+      const ignored = String(versionIgnoredTag || '').trim();
+      const latest = String(versionButtonLatestVersion || '').trim();
+      if (ignored && latest && ignored === latest) {
+        ignoreBtn.style.display = 'none';
+      } else {
+        ignoreBtn.style.display = 'flex';
+      }
+    } else {
+      ignoreBtn.style.display = 'none';
+    }
   }
   modal.style.display = 'flex';
   syncVersionNoticeDownloadButton();
@@ -1023,6 +1056,18 @@ function clearPlatformData(platform) {
     window.jlgjCourseGroupsSnapshot = [];
     clearJlgjStandaloneCards();
   }
+}
+
+// Open options button in top inline controls
+const openOptionsBtn = document.getElementById('open-options-btn');
+if (openOptionsBtn) {
+  openOptionsBtn.addEventListener('click', () => {
+    if (chrome.runtime && chrome.runtime.openOptionsPage) {
+      try { chrome.runtime.openOptionsPage(); return; } catch {}
+    }
+    // fallback
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('options.html') }); } catch {}
+  });
 }
 
 function triggerExternalPlatformLoad(platform, forceReload = false) {
@@ -7367,6 +7412,12 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
 async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   if (!btn || !card) return;
+  // don't auto-load courseware when running inside the popup iframe
+  if (typeof popupMode !== 'undefined' && popupMode) {
+    try { setCoursewareButtonLoading(btn, false); } catch (e) {}
+    try { btn.style.display = 'none'; } catch (e) {}
+    return;
+  }
   const courseListVersion = getCourseListLoadVersionSnapshot();
   const isStale = () => isCourseListLoadStale(courseListVersion);
   setCoursewareButtonLoading(btn, true);
@@ -7426,6 +7477,11 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
+  // In popup mode do not allow toggling courseware UI
+  if (typeof popupMode !== 'undefined' && popupMode) {
+    try { btn.style.display = 'none'; } catch (e) {}
+    return;
+  }
 
   const currentView = String(card.dataset.resultView || '').trim();
   const isOpen = isResultAreaOpen(resultArea);
@@ -7623,6 +7679,13 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
+  // don't auto-load video links when running inside the popup iframe
+  if (typeof popupMode !== 'undefined' && popupMode) {
+    try { btn.classList.remove('replay-list-loading'); } catch (e) {}
+    try { btn.classList.remove('replay-link-progress'); } catch (e) {}
+    try { btn.style.display = 'none'; } catch (e) {}
+    return;
+  }
   const currentView = String(card.dataset.resultView || '').trim();
   const shouldTouchVisibleArea = !currentView || currentView === 'replay';
   const courseListVersion = getCourseListLoadVersionSnapshot();
@@ -7821,6 +7884,11 @@ function toggleReplayFromCache(btn, courseIdInt) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
+  // In popup mode do not allow toggling replay UI
+  if (typeof popupMode !== 'undefined' && popupMode) {
+    try { btn.style.display = 'none'; } catch (e) {}
+    return;
+  }
   const cache = window.videoReplayCacheByCourseId[courseIdInt];
   const currentView = String(card.dataset.resultView || '').trim();
   const isOpen = isResultAreaOpen(resultArea);
