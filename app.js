@@ -1062,6 +1062,10 @@ function clearPlatformData(platform) {
 const openOptionsBtn = document.getElementById('open-options-btn');
 if (openOptionsBtn) {
   openOptionsBtn.addEventListener('click', () => {
+    if (typeof popupMode !== 'undefined' && popupMode) {
+      // Navigate inside popup iframe instead of opening a new tab.
+      try { window.location.href = 'options.html'; return; } catch {}
+    }
     if (chrome.runtime && chrome.runtime.openOptionsPage) {
       try { chrome.runtime.openOptionsPage(); return; } catch {}
     }
