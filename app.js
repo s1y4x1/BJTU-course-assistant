@@ -9688,8 +9688,8 @@ function renderHomeworkList(courseId) {
           <textarea data-submit-content="1" placeholder="请输入作业内容（可为空）"></textarea>
           <div class="hint">可勾选左侧上传成功文件一并提交；不勾选则仅提交文本内容。</div>
           <div class="actions">
-            <button class="btn cancel-submit-btn" style="background:#64748b; padding:4px 10px; font-size:12px;" data-action="cancel-submit">取消</button>
             <button class="btn confirm-submit-btn" style="background:#2563eb; padding:4px 10px; font-size:12px;" data-action="confirm-submit" data-course-id="${escapeHtml(String(courseId))}" data-hw-index="${idx}">确定</button>
+            <button class="btn cancel-submit-btn" style="background:#64748b; padding:4px 10px; font-size:12px;" data-action="cancel-submit">取消</button>
           </div>
         </div>
       </div>
