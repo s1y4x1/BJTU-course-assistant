@@ -10613,7 +10613,15 @@ captchaImg.addEventListener('click', () => {
 if (popupOpenFullscreenBtn instanceof HTMLButtonElement) {
   popupOpenFullscreenBtn.addEventListener('click', () => {
     try {
-      chrome.tabs.create({ url: chrome.runtime.getURL('app.html') });
+      chrome.runtime.sendMessage({ type: 'OPEN_APP' }, (resp) => {
+        if (chrome.runtime.lastError || !resp?.ok) {
+          try {
+            chrome.tabs.create({ url: chrome.runtime.getURL('app.html') });
+          } catch {
+            window.open('app.html', '_blank');
+          }
+        }
+      });
     } catch {
       window.open('app.html', '_blank');
     }

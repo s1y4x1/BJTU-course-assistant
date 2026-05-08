@@ -121,10 +121,22 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'OPEN_APP') {
-    chrome.tabs.create({ url: APP_URL });
-    try {
-      sendResponse({ ok: true });
-    } catch {}
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ url: APP_URL });
+        if (Array.isArray(tabs) && tabs.length) {
+          const t = tabs[0];
+          try { await chrome.tabs.update(t.id, { active: true }); } catch (e) {}
+          try { await chrome.windows.update(t.windowId, { focused: true }); } catch (e) {}
+          sendResponse({ ok: true, reused: true, tabId: t.id });
+          return;
+        }
+        const newTab = await chrome.tabs.create({ url: APP_URL });
+        sendResponse({ ok: true, reused: false, tabId: newTab?.id || null });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e?.message || e) });
+      }
+    })();
     return true;
   }
 

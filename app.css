@@ -539,8 +539,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             justify-content: center;
         }
         /* Settings/options button: square, same height as fullscreen, gray background */
-        #open-options-btn { display: none; }
-        body.popup-mode #open-options-btn {
+        #open-options-btn {
             display: inline-flex;
             width: 32px;
             height: 32px;
@@ -553,6 +552,10 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             border-radius: 6px;
             font-size: 14px;
             line-height: 1;
+        }
+        body.popup-mode #open-options-btn {
+            display: inline-flex;
+            margin-left: 6px;
         }
         body.popup-mode #parallel-limit,
         body.popup-mode #username-input,
