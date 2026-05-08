@@ -9463,15 +9463,37 @@ async function checkHomework(courseId) {
     area.innerHTML = '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业...';
   }
   try {
-    const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=getHomeWorkList&cId=${encodeURIComponent(courseId)}&subType=0&page=1&pagesize=10`;
-    const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
-    const data = JSON.parse(text);
-    if (String(data.STATUS) !== '0') {
-      window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
-      renderHomeworkList(courseId);
-      return;
+    const subTypes = [0, 1, 2];
+    const mergedList = [];
+    const seenKeys = new Set();
+    const getHwKey = (hw) => {
+      const key = String(
+        hw?.id ?? hw?.noteId ?? hw?.courseNoteId ??
+        hw?.upId ?? hw?.UPID ?? hw?.snId ?? hw?.noteSnId ??
+        hw?.workId ?? hw?.homeworkId ?? ''
+      ).trim();
+      return key;
+    };
+    for (const subType of subTypes) {
+      const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=getHomeWorkList&cId=${encodeURIComponent(courseId)}&subType=${subType}&page=1&pagesize=10`;
+      try {
+        const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+        const data = JSON.parse(text);
+        if (String(data.STATUS) !== '0') continue;
+        const list = data.courseNoteList || data.list || [];
+        list.forEach((hw) => {
+          const key = getHwKey(hw);
+          if (key) {
+            if (seenKeys.has(key)) return;
+            seenKeys.add(key);
+          }
+          mergedList.push(hw);
+        });
+      } catch {
+        // continue with other subTypes
+      }
     }
-    const list = data.courseNoteList || data.list || [];
+    const list = mergedList;
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
     const attachmentPrefetchPromise = prefetchHomeworkAttachments(courseId, list);
