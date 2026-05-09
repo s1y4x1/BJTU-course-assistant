@@ -9496,10 +9496,13 @@ async function checkHomework(courseId) {
     const list = mergedList;
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
+    // Concurrently fetch scores and attachments, wait for scores to complete before returning
     const attachmentPrefetchPromise = prefetchHomeworkAttachments(courseId, list);
     await prefetchCourseScores(courseId);
-    await attachmentPrefetchPromise;
-    recomputeCourseHomeworkState(courseId);
+    // After scores are fetched, courseware/replay can load; attachments continue in background
+    attachmentPrefetchPromise.finally(() => {
+      recomputeCourseHomeworkState(courseId);
+    }).catch(() => {});
   } catch (e) {
     console.error(`[VE] fetch error for ${courseId}: ${e.message}`);
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
@@ -9801,23 +9804,30 @@ async function prefetchCourseScores(courseId) {
   if (!tasks.length) return;
 
   window.homeworkScorePendingByCourse[courseId] = true;
-  let hasLoginRequired = false;
-  for (const t of tasks) {
-    try {
+  const results = await Promise.allSettled(
+    tasks.map(async (t) => {
       const score = await fetchHomeworkScore(t.upId, t.snId);
-      if (score === null || score === undefined || score === '') {
-        window.homeworkScoreCacheByKey[t.key] = '未批改';
-      } else {
-        window.homeworkScoreCacheByKey[t.key] = String(score);
-      }
-    } catch (e) {
-      if (String(e && e.message) === 'LOGIN_REQUIRED') {
-        hasLoginRequired = true;
-        break;
-      }
-    }
-  }
+      return { key: t.key, score };
+    })
+  );
   window.homeworkScorePendingByCourse[courseId] = false;
+
+  let hasLoginRequired = false;
+  results.forEach((result) => {
+    if (result.status === 'rejected') {
+      const err = result.reason;
+      if (String(err && err.message) === 'LOGIN_REQUIRED') {
+        hasLoginRequired = true;
+      }
+      return;
+    }
+    const { key, score } = result.value;
+    if (score === null || score === undefined || score === '') {
+      window.homeworkScoreCacheByKey[key] = '未批改';
+    } else {
+      window.homeworkScoreCacheByKey[key] = String(score);
+    }
+  });
 
   if (hasLoginRequired) {
     handleLoginRequired(() => prefetchCourseScores(courseId), null, VE_LOGIN_REQUIRED_HTML);
