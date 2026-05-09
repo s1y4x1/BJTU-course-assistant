@@ -330,12 +330,28 @@ function renderMarkdownBasic(markdownText) {
 
   const lines = src.split('\n');
   const out = [];
-  let inList = false;
+  const listStack = [];
+  const listUlStyle = 'margin:0 0 6px 18px; padding:0; color:#334155; line-height:1.6;';
 
-  const closeList = () => {
-    if (inList) {
+  const closeAllLists = () => {
+    while (listStack.length > 0) {
+      const top = listStack[listStack.length - 1];
+      if (top.liOpen) {
+        out.push('</li>');
+      }
       out.push('</ul>');
-      inList = false;
+      listStack.pop();
+    }
+  };
+
+  const closeListsToDepth = (depth) => {
+    while (listStack.length > depth) {
+      const top = listStack[listStack.length - 1];
+      if (top.liOpen) {
+        out.push('</li>');
+      }
+      out.push('</ul>');
+      listStack.pop();
     }
   };
 
@@ -343,14 +359,14 @@ function renderMarkdownBasic(markdownText) {
     const raw = String(line || '');
     const trimmed = raw.trim();
     if (!trimmed) {
-      closeList();
+      closeAllLists();
       out.push('<div style="height:6px;"></div>');
       return;
     }
 
     const releaseHeader = trimmed.match(/^@@release\|(.+)\|(.+)$/);
     if (releaseHeader) {
-      closeList();
+      closeAllLists();
       const versionText = parseInlineMarkdown(releaseHeader[1]);
       const timeText = parseInlineMarkdown(releaseHeader[2]);
       out.push(`<div style="display:flex; align-items:baseline; gap:8px; margin:0 0 6px; color:#0f172a; line-height:1.25;"><span style="font-size:16px; font-weight:700;">${versionText}</span><span style="font-size:12px; font-weight:500; color:#64748b;">${timeText}</span></div>`);
@@ -359,33 +375,44 @@ function renderMarkdownBasic(markdownText) {
 
     const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
-      closeList();
+      closeAllLists();
       const level = Math.min(6, heading[1].length);
       out.push(`<h${level} style="margin:0 0 8px; color:#0f172a; font-size:${Math.max(14, 22 - level * 2)}px;">${parseInlineMarkdown(heading[2])}</h${level}>`);
       return;
     }
 
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-      closeList();
+      closeAllLists();
       out.push('<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">');
       return;
     }
 
-    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+    const bullet = raw.match(/^(\s*)[-*]\s+(.+)$/);
     if (bullet) {
-      if (!inList) {
-        out.push('<ul style="margin:0 0 6px 18px; padding:0; color:#334155; line-height:1.6;">');
-        inList = true;
+      const indent = String(bullet[1] || '').replace(/\t/g, '  ');
+      const level = Math.max(1, Math.floor(indent.length / 2) + 1);
+
+      closeListsToDepth(level);
+
+      while (listStack.length < level) {
+        out.push(`<ul style="${listUlStyle}">`);
+        listStack.push({ liOpen: false });
       }
-      out.push(`<li style="margin:2px 0;">${parseInlineMarkdown(bullet[1])}</li>`);
+
+      const current = listStack[level - 1];
+      if (current.liOpen) {
+        out.push('</li>');
+      }
+      out.push(`<li style="margin:2px 0;">${parseInlineMarkdown(bullet[2])}`);
+      current.liOpen = true;
       return;
     }
 
-    closeList();
+    closeAllLists();
     out.push(`<p style="margin:0 0 6px; color:#334155; line-height:1.6;">${parseInlineMarkdown(trimmed)}</p>`);
   });
 
-  closeList();
+  closeAllLists();
   return out.join('');
 }
 
