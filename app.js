@@ -299,8 +299,6 @@ function syncVersionNoticeDownloadButton() {
   const downloading = isVersionDownloadingNow();
   if (downloading) {
     btn.textContent = '后台下载中...';
-  } else if (typeof popupMode !== 'undefined' && popupMode) {
-    btn.textContent = '请全屏后下载更新';
   } else {
     btn.textContent = '下载更新';
   }
@@ -437,10 +435,11 @@ function ensureVersionNoticeModal() {
     downloadBtn.addEventListener('click', () => {
       modal.style.display = 'none';
       if (popupMode) {
-        // In popup mode, prompt user to open full extension page to download updates
-        try {
-          chrome.tabs.create({ url: chrome.runtime.getURL('app.html') });
-        } catch (e) {}
+        startVersionDownloadWithFallback().catch(() => {
+          versionDownloadInProgress = false;
+          syncVersionNoticeDownloadButton();
+          showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
+        });
         return;
       }
       if (isVersionDownloadingNow()) {
@@ -497,11 +496,7 @@ function openVersionNoticeModal() {
   if (downloadBtn instanceof HTMLButtonElement) {
     if (versionButtonMode === 'outdated') {
       downloadBtn.style.display = 'block';
-      if (popupMode) {
-        downloadBtn.textContent = '请全屏后下载更新';
-      } else {
-        downloadBtn.textContent = '下载更新';
-      }
+      downloadBtn.textContent = '下载更新';
     } else {
       downloadBtn.style.display = 'none';
     }
