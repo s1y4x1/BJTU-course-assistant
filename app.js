@@ -7438,12 +7438,6 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
 async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   if (!btn || !card) return;
-  // don't auto-load courseware when running inside the popup iframe
-  if (typeof popupMode !== 'undefined' && popupMode) {
-    try { setCoursewareButtonLoading(btn, false); } catch (e) {}
-    try { btn.style.display = 'none'; } catch (e) {}
-    return;
-  }
   const courseListVersion = getCourseListLoadVersionSnapshot();
   const isStale = () => isCourseListLoadStale(courseListVersion);
   setCoursewareButtonLoading(btn, true);
@@ -7503,11 +7497,6 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
-  // In popup mode do not allow toggling courseware UI
-  if (typeof popupMode !== 'undefined' && popupMode) {
-    try { btn.style.display = 'none'; } catch (e) {}
-    return;
-  }
 
   const currentView = String(card.dataset.resultView || '').trim();
   const isOpen = isResultAreaOpen(resultArea);
@@ -7705,13 +7694,6 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
-  // don't auto-load video links when running inside the popup iframe
-  if (typeof popupMode !== 'undefined' && popupMode) {
-    try { btn.classList.remove('replay-list-loading'); } catch (e) {}
-    try { btn.classList.remove('replay-link-progress'); } catch (e) {}
-    try { btn.style.display = 'none'; } catch (e) {}
-    return;
-  }
   const currentView = String(card.dataset.resultView || '').trim();
   const shouldTouchVisibleArea = !currentView || currentView === 'replay';
   const courseListVersion = getCourseListLoadVersionSnapshot();
@@ -7910,11 +7892,6 @@ function toggleReplayFromCache(btn, courseIdInt) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
-  // In popup mode do not allow toggling replay UI
-  if (typeof popupMode !== 'undefined' && popupMode) {
-    try { btn.style.display = 'none'; } catch (e) {}
-    return;
-  }
   const cache = window.videoReplayCacheByCourseId[courseIdInt];
   const currentView = String(card.dataset.resultView || '').trim();
   const isOpen = isResultAreaOpen(resultArea);
