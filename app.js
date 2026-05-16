@@ -2203,10 +2203,24 @@ async function fetchUserInfoRemote(userId = '') {
 async function validateUserIdRemote(userId) {
   if (!userId) return { ok: false, status: 'empty', info: null };
   try {
+    // Ensure any account-scoped background fetches (courseware/replay/downloads)
+    // are stopped before we send the validation GET to avoid interference.
+    try { stopAccountScopedFetches(); } catch (e) { /* ignore */ }
     const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(userId)}`;
-    const { text } = await fetchText(url, { method: 'GET', credentials: 'include' });
+    const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
+    // Ensure runtime/cookie JSESSIONID synced from response so following requests use it
+    try { await syncJsessionidFromResponse(res); } catch (e) { /* ignore */ }
     if (text.includes('账号或密码错误')) return { ok: false, status: 'invalid', info: null };
-    if (text.includes('index.shtml?method=index&type=qxkt')) return { ok: true, status: '0', info: null };
+    if (text.includes('index.shtml?method=index&type=qxkt')) {
+      // Immediately trigger course load and refresh user info asynchronously
+      (async () => {
+        try {
+          if (isPlatformEnabled('ve')) await loadCourses().catch(() => {});
+          await fetchUserInfoRemote(userId).catch(() => {});
+        } catch (e) { /* ignore */ }
+      })();
+      return { ok: true, status: '0', info: null };
+    }
     return { ok: false, status: 'unknown', info: null };
   } catch {
     return { ok: false, status: 'error', info: null };
@@ -2715,6 +2729,8 @@ async function loginGet(username) {
   return { ok: false, reason: 'other', message: '登录失败' };
 }
 
+
+
 function hideLoginModal() {
   loginModal.style.display = 'none';
 }
@@ -2853,6 +2869,10 @@ async function doLoginFlow() {
     loginCancelRequested = false;
     hideLoginModal();
     showToast('登录成功', 'success');
+    // Immediately start loading courses in background so UI refreshes promptly
+    (async () => {
+      try { if (isPlatformEnabled('ve')) await loadCourses().catch(() => {}); } catch {}
+    })();
     await forceSyncJsessionidAfterLogin();
 
     let finalUser = String(username || '').trim();
@@ -10181,6 +10201,8 @@ usernameInput.addEventListener('change', async () => {
     if (!accountSwitchInterruptionArmed) {
       prioritizeAccountSwitch();
     }
+    // show logging toast before sending GET to /ve/s.shtml
+    showToast('正在登录...', 'info', 0);
     const validResult = await validateUserIdRemote(u);
     if (!validResult.ok && validResult.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
@@ -10206,7 +10228,21 @@ usernameInput.addEventListener('change', async () => {
     isLoginSessionValid = true;
     setWelcomeMessage(validResult.ok ? validResult.info : null);
     renderLoginAccountHistorySelect(u);
-    await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号', validResult.ok ? validResult.info : null);
+    // Directly complete post-login synchronization (no extra s.shtml)
+    try {
+      lastValidUsername = u;
+      await setLocal('username', u);
+      await syncJsessionidToUi().catch(() => {});
+      runPendingLoginCallbacks();
+      // reload courses and resource space asynchronously but start now
+      (async () => {
+        try { await syncAccountInfoAndReloadVeCourses({ userId: u, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true }); } catch {}
+      })();
+      showToast('登录成功', 'success', 1500);
+    } catch (e) {
+      // fallback to normal route if any step fails
+      try { await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号', validResult.ok ? validResult.info : null); } catch {}
+    }
     return;
   }
   const isFirstLogin = !lastValidUsername;
