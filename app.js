@@ -188,7 +188,6 @@ window.resourceDownloadQueueRunning = 0;
 window.resourceDownloadQueueStatus = { totalFiles: 0, savedFiles: 0 };
 window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
 window.resourceDownloadQueueClearTimer = null;
-window.trackedFetchControllers = new Set();
 let resourceSpaceSearchKeyword = '';
 let yktLoginAssistRetryTimer = null;
 let yktLoginAssistPollTimer = null;
@@ -1498,16 +1497,10 @@ let isSyncingAccountHistorySelect = false;
 let highPrioritySwitchTarget = '';
 let accountSwitchInterruptionArmed = false;
 
-function stopAccountScopedFetches() {
-  abortTrackedFetchRequests();
-  cancelAllResourceDownloadsForAccountSwitch();
-}
-
 function prioritizeAccountSwitch() {
   window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
   window.resourceSpaceLoadVersion = Number(window.resourceSpaceLoadVersion || 0) + 1;
   bumpPlatformLoadVersion('ve');
-  stopAccountScopedFetches();
 }
 
 function beginAccountSwitchInterruption() {
@@ -2228,9 +2221,6 @@ async function fetchUserInfoRemote(userId = '') {
 async function validateUserIdRemote(userId) {
   if (!userId) return { ok: false, status: 'empty', info: null };
   try {
-    // Ensure any account-scoped background fetches (courseware/replay/downloads)
-    // are stopped before we send the validation GET to avoid interference.
-    try { stopAccountScopedFetches(); } catch (e) { /* ignore */ }
     const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(userId)}`;
     const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
     try { console.debug && console.debug('validateUserIdRemote: fetch returned', Date.now()); } catch (e) {}
@@ -2612,11 +2602,6 @@ async function fetchText(url, options = {}) {
     }
   }
 
-  if (!(window.trackedFetchControllers instanceof Set)) {
-    window.trackedFetchControllers = new Set();
-  }
-  window.trackedFetchControllers.add(controller);
-
   const omitSessionId = !!options.omitSessionId;
   const sid = omitSessionId ? '' : await getPlatformSessionId();
   const headers = {
@@ -2639,9 +2624,6 @@ async function fetchText(url, options = {}) {
   } finally {
     if (externalSignal instanceof AbortSignal) {
       try { externalSignal.removeEventListener('abort', externalAbortHandler); } catch { /* ignore */ }
-    }
-    if (window.trackedFetchControllers instanceof Set) {
-      window.trackedFetchControllers.delete(controller);
     }
   }
 
@@ -3534,30 +3516,6 @@ function cancelResourceDownload(resourceId) {
     return true;
   }
   return false;
-}
-
-function cancelAllResourceDownloadsForAccountSwitch() {
-  const taskIds = Object.keys(window.resourceDownloadTasks || {});
-  taskIds.forEach((rid) => {
-    cancelResourceDownload(rid);
-  });
-
-  const queuedIds = Object.keys(window.resourceDownloadQueueById || {});
-  queuedIds.forEach((rid) => {
-    cancelResourceDownload(rid);
-  });
-
-  resetResourceDownloadBatch();
-  updateResourceDownloadTotals();
-}
-
-function abortTrackedFetchRequests() {
-  if (!(window.trackedFetchControllers instanceof Set)) return;
-  const ctrls = Array.from(window.trackedFetchControllers);
-  ctrls.forEach((ctrl) => {
-    try { ctrl.abort(); } catch { /* ignore */ }
-  });
-  window.trackedFetchControllers.clear();
 }
 
 function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '' } = {}) {
@@ -6839,7 +6797,7 @@ window.toggleHomeworkView = function(courseId) {
   window.toggleDoneView(courseId);
 };
 
-async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
+async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
@@ -6874,8 +6832,17 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
   setCourseReplayLoading(courseIdInt, true);
 
   try {
-    const calUrl = `${BASE_VE}back/rp/common/teachCalendar.shtml?method=toDisplyTeachCourses&courseId=${encodeURIComponent(courseIdInt)}`;
-    const { text: calText } = await fetchText(calUrl, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList`;
+    const calBody = new URLSearchParams({ calendarId: '', courseId: String(courseNum || ''), xkhId: String(fzId || ''), xqCode: String(xqCode || getCurrentXqCode()) });
+    const { text: calText } = await fetchText(calUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+        Accept: 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: calBody.toString()
+    });
     if (isStale()) {
       btn.classList.remove('replay-list-loading');
       btn.classList.remove('replay-link-progress');
@@ -6892,7 +6859,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
       return;
     }
 
-    const list = (data.courseSchedList || []).filter((it) => !!it.videoId);
+    const list = (data.result || []).filter((it) => !!it.rpId);
     if (!list.length) {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
@@ -6902,18 +6869,18 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     }
 
     const replayListHtml = list.map((item, index) => {
-      const title = `${item.classRoom || ''} ${item.courseBetween || '未知时间'}`;
-      const contentText = String(item.content || '').trim();
-      const detailHtml = renderExpandableHtml(
-        escapeHtml(contentText),
-        { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
-      );
+      const rpId = String(item.rpId || '');
+      const title = `${item.roomName || ''} ${item.rpName || '未知时间'}`;
+      const contentPlaceholderHtml = `
+        <div class="replay-content-area" data-rp-id="${rpId}" style="margin-top:4px; color:#888; font-size:12px; display:flex; align-items:center; gap:6px;">
+          <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中...
+        </div>`;
       const linkContainerId = `video-link-${courseIdInt}-${index}`;
       return `
-        <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;">
+        <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;" data-rp-id="${rpId}">
           <div style="font-weight: bold; color: #4a148c; font-size: 15px;">${title}</div>
           <div style="margin-top: 5px;">
-            ${detailHtml}
+            ${contentPlaceholderHtml}
             <div id="${linkContainerId}" class="video-links" style="font-size: 12px; color: #9C27B0; margin-top: 5px; font-weight: bold; word-break: break-all;">
               <span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中...
             </div>
@@ -6926,6 +6893,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
       html: replayListHtml,
       list,
       loaded: true,
+      contentLoaded: false,
       linksFetched: false,
       linksFetching: false
     };
@@ -6952,8 +6920,6 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId) {
     btn.textContent = '回放下载';
     setCourseReplayState(courseIdInt, true);
 
-    // Start resolving each replay link automatically after list is ready.
-    startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId).catch(() => {});
   } catch {
     btn.classList.remove('replay-list-loading');
     btn.classList.remove('replay-link-progress');
@@ -7006,7 +6972,7 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
 
   await Promise.allSettled(list.map((item, index) => {
     const linkContainerId = `video-link-${courseIdInt}-${index}`;
-    return fetchVideoLinkInternal(linkContainerId, item.videoId, courseNum, fzId, item.teacherId || '')
+    return fetchVideoLinkInternal(linkContainerId, item.rpId, courseNum, fzId, item.teacherId || '')
       .finally(onOneLinkDone);
   }));
 
@@ -7035,6 +7001,53 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
     toggleResultAreaAnimated(resultArea, true, { immediate: true });
   }
   flushPendingCourseCardSortIfIdle();
+}
+
+async function lazyLoadReplayContent(courseIdInt) {
+  const cache = window.videoReplayCacheByCourseId?.[courseIdInt];
+  if (!cache || cache.contentLoaded) return;
+
+  cache.contentLoaded = true;
+
+  try {
+    const calUrl = `${BASE_VE}back/rp/common/teachCalendar.shtml?method=toDisplyTeachCourses&courseId=${encodeURIComponent(courseIdInt)}`;
+    const { text: calText } = await fetchText(calUrl, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+    const data = JSON.parse(calText);
+    if (String(data.STATUS) !== '0') return;
+
+    const oldList = data.courseSchedList || [];
+    oldList.forEach((oldItem) => {
+      const videoId = String(oldItem.videoId || '').trim();
+      if (!videoId) return;
+      const contentText = String(oldItem.content || '').trim();
+
+      const detailHtml = contentText
+        ? renderExpandableHtml(
+            escapeHtml(contentText),
+            { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
+          )
+        : '';
+
+      const placeholderEls = document.querySelectorAll(`.replay-content-area[data-rp-id="${videoId}"]`);
+      placeholderEls.forEach((el) => {
+        if (el instanceof HTMLElement) {
+          el.outerHTML = detailHtml || '';
+        }
+      });
+    });
+
+    // Update cache.html so re-expand shows content instead of placeholders
+    const card = document.querySelector(`.file-item #course-${courseIdInt}`)?.closest('.file-item');
+    const shadowArea = card?.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
+    const resultArea = card?.querySelector('.result-area');
+    if (shadowArea instanceof HTMLElement && shadowArea.innerHTML.trim()) {
+      cache.html = shadowArea.innerHTML;
+    } else if (resultArea instanceof HTMLElement && resultArea.innerHTML.trim()) {
+      cache.html = resultArea.innerHTML;
+    }
+  } catch {
+    cache.contentLoaded = false;
+  }
 }
 
 function toggleReplayFromCache(btn, courseIdInt) {
@@ -7089,6 +7102,7 @@ function toggleReplayFromCache(btn, courseIdInt) {
   const courseNum = String(btn.dataset.courseNum || '').trim();
   const fzId = String(btn.dataset.fzId || '').trim();
   startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId).catch(() => {});
+  lazyLoadReplayContent(courseIdInt).catch(() => {});
 }
 
 function collectCourseMatchMap(courses) {
@@ -8235,7 +8249,6 @@ async function loadCourses() {
   try { console.debug && console.debug(new Error('loadCourses stack').stack); } catch (e) {}
   const courseLoadVersion = bumpPlatformLoadVersion('ve');
   window.courseListLoadVersion = courseLoadVersion;
-  stopAccountScopedFetches();
   window.homeworkNoteAttachmentCacheByKey = {};
   window.homeworkAttachmentItemsById = {};
   window.homeworkAttachmentItemsByCourseId = {};
@@ -8431,7 +8444,7 @@ function renderCourseList(courses) {
       setCoursewareButtonLoading(btnCourseware, true);
     }
     if (btnVideos) {
-      btnVideos.dataset.courseNum = String(courseNum || '');
+      btnVideos.dataset.courseNum = String(courseNumRaw || '');
       btnVideos.dataset.fzId = String(fzId || '');
       btnVideos.addEventListener('click', () => toggleReplayFromCache(btnVideos, courseId));
       // Show replay-loading animation immediately after card renders.
@@ -8458,7 +8471,7 @@ function renderCourseList(courses) {
     }
     if (btnVideos) {
       hwPromise.finally(() => {
-        autoLoadVideoLinks(btnVideos, courseId, courseNum, fzId);
+        autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode);
       });
     }
   });
@@ -9006,48 +9019,61 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
   resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取大纲...</span>';
   btn.textContent = '收起';
 
+  const xqCode = String(btn.dataset.xqCode || getCurrentXqCode());
+
   try {
-    // Step 1: get teaching calendar list (same as original upload.html)
-    const calUrl = `${BASE_VE}back/rp/common/teachCalendar.shtml?method=toDisplyTeachCourses&courseId=${encodeURIComponent(courseIdInt)}`;
-    const { text: calText } = await fetchText(calUrl, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList`;
+    const calBody = new URLSearchParams({ calendarId: '', courseId: String(courseNum || ''), xkhId: String(fzId || ''), xqCode: String(xqCode || '') });
+    const { text: calText } = await fetchText(calUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+        Accept: 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: calBody.toString()
+    });
     const data = JSON.parse(calText);
 
     if (String(data.STATUS) === '0') {
-      const list = data.courseSchedList || [];
+      const list = data.result || [];
       if (!list.length) {
         resultArea.innerHTML = '暂无课程安排';
         return;
       }
 
       resultArea.innerHTML = list.map((item, index) => {
-        const title = `${item.classRoom || ''} ${item.courseBetween || '未知时间'}`;
-        const contentText = String(item.content || '').trim();
-        const detailHtml = renderExpandableHtml(
-          escapeHtml(contentText),
-          { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
-        );
-        const videoId = item.videoId;
+        const rpId = String(item.rpId || '');
+        const title = `${item.roomName || ''} ${item.rpName || '未知时间'}`;
+        const contentPlaceholderHtml = `
+          <div class="replay-content-area" data-rp-id="${rpId}" style="margin-top:4px; color:#888; font-size:12px; display:flex; align-items:center; gap:6px;">
+            <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中...
+          </div>`;
         const linkContainerId = `video-link-${courseIdInt}-${index}`;
         return `
-          <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;">
+          <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;" data-rp-id="${rpId}">
             <div style="font-weight: bold; color: #4a148c; font-size: 15px;">${title}</div>
             <div style="margin-top: 5px;">
-              ${detailHtml}
+              ${contentPlaceholderHtml}
               <div id="${linkContainerId}" class="video-links" style="font-size: 12px; color: #9C27B0; margin-top: 5px; font-weight: bold; word-break: break-all;">
-                ${videoId ? '<span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中...' : '<span style="color: #999; font-weight: normal;">无回放</span>'}
+                ${rpId ? '<span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中...' : '<span style="color: #999; font-weight: normal;">无回放</span>'}
               </div>
             </div>
           </div>
         `;
       }).join('');
 
-      // trigger download url fetch for each video
       list.forEach((item, index) => {
-        if (item.videoId) {
+        if (item.rpId) {
           const linkContainerId = `video-link-${courseIdInt}-${index}`;
-          fetchVideoLinkInternal(linkContainerId, item.videoId, courseNum, fzId, item.teacherId || '');
+          fetchVideoLinkInternal(linkContainerId, item.rpId, courseNum, fzId, item.teacherId || '');
         }
       });
+
+      if (!window.videoReplayCacheByCourseId[courseIdInt]) {
+        window.videoReplayCacheByCourseId[courseIdInt] = { contentLoaded: false };
+      }
+      lazyLoadReplayContent(courseIdInt).catch(() => {});
       return;
     }
 
