@@ -279,11 +279,10 @@ let versionDownloadMinimized = false;
 let versionDownloadPhase = 'downloading';
 let versionIgnoredTag = '';
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
-const VERSION_LATEST_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases/latest';
 const VERSION_RELEASES_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases?per_page=100';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
-const VERSION_DOWNLOAD_FALLBACK_TOTAL_BYTES = 5 * 1024 * 1024;
-const VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT = '未获取到更新包大小，预估约5MB';
+const VERSION_DOWNLOAD_FALLBACK_TOTAL_BYTES = 123 * 1024;
+const VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT = '未获取到更新包大小，预估约123KB';
 function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
 }
@@ -1575,6 +1574,27 @@ async function getLocal(key, fallback = '') {
 }
 async function setLocal(key, value) {
   await chrome.storage.local.set({ [key]: value });
+}
+
+// 清理旧版本/不再需要的本地存储键
+async function clearLegacyStorage() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all || {});
+    const toRemove = [];
+    if (keys.includes('latestSentLoginJsessionid')) toRemove.push('latestSentLoginJsessionid');
+    if (keys.includes('latestResponseJsessionid')) toRemove.push('latestResponseJsessionid');
+    for (const k of keys) {
+      if (typeof k === 'string' && k.startsWith('pwd:')) toRemove.push(k);
+    }
+    // 如果 future-added keys 也需要清理，可以在此处加入判断
+    if (toRemove.length) {
+      await chrome.storage.local.remove(toRemove);
+      console.log('clearLegacyStorage: removed keys', toRemove);
+    }
+  } catch (e) {
+    console.warn('clearLegacyStorage: failed', e);
+  }
 }
 
 function normalizePlatformSessionId(v) {
@@ -10303,6 +10323,8 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 // -------------------- Init --------------------
 (async function init() {
   setupRightColumnResizer();
+  // 清理旧版本扩展可能遗留的不必要本地存储
+  await clearLegacyStorage().catch(() => {});
   await loadPlatformEnabledFromStorage();
   if (popupMode) {
     window.platformEnabled = { jlgj: false, mrzy: false, ve: true, ykt: false };
