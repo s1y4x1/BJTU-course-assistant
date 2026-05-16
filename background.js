@@ -1,7 +1,7 @@
 ﻿importScripts('portal-login-retry.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
-const portalLoginCtxByTab = new Map(); // tabId -> { username, passcode, passwordMd5, autoCode, fromExtension }
+const portalLoginCtxByTab = new Map(); // tabId -> { username, fromExtension }
 const portalHandledByTab = new Map(); // tabId -> { url, ts }
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
 
@@ -30,20 +30,6 @@ async function getPortalLoginAccountHistory() {
   } catch {
     return [];
   }
-}
-
-async function ensureTesseractInjected(tabId) {
-  try {
-    const res = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => !!globalThis.Tesseract
-    });
-    if (res?.[0]?.result) return;
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['vendor/tesseract/tesseract.min.js']
-    });
-  } catch (e) {}
 }
 
 // Manage action popup according to openMode ('popup' or 'page')
@@ -86,12 +72,6 @@ function shouldSkipRecent(tabId, url) {
 }
 
 async function injectPortalAutoLogin(tabId, ctx = null) {
-  try {
-    await ensureTesseractInjected(tabId);
-  } catch {
-    // fallback to non-tesseract OCR path
-  }
-
   const enrichedCtx = ctx && typeof ctx === 'object' ? { ...ctx } : {};
   if (!Array.isArray(enrichedCtx.accountHistory)) {
     enrichedCtx.accountHistory = await getPortalLoginAccountHistory();
@@ -152,9 +132,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (tabId) {
         portalLoginCtxByTab.set(tabId, {
           username: String(payload.username || ''),
-          passcode: String(payload.passcode || ''),
-          passwordMd5: String(payload.passwordMd5 || ''),
-          autoCode: String(payload.autoCode || ''),
           fromExtension: true
         });
       }
@@ -180,16 +157,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const r = await injectPortalAutoLogin(tabId, ctx);
   if (!r.ok && r.error === 'back-to-input') {
     await injectPortalAutoLogin(tabId, ctx);
-    return;
-  }
-  if (r.ok && r.meta?.pendingSwitch?.targetUsername) {
-    await chrome.storage.local.set({
-      portalPendingSwitchAfterAux: {
-        targetUsername: String(r.meta.pendingSwitch.targetUsername || '').trim(),
-        ts: Date.now(),
-        tabId
-      }
-    });
   }
 });
 
@@ -234,8 +201,7 @@ function extractJsessionidFromSetCookie(value) {
 
 function isLoginResponse(details) {
   const url = String(details?.url || '');
-  const method = String(details?.method || '').toUpperCase();
-  return method === 'POST' && /\/ve\/s\.shtml(?:[?#]|$)/i.test(url);
+  return /\/ve\/s\.shtml(?:[?#]|$)/i.test(url);
 }
 
 function extractJsessionidFromCookieHeader(value) {
@@ -254,8 +220,8 @@ function findHeaderValue(headers, name) {
 chrome.webRequest.onHeadersReceived.addListener(
   async (details) => {
     try {
-      // Only track Set-Cookie from login POST response.
-      // Other endpoints (captcha/image/home) may rotate JSESSIONID and pollute our login session selection.
+      // Only track Set-Cookie from login response.
+      // Other endpoints may rotate JSESSIONID and pollute our login session selection.
       if (!isLoginResponse(details)) return;
 
       const headers = details?.responseHeaders || [];
@@ -341,4 +307,3 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
   { urls: ['https://i-api.jielong.com/*'] },
   ['requestHeaders', 'extraHeaders']
 );
-

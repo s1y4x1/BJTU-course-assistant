@@ -76,14 +76,8 @@ const popupOpenFullscreenBtn = document.getElementById('popup-open-fullscreen');
 
 // Login modal
 const loginModal = document.getElementById('login-modal');
-const loginModalTitle = document.getElementById('login-modal-title');
-const captchaImg = document.getElementById('captcha-img');
-const captchaInput = document.getElementById('captcha-input');
 const loginBtn = document.getElementById('login-btn');
 const cancelBtn = document.getElementById('cancel-btn');
-const captchaHistoryList = document.getElementById('captcha-history-list');
-const auxContainer = document.getElementById('aux-login-container');
-const auxCheckbox = document.getElementById('aux-login-checkbox');
 
 function renderDirectOpenNotice() {
   document.body.innerHTML = `
@@ -155,7 +149,7 @@ window.platformNeedLogin = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformLoginState = { ve: 'checking', ykt: 'checking', mrzy: 'checking', jlgj: 'checking' }; // checking|offline|online
 window.platformLoginChecked = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformInteractiveLoginPending = { ykt: false, mrzy: false, jlgj: false };
-const DEFAULT_PLATFORM_ENABLED = { ve: true, ykt: false, mrzy: false, jlgj: false };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrzy: false, ve: true, ykt: false };
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
 window.platformLoadedOnce = { ve: false, ykt: false, mrzy: false, jlgj: false };
 window.platformLoadVersion = { ve: 0, ykt: 0, mrzy: 0, jlgj: 0 };
@@ -217,16 +211,16 @@ function isPlatformEnabled(platform) {
   const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
     ? String(platform || '').trim()
     : 've';
-  return window.platformEnabled?.[p] !== false;
+  return window.platformEnabled?.[p] === true;
 }
 
 function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
   const src = (raw && typeof raw === 'object') ? raw : null;
   return {
-    ve: src ? src.ve !== false : fallback.ve !== false,
-    ykt: src ? src.ykt !== false : fallback.ykt !== false,
-    mrzy: src ? src.mrzy !== false : fallback.mrzy !== false,
-    jlgj: src ? src.jlgj !== false : fallback.jlgj !== false
+    jlgj: typeof src?.jlgj === 'boolean' ? src.jlgj : !!fallback.jlgj,
+    mrzy: typeof src?.mrzy === 'boolean' ? src.mrzy : !!fallback.mrzy,
+    ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
+    ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt
   };
 }
 
@@ -1576,11 +1570,6 @@ async function getPlatformSessionId() {
   return runtimePlatformSessionId || DEFAULT_PLATFORM_SESSION_ID;
 }
 
-async function getAutoOcrCaptchaEnabled() {
-  const { autoOcrCaptcha } = await chrome.storage.sync.get(['autoOcrCaptcha']);
-  return autoOcrCaptcha !== false;
-}
-
 async function getCookieJsessionid() {
   // Prefer /ve/ cookie first: login/upload endpoints are under /ve/.
   const c2 = await chrome.cookies.get({ url: `${BASE}/ve/`, name: 'JSESSIONID' });
@@ -1770,11 +1759,7 @@ function promptLoginIfPossible(message) {
     showToast(message || defaultNeedLoginMsg, 'warning', 3500, true);
     return;
   }
-  if (shouldUsePortalPageLogin()) {
-    openPortalLoginForInvalidSession();
-    return;
-  }
-  showLoginModal(message || '请输入验证码重新登录');
+  doLoginFlow();
 }
 
 // -------------------- UI helpers --------------------
@@ -2169,14 +2154,12 @@ async function fetchUserInfoRemote(userId = '') {
 async function validateUserIdRemote(userId) {
   if (!userId) return { ok: false, status: 'empty', info: null };
   try {
-    const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(userId)}`;
-    const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
-    const data = JSON.parse(text);
-    if (String(data.STATUS) === '0' && data.result) return { ok: true, status: '0', info: data.result };
-    if (String(data.STATUS) === '4') return { ok: false, status: '4', info: null };
-    return { ok: false, status: String(data.STATUS ?? 'unknown'), info: null };
+    const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(userId)}`;
+    const { text } = await fetchText(url, { method: 'GET', credentials: 'include' });
+    if (text.includes('账号或密码错误')) return { ok: false, status: 'invalid', info: null };
+    if (text.includes('index.shtml?method=index&type=qxkt')) return { ok: true, status: '0', info: null };
+    return { ok: false, status: 'unknown', info: null };
   } catch {
-    // network / non-json
     return { ok: false, status: 'error', info: null };
   }
 }
@@ -2626,8 +2609,8 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
   if (u.includes('/ve/s.shtml')) return true;
   if (t.includes('login-page')) return true;
   // typical login form markers
-  if (/name=["']username["']/i.test(t) && /name=["']passcode["']/i.test(t)) return true;
-  if (t.includes('登录系统') && /passcode/i.test(t)) return true;
+  if (/name=["']username["']/i.test(t) && /type=["']password["']/i.test(t)) return true;
+  if (t.includes('登录系统') && /type=["']password["']/i.test(t)) return true;
   return false;
 }
 
@@ -2638,20 +2621,7 @@ function isSessionEndedHtml(html) {
     || /重新登录/i.test(t);
 }
 
-function isCaptchaErrorMessage(msg = '') {
-  return /验证码|驗證碼|passcode|请输入正确的验证码|請輸入正確的驗證碼/i.test(msg);
-}
-
-function isAccountLockedMessage(msg = '') {
-  return /账号锁定|帳號鎖定|锁定\d+分钟|鎖定\d+分鐘|密码输入错误次数过多|密碼輸入錯誤次數過多/i.test(String(msg || ''));
-}
-
-function looksLikeLoginSuccess(html) {
-  const t = String(html || '');
-  return t.includes('跳转首页') || t.includes('top.location') || t.includes('退出登录');
-}
-
-// -------------------- MD5 (internal, no external libs) --------------------
+// -------------------- MD5 (used by MRZY signing) --------------------
 function md5cycle(x, k) {
   let [a, b, c, d] = x;
   function ff(a,b,c,d,x,s,t){a=a+((b&c)|(~b&d))+x+t;return((a<<s)|(a>>>(32-s)))+b}
@@ -2682,308 +2652,25 @@ const hex_chr='0123456789abcdef'.split('');
 function rhex(n){let s='';for(let j=0;j<4;j++)s+=hex_chr[(n>>(j*8+4))&0x0f]+hex_chr[(n>>(j*8))&0x0f];return s}
 function md5(s){return md51(unescape(encodeURIComponent(s))).map(rhex).join('')}
 
-// -------------------- Captcha --------------------
-let lastCaptchaObjectUrl = '';
-let autoOcrAttemptCount = 0;
-let autoOcrAutoSubmitUsed = false;
-let lastLoginFailedByCaptcha = false;
-
-const MAX_CAPTCHA_ERROR_RETRIES = 3;
-const MAX_AUTO_SUBMITS_PER_MODAL = 1 + MAX_CAPTCHA_ERROR_RETRIES;
-let captchaErrorRetryCount = 0;
-
-let captchaNonce = 0;
-let tessWorkerPromise = null;
-let tessOcrInProgress = false;
-let tessInitErrorNotified = false;
-let lastAutoOcrCaptchaText = '';
-const captchaHistoryByNonce = new Map();
-
-function setCaptchaInputHint(message = '') {
-  if (!(captchaInput instanceof HTMLInputElement)) return;
-  const text = String(message || '').trim();
-  captchaInput.placeholder = text || '验证码';
-}
-
-function setLoginProgress(message = '', tone = 'normal') {
-  const msg = String(message || '').trim();
-  if (!msg || /^等待登录|登录中|登录成功/.test(msg)) {
-    setCaptchaInputHint('');
-    return;
-  }
-  if (/识别/.test(msg)) {
-    setCaptchaInputHint('识别中…');
-    return;
-  }
-  if (/验证码获取中|加载中/.test(msg)) {
-    setCaptchaInputHint('加载中…');
-  }
-}
-
-function refreshCaptchaWhenIdle(maxWaitMs = 1500) {
-  const start = Date.now();
-  const tryRefresh = async () => {
-    if (!isLoginInProgress || Date.now() - start >= maxWaitMs) {
-      await refreshCaptcha();
-      return;
-    }
-    setTimeout(() => {
-      tryRefresh().catch(() => {});
-    }, 50);
-  };
-  tryRefresh().catch(() => {});
-}
-
-function resetCaptchaHistory() {
-  captchaHistoryByNonce.clear();
-  if (captchaHistoryList) captchaHistoryList.innerHTML = '';
-}
-
-function pushCaptchaHistory(blob, nonce) {
-  if (!captchaHistoryList) return;
-  const item = document.createElement('div');
-  item.className = 'captcha-history-item';
-  item.innerHTML = `
-    <img alt="captcha-${nonce}">
-    <div>
-      <div>第 ${Math.max(1, captchaHistoryList.children.length + 1)} 次</div>
-      <div class="ocr-result" style="color:#64748b;">识别中…</div>
-    </div>
-  `;
-  captchaHistoryList.prepend(item);
-  captchaHistoryByNonce.set(String(nonce), item);
-
-  const img = item.querySelector('img');
-  if (img) {
-    const url = URL.createObjectURL(blob);
-    img.src = url;
-    img.onload = () => URL.revokeObjectURL(url);
-    img.onerror = () => URL.revokeObjectURL(url);
-  }
-}
-
-function markCaptchaHistoryResult(nonce, text, confidence = null) {
-  const item = captchaHistoryByNonce.get(String(nonce));
-  if (!item) return;
-  const resultEl = item.querySelector('.ocr-result');
-  if (!resultEl) return;
-  if (/^\d{4}$/.test(String(text || ''))) {
-    const confText = Number.isFinite(confidence) ? `（${(confidence * 100).toFixed(0)}%）` : '';
-    resultEl.textContent = `识别: ${text}${confText}`;
-    resultEl.style.color = '#166534';
-  } else {
-    resultEl.textContent = '识别失败';
-    resultEl.style.color = '#b45309';
-  }
-}
-
-function normalizeOcrConfidence(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  if (n <= 0) return null;
-  if (n > 100) return null;
-  return Math.max(0, Math.min(1, n / 100));
-}
-
-function preprocessCaptchaToCanvas(imgEl) {
-  const w = Math.max(1, imgEl.naturalWidth || imgEl.width || 0);
-  const h = Math.max(1, imgEl.naturalHeight || imgEl.height || 0);
-  const scale = 2;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w * scale;
-  canvas.height = h * scale;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
-
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  // Simple contrast + binarize; Tesseract works better on high-contrast.
-  for (let i = 0; i < img.data.length; i += 4) {
-    const r = img.data[i];
-    const g = img.data[i + 1];
-    const b = img.data[i + 2];
-    const gray = (0.299 * r + 0.587 * g + 0.114 * b);
-    const v = gray < 160 ? 0 : 255;
-    img.data[i] = v;
-    img.data[i + 1] = v;
-    img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  return canvas;
-}
-
-async function ensureTesseractWorker() {
-  if (tessWorkerPromise) return tessWorkerPromise;
-  const T = window.Tesseract;
-  if (!T || typeof T.createWorker !== 'function') {
-    throw new Error('Tesseract 未加载');
-  }
-
-  const workerPath = chrome.runtime.getURL('vendor/tesseract/worker.min.js');
-    const langPath = chrome.runtime.getURL('vendor/tesseract');
-
-  tessWorkerPromise = (async () => {
-    const createWithCore = async (corePath) => {
-      const options = {
-        logger: () => {},
-        workerPath,
-        langPath,
-        corePath,
-        // MV3 CSP: don't create blob workers
-        workerBlobURL: false
-      };
-
-      // tesseract.js v5: createWorker(langs, oem, options)
-      let w;
-      try {
-        w = await T.createWorker('eng', 1, options);
-      } catch {
-        // older signature fallback
-        w = await T.createWorker(options);
-        if (w.loadLanguage) await w.loadLanguage('eng');
-        if (w.initialize) await w.initialize('eng');
-      }
-
-      if (w.setParameters) {
-        await w.setParameters({
-          tessedit_char_whitelist: '0123456789',
-          tessedit_pageseg_mode: '7'
-        });
-      }
-      return w;
-    };
-
-    // Keep only SIMD core to reduce extension size.
-    return await createWithCore(chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js'));
-  })();
-
-  return tessWorkerPromise;
-}
-
-async function ocrCaptchaWithTesseract(imgEl) {
-  if (tessOcrInProgress) return { text: '', confidence: null };
-  tessOcrInProgress = true;
-  try {
-    const worker = await ensureTesseractWorker();
-    const canvas = preprocessCaptchaToCanvas(imgEl);
-    const { data } = await worker.recognize(canvas);
-    const digits = String(data?.text || '').replace(/\D/g, '');
-    const text = digits.slice(0, 4);
-    const confidence = normalizeOcrConfidence(data?.confidence);
-    if (!/^\d{4}$/.test(text)) return { text: '', confidence };
-    return { text, confidence };
-  } catch (e) {
-    if (!tessInitErrorNotified) {
-      tessInitErrorNotified = true;
-      showToast('OCR 初始化失败：' + (e?.message || String(e)), 'error', 4000);
-    }
-    return { text: '', confidence: null };
-  } finally {
-    tessOcrInProgress = false;
-  }
-}
-async function refreshCaptcha() {
-  try {
-    lastAutoOcrCaptchaText = '';
-    setCaptchaInputHint('');
-    captchaNonce++;
-    captchaImg.dataset.nonce = String(captchaNonce);
-    setLoginProgress('验证码获取中…');
-    const res = await fetch(`${BASE_VE}GetImg`, {
-      credentials: 'include',
-      cache: 'no-store',
-      headers: { Accept: 'image/*,*/*;q=0.8' }
-    });
-    maybeUpdatePlatformSessionIdFromResponse(res);
-    if (!res.ok) {
-      showToast(`验证码获取失败 HTTP ${res.status}`, 'error');
-      return;
-    }
-    const blob = await res.blob();
-    pushCaptchaHistory(blob, captchaNonce);
-    if (lastCaptchaObjectUrl) URL.revokeObjectURL(lastCaptchaObjectUrl);
-    lastCaptchaObjectUrl = URL.createObjectURL(blob);
-    captchaImg.src = lastCaptchaObjectUrl;
-    setLoginProgress('验证码已获取，等待识别…');
-    setCaptchaInputHint('识别中…');
-  } catch (e) {
-    setLoginProgress('验证码获取失败', 'error');
-    showToast('验证码获取失败: ' + e.message, 'error');
-  }
-}
-
-// -------------------- Password fetch (oldpassword) --------------------
-async function fetchPasswordMd5FromServer(userId) {
-  const infoUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(userId)}`;
-  const { text: infoText } = await fetchText(infoUrl);
-  if ((infoText || '').includes('login-page')) return null;
-
-  const studentUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=studentInfo&stuId=${encodeURIComponent(userId)}`;
-  const teacherUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=personInfo&teacherId=${encodeURIComponent(userId)}`;
-  const urls = (infoText || '').includes('学生') ? [studentUrl, teacherUrl] : [teacherUrl, studentUrl];
-  for (const u of urls) {
-    const { text } = await fetchText(u);
-    if (isSessionEndedHtml(text)) {
-      forcePortalLoginInPage = true;
-      await ensurePortalLoginTab(false);
-      return null;
-    }
-    const m = String(text || '').match(/(?:id|name)=["']oldpassword["'][^>]*value=["']([^"']+)["']/i)
-      || String(text || '').match(/value=["']([^"']+)["'][^>]*(?:id|name)=["']oldpassword["']/i);
-    if (m?.[1]) return m[1];
-  }
-  return null;
-}
-
 // -------------------- Login --------------------
-function showLoginModal(message = '请输入验证码重新登录') {
-  if (!usernameInput.value.trim()) {
-    // Username empty: do not block with modal.
-    showToast('账号为空：请直接填写 JSESSIONID', 'info', 2500);
-    updateJsessionidState();
-    jsessionidInput.focus();
-    return;
+async function loginGet(username) {
+  const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(username)}`;
+  const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
+  await syncJsessionidFromResponse(res);
+  if (text.includes('账号或密码错误')) {
+    return { ok: false, reason: 'invalid-account', message: '账号不存在' };
   }
-  const instruction = document.getElementById('login-instruction');
-  if (instruction) instruction.textContent = message;
-  if (loginModalTitle) {
-    const msg = String(message || '');
-    const isSwitchContext = !!pendingUsernameChange || /切换账号|有效登录状态|目标账号/.test(msg);
-    loginModalTitle.textContent = isSwitchContext ? '切换账号' : '登录已失效';
+  if (text.includes('index.shtml?method=index&type=qxkt')) {
+    return { ok: true };
   }
-  loginModal.style.display = 'block';
-  captchaInput.value = '';
-  setLoginProgress('等待登录');
-  resetCaptchaHistory();
-  // reset OCR loop guards per modal show
-  autoOcrAttemptCount = 0;
-  autoOcrAutoSubmitUsed = false;
-  lastLoginFailedByCaptcha = false;
-  captchaErrorRetryCount = 0;
-  refreshCaptcha();
-  setTimeout(() => captchaInput.focus(), 50);
+  return { ok: false, reason: 'other', message: '登录失败' };
 }
 
 function hideLoginModal() {
   loginModal.style.display = 'none';
 }
 
-function isInitialLoginWithoutSwitching() {
-  // User requirement: as long as this is NOT account switching,
-  // login should be submitted on the opened /ve/ page.
-  return !pendingUsernameChange;
-}
-
-function shouldUsePortalPageLogin() {
-  // Keep login in extension context to avoid captcha/session mismatch.
-  // Opening portal page can trigger a new captcha and invalidate extension-fetched code.
-  return !!forcePortalLoginInPage;
-}
-
 let portalLoginTabId = null;
-let forcePortalLoginInPage = false;
 
 async function ensurePortalLoginTab(active = false) {
   try {
@@ -3014,58 +2701,21 @@ async function closePortalLoginTab() {
 }
 
 async function openPortalForInitialLogin() {
-  await closePortalLoginTab();
-  showLoginModal('登录已失效，请输入验证码登录');
+  await doLoginFlow();
 }
 
 let lastPortalLoginTime = 0;
 async function openPortalLoginForInvalidSession() {
   if (Date.now() - lastPortalLoginTime < 5000) return;
   lastPortalLoginTime = Date.now();
-  await closePortalLoginTab();
-  showLoginModal('登录状态已失效：请在插件中输入验证码重新登录');
+  await doLoginFlow();
 }
 
-async function routeLoginBySessionValidityForSwitch(targetUsername, modalMessage, targetInfo = null) {
+async function routeLoginBySessionValidityForSwitch(targetUsername, _modalMessage) {
   jsessionidInput.value = '';
   isLoginSessionValid = true;
-  const switchHintEl = document.getElementById('login-welcome-msg');
-  if (switchHintEl instanceof HTMLElement) {
-    let displayName = '';
-    if (targetInfo && typeof targetInfo === 'object') {
-      const roleName = String(targetInfo.roleName || '').trim();
-      const userName = String(targetInfo.userName || '').trim();
-      displayName = `${roleName}${userName}`.trim();
-    }
-    if (!displayName) {
-      displayName = getAccountDisplayName(targetUsername);
-    }
-    if (!displayName) {
-      try {
-        const info = await fetchUserInfoRemote(targetUsername);
-        displayName = info ? `${String(info.roleName || '').trim()}${String(info.userName || '').trim()}` : '';
-      } catch {
-        displayName = '';
-      }
-    }
-    switchHintEl.textContent = displayName ? `正在切换至 ${displayName}` : '正在切换账号';
-  }
-
-  let pwdMd5 = '';
-  try {
-    pwdMd5 = await getLocal(`pwd:${targetUsername}`, '');
-    if (!pwdMd5) pwdMd5 = await fetchPasswordMd5FromServer(targetUsername);
-  } catch {
-    pwdMd5 = '';
-  }
-
-  if (pwdMd5) {
-    await setLocal(`pwd:${targetUsername}`, pwdMd5);
-    showLoginModal(modalMessage || '需要验证码完成账号切换');
-    return;
-  }
-
-  showLoginModal(modalMessage || '需要验证码完成账号切换');
+  usernameInput.value = targetUsername;
+  await doLoginFlow();
 }
 
 async function waitTabComplete(tabId, timeoutMs = 15000) {
@@ -3082,333 +2732,33 @@ async function waitTabComplete(tabId, timeoutMs = 15000) {
   return false;
 }
 
-async function capturePortalCaptchaDataUrl(tabId) {
-  try {
-    const injected = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async () => {
-        const waitForImage = async (img, timeoutMs = 8000) => {
-          if (!img) return false;
-          if (img.complete && img.naturalWidth > 0) return true;
-          return await new Promise((resolve) => {
-            let done = false;
-            const finish = (v) => {
-              if (done) return;
-              done = true;
-              cleanup();
-              resolve(v);
-            };
-            const cleanup = () => {
-              img.removeEventListener('load', onLoad);
-              img.removeEventListener('error', onError);
-              clearTimeout(timer);
-            };
-            const onLoad = () => finish(true);
-            const onError = () => finish(false);
-            const timer = setTimeout(() => finish(false), timeoutMs);
-            img.addEventListener('load', onLoad, { once: true });
-            img.addEventListener('error', onError, { once: true });
-          });
-        };
-
-        const passcodeInput = document.querySelector('input[name="passcode"], input#passcode');
-        const form = passcodeInput?.closest('form');
-        const root = form || document;
-        let img = root.querySelector('img[src*="GetImg"], img[src*="getimg"], img[src*="checkcode"], img[id*="passcode" i], img[name*="passcode" i]');
-        if (!img) {
-          img = document.querySelector('img[src*="GetImg"], img[src*="getimg"], img[src*="checkcode"], img[id*="passcode" i], img[name*="passcode" i]');
-        }
-        if (!img) return { ok: false, reason: 'captcha-image-not-found' };
-
-        const srcRaw = String(img.getAttribute('src') || img.src || '/ve/GetImg').trim();
-        const noHash = srcRaw.split('#')[0];
-        const sep = noHash.includes('?') ? '&' : '?';
-        img.src = `${noHash}${sep}_ts=${Date.now()}_${Math.random().toString(16).slice(2)}`;
-
-        const loaded = await waitForImage(img, 8000);
-        if (!loaded) return { ok: false, reason: 'captcha-image-load-failed' };
-
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || img.width || 120;
-        canvas.height = img.naturalHeight || img.height || 40;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return { ok: false, reason: 'captcha-canvas-failed' };
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        return { ok: true, dataUrl: canvas.toDataURL('image/png') };
-      }
-    });
-    return injected?.[0]?.result || { ok: false, reason: 'captcha-capture-empty' };
-  } catch {
-    return { ok: false, reason: 'captcha-capture-exception' };
-  }
-}
-
-async function syncPortalCaptchaToExtension(dataUrl, recognizedText = '', confidence = null) {
-  const src = String(dataUrl || '').trim();
-  if (!src) return null;
-
-  captchaNonce++;
-  const nonce = String(captchaNonce);
-  captchaImg.dataset.nonce = nonce;
-
-  if (lastCaptchaObjectUrl && String(lastCaptchaObjectUrl).startsWith('blob:')) {
-    try { URL.revokeObjectURL(lastCaptchaObjectUrl); } catch { /* ignore */ }
-  }
-  lastCaptchaObjectUrl = '';
-  captchaImg.src = src;
-
-  try {
-    const blobRes = await fetch(src);
-    const blob = await blobRes.blob();
-    pushCaptchaHistory(blob, nonce);
-    markCaptchaHistoryResult(nonce, recognizedText, confidence);
-  } catch {
-    // If conversion to blob fails, keep preview sync only.
-  }
-
-  if (/^\d{4}$/.test(String(recognizedText || ''))) {
-    captchaInput.value = String(recognizedText);
-    captchaInput.style.backgroundColor = '#e8f5e9';
-    setTimeout(() => {
-      captchaInput.style.backgroundColor = '';
-    }, 350);
-  }
-
-  return nonce;
-}
-
-async function resolvePortalCaptchaPasscode(tabId, fallbackCode = '', autoOcrEnabled = true) {
-  const fallback = String(fallbackCode || '').replace(/\D/g, '').slice(0, 4);
-  const capture = await capturePortalCaptchaDataUrl(tabId);
-  const dataUrl = String(capture?.dataUrl || '').trim();
-  if (!dataUrl) return fallback;
-
-  if (!autoOcrEnabled) {
-    await syncPortalCaptchaToExtension(dataUrl, '', null);
-    return fallback;
-  }
-
-  let recognized = '';
-  let confidence = null;
-
-  try {
-    const img = new Image();
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('portal-captcha-timeout')), 5000);
-      img.onload = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      img.onerror = () => {
-        clearTimeout(timer);
-        reject(new Error('portal-captcha-error'));
-      };
-      img.src = dataUrl;
-    });
-    const ocr = await ocrCaptchaWithTesseract(img);
-    recognized = String(ocr?.text || '').trim();
-    confidence = Number.isFinite(ocr?.confidence) ? Number(ocr.confidence) : null;
-  } catch {
-    recognized = '';
-    confidence = null;
-  }
-
-  await syncPortalCaptchaToExtension(dataUrl, recognized, confidence);
-  if (/^\d{4}$/.test(recognized)) return recognized;
-  return fallback;
-}
-
-async function submitPortalLoginWithCaptchaRetries(username, passwordMd5, fallbackCode, autoOcrEnabled) {
-  let lastResult = { ok: false, reason: 'other', message: '登录失败', tabId: null };
-  for (let attempt = 0; attempt <= MAX_CAPTCHA_ERROR_RETRIES; attempt++) {
-    if (loginCancelRequested) {
-      return { ok: false, reason: 'cancelled', message: '已取消', tabId: null };
-    }
-
-    const portalTab = await ensurePortalLoginTab(false);
-    if (!portalTab?.id) {
-      return { ok: false, reason: 'other', message: '无法打开课程平台页面', tabId: null };
-    }
-    await waitTabComplete(portalTab.id, 15000);
-
-    const passcode = await resolvePortalCaptchaPasscode(portalTab.id, fallbackCode, autoOcrEnabled);
-    if (!/^\d{4}$/.test(passcode)) {
-      showToast('验证码识别失败，请手动输入后重试', 'warning', 1800);
-      return { ok: false, reason: 'captcha', message: '验证码识别失败', tabId: null };
-    }
-
-    setLoginProgress(`验证码已同步（第 ${attempt + 1} 次提交）`);
-    showBackgroundPortalLoginPendingToast();
-    try {
-      lastResult = await openPortalAndSubmitLoginInPage(username, passwordMd5, passcode);
-    } finally {
-      hideBackgroundPortalLoginPendingToast();
-    }
-    if (lastResult.ok || lastResult.reason !== 'captcha') return lastResult;
-
-    captchaErrorRetryCount++;
-    if (captchaErrorRetryCount <= MAX_CAPTCHA_ERROR_RETRIES) {
-      showToast(`验证码错误，自动重试 (${captchaErrorRetryCount}/${MAX_CAPTCHA_ERROR_RETRIES})`, 'warning', 1200);
-      setLoginProgress(`验证码错误，重试 ${captchaErrorRetryCount}/${MAX_CAPTCHA_ERROR_RETRIES}`, 'warning');
-      lastLoginFailedByCaptcha = false;
-      continue;
-    }
-
-    showToast('验证码错误次数过多，请手动输入', 'warning', 2500);
-    setLoginProgress('验证码重试已达上限，请手动输入', 'warning');
-    lastLoginFailedByCaptcha = true;
-    return lastResult;
-  }
-  return lastResult;
-}
-
-async function openPortalAndSubmitLoginInPage(username, passwordMd5, passcode) {
-  let tab = null;
-  try {
-    tab = await ensurePortalLoginTab(false);
-    if (!tab?.id) {
-      return { ok: false, reason: 'other', message: '无法打开课程平台页面', tabId: null };
-    }
-    await waitTabComplete(tab.id, 15000);
-
-    const injected = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: async (u, p, c) => {
-        const body = new URLSearchParams({
-          login: 'main_2',
-          qxkt_type: '',
-          qxkt_url: '',
-          username: String(u || ''),
-          password: String(p || ''),
-          passcode: String(c || '')
-        }).toString();
-
-        const decodeHtmlFromResponse = async (res) => {
-          const buf = await res.arrayBuffer();
-          const bytes = new Uint8Array(buf);
-          const ct = String(res.headers.get('content-type') || '').toLowerCase();
-
-          const decodeBy = (enc) => {
-            try {
-              return new TextDecoder(enc).decode(bytes);
-            } catch {
-              return '';
-            }
-          };
-
-          // First pass by response header.
-          if (ct.includes('gbk') || ct.includes('gb2312') || ct.includes('gb18030')) {
-            const t = decodeBy('gb18030') || decodeBy('gbk');
-            if (t) return t;
-          }
-          if (ct.includes('utf-8') || ct.includes('utf8')) {
-            const t = decodeBy('utf-8');
-            if (t) return t;
-          }
-
-          // Fallback: decode as utf-8 first and inspect in-page meta charset.
-          const utf8Text = decodeBy('utf-8');
-          const head = String(utf8Text || '').slice(0, 2048).toLowerCase();
-          const metaSuggestGbk = /charset\s*=\s*["']?\s*(gbk|gb2312|gb18030)\b/.test(head);
-          if (metaSuggestGbk || utf8Text.includes('�')) {
-            const gbkText = decodeBy('gb18030') || decodeBy('gbk');
-            if (gbkText && !gbkText.includes('�')) return gbkText;
-          }
-          return utf8Text;
-        };
-
-        const res = await fetch('/ve/s.shtml', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-          },
-          body
-        });
-        const text = await decodeHtmlFromResponse(res);
-        return {
-          status: res.status,
-          url: String(res.url || ''),
-          text
-        };
-      },
-      args: [username, passwordMd5, passcode]
-    });
-
-    const result = injected?.[0]?.result;
-    const text = String(result?.text || '');
-    const alertMsg = parseAlertMsg(text);
-
-    if (alertMsg && isCaptchaErrorMessage(alertMsg)) {
-      return { ok: false, reason: 'captcha', message: alertMsg, tabId: Number(tab?.id || 0) || null };
-    }
-    if (alertMsg && isAccountLockedMessage(alertMsg)) {
-      return { ok: false, reason: 'locked', message: alertMsg, tabId: Number(tab?.id || 0) || null };
-    }
-    if (looksLikeLoginSuccess(text) || /个人中心|退出登录|跳转首页|top\.location/i.test(text)) {
-      return { ok: true, tabId: Number(tab?.id || 0) || null };
-    }
-    return { ok: false, reason: 'other', message: alertMsg || '登录失败', tabId: Number(tab?.id || 0) || null };
-  } catch (e) {
-    return { ok: false, reason: 'other', message: e?.message || '登录失败', tabId: Number(tab?.id || 0) || null };
-  }
-}
-
 async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 120000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     try {
       const detected = await detectUserIdFromPersonalCenter();
       if (detected) {
-        const wasLoginCancelled = loginCancelRequested;
-        const pendingPortalSwitch = await getLocal('portalPendingSwitchAfterAux', null);
-        const switchTarget = String(pendingPortalSwitch?.targetUsername || '').trim();
-
         await syncJsessionidToUi();
         loginCancelRequested = false;
-        if (switchTarget && detected === '8888') {
-          await setLocal('portalPendingSwitchAfterAux', null);
-          await closePortalLoginTab();
-
-          hideLoginModal();
-          showLoginModal('已用 8888 登录成功，正在扩展页切回目标账号');
-          try {
-            await syncAccountInfoAndReloadVeCourses({ userId: switchTarget, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
-          } catch {
-            // ignore
-          }
-          if (wasLoginCancelled) {
-            showToast('登录成功', 'success', 1800);
-          } else {
-            showToast('登录成功，正在切回目标账号', 'success', 2600);
-          }
-        } else {
-          if (switchTarget && detected !== '8888') {
-            await setLocal('portalPendingSwitchAfterAux', null);
-          }
-          await closePortalLoginTab();
-          hideLoginModal();
-          try {
-            await syncAccountInfoAndReloadVeCourses({ userId: detected, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
-          } catch {
-            // ignore
-          }
-          showToast('登录成功', 'success', 1800);
+        await closePortalLoginTab();
+        hideLoginModal();
+        try {
+          await syncAccountInfoAndReloadVeCourses({ userId: detected, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
+        } catch {
+          // ignore
         }
+        showToast('登录成功', 'success', 1800);
 
         if (isPlatformEnabled('jlgj') || window.platformInteractiveLoginPending?.jlgj) {
           closeJlgjLoginAssistPopup(false);
           scheduleJlgjLoginAssistRecheck(180);
         }
-        
+
         if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
 
-        if (!(switchTarget && detected === '8888')) {
-          runPendingLoginCallbacks();
-        }
+        runPendingLoginCallbacks();
 
-        if (!(switchTarget && detected === '8888') && isPlatformEnabled('ve')) {
+        if (isPlatformEnabled('ve')) {
           await loadCourses();
         }
         return true;
@@ -3423,148 +2773,13 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
   return false;
 }
 
-async function runPortalLoginFlow(username, code, autoOcrEnabled) {
-  const defaultPwd = md5(`Bjtu@${username}`);
-  let portalResult = await submitPortalLoginWithCaptchaRetries(username, defaultPwd, code, autoOcrEnabled);
-
-  if (loginCancelRequested && !portalResult.ok) {
-    setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-    showToast('已取消登录：失败后不再重试', 'warning', 1800);
-    await resumeVeAfterAccountSwitchFailure();
-    return;
-  }
-
-  if (!portalResult.ok && portalResult.reason !== 'captcha') {
-    if (portalResult.reason === 'locked') {
-      showToast(portalResult.message || '账号已临时锁定，请稍后再试', 'error', 4500);
-      setLoginProgress(portalResult.message || '账号已临时锁定，请稍后再试', 'error');
-      return;
-    }
-    await setLocal('portalPendingSwitchAfterAux', { targetUsername: username });
-    const auxPwd = md5('Bjtu@8888');
-    const auxRes = await submitPortalLoginWithCaptchaRetries('8888', auxPwd, code, autoOcrEnabled);
-
-    if (loginCancelRequested && !auxRes.ok) {
-      setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-      showToast('已取消登录：失败后不再重试', 'warning', 1800);
-      await resumeVeAfterAccountSwitchFailure();
-      return;
-    }
-
-    if (!auxRes.ok) {
-      if (auxRes.reason === 'locked') {
-        showToast(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error', 4500);
-        setLoginProgress(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error');
-        return;
-      }
-      if (auxRes.reason === 'captcha') {
-        captchaInput.value = '';
-        if (loginCancelRequested) {
-          setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-          await resumeVeAfterAccountSwitchFailure();
-          return;
-        }
-        return;
-      }
-      showToast('8888 登录失败: ' + (auxRes.message || '未知错误'), 'error');
-      return;
-    }
-
-    const ok = await waitAndSyncLoginFromPortal(auxRes.tabId, 120000);
-    if (!ok) {
-      showToast('辅助账号登录后状态同步失败，请重试', 'error');
-    }
-    return;
-  }
-
-  if (!portalResult.ok) {
-    if (portalResult.reason === 'locked') {
-      showToast(portalResult.message || '账号已临时锁定，请稍后再试', 'error', 4500);
-      setLoginProgress(portalResult.message || '账号已临时锁定，请稍后再试', 'error');
-      return;
-    }
-    if (portalResult.reason === 'captcha') {
-      captchaInput.value = '';
-      if (loginCancelRequested) {
-        await resumeVeAfterAccountSwitchFailure();
-        return;
-      }
-      return;
-    }
-    showToast(portalResult.message || '登录失败', 'error');
-    setLoginProgress(portalResult.message || '登录失败', 'error');
-    if (loginCancelRequested) {
-      setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-      await resumeVeAfterAccountSwitchFailure();
-      return;
-    }
-    return;
-  }
-
-  const ok = await waitAndSyncLoginFromPortal(portalResult.tabId, 120000);
-  if (!ok) {
-    showToast('登录成功但状态同步失败，请重试', 'warning', 2000);
-  }
-}
-
-async function loginPost(username, passwordMd5, passcode) {
-  await setLocal('latestResponseJsessionid', null);
-  await setLocal('latestSentLoginJsessionid', null);
-  await enforceJsessionidBeforeLoginRequest();
-  const body = new URLSearchParams({
-    login: 'main_2',
-    qxkt_type: '',
-    qxkt_url: '',
-    username,
-    password: passwordMd5,
-    passcode
-  });
-  const { res, text } = await fetchText(`${BASE_VE}s.shtml`, {
-    method: 'POST',
-    omitSessionId: true,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-      'Origin': BASE
-    },
-    body: body.toString()
-  });
-
-  // Some gateway responses may still alert “验证码错误” while actually rotating/repairing JSESSIONID.
-  // Always sync JSESSIONID from response headers/cookie after login POST.
-  await syncJsessionidFromResponse(res);
-  await forceSyncJsessionidAfterLogin();
-
-  const alertMsg = parseAlertMsg(text);
-  if (alertMsg && isCaptchaErrorMessage(alertMsg)) {
-    return { ok: false, reason: 'captcha', message: alertMsg };
-  }
-  if (alertMsg && isAccountLockedMessage(alertMsg)) {
-    return { ok: false, reason: 'locked', message: alertMsg };
-  }
-  if (looksLikeLoginSuccess(text)) {
-    return { ok: true };
-  }
-  return { ok: false, reason: 'other', message: alertMsg || '登录失败' };
-}
-
 async function doLoginFlow() {
   if (isLoginInProgress) return;
   const username = usernameInput.value.trim();
-  const code = captchaInput.value.trim();
   const wasSwitchingAccount = !!pendingUsernameChange;
   if (!username) {
     showToast('请输入账号，或改为填写 JSESSIONID', 'warning');
     return;
-  }
-  if (!code) {
-    showToast('请输入验证码', 'warning');
-    captchaInput.focus();
-    return;
-  }
-
-  if (shouldUsePortalPageLogin()) {
-    showToast('当前配置为原页面登录模式', 'info', 1200);
   }
 
   if (loginBtn) {
@@ -3572,150 +2787,25 @@ async function doLoginFlow() {
     loginBtn.style.opacity = '0.7';
     loginBtn.innerHTML = '登录中… <span class="spinner"></span>';
   }
-  setLoginProgress('登录中…');
   showToast('正在登录...', 'info', 0);
   isLoginInProgress = true;
   loginCancelRequested = false;
 
   try {
-    const autoOcrEnabled = await getAutoOcrCaptchaEnabled();
-    const retryTip = (n) => autoOcrEnabled
-      ? `验证码错误，自动重试 (${n}/${MAX_CAPTCHA_ERROR_RETRIES})`
-      : '验证码错误，请重试';
-
-    // Keep captcha generation and login submit in the same (extension) context.
-    const isPortalFlow = shouldUsePortalPageLogin();
-
-    if (isPortalFlow) {
-      await runPortalLoginFlow(username, code, autoOcrEnabled);
-      return;
-    }
-
-    // Determine strategy
-    const forceAux = !!(auxCheckbox && auxCheckbox.checked);
-    let pwdMd5 = await getLocal(`pwd:${username}`, '');
-    if (!pwdMd5) pwdMd5 = await fetchPasswordMd5FromServer(username);
-
-    if (shouldUsePortalPageLogin()) {
-      await runPortalLoginFlow(username, code, autoOcrEnabled);
-      return;
-    }
-
-    if (!pwdMd5) pwdMd5 = md5(`Bjtu@${username}`);
-
-    let result = await loginPost(username, pwdMd5, code);
-    if (loginCancelRequested && !result.ok) {
-      setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-      showToast('已取消登录：失败后不再重试', 'warning', 1800);
-      await resumeVeAfterAccountSwitchFailure();
-      return;
-    }
-    if (!result.ok && result.reason !== 'captcha') {
-      if (result.reason === 'locked') {
-        showToast(result.message || '账号已临时锁定，请稍后再试', 'error', 4500);
-        setLoginProgress(result.message || '账号已临时锁定，请稍后再试', 'error');
-        return;
-      }
-      // fallback to aux
-      if (forceAux || true) {
-        const auxPwd = md5('Bjtu@8888');
-        const auxRes = await loginPost('8888', auxPwd, code);
-        if (loginCancelRequested && !auxRes.ok) {
-          setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-          showToast('已取消登录：失败后不再重试', 'warning', 1800);
-          await resumeVeAfterAccountSwitchFailure();
-          return;
-        }
-        if (!auxRes.ok) {
-          if (auxRes.reason === 'locked') {
-            showToast(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error', 4500);
-            setLoginProgress(auxRes.message || '8888 账号已临时锁定，请稍后再试', 'error');
-            return;
-          }
-          if (auxRes.reason === 'captcha') {
-            captchaInput.value = '';
-            captchaErrorRetryCount++;
-            if (captchaErrorRetryCount <= MAX_CAPTCHA_ERROR_RETRIES) {
-              showToast(retryTip(captchaErrorRetryCount), 'warning', 1200);
-              setLoginProgress(`验证码错误，重试 ${captchaErrorRetryCount}/${MAX_CAPTCHA_ERROR_RETRIES}`, 'warning');
-              lastLoginFailedByCaptcha = false;
-              autoOcrAutoSubmitUsed = false;
-              if (loginCancelRequested) {
-                setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-                await resumeVeAfterAccountSwitchFailure();
-                return;
-              }
-              refreshCaptchaWhenIdle();
-              return;
-            }
-            showToast('验证码错误次数过多，请手动输入', 'warning', 2500);
-            setLoginProgress('验证码重试已达上限，请手动输入', 'warning');
-            lastLoginFailedByCaptcha = true;
-            refreshCaptchaWhenIdle();
-            return;
-          }
-          showToast('辅助账号登录失败: ' + (auxRes.message || '未知错误'), 'error');
-          refreshCaptchaWhenIdle();
-          return;
-        }
-
-        const foundPwd = await fetchPasswordMd5FromServer(username);
-        if (foundPwd) {
-          await setLocal(`pwd:${username}`, foundPwd);
-          pwdMd5 = foundPwd;
-          result = await loginPost(username, foundPwd, code);
-        }
-      }
-    }
+    const result = await loginGet(username);
 
     if (!result.ok) {
-      if (result.reason === 'locked') {
-        showToast(result.message || '账号已临时锁定，请稍后再试', 'error', 4500);
-        setLoginProgress(result.message || '账号已临时锁定，请稍后再试', 'error');
-        return;
-      }
-      if (result.reason === 'captcha') {
-        captchaInput.value = '';
-        captchaErrorRetryCount++;
-        if (captchaErrorRetryCount <= MAX_CAPTCHA_ERROR_RETRIES) {
-          showToast(retryTip(captchaErrorRetryCount), 'warning', 1200);
-          setLoginProgress(`验证码错误，重试 ${captchaErrorRetryCount}/${MAX_CAPTCHA_ERROR_RETRIES}`, 'warning');
-          lastLoginFailedByCaptcha = false;
-          autoOcrAutoSubmitUsed = false;
-          if (loginCancelRequested) {
-            await resumeVeAfterAccountSwitchFailure();
-            return;
-          }
-          refreshCaptchaWhenIdle();
-          return;
-        }
-        showToast('验证码错误次数过多，请手动输入', 'warning', 2500);
-        setLoginProgress('验证码重试已达上限，请手动输入', 'warning');
-        lastLoginFailedByCaptcha = true;
-      } else {
-        showToast(result.message || '登录失败', 'error');
-        setLoginProgress(result.message || '登录失败', 'error');
-        lastLoginFailedByCaptcha = false;
-      }
-      if (loginCancelRequested) {
-        setLoginProgress('已取消：本次登录失败后停止重试', 'warning');
-        await resumeVeAfterAccountSwitchFailure();
-        return;
-      }
-      refreshCaptchaWhenIdle();
+      showToast(result.message || '登录失败', 'error');
       return;
     }
 
     // Success
     isLoginSessionValid = true;
     loginCancelRequested = false;
-    setLoginProgress('登录成功，正在关闭页面…', 'success');
     hideLoginModal();
     showToast('登录成功', 'success');
     await forceSyncJsessionidAfterLogin();
 
-    // Login success already knows the target account from the input.
-    // Only fall back to personal-center detection if the username is missing.
     let finalUser = String(username || '').trim();
     if (!finalUser) {
       try {
@@ -3725,17 +2815,11 @@ async function doLoginFlow() {
       }
     }
 
-    const userBeforeLogin = String(lastValidUsername || '').trim();
-
-    // Always sync UI to the final logged-in account (even if user clicked Cancel during “登录中...”).
     usernameInput.value = finalUser;
     updateJsessionidState();
 
-    // run pending callbacks
     runPendingLoginCallbacks();
 
-    // Login success should always refresh account identity and VE courses so the UI
-    // does not stay stale after cancel/retry/switch flows.
     try {
       await syncAccountInfoAndReloadVeCourses({ userId: finalUser, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
     } catch {
@@ -3750,7 +2834,6 @@ async function doLoginFlow() {
       }
       try { await loadResourceSpaceForCurrentAccount(); } catch { /* ignore */ }
     }
-    forcePortalLoginInPage = false;
     isLoginInProgress = false;
     if (loginBtn) {
       loginBtn.disabled = false;
@@ -3759,6 +2842,7 @@ async function doLoginFlow() {
     }
   }
 }
+
 
 // -------------------- Courses / Homework / Videos --------------------
 function normalizeCourseNumToken(v) {
@@ -9116,7 +8200,7 @@ async function loadCourses() {
       isLoginSessionValid = false;
       setPlatformLoginState('ve', 'offline');
       if (usernameInput.value.trim()) {
-        promptLoginIfPossible('请输入验证码重新登录');
+        promptLoginIfPossible('请输入账号登录');
       }
       renderCourseList([]);
       rematchExternalByVeCourses();
@@ -9133,7 +8217,7 @@ async function loadCourses() {
         isLoginSessionValid = false;
         setPlatformLoginState('ve', 'offline');
         if (usernameInput.value.trim()) {
-          promptLoginIfPossible('请输入验证码重新登录');
+          promptLoginIfPossible('请输入账号登录');
         }
         renderCourseList([]);
         rematchExternalByVeCourses();
@@ -9172,7 +8256,7 @@ async function loadCourses() {
     if (likelyLoginInvalid) {
       isLoginSessionValid = false;
       if (usernameInput.value.trim()) {
-        promptLoginIfPossible('请输入验证码重新登录');
+        promptLoginIfPossible('请输入账号登录');
       }
     } else {
       showToast('课程加载失败: ' + errMsg, 'error');
@@ -10077,7 +9161,7 @@ function handleLoginRequired(retryCallback, cancelCallback, message) {
   if (retryCallback) {
     pendingLoginCallbacks.push(retryCallback);
   }
-  promptLoginIfPossible(message || '请输入验证码重新登录');
+  promptLoginIfPossible(message || '请输入账号登录');
   if (cancelCallback) {
     // store cancel? keep simple: ignore
   }
@@ -10179,7 +9263,7 @@ function uploadFile(file, fileId) {
       }
       uploadQueue.push(performUpload);
       processQueue();
-    }, null, '登录已失效，请输入验证码重新登录');
+    }, null, '登录已失效，请输入账号登录');
   };
 
   retryBtn.onclick = () => {
@@ -10640,86 +9724,7 @@ if (resourceDownloadSelectedBtn) {
   });
 }
 
-captchaImg.addEventListener('click', () => {
-  if (isLoginInProgress) return;
-  refreshCaptcha();
-});
-
-if (popupOpenFullscreenBtn instanceof HTMLButtonElement) {
-  popupOpenFullscreenBtn.addEventListener('click', () => {
-    try {
-      chrome.runtime.sendMessage({ type: 'OPEN_APP' }, (resp) => {
-        if (chrome.runtime.lastError || !resp?.ok) {
-          try {
-            chrome.tabs.create({ url: chrome.runtime.getURL('app.html') });
-          } catch {
-            window.open('app.html', '_blank');
-          }
-        }
-      });
-    } catch {
-      window.open('app.html', '_blank');
-    }
-  });
-}
-
-captchaImg.addEventListener('load', async () => {
-  try {
-    const enabled = await getAutoOcrCaptchaEnabled();
-    if (!enabled) return;
-    // only when modal is visible
-    if (!loginModal || loginModal.style.display === 'none') return;
-    if (!captchaImg.naturalWidth) return;
-
-    const nonce = captchaImg.dataset.nonce || '';
-    setCaptchaInputHint('识别中…');
-
-    const { text, confidence } = await ocrCaptchaWithTesseract(captchaImg);
-    // captcha might have been refreshed while OCR was running
-    if ((captchaImg.dataset.nonce || '') !== nonce) return;
-    if (!text) {
-      markCaptchaHistoryResult(nonce, '', confidence);
-      setLoginProgress('验证码识别失败，正在刷新…', 'warning');
-      setCaptchaInputHint('识别失败，正在刷新…');
-      if (!isLoginInProgress) {
-        autoOcrAutoSubmitUsed = false;
-        await refreshCaptcha();
-      }
-      return;
-    }
-
-    lastAutoOcrCaptchaText = text;
-    markCaptchaHistoryResult(nonce, text, confidence);
-
-    captchaInput.value = text;
-    captchaInput.style.backgroundColor = '#e8f5e9';
-    setTimeout(() => captchaInput.style.backgroundColor = '', 400);
-    setCaptchaInputHint('');
-
-    // Auto-submit: allow retry when captcha is wrong (bounded by MAX_AUTO_SUBMITS_PER_MODAL).
-    const canAutoSubmit = !isLoginInProgress && !autoOcrAutoSubmitUsed && autoOcrAttemptCount < MAX_AUTO_SUBMITS_PER_MODAL;
-    if (canAutoSubmit) {
-      autoOcrAutoSubmitUsed = true;
-      autoOcrAttemptCount++;
-      setTimeout(() => {
-        if (captchaInput.value.trim() === text) doLoginFlow();
-      }, 120);
-    }
-  } catch {
-    // ignore
-  }
-});
-captchaInput.addEventListener('input', (e) => {
-  setCaptchaInputHint('');
-  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
-  if (e.target.value.length === 4) {
-    doLoginFlow();
-  }
-});
 if (loginBtn) loginBtn.addEventListener('click', doLoginFlow);
-captchaInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') doLoginFlow();
-});
 cancelBtn.addEventListener('click', () => {
   loginModal.style.display = 'none';
 
@@ -11128,7 +10133,7 @@ usernameInput.addEventListener('change', async () => {
       prioritizeAccountSwitch();
     }
     const validResult = await validateUserIdRemote(u);
-    if (!validResult.ok && validResult.status === '4') {
+    if (!validResult.ok && validResult.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
       usernameInput.value = lastValidUsername;
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
@@ -11175,8 +10180,8 @@ usernameInput.addEventListener('change', async () => {
   // Validate userId first; if invalid -> revert to last valid
   const result = await validateUserIdRemote(u);
   if (!result.ok) {
-    // Only STATUS=4 means the account does not exist. Other failures may be due to session/network.
-    if (result.status === '4') {
+    // "invalid" means the account does not exist. Other failures may be due to session/network.
+    if (result.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
       usernameInput.value = lastValidUsername;
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
@@ -11271,7 +10276,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   setupRightColumnResizer();
   await loadPlatformEnabledFromStorage();
   if (popupMode) {
-    window.platformEnabled = { ve: true, ykt: false, mrzy: false, jlgj: false };
+    window.platformEnabled = { jlgj: false, mrzy: false, ve: true, ykt: false };
   }
   // Run update check in background to avoid blocking other startup requests.
   loadVersionInfo().catch(() => {});
@@ -11313,11 +10318,11 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   await syncJsessionidToUi();
 
-  // If no session, show login modal
+  // If no session, try direct login with current username.
   const jsid = jsessionidInput.value.trim();
   if (!jsid) {
     // Username empty -> allow manual JSESSIONID; do not popup modal.
-    if (usernameInput.value.trim()) showLoginModal('登录已失效，请输入验证码');
+    if (usernameInput.value.trim()) promptLoginIfPossible('登录已失效，请重新登录');
   }
 
   // startupPlatformLoadPromise and startupResourceSpacePromise already awaited above via `settled`

@@ -1,30 +1,28 @@
-
 function setMsg(text, ok = true) {
   const msg = document.getElementById('msg');
   msg.textContent = text;
   msg.className = ok ? 'ok' : 'err';
 }
 
-const DEFAULT_PLATFORM_ENABLED = { ve: true, ykt: true, mrzy: true, jlgj: true };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrzy: false, ve: true, ykt: false };
 
 const DEFAULT_OPEN_MODE = 'popup';
 
 function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
   return {
-    ve: src.ve !== false,
-    ykt: src.ykt !== false,
-    mrzy: src.mrzy !== false,
-    jlgj: src.jlgj !== false
+    jlgj: typeof src.jlgj === 'boolean' ? src.jlgj : DEFAULT_PLATFORM_ENABLED.jlgj,
+    mrzy: typeof src.mrzy === 'boolean' ? src.mrzy : DEFAULT_PLATFORM_ENABLED.mrzy,
+    ve: typeof src.ve === 'boolean' ? src.ve : DEFAULT_PLATFORM_ENABLED.ve,
+    ykt: typeof src.ykt === 'boolean' ? src.ykt : DEFAULT_PLATFORM_ENABLED.ykt
   };
 }
 
 (async function init() {
-  const { autoOcrCaptcha } = await chrome.storage.sync.get(['autoOcrCaptcha']);
   const { platformEnabled } = await chrome.storage.local.get(['platformEnabled']);
   const { openMode } = await chrome.storage.local.get(['openMode']);
-  const enabled = normalizePlatformEnabled(platformEnabled || DEFAULT_PLATFORM_ENABLED);
-  document.getElementById('autoOcrCaptcha').checked = autoOcrCaptcha !== false;
+  const enabled = normalizePlatformEnabled(platformEnabled);
+
   document.getElementById('enableVe').checked = !!enabled.ve;
   document.getElementById('enableYkt').checked = !!enabled.ykt;
   document.getElementById('enableMrzy').checked = !!enabled.mrzy;
@@ -46,12 +44,6 @@ function normalizePlatformEnabled(raw) {
     setMsg('已应用更改');
   };
 
-  const applyAutoOcr = async () => {
-    const v = !!document.getElementById('autoOcrCaptcha').checked;
-    await chrome.storage.sync.set({ autoOcrCaptcha: v });
-    setMsg('已应用更改');
-  };
-
   const applyOpenMode = async () => {
     const v = document.getElementById('openModePage').checked ? 'page' : 'popup';
     await chrome.storage.local.set({ openMode: v });
@@ -62,17 +54,14 @@ function normalizePlatformEnabled(raw) {
   document.getElementById('enableYkt').addEventListener('change', applyPlatform);
   document.getElementById('enableMrzy').addEventListener('change', applyPlatform);
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
-  document.getElementById('autoOcrCaptcha').addEventListener('change', applyAutoOcr);
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
 
   // Reset: restore defaults. Platform display/load should only check VE.
   document.getElementById('resetBtn').addEventListener('click', async () => {
-    await chrome.storage.sync.remove(['autoOcrCaptcha']);
-    const defaultPlatform = { ve: true, ykt: false, mrzy: false, jlgj: false };
+    const defaultPlatform = { jlgj: false, mrzy: false, ve: true, ykt: false };
     await chrome.storage.local.set({ platformEnabled: defaultPlatform });
     await chrome.storage.sync.remove(['platformEnabled']);
-    document.getElementById('autoOcrCaptcha').checked = true;
     document.getElementById('enableVe').checked = true;
     document.getElementById('enableYkt').checked = false;
     document.getElementById('enableMrzy').checked = false;

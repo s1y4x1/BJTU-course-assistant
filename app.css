@@ -1422,53 +1422,6 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             position: relative;
         }
         #login-modal .login-panel h3 { margin: 0 0 10px; color: #1f2937; }
-        .login-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-        .captcha-main-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            padding: 10px;
-            background: #f8fafc;
-            text-align: center;
-        }
-        .captcha-main-card img {
-            cursor: pointer;
-            height: 42px;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            background: #fff;
-        }
-        .captcha-history {
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            padding: 8px;
-            background: #fff;
-            max-height: 220px;
-            overflow-y: auto;
-        }
-        .captcha-history-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            border-bottom: 1px dashed #e5e7eb;
-            padding: 6px 2px;
-            font-size: 12px;
-        }
-        .captcha-history-item:last-child { border-bottom: none; }
-        .captcha-history-item img {
-            width: 80px;
-            height: 32px;
-            object-fit: contain;
-            border: 1px solid #d1d5db;
-            border-radius: 4px;
-            background: #fff;
-        }
-        @media (max-width: 860px) {
-            .login-grid { grid-template-columns: 1fr; }
-        }
 
         /* Keep course helper readable and left panel slightly denser */
         .right-column, .config-area, .status { font-size: 14px; }
