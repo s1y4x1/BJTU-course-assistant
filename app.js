@@ -476,7 +476,7 @@ function openVersionNoticeModal() {
   const downloadBtn = modal.querySelector('#version-notice-download');
   const ignoreBtn = modal.querySelector('#version-notice-ignore');
   if (titleEl instanceof HTMLElement) {
-    const versionLabel = escapeHtml(String(versionButtonLatestVersion || '').trim() || '--');
+    const versionLabel = escapeHtml(String(versionButtonLatestDisplayVersion || versionButtonLatestVersion || '').trim() || '--');
     const publishedText = escapeHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
     const timeHtml = publishedText ? `<span class="version-notice-title-time">${publishedText}</span>` : '';
     if (versionButtonMode === 'latest') {
@@ -1102,6 +1102,20 @@ if (openOptionsBtn) {
     }
     // fallback
     try { chrome.tabs.create({ url: chrome.runtime.getURL('options.html') }); } catch {}
+  });
+}
+
+if (popupOpenFullscreenBtn) {
+  popupOpenFullscreenBtn.addEventListener('click', () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'OPEN_APP' }, () => {
+        if (chrome.runtime.lastError) {
+          try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch {}
+        }
+      });
+    } catch {
+      try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch {}
+    }
   });
 }
 
