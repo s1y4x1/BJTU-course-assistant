@@ -270,6 +270,7 @@ function compareVersionText(a, b) {
 let versionButtonMode = 'loading';
 let versionButtonDownloadUrl = '';
 let versionButtonLatestVersion = '';
+let versionButtonLatestDisplayVersion = '';
 let versionButtonLatestPublishedAt = '';
 let versionButtonLatestBodyMarkdown = '';
 let versionNoticeShownVersion = '';
@@ -831,11 +832,12 @@ async function startVersionDownloadWithFallback() {
   syncVersionNoticeDownloadButton();
 }
 
-function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestPublishedAt = '', downloadUrl = '', body = '' } = {}) {
+function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestDisplayVersion = '', latestPublishedAt = '', downloadUrl = '', body = '' } = {}) {
   if (!versionBtn) return;
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
   versionButtonLatestVersion = String(latestVersion || '').trim();
+  versionButtonLatestDisplayVersion = String(latestDisplayVersion || latestVersion || '').trim();
   versionButtonLatestPublishedAt = String(latestPublishedAt || '').trim();
   versionButtonLatestBodyMarkdown = String(body || '').trim();
 
@@ -851,11 +853,11 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
     return;
   }
   if (versionButtonMode === 'latest') {
-    versionBtn.innerHTML = `<span>已是最新版本：${escapeHtml(latestVersion || localVersion || '--')}</span>`;
+    versionBtn.innerHTML = `<span>已是最新版本：${escapeHtml(versionButtonLatestDisplayVersion || latestVersion || localVersion || '--')}</span>`;
     return;
   }
   if (versionButtonMode === 'outdated') {
-    versionBtn.innerHTML = `<span class="version-btn-stack"><span>发现新版本：${escapeHtml(latestVersion || '--')}</span></span>`;
+    versionBtn.innerHTML = `<span class="version-btn-stack"><span>发现新版本：${escapeHtml(versionButtonLatestDisplayVersion || latestVersion || '--')}</span></span>`;
     return;
   }
   if (versionButtonMode === 'ahead') {
@@ -869,10 +871,19 @@ function pickReleaseDownloadUrl(releaseData) {
   return VERSION_DOWNLOAD_URL;
 }
 
+function getReleaseTagVersion(releaseData) {
+  return String(releaseData?.tag_name || '').trim();
+}
+
+function getReleaseDisplayVersion(releaseData) {
+  const releaseName = String(releaseData?.name || '').trim();
+  return releaseName || getReleaseTagVersion(releaseData);
+}
+
 function pickLatestStableRelease(releases = []) {
   const list = Array.isArray(releases) ? releases : [];
-  return list.find((r) => !r?.draft && !r?.prerelease && String(r?.tag_name || '').trim())
-    || list.find((r) => !r?.draft && String(r?.tag_name || '').trim())
+  return list.find((r) => !r?.draft && !r?.prerelease && getReleaseTagVersion(r))
+    || list.find((r) => !r?.draft && getReleaseTagVersion(r))
     || null;
 }
 
@@ -880,29 +891,30 @@ function buildAggregatedReleaseNotes(releases = [], localVersion = '', latestVer
   const list = Array.isArray(releases) ? releases : [];
   const items = list.filter((r) => {
     if (!r || r.draft) return false;
-    const tag = String(r.tag_name || '').trim();
+    const tag = getReleaseTagVersion(r);
     if (!tag) return false;
     return compareVersionText(tag, localVersion) > 0 && compareVersionText(tag, latestVersion) <= 0;
   });
   if (!items.length) return '';
   return items.map((r, idx) => {
-    const tag = String(r.tag_name || '').trim();
+    const versionLabel = getReleaseDisplayVersion(r);
     const body = String(r.body || '').trim() || '此版本暂无更新说明。';
     const publishedText = formatReleasePublishedAt(r?.published_at);
     // The modal title already shows the latest version; avoid repeating it at the top.
-    return idx === 0 ? `${body}` : `@@release|${tag}|${publishedText}\n${body}`;
+    return idx === 0 ? `${body}` : `@@release|${versionLabel}|${publishedText}\n${body}`;
   }).join('\n\n---\n\n');
 }
 
 function buildAllReleaseNotes(releases = [], latestVersion = '') {
   const list = Array.isArray(releases) ? releases : [];
-  const items = list.filter((r) => !r?.draft && String(r?.tag_name || '').trim());
+  const items = list.filter((r) => !r?.draft && getReleaseTagVersion(r));
   if (!items.length) return '';
   return items.map((r) => {
-    const tag = String(r.tag_name || '').trim();
+    const tag = getReleaseTagVersion(r);
+    const versionLabel = getReleaseDisplayVersion(r);
     const body = String(r.body || '').trim() || '此版本暂无更新说明。';
     const publishedText = formatReleasePublishedAt(r?.published_at);
-    return compareVersionText(tag, latestVersion) === 0 ? `${body}` : `@@release|${tag}|${publishedText}\n${body}`;
+    return compareVersionText(tag, latestVersion) === 0 ? `${body}` : `@@release|${versionLabel}|${publishedText}\n${body}`;
   }).join('\n\n---\n\n');
 }
 
@@ -988,7 +1000,8 @@ async function loadVersionInfo() {
       throw new Error('Missing releases');
     }
     const latestRelease = pickLatestStableRelease(releases);
-    const latestTag = String(latestRelease?.tag_name || '').trim();
+    const latestTag = getReleaseTagVersion(latestRelease);
+    const latestDisplayVersion = getReleaseDisplayVersion(latestRelease) || latestTag;
     if (!latestTag) throw new Error('Missing latest tag');
 
     const cmp = compareVersionText(latestTag, localVersion);
@@ -997,6 +1010,7 @@ async function loadVersionInfo() {
       setVersionButtonState('latest', {
         localVersion,
         latestVersion: latestTag,
+        latestDisplayVersion,
         latestPublishedAt: latestRelease?.published_at || '',
         body: historyBody
       });
@@ -1008,6 +1022,7 @@ async function loadVersionInfo() {
       setVersionButtonState('outdated', {
         localVersion,
         latestVersion: latestTag,
+        latestDisplayVersion,
         latestPublishedAt: latestRelease?.published_at || '',
         downloadUrl: pickReleaseDownloadUrl(latestRelease),
         body: mergedBody
@@ -1023,7 +1038,7 @@ async function loadVersionInfo() {
       versionIgnoredTag = '';
       await setLocal(VERSION_IGNORE_KEY, '');
     }
-    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestPublishedAt: latestRelease?.published_at || '' });
+    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '' });
   } catch (err) {
     setVersionButtonState('failure', { localVersion });
     const msg = String(err?.message || '').trim();
