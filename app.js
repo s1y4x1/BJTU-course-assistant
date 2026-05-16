@@ -8503,9 +8503,12 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800') {
   if (!list.length) return '';
 
   const courseId = String(hw?.__courseId || '').trim();
-  const softBg = String(borderColor || '').toLowerCase().includes('4caf50')
+  const normalizedBorderColor = String(borderColor || '').toLowerCase();
+  const softBg = normalizedBorderColor.includes('4caf50')
     ? 'rgba(232,245,233,0.72)'
-    : 'rgba(255,243,224,0.72)';
+    : (normalizedBorderColor.includes('ef4444') || normalizedBorderColor.includes('b91c1c') || normalizedBorderColor.includes('f44336')
+      ? 'rgba(254,242,242,0.78)'
+      : 'rgba(255,243,224,0.72)');
 
   const rows = list.map((it, idx) => {
     const fileNameNoExt = String(it?.fileNameNoExt || '').trim() || `附件${idx + 1}`;
