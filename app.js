@@ -6830,16 +6830,12 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
   setCourseReplayLoading(courseIdInt, true);
 
   try {
-    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList`;
-    const calBody = new URLSearchParams({ calendarId: '', courseId: String(courseNum || ''), xkhId: String(fzId || ''), xqCode: String(xqCode || getCurrentXqCode()) });
+    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList&calendarId=&courseId=${encodeURIComponent(courseNum || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || getCurrentXqCode())}`;
     const { text: calText } = await fetchText(calUrl, {
-      method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest',
         Accept: 'application/json, text/javascript, */*; q=0.01'
-      },
-      body: calBody.toString()
+      }
     });
     if (isStale()) {
       btn.classList.remove('replay-list-loading');
@@ -9027,16 +9023,12 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
   const xqCode = String(btn.dataset.xqCode || getCurrentXqCode());
 
   try {
-    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList`;
-    const calBody = new URLSearchParams({ calendarId: '', courseId: String(courseNum || ''), xkhId: String(fzId || ''), xqCode: String(xqCode || '') });
+    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList&calendarId=&courseId=${encodeURIComponent(courseNum || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || '')}`;
     const { text: calText } = await fetchText(calUrl, {
-      method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest',
         Accept: 'application/json, text/javascript, */*; q=0.01'
-      },
-      body: calBody.toString()
+      }
     });
     const data = JSON.parse(calText);
 
