@@ -6868,21 +6868,21 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
       return;
     }
 
-    const replayListHtml = list.map((item, index) => {
+    const replayListHtml = `
+      <div class="replay-loading-indicator" style="margin-bottom: 10px; padding: 5px; color: #888; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+        <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中…
+      </div>
+    ` + list.map((item, index) => {
       const rpId = String(item.rpId || '');
       const title = `${item.roomName || ''} ${item.rpName || '未知时间'}`;
-      const contentPlaceholderHtml = `
-        <div class="replay-content-area" data-rp-id="${rpId}" style="margin-top:4px; color:#888; font-size:12px; display:flex; align-items:center; gap:6px;">
-          <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中...
-        </div>`;
       const linkContainerId = `video-link-${courseIdInt}-${index}`;
       return `
         <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;" data-rp-id="${rpId}">
           <div style="font-weight: bold; color: #4a148c; font-size: 15px;">${title}</div>
           <div style="margin-top: 5px;">
-            ${contentPlaceholderHtml}
+            <div class="replay-content-area" data-rp-id="${rpId}"></div>
             <div id="${linkContainerId}" class="video-links" style="font-size: 12px; color: #9C27B0; margin-top: 5px; font-weight: bold; word-break: break-all;">
-              <span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中...
+              <span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中…
             </div>
           </div>
         </div>
@@ -6894,6 +6894,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
       list,
       loaded: true,
       contentLoaded: false,
+      contentMap: {},
       linksFetched: false,
       linksFetching: false
     };
@@ -7005,9 +7006,23 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
 
 async function lazyLoadReplayContent(courseIdInt) {
   const cache = window.videoReplayCacheByCourseId?.[courseIdInt];
-  if (!cache || cache.contentLoaded) return;
+  if (!cache) return;
 
-  cache.contentLoaded = true;
+  const card = document.getElementById(`course-${courseIdInt}`)?.closest('.file-item');
+  const scope = card instanceof HTMLElement ? card : document;
+
+  if (cache.contentLoaded && cache.contentMap) {
+    // Re-apply cached content to DOM (for re-expand)
+    Object.entries(cache.contentMap).forEach(([videoId, detailHtml]) => {
+      const els = scope.querySelectorAll(`.replay-content-area[data-rp-id="${videoId}"]`);
+      els.forEach((el) => {
+        if (el instanceof HTMLElement) el.innerHTML = detailHtml;
+      });
+    });
+    const indicator = scope.querySelector('.replay-loading-indicator');
+    if (indicator instanceof HTMLElement) indicator.style.display = 'none';
+    return;
+  }
 
   try {
     const calUrl = `${BASE_VE}back/rp/common/teachCalendar.shtml?method=toDisplyTeachCourses&courseId=${encodeURIComponent(courseIdInt)}`;
@@ -7015,36 +7030,28 @@ async function lazyLoadReplayContent(courseIdInt) {
     const data = JSON.parse(calText);
     if (String(data.STATUS) !== '0') return;
 
+    cache.contentMap = {};
     const oldList = data.courseSchedList || [];
     oldList.forEach((oldItem) => {
       const videoId = String(oldItem.videoId || '').trim();
       if (!videoId) return;
       const contentText = String(oldItem.content || '').trim();
-
       const detailHtml = contentText
         ? renderExpandableHtml(
             escapeHtml(contentText),
             { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
           )
         : '';
-
-      const placeholderEls = document.querySelectorAll(`.replay-content-area[data-rp-id="${videoId}"]`);
-      placeholderEls.forEach((el) => {
-        if (el instanceof HTMLElement) {
-          el.outerHTML = detailHtml || '';
-        }
+      cache.contentMap[videoId] = detailHtml;
+      const els = scope.querySelectorAll(`.replay-content-area[data-rp-id="${videoId}"]`);
+      els.forEach((el) => {
+        if (el instanceof HTMLElement) el.innerHTML = detailHtml;
       });
     });
 
-    // Update cache.html so re-expand shows content instead of placeholders
-    const card = document.querySelector(`.file-item #course-${courseIdInt}`)?.closest('.file-item');
-    const shadowArea = card?.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
-    const resultArea = card?.querySelector('.result-area');
-    if (shadowArea instanceof HTMLElement && shadowArea.innerHTML.trim()) {
-      cache.html = shadowArea.innerHTML;
-    } else if (resultArea instanceof HTMLElement && resultArea.innerHTML.trim()) {
-      cache.html = resultArea.innerHTML;
-    }
+    cache.contentLoaded = true;
+    const indicator = scope.querySelector('.replay-loading-indicator');
+    if (indicator instanceof HTMLElement) indicator.style.display = 'none';
   } catch {
     cache.contentLoaded = false;
   }
@@ -9016,7 +9023,7 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
   }
 
   toggleResultAreaAnimated(resultArea, true);
-  resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取大纲...</span>';
+  resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取大纲…</span>';
   btn.textContent = '收起';
 
   const xqCode = String(btn.dataset.xqCode || getCurrentXqCode());
@@ -9042,21 +9049,21 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
         return;
       }
 
-      resultArea.innerHTML = list.map((item, index) => {
+      resultArea.innerHTML = `
+        <div class="replay-loading-indicator" style="margin-bottom: 10px; padding: 5px; color: #888; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+          <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中…
+        </div>
+      ` + list.map((item, index) => {
         const rpId = String(item.rpId || '');
         const title = `${item.roomName || ''} ${item.rpName || '未知时间'}`;
-        const contentPlaceholderHtml = `
-          <div class="replay-content-area" data-rp-id="${rpId}" style="margin-top:4px; color:#888; font-size:12px; display:flex; align-items:center; gap:6px;">
-            <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中...
-          </div>`;
         const linkContainerId = `video-link-${courseIdInt}-${index}`;
         return `
           <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;" data-rp-id="${rpId}">
             <div style="font-weight: bold; color: #4a148c; font-size: 15px;">${title}</div>
             <div style="margin-top: 5px;">
-              ${contentPlaceholderHtml}
+              <div class="replay-content-area" data-rp-id="${rpId}"></div>
               <div id="${linkContainerId}" class="video-links" style="font-size: 12px; color: #9C27B0; margin-top: 5px; font-weight: bold; word-break: break-all;">
-                ${rpId ? '<span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中...' : '<span style="color: #999; font-weight: normal;">无回放</span>'}
+                ${rpId ? '<span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中…' : '<span style="color: #999; font-weight: normal;">无回放</span>'}
               </div>
             </div>
           </div>
@@ -9071,7 +9078,7 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
       });
 
       if (!window.videoReplayCacheByCourseId[courseIdInt]) {
-        window.videoReplayCacheByCourseId[courseIdInt] = { contentLoaded: false };
+        window.videoReplayCacheByCourseId[courseIdInt] = { contentLoaded: false, contentMap: {} };
       }
       lazyLoadReplayContent(courseIdInt).catch(() => {});
       return;
@@ -9188,7 +9195,7 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
   const span = container.querySelector('.video-link');
   const courseListVersion = getCourseListLoadVersionSnapshot();
   const isStale = () => isCourseListLoadStale(courseListVersion);
-  span.textContent = '获取中...';
+  span.textContent = '获取中…';
   try {
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
     const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: rpId });
