@@ -2818,6 +2818,7 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
 
 async function doLoginFlow() {
   if (isLoginInProgress) return;
+  loginFlowUsernameSet = true;
   const username = usernameInput.value.trim();
   const wasSwitchingAccount = !!pendingUsernameChange;
   if (!username) {
@@ -2847,10 +2848,6 @@ async function doLoginFlow() {
     loginCancelRequested = false;
     hideLoginModal();
     showToast('登录成功', 'success');
-    // Immediately start loading courses in background so UI refreshes promptly
-    (async () => {
-      try { if (isPlatformEnabled('ve')) await loadCourses().catch(() => {}); } catch {}
-    })();
     await forceSyncJsessionidAfterLogin();
 
     let finalUser = String(username || '').trim();
@@ -2882,6 +2879,7 @@ async function doLoginFlow() {
       try { await loadResourceSpaceForCurrentAccount(); } catch { /* ignore */ }
     }
     isLoginInProgress = false;
+    loginFlowUsernameSet = false;
     if (loginBtn) {
       loginBtn.disabled = false;
       loginBtn.style.opacity = '1';
@@ -10223,7 +10221,12 @@ document.addEventListener('click', (e) => {
   togglePlatformSelection(platform);
 });
 
+let initialUsernameSet = true;
+let loginFlowUsernameSet = false;
 usernameInput.addEventListener('change', async () => {
+  // Skip programmatic value sets during startup or login flow to avoid duplicate loads
+  if (initialUsernameSet) { initialUsernameSet = false; return; }
+  if (loginFlowUsernameSet) return;
   const u = usernameInput.value.trim();
   const isManualSwitch = !!u && !!lastValidUsername && u !== String(lastValidUsername || '').trim();
   const isHighPrioritySwitch = !!u && String(highPrioritySwitchTarget || '').trim() === u;
@@ -10280,6 +10283,7 @@ usernameInput.addEventListener('change', async () => {
     return;
   }
   const isFirstLogin = !lastValidUsername;
+  if (isFirstLogin) showToast('正在登录…', 'info', 0);
   updateJsessionidState();
   if (!u) {
     // treat as cleared
@@ -10323,7 +10327,8 @@ usernameInput.addEventListener('change', async () => {
   }
 
   try {
-    const detected = await detectUserIdFromPersonalCenter();
+    // For first login, skip redundant detectUserIdFromPersonalCenter
+    const detected = isFirstLogin ? u : await detectUserIdFromPersonalCenter();
     if (detected === u) {
       isLoginSessionValid = true;
       lastValidUsername = u;
@@ -10342,7 +10347,7 @@ usernameInput.addEventListener('change', async () => {
       setWelcomeMessage(info);
       await rememberLoggedInAccount(u, info);
       renderLoginAccountHistorySelect(u);
-      showToast('该账号登录处于有效状态', 'success');
+      showToast('登录成功', 'success', 1500);
       if (isPlatformEnabled('ve')) loadCourses();
       await loadResourceSpaceForCurrentAccount();
     } else if (detected) {
@@ -10439,12 +10444,8 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   await syncJsessionidToUi();
 
-  // If no session, try direct login with current username.
-  const jsid = jsessionidInput.value.trim();
-  if (!jsid) {
-    // Username empty -> allow manual JSESSIONID; do not popup modal.
-    if (usernameInput.value.trim()) promptLoginIfPossible('登录已失效，请重新登录');
-  }
+  // Mark session as valid if we have a saved username; avoids unnecessary login prompts
+  if (lastValidUsername) isLoginSessionValid = true;
 
   // startupPlatformLoadPromise and startupResourceSpacePromise already awaited above via `settled`
 })();
