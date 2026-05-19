@@ -159,7 +159,7 @@ window.courseShowDoneById = {};
 window.yktDetailCacheByKey = {}; // {detailKey: {state,title,exam_problems,problem_results,promise}}
 window.externalPlatformLoadVersion = 0;
 window.courseListLoadVersion = 0;
-window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded}}
+window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded,teachers:[]}}
 window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
 window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
@@ -3264,36 +3264,69 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
   }
 }
 
-async function fetchVeTeacherIdByCourse(courseNum, fzId) {
-  const courseIdPart = String(courseNum || '').trim();
-  const xkhIdPart = String(fzId || '').trim();
-  if (!courseIdPart || !xkhIdPart) return '';
-  const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10434&courseId=${encodeURIComponent(courseIdPart)}&dataSource=1&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(getCurrentXqCode())}`;
-  const { text, res } = await fetchText(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
-  if (isLikelyLoginPageHtml(text, res?.url)) return '';
-  const m = String(text || '').match(/<input[^>]*id=["']teacherId["'][^>]*value=["']([^"']+)["']/i)
-    || String(text || '').match(/<input[^>]*value=["']([^"']+)["'][^>]*id=["']teacherId["']/i);
-  return String(m?.[1] || '').trim();
+async function fetchVeTeacherIdByCourse(courseId) {
+  const courseIdPart = String(courseId || '').trim();
+  if (!courseIdPart) return [];
+  // POST: getAssistantForCourse，courseId 为课程 id（非 course_num）
+  const url = `${BASE_VE}back/course/courseAssistantInfo.shtml?method=getAssistantForCourse`;
+  const postBody = new URLSearchParams({ courseId: courseIdPart });
+  try {
+    const { text } = await fetchText(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        Accept: 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: postBody.toString()
+    });
+    const data = JSON.parse(text);
+    if (data?.result && Array.isArray(data.result) && data.result.length) {
+      return data.result;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
 }
 
 function updateVeTeacherMetaUi(courseId) {
   const cid = String(courseId || '').trim();
   if (!cid) return;
   const meta = window.veTeacherMetaByCourseId?.[cid] || {};
-  const teacherId = String(meta.teacherId || '').trim();
-  const idText = teacherId || (meta.loading ? '加载中...' : '未获取');
-  document.querySelectorAll('.ve-teacher-id').forEach((el) => {
-    if (!(el instanceof HTMLElement)) return;
-    if (String(el.dataset.courseId || '').trim() !== cid) return;
-    el.textContent = idText;
+  const teachers = Array.isArray(meta.teachers) ? meta.teachers : [];
+
+  document.querySelectorAll('.ve-teacher-pop').forEach((pop) => {
+    if (!(pop instanceof HTMLElement)) return;
+    if (String(pop.dataset.courseId || '').trim() !== cid) return;
+    pop.innerHTML = renderVeTeacherMetaPopHtml(meta, teachers);
   });
-  document.querySelectorAll('.ve-switch-teacher-btn').forEach((btn) => {
-    if (!(btn instanceof HTMLButtonElement)) return;
-    if (String(btn.dataset.courseId || '').trim() !== cid) return;
-    btn.disabled = !teacherId;
-    btn.style.opacity = teacherId ? '1' : '0.6';
-    btn.dataset.teacherId = teacherId;
-  });
+}
+
+function renderVeTeacherMetaPopHtml(meta, teachers) {
+  if (meta.loading) {
+    return '<div style="font-size:12px; color:#64748b;"><span class="spinner" style="width:10px;height:10px;border-width:1px;border-color:#2563eb;border-top-color:transparent;"></span> 正在获取教师信息...</div>';
+  }
+  if (!teachers.length) {
+    return '<div style="font-size:12px; color:#64748b;">未查询到教师/助教信息</div>';
+  }
+
+  const rows = teachers.map((t) => {
+    const userName = escapeHtml(String(t?.userName || '')).trim() || '-';
+    const loginName = escapeHtml(String(t?.loginName || '')).trim() || '-';
+    const userType = String(t?.userType || '').trim();
+    const role = userType === '1' ? '任课教师' : (userType === '2' ? '助教' : '其他');
+    const action = loginName !== '-' && loginName
+      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${loginName}">切换至此账号</button>`
+      : '<span style="font-size:11px;color:#999;">-</span>';
+    return `<tr><td>${userName}</td><td>${loginName}</td><td>${role}</td><td>${action}</td></tr>`;
+  }).join('');
+
+  return `
+    <table class="ve-course-teacher-table" style="font-size:12px;">
+      <thead><tr><th>姓名</th><th>教职工号/助教号</th><th>角色</th><th>操作</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 async function hydrateVeTeacherMeta(courseId, courseNum, fzId) {
@@ -3301,17 +3334,24 @@ async function hydrateVeTeacherMeta(courseId, courseNum, fzId) {
   if (!cid) return;
   const existing = window.veTeacherMetaByCourseId[cid] || {};
   if (existing.loading) return;
-  if (existing.loaded && existing.teacherId) {
+  if (existing.loaded && existing.teachers?.length) {
     updateVeTeacherMetaUi(cid);
     return;
   }
   window.veTeacherMetaByCourseId[cid] = { ...existing, loading: true };
   updateVeTeacherMetaUi(cid);
   try {
-    const teacherId = await fetchVeTeacherIdByCourse(courseNum, fzId);
-    window.veTeacherMetaByCourseId[cid] = { teacherId, loading: false, loaded: true };
+    const teachers = await fetchVeTeacherIdByCourse(cid);
+    // teachers: [{userName,loginName,userType}] where userType "1"=任课教师 "2"=助教
+    const firstTeacher = Array.isArray(teachers) ? teachers.find((t) => t.userType === '1') || teachers[0] : null;
+    window.veTeacherMetaByCourseId[cid] = {
+      teacherId: String(firstTeacher?.loginName || '').trim(),
+      teachers,
+      loading: false,
+      loaded: true
+    };
   } catch {
-    window.veTeacherMetaByCourseId[cid] = { teacherId: '', loading: false, loaded: true };
+    window.veTeacherMetaByCourseId[cid] = { teacherId: '', teachers: [], loading: false, loaded: true };
   }
   updateVeTeacherMetaUi(cid);
 }
@@ -3625,11 +3665,11 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
 async function switchToTeacherAccount(teacherId) {
   const tid = String(teacherId || '').trim();
   if (!tid) {
-    showToast('老师工号为空，无法切换', 'warning', 1600);
+    showToast('教师/助教账号为空，无法切换', 'warning', 1600);
     return;
   }
   if (usernameInput.value.trim() === tid) {
-    showToast('当前已是该教师账号', 'info', 1200);
+    showToast('当前已是该账号', 'info', 1200);
     return;
   }
   usernameInput.value = tid;
@@ -7682,9 +7722,8 @@ function renderCourseList(courses) {
           <div style="font-size:12px; color:#666; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             <span class="ve-teacher-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
               <span class="ve-teacher-name">${escapeHtml(teacherLabel)}</span>
-              <span class="ve-teacher-pop">
-                <div style="font-size:12px; color:#374151;">工号 <span class="ve-teacher-id" data-course-id="${escapeHtml(String(courseId || ''))}">加载中...</span></div>
-                <button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-course-id="${escapeHtml(String(courseId || ''))}">切换至教师账号</button>
+              <span class="ve-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}">
+                <div style="font-size:12px; color:#64748b;">悬停加载教师信息...</div>
               </span>
             </span>
             <span>·</span>
@@ -7765,14 +7804,10 @@ async function ensureHomeworkTeacherId(courseId) {
   const card = document.getElementById(`course-${cid}`);
   const wrap = card?.querySelector('.ve-course-num-wrap');
   const courseNum = String(wrap?.dataset?.courseNum || '').trim();
-  const fzId = String(wrap?.dataset?.fzId || '').trim();
   if (!courseNum) return '';
 
-  teacherId = await fetchVeTeacherIdByCourse(courseNum, fzId);
-  if (teacherId) {
-    window.veTeacherMetaByCourseId[cid] = { teacherId, loading: false, loaded: true };
-    updateVeTeacherMetaUi(cid);
-  }
+  await hydrateVeTeacherMeta(cid, courseNum, '');
+  teacherId = String(window.veTeacherMetaByCourseId?.[cid]?.teacherId || '').trim();
   return teacherId;
 }
 
@@ -9185,14 +9220,30 @@ courseListDiv.addEventListener('mouseover', (e) => {
   const t = e.target;
   if (!(t instanceof Element)) return;
   const wrap = t.closest('.ve-course-num-wrap');
-  if (!(wrap instanceof HTMLElement)) return;
-  const from = e.relatedTarget;
-  if (from instanceof Node && wrap.contains(from)) return;
-  const courseId = String(wrap.dataset.courseId || '').trim();
-  const courseNum = String(wrap.dataset.courseNum || '').trim();
-  const fzId = String(wrap.dataset.fzId || '').trim();
-  if (!courseId || !courseNum) return;
-  hydrateVeCourseTeachersMeta(courseId, courseNum, fzId).catch(() => {});
+  if ((wrap instanceof HTMLElement)) {
+    const from = e.relatedTarget;
+    if (from instanceof Node && wrap.contains(from)) return;
+    const courseId = String(wrap.dataset.courseId || '').trim();
+    const courseNum = String(wrap.dataset.courseNum || '').trim();
+    const fzId = String(wrap.dataset.fzId || '').trim();
+    if (!courseId || !courseNum) return;
+    hydrateVeCourseTeachersMeta(courseId, courseNum, fzId).catch(() => {});
+    return;
+  }
+  // 教师姓名悬停
+  const teacherWrap = t.closest('.ve-teacher-wrap');
+  if ((teacherWrap instanceof HTMLElement)) {
+    const from = e.relatedTarget;
+    if (from instanceof Node && teacherWrap.contains(from)) return;
+    const courseId = String(teacherWrap.dataset.courseId || '').trim();
+    if (!courseId) return;
+    const card = teacherWrap.closest('.file-item');
+    const courseNumWrap = card?.querySelector('.ve-course-num-wrap');
+    const courseNum = String(courseNumWrap?.dataset?.courseNum || '').trim();
+    if (!courseNum) return;
+    hydrateVeTeacherMeta(courseId, courseNum, '').catch(() => {});
+    return;
+  }
 });
 
 courseListDiv.addEventListener('click', async (e) => {
