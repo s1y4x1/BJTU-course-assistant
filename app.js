@@ -1455,6 +1455,7 @@ async function validateUserIdRemote(userId) {
       // Immediately trigger course load and refresh user info asynchronously
       (async () => {
         try {
+          prioritizeAccountSwitch();
           if (isPlatformEnabled('ve')) await loadCourses().catch(() => {});
           await fetchUserInfoRemote(userId).catch(() => {});
         } catch (e) { /* ignore */ }
@@ -1481,6 +1482,10 @@ async function syncAccountInfoAndReloadVeCourses({
   reloadCourses = true,
   reloadResourceSpace = true
 } = {}) {
+  // 若要重载课程，先中止所有进行中的课件/回放请求
+  if (reloadCourses) {
+    prioritizeAccountSwitch();
+  }
   let finalUser = String(userId || '').trim();
   let info = null;
   try {
@@ -2069,6 +2074,8 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
 async function doLoginFlow() {
   if (isLoginInProgress) return;
   loginFlowUsernameSet = true;
+  // 立即中止所有进行中的课件/回放请求
+  prioritizeAccountSwitch();
   const username = usernameInput.value.trim();
   const wasSwitchingAccount = !!pendingUsernameChange;
   if (!username) {

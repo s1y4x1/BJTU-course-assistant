@@ -363,33 +363,34 @@ function setVersionDownloadProgressUi({
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
   if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件...');
-  if (sourceEl) sourceEl.textContent = `下载源：${String(sourceUrl || '').trim() || '--'}`;
+  if (sourceEl) sourceEl.textContent = phase === 'finished' ? '' : `下载源：${String(sourceUrl || '').trim() || '--'}`;
   if (statusEl) statusEl.textContent = String(status || '下载中...');
-  if (sizeEl) {
+  if (sizeEl) sizeEl.textContent = phase === 'finished' ? '' : (() => {
     const loadedSafe = Math.max(0, Number(loaded) || 0);
     const totalSafe = Math.max(0, Number(total) || 0);
-    if (isTotalEstimated && totalSafe > 0) {
-      sizeEl.textContent = `${formatSize(loadedSafe)} / ${VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT}`;
-    } else {
-      sizeEl.textContent = totalSafe > 0
-        ? `${formatSize(loadedSafe)} / ${formatSize(totalSafe)}`
-        : `${formatSize(loadedSafe)} / --`;
-    }
-  }
-  if (speedEl) speedEl.textContent = formatSpeed(Math.max(0, Number(speed) || 0));
-  if (etaEl) {
-    if (Number.isFinite(Number(etaSec)) && Number(etaSec) > 0) {
-      etaEl.textContent = `剩余: ${formatEta(Number(etaSec))}`;
-    } else if (Math.max(0, Number(total) || 0) > 0 && Math.max(0, Number(loaded) || 0) >= Math.max(0, Number(total) || 0)) {
-      etaEl.textContent = '剩余: 0秒';
-    } else {
-      etaEl.textContent = '剩余: --';
-    }
-  }
+    if (isTotalEstimated && totalSafe > 0) return `${formatSize(loadedSafe)} / ${VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT}`;
+    return totalSafe > 0 ? `${formatSize(loadedSafe)} / ${formatSize(totalSafe)}` : `${formatSize(loadedSafe)} / --`;
+  })();
+  if (speedEl) speedEl.textContent = phase === 'finished' ? '' : formatSpeed(Math.max(0, Number(speed) || 0));
+  if (etaEl) etaEl.textContent = phase === 'finished' ? '' : (() => {
+    if (Number.isFinite(Number(etaSec)) && Number(etaSec) > 0) return `剩余: ${formatEta(Number(etaSec))}`;
+    if (Math.max(0, Number(total) || 0) > 0 && Math.max(0, Number(loaded) || 0) >= Math.max(0, Number(total) || 0)) return '剩余: 0秒';
+    return '剩余: --';
+  })();
   if (barEl) {
-    const p = Math.max(0, Math.min(100, Number(percent) || 0));
-    barEl.style.width = `${p}%`;
-    barEl.textContent = `${Math.round(p)}%`;
+    const container = barEl.parentElement;
+    const metaEl = document.getElementById('version-download-meta');
+    if (phase === 'finished') {
+      // 下载成功不显示进度条和元数据
+      if (container) container.style.display = 'none';
+      if (metaEl) metaEl.style.display = 'none';
+    } else {
+      if (container) container.style.display = '';
+      if (metaEl) metaEl.style.display = '';
+      const p = Math.max(0, Math.min(100, Number(percent) || 0));
+      barEl.style.width = `${p}%`;
+      barEl.textContent = `${Math.round(p)}%`;
+    }
   }
 }
 
@@ -397,130 +398,74 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
   const finalUrl = String(url || '').trim();
   if (!finalUrl) throw new Error('下载链接为空');
 
-  setVersionDownloadProgressUi({
-    visible: true,
-    sourceUrl: finalUrl,
-    status: '下载中...',
-    title: '正在下载',
-    body: '请稍候，正在下载更新文件...',
-    loaded: 0,
-    total: 0,
-    speed: 0,
-    etaSec: null,
-    percent: 0,
-    phase: 'downloading'
+  // 使用 chrome.downloads API 绕过 CORS 限制
+  if (typeof chrome === 'undefined' || !chrome.downloads) {
+    throw new Error('downloads API 不可用');
+  }
+
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    let downloadId = null;
+
+    const onChanged = (delta) => {
+      if (delta.id !== downloadId) return;
+      if (delta.state?.current === 'complete') {
+        chrome.downloads.onChanged.removeListener(onChanged);
+        if (!resolved) {
+          resolved = true;
+          setVersionDownloadProgressUi({
+            visible: true,
+            sourceUrl: finalUrl,
+            status: '已完成',
+            title: '下载成功',
+            body: '请打开下载目录，解压覆盖更新扩展目录并到 about:extensions 扩展管理页面重新加载扩展以完成更新。',
+            loaded: 0, total: 0, speed: 0, etaSec: 0, percent: 100,
+            phase: 'finished'
+          });
+          resolve();
+        }
+      } else if (delta.state?.current === 'interrupted') {
+        chrome.downloads.onChanged.removeListener(onChanged);
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('下载中断'));
+        }
+      }
+    };
+    chrome.downloads.onChanged.addListener(onChanged);
+
+    chrome.downloads.download({
+      url: finalUrl,
+      filename: fileName,
+      saveAs: false,
+      conflictAction: 'uniquify'
+    }, (id) => {
+      if (chrome.runtime.lastError) {
+        chrome.downloads.onChanged.removeListener(onChanged);
+        if (!resolved) {
+          resolved = true;
+          reject(new Error(chrome.runtime.lastError.message || '下载启动失败'));
+        }
+        return;
+      }
+      downloadId = id;
+
+      // 下载已启动，关闭弹窗，后台静默等待
+      const modal = document.getElementById('version-download-modal');
+      if (modal) modal.style.display = 'none';
+      versionDownloadMinimized = true;
+      showToast('浏览器后台下载中…', 'info', 2000);
+
+      // 兜底超时：2 分钟后若未完成则视为失败
+      setTimeout(() => {
+        if (!resolved) {
+          chrome.downloads.onChanged.removeListener(onChanged);
+          resolved = true;
+          reject(new Error('下载超时'));
+        }
+      }, 120000);
+    });
   });
-  setVersionDownloadRetryVisible(false);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
-  let res;
-  try {
-    res = await fetch(finalUrl, {
-      cache: 'no-store',
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-
-  const headerTotal = Math.max(0, Number(res.headers.get('content-length') || 0));
-  const total = headerTotal > 0 ? headerTotal : VERSION_DOWNLOAD_FALLBACK_TOTAL_BYTES;
-  const isTotalEstimated = headerTotal <= 0;
-  if (!res.body || !res.body.getReader) {
-    const blob = await res.blob();
-    const loaded = Number(blob.size || 0);
-    setVersionDownloadProgressUi({
-      visible: true,
-      status: '下载完成，准备保存...',
-      loaded,
-      total,
-      isTotalEstimated,
-      speed: 0,
-      etaSec: 0,
-      percent: 100,
-      phase: 'downloading'
-    });
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objectUrl;
-    a.download = fileName;
-    a.rel = 'noopener noreferrer';
-    a.click();
-    setTimeout(() => {
-      try { URL.revokeObjectURL(objectUrl); } catch { /* ignore */ }
-    }, 1500);
-    return;
-  }
-
-  const reader = res.body.getReader();
-  const chunks = [];
-  let loaded = 0;
-  const samples = [];
-  let lastUiTs = 0;
-  const UI_INTERVAL_MS = 180;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      chunks.push(value);
-      loaded += value.length;
-    }
-
-    const now = Date.now();
-    if (now - lastUiTs < UI_INTERVAL_MS) continue;
-    lastUiTs = now;
-    const speed = pushAndCalcRecentSpeed(samples, loaded, now);
-    const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
-    const etaSec = total > 0 && speed > 0 ? (total - loaded) / speed : null;
-    setVersionDownloadProgressUi({
-      visible: true,
-      sourceUrl: finalUrl,
-      status: '下载中...',
-      title: '正在下载',
-      body: '请稍候，正在下载更新文件...',
-      loaded,
-      total,
-      isTotalEstimated,
-      speed,
-      etaSec,
-      percent,
-      phase: 'downloading'
-    });
-  }
-
-  const blob = new Blob(chunks, { type: 'application/zip' });
-  const finalLoaded = Number(blob.size || loaded || 0);
-  const finalTotal = total > 0 ? total : finalLoaded;
-  setVersionDownloadProgressUi({
-    visible: true,
-    sourceUrl: finalUrl,
-    status: '下载完成，准备保存...',
-    title: '正在下载',
-    body: '文件已下载完成，正在保存...',
-    loaded: finalLoaded,
-    total: finalTotal,
-    isTotalEstimated,
-    speed: 0,
-    etaSec: 0,
-    percent: 100,
-    phase: 'downloading'
-  });
-
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = objectUrl;
-  a.download = fileName;
-  a.rel = 'noopener noreferrer';
-  a.click();
-  setTimeout(() => {
-    try { URL.revokeObjectURL(objectUrl); } catch { /* ignore */ }
-  }, 1500);
 }
 
 function buildVersionDownloadFileName(versionText = '') {
@@ -536,20 +481,6 @@ async function startVersionDownloadWithFallback() {
   }
   versionDownloadMinimized = false;
 
-  setVersionDownloadProgressUi({
-    visible: true,
-    sourceUrl: versionButtonDownloadUrl || VERSION_DOWNLOAD_URL,
-    status: '准备下载...',
-    title: '正在下载',
-    body: '请稍候，正在下载更新文件...',
-    loaded: 0,
-    total: 0,
-    speed: 0,
-    etaSec: null,
-    percent: 0,
-    phase: 'downloading'
-  });
-
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
   const fileName = buildVersionDownloadFileName(versionButtonLatestVersion);
@@ -557,19 +488,7 @@ async function startVersionDownloadWithFallback() {
 
   try {
     await downloadVersionByUrlWithProgress(primaryUrl, fileName);
-    setVersionDownloadProgressUi({
-      visible: true,
-      sourceUrl: primaryUrl,
-      status: '已完成',
-      title: '下载成功',
-      body: '请打开下载目录，解压覆盖更新扩展目录并到 about:extensions 扩展管理页面重新加载扩展以完成更新。',
-      loaded: 0,
-      total: 0,
-      speed: 0,
-      etaSec: 0,
-      percent: 100,
-      phase: 'finished'
-    });
+    // 成功 UI 已在 downloadVersionByUrlWithProgress 内部处理
   } catch (err) {
     setVersionDownloadProgressUi({
       visible: true,
