@@ -693,8 +693,15 @@ function prioritizeAccountSwitch() {
 // 课件/回放请求的 AbortController 集合，用于账号/学期切换时立即中止
 window.activeCoursewareAbortControllers = {}; // {courseId: AbortController}
 window.activeReplayAbortControllers = {}; // {courseId: AbortController}
+window.globalVeAbortController = new AbortController();
 
 function abortAllCoursewareReplayFetches() {
+  // 中止全局 AbortController，所有 VE 请求共享此信号
+  if (window.globalVeAbortController) {
+    try { window.globalVeAbortController.abort(); } catch { /* ignore */ }
+  }
+  window.globalVeAbortController = new AbortController();
+
   const cwControllers = window.activeCoursewareAbortControllers || {};
   Object.values(cwControllers).forEach((ctrl) => {
     try { ctrl.abort(); } catch { /* ignore */ }
@@ -5638,7 +5645,10 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
   if (externalAbortController instanceof AbortController) {
     window.activeCoursewareAbortControllers[courseIdPart] = externalAbortController;
   }
-  const signal = externalAbortController instanceof AbortController ? externalAbortController.signal : undefined;
+  // 合并全局 VE 中止信号
+  const globalSignal = window.globalVeAbortController?.signal;
+  const localSignal = externalAbortController instanceof AbortController ? externalAbortController.signal : undefined;
+  const signal = globalSignal || localSignal;
 
   const buildCoursewareUrl = (useQuestionMark = true) => {
     const sep = useQuestionMark ? '?' : '&';
@@ -5671,7 +5681,8 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
         'X-Requested-With': 'XMLHttpRequest',
         'Cache-Control': 'no-cache',
         Pragma: 'no-cache'
-      }
+      },
+      signal
     }));
   }
 
@@ -7502,6 +7513,8 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
 async function loadCourses() {
   try { console.debug && console.debug('loadCourses entry', Date.now()); } catch (e) {}
   try { console.debug && console.debug(new Error('loadCourses stack').stack); } catch (e) {}
+  // 立即中止所有进行中的课件/回放请求
+  abortAllCoursewareReplayFetches();
   const courseLoadVersion = bumpPlatformLoadVersion('ve');
   window.courseListLoadVersion = courseLoadVersion;
   window.homeworkNoteAttachmentCacheByKey = {};
@@ -8357,7 +8370,8 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
       headers: {
         'X-Requested-With': 'XMLHttpRequest',
         Accept: 'application/json, text/javascript, */*; q=0.01'
-      }
+      },
+      signal: window.globalVeAbortController?.signal
     });
     const data = JSON.parse(calText);
 
@@ -8433,7 +8447,8 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
         'Referer': referer,
         'Accept': 'application/json, text/javascript, */*; q=0.01'
       },
-      body: postBody.toString()
+      body: postBody.toString(),
+      signal: window.globalVeAbortController?.signal
     });
 
     if (isStale()) return false;
