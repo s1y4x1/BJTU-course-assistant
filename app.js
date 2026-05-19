@@ -105,13 +105,9 @@ if (popupMode) {
 }
 
 if (usernameInput) {
-  usernameInput.setAttribute('inputmode', 'numeric');
-  usernameInput.setAttribute('pattern', '[0-9]*');
   usernameInput.addEventListener('input', () => {
-    const normalized = String(usernameInput.value || '').replace(/\D/g, '');
-    if (usernameInput.value !== normalized) usernameInput.value = normalized;
+    const value = String(usernameInput.value || '').trim();
     const current = String(lastValidUsername || '').trim();
-    const value = String(normalized || '').trim();
     if (value && value !== current) {
       beginAccountSwitchInterruption();
     } else if (!value || value === current) {
@@ -172,6 +168,9 @@ window.coursewareItemsByCourseId = {}; // {courseId: CoursewareItem[]}
 window.homeworkAttachmentItemsById = {}; // {resourceId: {id,name,url,extName,courseId,sizeMbRaw,sizeMb}}
 window.homeworkAttachmentItemsByCourseId = {}; // {courseId: HomeworkAttachmentItem[]}
 window.resourceSpaceLoadVersion = 0;
+window.currentAccountLoginName = ''; // loginName from getUserInfo
+window.currentAccountUserId = ''; // numeric userId for internal comparison
+window.isTeacherAccount = false; // teacher role detected
 window.resourceDownloadTasks = {}; // {resourceId: {active,loaded,total,speed,samples,lastUiTs,abortController,xhr,cancelled,chromeDownloadId}}
 window.resourceDownloadBatch = {
   active: false,
@@ -687,6 +686,44 @@ function prioritizeAccountSwitch() {
   window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
   window.resourceSpaceLoadVersion = Number(window.resourceSpaceLoadVersion || 0) + 1;
   bumpPlatformLoadVersion('ve');
+  // 中止所有进行中的课件和回放获取请求
+  abortAllCoursewareReplayFetches();
+}
+
+// 课件/回放请求的 AbortController 集合，用于账号/学期切换时立即中止
+window.activeCoursewareAbortControllers = {}; // {courseId: AbortController}
+window.activeReplayAbortControllers = {}; // {courseId: AbortController}
+
+function abortAllCoursewareReplayFetches() {
+  const cwControllers = window.activeCoursewareAbortControllers || {};
+  Object.values(cwControllers).forEach((ctrl) => {
+    try { ctrl.abort(); } catch { /* ignore */ }
+  });
+  window.activeCoursewareAbortControllers = {};
+
+  const rpControllers = window.activeReplayAbortControllers || {};
+  Object.values(rpControllers).forEach((ctrl) => {
+    try { ctrl.abort(); } catch { /* ignore */ }
+  });
+  window.activeReplayAbortControllers = {};
+
+  // 重置所有缓存中正在获取的标记
+  Object.values(window.videoReplayCacheByCourseId || {}).forEach((cache) => {
+    if (cache) {
+      cache.linksFetching = false;
+      cache.linksFetched = false;
+    }
+  });
+  Object.values(window.coursewareCacheByCourseId || {}).forEach((cache) => {
+    if (cache && !cache.loaded) {
+      cache.loaded = false;
+    }
+  });
+
+  // 清理课程级别的 loading 标记
+  Object.keys(window.yktHomeworkLoadingByCourse || {}).forEach((k) => {
+    window.yktHomeworkLoadingByCourse[k] = false;
+  });
 }
 
 function beginAccountSwitchInterruption() {
@@ -1432,7 +1469,9 @@ async function validateUserIdRemote(userId) {
 
 function setWelcomeMessage(info) {
   const loginMsgEl = document.getElementById('login-welcome-msg');
-  const msg = info ? `${info.roleName || ''}${info.userName || ''}` : '';
+  const loginName = String(info?.loginName || '').trim();
+  const displayName = loginName ? `${info?.roleName || ''}${info?.userName || ''}（${loginName}）` : `${info?.roleName || ''}${info?.userName || ''}`;
+  const msg = info ? displayName : '';
   if (loginMsgEl) loginMsgEl.textContent = msg;
 }
 
@@ -1450,9 +1489,13 @@ async function syncAccountInfoAndReloadVeCourses({
     info = null;
   }
 
+  // 优先使用 loginName 作为显示/记录标识；保留 userId 用于 API 调用
+  const loginName = String(info?.loginName || '').trim();
   const detectedUser = String(info?.userId || info?.userID || info?.USERID || info?.stuId || info?.teacherId || '').trim();
-  if (detectedUser) {
-    finalUser = detectedUser;
+  const displayId = loginName || detectedUser;
+
+  if (displayId) {
+    finalUser = displayId;
   } else if (!finalUser && detectFromPortal) {
     try {
       const detected = String(await detectUserIdFromPersonalCenter() || '').trim();
@@ -1473,11 +1516,23 @@ async function syncAccountInfoAndReloadVeCourses({
     }
   }
 
+  // 检测教师账号
+  const roleName = String(info?.roleName || '').trim();
+  const teacherFlag = String(info?.isTeacher || '').trim();
+  window.isTeacherAccount = !!(roleName.includes('教师') || roleName.includes('老师') || roleName.includes('助教') || teacherFlag === '1' || teacherFlag === 'true');
+
   if (finalUser) {
     usernameInput.value = finalUser;
     await setLocal('username', finalUser);
     lastValidUsername = finalUser;
     isLoginSessionValid = true;
+    window.currentAccountLoginName = String(info?.loginName || '').trim() || String(info?.userId || detectedUser || '').trim();
+    // 保存数字 userId 用于内部比对（如检测账号切换）
+    const apiUserId = String(info?.userId || info?.userID || info?.USERID || info?.stuId || info?.teacherId || detectedUser || '').trim();
+    if (apiUserId) {
+      window.currentAccountUserId = apiUserId;
+      await setLocal('currentAccountUserId', apiUserId);
+    }
   }
   pendingUsernameChange = null;
   setWelcomeMessage(info);
@@ -1514,11 +1569,13 @@ function normalizeLoginAccountHistoryList(rawList) {
       if (!userId) return null;
       const userName = String(it?.userName || '').trim();
       const roleName = String(it?.roleName || '').trim();
+      const loginName = String(it?.loginName || userId).trim();
       const lastLoginAt = Number(it?.lastLoginAt || 0);
       return {
         userId,
         userName,
         roleName,
+        loginName,
         lastLoginAt: Number.isFinite(lastLoginAt) ? lastLoginAt : 0
       };
     })
@@ -1555,6 +1612,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
     opt.hidden = true;
     const selectedName = String(selectedRecord.userName || selectedRecord.userId || '未知用户').trim();
     const selectedRole = String(selectedRecord.roleName || '').trim();
+    // 选中项只显示 userName
     opt.textContent = `${selectedRole}${selectedName}`;
     accountHistorySelect.appendChild(opt);
   }
@@ -1566,7 +1624,10 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
       opt.value = it.userId;
       const userName = String(it.userName || it.userId || '未知用户').trim();
       const roleName = String(it.roleName || '').trim();
-      opt.textContent = `${roleName}${userName} (${it.userId})`;
+      const loginName = String(it.loginName || '').trim();
+      const loginSuffix = loginName ? ` (${loginName})` : '';
+      // 展开列表显示 userName(loginName)
+      opt.textContent = `${roleName}${userName}${loginSuffix}`;
       accountHistorySelect.appendChild(opt);
     });
 
@@ -1761,8 +1822,11 @@ async function rememberLoggedInAccount(userId, info = null) {
   const nextInfo = info && typeof info === 'object' ? info : {};
   const idx = loginAccountHistory.findIndex((it) => String(it?.userId || '').trim() === uid);
   const prev = idx >= 0 ? loginAccountHistory[idx] : null;
+  // loginName: 优先 API 返回的 loginName，其次用已有记录的 loginName，最后用 userId 初始化
+  const loginName = String(nextInfo.loginName || prev?.loginName || uid).trim();
   const record = {
     userId: uid,
+    loginName,
     userName: String(nextInfo.userName || prev?.userName || '').trim(),
     roleName: String(nextInfo.roleName || prev?.roleName || '').trim(),
     lastLoginAt: Date.now()
@@ -5558,10 +5622,16 @@ function buildCoursewareListHtml(courseId, items) {
   return `${selectAllToolbar}${rowsHtml}`;
 }
 
-async function fetchCoursewareItems(courseNum, fzId) {
+async function fetchCoursewareItems(courseNum, fzId, externalAbortController = null) {
   const courseIdPart = String(courseNum || '').trim();
   const xkhIdPart = String(fzId || '').trim();
   if (!courseIdPart || !xkhIdPart) return { loginRequired: false, items: [] };
+
+  // 注册 AbortController 以便账号/学期切换时中止
+  if (externalAbortController instanceof AbortController) {
+    window.activeCoursewareAbortControllers[courseIdPart] = externalAbortController;
+  }
+  const signal = externalAbortController instanceof AbortController ? externalAbortController.signal : undefined;
 
   const buildCoursewareUrl = (useQuestionMark = true) => {
     const sep = useQuestionMark ? '?' : '&';
@@ -5578,10 +5648,11 @@ async function fetchCoursewareItems(courseNum, fzId) {
         'X-Requested-With': 'XMLHttpRequest',
         'Cache-Control': 'no-cache',
         Pragma: 'no-cache'
-      }
+      },
+      signal
     }));
   } catch (e) {
-    // Keep existing behavior for non-HTTP errors.
+    if (signal?.aborted) return { loginRequired: false, items: [], aborted: true };
     throw e;
   }
 
@@ -5603,7 +5674,8 @@ async function fetchCoursewareItems(courseNum, fzId) {
 
   if (isLoginRedirect || hasLoginKeywords) {
     const currentUser = await detectUserIdFromPersonalCenter();
-    if (currentUser && currentUser !== String(lastValidUsername).trim()) {
+    const storedUserId = String(window.currentAccountUserId || lastValidUsername || '').trim();
+    if (currentUser && storedUserId && currentUser !== storedUserId) {
       return { loginRequired: true, accountSwitched: currentUser, items: [] };
     }
     return { loginRequired: true, items: [] };
@@ -5651,7 +5723,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
   if (!btn || !card || !resultArea) return;
   const shouldRender = () => String(card.dataset.resultView || '').trim() === 'courseware';
   const courseListVersion = getCourseListLoadVersionSnapshot();
-  const isStale = () => isCourseListLoadStale(courseListVersion);
+  const isStale = () => isCourseListLoadStale(courseListVersion) || (window.activeCoursewareAbortControllers[courseNum]?.signal?.aborted);
 
   setCoursewareButtonLoading(btn, true);
   setCourseCoursewareLoading(courseIdInt, true);
@@ -5660,28 +5732,24 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
   resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取课件...</span>';
   syncCourseActionButtonText(card, 'courseware');
 
+  const cwAbortController = new AbortController();
+
   try {
-    const payload = await fetchCoursewareItems(courseNum, fzId);
-    if (isStale()) {
+    const payload = await fetchCoursewareItems(courseNum, fzId, cwAbortController);
+    if (isStale() || payload.aborted) {
       setCourseCoursewareLoading(courseIdInt, false);
+      delete window.activeCoursewareAbortControllers[courseNum];
       return;
     }
+    delete window.activeCoursewareAbortControllers[courseNum];
     if (payload.loginRequired) {
       setCourseCoursewareLoading(courseIdInt, false);
       if (payload.accountSwitched) {
         showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载', 'info', 3000);
-        usernameInput.value = payload.accountSwitched;
-        await setLocal('username', payload.accountSwitched);
-        lastValidUsername = payload.accountSwitched;
-        resetAccountSwitchInterruption();
-        isLoginSessionValid = true;
-        renderLoginAccountHistorySelect(payload.accountSwitched);
+        // 使用统一流程完成账号切换同步
         try {
-          const info = await fetchUserInfoRemote(payload.accountSwitched);
-          setWelcomeMessage(info);
-          await rememberLoggedInAccount(payload.accountSwitched, info);
+          await syncAccountInfoAndReloadVeCourses({ userId: payload.accountSwitched, reloadCourses: true, reloadResourceSpace: true });
         } catch { /* ignore */ }
-        if (isPlatformEnabled('ve')) loadCourses();
         return;
       }
       if (shouldRender()) {
@@ -5744,18 +5812,11 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
       setCourseCoursewareLoading(courseIdInt, false);
       if (payload.accountSwitched) {
         showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载', 'info', 3000);
-        usernameInput.value = payload.accountSwitched;
-        await setLocal('username', payload.accountSwitched);
-        lastValidUsername = payload.accountSwitched;
-        resetAccountSwitchInterruption();
-        isLoginSessionValid = true;
-        renderLoginAccountHistorySelect(payload.accountSwitched);
+        // 使用统一流程完成账号切换同步
         try {
-          const info = await fetchUserInfoRemote(payload.accountSwitched);
-          setWelcomeMessage(info);
-          await rememberLoggedInAccount(payload.accountSwitched, info);
+          await syncAccountInfoAndReloadVeCourses({ userId: payload.accountSwitched, reloadCourses: true, reloadResourceSpace: true });
         } catch { /* ignore */ }
-        if (isPlatformEnabled('ve')) loadCourses();
+        return;
       }
       return;
     }
@@ -7704,11 +7765,14 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800') {
 
   const courseId = String(hw?.__courseId || '').trim();
   const normalizedBorderColor = String(borderColor || '').toLowerCase();
-  const softBg = normalizedBorderColor.includes('4caf50')
-    ? 'rgba(232,245,233,0.72)'
-    : (normalizedBorderColor.includes('ef4444') || normalizedBorderColor.includes('b91c1c') || normalizedBorderColor.includes('f44336')
-      ? 'rgba(254,242,242,0.78)'
-      : 'rgba(255,243,224,0.72)');
+  const isTeacherMode = !!window.isTeacherAccount;
+  const softBg = isTeacherMode
+    ? (normalizedBorderColor.includes('a78bfa') ? 'rgba(237,233,254,0.72)' : 'rgba(219,234,254,0.72)')
+    : (normalizedBorderColor.includes('4caf50')
+      ? 'rgba(232,245,233,0.72)'
+      : (normalizedBorderColor.includes('ef4444') || normalizedBorderColor.includes('b91c1c') || normalizedBorderColor.includes('f44336')
+        ? 'rgba(254,242,242,0.78)'
+        : 'rgba(255,243,224,0.72)'));
 
   const rows = list.map((it, idx) => {
     const fileNameNoExt = String(it?.fileNameNoExt || '').trim() || `附件${idx + 1}`;
@@ -7969,9 +8033,15 @@ function renderHomeworkList(courseId) {
 
   recomputeCourseHomeworkState(courseId);
 
-  const totalOverdueCount = nativeCls.overdue.length + yktCls.overdue.length + mrzyCls.overdue.length + jlgjCls.overdue.length;
-  const totalDoneCount = nativeCls.done.length + yktCls.done.length + mrzyCls.done.length + jlgjCls.done.length;
-  const totalPendingCount = nativeCls.pending.length + yktCls.pending.length + mrzyCls.pending.length + jlgjCls.pending.length;
+  // 教师账号：VE 作业不计入 overdue/done 分类
+  const isTeacherMode = !!window.isTeacherAccount;
+  const nativeOverdueCount = isTeacherMode ? 0 : nativeCls.overdue.length;
+  const nativeDoneCount = isTeacherMode ? 0 : nativeCls.done.length;
+  const nativePendingCount = isTeacherMode ? list.length : nativeCls.pending.length;
+
+  const totalOverdueCount = nativeOverdueCount + yktCls.overdue.length + mrzyCls.overdue.length + jlgjCls.overdue.length;
+  const totalDoneCount = nativeDoneCount + yktCls.done.length + mrzyCls.done.length + jlgjCls.done.length;
+  const totalPendingCount = nativePendingCount + yktCls.pending.length + mrzyCls.pending.length + jlgjCls.pending.length;
   const totalHomeworkCount = list.length + yktItems.length + mrzyItems.length + jlgjItems.length;
 
   const renderHomeworkToggle = (kind, action, isExpanded, count, collapsedText, expandedText, collapsedDirection, expandedDirection) => {
@@ -7980,7 +8050,8 @@ function renderHomeworkList(courseId) {
     return `<button class="btn homework-toggle-btn ${isExpanded ? 'is-expanded' : ''} homework-toggle-btn--${direction}" data-action="${action}" data-course-id="${escapeHtml(String(courseId))}" data-homework-toggle-kind="${kind}" data-count="${escapeHtml(String(count))}" data-collapsed-text="${escapeHtml(collapsedText)}" data-expanded-text="${escapeHtml(expandedText)}" aria-expanded="${isExpanded ? 'true' : 'false'}"><span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span><span class="homework-toggle-label">${escapeHtml(label)}</span><span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span></button>`;
   };
 
-  const overdueToggleRowHtml = totalOverdueCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, totalOverdueCount, '查看逾期作业', '收起逾期作业', 'down', 'up')}</div>` : '';
+  // 教师账号：doneToggleRow 始终使用原文案
+  const isTeacherMode2 = !!window.isTeacherAccount;
   const doneToggleRowHtml = totalDoneCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--done">${renderHomeworkToggle('done', 'toggle-done', data.showDone, totalDoneCount, '查看已交作业', '收起已交作业', 'down', 'up')}</div>` : '';
 
   const renderNativeHomeworkItems = (items) => (items || []).map((hw) => {
@@ -7990,15 +8061,26 @@ function renderHomeworkList(courseId) {
     const subTime = hw.subTime ?? hw.sub_time ?? '';
     const isDone = isNativeHomeworkDone(hw);
     const overdue = !isDone && isNativeHomeworkOverdue(hw);
-    const bgColor = isDone ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
-    const borderColor = isDone ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
-    const titleColor = isDone ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
-    const detailBtnColor = isDone ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
+
+    // 教师账号：统一蓝色背景，不区分三类；过时作业用紫色
+    const isTeacherMode = !!window.isTeacherAccount;
+    const bgColor = isTeacherMode
+      ? (overdue ? '#ede9fe' : '#dbeafe')
+      : (isDone ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0'));
+    const borderColor = isTeacherMode
+      ? (overdue ? '#a78bfa' : '#93c5fd')
+      : (isDone ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800'));
+    const titleColor = isTeacherMode
+      ? (overdue ? '#6d28d9' : '#1d4ed8')
+      : (isDone ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100'));
+    const detailBtnColor = isTeacherMode
+      ? (overdue ? '#6d28d9' : '#1d4ed8')
+      : (isDone ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100'));
     const title = hw.title || hw.workTitle || hw.courseNoteTitle || '作业';
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
     const deadline = hw.end_time || hw.endTime || '';
-    const statusHtml = isDone ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
+    const statusHtml = isTeacherMode ? '' : (isDone ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : ''));
 
     const scoreStatus = hw.lastScore ?? hw.last_score ?? hw.scoreStatus ?? hw.score_status ?? hw.lastScoreText ?? hw.last_score_text ?? '';
     const obtainedScore = hw.lastScore ?? hw.oldScore ?? hw.old_score ?? hw.finalScore ?? hw.final_score ?? '';
@@ -8018,7 +8100,7 @@ function renderHomeworkList(courseId) {
       scoreHtml = `<span style="font-weight:bold; color:#E91E63; margin-left:5px;">[${escapeHtml(String(cachedScore))}${escapeHtml(totalStr)}]</span>`;
     } else if (isPendingScore) {
       scoreHtml = `<span class="async-score" data-pending="1" data-upid="${String(upId)}" data-snid="${String(snId)}" data-full="${String(fullScore || '')}" style="font-weight:bold; color:#E91E63; margin-left:5px;">[正在查询...]</span>`;
-    } else if (isDone) {
+    } else if (isDone && !isTeacherMode) {
       const shown = String(obtainedScore || '').trim();
       if (shown) {
         const totalStr = fullScore ? `/${fullScore}` : '';
@@ -8033,39 +8115,38 @@ function renderHomeworkList(courseId) {
     const expandKey = `native:${nativeKeySeed || `idx-${idx}`}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
     const attachmentHtml = renderHomeworkAttachments(hw, borderColor);
+    const expandableBaseBg = isTeacherMode ? (overdue ? 'rgba(237,233,254,0.78)' : 'rgba(219,234,254,0.78)') : (isDone ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)');
     const expandable = renderExpandableHtml(contentHtml, {
       emptyHtml: '<span style="color:#999;">无内容</span>',
       expandText: '点击查看作业详情',
       collapseText: '点击收起作业详情',
       hideWhenEmpty: true,
-      baseBg: isDone ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)',
+      baseBg: expandableBaseBg,
       flatDisplay: true,
       courseId,
       expandKey,
       expanded
     });
-    const viewBtnColor = isDone ? '#2E7D32' : '#0ea5e9';
-    const countdownSpan = (!isDone && !overdue && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
+    const viewBtnColor = isTeacherMode ? '#1d4ed8' : (isDone ? '#2E7D32' : '#0ea5e9');
+    const countdownSpan = (!isTeacherMode && !isDone && !overdue && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
 
-    return `
-      <div class="hw-card-item" data-homework-done="${isDone ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
-          <div>
-            <div style="font-weight:bold; color:${titleColor};">${title}</div>
-            <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}</div>
-          </div>
-          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-            ${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}
-            <div style="display:flex; align-items:center; gap:6px;">
-              ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">查看</a>` : ''}
-              <button class="btn" data-action="open-submit" data-course-id="${escapeHtml(String(courseId))}" data-hw-index="${idx}" style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px;">提交</button>
-            </div>
-          </div>
-        </div>
+    // 教师账号：作业ID（用于批量下载）
+    const homeworkId = String(hw.snId || hw.noteId || hw.courseNoteId || hw.id || hw.upId || '').trim();
+    const batchDownloadUrl = homeworkId ? `http://123.121.147.7:88/ve/back/coursePlatform/homeWork.shtml?method=batchDownloadWorks&id=${encodeURIComponent(homeworkId)}` : '';
 
-  ${attachmentHtml}
-        ${expandable ? `<div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0;">${expandable}</div>` : ''}
+    // 按钮区域：教师账号显示"下载已交作业包"，否则显示"提交"
+    const actionButtonsHtml = isTeacherMode
+      ? `<div style="display:flex; align-items:center; gap:6px;">
+          ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">查看</a>` : ''}
+          ${batchDownloadUrl ? `<a class="btn" href="${batchDownloadUrl}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">下载已交作业包</a>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
+        </div>`
+      : `<div style="display:flex; align-items:center; gap:6px;">
+          ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">查看</a>` : ''}
+          <button class="btn" data-action="open-submit" data-course-id="${escapeHtml(String(courseId))}" data-hw-index="${idx}" style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px;">提交</button>
+        </div>`;
 
+    // 提交面板（仅非教师账号显示）
+    const submitPanelHtml = isTeacherMode ? '' : `
         <div class="submit-panel" data-submit-panel="1" style="display:none;">
           <textarea data-submit-content="1" placeholder="请输入作业内容（可为空）"></textarea>
           <div class="hint">可勾选左侧上传成功文件一并提交；不勾选则仅提交文本内容。</div>
@@ -8073,12 +8154,41 @@ function renderHomeworkList(courseId) {
             <button class="btn confirm-submit-btn" style="background:#2563eb; padding:4px 10px; font-size:12px;" data-action="confirm-submit" data-course-id="${escapeHtml(String(courseId))}" data-hw-index="${idx}">确定</button>
             <button class="btn cancel-submit-btn" style="background:#64748b; padding:4px 10px; font-size:12px;" data-action="cancel-submit">取消</button>
           </div>
+        </div>`;
+
+    return `
+      <div class="hw-card-item" data-homework-done="${isTeacherMode ? '0' : (isDone ? '1' : '0')}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
+          <div>
+            <div style="font-weight:bold; color:${titleColor};">${title}</div>
+            <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}</div>
+          </div>
+          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+            ${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}
+            ${actionButtonsHtml}
+          </div>
         </div>
+
+  ${attachmentHtml}
+        ${expandable ? `<div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0;">${expandable}</div>` : ''}
+
+        ${submitPanelHtml}
       </div>
     `;
   }).join('');
 
   const renderHomeworkGroup = (kind) => {
+    // 教师账号：VE 作业不分类，直接合并在 teacher group
+    if (window.isTeacherAccount) {
+      // 外部分类保持不变
+      if (kind === 'overdue') {
+        return `${renderYktSection(yktOverdueItems)}${renderMrzySection(mrzyOverdueItems)}${renderJlgjSection(jlgjOverdueItems)}`;
+      }
+      if (kind === 'done') {
+        return `${renderYktSection(yktDoneItems)}${renderMrzySection(mrzyDoneItems)}${renderJlgjSection(jlgjDoneItems)}`;
+      }
+      return `${renderYktSection(yktPendingItems)}${renderMrzySection(mrzyPendingItems)}${renderJlgjSection(jlgjPendingItems)}`;
+    }
     if (kind === 'overdue') {
       return `${renderNativeHomeworkItems(nativeOverdueItems)}${renderYktSection(yktOverdueItems)}${renderMrzySection(mrzyOverdueItems)}${renderJlgjSection(jlgjOverdueItems)}`;
     }
@@ -8088,20 +8198,46 @@ function renderHomeworkList(courseId) {
     return `${renderNativeHomeworkItems(nativePendingItems)}${renderYktSection(yktPendingItems)}${renderMrzySection(mrzyPendingItems)}${renderJlgjSection(jlgjPendingItems)}`;
   };
 
+  // 教师账号：VE 作业按过时/非过时分为两组
+  const teacherNonOverdueItems = window.isTeacherAccount ? list.filter((hw) => !isNativeHomeworkOverdue(hw)) : [];
+  const teacherOverdueItems = window.isTeacherAccount ? list.filter((hw) => isNativeHomeworkOverdue(hw)) : [];
+  const teacherNonOverdueHtml = window.isTeacherAccount ? renderNativeHomeworkItems(teacherNonOverdueItems) : '';
+  const teacherOverdueHtmlRaw = window.isTeacherAccount ? renderNativeHomeworkItems(teacherOverdueItems) : '';
+
   const overdueHtml = renderHomeworkGroup('overdue');
   const pendingHtml = renderHomeworkGroup('pending');
   const doneHtml = renderHomeworkGroup('done');
+
+  // 教师模式：将 VE 过时作业合并到 overdue 组中，使用统一折叠切换
+  const mergedOverdueHtml = window.isTeacherAccount
+    ? `${teacherOverdueHtmlRaw}${overdueHtml}`
+    : overdueHtml;
+
+  const overdueCollapsedText = isTeacherMode2 ? '查看过时作业' : '查看逾期作业';
+  const overdueExpandedText = isTeacherMode2 ? '收起过时作业' : '收起逾期作业';
+  const mergedOverdueCount = window.isTeacherAccount
+    ? teacherOverdueItems.length + (totalOverdueCount - nativeOverdueCount)
+    : totalOverdueCount;
+  const mergedOverdueToggleRowHtml = mergedOverdueCount > 0
+    ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, mergedOverdueCount, overdueCollapsedText, overdueExpandedText, 'down', 'up')}</div>`
+    : '';
+
   const loadingText = isYktStandalone ? '正在同步雨课堂作业...' : (isMrzyStandalone ? '正在同步每日交作业...' : '正在获取作业…');
   const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrzyStandalone ? mrzySyncing : jlgjSyncing);
   const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> ${loadingText}` : '';
   const emptyExternalTip = isExternalStandalone && totalHomeworkCount === 0 && !standaloneSyncing ? '<span style="color:#999;">没有作业数据</span>' : '';
-  const noPendingTip = totalHomeworkCount > 0 && totalPendingCount === 0
+  const noPendingTip = !isTeacherMode2 && totalHomeworkCount > 0 && totalPendingCount === 0
     ? `<div class="homework-empty-tip" style="color:#4CAF50; margin-top:2px;">${totalOverdueCount > 0 ? '✓ 无待交作业' : '✓ 所有作业已提交'}</div>`
     : '';
-  const noRelatedTip = !pendingHtml && totalHomeworkCount > 0 && !noPendingTip ? '<span class="homework-empty-tip" style="color:#999;">无未交作业</span>' : '';
+  const noRelatedTip = !isTeacherMode2 && !pendingHtml && totalHomeworkCount > 0 && !noPendingTip ? '<span class="homework-empty-tip" style="color:#999;">无未交作业</span>' : '';
   const noDataTip = !isExternalStandalone && totalHomeworkCount === 0 ? '<span style="color:#999;">没有作业数据</span>' : '';
 
-  area.innerHTML = `${loadingHtml}${emptyExternalTip}${noDataTip}${overdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${overdueHtml}</div>` : ''}${overdueToggleRowHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
+  // 教师账号：VE 非过时作业始终可见（蓝色）
+  const teacherNonOverdueSectionHtml = (window.isTeacherAccount && teacherNonOverdueHtml)
+    ? `<div class="homework-group homework-group--pending" data-homework-group="teacher-active">${teacherNonOverdueHtml}</div>`
+    : '';
+
+  area.innerHTML = `${loadingHtml}${emptyExternalTip}${noDataTip}${teacherNonOverdueSectionHtml}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
   applyExpandableAutoToggle();
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
@@ -8303,20 +8439,18 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       if (isStale()) return false;
 
       const currentUser = await detectUserIdFromPersonalCenter();
-      if (currentUser && currentUser !== String(lastValidUsername).trim()) {
+      const storedUserId = String(window.currentAccountUserId || lastValidUsername || '').trim();
+      if (currentUser && storedUserId && currentUser !== storedUserId) {
         showToast('检测到当前账号已变更为 ' + currentUser + '，正在切换并重新加载', 'info', 3000);
         usernameInput.value = currentUser;
         await setLocal('username', currentUser);
         lastValidUsername = currentUser;
         resetAccountSwitchInterruption();
         isLoginSessionValid = true;
-        renderLoginAccountHistorySelect(currentUser);
+        // 使用统一流程完成账号切换同步
         try {
-          const info = await fetchUserInfoRemote(currentUser);
-          setWelcomeMessage(info);
-          await rememberLoggedInAccount(currentUser, info);
+          await syncAccountInfoAndReloadVeCourses({ userId: currentUser, reloadCourses: true, reloadResourceSpace: true });
         } catch { /* ignore */ }
-        if (isPlatformEnabled('ve')) loadCourses();
         return false;
       }
 
@@ -9422,21 +9556,19 @@ usernameInput.addEventListener('change', async () => {
     if (!validResult.ok && validResult.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
       usernameInput.value = lastValidUsername;
+      pendingUsernameChange = null;
+      resetAccountSwitchInterruption();
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
       renderLoginAccountHistorySelect(lastValidUsername);
-      resetAccountSwitchInterruption();
-      if (isPlatformEnabled('ve')) loadCourses();
-      await loadResourceSpaceForCurrentAccount();
       return;
     }
     if (!validResult.ok) {
       showToast('无法验证账号有效性，请稍后重试', 'warning');
       usernameInput.value = lastValidUsername;
+      pendingUsernameChange = null;
+      resetAccountSwitchInterruption();
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
       renderLoginAccountHistorySelect(lastValidUsername);
-      resetAccountSwitchInterruption();
-      if (isPlatformEnabled('ve')) loadCourses();
-      await loadResourceSpaceForCurrentAccount();
       return;
     }
     pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: u } : null;
@@ -9485,18 +9617,18 @@ usernameInput.addEventListener('change', async () => {
     if (result.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
       usernameInput.value = lastValidUsername;
+      pendingUsernameChange = null;
+      resetAccountSwitchInterruption();
       setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
       renderLoginAccountHistorySelect(lastValidUsername);
-      if (isPlatformEnabled('ve')) loadCourses();
-      await loadResourceSpaceForCurrentAccount();
       return;
     }
     showToast('无法验证账号有效性，请稍后重试', 'warning');
     usernameInput.value = lastValidUsername;
+    pendingUsernameChange = null;
+    resetAccountSwitchInterruption();
     setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
     renderLoginAccountHistorySelect(lastValidUsername);
-    if (isPlatformEnabled('ve')) loadCourses();
-    await loadResourceSpaceForCurrentAccount();
     return;
   } else {
     // valid
@@ -9600,6 +9732,8 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   // 不默认使用本地保存账号。
   lastValidUsername = (await getLocal('username', '')).trim();
+  // 恢复内部 userId 用于账号切换检测
+  window.currentAccountUserId = (await getLocal('currentAccountUserId', '')).trim();
   let welcomeInfoUserId = '';
   let welcomeInfo = null;
   usernameInput.value = lastValidUsername;
@@ -9628,6 +9762,9 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   // Mark session as valid if we have a saved username; avoids unnecessary login prompts
   if (lastValidUsername) isLoginSessionValid = true;
+
+  // 确保 init 完成后的首次账号切换不会被 initialUsernameSet 拦截
+  initialUsernameSet = false;
 
   // startupPlatformLoadPromise and startupResourceSpacePromise already awaited above via `settled`
 })();
