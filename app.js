@@ -3501,8 +3501,8 @@ function renderVeCourseTeachersPopHtml(meta) {
         const roomName = escapeHtml(String(it?.roomName || '')) || '-';
         const teacherIdRaw = String(it?.teacherId || '').trim();
         const action = teacherIdRaw
-          ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdRaw)}">切换至教师账号</button>`
-          : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至教师账号</button>';
+          ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdRaw)}">切换至此账号</button>`
+          : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至此账号</button>';
         return `<tr><td>${teacherName}</td><td>${teacherId}</td><td>${roomName}</td><td>${action}</td></tr>`;
       }).join('');
 
@@ -3543,8 +3543,8 @@ function renderVeCourseTeacherRowsHtml(rows) {
     const roomName = escapeHtml(String(it?.roomName || '')) || '-';
     const teacherIdRaw = String(it?.teacherId || '').trim();
     const action = teacherIdRaw
-      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdRaw)}">切换至教师账号</button>`
-      : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至教师账号</button>';
+      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdRaw)}">切换至此账号</button>`
+      : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至此账号</button>';
     return `<tr><td>${teacherName}</td><td>${teacherId}</td><td>${roomName}</td><td>${action}</td></tr>`;
   }).join('');
 }
