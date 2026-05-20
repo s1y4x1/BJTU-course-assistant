@@ -18,7 +18,7 @@
     2. 打开浏览器扩展管理页面(`about://extensions`)。
     3. 开启开发者模式。
     4. 点击“加载已解压的扩展程序”，选择本目录。
-2. Edge Add-ons
+2. Edge Add-ons\
     获取[ Edge 扩展](https://microsoftedge.microsoft.com/addons/detail/gafghgpaebcaefhgncebianhlnjbphcn)
    
 ## 使用说明
