@@ -756,22 +756,6 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             color: #334155;
             margin-bottom: 8px;
         }
-        .version-download-source {
-            font-size: 12px;
-            color: #475569;
-            margin-bottom: 6px;
-            word-break: break-all;
-        }
-        .version-download-meta {
-            margin-bottom: 4px;
-            font-size: 12px;
-            color: #64748b;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            font-weight: 700;
-        }
-        .version-download-speed { color: #2196F3; }
         .version-download-actions {
             display: none;
             margin-top: 10px;

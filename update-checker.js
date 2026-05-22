@@ -42,8 +42,6 @@ let versionIgnoredTag = '';
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_RELEASES_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases?per_page=100';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
-const VERSION_DOWNLOAD_FALLBACK_TOTAL_BYTES = 123 * 1024;
-const VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT = '未获取到更新包大小，预估约123KB';
 
 function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
@@ -324,16 +322,9 @@ function renderVersionDownloadBodyHtml(bodyText) {
 
 function setVersionDownloadProgressUi({
   visible = true,
-  sourceUrl = VERSION_DOWNLOAD_URL,
   status = '下载中...',
   title = '正在下载',
   body = '请稍候，正在下载更新文件...',
-  loaded = 0,
-  total = 0,
-  isTotalEstimated = false,
-  speed = 0,
-  etaSec = null,
-  percent = 0,
   phase = 'downloading'
 } = {}) {
   const modal = ensureVersionDownloadModal();
@@ -349,12 +340,7 @@ function setVersionDownloadProgressUi({
 
   const titleEl = document.getElementById('version-download-title');
   const bodyEl = document.getElementById('version-download-body');
-  const sourceEl = document.getElementById('version-download-source');
   const statusEl = document.getElementById('version-download-status');
-  const sizeEl = document.getElementById('version-download-size');
-  const speedEl = document.getElementById('version-download-speed');
-  const etaEl = document.getElementById('version-download-eta');
-  const barEl = document.getElementById('version-download-bar');
   const minBtn = document.getElementById('version-download-minimize');
 
   if (minBtn instanceof HTMLButtonElement) {
@@ -363,35 +349,7 @@ function setVersionDownloadProgressUi({
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
   if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件...');
-  if (sourceEl) sourceEl.innerHTML = phase === 'finished' ? '' : `下载源：<a href="${escapeHtml(String(sourceUrl || VERSION_DOWNLOAD_URL).trim())}" target="_blank" rel="noopener noreferrer" style="color:#0f766e;">${escapeHtml(String(sourceUrl || VERSION_DOWNLOAD_URL).trim() || '--')}</a>`;
-  if (statusEl) statusEl.textContent = String(status || '下载中...');
-  if (sizeEl) sizeEl.textContent = phase === 'finished' ? '' : (() => {
-    const loadedSafe = Math.max(0, Number(loaded) || 0);
-    const totalSafe = Math.max(0, Number(total) || 0);
-    if (isTotalEstimated && totalSafe > 0) return `${formatSize(loadedSafe)} / ${VERSION_DOWNLOAD_ESTIMATED_SIZE_TEXT}`;
-    return totalSafe > 0 ? `${formatSize(loadedSafe)} / ${formatSize(totalSafe)}` : `${formatSize(loadedSafe)} / --`;
-  })();
-  if (speedEl) speedEl.textContent = phase === 'finished' ? '' : formatSpeed(Math.max(0, Number(speed) || 0));
-  if (etaEl) etaEl.textContent = phase === 'finished' ? '' : (() => {
-    if (Number.isFinite(Number(etaSec)) && Number(etaSec) > 0) return `剩余: ${formatEta(Number(etaSec))}`;
-    if (Math.max(0, Number(total) || 0) > 0 && Math.max(0, Number(loaded) || 0) >= Math.max(0, Number(total) || 0)) return '剩余: 0秒';
-    return '剩余: --';
-  })();
-  if (barEl) {
-    const container = barEl.parentElement;
-    const metaEl = document.getElementById('version-download-meta');
-    if (phase === 'finished') {
-      // 下载成功不显示进度条和元数据
-      if (container) container.style.display = 'none';
-      if (metaEl) metaEl.style.display = 'none';
-    } else {
-      if (container) container.style.display = '';
-      if (metaEl) metaEl.style.display = '';
-      const p = Math.max(0, Math.min(100, Number(percent) || 0));
-      barEl.style.width = `${p}%`;
-      barEl.textContent = `${Math.round(p)}%`;
-    }
-  }
+  if (statusEl) statusEl.textContent = phase === 'finished' ? '' : String(status || '下载中...');
 }
 
 async function downloadVersionByUrlWithProgress(url, fileName) {
@@ -415,11 +373,9 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
           resolved = true;
           setVersionDownloadProgressUi({
             visible: true,
-            sourceUrl: finalUrl,
             status: '已完成',
             title: '下载成功',
             body: '请打开下载目录，解压覆盖更新扩展目录并到 about:extensions 扩展管理页面重新加载扩展以完成更新。',
-            loaded: 0, total: 0, speed: 0, etaSec: 0, percent: 100,
             phase: 'finished'
           });
           resolve();
@@ -492,15 +448,9 @@ async function startVersionDownloadWithFallback() {
   } catch (err) {
     setVersionDownloadProgressUi({
       visible: true,
-      sourceUrl: primaryUrl,
       status: `下载失败：${String(err?.message || '未知错误')}`,
-      title: '正在下载',
+      title: '下载失败',
       body: '下载失败，请检查网络后重试。',
-      loaded: 0,
-      total: 0,
-      speed: 0,
-      etaSec: null,
-      percent: 0,
       phase: 'failed'
     });
     setVersionDownloadRetryVisible(true);
