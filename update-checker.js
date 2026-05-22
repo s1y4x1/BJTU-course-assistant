@@ -363,7 +363,7 @@ function setVersionDownloadProgressUi({
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
   if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件...');
-  if (sourceEl) sourceEl.textContent = phase === 'finished' ? '' : `下载源：${String(sourceUrl || '').trim() || '--'}`;
+  if (sourceEl) sourceEl.innerHTML = phase === 'finished' ? '' : `下载源：<a href="${escapeHtml(String(sourceUrl || VERSION_DOWNLOAD_URL).trim())}" target="_blank" rel="noopener noreferrer" style="color:#0f766e;">${escapeHtml(String(sourceUrl || VERSION_DOWNLOAD_URL).trim() || '--')}</a>`;
   if (statusEl) statusEl.textContent = String(status || '下载中...');
   if (sizeEl) sizeEl.textContent = phase === 'finished' ? '' : (() => {
     const loadedSafe = Math.max(0, Number(loaded) || 0);
