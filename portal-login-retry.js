@@ -28,10 +28,11 @@ async function portalLoginAutoLoginInjected(context) {
   function isLikelyLoginPageHtml(html, resUrl = '') {
     const t = String(html || '');
     const u = String(resUrl || '');
-    if (u.includes('/ve/Login_2.jsp')) return true;
+    if (u.includes('/ve/Login_2.jsp') || u.includes('/ve/Timeout.jsp')) return true;
     if (t.includes('login-page')) return true;
     if (/name=["']username["']/i.test(t)) return true;
     if (t.includes('登录系统')) return true;
+    if (t.includes('会话结束') || t.includes('重新登录')) return true;
     return false;
   }
 
