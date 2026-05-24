@@ -6334,7 +6334,25 @@ async function lazyLoadReplayContent(courseIdInt) {
       cache.contentMap[videoId] = detailHtml;
       const els = scope.querySelectorAll(`.replay-content-area[data-rp-id="${videoId}"]`);
       els.forEach((el) => {
-        if (el instanceof HTMLElement) el.innerHTML = detailHtml;
+        if (el instanceof HTMLElement) {
+          el.innerHTML = detailHtml;
+          // 回放详情不超过3行则不折叠
+          const box = el.querySelector('.expandable-box');
+          if (box instanceof HTMLElement) {
+            const body = box.querySelector('.expandable-body');
+            if (body instanceof HTMLElement) {
+              // 临时设为 collapsed 高度来测量
+              const prevMaxH = body.style.maxHeight;
+              body.style.maxHeight = '';
+              if (body.scrollHeight <= body.clientHeight + 2) {
+                box.classList.add('no-toggle');
+                box.classList.remove('expanded');
+                box.dataset.expanded = '0';
+              }
+              body.style.maxHeight = prevMaxH;
+            }
+          }
+        }
       });
     });
 
