@@ -1345,7 +1345,7 @@ async function submitNativeHomework(courseId, hw, content, fileList) {
     groupId: '',
     courseId: String(courseId || ''),
     contentType: '0',
-    fz: '0',
+    fz: String(hw?.is_fz ?? '0'),
     jxrl_id: '',
     fileList: JSON.stringify(fileList || []),
     upId: String(upId),
