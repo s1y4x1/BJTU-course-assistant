@@ -25,14 +25,15 @@ async function portalLoginAutoLoginInjected(context) {
     }[ch]));
   }
 
+  function isSessionEndedHtml(html) {
+    const t = String(html || '');
+    return /<title>会话结束<\/title>/i.test(t) && t.includes('会话结束,请退出系统') && t.includes('重新登录');
+  }
+
   function isLikelyLoginPageHtml(html, resUrl = '') {
     const t = String(html || '');
     const u = String(resUrl || '');
-    if (u.includes('/ve/Login_2.jsp') || u.includes('/ve/Timeout.jsp')) return true;
-    if (t.includes('login-page')) return true;
-    if (/name=["']username["']/i.test(t)) return true;
-    if (t.includes('登录系统')) return true;
-    if (t.includes('会话结束') || t.includes('重新登录')) return true;
+    if (u.includes('/ve/Login_2.jsp') || u.includes('/ve/Timeout.jsp') || isSessionEndedHtml(t)) return true;
     return false;
   }
 

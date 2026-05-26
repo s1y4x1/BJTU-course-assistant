@@ -1937,22 +1937,16 @@ function parseAlertMsg(html) {
   return arr[arr.length - 1][1];
 }
 
+function isSessionEndedHtml(html) {
+  const t = String(html || '');
+  return /<title>会话结束<\/title>/i.test(t) && t.includes('会话结束,请退出系统') && t.includes('重新登录');
+}
+
 function isLikelyLoginPageHtml(html, resUrl = '') {
   const t = String(html || '');
   const u = String(resUrl || '');
-  if (u.includes('/ve/s.shtml')) return true;
-  if (t.includes('login-page')) return true;
-  // typical login form markers
-  if (/name=["']username["']/i.test(t) && /type=["']password["']/i.test(t)) return true;
-  if (t.includes('登录系统') && /type=["']password["']/i.test(t)) return true;
+  if (u.includes('/ve/s.shtml') || u.includes('/ve/Login_2.jsp') || u.includes('/ve/Timeout.jsp') || isSessionEndedHtml(t)) return true;
   return false;
-}
-
-function isSessionEndedHtml(html) {
-  const t = String(html || '');
-  return /<title>\s*会话结束\s*<\/title>/i.test(t)
-    || /会话结束,?请退出系统/i.test(t)
-    || /重新登录/i.test(t);
 }
 
 // -------------------- Login --------------------
