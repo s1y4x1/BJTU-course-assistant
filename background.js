@@ -58,9 +58,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 function isPortalLoginUrl(url) {
   const u = String(url || '');
-  return /^http:\/\/123\.121\.147\.7:88\/ve\/?(?:[#?].*)?$/i.test(u)
-    || /^http:\/\/123\.121\.147\.7:88\/ve\/Login_2\.jsp(?:[#?].*)?$/i.test(u)
-    || /^http:\/\/123\.121\.147\.7:88\/ve\/Timeout\.jsp(?:[#?].*)?$/i.test(u);
+  // 所有 VE 页面均注入检测脚本，由注入脚本判断是否需要弹出登录框
+  return /^http:\/\/123\.121\.147\.7:88\//i.test(u);
 }
 
 function shouldSkipRecent(tabId, url) {
