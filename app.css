@@ -904,6 +904,17 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             color: #fff !important;
         }
 
+        .btn.courseware-link-progress,
+        .btn.courseware-link-progress:hover {
+            background: linear-gradient(
+                90deg,
+                #1e3a8a 0 var(--courseware-progress, 0%),
+                #9bb8ec var(--courseware-progress, 0%) 100%
+            ) !important;
+            color: #fff !important;
+            transition: background 0.25s ease;
+        }
+
         .expandable-box {
             position: relative;
             margin-top: 8px;

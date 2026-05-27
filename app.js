@@ -50,6 +50,28 @@ const totalSizeInfoDiv = document.getElementById('total-size-info');
 const totalPercentDiv = document.getElementById('total-percent');
 const totalEtaDiv = document.getElementById('total-eta');
 const copyAllBtn = document.getElementById('copy-all-btn');
+function parseVeJson(text) {
+  const s = String(text || '{}').trim();
+  return JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
+}
+
+function cleanRpUrl(url, { keepG = false } = {}) {
+  try {
+    const u = new URL(url);
+    const params = new URLSearchParams(u.search);
+    const id = params.get('id');
+    const p = params.get('p');
+    const g = keepG ? params.get('g') : null;
+    const clean = new URL(u.origin + u.pathname);
+    if (id) clean.searchParams.set('id', id);
+    if (p) clean.searchParams.set('p', p);
+    if (g) clean.searchParams.set('g', g);
+    return clean.toString();
+  } catch {
+    return url;
+  }
+}
+
 const resourceSpaceSection = document.getElementById('resource-space-section');
 const resourceSpaceStatus = document.getElementById('resource-space-status');
 const resourceSpaceList = document.getElementById('resource-space-list');
@@ -2800,6 +2822,8 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
       sizeEl.textContent = `(${formatSize(loadedSafe)} / ${formatSize(totalSafe)})`;
     } else if (loadedSafe > 0) {
       sizeEl.textContent = `(${formatSize(loadedSafe)})`;
+    } else if (active) {
+      sizeEl.textContent = '(未知大小)';
     } else {
       sizeEl.textContent = '';
     }
@@ -2831,10 +2855,15 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
 
 async function downloadResourceItemWithProgress(item) {
   const id = String(item?.id || '').trim();
-  const rawUrl = String(item?.url || '').trim();
+  let rawUrl = String(item?.url || '').trim();
   const fileName = ensureResourceDownloadFileName(item, rawUrl);
   const expectedBytes = getResourceItemSizeBytes(item);
-  if (!id || !rawUrl) throw new Error('资源链接无效');
+  if (!id) throw new Error('资源链接无效');
+  if (!rawUrl && item?.rpId) {
+    rawUrl = await fetchCoursewareRpUrl(item.rpId);
+    if (rawUrl) item.url = rawUrl;
+  }
+  if (!rawUrl) throw new Error('资源链接无效');
 
   if (isResourceDownloadActive(id)) {
     throw new Error('该文件正在下载中');
@@ -3171,7 +3200,7 @@ async function fetchResourceSpaceListRaw(rows = 10, searchName = '') {
   });
   if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, total: 0, result: [] };
   let data = null;
-  try { data = JSON.parse(String(text || '{}')); } catch { data = null; }
+  try { data = parseVeJson(text); } catch { data = null; }
   if (!data || typeof data !== 'object') return { loginRequired: true, total: 0, result: [] };
   const total = Number(data.total || 0);
   const result = Array.isArray(data.result) ? data.result : [];
@@ -3424,7 +3453,7 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
 
       let data = null;
       try {
-        data = JSON.parse(String(text || '{}'));
+        data = parseVeJson(text);
       } catch {
         markStop(classNo);
         return;
@@ -3766,7 +3795,7 @@ function sortCourseCards() {
 }
 
 function hasCourseActionButtonAnimationActive() {
-  return !!courseListDiv.querySelector('button[data-action="videos"].replay-list-loading, button[data-action="videos"].replay-link-progress, button[data-action="courseware"].courseware-list-loading');
+  return !!courseListDiv.querySelector('button[data-action="videos"].replay-list-loading, button[data-action="videos"].replay-link-progress, button[data-action="courseware"].courseware-list-loading, button[data-action="courseware"].courseware-link-progress');
 }
 
 function sortCourseCardsWithGuard({ deferWhileActionAnimating = false } = {}) {
@@ -5631,19 +5660,29 @@ function buildCoursewareListHtml(courseId, items) {
     const fileName = ensureResourceDownloadFileName(item, item?.url || '');
     const url = String(item?.url || '').trim();
     const id = String(item?.id || '').trim();
+    const rpId = String(item?.rpId || '').trim();
     const checked = window.resourceSpaceSelected.has(id) ? 'checked' : '';
     const sizeMb = String(item?.sizeMb || '').trim();
     const sizeStyle = buildResourceSizeEmphasisStyle(item?.sizeMbRaw ?? item?.rpSize);
+    const displayUrl = cleanRpUrl(url);
+    const hasUrl = !!url;
+    const needsRpFetch = !hasUrl && !!rpId;
+    const rpLinkContainerId = `courseware-rp-link-${id}`;
     return `
-      <div class="file-item" data-resource-id="${escapeHtml(id)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #4CAF50; background:#f8fff9; border-radius:4px;">
+      <div class="file-item" data-resource-id="${escapeHtml(id)}" data-rp-id="${escapeHtml(rpId)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #4CAF50; background:#f8fff9; border-radius:4px;">
         <div class="resource-row-title" style="margin-bottom:4px;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin:0 4px 0 0;">
           <span class="resource-name">${escapeHtml(fileName || name)}</span>
           ${sizeMb ? `<span class="resource-time-inline" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>` : ''}
         </div>
         <div class="resource-link-row">
-          <a class="resource-url" href="${escapeHtml(url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(url || '')}</a>
-          <button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>
+          ${hasUrl
+            ? `<a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(displayUrl)}</a>`
+            : needsRpFetch
+              ? `<span id="${escapeHtml(rpLinkContainerId)}" class="courseware-rp-link" style="color:#999;font-size:12px;">获取链接中...</span>`
+              : `<span class="resource-url" style="color:#999;">无下载链接</span>`
+          }
+          ${hasUrl ? `<button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>` : ''}
           <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(id)}">下载</button>
         </div>
         <div class="resource-download-progress" style="display:none;">
@@ -5726,7 +5765,7 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
   }
 
   let data = null;
-  try { data = JSON.parse(String(text || '{}')); } catch { data = null; }
+  try { data = parseVeJson(text); } catch { data = null; }
   if (!data || typeof data !== 'object') return { loginRequired: false, items: [] };
 
   const response = (data?.response && typeof data.response === 'object') ? data.response : data;
@@ -5739,16 +5778,18 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
     const urlNorm = normalizeResourceUrl(urlRaw);
     const sizeMbRaw = Number(item?.rpSize);
     const name = extName && !/\.[a-zA-Z0-9_-]{1,16}$/.test(rpName) ? `${rpName}.${extName}` : rpName;
+    const rpId = String(item?.rpId || '').trim();
     return {
-      id: `cw-${String(item?.rpId || `${courseIdPart}-${xkhIdPart}-${index}`).trim()}`,
+      id: `cw-${rpId || `${courseIdPart}-${xkhIdPart}-${index}`}`,
       name,
       extName,
       url: urlNorm,
+      rpId,
       courseId: String(courseIdPart || '').trim(),
       sizeMb: formatResourceSizeMb(sizeMbRaw),
       sizeMbRaw
     };
-  }).filter((it) => !!it.url);
+  });
 
   return { loginRequired: false, items };
 }
@@ -5827,6 +5868,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
     if (shouldRender()) {
       resultArea.innerHTML = html;
     }
+    startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
   } catch (e) {
     setCourseCoursewareLoading(courseIdInt, false);
     if (shouldRender()) {
@@ -5928,6 +5970,7 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
     toggleResultAreaAnimated(resultArea, true);
     card.dataset.resultView = 'courseware';
     syncCourseActionButtonText(card, 'courseware');
+    startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
     return;
   }
 
@@ -5935,7 +5978,119 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   moveVisibleReplayToShadowIfNeeded();
   loadCoursewareList(btn, courseIdInt, courseNum, fzId).catch(() => {
     syncCourseActionButtonText(card, 'courseware');
+  }).then(() => {
+    startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
   });
+}
+
+async function fetchCoursewareRpUrl(rpId) {
+  if (!rpId) return '';
+  try {
+    const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
+    const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: String(rpId) });
+    const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480`;
+
+    const { text } = await fetchText(postUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': referer,
+        'Accept': 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: postBody.toString(),
+      signal: window.globalVeAbortController?.signal
+    });
+
+    const data = parseVeJson(text);
+    if (data.flag === true || String(data.STATUS) === '0') {
+      return String(data.rpUrl || data.html || '').trim();
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
+  const card = btn?.closest('.file-item');
+  const resultArea = card?.querySelector('.result-area');
+  if (!btn || !card || !resultArea) return;
+  const courseListVersion = getCourseListLoadVersionSnapshot();
+  const isStale = () => isCourseListLoadStale(courseListVersion);
+  const cache = window.coursewareCacheByCourseId?.[courseIdInt];
+  const items = Array.isArray(cache?.items) ? cache.items : [];
+  const rpItems = items.filter((it) => !it.url && it.rpId);
+  if (!rpItems.length || cache?.rpLinksFetched || cache?.rpLinksFetching) return;
+
+  if (isStale()) {
+    if (cache) cache.rpLinksFetching = false;
+    return;
+  }
+
+  if (!cache) return;
+  cache.rpLinksFetching = true;
+
+  btn.classList.add('courseware-link-progress');
+  btn.style.setProperty('--courseware-progress', '0%');
+
+  const totalLinks = rpItems.length;
+  let doneLinks = 0;
+  const onOneLinkDone = () => {
+    doneLinks += 1;
+    const p = Math.max(0, Math.min(100, Math.round((doneLinks / totalLinks) * 100)));
+    btn.style.setProperty('--courseware-progress', `${p}%`);
+    if (doneLinks >= totalLinks) {
+      btn.classList.remove('courseware-link-progress');
+      btn.style.removeProperty('--courseware-progress');
+    }
+  };
+
+  await Promise.allSettled(rpItems.map(async (item) => {
+    const rpUrl = await fetchCoursewareRpUrl(item.rpId).finally(onOneLinkDone);
+    if (isStale()) return;
+    if (rpUrl) {
+      item.url = rpUrl;
+      const displayUrl = cleanRpUrl(rpUrl);
+      const linkContainer = resultArea.querySelector(`[id="courseware-rp-link-${item.id.replace(/["\\]/g, '')}"]`);
+      if (linkContainer) {
+        linkContainer.outerHTML = `<a class="resource-url" href="${escapeHtml(rpUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(displayUrl)}</a>`;
+      }
+      const copyBtn = resultArea.querySelector(`button.resource-copy-btn[data-resource-id="${item.id.replace(/["\\]/g, '')}"]`);
+      if (!copyBtn) {
+        const linkRow = linkContainer?.closest('.resource-link-row');
+        if (linkRow) {
+          const downloadBtn = linkRow.querySelector(`button.resource-download-btn[data-resource-id="${item.id.replace(/["\\]/g, '')}"]`);
+          const newCopyBtn = document.createElement('button');
+          newCopyBtn.className = 'btn resource-copy-btn';
+          newCopyBtn.dataset.action = 'resource-copy';
+          newCopyBtn.dataset.resourceId = item.id;
+          newCopyBtn.textContent = '复制';
+          if (downloadBtn) {
+            linkRow.insertBefore(newCopyBtn, downloadBtn);
+          } else {
+            linkRow.appendChild(newCopyBtn);
+          }
+        }
+      }
+    }
+  }));
+
+  if (isStale()) {
+    cache.rpLinksFetching = false;
+    btn.classList.remove('courseware-link-progress');
+    btn.style.removeProperty('--courseware-progress');
+    return;
+  }
+
+  cache.rpLinksFetched = true;
+  cache.rpLinksFetching = false;
+  const currentView = String(card.dataset.resultView || '').trim();
+  if (currentView === 'courseware') {
+    const newHtml = buildCoursewareListHtml(courseIdInt, items);
+    cache.html = newHtml;
+    resultArea.innerHTML = newHtml;
+  }
 }
 
 function recomputeCourseHomeworkState(courseId) {
@@ -6135,7 +6290,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
       setCourseReplayLoading(courseIdInt, false);
       return;
     }
-    const data = JSON.parse(calText);
+    const data = parseVeJson(calText);
     if (String(data.STATUS) !== '0') {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
@@ -8412,7 +8567,7 @@ window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
       },
       signal: window.globalVeAbortController?.signal
     });
-    const data = JSON.parse(calText);
+    const data = parseVeJson(calText);
 
     if (String(data.STATUS) === '0') {
       const list = data.result || [];
@@ -8492,7 +8647,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
 
     if (isStale()) return false;
 
-    const detailData = JSON.parse(text);
+    const detailData = parseVeJson(text);
 
     if (detailData.flag === false || (String(detailData.STATUS) === '1' && String(detailData.ERRMSG || '').includes('不合法'))) {
       const linksDiv = getLinksDiv();
@@ -9443,7 +9598,7 @@ if (resourceSpaceList) {
     }
 
     if (action === 'resource-copy') {
-      navigator.clipboard.writeText(String(item.url || '')).then(() => {
+      navigator.clipboard.writeText(cleanRpUrl(String(item.url || ''), { keepG: true })).then(() => {
         showToast('链接已复制', 'success', 1200);
       });
       return;
@@ -9459,6 +9614,15 @@ if (resourceSpaceList) {
 
     if (action === 'resource-download') {
       try {
+        if (!item.url && item.rpId) {
+          const rpUrl = await fetchCoursewareRpUrl(item.rpId);
+          if (rpUrl) {
+            item.url = rpUrl;
+          } else {
+            showToast('获取下载链接失败', 'error', 1800);
+            return;
+          }
+        }
         await enqueueResourceDownload(item);
         showToast('下载完成', 'success', 1200);
       } catch (err) {
