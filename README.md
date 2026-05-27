@@ -13,13 +13,13 @@
 
 ## 安装方式
 
-1. Github Releases
+- Github Releases
     1. 下载[压缩包](https://github.com/s1y4x1/BJTU-course-assistant/archive/refs/heads/master.zip)并解压
     2. 打开浏览器扩展管理页面(`about://extensions`)。
     3. 开启「开发者模式」/「开发人员模式」。
     4. 点击「加载已解压的扩展程序」/「加载解压缩的扩展」，选择本目录。
-2. Edge Add-ons\
-    获取[ Edge 扩展](https://microsoftedge.microsoft.com/addons/detail/gafghgpaebcaefhgncebianhlnjbphcn)
+- Edge Add-ons
+获取 [Edge 扩展](https://microsoftedge.microsoft.com/addons/detail/gafghgpaebcaefhgncebianhlnjbphcn)
    
 ## 使用说明
 
