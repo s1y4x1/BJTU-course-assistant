@@ -160,6 +160,13 @@ function renderMarkdownBasic(markdownText) {
       return;
     }
 
+    if (listStack.length > 0) {
+      const top = listStack[listStack.length - 1];
+      if (top.liOpen) {
+        out.push(`<p style="margin:4px 0 0; color:#334155; line-height:1.6; white-space:pre-wrap;">${parseInlineMarkdown(raw)}</p>`);
+        return;
+      }
+    }
     closeAllLists();
     out.push(`<p style="margin:0 0 6px; color:#334155; line-height:1.6;">${parseInlineMarkdown(trimmed)}</p>`);
   });
