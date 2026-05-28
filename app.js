@@ -2860,7 +2860,8 @@ async function downloadResourceItemWithProgress(item) {
   const expectedBytes = getResourceItemSizeBytes(item);
   if (!id) throw new Error('资源链接无效');
   if (!rawUrl && item?.rpId) {
-    rawUrl = await fetchCoursewareRpUrl(item.rpId);
+    const result = await fetchCoursewareRpUrl(item.rpId);
+    rawUrl = String(result?.url || '').trim();
     if (rawUrl) item.url = rawUrl;
   }
   if (!rawUrl) throw new Error('资源链接无效');
@@ -5984,7 +5985,7 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
 }
 
 async function fetchCoursewareRpUrl(rpId) {
-  if (!rpId) return '';
+  if (!rpId) return { url: '' };
   try {
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
     const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: String(rpId) });
@@ -6004,14 +6005,14 @@ async function fetchCoursewareRpUrl(rpId) {
 
     const data = parseVeJson(text);
     if (data.flag === true || String(data.STATUS) === '0') {
-      return String(data.rpUrl || data.html || '').trim();
+      return { url: String(data.rpUrl || data.html || '').trim() };
     }
     if (data.flag === false) {
-      promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+      return { url: '', loginExpired: true };
     }
-    return '';
+    return { url: '' };
   } catch {
-    return '';
+    return { url: '' };
   }
 }
 
@@ -6049,9 +6050,12 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
     }
   };
 
+  let loginHandled = false;
+
   await Promise.allSettled(rpItems.map(async (item) => {
-    const rpUrl = await fetchCoursewareRpUrl(item.rpId).finally(onOneLinkDone);
+    const result = await fetchCoursewareRpUrl(item.rpId).finally(onOneLinkDone);
     if (isStale()) return;
+    const rpUrl = String(result?.url || '').trim();
     if (rpUrl) {
       item.url = rpUrl;
       const displayUrl = cleanRpUrl(rpUrl);
@@ -6076,15 +6080,25 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
           }
         }
       }
+    } else if (result?.loginExpired) {
+      const linkContainer = resultArea.querySelector(`[id="courseware-rp-link-${item.id.replace(/["\\]/g, '')}"]`);
+      if (linkContainer) {
+        linkContainer.innerHTML = '<span style="color:#f44336;">Err</span>';
+      }
+      if (!loginHandled) {
+        loginHandled = true;
+        const currentUser = await detectUserIdFromPersonalCenter();
+        if (!currentUser) {
+          if (linkContainer) {
+            linkContainer.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
+            const sp = linkContainer.querySelector('span');
+            if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
+          }
+          promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+        }
+      }
     }
   }));
-
-  if (isStale()) {
-    cache.rpLinksFetching = false;
-    btn.classList.remove('courseware-link-progress');
-    btn.style.removeProperty('--courseware-progress');
-    return;
-  }
 
   cache.rpLinksFetched = true;
   cache.rpLinksFetching = false;
@@ -9618,9 +9632,17 @@ if (resourceSpaceList) {
     if (action === 'resource-download') {
       try {
         if (!item.url && item.rpId) {
-          const rpUrl = await fetchCoursewareRpUrl(item.rpId);
+          const result = await fetchCoursewareRpUrl(item.rpId);
+          const rpUrl = String(result?.url || '').trim();
           if (rpUrl) {
             item.url = rpUrl;
+          } else if (result?.loginExpired) {
+            const userId = await detectUserIdFromPersonalCenter();
+            if (!userId) {
+              promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+            }
+            showToast('获取下载链接失败', 'error', 1800);
+            return;
           } else {
             showToast('获取下载链接失败', 'error', 1800);
             return;
