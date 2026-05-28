@@ -6006,6 +6006,9 @@ async function fetchCoursewareRpUrl(rpId) {
     if (data.flag === true || String(data.STATUS) === '0') {
       return String(data.rpUrl || data.html || '').trim();
     }
+    if (data.flag === false) {
+      promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+    }
     return '';
   } catch {
     return '';
