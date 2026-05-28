@@ -47,14 +47,16 @@ function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
 }
 
-function syncVersionNoticeDownloadButton() {
+function syncVersionNoticeDownloadButton(buttonText) {
   const btn = document.getElementById('version-notice-download');
   if (!(btn instanceof HTMLButtonElement)) return;
   const downloading = isVersionDownloadingNow();
   if (downloading) {
     btn.textContent = '后台下载中...';
+  } else if (buttonText) {
+    btn.textContent = buttonText;
   } else {
-    btn.textContent = '下载更新';
+    btn.textContent = versionButtonMode === 'ahead' ? '下载正式版' : '下载更新';
   }
 }
 
@@ -233,8 +235,9 @@ function ensureVersionNoticeModal() {
   return modal;
 }
 
-function openVersionNoticeModal() {
-  if (versionButtonMode !== 'outdated' && versionButtonMode !== 'latest') return;
+function openVersionNoticeModal(overrideMode) {
+  const mode = String(overrideMode || versionButtonMode || '').trim();
+  if (mode !== 'outdated' && mode !== 'latest' && mode !== 'ahead') return;
   const modal = ensureVersionNoticeModal();
   if (!modal) return;
   const titleEl = modal.querySelector('#version-notice-title');
@@ -245,8 +248,10 @@ function openVersionNoticeModal() {
     const versionLabel = escapeHtml(String(versionButtonLatestDisplayVersion || versionButtonLatestVersion || '').trim() || '--');
     const publishedText = escapeHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
     const timeHtml = publishedText ? `<span class="version-notice-title-time">${publishedText}</span>` : '';
-    if (versionButtonMode === 'latest') {
+    if (mode === 'latest') {
       titleEl.innerHTML = `<span class="version-notice-title-main">已是最新版本：${versionLabel}</span>${timeHtml}`;
+    } else if (mode === 'ahead') {
+      titleEl.innerHTML = `<span class="version-notice-title-main">当前为开发预览版本：${versionLabel}</span>${timeHtml}`;
     } else {
       titleEl.innerHTML = `<span class="version-notice-title-main">发现新版本：${versionLabel}</span>${timeHtml}`;
     }
@@ -255,15 +260,14 @@ function openVersionNoticeModal() {
     bodyEl.innerHTML = renderMarkdownBasic(versionButtonLatestBodyMarkdown);
   }
   if (downloadBtn instanceof HTMLButtonElement) {
-    if (versionButtonMode === 'outdated') {
+    if (mode === 'outdated' || mode === 'ahead') {
       downloadBtn.style.display = 'block';
-      downloadBtn.textContent = '下载更新';
     } else {
       downloadBtn.style.display = 'none';
     }
   }
   if (ignoreBtn instanceof HTMLButtonElement) {
-    if (versionButtonMode === 'outdated') {
+    if (mode === 'outdated') {
       const ignored = String(versionIgnoredTag || '').trim();
       const latest = String(versionButtonLatestVersion || '').trim();
       if (ignored && latest && ignored === latest) {
@@ -478,7 +482,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
   versionButtonLatestBodyMarkdown = String(body || '').trim();
 
   versionBtn.className = `version-btn ${versionButtonMode}`;
-  versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated' || versionButtonMode === 'latest');
+  versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated' || versionButtonMode === 'latest' || versionButtonMode === 'ahead');
 
   if (versionButtonMode === 'loading') {
     versionBtn.innerHTML = '<span class="version-btn-spinner"></span><span>获取最新版本中...</span>';
@@ -672,7 +676,8 @@ async function loadVersionInfo() {
       versionIgnoredTag = '';
       await setLocal(VERSION_IGNORE_KEY, '');
     }
-    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '' });
+    const aheadBody = buildAllReleaseNotes(releases, latestTag);
+    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '', body: aheadBody });
   } catch (err) {
     setVersionButtonState('failure', { localVersion });
     const msg = String(err?.message || '').trim();
@@ -706,6 +711,10 @@ function setupVersionButton() {
     }
     if (versionButtonMode === 'outdated') {
       openVersionNoticeModal();
+      return;
+    }
+    if (versionButtonMode === 'ahead') {
+      openVersionNoticeModal('ahead');
     }
   });
 

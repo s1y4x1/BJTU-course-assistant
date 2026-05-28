@@ -651,6 +651,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             background: #dbeafe;
             border-color: #93c5fd;
             color: #1d4ed8;
+            cursor: pointer;
         }
         .version-btn:disabled {
             opacity: 1;
