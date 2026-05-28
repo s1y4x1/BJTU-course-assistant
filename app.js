@@ -2908,7 +2908,8 @@ async function downloadResourceItemWithProgress(item) {
     const loadedSafe = Math.max(0, Number(loaded) || 0);
     const totalSafe = Math.max(0, Number(total) || 0);
     task.loaded = loadedSafe;
-    task.total = totalSafe;
+    if (totalSafe > 0) task.total = totalSafe;
+    const effectiveTotal = task.total;
 
     const speed = pushAndCalcRecentSpeed(task.samples, loadedSafe, now);
     task.speed = speed;
@@ -2916,13 +2917,13 @@ async function downloadResourceItemWithProgress(item) {
     if (!force && now - task.lastUiTs < PROGRESS_INTERVAL_MS) return;
     task.lastUiTs = now;
 
-    const percent = totalSafe > 0 ? Math.round((loadedSafe / totalSafe) * 100) : 0;
-    const etaSec = (totalSafe > 0 && speed > 0) ? ((totalSafe - loadedSafe) / speed) : null;
+    const percent = effectiveTotal > 0 ? Math.round((loadedSafe / effectiveTotal) * 100) : 0;
+    const etaSec = (effectiveTotal > 0 && speed > 0) ? ((effectiveTotal - loadedSafe) / speed) : null;
     setResourceDownloadUi(id, {
       active: true,
       percent,
       loaded: loadedSafe,
-      total: totalSafe,
+      total: effectiveTotal,
       speed,
       etaSec,
       status
@@ -6060,24 +6061,21 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
       item.url = rpUrl;
       const displayUrl = cleanRpUrl(rpUrl);
       const linkContainer = resultArea.querySelector(`[id="courseware-rp-link-${item.id.replace(/["\\]/g, '')}"]`);
+      const linkRow = linkContainer?.closest('.resource-link-row');
       if (linkContainer) {
         linkContainer.outerHTML = `<a class="resource-url" href="${escapeHtml(rpUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(displayUrl)}</a>`;
       }
-      const copyBtn = resultArea.querySelector(`button.resource-copy-btn[data-resource-id="${item.id.replace(/["\\]/g, '')}"]`);
-      if (!copyBtn) {
-        const linkRow = linkContainer?.closest('.resource-link-row');
-        if (linkRow) {
-          const downloadBtn = linkRow.querySelector(`button.resource-download-btn[data-resource-id="${item.id.replace(/["\\]/g, '')}"]`);
-          const newCopyBtn = document.createElement('button');
-          newCopyBtn.className = 'btn resource-copy-btn';
-          newCopyBtn.dataset.action = 'resource-copy';
-          newCopyBtn.dataset.resourceId = item.id;
-          newCopyBtn.textContent = '复制';
-          if (downloadBtn) {
-            linkRow.insertBefore(newCopyBtn, downloadBtn);
-          } else {
-            linkRow.appendChild(newCopyBtn);
-          }
+      if (linkRow && !linkRow.querySelector(`button.resource-copy-btn`)) {
+        const downloadBtn = linkRow.querySelector(`button.resource-download-btn`);
+        const newCopyBtn = document.createElement('button');
+        newCopyBtn.className = 'btn resource-copy-btn';
+        newCopyBtn.dataset.action = 'resource-copy';
+        newCopyBtn.dataset.resourceId = item.id;
+        newCopyBtn.textContent = '复制';
+        if (downloadBtn) {
+          linkRow.insertBefore(newCopyBtn, downloadBtn);
+        } else {
+          linkRow.appendChild(newCopyBtn);
         }
       }
     } else if (result?.loginExpired) {
