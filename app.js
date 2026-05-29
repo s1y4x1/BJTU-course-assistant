@@ -2041,18 +2041,16 @@ async function getVeTessWorker() {
     if (!T || typeof T.createWorker !== 'function') throw new Error('Tesseract 未加载');
     const options = {
       logger: () => {},
+      workerBlobURL: false,
       workerPath: chrome.runtime.getURL('vendor/tesseract/worker.min.js'),
       corePath: chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js'),
-      langPath: chrome.runtime.getURL('vendor/tesseract'),
-      workerBlobURL: true
+      langPath: chrome.runtime.getURL('vendor/tesseract')
     };
     let worker;
     try {
       worker = await T.createWorker('eng', 1, options);
     } catch {
-      worker = await T.createWorker(options);
-      if (worker.loadLanguage) await worker.loadLanguage('eng');
-      if (worker.initialize) await worker.initialize('eng');
+      worker = await T.createWorker('eng', 1, options);
     }
     if (worker.setParameters) {
       await worker.setParameters({

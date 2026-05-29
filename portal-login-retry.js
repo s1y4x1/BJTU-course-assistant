@@ -386,19 +386,17 @@ async function portalLoginAutoLoginInjected(context) {
 
         const options = {
           logger: () => {},
+          workerBlobURL: false,
           workerPath,
           corePath,
-          langPath,
-          workerBlobURL: true
+          langPath
         };
 
         let worker;
         try {
           worker = await T.createWorker('eng', 1, options);
         } catch {
-          worker = await T.createWorker(options);
-          if (worker.loadLanguage) await worker.loadLanguage('eng');
-          if (worker.initialize) await worker.initialize('eng');
+          worker = await T.createWorker('eng', 1, options);
         }
 
         if (worker.setParameters) {
