@@ -18,7 +18,7 @@
 <body>
   <h2>BJTU 上传助手 - 设置</h2>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div style="font-weight:600; margin-bottom:8px;">平台显示与加载</div>
+    <div style="font-weight:600; margin-bottom:8px; font-size: 16px;">平台显示与加载</div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
       <input type="checkbox" id="enableVe" style="width:auto;" checked />
       智慧课程平台
@@ -35,7 +35,7 @@
       <input type="checkbox" id="enableJlgj" style="width:auto;" />
       接龙管家
     </label>
-    <div style="margin-top:6px; font-size:12px; color:#6b7280;">说明：仅选中的平台会在打开扩展页面时异步加载一次；从未选中改为选中时会重新加载该平台。</div>
+    <div class="tip">说明：仅选中的平台会在打开扩展页面时异步加载一次；从未选中改为选中时会重新加载该平台。</div>
   </div>
   <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
     <div style="font-weight:600; margin-right:8px;">点击扩展按钮时：</div>
@@ -48,9 +48,9 @@
     <button id="resetBtn" style="background:#6b7280;margin-left:auto;">恢复默认</button>
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div style="font-weight:600; margin-bottom:8px;">智慧课程平台快速登录</div>
-    <button id="bindPortalUsernameBtn" type="button">通过 MIS 绑定 username 以快速登录</button>
-    <div class="tip">完成 MIS 跳转后会自动记录新 username，并和当前登录账号匹配。</div>
+    <div style="font-weight:600; margin-bottom:8px; font-size: 16px;">智慧课程平台快速登录</div>
+    <button id="bindPortalUsernameBtn" type="button">通过 MIS 绑定 username</button>
+    <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配。</div>
   </div>
   <div id="msg"></div>
   <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>
