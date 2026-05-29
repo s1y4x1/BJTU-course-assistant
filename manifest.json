@@ -36,8 +36,22 @@
     "https://i.jielong.com/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self';"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self';"
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vendor/tesseract/tesseract.min.js",
+        "vendor/tesseract/worker.min.js",
+        "vendor/tesseract/tesseract-core-simd.wasm.js",
+        "vendor/tesseract/tesseract-core-simd.wasm",
+        "vendor/tesseract/eng.traineddata.gz"
+      ],
+      "matches": [
+        "http://123.121.147.7:88/*"
+      ]
+    }
+  ],
   "action": {
     "default_title": "BJTU 课程助手",
     "default_popup": "popup.html",

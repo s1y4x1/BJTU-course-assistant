@@ -57,6 +57,45 @@ function normalizePlatformEnabled(raw) {
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
 
+  const bindBtn = document.getElementById('bindPortalUsernameBtn');
+  if (bindBtn) {
+    bindBtn.addEventListener('click', async () => {
+      bindBtn.disabled = true;
+      const bindUrl = 'http://123.121.147.7:88/oauth/api/user/thirdLogin';
+      try {
+        const resp = await chrome.runtime.sendMessage({ type: 'START_BIND_PORTAL_USERNAME' });
+        if (!resp?.ok) {
+          await chrome.tabs.create({ url: bindUrl, active: true });
+          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录/授权');
+          return;
+        }
+        setMsg('已打开 MIS 绑定页面，请在新标签页完成登录/授权');
+      } catch (e) {
+        try {
+          await chrome.tabs.create({ url: bindUrl, active: true });
+          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录/授权');
+        } catch (err) {
+          setMsg(String(err?.message || e?.message || e || '无法打开 MIS 绑定页面'), false);
+          bindBtn.disabled = false;
+        }
+      }
+    });
+  }
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
+    const st = message.payload || {};
+    if (st.status === 'done') {
+      setMsg(`已绑定快速登录 username：${st.userId || st.quickUsername || ''}`);
+      if (bindBtn) bindBtn.disabled = false;
+    } else if (st.status === 'detected') {
+      setMsg('已检测到新 username，正在匹配账号信息');
+    } else if (st.status === 'error') {
+      setMsg(`绑定失败：${st.error || '无法匹配账号信息'}`, false);
+      if (bindBtn) bindBtn.disabled = false;
+    }
+  });
+
   // Reset: restore defaults. Platform display/load should only check VE.
   document.getElementById('resetBtn').addEventListener('click', async () => {
     const defaultPlatform = { jlgj: false, mrzy: false, ve: true, ykt: false };

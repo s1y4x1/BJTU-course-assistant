@@ -694,6 +694,7 @@ let lastValidUsername = '';
 let pendingUsernameChange = null; // { from: string, to: string } | null
 let isLoginInProgress = false;
 let loginCancelRequested = false;
+let loginAbortController = null;
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
 const CURRENT_XQ_CODE_KEY = 'selectedXqCode';
 let currentXqOptions = []; // [{xqId,xqCode,xqName,currentFlag,beginDate,endDate}]
@@ -821,27 +822,6 @@ async function setLocal(key, value) {
   await chrome.storage.local.set({ [key]: value });
 }
 
-// 清理旧版本/不再需要的本地存储键
-async function clearLegacyStorage() {
-  try {
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all || {});
-    const toRemove = [];
-    if (keys.includes('latestSentLoginJsessionid')) toRemove.push('latestSentLoginJsessionid');
-    if (keys.includes('latestResponseJsessionid')) toRemove.push('latestResponseJsessionid');
-    for (const k of keys) {
-      if (typeof k === 'string' && k.startsWith('pwd:')) toRemove.push(k);
-    }
-    // 如果 future-added keys 也需要清理，可以在此处加入判断
-    if (toRemove.length) {
-      await chrome.storage.local.remove(toRemove);
-      console.log('clearLegacyStorage: removed keys', toRemove);
-    }
-  } catch (e) {
-    console.warn('clearLegacyStorage: failed', e);
-  }
-}
-
 function normalizePlatformSessionId(v) {
   const s = String(v || '').trim();
   // allow hex-like tokens; fallback handled by caller
@@ -890,7 +870,11 @@ function parseJsessionidFromSetCookieHeader(setCookieValue) {
 async function getLatestResponseJsessionid(maxAgeMs = 15000) {
   for (let i = 0; i < 10; i++) {
     try {
-      const rec = await getLocal('latestResponseJsessionid', null);
+      const resp = await chrome.runtime.sendMessage({
+        type: 'GET_LATEST_RESPONSE_JSESSIONID',
+        maxAgeMs
+      });
+      const rec = resp?.record || null;
       if (rec && typeof rec === 'object') {
         const value = String(rec.value || '').trim();
         const ts = Number(rec.ts || 0);
@@ -1473,27 +1457,33 @@ async function fetchUserInfoRemote(userId = '') {
 async function validateUserIdRemote(userId) {
   if (!userId) return { ok: false, status: 'empty', info: null };
   try {
-    const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(userId)}`;
-    const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
-    try { console.debug && console.debug('validateUserIdRemote: fetch returned', Date.now()); } catch (e) {}
-    // Ensure runtime/cookie JSESSIONID synced from response so following requests use it
-    try { await syncJsessionidFromResponse(res); } catch (e) { /* ignore */ }
-    try { console.debug && console.debug('validateUserIdRemote: syncJsessionidFromResponse done', Date.now()); } catch (e) {}
-    if (text.includes('账号或密码错误')) return { ok: false, status: 'invalid', info: null };
-    if (text.includes('index.shtml?method=index&type=qxkt')) {
-      // Immediately trigger course load and refresh user info asynchronously
-      (async () => {
-        try {
-          prioritizeAccountSwitch();
-          if (isPlatformEnabled('ve')) await loadCourses().catch(() => {});
-          await fetchUserInfoRemote(userId).catch(() => {});
-        } catch (e) { /* ignore */ }
-      })();
-      return { ok: true, status: '0', info: null };
+    const currentUser = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
+    const info = await fetchUserInfoRemote(userId);
+    if (currentUser && currentUser === String(userId || '').trim()) {
+      return { ok: true, status: 'already-authenticated', info };
     }
-    return { ok: false, status: 'unknown', info: null };
+
+    const quickUsername = String(findLoginAccountRecord(userId)?.quickUsername || '').trim();
+    if (quickUsername) {
+      const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(quickUsername)}`;
+      const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
+      try { await syncJsessionidFromResponse(res); } catch (e) { /* ignore */ }
+      if (text.includes('index.shtml?method=index&type=qxkt')) {
+        const detectedAfterQuick = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
+        if (detectedAfterQuick && detectedAfterQuick !== String(userId || '').trim()) {
+          return { ok: true, status: 'needs-post-login', info };
+        }
+        const quickInfo = await fetchUserInfoRemote(userId).catch(() => null);
+        return { ok: true, status: '0', info: quickInfo };
+      }
+      if (text.includes('账号或密码错误')) {
+        return { ok: true, status: 'needs-post-login', info };
+      }
+    }
+    if (info) return { ok: true, status: 'needs-post-login', info };
+    return { ok: true, status: 'needs-post-login', info: null };
   } catch {
-    return { ok: false, status: 'error', info: null };
+    return { ok: true, status: 'needs-post-login', info: null };
   }
 }
 
@@ -1604,12 +1594,16 @@ function normalizeLoginAccountHistoryList(rawList) {
       const userName = String(it?.userName || '').trim();
       const roleName = String(it?.roleName || '').trim();
       const loginName = String(it?.loginName || userId).trim();
+      const passwordMd5 = String(it?.passwordMd5 || '').trim();
+      const quickUsername = String(it?.quickUsername || it?.username || '').trim();
       const lastLoginAt = Number(it?.lastLoginAt || 0);
       return {
         userId,
         userName,
         roleName,
         loginName,
+        passwordMd5,
+        quickUsername,
         lastLoginAt: Number.isFinite(lastLoginAt) ? lastLoginAt : 0
       };
     })
@@ -1646,8 +1640,9 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
     opt.hidden = true;
     const selectedName = String(selectedRecord.userName || selectedRecord.userId || '未知用户').trim();
     const selectedRole = String(selectedRecord.roleName || '').trim();
+    const selectedQuick = selectedRecord.quickUsername ? ' [免验证码]' : '';
     // 选中项只显示 userName
-    opt.textContent = `${selectedRole}${selectedName}`;
+    opt.textContent = `${selectedRole}${selectedName}${selectedQuick}`;
     accountHistorySelect.appendChild(opt);
   }
 
@@ -1660,8 +1655,9 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
       const roleName = String(it.roleName || '').trim();
       const loginName = String(it.loginName || '').trim();
       const loginSuffix = loginName ? ` (${loginName})` : '';
+      const quickSuffix = it.quickUsername ? ' [免验证码]' : '';
       // 展开列表显示 userName(loginName)
-      opt.textContent = `${roleName}${userName}${loginSuffix}`;
+      opt.textContent = `${roleName}${userName}${loginSuffix}${quickSuffix}`;
       accountHistorySelect.appendChild(opt);
     });
 
@@ -1836,6 +1832,13 @@ function getAccountDisplayName(userId) {
   return `${roleName}${userName}`;
 }
 
+function findLoginAccountRecord(userId) {
+  const uid = String(userId || '').trim();
+  if (!uid) return null;
+  return normalizeLoginAccountHistoryList(loginAccountHistory)
+    .find((it) => it.userId === uid || it.loginName === uid) || null;
+}
+
 async function loadLoginAccountHistory() {
   try {
     const raw = await getLocal(LOGIN_ACCOUNT_HISTORY_KEY, []);
@@ -1863,6 +1866,8 @@ async function rememberLoggedInAccount(userId, info = null) {
     loginName,
     userName: String(nextInfo.userName || prev?.userName || '').trim(),
     roleName: String(nextInfo.roleName || prev?.roleName || '').trim(),
+    passwordMd5: String(nextInfo.passwordMd5 || prev?.passwordMd5 || '').trim(),
+    quickUsername: String(nextInfo.quickUsername || nextInfo.username || prev?.quickUsername || '').trim(),
     lastLoginAt: Date.now()
   };
   if (idx >= 0) loginAccountHistory.splice(idx, 1);
@@ -1972,17 +1977,227 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
 }
 
 // -------------------- Login --------------------
-async function loginGet(username) {
-  const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(username)}`;
-  const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
+function isCaptchaErrorMessage(msg = '') {
+  return /验证码|驗證碼|passcode|请输入正确的验证码|請輸入正確的驗證碼/i.test(String(msg || ''));
+}
+
+function isCredentialErrorMessage(msg = '') {
+  const t = String(msg || '');
+  if (!t || isCaptchaErrorMessage(t)) return false;
+  return /账号|帳號|用户名|用戶名|密码|密碼|口令|学号|工号|登录失败|登錄失敗|账号或密码|帳號或密碼/i.test(t);
+}
+
+function looksLikeLoginSuccess(html) {
+  const t = String(html || '');
+  return t.includes('跳转首页') || t.includes('top.location') || t.includes('退出登录') || t.includes('index.shtml?method=index&type=qxkt');
+}
+
+async function fetchPasswordMd5FromServer(userId) {
+  const uid = String(userId || '').trim();
+  if (!uid) return '';
+  const infoUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(uid)}`;
+  const { text: infoText } = await fetchText(infoUrl, {
+    headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+  });
+  if ((infoText || '').includes('login-page') || isSessionEndedHtml(infoText)) return '';
+
+  const studentUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=studentInfo&stuId=${encodeURIComponent(uid)}`;
+  const teacherUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=personInfo&teacherId=${encodeURIComponent(uid)}`;
+  const urls = (infoText || '').includes('学生') ? [studentUrl, teacherUrl] : [teacherUrl, studentUrl];
+  for (const url of urls) {
+    const { text } = await fetchText(url);
+    if ((text || '').includes('login-page') || isSessionEndedHtml(text)) return '';
+    const m = String(text || '').match(/(?:id|name)=["']oldpassword["'][^>]*value=["']([^"']+)["']/i)
+      || String(text || '').match(/value=["']([^"']+)["'][^>]*(?:id|name)=["']oldpassword["']/i);
+    if (m?.[1]) return String(m[1] || '').trim();
+  }
+  return '';
+}
+
+async function saveLoginAccountCredential(userId, passwordMd5 = '') {
+  const uid = String(userId || '').trim();
+  if (!uid) return;
+  const idx = loginAccountHistory.findIndex((it) => String(it?.userId || '').trim() === uid || String(it?.loginName || '').trim() === uid);
+  const prev = idx >= 0 ? loginAccountHistory[idx] : { userId: uid, loginName: uid };
+  const record = {
+    ...prev,
+    userId: String(prev.userId || uid).trim(),
+    loginName: String(prev.loginName || uid).trim(),
+    passwordMd5: String(passwordMd5 || '').trim(),
+    lastLoginAt: Date.now()
+  };
+  if (idx >= 0) loginAccountHistory.splice(idx, 1);
+  loginAccountHistory.unshift(record);
+  await saveLoginAccountHistory();
+  renderLoginAccountHistorySelect(uid);
+}
+
+let veTessWorkerPromise = null;
+
+async function getVeTessWorker() {
+  if (veTessWorkerPromise) return veTessWorkerPromise;
+  veTessWorkerPromise = (async () => {
+    const T = globalThis.Tesseract;
+    if (!T || typeof T.createWorker !== 'function') throw new Error('Tesseract 未加载');
+    const options = {
+      logger: () => {},
+      workerPath: chrome.runtime.getURL('vendor/tesseract/worker.min.js'),
+      corePath: chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js'),
+      langPath: chrome.runtime.getURL('vendor/tesseract'),
+      workerBlobURL: true
+    };
+    let worker;
+    try {
+      worker = await T.createWorker('eng', 1, options);
+    } catch {
+      worker = await T.createWorker(options);
+      if (worker.loadLanguage) await worker.loadLanguage('eng');
+      if (worker.initialize) await worker.initialize('eng');
+    }
+    if (worker.setParameters) {
+      await worker.setParameters({
+        tessedit_char_whitelist: '0123456789',
+        tessedit_pageseg_mode: '7'
+      });
+    }
+    return worker;
+  })();
+  return veTessWorkerPromise;
+}
+
+function preprocessCaptchaImageToCanvas(img) {
+  const w = Math.max(1, img.naturalWidth || img.width || 1);
+  const h = Math.max(1, img.naturalHeight || img.height || 1);
+  const canvas = document.createElement('canvas');
+  canvas.width = w * 2;
+  canvas.height = h * 2;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < data.data.length; i += 4) {
+    const gray = 0.299 * data.data[i] + 0.587 * data.data[i + 1] + 0.114 * data.data[i + 2];
+    const v = gray < 160 ? 0 : 255;
+    data.data[i] = v;
+    data.data[i + 1] = v;
+    data.data[i + 2] = v;
+    data.data[i + 3] = 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvas;
+}
+
+async function loadImageFromBlob(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+    return img;
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
+async function recognizePortalCaptchaInExtension() {
+  await enforceJsessionidBeforeLoginRequest();
+  const res = await fetch(`${BASE_VE}GetImg?t=${Date.now()}`, {
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' }
+  });
+  const blob = await res.blob();
+  const img = await loadImageFromBlob(blob);
+  const worker = await getVeTessWorker();
+  const canvas = preprocessCaptchaImageToCanvas(img);
+  const { data } = await worker.recognize(canvas);
+  return String(data?.text || '').replace(/\D/g, '').slice(0, 4);
+}
+
+async function loginPostInExtension(username, passwordMd5, passcode, { signal } = {}) {
+  await enforceJsessionidBeforeLoginRequest();
+  const body = new URLSearchParams({
+    login: 'main_2',
+    qxkt_type: '',
+    qxkt_url: '',
+    username: String(username || ''),
+    password: String(passwordMd5 || ''),
+    passcode: String(passcode || '')
+  });
+  const { res, text } = await fetchText(`${BASE_VE}s.shtml`, {
+    method: 'POST',
+    omitSessionId: true,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      Origin: BASE
+    },
+    body: body.toString(),
+    signal
+  });
+  await syncJsessionidFromResponse(res);
+  await forceSyncJsessionidAfterLogin();
+  const alertMsg = parseAlertMsg(text);
+  if (alertMsg && isCaptchaErrorMessage(alertMsg)) return { ok: false, reason: 'captcha', message: alertMsg };
+  if (alertMsg && isCredentialErrorMessage(alertMsg)) return { ok: false, reason: 'credential', message: alertMsg };
+  if (looksLikeLoginSuccess(text)) return { ok: true };
+  return { ok: false, reason: 'other', message: alertMsg || '登录失败' };
+}
+
+async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal } = {}) {
+  let last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
+  for (let i = 0; i < 3; i++) {
+    if (loginCancelRequested || signal?.aborted) return last;
+    showToast(`正在识别验证码 (${i + 1}/3)...`, 'info', 0);
+    const code = await recognizePortalCaptchaInExtension();
+    if (!/^\d{4}$/.test(code)) {
+      last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
+      continue;
+    }
+    if (loginCancelRequested || signal?.aborted) return last;
+    showToast('验证码已识别，正在提交登录...', 'info', 0);
+    last = await loginPostInExtension(username, passwordMd5, code, { signal });
+    if (last.ok || last.reason !== 'captcha') return last;
+  }
+  return last;
+}
+
+async function loginGet(username, { signal } = {}) {
+  const account = findLoginAccountRecord(username);
+  const quickUsername = String(account?.quickUsername || '').trim();
+  if (!quickUsername) {
+    return { ok: false, reason: 'needs-post-login', message: '需要验证码登录' };
+  }
+  const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(quickUsername)}`;
+  const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include', signal });
   await syncJsessionidFromResponse(res);
   if (text.includes('账号或密码错误')) {
-    return { ok: false, reason: 'invalid-account', message: '账号不存在' };
+    return { ok: false, reason: 'invalid-account', message: '绑定的快速登录 username 已失效' };
   }
   if (text.includes('index.shtml?method=index&type=qxkt')) {
     return { ok: true };
   }
   return { ok: false, reason: 'other', message: '登录失败' };
+}
+
+async function bootstrapSessionWithAnyQuickAccount(excludeUserId = '', { signal } = {}) {
+  const exclude = String(excludeUserId || '').trim();
+  const candidates = normalizeLoginAccountHistoryList(loginAccountHistory)
+    .filter((it) => it.quickUsername && it.userId !== exclude && it.loginName !== exclude);
+  for (const account of candidates) {
+    if (loginCancelRequested || signal?.aborted) return null;
+    try {
+      const result = await loginGet(account.userId, { signal });
+      if (result.ok) return account;
+    } catch {
+      if (loginCancelRequested || signal?.aborted) return null;
+    }
+  }
+  return null;
 }
 
 
@@ -2027,9 +2242,23 @@ async function openPortalForInitialLogin() {
 
 let lastPortalLoginTime = 0;
 async function openPortalLoginForInvalidSession() {
-  if (Date.now() - lastPortalLoginTime < 5000) return;
+  if (Date.now() - lastPortalLoginTime < 1200) return;
   lastPortalLoginTime = Date.now();
-  await doLoginFlow();
+  const username = String(usernameInput.value || '').trim();
+  const account = findLoginAccountRecord(username);
+  const tabResp = await chrome.runtime.sendMessage({
+    type: 'OPEN_PORTAL_LOGIN_TAB',
+    payload: {
+      username,
+      passwordMd5: String(account?.passwordMd5 || '').trim()
+    }
+  });
+  if (!tabResp?.ok) {
+    showToast(tabResp?.error || '无法打开智慧课程平台登录页', 'error');
+    return;
+  }
+  const synced = await waitAndSyncLoginFromPortal(tabResp.tabId, 180000, username);
+  if (!synced) showToast('登录未完成或超时', 'warning');
 }
 
 async function routeLoginBySessionValidityForSwitch(targetUsername, _modalMessage) {
@@ -2053,12 +2282,17 @@ async function waitTabComplete(tabId, timeoutMs = 15000) {
   return false;
 }
 
-async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 120000) {
+async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 120000, expectedUserId = '') {
+  const expected = String(expectedUserId || '').trim();
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     try {
       const detected = await detectUserIdFromPersonalCenter();
       if (detected) {
+        if (expected && String(detected) !== expected) {
+          await new Promise(r => setTimeout(r, 300));
+          continue;
+        }
         await syncJsessionidToUi();
         loginCancelRequested = false;
         await closePortalLoginTab();
@@ -2114,35 +2348,112 @@ async function doLoginFlow() {
   showToast('正在登录...', 'info', 0);
   isLoginInProgress = true;
   loginCancelRequested = false;
+  loginAbortController = new AbortController();
+  const loginSignal = loginAbortController.signal;
 
   try {
-    const result = await loginGet(username);
+    const currentSessionUser = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
+    const result = await loginGet(username, { signal: loginSignal });
 
     if (!result.ok) {
-      showToast(result.message || '登录失败', 'error');
-      return;
+      let hasWorkingSession = !!currentSessionUser;
+      let confirmedSessionInExtension = !!currentSessionUser;
+      if (!hasWorkingSession) {
+        if (loginCancelRequested || loginSignal?.aborted) return;
+        const bootstrapped = await bootstrapSessionWithAnyQuickAccount(username, { signal: loginSignal });
+        if (bootstrapped) {
+          hasWorkingSession = true;
+          confirmedSessionInExtension = true;
+          showToast(`已先通过 ${getAccountDisplayName(bootstrapped.userId) || bootstrapped.userId} 建立登录态`, 'info', 1800);
+        }
+      }
+      if (!hasWorkingSession) {
+        const savedJsid = String(await getLocal('jsessionid', '') || '').trim();
+        const cookieJsid = String(await getCookieJsessionid().catch(() => '') || '').trim();
+        hasWorkingSession = !!(savedJsid || cookieJsid || isLoginSessionValid);
+      }
+
+      if (!hasWorkingSession) {
+        if (result.reason !== 'needs-post-login') {
+          showToast(result.message || '登录失败，正在打开智慧课程平台登录页', 'warning', 1800);
+        }
+        await openPortalLoginForInvalidSession();
+        return;
+      }
+
+      const account = findLoginAccountRecord(username);
+      let passwordMd5 = String(account?.passwordMd5 || '').trim();
+      if (!passwordMd5) {
+        passwordMd5 = await fetchPasswordMd5FromServer(username).catch(() => '');
+      }
+      if (!passwordMd5) passwordMd5 = md5(`Bjtu@${username}`);
+
+      let postResult;
+      try {
+        postResult = await loginPostWithCaptchaInExtension(username, passwordMd5, { signal: loginSignal });
+      } catch (e) {
+        if (loginCancelRequested || loginSignal?.aborted) return;
+        postResult = { ok: false, reason: 'captcha', message: String(e?.message || e || '验证码识别失败') };
+      }
+      if (!postResult.ok && postResult.reason === 'credential') {
+        const refreshed = await fetchPasswordMd5FromServer(username).catch(() => '');
+        if (refreshed && refreshed !== passwordMd5) {
+          await saveLoginAccountCredential(username, refreshed);
+          passwordMd5 = refreshed;
+          try {
+            postResult = await loginPostWithCaptchaInExtension(username, passwordMd5, { signal: loginSignal });
+          } catch (e) {
+            if (loginCancelRequested || loginSignal?.aborted) return;
+            postResult = { ok: false, reason: 'captcha', message: String(e?.message || e || '验证码识别失败') };
+          }
+        } else {
+          await saveLoginAccountCredential(username, '');
+        }
+      }
+
+      if (!postResult.ok) {
+        if (confirmedSessionInExtension) {
+          showToast(postResult.message || '扩展页内切换账号失败，请稍后重试', 'warning', 2800);
+          return;
+        }
+        const stillLoggedIn = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
+        if (stillLoggedIn) {
+          showToast(postResult.message || '扩展页内切换账号失败，请稍后重试', 'warning', 2800);
+          return;
+        }
+        showToast(postResult.message || '登录已失效，正在打开智慧课程平台登录页', 'warning', 2200);
+        await openPortalLoginForInvalidSession();
+        return;
+      }
+
+      await saveLoginAccountCredential(username, passwordMd5);
     }
 
     // Success
     isLoginSessionValid = true;
     loginCancelRequested = false;
     hideLoginModal();
-    showToast('登录成功', 'success');
     await forceSyncJsessionidAfterLogin();
 
     let finalUser = String(username || '').trim();
-    if (!finalUser) {
-      try {
-        finalUser = String(await detectUserIdFromPersonalCenter() || '').trim();
-      } catch {
-        finalUser = '';
-      }
+    let verifiedUser = '';
+    try {
+      verifiedUser = String(await detectUserIdFromPersonalCenter() || '').trim();
+    } catch {
+      verifiedUser = '';
     }
+    if (verifiedUser && finalUser && verifiedUser !== finalUser) {
+      showToast(`登录后检测到仍是账号 ${verifiedUser}，未切换到 ${finalUser}`, 'error', 3500);
+      isLoginSessionValid = false;
+      return;
+    }
+    if (verifiedUser) finalUser = verifiedUser;
 
     usernameInput.value = finalUser;
     updateJsessionidState();
 
     runPendingLoginCallbacks();
+    showToast('登录成功', 'success');
 
     try {
       await syncAccountInfoAndReloadVeCourses({ userId: finalUser, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
@@ -2150,6 +2461,10 @@ async function doLoginFlow() {
       // ignore
     }
 
+  } catch (e) {
+    if (loginCancelRequested || loginSignal?.aborted) return;
+    console.error('Login error:', e);
+    showToast('登录过程中出现异常', 'error');
   } finally {
     const switchModalClosed = !loginModal || loginModal.style.display === 'none';
     if (wasSwitchingAccount && pendingUsernameChange && switchModalClosed) {
@@ -9371,6 +9686,8 @@ if (resourceDownloadSelectedBtn) {
 if (loginBtn) loginBtn.addEventListener('click', doLoginFlow);
 cancelBtn.addEventListener('click', () => {
   loginModal.style.display = 'none';
+  loginAbortController?.abort();
+  loginAbortController = null;
 
   if (isLoginInProgress) {
     loginCancelRequested = true;
@@ -9835,6 +10152,11 @@ usernameInput.addEventListener('change', async () => {
       renderLoginAccountHistorySelect(lastValidUsername);
       return;
     }
+    if (validResult.status === 'needs-post-login') {
+      pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: u } : null;
+      await routeLoginBySessionValidityForSwitch(u, '需要验证码登录');
+      return;
+    }
     pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: u } : null;
     isLoginSessionValid = true;
     setWelcomeMessage(validResult.ok ? validResult.info : null);
@@ -9898,6 +10220,12 @@ usernameInput.addEventListener('change', async () => {
     // valid
     pendingUsernameChange = isFirstLogin ? null : { from: lastValidUsername, to: u };
     setWelcomeMessage(result.info);
+  }
+
+  if (result.status === 'needs-post-login') {
+    isLoginSessionValid = false;
+    await openPortalLoginForInvalidSession();
+    return;
   }
 
   try {
@@ -9972,8 +10300,6 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 // -------------------- Init --------------------
 (async function init() {
   setupRightColumnResizer();
-  // 清理旧版本扩展可能遗留的不必要本地存储
-  await clearLegacyStorage().catch(() => {});
   await loadPlatformEnabledFromStorage();
   if (popupMode) {
     window.platformEnabled = { jlgj: false, mrzy: false, ve: true, ykt: false };
