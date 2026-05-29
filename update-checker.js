@@ -30,9 +30,12 @@ function compareVersionText(a, b) {
 
 let versionButtonMode = 'loading';
 let versionButtonDownloadUrl = '';
+let versionButtonLocalVersion = '';
 let versionButtonLatestVersion = '';
 let versionButtonLatestDisplayVersion = '';
 let versionButtonLatestPublishedAt = '';
+let versionButtonLocalReleaseVersion = '';
+let versionButtonLocalPublishedAt = '';
 let versionButtonLatestBodyMarkdown = '';
 let versionNoticeShownVersion = '';
 let versionDownloadInProgress = false;
@@ -251,7 +254,10 @@ function openVersionNoticeModal(overrideMode) {
     if (mode === 'latest') {
       titleEl.innerHTML = `<span class="version-notice-title-main">已是最新版本：${versionLabel}</span>${timeHtml}`;
     } else if (mode === 'ahead') {
-      titleEl.innerHTML = `<span class="version-notice-title-main">当前为开发预览版本：${versionLabel}</span>${timeHtml}`;
+      const localLabel = escapeHtml(String(versionButtonLocalReleaseVersion || versionButtonLocalVersion || '').trim() || '--');
+      const localPublishedText = escapeHtml(formatReleasePublishedAt(versionButtonLocalPublishedAt));
+      const localTimeHtml = localPublishedText ? `<span class="version-notice-title-time">${localPublishedText}</span>` : '';
+      titleEl.innerHTML = `<span class="version-notice-title-main">当前为开发预览版本：${localLabel}</span>${localTimeHtml}`;
     } else {
       titleEl.innerHTML = `<span class="version-notice-title-main">发现新版本：${versionLabel}</span>${timeHtml}`;
     }
@@ -476,6 +482,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
   if (!versionBtn) return;
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
+  versionButtonLocalVersion = String(localVersion || '').trim();
   versionButtonLatestVersion = String(latestVersion || '').trim();
   versionButtonLatestDisplayVersion = String(latestDisplayVersion || latestVersion || '').trim();
   versionButtonLatestPublishedAt = String(latestPublishedAt || '').trim();
@@ -544,7 +551,7 @@ function buildAggregatedReleaseNotes(releases = [], localVersion = '', latestVer
   }).join('\n\n---\n\n');
 }
 
-function buildAllReleaseNotes(releases = [], latestVersion = '') {
+function buildAllReleaseNotes(releases = [], latestVersion = '', suppressLatest = false) {
   const list = Array.isArray(releases) ? releases : [];
   const items = list.filter((r) => !r?.draft && getReleaseTagVersion(r));
   if (!items.length) return '';
@@ -553,7 +560,10 @@ function buildAllReleaseNotes(releases = [], latestVersion = '') {
     const versionLabel = getReleaseDisplayVersion(r);
     const body = String(r.body || '').trim() || '此版本暂无更新说明。';
     const publishedText = formatReleasePublishedAt(r?.published_at);
-    return compareVersionText(tag, latestVersion) === 0 ? `${body}` : `@@release|${versionLabel}|${publishedText}\n${body}`;
+    if (suppressLatest && compareVersionText(tag, latestVersion) === 0) {
+      return body;
+    }
+    return `@@release|${versionLabel}|${publishedText}\n${body}`;
   }).join('\n\n---\n\n');
 }
 
@@ -644,7 +654,7 @@ async function loadVersionInfo() {
 
     const cmp = compareVersionText(latestTag, localVersion);
     if (cmp === 0) {
-      const historyBody = buildAllReleaseNotes(releases, latestTag);
+      const historyBody = buildAllReleaseNotes(releases, latestTag, true);
       setVersionButtonState('latest', {
         localVersion,
         latestVersion: latestTag,
@@ -676,6 +686,13 @@ async function loadVersionInfo() {
       versionIgnoredTag = '';
       await setLocal(VERSION_IGNORE_KEY, '');
     }
+    const localRelease = (Array.isArray(releases) ? releases : []).find((r) => {
+      if (r?.draft) return false;
+      const tag = getReleaseTagVersion(r);
+      return tag && compareVersionText(tag, localVersion) === 0;
+    });
+    versionButtonLocalReleaseVersion = localRelease ? getReleaseDisplayVersion(localRelease) : localVersion;
+    versionButtonLocalPublishedAt = localRelease?.published_at || '';
     const aheadBody = buildAllReleaseNotes(releases, latestTag);
     setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '', body: aheadBody });
   } catch (err) {
