@@ -21,12 +21,15 @@ function normalizePlatformEnabled(raw) {
 (async function init() {
   const { platformEnabled } = await chrome.storage.local.get(['platformEnabled']);
   const { openMode } = await chrome.storage.local.get(['openMode']);
+  const { autoCaptcha } = await chrome.storage.local.get(['autoCaptcha']);
   const enabled = normalizePlatformEnabled(platformEnabled);
 
   document.getElementById('enableVe').checked = !!enabled.ve;
   document.getElementById('enableYkt').checked = !!enabled.ykt;
   document.getElementById('enableMrzy').checked = !!enabled.mrzy;
   document.getElementById('enableJlgj').checked = !!enabled.jlgj;
+  const autoCaptchaVal = autoCaptcha === undefined ? true : !!autoCaptcha;
+  document.getElementById('autoCaptcha').checked = autoCaptchaVal;
   const mode = String(openMode || DEFAULT_OPEN_MODE);
   document.getElementById('openModePopup').checked = mode === 'popup';
   document.getElementById('openModePage').checked = mode === 'page';
@@ -56,6 +59,11 @@ function normalizePlatformEnabled(raw) {
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
+
+  document.getElementById('autoCaptcha').addEventListener('change', async () => {
+    await chrome.storage.local.set({ autoCaptcha: !!document.getElementById('autoCaptcha').checked });
+    setMsg('已应用更改');
+  });
 
   const bindBtn = document.getElementById('bindPortalUsernameBtn');
   if (bindBtn) {
@@ -105,9 +113,11 @@ function normalizePlatformEnabled(raw) {
     document.getElementById('enableYkt').checked = false;
     document.getElementById('enableMrzy').checked = false;
     document.getElementById('enableJlgj').checked = false;
+    document.getElementById('autoCaptcha').checked = true;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
+    await chrome.storage.local.set({ autoCaptcha: true });
     setMsg('已恢复默认配置');
   });
 })();

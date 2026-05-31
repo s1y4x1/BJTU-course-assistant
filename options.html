@@ -18,6 +18,14 @@
 <body>
   <h2>BJTU 上传助手 - 设置</h2>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div style="font-weight:600; margin-bottom:8px; font-size: 16px;">验证码</div>
+    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="autoCaptcha" style="width:auto;" checked />
+      自动识别验证码
+    </label>
+    <div class="tip">关闭后，扩展页面和智慧课程平台登录页均需手动输入验证码。但您可以清理 vendor/tesseract 目录。</div>
+  </div>
+  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div style="font-weight:600; margin-bottom:8px; font-size: 16px;">平台显示与加载</div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
       <input type="checkbox" id="enableVe" style="width:auto;" checked />

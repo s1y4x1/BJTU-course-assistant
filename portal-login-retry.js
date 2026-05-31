@@ -703,6 +703,12 @@ async function portalLoginAutoLoginInjected(context) {
         }
 
         if (!passcode) {
+          const autoCaptcha = await chrome.storage.local.get(['autoCaptcha']).then(r => r.autoCaptcha).catch(() => true);
+          const autoCaptchaEnabled = autoCaptcha === undefined ? true : !!autoCaptcha;
+          if (!autoCaptchaEnabled) {
+            statusEl.textContent = '验证码识别已关闭，请手动输入';
+            return;
+          }
           const baseRetry = Math.max(0, Number(flowState.retryCount || 0));
           while (tryCount < maxTry && !passcode) {
             tryCount++;
@@ -850,8 +856,12 @@ async function portalLoginAutoLoginInjected(context) {
 
   if (!username) return { ok: false, reason: 'empty-username' };
   if (!passcode) {
-    const ocrRes = await autoRecognizeCaptchaCode();
-    passcode = String(ocrRes?.code || '').trim();
+    const autoCaptcha = await chrome.storage.local.get(['autoCaptcha']).then(r => r.autoCaptcha).catch(() => true);
+    const autoCaptchaEnabled = autoCaptcha === undefined ? true : !!autoCaptcha;
+    if (autoCaptchaEnabled) {
+      const ocrRes = await autoRecognizeCaptchaCode();
+      passcode = String(ocrRes?.code || '').trim();
+    }
   }
   if (!passcode) return { ok: false, reason: 'empty-passcode' };
   if (!passwordMd5) {

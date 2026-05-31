@@ -2147,6 +2147,10 @@ async function loginPostInExtension(username, passwordMd5, passcode, { signal } 
 }
 
 async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal } = {}) {
+  const autoCaptcha = await getLocal('autoCaptcha', 'true');
+  if (autoCaptcha !== 'true' && autoCaptcha !== true) {
+    return { ok: false, reason: 'captcha', message: '验证码识别已关闭' };
+  }
   let last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
   for (let i = 0; i < 3; i++) {
     if (loginCancelRequested || signal?.aborted) return last;
