@@ -12,6 +12,14 @@ async function portalLoginAutoLoginInjected(context) {
   const old2 = document.getElementById('__bjtu_login_modal__');
   if (old2) old2.remove();
 
+  // Pre-computed values from background.js (MAIN world compat)
+  const tesseractWorkerUrl = context._tesseractWorkerUrl;
+  const tesseractCoreUrl = context._tesseractCoreUrl;
+  const tesseractLangUrl = context._tesseractLangUrl;
+  const portalModalUrl = context._portalModalUrl;
+  const autoCaptchaEnabled = context._autoCaptchaEnabled;
+  const hasChrome = typeof chrome !== 'undefined' && !!chrome?.storage?.local;
+
   let username = String(context?.username || '').trim();
   let passcode = String(context?.passcode || '').trim();
   let passwordMd5 = String(context?.passwordMd5 || '').trim();
@@ -75,7 +83,7 @@ async function portalLoginAutoLoginInjected(context) {
 
   async function saveLoginAccountPatch(userId, patch = {}) {
     const uid = String(userId || '').trim();
-    if (!uid || typeof chrome === 'undefined' || !chrome?.storage?.local) return;
+    if (!uid || !hasChrome) return;
     try {
       const key = 'loginAccountHistory';
       const raw = await chrome.storage.local.get(key);
@@ -337,19 +345,17 @@ async function portalLoginAutoLoginInjected(context) {
     if (cachedTessWorkerPromise) return cachedTessWorkerPromise;
     cachedTessWorkerPromise = (async () => {
       const T = globalThis.Tesseract;
-      try {
-        console.warn('[bjtu] ocr: getTessWorker start. hasTesseract=', !!T, 'createWorker=', typeof T?.createWorker, 'hasChrome=', typeof chrome !== 'undefined', 'hasGetURL=', typeof chrome?.runtime?.getURL === 'function', 'globalKeys=', Object.keys(globalThis).slice(0, 20).join(','));
-      } catch {}
-      if (!T || typeof T.createWorker !== 'function' || typeof chrome === 'undefined' || !chrome?.runtime?.getURL) {
+      if (!T || typeof T.createWorker !== 'function') {
         return null;
       }
       const options = {
         logger: () => {},
         workerBlobURL: false,
-        workerPath: chrome.runtime.getURL('vendor/tesseract/worker.min.js'),
-        corePath: chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js'),
-        langPath: chrome.runtime.getURL('vendor/tesseract')
+        workerPath: tesseractWorkerUrl || (hasChrome ? chrome.runtime.getURL('vendor/tesseract/worker.min.js') : null),
+        corePath: tesseractCoreUrl || (hasChrome ? chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js') : null),
+        langPath: tesseractLangUrl || (hasChrome ? chrome.runtime.getURL('vendor/tesseract') : null)
       };
+      if (!options.workerPath) return null;
       let worker = null;
       try {
         worker = await T.createWorker('eng', 1, options);
@@ -553,7 +559,7 @@ async function portalLoginAutoLoginInjected(context) {
     mask.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2147483646;display:flex;align-items:center;justify-content:center;';
     let modalHtml = '';
     try {
-      const res = await fetch(chrome.runtime.getURL('portal-modal.html'), { cache: 'no-store' });
+      const res = await fetch(portalModalUrl || (hasChrome ? chrome.runtime.getURL('portal-modal.html') : ''), { cache: 'no-store' });
       modalHtml = await res.text();
     } catch (e) {
       return { ok: false, reason: 'modal-template-load-failed', message: String(e?.message || e) };
@@ -778,8 +784,6 @@ async function portalLoginAutoLoginInjected(context) {
           }
 
           if (!passcode) {
-            const autoCaptcha = await chrome.storage.local.get(['autoCaptcha']).then(r => r.autoCaptcha).catch(() => true);
-            const autoCaptchaEnabled = autoCaptcha === undefined ? true : !!autoCaptcha;
             if (!autoCaptchaEnabled) {
               statusEl.textContent = '验证码识别已关闭，请手动输入';
               return;
@@ -954,8 +958,6 @@ async function portalLoginAutoLoginInjected(context) {
 
   if (!username) return { ok: false, reason: 'empty-username' };
   if (!passcode) {
-    const autoCaptcha = await chrome.storage.local.get(['autoCaptcha']).then(r => r.autoCaptcha).catch(() => true);
-    const autoCaptchaEnabled = autoCaptcha === undefined ? true : !!autoCaptcha;
     if (autoCaptchaEnabled) {
       const ocrRes = await autoRecognizeCaptchaCode();
       passcode = String(ocrRes?.code || '').trim();

@@ -77,62 +77,27 @@ async function savePortalLoginAccountRecord(userId, patch = {}) {
   return record;
 }
 
-async function ensureTesseractInjected(tabId) {
-  try {
-    const res = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => !!globalThis.Tesseract
-    });
-    if (!res?.[0]?.result) {
+async function ensureMainScriptsInjected(tabId, files) {
+  for (const file of files) {
+    try {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ['vendor/tesseract/tesseract.min.js']
+        world: 'MAIN',
+        files: [file]
       });
-      // Verify injection succeeded
-      const verify = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: () => ({
-          hasTesseract: !!globalThis.Tesseract,
-          createWorkerType: typeof globalThis.Tesseract?.createWorker,
-          winKeys: Object.keys(globalThis).filter(k => /tess/i.test(k))
-        })
-      });
-      console.warn('[bjtu] tesseract injection verify (MAIN):', verify?.[0]?.result);
-    }
-  } catch (e) {
-    console.warn('[bjtu] ensureTesseractInjected failed:', String(e?.message || e));
+    } catch {}
   }
 }
 
-async function ensureTesseractInjectedIsolated(tabId) {
-  try {
-    const res = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'ISOLATED',
-      func: () => !!globalThis.Tesseract
-    });
-    if (!res?.[0]?.result) {
+async function ensureIsolatedScriptsInjected(tabId, files) {
+  for (const file of files) {
+    try {
       await chrome.scripting.executeScript({
         target: { tabId },
         world: 'ISOLATED',
-        files: ['vendor/tesseract/tesseract.min.js']
+        files: [file]
       });
-      // Verify injection succeeded
-      const verify = await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'ISOLATED',
-        func: () => ({
-          hasTesseract: !!globalThis.Tesseract,
-          createWorkerType: typeof globalThis.Tesseract?.createWorker,
-          winKeys: Object.keys(globalThis).filter(k => /tess/i.test(k)),
-          hasChrome: typeof chrome !== 'undefined',
-          hasChromeRuntime: typeof chrome?.runtime?.getURL === 'function'
-        })
-      });
-      console.warn('[bjtu] tesseract injection verify (ISOLATED):', verify?.[0]?.result);
-    }
-  } catch (e) {
-    console.warn('[bjtu] ensureTesseractInjectedIsolated failed:', String(e?.message || e));
+    } catch {}
   }
 }
 
@@ -177,14 +142,10 @@ function shouldSkipRecent(tabId, url) {
 
 async function injectPortalAutoLogin(tabId, ctx = null) {
   try {
-    await ensureTesseractInjected(tabId);
+    await ensureMainScriptsInjected(tabId, ['md5.js', 'vendor/tesseract/tesseract.min.js']);
   } catch {
-    // fallback to non-tesseract OCR path
-  }
-  try {
-    await ensureTesseractInjectedIsolated(tabId);
-  } catch {
-    // isolated-world Tesseract unavailable; createWorker will fail
+    // MAIN injection failed; try ISOLATED fallback
+    try { await ensureIsolatedScriptsInjected(tabId, ['md5.js', 'vendor/tesseract/tesseract.min.js']); } catch {}
   }
 
   const enrichedCtx = ctx && typeof ctx === 'object' ? { ...ctx } : {};
@@ -192,26 +153,36 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
     enrichedCtx.accountHistory = await getPortalLoginAccountHistory();
   }
 
-  return new Promise((resolve) => {
+  // Pre-compute all extension URLs and storage values for MAIN world
+  enrichedCtx._tesseractWorkerUrl = chrome.runtime.getURL('vendor/tesseract/worker.min.js');
+  enrichedCtx._tesseractCoreUrl = chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js');
+  enrichedCtx._tesseractLangUrl = chrome.runtime.getURL('vendor/tesseract');
+  enrichedCtx._portalModalUrl = chrome.runtime.getURL('portal-modal.html');
+  try {
+    const r = await chrome.storage.local.get(['autoCaptcha']);
+    enrichedCtx._autoCaptchaEnabled = r.autoCaptcha === undefined ? true : !!r.autoCaptcha;
+  } catch {
+    enrichedCtx._autoCaptchaEnabled = true;
+  }
+
+  const injectInWorld = (world) => new Promise((resolve) => {
     chrome.scripting.executeScript({
       target: { tabId },
-      world: 'ISOLATED',
+      world,
       func: portalLoginAutoLoginInjected,
       args: [enrichedCtx]
     }, (results) => {
       const err = chrome.runtime.lastError;
-      if (err) {
-        resolve({ ok: false, error: err.message || String(err) });
-        return;
-      }
+      if (err) { resolve({ ok: false, error: err.message || String(err) }); return; }
       const result = Array.isArray(results) && results[0] ? results[0].result : null;
-      if (!result || result.ok !== true) {
-        resolve({ ok: false, error: result?.reason || 'inject-failed' });
-        return;
-      }
+      if (!result || result.ok !== true) { resolve({ ok: false, error: result?.reason || 'inject-failed' }); return; }
       resolve({ ok: true, meta: result });
     });
   });
+  const mainRes = await injectInWorld('MAIN');
+  if (mainRes.ok) return mainRes;
+  // Fallback to ISOLATED world if MAIN fails
+  return await injectInWorld('ISOLATED');
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

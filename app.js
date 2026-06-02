@@ -558,14 +558,9 @@ function togglePlatformSelection(platform) {
 }
 
 function refreshUploadSelectVisibility() {
-  const hasOpenSubmit = !!document.querySelector('.submit-panel[data-submit-panel="1"][style*="display: block"]');
   const wraps = document.querySelectorAll('.upload-select-wrap');
   wraps.forEach((wrap) => {
-    const cb = wrap.querySelector('.submit-file-check');
-    const fileId = String(cb?.dataset?.fileId || '').trim();
-    const visible = hasOpenSubmit && !!window.uploadedFileMetaById[fileId];
-    wrap.style.display = visible ? 'inline-flex' : 'none';
-    if (!visible && cb) cb.checked = false;
+    wrap.style.display = 'inline-flex';
   });
 }
 
@@ -2004,22 +1999,12 @@ async function fetchText(url, options = {}) {
 }
 
 async function detectUserIdFromPersonalCenter() {
-  const url = `${BASE_VE}back/personalCenter/personalCenter.shtml?method=toPersonalCenter`;
-  const { res, text } = await fetchText(url, {
-    omitSessionId: true,
-    headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
-  });
-
-  if (isLikelyLoginPageHtml(text, res?.url)) return '';
-
-  // <p><span>学号：</span> 24281272</p> OR <p><span>工号：</span> 7971</p>
-  const m = String(text || '').match(/<span>\s*(学号|工号)\s*：\s*<\/span>\s*([0-9]{1,})\s*<\/p>/);
-  if (m?.[2]) return m[2];
-
-  const m2 = String(text || '').replace(/\s+/g, ' ').match(/(学号|工号)\s*：\s*([0-9]{1,})/);
-  if (m2?.[2]) return m2[2];
-
-  return '';
+  try {
+    const info = await fetchUserInfoRemote();
+    return String(info?.loginName || info?.userId || info?.userID || info?.stuId || info?.teacherId || '').trim();
+  } catch {
+    return '';
+  }
 }
 
 function parseAlertMsg(html) {
@@ -6417,7 +6402,7 @@ function buildCoursewareListHtml(courseId, items) {
 
   const currentCourseId = String(courseId || '').trim();
   const selectAllToolbar = currentCourseId
-    ? `<div class="courseware-toolbar"><button class="btn courseware-select-all-btn" data-action="courseware-select-all" data-course-id="${escapeHtml(currentCourseId)}" style="background:#1e3a8a; padding:3px 8px; font-size:11px; line-height:1.2;">反选</button></div>`
+    ? `<div class="courseware-toolbar"><button class="btn courseware-select-all-btn" data-action="courseware-select-all" data-course-id="${escapeHtml(currentCourseId)}" style="background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2;">反选</button></div>`
     : '';
 
   const rowsHtml = list.map((item, index) => {
@@ -9845,7 +9830,7 @@ function uploadFile(file, fileId) {
               a.style.textDecoration = 'none';
               const btn = document.createElement('button');
               btn.className = 'btn';
-              btn.style.padding = '5px 10px';
+              btn.style.padding = '2px 8px';
               btn.style.fontSize = '12px';
               btn.style.whiteSpace = 'nowrap';
               btn.textContent = '复制';
@@ -10003,25 +9988,27 @@ function handleFiles(e) {
 }
 
 copyAllBtn.addEventListener('click', () => {
-  const items = Array.from(document.querySelectorAll('#file-list .file-item')).reverse();
   let textToCopy = '';
-  items.forEach(item => {
-    const linkEl = item.querySelector('.url-link');
-    if (linkEl) {
+  const appendChecked = (container) => {
+    container.querySelectorAll('input.submit-file-check:checked').forEach(cb => {
+      const item = cb.closest('.file-item');
+      if (!item) return;
+      const linkEl = item.querySelector('.url-link');
+      if (!linkEl) return;
       const name = item.querySelector('strong')?.textContent || '';
-      const link = linkEl.href;
-      textToCopy += `${name}\n${link}\n\n`;
-    }
-  });
+      textToCopy += `${name}\n${linkEl.href}\n\n`;
+    });
+  };
+  appendChecked(document.querySelector('#file-list'));
+  const savedList = document.querySelector('.saved-uploads-list');
+  if (savedList) appendChecked(savedList);
   textToCopy = textToCopy.trim();
   if (!textToCopy) {
-    showToast('没有可复制的链接', 'warning');
+    showToast('请先选择文件', 'warning', 1200);
     return;
   }
   navigator.clipboard.writeText(textToCopy).then(() => {
-    const original = copyAllBtn.textContent;
-    copyAllBtn.textContent = '已复制全部';
-    setTimeout(() => copyAllBtn.textContent = original, 1500);
+    showToast('已复制选中链接', 'success', 1200);
   });
 });
 
@@ -10845,7 +10832,7 @@ function renderSavedUploadsSection() {
     };
   }
 
-  const cardsHtml = expanded ? list.map((it) => {
+  const cardsHtml = list.map((it) => {
     const entryId = String(it.id || '').trim();
     if (!entryId) return '';
     const synthFileId = `saved_${entryId}`;
@@ -10875,11 +10862,11 @@ function renderSavedUploadsSection() {
         </div>
         <div class="upload-link-row">
           <a class="url-link" href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>
-          <button type="button" class="btn saved-upload-copy" data-action="copy-saved-upload" data-saved-upload-id="${safeEntryId}" style="padding:5px 10px; font-size:12px; white-space:nowrap;">复制</button>
+          <button type="button" class="btn saved-upload-copy" data-action="copy-saved-upload" data-saved-upload-id="${safeEntryId}" style="padding:2px 8px; font-size:12px; white-space:nowrap;">复制</button>
         </div>
       </div>
     `;
-  }).join('') : '';
+  }).join('');
 
   section.innerHTML = `
     <div class="homework-toggle-row homework-toggle-row--saved-uploads">
@@ -10889,7 +10876,7 @@ function renderSavedUploadsSection() {
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
       </button>
     </div>
-    ${expanded ? `<div class="saved-uploads-list">${cardsHtml}</div>` : ''}
+    <div class="saved-uploads-list homework-group ${expanded ? '' : 'is-hidden'} homework-group-animating">${cardsHtml}</div>
   `;
   if (typeof refreshUploadSelectVisibility === 'function') {
     refreshUploadSelectVisibility();
@@ -10905,6 +10892,13 @@ function setupSavedUploadsUi() {
       persistSaveUploadsEnabled();
     });
   }
+  const invertBtn = document.getElementById('invert-save-uploads-btn');
+  if (invertBtn) {
+    invertBtn.addEventListener('click', () => {
+      document.querySelectorAll('#file-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
+      document.querySelectorAll('.saved-uploads-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
+    });
+  }
   const section = document.getElementById('saved-uploads-section');
   if (section instanceof HTMLElement) {
     section.addEventListener('click', (e) => {
@@ -10917,8 +10911,24 @@ function setupSavedUploadsUi() {
         const action = String(actionEl.dataset.action || '').trim();
         if (action === 'toggle-saved-uploads') {
           const expanded = section.dataset.expanded === '1';
-          section.dataset.expanded = expanded ? '0' : '1';
-          renderSavedUploadsSection();
+          const nextExpanded = expanded ? '0' : '1';
+          section.dataset.expanded = nextExpanded;
+          const list = section.querySelector('.saved-uploads-list');
+          if (list) {
+            if (nextExpanded === '1') list.classList.remove('is-hidden');
+            else list.classList.add('is-hidden');
+          }
+          const btn = actionEl;
+          const isExpanded = nextExpanded === '1';
+          btn.classList.toggle('is-expanded', isExpanded);
+          const collapsedText = String(btn.dataset.collapsedText || '查看全部已上传文件');
+          const expandedText = String(btn.dataset.expandedText || '收起全部已上传文件');
+          const count = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles.length : 0;
+          const label = btn.querySelector('.homework-toggle-label');
+          if (label) label.textContent = `${isExpanded ? expandedText : collapsedText} (${count})`;
+          btn.classList.toggle('homework-toggle-btn--up', isExpanded);
+          btn.classList.toggle('homework-toggle-btn--down', !isExpanded);
+          btn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
           return;
         }
         if (action === 'delete-saved-upload') {

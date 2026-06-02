@@ -11,7 +11,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         @keyframes toastEnter { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes fadeOutUp { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-12px); opacity: 0; } }
 
-        #drop-zone { border: 2px dashed #ccc; border-radius: 20px; width: 100%; padding: 40px; text-align: center; box-sizing: border-box; margin-bottom: 20px; transition: border-color 0.3s; cursor: pointer; }
+        #drop-zone { border: 2px dashed #ccc; border-radius: 20px; width: 100%; padding: 40px; text-align: center; box-sizing: border-box; margin-bottom: 4px; transition: border-color 0.3s; cursor: pointer; }
         #drop-zone.dragover { border-color: #4CAF50; background-color: #f0f9f0; }
         #file-input { display: none; }
         .btn { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
