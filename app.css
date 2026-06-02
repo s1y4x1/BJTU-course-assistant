@@ -2,7 +2,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
 
         /* Toast Notifications */
         #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10000; }
-        .toast { min-width: 250px; padding: 12px 20px; margin-bottom: 10px; border-radius: 8px; background-color: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; animation: toastEnter 0.25s ease-out; font-size: 14px; color: #333; opacity: 1; }
+        .toast { min-width: 250px; padding: 12px 20px; margin-bottom: 10px; border-radius: 8px; background-color: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; animation: toastEnter 0.25s ease-out; font-size: 14px; color: #333; opacity: 1; cursor: pointer; }
         .toast.success { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
         .toast.error { background-color: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }
         .toast.warning { background-color: #FFF8E1; color: #F57F17; border: 1px solid #FFECB3; }
@@ -1431,3 +1431,18 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         /* Keep course helper readable and left panel slightly denser */
         .right-column, .config-area, .status { font-size: 14px; }
         .left-column h1 { font-size: 24px; margin: 0 0 10px; }
+
+        /* Saved uploads list (in 本地保存本次上传过的文件) — 与下方新上传列表保持一致 */
+        #saved-uploads-section { margin-top: 8px; }
+        .saved-uploads-list {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #fff;
+            margin-top: 6px;
+            padding: 6px;
+            max-height: 360px;
+            overflow-y: auto;
+        }
+        .saved-uploads-list .file-item { margin-bottom: 8px; }
+        .saved-uploads-list .file-item:last-child { margin-bottom: 0; }
+        .save-uploads-toggle input[type="checkbox"] { cursor: pointer; }

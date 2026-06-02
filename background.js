@@ -1,4 +1,5 @@
-﻿importScripts('portal-login-retry.js');
+﻿importScripts('md5.js');
+importScripts('portal-auto-login.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
 const portalLoginCtxByTab = new Map(); // tabId -> { username, passcode, passwordMd5, autoCode, fromExtension }

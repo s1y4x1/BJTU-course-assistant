@@ -6,19 +6,27 @@
   <title>BJTU 上传助手 - 设置</title>
   <style>
     body { font-family: Segoe UI, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
-    h2 { margin-top: 0; }
+    h2 { margin: 0; }
     label { display: block; margin: 12px 0 6px; }
     input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
     button { margin-top: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
     .tip { margin-top: 12px; color: #666; font-size: 13px; }
     .ok { color: #2e7d32; margin-top: 8px; }
     .err { color: #c62828; margin-top: 8px; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .section-title { font-weight: 600; margin-bottom: 8px; font-size: 16px; }
+    .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
+    .back-home-link:hover { text-decoration: underline; }
+    .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
   </style>
 </head>
 <body>
-  <h2>BJTU 上传助手 - 设置</h2>
+  <div class="page-header">
+    <h2><span id="back-home" class="back-home-link" role="link" tabindex="0">BJTU 上传助手</span> - 设置</h2>
+    <button id="resetBtn" type="button" style="background:#6b7280; margin-top: 0;">恢复默认</button>
+  </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div style="font-weight:600; margin-bottom:8px; font-size: 16px;">验证码</div>
+    <div class="section-title">验证码</div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
       <input type="checkbox" id="autoCaptcha" style="width:auto;" checked />
       自动识别验证码
@@ -26,7 +34,7 @@
     <div class="tip">关闭后，扩展页面和智慧课程平台登录页均需手动输入验证码。但您可以清理 vendor/tesseract 目录。</div>
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div style="font-weight:600; margin-bottom:8px; font-size: 16px;">平台显示与加载</div>
+    <div class="section-title">平台显示与加载</div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
       <input type="checkbox" id="enableVe" style="width:auto;" checked />
       智慧课程平台
@@ -45,18 +53,25 @@
     </label>
     <div class="tip">说明：仅选中的平台会在打开扩展页面时异步加载一次；从未选中改为选中时会重新加载该平台。</div>
   </div>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-    <div style="font-weight:600; margin-right:8px;">点击扩展按钮时：</div>
-    <label style="display:flex; align-items:center; gap:8px;">
+  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div class="section-title">文件上传</div>
+    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
+      <span>在本地保存本次上传过的文件</span>
+    </label>
+    <div class="tip">开启后，已上传的文件会保存在扩展 storage 中，可在主页查看/复制链接/作为作业附件提交。</div>
+  </div>
+  <div class="open-mode-row">
+    <div class="section-title" style="margin-bottom:0;">点击扩展按钮时：</div>
+    <label style="display:flex; align-items:center; gap:8px; margin:0;">
       <input type="radio" name="openMode" id="openModePopup" value="popup" checked style="width:auto;"> 弹出窗口
     </label>
-    <label style="display:flex; align-items:center; gap:8px;">
+    <label style="display:flex; align-items:center; gap:8px; margin:0;">
       <input type="radio" name="openMode" id="openModePage" value="page" style="width:auto;"> 打开新页面
     </label>
-    <button id="resetBtn" style="background:#6b7280;margin-left:auto;">恢复默认</button>
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div style="font-weight:600; margin-bottom:8px; font-size: 16px;">智慧课程平台快速登录</div>
+    <div class="section-title">智慧课程平台快速登录</div>
     <button id="bindPortalUsernameBtn" type="button">通过 MIS 绑定 username</button>
     <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配。</div>
   </div>

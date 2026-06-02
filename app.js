@@ -136,6 +136,14 @@ if (usernameInput) {
       resetAccountSwitchInterruption();
     }
   });
+  usernameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (typeof doLoginFlow === 'function' && !isLoginInProgress) {
+        doLoginFlow();
+      }
+    }
+  });
 }
 
 // Upload state
@@ -175,6 +183,8 @@ window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
 window.homeworkNoteAttachmentCacheByKey = {}; // {"noteId|courseId|teacherId": {loading,loaded,picList}}
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
+window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}]
+window.saveUploadedFilesEnabled = true;
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
 window.courseShowOverdueById = {};
 window.courseShowDoneById = {};
@@ -183,6 +193,7 @@ window.externalPlatformLoadVersion = 0;
 window.courseListLoadVersion = 0;
 window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded,teachers:[]}}
 window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
+window.veUserNameByTeacherId = {}; // {teacherId:{name:string|null,promise:Promise|null}} — 学生账号用 getUserInfo 解析教师姓名
 window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
 window.coursewareItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
@@ -300,7 +311,7 @@ if (openOptionsBtn) {
   openOptionsBtn.addEventListener('click', () => {
     if (typeof popupMode !== 'undefined' && popupMode) {
       // Navigate inside popup iframe instead of opening a new tab.
-      try { window.location.href = 'options.html'; return; } catch {}
+      try { window.location.href = 'options.html?popup=1'; return; } catch {}
     }
     if (chrome.runtime && chrome.runtime.openOptionsPage) {
       try { chrome.runtime.openOptionsPage(); return; } catch {}
@@ -1093,6 +1104,13 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
       toast.addEventListener('animationend', () => toast.remove());
     }, duration);
   }
+
+  // Click to dismiss
+  toast.addEventListener('click', () => {
+    if (!toast.isConnected) return;
+    toast.style.animation = 'fadeOutUp 0.25s ease-in forwards';
+    toast.addEventListener('animationend', () => toast.remove());
+  });
 }
 
 function showBackgroundPortalLoginPendingToast() {
@@ -1112,6 +1130,13 @@ function showBackgroundPortalLoginPendingToast() {
   spinner.className = 'toast-spinner';
   toast.appendChild(spinner);
   container.appendChild(toast);
+
+  // Click to dismiss sticky toast too
+  toast.addEventListener('click', () => {
+    if (!toast.isConnected) return;
+    toast.style.animation = 'fadeOutUp 0.25s ease-in forwards';
+    toast.addEventListener('animationend', () => toast.remove());
+  });
 }
 
 function hideBackgroundPortalLoginPendingToast() {
@@ -1452,6 +1477,45 @@ async function fetchUserInfoRemote(userId = '') {
   } catch {
     return null;
   }
+}
+
+// 通过工号 getUserInfo 解析教师真实姓名（学生账号下使用，覆盖同课教师列表的原始姓名）
+// 缓存：window.veUserNameByTeacherId[worknumber] = { name: string|null, promise: Promise|null }
+// - 成功结果会缓存（避免重复请求）
+// - 失败结果不缓存（下次调用会自动重试）
+// - 进行中的 promise 用于并发去重
+async function resolveVeUserNameByWorknumber(worknumber) {
+  const tid = String(worknumber || '').trim();
+  if (!tid) return null;
+  if (!window.veUserNameByTeacherId) window.veUserNameByTeacherId = {};
+  const cache = window.veUserNameByTeacherId;
+  const existing = cache[tid];
+  if (existing && existing.name) return existing.name;
+  if (existing && existing.promise) return existing.promise;
+  const entry = existing || { name: null, promise: null };
+  cache[tid] = entry;
+  const infoUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(tid)}`;
+  const promise = (async () => {
+    try {
+      const { text } = await fetchText(infoUrl, {
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+      });
+      const data = parseVeJson(text);
+      if (data && String(data.STATUS) === '0' && data.result) {
+        const name = String(data.result.userName || '').trim();
+        if (name) entry.name = name;
+        return entry.name || null;
+      }
+      return null;
+    } catch {
+      // 失败不缓存，下次调用会重新尝试
+      return null;
+    } finally {
+      entry.promise = null;
+    }
+  })();
+  entry.promise = promise;
+  return promise;
 }
 
 async function validateUserIdRemote(userId) {
@@ -2014,6 +2078,47 @@ async function fetchPasswordMd5FromServer(userId) {
   return '';
 }
 
+async function validateAccountByGetUserInfo(userId, { signal } = {}) {
+  const uid = String(userId || '').trim();
+  if (!uid) return { ok: false, reason: 'empty-username', message: '请输入账号' };
+  const infoUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(uid)}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const externalAbortHandler = () => {
+    try { controller.abort(); } catch { /* ignore */ }
+  };
+  if (signal instanceof AbortSignal) {
+    if (signal.aborted) {
+      try { controller.abort(); } catch { /* ignore */ }
+    } else {
+      signal.addEventListener('abort', externalAbortHandler, { once: true });
+    }
+  }
+  try {
+    const { res, text } = await fetchText(infoUrl, {
+      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' },
+      signal: controller.signal
+    });
+    const htmlOrText = String(text || '');
+    if (htmlOrText.includes('login-page') || isSessionEndedHtml(htmlOrText) || isLikelyLoginPageHtml(htmlOrText, res?.url)) {
+      return { ok: false, reason: 'session-invalid', message: '未登录或会话已失效' };
+    }
+    const data = parseVeJson(htmlOrText);
+    if (data && String(data.STATUS) === '4') {
+      return { ok: false, reason: 'invalid-account', message: '该账号不存在' };
+    }
+    return { ok: true, info: data, status: data?.STATUS || '' };
+  } catch (e) {
+    if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
+    return { ok: false, reason: 'network', message: '账号验证失败，请稍后重试' };
+  } finally {
+    clearTimeout(timeoutId);
+    if (signal instanceof AbortSignal) {
+      try { signal.removeEventListener('abort', externalAbortHandler); } catch { /* ignore */ }
+    }
+  }
+}
+
 async function saveLoginAccountCredential(userId, passwordMd5 = '') {
   const uid = String(userId || '').trim();
   if (!uid) return;
@@ -2101,19 +2206,53 @@ async function loadImageFromBlob(blob) {
   }
 }
 
-async function recognizePortalCaptchaInExtension() {
-  await enforceJsessionidBeforeLoginRequest();
-  const res = await fetch(`${BASE_VE}GetImg?t=${Date.now()}`, {
-    credentials: 'include',
-    cache: 'no-store',
-    headers: { Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' }
+async function recognizePortalCaptchaInExtension({ signal } = {}) {
+  const OVERALL_TIMEOUT_MS = 8000;
+  const TESS_TIMEOUT_MS = 6000;
+  const fetchController = new AbortController();
+  const fetchTimeout = setTimeout(() => fetchController.abort(), 5000);
+  const externalAbortHandler = () => {
+    try { fetchController.abort(); } catch { /* ignore */ }
+  };
+  if (signal instanceof AbortSignal) {
+    if (signal.aborted) {
+      try { fetchController.abort(); } catch { /* ignore */ }
+    } else {
+      signal.addEventListener('abort', externalAbortHandler, { once: true });
+    }
+  }
+  const overallTimer = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('recognize-overall-timeout')), OVERALL_TIMEOUT_MS);
   });
-  const blob = await res.blob();
-  const img = await loadImageFromBlob(blob);
-  const worker = await getVeTessWorker();
-  const canvas = preprocessCaptchaImageToCanvas(img);
-  const { data } = await worker.recognize(canvas);
-  return String(data?.text || '').replace(/\D/g, '').slice(0, 4);
+  const work = (async () => {
+    await enforceJsessionidBeforeLoginRequest();
+    const res = await fetch(`${BASE_VE}GetImg?t=${Date.now()}`, {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' },
+      signal: fetchController.signal
+    });
+    const blob = await res.blob();
+    const img = await loadImageFromBlob(blob);
+    const worker = await getVeTessWorker();
+    const canvas = preprocessCaptchaImageToCanvas(img);
+    const tessRace = Promise.race([
+      worker.recognize(canvas),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('tess-timeout')), TESS_TIMEOUT_MS))
+    ]);
+    const { data } = await tessRace;
+    return String(data?.text || '').replace(/\D/g, '').slice(0, 4);
+  })();
+  try {
+    return await Promise.race([work, overallTimer]);
+  } catch {
+    return '';
+  } finally {
+    clearTimeout(fetchTimeout);
+    if (signal instanceof AbortSignal) {
+      try { signal.removeEventListener('abort', externalAbortHandler); } catch { /* ignore */ }
+    }
+  }
 }
 
 async function loginPostInExtension(username, passwordMd5, passcode, { signal } = {}) {
@@ -2154,16 +2293,18 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
   let last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
   for (let i = 0; i < 3; i++) {
     if (loginCancelRequested || signal?.aborted) return last;
-    showToast(`正在识别验证码 (${i + 1}/3)...`, 'info', 0);
-    const code = await recognizePortalCaptchaInExtension();
+    showToast(`正在识别验证码 (${i + 1}/3)…`, 'info', 0);
+    const code = await recognizePortalCaptchaInExtension({ signal });
     if (!/^\d{4}$/.test(code)) {
       last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
       continue;
     }
     if (loginCancelRequested || signal?.aborted) return last;
-    showToast('验证码已识别，正在提交登录...', 'info', 0);
+    showToast('验证码已识别，正在提交登录…', 'info', 0);
     last = await loginPostInExtension(username, passwordMd5, code, { signal });
     if (last.ok || last.reason !== 'captcha') return last;
+    // 验证码错误：立刻提示用户，然后进入下一轮
+    showToast(`验证码错误：${last.message || '请重试'}，正在重新识别 (${i + 1}/3)…`, 'warning', 2000);
   }
   return last;
 }
@@ -2206,6 +2347,38 @@ async function bootstrapSessionWithAnyQuickAccount(excludeUserId = '', { signal 
 
 function hideLoginModal() {
   loginModal.style.display = 'none';
+}
+
+function showLoginModal() {
+  if (loginModal) loginModal.style.display = 'flex';
+}
+
+function dismissLoginModal({ abort = true } = {}) {
+  hideLoginModal();
+  if (abort) {
+    try { loginAbortController?.abort(); } catch { /* ignore */ }
+    loginAbortController = null;
+    if (isLoginInProgress) loginCancelRequested = true;
+  }
+  if (pendingUsernameChange) {
+    const backTo = String(pendingUsernameChange.from || '').trim();
+    if (backTo) {
+      syncAccountInfoAndReloadVeCourses({
+        userId: backTo,
+        detectFromPortal: false,
+        reloadCourses: false,
+        reloadResourceSpace: true
+      }).catch(() => {});
+    }
+  }
+}
+
+if (loginModal) {
+  loginModal.addEventListener('mousedown', (e) => {
+    if (e.target === loginModal) {
+      dismissLoginModal();
+    }
+  });
 }
 
 let portalLoginTabId = null;
@@ -2347,11 +2520,27 @@ async function doLoginFlow() {
     loginBtn.style.opacity = '0.7';
     loginBtn.innerHTML = '登录中… <span class="spinner"></span>';
   }
-  showToast('正在登录...', 'info', 0);
+  showToast('正在登录…', 'info', 0);
   isLoginInProgress = true;
   loginCancelRequested = false;
   loginAbortController = new AbortController();
   const loginSignal = loginAbortController.signal;
+
+  // 提前用 getUserInfo 验证账号是否有效（STATUS=4 即账号不存在）
+  const validation = await validateAccountByGetUserInfo(username, { signal: loginSignal });
+  if (loginCancelRequested || loginSignal?.aborted) return;
+  if (!validation.ok) {
+    if (validation.reason === 'invalid-account') {
+      showToast(`账号 ${username} 不存在，请检查后重试`, 'error', 3000);
+    } else if (validation.reason === 'session-invalid') {
+      // 会话失效不算账号无效，让下面的流程继续
+    } else if (validation.reason === 'cancelled') {
+      return;
+    } else {
+      showToast(validation.message || '账号验证失败，请稍后重试', 'warning', 2500);
+      return;
+    }
+  }
 
   try {
     const currentSessionUser = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
@@ -2896,7 +3085,7 @@ function enqueueResourceDownload(item) {
     total: expectedBytes,
     speed: 0,
     etaSec: null,
-    status: '排队等待...'
+    status: '排队等待…'
   });
 
   processResourceDownloadQueue();
@@ -3056,9 +3245,9 @@ function updateResourceDownloadTotals() {
   if (hasKnownTotal && totalSize > totalLoaded && totalSpeed > 0) {
     resourceTotalEta.textContent = `总剩余: ${formatEta((totalSize - totalLoaded) / totalSpeed)}`;
   } else if (hasKnownTotal && totalSize > totalLoaded) {
-    resourceTotalEta.textContent = '总剩余: 计算中...';
+    resourceTotalEta.textContent = '总剩余: 计算中…';
   } else if (tasks.length || batchActive || queuedEntries.length) {
-    resourceTotalEta.textContent = hasKnownTotal ? '' : '总剩余: 计算中...';
+    resourceTotalEta.textContent = hasKnownTotal ? '' : '总剩余: 计算中…';
   } else {
     resourceTotalEta.textContent = '';
   }
@@ -3217,10 +3406,10 @@ async function downloadResourceItemWithProgress(item) {
     total: expectedBytes,
     speed: 0,
     etaSec: null,
-    status: '下载中...'
+    status: '下载中…'
   });
 
-  const updateProgress = (loaded, total, status = '下载中...', force = false) => {
+  const updateProgress = (loaded, total, status = '下载中…', force = false) => {
     const now = Date.now();
     const loadedSafe = Math.max(0, Number(loaded) || 0);
     const totalSafe = Math.max(0, Number(total) || 0);
@@ -3291,7 +3480,7 @@ async function downloadResourceItemWithProgress(item) {
     const finalTotal = total > 0 ? total : (blob?.size || loaded);
     const finalLoaded = blob?.size || loaded;
     addResourceDownloadCompletedContribution(finalLoaded, finalTotal);
-    finalizeSuccessUi(finalLoaded, finalTotal, '下载完成，准备保存...');
+    finalizeSuccessUi(finalLoaded, finalTotal, '下载完成，准备保存…');
 
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3315,7 +3504,7 @@ async function downloadResourceItemWithProgress(item) {
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
     xhr.onprogress = (e) => {
-      updateProgress(Number(e.loaded || 0), Number(e.total || 0), '下载中...');
+      updateProgress(Number(e.loaded || 0), Number(e.total || 0), '下载中…');
     };
 
     xhr.onload = () => {
@@ -3331,7 +3520,7 @@ async function downloadResourceItemWithProgress(item) {
       }
       const loaded = Number(blob.size || 0);
       const total = Number(xhr.getResponseHeader('content-length') || loaded || 0);
-      updateProgress(loaded, total, '下载中...', true);
+      updateProgress(loaded, total, '下载中…', true);
       resolve({ blob, loaded, total });
     };
 
@@ -3403,14 +3592,14 @@ async function downloadResourceItemWithProgress(item) {
           if (task.cancelled) throw new Error('下载已取消');
           chunks.push(value);
           loaded += value.byteLength;
-          updateProgress(loaded, total, '下载中...');
+          updateProgress(loaded, total, '下载中…');
         }
       }
       blob = new Blob(chunks, { type: res.headers.get('content-type') || 'application/octet-stream' });
     } else {
       blob = await res.blob();
       loaded = blob.size;
-      updateProgress(loaded, total || loaded, '下载中...', true);
+      updateProgress(loaded, total || loaded, '下载中…', true);
     }
 
     saveBlobToFile(blob, loaded, total);
@@ -3422,7 +3611,7 @@ async function downloadResourceItemWithProgress(item) {
       throw new Error('下载已取消');
     }
     try {
-      setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: task.speed, etaSec: null, status: 'Fetch失败，正在重试...' });
+      setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: task.speed, etaSec: null, status: 'Fetch失败，正在重试…' });
       const xhrResult = await tryDownloadByXhr();
       saveBlobToFile(xhrResult.blob, xhrResult.loaded, xhrResult.total);
       cleanup();
@@ -3433,7 +3622,7 @@ async function downloadResourceItemWithProgress(item) {
         throw new Error('下载已取消');
       }
       try {
-        setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: task.speed, etaSec: null, status: '页面下载失败，转浏览器下载...' });
+        setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: task.speed, etaSec: null, status: '页面下载失败，转浏览器下载…' });
         await tryChromeDownloadsApi();
         finalizeSuccessUi(0, 0, '已转为浏览器下载');
         cleanup();
@@ -3536,7 +3725,7 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
   const loadVersion = ++window.resourceSpaceLoadVersion;
   const isStale = () => loadVersion !== window.resourceSpaceLoadVersion;
 
-  setResourceSpaceStatus(keyword ? `资源空间加载中（搜索：${keyword}）...` : '资源空间加载中...');
+  setResourceSpaceStatus(keyword ? `资源空间加载中（搜索：${keyword}）…` : '资源空间加载中…');
   resourceSpaceList.innerHTML = '';
   window.resourceDownloadTasks = {};
   resetResourceDownloadBatch();
@@ -3579,7 +3768,7 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
       window.resourceDownloadTasks = {};
       resetResourceDownloadBatch();
       setResourceSpaceCount(normalized.length, 'loaded');
-      setResourceSpaceStatus(`已加载 ${normalized.length} 个资源文件，正在继续加载...`);
+      setResourceSpaceStatus(`已加载 ${normalized.length} 个资源文件，正在继续加载…`);
       renderResourceSpaceList();
 
       payload = await fetchResourceSpaceListRaw(payload.total, keyword);
@@ -3646,7 +3835,7 @@ function updateVeTeacherMetaUi(courseId) {
 
 function renderVeTeacherMetaPopHtml(meta, teachers) {
   if (meta.loading) {
-    return '<div style="font-size:12px; color:#64748b;"><span class="spinner" style="width:10px;height:10px;border-width:1px;border-color:#2563eb;border-top-color:transparent;"></span> 正在获取教师信息...</div>';
+    return '<div style="font-size:12px; color:#64748b;"><span class="spinner" style="width:10px;height:10px;border-width:1px;border-color:#2563eb;border-top-color:transparent;"></span> 正在获取教师信息…</div>';
   }
   if (!teachers.length) {
     return '<div style="font-size:12px; color:#64748b;">未查询到教师/助教信息</div>';
@@ -3849,9 +4038,9 @@ function renderVeCourseTeachersPopHtml(meta) {
 
   if (meta.loading) {
     if (tableHtml) {
-      return `${tableHtml}<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取更多同课教师...</span></div>`;
+      return `${tableHtml}<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取更多同课教师…</span></div>`;
     }
-    return '<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取同课教师...</span></div>';
+    return '<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取同课教师…</span></div>';
   }
 
   if (meta.error) {
@@ -3936,7 +4125,7 @@ function updateVeCourseTeachersPopUi(courseId) {
 
     if (meta.loading) {
       statusLine.style.display = 'flex';
-      statusText.textContent = rows.length ? '正在获取更多同课教师...' : '正在获取同课教师...';
+      statusText.textContent = rows.length ? '正在获取更多同课教师…' : '正在获取同课教师…';
       return;
     }
     if (meta.error) {
@@ -3982,10 +4171,12 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
       promise: latest.promise || null
     };
     updateVeCourseTeachersPopUi(cid);
+    hydrateVeUserNamesForCourseTeachers(cid).catch(() => {});
   })
     .then((rows) => {
       window.veCourseTeachersMetaByCourseId[cid] = { rows: Array.isArray(rows) ? rows : [], loading: false, loaded: true, error: false, promise: null };
       updateVeCourseTeachersPopUi(cid);
+      hydrateVeUserNamesForCourseTeachers(cid).catch(() => {});
     })
     .catch(() => {
       window.veCourseTeachersMetaByCourseId[cid] = { rows: [], loading: false, loaded: true, error: true, promise: null };
@@ -3993,7 +4184,79 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
     });
 
   window.veCourseTeachersMetaByCourseId[cid] = { ...loadingMeta, promise: p };
+  hydrateVeUserNamesForCourseTeachers(cid).catch(() => {});
   return p;
+}
+
+// 学生账号下，通过工号 getUserInfo 解析同课其他教师的真实 userName，覆盖原始教师姓名
+async function hydrateVeUserNamesForCourseTeachers(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  // 仅学生账号触发：教师/助教账号下，原始教师姓名已经是权威，无需覆盖
+  if (window.isTeacherAccount) return;
+  const meta = window.veCourseTeachersMetaByCourseId?.[cid];
+  if (!meta || !Array.isArray(meta.rows) || !meta.rows.length) return;
+  const rows = meta.rows;
+  if (!window.veUserNameByTeacherId) window.veUserNameByTeacherId = {};
+  const cache = window.veUserNameByTeacherId;
+
+  // 收集本课程涉及的所有工号
+  const teacherIds = new Set();
+  for (const row of rows) {
+    const tid = String(row?.teacherId || '').trim();
+    if (tid) teacherIds.add(tid);
+  }
+  if (!teacherIds.size) return;
+
+  let redrawNeeded = false;
+  const pending = [];
+  for (const tid of teacherIds) {
+    const entry = cache[tid] || { name: null, promise: null };
+    cache[tid] = entry;
+    // 已有解析结果：直接覆盖原始姓名
+    if (entry.name) {
+      for (const row of rows) {
+        if (String(row?.teacherId || '').trim() === tid && String(row.teacherName || '').trim() !== entry.name) {
+          row.teacherName = entry.name;
+          redrawNeeded = true;
+        }
+      }
+      continue;
+    }
+    // 正在请求中：让出，等待结果
+    if (entry.promise) {
+      pending.push(entry.promise.then((name) => {
+        if (!name) return;
+        for (const row of rows) {
+          if (String(row?.teacherId || '').trim() === tid && String(row.teacherName || '').trim() !== name) {
+            row.teacherName = name;
+            redrawNeeded = true;
+          }
+        }
+      }).catch(() => {}));
+      continue;
+    }
+    // 发起新请求
+    const p = resolveVeUserNameByWorknumber(tid).then((name) => {
+      if (!name) return;
+      for (const row of rows) {
+        if (String(row?.teacherId || '').trim() === tid && String(row.teacherName || '').trim() !== name) {
+          row.teacherName = name;
+          redrawNeeded = true;
+        }
+      }
+    }).catch(() => {});
+    pending.push(p);
+  }
+  if (redrawNeeded) {
+    updateVeCourseTeachersPopUi(cid);
+  }
+  if (pending.length) {
+    Promise.all(pending).then(() => {
+      // 最后再做一次重绘，确保所有并发结果都反映到 UI
+      updateVeCourseTeachersPopUi(cid);
+    }).catch(() => {});
+  }
 }
 
 async function switchToTeacherAccount(teacherId) {
@@ -5422,9 +5685,9 @@ function renderYktHomeworkItems(courseId, items) {
     if ((isExam || isCard) && !examDetail) {
       const state = String(it?.exam_detail_state || '').trim();
       if (state === 'loading') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>正在获取作业详情...</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>正在获取作业详情…</div>`;
       } else if (state === 'queued') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>正在排队等待...</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>正在排队等待…</div>`;
       } else if (state === 'failed') {
         detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:#b45309;">作业详情获取失败，可稍后重试</div>`;
       }
@@ -5998,7 +6261,7 @@ function buildCoursewareListHtml(courseId, items) {
           ${hasUrl
             ? `<a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(displayUrl)}</a>`
             : needsRpFetch
-              ? `<span id="${escapeHtml(rpLinkContainerId)}" class="courseware-rp-link" style="color:#999;font-size:12px;">获取链接中...</span>`
+              ? `<span id="${escapeHtml(rpLinkContainerId)}" class="courseware-rp-link" style="color:#999;font-size:12px;">获取链接中…</span>`
               : `<span class="resource-url" style="color:#999;">无下载链接</span>`
           }
           ${hasUrl ? `<button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>` : ''}
@@ -6133,7 +6396,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
   setCourseCoursewareLoading(courseIdInt, true);
   toggleResultAreaAnimated(resultArea, true);
   card.dataset.resultView = 'courseware';
-  resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取课件...</span>';
+  resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取课件…</span>';
   syncCourseActionButtonText(card, 'courseware');
 
   const cwAbortController = new AbortController();
@@ -8214,13 +8477,13 @@ function renderCourseList(courses) {
             <span class="ve-teacher-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
               <span class="ve-teacher-name">${escapeHtml(teacherLabel)}</span>
               <span class="ve-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}">
-                <div style="font-size:12px; color:#64748b;">悬停加载教师信息...</div>
+                <div style="font-size:12px; color:#64748b;">悬停加载教师信息…</div>
               </span>
             </span>
             <span>·</span>
             <span class="ve-course-num-wrap" data-course-id="${escapeHtml(String(courseId || ''))}" data-course-num="${escapeHtml(String(courseNumRaw || ''))}" data-fz-id="${escapeHtml(String(fzId || ''))}">
               <span class="ve-course-num-text">${escapeHtml(String(courseNum || ''))}</span>
-              <span class="ve-course-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载同课教师...</div></span>
+              <span class="ve-course-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载同课教师…</div></span>
             </span>
           </div>
         </div>
@@ -8423,7 +8686,7 @@ async function checkHomework(courseId) {
     || ((window.mrzyMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
     || ((window.jlgjMatchedHomeworkByCourseId?.[courseId] || []).length > 0);
   if (!hasMatchedExternal && !String(area.innerHTML || '').trim()) {
-    area.innerHTML = '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业...';
+    area.innerHTML = '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业…';
   }
   try {
     const subTypes = [0, 1, 2];
@@ -8645,7 +8908,7 @@ function renderHomeworkList(courseId) {
       const totalStr = fullScore ? `/${fullScore}` : '';
       scoreHtml = `<span style="font-weight:bold; color:#E91E63; margin-left:5px;">[${escapeHtml(String(cachedScore))}${escapeHtml(totalStr)}]</span>`;
     } else if (isPendingScore) {
-      scoreHtml = `<span class="async-score" data-pending="1" data-upid="${String(upId)}" data-snid="${String(snId)}" data-full="${String(fullScore || '')}" style="font-weight:bold; color:#E91E63; margin-left:5px;">[正在查询...]</span>`;
+      scoreHtml = `<span class="async-score" data-pending="1" data-upid="${String(upId)}" data-snid="${String(snId)}" data-full="${String(fullScore || '')}" style="font-weight:bold; color:#E91E63; margin-left:5px;">[正在查询…]</span>`;
     } else if (isDone && !isTeacherMode) {
       const shown = String(obtainedScore || '').trim();
       if (shown) {
@@ -8768,7 +9031,7 @@ function renderHomeworkList(courseId) {
     ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, mergedOverdueCount, overdueCollapsedText, overdueExpandedText, 'down', 'up')}</div>`
     : '';
 
-  const loadingText = isYktStandalone ? '正在同步雨课堂作业...' : (isMrzyStandalone ? '正在同步每日交作业...' : '正在获取作业…');
+  const loadingText = isYktStandalone ? '正在同步雨课堂作业…' : (isMrzyStandalone ? '正在同步每日交作业…' : '正在获取作业…');
   const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrzyStandalone ? mrzySyncing : jlgjSyncing);
   const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> ${loadingText}` : '';
   const emptyExternalTip = isExternalStandalone && totalHomeworkCount === 0 && !standaloneSyncing ? '<span style="color:#999;">没有作业数据</span>' : '';
@@ -9139,7 +9402,7 @@ function uploadFile(file, fileId) {
           作为作业附件
         </label>
         <strong>${file.name}</strong>
-        <span class="inline-status" style="font-size:12px; margin-left:8px; color:#6b7280;">排队中...</span>
+        <span class="inline-status" style="font-size:12px; margin-left:8px; color:#6b7280;">排队中…</span>
         <span class="size-progress" style="font-size:12px; color:#666; margin-left:5px;">(${formatSize(0)} / ${formatSize(file.size)})</span>
         <span class="speed-display" style="font-size:12px; color:#666; margin-left:10px;"></span>
         <span class="eta-display" style="font-size:12px; color:#6b7280; margin-left:10px;"></span>
@@ -9214,7 +9477,7 @@ function uploadFile(file, fileId) {
       if (cancelRequested) return;
       retryBtn.style.display = 'none';
       cancelBtn.style.display = 'inline-block';
-      setInlineStatus('登录恢复，自动重试中...', 'warning');
+      setInlineStatus('登录恢复，自动重试中…', 'warning');
       if (etaDisplay) etaDisplay.textContent = '';
       isRunning = false;
       xhrRef = null;
@@ -9231,7 +9494,7 @@ function uploadFile(file, fileId) {
     autoRetryQueuedByLogin = false;
     retryBtn.style.display = 'none';
     cancelBtn.style.display = 'inline-block';
-    setInlineStatus('准备重试...', 'warning');
+    setInlineStatus('准备重试…', 'warning');
     if (etaDisplay) etaDisplay.textContent = '';
     cancelRequested = false;
     isRunning = false;
@@ -9266,7 +9529,7 @@ function uploadFile(file, fileId) {
     const manualJsessionMode = !usernameInput.value.trim();
     const jsid = (jsessionidInput.value.trim() || await getLocal('jsessionid', '')).trim();
     if (manualJsessionMode && !jsid) {
-      setInlineStatus('等待登录...', 'warning');
+      setInlineStatus('等待登录…', 'warning');
       if (etaDisplay) etaDisplay.textContent = '';
       queueAutoRetryAfterLogin();
       showRetry();
@@ -9276,7 +9539,7 @@ function uploadFile(file, fileId) {
       return;
     }
 
-    setInlineStatus('上传中...', 'normal');
+    setInlineStatus('上传中…', 'normal');
     progressBar.style.backgroundColor = '#4CAF50';
 
     const fd = new FormData();
@@ -9366,6 +9629,8 @@ function uploadFile(file, fileId) {
           if (data.visitName) {
             const convertedUrl = convertVisitNameToUrl(data.visitName);
             setInlineStatus('上传完成', 'success');
+
+            addSavedUpload(file, data, convertedUrl);
 
             const nameParts = splitFileName(file.name);
             window.uploadedFileMetaById[fileId] = {
@@ -9686,27 +9951,7 @@ if (resourceDownloadSelectedBtn) {
 }
 
 if (loginBtn) loginBtn.addEventListener('click', doLoginFlow);
-cancelBtn.addEventListener('click', () => {
-  loginModal.style.display = 'none';
-  loginAbortController?.abort();
-  loginAbortController = null;
-
-  if (isLoginInProgress) {
-    loginCancelRequested = true;
-  }
-
-  if (pendingUsernameChange) {
-    const backTo = String(pendingUsernameChange.from || '').trim();
-    if (backTo) {
-      syncAccountInfoAndReloadVeCourses({
-        userId: backTo,
-        detectFromPortal: false,
-        reloadCourses: false,
-        reloadResourceSpace: true
-      }).catch(() => {});
-    }
-  }
-});
+if (cancelBtn) cancelBtn.addEventListener('click', () => dismissLoginModal());
 
 // Delegated handlers (extension CSP blocks inline onclick)
 courseListDiv.addEventListener('mouseover', (e) => {
@@ -9868,7 +10113,7 @@ courseListDiv.addEventListener('click', async (e) => {
 
     const btn = actionEl;
     const oldText = btn.textContent;
-    btn.textContent = '提交中...';
+    btn.textContent = '提交中…';
     btn.setAttribute('disabled', 'disabled');
     try {
       const res = await submitNativeHomework(courseId, hw, content, fileList);
@@ -10134,7 +10379,7 @@ usernameInput.addEventListener('change', async () => {
       prioritizeAccountSwitch();
     }
     // show logging toast before sending GET to /ve/s.shtml
-    showToast('正在登录...', 'info', 0);
+    showToast('正在登录…', 'info', 0);
     const validResult = await validateUserIdRemote(u);
     if (!validResult.ok && validResult.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
@@ -10294,10 +10539,241 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     await setLocal('jsessionid', v);
     await reconcileJsessionidCookies(v);
     isLoginSessionValid = true;
-    showToast('已保存 JSESSIONID，正在验证...', 'info', 1500);
+    showToast('已保存 JSESSIONID，正在验证…', 'info', 1500);
     if (isPlatformEnabled('ve')) loadCourses();
     await loadResourceSpaceForCurrentAccount();
   });
+
+// -------------------- Saved Uploads (本地保存本次上传过的文件) --------------------
+const SAVED_UPLOADS_KEY = 'savedUploadedFiles';
+const SAVE_UPLOADS_ENABLED_KEY = 'saveUploadedFilesEnabled';
+
+async function loadSavedUploadsFromStorage() {
+  try {
+    const raw = await chrome.storage.local.get([SAVED_UPLOADS_KEY, SAVE_UPLOADS_ENABLED_KEY]);
+    const list = raw?.[SAVED_UPLOADS_KEY];
+    window.savedUploadedFiles = Array.isArray(list) ? list.filter((it) => it && it.url && it.visitName) : [];
+    if (typeof raw?.[SAVE_UPLOADS_ENABLED_KEY] === 'boolean') {
+      window.saveUploadedFilesEnabled = raw[SAVE_UPLOADS_ENABLED_KEY];
+    }
+  } catch {
+    window.savedUploadedFiles = [];
+  }
+}
+
+async function persistSavedUploads() {
+  try {
+    await chrome.storage.local.set({ [SAVED_UPLOADS_KEY]: window.savedUploadedFiles });
+  } catch {
+    // ignore quota / IO errors
+  }
+}
+
+async function persistSaveUploadsEnabled() {
+  try {
+    await chrome.storage.local.set({ [SAVE_UPLOADS_ENABLED_KEY]: !!window.saveUploadedFilesEnabled });
+  } catch {
+    // ignore
+  }
+}
+
+async function addSavedUpload(file, serverData, convertedUrl) {
+  if (!window.saveUploadedFilesEnabled) return;
+  const visitName = String(serverData?.visitName || '').trim();
+  const url = String(convertedUrl || '').trim();
+  if (!visitName || !url) return;
+  const fileName = String(file?.name || '').trim() || '(未命名)';
+  const fileSize = Number(file?.size || 0);
+  const entry = {
+    id: `up_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    fileName,
+    fileSize,
+    visitName,
+    url,
+    savedAt: Date.now()
+  };
+  const list = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles : [];
+  const existingIdx = list.findIndex((it) => it && it.visitName === visitName);
+  if (existingIdx >= 0) {
+    list[existingIdx] = entry;
+  } else {
+    list.unshift(entry);
+  }
+  window.savedUploadedFiles = list;
+  await persistSavedUploads();
+  renderSavedUploadsSection();
+}
+
+async function removeSavedUpload(id) {
+  const target = String(id || '').trim();
+  if (!target) return;
+  const list = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles : [];
+  window.savedUploadedFiles = list.filter((it) => it && it.id !== target);
+  // Clean up the synthesized meta entry so the checkbox can no longer find the file.
+  if (window.uploadedFileMetaById) {
+    delete window.uploadedFileMetaById[`saved_${target}`];
+  }
+  await persistSavedUploads();
+  renderSavedUploadsSection();
+}
+
+function formatSavedUploadSize(bytes) {
+  const n = Number(bytes || 0);
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function renderSavedUploadsSection() {
+  const section = document.getElementById('saved-uploads-section');
+  if (!(section instanceof HTMLElement)) return;
+  const list = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles : [];
+  const count = list.length;
+  if (count === 0) {
+    section.innerHTML = '';
+    section.dataset.expanded = '0';
+    return;
+  }
+  const expanded = section.dataset.expanded === '1';
+  const collapsedText = '查看全部已上传文件';
+  const expandedText = '收起全部已上传文件';
+  const toggleLabel = `${expanded ? expandedText : collapsedText} (${count})`;
+  const direction = expanded ? 'up' : 'down';
+
+  // Register synthesized metas so saved files can be selected as homework attachments.
+  if (!window.uploadedFileMetaById) window.uploadedFileMetaById = {};
+  for (const it of list) {
+    if (!it || !it.id || !it.visitName || !it.url) continue;
+    const synthId = `saved_${it.id}`;
+    const nameParts = splitFileName(it.fileName || '');
+    window.uploadedFileMetaById[synthId] = {
+      fileNameNoExt: String(nameParts?.fileNameNoExt || ''),
+      fileExtName: String(nameParts?.fileExtName || ''),
+      fileSize: String(Number(it.fileSize || 0) || 0),
+      visitName: String(it.visitName || ''),
+      pid: '',
+      ftype: 'insert'
+    };
+  }
+
+  const cardsHtml = expanded ? list.map((it) => {
+    const entryId = String(it.id || '').trim();
+    if (!entryId) return '';
+    const synthFileId = `saved_${entryId}`;
+    const name = escapeHtml(it.fileName || '(未命名)');
+    const size = escapeHtml(formatSavedUploadSize(it.fileSize));
+    const url = String(it.url || '').trim();
+    const safeUrl = escapeHtml(url);
+    const safeHref = escapeHtml(url);
+    const safeEntryId = escapeHtml(entryId);
+    const safeSynthFileId = escapeHtml(synthFileId);
+    const timeText = it.savedAt ? new Date(it.savedAt).toLocaleString('zh-CN', { hour12: false }) : '';
+    return `
+      <div class="file-item" data-saved-upload-id="${safeEntryId}">
+        <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+          <div>
+            <label class="upload-select-wrap">
+              <input type="checkbox" class="submit-file-check" data-file-id="${safeSynthFileId}">
+              作为作业附件
+            </label>
+            <strong>${name}</strong>
+            <span class="inline-status" style="font-size:12px; margin-left:8px; color:#2e7d32;">已上传</span>
+            <span class="size-progress" style="font-size:12px; color:#666; margin-left:5px;">(${size}${timeText ? ' · ' + escapeHtml(timeText) : ''})</span>
+          </div>
+          <div>
+            <button type="button" class="btn saved-upload-delete" data-action="delete-saved-upload" data-saved-upload-id="${safeEntryId}" style="padding:2px 8px; font-size:12px; background-color:#f44336;">删除</button>
+          </div>
+        </div>
+        <div class="upload-link-row">
+          <a class="url-link" href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>
+          <button type="button" class="btn saved-upload-copy" data-action="copy-saved-upload" data-saved-upload-id="${safeEntryId}" style="padding:5px 10px; font-size:12px; white-space:nowrap;">复制</button>
+        </div>
+      </div>
+    `;
+  }).join('') : '';
+
+  section.innerHTML = `
+    <div class="homework-toggle-row homework-toggle-row--saved-uploads">
+      <button class="btn homework-toggle-btn ${expanded ? 'is-expanded' : ''} homework-toggle-btn--${direction}" data-action="toggle-saved-uploads" data-collapsed-text="${escapeHtml(collapsedText)}" data-expanded-text="${escapeHtml(expandedText)}" aria-expanded="${expanded ? 'true' : 'false'}">
+        <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
+        <span class="homework-toggle-label">${escapeHtml(toggleLabel)}</span>
+        <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
+      </button>
+    </div>
+    ${expanded ? `<div class="saved-uploads-list">${cardsHtml}</div>` : ''}
+  `;
+  if (typeof refreshUploadSelectVisibility === 'function') {
+    refreshUploadSelectVisibility();
+  }
+}
+
+function setupSavedUploadsUi() {
+  const cb = document.getElementById('save-uploads-enabled');
+  if (cb instanceof HTMLInputElement) {
+    cb.checked = !!window.saveUploadedFilesEnabled;
+    cb.addEventListener('change', () => {
+      window.saveUploadedFilesEnabled = !!cb.checked;
+      persistSaveUploadsEnabled();
+    });
+  }
+  const section = document.getElementById('saved-uploads-section');
+  if (section instanceof HTMLElement) {
+    section.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+
+      // Handle action buttons first
+      const actionEl = t.closest('[data-action]');
+      if (actionEl instanceof HTMLElement) {
+        const action = String(actionEl.dataset.action || '').trim();
+        if (action === 'toggle-saved-uploads') {
+          const expanded = section.dataset.expanded === '1';
+          section.dataset.expanded = expanded ? '0' : '1';
+          renderSavedUploadsSection();
+          return;
+        }
+        if (action === 'delete-saved-upload') {
+          const id = String(actionEl.dataset.savedUploadId || '').trim();
+          if (id) removeSavedUpload(id);
+          return;
+        }
+        if (action === 'copy-saved-upload') {
+          const id = String(actionEl.dataset.savedUploadId || '').trim();
+          const entry = (window.savedUploadedFiles || []).find((it) => it && it.id === id);
+          if (entry && entry.url) {
+            navigator.clipboard.writeText(entry.url).then(() => {
+              const original = actionEl.textContent;
+              actionEl.textContent = '已复制';
+              setTimeout(() => { actionEl.textContent = original; }, 1500);
+            }).catch(() => {
+              if (typeof showToast === 'function') {
+                showToast('复制失败，请手动复制链接', 'error', 2000);
+              }
+            });
+          }
+          return;
+        }
+        return;
+      }
+
+      // Click on a head row (not on button/link/input) toggles the checkbox
+      const row = t.closest('.upload-file-head-row');
+      if (!(row instanceof HTMLElement)) return;
+      if (t.closest('button,a,input,textarea,select,label')) return;
+      const cb = row.querySelector('input.submit-file-check');
+      if (!(cb instanceof HTMLInputElement)) return;
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+  renderSavedUploadsSection();
+}
 
 // -------------------- Init --------------------
 (async function init() {
@@ -10321,6 +10797,10 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   await loadLoginAccountHistory();
   await loadCurrentXqOptions().catch(() => {});
+
+  // 本地保存已上传文件：加载并绑定 UI
+  await loadSavedUploadsFromStorage();
+  setupSavedUploadsUi();
 
   // 不默认使用本地保存账号。
   lastValidUsername = (await getLocal('username', '')).trim();

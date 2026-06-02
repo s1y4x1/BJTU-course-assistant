@@ -45,7 +45,8 @@
         "vendor/tesseract/worker.min.js",
         "vendor/tesseract/tesseract-core-simd.wasm.js",
         "vendor/tesseract/tesseract-core-simd.wasm",
-        "vendor/tesseract/eng.traineddata.gz"
+        "vendor/tesseract/eng.traineddata.gz",
+        "portal-modal.html"
       ],
       "matches": [
         "http://123.121.147.7:88/*"
@@ -76,6 +77,15 @@
       ],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://123.121.147.7:88/*"
+      ],
+      "js": [
+        "md5.js"
+      ],
+      "run_at": "document_start"
     }
   ]
 }

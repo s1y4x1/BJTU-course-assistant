@@ -1,33 +1,8 @@
 async function portalLoginAutoLoginInjected(context) {
-  function md5cycle(x, k) {
-    let [a, b, c, d] = x;
-    function ff(a,b,c,d,x,s,t){a=a+((b&c)|(~b&d))+x+t;return((a<<s)|(a>>>(32-s)))+b}
-    function gg(a,b,c,d,x,s,t){a=a+((b&d)|(c&~d))+x+t;return((a<<s)|(a>>>(32-s)))+b}
-    function hh(a,b,c,d,x,s,t){a=a+(b^c^d)+x+t;return((a<<s)|(a>>>(32-s)))+b}
-    function ii(a,b,c,d,x,s,t){a=a+(c^(b|~d))+x+t;return((a<<s)|(a>>>(32-s)))+b}
-    a=ff(a,b,c,d,k[0],7,-680876936);d=ff(d,a,b,c,k[1],12,-389564586);c=ff(c,d,a,b,k[2],17,606105819);b=ff(b,c,d,a,k[3],22,-1044525330);
-    a=ff(a,b,c,d,k[4],7,-176418897);d=ff(d,a,b,c,k[5],12,1200080426);c=ff(c,d,a,b,k[6],17,-1473231341);b=ff(b,c,d,a,k[7],22,-45705983);
-    a=ff(a,b,c,d,k[8],7,1770035416);d=ff(d,a,b,c,k[9],12,-1958414417);c=ff(c,d,a,b,k[10],17,-42063);b=ff(b,c,d,a,k[11],22,-1990404162);
-    a=ff(a,b,c,d,k[12],7,1804603682);d=ff(d,a,b,c,k[13],12,-40341101);c=ff(c,d,a,b,k[14],17,-1502002290);b=ff(b,c,d,a,k[15],22,1236535329);
-    a=gg(a,b,c,d,k[1],5,-165796510);d=gg(d,a,b,c,k[6],9,-1069501632);c=gg(c,d,a,b,k[11],14,643717713);b=gg(b,c,d,a,k[0],20,-373897302);
-    a=gg(a,b,c,d,k[5],5,-701558691);d=gg(d,a,b,c,k[10],9,38016083);c=gg(c,d,a,b,k[15],14,-660478335);b=gg(b,c,d,a,k[4],20,-405537848);
-    a=gg(a,b,c,d,k[9],5,568446438);d=gg(d,a,b,c,k[14],9,-1019803690);c=gg(c,d,a,b,k[3],14,-187363961);b=gg(b,c,d,a,k[8],20,1163531501);
-    a=gg(a,b,c,d,k[13],5,-1444681467);d=gg(d,a,b,c,k[2],9,-51403784);c=gg(c,d,a,b,k[7],14,1735328473);b=gg(b,c,d,a,k[12],20,-1926607734);
-    a=hh(a,b,c,d,k[5],4,-378558);d=hh(d,a,b,c,k[8],11,-2022574463);c=hh(c,d,a,b,k[11],16,1839030562);b=hh(b,c,d,a,k[14],23,-35309556);
-    a=hh(a,b,c,d,k[1],4,-1530992060);d=hh(d,a,b,c,k[4],11,1272893353);c=hh(c,d,a,b,k[7],16,-155497632);b=hh(b,c,d,a,k[10],23,-1094730640);
-    a=hh(a,b,c,d,k[13],4,681279174);d=hh(d,a,b,c,k[0],11,-358537222);c=hh(c,d,a,b,k[3],16,-722521979);b=hh(b,c,d,a,k[6],23,76029189);
-    a=hh(a,b,c,d,k[9],4,-640364487);d=hh(d,a,b,c,k[12],11,-421815835);c=hh(c,d,a,b,k[15],16,530742520);b=hh(b,c,d,a,k[2],23,-995338651);
-    a=ii(a,b,c,d,k[0],6,-198630844);d=ii(d,a,b,c,k[7],10,1126891415);c=ii(c,d,a,b,k[14],15,-1416354905);b=ii(b,c,d,a,k[5],21,-57434055);
-    a=ii(a,b,c,d,k[12],6,1700485571);d=ii(d,a,b,c,k[3],10,-1894986606);c=ii(c,d,a,b,k[10],15,-1051523);b=ii(b,c,d,a,k[1],21,-2054922799);
-    a=ii(a,b,c,d,k[8],6,1873313359);d=ii(d,a,b,c,k[15],10,-30611744);c=ii(c,d,a,b,k[6],15,-1560198380);b=ii(b,c,d,a,k[13],21,1309151649);
-    a=ii(a,b,c,d,k[4],6,-145523070);d=ii(d,a,b,c,k[11],10,-1120210379);c=ii(c,d,a,b,k[2],15,718787259);b=ii(b,c,d,a,k[9],21,-343485551);
-    x[0]=(a+x[0])|0; x[1]=(b+x[1])|0; x[2]=(c+x[2])|0; x[3]=(d+x[3])|0;
+  // md5() is provided globally by the md5.js content script declared in manifest.json.
+  if (typeof md5 !== 'function') {
+    return { ok: false, reason: 'md5-missing', message: '全局 md5 函数不可用（md5.js content script 未加载）' };
   }
-  function md5blk(s){const md5blks=[];for(let i=0;i<64;i+=4){md5blks[i>>2]=s.charCodeAt(i)+(s.charCodeAt(i+1)<<8)+(s.charCodeAt(i+2)<<16)+(s.charCodeAt(i+3)<<24)}return md5blks}
-  function md51(s){let n=s.length;let state=[1732584193,-271733879,-1732584194,271733878];let i;for(i=64;i<=n;i+=64){md5cycle(state,md5blk(s.substring(i-64,i)))}s=s.substring(i-64);const tail=new Array(16).fill(0);for(i=0;i<s.length;i++)tail[i>>2]|=s.charCodeAt(i)<<((i%4)<<3);tail[i>>2]|=0x80<<((i%4)<<3);if(i>55){md5cycle(state,tail);for(i=0;i<16;i++)tail[i]=0}tail[14]=n*8;md5cycle(state,tail);return state}
-  const hex_chr='0123456789abcdef'.split('');
-  function rhex(n){let s='';for(let j=0;j<4;j++)s+=hex_chr[(n>>(j*8+4))&0x0f]+hex_chr[(n>>(j*8))&0x0f];return s}
-  function md5(s){return md51(unescape(encodeURIComponent(s))).map(rhex).join('')}
 
   const root = document.body || document.documentElement;
   if (!root) return { ok: false, reason: 'no-root' };
@@ -156,15 +131,33 @@ async function portalLoginAutoLoginInjected(context) {
   async function fetchPasswordMd5ByUserId(userId) {
     const id = String(userId || '').trim();
     if (!id) return '';
-    const infoRes = await fetch(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(id)}`, { credentials: 'include' });
-    const infoText = await infoRes.text();
+    const fetchWithTimeout = (url, timeoutMs = 5000) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, { credentials: 'include', signal: controller.signal })
+        .finally(() => clearTimeout(timeoutId));
+    };
+    let infoRes;
+    try {
+      infoRes = await fetchWithTimeout(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(id)}`);
+    } catch {
+      return '';
+    }
+    let infoText = '';
+    try { infoText = await infoRes.text(); } catch { return ''; }
     if ((infoText || '').includes('login-page')) return '';
     const studentUrl = `/ve/back/coursePlatform/coursePlatform.shtml?method=studentInfo&stuId=${encodeURIComponent(id)}`;
     const teacherUrl = `/ve/back/coursePlatform/coursePlatform.shtml?method=personInfo&teacherId=${encodeURIComponent(id)}`;
     const urls = (infoText || '').includes('学生') ? [studentUrl, teacherUrl] : [teacherUrl, studentUrl];
     for (const u of urls) {
-      const res = await fetch(u, { credentials: 'include' });
-      const text = await res.text();
+      let res;
+      try {
+        res = await fetchWithTimeout(u);
+      } catch {
+        continue;
+      }
+      let text = '';
+      try { text = await res.text(); } catch { continue; }
       const m = String(text || '').match(/(?:id|name)=["']oldpassword["'][^>]*value=["']([^"']+)["']/i)
         || String(text || '').match(/value=["']([^"']+)["'][^>]*(?:id|name)=["']oldpassword["']/i);
       if (m?.[1]) return m[1];
@@ -190,15 +183,20 @@ async function portalLoginAutoLoginInjected(context) {
   async function tryQuickUsernameLogin(quickUsername) {
     const quick = String(quickUsername || '').trim();
     if (!quick) return false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
       const res = await fetch(`/ve/s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(quick)}`, {
         credentials: 'include',
-        cache: 'no-store'
+        cache: 'no-store',
+        signal: controller.signal
       });
       const text = await res.text();
       return looksLikeLoginSuccess(text) || String(text || '').includes('index.shtml?method=index&type=qxkt');
     } catch {
       return false;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -256,7 +254,15 @@ async function portalLoginAutoLoginInjected(context) {
     const current = String(flowState.currentUsername || '').trim();
     if (original && flowState.useAux && current && current !== original) {
       const foundPwd = await fetchAndSavePasswordMd5(original);
-      try { await fetch('/ve/Exit_2.jsp', { credentials: 'include', cache: 'no-store' }); } catch {}
+      try {
+        const exitController = new AbortController();
+        const exitTimeout = setTimeout(() => exitController.abort(), 3000);
+        try {
+          await fetch('/ve/Exit_2.jsp', { credentials: 'include', cache: 'no-store', signal: exitController.signal });
+        } finally {
+          clearTimeout(exitTimeout);
+        }
+      } catch {}
       flowState.currentUsername = original;
       flowState.useAux = false;
       flowState.passwordMd5 = foundPwd || '';
@@ -295,12 +301,12 @@ async function portalLoginAutoLoginInjected(context) {
     });
   }
 
-  function preprocessToCanvas(img) {
+  function binarizeToCanvas(img, threshold = 160, scale = 2) {
     const w = Math.max(1, img.naturalWidth || img.width || 1);
     const h = Math.max(1, img.naturalHeight || img.height || 1);
     const canvas = document.createElement('canvas');
-    canvas.width = w * 2;
-    canvas.height = h * 2;
+    canvas.width = Math.max(1, Math.round(w * scale));
+    canvas.height = Math.max(1, Math.round(h * scale));
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -310,7 +316,7 @@ async function portalLoginAutoLoginInjected(context) {
       const g = imgData.data[i + 1];
       const b = imgData.data[i + 2];
       const gray = (0.299 * r + 0.587 * g + 0.114 * b);
-      const v = gray < 160 ? 0 : 255;
+      const v = gray < threshold ? 0 : 255;
       imgData.data[i] = v;
       imgData.data[i + 1] = v;
       imgData.data[i + 2] = v;
@@ -320,97 +326,127 @@ async function portalLoginAutoLoginInjected(context) {
     return canvas;
   }
 
-  async function autoRecognizeCaptchaCode() {
-    let recognizedFrom = '';
-    let recognizedConfidence = null;
-    let recognizedImgSrc = '';
+  function preprocessToCanvas(img) {
+    return binarizeToCanvas(img, 160, 2);
+  }
 
-    let c = String(autoCode || '').replace(/\D/g, '').slice(0, 4);
-    if (/^\d{4}$/.test(c)) {
-      return { code: c, confidence: null, imageSrc: '', source: 'autoCode' };
-    }
-
-    const input = document.querySelector('input[name="passcode"], input#passcode, input[name="code"]');
-    c = String(input?.value || '').replace(/\D/g, '').slice(0, 4);
-    if (/^\d{4}$/.test(c)) {
-      return { code: c, confidence: null, imageSrc: '', source: 'existingInput' };
-    }
-
-    const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
-    if (img && 'TextDetector' in window) {
-      try {
-        const ok = await waitImageReady(img, 2800);
-        if (!ok) return { code: '', confidence: null, imageSrc: '', source: '' };
-        const detector = new window.TextDetector();
-        const candidates = [];
-        recognizedImgSrc = String(img?.src || '');
-
-        const canvasA = document.createElement('canvas');
-        const w = Math.max(1, img.naturalWidth || img.width || 1);
-        const h = Math.max(1, img.naturalHeight || img.height || 1);
-        canvasA.width = w * 2;
-        canvasA.height = h * 2;
-        const ctxA = canvasA.getContext('2d', { willReadFrequently: true });
-        ctxA.imageSmoothingEnabled = false;
-        ctxA.drawImage(img, 0, 0, canvasA.width, canvasA.height);
-
-        const resultA = await detector.detect(canvasA);
-        candidates.push((resultA || []).map(r => String(r.rawValue || '')).join(''));
-
-        const canvasB = preprocessToCanvas(img);
-        const resultB = await detector.detect(canvasB);
-        candidates.push((resultB || []).map(r => String(r.rawValue || '')).join(''));
-
-        for (const t of candidates) {
-          c = String(t || '').replace(/\D/g, '').slice(0, 4);
-          if (/^\d{4}$/.test(c)) {
-            recognizedFrom = 'text-detector';
-            recognizedConfidence = null;
-            return { code: c, confidence: recognizedConfidence, imageSrc: recognizedImgSrc, source: recognizedFrom };
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    try {
+  // Tesseract worker 单例：每次识别都新建 worker 会消耗整个 8s 预算（冷启动 1.5-3s × 3 次重试），
+  // 导致后续调用超时失败。跨调用复用同一个 worker，恢复旧版行为。
+  let cachedTessWorkerPromise = null;
+  async function getTessWorker() {
+    if (cachedTessWorkerPromise) return cachedTessWorkerPromise;
+    cachedTessWorkerPromise = (async () => {
       const T = globalThis.Tesseract;
-      if (img && T && typeof T.createWorker === 'function' && typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
-        const ok = await waitImageReady(img, 2800);
-        if (!ok) return { code: '', confidence: null, imageSrc: '', source: '' };
-
-        const workerPath = chrome.runtime.getURL('vendor/tesseract/worker.min.js');
-        const corePath = chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js');
-        const langPath = chrome.runtime.getURL('vendor/tesseract');
-
-        const options = {
-          logger: () => {},
-          workerBlobURL: false,
-          workerPath,
-          corePath,
-          langPath
-        };
-
-        let worker;
-        try {
-          worker = await T.createWorker('eng', 1, options);
-        } catch {
-          worker = await T.createWorker('eng', 1, options);
-        }
-
+      if (!T || typeof T.createWorker !== 'function' || typeof chrome === 'undefined' || !chrome?.runtime?.getURL) {
+        return null;
+      }
+      const options = {
+        logger: () => {},
+        workerBlobURL: false,
+        workerPath: chrome.runtime.getURL('vendor/tesseract/worker.min.js'),
+        corePath: chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js'),
+        langPath: chrome.runtime.getURL('vendor/tesseract')
+      };
+      let worker = null;
+      try {
+        worker = await T.createWorker('eng', 1, options);
+      } catch {
+        try { worker = await T.createWorker('eng', 1, options); } catch {}
+      }
+      if (!worker) return null;
+      try {
         if (worker.setParameters) {
           await worker.setParameters({
             tessedit_char_whitelist: '0123456789',
             tessedit_pageseg_mode: '7'
           });
         }
+      } catch {}
+      return worker;
+    })();
+    return cachedTessWorkerPromise;
+  }
 
-        const canvas = preprocessToCanvas(img);
-        const { data } = await worker.recognize(canvas);
+  async function autoRecognizeCaptchaCode() {
+    const overallTimeoutMs = 12000;
+    const t0 = Date.now();
+    let timeoutHandle = null;
+    const overallTimer = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error('ocr-overall-timeout')), overallTimeoutMs);
+    });
+    const work = (async () => {
+      let recognizedFrom = '';
+      let recognizedConfidence = null;
+      let recognizedImgSrc = '';
+
+      let c = String(autoCode || '').replace(/\D/g, '').slice(0, 4);
+      if (/^\d{4}$/.test(c)) {
+        return { code: c, confidence: null, imageSrc: '', source: 'autoCode' };
+      }
+
+      const input = document.querySelector('input[name="passcode"], input#passcode, input[name="code"]');
+      c = String(input?.value || '').replace(/\D/g, '').slice(0, 4);
+      if (/^\d{4}$/.test(c)) {
+        return { code: c, confidence: null, imageSrc: '', source: 'existingInput' };
+      }
+
+      const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+      if (!img) {
+        try { console.warn('[bjtu] ocr: captcha img not found'); } catch {}
+        return { code: '', confidence: null, imageSrc: '', source: '' };
+      }
+      const ok = await waitImageReady(img, 5000);
+      if (!ok) {
+        try { console.warn('[bjtu] ocr: captcha img not ready after 5s, naturalWidth=', img.naturalWidth, 'complete=', img.complete); } catch {}
+        return { code: '', confidence: null, imageSrc: '', source: '' };
+      }
+      recognizedImgSrc = String(img?.src || '');
+
+      if ('TextDetector' in window) {
+        try {
+          const detector = new window.TextDetector();
+          for (const cnv of [binarizeToCanvas(img, 160, 2), binarizeToCanvas(img, 160, 1)]) {
+            try {
+              const result = await detector.detect(cnv);
+              const joined = (result || []).map(r => String(r.rawValue || '')).join('');
+              c = String(joined || '').replace(/\D/g, '').slice(0, 4);
+              if (/^\d{4}$/.test(c)) {
+                return { code: c, confidence: null, imageSrc: recognizedImgSrc, source: 'text-detector' };
+              }
+            } catch {
+              // try next canvas
+            }
+          }
+        } catch (e) {
+          try { console.warn('[bjtu] ocr: TextDetector path failed:', String(e?.message || e)); } catch {}
+        }
+      }
+
+      let worker = null;
+      try {
+        worker = await getTessWorker();
+      } catch (e) {
+        try { console.warn('[bjtu] ocr: getTessWorker failed:', String(e?.message || e)); } catch {}
+      }
+      if (!worker) {
+        try { console.warn('[bjtu] ocr: no tesseract worker available (Tesseract not loaded or createWorker failed)'); } catch {}
+        return { code: '', confidence: null, imageSrc: recognizedImgSrc, source: '' };
+      }
+
+      const thresholds = [180, 160, 140, 120];
+      for (const thr of thresholds) {
+        let data;
+        try {
+          const canvas = binarizeToCanvas(img, thr, 2);
+          data = await Promise.race([
+            worker.recognize(canvas),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('ocr-recognize-timeout')), 6000))
+          ]);
+        } catch (e) {
+          try { console.warn('[bjtu] ocr: tesseract recognize failed (thr=' + thr + '):', String(e?.message || e)); } catch {}
+          continue;
+        }
         const digits = String(data?.text || '').replace(/\D/g, '').slice(0, 4);
-        recognizedImgSrc = String(img?.src || '');
-        try { await worker.terminate?.(); } catch {}
         if (/^\d{4}$/.test(digits)) {
           recognizedFrom = 'tesseract';
           recognizedConfidence = Number.isFinite(Number(data?.confidence))
@@ -419,11 +455,36 @@ async function portalLoginAutoLoginInjected(context) {
           return { code: digits, confidence: recognizedConfidence, imageSrc: recognizedImgSrc, source: recognizedFrom };
         }
       }
-    } catch {
-      // ignore
-    }
+      // Scale-1 fallback
+      try {
+        const canvas = binarizeToCanvas(img, 160, 1);
+        const data = await Promise.race([
+          worker.recognize(canvas),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('ocr-recognize-timeout')), 6000))
+        ]);
+        const digits = String(data?.text || '').replace(/\D/g, '').slice(0, 4);
+        if (/^\d{4}$/.test(digits)) {
+          recognizedFrom = 'tesseract';
+          recognizedConfidence = Number.isFinite(Number(data?.confidence))
+            ? Math.max(0, Math.min(100, Number(data.confidence)))
+            : null;
+          return { code: digits, confidence: recognizedConfidence, imageSrc: recognizedImgSrc, source: recognizedFrom };
+        }
+      } catch (e) {
+        try { console.warn('[bjtu] ocr: tesseract recognize failed (scale=1):', String(e?.message || e)); } catch {}
+      }
 
-    return { code: '', confidence: null, imageSrc: '', source: '' };
+      try { console.warn('[bjtu] ocr: no 4-digit match after all attempts, elapsed=', Date.now() - t0, 'ms'); } catch {}
+      return { code: '', confidence: null, imageSrc: recognizedImgSrc, source: '' };
+    })();
+    try {
+      return await Promise.race([work, overallTimer]);
+    } catch (e) {
+      try { console.warn('[bjtu] ocr: overall timeout, elapsed=', Date.now() - t0, 'ms, err=', String(e?.message || e)); } catch {}
+      return { code: '', confidence: null, imageSrc: '', source: '' };
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
   }
 
   let pendingSwitchTarget = '';
@@ -487,52 +548,15 @@ async function portalLoginAutoLoginInjected(context) {
     const mask = document.createElement('div');
     mask.id = '__bjtu_login_modal__';
     mask.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2147483646;display:flex;align-items:center;justify-content:center;';
-    mask.innerHTML = `
-        <style>
-          .__bjtu_login_grid {
-            display: inline-grid;
-            width: fit-content;
-            grid-template-columns: minmax(144px, 176px) minmax(228px, 256px) minmax(144px, 176px);
-            gap: 10px;
-            align-items: start;
-            min-height: 380px;
-            justify-content: start;
-          }
-          @media(max-width: 720px) {
-            .__bjtu_login_grid {
-              display: grid;
-              width: 100%;
-              grid-template-columns: 1fr;
-            }
-          }
-        </style>
-        <div style="width:fit-content; max-width:min(92vw, 620px); max-height:90vh; display:flex; flex-direction:column; background:#fff; border:1px solid #e8edf5; border-radius:14px; box-shadow:0 18px 42px rgba(0,0,0,.25); padding:14px 14px 12px; pointer-events:auto;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-shrink:0;">
-            <div style="font-size:16px;font-weight:700;color:#1f2937;">课程助手登录</div>
-            <button id="__bjtu_close__" aria-label="关闭" title="关闭" style="border:1px solid #cbd5e1;background:#fff;border-radius:999px;width:24px;height:24px;line-height:20px;font-size:16px;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;">×</button>
-          </div>
-          <div style="font-size:13px;color:#0f766e;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:4px 8px;flex-shrink:0;" id="__bjtu_status__">检测到登录页，请输入账号并登录</div>
-          <div class="__bjtu_login_grid" style="margin-top:10px;overflow-y:auto;overflow-x:hidden;padding-right:4px;">
-            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:8px;height:100%;overflow:auto;background:#fff;box-sizing:border-box;">
-              <div style="font-size:12px;color:#475569;margin-bottom:6px;">快速登录</div>
-              <div id="__bjtu_quick__"></div>
-            </div>
-            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc;display:flex;flex-direction:column;box-sizing:border-box;">
-              <img id="__bjtu_modal_captcha__" style="width:100%;height:54px;object-fit:contain;cursor:pointer;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:8px;background:#fff;display:none;" title="点击刷新" />
-              <input id="__bjtu_u" placeholder="账号" style="width:100%;padding:8px;box-sizing:border-box;margin-bottom:8px;border:1px solid #d1d5db;border-radius:6px;" />
-              <input id="__bjtu_c" placeholder="验证码(可留空自动识别)" maxlength="4" style="width:100%;padding:8px;box-sizing:border-box;margin-bottom:8px;border:1px solid #d1d5db;border-radius:6px;" />
-              <div style="display:flex;gap:8px;justify-content:flex-end;">
-                <button id="__bjtu_refresh__" style="padding:6px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">刷新验证码</button>
-                <button id="__bjtu_go" style="padding:6px 12px;background:#2563eb;color:#fff;border:0;border-radius:6px;cursor:pointer;font-size:13px;">登录</button>
-              </div>
-            </div>
-            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:8px;height:100%;overflow:auto;background:#fff;box-sizing:border-box;">
-              <div style="font-size:12px;color:#475569;margin-bottom:6px;">验证码识别记录</div>
-              <div id="__bjtu_hist__"></div>
-            </div>
-          </div>
-        </div>
-`;
+    let modalHtml = '';
+    try {
+      const res = await fetch(chrome.runtime.getURL('portal-modal.html'), { cache: 'no-store' });
+      modalHtml = await res.text();
+    } catch (e) {
+      return { ok: false, reason: 'modal-template-load-failed', message: String(e?.message || e) };
+    }
+    if (!modalHtml) return { ok: false, reason: 'modal-template-empty' };
+    mask.innerHTML = modalHtml;
     root.appendChild(mask);
 
     const userInput = mask.querySelector('#__bjtu_u');
@@ -615,12 +639,18 @@ async function portalLoginAutoLoginInjected(context) {
     const refreshCaptchaInPage = () => {
       const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
       if (!img) return null;
+      const srcBefore = String(img.src || '');
       try { img.click(); } catch {}
-      try {
-        const u = new URL(img.src, location.origin);
-        u.searchParams.set('t', String(Date.now()));
-        img.src = u.toString();
-      } catch {}
+      // 仅当 click() 未能触发页面换图时，再用 ?t=Date.now() 强制刷新一次
+      Promise.resolve().then(() => {
+        try {
+          if (String(img.src || '') === srcBefore) {
+            const u = new URL(srcBefore, location.origin);
+            u.searchParams.set('t', String(Date.now()));
+            img.src = u.toString();
+          }
+        } catch {}
+      });
       if (captchaImgEl && img && img.src) { captchaImgEl.src = img.src; captchaImgEl.style.display = 'block'; }
 
       return img;
@@ -641,7 +671,20 @@ async function portalLoginAutoLoginInjected(context) {
     });
 
     const handleEnter = (e) => {
-      if (e.key === 'Enter') btnGo.click();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.target && typeof e.target.blur === 'function') {
+          try { e.target.blur(); } catch {}
+        }
+        if (btnGo && !btnGo.disabled) {
+          btnGo.click();
+        } else if (btnGo) {
+          // 按钮被禁用时（例如上一次点击还在跑），强制重置并触发
+          try { btnGo.disabled = false; } catch {}
+          btnGo.click();
+        }
+      }
     };
     userInput.addEventListener('keydown', handleEnter);
     codeInput.addEventListener('keydown', handleEnter);
@@ -670,91 +713,123 @@ async function portalLoginAutoLoginInjected(context) {
         btnGo.disabled = true;
         const origText = btnGo.textContent;
         btnGo.textContent = '验证中';
-        try {
-          const u = encodeURIComponent(username);
-          const checkRes = await fetch(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${u}`);
-          const checkData = JSON.parse(await checkRes.text());
-          if (checkData && String(checkData.STATUS) === '4') {
-            statusEl.textContent = '该账号无效或不存在，已回退旧账号';
-            statusEl.style.color = '#dc2626';
-            statusEl.style.background = '#fef2f2';
-            statusEl.style.borderColor = '#fecaca';
-            username = String(context?.username || existingUser?.value || '').trim();
-            userInput.value = username;
-            try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username); } catch {}
-            btnGo.disabled = false;
-            btnGo.textContent = origText;
-            return;
-          }
-        } catch (e) {}
-
+        statusEl.textContent = '正在验证账号…';
         statusEl.style.color = '#0f766e';
         statusEl.style.background = '#ecfeff';
         statusEl.style.borderColor = '#a5f3fc';
-        btnGo.disabled = false;
-        btnGo.textContent = origText;
 
-        // Manual click without passcode starts a fresh no-code auto-retry round.
-        if (!isAutoStart && !passcode) {
-          tryCount = 0;
-          flowState.retryCount = 0;
-          flowState.forceRetry = false;
-          writeFlowState(flowState);
-        }
+        // 安全网：兜底超时，避免极端情况下按钮永久卡在"验证中"导致卡死
+        const STUCK_TIMEOUT_MS = 15000;
+        const stuckTimer = setTimeout(() => {
+          try { btnGo.disabled = false; } catch {}
+          try { btnGo.textContent = origText; } catch {}
+          statusEl.textContent = '登录请求处理超时，请重试';
+          statusEl.style.color = '#dc2626';
+        }, STUCK_TIMEOUT_MS);
 
-        if (!passcode) {
-          const autoCaptcha = await chrome.storage.local.get(['autoCaptcha']).then(r => r.autoCaptcha).catch(() => true);
-          const autoCaptchaEnabled = autoCaptcha === undefined ? true : !!autoCaptcha;
-          if (!autoCaptchaEnabled) {
-            statusEl.textContent = '验证码识别已关闭，请手动输入';
-            return;
-          }
-          const baseRetry = Math.max(0, Number(flowState.retryCount || 0));
-          while (tryCount < maxTry && !passcode) {
-            tryCount++;
-            const currentRound = Math.min(maxTry, baseRetry + tryCount);
-            statusEl.textContent = `正在识别当前验证码 (${currentRound}/${maxTry})…`;
-            const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
-            if (!img) {
-              statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
+        try {
+          try {
+            const u = encodeURIComponent(username);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            let checkRes, checkData;
+            try {
+              checkRes = await fetch(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${u}`, { signal: controller.signal });
+              const bodyText = await Promise.race([
+                checkRes.text(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('getUserInfo-body-timeout')), 5000))
+              ]);
+              const s = String(bodyText || '{}').trim();
+              checkData = JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
+            } finally {
+              clearTimeout(timeoutId);
+            }
+            if (checkData && String(checkData.STATUS) === '4') {
+              statusEl.textContent = '该账号无效或不存在，已回退旧账号';
+              statusEl.style.color = '#dc2626';
+              statusEl.style.background = '#fef2f2';
+              statusEl.style.borderColor = '#fecaca';
+              username = String(context?.username || existingUser?.value || '').trim();
+              userInput.value = username;
+              try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username); } catch {}
+              btnGo.disabled = false;
+              btnGo.textContent = origText;
               return;
             }
-            await waitImageReady(img, 2800);
-            await new Promise(r => setTimeout(r, 160));
-            const ocrRes = await autoRecognizeCaptchaCode();
-            const c = String(ocrRes?.code || '').trim();
-            if (/^\d{4}$/.test(c)) {
-              passcode = c;
-              codeInput.value = c;
-              lastRecognizedCode = c;
-              lastRecognizedConfidence = Number.isFinite(Number(ocrRes?.confidence)) ? Number(ocrRes.confidence) : null;
-              lastRecognizedImageSrc = String(ocrRes?.imageSrc || img?.src || '');
-              pushHist(lastRecognizedImageSrc || img?.src || '', `识别: ${c}`);
-              break;
+          } catch (e) {
+            try { console.warn('[bjtu] getUserInfo check failed:', String(e?.message || e)); } catch {}
+          }
+
+          statusEl.style.color = '#0f766e';
+          statusEl.style.background = '#ecfeff';
+          statusEl.style.borderColor = '#a5f3fc';
+          btnGo.disabled = false;
+          btnGo.textContent = origText;
+
+          // Manual click without passcode starts a fresh no-code auto-retry round.
+          if (!isAutoStart && !passcode) {
+            tryCount = 0;
+            flowState.retryCount = 0;
+            flowState.forceRetry = false;
+            writeFlowState(flowState);
+          }
+
+          if (!passcode) {
+            const autoCaptcha = await chrome.storage.local.get(['autoCaptcha']).then(r => r.autoCaptcha).catch(() => true);
+            const autoCaptchaEnabled = autoCaptcha === undefined ? true : !!autoCaptcha;
+            if (!autoCaptchaEnabled) {
+              statusEl.textContent = '验证码识别已关闭，请手动输入';
+              return;
             }
-            pushHist(img?.src || '', '识别失败');
-            if (tryCount < maxTry) {
-              statusEl.textContent = `验证码识别失败，正在刷新 (${tryCount}/${maxTry})…`;
-              refreshCaptchaInPage();
+            const baseRetry = Math.max(0, Number(flowState.retryCount || 0));
+            while (tryCount < maxTry && !passcode) {
+              tryCount++;
+              const currentRound = Math.min(maxTry, baseRetry + tryCount);
+              statusEl.textContent = `正在识别当前验证码 (${currentRound}/${maxTry})…`;
+              const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+              if (!img) {
+                statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
+                return;
+              }
               await waitImageReady(img, 2800);
-              await new Promise((r) => setTimeout(r, 180));
+              await new Promise(r => setTimeout(r, 160));
+              const ocrRes = await autoRecognizeCaptchaCode();
+              const c = String(ocrRes?.code || '').trim();
+              if (/^\d{4}$/.test(c)) {
+                passcode = c;
+                codeInput.value = c;
+                lastRecognizedCode = c;
+                lastRecognizedConfidence = Number.isFinite(Number(ocrRes?.confidence)) ? Number(ocrRes.confidence) : null;
+                lastRecognizedImageSrc = String(ocrRes?.imageSrc || img?.src || '');
+                pushHist(lastRecognizedImageSrc || img?.src || '', c);
+                break;
+              }
+              pushHist(img?.src || '', '识别失败');
+              if (tryCount < maxTry) {
+                statusEl.textContent = `验证码识别失败，正在刷新 (${tryCount}/${maxTry})…`;
+                refreshCaptchaInPage();
+                await waitImageReady(img, 2800);
+                await new Promise((r) => setTimeout(r, 180));
+              }
             }
           }
-        }
 
-        if (!passcode) {
-          statusEl.textContent = '验证码识别失败，请手动输入';
-          return;
-        }
+          if (!passcode) {
+            statusEl.textContent = '验证码识别失败，请手动输入';
+            return;
+          }
 
-        statusEl.textContent = '登录中…';
-        resolve({
-          u: username,
-          c: passcode,
-          recognizedCode: lastRecognizedCode || passcode,
-          recognizedConfidence: lastRecognizedConfidence,
-          recognizedImageSrc: lastRecognizedImageSrc || String(document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]')?.src || '')
-        });
+          statusEl.textContent = '登录中…';
+          resolve({
+            u: username,
+            c: passcode,
+            recognizedCode: lastRecognizedCode || passcode,
+            recognizedConfidence: lastRecognizedConfidence,
+            recognizedImageSrc: lastRecognizedImageSrc || String(document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]')?.src || '')
+          });
+        } finally {
+          clearTimeout(stuckTimer);
+        }
       });
 
         let suppressAutoStartOnce = false;
@@ -767,12 +842,32 @@ async function portalLoginAutoLoginInjected(context) {
         const refIsFromLoginPost = String(document.referrer || '').includes('/ve/s.shtml');
         const lastAttemptRecent = !flowState.lastAttemptTs || (Date.now() - Number(flowState.lastAttemptTs || 0) <= 60 * 1000);
         const extensionTrigger = fromExtension && refIsFromLoginPost;
-        const shouldAutoStart = !suppressAutoStartOnce && canAutoRetry && (fromExtension || extensionTrigger || !!flowState.forceRetry || (Number(flowState.retryCount || 0) > 0 && lastAttemptRecent)) && String(userInput.value || '').trim();
+        const hasUsername = !!String(userInput.value || '').trim();
+        const shouldAutoStart = !suppressAutoStartOnce && canAutoRetry && (fromExtension || extensionTrigger || !!flowState.forceRetry || (Number(flowState.retryCount || 0) > 0 && lastAttemptRecent)) && (hasUsername || fromExtension);
         if (shouldAutoStart) {
           const nextRound = Math.min(maxTry, Number(flowState.retryCount || 0) + 1);
-          statusEl.textContent = `检测到自动重试，开始登录 (${nextRound}/${maxTry})...`;
+          statusEl.textContent = hasUsername
+            ? `检测到自动重试，开始登录 (${nextRound}/${maxTry})…`
+            : `检测到来自扩展的登录请求，请输入账号 (${nextRound}/${maxTry})…`;
           autoStartPending = true;
-          setTimeout(() => btnGo.click(), 300);
+          // 延迟 1000ms 让页面/captcha 资源就绪，并确保 Tesseract worker 可用
+          setTimeout(() => {
+            (async () => {
+              try { userInput.focus(); } catch {}
+              if (hasUsername) {
+                // 在点击登录前，先确保验证码图片已加载就绪，避免 cold-start 时识别到半截/空图片
+                try {
+                  const captchaImg = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+                  if (captchaImg && typeof waitImageReady === 'function') {
+                    await waitImageReady(captchaImg, 5000);
+                  }
+                } catch {}
+                btnGo.click();
+              }
+            })().catch(() => {
+              try { if (hasUsername) btnGo.click(); } catch {}
+            });
+          }, 1000);
           flowState.forceRetry = false;
           writeFlowState(flowState);
         } else if (!canAutoRetry) {

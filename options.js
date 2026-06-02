@@ -8,6 +8,8 @@ const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrzy: false, ve: true, ykt: fals
 
 const DEFAULT_OPEN_MODE = 'popup';
 
+const DEFAULT_SAVE_UPLOADS_ENABLED = true;
+
 function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
   return {
@@ -18,10 +20,48 @@ function normalizePlatformEnabled(raw) {
   };
 }
 
+function goBackToApp() {
+  // options.html is opened either as a top-level options page, or embedded inside the
+  // popup iframe by app.html's ⚙️ button. Detect which one and route accordingly.
+  const inPopup = new URLSearchParams(String(location.search || '')).get('popup') === '1';
+  if (inPopup) {
+    try { window.location.href = 'app.html?popup=1'; return; } catch {}
+  }
+  const appUrl = chrome.runtime.getURL('app.html');
+  // Prefer reusing an existing app.html tab; otherwise navigate this page to app.html.
+  try {
+    chrome.tabs.query({ url: appUrl }, (tabs) => {
+      if (chrome.runtime.lastError) {
+        try { window.location.href = appUrl; } catch {}
+        return;
+      }
+      if (Array.isArray(tabs) && tabs.length) {
+        const t = tabs[0];
+        try {
+          chrome.tabs.update(t.id, { active: true }, () => {
+            if (chrome.runtime.lastError) {
+              try { window.location.href = appUrl; } catch {}
+            } else {
+              try { window.close(); } catch {}
+            }
+          });
+        } catch {
+          try { window.location.href = appUrl; } catch {}
+        }
+      } else {
+        try { window.location.href = appUrl; } catch {}
+      }
+    });
+  } catch {
+    try { window.location.href = appUrl; } catch {}
+  }
+}
+
 (async function init() {
   const { platformEnabled } = await chrome.storage.local.get(['platformEnabled']);
   const { openMode } = await chrome.storage.local.get(['openMode']);
   const { autoCaptcha } = await chrome.storage.local.get(['autoCaptcha']);
+  const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
   const enabled = normalizePlatformEnabled(platformEnabled);
 
   document.getElementById('enableVe').checked = !!enabled.ve;
@@ -33,6 +73,10 @@ function normalizePlatformEnabled(raw) {
   const mode = String(openMode || DEFAULT_OPEN_MODE);
   document.getElementById('openModePopup').checked = mode === 'popup';
   document.getElementById('openModePage').checked = mode === 'page';
+  const saveUploadsVal = saveUploadedFilesEnabled === undefined
+    ? DEFAULT_SAVE_UPLOADS_ENABLED
+    : !!saveUploadedFilesEnabled;
+  document.getElementById('saveUploadsEnabled').checked = saveUploadsVal;
 
   // apply changes immediately when inputs change
   const applyPlatform = async () => {
@@ -65,6 +109,29 @@ function normalizePlatformEnabled(raw) {
     setMsg('已应用更改');
   });
 
+  document.getElementById('saveUploadsEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      saveUploadedFilesEnabled: !!document.getElementById('saveUploadsEnabled').checked
+    });
+    setMsg('已应用更改');
+  });
+
+  // "BJTU 上传助手" link: navigate to app.html
+  const backHome = document.getElementById('back-home');
+  if (backHome) {
+    const go = (e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      goBackToApp();
+    };
+    backHome.addEventListener('click', go);
+    backHome.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') go(e);
+    });
+  }
+
   const bindBtn = document.getElementById('bindPortalUsernameBtn');
   if (bindBtn) {
     bindBtn.addEventListener('click', async () => {
@@ -74,14 +141,14 @@ function normalizePlatformEnabled(raw) {
         const resp = await chrome.runtime.sendMessage({ type: 'START_BIND_PORTAL_USERNAME' });
         if (!resp?.ok) {
           await chrome.tabs.create({ url: bindUrl, active: true });
-          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录/授权');
+          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
           return;
         }
-        setMsg('已打开 MIS 绑定页面，请在新标签页完成登录/授权');
+        setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
       } catch (e) {
         try {
           await chrome.tabs.create({ url: bindUrl, active: true });
-          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录/授权');
+          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
         } catch (err) {
           setMsg(String(err?.message || e?.message || e || '无法打开 MIS 绑定页面'), false);
           bindBtn.disabled = false;
@@ -116,8 +183,10 @@ function normalizePlatformEnabled(raw) {
     document.getElementById('autoCaptcha').checked = true;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
+    document.getElementById('saveUploadsEnabled').checked = true;
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoCaptcha: true });
+    await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
     setMsg('已恢复默认配置');
   });
 })();
