@@ -337,6 +337,9 @@ async function portalLoginAutoLoginInjected(context) {
     if (cachedTessWorkerPromise) return cachedTessWorkerPromise;
     cachedTessWorkerPromise = (async () => {
       const T = globalThis.Tesseract;
+      try {
+        console.warn('[bjtu] ocr: getTessWorker start. hasTesseract=', !!T, 'createWorker=', typeof T?.createWorker, 'hasChrome=', typeof chrome !== 'undefined', 'hasGetURL=', typeof chrome?.runtime?.getURL === 'function', 'globalKeys=', Object.keys(globalThis).slice(0, 20).join(','));
+      } catch {}
       if (!T || typeof T.createWorker !== 'function' || typeof chrome === 'undefined' || !chrome?.runtime?.getURL) {
         return null;
       }
@@ -900,7 +903,7 @@ async function portalLoginAutoLoginInjected(context) {
     const amask = document.createElement('div');
     amask.style.cssText = 'position:fixed;inset:0;background:transparent;z-index:2147483647;display:flex;align-items:center;justify-content:center;pointer-events:none;';
     amask.innerHTML = `
-      <div style="width:min(520px,88vw);background:#fff;border:1px solid #e8edf5;border-radius:14px;box-shadow:0 18px 42px rgba(0,0,0,.25);padding:14px;pointer-events:auto;">
+      <div style="width:min(520px,88vw);background:#fff;border:1px solid #e8edf5;border-radius:12px;box-shadow:0 18px 42px rgba(0,0,0,.25);padding:14px;pointer-events:auto;">
         <div style="font-size:16px;font-weight:700;color:#1f2937;margin-bottom:10px;">正在自动登录</div>
         <div style="font-size:13px;color:#0f766e;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;margin-bottom:10px;">
           <svg style="width:16px;height:16px;color:#0f766e;animation:__bjtu_spin 1s linear infinite;flex:0 0 auto;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-opacity="0.25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -915,7 +918,7 @@ async function portalLoginAutoLoginInjected(context) {
           </div>
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:10px;">
-          <button id="__bjtu_cancel_submit__" style="padding:6px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">取消</button>
+          <button id="__bjtu_cancel_submit__" style="background:#64748b;color:#fff;border:0;border-radius:999px;width:28px;height:28px;font-size:16px;font-weight:700;line-height:1;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;" aria-label="取消" title="取消">×</button>
         </div>
         <style>@keyframes __bjtu_spin{to{transform:rotate(360deg)}}</style>
       </div>

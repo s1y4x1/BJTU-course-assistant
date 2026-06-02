@@ -83,12 +83,57 @@ async function ensureTesseractInjected(tabId) {
       target: { tabId },
       func: () => !!globalThis.Tesseract
     });
-    if (res?.[0]?.result) return;
-    await chrome.scripting.executeScript({
+    if (!res?.[0]?.result) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['vendor/tesseract/tesseract.min.js']
+      });
+      // Verify injection succeeded
+      const verify = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => ({
+          hasTesseract: !!globalThis.Tesseract,
+          createWorkerType: typeof globalThis.Tesseract?.createWorker,
+          winKeys: Object.keys(globalThis).filter(k => /tess/i.test(k))
+        })
+      });
+      console.warn('[bjtu] tesseract injection verify (MAIN):', verify?.[0]?.result);
+    }
+  } catch (e) {
+    console.warn('[bjtu] ensureTesseractInjected failed:', String(e?.message || e));
+  }
+}
+
+async function ensureTesseractInjectedIsolated(tabId) {
+  try {
+    const res = await chrome.scripting.executeScript({
       target: { tabId },
-      files: ['vendor/tesseract/tesseract.min.js']
+      world: 'ISOLATED',
+      func: () => !!globalThis.Tesseract
     });
-  } catch (e) {}
+    if (!res?.[0]?.result) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'ISOLATED',
+        files: ['vendor/tesseract/tesseract.min.js']
+      });
+      // Verify injection succeeded
+      const verify = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'ISOLATED',
+        func: () => ({
+          hasTesseract: !!globalThis.Tesseract,
+          createWorkerType: typeof globalThis.Tesseract?.createWorker,
+          winKeys: Object.keys(globalThis).filter(k => /tess/i.test(k)),
+          hasChrome: typeof chrome !== 'undefined',
+          hasChromeRuntime: typeof chrome?.runtime?.getURL === 'function'
+        })
+      });
+      console.warn('[bjtu] tesseract injection verify (ISOLATED):', verify?.[0]?.result);
+    }
+  } catch (e) {
+    console.warn('[bjtu] ensureTesseractInjectedIsolated failed:', String(e?.message || e));
+  }
 }
 
 // Manage action popup according to openMode ('popup' or 'page')
@@ -135,6 +180,11 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
     await ensureTesseractInjected(tabId);
   } catch {
     // fallback to non-tesseract OCR path
+  }
+  try {
+    await ensureTesseractInjectedIsolated(tabId);
+  } catch {
+    // isolated-world Tesseract unavailable; createWorker will fail
   }
 
   const enrichedCtx = ctx && typeof ctx === 'object' ? { ...ctx } : {};

@@ -2224,6 +2224,7 @@ async function recognizePortalCaptchaInExtension({ signal } = {}) {
   const overallTimer = new Promise((_, reject) => {
     setTimeout(() => reject(new Error('recognize-overall-timeout')), OVERALL_TIMEOUT_MS);
   });
+  let imageUrl = null;
   const work = (async () => {
     await enforceJsessionidBeforeLoginRequest();
     const res = await fetch(`${BASE_VE}GetImg?t=${Date.now()}`, {
@@ -2233,6 +2234,7 @@ async function recognizePortalCaptchaInExtension({ signal } = {}) {
       signal: fetchController.signal
     });
     const blob = await res.blob();
+    imageUrl = URL.createObjectURL(blob);
     const img = await loadImageFromBlob(blob);
     const worker = await getVeTessWorker();
     const canvas = preprocessCaptchaImageToCanvas(img);
@@ -2241,19 +2243,22 @@ async function recognizePortalCaptchaInExtension({ signal } = {}) {
       new Promise((_, reject) => setTimeout(() => reject(new Error('tess-timeout')), TESS_TIMEOUT_MS))
     ]);
     const { data } = await tessRace;
-    return String(data?.text || '').replace(/\D/g, '').slice(0, 4);
+    return { code: String(data?.text || '').replace(/\D/g, '').slice(0, 4), imageUrl };
   })();
   try {
     return await Promise.race([work, overallTimer]);
   } catch {
-    return '';
+    if (imageUrl) { try { URL.revokeObjectURL(imageUrl); } catch {} }
+    return null;
   } finally {
     clearTimeout(fetchTimeout);
     if (signal instanceof AbortSignal) {
-      try { signal.removeEventListener('abort', externalAbortHandler); } catch { /* ignore */ }
+      try { signal.removeEventListener('abort', externalAbortHandler); } catch {}
     }
   }
 }
+
+
 
 async function loginPostInExtension(username, passwordMd5, passcode, { signal } = {}) {
   await enforceJsessionidBeforeLoginRequest();
@@ -2291,22 +2296,81 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
     return { ok: false, reason: 'captcha', message: '验证码识别已关闭' };
   }
   let last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
-  for (let i = 0; i < 3; i++) {
-    if (loginCancelRequested || signal?.aborted) return last;
-    showToast(`正在识别验证码 (${i + 1}/3)…`, 'info', 0);
-    const code = await recognizePortalCaptchaInExtension({ signal });
-    if (!/^\d{4}$/.test(code)) {
-      last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
-      continue;
+  const cancelHandler = () => {
+    if (loginAbortController) {
+      try { loginAbortController.abort(); } catch {}
     }
-    if (loginCancelRequested || signal?.aborted) return last;
-    showToast('验证码已识别，正在提交登录…', 'info', 0);
-    last = await loginPostInExtension(username, passwordMd5, code, { signal });
-    if (last.ok || last.reason !== 'captcha') return last;
-    // 验证码错误：立刻提示用户，然后进入下一轮
-    showToast(`验证码错误：${last.message || '请重试'}，正在重新识别 (${i + 1}/3)…`, 'warning', 2000);
+    loginCancelRequested = true;
+    hideCaptchaModal();
+  };
+  // 等待用户点击"刷新验证码"或图片的手动重试机制
+  // 返回的 promise 在 resolve 后继续执行本轮
+  const waitForUserRefresh = () => new Promise((resolve) => {
+    let done = false;
+    const once = () => { if (done) return; done = true; resolve(); };
+    if (captchaModalRefresh instanceof HTMLButtonElement) {
+      captchaModalRefresh.addEventListener('click', once, { once: true });
+    }
+    if (captchaModalImg instanceof HTMLImageElement) {
+      captchaModalImg.addEventListener('click', once, { once: true });
+    }
+  });
+  try {
+    for (let i = 0; i < 3; i++) {
+      if (loginCancelRequested || signal?.aborted) return last;
+      showCaptchaModal({
+        imageUrl: null,
+        status: `正在识别验证码 (${i + 1}/3)…`,
+        level: 'info',
+        spinner: true,
+        refreshHandler: null,
+        cancelHandler
+      });
+      const result = await recognizePortalCaptchaInExtension({ signal });
+      if (loginCancelRequested || signal?.aborted) return last;
+      const code = String(result?.code || '').trim();
+      const imageUrl = result?.imageUrl || null;
+      if (!/^\d{4}$/.test(code)) {
+        last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
+        showCaptchaModal({
+          imageUrl,
+          status: `本轮识别失败 (${i + 1}/3)，点击图片或刷新按钮手动重试`,
+          level: 'warning',
+          spinner: false,
+          refreshHandler: () => {},
+          cancelHandler
+        });
+        await waitForUserRefresh();
+        continue;
+      }
+      if (loginCancelRequested || signal?.aborted) return last;
+      showCaptchaModal({
+        imageUrl,
+        status: `已识别验证码：${code}，正在提交登录 (${i + 1}/3)…`,
+        level: 'info',
+        spinner: true,
+        refreshHandler: null,
+        cancelHandler
+      });
+      last = await loginPostInExtension(username, passwordMd5, code, { signal });
+      if (last.ok || last.reason !== 'captcha') {
+        hideCaptchaModal();
+        return last;
+      }
+      // 验证码错误：保持图片可见，提示用户后进入下一轮
+      showCaptchaModal({
+        imageUrl,
+        status: `验证码错误：${last.message || '请重试'}，正在重新识别 (${i + 1}/3)…`,
+        level: 'warning',
+        spinner: false,
+        refreshHandler: null,
+        cancelHandler
+      });
+    }
+    return last;
+  } finally {
+    hideCaptchaModal();
   }
-  return last;
 }
 
 async function loginGet(username, { signal } = {}) {
@@ -2379,6 +2443,125 @@ if (loginModal) {
       dismissLoginModal();
     }
   });
+}
+
+const captchaModal = document.getElementById('captcha-modal');
+const captchaModalImg = document.getElementById('captcha-modal-img');
+const captchaModalStatus = document.getElementById('captcha-modal-status');
+const captchaModalSpinner = document.getElementById('captcha-modal-spinner');
+const captchaModalRefresh = document.getElementById('captcha-modal-refresh');
+const captchaModalCancel = document.getElementById('captcha-modal-cancel');
+const captchaModalClose = document.getElementById('captcha-modal-close');
+let currentCaptchaImageUrl = null;
+let captchaModalRefreshHandler = null;
+let captchaModalCancelHandler = null;
+
+function setCaptchaModalStatus(text, level = 'info') {
+  if (!(captchaModalStatus instanceof HTMLElement)) return;
+  captchaModalStatus.classList.remove('is-error', 'is-warning');
+  if (level === 'error') captchaModalStatus.classList.add('is-error');
+  else if (level === 'warning') captchaModalStatus.classList.add('is-warning');
+  captchaModalStatus.textContent = String(text || '');
+}
+
+function setCaptchaModalSpinner(visible) {
+  if (!(captchaModalSpinner instanceof HTMLElement)) return;
+  captchaModalSpinner.style.display = visible ? 'flex' : 'none';
+}
+
+function setCaptchaModalImage(imageUrl) {
+  if (currentCaptchaImageUrl) {
+    try { URL.revokeObjectURL(currentCaptchaImageUrl); } catch {}
+    currentCaptchaImageUrl = null;
+  }
+  if (imageUrl) {
+    currentCaptchaImageUrl = imageUrl;
+    if (captchaModalImg instanceof HTMLImageElement) captchaModalImg.src = imageUrl;
+  } else {
+    if (captchaModalImg instanceof HTMLImageElement) captchaModalImg.removeAttribute('src');
+  }
+}
+
+function showCaptchaModal({
+  imageUrl = null,
+  status = '正在准备验证码…',
+  level = 'info',
+  spinner = false,
+  refreshHandler = null,
+  cancelHandler = null
+} = {}) {
+  if (!(captchaModal instanceof HTMLElement)) return;
+  setCaptchaModalImage(imageUrl);
+  setCaptchaModalStatus(status, level);
+  setCaptchaModalSpinner(spinner);
+  // 绑定/解绑刷新/取消按钮
+  if (captchaModalRefresh instanceof HTMLButtonElement) {
+    if (captchaModalRefreshHandler) {
+      try { captchaModalRefresh.removeEventListener('click', captchaModalRefreshHandler); } catch {}
+    }
+    captchaModalRefreshHandler = typeof refreshHandler === 'function' ? refreshHandler : null;
+    if (captchaModalRefreshHandler) {
+      captchaModalRefresh.addEventListener('click', captchaModalRefreshHandler);
+      captchaModalRefresh.style.display = '';
+    } else {
+      captchaModalRefresh.style.display = 'none';
+    }
+  }
+  if (captchaModalCancel instanceof HTMLButtonElement) {
+    if (captchaModalCancelHandler) {
+      try { captchaModalCancel.removeEventListener('click', captchaModalCancelHandler); } catch {}
+    }
+    captchaModalCancelHandler = typeof cancelHandler === 'function' ? cancelHandler : null;
+    if (captchaModalCancelHandler) {
+      captchaModalCancel.addEventListener('click', captchaModalCancelHandler);
+      captchaModalCancel.textContent = '取消登录';
+      captchaModalCancel.style.display = '';
+    } else {
+      captchaModalCancel.style.display = 'none';
+    }
+  }
+  captchaModal.style.display = 'flex';
+}
+
+function hideCaptchaModal() {
+  if (!(captchaModal instanceof HTMLElement)) return;
+  captchaModal.style.display = 'none';
+  setCaptchaModalImage(null);
+  setCaptchaModalSpinner(false);
+  if (captchaModalRefresh instanceof HTMLButtonElement && captchaModalRefreshHandler) {
+    try { captchaModalRefresh.removeEventListener('click', captchaModalRefreshHandler); } catch {}
+    captchaModalRefreshHandler = null;
+  }
+  if (captchaModalCancel instanceof HTMLButtonElement && captchaModalCancelHandler) {
+    try { captchaModalCancel.removeEventListener('click', captchaModalCancelHandler); } catch {}
+    captchaModalCancelHandler = null;
+  }
+}
+
+if (captchaModal instanceof HTMLElement) {
+  captchaModal.addEventListener('mousedown', (e) => {
+    if (e.target === captchaModal) {
+      // 点遮罩等价于点取消
+      if (captchaModalCancelHandler) {
+        try { captchaModalCancelHandler(); } catch {}
+      } else {
+        hideCaptchaModal();
+      }
+    }
+  });
+}
+if (captchaModalClose instanceof HTMLButtonElement) {
+  captchaModalClose.addEventListener('click', () => {
+    if (captchaModalCancelHandler) {
+      try { captchaModalCancelHandler(); } catch {}
+    } else {
+      hideCaptchaModal();
+    }
+  });
+}
+const loginModalClose = document.getElementById('login-modal-close');
+if (loginModalClose instanceof HTMLButtonElement) {
+  loginModalClose.addEventListener('click', () => dismissLoginModal());
 }
 
 let portalLoginTabId = null;
@@ -4629,7 +4812,7 @@ function ensureYktLoginAssistPopup() {
     <div style="width:min(360px, 92vw); max-height:min(88vh, 560px); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
       <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
         <div style="font-size:14px; font-weight:700; color:#0f172a;">登录雨课堂</div>
-        <button type="button" data-action="close-ykt-login-assist" style="border:0; background:transparent; color:#475569; font-size:18px; line-height:1; cursor:pointer;">×</button>
+        <button type="button" data-action="close-ykt-login-assist" class="modal-close-btn" style="position:static; flex-shrink:0;" aria-label="关闭" title="关闭">×</button>
       </div>
       <div style="flex:1; padding:8px; background:#f8fafc;">
         <iframe id="ykt-login-assist-frame" title="登录雨课堂" referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-same-origin allow-popups" style="width:100%; height:100%; border:0; border-radius:8px; background:#fff;"></iframe>
@@ -4867,7 +5050,7 @@ function ensureMrzyLoginAssistPopup() {
     <div style="width:min(360px, 92vw); max-height:min(88vh, 560px); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
       <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
         <div style="font-size:14px; font-weight:700; color:#0f172a;">登录每日交作业</div>
-        <button type="button" data-action="close-mrzy-login-assist" style="border:0; background:transparent; color:#475569; font-size:18px; line-height:1; cursor:pointer;">×</button>
+        <button type="button" data-action="close-mrzy-login-assist" class="modal-close-btn" style="position:static; flex-shrink:0;" aria-label="关闭" title="关闭">×</button>
       </div>
       <div style="flex:1; padding:14px 14px 16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">
         <img id="mrzy-login-assist-qr" alt="登录二维码" title="点击刷新二维码" style="width:220px; height:220px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; cursor:pointer;" />

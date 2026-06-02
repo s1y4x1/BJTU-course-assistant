@@ -806,7 +806,8 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             line-height: 1.15;
         }
         .version-close-btn,
-        .version-min-btn {
+        .version-min-btn,
+        .modal-close-btn {
             background: #64748b;
             width: 28px;
             height: 28px;
@@ -820,9 +821,113 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             font-weight: 700;
         }
         .version-close-btn:hover,
-        .version-min-btn:hover {
+        .version-min-btn:hover,
+        .modal-close-btn:hover {
             background: #475569;
         }
+        /* 验证码弹窗 */
+        .captcha-modal-mask {
+            position: fixed;
+            inset: 0;
+            background: rgba(15,23,42,0.45);
+            z-index: 1100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+        }
+        .captcha-modal-card {
+            width: min(420px, 92vw);
+            background: #fff;
+            border-radius: 12px;
+            border: 1px solid #e8edf5;
+            box-shadow: 0 18px 42px rgba(0,0,0,0.25);
+            padding: 14px 14px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .captcha-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .captcha-modal-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+        .captcha-modal-body {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .captcha-modal-image-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #f8fafc;
+            min-height: 60px;
+        }
+        .captcha-modal-image-wrap img {
+            max-width: 100%;
+            max-height: 64px;
+            object-fit: contain;
+            cursor: pointer;
+            background: #fff;
+            border-radius: 4px;
+        }
+        .captcha-modal-spinner {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.65);
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        .captcha-modal-status {
+            font-size: 13px;
+            color: #0f766e;
+            background: #ecfeff;
+            border: 1px solid #a5f3fc;
+            border-radius: 8px;
+            padding: 6px 10px;
+            min-height: 1.2em;
+            word-break: break-all;
+        }
+        .captcha-modal-status.is-error {
+            color: #c62828;
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+        .captcha-modal-status.is-warning {
+            color: #b45309;
+            background: #fffbeb;
+            border-color: #fde68a;
+        }
+        .captcha-modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .captcha-refresh-btn {
+            background: #fff;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+        }
+        .captcha-refresh-btn:hover { background: #f1f5f9; }
+        .captcha-cancel-btn {
+            background: #64748b;
+        }
+        .captcha-cancel-btn:hover { background: #475569; }
         .top-inline-controls #account-history-select {
             margin-left: 4px;
             margin-right: 4px;
@@ -1419,14 +1524,15 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             background: #fff;
             width: min(640px, 92vw);
             margin: 12vh auto;
-            border-radius: 14px;
-            padding: 18px;
+            border-radius: 12px;
+            padding: 18px 18px 18px 18px;
             box-shadow: 0 18px 42px rgba(0,0,0,0.25);
             text-align: left;
             border: 1px solid #e8edf5;
             position: relative;
         }
-        #login-modal .login-panel h3 { margin: 0 0 10px; color: #1f2937; }
+        #login-modal .login-panel h3 { margin: 0 0 10px; color: #1f2937; padding-right: 36px; }
+        #login-modal #login-modal-close { position: absolute; top: 10px; right: 10px; }
 
         /* Keep course helper readable and left panel slightly denser */
         .right-column, .config-area, .status { font-size: 14px; }
