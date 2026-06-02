@@ -202,7 +202,6 @@ window.homeworkAttachmentItemsById = {}; // {resourceId: {id,name,url,extName,co
 window.homeworkAttachmentItemsByCourseId = {}; // {courseId: HomeworkAttachmentItem[]}
 window.resourceSpaceLoadVersion = 0;
 window.currentAccountLoginName = ''; // loginName from getUserInfo
-window.currentAccountUserId = ''; // numeric userId for internal comparison
 window.isTeacherAccount = false; // teacher role detected
 window.resourceDownloadTasks = {}; // {resourceId: {active,loaded,total,speed,samples,lastUiTs,abortController,xhr,cancelled,chromeDownloadId}}
 window.resourceDownloadBatch = {
@@ -1610,12 +1609,7 @@ async function syncAccountInfoAndReloadVeCourses({
     lastValidUsername = finalUser;
     isLoginSessionValid = true;
     window.currentAccountLoginName = String(info?.loginName || '').trim() || String(info?.userId || detectedUser || '').trim();
-    // 保存数字 userId 用于内部比对（如检测账号切换）
-    const apiUserId = String(info?.userId || info?.userID || info?.USERID || info?.stuId || info?.teacherId || detectedUser || '').trim();
-    if (apiUserId) {
-      window.currentAccountUserId = apiUserId;
-      await setLocal('currentAccountUserId', apiUserId);
-    }
+    // 数字 userId 不再独立保存，使用 loginName 比对即可
   }
   pendingUsernameChange = null;
   setWelcomeMessage(info);
@@ -6507,8 +6501,7 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
 
   if (isLoginRedirect || hasLoginKeywords) {
     const currentUser = await detectUserIdFromPersonalCenter();
-    const storedUserId = String(window.currentAccountUserId || lastValidUsername || '').trim();
-    if (currentUser && storedUserId && currentUser !== storedUserId) {
+    if (currentUser && lastValidUsername && currentUser !== lastValidUsername) {
       return { loginRequired: true, accountSwitched: currentUser, items: [] };
     }
     return { loginRequired: true, items: [] };
@@ -9418,8 +9411,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       if (isStale()) return false;
 
       const currentUser = await detectUserIdFromPersonalCenter();
-      const storedUserId = String(window.currentAccountUserId || lastValidUsername || '').trim();
-      if (currentUser && storedUserId && currentUser !== storedUserId) {
+      if (currentUser && lastValidUsername && currentUser !== lastValidUsername) {
         showToast('检测到当前账号已变更为 ' + currentUser + '，正在切换并重新加载', 'info', 3000);
         usernameInput.value = currentUser;
         await setLocal('username', currentUser);
@@ -9937,11 +9929,19 @@ if (parallelLimitInput instanceof HTMLInputElement) {
 }
 
 dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover', 'dragover-invalid');
+  const isFile = e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+  dropZone.classList.add(isFile ? 'dragover' : 'dragover-invalid');
+});
+dropZone.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover', 'dragover-invalid');
+});
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('dragover');
+  dropZone.classList.remove('dragover', 'dragover-invalid');
   handleFiles(e);
 });
 
@@ -10771,7 +10771,6 @@ async function addSavedUpload(file, serverData, convertedUrl) {
   }
   window.savedUploadedFiles = list;
   await persistSavedUploads();
-  renderSavedUploadsSection();
 }
 
 async function removeSavedUpload(id) {
@@ -10896,7 +10895,7 @@ function setupSavedUploadsUi() {
   if (invertBtn) {
     invertBtn.addEventListener('click', () => {
       document.querySelectorAll('#file-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
-      document.querySelectorAll('.saved-uploads-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
+      document.querySelectorAll('.saved-uploads-list:not(.is-hidden) .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
     });
   }
   const section = document.getElementById('saved-uploads-section');
@@ -10921,11 +10920,6 @@ function setupSavedUploadsUi() {
           const btn = actionEl;
           const isExpanded = nextExpanded === '1';
           btn.classList.toggle('is-expanded', isExpanded);
-          const collapsedText = String(btn.dataset.collapsedText || '查看全部已上传文件');
-          const expandedText = String(btn.dataset.expandedText || '收起全部已上传文件');
-          const count = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles.length : 0;
-          const label = btn.querySelector('.homework-toggle-label');
-          if (label) label.textContent = `${isExpanded ? expandedText : collapsedText} (${count})`;
           btn.classList.toggle('homework-toggle-btn--up', isExpanded);
           btn.classList.toggle('homework-toggle-btn--down', !isExpanded);
           btn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
@@ -10997,8 +10991,6 @@ function setupSavedUploadsUi() {
 
   // 不默认使用本地保存账号。
   lastValidUsername = (await getLocal('username', '')).trim();
-  // 恢复内部 userId 用于账号切换检测
-  window.currentAccountUserId = (await getLocal('currentAccountUserId', '')).trim();
   let welcomeInfoUserId = '';
   let welcomeInfo = null;
   usernameInput.value = lastValidUsername;
