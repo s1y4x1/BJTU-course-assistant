@@ -77,28 +77,25 @@ async function savePortalLoginAccountRecord(userId, patch = {}) {
   return record;
 }
 
-async function ensureMainScriptsInjected(tabId, files) {
-  for (const file of files) {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        files: [file]
-      });
-    } catch {}
+async function injectScriptsWithEntry(tabId, world, entryFiles, entryFunc, entryArgs) {
+  // Inject entry files (md5.js, tesseract.min.js) in order, then run the entry function
+  for (const file of entryFiles) {
+    await chrome.scripting.executeScript({ target: { tabId }, world, files: [file] });
   }
-}
-
-async function ensureIsolatedScriptsInjected(tabId, files) {
-  for (const file of files) {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'ISOLATED',
-        files: [file]
-      });
-    } catch {}
-  }
+  return new Promise((resolve) => {
+    chrome.scripting.executeScript({
+      target: { tabId },
+      world,
+      func: entryFunc,
+      args: entryArgs
+    }, (results) => {
+      const err = chrome.runtime.lastError;
+      if (err) { resolve({ ok: false, error: err.message || String(err) }); return; }
+      const result = Array.isArray(results) && results[0] ? results[0].result : null;
+      if (!result || result.ok !== true) { resolve({ ok: false, error: result?.reason || 'inject-failed' }); return; }
+      resolve({ ok: true, meta: result });
+    });
+  });
 }
 
 // Manage action popup according to openMode ('popup' or 'page')
@@ -141,19 +138,13 @@ function shouldSkipRecent(tabId, url) {
 }
 
 async function injectPortalAutoLogin(tabId, ctx = null) {
-  try {
-    await ensureMainScriptsInjected(tabId, ['md5.js', 'vendor/tesseract/tesseract.min.js']);
-  } catch {
-    // MAIN injection failed; try ISOLATED fallback
-    try { await ensureIsolatedScriptsInjected(tabId, ['md5.js', 'vendor/tesseract/tesseract.min.js']); } catch {}
-  }
-
   const enrichedCtx = ctx && typeof ctx === 'object' ? { ...ctx } : {};
   if (!Array.isArray(enrichedCtx.accountHistory)) {
     enrichedCtx.accountHistory = await getPortalLoginAccountHistory();
   }
 
-  // Pre-compute all extension URLs and storage values for MAIN world
+  // Pre-compute extension URLs and storage values; the injected page context cannot
+  // reliably create extension-packaged OCR workers, so prefer the isolated world.
   enrichedCtx._tesseractWorkerUrl = chrome.runtime.getURL('vendor/tesseract/worker.min.js');
   enrichedCtx._tesseractCoreUrl = chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js');
   enrichedCtx._tesseractLangUrl = chrome.runtime.getURL('vendor/tesseract');
@@ -165,24 +156,12 @@ async function injectPortalAutoLogin(tabId, ctx = null) {
     enrichedCtx._autoCaptchaEnabled = true;
   }
 
-  const injectInWorld = (world) => new Promise((resolve) => {
-    chrome.scripting.executeScript({
-      target: { tabId },
-      world,
-      func: portalLoginAutoLoginInjected,
-      args: [enrichedCtx]
-    }, (results) => {
-      const err = chrome.runtime.lastError;
-      if (err) { resolve({ ok: false, error: err.message || String(err) }); return; }
-      const result = Array.isArray(results) && results[0] ? results[0].result : null;
-      if (!result || result.ok !== true) { resolve({ ok: false, error: result?.reason || 'inject-failed' }); return; }
-      resolve({ ok: true, meta: result });
-    });
-  });
-  const mainRes = await injectInWorld('MAIN');
-  if (mainRes.ok) return mainRes;
-  // Fallback to ISOLATED world if MAIN fails
-  return await injectInWorld('ISOLATED');
+  const sharedFiles = ['md5.js', 'vendor/tesseract/tesseract.min.js'];
+  // Try ISOLATED first so Tesseract can boot its extension-packaged worker/WASM.
+  let isolatedRes;
+  try { isolatedRes = await injectScriptsWithEntry(tabId, 'ISOLATED', sharedFiles, portalLoginAutoLoginInjected, [enrichedCtx]); } catch { isolatedRes = null; }
+  if (isolatedRes?.ok) return isolatedRes;
+  return await injectScriptsWithEntry(tabId, 'MAIN', sharedFiles, portalLoginAutoLoginInjected, [enrichedCtx]);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

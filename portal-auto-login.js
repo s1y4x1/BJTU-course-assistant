@@ -3,6 +3,10 @@ async function portalLoginAutoLoginInjected(context) {
   if (typeof md5 !== 'function') {
     return { ok: false, reason: 'md5-missing', message: '全局 md5 函数不可用（md5.js content script 未加载）' };
   }
+  // Verify Tesseract is loaded; if not, the function will return early so the caller can try ISOLATED world
+  if (typeof globalThis.Tesseract !== 'object' || typeof globalThis.Tesseract.createWorker !== 'function') {
+    return { ok: false, reason: 'tesseract-missing', message: 'Tesseract OCR 未加载' };
+  }
 
   const root = document.body || document.documentElement;
   if (!root) return { ok: false, reason: 'no-root' };
@@ -338,6 +342,35 @@ async function portalLoginAutoLoginInjected(context) {
     return binarizeToCanvas(img, 160, 2);
   }
 
+  async function loadImageFromBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = url;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+      return img;
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+
+  async function blobToDataUrl(blob) {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('blob-read-failed'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function getTessResultData(result) {
+    return result?.data && typeof result.data === 'object' ? result.data : (result || {});
+  }
+
   // Tesseract worker 单例：每次识别都新建 worker 会消耗整个 8s 预算（冷启动 1.5-3s × 3 次重试），
   // 导致后续调用超时失败。跨调用复用同一个 worker，恢复旧版行为。
   let cachedTessWorkerPromise = null;
@@ -348,21 +381,30 @@ async function portalLoginAutoLoginInjected(context) {
       if (!T || typeof T.createWorker !== 'function') {
         return null;
       }
-      const options = {
+      const baseOptions = {
         logger: () => {},
-        workerBlobURL: false,
         workerPath: tesseractWorkerUrl || (hasChrome ? chrome.runtime.getURL('vendor/tesseract/worker.min.js') : null),
         corePath: tesseractCoreUrl || (hasChrome ? chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js') : null),
         langPath: tesseractLangUrl || (hasChrome ? chrome.runtime.getURL('vendor/tesseract') : null)
       };
-      if (!options.workerPath) return null;
+      if (!baseOptions.workerPath) return null;
       let worker = null;
-      try {
-        worker = await T.createWorker('eng', 1, options);
-      } catch {
-        try { worker = await T.createWorker('eng', 1, options); } catch {}
+      const optionVariants = [
+        { ...baseOptions, workerBlobURL: true },
+        { ...baseOptions, workerBlobURL: false }
+      ];
+      for (const options of optionVariants) {
+        try {
+          worker = await T.createWorker('eng', 1, options);
+          break;
+        } catch (e) {
+          try { console.warn('[bjtu] ocr: createWorker failed (workerBlobURL=' + options.workerBlobURL + '):', String(e?.message || e)); } catch {}
+        }
       }
-      if (!worker) return null;
+      if (!worker) {
+        cachedTessWorkerPromise = null;
+        return null;
+      }
       try {
         if (worker.setParameters) {
           await worker.setParameters({
@@ -399,17 +441,34 @@ async function portalLoginAutoLoginInjected(context) {
         return { code: c, confidence: null, imageSrc: '', source: 'existingInput' };
       }
 
-      const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
-      if (!img) {
+      const pageImg = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+      let img = pageImg;
+      if (!pageImg) {
         try { console.warn('[bjtu] ocr: captcha img not found'); } catch {}
         return { code: '', confidence: null, imageSrc: '', source: '' };
       }
-      const ok = await waitImageReady(img, 5000);
-      if (!ok) {
-        try { console.warn('[bjtu] ocr: captcha img not ready after 5s, naturalWidth=', img.naturalWidth, 'complete=', img.complete); } catch {}
-        return { code: '', confidence: null, imageSrc: '', source: '' };
+      try {
+        const captchaUrl = new URL(String(pageImg.getAttribute('src') || pageImg.src || 'GetImg'), location.href);
+        captchaUrl.searchParams.set('t', String(Date.now()));
+        const res = await fetch(captchaUrl.toString(), {
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' }
+        });
+        const blob = await res.blob();
+        img = await loadImageFromBlob(blob);
+        recognizedImgSrc = await blobToDataUrl(blob);
+      } catch (e) {
+        try { console.warn('[bjtu] ocr: captcha fetch/decode failed, fallback to page image:', String(e?.message || e)); } catch {}
       }
-      recognizedImgSrc = String(img?.src || '');
+      if (img === pageImg) {
+        const ok = await waitImageReady(img, 5000);
+        if (!ok) {
+          try { console.warn('[bjtu] ocr: captcha img not ready after 5s, naturalWidth=', img.naturalWidth, 'complete=', img.complete); } catch {}
+          return { code: '', confidence: null, imageSrc: '', source: '' };
+        }
+        recognizedImgSrc = String(img?.src || '');
+      }
 
       if ('TextDetector' in window) {
         try {
@@ -455,11 +514,12 @@ async function portalLoginAutoLoginInjected(context) {
           try { console.warn('[bjtu] ocr: tesseract recognize failed (thr=' + thr + '):', String(e?.message || e)); } catch {}
           continue;
         }
-        const digits = String(data?.text || '').replace(/\D/g, '').slice(0, 4);
+        const tessData = getTessResultData(data);
+        const digits = String(tessData?.text || '').replace(/\D/g, '').slice(0, 4);
         if (/^\d{4}$/.test(digits)) {
           recognizedFrom = 'tesseract';
-          recognizedConfidence = Number.isFinite(Number(data?.confidence))
-            ? Math.max(0, Math.min(100, Number(data.confidence)))
+          recognizedConfidence = Number.isFinite(Number(tessData?.confidence))
+            ? Math.max(0, Math.min(100, Number(tessData.confidence)))
             : null;
           return { code: digits, confidence: recognizedConfidence, imageSrc: recognizedImgSrc, source: recognizedFrom };
         }
@@ -471,11 +531,12 @@ async function portalLoginAutoLoginInjected(context) {
           worker.recognize(canvas),
           new Promise((_, reject) => setTimeout(() => reject(new Error('ocr-recognize-timeout')), 6000))
         ]);
-        const digits = String(data?.text || '').replace(/\D/g, '').slice(0, 4);
+        const tessData = getTessResultData(data);
+        const digits = String(tessData?.text || '').replace(/\D/g, '').slice(0, 4);
         if (/^\d{4}$/.test(digits)) {
           recognizedFrom = 'tesseract';
-          recognizedConfidence = Number.isFinite(Number(data?.confidence))
-            ? Math.max(0, Math.min(100, Number(data.confidence)))
+          recognizedConfidence = Number.isFinite(Number(tessData?.confidence))
+            ? Math.max(0, Math.min(100, Number(tessData.confidence)))
             : null;
           return { code: digits, confidence: recognizedConfidence, imageSrc: recognizedImgSrc, source: recognizedFrom };
         }

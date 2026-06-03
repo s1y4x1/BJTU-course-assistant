@@ -2301,7 +2301,7 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
         imageUrl: null,
         status: `正在识别验证码 (${i + 1}/3)…`,
         level: 'info',
-        spinner: true,
+        spinner: false,
         refreshHandler: null,
         cancelHandler
       });
@@ -2330,7 +2330,7 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
         imageUrl,
         status: `正在提交登录…`,
         level: 'info',
-        spinner: true,
+        spinner: false,
         refreshHandler: null,
         cancelHandler
       });
