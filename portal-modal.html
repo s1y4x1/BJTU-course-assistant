@@ -2,10 +2,9 @@
   .__bjtu_login_grid {
     display: inline-grid;
     width: fit-content;
-    grid-template-columns: minmax(144px, 176px) minmax(228px, 256px) minmax(144px, 176px);
-    gap: 10px;
+    grid-template-columns: minmax(120px, 150px) minmax(180px, 210px) minmax(120px, 150px);
+    gap: 8px;
     align-items: start;
-    min-height: 380px;
     justify-content: start;
   }
   @media(max-width: 720px) {
@@ -16,10 +15,10 @@
     }
   }
 </style>
-<div style="width:fit-content; max-width:min(92vw, 620px); max-height:90vh; display:flex; flex-direction:column; background:#fff; border:1px solid #e8edf5; border-radius:14px; box-shadow:0 18px 42px rgba(0,0,0,.25); padding:14px 14px 12px; pointer-events:auto;">
+<div style="width:fit-content; max-width:min(92vw, 480px); max-height:90vh; display:flex; flex-direction:column; background:#fff; border:1px solid #e8edf5; border-radius:14px; box-shadow:0 18px 42px rgba(0,0,0,.25); padding:14px 14px 12px; pointer-events:auto;">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-shrink:0;">
     <div style="font-size:16px;font-weight:700;color:#1f2937;">课程助手登录</div>
-    <button id="__bjtu_close__" aria-label="关闭" title="关闭" style="background:#64748b;border-radius:999px;width:28px;height:28px;line-height:24px;font-size:16px;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;color:#fff;border:0;font-weight:700;">×</button>
+    <button id="__bjtu_close__" style="padding:4px 10px;background:#64748b;color:#fff;border:0;border-radius:6px;cursor:pointer;font-size:13px;">取消</button>
   </div>
   <div style="font-size:13px;color:#0f766e;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:4px 8px;flex-shrink:0;" id="__bjtu_status__">检测到登录页，请输入账号并登录</div>
   <div class="__bjtu_login_grid" style="margin-top:10px;overflow-y:auto;overflow-x:hidden;padding-right:4px;">
@@ -31,10 +30,7 @@
       <img id="__bjtu_modal_captcha__" style="width:100%;height:54px;object-fit:contain;cursor:pointer;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:8px;background:#fff;display:none;" title="点击刷新" />
       <input id="__bjtu_u" placeholder="账号" style="width:100%;padding:8px;box-sizing:border-box;margin-bottom:8px;border:1px solid #d1d5db;border-radius:6px;" />
       <input id="__bjtu_c" placeholder="验证码(可留空自动识别)" maxlength="4" style="width:100%;padding:8px;box-sizing:border-box;margin-bottom:8px;border:1px solid #d1d5db;border-radius:6px;" />
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
-        <button id="__bjtu_refresh__" style="padding:6px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">刷新验证码</button>
-        <button id="__bjtu_go" style="padding:6px 12px;background:#2563eb;color:#fff;border:0;border-radius:6px;cursor:pointer;font-size:13px;">登录</button>
-      </div>
+      <div id="__bjtu_login_action_hint__" style="font-size:12px;color:#94a3b8;text-align:right;line-height:1.6;">按 Enter 登录<br>点击图片刷新验证码</div>
     </div>
     <div style="border:1px solid #e5e7eb;border-radius:10px;padding:8px;height:100%;overflow:auto;background:#fff;box-sizing:border-box;">
       <div style="font-size:12px;color:#475569;margin-bottom:6px;">验证码识别记录</div>

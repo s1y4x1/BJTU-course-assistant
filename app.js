@@ -2323,9 +2323,12 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
         continue;
       }
       if (loginCancelRequested || signal?.aborted) return last;
+      if (captchaModalInput instanceof HTMLInputElement) {
+        captchaModalInput.value = code;
+      }
       showCaptchaModal({
         imageUrl,
-        status: `已识别验证码：${code}，正在提交登录 (${i + 1}/3)…`,
+        status: `正在提交登录…`,
         level: 'info',
         spinner: true,
         refreshHandler: null,
@@ -2427,6 +2430,7 @@ if (loginModal) {
 const captchaModal = document.getElementById('captcha-modal');
 const captchaModalImg = document.getElementById('captcha-modal-img');
 const captchaModalStatus = document.getElementById('captcha-modal-status');
+const captchaModalInput = document.getElementById('captcha-modal-input');
 const captchaModalSpinner = document.getElementById('captcha-modal-spinner');
 const captchaModalRefresh = document.getElementById('captcha-modal-refresh');
 const captchaModalCancel = document.getElementById('captcha-modal-cancel');
@@ -2493,7 +2497,7 @@ function showCaptchaModal({
     captchaModalCancelHandler = typeof cancelHandler === 'function' ? cancelHandler : null;
     if (captchaModalCancelHandler) {
       captchaModalCancel.addEventListener('click', captchaModalCancelHandler);
-      captchaModalCancel.textContent = '取消登录';
+      captchaModalCancel.textContent = '取消';
       captchaModalCancel.style.display = '';
     } else {
       captchaModalCancel.style.display = 'none';

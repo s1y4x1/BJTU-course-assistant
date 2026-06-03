@@ -838,7 +838,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             padding: 12px;
         }
         .captcha-modal-card {
-            width: min(420px, 92vw);
+            width: min(340px, 92vw);
             background: #fff;
             border-radius: 12px;
             border: 1px solid #e8edf5;
@@ -890,7 +890,6 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(255,255,255,0.65);
             border-radius: 8px;
             pointer-events: none;
         }

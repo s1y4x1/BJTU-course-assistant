@@ -570,8 +570,6 @@ async function portalLoginAutoLoginInjected(context) {
 
     const userInput = mask.querySelector('#__bjtu_u');
     const codeInput = mask.querySelector('#__bjtu_c');
-    const btnGo = mask.querySelector('#__bjtu_go');
-    const btnRefresh = mask.querySelector('#__bjtu_refresh__');
     const btnClose = mask.querySelector('#__bjtu_close__');
     const statusEl = mask.querySelector('#__bjtu_status__');
     const histEl = mask.querySelector('#__bjtu_hist__');
@@ -624,7 +622,7 @@ async function portalLoginAutoLoginInjected(context) {
             }
             statusEl.textContent = '免验证码登录失败，改用验证码登录…';
           }
-          btnGo.click();
+          doLoginSubmit().then((r) => { if (r && typeof gotResolve === 'function') gotResolve(r); });
         });
         quickEl.appendChild(btn);
       });
@@ -674,10 +672,112 @@ async function portalLoginAutoLoginInjected(context) {
     };
     initCaptcha();
 
-    btnRefresh.addEventListener('click', () => {
-      refreshCaptchaInPage();
-      statusEl.textContent = '验证码已刷新';
-    });
+    const doLoginSubmit = async () => {
+      username = String(userInput.value || '').trim();
+      passcode = String(codeInput.value || '').replace(/\D/g, '').slice(0, 4);
+      if (!username) {
+        statusEl.textContent = '请先输入账号';
+        return;
+      }
+      try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username); } catch {}
+
+      statusEl.textContent = '正在验证账号…';
+      statusEl.style.color = '#0f766e';
+      statusEl.style.background = '#ecfeff';
+      statusEl.style.borderColor = '#a5f3fc';
+
+      const STUCK_TIMEOUT_MS = 15000;
+      const stuckTimer = setTimeout(() => {
+        statusEl.textContent = '登录请求处理超时，请重试';
+        statusEl.style.color = '#dc2626';
+      }, STUCK_TIMEOUT_MS);
+
+      try {
+        try {
+          const u = encodeURIComponent(username);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          let checkRes, checkData;
+          try {
+            checkRes = await fetch(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${u}`, { signal: controller.signal });
+            const bodyText = await Promise.race([
+              checkRes.text(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('getUserInfo-body-timeout')), 5000))
+            ]);
+            const s = String(bodyText || '{}').trim();
+            checkData = JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
+          } finally {
+            clearTimeout(timeoutId);
+          }
+          if (checkData && String(checkData.STATUS) === '4') {
+            statusEl.textContent = '该账号无效或不存在，已回退旧账号';
+            statusEl.style.color = '#dc2626';
+            statusEl.style.background = '#fef2f2';
+            statusEl.style.borderColor = '#fecaca';
+            username = String(context?.username || existingUser?.value || '').trim();
+            userInput.value = username;
+            try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username); } catch {}
+            return;
+          }
+        } catch (e) {
+          try { console.warn('[bjtu] getUserInfo check failed:', String(e?.message || e)); } catch {}
+        }
+
+        if (!passcode) {
+          if (!autoCaptchaEnabled) {
+            statusEl.textContent = '验证码识别已关闭，请手动输入';
+            return;
+          }
+          const baseRetry = Math.max(0, Number(flowState.retryCount || 0));
+          while (tryCount < maxTry && !passcode) {
+            tryCount++;
+            const currentRound = Math.min(maxTry, baseRetry + tryCount);
+            statusEl.textContent = `正在识别验证码 (${currentRound}/${maxTry})…`;
+            const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+            if (!img) {
+              statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
+              return;
+            }
+            await waitImageReady(img, 2800);
+            await new Promise(r => setTimeout(r, 160));
+            const ocrRes = await autoRecognizeCaptchaCode();
+            const c = String(ocrRes?.code || '').trim();
+            if (/^\d{4}$/.test(c)) {
+              passcode = c;
+              codeInput.value = c;
+              lastRecognizedCode = c;
+              lastRecognizedConfidence = Number.isFinite(Number(ocrRes?.confidence)) ? Number(ocrRes.confidence) : null;
+              lastRecognizedImageSrc = String(ocrRes?.imageSrc || img?.src || '');
+              pushHist(lastRecognizedImageSrc || img?.src || '', c);
+              break;
+            }
+            pushHist(img?.src || '', '识别失败');
+            if (tryCount < maxTry) {
+              statusEl.textContent = `验证码识别失败，正在刷新 (${tryCount}/${maxTry})…`;
+              refreshCaptchaInPage();
+              await waitImageReady(img, 2800);
+              await new Promise((r) => setTimeout(r, 180));
+            }
+          }
+        }
+
+        if (!passcode) {
+          statusEl.textContent = '验证码识别失败，请手动输入';
+          return;
+        }
+
+        statusEl.textContent = '登录中…';
+        return {
+          u: username,
+          c: passcode,
+          recognizedCode: lastRecognizedCode || passcode,
+          recognizedConfidence: lastRecognizedConfidence,
+          recognizedImageSrc: lastRecognizedImageSrc || String(document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]')?.src || '')
+        };
+      } finally {
+        clearTimeout(stuckTimer);
+      }
+    };
 
     const handleEnter = (e) => {
       if (e.key === 'Enter') {
@@ -686,19 +786,15 @@ async function portalLoginAutoLoginInjected(context) {
         if (e.target && typeof e.target.blur === 'function') {
           try { e.target.blur(); } catch {}
         }
-        if (btnGo && !btnGo.disabled) {
-          btnGo.click();
-        } else if (btnGo) {
-          // 按钮被禁用时（例如上一次点击还在跑），强制重置并触发
-          try { btnGo.disabled = false; } catch {}
-          btnGo.click();
-        }
+        doLoginSubmit().then((result) => { if (result) gotResolve(result); });
       }
     };
     userInput.addEventListener('keydown', handleEnter);
     codeInput.addEventListener('keydown', handleEnter);
 
+    let gotResolve = null;
     const got = await new Promise((resolve) => {
+      gotResolve = resolve;
       mask.addEventListener('click', (e) => {
         if (e.target === mask) btnClose.click();
       });
@@ -708,136 +804,8 @@ async function portalLoginAutoLoginInjected(context) {
         resolve({ closed: true });
       });
 
-      btnGo.addEventListener('click', async () => {
-        username = String(userInput.value || '').trim();
-        passcode = String(codeInput.value || '').replace(/\D/g, '').slice(0, 4);
-        const isAutoStart = autoStartPending;
-        autoStartPending = false;
-        if (!username) {
-          statusEl.textContent = '请先输入账号';
-          return;
-        }
-        try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username); } catch {}
-
-        btnGo.disabled = true;
-        const origText = btnGo.textContent;
-        btnGo.textContent = '验证中';
-        statusEl.textContent = '正在验证账号…';
-        statusEl.style.color = '#0f766e';
-        statusEl.style.background = '#ecfeff';
-        statusEl.style.borderColor = '#a5f3fc';
-
-        // 安全网：兜底超时，避免极端情况下按钮永久卡在"验证中"导致卡死
-        const STUCK_TIMEOUT_MS = 15000;
-        const stuckTimer = setTimeout(() => {
-          try { btnGo.disabled = false; } catch {}
-          try { btnGo.textContent = origText; } catch {}
-          statusEl.textContent = '登录请求处理超时，请重试';
-          statusEl.style.color = '#dc2626';
-        }, STUCK_TIMEOUT_MS);
-
-        try {
-          try {
-            const u = encodeURIComponent(username);
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-            let checkRes, checkData;
-            try {
-              checkRes = await fetch(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${u}`, { signal: controller.signal });
-              const bodyText = await Promise.race([
-                checkRes.text(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('getUserInfo-body-timeout')), 5000))
-              ]);
-              const s = String(bodyText || '{}').trim();
-              checkData = JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
-            } finally {
-              clearTimeout(timeoutId);
-            }
-            if (checkData && String(checkData.STATUS) === '4') {
-              statusEl.textContent = '该账号无效或不存在，已回退旧账号';
-              statusEl.style.color = '#dc2626';
-              statusEl.style.background = '#fef2f2';
-              statusEl.style.borderColor = '#fecaca';
-              username = String(context?.username || existingUser?.value || '').trim();
-              userInput.value = username;
-              try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username); } catch {}
-              btnGo.disabled = false;
-              btnGo.textContent = origText;
-              return;
-            }
-          } catch (e) {
-            try { console.warn('[bjtu] getUserInfo check failed:', String(e?.message || e)); } catch {}
-          }
-
-          statusEl.style.color = '#0f766e';
-          statusEl.style.background = '#ecfeff';
-          statusEl.style.borderColor = '#a5f3fc';
-          btnGo.disabled = false;
-          btnGo.textContent = origText;
-
-          // Manual click without passcode starts a fresh no-code auto-retry round.
-          if (!isAutoStart && !passcode) {
-            tryCount = 0;
-            flowState.retryCount = 0;
-            flowState.forceRetry = false;
-            writeFlowState(flowState);
-          }
-
-          if (!passcode) {
-            if (!autoCaptchaEnabled) {
-              statusEl.textContent = '验证码识别已关闭，请手动输入';
-              return;
-            }
-            const baseRetry = Math.max(0, Number(flowState.retryCount || 0));
-            while (tryCount < maxTry && !passcode) {
-              tryCount++;
-              const currentRound = Math.min(maxTry, baseRetry + tryCount);
-              statusEl.textContent = `正在识别当前验证码 (${currentRound}/${maxTry})…`;
-              const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
-              if (!img) {
-                statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
-                return;
-              }
-              await waitImageReady(img, 2800);
-              await new Promise(r => setTimeout(r, 160));
-              const ocrRes = await autoRecognizeCaptchaCode();
-              const c = String(ocrRes?.code || '').trim();
-              if (/^\d{4}$/.test(c)) {
-                passcode = c;
-                codeInput.value = c;
-                lastRecognizedCode = c;
-                lastRecognizedConfidence = Number.isFinite(Number(ocrRes?.confidence)) ? Number(ocrRes.confidence) : null;
-                lastRecognizedImageSrc = String(ocrRes?.imageSrc || img?.src || '');
-                pushHist(lastRecognizedImageSrc || img?.src || '', c);
-                break;
-              }
-              pushHist(img?.src || '', '识别失败');
-              if (tryCount < maxTry) {
-                statusEl.textContent = `验证码识别失败，正在刷新 (${tryCount}/${maxTry})…`;
-                refreshCaptchaInPage();
-                await waitImageReady(img, 2800);
-                await new Promise((r) => setTimeout(r, 180));
-              }
-            }
-          }
-
-          if (!passcode) {
-            statusEl.textContent = '验证码识别失败，请手动输入';
-            return;
-          }
-
-          statusEl.textContent = '登录中…';
-          resolve({
-            u: username,
-            c: passcode,
-            recognizedCode: lastRecognizedCode || passcode,
-            recognizedConfidence: lastRecognizedConfidence,
-            recognizedImageSrc: lastRecognizedImageSrc || String(document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]')?.src || '')
-          });
-        } finally {
-          clearTimeout(stuckTimer);
-        }
-      });
+      // Auto-start: immediately try to recognize captcha and fill input
+      setTimeout(() => { doLoginSubmit().then((result) => { if (result) resolve(result); }); }, 200);
 
         let suppressAutoStartOnce = false;
         try {
@@ -869,10 +837,10 @@ async function portalLoginAutoLoginInjected(context) {
                     await waitImageReady(captchaImg, 5000);
                   }
                 } catch {}
-                btnGo.click();
+                doLoginSubmit().then((r) => { if (r) resolve(r); });
               }
             })().catch(() => {
-              try { if (hasUsername) btnGo.click(); } catch {}
+              try { if (hasUsername) doLoginSubmit().then((r) => { if (r) resolve(r); }); } catch {}
             });
           }, 1000);
           flowState.forceRetry = false;
