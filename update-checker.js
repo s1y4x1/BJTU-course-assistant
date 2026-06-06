@@ -456,6 +456,7 @@ async function startVersionDownloadWithFallback() {
 
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
+  showToast('已发送下载请求，浏览器正在连接…', 'info', 2000);
   const fileName = buildVersionDownloadFileName(versionButtonLatestVersion);
   const primaryUrl = VERSION_DOWNLOAD_URL;
 
