@@ -11,10 +11,17 @@ async function portalLoginAutoLoginInjected(context) {
   const root = document.body || document.documentElement;
   if (!root) return { ok: false, reason: 'no-root' };
 
-  const old = document.getElementById('__bjtu_login_overlay__');
-  if (old) old.remove();
   const old2 = document.getElementById('__bjtu_login_modal__');
-  if (old2) old2.remove();
+  if (old2) return { ok: false, reason: 'modal-already-shown' };
+  const old3 = document.getElementById('__bjtu_auto_login_overlay__');
+  if (old3) return { ok: false, reason: 'auto-overlay-already-shown' };
+
+  if (window.__bjtu_portal_login_running__) {
+    return { ok: false, reason: 'already-running' };
+  }
+  window.__bjtu_portal_login_running__ = true;
+  const _resetRunningFlag = () => { try { window.__bjtu_portal_login_running__ = false; } catch {} };
+  try { window.addEventListener('pagehide', _resetRunningFlag, { once: true }); } catch {}
 
   // Pre-computed values from background.js (MAIN world compat)
   const tesseractWorkerUrl = context._tesseractWorkerUrl;
@@ -243,6 +250,10 @@ async function portalLoginAutoLoginInjected(context) {
   const pageHtmlAtStart = document.documentElement?.outerHTML || '';
   const alertMsgAtStart = parseAlertMsg(pageHtmlAtStart);
   const onLoginPageAtStart = isLikelyLoginPageHtml(pageHtmlAtStart, location.href);
+  const pageHtmlLower = String(pageHtmlAtStart || '').toLowerCase();
+  const sessionEnded = pageHtmlLower.includes('<title>会话结束</title>')
+    && pageHtmlLower.includes('<strong><font style="font-size:16px">会话结束,请退出系统')
+    && pageHtmlLower.includes('重新登录');
   const flowState = readFlowState();
   flowState.mode = flowState.mode || (fromExtension ? 'extension' : 'page');
   flowState.retryCount = Number.isFinite(Number(flowState.retryCount))
@@ -261,7 +272,7 @@ async function portalLoginAutoLoginInjected(context) {
     passwordMd5 = String(flowState.passwordMd5 || findAccountRecord(username)?.passwordMd5 || '').trim();
   }
 
-  if (!onLoginPageAtStart) {
+  if (!onLoginPageAtStart && !sessionEnded) {
     const original = String(flowState.originalUsername || '').trim();
     const current = String(flowState.currentUsername || '').trim();
     if (original && flowState.useAux && current && current !== original) {
@@ -614,6 +625,9 @@ async function portalLoginAutoLoginInjected(context) {
     // ignore
   }
 
+  let loginController = null;
+  let cancelTriggered = false;
+
   if (!username || !passcode) {
     const mask = document.createElement('div');
     mask.id = '__bjtu_login_modal__';
@@ -636,7 +650,7 @@ async function portalLoginAutoLoginInjected(context) {
     const histEl = mask.querySelector('#__bjtu_hist__');
     const quickEl = mask.querySelector('#__bjtu_quick__');
     const captchaImgEl = mask.querySelector('#__bjtu_modal_captcha__');
-    if (captchaImgEl) captchaImgEl.addEventListener('click', () => { refreshCaptchaInPage(); statusEl.textContent = '验证码已刷新'; });
+    if (captchaImgEl) captchaImgEl.addEventListener('click', () => { refreshCaptchaInPage(); statusEl.textContent = '验证码已刷新，正在识别…'; autoRecognizeAndFill(); });
 
 
     const existingUser = document.querySelector('input[name="username"], input#username, input[name="userId"]');
@@ -692,7 +706,6 @@ async function portalLoginAutoLoginInjected(context) {
 
     let tryCount = 0;
     const maxTry = MAX_AUTO_RETRY_ROUNDS;
-    let autoStartPending = false;
     let lastRecognizedCode = '';
     let lastRecognizedConfidence = null;
     let lastRecognizedImageSrc = '';
@@ -732,6 +745,45 @@ async function portalLoginAutoLoginInjected(context) {
       }
     };
     initCaptcha();
+
+    const autoRecognizeAndFill = async () => {
+      if (!autoCaptchaEnabled) {
+        if (statusEl) statusEl.textContent = '验证码识别已关闭，请手动输入';
+        return;
+      }
+      let img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+      if (!img) {
+        try {
+          refreshCaptchaInPage();
+          await new Promise((r) => setTimeout(r, 600));
+        } catch {}
+        img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+      }
+      if (!img) {
+        if (statusEl) statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
+        return;
+      }
+      try {
+        if (typeof waitImageReady === 'function') await waitImageReady(img, 5000);
+      } catch {}
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        const ocrRes = await autoRecognizeCaptchaCode();
+        const c = String(ocrRes?.code || '').trim();
+        if (/^\d{4}$/.test(c)) {
+          codeInput.value = c;
+          if (statusEl) statusEl.textContent = `已自动识别验证码 ${c}，请确认后点击登录`;
+          try { pushHist(String(ocrRes?.imageSrc || img?.src || ''), c); } catch {}
+        } else {
+          try { pushHist(String(img?.src || ''), '识别失败'); } catch {}
+          if (statusEl) statusEl.textContent = '验证码识别失败，请手动输入';
+        }
+      } catch (e) {
+        try { console.warn('[bjtu] autoRecognizeAndFill failed:', String(e?.message || e)); } catch {}
+        if (statusEl) statusEl.textContent = '验证码识别出错，请手动输入';
+      }
+    };
+    autoRecognizeAndFill();
 
     const doLoginSubmit = async () => {
       username = String(userInput.value || '').trim();
@@ -865,50 +917,24 @@ async function portalLoginAutoLoginInjected(context) {
         resolve({ closed: true });
       });
 
-      // Auto-start: immediately try to recognize captcha and fill input
-      setTimeout(() => { doLoginSubmit().then((result) => { if (result) resolve(result); }); }, 200);
+      const hintLogin = mask.querySelector('#__bjtu_hint_login__');
+      if (hintLogin) {
+        hintLogin.addEventListener('click', (e) => {
+          e.preventDefault();
+          doLoginSubmit().then((result) => { if (result) resolve(result); });
+        });
+      }
+      const hintRefresh = mask.querySelector('#__bjtu_hint_refresh__');
+      if (hintRefresh) {
+        hintRefresh.addEventListener('click', (e) => {
+          e.preventDefault();
+          refreshCaptchaInPage();
+        });
+      }
 
-        let suppressAutoStartOnce = false;
-        try {
-          suppressAutoStartOnce = sessionStorage.getItem(SUPPRESS_AUTO_START_ONCE_KEY) === '1';
-          if (suppressAutoStartOnce) sessionStorage.removeItem(SUPPRESS_AUTO_START_ONCE_KEY);
-        } catch {}
-        const canAutoRetry = Number(flowState.retryCount || 0) < maxTry;
-        // Consider recent attempts or a referrer from a login POST as valid triggers.
-        const refIsFromLoginPost = String(document.referrer || '').includes('/ve/s.shtml');
-        const lastAttemptRecent = !flowState.lastAttemptTs || (Date.now() - Number(flowState.lastAttemptTs || 0) <= 60 * 1000);
-        const extensionTrigger = fromExtension && refIsFromLoginPost;
-        const hasUsername = !!String(userInput.value || '').trim();
-        const shouldAutoStart = !suppressAutoStartOnce && canAutoRetry && (fromExtension || extensionTrigger || !!flowState.forceRetry || (Number(flowState.retryCount || 0) > 0 && lastAttemptRecent)) && (hasUsername || fromExtension);
-        if (shouldAutoStart) {
-          const nextRound = Math.min(maxTry, Number(flowState.retryCount || 0) + 1);
-          statusEl.textContent = hasUsername
-            ? `检测到自动重试，开始登录 (${nextRound}/${maxTry})…`
-            : `检测到来自扩展的登录请求，请输入账号 (${nextRound}/${maxTry})…`;
-          autoStartPending = true;
-          // 延迟 1000ms 让页面/captcha 资源就绪，并确保 Tesseract worker 可用
-          setTimeout(() => {
-            (async () => {
-              try { userInput.focus(); } catch {}
-              if (hasUsername) {
-                // 在点击登录前，先确保验证码图片已加载就绪，避免 cold-start 时识别到半截/空图片
-                try {
-                  const captchaImg = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
-                  if (captchaImg && typeof waitImageReady === 'function') {
-                    await waitImageReady(captchaImg, 5000);
-                  }
-                } catch {}
-                doLoginSubmit().then((r) => { if (r) resolve(r); });
-              }
-            })().catch(() => {
-              try { if (hasUsername) doLoginSubmit().then((r) => { if (r) resolve(r); }); } catch {}
-            });
-          }, 1000);
-          flowState.forceRetry = false;
-          writeFlowState(flowState);
-        } else if (!canAutoRetry) {
-          statusEl.textContent = `自动重试已达上限 (${maxTry}/${maxTry})，请手动输入验证码登录`;
-        }
+      if (sessionEnded && statusEl) {
+        statusEl.textContent = '会话已结束，请重新登录';
+      }
     });
     if (got?.closed) {
       mask.remove();
@@ -934,6 +960,7 @@ async function portalLoginAutoLoginInjected(context) {
     const safeImg = recognizedImageSrc ? `<img src="${recognizedImageSrc}" style="width:140px;height:50px;object-fit:contain;border:1px solid #d1d5db;border-radius:6px;background:#fff;">` : '<div style="font-size:12px;color:#64748b;">未捕获验证码图片</div>';
 
     const amask = document.createElement('div');
+    amask.id = '__bjtu_auto_login_overlay__';
     amask.style.cssText = 'position:fixed;inset:0;background:transparent;z-index:2147483647;display:flex;align-items:center;justify-content:center;pointer-events:none;';
     amask.innerHTML = `
       <div style="width:min(520px,88vw);background:#fff;border:1px solid #e8edf5;border-radius:12px;box-shadow:0 18px 42px rgba(0,0,0,.25);padding:14px;pointer-events:auto;">
@@ -951,29 +978,29 @@ async function portalLoginAutoLoginInjected(context) {
           </div>
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:10px;">
-          <button id="__bjtu_cancel_submit__" style="background:#64748b;color:#fff;border:0;border-radius:999px;width:28px;height:28px;font-size:16px;font-weight:700;line-height:1;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;" aria-label="取消" title="取消">×</button>
+          <button id="__bjtu_cancel_submit__" style="background:#dc2626;color:#fff;border:0;border-radius:6px;padding:6px 18px;font-size:13px;font-weight:600;cursor:pointer;">取消</button>
         </div>
         <style>@keyframes __bjtu_spin{to{transform:rotate(360deg)}}</style>
       </div>
     `;
     root.appendChild(amask);
-      const cancelSubmit = await new Promise((resolve) => {
-      const t = setTimeout(() => resolve(false), 700);
-      const btnCancel = amask.querySelector('#__bjtu_cancel_submit__');
-      if (btnCancel) {
-        btnCancel.addEventListener('click', () => {
-          clearTimeout(t);
-          resolve(true);
-        }, { once: true });
-      }
-    });
-    if (cancelSubmit) {
-      flowState.forceRetry = false;
-      writeFlowState(flowState);
-      try { sessionStorage.setItem(SUPPRESS_AUTO_START_ONCE_KEY, '1'); } catch {}
-      try { amask.remove(); } catch {}
-      return { ok: false, reason: 'back-to-input' };
+    const btnCancel = amask.querySelector('#__bjtu_cancel_submit__');
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        if (cancelTriggered) return;
+        cancelTriggered = true;
+        flowState.forceRetry = false;
+        writeFlowState(flowState);
+        try { sessionStorage.setItem(SUPPRESS_AUTO_START_ONCE_KEY, '1'); } catch {}
+        try { amask.remove(); } catch {}
+        if (loginController) {
+          try { loginController.abort(); } catch {}
+        }
+        location.href = 'http://123.121.147.7:88/ve/Exit_2.jsp';
+      }, { once: true });
     }
+    await new Promise(r => setTimeout(r, 700));
+    if (cancelTriggered) return { ok: false, reason: 'cancelled' };
   }
 
       const cleanupOverlays = () => {
@@ -1022,23 +1049,44 @@ async function portalLoginAutoLoginInjected(context) {
 
   await new Promise(r => setTimeout(r, 150));
 
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = 'http://123.121.147.7:88/ve/s.shtml';
-  form.style.display = 'none';
-  const add = (k, v) => {
-    const i = document.createElement('input');
-    i.type = 'hidden'; i.name = k; i.value = v; form.appendChild(i);
-  };
-  add('login', 'main_2');
-  add('qxkt_type', '');
-  add('qxkt_url', '');
-  add('username', username);
-  add('password', passwordMd5);
-  add('passcode', passcode);
-  root.appendChild(form);
+  loginController = new AbortController();
+  const params = new URLSearchParams();
+  params.append('login', 'main_2');
+  params.append('qxkt_type', '');
+  params.append('qxkt_url', '');
+  params.append('username', username);
+  params.append('password', passwordMd5);
+  params.append('passcode', passcode);
   try { if (typeof cleanupOverlays === 'function') cleanupOverlays(); } catch {}
-  form.submit();
+  let loginRes = null;
+  try {
+    loginRes = await fetch('http://123.121.147.7:88/ve/s.shtml', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+      credentials: 'include',
+      signal: loginController.signal,
+      redirect: 'follow'
+    });
+  } catch (e) {
+    if (cancelTriggered || (loginController && loginController.signal.aborted)) {
+      return { ok: false, reason: 'cancelled' };
+    }
+    try { console.error('[bjtu] login fetch failed:', e); } catch {}
+    throw e;
+  }
+  if (cancelTriggered) return { ok: false, reason: 'cancelled' };
+  try {
+    const finalUrl = String(loginRes?.url || '').trim();
+    const looksLikeLoginPage = /Login_2\.jsp|Timeout\.jsp|s\.shtml/i.test(finalUrl);
+    if (finalUrl && !looksLikeLoginPage) {
+      location.href = finalUrl;
+    } else {
+      location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
+    }
+  } catch {
+    location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
+  }
 
   flowState.currentUsername = username;
   if (username === '8888') flowState.useAux = true;
