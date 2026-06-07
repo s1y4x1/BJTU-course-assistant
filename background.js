@@ -306,14 +306,14 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   let quickUsername = extractPortalQuickUsername(url);
   const bindState = portalUsernameBindByTab.get(tabId) || null;
-  if (quickUsername && (portalUsernameBindByTab.has(tabId) || isEncodedPortalQuickUsername(quickUsername))) {
+  if (quickUsername && portalUsernameBindByTab.has(tabId)) {
     portalUsernameBindByTab.set(tabId, { ...(bindState || {}), quickUsername, ts: Date.now() });
     notifyPortalUsernameBindStatus({ status: 'detected', tabId, quickUsername, ts: Date.now() });
   } else if (!quickUsername && bindState?.quickUsername) {
     quickUsername = String(bindState.quickUsername || '').trim();
   }
 
-  if (changeInfo.status === 'complete' && quickUsername && (portalUsernameBindByTab.has(tabId) || isEncodedPortalQuickUsername(quickUsername))) {
+  if (changeInfo.status === 'complete' && quickUsername && portalUsernameBindByTab.has(tabId)) {
       try {
         const record = await fetchBoundPortalAccountInfo(tabId, quickUsername);
         notifyPortalUsernameBindStatus({
