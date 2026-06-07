@@ -9972,18 +9972,33 @@ if (parallelLimitInput instanceof HTMLInputElement) {
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('dragover', 'dragover-invalid');
-  const isFile = e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
-  dropZone.classList.add(isFile ? 'dragover' : 'dragover-invalid');
+  dropZone.classList.remove('dragover', 'dragover-invalid', 'dragover-text');
+  const dt = e.dataTransfer;
+  if (!dt) return;
+  const types = Array.from(dt.types || []);
+  if (types.includes('Files')) {
+    dropZone.classList.add('dragover');
+  } else if (types.includes('text/plain') || types.includes('text/html')) {
+    dropZone.classList.add('dragover-text');
+  } else {
+    dropZone.classList.add('dragover-invalid');
+  }
 });
 dropZone.addEventListener('dragleave', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('dragover', 'dragover-invalid');
+  dropZone.classList.remove('dragover', 'dragover-invalid', 'dragover-text');
 });
-dropZone.addEventListener('drop', (e) => {
+dropZone.addEventListener('drop', async (e) => {
   e.preventDefault();
-  dropZone.classList.remove('dragover', 'dragover-invalid');
-  handleFiles(e);
+  dropZone.classList.remove('dragover', 'dragover-invalid', 'dragover-text');
+
+  if (e.dataTransfer?.files?.length > 0) {
+    handleFiles(e);
+    return;
+  }
+
+  const textFiles = await convertTextDropToFiles(e.dataTransfer);
+  processFilesForUpload(textFiles);
 });
 
 fileInput.addEventListener('change', handleFiles);
@@ -10003,8 +10018,7 @@ fileList.addEventListener('click', (e) => {
   cb.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
-function handleFiles(e) {
-  const files = e.target.files || e.dataTransfer.files;
+function processFilesForUpload(files) {
   if (!files || !files.length) return;
 
   if (!isLoginSessionValid) {
@@ -10026,6 +10040,35 @@ function handleFiles(e) {
     uploadFile(f, fileId);
   });
   updateTotalProgress();
+}
+
+function handleFiles(e) {
+  const files = e.target.files || e.dataTransfer.files;
+  processFilesForUpload(files);
+}
+
+async function convertTextDropToFiles(dt) {
+  if (!dt) return [];
+  const types = Array.from(dt.types || []);
+  const files = [];
+
+  if (types.includes('text/html')) {
+    const html = dt.getData('text/html');
+    if (html) {
+      files.push(new File([new Blob([html], { type: 'text/html' })], 'pasted-content.html', { type: 'text/html' }));
+      return files;
+    }
+  }
+
+  if (types.includes('text/plain')) {
+    const text = dt.getData('text/plain');
+    if (text) {
+      files.push(new File([new Blob([text], { type: 'text/plain' })], 'pasted-content.txt', { type: 'text/plain' }));
+      return files;
+    }
+  }
+
+  return files;
 }
 
 copyAllBtn.addEventListener('click', () => {
