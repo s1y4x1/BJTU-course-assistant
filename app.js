@@ -11268,21 +11268,35 @@ setInterval(updateAllCountdowns, 1000);
   };
 
   const uploadCourseListAndShowQr = async (triggerEl) => {
-    const courseList = document.getElementById('course-list');
-    if (!courseList) return;
-    const htmlContent = courseList.innerHTML.trim();
+    const setStatus = (text) => { if (headerQrStatus) headerQrStatus.textContent = text; };
+
+    const getCourseListHtml = () => {
+      const el = document.getElementById('course-list');
+      if (!el) return '';
+      return el.innerHTML.trim();
+    };
+
+    let htmlContent = getCourseListHtml();
     if (!htmlContent) {
-      if (headerQrStatus) headerQrStatus.textContent = '暂无课程内容';
+      setStatus('等待列表加载完毕…');
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 300));
+        htmlContent = getCourseListHtml();
+        if (htmlContent) break;
+      }
+    }
+    if (!htmlContent) {
+      setStatus('暂无课程内容');
       return;
     }
 
     const jsid = (document.getElementById('jsessionid-input')?.value?.trim() || await getLocal('jsessionid', '')).trim();
     if (!jsid) {
-      if (headerQrStatus) headerQrStatus.textContent = '请先登录';
+      setStatus('请先登录');
       return;
     }
 
-    if (headerQrStatus) headerQrStatus.textContent = '正在上传…';
+    setStatus('正在上传…');
 
     const fullHtml = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>课程列表</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>' + htmlContent + '</body></html>';
     const file = new File([fullHtml], 'course-list.html', { type: 'text/html' });
@@ -11310,16 +11324,18 @@ setInterval(updateAllCountdowns, 1000);
       });
 
       headerQrUrl = url;
+      setStatus('正在生成二维码…');
+      await new Promise(r => setTimeout(r, 50));
       try {
         headerQrImg.src = buildQrImageUrl(url, 160);
-        if (headerQrStatus) headerQrStatus.textContent = '';
+        setStatus('');
       } catch {
-        if (headerQrStatus) headerQrStatus.textContent = '二维码生成失败';
+        setStatus('二维码生成失败');
       }
       const rect = triggerEl.getBoundingClientRect();
       showHeaderQr(rect.bottom, rect.left);
     } catch (err) {
-      if (headerQrStatus) headerQrStatus.textContent = '上传失败: ' + (err.message || '');
+      setStatus('上传失败: ' + (err.message || ''));
     }
   };
 
@@ -11329,9 +11345,11 @@ setInterval(updateAllCountdowns, 1000);
   courseHeaderEl.addEventListener('mouseenter', () => {
     if (headerQrHideTimer) { clearTimeout(headerQrHideTimer); headerQrHideTimer = null; }
     if (!headerQrUrl) {
-      if (headerQrStatus) headerQrStatus.textContent = '';
+      headerTooltip.style.display = 'flex';
+      const rect = courseHeaderEl.getBoundingClientRect();
+      showHeaderQr(rect.bottom, rect.left);
       headerQrImg.src = '';
-      headerTooltip.style.display = 'none';
+      if (headerQrStatus) headerQrStatus.textContent = '正在准备…';
       uploadCourseListAndShowQr(courseHeaderEl);
       return;
     }
