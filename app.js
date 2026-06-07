@@ -1349,7 +1349,7 @@ function getSelectedUploadedFileList() {
     const meta = window.uploadedFileMetaById[fileId];
     if (!meta || !meta.visitName) return;
     files.push({
-      fileNameNoExt: meta.fileNameNoExt,
+      fileNameNoExt: encodeURIComponent(String(meta.fileNameNoExt || '')),
       fileExtName: meta.fileExtName,
       fileSize: String(meta.fileSize || ''),
       visitName: meta.visitName,
@@ -1623,6 +1623,7 @@ async function syncAccountInfoAndReloadVeCourses({
   resetAccountSwitchInterruption();
 
   if (reloadCourses && isPlatformEnabled('ve')) {
+    window.__headerQrUrl = '';
     await loadCourses();
   }
   if (reloadResourceSpace) {
@@ -1867,6 +1868,7 @@ if (xqSelect instanceof HTMLSelectElement) {
     }
     adjustXqSelectWidth();
     if (isPlatformEnabled('ve')) {
+      window.__headerQrUrl = '';
       try {
         await loadCourses();
       } catch {
@@ -11054,12 +11056,10 @@ function setupSavedUploadsUi() {
   if (popupMode) {
     window.platformEnabled = { jlgj: false, mrzy: false, ve: true, ykt: false };
   }
-  // 如果 update-checker.js 未加载（Edge 商店版本），隐藏版本按钮
-  if (!window.__updateCheckerLoaded) {
+  if (popupMode || !window.__updateCheckerLoaded) {
     const versionInfoEl = document.getElementById('version-info');
     if (versionInfoEl) versionInfoEl.style.display = 'none';
   }
-
   refreshPlatformLoginTip();
 
   // VE enabled startup must always dispatch these 3 requests concurrently:
