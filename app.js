@@ -4254,7 +4254,7 @@ function renderVeCourseTeachersPopHtml(meta) {
   }
 
   if (!tableHtml) {
-    return '<div style="font-size:12px; color:#64748b;">未查询到同课其他教师</div>';
+    return '<div style="font-size:12px; color:#64748b;">未查询到同课其他教师<br>无法获取无回放课程</div>';
   }
   return tableHtml;
 }
@@ -4341,7 +4341,7 @@ function updateVeCourseTeachersPopUi(courseId) {
     if (!rows.length) {
       statusLine.style.display = 'flex';
       if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
-      statusText.textContent = '未查询到同课其他教师';
+      statusText.innerHTML = '未查询到同课其他教师<br>无法获取无回放课程';
     }
   });
 }
