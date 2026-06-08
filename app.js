@@ -10050,12 +10050,19 @@ dropZone.addEventListener('drop', async (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover', 'dragover-invalid', 'dragover-text');
 
-  if (e.dataTransfer?.files?.length > 0) {
-    handleFiles(e);
+  const dt = e.dataTransfer;
+  const types = Array.from(dt?.types || []);
+  if (types.includes('Files')) {
+    const files = await clipboardDataToFiles(dt);
+    if (files.length) {
+      processFilesForUpload(files);
+    } else {
+      showToast('未找到可上传的文件', 'warning', 1800);
+    }
     return;
   }
 
-  const textFiles = await convertTextDropToFiles(e.dataTransfer);
+  const textFiles = await convertTextDropToFiles(dt);
   processFilesForUpload(textFiles);
 });
 
