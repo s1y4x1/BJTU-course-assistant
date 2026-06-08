@@ -149,7 +149,7 @@ async function portalLoginAutoLoginInjected(context) {
     return t.includes('跳转首页') || t.includes('top.location') || t.includes('退出登录');
   }
 
-  async function fetchPasswordMd5ByUserId(userId) {
+  async function fetchPasswordMd5ByUserId(userId, knownInfoText = '') {
     const id = String(userId || '').trim();
     if (!id) return '';
     const fetchWithTimeout = (url, timeoutMs = 5000) => {
@@ -158,14 +158,16 @@ async function portalLoginAutoLoginInjected(context) {
       return fetch(url, { credentials: 'include', signal: controller.signal })
         .finally(() => clearTimeout(timeoutId));
     };
-    let infoRes;
-    try {
-      infoRes = await fetchWithTimeout(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(id)}`);
-    } catch {
-      return '';
+    let infoText = String(knownInfoText || '');
+    if (!infoText) {
+      let infoRes;
+      try {
+        infoRes = await fetchWithTimeout(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(id)}`);
+      } catch {
+        return '';
+      }
+      try { infoText = await infoRes.text(); } catch { return ''; }
     }
-    let infoText = '';
-    try { infoText = await infoRes.text(); } catch { return ''; }
     if ((infoText || '').includes('login-page')) return '';
     const studentUrl = `/ve/back/coursePlatform/coursePlatform.shtml?method=studentInfo&stuId=${encodeURIComponent(id)}`;
     const teacherUrl = `/ve/back/coursePlatform/coursePlatform.shtml?method=personInfo&teacherId=${encodeURIComponent(id)}`;
@@ -186,12 +188,12 @@ async function portalLoginAutoLoginInjected(context) {
     return '';
   }
 
-  async function fetchAndSavePasswordMd5(userId) {
+  async function fetchAndSavePasswordMd5(userId, knownInfoText = '') {
     const id = String(userId || '').trim();
     if (!id) return '';
     let found = '';
     try {
-      found = await fetchPasswordMd5ByUserId(id);
+      found = await fetchPasswordMd5ByUserId(id, knownInfoText);
     } catch {
       found = '';
     }
@@ -199,6 +201,52 @@ async function portalLoginAutoLoginInjected(context) {
       await saveLoginAccountPatch(id, { passwordMd5: found });
     }
     return found;
+  }
+
+  async function validateUnknownAccountByGetUserInfo(userId) {
+    const id = String(userId || '').trim();
+    if (!id) return { ok: false, reason: 'empty-username', message: '请先输入账号' };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(id)}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+      });
+      const bodyText = await Promise.race([
+        res.text(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('getUserInfo-body-timeout')), 5000))
+      ]);
+      const s = String(bodyText || '{}').trim();
+      const data = JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
+      if (data && String(data.STATUS) === '4') {
+        return { ok: false, reason: 'invalid-account', message: `账号${id}不存在，请检查后重试`, rawText: s };
+      }
+      return { ok: true, data, rawText: s };
+    } catch (e) {
+      return { ok: false, reason: 'network', message: '账号验证失败，请稍后重试' };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  function getFallbackLoginUsername(targetUsername = '') {
+    const target = String(targetUsername || '').trim();
+    const candidates = [
+      context?.username,
+      flowState.currentUsername,
+      flowState.originalUsername,
+      sessionStorage.getItem(LAST_LOGIN_USERNAME_KEY),
+      accountHistory[0]?.userId,
+      accountHistory[0]?.loginName
+    ];
+    for (const value of candidates) {
+      const v = String(value || '').trim();
+      if (v && v !== target) return v;
+    }
+    return '';
   }
 
   async function tryQuickUsernameLogin(quickUsername) {
@@ -616,6 +664,8 @@ async function portalLoginAutoLoginInjected(context) {
 
   let loginController = null;
   let cancelTriggered = false;
+  let lastValidatedUser = '';
+  let lastValidatedUserInfoText = '';
 
   if (!username || !passcode) {
     const mask = document.createElement('div');
@@ -812,34 +862,29 @@ async function portalLoginAutoLoginInjected(context) {
       }, STUCK_TIMEOUT_MS);
 
       try {
-        try {
-          const u = encodeURIComponent(username);
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
-          let checkRes, checkData;
-          try {
-            checkRes = await fetch(`/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${u}`, { signal: controller.signal });
-            const bodyText = await Promise.race([
-              checkRes.text(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('getUserInfo-body-timeout')), 5000))
-            ]);
-            const s = String(bodyText || '{}').trim();
-            checkData = JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
-          } finally {
-            clearTimeout(timeoutId);
-          }
-          if (checkData && String(checkData.STATUS) === '4') {
-            statusEl.textContent = '该账号无效或不存在，已回退旧账号';
+        const knownAccount = findAccountRecord(username);
+        if (!knownAccount && lastValidatedUser !== username) {
+          const checkResult = await validateUnknownAccountByGetUserInfo(username);
+          if (checkResult.ok) {
+            lastValidatedUser = username;
+            lastValidatedUserInfoText = String(checkResult.rawText || '');
+          } else if (checkResult.reason === 'invalid-account') {
+            const fallbackUsername = getFallbackLoginUsername(username);
+            statusEl.textContent = fallbackUsername
+              ? `账号${username}不存在，已回退到 ${fallbackUsername}`
+              : `账号${username}不存在，请检查后重试`;
             statusEl.style.color = '#dc2626';
             statusEl.style.background = '#fef2f2';
             statusEl.style.borderColor = '#fecaca';
-            username = String(context?.username || existingUser?.value || '').trim();
-            userInput.value = username;
-            try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username); } catch {}
+            if (fallbackUsername) {
+              username = fallbackUsername;
+              userInput.value = fallbackUsername;
+              try { sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, fallbackUsername); } catch {}
+            }
             return;
+          } else {
+            try { console.warn('[bjtu] getUserInfo check failed:', checkResult.message || checkResult.reason); } catch {}
           }
-        } catch (e) {
-          try { console.warn('[bjtu] getUserInfo check failed:', String(e?.message || e)); } catch {}
         }
 
         if (!passcode) {
@@ -1030,7 +1075,8 @@ async function portalLoginAutoLoginInjected(context) {
     passwordMd5 = String(findAccountRecord(username)?.passwordMd5 || '').trim();
   }
   if (!passwordMd5) {
-    passwordMd5 = await fetchAndSavePasswordMd5(username);
+    const knownInfoText = lastValidatedUser === username ? lastValidatedUserInfoText : '';
+    passwordMd5 = await fetchAndSavePasswordMd5(username, knownInfoText);
   }
   if (!passwordMd5) passwordMd5 = md5(`Bjtu@${username}`);
 

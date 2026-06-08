@@ -698,6 +698,7 @@ let totalRecentSpeedBps = 0;
 
 let lastValidUsername = '';
 let pendingUsernameChange = null; // { from: string, to: string } | null
+let loginAccountValidationCache = null; // { userId, ts, validation }
 let isLoginInProgress = false;
 let loginCancelRequested = false;
 let loginAbortController = null;
@@ -1505,13 +1506,24 @@ async function resolveVeUserNameByWorknumber(worknumber) {
 async function validateUserIdRemote(userId) {
   if (!userId) return { ok: false, status: 'empty', info: null };
   try {
+    const account = findLoginAccountRecord(userId);
     const currentUser = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
-    const info = await fetchUserInfoRemote(userId);
     if (currentUser && currentUser === String(userId || '').trim()) {
+      const info = await fetchUserInfoRemote(userId);
       return { ok: true, status: 'already-authenticated', info };
     }
 
-    const quickUsername = String(findLoginAccountRecord(userId)?.quickUsername || '').trim();
+    let info = null;
+    if (!account) {
+      const validation = await validateAccountByGetUserInfo(userId);
+      loginAccountValidationCache = { userId: String(userId || '').trim(), ts: Date.now(), validation };
+      if (!validation.ok && validation.reason === 'invalid-account') {
+        return { ok: false, status: 'invalid', info: null };
+      }
+      if (validation.ok) info = validation.info?.result || validation.info || null;
+    }
+
+    const quickUsername = String(account?.quickUsername || '').trim();
     if (quickUsername) {
       const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(quickUsername)}`;
       const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
@@ -2064,6 +2076,30 @@ async function fetchPasswordMd5WithKnownInfo(userId, userInfoRawText) {
     if (m?.[1]) return String(m[1] || '').trim();
   }
   return '';
+}
+
+function getLoginFallbackUsername(targetUsername = '') {
+  const target = String(targetUsername || '').trim();
+  const pendingFrom = String(pendingUsernameChange?.from || '').trim();
+  if (pendingFrom && pendingFrom !== target) return pendingFrom;
+  const last = String(lastValidUsername || '').trim();
+  if (last && last !== target) return last;
+  const newest = normalizeLoginAccountHistoryList(loginAccountHistory)[0] || null;
+  const remembered = String(newest?.userId || newest?.loginName || '').trim();
+  if (remembered && remembered !== target) return remembered;
+  return '';
+}
+
+async function restoreLoginFallbackUsername(targetUsername = '') {
+  const fallback = getLoginFallbackUsername(targetUsername);
+  if (!fallback) return '';
+  usernameInput.value = fallback;
+  pendingUsernameChange = null;
+  resetAccountSwitchInterruption();
+  const localInfo = findLoginAccountRecord(fallback);
+  setWelcomeMessage(localInfo || null);
+  renderLoginAccountHistorySelect(fallback);
+  return fallback;
 }
 
 async function validateAccountByGetUserInfo(userId, { signal } = {}) {
@@ -2742,6 +2778,7 @@ async function doLoginFlow() {
   prioritizeAccountSwitch();
   const username = usernameInput.value.trim();
   const wasSwitchingAccount = !!pendingUsernameChange;
+  const accountAtStart = findLoginAccountRecord(username);
   if (!username) {
     showToast('请输入账号，或改为填写 JSESSIONID', 'warning');
     return;
@@ -2756,24 +2793,30 @@ async function doLoginFlow() {
   loginCancelRequested = false;
   loginAbortController = new AbortController();
   const loginSignal = loginAbortController.signal;
-  const previousUsername = usernameInput.value.trim();
 
-  // Step 1: getUserInfo(loginName) -> STATUS 4 check
-  showToast('正在验证账号…', 'info', 5000);
-  const validation = await validateAccountByGetUserInfo(username, { signal: loginSignal });
-  if (loginCancelRequested || loginSignal?.aborted) return;
-  if (!validation.ok) {
-    if (validation.reason === 'invalid-account') {
-      showToast(`账号${username}不存在，请检查后重试`, 'error', 3000);
-      if (previousUsername && previousUsername !== username) {
-        usernameInput.value = previousUsername;
+  // Step 1: per RULES.md, only unknown accounts need getUserInfo(loginName) STATUS 4 check.
+  let validation = { ok: true, info: null, status: '', rawText: '' };
+  if (!accountAtStart) {
+    showToast('正在验证账号…', 'info', 5000);
+    const cachedValidation = loginAccountValidationCache
+      && loginAccountValidationCache.userId === username
+      && Date.now() - Number(loginAccountValidationCache.ts || 0) < 10000
+      ? loginAccountValidationCache.validation
+      : null;
+    validation = cachedValidation || await validateAccountByGetUserInfo(username, { signal: loginSignal });
+    loginAccountValidationCache = { userId: username, ts: Date.now(), validation };
+    if (loginCancelRequested || loginSignal?.aborted) return;
+    if (!validation.ok) {
+      if (validation.reason === 'invalid-account') {
+        await restoreLoginFallbackUsername(username);
+        showToast(`账号${username}不存在，请检查后重试`, 'error', 3000);
+        return;
+      } else if (validation.reason === 'cancelled') {
+        return;
+      } else if (validation.reason !== 'session-invalid') {
+        showToast(validation.message || '账号验证失败，请稍后重试', 'warning', 2500);
+        return;
       }
-      return;
-    } else if (validation.reason === 'cancelled') {
-      return;
-    } else if (validation.reason !== 'session-invalid') {
-      showToast(validation.message || '账号验证失败，请稍后重试', 'warning', 2500);
-      return;
     }
   }
 
@@ -2804,7 +2847,7 @@ async function doLoginFlow() {
     //   if quickUsername != "" → quick login (no login state needed)
     //   elif passwordMd5 != "" → password login (captcha retry 3x, password error → 获取密码)
     //   else → default password login (captcha retry, password error → 获取密码)
-    const account = findLoginAccountRecord(username);
+    const account = accountAtStart || findLoginAccountRecord(username);
     const quickUsername = String(account?.quickUsername || '').trim();
     let passwordMd5 = String(account?.passwordMd5 || '').trim();
 
@@ -10626,23 +10669,20 @@ usernameInput.addEventListener('change', async () => {
     }
     // show logging toast before sending GET to /ve/s.shtml
     showToast('正在登录…', 'info', 0);
-    const validResult = await validateUserIdRemote(u);
+    const knownAccount = findLoginAccountRecord(u);
+    const validResult = knownAccount ? { ok: true, status: 'needs-post-login', info: knownAccount } : await validateUserIdRemote(u);
     if (!validResult.ok && validResult.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
-      usernameInput.value = lastValidUsername;
+      await restoreLoginFallbackUsername(u);
       pendingUsernameChange = null;
       resetAccountSwitchInterruption();
-      setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
-      renderLoginAccountHistorySelect(lastValidUsername);
       return;
     }
     if (!validResult.ok) {
       showToast('无法验证账号有效性，请稍后重试', 'warning');
-      usernameInput.value = lastValidUsername;
+      await restoreLoginFallbackUsername(u);
       pendingUsernameChange = null;
       resetAccountSwitchInterruption();
-      setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
-      renderLoginAccountHistorySelect(lastValidUsername);
       return;
     }
     if (validResult.status === 'needs-post-login') {
@@ -10690,24 +10730,21 @@ usernameInput.addEventListener('change', async () => {
   }
 
   // Validate userId first; if invalid -> revert to last valid
-  const result = await validateUserIdRemote(u);
+  const knownAccount = findLoginAccountRecord(u);
+  const result = knownAccount ? { ok: true, status: 'needs-post-login', info: knownAccount } : await validateUserIdRemote(u);
   if (!result.ok) {
     // "invalid" means the account does not exist. Other failures may be due to session/network.
     if (result.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
-      usernameInput.value = lastValidUsername;
+      await restoreLoginFallbackUsername(u);
       pendingUsernameChange = null;
       resetAccountSwitchInterruption();
-      setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
-      renderLoginAccountHistorySelect(lastValidUsername);
       return;
     }
     showToast('无法验证账号有效性，请稍后重试', 'warning');
-    usernameInput.value = lastValidUsername;
+    await restoreLoginFallbackUsername(u);
     pendingUsernameChange = null;
     resetAccountSwitchInterruption();
-    setWelcomeMessage(lastValidUsername ? await fetchUserInfoRemote(lastValidUsername) : null);
-    renderLoginAccountHistorySelect(lastValidUsername);
     return;
   } else {
     // valid

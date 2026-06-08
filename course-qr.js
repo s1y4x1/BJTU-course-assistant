@@ -125,18 +125,38 @@
 
   const buildQrCourseListHtml = () => {
     const veCourseList = window.currentVeCourseList || [];
-    const yktStandalone = (window.yktStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'ykt', fallback: `ykt-${i}` }));
-    const mrzyStandalone = (window.mrzyStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'mrzy', fallback: `mrzy-${i}` }));
-    const jlgjStandalone = (window.jlgjStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'jlgj', fallback: `jlgj-${i}` }));
+    const yktStandalone = (window.yktStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'ykt', index: i }));
+    const mrzyStandalone = (window.mrzyStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'mrzy', index: i }));
+    const jlgjStandalone = (window.jlgjStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'jlgj', index: i }));
     const standaloneMeta = [...yktStandalone, ...mrzyStandalone, ...jlgjStandalone];
+    const getStandaloneCourseId = (sc, platform, index = 0) => {
+      if (platform === 'ykt') return `ykt-${String(sc?.classroom_id || index)}`;
+      if (platform === 'mrzy') return `mrzy-${String(sc?.classNum || index)}`;
+      if (platform === 'jlgj') return `jlgj-${String(sc?.groupId || index)}`;
+      return `${platform}-${String(index)}`;
+    };
+    const makeStandaloneCourse = (sc, platform, index = 0, explicitId = '') => ({
+      id: explicitId || getStandaloneCourseId(sc, platform, index),
+      name: sc.course_name || sc.name || sc.divClass || `${platform}课程`,
+      divClass: sc.divClass || '',
+      classNum: sc.classNum || '',
+      teacher_name: sc.teacher_name || sc.teacherName || '',
+      teacherName: sc.teacherName || sc.teacher_name || '',
+      _standalone: true,
+      _platform: platform,
+      _homeworkList: Array.isArray(sc.homeworks) ? sc.homeworks : [],
+      loadingMeta: !!sc.loadingMeta,
+      ...(sc.classroom_id ? { classroom_id: sc.classroom_id } : {}),
+      ...(sc.groupId ? { groupId: sc.groupId } : {})
+    });
 
     const cards = document.querySelectorAll('#courseListDiv .file-item[id^="course-"]') || [];
     const veMap = {};
     veCourseList.forEach((c) => { const cid = String(c.id || c.cId || c.courseId || c.course_id || ''); if (cid) veMap[cid] = c; });
     const standaloneMap = {};
-    standaloneMeta.forEach(({ sc, platform }) => {
-      const cid = `${platform}-${String(sc.classroom_id || sc.classNum || sc.groupId || sc.divClass || sc.name || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-      standaloneMap[cid] = { sc, platform, cid };
+    standaloneMeta.forEach(({ sc, platform, index }) => {
+      const cid = getStandaloneCourseId(sc, platform, index);
+      standaloneMap[cid] = { sc, platform, cid, index };
     });
 
     let allCourses = [];
@@ -145,8 +165,8 @@
       if (!cardCourseId) return;
       if (veMap[cardCourseId]) { allCourses.push(veMap[cardCourseId]); delete veMap[cardCourseId]; return; }
       if (standaloneMap[cardCourseId]) {
-        const { sc, platform } = standaloneMap[cardCourseId];
-        allCourses.push({ id: cardCourseId, name: sc.course_name || sc.name || sc.divClass || `${platform}课程`, teacher_name: sc.teacher_name || sc.teacherName || '', _standalone: true, _platform: platform, _homeworkList: sc.homeworks || [], ...(sc.classroom_id ? { classroom_id: sc.classroom_id } : {}), ...(sc.groupId ? { groupId: sc.groupId } : {}) });
+        const { sc, platform, index } = standaloneMap[cardCourseId];
+        allCourses.push(makeStandaloneCourse(sc, platform, index, cardCourseId));
         delete standaloneMap[cardCourseId];
         return;
       }
@@ -155,28 +175,12 @@
     if (!allCourses.length) {
       allCourses = [
         ...veCourseList.map((c) => c),
-        ...standaloneMeta.map(({ sc, platform }) => ({
-          id: `${platform}-${String(sc.classroom_id || sc.classNum || sc.groupId || sc.divClass || sc.name || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-          name: sc.course_name || sc.name || sc.divClass || `${platform}课程`,
-          teacher_name: sc.teacher_name || sc.teacherName || '',
-          _standalone: true, _platform: platform,
-          _homeworkList: sc.homeworks || [],
-          ...(sc.classroom_id ? { classroom_id: sc.classroom_id } : {}),
-          ...(sc.groupId ? { groupId: sc.groupId } : {})
-        }))
+        ...standaloneMeta.map(({ sc, platform, index }) => makeStandaloneCourse(sc, platform, index))
       ];
     } else {
       Object.values(veMap).forEach((c) => allCourses.push(c));
-      Object.values(standaloneMap).forEach(({ sc, platform }) => {
-        const cid = `${platform}-${String(sc.classroom_id || sc.classNum || sc.groupId || sc.divClass || sc.name || 'x').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-        allCourses.push({
-          id: cid, name: sc.course_name || sc.name || sc.divClass || `${platform}课程`,
-          teacher_name: sc.teacher_name || sc.teacherName || '',
-          _standalone: true, _platform: platform,
-          _homeworkList: sc.homeworks || [],
-          ...(sc.classroom_id ? { classroom_id: sc.classroom_id } : {}),
-          ...(sc.groupId ? { groupId: sc.groupId } : {})
-        });
+      Object.values(standaloneMap).forEach(({ sc, platform, cid, index }) => {
+        allCourses.push(makeStandaloneCourse(sc, platform, index, cid));
       });
     }
 
@@ -246,7 +250,7 @@
     let cardsHtml = '';
     allCourses.forEach((course) => {
       const courseId = course.id || course.cId || course.courseId || course.course_id;
-      const courseName = course.name || course.NAME || course.courseName || '未知课程';
+      const courseName = course.course_name || course.name || course.divClass || course.NAME || course.courseName || '未知课程';
       const teacherName = course.teacher_name || course.teacherName || '';
       const courseKey = String(courseId || '');
       const isS = course._standalone;
@@ -324,9 +328,26 @@
       const allOverdue = [...nativeCls.overdue, ...yktCls.overdue, ...mrzyCls.overdue, ...jlgjCls.overdue];
       const allDone = [...nativeCls.done, ...yktCls.done, ...mrzyCls.done, ...jlgjCls.done];
 
-      const pendingHtml = allPending.map((hw) => buildQrHomeworkItemHtml(hw, 'pending', courseKey, platform)).join('');
-      const overdueHtml = allOverdue.map((hw) => buildQrHomeworkItemHtml(hw, 'overdue', courseKey, platform)).join('');
-      const doneHtml = allDone.map((hw) => buildQrHomeworkItemHtml(hw, 'done', courseKey, platform)).join('');
+      const renderPlatformHomework = (cls, type, itemPlatform) =>
+        cls[type].map((hw) => buildQrHomeworkItemHtml(hw, type, courseKey, itemPlatform)).join('');
+      const pendingHtml = [
+        renderPlatformHomework(nativeCls, 'pending', 've'),
+        renderPlatformHomework(yktCls, 'pending', 'ykt'),
+        renderPlatformHomework(mrzyCls, 'pending', 'mrzy'),
+        renderPlatformHomework(jlgjCls, 'pending', 'jlgj')
+      ].join('');
+      const overdueHtml = [
+        renderPlatformHomework(nativeCls, 'overdue', 've'),
+        renderPlatformHomework(yktCls, 'overdue', 'ykt'),
+        renderPlatformHomework(mrzyCls, 'overdue', 'mrzy'),
+        renderPlatformHomework(jlgjCls, 'overdue', 'jlgj')
+      ].join('');
+      const doneHtml = [
+        renderPlatformHomework(nativeCls, 'done', 've'),
+        renderPlatformHomework(yktCls, 'done', 'ykt'),
+        renderPlatformHomework(mrzyCls, 'done', 'mrzy'),
+        renderPlatformHomework(jlgjCls, 'done', 'jlgj')
+      ].join('');
 
       const cwId = `qr-cw-${courseKey}`;
       const rpId = `qr-rp-${courseKey}`;
@@ -438,12 +459,29 @@ ${cardsHtml}
       await new Promise((r) => setTimeout(r, 500));
     }
 
+    const hasLoadingMeta = (list) => (Array.isArray(list) ? list : []).some((course) => {
+      if (course?.loadingMeta) return true;
+      return (Array.isArray(course?.homeworks) ? course.homeworks : []).some((hw) => !!hw?.loadingMeta);
+    });
+    const isExternalPlatformReady = (platform) => {
+      if (!isPlatformEnabled(platform)) return true;
+      if (window.platformLoadedOnce?.[platform] !== true) return false;
+      if (platform === 'ykt') {
+        const loadingMap = window.yktHomeworkLoadingByCourse || {};
+        if (Object.values(loadingMap).some(Boolean)) return false;
+        return true;
+      }
+      if (platform === 'mrzy') return !hasLoadingMeta(window.mrzyStandaloneCourses);
+      if (platform === 'jlgj') return !hasLoadingMeta(window.jlgjStandaloneCourses);
+      return true;
+    };
+
     // 3. Give all external platforms time to finish loading and populate standalone arrays
-    for (let i = 0; i < 24; i++) {
+    while (Date.now() - startTs < MAX_WAIT) {
       const settled = (
-        (!isPlatformEnabled('ykt') || window.platformLoadedOnce?.ykt !== undefined) &&
-        (!isPlatformEnabled('mrzy') || window.platformLoadedOnce?.mrzy !== undefined) &&
-        (!isPlatformEnabled('jlgj') || window.platformLoadedOnce?.jlgj !== undefined)
+        isExternalPlatformReady('ykt') &&
+        isExternalPlatformReady('mrzy') &&
+        isExternalPlatformReady('jlgj')
       );
       if (settled) break;
       showProgress('正在等待其他平台…');
