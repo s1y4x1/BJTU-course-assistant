@@ -16,11 +16,12 @@ async function portalLoginAutoLoginInjected(context) {
   const old3 = document.getElementById('__bjtu_auto_login_overlay__');
   if (old3) return { ok: false, reason: 'auto-overlay-already-shown' };
 
-  if (window.__bjtu_portal_login_running__) {
+  // Use a DOM attribute (not window.*) so the check works across ISOLATED and MAIN worlds
+  if (document.documentElement.getAttribute('data-bjtu-login-running') === '1') {
     return { ok: false, reason: 'already-running' };
   }
-  window.__bjtu_portal_login_running__ = true;
-  const _resetRunningFlag = () => { try { window.__bjtu_portal_login_running__ = false; } catch {} };
+  document.documentElement.setAttribute('data-bjtu-login-running', '1');
+  const _resetRunningFlag = () => { try { document.documentElement.removeAttribute('data-bjtu-login-running'); } catch {} };
   try { window.addEventListener('pagehide', _resetRunningFlag, { once: true }); } catch {}
 
   // Pre-computed values from background.js (MAIN world compat)
@@ -137,6 +138,7 @@ async function portalLoginAutoLoginInjected(context) {
     const t = String(html || '');
     const u = String(resUrl || '');
     if (u.includes('/ve/Login_2.jsp')) return true;
+    if (u.includes('/ve/Timeout.jsp')) return true;
     if (t.includes('login-page')) return true;
     if (/name=["']username["']/i.test(t) && /name=["']passcode["']/i.test(t)) return true;
     if (t.includes('登录系统') && /passcode/i.test(t)) return true;
@@ -452,33 +454,20 @@ async function portalLoginAutoLoginInjected(context) {
         return { code: c, confidence: null, imageSrc: '', source: 'existingInput' };
       }
 
-      const pageImg = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+      const pageImg = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"], img#__bjtu_modal_captcha__');
       let img = pageImg;
       if (!pageImg) {
         try { console.warn('[bjtu] ocr: captcha img not found'); } catch {}
         return { code: '', confidence: null, imageSrc: '', source: '' };
       }
-      try {
-        const captchaUrl = new URL(String(pageImg.getAttribute('src') || pageImg.src || 'GetImg'), location.href);
-        captchaUrl.searchParams.set('t', String(Date.now()));
-        const res = await fetch(captchaUrl.toString(), {
-          credentials: 'include',
-          cache: 'no-store',
-          headers: { Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' }
-        });
-        const blob = await res.blob();
-        img = await loadImageFromBlob(blob);
-        recognizedImgSrc = await blobToDataUrl(blob);
-      } catch (e) {
-        try { console.warn('[bjtu] ocr: captcha fetch/decode failed, fallback to page image:', String(e?.message || e)); } catch {}
-      }
-      if (img === pageImg) {
+      // Use the existing page captcha image directly instead of fetching a new one
+      recognizedImgSrc = String(pageImg?.src || '');
+      {
         const ok = await waitImageReady(img, 5000);
         if (!ok) {
           try { console.warn('[bjtu] ocr: captcha img not ready after 5s, naturalWidth=', img.naturalWidth, 'complete=', img.complete); } catch {}
           return { code: '', confidence: null, imageSrc: '', source: '' };
         }
-        recognizedImgSrc = String(img?.src || '');
       }
 
       if ('TextDetector' in window) {
@@ -717,12 +706,21 @@ async function portalLoginAutoLoginInjected(context) {
       histEl.prepend(row);
     };
 
+    const CAPTCHA_SELECTOR = 'img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"], img#__bjtu_modal_captcha__';
+    const captchaQuery = () => document.querySelector(CAPTCHA_SELECTOR);
+
     const refreshCaptchaInPage = () => {
-      const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
-      if (!img) return null;
+      let img = captchaQuery();
+      if (!img) {
+        if (captchaImgEl) {
+          captchaImgEl.src = '/ve/GetImg?' + Date.now();
+          captchaImgEl.style.display = 'block';
+          img = captchaImgEl;
+        }
+        return img;
+      }
       const srcBefore = String(img.src || '');
       try { img.click(); } catch {}
-      // 仅当 click() 未能触发页面换图时，再用 ?t=Date.now() 强制刷新一次
       Promise.resolve().then(() => {
         try {
           if (String(img.src || '') === srcBefore) {
@@ -738,9 +736,13 @@ async function portalLoginAutoLoginInjected(context) {
     };
 
     const initCaptcha = () => {
-      const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+      const img = captchaQuery();
       if (img && captchaImgEl && img.src) {
         captchaImgEl.src = img.src;
+        captchaImgEl.style.display = 'block';
+      } else if (captchaImgEl) {
+        // No captcha image on page; fetch one directly for the modal (e.g. Timeout.jsp)
+        captchaImgEl.src = '/ve/GetImg?' + Date.now();
         captchaImgEl.style.display = 'block';
       }
     };
@@ -751,15 +753,19 @@ async function portalLoginAutoLoginInjected(context) {
         if (statusEl) statusEl.textContent = '验证码识别已关闭，请手动输入';
         return;
       }
-      let img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+      let img = captchaQuery();
       if (!img) {
-        try {
-          refreshCaptchaInPage();
-          await new Promise((r) => setTimeout(r, 600));
-        } catch {}
-        img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+        if (captchaImgEl && captchaImgEl.complete && captchaImgEl.naturalWidth > 0) {
+          img = captchaImgEl;
+        } else {
+          try {
+            refreshCaptchaInPage();
+            await new Promise((r) => setTimeout(r, 600));
+          } catch {}
+          img = captchaQuery();
+        }
       }
-      if (!img) {
+      if (!img || !(img instanceof HTMLImageElement)) {
         if (statusEl) statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
         return;
       }
@@ -846,7 +852,7 @@ async function portalLoginAutoLoginInjected(context) {
             tryCount++;
             const currentRound = Math.min(maxTry, baseRetry + tryCount);
             statusEl.textContent = `正在识别验证码 (${currentRound}/${maxTry})…`;
-            const img = document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]');
+            const img = captchaQuery();
             if (!img) {
               statusEl.textContent = '当前验证码未显示，请先点击刷新验证码';
               return;
@@ -885,7 +891,7 @@ async function portalLoginAutoLoginInjected(context) {
           c: passcode,
           recognizedCode: lastRecognizedCode || passcode,
           recognizedConfidence: lastRecognizedConfidence,
-          recognizedImageSrc: lastRecognizedImageSrc || String(document.querySelector('img[src*="GetImg"], img#imgcode, img#passcodeImg, img[alt*="验证码"]')?.src || '')
+          recognizedImageSrc: lastRecognizedImageSrc || String(captchaQuery()?.src || '')
         };
       } finally {
         clearTimeout(stuckTimer);
@@ -938,7 +944,7 @@ async function portalLoginAutoLoginInjected(context) {
     });
     if (got?.closed) {
       mask.remove();
-      return { ok: false, reason: 'modal-closed' };
+      return { ok: true, closed: true };
     }
     passcode = String(got?.c || '').trim();
     const recognizedCode = String(got?.recognizedCode || '').trim();

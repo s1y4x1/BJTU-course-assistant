@@ -62,6 +62,8 @@ function goBackToApp() {
   const { openMode } = await chrome.storage.local.get(['openMode']);
   const { autoCaptcha } = await chrome.storage.local.get(['autoCaptcha']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
+  const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
+  const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
   const enabled = normalizePlatformEnabled(platformEnabled);
 
   document.getElementById('enableVe').checked = !!enabled.ve;
@@ -77,6 +79,10 @@ function goBackToApp() {
     ? DEFAULT_SAVE_UPLOADS_ENABLED
     : !!saveUploadedFilesEnabled;
   document.getElementById('saveUploadsEnabled').checked = saveUploadsVal;
+  const headerQrVal = headerQrEnabled === undefined ? true : !!headerQrEnabled;
+  document.getElementById('headerQrEnabled').checked = headerQrVal;
+  const linkQrVal = linkQrEnabled === undefined ? true : !!linkQrEnabled;
+  document.getElementById('linkQrEnabled').checked = linkQrVal;
 
   // apply changes immediately when inputs change
   const applyPlatform = async () => {
@@ -112,6 +118,20 @@ function goBackToApp() {
   document.getElementById('saveUploadsEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
       saveUploadedFilesEnabled: !!document.getElementById('saveUploadsEnabled').checked
+    });
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('headerQrEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      headerQrEnabled: !!document.getElementById('headerQrEnabled').checked
+    });
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('linkQrEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      linkQrEnabled: !!document.getElementById('linkQrEnabled').checked
     });
     setMsg('已应用更改');
   });
@@ -184,9 +204,13 @@ function goBackToApp() {
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
     document.getElementById('saveUploadsEnabled').checked = true;
+    document.getElementById('headerQrEnabled').checked = true;
+    document.getElementById('linkQrEnabled').checked = true;
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoCaptcha: true });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
+    await chrome.storage.local.set({ headerQrEnabled: true });
+    await chrome.storage.local.set({ linkQrEnabled: true });
     setMsg('已恢复默认配置');
   });
 })();

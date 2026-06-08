@@ -5,6 +5,7 @@ const APP_URL = chrome.runtime.getURL('app.html');
 const portalLoginCtxByTab = new Map(); // tabId -> { username, passcode, passwordMd5, autoCode, fromExtension }
 const portalUsernameBindByTab = new Map(); // tabId -> { ts }
 const portalHandledByTab = new Map(); // tabId -> { url, ts }
+const portalInjectionDoneByTab = new Set(); // tabId -> injected once for current page load
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
 let latestResponseJsessionid = null;
 
@@ -133,8 +134,7 @@ function shouldSkipRecent(tabId, url) {
   if (!rec) return false;
   const same = rec.url === url;
   const recent = (Date.now() - rec.ts) < 4000;
-  if (!same || !recent) return false;
-  return !portalLoginCtxByTab.has(tabId);
+  return same && recent;
 }
 
 async function injectPortalAutoLogin(tabId, ctx = null) {
@@ -238,6 +238,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   portalLoginCtxByTab.delete(tabId);
   portalHandledByTab.delete(tabId);
   portalUsernameBindByTab.delete(tabId);
+  portalInjectionDoneByTab.delete(tabId);
 });
 
 function extractPortalQuickUsername(url) {
@@ -304,6 +305,11 @@ async function fetchBoundPortalAccountInfo(tabId, quickUsername) {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const url = String(changeInfo?.url || tab?.url || '');
 
+  // Clear injection-done flag on new navigation (loading), so each page load gets exactly one injection
+  if (changeInfo.status === 'loading') {
+    portalInjectionDoneByTab.delete(tabId);
+  }
+
   let quickUsername = extractPortalQuickUsername(url);
   const bindState = portalUsernameBindByTab.get(tabId) || null;
   if (quickUsername && portalUsernameBindByTab.has(tabId)) {
@@ -342,13 +348,23 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== 'complete') return;
   if (!isPortalLoginUrl(url)) return;
   if (shouldSkipRecent(tabId, url)) return;
+  // Each page load gets exactly one injection attempt; cleared on next 'loading' event
+  if (portalInjectionDoneByTab.has(tabId)) return;
+  portalInjectionDoneByTab.add(tabId);
+
+  // Set handled timestamp synchronously BEFORE any async operation to prevent concurrent events
+  portalHandledByTab.set(tabId, { url, ts: Date.now() });
+
+  // Check DOM for existing modal to avoid double popup across worlds/events
+  const [{ result: modalExists } = {}] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'ISOLATED',
+    func: () => !!document.getElementById('__bjtu_login_modal__') || !!document.getElementById('__bjtu_auto_login_overlay__')
+  }).catch(() => [{}]);
+  if (modalExists) return;
 
   const ctx = portalLoginCtxByTab.get(tabId) || null;
-  portalHandledByTab.set(tabId, { url, ts: Date.now() });
-  const r = await injectPortalAutoLogin(tabId, ctx);
-  if (!r.ok && r.error === 'back-to-input') {
-    await injectPortalAutoLogin(tabId, ctx);
-  }
+  await injectPortalAutoLogin(tabId, ctx);
 });
 
 chrome.action.onClicked.addListener(async () => {
