@@ -25,6 +25,7 @@
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.platformEnabled) {
         window.__headerQrUrl = '';
+        window.__sectionQrCache = {};
       }
     });
   } catch {}
@@ -71,19 +72,37 @@
     }).filter(Boolean).join('');
   };
 
-  const buildQrHomeworkItemHtml = (hw, type, courseId) => {
+  const buildQrHomeworkItemHtml = (hw, type, courseId, platform = 've') => {
     const title = escapeHtml(hw.title || hw.workTitle || hw.courseNoteTitle || '作业');
     const deadline = escapeHtml(hw.end_time || hw.endTime || hw?.end || '无');
     const cls = type === 'overdue' ? 'hw-overdue' : type === 'done' ? 'hw-done' : 'hw-pending';
 
-    const rawObtained = hw.lastScore ?? hw.obtainedScore ?? hw.oldScore ?? hw.finalScore ?? '';
-    const rawFull = hw.score ?? hw.fullScore ?? hw.maxScore ?? hw.totalScore ?? '';
-    const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? hw.noteId ?? '';
-    const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? hw.sn ?? '';
-    const scoreKey = upId && snId ? `${String(upId).trim()}|${String(snId).trim()}` : '';
-    const cachedScore = scoreKey ? window.homeworkScoreCacheByKey?.[scoreKey] : undefined;
-    const finalObtained = cachedScore !== undefined && cachedScore !== null ? String(cachedScore) : (rawObtained || '');
-    const finalFull = rawFull || '';
+    // Score extraction per-platform
+    let finalObtained = '', finalFull = '';
+    if (platform === 'ykt') {
+      if (hw.score != null && hw.score !== '') {
+        finalObtained = String(hw.score);
+        finalFull = hw.total_score != null ? String(hw.total_score) : '';
+      } else {
+        const problemResults = Array.isArray(hw.problem_results) ? hw.problem_results : [];
+        const sumGot = problemResults.reduce((s, pr) => s + (Number(pr?.problem_result?.score) || 0), 0);
+        const sumFull = problemResults.reduce((s, pr) => s + (Number(pr?.score) || 0), 0);
+        if (sumGot > 0 || sumFull > 0) {
+          finalObtained = String(sumGot);
+          finalFull = sumFull > 0 ? String(sumFull) : '';
+        }
+      }
+    } else {
+      const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? hw.noteId ?? '';
+      const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? hw.sn ?? '';
+      const scoreKey = upId && snId ? `${String(upId).trim()}|${String(snId).trim()}` : '';
+      const cachedScore = scoreKey ? window.homeworkScoreCacheByKey?.[scoreKey] : undefined;
+      const rawObtained = hw.lastScore ?? hw.obtainedScore ?? hw.oldScore ?? hw.finalScore ?? '';
+      const rawFull = hw.fullScore ?? hw.maxScore ?? hw.totalScore ?? hw.score ?? '';
+      finalObtained = cachedScore !== undefined && cachedScore !== null ? String(cachedScore) : (rawObtained || '');
+      finalFull = rawFull || '';
+    }
+
     const scoreText = finalObtained ? `${finalObtained}${finalFull ? '/' + finalFull : ''}` : '';
     const scoreHtml = type === 'done' && scoreText
       ? `<span style="font-weight:bold;color:#e91e63;margin-left:5px;">[${escapeHtml(scoreText)}]</span>`
@@ -305,9 +324,9 @@
       const allOverdue = [...nativeCls.overdue, ...yktCls.overdue, ...mrzyCls.overdue, ...jlgjCls.overdue];
       const allDone = [...nativeCls.done, ...yktCls.done, ...mrzyCls.done, ...jlgjCls.done];
 
-      const pendingHtml = allPending.map((hw) => buildQrHomeworkItemHtml(hw, 'pending', courseKey)).join('');
-      const overdueHtml = allOverdue.map((hw) => buildQrHomeworkItemHtml(hw, 'overdue', courseKey)).join('');
-      const doneHtml = allDone.map((hw) => buildQrHomeworkItemHtml(hw, 'done', courseKey)).join('');
+      const pendingHtml = allPending.map((hw) => buildQrHomeworkItemHtml(hw, 'pending', courseKey, platform)).join('');
+      const overdueHtml = allOverdue.map((hw) => buildQrHomeworkItemHtml(hw, 'overdue', courseKey, platform)).join('');
+      const doneHtml = allDone.map((hw) => buildQrHomeworkItemHtml(hw, 'done', courseKey, platform)).join('');
 
       const cwId = `qr-cw-${courseKey}`;
       const rpId = `qr-rp-${courseKey}`;
@@ -370,66 +389,18 @@ ${cardsHtml}
   // ─── Data loading ───
 
   const waitForAllData = async (setStatus) => {
-    // 1. Wait for either VE course list or any standalone courses
-    const hasAnyCourses = () => (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) ||
-      (isPlatformEnabled('ykt') && window.platformLoadedOnce?.ykt !== undefined) ||
-      (isPlatformEnabled('mrzy') && window.platformLoadedOnce?.mrzy !== undefined) ||
-      (isPlatformEnabled('jlgj') && window.platformLoadedOnce?.jlgj !== undefined);
-
-    if (!hasAnyCourses()) {
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        if (hasAnyCourses()) break;
-      }
-      if (!hasAnyCourses()) return false;
+    // 1. Wait briefly for initial data to appear (any platform)
+    for (let i = 0; i < 20; i++) {
+      if (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) break;
+      if ((window.yktStandaloneCourses || []).length) break;
+      if ((window.mrzyStandaloneCourses || []).length) break;
+      if ((window.jlgjStandaloneCourses || []).length) break;
+      await new Promise((r) => setTimeout(r, 500));
     }
 
     setStatus('正在等待数据加载…');
-    const courses = window.currentVeCourseList;
     const startTs = Date.now();
-    const MAX_WAIT = 90000;
-
-    const hasUnresolvedCw = (cid) => {
-      const cw = window.coursewareCacheByCourseId?.[cid];
-      return cw?.items?.some((it) => !it.url && it.rpId);
-    };
-
-    const isAllDataReady = () => {
-      // Check if any homework attachments are still loading
-      const attLoaded = Object.values(window.homeworkNoteAttachmentCacheByKey || {}).every(v => v.loading !== true || v.loaded === true);
-      if (!attLoaded) return false;
-
-      return courses.every((c) => {
-        const cid = c.id || c.cId || c.courseId || c.course_id;
-        if (!cid) return true;
-
-        if (!window.courseHomeworkData?.[cid]) return false;
-
-        if (window.homeworkScorePendingByCourse?.[cid]) return false;
-
-        const state = window.courseCardStateById?.[cid];
-
-        if (!window.veTeacherMetaByCourseId?.[cid]?.loaded && window.veTeacherMetaByCourseId?.[cid]) return false;
-
-        const cw = window.coursewareCacheByCourseId?.[cid];
-        if (cw) {
-          if (cw.loaded !== true || state?.coursewareListLoading) return false;
-          if (hasUnresolvedCw(cid) && !cw.rpLinksFetched && !cw.rpLinksFetching) return false;
-          if (cw.rpLinksFetching) return false;
-        }
-
-        const rp = window.videoReplayCacheByCourseId?.[cid];
-        if (rp && rp.loaded !== true) return false;
-
-        return true;
-      });
-    };
-
-    const platformPending = () => (
-      (isPlatformEnabled('ykt') && window.platformLoadedOnce?.ykt === undefined) ||
-      (isPlatformEnabled('mrzy') && window.platformLoadedOnce?.mrzy === undefined) ||
-      (isPlatformEnabled('jlgj') && window.platformLoadedOnce?.jlgj === undefined)
-    );
+    const MAX_WAIT = 60000;
 
     const estimateSizeKb = () => {
       try {
@@ -448,26 +419,44 @@ ${cardsHtml}
       }
     };
 
-    // 2. Wait for all VE course data to finish loading
+    // 2. Wait for VE course homework + scores to be ready
+    const isVeDataReady = () => {
+      const courses = window.currentVeCourseList;
+      if (!Array.isArray(courses) || !courses.length) return true;
+      return courses.every((c) => {
+        const cid = c.id || c.cId || c.courseId || c.course_id;
+        if (!cid) return true;
+        if (!window.courseHomeworkData?.[cid]) return false;
+        if (window.homeworkScorePendingByCourse?.[cid]) return false;
+        return true;
+      });
+    };
+
     while (Date.now() - startTs < MAX_WAIT) {
-      if (isAllDataReady()) break;
+      if (isVeDataReady()) break;
       showProgress('正在等待数据加载…');
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    // 3. Give external platforms a brief window to finish loading
-    if (platformPending()) {
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        if (!platformPending()) break;
-        showProgress('正在等待其他平台…');
-      }
+    // 3. Give all external platforms time to finish loading and populate standalone arrays
+    for (let i = 0; i < 24; i++) {
+      const settled = (
+        (!isPlatformEnabled('ykt') || window.platformLoadedOnce?.ykt !== undefined) &&
+        (!isPlatformEnabled('mrzy') || window.platformLoadedOnce?.mrzy !== undefined) &&
+        (!isPlatformEnabled('jlgj') || window.platformLoadedOnce?.jlgj !== undefined)
+      );
+      if (settled) break;
+      showProgress('正在等待其他平台…');
+      await new Promise((r) => setTimeout(r, 500));
     }
 
-    // 4. Resolve courseware RP links
-    const cwNeedsResolve = courses.some((c) => {
+    // 4. Resolve courseware RP links (download URLs for course materials)
+    const courses = window.currentVeCourseList;
+    const cwNeedsResolve = Array.isArray(courses) && courses.some((c) => {
       const cid = c.id || c.cId || c.courseId || c.course_id;
-      return cid && hasUnresolvedCw(cid);
+      if (!cid) return false;
+      const cw = window.coursewareCacheByCourseId?.[cid];
+      return cw?.items?.some((it) => !it.url && it.rpId);
     });
 
     if (cwNeedsResolve) {
@@ -486,12 +475,7 @@ ${cardsHtml}
                 const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480`;
                 const { text } = await fetchText(postUrl, {
                   method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Referer': referer,
-                    'Accept': 'application/json, text/javascript, */*; q=0.01'
-                  },
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest', 'Referer': referer, 'Accept': 'application/json, text/javascript, */*; q=0.01' },
                   body: postBody.toString()
                 });
                 const data = parseVeJson(text);
@@ -505,23 +489,19 @@ ${cardsHtml}
         });
       });
       await Promise.allSettled(promises);
-
-      // Update cache.html with resolved URLs
       if (typeof buildCoursewareListHtml === 'function') {
         courses.forEach((c) => {
           const cid = c.id || c.cId || c.courseId || c.course_id;
           if (!cid) return;
           const cache = window.coursewareCacheByCourseId?.[cid];
-          if (cache?.items?.length) {
-            cache.html = buildCoursewareListHtml(cid, cache.items);
-          }
+          if (cache?.items?.length) cache.html = buildCoursewareListHtml(cid, cache.items);
         });
       }
       showProgress('正在获取课件链接…');
     }
 
     // 5. Resolve replay download links
-    const rpNeedsResolve = courses.some((c) => {
+    const rpNeedsResolve = Array.isArray(courses) && courses.some((c) => {
       const cid = c.id || c.cId || c.courseId || c.course_id;
       if (!cid) return false;
       const cache = window.videoReplayCacheByCourseId?.[cid];
@@ -544,23 +524,15 @@ ${cardsHtml}
                 const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480`;
                 const { text } = await fetchText(postUrl, {
                   method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Referer': referer,
-                    'Accept': 'application/json, text/javascript, */*; q=0.01'
-                  },
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest', 'Referer': referer, 'Accept': 'application/json, text/javascript, */*; q=0.01' },
                   body: postBody.toString()
                 });
                 const data = parseVeJson(text);
                 if (data.flag === true || String(data.STATUS) === '0') {
                   const html = (data.html || '').trim();
                   const rpUrl = (data.rpUrl || '').trim();
-                  if (html) {
-                    item.qrResolvedLinkHtml = html;
-                  } else if (rpUrl) {
-                    item.qrResolvedUrl = rpUrl;
-                  }
+                  if (html) item.qrResolvedLinkHtml = html;
+                  else if (rpUrl) item.qrResolvedUrl = rpUrl;
                 }
               } catch {}
             })());
@@ -664,7 +636,269 @@ ${cardsHtml}
     }
   };
 
-  // ─── Event handlers ───
+  // ─── Reusable upload helper ───
+
+  const uploadHtmlAndGetUrl = async (htmlContent, onProgress) => {
+    const jsid = (document.getElementById('jsessionid-input')?.value?.trim() || await getLocal('jsessionid', '')).trim();
+    if (!jsid) return null;
+    const file = new File([htmlContent], 'snapshot.html', { type: 'text/html' });
+    const fd = new FormData();
+    fd.append('file', file);
+    const url = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const uploadUrl = `${BASE}/ve/back/rp/common/rpUpload.shtml;jsessionid=${encodeURIComponent(jsid)}`;
+      xhr.open('POST', uploadUrl, true);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+      xhr.setRequestHeader('Upgrade-Insecure-Requests', '1');
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
+        };
+      }
+      xhr.onload = () => {
+        if (xhr.status !== 200) { reject(new Error('上传失败 HTTP ' + xhr.status)); return; }
+        try {
+          const data = JSON.parse(xhr.responseText || '{}');
+          if (!data.visitName) { reject(new Error('上传返回数据异常')); return; }
+          resolve(convertVisitNameToUrl(data.visitName));
+        } catch (e) { reject(new Error('解析响应失败')); }
+      };
+      xhr.onerror = () => reject(new Error('网络错误'));
+      xhr.send(fd);
+    });
+    return url;
+  };
+
+  // ─── Section QR setup (file upload / resource space) ───
+
+  const setupSectionQr = (triggerSelector, buildHtmlFn, cacheKey) => {
+    const triggerEl = document.querySelector(triggerSelector);
+    if (!triggerEl) return;
+
+    const SECTION_TOOLTIP_ID = `__bjtu_section_qr_${triggerSelector.replace(/[^a-zA-Z0-9_-]/g, '_')}__`;
+    let sectionTooltip = document.getElementById(SECTION_TOOLTIP_ID);
+    if (!sectionTooltip) {
+      sectionTooltip = document.createElement('div');
+      sectionTooltip.id = SECTION_TOOLTIP_ID;
+      sectionTooltip.style.cssText = 'position:fixed;z-index:99999;padding:10px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.18);display:none;flex-direction:column;align-items:center;gap:6px;pointer-events:none;';
+      sectionTooltip.innerHTML = '<div style="font-size:11px;color:#94a3b8;text-align:center;">扫描二维码查看列表</div><div style="position:relative;width:160px;height:160px;"><div class="__qr_spinner" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><div style="width:36px;height:36px;border:4px solid #e0e0e0;border-top-color:#1565c0;border-radius:50%;animation:__qr_spin .8s linear infinite;"></div></div><img style="display:none;width:160px;height:160px;image-rendering:pixelated;"></div><div class="__section_qr_status" style="font-size:11px;color:#94a3b8;text-align:center;"></div>';
+      document.body.appendChild(sectionTooltip);
+    }
+
+    const secQrImg = sectionTooltip.querySelector('img');
+    const secQrSpinner = sectionTooltip.querySelector('.__qr_spinner');
+    const secQrStatus = sectionTooltip.querySelector('.__section_qr_status');
+    const cacheUrlKey = `_${cacheKey || triggerSelector.replace(/[^a-zA-Z0-9]/g, '_')}Url`;
+
+    let secQrHideTimer = null;
+    let secLoading = false;
+
+    const secShowLoading = () => {
+      if (secQrSpinner) secQrSpinner.style.display = 'flex';
+      if (secQrImg) secQrImg.style.display = 'none';
+    };
+    const secHideLoading = () => {
+      if (secQrSpinner) secQrSpinner.style.display = 'none';
+      if (secQrImg) secQrImg.style.display = 'block';
+    };
+
+    const showSectionQr = (top, left) => {
+      sectionTooltip.style.display = 'flex';
+      let tRect = sectionTooltip.getBoundingClientRect();
+      let l = left;
+      let t = top + 12;
+      if (l + tRect.width > window.innerWidth - 4) l = window.innerWidth - tRect.width - 4;
+      if (t + tRect.height > window.innerHeight - 4) t = top - tRect.height - 4;
+      if (l < 4) l = 4;
+      if (t < 4) t = 4;
+      sectionTooltip.style.top = t + 'px';
+      sectionTooltip.style.left = l + 'px';
+    };
+
+    const showCachedQr = () => {
+      const cachedUrl = window.__sectionQrCache[cacheUrlKey];
+      if (!cachedUrl) return false;
+      try {
+        secQrImg.src = buildQrImageUrl(cachedUrl, 160);
+        secHideLoading();
+        return true;
+      } catch { return false; }
+    };
+
+    const generateAndShow = async () => {
+      if (secLoading) return;
+      secLoading = true;
+
+      const htmlContent = buildHtmlFn();
+      if (htmlContent === null) {
+        // Data unchanged — try cached URL
+        if (showCachedQr()) {
+          sectionTooltip.style.display = 'flex';
+          const rect = triggerEl.getBoundingClientRect();
+          showSectionQr(rect.bottom, rect.left);
+          secLoading = false;
+          return;
+        }
+        // Cache miss, fall through to regenerate
+        secLoading = false;
+        return;
+      }
+
+      secShowLoading();
+      sectionTooltip.style.display = 'flex';
+      const rect = triggerEl.getBoundingClientRect();
+      showSectionQr(rect.bottom, rect.left);
+      if (secQrStatus) secQrStatus.textContent = '正在生成…';
+
+      if (!htmlContent) {
+        if (secQrStatus) secQrStatus.textContent = '暂无内容';
+        secHideLoading();
+        secLoading = false;
+        return;
+      }
+
+      if (secQrStatus) secQrStatus.textContent = `HTML ${(htmlContent.length / 1024).toFixed(1)} KB，正在上传…`;
+      const url = await uploadHtmlAndGetUrl(htmlContent, (pct) => {
+        if (secQrStatus) secQrStatus.textContent = `HTML ${(htmlContent.length / 1024).toFixed(1)} KB，上传中 ${pct}%`;
+      });
+      if (!url) {
+        if (secQrStatus) secQrStatus.textContent = '请先登录';
+        secHideLoading();
+        secLoading = false;
+        return;
+      }
+
+      try {
+        secQrImg.src = buildQrImageUrl(url, 160);
+        secHideLoading();
+        if (secQrStatus) secQrStatus.textContent = '';
+        window.__sectionQrCache[cacheUrlKey] = url;
+      } catch {
+        if (secQrStatus) secQrStatus.textContent = '二维码生成失败';
+      }
+      secLoading = false;
+    };
+
+    triggerEl.addEventListener('mouseenter', () => {
+      if (secQrHideTimer) { clearTimeout(secQrHideTimer); secQrHideTimer = null; }
+      generateAndShow();
+    });
+
+    triggerEl.addEventListener('mouseleave', (e) => {
+      if (secQrHideTimer) { clearTimeout(secQrHideTimer); }
+      const toEl = e.relatedTarget;
+      if (toEl && (triggerEl.contains(toEl) || (sectionTooltip.style.display !== 'none' && sectionTooltip.contains(toEl)))) return;
+      secQrHideTimer = setTimeout(() => { sectionTooltip.style.display = 'none'; }, 80);
+    });
+  };
+
+  // ─── File upload list HTML builder ───
+
+  const buildUploadListHtml = () => {
+    const items = window.savedUploadedFiles || [];
+    if (!items.length) return '';
+    const rows = items.map((f) => {
+      const name = escapeHtml(f.fileName || f.name || '文件');
+      const url = String(f.url || '').trim();
+      const linkHtml = url
+        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color:#1565c0;word-break:break-all;">${escapeHtml(cleanRpUrl ? cleanRpUrl(url) : url)}</a>`
+        : '<span style="color:#999;">无链接</span>';
+      return `<div style="padding:6px 8px;border-bottom:1px solid #eee;"><div style="font-weight:bold;font-size:13px;">${name}</div><div style="font-size:12px;margin-top:2px;">${linkHtml}</div></div>`;
+    }).join('');
+
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}.${pad2(now.getMonth() + 1)}.${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>文件上传列表</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:16px;max-width:800px;margin:0 auto;color:#333;background:#f5f5f5}a{color:#1565c0;text-decoration:none}h2{font-size:18px;margin:0 0 12px}.notice{padding:8px 12px;background:#ffebee;border:1px solid #ef4444;border-radius:6px;color:#b91c1c;font-size:12px;font-weight:bold;text-align:center;margin-bottom:12px}.list{background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)}</style>
+</head>
+<body>
+<h2>文件上传列表</h2>
+<div class="notice">这是 ${ts} 生成的静态页面，不会实时更新</div>
+<div class="list">${rows}</div>
+</body>
+</html>`;
+  };
+
+  // ─── Resource space list HTML builder ───
+
+  const buildResourceSpaceListHtml = () => {
+    const items = window.resourceSpaceItems || [];
+    if (!items.length) return '';
+    const rows = items.map((f) => {
+      const name = escapeHtml(f.name || f.fileName || '资源');
+      const url = String(f.url || '').trim();
+      const sizeStr = f.sizeMb ? ` (${escapeHtml(String(f.sizeMb))})` : '';
+      const linkHtml = url
+        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color:#1565c0;word-break:break-all;">${escapeHtml(url)}</a>`
+        : '<span style="color:#999;">无链接</span>';
+      return `<div style="padding:6px 8px;border-bottom:1px solid #eee;"><div style="font-weight:bold;font-size:13px;">${name}${sizeStr}</div><div style="font-size:12px;margin-top:2px;">${linkHtml}</div></div>`;
+    }).join('');
+
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}.${pad2(now.getMonth() + 1)}.${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>资源空间</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;padding:16px;max-width:800px;margin:0 auto;color:#333;background:#f5f5f5}a{color:#1565c0;text-decoration:none}h2{font-size:18px;margin:0 0 12px}.notice{padding:8px 12px;background:#ffebee;border:1px solid #ef4444;border-radius:6px;color:#b91c1c;font-size:12px;font-weight:bold;text-align:center;margin-bottom:12px}.list{background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)}</style>
+</head>
+<body>
+<h2>资源空间</h2>
+<div class="notice">这是 ${ts} 生成的静态页面，不会实时更新</div>
+<div class="list">${rows}</div>
+</body>
+</html>`;
+  };
+
+  // ─── Attach section QR tooltips with caching ───
+
+  window.__sectionQrCache = window.__sectionQrCache || {};
+
+  const dataHash = (items) => {
+    if (!items || !items.length) return '';
+    return String(items.length) + '|' + items.map((f) => f.url || '').join(',');
+  };
+
+  setupSectionQr('.upload-section-header h1', () => {
+    const items = window.savedUploadedFiles || [];
+    const hash = dataHash(items);
+    if (hash && window.__sectionQrCache._upload === hash && window.__sectionQrCache._uploadUrl) {
+      return null; // use cached URL
+    }
+    window.__sectionQrCache._upload = hash;
+    return buildUploadListHtml();
+  }, 'upload');
+
+  setupSectionQr('#resource-space-section .resource-space-title', () => {
+    const items = window.resourceSpaceItems || [];
+    const hash = dataHash(items);
+    if (hash && window.__sectionQrCache._resource === hash && window.__sectionQrCache._resourceUrl) {
+      return null;
+    }
+    window.__sectionQrCache._resource = hash;
+    return buildResourceSpaceListHtml();
+  }, 'resource');
+
+  window.addEventListener('scroll', () => {
+    headerTooltip.style.display = 'none';
+    document.querySelectorAll('[id^="__bjtu_section_qr_"]').forEach((el) => { el.style.display = 'none'; });
+  }, { passive: true });
+  window.addEventListener('resize', () => {
+    headerTooltip.style.display = 'none';
+    document.querySelectorAll('[id^="__bjtu_section_qr_"]').forEach((el) => { el.style.display = 'none'; });
+  }, { passive: true });
 
   const courseHeaderEl = document.querySelector('h2.course-header span');
   if (!courseHeaderEl) return;
@@ -701,7 +935,4 @@ ${cardsHtml}
     if (toEl && (courseHeaderEl.contains(toEl) || (headerTooltip.style.display !== 'none' && headerTooltip.contains(toEl)))) return;
     headerQrHideTimer = setTimeout(() => { headerTooltip.style.display = 'none'; }, 80);
   });
-
-  window.addEventListener('scroll', () => { headerTooltip.style.display = 'none'; }, { passive: true });
-  window.addEventListener('resize', () => { headerTooltip.style.display = 'none'; }, { passive: true });
 })();

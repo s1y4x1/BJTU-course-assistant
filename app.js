@@ -2049,6 +2049,23 @@ async function fetchPasswordMd5FromServer(userId) {
   return '';
 }
 
+async function fetchPasswordMd5WithKnownInfo(userId, userInfoRawText) {
+  const uid = String(userId || '').trim();
+  if (!uid) return '';
+  const isStudent = String(userInfoRawText || '').includes('学生');
+  const studentUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=studentInfo&stuId=${encodeURIComponent(uid)}`;
+  const teacherUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=personInfo&teacherId=${encodeURIComponent(uid)}`;
+  const urls = isStudent ? [studentUrl, teacherUrl] : [teacherUrl, studentUrl];
+  for (const url of urls) {
+    const { text } = await fetchText(url);
+    if ((text || '').includes('login-page') || isSessionEndedHtml(text)) return '';
+    const m = String(text || '').match(/(?:id|name)=["']oldpassword["'][^>]*value=["']([^"']+)["']/i)
+      || String(text || '').match(/value=["']([^"']+)["'][^>]*(?:id|name)=["']oldpassword["']/i);
+    if (m?.[1]) return String(m[1] || '').trim();
+  }
+  return '';
+}
+
 async function validateAccountByGetUserInfo(userId, { signal } = {}) {
   const uid = String(userId || '').trim();
   if (!uid) return { ok: false, reason: 'empty-username', message: '请输入账号' };
@@ -2078,7 +2095,7 @@ async function validateAccountByGetUserInfo(userId, { signal } = {}) {
     if (data && String(data.STATUS) === '4') {
       return { ok: false, reason: 'invalid-account', message: '该账号不存在' };
     }
-    return { ok: true, info: data, status: data?.STATUS || '' };
+    return { ok: true, info: data, status: data?.STATUS || '', rawText: htmlOrText };
   } catch (e) {
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
     return { ok: false, reason: 'network', message: '账号验证失败，请稍后重试' };
@@ -2739,13 +2756,19 @@ async function doLoginFlow() {
   loginCancelRequested = false;
   loginAbortController = new AbortController();
   const loginSignal = loginAbortController.signal;
+  const previousUsername = usernameInput.value.trim();
 
   // Step 1: getUserInfo(loginName) -> STATUS 4 check
+  showToast('正在验证账号…', 'info', 5000);
   const validation = await validateAccountByGetUserInfo(username, { signal: loginSignal });
   if (loginCancelRequested || loginSignal?.aborted) return;
   if (!validation.ok) {
     if (validation.reason === 'invalid-account') {
       showToast(`账号${username}不存在，请检查后重试`, 'error', 3000);
+      if (previousUsername && previousUsername !== username) {
+        usernameInput.value = previousUsername;
+      }
+      return;
     } else if (validation.reason === 'cancelled') {
       return;
     } else if (validation.reason !== 'session-invalid') {
@@ -2850,7 +2873,13 @@ async function doLoginFlow() {
       }
     }
 
-    let fetchedPw = await fetchPasswordMd5FromServer(username).catch(() => '');
+    let fetchedPw = '';
+    if (validation.rawText) {
+      fetchedPw = await fetchPasswordMd5WithKnownInfo(username, validation.rawText).catch(() => '');
+    }
+    if (!fetchedPw) {
+      fetchedPw = await fetchPasswordMd5FromServer(username).catch(() => '');
+    }
     if (!fetchedPw) fetchedPw = md5(`Bjtu@${username}`);
     passwordMd5 = fetchedPw;
 
