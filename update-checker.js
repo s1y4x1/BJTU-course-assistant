@@ -392,7 +392,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
             visible: true,
             status: '已完成',
             title: '下载成功',
-            body: '请打开下载目录，解压覆盖更新扩展目录并到 about:extensions 扩展管理页面重新加载扩展以完成更新。',
+            body: '请打开下载目录，解压覆盖更新扩展目录并到 about:extensions 扩展管理页面**重新加载**扩展以完成更新。',
             phase: 'finished'
           });
           resolve();
