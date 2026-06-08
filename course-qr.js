@@ -58,23 +58,31 @@
 
   // ─── HTML generators ───
 
-  const getQrAttachmentHtml = (hw) => {
+  const getQrAttachmentHtml = (hw, type = 'pending') => {
     const key = String(hw?.__attachmentKey || '').trim();
     if (!key) return '';
     const cache = window.homeworkNoteAttachmentCacheByKey?.[key] || null;
     const list = Array.isArray(cache?.picList) ? cache.picList : [];
     if (!list.length) return '';
+    const color = type === 'done'
+      ? { border: '#4caf50', bg: '#e8f5e9' }
+      : (type === 'overdue'
+        ? { border: '#ef4444', bg: '#ffebee' }
+        : { border: '#ff9800', bg: '#fff3e0' });
     return list.map((it) => {
       const name = escapeHtml(it.fileNameNoExt || it.fileName || '附件');
       const url = String(it.url || '').trim();
       if (!url) return '';
-      return `<div style="padding:4px 6px;border:1px solid #ff9800;border-radius:4px;background:#fff3e0;margin-top:4px;font-size:11px;"><strong>${name}</strong><br><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="font-size:11px;">${escapeHtml(url)}</a></div>`;
+      return `<div style="padding:4px 6px;border:1px solid ${color.border};border-radius:4px;background:${color.bg};margin-top:4px;font-size:11px;"><strong>${name}</strong><br><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="font-size:11px;">${escapeHtml(url)}</a></div>`;
     }).filter(Boolean).join('');
   };
 
   const buildQrHomeworkItemHtml = (hw, type, courseId, platform = 've') => {
     const title = escapeHtml(hw.title || hw.workTitle || hw.courseNoteTitle || '作业');
-    const deadline = escapeHtml(hw.end_time || hw.endTime || hw?.end || '无');
+    const rawDeadline = hw.end_time || hw.endTime || hw?.end || '';
+    const deadline = escapeHtml(platform === 'ykt' && typeof formatYktDateTime === 'function'
+      ? formatYktDateTime(rawDeadline)
+      : (rawDeadline || '无'));
     const cls = type === 'overdue' ? 'hw-overdue' : type === 'done' ? 'hw-done' : 'hw-pending';
 
     // Score extraction per-platform
@@ -113,7 +121,7 @@
     const contentHtml = rawContent
       ? `<div class="hw-detail-content" id="${detailId}" style="display:none;margin-top:4px;padding:6px 8px;background:#fafafa;border-radius:4px;font-size:12px;color:#555;word-break:break-all;max-height:200px;overflow-y:auto;">${normalizeHomeworkContent(rawContent)}</div>`
       : '';
-    const attachmentHtml = getQrAttachmentHtml(hw);
+    const attachmentHtml = getQrAttachmentHtml(hw, type);
 
     return `<div class="hw-item ${cls}" data-toggle-detail="${detailId}">
       <div class="hw-title">${title}${scoreHtml} <span data-detail-toggle style="font-weight:normal;font-size:11px;color:#999;">[点击查看详情]</span></div>
@@ -124,14 +132,21 @@
   };
 
   const buildQrCourseListHtml = () => {
-    const veCourseList = window.currentVeCourseList || [];
-    const yktStandalone = (window.yktStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'ykt', index: i }));
-    const mrzyStandalone = (window.mrzyStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'mrzy', index: i }));
-    const jlgjStandalone = (window.jlgjStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'jlgj', index: i }));
+    const isMrjzyPlatform = (platform) => platform === 'mrjzy' || platform === 'mrzy';
+    const enabledPlatforms = {
+      ve: isPlatformEnabled('ve'),
+      ykt: isPlatformEnabled('ykt'),
+      mrjzy: isPlatformEnabled('mrjzy') || isPlatformEnabled('mrzy'),
+      jlgj: isPlatformEnabled('jlgj')
+    };
+    const veCourseList = isPlatformEnabled('ve') ? (window.currentVeCourseList || []) : [];
+    const yktStandalone = enabledPlatforms.ykt ? (window.yktStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'ykt', index: i })) : [];
+    const mrzyStandalone = enabledPlatforms.mrjzy ? (window.mrzyStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'mrjzy', index: i })) : [];
+    const jlgjStandalone = enabledPlatforms.jlgj ? (window.jlgjStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'jlgj', index: i })) : [];
     const standaloneMeta = [...yktStandalone, ...mrzyStandalone, ...jlgjStandalone];
     const getStandaloneCourseId = (sc, platform, index = 0) => {
       if (platform === 'ykt') return `ykt-${String(sc?.classroom_id || index)}`;
-      if (platform === 'mrzy') return `mrzy-${String(sc?.classNum || index)}`;
+      if (isMrjzyPlatform(platform)) return `mrzy-${String(sc?.classNum || index)}`;
       if (platform === 'jlgj') return `jlgj-${String(sc?.groupId || index)}`;
       return `${platform}-${String(index)}`;
     };
@@ -163,6 +178,10 @@
     cards.forEach((card) => {
       const cardCourseId = card?.dataset?.courseId || (card.id && card.id.replace(/^course-/, '')) || '';
       if (!cardCourseId) return;
+      if (/^ykt-/.test(cardCourseId) && !enabledPlatforms.ykt) return;
+      if (/^mrzy-/.test(cardCourseId) && !enabledPlatforms.mrjzy) return;
+      if (/^jlgj-/.test(cardCourseId) && !enabledPlatforms.jlgj) return;
+      if (!/^(ykt|mrzy|jlgj)-/.test(cardCourseId) && !enabledPlatforms.ve) return;
       if (veMap[cardCourseId]) { allCourses.push(veMap[cardCourseId]); delete veMap[cardCourseId]; return; }
       if (standaloneMap[cardCourseId]) {
         const { sc, platform, index } = standaloneMap[cardCourseId];
@@ -189,8 +208,8 @@
     // ─── Sort per RULES.md ───
     const computeDeadlineMs = (hw) => {
       const t = hw.end_time || hw.endTime || hw?.end || '';
-      const ts = new Date(t).getTime();
-      return isNaN(ts) ? Infinity : ts;
+      const ts = typeof parseDeadlineToTs === 'function' ? parseDeadlineToTs(t) : new Date(t).getTime();
+      return ts > 0 && !isNaN(ts) ? ts : Infinity;
     };
     const classifyItems = (items, isDoneFn, isOverdueFn) => {
       const pending = [], overdue = [], done = [];
@@ -210,15 +229,15 @@
       let allNative, allYkt, allMrzy, allJlgj;
       if (isS) {
         const empty = { items: [], doneFn: () => false, overdueFn: () => false };
-        allNative = allMrzy = allJlgj = empty;
+        allNative = allYkt = allMrzy = allJlgj = empty;
         if (platform === 'ykt') allYkt = { items: hwList, doneFn: isYktHomeworkDone, overdueFn: isYktOverdue };
-        else if (platform === 'mrzy') allMrzy = { items: hwList, doneFn: isMrzyHomeworkDone, overdueFn: isMrzyOverdue };
+        else if (isMrjzyPlatform(platform)) allMrzy = { items: hwList, doneFn: isMrzyHomeworkDone, overdueFn: isMrzyOverdue };
         else allJlgj = { items: hwList, doneFn: isJlgjHomeworkDone, overdueFn: isJlgjOverdue };
       } else {
         allNative = { items: hwList, doneFn: isNativeHomeworkDone, overdueFn: isNativeHomeworkOverdue };
-        allYkt = isPlatformEnabled('ykt') ? { items: window.yktMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isYktHomeworkDone, overdueFn: isYktOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
-        allMrzy = isPlatformEnabled('mrzy') ? { items: window.mrzyMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isMrzyHomeworkDone, overdueFn: isMrzyOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
-        allJlgj = isPlatformEnabled('jlgj') ? { items: window.jlgjMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isJlgjHomeworkDone, overdueFn: isJlgjOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
+        allYkt = enabledPlatforms.ykt ? { items: window.yktMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isYktHomeworkDone, overdueFn: isYktOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
+        allMrzy = enabledPlatforms.mrjzy ? { items: window.mrzyMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isMrzyHomeworkDone, overdueFn: isMrzyOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
+        allJlgj = enabledPlatforms.jlgj ? { items: window.jlgjMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isJlgjHomeworkDone, overdueFn: isJlgjOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
       }
 
       const cl = (cfg) => classifyItems(cfg.items, cfg.doneFn, cfg.overdueFn);
@@ -258,7 +277,7 @@
 
       const coursePlatformUrl = isS
         ? (platform === 'ykt' ? yktCourseLink(course.classroom_id || '') :
-           platform === 'mrzy' ? `${MRZY_WEB_BASE}/` :
+           isMrjzyPlatform(platform) ? `${MRZY_WEB_BASE}/` :
            platform === 'jlgj' ? `${JLGJ_WEB_BASE}` : '#')
         : `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10460&courseId=${encodeURIComponent(course.course_num || course.courseNum || course.courseNo || course.course_id || courseId || '')}&cId=${encodeURIComponent(courseKey)}&xknId=${encodeURIComponent(course.fz_id || course.fzId || course.xkhId || course.xkh_id || '')}&xkhId=${encodeURIComponent(course.fz_id || course.fzId || course.xkhId || course.xkh_id || '')}`;
 
@@ -284,7 +303,7 @@
           const urlHtml = url
             ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(cleanRpUrl(url))}</a>`
             : '<span style="color:#999;">链接获取中…</span>';
-          return `<div style="padding:6px 8px;border:1px solid #c8e6c9;border-radius:4px;background:#f1f8e9;margin-top:6px;"><div style="font-weight:bold;">${name}</div><div style="margin-top:2px;">${urlHtml}</div></div>`;
+          return `<div style="padding:6px 8px;border:1px solid #93b4e8;border-radius:4px;background:#e8efff;margin-top:6px;"><div style="font-weight:bold;">${name}</div><div style="margin-top:2px;">${urlHtml}</div></div>`;
         }).join('');
       }
 
@@ -312,14 +331,16 @@
       const hwList = isS ? (course._homeworkList || []) : (window.courseHomeworkData?.[courseKey]?.list || []);
       let nativeCls, yktCls, mrzyCls, jlgjCls;
       if (isS) {
-        if (platform === 'ykt') { yktCls = classifyItems(hwList, isYktHomeworkDone, isYktOverdue); nativeCls = mrzyCls = jlgjCls = { pending: [], overdue: [], done: [] }; }
-        else if (platform === 'mrzy') { mrzyCls = classifyItems(hwList, isMrzyHomeworkDone, isMrzyOverdue); nativeCls = yktCls = jlgjCls = { pending: [], overdue: [], done: [] }; }
-        else { jlgjCls = classifyItems(hwList, isJlgjHomeworkDone, isJlgjOverdue); nativeCls = yktCls = mrzyCls = { pending: [], overdue: [], done: [] }; }
+        const emptyCls = { pending: [], overdue: [], done: [] };
+        nativeCls = yktCls = mrzyCls = jlgjCls = emptyCls;
+        if (platform === 'ykt') yktCls = classifyItems(hwList, isYktHomeworkDone, isYktOverdue);
+        else if (isMrjzyPlatform(platform)) mrzyCls = classifyItems(hwList, isMrzyHomeworkDone, isMrzyOverdue);
+        else jlgjCls = classifyItems(hwList, isJlgjHomeworkDone, isJlgjOverdue);
       } else {
         nativeCls = classifyItems(hwList, isNativeHomeworkDone, isNativeHomeworkOverdue);
-        const yktItems = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId?.[courseKey] || []) : [];
-        const mrzyItems = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId?.[courseKey] || []) : [];
-        const jlgjItems = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId?.[courseKey] || []) : [];
+        const yktItems = enabledPlatforms.ykt ? (window.yktMatchedHomeworkByCourseId?.[courseKey] || []) : [];
+        const mrzyItems = enabledPlatforms.mrjzy ? (window.mrzyMatchedHomeworkByCourseId?.[courseKey] || []) : [];
+        const jlgjItems = enabledPlatforms.jlgj ? (window.jlgjMatchedHomeworkByCourseId?.[courseKey] || []) : [];
         yktCls = classifyItems(yktItems, isYktHomeworkDone, isYktOverdue);
         mrzyCls = classifyItems(mrzyItems, isMrzyHomeworkDone, isMrzyOverdue);
         jlgjCls = classifyItems(jlgjItems, isJlgjHomeworkDone, isJlgjOverdue);
@@ -393,15 +414,97 @@ ${cardsHtml}
   // ─── Data loading ───
 
   const waitForAllData = async (setStatus) => {
-    const hasAnyCourseData = () => (
-      (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) ||
-      (window.yktStandaloneCourses || []).length ||
-      (window.mrzyStandaloneCourses || []).length ||
-      (window.jlgjStandaloneCourses || []).length ||
-      Object.keys(window.yktMatchedHomeworkByCourseId || {}).length ||
-      Object.keys(window.mrzyMatchedHomeworkByCourseId || {}).length ||
-      Object.keys(window.jlgjMatchedHomeworkByCourseId || {}).length
+    const isMrjzyEnabled = () => isPlatformEnabled('mrjzy') || isPlatformEnabled('mrzy');
+    const isMrjzySettled = () => (
+      !isMrjzyEnabled() ||
+      window.platformLoadedOnce?.mrjzy === true ||
+      window.platformLoadedOnce?.mrzy === true ||
+      (window.platformLoginState?.mrjzy || window.platformLoginState?.mrzy || '') === 'offline' ||
+      window.platformNeedLogin?.mrjzy ||
+      window.platformNeedLogin?.mrzy ||
+      window.platformLoginChecked?.mrjzy ||
+      window.platformLoginChecked?.mrzy
     );
+    const getMrjzyMatchedHomeworkMap = () => window.mrjzyMatchedHomeworkByCourseId || window.mrzyMatchedHomeworkByCourseId || {};
+    const getMrjzyStandaloneCourses = () => window.mrjzyStandaloneCourses || window.mrzyStandaloneCourses || [];
+    const getMrjzySnapshot = () => window.mrjzyCourseGroupsSnapshot || window.mrzyCourseGroupsSnapshot || [];
+    const hasMrjzyLoadingPlaceholders = () => {
+      const courses = getMrjzyStandaloneCourses();
+      const matched = getMrjzyMatchedHomeworkMap();
+      const groups = [...courses, ...getMrjzySnapshot(), ...Object.values(matched).map((homeworks) => ({ homeworks }))];
+      return groups.some((group) => {
+        if (group?.loadingMeta) return true;
+        const courseName = String(group?.divClass || group?.name || '').trim();
+        const teacherName = String(group?.teacherName || group?.teacher_name || '').trim();
+        if (/正在加载/.test(courseName) || /正在加载/.test(teacherName)) return true;
+        return (Array.isArray(group?.homeworks) ? group.homeworks : []).some((hw) => (
+          hw?.loadingMeta ||
+          /正在加载/.test(String(hw?.end || hw?.deadline || '')) ||
+          !String(hw?.end || hw?.deadline || '').trim()
+        ));
+      });
+    };
+    const hasYktDetailPending = () => {
+      if (!isPlatformEnabled('ykt')) return false;
+      if (Object.values(window.yktHomeworkLoadingByCourse || {}).some(Boolean)) return true;
+      const groups = [
+        ...(window.yktStandaloneCourses || []),
+        ...(window.yktCourseGroupsSnapshot || []),
+        ...Object.values(window.yktMatchedHomeworkByCourseId || {}).map((homeworks) => ({ homeworks }))
+      ];
+      if (groups.some((group) => (Array.isArray(group?.homeworks) ? group.homeworks : []).some((hw) => {
+        const state = String(hw?.exam_detail_state || '').trim();
+        return state === 'queued' || state === 'loading';
+      }))) return true;
+      return Object.values(window.yktDetailCacheByKey || {}).some((cache) => {
+        const state = String(cache?.state || '').trim();
+        return state === 'queued' || state === 'loading' || !!cache?.promise;
+      });
+    };
+    const getVeLoadingReasons = () => {
+      if (!isPlatformEnabled('ve')) return [];
+      const courses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+      const reasons = [];
+      courses.forEach((c) => {
+        const cid = String(c.id || c.cId || c.courseId || c.course_id || '').trim();
+        if (!cid) return;
+        const name = String(c.course_name || c.name || c.NAME || c.courseName || cid).trim();
+        const state = window.courseCardStateById?.[cid] || {};
+        if (!window.courseHomeworkData?.[cid]) reasons.push(`${name}: 作业`);
+        if (window.homeworkScorePendingByCourse?.[cid]) reasons.push(`${name}: 成绩`);
+        if (state.coursewareListLoading) reasons.push(`${name}: 课件列表`);
+        if (state.replayListLoading) reasons.push(`${name}: 回放列表`);
+        const cwCache = window.coursewareCacheByCourseId?.[cid];
+        if (cwCache?.rpLinksFetching) reasons.push(`${name}: 课件链接`);
+        const rpCache = window.videoReplayCacheByCourseId?.[cid];
+        if (rpCache?.linksFetching) reasons.push(`${name}: 回放链接`);
+      });
+      const root = document.getElementById('courseListDiv');
+      if (root?.querySelector?.('button[data-action="courseware"].courseware-list-loading, button[data-action="courseware"].courseware-link-progress')) reasons.push('课件按钮仍在加载');
+      if (root?.querySelector?.('button[data-action="videos"].replay-list-loading, button[data-action="videos"].replay-link-progress')) reasons.push('回放按钮仍在加载');
+      return [...new Set(reasons)];
+    };
+    const hasAnyCourseData = () => (
+      (isPlatformEnabled('ve') && Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) ||
+      (isPlatformEnabled('ykt') && (window.yktStandaloneCourses || []).length) ||
+      (isMrjzyEnabled() && getMrjzyStandaloneCourses().length) ||
+      (isPlatformEnabled('jlgj') && (window.jlgjStandaloneCourses || []).length) ||
+      (isPlatformEnabled('ykt') && Object.keys(window.yktMatchedHomeworkByCourseId || {}).length) ||
+      (isMrjzyEnabled() && Object.keys(getMrjzyMatchedHomeworkMap()).length) ||
+      (isPlatformEnabled('jlgj') && Object.keys(window.jlgjMatchedHomeworkByCourseId || {}).length)
+    );
+    const hasRenderedEnabledCourseCards = () => {
+      const root = document.getElementById('courseListDiv');
+      if (!root) return false;
+      return [...root.querySelectorAll('.file-item[id^="course-"]')].some((card) => {
+        if (!(card instanceof HTMLElement) || card.offsetParent === null) return false;
+        const id = String(card.dataset.courseId || card.id.replace(/^course-/, '') || '').trim();
+        if (/^jlgj-/.test(id)) return isPlatformEnabled('jlgj');
+        if (/^mrzy-/.test(id)) return isMrjzyEnabled();
+        if (/^ykt-/.test(id)) return isPlatformEnabled('ykt');
+        return isPlatformEnabled('ve');
+      });
+    };
     const isPlatformSettledForInitialPaint = (platform) => {
       if (!isPlatformEnabled(platform)) return true;
       if (window.platformLoadedOnce?.[platform] === true) return true;
@@ -412,17 +515,21 @@ ${cardsHtml}
 
     // 1. Wait briefly for initial data to appear (any platform)
     for (let i = 0; i < 20; i++) {
-      if (hasAnyCourseData()) break;
+      if (hasAnyCourseData() || hasRenderedEnabledCourseCards()) break;
       if (
         isPlatformSettledForInitialPaint('ve') &&
         isPlatformSettledForInitialPaint('ykt') &&
-        isPlatformSettledForInitialPaint('mrzy') &&
+        isMrjzySettled() &&
         isPlatformSettledForInitialPaint('jlgj')
       ) break;
+      const waiting = ['ve', 'ykt', 'mrjzy', 'jlgj']
+        .filter((p) => p === 'mrjzy' ? (isMrjzyEnabled() && !isMrjzySettled()) : (isPlatformEnabled(p) && !isPlatformSettledForInitialPaint(p)))
+        .join('/');
+      setStatus(waiting ? `正在等待数据加载：${waiting}` : '正在等待数据加载…');
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    setStatus('正在等待数据加载…');
+    setStatus((hasAnyCourseData() || hasRenderedEnabledCourseCards()) ? '正在生成课程列表…' : '正在等待数据加载…');
     const startTs = Date.now();
     const MAX_WAIT = 60000;
 
@@ -435,11 +542,14 @@ ${cardsHtml}
     };
 
     let lastKb = null;
+    let lastProgressText = '';
     const showProgress = (prefix) => {
       const kb = estimateSizeKb();
-      if (kb && kb !== lastKb) {
+      const text = kb ? `${prefix} ${kb} KB` : prefix;
+      if (text !== lastProgressText || (kb && kb !== lastKb)) {
         lastKb = kb;
-        setStatus(`${prefix} ${kb} KB`);
+        lastProgressText = text;
+        setStatus(text);
       }
     };
 
@@ -460,11 +570,19 @@ ${cardsHtml}
       return [...reasons];
     };
 
-    // 2. Wait for VE course homework + scores to be ready
+    const getAllLoadingReasons = () => {
+      const reasons = [...getRenderedLoadingReasons(), ...getVeLoadingReasons()];
+      if (hasYktDetailPending()) reasons.push('雨课堂作业详情');
+      if (hasMrjzyLoadingPlaceholders()) reasons.push('每日交作业课程/教师/截止时间');
+      return [...new Set(reasons)];
+    };
+
+    // 2. Wait for VE course homework + scores + courseware/replay loading to be ready
     const isVeDataReady = () => {
+      if (!isPlatformEnabled('ve')) return true;
       const courses = window.currentVeCourseList;
       if (!Array.isArray(courses) || !courses.length) return true;
-      if (!getRenderedLoadingReasons().length && buildQrCourseListHtml()) return true;
+      if (getVeLoadingReasons().length) return false;
       return courses.every((c) => {
         const cid = c.id || c.cId || c.courseId || c.course_id;
         if (!cid) return true;
@@ -480,16 +598,16 @@ ${cardsHtml}
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    // 3. Wait until the rendered course helper no longer shows loading placeholders.
+    // 3. Wait until the rendered course helper and external-platform snapshots no longer show loading placeholders.
     while (Date.now() - startTs < MAX_WAIT) {
-      const reasons = getRenderedLoadingReasons();
+      const reasons = getAllLoadingReasons();
       if (!reasons.length) break;
       showProgress(`正在等待其他平台：${reasons.slice(0, 2).join('；')}${reasons.length > 2 ? '…' : ''}`);
       await new Promise((r) => setTimeout(r, 500));
     }
 
     // 4. Resolve courseware RP links (download URLs for course materials)
-    const courses = window.currentVeCourseList;
+    const courses = isPlatformEnabled('ve') ? window.currentVeCourseList : [];
     const cwNeedsResolve = Array.isArray(courses) && courses.some((c) => {
       const cid = c.id || c.cId || c.courseId || c.course_id;
       if (!cid) return false;
@@ -498,6 +616,7 @@ ${cardsHtml}
     });
 
     if (cwNeedsResolve) {
+      showProgress('正在获取课件链接…');
       const promises = [];
       courses.forEach((c) => {
         const cid = c.id || c.cId || c.courseId || c.course_id;
@@ -535,7 +654,6 @@ ${cardsHtml}
           if (cache?.items?.length) cache.html = buildCoursewareListHtml(cid, cache.items);
         });
       }
-      showProgress('正在获取课件链接…');
     }
 
     // 5. Resolve replay download links
@@ -547,6 +665,7 @@ ${cardsHtml}
     });
 
     if (rpNeedsResolve) {
+      showProgress('正在获取回放链接…');
       const promises = [];
       courses.forEach((c) => {
         const cid = c.id || c.cId || c.courseId || c.course_id;
@@ -579,7 +698,6 @@ ${cardsHtml}
         cache.qrLinksResolved = true;
       });
       await Promise.allSettled(promises);
-      showProgress('正在获取回放链接…');
     }
 
     return true;
@@ -594,40 +712,56 @@ ${cardsHtml}
     __qrUploadRunning = true;
 
     const setStatus = (text) => { if (headerQrStatus) headerQrStatus.textContent = text; };
-
-    setStatus('正在等待加载…');
-    const ready = await waitForAllData(setStatus);
-    if (!ready) {
-      setStatus('暂无课程内容');
-      hideQrLoading();
-      __qrUploadRunning = false;
-      return;
-    }
-
-    const htmlContent = buildQrCourseListHtml();
-    if (!htmlContent) {
-      setStatus('暂无课程内容');
-      hideQrLoading();
-      __qrUploadRunning = false;
-      return;
-    }
-    const htmlSizeKb = (htmlContent.length / 1024).toFixed(1);
-
-    const jsid = (document.getElementById('jsessionid-input')?.value?.trim() || await getLocal('jsessionid', '')).trim();
-    if (!jsid) {
-      setStatus('请先登录');
-      hideQrLoading();
-      __qrUploadRunning = false;
-      return;
-    }
-
-    setStatus(`HTML ${htmlSizeKb} KB，正在上传…`);
-
-    const file = new File([htmlContent], 'course-list.html', { type: 'text/html' });
-    const fd = new FormData();
-    fd.append('file', file);
+    const withTimeout = (promise, timeoutMs, label) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label || 'operation'}-timeout`)), timeoutMs))
+    ]);
 
     try {
+      setStatus('正在等待加载…');
+      const ready = await withTimeout(waitForAllData(setStatus), 65000, 'wait-data');
+      if (!ready) {
+        setStatus('暂无课程内容');
+        hideQrLoading();
+        __qrUploadRunning = false;
+        return;
+      }
+
+      setStatus('正在生成课程列表…');
+      let htmlContent = '';
+      try {
+        htmlContent = buildQrCourseListHtml();
+      } catch (e) {
+        try { console.warn('[bjtu] course qr html build failed:', e); } catch {}
+        setStatus(`生成课程列表失败：${String(e?.message || e)}`);
+        hideQrLoading();
+        __qrUploadRunning = false;
+        return;
+      }
+      if (!htmlContent) {
+        setStatus('暂无课程内容');
+        hideQrLoading();
+        __qrUploadRunning = false;
+        return;
+      }
+      const htmlSizeKb = (htmlContent.length / 1024).toFixed(1);
+
+      setStatus(`HTML ${htmlSizeKb} KB，正在读取登录状态…`);
+      const savedJsessionid = await withTimeout(getLocal('jsessionid', ''), 5000, 'read-jsessionid').catch(() => '');
+      const jsid = (document.getElementById('jsessionid-input')?.value?.trim() || String(savedJsessionid || '')).trim();
+      if (!jsid) {
+        setStatus('请先登录');
+        hideQrLoading();
+        __qrUploadRunning = false;
+        return;
+      }
+
+      setStatus(`HTML ${htmlSizeKb} KB，正在上传…`);
+
+      const file = new File([htmlContent], 'course-list.html', { type: 'text/html' });
+      const fd = new FormData();
+      fd.append('file', file);
+
       const url = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         const uploadUrl = `${BASE}/ve/back/rp/common/rpUpload.shtml;jsessionid=${encodeURIComponent(jsid)}`;

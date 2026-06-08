@@ -236,18 +236,24 @@ let jlgjLoginAssistPollTimer = null;
 let jlgjLoginAssistPopupWindowId = null;
 let jlgjLoginAssistPopupTabId = null;
 
+function normalizePlatformId(platform) {
+  const p = String(platform || '').trim();
+  if (p === 'mrjzy' || p === 'mrzy') return 'mrzy';
+  return ['ve', 'ykt', 'jlgj'].includes(p) ? p : 've';
+}
+
 function isPlatformEnabled(platform) {
-  const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
-    ? String(platform || '').trim()
-    : 've';
+  const p = normalizePlatformId(platform);
   return window.platformEnabled?.[p] === true;
 }
 
 function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
   const src = (raw && typeof raw === 'object') ? raw : null;
+  const mrjzy = typeof src?.mrjzy === 'boolean' ? src.mrjzy : (typeof src?.mrzy === 'boolean' ? src.mrzy : !!fallback.mrzy);
   return {
     jlgj: typeof src?.jlgj === 'boolean' ? src.jlgj : !!fallback.jlgj,
-    mrzy: typeof src?.mrzy === 'boolean' ? src.mrzy : !!fallback.mrzy,
+    mrzy: mrjzy,
+    mrjzy,
     ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
     ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt
   };
@@ -271,9 +277,7 @@ async function savePlatformEnabledToStorage() {
 }
 
 function bumpPlatformLoadVersion(platform) {
-  const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
-    ? String(platform || '').trim()
-    : 've';
+  const p = normalizePlatformId(platform);
   const next = Number(window.platformLoadVersion?.[p] || 0) + 1;
   window.platformLoadVersion[p] = next;
   return next;
@@ -335,6 +339,7 @@ if (popupOpenFullscreenBtn) {
 }
 
 function triggerExternalPlatformLoad(platform, forceReload = false) {
+  platform = normalizePlatformId(platform);
   if (!['ykt', 'mrzy', 'jlgj'].includes(platform)) return;
   if (!isPlatformEnabled(platform)) return;
   if (!forceReload && window.platformLoadedOnce?.[platform]) return;
@@ -451,13 +456,12 @@ function rerenderAllHomeworkAreas() {
 }
 
 function isPlatformChecking(platform) {
-  const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
-    ? String(platform || '').trim()
-    : 've';
+  const p = normalizePlatformId(platform);
   return isPlatformEnabled(p) && window.platformLoginState?.[p] === 'checking';
 }
 
 function togglePlatformSelection(platform) {
+  platform = normalizePlatformId(platform);
   if (!platform || !['ve', 'ykt', 'mrzy', 'jlgj'].includes(platform)) return;
   if (isPlatformChecking(platform)) {
     if (platform === 'ykt') {
@@ -5303,9 +5307,7 @@ function showPlatformNeedLoginToast(platform) {
 }
 
 function setPlatformLoginState(platform, state) {
-  const p = ['ve', 'ykt', 'mrzy', 'jlgj'].includes(String(platform || '').trim())
-    ? String(platform || '').trim()
-    : 've';
+  const p = normalizePlatformId(platform);
   const prev = String(window.platformLoginState?.[p] || '').trim();
   const s = (state === 'online' || state === 'offline') ? state : 'checking';
   window.platformLoginState[p] = s;
@@ -6510,7 +6512,7 @@ function buildCoursewareListHtml(courseId, items) {
     const needsRpFetch = !hasUrl && !!rpId;
     const rpLinkContainerId = `courseware-rp-link-${id}`;
     return `
-      <div class="file-item" data-resource-id="${escapeHtml(id)}" data-rp-id="${escapeHtml(rpId)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #4CAF50; background:#f8fff9; border-radius:4px;">
+      <div class="file-item" data-resource-id="${escapeHtml(id)}" data-rp-id="${escapeHtml(rpId)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #1e3a8a; background:#e8efff; border-radius:4px;">
         <div class="resource-row-title" style="margin-bottom:4px;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin:0 4px 0 0;">
           <span class="resource-name">${escapeHtml(fileName || name)}</span>
@@ -8823,7 +8825,7 @@ async function ensureHomeworkTeacherId(courseId) {
   return teacherId;
 }
 
-function renderHomeworkAttachments(hw, borderColor = '#ff9800') {
+function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor = '') {
   const key = String(hw?.__attachmentKey || '').trim();
   if (!key) return '';
   const cache = window.homeworkNoteAttachmentCacheByKey?.[key] || null;
@@ -8833,13 +8835,13 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800') {
   const courseId = String(hw?.__courseId || '').trim();
   const normalizedBorderColor = String(borderColor || '').toLowerCase();
   const isTeacherMode = !!window.isTeacherAccount;
-  const softBg = isTeacherMode
+  const softBg = backgroundColor || (isTeacherMode
     ? (normalizedBorderColor.includes('a78bfa') ? 'rgba(237,233,254,0.72)' : 'rgba(219,234,254,0.72)')
     : (normalizedBorderColor.includes('4caf50')
       ? 'rgba(232,245,233,0.72)'
       : (normalizedBorderColor.includes('ef4444') || normalizedBorderColor.includes('b91c1c') || normalizedBorderColor.includes('f44336')
         ? 'rgba(254,242,242,0.78)'
-        : 'rgba(255,243,224,0.72)'));
+        : 'rgba(255,243,224,0.72)')));
 
   const rows = list.map((it, idx) => {
     const fileNameNoExt = String(it?.fileNameNoExt || '').trim() || `附件${idx + 1}`;
@@ -9181,7 +9183,7 @@ function renderHomeworkList(courseId) {
     const nativeKeySeed = String(upId || snId || hw.id || hw.upId || hw.noteId || hw.courseNoteId || '').trim();
     const expandKey = `native:${nativeKeySeed || `idx-${idx}`}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
-    const attachmentHtml = renderHomeworkAttachments(hw, borderColor);
+    const attachmentHtml = renderHomeworkAttachments(hw, borderColor, bgColor);
     const expandableBaseBg = isTeacherMode ? (overdue ? 'rgba(237,233,254,0.78)' : 'rgba(219,234,254,0.78)') : (isDone ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)');
     const expandable = renderExpandableHtml(contentHtml, {
       emptyHtml: '<span style="color:#999;">无内容</span>',
