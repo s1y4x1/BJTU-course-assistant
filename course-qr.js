@@ -328,26 +328,9 @@
       const allOverdue = [...nativeCls.overdue, ...yktCls.overdue, ...mrzyCls.overdue, ...jlgjCls.overdue];
       const allDone = [...nativeCls.done, ...yktCls.done, ...mrzyCls.done, ...jlgjCls.done];
 
-      const renderPlatformHomework = (cls, type, itemPlatform) =>
-        cls[type].map((hw) => buildQrHomeworkItemHtml(hw, type, courseKey, itemPlatform)).join('');
-      const pendingHtml = [
-        renderPlatformHomework(nativeCls, 'pending', 've'),
-        renderPlatformHomework(yktCls, 'pending', 'ykt'),
-        renderPlatformHomework(mrzyCls, 'pending', 'mrzy'),
-        renderPlatformHomework(jlgjCls, 'pending', 'jlgj')
-      ].join('');
-      const overdueHtml = [
-        renderPlatformHomework(nativeCls, 'overdue', 've'),
-        renderPlatformHomework(yktCls, 'overdue', 'ykt'),
-        renderPlatformHomework(mrzyCls, 'overdue', 'mrzy'),
-        renderPlatformHomework(jlgjCls, 'overdue', 'jlgj')
-      ].join('');
-      const doneHtml = [
-        renderPlatformHomework(nativeCls, 'done', 've'),
-        renderPlatformHomework(yktCls, 'done', 'ykt'),
-        renderPlatformHomework(mrzyCls, 'done', 'mrzy'),
-        renderPlatformHomework(jlgjCls, 'done', 'jlgj')
-      ].join('');
+      const pendingHtml = allPending.map((hw) => buildQrHomeworkItemHtml(hw, 'pending', courseKey, platform)).join('');
+      const overdueHtml = allOverdue.map((hw) => buildQrHomeworkItemHtml(hw, 'overdue', courseKey, platform)).join('');
+      const doneHtml = allDone.map((hw) => buildQrHomeworkItemHtml(hw, 'done', courseKey, platform)).join('');
 
       const cwId = `qr-cw-${courseKey}`;
       const rpId = `qr-rp-${courseKey}`;
@@ -410,12 +393,32 @@ ${cardsHtml}
   // ─── Data loading ───
 
   const waitForAllData = async (setStatus) => {
+    const hasAnyCourseData = () => (
+      (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) ||
+      (window.yktStandaloneCourses || []).length ||
+      (window.mrzyStandaloneCourses || []).length ||
+      (window.jlgjStandaloneCourses || []).length ||
+      Object.keys(window.yktMatchedHomeworkByCourseId || {}).length ||
+      Object.keys(window.mrzyMatchedHomeworkByCourseId || {}).length ||
+      Object.keys(window.jlgjMatchedHomeworkByCourseId || {}).length
+    );
+    const isPlatformSettledForInitialPaint = (platform) => {
+      if (!isPlatformEnabled(platform)) return true;
+      if (window.platformLoadedOnce?.[platform] === true) return true;
+      if ((window.platformLoginState?.[platform] || '') === 'offline') return true;
+      if (window.platformNeedLogin?.[platform] || window.platformLoginChecked?.[platform]) return true;
+      return false;
+    };
+
     // 1. Wait briefly for initial data to appear (any platform)
     for (let i = 0; i < 20; i++) {
-      if (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) break;
-      if ((window.yktStandaloneCourses || []).length) break;
-      if ((window.mrzyStandaloneCourses || []).length) break;
-      if ((window.jlgjStandaloneCourses || []).length) break;
+      if (hasAnyCourseData()) break;
+      if (
+        isPlatformSettledForInitialPaint('ve') &&
+        isPlatformSettledForInitialPaint('ykt') &&
+        isPlatformSettledForInitialPaint('mrzy') &&
+        isPlatformSettledForInitialPaint('jlgj')
+      ) break;
       await new Promise((r) => setTimeout(r, 500));
     }
 
@@ -440,10 +443,28 @@ ${cardsHtml}
       }
     };
 
+    const getRenderedLoadingReasons = () => {
+      const root = document.getElementById('courseListDiv');
+      if (!root) return [];
+      const reasons = new Set();
+      const visibleCards = [...root.querySelectorAll('.file-item[id^="course-"]')]
+        .filter((el) => el instanceof HTMLElement && el.offsetParent !== null);
+      visibleCards.forEach((card) => {
+        const txt = String(card.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!txt) return;
+        const title = String(card.querySelector('.course-card-title')?.textContent || card.id || '课程').replace(/\s+/g, ' ').trim();
+        if (/正在同步雨课堂作业|正在获取作业详情|详情获取中|作业详情获取中/.test(txt)) reasons.add(`${title}: 雨课堂作业详情`);
+        if (/正在同步每日交作业|正在加载……|正在加载\.\.\./.test(txt)) reasons.add(`${title}: 每日交作业`);
+        if (/正在获取作业/.test(txt)) reasons.add(`${title}: 作业`);
+      });
+      return [...reasons];
+    };
+
     // 2. Wait for VE course homework + scores to be ready
     const isVeDataReady = () => {
       const courses = window.currentVeCourseList;
       if (!Array.isArray(courses) || !courses.length) return true;
+      if (!getRenderedLoadingReasons().length && buildQrCourseListHtml()) return true;
       return courses.every((c) => {
         const cid = c.id || c.cId || c.courseId || c.course_id;
         if (!cid) return true;
@@ -459,32 +480,11 @@ ${cardsHtml}
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    const hasLoadingMeta = (list) => (Array.isArray(list) ? list : []).some((course) => {
-      if (course?.loadingMeta) return true;
-      return (Array.isArray(course?.homeworks) ? course.homeworks : []).some((hw) => !!hw?.loadingMeta);
-    });
-    const isExternalPlatformReady = (platform) => {
-      if (!isPlatformEnabled(platform)) return true;
-      if (window.platformLoadedOnce?.[platform] !== true) return false;
-      if (platform === 'ykt') {
-        const loadingMap = window.yktHomeworkLoadingByCourse || {};
-        if (Object.values(loadingMap).some(Boolean)) return false;
-        return true;
-      }
-      if (platform === 'mrzy') return !hasLoadingMeta(window.mrzyStandaloneCourses);
-      if (platform === 'jlgj') return !hasLoadingMeta(window.jlgjStandaloneCourses);
-      return true;
-    };
-
-    // 3. Give all external platforms time to finish loading and populate standalone arrays
+    // 3. Wait until the rendered course helper no longer shows loading placeholders.
     while (Date.now() - startTs < MAX_WAIT) {
-      const settled = (
-        isExternalPlatformReady('ykt') &&
-        isExternalPlatformReady('mrzy') &&
-        isExternalPlatformReady('jlgj')
-      );
-      if (settled) break;
-      showProgress('正在等待其他平台…');
+      const reasons = getRenderedLoadingReasons();
+      if (!reasons.length) break;
+      showProgress(`正在等待其他平台：${reasons.slice(0, 2).join('；')}${reasons.length > 2 ? '…' : ''}`);
       await new Promise((r) => setTimeout(r, 500));
     }
 

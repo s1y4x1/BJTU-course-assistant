@@ -2320,8 +2320,14 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
     return { ok: false, reason: 'captcha', message: '验证码识别已关闭' };
   }
   let last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
+  let stopCaptchaAutoRetry = false;
+  let resumeAfterCancel = null;
   const cancelHandler = () => {
-    loginCancelRequested = true;
+    stopCaptchaAutoRetry = true;
+    if (typeof resumeAfterCancel === 'function') {
+      resumeAfterCancel();
+      resumeAfterCancel = null;
+    }
     hideCaptchaModal();
   };
   // 等待用户点击"刷新验证码"或图片的手动重试机制
@@ -2329,6 +2335,7 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
   const waitForUserRefresh = () => new Promise((resolve) => {
     let done = false;
     const once = () => { if (done) return; done = true; resolve(); };
+    resumeAfterCancel = once;
     if (captchaModalRefresh instanceof HTMLButtonElement) {
       captchaModalRefresh.addEventListener('click', once, { once: true });
     }
@@ -2338,7 +2345,8 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
   });
   try {
     for (let i = 0; i < 3; i++) {
-      if (loginCancelRequested || signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
+      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
+      if (stopCaptchaAutoRetry) return last;
       showCaptchaModal({
         imageUrl: null,
         status: `正在识别验证码 (${i + 1}/3)…`,
@@ -2348,7 +2356,8 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
         cancelHandler
       });
       const result = await recognizePortalCaptchaInExtension({ signal });
-      if (loginCancelRequested || signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
+      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
+      if (stopCaptchaAutoRetry) return last;
       const code = String(result?.code || '').trim();
       const imageUrl = result?.imageUrl || null;
       if (!/^\d{4}$/.test(code)) {
@@ -2362,9 +2371,12 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
           cancelHandler
         });
         await waitForUserRefresh();
+        resumeAfterCancel = null;
+        if (stopCaptchaAutoRetry) return last;
         continue;
       }
-      if (loginCancelRequested || signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
+      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
+      if (stopCaptchaAutoRetry) return last;
       if (captchaModalInput instanceof HTMLInputElement) {
         captchaModalInput.value = code;
       }
@@ -2381,6 +2393,7 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
         hideCaptchaModal();
         return last;
       }
+      if (stopCaptchaAutoRetry) return last;
       if (i < 2) {
         showCaptchaModal({
           imageUrl,
@@ -2406,6 +2419,7 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
     }
     return last;
   } finally {
+    resumeAfterCancel = null;
     hideCaptchaModal();
   }
 }
@@ -3269,6 +3283,12 @@ function findResourceItemElementById(resourceId) {
     if (!(row instanceof HTMLElement)) continue;
     if (String(row.dataset.resourceId || '').trim() === rid) return row;
   }
+  // Also search saved upload items
+  const savedRows = document.querySelectorAll('.file-item[data-saved-upload-id]');
+  for (const row of savedRows) {
+    if (!(row instanceof HTMLElement)) continue;
+    if (`saved_${String(row.dataset.savedUploadId || '').trim()}` === rid) return row;
+  }
   return null;
 }
 
@@ -3419,7 +3439,7 @@ function setResourceItemDownloadingState(resourceId, downloading) {
   const row = findResourceItemElementById(resourceId);
   if (!row) return;
   const checkbox = row.querySelector('input[data-action="resource-check"]');
-  const downloadBtn = row.querySelector('button.resource-download-btn');
+  const downloadBtn = row.querySelector('button.resource-download-btn') || row.querySelector('button.saved-upload-download');
 
   if (checkbox instanceof HTMLInputElement) {
     checkbox.disabled = !!downloading;
@@ -3431,11 +3451,12 @@ function setResourceItemDownloadingState(resourceId, downloading) {
 
   if (downloadBtn instanceof HTMLButtonElement) {
     if (downloading) {
-      downloadBtn.dataset.action = 'resource-cancel-download';
+      downloadBtn.dataset.prevAction = downloadBtn.dataset.action || 'download-saved-upload';
+      downloadBtn.dataset.action = 'cancel-saved-upload';
       downloadBtn.textContent = '取消';
       downloadBtn.classList.add('is-cancel');
     } else {
-      downloadBtn.dataset.action = 'resource-download';
+      downloadBtn.dataset.action = downloadBtn.dataset.prevAction || 'download-saved-upload';
       downloadBtn.textContent = '下载';
       downloadBtn.classList.remove('is-cancel');
       downloadBtn.disabled = false;
@@ -10038,6 +10059,173 @@ dropZone.addEventListener('drop', async (e) => {
 
 fileInput.addEventListener('change', handleFiles);
 
+if (dropZone instanceof HTMLElement) {
+  dropZone.tabIndex = 0;
+}
+
+function cloneFileWithPath(file, relativePath = '') {
+  const name = String(relativePath || file?.webkitRelativePath || file?.name || 'pasted-file').replace(/^[/\\]+/, '');
+  if (!name || name === file.name) return file;
+  return new File([file], name, { type: file.type || '', lastModified: file.lastModified || Date.now() });
+}
+
+function readFileEntry(entry, basePath = '') {
+  return new Promise((resolve) => {
+    try {
+      entry.file((file) => {
+        const rel = `${basePath || ''}${file.name || entry.name || 'file'}`;
+        resolve([cloneFileWithPath(file, rel)]);
+      }, () => resolve([]));
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+async function readDirectoryEntry(entry, basePath = '') {
+  const dirPath = `${basePath || ''}${entry.name || 'folder'}/`;
+  const reader = entry.createReader();
+  const children = [];
+  while (true) {
+    const batch = await new Promise((resolve) => {
+      try { reader.readEntries(resolve, () => resolve([])); } catch { resolve([]); }
+    });
+    if (!batch.length) break;
+    children.push(...batch);
+  }
+  const nested = await Promise.all(children.map((child) => readEntryFiles(child, dirPath)));
+  return nested.flat();
+}
+
+async function readEntryFiles(entry, basePath = '') {
+  if (!entry) return [];
+  if (entry.isFile) return readFileEntry(entry, basePath);
+  if (entry.isDirectory) return readDirectoryEntry(entry, basePath);
+  return [];
+}
+
+async function clipboardDataToFiles(dt) {
+  if (!dt) return [];
+  const items = Array.from(dt.items || []);
+  const files = [];
+  for (const item of items) {
+    const entry = typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
+    if (entry) {
+      files.push(...await readEntryFiles(entry));
+      continue;
+    }
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  if (!files.length && dt.files?.length) files.push(...Array.from(dt.files));
+  return files;
+}
+
+async function handleClipboardUploadPaste(e) {
+  const active = document.activeElement;
+  if (active && (
+    active instanceof HTMLInputElement ||
+    active instanceof HTMLTextAreaElement ||
+    active.isContentEditable
+  )) return;
+  const files = await clipboardDataToFiles(e.clipboardData);
+  if (!files.length) return;
+  e.preventDefault();
+  processFilesForUpload(files);
+}
+
+document.addEventListener('paste', (e) => {
+  handleClipboardUploadPaste(e).catch((err) => {
+    showToast(`粘贴失败：${String(err?.message || err)}`, 'error', 3000);
+  });
+});
+
+const pasteFileBtn = document.getElementById('paste-file-btn');
+if (pasteFileBtn) {
+  pasteFileBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      if (!isLoginSessionValid) {
+        showToast('登录状态已失效，请重新登录', 'warning');
+        return;
+      }
+      const items = await navigator.clipboard.read();
+      if (!items || !items.length) {
+        showToast('剪贴板中没有可粘贴的内容', 'info', 2000);
+        return;
+      }
+      const files = [];
+      let textCount = 0;
+      for (const item of items) {
+        let handled = false;
+        const allTypes = item.types || [];
+        for (const type of allTypes) {
+          if (type.startsWith('image/')) {
+            const blob = await item.getType(type);
+            const ext = type.split('/')[1] || 'png';
+            files.push(new File([blob], `pasted-image.${ext}`, { type }));
+            handled = true;
+            break;
+          }
+        }
+        if (handled) continue;
+        // Try text types
+        const textBlob = await item.getType('text/plain').catch(() => null);
+        const htmlBlob = await item.getType('text/html').catch(() => null);
+        if (textBlob || htmlBlob) {
+          let addedText = false;
+          let content = '';
+          if (htmlBlob) {
+            content = await htmlBlob.text();
+            if (content.trim()) {
+              files.push(new File([new Blob([content], { type: 'text/html' })], 'pasted-content.html', { type: 'text/html' }));
+              addedText = true;
+            }
+          } else if (textBlob) {
+            content = await textBlob.text();
+            if (content.trim()) {
+              files.push(new File([new Blob([content], { type: 'text/plain' })], 'pasted-content.txt', { type: 'text/plain' }));
+              addedText = true;
+            }
+          }
+          if (addedText) textCount++;
+          handled = true;
+        }
+        if (handled) continue;
+        // Fallback: try any non-text type as a file
+        for (const type of allTypes) {
+          if (type.startsWith('text/')) continue;
+          try {
+            const blob = await item.getType(type);
+            const ext = type.includes('/') ? type.split('/')[1].split(';')[0] : 'bin';
+            files.push(new File([blob], `pasted-file.${ext || 'bin'}`, { type }));
+            break;
+          } catch {}
+        }
+      }
+      if (!files.length) {
+        showToast('若从资源管理器复制文件或文件夹，请在页面按 Ctrl+V 粘贴', 'info', 3000);
+        return;
+      }
+      const nonTextCount = files.length - textCount;
+      if (textCount > 0 && nonTextCount === 0) {
+        showToast(`已将剪贴板文本转为 ${files.length} 个文件并开始上传`, 'info', 3000);
+      } else if (textCount > 0) {
+        showToast(`已粘贴 ${nonTextCount} 个文件，${textCount} 个文本已转为文件`, 'info', 3000);
+      }
+      processFilesForUpload(files);
+    } catch (err) {
+      if (String(err?.message || err).includes('clipboard-read')) {
+        showToast('没有剪贴板读取权限，请授予后重试', 'error', 3000);
+      } else {
+        showToast(`粘贴失败：${String(err?.message || err)}`, 'error', 3000);
+      }
+    }
+  });
+}
+
 fileList.addEventListener('click', (e) => {
   const rawTarget = e.target;
   const t = rawTarget instanceof Element
@@ -10957,7 +11145,7 @@ function renderSavedUploadsSection() {
     const safeSynthFileId = escapeHtml(synthFileId);
     const timeText = it.savedAt ? new Date(it.savedAt).toLocaleString('zh-CN', { hour12: false }) : '';
     return `
-      <div class="file-item" data-saved-upload-id="${safeEntryId}">
+      <div class="file-item" data-saved-upload-id="${safeEntryId}" data-resource-id="${safeSynthFileId}">
         <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
           <div>
             <label class="upload-select-wrap">
@@ -10975,6 +11163,16 @@ function renderSavedUploadsSection() {
         <div class="upload-link-row">
           <a class="url-link" href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>
           <button type="button" class="btn saved-upload-copy" data-action="copy-saved-upload" data-saved-upload-id="${safeEntryId}" style="padding:2px 8px; font-size:12px; white-space:nowrap;">复制</button>
+          <button type="button" class="btn saved-upload-download" data-action="download-saved-upload" data-saved-upload-id="${safeEntryId}" data-url="${safeHref}" data-filename="${escapeHtml(it.fileName || '')}" style="padding:2px 8px; font-size:12px; white-space:nowrap; background:#1e3a8a;">下载</button>
+        </div>
+        <div class="resource-download-progress" style="display:none;">
+          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="resource-download-meta">
+            <span class="resource-dl-status"></span>
+            <span class="resource-dl-size"></span>
+            <span class="resource-dl-speed"></span>
+            <span class="resource-dl-eta"></span>
+          </div>
         </div>
       </div>
     `;
@@ -11013,7 +11211,7 @@ function setupSavedUploadsUi() {
   }
   const section = document.getElementById('saved-uploads-section');
   if (section instanceof HTMLElement) {
-    section.addEventListener('click', (e) => {
+    section.addEventListener('click', async (e) => {
       const t = e.target;
       if (!(t instanceof Element)) return;
 
@@ -11056,6 +11254,32 @@ function setupSavedUploadsUi() {
                 showToast('复制失败，请手动复制链接', 'error', 2000);
               }
             });
+          }
+          return;
+        }
+        if (action === 'cancel-saved-upload') {
+          const id = `saved_${String(actionEl.dataset.savedUploadId || '').trim()}`;
+          if (id) cancelResourceDownload(id);
+          return;
+        }
+        if (action === 'download-saved-upload') {
+          const url = String(actionEl.dataset.url || '').trim();
+          const filename = String(actionEl.dataset.filename || '').trim() || '下载';
+          const entryId = String(actionEl.dataset.savedUploadId || '').trim();
+          if (url) {
+            try {
+              await enqueueResourceDownload({
+                id: `saved_${entryId}`,
+                name: filename,
+                url: url,
+                extName: filename.includes('.') ? filename.split('.').pop() : '',
+                sizeMb: '-',
+                sizeMbRaw: 0,
+                inputTime: ''
+              });
+            } catch (e) {
+              showToast(`下载失败：${String(e?.message || e)}`, 'error', 2000);
+            }
           }
           return;
         }
