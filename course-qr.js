@@ -21,6 +21,14 @@
   window.__headerQrUrl = window.__headerQrUrl || '';
   let headerQrHideTimer = null;
 
+  try {
+    chrome.storage.onChanged.addListener((changes) => {
+      if (changes.platformEnabled) {
+        window.__headerQrUrl = '';
+      }
+    });
+  } catch {}
+
   const qrStyle = document.createElement('style');
   qrStyle.textContent = '@keyframes __qr_spin{to{transform:rotate(360deg)}}';
   document.head.appendChild(qrStyle);
@@ -265,7 +273,15 @@
         hasRp = rpList.length > 0;
         rpHtml = rpList.map((item) => {
           const title = escapeHtml(`${item.roomName || ''} ${item.rpName || '未知时间'}`);
-          return `<div style="padding:6px 8px;border:1px solid #ce93d8;border-radius:4px;background:#f3e5f5;margin-top:6px;"><div style="font-weight:bold;color:#4a148c;">${title}</div><div style="margin-top:2px;"><span style="color:#999;">请前往课程助手下载</span></div></div>`;
+          let linkHtml = '';
+          if (item.qrResolvedLinkHtml) {
+            linkHtml = item.qrResolvedLinkHtml;
+          } else if (item.qrResolvedUrl) {
+            linkHtml = `<a href="${escapeHtml(item.qrResolvedUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(cleanRpUrl(item.qrResolvedUrl))}</a>`;
+          } else {
+            linkHtml = '<span style="color:#999;">链接获取中…</span>';
+          }
+          return `<div style="padding:6px 8px;border:1px solid #ce93d8;border-radius:4px;background:#f3e5f5;margin-top:6px;"><div style="font-weight:bold;color:#4a148c;">${title}</div><div style="margin-top:2px;">${linkHtml}</div></div>`;
         }).join('');
       }
 
@@ -354,13 +370,18 @@ ${cardsHtml}
   // ─── Data loading ───
 
   const waitForAllData = async (setStatus) => {
-    // 1. Wait for VE course list
-    if (!(Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length)) {
+    // 1. Wait for either VE course list or any standalone courses
+    const hasAnyCourses = () => (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) ||
+      (isPlatformEnabled('ykt') && window.platformLoadedOnce?.ykt !== undefined) ||
+      (isPlatformEnabled('mrzy') && window.platformLoadedOnce?.mrzy !== undefined) ||
+      (isPlatformEnabled('jlgj') && window.platformLoadedOnce?.jlgj !== undefined);
+
+    if (!hasAnyCourses()) {
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 500));
-        if (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) break;
+        if (hasAnyCourses()) break;
       }
-      if (!window.currentVeCourseList?.length) return false;
+      if (!hasAnyCourses()) return false;
     }
 
     setStatus('正在等待数据加载…');
@@ -374,6 +395,10 @@ ${cardsHtml}
     };
 
     const isAllDataReady = () => {
+      // Check if any homework attachments are still loading
+      const attLoaded = Object.values(window.homeworkNoteAttachmentCacheByKey || {}).every(v => v.loading !== true || v.loaded === true);
+      if (!attLoaded) return false;
+
       return courses.every((c) => {
         const cid = c.id || c.cId || c.courseId || c.course_id;
         if (!cid) return true;
@@ -425,12 +450,12 @@ ${cardsHtml}
 
     // 2. Wait for all VE course data to finish loading
     while (Date.now() - startTs < MAX_WAIT) {
-      if (isAllDataReady() && !platformPending()) break;
+      if (isAllDataReady()) break;
       showProgress('正在等待数据加载…');
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    // 3. Give external platforms extra grace period
+    // 3. Give external platforms a brief window to finish loading
     if (platformPending()) {
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 500));
@@ -439,27 +464,112 @@ ${cardsHtml}
       }
     }
 
-    // 4. Wait for courseware rp links (the main app resolves them async)
-    const cwWaiting = courses.some((c) => {
+    // 4. Resolve courseware RP links
+    const cwNeedsResolve = courses.some((c) => {
       const cid = c.id || c.cId || c.courseId || c.course_id;
-      if (!cid) return false;
-      if (!hasUnresolvedCw(cid)) return false;
-      const cw = window.coursewareCacheByCourseId?.[cid];
-      return cw?.rpLinksFetching;
+      return cid && hasUnresolvedCw(cid);
     });
 
-    if (cwWaiting) {
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const still = courses.some((c) => {
-          const cid = c.id || c.cId || c.courseId || c.course_id;
-          if (!cid) return false;
-          if (!hasUnresolvedCw(cid)) return false;
-          return window.coursewareCacheByCourseId?.[cid]?.rpLinksFetching;
+    if (cwNeedsResolve) {
+      const promises = [];
+      courses.forEach((c) => {
+        const cid = c.id || c.cId || c.courseId || c.course_id;
+        if (!cid) return;
+        const cache = window.coursewareCacheByCourseId?.[cid];
+        if (!cache?.items?.length) return;
+        cache.items.forEach((item) => {
+          if (!item.url && item.rpId) {
+            promises.push((async () => {
+              try {
+                const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
+                const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: String(item.rpId) });
+                const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480`;
+                const { text } = await fetchText(postUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Referer': referer,
+                    'Accept': 'application/json, text/javascript, */*; q=0.01'
+                  },
+                  body: postBody.toString()
+                });
+                const data = parseVeJson(text);
+                if (data.flag === true || String(data.STATUS) === '0') {
+                  const rpUrl = (data.rpUrl || '').trim();
+                  if (rpUrl) item.url = rpUrl;
+                }
+              } catch {}
+            })());
+          }
         });
-        if (!still) break;
-        showProgress('正在获取课件链接…');
+      });
+      await Promise.allSettled(promises);
+
+      // Update cache.html with resolved URLs
+      if (typeof buildCoursewareListHtml === 'function') {
+        courses.forEach((c) => {
+          const cid = c.id || c.cId || c.courseId || c.course_id;
+          if (!cid) return;
+          const cache = window.coursewareCacheByCourseId?.[cid];
+          if (cache?.items?.length) {
+            cache.html = buildCoursewareListHtml(cid, cache.items);
+          }
+        });
       }
+      showProgress('正在获取课件链接…');
+    }
+
+    // 5. Resolve replay download links
+    const rpNeedsResolve = courses.some((c) => {
+      const cid = c.id || c.cId || c.courseId || c.course_id;
+      if (!cid) return false;
+      const cache = window.videoReplayCacheByCourseId?.[cid];
+      return cache?.list?.some((it) => it.rpId && !it.qrResolvedUrl && !it.qrResolvedLinkHtml);
+    });
+
+    if (rpNeedsResolve) {
+      const promises = [];
+      courses.forEach((c) => {
+        const cid = c.id || c.cId || c.courseId || c.course_id;
+        if (!cid) return;
+        const cache = window.videoReplayCacheByCourseId?.[cid];
+        if (!cache?.list?.length || cache.qrLinksResolved) return;
+        cache.list.forEach((item) => {
+          if (item.rpId && !item.qrResolvedUrl && !item.qrResolvedLinkHtml) {
+            promises.push((async () => {
+              try {
+                const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
+                const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: String(item.rpId) });
+                const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480`;
+                const { text } = await fetchText(postUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Referer': referer,
+                    'Accept': 'application/json, text/javascript, */*; q=0.01'
+                  },
+                  body: postBody.toString()
+                });
+                const data = parseVeJson(text);
+                if (data.flag === true || String(data.STATUS) === '0') {
+                  const html = (data.html || '').trim();
+                  const rpUrl = (data.rpUrl || '').trim();
+                  if (html) {
+                    item.qrResolvedLinkHtml = html;
+                  } else if (rpUrl) {
+                    item.qrResolvedUrl = rpUrl;
+                  }
+                }
+              } catch {}
+            })());
+          }
+        });
+        cache.qrLinksResolved = true;
+      });
+      await Promise.allSettled(promises);
+      showProgress('正在获取回放链接…');
     }
 
     return true;
