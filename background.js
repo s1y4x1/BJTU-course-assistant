@@ -4,6 +4,8 @@ importScripts('portal-auto-login.js');
 const APP_URL = chrome.runtime.getURL('app.html');
 const portalLoginCtxByTab = new Map(); // tabId -> { username, passcode, passwordMd5, autoCode, fromExtension }
 const portalUsernameBindByTab = new Map(); // tabId -> { ts }
+const portalDetectedQuickUsernameByTab = new Map(); // tabId -> quickUsername seen during ordinary MIS redirects
+const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
 const portalHandledByTab = new Map(); // tabId -> { url, ts }
 const portalInjectionDoneByTab = new Set(); // tabId -> injected once for current page load
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
@@ -100,7 +102,7 @@ async function injectScriptsWithEntry(tabId, world, entryFiles, entryFunc, entry
 }
 
 // Manage action popup according to openMode ('popup' or 'page')
-let currentOpenMode = 'popup';
+let currentOpenMode = '';
 async function refreshActionPopupFromStorage() {
   try {
     const r = await chrome.storage.local.get('openMode');
@@ -122,6 +124,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
     refreshActionPopupFromStorage().catch(() => {});
   }
 });
+
+chrome.runtime.onInstalled.addListener(() => {
+  refreshActionPopupFromStorage().catch(() => {});
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  refreshActionPopupFromStorage().catch(() => {});
+});
+
+refreshActionPopupFromStorage().catch(() => {});
 
 function isPortalLoginUrl(url) {
   const u = String(url || '');
@@ -238,6 +250,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   portalLoginCtxByTab.delete(tabId);
   portalHandledByTab.delete(tabId);
   portalUsernameBindByTab.delete(tabId);
+  portalDetectedQuickUsernameByTab.delete(tabId);
+  portalQuickUsernameToastByTab.delete(tabId);
   portalInjectionDoneByTab.delete(tabId);
 });
 
@@ -294,12 +308,62 @@ async function fetchBoundPortalAccountInfo(tabId, quickUsername) {
   const info = Array.isArray(results) && results[0] ? results[0].result : null;
   const loginName = String(info?.loginName || info?.userId || info?.userID || info?.stuId || info?.teacherId || '').trim();
   if (!loginName) return null;
-  return await savePortalLoginAccountRecord(loginName, {
+  const before = await getPortalLoginAccountHistory();
+  const prev = before.find((it) => String(it?.userId || '').trim() === loginName || String(it?.loginName || '').trim() === loginName) || null;
+  const prevQuickUsername = String(prev?.quickUsername || '').trim();
+  const record = await savePortalLoginAccountRecord(loginName, {
     loginName,
     userName: String(info?.userName || '').trim(),
     roleName: String(info?.roleName || '').trim(),
     quickUsername
   });
+  return record ? {
+    ...record,
+    quickUsernameChanged: !!quickUsername && prevQuickUsername !== String(quickUsername || '').trim()
+  } : null;
+}
+
+async function showPortalQuickUsernameBoundToast(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: (message) => {
+        const id = '__bjtu_quick_username_bind_toast__';
+        const old = document.getElementById(id);
+        if (old) old.remove();
+        const toast = document.createElement('div');
+        toast.id = id;
+        toast.textContent = message;
+        toast.style.cssText = [
+          'position:fixed',
+          'top:18px',
+          'left:50%',
+          'transform:translateX(-50%)',
+          'z-index:2147483647',
+          'background:#16a34a',
+          'color:#fff',
+          'font-size:14px',
+          'font-weight:600',
+          'line-height:1.5',
+          'padding:10px 14px',
+          'border-radius:8px',
+          'box-shadow:0 10px 30px rgba(0,0,0,.22)',
+          'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
+        ].join(';');
+        document.documentElement.appendChild(toast);
+        setTimeout(() => {
+          toast.style.transition = 'opacity .25s ease, transform .25s ease';
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateX(-50%) translateY(-8px)';
+          setTimeout(() => toast.remove(), 280);
+        }, 3600);
+      },
+      args: ['已为您成功绑定智慧课程平台免验证码快速登录']
+    });
+  } catch {
+    // ignore
+  }
 }
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -311,6 +375,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 
   let quickUsername = extractPortalQuickUsername(url);
+  if (quickUsername) {
+    portalDetectedQuickUsernameByTab.set(tabId, quickUsername);
+  } else {
+    quickUsername = String(portalDetectedQuickUsernameByTab.get(tabId) || '').trim();
+  }
   const bindState = portalUsernameBindByTab.get(tabId) || null;
   if (quickUsername && portalUsernameBindByTab.has(tabId)) {
     portalUsernameBindByTab.set(tabId, { ...(bindState || {}), quickUsername, ts: Date.now() });
@@ -343,6 +412,21 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
           ts: Date.now()
         });
       }
+  }
+
+  if (changeInfo.status === 'complete' && quickUsername && isEncodedPortalQuickUsername(quickUsername) && !portalUsernameBindByTab.has(tabId)) {
+    const toastedQuick = String(portalQuickUsernameToastByTab.get(tabId) || '').trim();
+    if (toastedQuick !== quickUsername) {
+      try {
+        const record = await fetchBoundPortalAccountInfo(tabId, quickUsername);
+        if (record?.quickUsernameChanged) {
+          portalQuickUsernameToastByTab.set(tabId, quickUsername);
+          await showPortalQuickUsernameBoundToast(tabId);
+        }
+      } catch {
+        // Ordinary portal navigation should not be interrupted by best-effort binding.
+      }
+    }
   }
 
   if (changeInfo.status !== 'complete') return;

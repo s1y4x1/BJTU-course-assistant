@@ -706,6 +706,21 @@ ${cardsHtml}
   // ─── Upload & QR ───
 
   let __qrUploadRunning = false;
+  let headerQrHoverActive = false;
+  const isHeaderQrHoverActive = (el) => {
+    if (!(el instanceof HTMLElement)) return false;
+    if (!headerQrHoverActive) return false;
+    try {
+      return el.matches(':hover');
+    } catch {
+      return headerQrHoverActive;
+    }
+  };
+  const hideHeaderQr = () => {
+    headerQrHoverActive = false;
+    if (headerQrHideTimer) { clearTimeout(headerQrHideTimer); headerQrHideTimer = null; }
+    headerTooltip.style.display = 'none';
+  };
 
   const uploadCourseListAndShowQr = async (triggerEl) => {
     if (__qrUploadRunning) return;
@@ -799,6 +814,10 @@ ${cardsHtml}
         hideQrLoading();
       }
       __qrUploadRunning = false;
+      if (!isHeaderQrHoverActive(triggerEl)) {
+        headerTooltip.style.display = 'none';
+        return;
+      }
       const rect = triggerEl.getBoundingClientRect();
       showHeaderQr(rect.bottom, rect.left);
     } catch (err) {
@@ -1064,18 +1083,20 @@ ${cardsHtml}
   }, 'resource');
 
   window.addEventListener('scroll', () => {
-    headerTooltip.style.display = 'none';
+    hideHeaderQr();
     document.querySelectorAll('[id^="__bjtu_section_qr_"]').forEach((el) => { el.style.display = 'none'; });
   }, { passive: true });
   window.addEventListener('resize', () => {
-    headerTooltip.style.display = 'none';
+    hideHeaderQr();
     document.querySelectorAll('[id^="__bjtu_section_qr_"]').forEach((el) => { el.style.display = 'none'; });
   }, { passive: true });
+  window.addEventListener('blur', hideHeaderQr);
 
   const courseHeaderEl = document.querySelector('h2.course-header span');
   if (!courseHeaderEl) return;
 
   courseHeaderEl.addEventListener('mouseenter', () => {
+    headerQrHoverActive = true;
     if (headerQrHideTimer) { clearTimeout(headerQrHideTimer); headerQrHideTimer = null; }
     if (!window.__headerQrUrl) {
       if (__qrUploadRunning) {
@@ -1102,9 +1123,14 @@ ${cardsHtml}
   });
 
   courseHeaderEl.addEventListener('mouseleave', (e) => {
+    headerQrHoverActive = false;
     if (headerQrHideTimer) { clearTimeout(headerQrHideTimer); }
     const toEl = e.relatedTarget;
     if (toEl && (courseHeaderEl.contains(toEl) || (headerTooltip.style.display !== 'none' && headerTooltip.contains(toEl)))) return;
     headerQrHideTimer = setTimeout(() => { headerTooltip.style.display = 'none'; }, 80);
   });
+  document.addEventListener('mousemove', () => {
+    if (headerTooltip.style.display === 'none') return;
+    if (!isHeaderQrHoverActive(courseHeaderEl)) headerTooltip.style.display = 'none';
+  }, { passive: true });
 })();

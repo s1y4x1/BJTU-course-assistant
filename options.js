@@ -89,6 +89,7 @@ function goBackToApp() {
     ? DEFAULT_POPUP_CACHE_ENABLED
     : !!popupUseFullscreenCacheEnabled;
   document.getElementById('popupUseFullscreenCacheEnabled').checked = popupCacheVal;
+  updatePopupCacheDisabled();
 
   // apply changes immediately when inputs change
   const applyPlatform = async () => {
@@ -106,8 +107,17 @@ function goBackToApp() {
   const applyOpenMode = async () => {
     const v = document.getElementById('openModePage').checked ? 'page' : 'popup';
     await chrome.storage.local.set({ openMode: v });
+    updatePopupCacheDisabled();
     setMsg('已应用更改');
   };
+
+  function updatePopupCacheDisabled() {
+    const disabled = document.getElementById('openModePage').checked;
+    const container = document.getElementById('popupCacheContainer');
+    const checkbox = document.getElementById('popupUseFullscreenCacheEnabled');
+    container.classList.toggle('is-disabled', disabled);
+    checkbox.disabled = disabled;
+  }
 
   document.getElementById('enableVe').addEventListener('change', applyPlatform);
   document.getElementById('enableYkt').addEventListener('change', applyPlatform);
