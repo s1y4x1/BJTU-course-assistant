@@ -54,9 +54,10 @@ function buildQrImageUrl(content, size = 220) {
 }
 
 (async function initDownloadQRTooltips() {
+  window.__linkQrEnabled = true;
   try {
     const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
-    if (linkQrEnabled === false) return;
+    window.__linkQrEnabled = linkQrEnabled !== false;
   } catch {
     // allow on error
   }
@@ -78,7 +79,20 @@ function buildQrImageUrl(content, size = 220) {
   const qrImg = tooltip.querySelector('img');
   let hideTimer = null;
 
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.linkQrEnabled) return;
+      window.__linkQrEnabled = changes.linkQrEnabled.newValue === undefined
+        ? true
+        : !!changes.linkQrEnabled.newValue;
+      if (!window.__linkQrEnabled) tooltip.style.display = 'none';
+    });
+  } catch {
+    // ignore
+  }
+
   const maybeShow = (link) => {
+    if (!window.__linkQrEnabled) return;
     const url = link.href;
     if (!url || url === '#' || /^javascript:/i.test(url)) return;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
@@ -111,6 +125,8 @@ function buildQrImageUrl(content, size = 220) {
   };
 
   document.addEventListener('mouseover', (e) => {
+    if (!window.__linkQrEnabled) return;
+    if (!(e.target instanceof Element)) return;
     const link = e.target.closest('a.resource-url, a.url-link, .video-links a, a[href*="batchDownload"]');
     if (!link) return;
     if (link.closest('#' + TOOLTIP_ID)) return;
@@ -118,6 +134,7 @@ function buildQrImageUrl(content, size = 220) {
   }, true);
 
   document.addEventListener('mouseout', (e) => {
+    if (!(e.target instanceof Element)) return;
     const link = e.target.closest('a.resource-url, a.url-link, .video-links a, a[href*="batchDownload"]');
     if (!link) return;
     maybeHide(link, e.relatedTarget);

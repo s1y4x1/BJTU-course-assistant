@@ -11,8 +11,25 @@
     input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
     button { margin-top: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
     .tip { margin-top: 12px; color: #666; font-size: 13px; }
-    .ok { color: #2e7d32; margin-top: 8px; }
-    .err { color: #c62828; margin-top: 8px; }
+    #msg {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      z-index: 9999;
+      max-width: min(520px, calc(100vw - 32px));
+      padding: 9px 14px;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+      font-size: 13px;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -8px);
+      transition: opacity .16s ease, transform .16s ease;
+    }
+    #msg.show { opacity: 1; transform: translate(-50%, 0); }
+    #msg.ok { border: 1px solid #86efac; background: #f0fdf4; color: #166534; }
+    #msg.err { border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; }
     .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .section-title { font-weight: 600; margin-bottom: 8px; font-size: 16px; }
     .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
@@ -72,7 +89,7 @@
       <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
       <span>在本地存储以后上传的文件链接</span>
     </label>
-    <div class="tip">开启后，已上传的文件会保存在扩展 storage 中，可在主页查看/复制链接/作为作业附件提交。</div>
+    <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">弹出窗口</div>

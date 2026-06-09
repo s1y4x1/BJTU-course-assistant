@@ -1,7 +1,12 @@
+let msgHideTimer = null;
 function setMsg(text, ok = true) {
   const msg = document.getElementById('msg');
   msg.textContent = text;
-  msg.className = ok ? 'ok' : 'err';
+  msg.className = `${ok ? 'ok' : 'err'} show`;
+  if (msgHideTimer) clearTimeout(msgHideTimer);
+  msgHideTimer = setTimeout(() => {
+    msg.classList.remove('show');
+  }, ok ? 1800 : 3200);
 }
 
 const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrzy: false, ve: true, ykt: false };
@@ -117,6 +122,47 @@ function goBackToApp() {
     const checkbox = document.getElementById('popupUseFullscreenCacheEnabled');
     container.classList.toggle('is-disabled', disabled);
     checkbox.disabled = disabled;
+  }
+
+  function setChecked(id, checked) {
+    const el = document.getElementById(id);
+    if (el instanceof HTMLInputElement) el.checked = !!checked;
+  }
+
+  function applyPlatformUi(raw) {
+    const enabled = normalizePlatformEnabled(raw);
+    setChecked('enableVe', enabled.ve);
+    setChecked('enableYkt', enabled.ykt);
+    setChecked('enableMrzy', enabled.mrzy);
+    setChecked('enableJlgj', enabled.jlgj);
+  }
+
+  function applyOpenModeUi(raw) {
+    const mode = String(raw || DEFAULT_OPEN_MODE);
+    setChecked('openModePopup', mode !== 'page');
+    setChecked('openModePage', mode === 'page');
+    updatePopupCacheDisabled();
+  }
+
+  function applyBooleanUi(id, raw, fallback = true) {
+    setChecked(id, raw === undefined ? fallback : !!raw);
+  }
+
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
+      if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
+      if (changes.autoCaptcha) applyBooleanUi('autoCaptcha', changes.autoCaptcha.newValue, true);
+      if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
+      if (changes.headerQrEnabled) applyBooleanUi('headerQrEnabled', changes.headerQrEnabled.newValue, true);
+      if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, true);
+      if (changes.popupUseFullscreenCacheEnabled) {
+        applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
+      }
+    });
+  } catch {
+    // ignore non-extension contexts
   }
 
   document.getElementById('enableVe').addEventListener('change', applyPlatform);

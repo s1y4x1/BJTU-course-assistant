@@ -1,7 +1,8 @@
 (async function setupCourseHeaderQr() {
+  window.__headerQrEnabled = true;
   try {
     const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
-    if (headerQrEnabled === false) return;
+    window.__headerQrEnabled = headerQrEnabled !== false;
   } catch {
     // allow on error (non-extension context)
   }
@@ -20,12 +21,24 @@
   const headerQrSpinner = headerTooltip.querySelector('.__qr_spinner');
   window.__headerQrUrl = window.__headerQrUrl || '';
   let headerQrHideTimer = null;
+  let headerQrHoverActive = false;
 
   try {
-    chrome.storage.onChanged.addListener((changes) => {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
       if (changes.platformEnabled) {
         window.__headerQrUrl = '';
         window.__sectionQrCache = {};
+      }
+      if (changes.headerQrEnabled) {
+        window.__headerQrEnabled = changes.headerQrEnabled.newValue === undefined
+          ? true
+          : !!changes.headerQrEnabled.newValue;
+        if (!window.__headerQrEnabled) {
+          headerQrHoverActive = false;
+          headerTooltip.style.display = 'none';
+          document.querySelectorAll('[id^="__bjtu_section_qr_"]').forEach((el) => { el.style.display = 'none'; });
+        }
       }
     });
   } catch {}
@@ -706,7 +719,6 @@ ${cardsHtml}
   // ─── Upload & QR ───
 
   let __qrUploadRunning = false;
-  let headerQrHoverActive = false;
   const isHeaderQrHoverActive = (el) => {
     if (!(el instanceof HTMLElement)) return false;
     if (!headerQrHoverActive) return false;
@@ -723,6 +735,7 @@ ${cardsHtml}
   };
 
   const uploadCourseListAndShowQr = async (triggerEl) => {
+    if (!window.__headerQrEnabled) return;
     if (__qrUploadRunning) return;
     __qrUploadRunning = true;
 
@@ -918,6 +931,10 @@ ${cardsHtml}
     };
 
     const generateAndShow = async () => {
+      if (!window.__headerQrEnabled) {
+        sectionTooltip.style.display = 'none';
+        return;
+      }
       if (secLoading) return;
       secLoading = true;
 
@@ -972,6 +989,7 @@ ${cardsHtml}
     };
 
     triggerEl.addEventListener('mouseenter', () => {
+      if (!window.__headerQrEnabled) return;
       if (secQrHideTimer) { clearTimeout(secQrHideTimer); secQrHideTimer = null; }
       generateAndShow();
     });
@@ -1096,6 +1114,7 @@ ${cardsHtml}
   if (!courseHeaderEl) return;
 
   courseHeaderEl.addEventListener('mouseenter', () => {
+    if (!window.__headerQrEnabled) return;
     headerQrHoverActive = true;
     if (headerQrHideTimer) { clearTimeout(headerQrHideTimer); headerQrHideTimer = null; }
     if (!window.__headerQrUrl) {

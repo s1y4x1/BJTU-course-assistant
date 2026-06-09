@@ -562,6 +562,50 @@ function togglePlatformSelection(platform) {
   window.__headerQrUrl = '';
 }
 
+function applyPlatformEnabledSettingFromStorage(raw) {
+  const next = sanitizePlatformEnabled(raw, window.platformEnabled || DEFAULT_PLATFORM_ENABLED);
+  ['ve', 'ykt', 'mrzy', 'jlgj'].forEach((platform) => {
+    if (isPlatformEnabled(platform) !== !!next[platform]) {
+      togglePlatformSelection(platform);
+    }
+  });
+}
+
+let optionsStorageLiveSyncReady = false;
+function setupOptionsStorageLiveSync() {
+  if (optionsStorageLiveSyncReady || !chrome?.storage?.onChanged) return;
+  optionsStorageLiveSyncReady = true;
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+
+    if (changes.platformEnabled) {
+      applyPlatformEnabledSettingFromStorage(changes.platformEnabled.newValue);
+      window.__headerQrUrl = '';
+      window.__sectionQrCache = {};
+    }
+
+    if (changes.autoCaptcha) {
+      const enabled = changes.autoCaptcha.newValue === undefined ? true : !!changes.autoCaptcha.newValue;
+      showToast(enabled ? '已启用自动识别验证码' : '已关闭自动识别验证码，将改为手动输入', 'info', 1600);
+    }
+
+    if (changes.saveUploadedFilesEnabled) {
+      window.saveUploadedFilesEnabled = changes.saveUploadedFilesEnabled.newValue === undefined
+        ? true
+        : !!changes.saveUploadedFilesEnabled.newValue;
+      const cb = document.getElementById('save-uploads-enabled');
+      if (cb instanceof HTMLInputElement) cb.checked = !!window.saveUploadedFilesEnabled;
+    }
+
+    if (changes.popupUseFullscreenCacheEnabled) {
+      window.popupUseFullscreenCacheEnabled = changes.popupUseFullscreenCacheEnabled.newValue === undefined
+        ? true
+        : !!changes.popupUseFullscreenCacheEnabled.newValue;
+      if (window.popupUseFullscreenCacheEnabled) scheduleFullscreenCourseCacheSave(200);
+    }
+  });
+}
+
 function refreshUploadSelectVisibility() {
   const wraps = document.querySelectorAll('.upload-select-wrap');
   wraps.forEach((wrap) => {
@@ -11507,6 +11551,7 @@ function setupSavedUploadsUi() {
   setupRightColumnResizer();
   await loadPlatformEnabledFromStorage();
   await loadPopupCacheEnabledSetting();
+  setupOptionsStorageLiveSync();
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {
     window.platformEnabled = { jlgj: false, mrzy: false, ve: true, ykt: false };
