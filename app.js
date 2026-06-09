@@ -2312,7 +2312,6 @@ async function loginPostInExtension(username, passwordMd5, passcode, { signal } 
     signal
   });
   await syncJsessionidFromResponse(res);
-  await forceSyncJsessionidAfterLogin();
   const alertMsg = parseAlertMsg(text);
   if (alertMsg && isCaptchaErrorMessage(alertMsg)) return { ok: false, reason: 'captcha', message: alertMsg };
   if (alertMsg && isCredentialErrorMessage(alertMsg)) return { ok: false, reason: 'credential', message: alertMsg };
@@ -2825,7 +2824,7 @@ async function handleLoginSuccess(username) {
   isLoginSessionValid = true;
   loginCancelRequested = false;
   hideLoginModal();
-  await forceSyncJsessionidAfterLogin();
+  void forceSyncJsessionidAfterLogin().catch(() => {});
 
   let finalUser = String(username || '').trim();
   usernameInput.value = finalUser;
@@ -7526,6 +7525,15 @@ function toggleReplayFromCache(btn, courseIdInt) {
 
   if (!cache?.html) {
     if (btn.disabled) return;
+    const courseNum = String(btn.dataset.courseNum || courseIdInt || '').trim();
+    const fzId = String(btn.dataset.fzId || '').trim();
+    const xqCode = String(btn.dataset.xqCode || getCurrentXqCode() || '').trim();
+    autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode).then(() => {
+      const latestCache = window.videoReplayCacheByCourseId?.[courseIdInt];
+      if (latestCache?.html && String(card.dataset.resultView || '').trim() !== 'replay') {
+        toggleReplayFromCache(btn, courseIdInt);
+      }
+    }).catch(() => {});
     return;
   }
 
@@ -8831,6 +8839,52 @@ function scheduleJlgjLoad(courses, loadVersion = 0) {
   return window.__jlgjLoadSerialPromise;
 }
 
+function bindCourseCardActionButtons(root = courseListDiv) {
+  if (!(root instanceof HTMLElement)) return;
+  const cards = root.classList.contains('file-item')
+    ? [root]
+    : Array.from(root.querySelectorAll('.file-item'));
+  cards.forEach((card) => {
+    if (!(card instanceof HTMLElement)) return;
+    let courseId = String(card.dataset.courseId || '').trim();
+    if (!courseId) {
+      const id = String(card.id || '').trim();
+      courseId = id.startsWith('course-') ? id.slice('course-'.length) : '';
+    }
+    if (!courseId) return;
+
+    const meta = card.querySelector('.ve-course-num-wrap');
+    const courseNumRaw = String(
+      card.querySelector('button[data-action="courseware"]')?.dataset?.courseNum ||
+      card.querySelector('button[data-action="videos"]')?.dataset?.courseNum ||
+      meta?.dataset?.courseNum ||
+      courseId
+    ).trim();
+    const fzId = String(
+      card.querySelector('button[data-action="courseware"]')?.dataset?.fzId ||
+      card.querySelector('button[data-action="videos"]')?.dataset?.fzId ||
+      meta?.dataset?.fzId ||
+      ''
+    ).trim();
+
+    const btnCourseware = card.querySelector('button[data-action="courseware"]');
+    if (btnCourseware instanceof HTMLElement && btnCourseware.dataset.courseActionBound !== '1') {
+      btnCourseware.dataset.courseNum = courseNumRaw;
+      btnCourseware.dataset.fzId = fzId;
+      btnCourseware.dataset.courseActionBound = '1';
+      btnCourseware.addEventListener('click', () => toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId));
+    }
+
+    const btnVideos = card.querySelector('button[data-action="videos"]');
+    if (btnVideos instanceof HTMLElement && btnVideos.dataset.courseActionBound !== '1') {
+      btnVideos.dataset.courseNum = courseNumRaw;
+      btnVideos.dataset.fzId = fzId;
+      btnVideos.dataset.courseActionBound = '1';
+      btnVideos.addEventListener('click', () => toggleReplayFromCache(btnVideos, courseId));
+    }
+  });
+}
+
 function renderCourseList(courses) {
   courseListDiv.innerHTML = '';
   if (!courses || !courses.length) {
@@ -8888,12 +8942,17 @@ function renderCourseList(courses) {
     const btnCourseware = card.querySelector('button[data-action="courseware"]');
     const btnVideos = card.querySelector('button[data-action="videos"]');
     if (btnCourseware) {
+      btnCourseware.dataset.courseNum = String(courseNumRaw || '');
+      btnCourseware.dataset.fzId = String(fzId || '');
+      btnCourseware.dataset.courseActionBound = '1';
       btnCourseware.addEventListener('click', () => toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId));
       setCoursewareButtonLoading(btnCourseware, true);
     }
     if (btnVideos) {
       btnVideos.dataset.courseNum = String(courseNumRaw || '');
       btnVideos.dataset.fzId = String(fzId || '');
+      btnVideos.dataset.xqCode = String(xqCode || '');
+      btnVideos.dataset.courseActionBound = '1';
       btnVideos.addEventListener('click', () => toggleReplayFromCache(btnVideos, courseId));
       // Show replay-loading animation immediately after card renders.
       btnVideos.disabled = true;
@@ -11476,6 +11535,7 @@ function setupSavedUploadsUi() {
     updateJsessionidState();
     setWelcomeMessage(null);
     refreshUploadSelectVisibility();
+    bindCourseCardActionButtons(courseListDiv);
     // popup 缓存恢复分支会提前结束 init；这里必须解除启动期保护，
     // 否则用户第一次手动切换账号会被误判为程序赋值而被忽略。
     initialUsernameSet = false;
