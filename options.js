@@ -230,6 +230,7 @@ function goBackToApp() {
     document.getElementById('headerQrEnabled').checked = true;
     document.getElementById('linkQrEnabled').checked = true;
     document.getElementById('popupUseFullscreenCacheEnabled').checked = true;
+    updatePopupCacheDisabled();
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoCaptcha: true });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
