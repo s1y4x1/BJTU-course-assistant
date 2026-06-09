@@ -274,6 +274,7 @@ async function savePlatformEnabledToStorage() {
   const normalized = sanitizePlatformEnabled(window.platformEnabled);
   await chrome.storage.local.set({ platformEnabled: normalized });
   await chrome.storage.sync.set({ platformEnabled: normalized });
+  scheduleFullscreenCourseCacheSave(200);
 }
 
 function bumpPlatformLoadVersion(platform) {
@@ -11312,7 +11313,9 @@ function setupSavedUploadsUi() {
 (async function init() {
   setupRightColumnResizer();
   await loadPlatformEnabledFromStorage();
-  if (popupMode) {
+  await loadPopupCacheEnabledSetting();
+  const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
+  if (popupMode && !restoredPopupCache) {
     window.platformEnabled = { jlgj: false, mrzy: false, ve: true, ykt: false };
   }
   if (popupMode || !window.__updateCheckerLoaded) {
@@ -11320,6 +11323,29 @@ function setupSavedUploadsUi() {
     if (versionInfoEl) versionInfoEl.style.display = 'none';
   }
   refreshPlatformLoginTip();
+
+  if (restoredPopupCache) {
+    await loadLoginAccountHistory();
+    await loadSavedUploadsFromStorage();
+    setupSavedUploadsUi();
+    lastValidUsername = (await getLocal('username', '')).trim();
+    usernameInput.value = lastValidUsername;
+    const savedParallelLimit = parseInt(await getLocal(PARALLEL_LIMIT_KEY, String(maxParallelUploads)), 10);
+    if (savedParallelLimit > 0) {
+      maxParallelUploads = savedParallelLimit;
+      if (parallelLimitInput instanceof HTMLInputElement) {
+        parallelLimitInput.value = String(savedParallelLimit);
+      }
+    }
+    adjustParallelLimitWidth();
+    renderLoginAccountHistorySelect(lastValidUsername);
+    updateJsessionidState();
+    setWelcomeMessage(null);
+    refreshUploadSelectVisibility();
+    return;
+  }
+
+  setupFullscreenCourseCacheObserver();
 
   // VE enabled startup must always dispatch these 3 requests concurrently:
   // getUserInfo + getCourseList + resourceSpaceList.
@@ -11358,6 +11384,7 @@ function setupSavedUploadsUi() {
   }
   renderLoginAccountHistorySelect(lastValidUsername);
   updateJsessionidState();
+  scheduleFullscreenCourseCacheSave(1200);
 
   await syncJsessionidToUi();
 

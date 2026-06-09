@@ -9,6 +9,7 @@ const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrzy: false, ve: true, ykt: fals
 const DEFAULT_OPEN_MODE = 'popup';
 
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
+const DEFAULT_POPUP_CACHE_ENABLED = true;
 
 function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
@@ -64,6 +65,7 @@ function goBackToApp() {
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
   const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
+  const { popupUseFullscreenCacheEnabled } = await chrome.storage.local.get(['popupUseFullscreenCacheEnabled']);
   const enabled = normalizePlatformEnabled(platformEnabled);
 
   document.getElementById('enableVe').checked = !!enabled.ve;
@@ -83,6 +85,10 @@ function goBackToApp() {
   document.getElementById('headerQrEnabled').checked = headerQrVal;
   const linkQrVal = linkQrEnabled === undefined ? true : !!linkQrEnabled;
   document.getElementById('linkQrEnabled').checked = linkQrVal;
+  const popupCacheVal = popupUseFullscreenCacheEnabled === undefined
+    ? DEFAULT_POPUP_CACHE_ENABLED
+    : !!popupUseFullscreenCacheEnabled;
+  document.getElementById('popupUseFullscreenCacheEnabled').checked = popupCacheVal;
 
   // apply changes immediately when inputs change
   const applyPlatform = async () => {
@@ -132,6 +138,13 @@ function goBackToApp() {
   document.getElementById('linkQrEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
       linkQrEnabled: !!document.getElementById('linkQrEnabled').checked
+    });
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('popupUseFullscreenCacheEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      popupUseFullscreenCacheEnabled: !!document.getElementById('popupUseFullscreenCacheEnabled').checked
     });
     setMsg('已应用更改');
   });
@@ -206,11 +219,13 @@ function goBackToApp() {
     document.getElementById('saveUploadsEnabled').checked = true;
     document.getElementById('headerQrEnabled').checked = true;
     document.getElementById('linkQrEnabled').checked = true;
+    document.getElementById('popupUseFullscreenCacheEnabled').checked = true;
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoCaptcha: true });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
     await chrome.storage.local.set({ headerQrEnabled: true });
     await chrome.storage.local.set({ linkQrEnabled: true });
+    await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
     setMsg('已恢复默认配置');
   });
 })();

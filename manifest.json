@@ -16,7 +16,8 @@
     "cookies",
     "webRequest",
     "scripting",
-    "downloads"
+    "downloads",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "http://123.121.147.7:88/*",
