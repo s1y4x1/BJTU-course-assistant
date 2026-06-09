@@ -716,6 +716,8 @@ let loginAccountHistory = []; // [{userId,userName,roleName,lastLoginAt}]
 let isSyncingAccountHistorySelect = false;
 let highPrioritySwitchTarget = '';
 let accountSwitchInterruptionArmed = false;
+let usernameChangeVersion = 0;
+let usernameChangeAbortController = null;
 
 function prioritizeAccountSwitch() {
   window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
@@ -1508,50 +1510,6 @@ async function resolveVeUserNameByWorknumber(worknumber) {
   return promise;
 }
 
-async function validateUserIdRemote(userId) {
-  if (!userId) return { ok: false, status: 'empty', info: null };
-  try {
-    const account = findLoginAccountRecord(userId);
-    const currentUser = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
-    if (currentUser && currentUser === String(userId || '').trim()) {
-      const info = await fetchUserInfoRemote(userId);
-      return { ok: true, status: 'already-authenticated', info };
-    }
-
-    let info = null;
-    if (!account) {
-      const validation = await validateAccountByGetUserInfo(userId);
-      loginAccountValidationCache = { userId: String(userId || '').trim(), ts: Date.now(), validation };
-      if (!validation.ok && validation.reason === 'invalid-account') {
-        return { ok: false, status: 'invalid', info: null };
-      }
-      if (validation.ok) info = validation.info?.result || validation.info || null;
-    }
-
-    const quickUsername = String(account?.quickUsername || '').trim();
-    if (quickUsername) {
-      const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(quickUsername)}`;
-      const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include' });
-      try { await syncJsessionidFromResponse(res); } catch (e) { /* ignore */ }
-      if (text.includes('index.shtml?method=index&type=qxkt')) {
-        const detectedAfterQuick = String(await detectUserIdFromPersonalCenter().catch(() => '') || '').trim();
-        if (detectedAfterQuick && detectedAfterQuick !== String(userId || '').trim()) {
-          return { ok: true, status: 'needs-post-login', info };
-        }
-        const quickInfo = await fetchUserInfoRemote(userId).catch(() => null);
-        return { ok: true, status: '0', info: quickInfo };
-      }
-      if (text.includes('账号或密码错误')) {
-        return { ok: true, status: 'needs-post-login', info };
-      }
-    }
-    if (info) return { ok: true, status: 'needs-post-login', info };
-    return { ok: true, status: 'needs-post-login', info: null };
-  } catch {
-    return { ok: true, status: 'needs-post-login', info: null };
-  }
-}
-
 function setWelcomeMessage(info) {
   const loginMsgEl = document.getElementById('login-welcome-msg');
   const loginName = String(info?.loginName || '').trim();
@@ -2146,6 +2104,35 @@ async function validateAccountByGetUserInfo(userId, { signal } = {}) {
       try { signal.removeEventListener('abort', externalAbortHandler); } catch { /* ignore */ }
     }
   }
+}
+
+async function validateUsernameBeforeLoginStart(userId, { signal } = {}) {
+  const uid = String(userId || '').trim();
+  if (!uid) return { ok: false, status: 'empty', message: '请输入账号' };
+  const knownAccount = findLoginAccountRecord(uid);
+  if (knownAccount) {
+    return { ok: true, status: 'needs-post-login', info: knownAccount };
+  }
+  const cachedValidation = loginAccountValidationCache
+    && loginAccountValidationCache.userId === uid
+    && Date.now() - Number(loginAccountValidationCache.ts || 0) < 10000
+    ? loginAccountValidationCache.validation
+    : null;
+  const validation = cachedValidation || await validateAccountByGetUserInfo(uid, { signal });
+  loginAccountValidationCache = { userId: uid, ts: Date.now(), validation };
+  if (!validation.ok) {
+    if (validation.reason === 'invalid-account') {
+      return { ok: false, status: 'invalid', message: '该账号不存在' };
+    }
+    if (validation.reason === 'cancelled') {
+      return { ok: false, status: 'cancelled', message: '已取消' };
+    }
+    if (validation.reason !== 'session-invalid') {
+      return { ok: false, status: 'unknown', message: validation.message || '账号验证失败，请稍后重试' };
+    }
+  }
+  const info = validation.info?.result || validation.info || null;
+  return { ok: true, status: 'needs-post-login', info };
 }
 
 async function saveLoginAccountCredential(userId, passwordMd5 = '') {
@@ -2793,15 +2780,17 @@ async function bootstrapSessionForGetPassword(excludeUserId, { signal } = {}) {
 
 async function doLoginFlow() {
   if (isLoginInProgress) return;
-  loginFlowUsernameSet = true;
-  prioritizeAccountSwitch();
   const username = usernameInput.value.trim();
-  const wasSwitchingAccount = !!pendingUsernameChange;
-  const accountAtStart = findLoginAccountRecord(username);
   if (!username) {
     showToast('请输入账号，或改为填写 JSESSIONID', 'warning');
     return;
   }
+  loginFlowUsernameSet = true;
+  usernameChangeVersion += 1;
+  try { usernameChangeAbortController?.abort(); } catch { /* ignore */ }
+  prioritizeAccountSwitch();
+  const wasSwitchingAccount = !!pendingUsernameChange;
+  const accountAtStart = findLoginAccountRecord(username);
 
   if (loginBtn) {
     loginBtn.disabled = true;
@@ -10855,6 +10844,12 @@ usernameInput.addEventListener('change', async () => {
   if (initialUsernameSet) { initialUsernameSet = false; return; }
   if (loginFlowUsernameSet) return;
   const u = usernameInput.value.trim();
+  usernameChangeVersion += 1;
+  const changeVersion = usernameChangeVersion;
+  try { usernameChangeAbortController?.abort(); } catch { /* ignore */ }
+  usernameChangeAbortController = new AbortController();
+  const changeSignal = usernameChangeAbortController.signal;
+  const isCurrentUsernameChange = () => changeVersion === usernameChangeVersion && usernameInput.value.trim() === u;
   const isManualSwitch = !!u && !!lastValidUsername && u !== String(lastValidUsername || '').trim();
   const isHighPrioritySwitch = !!u && String(highPrioritySwitchTarget || '').trim() === u;
   if (!isHighPrioritySwitch && highPrioritySwitchTarget && String(highPrioritySwitchTarget).trim() !== u) {
@@ -10867,8 +10862,9 @@ usernameInput.addEventListener('change', async () => {
     }
     // show logging toast before sending GET to /ve/s.shtml
     showToast('正在登录…', 'info', 0);
-    const knownAccount = findLoginAccountRecord(u);
-    const validResult = knownAccount ? { ok: true, status: 'needs-post-login', info: knownAccount } : await validateUserIdRemote(u);
+    const validResult = await validateUsernameBeforeLoginStart(u, { signal: changeSignal });
+    if (!isCurrentUsernameChange()) return;
+    if (!validResult.ok && validResult.status === 'cancelled') return;
     if (!validResult.ok && validResult.status === 'invalid') {
       showToast('该账号不存在，已恢复原账号', 'error');
       await restoreLoginFallbackUsername(u);
@@ -10928,8 +10924,9 @@ usernameInput.addEventListener('change', async () => {
   }
 
   // Validate userId first; if invalid -> revert to last valid
-  const knownAccount = findLoginAccountRecord(u);
-  const result = knownAccount ? { ok: true, status: 'needs-post-login', info: knownAccount } : await validateUserIdRemote(u);
+  const result = await validateUsernameBeforeLoginStart(u, { signal: changeSignal });
+  if (!isCurrentUsernameChange()) return;
+  if (!result.ok && result.status === 'cancelled') return;
   if (!result.ok) {
     // "invalid" means the account does not exist. Other failures may be due to session/network.
     if (result.status === 'invalid') {
@@ -11342,6 +11339,9 @@ function setupSavedUploadsUi() {
     updateJsessionidState();
     setWelcomeMessage(null);
     refreshUploadSelectVisibility();
+    // popup 缓存恢复分支会提前结束 init；这里必须解除启动期保护，
+    // 否则用户第一次手动切换账号会被误判为程序赋值而被忽略。
+    initialUsernameSet = false;
     return;
   }
 
