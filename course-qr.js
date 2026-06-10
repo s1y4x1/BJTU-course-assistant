@@ -129,10 +129,20 @@
       ? `<span style="font-weight:bold;color:#e91e63;margin-left:5px;">[${escapeHtml(scoreText)}]</span>`
       : '';
 
+    const yktDone = platform === 'ykt' && typeof isYktHomeworkDone === 'function' ? isYktHomeworkDone(hw) : false;
+    const yktActype = Number(hw?.__actype);
+    const yktDetailHtml = platform === 'ykt'
+      ? (yktActype === 5 && typeof renderYktExamProblemsHtml === 'function'
+        ? renderYktExamProblemsHtml(hw?.exam_problems || [], yktDone)
+        : (yktActype === 15 && typeof renderYktCardProblemResultsHtml === 'function'
+          ? renderYktCardProblemResultsHtml(hw?.problem_results || [], yktDone)
+          : ''))
+      : '';
     const rawContent = String(hw.content || hw.content_clean || hw.workContent || '').trim();
     const detailId = `qr-hw-detail-${courseId}-${String(hw.id || hw.noteId || hw.courseNoteId || hw.upId || '').replace(/[^a-zA-Z0-9_-]/g, '') || Math.random().toString(36).slice(2, 8)}`;
-    const contentHtml = rawContent
-      ? `<div class="hw-detail-content" id="${detailId}" style="display:none;margin-top:4px;padding:6px 8px;background:#fafafa;border-radius:4px;font-size:12px;color:#555;word-break:break-all;max-height:200px;overflow-y:auto;">${normalizeHomeworkContent(rawContent)}</div>`
+    const detailBodyHtml = yktDetailHtml || (rawContent ? normalizeHomeworkContent(rawContent) : '');
+    const contentHtml = detailBodyHtml
+      ? `<div class="hw-detail-content" id="${detailId}" style="display:none;margin-top:4px;padding:6px 8px;background:#fafafa;border-radius:4px;font-size:12px;color:#555;word-break:break-all;max-height:200px;overflow-y:auto;">${detailBodyHtml}</div>`
       : '';
     const attachmentHtml = getQrAttachmentHtml(hw, type);
 
@@ -145,21 +155,20 @@
   };
 
   const buildQrCourseListHtml = () => {
-    const isMrjzyPlatform = (platform) => platform === 'mrjzy' || platform === 'mrzy';
     const enabledPlatforms = {
       ve: isPlatformEnabled('ve'),
       ykt: isPlatformEnabled('ykt'),
-      mrjzy: isPlatformEnabled('mrjzy') || isPlatformEnabled('mrzy'),
+      mrjzy: isPlatformEnabled('mrjzy'),
       jlgj: isPlatformEnabled('jlgj')
     };
     const veCourseList = isPlatformEnabled('ve') ? (window.currentVeCourseList || []) : [];
     const yktStandalone = enabledPlatforms.ykt ? (window.yktStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'ykt', index: i })) : [];
-    const mrzyStandalone = enabledPlatforms.mrjzy ? (window.mrzyStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'mrjzy', index: i })) : [];
+    const mrjzyStandalone = enabledPlatforms.mrjzy ? (window.mrjzyStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'mrjzy', index: i })) : [];
     const jlgjStandalone = enabledPlatforms.jlgj ? (window.jlgjStandaloneCourses || []).map((sc, i) => ({ sc, platform: 'jlgj', index: i })) : [];
-    const standaloneMeta = [...yktStandalone, ...mrzyStandalone, ...jlgjStandalone];
+    const standaloneMeta = [...yktStandalone, ...mrjzyStandalone, ...jlgjStandalone];
     const getStandaloneCourseId = (sc, platform, index = 0) => {
       if (platform === 'ykt') return `ykt-${String(sc?.classroom_id || index)}`;
-      if (isMrjzyPlatform(platform)) return `mrzy-${String(sc?.classNum || index)}`;
+      if (platform === 'mrjzy') return `mrjzy-${String(sc?.classNum || index)}`;
       if (platform === 'jlgj') return `jlgj-${String(sc?.groupId || index)}`;
       return `${platform}-${String(index)}`;
     };
@@ -178,7 +187,7 @@
       ...(sc.groupId ? { groupId: sc.groupId } : {})
     });
 
-    const cards = document.querySelectorAll('#courseListDiv .file-item[id^="course-"]') || [];
+    const cards = document.querySelectorAll('#course-list .file-item[id^="course-"]') || [];
     const veMap = {};
     veCourseList.forEach((c) => { const cid = String(c.id || c.cId || c.courseId || c.course_id || ''); if (cid) veMap[cid] = c; });
     const standaloneMap = {};
@@ -192,9 +201,9 @@
       const cardCourseId = card?.dataset?.courseId || (card.id && card.id.replace(/^course-/, '')) || '';
       if (!cardCourseId) return;
       if (/^ykt-/.test(cardCourseId) && !enabledPlatforms.ykt) return;
-      if (/^mrzy-/.test(cardCourseId) && !enabledPlatforms.mrjzy) return;
+      if (/^mrjzy-/.test(cardCourseId) && !enabledPlatforms.mrjzy) return;
       if (/^jlgj-/.test(cardCourseId) && !enabledPlatforms.jlgj) return;
-      if (!/^(ykt|mrzy|jlgj)-/.test(cardCourseId) && !enabledPlatforms.ve) return;
+      if (!/^(ykt|mrjzy|jlgj)-/.test(cardCourseId) && !enabledPlatforms.ve) return;
       if (veMap[cardCourseId]) { allCourses.push(veMap[cardCourseId]); delete veMap[cardCourseId]; return; }
       if (standaloneMap[cardCourseId]) {
         const { sc, platform, index } = standaloneMap[cardCourseId];
@@ -230,7 +239,7 @@
       return { pending, overdue, done };
     };
     const isYktOverdue = (hw) => !isYktHomeworkDone(hw) && isDeadlinePassed(hw?.end);
-    const isMrzyOverdue = (hw) => !isMrzyHomeworkDone(hw) && isDeadlinePassed(hw?.end);
+    const isMrjzyOverdue = (hw) => !isMrjzyHomeworkDone(hw) && isDeadlinePassed(hw?.end);
     const isJlgjOverdue = (hw) => !isJlgjHomeworkDone(hw) && isDeadlinePassed(hw?.end);
 
     allCourses.forEach((course) => {
@@ -239,24 +248,24 @@
       const platform = course._platform || 've';
       const hwList = isS ? (course._homeworkList || []) : (window.courseHomeworkData?.[courseKey]?.list || []);
 
-      let allNative, allYkt, allMrzy, allJlgj;
+      let allNative, allYkt, allMrjzy, allJlgj;
       if (isS) {
         const empty = { items: [], doneFn: () => false, overdueFn: () => false };
-        allNative = allYkt = allMrzy = allJlgj = empty;
+        allNative = allYkt = allMrjzy = allJlgj = empty;
         if (platform === 'ykt') allYkt = { items: hwList, doneFn: isYktHomeworkDone, overdueFn: isYktOverdue };
-        else if (isMrjzyPlatform(platform)) allMrzy = { items: hwList, doneFn: isMrzyHomeworkDone, overdueFn: isMrzyOverdue };
+        else if (platform === 'mrjzy') allMrjzy = { items: hwList, doneFn: isMrjzyHomeworkDone, overdueFn: isMrjzyOverdue };
         else allJlgj = { items: hwList, doneFn: isJlgjHomeworkDone, overdueFn: isJlgjOverdue };
       } else {
         allNative = { items: hwList, doneFn: isNativeHomeworkDone, overdueFn: isNativeHomeworkOverdue };
         allYkt = enabledPlatforms.ykt ? { items: window.yktMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isYktHomeworkDone, overdueFn: isYktOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
-        allMrzy = enabledPlatforms.mrjzy ? { items: window.mrzyMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isMrzyHomeworkDone, overdueFn: isMrzyOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
+        allMrjzy = enabledPlatforms.mrjzy ? { items: window.mrjzyMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isMrjzyHomeworkDone, overdueFn: isMrjzyOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
         allJlgj = enabledPlatforms.jlgj ? { items: window.jlgjMatchedHomeworkByCourseId?.[courseKey] || [], doneFn: isJlgjHomeworkDone, overdueFn: isJlgjOverdue } : { items: [], doneFn: () => false, overdueFn: () => false };
       }
 
       const cl = (cfg) => classifyItems(cfg.items, cfg.doneFn, cfg.overdueFn);
-      const allPending = [...cl(allNative).pending, ...cl(allYkt).pending, ...cl(allMrzy).pending, ...cl(allJlgj).pending];
-      const allOverdue = [...cl(allNative).overdue, ...cl(allYkt).overdue, ...cl(allMrzy).overdue, ...cl(allJlgj).overdue];
-      const allDone = [...cl(allNative).done, ...cl(allYkt).done, ...cl(allMrzy).done, ...cl(allJlgj).done];
+      const allPending = [...cl(allNative).pending, ...cl(allYkt).pending, ...cl(allMrjzy).pending, ...cl(allJlgj).pending];
+      const allOverdue = [...cl(allNative).overdue, ...cl(allYkt).overdue, ...cl(allMrjzy).overdue, ...cl(allJlgj).overdue];
+      const allDone = [...cl(allNative).done, ...cl(allYkt).done, ...cl(allMrjzy).done, ...cl(allJlgj).done];
 
       let primaryGroup = 3;
       if (allPending.length > 0) primaryGroup = 0;
@@ -290,7 +299,7 @@
 
       const coursePlatformUrl = isS
         ? (platform === 'ykt' ? yktCourseLink(course.classroom_id || '') :
-           isMrjzyPlatform(platform) ? `${MRZY_WEB_BASE}/` :
+           platform === 'mrjzy' ? `${MRJZY_WEB_BASE}/` :
            platform === 'jlgj' ? `${JLGJ_WEB_BASE}` : '#')
         : `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10460&courseId=${encodeURIComponent(course.course_num || course.courseNum || course.courseNo || course.course_id || courseId || '')}&cId=${encodeURIComponent(courseKey)}&xknId=${encodeURIComponent(course.fz_id || course.fzId || course.xkhId || course.xkh_id || '')}&xkhId=${encodeURIComponent(course.fz_id || course.fzId || course.xkhId || course.xkh_id || '')}`;
 
@@ -342,29 +351,49 @@
 
       // Homework
       const hwList = isS ? (course._homeworkList || []) : (window.courseHomeworkData?.[courseKey]?.list || []);
-      let nativeCls, yktCls, mrzyCls, jlgjCls;
+      let nativeCls, yktCls, mrjzyCls, jlgjCls;
       if (isS) {
         const emptyCls = { pending: [], overdue: [], done: [] };
-        nativeCls = yktCls = mrzyCls = jlgjCls = emptyCls;
+        nativeCls = yktCls = mrjzyCls = jlgjCls = emptyCls;
         if (platform === 'ykt') yktCls = classifyItems(hwList, isYktHomeworkDone, isYktOverdue);
-        else if (isMrjzyPlatform(platform)) mrzyCls = classifyItems(hwList, isMrzyHomeworkDone, isMrzyOverdue);
+        else if (platform === 'mrjzy') mrjzyCls = classifyItems(hwList, isMrjzyHomeworkDone, isMrjzyOverdue);
         else jlgjCls = classifyItems(hwList, isJlgjHomeworkDone, isJlgjOverdue);
       } else {
         nativeCls = classifyItems(hwList, isNativeHomeworkDone, isNativeHomeworkOverdue);
         const yktItems = enabledPlatforms.ykt ? (window.yktMatchedHomeworkByCourseId?.[courseKey] || []) : [];
-        const mrzyItems = enabledPlatforms.mrjzy ? (window.mrzyMatchedHomeworkByCourseId?.[courseKey] || []) : [];
+        const mrjzyItems = enabledPlatforms.mrjzy ? (window.mrjzyMatchedHomeworkByCourseId?.[courseKey] || []) : [];
         const jlgjItems = enabledPlatforms.jlgj ? (window.jlgjMatchedHomeworkByCourseId?.[courseKey] || []) : [];
         yktCls = classifyItems(yktItems, isYktHomeworkDone, isYktOverdue);
-        mrzyCls = classifyItems(mrzyItems, isMrzyHomeworkDone, isMrzyOverdue);
+        mrjzyCls = classifyItems(mrjzyItems, isMrjzyHomeworkDone, isMrjzyOverdue);
         jlgjCls = classifyItems(jlgjItems, isJlgjHomeworkDone, isJlgjOverdue);
       }
-      const allPending = [...nativeCls.pending, ...yktCls.pending, ...mrzyCls.pending, ...jlgjCls.pending];
-      const allOverdue = [...nativeCls.overdue, ...yktCls.overdue, ...mrzyCls.overdue, ...jlgjCls.overdue];
-      const allDone = [...nativeCls.done, ...yktCls.done, ...mrzyCls.done, ...jlgjCls.done];
+      const tagItems = (items, itemPlatform) => items.map((hw) => ({ hw, platform: itemPlatform }));
+      const nativePlatform = isS ? platform : 've';
+      const allPending = [...nativeCls.pending, ...yktCls.pending, ...mrjzyCls.pending, ...jlgjCls.pending];
+      const allOverdue = [...nativeCls.overdue, ...yktCls.overdue, ...mrjzyCls.overdue, ...jlgjCls.overdue];
+      const allDone = [...nativeCls.done, ...yktCls.done, ...mrjzyCls.done, ...jlgjCls.done];
+      const pendingEntries = [
+        ...tagItems(nativeCls.pending, nativePlatform),
+        ...tagItems(yktCls.pending, 'ykt'),
+        ...tagItems(mrjzyCls.pending, 'mrjzy'),
+        ...tagItems(jlgjCls.pending, 'jlgj')
+      ];
+      const overdueEntries = [
+        ...tagItems(nativeCls.overdue, nativePlatform),
+        ...tagItems(yktCls.overdue, 'ykt'),
+        ...tagItems(mrjzyCls.overdue, 'mrjzy'),
+        ...tagItems(jlgjCls.overdue, 'jlgj')
+      ];
+      const doneEntries = [
+        ...tagItems(nativeCls.done, nativePlatform),
+        ...tagItems(yktCls.done, 'ykt'),
+        ...tagItems(mrjzyCls.done, 'mrjzy'),
+        ...tagItems(jlgjCls.done, 'jlgj')
+      ];
 
-      const pendingHtml = allPending.map((hw) => buildQrHomeworkItemHtml(hw, 'pending', courseKey, platform)).join('');
-      const overdueHtml = allOverdue.map((hw) => buildQrHomeworkItemHtml(hw, 'overdue', courseKey, platform)).join('');
-      const doneHtml = allDone.map((hw) => buildQrHomeworkItemHtml(hw, 'done', courseKey, platform)).join('');
+      const pendingHtml = pendingEntries.map((entry) => buildQrHomeworkItemHtml(entry.hw, 'pending', courseKey, entry.platform)).join('');
+      const overdueHtml = overdueEntries.map((entry) => buildQrHomeworkItemHtml(entry.hw, 'overdue', courseKey, entry.platform)).join('');
+      const doneHtml = doneEntries.map((entry) => buildQrHomeworkItemHtml(entry.hw, 'done', courseKey, entry.platform)).join('');
 
       const cwId = `qr-cw-${courseKey}`;
       const rpId = `qr-rp-${courseKey}`;
@@ -426,21 +455,51 @@ ${cardsHtml}
 
   // ─── Data loading ───
 
+  const ensureVeCourseResourceListsForQr = async (setStatus) => {
+    if (!isPlatformEnabled('ve')) return;
+    const courses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+    if (!courses.length) return;
+    const tasks = [];
+    courses.forEach((c) => {
+      const cid = String(c.id || c.cId || c.courseId || c.course_id || '').trim();
+      if (!cid) return;
+      const card = document.getElementById(`course-${cid}`);
+      if (!(card instanceof HTMLElement)) return;
+      const state = window.courseCardStateById?.[cid] || {};
+      const meta = card.querySelector('.ve-course-num-wrap');
+      const courseNum = String(meta?.dataset?.courseNum || c.course_num || c.courseNum || c.courseNo || c.course_id || cid).trim();
+      const fzId = String(meta?.dataset?.fzId || c.fz_id || c.fzId || c.xkhId || c.xkh_id || '').trim();
+      const xqCode = String(c.xq_code || c.xqCode || (typeof getCurrentXqCode === 'function' ? getCurrentXqCode() : '') || '').trim();
+
+      const btnCourseware = card.querySelector('button[data-action="courseware"]');
+      const cwCache = window.coursewareCacheByCourseId?.[cid];
+      if (btnCourseware instanceof HTMLElement && !cwCache?.loaded && !state.coursewareListLoading && typeof autoLoadCourseware === 'function') {
+        tasks.push(autoLoadCourseware(btnCourseware, cid, courseNum, fzId));
+      }
+
+      const btnReplay = card.querySelector('button[data-action="videos"]');
+      const rpCache = window.videoReplayCacheByCourseId?.[cid];
+      if (btnReplay instanceof HTMLElement && !rpCache?.loaded && !state.replayListLoading && typeof autoLoadVideoLinks === 'function') {
+        tasks.push(autoLoadVideoLinks(btnReplay, cid, courseNum, fzId, xqCode));
+      }
+    });
+    if (!tasks.length) return;
+    setStatus('正在获取课件/回放列表…');
+    await Promise.allSettled(tasks);
+  };
+
   const waitForAllData = async (setStatus) => {
-    const isMrjzyEnabled = () => isPlatformEnabled('mrjzy') || isPlatformEnabled('mrzy');
+    const isMrjzyEnabled = () => isPlatformEnabled('mrjzy');
     const isMrjzySettled = () => (
       !isMrjzyEnabled() ||
       window.platformLoadedOnce?.mrjzy === true ||
-      window.platformLoadedOnce?.mrzy === true ||
-      (window.platformLoginState?.mrjzy || window.platformLoginState?.mrzy || '') === 'offline' ||
+      (window.platformLoginState?.mrjzy || '') === 'offline' ||
       window.platformNeedLogin?.mrjzy ||
-      window.platformNeedLogin?.mrzy ||
-      window.platformLoginChecked?.mrjzy ||
-      window.platformLoginChecked?.mrzy
+      window.platformLoginChecked?.mrjzy
     );
-    const getMrjzyMatchedHomeworkMap = () => window.mrjzyMatchedHomeworkByCourseId || window.mrzyMatchedHomeworkByCourseId || {};
-    const getMrjzyStandaloneCourses = () => window.mrjzyStandaloneCourses || window.mrzyStandaloneCourses || [];
-    const getMrjzySnapshot = () => window.mrjzyCourseGroupsSnapshot || window.mrzyCourseGroupsSnapshot || [];
+    const getMrjzyMatchedHomeworkMap = () => window.mrjzyMatchedHomeworkByCourseId || {};
+    const getMrjzyStandaloneCourses = () => window.mrjzyStandaloneCourses || [];
+    const getMrjzySnapshot = () => window.mrjzyCourseGroupsSnapshot || [];
     const hasMrjzyLoadingPlaceholders = () => {
       const courses = getMrjzyStandaloneCourses();
       const matched = getMrjzyMatchedHomeworkMap();
@@ -492,7 +551,7 @@ ${cardsHtml}
         const rpCache = window.videoReplayCacheByCourseId?.[cid];
         if (rpCache?.linksFetching) reasons.push(`${name}: 回放链接`);
       });
-      const root = document.getElementById('courseListDiv');
+      const root = document.getElementById('course-list');
       if (root?.querySelector?.('button[data-action="courseware"].courseware-list-loading, button[data-action="courseware"].courseware-link-progress')) reasons.push('课件按钮仍在加载');
       if (root?.querySelector?.('button[data-action="videos"].replay-list-loading, button[data-action="videos"].replay-link-progress')) reasons.push('回放按钮仍在加载');
       return [...new Set(reasons)];
@@ -507,13 +566,13 @@ ${cardsHtml}
       (isPlatformEnabled('jlgj') && Object.keys(window.jlgjMatchedHomeworkByCourseId || {}).length)
     );
     const hasRenderedEnabledCourseCards = () => {
-      const root = document.getElementById('courseListDiv');
+      const root = document.getElementById('course-list');
       if (!root) return false;
       return [...root.querySelectorAll('.file-item[id^="course-"]')].some((card) => {
         if (!(card instanceof HTMLElement) || card.offsetParent === null) return false;
         const id = String(card.dataset.courseId || card.id.replace(/^course-/, '') || '').trim();
         if (/^jlgj-/.test(id)) return isPlatformEnabled('jlgj');
-        if (/^mrzy-/.test(id)) return isMrjzyEnabled();
+        if (/^mrjzy-/.test(id)) return isMrjzyEnabled();
         if (/^ykt-/.test(id)) return isPlatformEnabled('ykt');
         return isPlatformEnabled('ve');
       });
@@ -567,7 +626,7 @@ ${cardsHtml}
     };
 
     const getRenderedLoadingReasons = () => {
-      const root = document.getElementById('courseListDiv');
+      const root = document.getElementById('course-list');
       if (!root) return [];
       const reasons = new Set();
       const visibleCards = [...root.querySelectorAll('.file-item[id^="course-"]')]
@@ -582,6 +641,8 @@ ${cardsHtml}
       });
       return [...reasons];
     };
+
+    await ensureVeCourseResourceListsForQr(showProgress);
 
     const getAllLoadingReasons = () => {
       const reasons = [...getRenderedLoadingReasons(), ...getVeLoadingReasons()];
@@ -837,6 +898,9 @@ ${cardsHtml}
       setStatus('上传失败: ' + (err.message || ''));
       hideQrLoading();
       __qrUploadRunning = false;
+      if (!isHeaderQrHoverActive(triggerEl)) {
+        headerTooltip.style.display = 'none';
+      }
     }
   };
 

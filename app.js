@@ -1,11 +1,11 @@
-﻿const BASE = 'http://123.121.147.7:88';
+const BASE = 'http://123.121.147.7:88';
 const BASE_VE = `${BASE}/ve/`;
 const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#1565c0; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
 const VE_LOGIN_REQUIRED_HTML = `如需查看${VE_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_LOGIN_LINK_HTML = '<a href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer" style="color:#5096f5; text-decoration:none; font-weight:600;">雨课堂</a>';
 const YKT_LOGIN_REQUIRED_HTML = `如需查看${YKT_LOGIN_LINK_HTML}作业，请前往登录`;
-const MRZY_LOGIN_LINK_HTML = '<a href="https://zuoye.lulufind.com/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none; font-weight:600;">每日交作业</a>';
-const MRZY_LOGIN_REQUIRED_HTML = `如需查看${MRZY_LOGIN_LINK_HTML}作业，请前往登录`;
+const MRJZY_LOGIN_LINK_HTML = '<a href="https://zuoye.lulufind.com/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none; font-weight:600;">每日交作业</a>';
+const MRJZY_LOGIN_REQUIRED_HTML = `如需查看${MRJZY_LOGIN_LINK_HTML}作业，请前往登录`;
 const JLGJ_LOGIN_LINK_HTML = '<a href="https://i.jielong.com/my-class" target="_blank" rel="noopener noreferrer" style="color:#ffd243; text-decoration:none; font-weight:600;">接龙管家</a>';
 const JLGJ_LOGIN_REQUIRED_HTML = `如需查看${JLGJ_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_BASE = 'https://www.yuketang.cn';
@@ -17,10 +17,10 @@ const YKT_HEADERS = {
   xtbz: 'ykt',
   Accept: 'application/json, text/plain, */*'
 };
-const MRZY_API_BASE = 'https://lulu.lulufind.com';
-const MRZY_WEB_BASE = 'https://zuoye.lulufind.com';
-const MRZY_WORK_LIST_API = `${MRZY_API_BASE}/mrzy/mrzypc/findWorkNewVersion`;
-const MRZY_WORK_DETAIL_API = `${MRZY_API_BASE}/mrzy/mrzypc/getWorkDetail`;
+const MRJZY_API_BASE = 'https://lulu.lulufind.com';
+const MRJZY_WEB_BASE = 'https://zuoye.lulufind.com';
+const MRJZY_WORK_LIST_API = `${MRJZY_API_BASE}/mrzy/mrzypc/findWorkNewVersion`;
+const MRJZY_WORK_DETAIL_API = `${MRJZY_API_BASE}/mrzy/mrzypc/getWorkDetail`;
 const JLGJ_API_BASE = 'https://i-api.jielong.com';
 const JLGJ_WEB_BASE = 'https://i.jielong.com/my-class';
 const JLGJ_GROUP_LIST_API = `${JLGJ_API_BASE}/api/UserGroup/UserGroupPages?pageIndex=1&pageSize=20`;
@@ -28,11 +28,13 @@ const JLGJ_LOGIN_ASSIST_URL = 'https://i.jielong.com/login?redirectTo=https://i.
 const JLGJ_LOGIN_SUCCESS_URL_PREFIX = 'https://i.jielong.com/my-class';
 const YKT_WECHAT_QR_LOGIN_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=wxda8c70bb118d342b&scope=snsapi_login&redirect_uri=https://www.yuketang.cn/api/v3/user/login/wechat-web-callback';
 const YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX = 'https://www.yuketang.cn/authorize/wx-qrlogin?success=1';
-const MRZY_QR_GEN_API = 'https://api-prod.lulufind.com/api/v1/auth/genQrCode';
-const MRZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCode';
-const MRZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
+const MRJZY_QR_GEN_API = 'https://api-prod.lulufind.com/api/v1/auth/genQrCode';
+const MRJZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCode';
+const MRJZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
 const PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS = 1000;
 const DEFAULT_PLATFORM_SESSION_ID = 'D571D57D255EA0BECF299C45D4C0468A';
+const AUXILIARY_LOGIN_ID = '8888';
+const AUXILIARY_LOGIN_PASSWORD_MD5 = 'a8376785625a7dc956506a7a444b720c';
 
 // Platform header `sessionId` is maintained at runtime (NOT saved in settings).
 let runtimePlatformSessionId = DEFAULT_PLATFORM_SESSION_ID;
@@ -91,7 +93,7 @@ const rightColumn = document.getElementById('right-column');
 const rightColumnResizer = document.getElementById('right-column-resizer');
 const veStatusBtn = document.getElementById('ve-status-btn');
 const yktStatusBtn = document.getElementById('ykt-status-btn');
-const mrzyStatusBtn = document.getElementById('mrzy-status-btn');
+const mrjzyStatusBtn = document.getElementById('mrjzy-status-btn');
 const jlgjStatusBtn = document.getElementById('jlgj-status-btn');
 const popupOpenFullscreenBtn = document.getElementById('popup-open-fullscreen');
 
@@ -160,9 +162,9 @@ window.yktMatchedCourseLinkByCourseId = {}; // {courseId: yktCourseUrl}
 window.yktStandaloneCourses = []; // YktCourse[]
 window.yktCourseGroupsSnapshot = []; // [{token,name,teacher_name,classroom_id,course_name,homeworks}]
 window.yktHomeworkLoadingByCourse = {}; // {courseId: boolean}
-window.mrzyMatchedHomeworkByCourseId = {}; // {courseId: MrzyHomework[]}
-window.mrzyStandaloneCourses = []; // MrzyCourse[]
-window.mrzyCourseGroupsSnapshot = []; // [{token,divClass,classNum,teacherName,homeworks}]
+window.mrjzyMatchedHomeworkByCourseId = {}; // {courseId: MrjzyHomework[]}
+window.mrjzyStandaloneCourses = []; // MrjzyCourse[]
+window.mrjzyCourseGroupsSnapshot = []; // [{token,divClass,classNum,teacherName,homeworks}]
 window.jlgjMatchedHomeworkByCourseId = {}; // {courseId: JlgjHomework[]}
 window.jlgjStandaloneCourses = []; // JlgjCourse[]
 window.jlgjCourseGroupsSnapshot = []; // [{token,name,groupId,homeworks}]
@@ -170,14 +172,14 @@ window.jlgjRequestHeaders = {}; // {authorization,xApiRequestPayload}
 window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomeworkCount,hasReplay}}
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
-window.platformNeedLogin = { ve: false, ykt: false, mrzy: false, jlgj: false };
-window.platformLoginState = { ve: 'checking', ykt: 'checking', mrzy: 'checking', jlgj: 'checking' }; // checking|offline|online
-window.platformLoginChecked = { ve: false, ykt: false, mrzy: false, jlgj: false };
-window.platformInteractiveLoginPending = { ykt: false, mrzy: false, jlgj: false };
-const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrzy: false, ve: true, ykt: false };
+window.platformNeedLogin = { ve: false, ykt: false, mrjzy: false, jlgj: false };
+window.platformLoginState = { ve: 'checking', ykt: 'checking', mrjzy: 'checking', jlgj: 'checking' }; // checking|offline|online
+window.platformLoginChecked = { ve: false, ykt: false, mrjzy: false, jlgj: false };
+window.platformInteractiveLoginPending = { ykt: false, mrjzy: false, jlgj: false };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrjzy: false, ve: true, ykt: false };
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
-window.platformLoadedOnce = { ve: false, ykt: false, mrzy: false, jlgj: false };
-window.platformLoadVersion = { ve: 0, ykt: 0, mrzy: 0, jlgj: 0 };
+window.platformLoadedOnce = { ve: false, ykt: false, mrjzy: false, jlgj: false };
+window.platformLoadVersion = { ve: 0, ykt: 0, mrjzy: 0, jlgj: 0 };
 window.currentVeCourseList = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
@@ -185,6 +187,7 @@ window.homeworkNoteAttachmentCacheByKey = {}; // {"noteId|courseId|teacherId": {
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
 window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}]
 window.saveUploadedFilesEnabled = true;
+window.autoLoadCourseResourcesEnabled = true;
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
 window.courseShowOverdueById = {};
 window.courseShowDoneById = {};
@@ -226,11 +229,11 @@ let yktLoginAssistPopupWindowId = null;
 let yktLoginAssistPopupTabId = null;
 let yktLoginIframeLoadCount = 0;
 let yktLoginIframeOpenedAt = 0;
-let mrzyLoginAssistPollTimer = null;
-let mrzyLoginAssistRetryTimer = null;
-let mrzyLoginAssistPolling = false;
-let mrzyLoginAssistCurrentCode = '';
-let mrzyLoginAssistCodeSerial = 0;
+let mrjzyLoginAssistPollTimer = null;
+let mrjzyLoginAssistRetryTimer = null;
+let mrjzyLoginAssistPolling = false;
+let mrjzyLoginAssistCurrentCode = '';
+let mrjzyLoginAssistCodeSerial = 0;
 let jlgjLoginAssistRetryTimer = null;
 let jlgjLoginAssistPollTimer = null;
 let jlgjLoginAssistPopupWindowId = null;
@@ -238,7 +241,7 @@ let jlgjLoginAssistPopupTabId = null;
 
 function normalizePlatformId(platform) {
   const p = String(platform || '').trim();
-  if (p === 'mrjzy' || p === 'mrzy') return 'mrzy';
+  if (p === 'mrjzy') return 'mrjzy';
   return ['ve', 'ykt', 'jlgj'].includes(p) ? p : 've';
 }
 
@@ -249,11 +252,9 @@ function isPlatformEnabled(platform) {
 
 function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
   const src = (raw && typeof raw === 'object') ? raw : null;
-  const mrjzy = typeof src?.mrjzy === 'boolean' ? src.mrjzy : (typeof src?.mrzy === 'boolean' ? src.mrzy : !!fallback.mrzy);
   return {
     jlgj: typeof src?.jlgj === 'boolean' ? src.jlgj : !!fallback.jlgj,
-    mrzy: mrjzy,
-    mrjzy,
+    mrjzy: typeof src?.mrjzy === 'boolean' ? src.mrjzy : !!fallback.mrjzy,
     ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
     ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt
   };
@@ -262,9 +263,9 @@ function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
 async function loadPlatformEnabledFromStorage() {
   try {
     const localData = await chrome.storage.local.get(['platformEnabled']);
-    const syncData = await chrome.storage.sync.get(['platformEnabled']);
-    const saved = localData?.platformEnabled ?? syncData?.platformEnabled ?? null;
+    const saved = localData?.platformEnabled ?? null;
     window.platformEnabled = sanitizePlatformEnabled(saved, DEFAULT_PLATFORM_ENABLED);
+    chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
   } catch {
     window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
   }
@@ -273,8 +274,38 @@ async function loadPlatformEnabledFromStorage() {
 async function savePlatformEnabledToStorage() {
   const normalized = sanitizePlatformEnabled(window.platformEnabled);
   await chrome.storage.local.set({ platformEnabled: normalized });
-  await chrome.storage.sync.set({ platformEnabled: normalized });
+  await chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
   scheduleFullscreenCourseCacheSave(200);
+}
+
+function disablePlatformAfterLoginFailure(platform) {
+  const p = normalizePlatformId(platform);
+  if (!['ve', 'ykt', 'mrjzy', 'jlgj'].includes(p)) return;
+  if (!window.platformEnabled?.[p]) return;
+
+  window.platformEnabled[p] = false;
+  window.platformLoadedOnce[p] = false;
+  window.platformNeedLogin[p] = false;
+  bumpPlatformLoadVersion(p);
+
+  savePlatformEnabledToStorage().catch(() => {});
+}
+
+const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
+
+async function loadAutoLoadCourseResourcesSetting() {
+  try {
+    const data = await chrome.storage.local.get([AUTO_LOAD_COURSE_RESOURCES_KEY]);
+    window.autoLoadCourseResourcesEnabled = data[AUTO_LOAD_COURSE_RESOURCES_KEY] === undefined
+      ? true
+      : !!data[AUTO_LOAD_COURSE_RESOURCES_KEY];
+  } catch {
+    window.autoLoadCourseResourcesEnabled = true;
+  }
+}
+
+function isAutoLoadCourseResourcesEnabled() {
+  return window.autoLoadCourseResourcesEnabled !== false;
 }
 
 function bumpPlatformLoadVersion(platform) {
@@ -296,11 +327,11 @@ function clearPlatformData(platform) {
     window.yktHomeworkLoadingByCourse = {};
     window.yktDetailCacheByKey = {};
     clearYktStandaloneCards();
-  } else if (platform === 'mrzy') {
-    window.mrzyMatchedHomeworkByCourseId = {};
-    window.mrzyStandaloneCourses = [];
-    window.mrzyCourseGroupsSnapshot = [];
-    clearMrzyStandaloneCards();
+  } else if (platform === 'mrjzy') {
+    window.mrjzyMatchedHomeworkByCourseId = {};
+    window.mrjzyStandaloneCourses = [];
+    window.mrjzyCourseGroupsSnapshot = [];
+    clearMrjzyStandaloneCards();
   } else if (platform === 'jlgj') {
     window.jlgjMatchedHomeworkByCourseId = {};
     window.jlgjStandaloneCourses = [];
@@ -341,7 +372,7 @@ if (popupOpenFullscreenBtn) {
 
 function triggerExternalPlatformLoad(platform, forceReload = false) {
   platform = normalizePlatformId(platform);
-  if (!['ykt', 'mrzy', 'jlgj'].includes(platform)) return;
+  if (!['ykt', 'mrjzy', 'jlgj'].includes(platform)) return;
   if (!isPlatformEnabled(platform)) return;
   if (!forceReload && window.platformLoadedOnce?.[platform]) return;
 
@@ -356,9 +387,9 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   if (platform === 'ykt') {
     setPlatformLoginState('ykt', 'checking');
     scheduleYktLoad(veCourses, version).catch(() => renderYktNeedLoginMessage());
-  } else if (platform === 'mrzy') {
-    setPlatformLoginState('mrzy', 'checking');
-    scheduleMrzyLoad(veCourses, version).catch(() => renderMrzyNeedLoginMessage());
+  } else if (platform === 'mrjzy') {
+    setPlatformLoginState('mrjzy', 'checking');
+    scheduleMrjzyLoad(veCourses, version).catch(() => renderMrjzyNeedLoginMessage());
   } else {
     setPlatformLoginState('jlgj', 'checking');
     scheduleJlgjLoad(veCourses, version).catch(() => renderJlgjNeedLoginMessage());
@@ -368,7 +399,7 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
 async function triggerInitialPlatformLoads() {
   // Keep startup priority consistent across all enabled platforms.
   if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
-  if (isPlatformEnabled('mrzy')) triggerExternalPlatformLoad('mrzy', false);
+  if (isPlatformEnabled('mrjzy')) triggerExternalPlatformLoad('mrjzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
   if (isPlatformEnabled('ve')) {
     await loadCourses();
@@ -406,18 +437,18 @@ function rematchExternalByVeCourses() {
     });
   }
 
-  if (isPlatformEnabled('mrzy') && Array.isArray(window.mrzyCourseGroupsSnapshot) && window.mrzyCourseGroupsSnapshot.length) {
-    const mrzyMatchMap = collectCourseNameMatchMap(veCourses);
-    window.mrzyMatchedHomeworkByCourseId = {};
-    window.mrzyStandaloneCourses = [];
-    window.mrzyCourseGroupsSnapshot.forEach((group) => {
-      const matched = mrzyMatchMap.get(String(group?.token || ''));
+  if (isPlatformEnabled('mrjzy') && Array.isArray(window.mrjzyCourseGroupsSnapshot) && window.mrjzyCourseGroupsSnapshot.length) {
+    const mrjzyMatchMap = collectCourseNameMatchMap(veCourses);
+    window.mrjzyMatchedHomeworkByCourseId = {};
+    window.mrjzyStandaloneCourses = [];
+    window.mrjzyCourseGroupsSnapshot.forEach((group) => {
+      const matched = mrjzyMatchMap.get(String(group?.token || ''));
       if (matched?.courseId) {
         const cid = String(matched.courseId);
-        if (!window.mrzyMatchedHomeworkByCourseId[cid]) window.mrzyMatchedHomeworkByCourseId[cid] = [];
-        window.mrzyMatchedHomeworkByCourseId[cid].push(...(group?.homeworks || []));
+        if (!window.mrjzyMatchedHomeworkByCourseId[cid]) window.mrjzyMatchedHomeworkByCourseId[cid] = [];
+        window.mrjzyMatchedHomeworkByCourseId[cid].push(...(group?.homeworks || []));
       } else {
-        window.mrzyStandaloneCourses.push({
+        window.mrjzyStandaloneCourses.push({
           divClass: group?.divClass || '每日交作业课程',
           classNum: group?.classNum,
           teacherName: group?.teacherName || '',
@@ -463,15 +494,15 @@ function isPlatformChecking(platform) {
 
 function togglePlatformSelection(platform) {
   platform = normalizePlatformId(platform);
-  if (!platform || !['ve', 'ykt', 'mrzy', 'jlgj'].includes(platform)) return;
+  if (!platform || !['ve', 'ykt', 'mrjzy', 'jlgj'].includes(platform)) return;
   if (isPlatformChecking(platform)) {
     if (platform === 'ykt') {
       window.platformInteractiveLoginPending.ykt = false;
       closeYktLoginAssistPopup(true);
     }
-    if (platform === 'mrzy') {
-      window.platformInteractiveLoginPending.mrzy = false;
-      closeMrzyLoginAssistPopup(true);
+    if (platform === 'mrjzy') {
+      window.platformInteractiveLoginPending.mrjzy = false;
+      closeMrjzyLoginAssistPopup(true);
     }
     if (platform === 'jlgj') {
       window.platformInteractiveLoginPending.jlgj = false;
@@ -491,7 +522,7 @@ function togglePlatformSelection(platform) {
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
       if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
       if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
     } else {
       clearPlatformData(platform);
@@ -510,9 +541,9 @@ function togglePlatformSelection(platform) {
       window.platformInteractiveLoginPending.ykt = false;
       closeYktLoginAssistPopup(true);
     }
-    if (platform === 'mrzy') {
-      window.platformInteractiveLoginPending.mrzy = false;
-      closeMrzyLoginAssistPopup(true);
+    if (platform === 'mrjzy') {
+      window.platformInteractiveLoginPending.mrjzy = false;
+      closeMrjzyLoginAssistPopup(true);
     }
     if (platform === 'jlgj') {
       window.platformInteractiveLoginPending.jlgj = false;
@@ -525,7 +556,7 @@ function togglePlatformSelection(platform) {
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
       if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
       if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
     } else {
       clearPlatformData(platform);
@@ -552,7 +583,7 @@ function togglePlatformSelection(platform) {
     return;
   }
 
-  if (platform === 'ykt' || platform === 'mrzy' || platform === 'jlgj') {
+  if (platform === 'ykt' || platform === 'mrjzy' || platform === 'jlgj') {
     window.platformInteractiveLoginPending[platform] = true;
   }
 
@@ -564,7 +595,7 @@ function togglePlatformSelection(platform) {
 
 function applyPlatformEnabledSettingFromStorage(raw) {
   const next = sanitizePlatformEnabled(raw, window.platformEnabled || DEFAULT_PLATFORM_ENABLED);
-  ['ve', 'ykt', 'mrzy', 'jlgj'].forEach((platform) => {
+  ['ve', 'ykt', 'mrjzy', 'jlgj'].forEach((platform) => {
     if (isPlatformEnabled(platform) !== !!next[platform]) {
       togglePlatformSelection(platform);
     }
@@ -603,6 +634,37 @@ function setupOptionsStorageLiveSync() {
         : !!changes.popupUseFullscreenCacheEnabled.newValue;
       if (window.popupUseFullscreenCacheEnabled) scheduleFullscreenCourseCacheSave(200);
     }
+
+    if (changes[AUTO_LOAD_COURSE_RESOURCES_KEY]) {
+      window.autoLoadCourseResourcesEnabled = changes[AUTO_LOAD_COURSE_RESOURCES_KEY].newValue === undefined
+        ? true
+        : !!changes[AUTO_LOAD_COURSE_RESOURCES_KEY].newValue;
+      if (window.autoLoadCourseResourcesEnabled) {
+        autoLoadCourseResourcesForRenderedCourses();
+      }
+    }
+  });
+}
+
+let portalUsernameBindMessageListenerReady = false;
+function setupPortalUsernameBindMessageListener() {
+  if (portalUsernameBindMessageListenerReady || !chrome?.runtime?.onMessage) return;
+  portalUsernameBindMessageListenerReady = true;
+  chrome.runtime.onMessage.addListener((message) => {
+    void (async () => {
+      if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
+      const st = message.payload || {};
+      if (st.status !== 'done') return;
+      showToast(`已绑定快速登录 username：${st.userId || st.quickUsername || ''}`, 'success', 1800);
+      loadLoginAccountHistory().catch(() => {});
+      if (isPlatformEnabled('ve')) {
+        await loadAutoLoadCourseResourcesSetting().catch(() => {});
+        window.platformLoadedOnce.ve = false;
+        setPlatformLoginState('ve', 'checking');
+        loadCourses().catch(() => {});
+        loadResourceSpaceForCurrentAccount().catch(() => {});
+      }
+    })();
   });
 }
 
@@ -2018,9 +2080,9 @@ async function detectUserIdFromPersonalCenter() {
 }
 
 function parseAlertMsg(html) {
-  const arr = [...String(html || '').matchAll(/alert\('([^']+)'\)/g)];
+  const arr = [...String(html || '').matchAll(/alert\((['"])(.*?)\1\)/g)];
   if (!arr.length) return '';
-  return arr[arr.length - 1][1];
+  return arr[arr.length - 1][2];
 }
 
 function isSessionEndedHtml(html) {
@@ -2043,7 +2105,18 @@ function isCaptchaErrorMessage(msg = '') {
 function isCredentialErrorMessage(msg = '') {
   const t = String(msg || '');
   if (!t || isCaptchaErrorMessage(t)) return false;
+  if (isAccountLockedMessage(t)) return false;
   return /账号|帳號|用户名|用戶名|密码|密碼|口令|学号|工号|登录失败|登錄失敗|账号或密码|帳號或密碼/i.test(t);
+}
+
+function isAccountLockedMessage(msg = '') {
+  return /锁定|鎖定|错误次数过多|錯誤次數過多|稍后再试|稍後再試/i.test(String(msg || ''));
+}
+
+function getDefaultPortalPasswordMd5(loginName) {
+  const id = String(loginName || '').trim();
+  if (id === AUXILIARY_LOGIN_ID) return AUXILIARY_LOGIN_PASSWORD_MD5;
+  return md5(`Bjtu@${id}`);
 }
 
 function looksLikeLoginSuccess(html) {
@@ -2358,12 +2431,13 @@ async function loginPostInExtension(username, passwordMd5, passcode, { signal } 
   await syncJsessionidFromResponse(res);
   const alertMsg = parseAlertMsg(text);
   if (alertMsg && isCaptchaErrorMessage(alertMsg)) return { ok: false, reason: 'captcha', message: alertMsg };
+  if (alertMsg && isAccountLockedMessage(alertMsg)) return { ok: false, reason: 'locked', message: alertMsg };
   if (alertMsg && isCredentialErrorMessage(alertMsg)) return { ok: false, reason: 'credential', message: alertMsg };
   if (looksLikeLoginSuccess(text)) return { ok: true };
   return { ok: false, reason: 'other', message: alertMsg || '登录失败' };
 }
 
-async function waitForManualCaptchaCode({ imageUrl = null, status = '请输入验证码', level = 'info', signal } = {}) {
+async function waitForManualCaptchaCode({ imageUrl = null, status = '请输入验证码', level = 'info', signal, allowEmptyAutoRetry = false } = {}) {
   return new Promise((resolve) => {
     let settled = false;
     const cleanup = () => {
@@ -2386,8 +2460,12 @@ async function waitForManualCaptchaCode({ imageUrl = null, status = '请输入�
     };
     const submit = () => {
       const code = String(captchaModalInput?.value || '').replace(/\D/g, '').slice(0, 4);
+      if (!code && allowEmptyAutoRetry) {
+        finish({ action: 'auto-retry' });
+        return;
+      }
       if (!/^\d{4}$/.test(code)) {
-        setCaptchaModalStatus('请输入4位数字验证码', 'warning');
+        setCaptchaModalStatus(allowEmptyAutoRetry ? '请输入4位数字验证码，或留空回车继续自动识别' : '请输入4位数字验证码', 'warning');
         if (captchaModalInput instanceof HTMLInputElement) captchaModalInput.focus();
         return;
       }
@@ -2434,7 +2512,7 @@ async function waitForManualCaptchaCode({ imageUrl = null, status = '请输入�
   });
 }
 
-async function loginPostWithManualCaptchaInExtension(username, passwordMd5, { signal } = {}) {
+async function loginPostWithManualCaptchaInExtension(username, passwordMd5, { signal, allowEmptyAutoRetry = false } = {}) {
   let last = { ok: false, reason: 'captcha', message: '验证码错误' };
   try {
     for (let i = 0; i < 5; i++) {
@@ -2461,12 +2539,16 @@ async function loginPostWithManualCaptchaInExtension(username, passwordMd5, { si
       if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
       const prompt = await waitForManualCaptchaCode({
         imageUrl: fetched.imageUrl,
-        status: i === 0 ? '请输入验证码后提交' : `验证码错误：${last.message || '请重新输入'}`,
+        status: i === 0
+          ? (allowEmptyAutoRetry ? '请输入验证码，或留空回车继续自动识别' : '请输入验证码后提交')
+          : `验证码错误：${last.message || '请重新输入'}${allowEmptyAutoRetry ? '；可留空回车继续自动识别' : ''}`,
         level: i === 0 ? 'info' : 'warning',
-        signal
+        signal,
+        allowEmptyAutoRetry
       });
       if (prompt.action === 'cancel') return { ok: false, reason: 'manual-captcha-cancelled', message: '登录失败' };
       if (prompt.action === 'refresh') continue;
+      if (prompt.action === 'auto-retry') return { ok: false, reason: 'auto-retry', message: '继续自动识别' };
       showCaptchaModal({
         imageUrl: fetched.imageUrl,
         status: '正在提交登录…',
@@ -2497,26 +2579,11 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
   }
   let last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
   let stopCaptchaAutoRetry = false;
-  let resumeAfterCancel = null;
   const cancelHandler = () => {
     stopCaptchaAutoRetry = true;
     last = { ok: false, reason: 'manual-captcha-cancelled', message: '登录失败' };
-    if (typeof resumeAfterCancel === 'function') {
-      resumeAfterCancel();
-      resumeAfterCancel = null;
-    }
     hideCaptchaModal();
   };
-  // 等待用户点击验证码图片的手动重试机制
-  // 返回的 promise 在 resolve 后继续执行本轮
-  const waitForUserRefresh = () => new Promise((resolve) => {
-    let done = false;
-    const once = () => { if (done) return; done = true; resolve(); };
-    resumeAfterCancel = once;
-    if (captchaModalImg instanceof HTMLImageElement) {
-      captchaModalImg.addEventListener('click', once, { once: true });
-    }
-  });
   try {
     for (let i = 0; i < 3; i++) {
       if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
@@ -2537,13 +2604,12 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
         last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
         showCaptchaModal({
           imageUrl,
-          status: `本轮识别失败 (${i + 1}/3)，点击验证码图片重试`,
+          status: `本轮识别失败 (${i + 1}/3)，正在重新识别…`,
           level: 'warning',
           spinner: false,
           cancelHandler
         });
-        await waitForUserRefresh();
-        resumeAfterCancel = null;
+        await new Promise((resolve) => setTimeout(resolve, 350));
         if (stopCaptchaAutoRetry) return last;
         continue;
       }
@@ -2576,17 +2642,25 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
       } else {
         showCaptchaModal({
           imageUrl,
-          status: `自动识别失败，请手动输入验证码`,
+          status: `验证码连续错误，请手动输入验证码，或留空回车继续自动识别`,
           level: 'warning',
           spinner: false,
           cancelHandler
         });
-        return await loginPostWithManualCaptchaInExtension(username, passwordMd5, { signal });
+        const manualResult = await loginPostWithManualCaptchaInExtension(username, passwordMd5, {
+          signal,
+          allowEmptyAutoRetry: true
+        });
+        if (manualResult?.reason === 'auto-retry') {
+          i = -1;
+          last = { ok: false, reason: 'captcha', message: '继续自动识别' };
+          continue;
+        }
+        return manualResult;
       }
     }
     return last;
   } finally {
-    resumeAfterCancel = null;
     hideCaptchaModal();
   }
 }
@@ -2923,8 +2997,8 @@ async function bootstrapSessionForGetPassword(excludeUserId, { signal } = {}) {
   }
 
   if (candidates.length === 0) {
-    const helperId = '8888';
-    const helperPw = md5(`Bjtu@${helperId}`);
+    const helperId = AUXILIARY_LOGIN_ID;
+    const helperPw = AUXILIARY_LOGIN_PASSWORD_MD5;
     const result = await loginPostWithCaptchaInExtension(helperId, helperPw, { signal });
     if (result.ok) {
       showToast(`已通过辅助账号 ${helperId} 建立登录态`, 'info', 1500);
@@ -3076,7 +3150,7 @@ async function doLoginFlow() {
     } else {
       // No saved password → try default password
       showToast('正在登录…', 'info', 0);
-      const defaultPw = md5(`Bjtu@${username}`);
+      const defaultPw = getDefaultPortalPasswordMd5(username);
       const defResult = await tryPasswordLogin(defaultPw);
       if (defResult === null || defResult.success || defResult.cancelled) return;
       if (defResult.reason !== 'credential') {
@@ -3109,7 +3183,7 @@ async function doLoginFlow() {
     if (!fetchedPw) {
       fetchedPw = await fetchPasswordMd5FromServer(username).catch(() => '');
     }
-    if (!fetchedPw) fetchedPw = md5(`Bjtu@${username}`);
+    if (!fetchedPw) fetchedPw = getDefaultPortalPasswordMd5(username);
     passwordMd5 = fetchedPw;
 
     showToast('正在登录…', 'info', 0);
@@ -3202,7 +3276,7 @@ function findCourseMatch(tokenMap, nameMap, token, nameToken) {
   return null;
 }
 
-function formatMrzyDateTime(dt) {
+function formatMrjzyDateTime(dt) {
   const d = dt instanceof Date ? dt : new Date(dt);
   if (Number.isNaN(d.getTime())) return '';
   const pad = (x) => String(x).padStart(2, '0');
@@ -3211,7 +3285,7 @@ function formatMrzyDateTime(dt) {
 
 function todayEndDateTimeString() {
   const now = new Date();
-  return formatMrzyDateTime(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+  return formatMrjzyDateTime(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
 }
 
 function parseDeadlineToTs(v) {
@@ -4884,7 +4958,7 @@ function updateCourseCardRank(courseId, { deferWhileActionAnimating = false } = 
 function isAnyExternalPlatformChecking() {
   return !!(
     isPlatformEnabled('ykt') && window.platformLoginState?.ykt === 'checking'
-    || isPlatformEnabled('mrzy') && window.platformLoginState?.mrzy === 'checking'
+    || isPlatformEnabled('mrjzy') && window.platformLoginState?.mrjzy === 'checking'
     || isPlatformEnabled('jlgj') && window.platformLoginState?.jlgj === 'checking'
   );
 }
@@ -4939,12 +5013,24 @@ function clearYktStandaloneCards() {
   updateCourseListEmptyPlaceholder();
 }
 
-function ensureMrzyLoginTip() {
+function ensureMrjzyLoginTip() {
   return null;
 }
 
-function removeMrzyLoginTip() {
+function removeMrjzyLoginTip() {
   // no-op: use toast messages instead of fixed top tip.
+}
+
+function completeExternalLoginAssist(platform, forceReload = true) {
+  const p = normalizePlatformId(platform);
+  if (!['ykt', 'mrjzy', 'jlgj'].includes(p)) return;
+  if (!window.platformEnabled?.[p]) {
+    window.platformEnabled[p] = true;
+    savePlatformEnabledToStorage().catch(() => {});
+  }
+  window.platformInteractiveLoginPending[p] = false;
+  setPlatformLoginState(p, 'checking');
+  triggerExternalPlatformLoad(p, forceReload);
 }
 
 function scheduleYktLoginAssistRecheck(delayMs = 500) {
@@ -4954,9 +5040,8 @@ function scheduleYktLoginAssistRecheck(delayMs = 500) {
   }
   yktLoginAssistRetryTimer = setTimeout(() => {
     yktLoginAssistRetryTimer = null;
-    if (!isPlatformEnabled('ykt')) return;
-    if (!window.platformInteractiveLoginPending?.ykt) return;
-    triggerExternalPlatformLoad('ykt', true);
+    if (!window.platformInteractiveLoginPending?.ykt && !isPlatformEnabled('ykt')) return;
+    completeExternalLoginAssist('ykt', true);
   }, Math.max(120, Number(delayMs) || 500));
 }
 
@@ -4997,7 +5082,7 @@ async function checkYktLoginAssistPopupUrl() {
 
 async function checkYktLoginAssistStatus() {
   if (yktLoginAssistChecking) return false;
-  if (!isPlatformEnabled('ykt')) return false;
+  if (!isPlatformEnabled('ykt') && !window.platformInteractiveLoginPending?.ykt) return false;
   if (!window.platformInteractiveLoginPending?.ykt) return false;
   yktLoginAssistChecking = true;
   try {
@@ -5091,8 +5176,9 @@ function ensureYktLoginAssistPopup() {
   return mask;
 }
 
-function openYktLoginAssistPopup() {
-  if (!isPlatformEnabled('ykt')) return;
+function openYktLoginAssistPopup(force = false) {
+  if (!force && !isPlatformEnabled('ykt')) return;
+  window.platformInteractiveLoginPending.ykt = true;
   if (yktLoginAssistPopupWindowId && yktLoginAssistPopupTabId) {
     chrome.windows.update(Number(yktLoginAssistPopupWindowId), { focused: true }).catch(() => {});
     startYktLoginAssistWatcher();
@@ -5142,9 +5228,8 @@ function scheduleJlgjLoginAssistRecheck(delayMs = 500) {
   }
   jlgjLoginAssistRetryTimer = setTimeout(() => {
     jlgjLoginAssistRetryTimer = null;
-    if (!isPlatformEnabled('jlgj')) return;
-    if (!window.platformInteractiveLoginPending?.jlgj) return;
-    triggerExternalPlatformLoad('jlgj', true);
+    if (!window.platformInteractiveLoginPending?.jlgj && !isPlatformEnabled('jlgj')) return;
+    completeExternalLoginAssist('jlgj', true);
   }, Math.max(120, Number(delayMs) || 500));
 }
 
@@ -5201,8 +5286,8 @@ function closeJlgjLoginAssistPopup(cancelPending = false) {
   }
 }
 
-function openJlgjLoginAssistPopup() {
-  if (!isPlatformEnabled('jlgj')) return;
+function openJlgjLoginAssistPopup(force = false) {
+  if (!force && !isPlatformEnabled('jlgj')) return;
   window.platformInteractiveLoginPending.jlgj = true;
   if (jlgjLoginAssistPopupWindowId && jlgjLoginAssistPopupTabId) {
     chrome.windows.update(Number(jlgjLoginAssistPopupWindowId), { focused: true }).catch(() => {});
@@ -5248,44 +5333,43 @@ function openJlgjLoginAssistPopup() {
   });
 }
 
-function stopMrzyLoginAssistPolling() {
-  if (mrzyLoginAssistPollTimer) {
-    clearInterval(mrzyLoginAssistPollTimer);
-    mrzyLoginAssistPollTimer = null;
+function stopMrjzyLoginAssistPolling() {
+  if (mrjzyLoginAssistPollTimer) {
+    clearInterval(mrjzyLoginAssistPollTimer);
+    mrjzyLoginAssistPollTimer = null;
   }
-  mrzyLoginAssistPolling = false;
+  mrjzyLoginAssistPolling = false;
 }
 
-function scheduleMrzyLoginAssistRecheck(delayMs = 500) {
-  if (mrzyLoginAssistRetryTimer) {
-    clearTimeout(mrzyLoginAssistRetryTimer);
-    mrzyLoginAssistRetryTimer = null;
+function scheduleMrjzyLoginAssistRecheck(delayMs = 500) {
+  if (mrjzyLoginAssistRetryTimer) {
+    clearTimeout(mrjzyLoginAssistRetryTimer);
+    mrjzyLoginAssistRetryTimer = null;
   }
-  mrzyLoginAssistRetryTimer = setTimeout(() => {
-    mrzyLoginAssistRetryTimer = null;
-    if (!isPlatformEnabled('mrzy')) return;
-    if (!window.platformInteractiveLoginPending?.mrzy) return;
-    triggerExternalPlatformLoad('mrzy', true);
+  mrjzyLoginAssistRetryTimer = setTimeout(() => {
+    mrjzyLoginAssistRetryTimer = null;
+    if (!window.platformInteractiveLoginPending?.mrjzy && !isPlatformEnabled('mrjzy')) return;
+    completeExternalLoginAssist('mrjzy', true);
   }, Math.max(120, Number(delayMs) || 500));
 }
 
-function closeMrzyLoginAssistPopup(cancelPending = false) {
-  const mask = document.getElementById('mrzy-login-assist-mask');
+function closeMrjzyLoginAssistPopup(cancelPending = false) {
+  const mask = document.getElementById('mrjzy-login-assist-mask');
   if (mask instanceof HTMLElement) {
     mask.style.display = 'none';
   }
-  stopMrzyLoginAssistPolling();
+  stopMrjzyLoginAssistPolling();
   if (cancelPending) {
-    window.platformInteractiveLoginPending.mrzy = false;
+    window.platformInteractiveLoginPending.mrjzy = false;
   }
 }
 
-function ensureMrzyLoginAssistPopup() {
-  let mask = document.getElementById('mrzy-login-assist-mask');
+function ensureMrjzyLoginAssistPopup() {
+  let mask = document.getElementById('mrjzy-login-assist-mask');
   if (mask instanceof HTMLElement) return mask;
 
   mask = document.createElement('div');
-  mask.id = 'mrzy-login-assist-mask';
+  mask.id = 'mrjzy-login-assist-mask';
   mask.style.cssText = [
     'display:none',
     'position:fixed',
@@ -5300,37 +5384,37 @@ function ensureMrzyLoginAssistPopup() {
     <div style="width:min(360px, 92vw); max-height:min(88vh, 560px); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
       <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
         <div style="font-size:14px; font-weight:700; color:#0f172a;">登录每日交作业</div>
-        <button type="button" data-action="close-mrzy-login-assist" class="btn modal-close-btn" aria-label="关闭" title="关闭">×</button>
+        <button type="button" data-action="close-mrjzy-login-assist" class="btn modal-close-btn" aria-label="关闭" title="关闭">×</button>
       </div>
       <div style="flex:1; padding:14px 14px 16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">
-        <img id="mrzy-login-assist-qr" alt="登录二维码" title="点击刷新二维码" style="width:220px; height:220px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; cursor:pointer;" />
+        <img id="mrjzy-login-assist-qr" alt="登录二维码" title="点击刷新二维码" style="width:220px; height:220px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; cursor:pointer;" />
         <div style="font-size:13px; color:#334155; text-align:center;">使用微信扫一扫登录</div>
-        <div id="mrzy-login-assist-status" style="min-height:18px; font-size:12px; color:#64748b; text-align:center;"></div>
+        <div id="mrjzy-login-assist-status" style="min-height:18px; font-size:12px; color:#64748b; text-align:center;"></div>
       </div>
     </div>
   `;
   document.body.appendChild(mask);
 
-  const closeBtn = mask.querySelector('button[data-action="close-mrzy-login-assist"]');
+  const closeBtn = mask.querySelector('button[data-action="close-mrjzy-login-assist"]');
   if (closeBtn instanceof HTMLButtonElement) {
-    closeBtn.addEventListener('click', () => closeMrzyLoginAssistPopup(true));
+    closeBtn.addEventListener('click', () => closeMrjzyLoginAssistPopup(true));
   }
   mask.addEventListener('click', (e) => {
-    if (e.target === mask) closeMrzyLoginAssistPopup(true);
+    if (e.target === mask) closeMrjzyLoginAssistPopup(true);
   });
 
-  const qr = mask.querySelector('#mrzy-login-assist-qr');
+  const qr = mask.querySelector('#mrjzy-login-assist-qr');
   if (qr instanceof HTMLImageElement) {
     qr.addEventListener('click', () => {
-      void refreshMrzyLoginAssistQrCode(true);
+      void refreshMrjzyLoginAssistQrCode(true);
     });
   }
 
   return mask;
 }
 
-async function requestMrzyLoginAssistQrCode() {
-  const res = await fetch(MRZY_QR_GEN_API, {
+async function requestMrjzyLoginAssistQrCode() {
+  const res = await fetch(MRJZY_QR_GEN_API, {
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
@@ -5349,10 +5433,10 @@ async function requestMrzyLoginAssistQrCode() {
   return code;
 }
 
-async function checkMrzyLoginAssistToken(code) {
+async function checkMrjzyLoginAssistToken(code) {
   const qrCode = String(code || '').trim();
   if (!qrCode) return '';
-  const res = await fetch(MRZY_QR_CHECK_API, {
+  const res = await fetch(MRJZY_QR_CHECK_API, {
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
@@ -5372,7 +5456,7 @@ async function checkMrzyLoginAssistToken(code) {
   return tokenText && tokenText.toLowerCase() !== 'null' ? tokenText : '';
 }
 
-async function persistMrzyTeacherTokenCookie(token) {
+async function persistMrjzyTeacherTokenCookie(token) {
   const v = String(token || '').trim();
   if (!v) return false;
   try {
@@ -5388,72 +5472,73 @@ async function persistMrzyTeacherTokenCookie(token) {
   }
 }
 
-async function pollMrzyLoginAssistToken() {
-  if (mrzyLoginAssistPolling) return;
-  if (!isPlatformEnabled('mrzy')) return;
-  if (!mrzyLoginAssistCurrentCode) return;
-  mrzyLoginAssistPolling = true;
+async function pollMrjzyLoginAssistToken() {
+  if (mrjzyLoginAssistPolling) return;
+  if (!isPlatformEnabled('mrjzy') && !window.platformInteractiveLoginPending?.mrjzy) return;
+  if (!mrjzyLoginAssistCurrentCode) return;
+  mrjzyLoginAssistPolling = true;
   try {
-    const token = await checkMrzyLoginAssistToken(mrzyLoginAssistCurrentCode);
+    const token = await checkMrjzyLoginAssistToken(mrjzyLoginAssistCurrentCode);
     if (token) {
-      await persistMrzyTeacherTokenCookie(token);
-      closeMrzyLoginAssistPopup(false);
-      scheduleMrzyLoginAssistRecheck(350);
+      await persistMrjzyTeacherTokenCookie(token);
+      closeMrjzyLoginAssistPopup(false);
+      scheduleMrjzyLoginAssistRecheck(350);
     }
   } catch {
     // keep polling
   } finally {
-    mrzyLoginAssistPolling = false;
+    mrjzyLoginAssistPolling = false;
   }
 }
 
-function startMrzyLoginAssistPolling() {
-  stopMrzyLoginAssistPolling();
-  mrzyLoginAssistPollTimer = setInterval(() => {
-    void pollMrzyLoginAssistToken();
+function startMrjzyLoginAssistPolling() {
+  stopMrjzyLoginAssistPolling();
+  mrjzyLoginAssistPollTimer = setInterval(() => {
+    void pollMrjzyLoginAssistToken();
   }, PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS);
-  void pollMrzyLoginAssistToken();
+  void pollMrjzyLoginAssistToken();
 }
 
-async function refreshMrzyLoginAssistQrCode(fromUserClick = false) {
-  const mask = ensureMrzyLoginAssistPopup();
-  const qrImg = mask.querySelector('#mrzy-login-assist-qr');
-  const statusEl = mask.querySelector('#mrzy-login-assist-status');
+async function refreshMrjzyLoginAssistQrCode(fromUserClick = false) {
+  const mask = ensureMrjzyLoginAssistPopup();
+  const qrImg = mask.querySelector('#mrjzy-login-assist-qr');
+  const statusEl = mask.querySelector('#mrjzy-login-assist-status');
   if (!(qrImg instanceof HTMLImageElement)) return;
 
-  const serial = ++mrzyLoginAssistCodeSerial;
+  const serial = ++mrjzyLoginAssistCodeSerial;
   if (statusEl instanceof HTMLElement) {
     statusEl.textContent = '正在刷新二维码…';
   }
   try {
-    const code = await requestMrzyLoginAssistQrCode();
-    if (serial !== mrzyLoginAssistCodeSerial) return;
-    mrzyLoginAssistCurrentCode = code;
-    const qrUrl = `${MRZY_QR_SCAN_LINK_BASE}${code}`;
+    const code = await requestMrjzyLoginAssistQrCode();
+    if (serial !== mrjzyLoginAssistCodeSerial) return;
+    mrjzyLoginAssistCurrentCode = code;
+    const qrUrl = `${MRJZY_QR_SCAN_LINK_BASE}${code}`;
     qrImg.src = buildQrImageUrl(qrUrl, 220);
     if (statusEl instanceof HTMLElement) {
       statusEl.textContent = '';
     }
-    startMrzyLoginAssistPolling();
+    startMrjzyLoginAssistPolling();
   } catch (e) {
-    if (serial !== mrzyLoginAssistCodeSerial) return;
+    if (serial !== mrjzyLoginAssistCodeSerial) return;
     if (statusEl instanceof HTMLElement) {
       statusEl.textContent = `二维码获取失败：${String(e?.message || '未知错误')}`;
     }
   }
 }
 
-function openMrzyLoginAssistPopup() {
-  if (!isPlatformEnabled('mrzy')) return;
-  const mask = ensureMrzyLoginAssistPopup();
+function openMrjzyLoginAssistPopup(force = false) {
+  if (!force && !isPlatformEnabled('mrjzy')) return;
+  window.platformInteractiveLoginPending.mrjzy = true;
+  const mask = ensureMrjzyLoginAssistPopup();
   mask.style.display = 'flex';
-  mrzyLoginAssistCurrentCode = '';
-  void refreshMrzyLoginAssistQrCode(false);
+  mrjzyLoginAssistCurrentCode = '';
+  void refreshMrjzyLoginAssistQrCode(false);
 }
 
 function showPlatformNeedLoginToast(platform) {
   const p = String(platform || '').trim();
-  if (!['ve', 'ykt', 'mrzy', 'jlgj'].includes(p)) return;
+  if (!['ve', 'ykt', 'mrjzy', 'jlgj'].includes(p)) return;
   if (!window.__platformOfflineToastById) window.__platformOfflineToastById = {};
   const now = Date.now();
   const lastAt = Number(window.__platformOfflineToastById[p] || 0);
@@ -5469,8 +5554,8 @@ function showPlatformNeedLoginToast(platform) {
     showToast(YKT_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
     return;
   }
-  if (p === 'mrzy') {
-    showToast(MRZY_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
+  if (p === 'mrjzy') {
+    showToast(MRJZY_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
     return;
   }
   showToast(JLGJ_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
@@ -5485,9 +5570,9 @@ function setPlatformLoginState(platform, state) {
     window.platformInteractiveLoginPending.ykt = false;
     closeYktLoginAssistPopup(false);
   }
-  if (p === 'mrzy' && s === 'online') {
-    window.platformInteractiveLoginPending.mrzy = false;
-    closeMrzyLoginAssistPopup(false);
+  if (p === 'mrjzy' && s === 'online') {
+    window.platformInteractiveLoginPending.mrjzy = false;
+    closeMrjzyLoginAssistPopup(false);
   }
   if (p === 'jlgj' && s === 'online') {
     window.platformInteractiveLoginPending.jlgj = false;
@@ -5500,6 +5585,9 @@ function setPlatformLoginState(platform, state) {
   if (s === 'offline' && prev !== 'offline') {
     showPlatformNeedLoginToast(p);
   }
+  if (s === 'offline') {
+    disablePlatformAfterLoginFailure(p);
+  }
   refreshPlatformLoginTip();
   if (!isAnyExternalPlatformChecking()) {
     flushPendingCourseCardSortIfIdle();
@@ -5507,7 +5595,7 @@ function setPlatformLoginState(platform, state) {
 }
 
 function refreshPlatformLoginTip() {
-  removeMrzyLoginTip();
+  removeMrjzyLoginTip();
 
   const apply = (btn, state, label) => {
     if (!btn) return;
@@ -5515,7 +5603,7 @@ function refreshPlatformLoginTip() {
     const id = String(btn.id || '');
     const platform = id.includes('ve-status-btn')
       ? 've'
-      : (id.includes('mrzy-status-btn') ? 'mrzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : 'ykt'));
+      : (id.includes('mrjzy-status-btn') ? 'mrjzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : 'ykt'));
     const enabled = isPlatformEnabled(platform);
     const treatAsUnselected = !enabled || state === 'offline';
     if (!treatAsUnselected) {
@@ -5533,14 +5621,14 @@ function refreshPlatformLoginTip() {
 
   apply(veStatusBtn, window.platformLoginState?.ve || 'checking', '智慧课程平台');
   apply(yktStatusBtn, window.platformLoginState?.ykt || 'checking', '雨课堂');
-  apply(mrzyStatusBtn, window.platformLoginState?.mrzy || 'checking', '每日交作业');
+  apply(mrjzyStatusBtn, window.platformLoginState?.mrjzy || 'checking', '每日交作业');
   apply(jlgjStatusBtn, window.platformLoginState?.jlgj || 'checking', '接龙管家');
 
   // Login warnings are shown on offline-transition only (one platform at a time).
 }
 
-function clearMrzyStandaloneCards() {
-  const cards = courseListDiv.querySelectorAll('.mrzy-standalone-card');
+function clearMrjzyStandaloneCards() {
+  const cards = courseListDiv.querySelectorAll('.mrjzy-standalone-card');
   cards.forEach((n) => n.remove());
   updateCourseListEmptyPlaceholder();
 }
@@ -5555,7 +5643,7 @@ function shouldShowNoCoursePlaceholder() {
   if (!courseListDiv) return false;
   if (courseListDiv.querySelector('.file-item')) return false;
 
-  const selected = ['ve', 'ykt', 'mrzy', 'jlgj'].filter((p) => isPlatformEnabled(p));
+  const selected = ['ve', 'ykt', 'mrjzy', 'jlgj'].filter((p) => isPlatformEnabled(p));
   if (!selected.length) return true;
 
   const allOffline = selected.every((p) => (window.platformLoginState?.[p] || 'checking') === 'offline');
@@ -5591,14 +5679,15 @@ function ensureYktSection() {
 }
 
 function renderYktNeedLoginMessage() {
+  const shouldOpenAssist = isPlatformEnabled('ykt') || !!window.platformInteractiveLoginPending?.ykt;
   removeYktLoginSection();
   window.platformLoadedOnce.ykt = false;
   clearPlatformData('ykt');
   rerenderAllHomeworkAreas();
   setPlatformLoginState('ykt', 'offline');
 
-  if (isPlatformEnabled('ykt')) {
-    openYktLoginAssistPopup();
+  if (shouldOpenAssist) {
+    openYktLoginAssistPopup(true);
     return;
   }
 
@@ -5607,31 +5696,33 @@ function renderYktNeedLoginMessage() {
   refreshPlatformLoginTip();
 }
 
-function renderMrzyNeedLoginMessage() {
-  window.platformLoadedOnce.mrzy = false;
-  clearPlatformData('mrzy');
+function renderMrjzyNeedLoginMessage() {
+  const shouldOpenAssist = isPlatformEnabled('mrjzy') || !!window.platformInteractiveLoginPending?.mrjzy;
+  window.platformLoadedOnce.mrjzy = false;
+  clearPlatformData('mrjzy');
   rerenderAllHomeworkAreas();
-  setPlatformLoginState('mrzy', 'offline');
+  setPlatformLoginState('mrjzy', 'offline');
 
-  if (isPlatformEnabled('mrzy')) {
-    openMrzyLoginAssistPopup();
+  if (shouldOpenAssist) {
+    openMrjzyLoginAssistPopup(true);
     return;
   }
 
-  closeMrzyLoginAssistPopup(true);
-  window.platformNeedLogin.mrzy = false;
+  closeMrjzyLoginAssistPopup(true);
+  window.platformNeedLogin.mrjzy = false;
   refreshPlatformLoginTip();
 }
 
 function renderJlgjNeedLoginMessage() {
+  const shouldOpenAssist = isPlatformEnabled('jlgj') || !!window.platformInteractiveLoginPending?.jlgj;
   window.platformLoadedOnce.jlgj = false;
   clearPlatformData('jlgj');
   rerenderAllHomeworkAreas();
-  setPlatformLoginState('jlgj', 'offline');
   window.platformInteractiveLoginPending.jlgj = true;
+  setPlatformLoginState('jlgj', 'offline');
 
-  if (isPlatformEnabled('jlgj')) {
-    openJlgjLoginAssistPopup();
+  if (shouldOpenAssist) {
+    openJlgjLoginAssistPopup(true);
     return;
   }
 
@@ -6208,24 +6299,24 @@ function renderJlgjHomeworkItems(items) {
   }).join('');
 }
 
-function isMrzyHomeworkDone(hw) {
+function isMrjzyHomeworkDone(hw) {
   return Number(hw?.submit || 0) > 0 || Number(hw?.isSubmit || 0) > 0 || !!hw?.done;
 }
 
-function isMrzyHomeworkPending(hw) {
-  return !isMrzyHomeworkDone(hw) && !isDeadlinePassed(hw?.end);
+function isMrjzyHomeworkPending(hw) {
+  return !isMrjzyHomeworkDone(hw) && !isDeadlinePassed(hw?.end);
 }
 
-function isMrzyHomeworkOverdue(hw) {
-  return !isMrzyHomeworkDone(hw) && isDeadlinePassed(hw?.end);
+function isMrjzyHomeworkOverdue(hw) {
+  return !isMrjzyHomeworkDone(hw) && isDeadlinePassed(hw?.end);
 }
 
-function renderMrzyHomeworkItems(items) {
+function renderMrjzyHomeworkItems(items) {
   const list = items || [];
   if (!list.length) return '';
   return list.map((it) => {
-    const done = isMrzyHomeworkDone(it);
-    const overdue = !done && isMrzyHomeworkOverdue(it);
+    const done = isMrjzyHomeworkDone(it);
+    const overdue = !done && isMrjzyHomeworkOverdue(it);
     const bgColor = done ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
     const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
     const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
@@ -6306,9 +6397,9 @@ function renderYktStandaloneCourses() {
   updateCourseListEmptyPlaceholder();
 }
 
-function renderMrzyStandaloneCourses() {
-  clearMrzyStandaloneCards();
-  const courses = window.mrzyStandaloneCourses || [];
+function renderMrjzyStandaloneCourses() {
+  clearMrjzyStandaloneCards();
+  const courses = window.mrjzyStandaloneCourses || [];
   if (!courses.length) {
     updateCourseListEmptyPlaceholder();
     return;
@@ -6316,16 +6407,16 @@ function renderMrzyStandaloneCourses() {
 
   const baseOrder = Number(courseListDiv.dataset.orderBase || 100000) + 50000;
   courses.forEach((c, idx) => {
-    const courseId = `mrzy-${String(c.classNum || idx)}`;
+    const courseId = `mrjzy-${String(c.classNum || idx)}`;
     const loadingMeta = !!c.loadingMeta;
     const titleHtml = loadingMeta
       ? '正在加载…… <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:1px; border-color:#6366f1; border-top-color:transparent;"></span>'
-      : `<a href="${MRZY_WEB_BASE}/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none;">${escapeHtml(c.divClass || '每日交作业课程')}</a>`;
+      : `<a href="${MRJZY_WEB_BASE}/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none;">${escapeHtml(c.divClass || '每日交作业课程')}</a>`;
     const teacherHtml = loadingMeta
       ? '正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : escapeHtml(c.teacherName || '');
     const card = document.createElement('div');
-    card.className = 'file-item mrzy-standalone-card';
+    card.className = 'file-item mrjzy-standalone-card';
     card.style.backgroundColor = '#fff';
     card.id = `course-${courseId}`;
     card.dataset.courseRankable = '1';
@@ -6348,7 +6439,7 @@ function renderMrzyStandaloneCourses() {
 
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     window.yktMatchedHomeworkByCourseId[courseId] = [];
-    window.mrzyMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
+    window.mrjzyMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
 
     renderHomeworkList(courseId);
   });
@@ -6397,7 +6488,7 @@ function renderJlgjStandaloneCourses() {
 
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     window.yktMatchedHomeworkByCourseId[courseId] = [];
-    window.mrzyMatchedHomeworkByCourseId[courseId] = [];
+    window.mrjzyMatchedHomeworkByCourseId[courseId] = [];
     window.jlgjMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
 
     renderHomeworkList(courseId);
@@ -6988,10 +7079,18 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
 
   // Ensure replay live DOM is not lost while loading when switching views.
   moveVisibleReplayToShadowIfNeeded();
-  loadCoursewareList(btn, courseIdInt, courseNum, fzId).catch(() => {
+  autoLoadCourseware(btn, courseIdInt, courseNum, fzId).then(() => {
+    const latestCache = window.coursewareCacheByCourseId?.[courseIdInt];
+    if (!latestCache?.loaded || !latestCache?.html) return;
+    if (!Array.isArray(latestCache.items) || !latestCache.items.length) return;
+    syncCoursewareItemsIndex(courseIdInt, latestCache.items || []);
+    resultArea.innerHTML = latestCache.html;
+    toggleResultAreaAnimated(resultArea, true);
+    card.dataset.resultView = 'courseware';
     syncCourseActionButtonText(card, 'courseware');
-  }).then(() => {
     startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
+  }).catch(() => {
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
   });
 }
 
@@ -7121,38 +7220,38 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
 function recomputeCourseHomeworkState(courseId) {
   const nativeList = (window.courseHomeworkData[courseId]?.list || []);
   const yktList = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId[courseId] || []) : [];
-  const mrzyList = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId[courseId] || []) : [];
+  const mrjzyList = isPlatformEnabled('mrjzy') ? (window.mrjzyMatchedHomeworkByCourseId[courseId] || []) : [];
   const jlgjList = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId[courseId] || []) : [];
-  const allHomeworkCount = nativeList.length + yktList.length + mrzyList.length + jlgjList.length;
+  const allHomeworkCount = nativeList.length + yktList.length + mrjzyList.length + jlgjList.length;
   const nativePendingList = nativeList.filter(isNativeHomeworkPending);
   const yktPendingList = yktList.filter(isYktHomeworkPending);
-  const mrzyPendingList = mrzyList.filter(isMrzyHomeworkPending);
+  const mrjzyPendingList = mrjzyList.filter(isMrjzyHomeworkPending);
   const jlgjPendingList = jlgjList.filter(isJlgjHomeworkPending);
   const nativeOverdueList = nativeList.filter(isNativeHomeworkOverdue);
   const yktOverdueList = yktList.filter(isYktHomeworkOverdue);
-  const mrzyOverdueList = mrzyList.filter(isMrzyHomeworkOverdue);
+  const mrjzyOverdueList = mrjzyList.filter(isMrjzyHomeworkOverdue);
   const jlgjOverdueList = jlgjList.filter(isJlgjHomeworkOverdue);
   const nativePending = nativePendingList.length;
   const yktPending = yktPendingList.length;
-  const mrzyPending = mrzyPendingList.length;
+  const mrjzyPending = mrjzyPendingList.length;
   const jlgjPending = jlgjPendingList.length;
   const pendingTs = [];
   nativePendingList.forEach((hw) => pendingTs.push(parseDeadlineToTs(hw?.end_time ?? hw?.endTime ?? '')));
   yktPendingList.forEach((hw) => pendingTs.push(parseDeadlineToTs(hw?.end)));
-  mrzyPendingList.forEach((hw) => pendingTs.push(parseDeadlineToTs(hw?.end)));
+  mrjzyPendingList.forEach((hw) => pendingTs.push(parseDeadlineToTs(hw?.end)));
   jlgjPendingList.forEach((hw) => pendingTs.push(parseDeadlineToTs(hw?.end)));
   const validPendingTs = pendingTs.filter((n) => Number.isFinite(n) && n > 0);
   const overdueTs = [];
   nativeOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end_time ?? hw?.endTime ?? '')));
   yktOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end)));
-  mrzyOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end)));
+  mrjzyOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end)));
   jlgjOverdueList.forEach((hw) => overdueTs.push(parseDeadlineToTs(hw?.end)));
   const validOverdueTs = overdueTs.filter((n) => Number.isFinite(n) && n > 0);
   const state = ensureCourseCardState(courseId);
   state.allHomeworkCount = allHomeworkCount;
-  state.pendingHomeworkCount = nativePending + yktPending + mrzyPending + jlgjPending;
+  state.pendingHomeworkCount = nativePending + yktPending + mrjzyPending + jlgjPending;
   state.pendingEarliestTs = validPendingTs.length ? Math.min(...validPendingTs) : 0;
-  state.overdueHomeworkCount = nativeOverdueList.length + yktOverdueList.length + mrzyOverdueList.length + jlgjOverdueList.length;
+  state.overdueHomeworkCount = nativeOverdueList.length + yktOverdueList.length + mrjzyOverdueList.length + jlgjOverdueList.length;
   state.overdueEarliestTs = validOverdueTs.length ? Math.min(...validOverdueTs) : 0;
   const hasAnyHomework = state.allHomeworkCount > 0 || state.pendingHomeworkCount > 0 || state.overdueHomeworkCount > 0;
   updateCourseCardRank(courseId, { deferWhileActionAnimating: !hasAnyHomework });
@@ -7827,7 +7926,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     rematchExternalByVeCourses();
     rerenderAllHomeworkAreas();
     renderYktStandaloneCourses();
-    if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+    if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
     if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
 
     let queuedChanged = false;
@@ -7942,8 +8041,8 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   }
 }
 
-async function postMrzyForm(url, paramsObj, runtimeCtx = null) {
-  const MRZY_SIGN_SALT = 'IF75D4U19LKLDAZSMPN5ATQLGBFEJL4VIL2STVDBNJJTO6LNOGB265CR40I4AL13';
+async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
+  const MRJZY_SIGN_SALT = 'IF75D4U19LKLDAZSMPN5ATQLGBFEJL4VIL2STVDBNJJTO6LNOGB265CR40I4AL13';
 
   const waitTabReady = async (tabId, timeoutMs = 12000) => {
     const start = Date.now();
@@ -7959,7 +8058,7 @@ async function postMrzyForm(url, paramsObj, runtimeCtx = null) {
     return false;
   };
 
-  const normalizeMrzyParams = (obj) => {
+  const normalizeMrjzyParams = (obj) => {
     const out = {};
     Object.keys(obj || {}).forEach((k) => {
       const v = obj[k];
@@ -7982,10 +8081,10 @@ async function postMrzyForm(url, paramsObj, runtimeCtx = null) {
     }
   };
 
-  const buildMrzySign = (obj) => {
-    const normalized = normalizeMrzyParams(obj || {});
+  const buildMrjzySign = (obj) => {
+    const normalized = normalizeMrjzyParams(obj || {});
     const payload = JSON.stringify(normalized || {});
-    return md5(`${toBase64Utf8(payload)}${MRZY_SIGN_SALT}`);
+    return md5(`${toBase64Utf8(payload)}${MRJZY_SIGN_SALT}`);
   };
 
   const postFromZuoyePageContext = async (bodyRaw, extSign, extToken, ctx = null) => {
@@ -8136,11 +8235,11 @@ async function postMrzyForm(url, paramsObj, runtimeCtx = null) {
     }
   };
 
-  const sign = buildMrzySign(paramsObj || {});
+  const sign = buildMrjzySign(paramsObj || {});
   const token = await getCookieValueLoose('lulu.lulufind.com', ['Teacher-Token', 'Token'])
     || await getCookieValueLoose('zuoye.lulufind.com', ['Teacher-Token', 'Token']);
 
-  const normalizedParams = normalizeMrzyParams(paramsObj || {});
+  const normalizedParams = normalizeMrjzyParams(paramsObj || {});
   const bodyRaw = toBodyRaw(normalizedParams);
   const headers = {
     Accept: 'application/json, text/plain, */*',
@@ -8196,72 +8295,72 @@ function collectCourseNameMatchMap(courses) {
   return m;
 }
 
-async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
-  const shouldAbort = () => !!(loadVersion && loadVersion !== (window.platformLoadVersion?.mrzy || 0)) || !isPlatformEnabled('mrzy');
+async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
+  const shouldAbort = () => !!(loadVersion && loadVersion !== (window.platformLoadVersion?.mrjzy || 0)) || !isPlatformEnabled('mrjzy');
   if (shouldAbort()) return;
-  if (!isPlatformEnabled('mrzy')) {
-    clearPlatformData('mrzy');
+  if (!isPlatformEnabled('mrjzy')) {
+    clearPlatformData('mrjzy');
     rerenderAllHomeworkAreas();
     return;
   }
-  setPlatformLoginState('mrzy', 'checking');
-  const mrzyRuntimeCtx = { tabId: null, createdTab: false, preferPageContext: true };
-  const closeMrzyRuntimeTab = async () => {
-    if (mrzyRuntimeCtx?.createdTab && mrzyRuntimeCtx?.tabId) {
-      try { await chrome.tabs.remove(Number(mrzyRuntimeCtx.tabId)); } catch { /* ignore */ }
-      mrzyRuntimeCtx.tabId = null;
+  setPlatformLoginState('mrjzy', 'checking');
+  const mrjzyRuntimeCtx = { tabId: null, createdTab: false, preferPageContext: true };
+  const closeMrjzyRuntimeTab = async () => {
+    if (mrjzyRuntimeCtx?.createdTab && mrjzyRuntimeCtx?.tabId) {
+      try { await chrome.tabs.remove(Number(mrjzyRuntimeCtx.tabId)); } catch { /* ignore */ }
+      mrjzyRuntimeCtx.tabId = null;
     }
   };
 
-  const pickMrzyCourseName = (w) => {
+  const pickMrjzyCourseName = (w) => {
     const v = String(w?.divClass || w?.className || w?.courseName || w?.course_name || w?.workClass || '').trim();
     return v || '每日交作业课程';
   };
-  const pickMrzyTeacherName = (w) => String(w?.teacherName || w?.teacher_name || w?.teacherRealName || w?.userRealName || w?.teacher || '').trim();
-  const pickMrzyDeadline = (w) => String(w?.workRemark || w?.endTime || w?.end || w?.deadline || '').trim();
-  const pickMrzyTitle = (w) => String(w?.workDetail || w?.title || '').trim() || `作业 ${w?.workId || ''}`;
+  const pickMrjzyTeacherName = (w) => String(w?.teacherName || w?.teacher_name || w?.teacherRealName || w?.userRealName || w?.teacher || '').trim();
+  const pickMrjzyDeadline = (w) => String(w?.workRemark || w?.endTime || w?.end || w?.deadline || '').trim();
+  const pickMrjzyTitle = (w) => String(w?.workDetail || w?.title || '').trim() || `作业 ${w?.workId || ''}`;
 
   const matchMap = collectCourseNameMatchMap(courses);
   const endTime = todayEndDateTimeString();
-  const listResp = await postMrzyForm(MRZY_WORK_LIST_API, {
+  const listResp = await postMrjzyForm(MRJZY_WORK_LIST_API, {
     start: 0,
     num: 12,
     beginTime: '1990-01-01 00:00:00',
     endTime,
     limit: 1
-  }, mrzyRuntimeCtx);
+  }, mrjzyRuntimeCtx);
   if (shouldAbort()) return;
 
   if (listResp.res.status === 401 || listResp.res.status === 403) {
-    window.platformLoadedOnce.mrzy = true;
-    await closeMrzyRuntimeTab();
-    renderMrzyNeedLoginMessage();
+    window.platformLoadedOnce.mrjzy = true;
+    await closeMrjzyRuntimeTab();
+    renderMrjzyNeedLoginMessage();
     return;
   }
   if (!listResp.data || Number(listResp.data.code) !== 200) {
-    window.platformLoadedOnce.mrzy = true;
-    await closeMrzyRuntimeTab();
-    renderMrzyNeedLoginMessage();
+    window.platformLoadedOnce.mrjzy = true;
+    await closeMrjzyRuntimeTab();
+    renderMrjzyNeedLoginMessage();
     return;
   }
 
-  window.mrzyMatchedHomeworkByCourseId = {};
-  window.mrzyStandaloneCourses = [];
-  window.mrzyCourseGroupsSnapshot = [];
+  window.mrjzyMatchedHomeworkByCourseId = {};
+  window.mrjzyStandaloneCourses = [];
+  window.mrjzyCourseGroupsSnapshot = [];
 
-  setPlatformLoginState('mrzy', 'online');
-  window.platformLoadedOnce.mrzy = true;
+  setPlatformLoginState('mrjzy', 'online');
+  window.platformLoadedOnce.mrjzy = true;
   const works = Array.isArray(listResp.data.data) ? listResp.data.data : [];
   if (!works.length) {
-    await closeMrzyRuntimeTab();
-    renderMrzyStandaloneCourses();
+    await closeMrjzyRuntimeTab();
+    renderMrjzyStandaloneCourses();
     return;
   }
 
   // First paint: render homework titles immediately with loading placeholders.
   const groupedLoading = new Map();
   works.forEach((w) => {
-    const realDivClass = pickMrzyCourseName(w);
+    const realDivClass = pickMrjzyCourseName(w);
     const key = String(realDivClass || w.classNum || `work-${w.workId}`).trim();
     if (!groupedLoading.has(key)) {
       groupedLoading.set(key, {
@@ -8275,13 +8374,13 @@ async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
     const g = groupedLoading.get(key);
     g.homeworks.push({
       workId: w.workId,
-      title: pickMrzyTitle(w),
+      title: pickMrjzyTitle(w),
       end: '正在加载……',
       submit: Number(w.submit || 0),
       isSubmit: Number(w.isSubmit || 0),
       done: Number(w.submit || 0) > 0,
       loadingMeta: true,
-      link: `${MRZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(w.workId || ''))}`
+      link: `${MRJZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(w.workId || ''))}`
     });
   });
 
@@ -8289,12 +8388,12 @@ async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
     const token = normalizeCourseNameToken(courseGroup.realDivClass || '');
     const matched = token ? matchMap.get(token) : null;
     if (matched?.courseId) {
-      if (!window.mrzyMatchedHomeworkByCourseId[matched.courseId]) {
-        window.mrzyMatchedHomeworkByCourseId[matched.courseId] = [];
+      if (!window.mrjzyMatchedHomeworkByCourseId[matched.courseId]) {
+        window.mrjzyMatchedHomeworkByCourseId[matched.courseId] = [];
       }
-      window.mrzyMatchedHomeworkByCourseId[matched.courseId].push(...courseGroup.homeworks);
+      window.mrjzyMatchedHomeworkByCourseId[matched.courseId].push(...courseGroup.homeworks);
     } else {
-      window.mrzyStandaloneCourses.push({
+      window.mrjzyStandaloneCourses.push({
         divClass: courseGroup.divClass,
         classNum: courseGroup.classNum,
         teacherName: courseGroup.teacherName,
@@ -8304,13 +8403,13 @@ async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
     }
   });
 
-  Object.keys(window.mrzyMatchedHomeworkByCourseId).forEach((courseId) => {
+  Object.keys(window.mrjzyMatchedHomeworkByCourseId).forEach((courseId) => {
     renderHomeworkList(courseId);
   });
-  renderMrzyStandaloneCourses();
+  renderMrjzyStandaloneCourses();
 
   const detailSettled = await Promise.allSettled(works.map(async (w) => {
-    const dr = await postMrzyForm(MRZY_WORK_DETAIL_API, { workId: w.workId }, mrzyRuntimeCtx);
+    const dr = await postMrjzyForm(MRJZY_WORK_DETAIL_API, { workId: w.workId }, mrjzyRuntimeCtx);
     const teacherName = dr?.data?.data?.teacher?.userRealName || '';
     return { workId: w.workId, teacherName };
   }));
@@ -8322,7 +8421,7 @@ async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
 
   const grouped = new Map();
   works.forEach((w) => {
-    const key = pickMrzyCourseName(w);
+    const key = pickMrjzyCourseName(w);
     if (!grouped.has(key)) {
       grouped.set(key, {
         divClass: key,
@@ -8332,28 +8431,28 @@ async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
       });
     }
     const g = grouped.get(key);
-    const teacherName = String(teacherByWorkId.get(w.workId) || pickMrzyTeacherName(w) || '').trim();
+    const teacherName = String(teacherByWorkId.get(w.workId) || pickMrjzyTeacherName(w) || '').trim();
     if (!g.teacherName && teacherName) g.teacherName = teacherName;
     g.homeworks.push({
       workId: w.workId,
-      title: pickMrzyTitle(w),
-      end: pickMrzyDeadline(w),
+      title: pickMrjzyTitle(w),
+      end: pickMrjzyDeadline(w),
       submit: Number(w.submit || 0),
       isSubmit: Number(w.isSubmit || 0),
       done: Number(w.submit || 0) > 0,
       loadingMeta: false,
-      link: `${MRZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(w.workId || ''))}`
+      link: `${MRJZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(w.workId || ''))}`
     });
   });
 
   // Replace first-stage placeholder data with hydrated data instead of appending.
-  window.mrzyMatchedHomeworkByCourseId = {};
-  window.mrzyStandaloneCourses = [];
-  window.mrzyCourseGroupsSnapshot = [];
+  window.mrjzyMatchedHomeworkByCourseId = {};
+  window.mrjzyStandaloneCourses = [];
+  window.mrjzyCourseGroupsSnapshot = [];
 
   grouped.forEach((courseGroup) => {
     const token = normalizeCourseNameToken(courseGroup.divClass);
-    window.mrzyCourseGroupsSnapshot.push({
+    window.mrjzyCourseGroupsSnapshot.push({
       token,
       divClass: courseGroup.divClass,
       classNum: courseGroup.classNum,
@@ -8362,21 +8461,21 @@ async function loadMrzyCoursesAndHomework(courses, loadVersion = 0) {
     });
     const matched = matchMap.get(token);
     if (matched?.courseId) {
-      if (!window.mrzyMatchedHomeworkByCourseId[matched.courseId]) {
-        window.mrzyMatchedHomeworkByCourseId[matched.courseId] = [];
+      if (!window.mrjzyMatchedHomeworkByCourseId[matched.courseId]) {
+        window.mrjzyMatchedHomeworkByCourseId[matched.courseId] = [];
       }
-      window.mrzyMatchedHomeworkByCourseId[matched.courseId].push(...courseGroup.homeworks);
+      window.mrjzyMatchedHomeworkByCourseId[matched.courseId].push(...courseGroup.homeworks);
     } else {
-      window.mrzyStandaloneCourses.push(courseGroup);
+      window.mrjzyStandaloneCourses.push(courseGroup);
     }
   });
 
-  Object.keys(window.mrzyMatchedHomeworkByCourseId).forEach((courseId) => {
+  Object.keys(window.mrjzyMatchedHomeworkByCourseId).forEach((courseId) => {
     renderHomeworkList(courseId);
   });
-  renderMrzyStandaloneCourses();
+  renderMrjzyStandaloneCourses();
 
-  await closeMrzyRuntimeTab();
+  await closeMrjzyRuntimeTab();
 }
 
 async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
@@ -8765,7 +8864,7 @@ async function loadCourses() {
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
       if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
       if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
       return;
     }
@@ -8787,7 +8886,7 @@ async function loadCourses() {
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
       if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
       if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
       return;
     }
@@ -8804,7 +8903,7 @@ async function loadCourses() {
         rematchExternalByVeCourses();
         rerenderAllHomeworkAreas();
         if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-        if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+        if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
         if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
         return;
       }
@@ -8814,7 +8913,7 @@ async function loadCourses() {
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
       if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
       if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
       return;
     }
@@ -8828,7 +8927,7 @@ async function loadCourses() {
     renderCourseList(list);
     rerenderAllHomeworkAreas();
     if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-    if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+    if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
     if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
   } catch (e) {
     setPlatformLoginState('ve', 'offline');
@@ -8846,7 +8945,7 @@ async function loadCourses() {
     rematchExternalByVeCourses();
     rerenderAllHomeworkAreas();
     if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-    if (isPlatformEnabled('mrzy')) renderMrzyStandaloneCourses();
+    if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
     if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
   } finally {
     if (courseLoadVersion === window.courseListLoadVersion && courseLoadingStatus) courseLoadingStatus.style.display = 'none';
@@ -8863,14 +8962,14 @@ function scheduleYktLoad(courses, loadVersion = 0) {
   return window.__yktLoadSerialPromise;
 }
 
-function scheduleMrzyLoad(courses, loadVersion = 0) {
-  if (!isPlatformEnabled('mrzy')) return Promise.resolve();
+function scheduleMrjzyLoad(courses, loadVersion = 0) {
+  if (!isPlatformEnabled('mrjzy')) return Promise.resolve();
   const list = Array.isArray(courses) ? courses : [];
-  if (!window.__mrzyLoadSerialPromise) window.__mrzyLoadSerialPromise = Promise.resolve();
-  window.__mrzyLoadSerialPromise = window.__mrzyLoadSerialPromise
+  if (!window.__mrjzyLoadSerialPromise) window.__mrjzyLoadSerialPromise = Promise.resolve();
+  window.__mrjzyLoadSerialPromise = window.__mrjzyLoadSerialPromise
     .catch(() => {})
-    .then(() => loadMrzyCoursesAndHomework(list, loadVersion));
-  return window.__mrzyLoadSerialPromise;
+    .then(() => loadMrjzyCoursesAndHomework(list, loadVersion));
+  return window.__mrjzyLoadSerialPromise;
 }
 
 function scheduleJlgjLoad(courses, loadVersion = 0) {
@@ -8912,20 +9011,60 @@ function bindCourseCardActionButtons(root = courseListDiv) {
     ).trim();
 
     const btnCourseware = card.querySelector('button[data-action="courseware"]');
-    if (btnCourseware instanceof HTMLElement && btnCourseware.dataset.courseActionBound !== '1') {
+    if (btnCourseware instanceof HTMLElement && btnCourseware.__courseActionBound !== true) {
       btnCourseware.dataset.courseNum = courseNumRaw;
       btnCourseware.dataset.fzId = fzId;
-      btnCourseware.dataset.courseActionBound = '1';
-      btnCourseware.addEventListener('click', () => toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId));
+      btnCourseware.__courseActionBound = true;
+      btnCourseware.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId);
+      });
     }
 
     const btnVideos = card.querySelector('button[data-action="videos"]');
-    if (btnVideos instanceof HTMLElement && btnVideos.dataset.courseActionBound !== '1') {
+    if (btnVideos instanceof HTMLElement && btnVideos.__courseActionBound !== true) {
       btnVideos.dataset.courseNum = courseNumRaw;
       btnVideos.dataset.fzId = fzId;
-      btnVideos.dataset.courseActionBound = '1';
-      btnVideos.addEventListener('click', () => toggleReplayFromCache(btnVideos, courseId));
+      btnVideos.__courseActionBound = true;
+      btnVideos.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        toggleReplayFromCache(btnVideos, courseId);
+      });
     }
+  });
+}
+
+function autoLoadCourseResourcesForCard(card) {
+  if (!isAutoLoadCourseResourcesEnabled()) return;
+  if (!(card instanceof HTMLElement)) return;
+  let courseId = String(card.dataset.courseId || '').trim();
+  if (!courseId) {
+    const id = String(card.id || '').trim();
+    courseId = id.startsWith('course-') ? id.slice('course-'.length) : '';
+  }
+  if (!courseId || /^(ykt|mrjzy|jlgj)-/.test(courseId)) return;
+
+  const meta = card.querySelector('.ve-course-num-wrap');
+  const btnCourseware = card.querySelector('button[data-action="courseware"]');
+  const btnVideos = card.querySelector('button[data-action="videos"]');
+  const courseNumRaw = String(btnCourseware?.dataset?.courseNum || btnVideos?.dataset?.courseNum || meta?.dataset?.courseNum || courseId).trim();
+  const fzId = String(btnCourseware?.dataset?.fzId || btnVideos?.dataset?.fzId || meta?.dataset?.fzId || '').trim();
+  const xqCode = String(btnVideos?.dataset?.xqCode || getCurrentXqCode() || '').trim();
+
+  if (btnCourseware instanceof HTMLElement && !window.coursewareCacheByCourseId?.[courseId]?.loaded) {
+    autoLoadCourseware(btnCourseware, courseId, courseNumRaw, fzId).catch(() => {});
+  }
+  if (btnVideos instanceof HTMLElement && !window.videoReplayCacheByCourseId?.[courseId]?.loaded) {
+    autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode).catch(() => {});
+  }
+}
+
+function autoLoadCourseResourcesForRenderedCourses() {
+  if (!isAutoLoadCourseResourcesEnabled() || !courseListDiv) return;
+  courseListDiv.querySelectorAll('.file-item[id^="course-"]').forEach((card) => {
+    autoLoadCourseResourcesForCard(card);
   });
 }
 
@@ -8988,24 +9127,36 @@ function renderCourseList(courses) {
     if (btnCourseware) {
       btnCourseware.dataset.courseNum = String(courseNumRaw || '');
       btnCourseware.dataset.fzId = String(fzId || '');
-      btnCourseware.dataset.courseActionBound = '1';
-      btnCourseware.addEventListener('click', () => toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId));
-      setCoursewareButtonLoading(btnCourseware, true);
+      btnCourseware.__courseActionBound = true;
+      btnCourseware.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId);
+      });
+      if (isAutoLoadCourseResourcesEnabled()) {
+        setCoursewareButtonLoading(btnCourseware, true);
+      }
     }
     if (btnVideos) {
       btnVideos.dataset.courseNum = String(courseNumRaw || '');
       btnVideos.dataset.fzId = String(fzId || '');
       btnVideos.dataset.xqCode = String(xqCode || '');
-      btnVideos.dataset.courseActionBound = '1';
-      btnVideos.addEventListener('click', () => toggleReplayFromCache(btnVideos, courseId));
-      // Show replay-loading animation immediately after card renders.
-      btnVideos.disabled = true;
-      btnVideos.style.opacity = '1';
-      btnVideos.style.pointerEvents = 'none';
-      btnVideos.classList.remove('replay-link-progress');
-      btnVideos.classList.add('replay-list-loading');
-      btnVideos.style.setProperty('--replay-progress', '0%');
-      btnVideos.innerHTML = `回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
+      btnVideos.__courseActionBound = true;
+      btnVideos.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        toggleReplayFromCache(btnVideos, courseId);
+      });
+      if (isAutoLoadCourseResourcesEnabled()) {
+        // Show replay-loading animation immediately after card renders.
+        btnVideos.disabled = true;
+        btnVideos.style.opacity = '1';
+        btnVideos.style.pointerEvents = 'none';
+        btnVideos.classList.remove('replay-link-progress');
+        btnVideos.classList.add('replay-list-loading');
+        btnVideos.style.setProperty('--replay-progress', '0%');
+        btnVideos.innerHTML = `回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
+      }
     }
 
     hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
@@ -9017,12 +9168,16 @@ function renderCourseList(courses) {
       hwPromise.finally(() => {
         // Balance the initial preloading spinner before entering actual auto-load phase.
         setCoursewareButtonLoading(btnCourseware, false);
-        autoLoadCourseware(btnCourseware, courseId, courseNumRaw, fzId).catch(() => {});
+        if (isAutoLoadCourseResourcesEnabled()) {
+          autoLoadCourseware(btnCourseware, courseId, courseNumRaw, fzId).catch(() => {});
+        }
       });
     }
     if (btnVideos) {
       hwPromise.finally(() => {
-        autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode);
+        if (isAutoLoadCourseResourcesEnabled()) {
+          autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode);
+        }
       });
     }
   });
@@ -9173,7 +9328,7 @@ async function checkHomework(courseId) {
   const area = document.getElementById(`homework-area-${courseId}`);
   if (!area) return;
   const hasMatchedExternal = ((window.yktMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
-    || ((window.mrzyMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
+    || ((window.mrjzyMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
     || ((window.jlgjMatchedHomeworkByCourseId?.[courseId] || []).length > 0);
   if (!hasMatchedExternal && !String(area.innerHTML || '').trim()) {
     area.innerHTML = '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业…';
@@ -9252,8 +9407,8 @@ function renderHomeworkList(courseId) {
   const nativeCls = classify(list, isNativeHomeworkDone, isNativeHomeworkOverdue);
   const yktItems = isPlatformEnabled('ykt') ? (window.yktMatchedHomeworkByCourseId[courseId] || []) : [];
   const yktCls = classify(yktItems, isYktHomeworkDone, isYktHomeworkOverdue);
-  const mrzyItems = isPlatformEnabled('mrzy') ? (window.mrzyMatchedHomeworkByCourseId[courseId] || []) : [];
-  const mrzyCls = classify(mrzyItems, isMrzyHomeworkDone, isMrzyHomeworkOverdue);
+  const mrjzyItems = isPlatformEnabled('mrjzy') ? (window.mrjzyMatchedHomeworkByCourseId[courseId] || []) : [];
+  const mrjzyCls = classify(mrjzyItems, isMrjzyHomeworkDone, isMrjzyHomeworkOverdue);
   const jlgjItems = isPlatformEnabled('jlgj') ? (window.jlgjMatchedHomeworkByCourseId[courseId] || []) : [];
   const jlgjCls = classify(jlgjItems, isJlgjHomeworkDone, isJlgjHomeworkOverdue);
 
@@ -9265,20 +9420,20 @@ function renderHomeworkList(courseId) {
   const yktPendingItems = sortExternalGroup(yktCls.pending);
   const yktOverdueItems = sortExternalGroup(yktCls.overdue);
   const yktDoneItems = sortExternalGroup(yktCls.done);
-  const mrzyPendingItems = sortExternalGroup(mrzyCls.pending);
-  const mrzyOverdueItems = sortExternalGroup(mrzyCls.overdue);
-  const mrzyDoneItems = sortExternalGroup(mrzyCls.done);
+  const mrjzyPendingItems = sortExternalGroup(mrjzyCls.pending);
+  const mrjzyOverdueItems = sortExternalGroup(mrjzyCls.overdue);
+  const mrjzyDoneItems = sortExternalGroup(mrjzyCls.done);
   const jlgjPendingItems = sortExternalGroup(jlgjCls.pending);
   const jlgjOverdueItems = sortExternalGroup(jlgjCls.overdue);
   const jlgjDoneItems = sortExternalGroup(jlgjCls.done);
 
   const isYktStandalone = String(courseId).startsWith('ykt-');
-  const isMrzyStandalone = String(courseId).startsWith('mrzy-');
+  const isMrjzyStandalone = String(courseId).startsWith('mrjzy-');
   const isJlgjStandalone = String(courseId).startsWith('jlgj-');
-  const isExternalStandalone = isYktStandalone || isMrzyStandalone || isJlgjStandalone;
+  const isExternalStandalone = isYktStandalone || isMrjzyStandalone || isJlgjStandalone;
   const yktLoading = !!window.yktHomeworkLoadingByCourse?.[courseId];
   const yktSyncing = isPlatformEnabled('ykt') && ((window.platformLoginState?.ykt || 'checking') === 'checking') && !window.platformLoadedOnce?.ykt;
-  const mrzySyncing = isPlatformEnabled('mrzy') && ((window.platformLoginState?.mrzy || 'checking') === 'checking') && !window.platformLoadedOnce?.mrzy;
+  const mrjzySyncing = isPlatformEnabled('mrjzy') && ((window.platformLoginState?.mrjzy || 'checking') === 'checking') && !window.platformLoadedOnce?.mrjzy;
   const jlgjHasEarlyLoadingGroups = Array.isArray(window.jlgjCourseGroupsSnapshot) && window.jlgjCourseGroupsSnapshot.some((group) => !!group?.loadingMeta);
   const jlgjSyncing = isPlatformEnabled('jlgj') && (((window.platformLoginState?.jlgj || 'checking') === 'checking') && !window.platformLoadedOnce?.jlgj || jlgjHasEarlyLoadingGroups);
 
@@ -9286,8 +9441,8 @@ function renderHomeworkList(courseId) {
   const yktHeaderHtml = isYktStandalone ? '' : `<div style="font-size:12px;color:#0369a1; margin-bottom:4px;">${yktCourseLink ? `<a href="${yktCourseLink}" target="_blank" rel="noopener noreferrer" style="color:#0369a1; text-decoration:none;">雨课堂作业</a>` : '雨课堂作业'}</div>`;
   const yktWrapperStyle = isYktStandalone ? '' : 'margin-top:6px; padding-top:6px; border-top:1px dashed #b3e5fc;';
   const renderYktSection = (items) => yktItems.length && items.length ? `<div style="${yktWrapperStyle}">${yktHeaderHtml}${renderYktHomeworkItems(courseId, items)}</div>` : '';
-  const mrzyHeaderHtml = isMrzyStandalone ? '' : '<div style="font-size:12px;color:#3730a3; margin-bottom:4px;">每日交作业</div>';
-  const renderMrzySection = (items) => mrzyItems.length && items.length ? `<div>${mrzyHeaderHtml}${renderMrzyHomeworkItems(items)}</div>` : '';
+  const mrjzyHeaderHtml = isMrjzyStandalone ? '' : '<div style="font-size:12px;color:#3730a3; margin-bottom:4px;">每日交作业</div>';
+  const renderMrjzySection = (items) => mrjzyItems.length && items.length ? `<div>${mrjzyHeaderHtml}${renderMrjzyHomeworkItems(items)}</div>` : '';
   const jlgjHeaderHtml = isJlgjStandalone ? '' : '<div style="font-size:12px;color:#0f766e; margin-bottom:4px;">接龙管家</div>';
   const renderJlgjSection = (items) => jlgjItems.length && items.length ? `<div>${jlgjHeaderHtml}${renderJlgjHomeworkItems(items)}</div>` : '';
 
@@ -9338,10 +9493,10 @@ function renderHomeworkList(courseId) {
   const nativeDoneCount = isTeacherMode ? 0 : nativeCls.done.length;
   const nativePendingCount = isTeacherMode ? list.length : nativeCls.pending.length;
 
-  const totalOverdueCount = nativeOverdueCount + yktCls.overdue.length + mrzyCls.overdue.length + jlgjCls.overdue.length;
-  const totalDoneCount = nativeDoneCount + yktCls.done.length + mrzyCls.done.length + jlgjCls.done.length;
-  const totalPendingCount = nativePendingCount + yktCls.pending.length + mrzyCls.pending.length + jlgjCls.pending.length;
-  const totalHomeworkCount = list.length + yktItems.length + mrzyItems.length + jlgjItems.length;
+  const totalOverdueCount = nativeOverdueCount + yktCls.overdue.length + mrjzyCls.overdue.length + jlgjCls.overdue.length;
+  const totalDoneCount = nativeDoneCount + yktCls.done.length + mrjzyCls.done.length + jlgjCls.done.length;
+  const totalPendingCount = nativePendingCount + yktCls.pending.length + mrjzyCls.pending.length + jlgjCls.pending.length;
+  const totalHomeworkCount = list.length + yktItems.length + mrjzyItems.length + jlgjItems.length;
 
   const renderHomeworkToggle = (kind, action, isExpanded, count, collapsedText, expandedText, collapsedDirection, expandedDirection) => {
     const direction = isExpanded ? expandedDirection : collapsedDirection;
@@ -9481,20 +9636,20 @@ function renderHomeworkList(courseId) {
     if (window.isTeacherAccount) {
       // 外部分类保持不变
       if (kind === 'overdue') {
-        return `${renderYktSection(yktOverdueItems)}${renderMrzySection(mrzyOverdueItems)}${renderJlgjSection(jlgjOverdueItems)}`;
+        return `${renderYktSection(yktOverdueItems)}${renderMrjzySection(mrjzyOverdueItems)}${renderJlgjSection(jlgjOverdueItems)}`;
       }
       if (kind === 'done') {
-        return `${renderYktSection(yktDoneItems)}${renderMrzySection(mrzyDoneItems)}${renderJlgjSection(jlgjDoneItems)}`;
+        return `${renderYktSection(yktDoneItems)}${renderMrjzySection(mrjzyDoneItems)}${renderJlgjSection(jlgjDoneItems)}`;
       }
-      return `${renderYktSection(yktPendingItems)}${renderMrzySection(mrzyPendingItems)}${renderJlgjSection(jlgjPendingItems)}`;
+      return `${renderYktSection(yktPendingItems)}${renderMrjzySection(mrjzyPendingItems)}${renderJlgjSection(jlgjPendingItems)}`;
     }
     if (kind === 'overdue') {
-      return `${renderNativeHomeworkItems(nativeOverdueItems)}${renderYktSection(yktOverdueItems)}${renderMrzySection(mrzyOverdueItems)}${renderJlgjSection(jlgjOverdueItems)}`;
+      return `${renderNativeHomeworkItems(nativeOverdueItems)}${renderYktSection(yktOverdueItems)}${renderMrjzySection(mrjzyOverdueItems)}${renderJlgjSection(jlgjOverdueItems)}`;
     }
     if (kind === 'done') {
-      return `${renderNativeHomeworkItems(nativeDoneItems)}${renderYktSection(yktDoneItems)}${renderMrzySection(mrzyDoneItems)}${renderJlgjSection(jlgjDoneItems)}`;
+      return `${renderNativeHomeworkItems(nativeDoneItems)}${renderYktSection(yktDoneItems)}${renderMrjzySection(mrjzyDoneItems)}${renderJlgjSection(jlgjDoneItems)}`;
     }
-    return `${renderNativeHomeworkItems(nativePendingItems)}${renderYktSection(yktPendingItems)}${renderMrzySection(mrzyPendingItems)}${renderJlgjSection(jlgjPendingItems)}`;
+    return `${renderNativeHomeworkItems(nativePendingItems)}${renderYktSection(yktPendingItems)}${renderMrjzySection(mrjzyPendingItems)}${renderJlgjSection(jlgjPendingItems)}`;
   };
 
   // 教师账号：VE 作业按过时/非过时分为两组
@@ -9521,8 +9676,8 @@ function renderHomeworkList(courseId) {
     ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, mergedOverdueCount, overdueCollapsedText, overdueExpandedText, 'down', 'up')}</div>`
     : '';
 
-  const loadingText = isYktStandalone ? '正在同步雨课堂作业…' : (isMrzyStandalone ? '正在同步每日交作业…' : '正在获取作业…');
-  const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrzyStandalone ? mrzySyncing : jlgjSyncing);
+  const loadingText = isYktStandalone ? '正在同步雨课堂作业…' : (isMrjzyStandalone ? '正在同步每日交作业…' : '正在获取作业…');
+  const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrjzyStandalone ? mrjzySyncing : jlgjSyncing);
   const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> ${loadingText}` : '';
   const emptyExternalTip = isExternalStandalone && totalHomeworkCount === 0 && !standaloneSyncing ? '<span style="color:#999;">没有作业数据</span>' : '';
   const noPendingTip = !isTeacherMode2 && totalHomeworkCount > 0 && totalPendingCount === 0
@@ -10707,6 +10862,26 @@ courseListDiv.addEventListener('click', async (e) => {
   if (!(actionEl instanceof HTMLElement)) return;
   const action = String(actionEl.dataset.action || '').trim();
 
+  if (action === 'courseware' || action === 'videos') {
+    const card = actionEl.closest('.file-item[id^="course-"]');
+    if (!(card instanceof HTMLElement)) return;
+    const rawId = String(card.dataset.courseId || card.id.replace(/^course-/, '') || '').trim();
+    if (!rawId) return;
+    const meta = card.querySelector('.ve-course-num-wrap');
+    const courseNum = String(actionEl.dataset.courseNum || meta?.dataset?.courseNum || rawId).trim();
+    const fzId = String(actionEl.dataset.fzId || meta?.dataset?.fzId || '').trim();
+    e.preventDefault();
+    e.stopPropagation();
+    if (action === 'courseware') {
+      toggleCoursewareFromCache(actionEl, rawId, courseNum, fzId);
+    } else {
+      actionEl.dataset.courseNum = courseNum;
+      actionEl.dataset.fzId = fzId;
+      toggleReplayFromCache(actionEl, rawId);
+    }
+    return;
+  }
+
   if (action === 'toggle-expand') {
     const box = actionEl.closest('.expandable-box');
     if (!box) return;
@@ -10847,7 +11022,7 @@ courseListDiv.addEventListener('click', async (e) => {
       }
 
       hw.subStatus = '已提交';
-      hw.subTime = formatMrzyDateTime(new Date());
+      hw.subTime = formatMrjzyDateTime(new Date());
       showToast('作业提交成功', 'success', 1600);
       renderHomeworkList(courseId);
       recomputeCourseHomeworkState(courseId);
@@ -11551,10 +11726,12 @@ function setupSavedUploadsUi() {
   setupRightColumnResizer();
   await loadPlatformEnabledFromStorage();
   await loadPopupCacheEnabledSetting();
+  await loadAutoLoadCourseResourcesSetting();
   setupOptionsStorageLiveSync();
+  setupPortalUsernameBindMessageListener();
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {
-    window.platformEnabled = { jlgj: false, mrzy: false, ve: true, ykt: false };
+    window.platformEnabled = { jlgj: false, mrjzy: false, ve: true, ykt: false };
   }
   if (popupMode || !window.__updateCheckerLoaded) {
     const versionInfoEl = document.getElementById('version-info');

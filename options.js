@@ -9,18 +9,19 @@ function setMsg(text, ok = true) {
   }, ok ? 1800 : 3200);
 }
 
-const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrzy: false, ve: true, ykt: false };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrjzy: false, ve: true, ykt: false };
 
 const DEFAULT_OPEN_MODE = 'popup';
 
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
+const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = true;
 
 function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
   return {
     jlgj: typeof src.jlgj === 'boolean' ? src.jlgj : DEFAULT_PLATFORM_ENABLED.jlgj,
-    mrzy: typeof src.mrzy === 'boolean' ? src.mrzy : DEFAULT_PLATFORM_ENABLED.mrzy,
+    mrjzy: typeof src.mrjzy === 'boolean' ? src.mrjzy : DEFAULT_PLATFORM_ENABLED.mrjzy,
     ve: typeof src.ve === 'boolean' ? src.ve : DEFAULT_PLATFORM_ENABLED.ve,
     ykt: typeof src.ykt === 'boolean' ? src.ykt : DEFAULT_PLATFORM_ENABLED.ykt
   };
@@ -65,8 +66,10 @@ function goBackToApp() {
 
 (async function init() {
   const { platformEnabled } = await chrome.storage.local.get(['platformEnabled']);
+  try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
   const { autoCaptcha } = await chrome.storage.local.get(['autoCaptcha']);
+  const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
   const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
@@ -75,10 +78,14 @@ function goBackToApp() {
 
   document.getElementById('enableVe').checked = !!enabled.ve;
   document.getElementById('enableYkt').checked = !!enabled.ykt;
-  document.getElementById('enableMrzy').checked = !!enabled.mrzy;
+  document.getElementById('enableMrjzy').checked = !!enabled.mrjzy;
   document.getElementById('enableJlgj').checked = !!enabled.jlgj;
   const autoCaptchaVal = autoCaptcha === undefined ? true : !!autoCaptcha;
   document.getElementById('autoCaptcha').checked = autoCaptchaVal;
+  const autoLoadResourcesVal = autoLoadCourseResourcesEnabled === undefined
+    ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
+    : !!autoLoadCourseResourcesEnabled;
+  document.getElementById('autoLoadCourseResourcesEnabled').checked = autoLoadResourcesVal;
   const mode = String(openMode || DEFAULT_OPEN_MODE);
   document.getElementById('openModePopup').checked = mode === 'popup';
   document.getElementById('openModePage').checked = mode === 'page';
@@ -101,11 +108,11 @@ function goBackToApp() {
     const pe = {
       ve: !!document.getElementById('enableVe').checked,
       ykt: !!document.getElementById('enableYkt').checked,
-      mrzy: !!document.getElementById('enableMrzy').checked,
+      mrjzy: !!document.getElementById('enableMrjzy').checked,
       jlgj: !!document.getElementById('enableJlgj').checked
     };
     await chrome.storage.local.set({ platformEnabled: pe });
-    await chrome.storage.sync.set({ platformEnabled: pe }).catch(() => {});
+    await chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
     setMsg('已应用更改');
   };
 
@@ -133,7 +140,7 @@ function goBackToApp() {
     const enabled = normalizePlatformEnabled(raw);
     setChecked('enableVe', enabled.ve);
     setChecked('enableYkt', enabled.ykt);
-    setChecked('enableMrzy', enabled.mrzy);
+    setChecked('enableMrjzy', enabled.mrjzy);
     setChecked('enableJlgj', enabled.jlgj);
   }
 
@@ -154,6 +161,7 @@ function goBackToApp() {
       if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
       if (changes.autoCaptcha) applyBooleanUi('autoCaptcha', changes.autoCaptcha.newValue, true);
+      if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
       if (changes.headerQrEnabled) applyBooleanUi('headerQrEnabled', changes.headerQrEnabled.newValue, true);
       if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, true);
@@ -167,13 +175,20 @@ function goBackToApp() {
 
   document.getElementById('enableVe').addEventListener('change', applyPlatform);
   document.getElementById('enableYkt').addEventListener('change', applyPlatform);
-  document.getElementById('enableMrzy').addEventListener('change', applyPlatform);
+  document.getElementById('enableMrjzy').addEventListener('change', applyPlatform);
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
 
   document.getElementById('autoCaptcha').addEventListener('change', async () => {
     await chrome.storage.local.set({ autoCaptcha: !!document.getElementById('autoCaptcha').checked });
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('autoLoadCourseResourcesEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      autoLoadCourseResourcesEnabled: !!document.getElementById('autoLoadCourseResourcesEnabled').checked
+    });
     setMsg('已应用更改');
   });
 
@@ -262,14 +277,15 @@ function goBackToApp() {
 
   // Reset: restore defaults. Platform display/load should only check VE.
   document.getElementById('resetBtn').addEventListener('click', async () => {
-    const defaultPlatform = { jlgj: false, mrzy: false, ve: true, ykt: false };
+    const defaultPlatform = { jlgj: false, mrjzy: false, ve: true, ykt: false };
     await chrome.storage.local.set({ platformEnabled: defaultPlatform });
     await chrome.storage.sync.remove(['platformEnabled']);
     document.getElementById('enableVe').checked = true;
     document.getElementById('enableYkt').checked = false;
-    document.getElementById('enableMrzy').checked = false;
+    document.getElementById('enableMrjzy').checked = false;
     document.getElementById('enableJlgj').checked = false;
     document.getElementById('autoCaptcha').checked = true;
+    document.getElementById('autoLoadCourseResourcesEnabled').checked = true;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
     document.getElementById('saveUploadsEnabled').checked = true;
@@ -279,6 +295,7 @@ function goBackToApp() {
     updatePopupCacheDisabled();
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoCaptcha: true });
+    await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
     await chrome.storage.local.set({ headerQrEnabled: true });
     await chrome.storage.local.set({ linkQrEnabled: true });

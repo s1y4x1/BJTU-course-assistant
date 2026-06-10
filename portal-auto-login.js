@@ -53,6 +53,8 @@ async function portalLoginAutoLoginInjected(context) {
   const FLOW_STATE_KEY = '__bjtu_portal_login_flow_state__';
   const SUPPRESS_AUTO_START_ONCE_KEY = '__bjtu_suppress_auto_start_once__';
   const MAX_AUTO_RETRY_ROUNDS = 3;
+  const AUXILIARY_LOGIN_ID = '8888';
+  const AUXILIARY_LOGIN_PASSWORD_MD5 = 'a8376785625a7dc956506a7a444b720c';
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -121,18 +123,27 @@ async function portalLoginAutoLoginInjected(context) {
   }
 
   function parseAlertMsg(html) {
-    const arr = [...String(html || '').matchAll(/alert\('([^']+)'\)/g)];
+    const arr = [...String(html || '').matchAll(/alert\((['"])(.*?)\1\)/g)];
     if (!arr.length) return '';
-    return arr[arr.length - 1][1];
+    return arr[arr.length - 1][2];
   }
   function isCaptchaErrorMessage(msg = '') {
     return /验证码|驗證碼|passcode|请输入正确的验证码|請輸入正確的驗證碼/i.test(String(msg || ''));
+  }
+  function isAccountLockedMessage(msg = '') {
+    return /锁定|鎖定|错误次数过多|錯誤次數過多|稍后再试|稍後再試/i.test(String(msg || ''));
   }
   function isCredentialErrorMessage(msg = '') {
     const t = String(msg || '');
     if (!t) return false;
     if (isCaptchaErrorMessage(t)) return false;
+    if (isAccountLockedMessage(t)) return false;
     return /账号|帳號|用户名|用戶名|密码|密碼|口令|学号|工号|登录失败|登錄失敗|账号或密码|帳號或密碼/i.test(t);
+  }
+  function getDefaultPortalPasswordMd5(loginName) {
+    const id = String(loginName || '').trim();
+    if (id === AUXILIARY_LOGIN_ID) return AUXILIARY_LOGIN_PASSWORD_MD5;
+    return md5(`Bjtu@${id}`);
   }
   function isLikelyLoginPageHtml(html, resUrl = '') {
     const t = String(html || '');
@@ -289,9 +300,9 @@ async function portalLoginAutoLoginInjected(context) {
       }
     }
 
-    username = '8888';
-    passwordMd5 = md5('Bjtu@8888');
-    flowState.currentUsername = '8888';
+    username = AUXILIARY_LOGIN_ID;
+    passwordMd5 = AUXILIARY_LOGIN_PASSWORD_MD5;
+    flowState.currentUsername = AUXILIARY_LOGIN_ID;
     flowState.passwordMd5 = passwordMd5;
     writeFlowState(flowState);
     return false;
@@ -608,6 +619,10 @@ async function portalLoginAutoLoginInjected(context) {
   let pendingSwitchTarget = '';
   try {
     const alertMsg = alertMsgAtStart;
+    if (alertMsg && isAccountLockedMessage(alertMsg)) {
+      clearFlowState();
+      return { ok: false, reason: 'account-locked', message: alertMsg };
+    }
     const lastDefaultTryUser = String(sessionStorage.getItem(LAST_DEFAULT_TRY_USER_KEY) || '').trim();
     if (alertMsg && isCaptchaErrorMessage(alertMsg)) {
       passcode = '';
@@ -616,7 +631,7 @@ async function portalLoginAutoLoginInjected(context) {
     if (
       fromExtension
       && originalRequestedUsername
-      && originalRequestedUsername !== '8888'
+      && originalRequestedUsername !== AUXILIARY_LOGIN_ID
       && lastDefaultTryUser === originalRequestedUsername
       && alertMsg
       && isCredentialErrorMessage(alertMsg)
@@ -628,11 +643,11 @@ async function portalLoginAutoLoginInjected(context) {
       }
     } else if (alertMsg && isCredentialErrorMessage(alertMsg)) {
       const current = String(flowState.currentUsername || username || '').trim();
-      if (current === '8888') {
-        username = '8888';
+      if (current === AUXILIARY_LOGIN_ID) {
+        username = AUXILIARY_LOGIN_ID;
         passcode = '';
-        passwordMd5 = md5('Bjtu@8888');
-        flowState.currentUsername = '8888';
+        passwordMd5 = AUXILIARY_LOGIN_PASSWORD_MD5;
+        flowState.currentUsername = AUXILIARY_LOGIN_ID;
         flowState.useAux = true;
         flowState.forceRetry = Number(flowState.retryCount || 0) < MAX_AUTO_RETRY_ROUNDS;
       } else if (current) {
@@ -1000,7 +1015,7 @@ async function portalLoginAutoLoginInjected(context) {
     mask.remove();
 
     flowState.currentUsername = username;
-    if (username && username !== '8888' && !flowState.originalUsername) {
+    if (username && username !== AUXILIARY_LOGIN_ID && !flowState.originalUsername) {
       flowState.originalUsername = username;
     }
     writeFlowState(flowState);
@@ -1078,15 +1093,15 @@ async function portalLoginAutoLoginInjected(context) {
     const knownInfoText = lastValidatedUser === username ? lastValidatedUserInfoText : '';
     passwordMd5 = await fetchAndSavePasswordMd5(username, knownInfoText);
   }
-  if (!passwordMd5) passwordMd5 = md5(`Bjtu@${username}`);
+  if (!passwordMd5) passwordMd5 = getDefaultPortalPasswordMd5(username);
 
   try {
     const usingDefaultForOriginal = !!(
       fromExtension
       && originalRequestedUsername
-      && originalRequestedUsername !== '8888'
+      && originalRequestedUsername !== AUXILIARY_LOGIN_ID
       && username === originalRequestedUsername
-      && passwordMd5 === md5(`Bjtu@${originalRequestedUsername}`)
+      && passwordMd5 === getDefaultPortalPasswordMd5(originalRequestedUsername)
     );
     if (usingDefaultForOriginal) {
       sessionStorage.setItem(LAST_DEFAULT_TRY_USER_KEY, originalRequestedUsername);
@@ -1095,7 +1110,7 @@ async function portalLoginAutoLoginInjected(context) {
     }
     sessionStorage.setItem(LAST_LOGIN_USERNAME_KEY, username);
   } catch {}
-  if (username && passwordMd5 && username !== '8888') {
+  if (username && passwordMd5 && username !== AUXILIARY_LOGIN_ID) {
     await saveLoginAccountPatch(username, { passwordMd5 });
   }
 
@@ -1128,6 +1143,13 @@ async function portalLoginAutoLoginInjected(context) {
     throw e;
   }
   if (cancelTriggered) return { ok: false, reason: 'cancelled' };
+  let loginText = '';
+  try { loginText = await loginRes.clone().text(); } catch {}
+  const loginAlertMsg = parseAlertMsg(loginText);
+  if (loginAlertMsg && isAccountLockedMessage(loginAlertMsg)) {
+    clearFlowState();
+    return { ok: false, reason: 'account-locked', message: loginAlertMsg };
+  }
   try {
     const finalUrl = String(loginRes?.url || '').trim();
     const looksLikeLoginPage = /Login_2\.jsp|Timeout\.jsp|s\.shtml/i.test(finalUrl);
@@ -1141,7 +1163,7 @@ async function portalLoginAutoLoginInjected(context) {
   }
 
   flowState.currentUsername = username;
-  if (username === '8888') flowState.useAux = true;
+  if (username === AUXILIARY_LOGIN_ID) flowState.useAux = true;
   flowState.retryCount = Math.min(MAX_AUTO_RETRY_ROUNDS, Number(flowState.retryCount || 0) + 1);
   // record timestamp of this submit attempt so subsequent loads can decide recency
   flowState.lastAttemptTs = Date.now();

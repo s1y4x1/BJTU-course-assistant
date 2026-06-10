@@ -127,9 +127,9 @@ async function saveFullscreenCourseCache() {
     yktMatchedCourseLinkByCourseId: safeStorageClone(window.yktMatchedCourseLinkByCourseId, {}),
     yktStandaloneCourses: safeStorageClone(window.yktStandaloneCourses, []),
     yktCourseGroupsSnapshot: safeStorageClone(window.yktCourseGroupsSnapshot, []),
-    mrzyMatchedHomeworkByCourseId: safeStorageClone(window.mrzyMatchedHomeworkByCourseId, {}),
-    mrzyStandaloneCourses: safeStorageClone(window.mrzyStandaloneCourses, []),
-    mrzyCourseGroupsSnapshot: safeStorageClone(window.mrzyCourseGroupsSnapshot, []),
+    mrjzyMatchedHomeworkByCourseId: safeStorageClone(window.mrjzyMatchedHomeworkByCourseId, {}),
+    mrjzyStandaloneCourses: safeStorageClone(window.mrjzyStandaloneCourses, []),
+    mrjzyCourseGroupsSnapshot: safeStorageClone(window.mrjzyCourseGroupsSnapshot, []),
     jlgjMatchedHomeworkByCourseId: safeStorageClone(window.jlgjMatchedHomeworkByCourseId, {}),
     jlgjStandaloneCourses: safeStorageClone(window.jlgjStandaloneCourses, []),
     jlgjCourseGroupsSnapshot: safeStorageClone(window.jlgjCourseGroupsSnapshot, []),
@@ -210,9 +210,9 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.yktMatchedCourseLinkByCourseId = cache.yktMatchedCourseLinkByCourseId || {};
   window.yktStandaloneCourses = Array.isArray(cache.yktStandaloneCourses) ? cache.yktStandaloneCourses : [];
   window.yktCourseGroupsSnapshot = Array.isArray(cache.yktCourseGroupsSnapshot) ? cache.yktCourseGroupsSnapshot : [];
-  window.mrzyMatchedHomeworkByCourseId = cache.mrzyMatchedHomeworkByCourseId || {};
-  window.mrzyStandaloneCourses = Array.isArray(cache.mrzyStandaloneCourses) ? cache.mrzyStandaloneCourses : [];
-  window.mrzyCourseGroupsSnapshot = Array.isArray(cache.mrzyCourseGroupsSnapshot) ? cache.mrzyCourseGroupsSnapshot : [];
+  window.mrjzyMatchedHomeworkByCourseId = cache.mrjzyMatchedHomeworkByCourseId || {};
+  window.mrjzyStandaloneCourses = Array.isArray(cache.mrjzyStandaloneCourses) ? cache.mrjzyStandaloneCourses : [];
+  window.mrjzyCourseGroupsSnapshot = Array.isArray(cache.mrjzyCourseGroupsSnapshot) ? cache.mrjzyCourseGroupsSnapshot : [];
   window.jlgjMatchedHomeworkByCourseId = cache.jlgjMatchedHomeworkByCourseId || {};
   window.jlgjStandaloneCourses = Array.isArray(cache.jlgjStandaloneCourses) ? cache.jlgjStandaloneCourses : [];
   window.jlgjCourseGroupsSnapshot = Array.isArray(cache.jlgjCourseGroupsSnapshot) ? cache.jlgjCourseGroupsSnapshot : [];

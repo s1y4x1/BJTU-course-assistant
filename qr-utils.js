@@ -1,4 +1,4 @@
-// Shared QR utilities used by both app.js (MRZY login, resource upload) and course-qr.js (header QR tooltip)
+// Shared QR utilities used by both app.js (MRJZY login, resource upload) and course-qr.js (header QR tooltip)
 
 function convertVisitNameToUrl(visitName) {
   const raw = String(visitName || '').trim();
