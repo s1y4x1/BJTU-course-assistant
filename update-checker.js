@@ -704,7 +704,7 @@ async function loadVersionInfo() {
     const msg = String(err?.message || '').trim();
     const base = '检查更新失败：无法连接到 Github';
     const text = msg ? `${base}\n${msg}` : base;
-    showToast(text, 'error', 2600);
+    showToast(text, 'error', 2600, false, { preserveInfoToasts: true });
   }
 }
 

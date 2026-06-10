@@ -1186,10 +1186,13 @@ function promptLoginIfPossible(message) {
 }
 
 // -------------------- UI helpers --------------------
-function showToast(message, type = 'success', duration = 3000, allowHtml = false) {
+function showToast(message, type = 'success', duration = 3000, allowHtml = false, options = {}) {
   const container = document.getElementById('toast-container');
-  // clear existing info toasts
-  container.querySelectorAll('.toast.info:not([data-sticky="1"])').forEach(el => el.remove());
+  const preserveInfoToasts = !!options?.preserveInfoToasts;
+  if (!preserveInfoToasts) {
+    // clear existing info toasts
+    container.querySelectorAll('.toast.info:not([data-sticky="1"])').forEach(el => el.remove());
+  }
 
   const text = String(message || '');
   const toast = document.createElement('div');
