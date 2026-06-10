@@ -455,10 +455,40 @@ ${cardsHtml}
 
   // ─── Data loading ───
 
-  const ensureVeCourseResourceListsForQr = async (setStatus) => {
+  const syncCoursewareButtonsFromLoadedCache = () => {
+    if (!isPlatformEnabled('ve')) return;
+    const courses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+    courses.forEach((c) => {
+      const cid = String(c.id || c.cId || c.courseId || c.course_id || '').trim();
+      if (!cid) return;
+      const cache = window.coursewareCacheByCourseId?.[cid];
+      if (!cache?.loaded) return;
+      const card = document.getElementById(`course-${cid}`);
+      if (!(card instanceof HTMLElement)) return;
+      const btn = card.querySelector('button[data-action="courseware"]');
+      if (!(btn instanceof HTMLElement)) return;
+      const hasItems = Array.isArray(cache.items) && cache.items.length > 0;
+      btn.style.display = hasItems ? '' : 'none';
+      if (!hasItems) {
+        if (typeof setCourseCoursewareState === 'function') setCourseCoursewareState(cid, false);
+        if (String(card.dataset.resultView || '').trim() === 'courseware') {
+          const resultArea = card.querySelector('.result-area');
+          if (resultArea instanceof HTMLElement) {
+            if (typeof toggleResultAreaAnimated === 'function') toggleResultAreaAnimated(resultArea, false);
+            else resultArea.style.display = 'none';
+          }
+          card.dataset.resultView = '';
+          if (typeof syncCourseActionButtonText === 'function') syncCourseActionButtonText(card, '');
+        }
+      }
+    });
+  };
+
+  const ensureVeCourseResourceListsForQr = async (setStatus, withProgressTicker = null) => {
     if (!isPlatformEnabled('ve')) return;
     const courses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
     if (!courses.length) return;
+    syncCoursewareButtonsFromLoadedCache();
     const tasks = [];
     courses.forEach((c) => {
       const cid = String(c.id || c.cId || c.courseId || c.course_id || '').trim();
@@ -483,9 +513,18 @@ ${cardsHtml}
         tasks.push(autoLoadVideoLinks(btnReplay, cid, courseNum, fzId, xqCode));
       }
     });
-    if (!tasks.length) return;
-    setStatus('正在获取课件/回放列表…');
-    await Promise.allSettled(tasks);
+    if (!tasks.length) {
+      syncCoursewareButtonsFromLoadedCache();
+      return;
+    }
+    const allTasks = Promise.allSettled(tasks);
+    if (typeof withProgressTicker === 'function') {
+      await withProgressTicker('正在获取课件/回放列表…', allTasks);
+    } else {
+      setStatus('正在获取课件/回放列表…');
+      await allTasks;
+    }
+    syncCoursewareButtonsFromLoadedCache();
   };
 
   const waitForAllData = async (setStatus) => {
@@ -624,6 +663,17 @@ ${cardsHtml}
         setStatus(text);
       }
     };
+    const withProgressTicker = async (prefix, promise, intervalMs = 350) => {
+      showProgress(prefix);
+      const ms = Math.max(120, Number(intervalMs) || 350);
+      const timer = setInterval(() => showProgress(prefix), ms);
+      try {
+        return await promise;
+      } finally {
+        clearInterval(timer);
+        showProgress(prefix);
+      }
+    };
 
     const getRenderedLoadingReasons = () => {
       const root = document.getElementById('course-list');
@@ -642,7 +692,7 @@ ${cardsHtml}
       return [...reasons];
     };
 
-    await ensureVeCourseResourceListsForQr(showProgress);
+    await ensureVeCourseResourceListsForQr(showProgress, withProgressTicker);
 
     const getAllLoadingReasons = () => {
       const reasons = [...getRenderedLoadingReasons(), ...getVeLoadingReasons()];
@@ -690,7 +740,6 @@ ${cardsHtml}
     });
 
     if (cwNeedsResolve) {
-      showProgress('正在获取课件链接…');
       const promises = [];
       courses.forEach((c) => {
         const cid = c.id || c.cId || c.courseId || c.course_id;
@@ -719,7 +768,7 @@ ${cardsHtml}
           }
         });
       });
-      await Promise.allSettled(promises);
+      await withProgressTicker('正在获取课件链接…', Promise.allSettled(promises));
       if (typeof buildCoursewareListHtml === 'function') {
         courses.forEach((c) => {
           const cid = c.id || c.cId || c.courseId || c.course_id;
@@ -739,7 +788,6 @@ ${cardsHtml}
     });
 
     if (rpNeedsResolve) {
-      showProgress('正在获取回放链接…');
       const promises = [];
       courses.forEach((c) => {
         const cid = c.id || c.cId || c.courseId || c.course_id;
@@ -771,7 +819,7 @@ ${cardsHtml}
         });
         cache.qrLinksResolved = true;
       });
-      await Promise.allSettled(promises);
+      await withProgressTicker('正在获取回放链接…', Promise.allSettled(promises));
     }
 
     return true;
