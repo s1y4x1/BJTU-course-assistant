@@ -2565,6 +2565,7 @@ async function loginPostWithManualCaptchaInExtension(username, passwordMd5, { si
         hideCaptchaModal();
         return last;
       }
+      showToast(last.message || '验证码错误', 'warning', 1600);
     }
     return last;
   } finally {
@@ -2630,6 +2631,7 @@ async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal }
         hideCaptchaModal();
         return last;
       }
+      showToast(last.message || '验证码错误', 'warning', 1600);
       if (stopCaptchaAutoRetry) return last;
       if (i < 2) {
         showCaptchaModal({
@@ -2939,6 +2941,12 @@ async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 12000
 }
 
 async function handleLoginSuccess(username) {
+  if (!isPlatformEnabled('ve')) {
+    window.platformEnabled.ve = true;
+    savePlatformEnabledToStorage().catch(() => {});
+  }
+  window.platformLoadedOnce.ve = false;
+  setPlatformLoginState('ve', 'checking');
   isLoginSessionValid = true;
   loginCancelRequested = false;
   hideLoginModal();
