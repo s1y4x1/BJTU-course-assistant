@@ -682,15 +682,13 @@ function setupRightColumnResizer() {
   if (!rightColumn || !rightColumnResizer) return;
   const STORAGE_KEY = 'courseHelperWidthPx';
   const BASE_MIN_W = 480;
-  const BASE_MAX_W = 760;
 
   const isAdaptiveLayout = () => window.matchMedia('(max-width: 900px), (orientation: portrait)').matches;
 
   const getBounds = () => {
     const vw = Math.max(0, Number(window.innerWidth || 0));
     const minW = BASE_MIN_W;
-    const maxByViewport = Math.max(minW + 20, vw - 48);
-    const maxW = Math.max(minW, Math.min(BASE_MAX_W, maxByViewport));
+    const maxW = Math.max(minW + 20, vw - 48);
     return { minW, maxW };
   };
 

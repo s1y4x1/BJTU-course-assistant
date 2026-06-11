@@ -58,18 +58,17 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .layout-container { display: flex; gap: 20px; align-items: flex-start; margin: 0; }
-        .left-column { flex: 1; min-width: 0; font-size: 14px; }
+        .left-column { flex: 1; min-width: 480px; font-size: 14px; }
         .right-column {
-            width: clamp(560px, 38vw, 760px);
+            flex: 0 1 auto;
             min-width: 480px;
-            flex-shrink: 0;
             position: sticky;
             top: 20px;
             background: #f9f9f9;
             padding: 15px;
             padding-left: 12px;
             border-radius: 8px;
-            max-height: calc(100vh - 100px);
+            max-height: calc(100vh - 80px);
             overflow-y: auto;
             overflow-x: hidden;
             box-sizing: border-box;
@@ -1538,7 +1537,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
 
         .course-header {
             margin-top: 0;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
             border-bottom: 2px solid #ddd;
             padding-bottom: 10px;
             display: flex;
