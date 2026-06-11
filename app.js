@@ -184,6 +184,7 @@ window.currentVeCourseList = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
 window.homeworkNoteAttachmentCacheByKey = {}; // {"noteId|courseId|teacherId": {loading,loaded,picList}}
+window.homeworkAttachmentPendingByCourse = {}; // {courseId: boolean}
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
 window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}]
 window.saveUploadedFilesEnabled = true;
@@ -492,9 +493,11 @@ function isPlatformChecking(platform) {
   return isPlatformEnabled(p) && window.platformLoginState?.[p] === 'checking';
 }
 
-function togglePlatformSelection(platform) {
+function togglePlatformSelection(platform, options = {}) {
   platform = normalizePlatformId(platform);
   if (!platform || !['ve', 'ykt', 'mrjzy', 'jlgj'].includes(platform)) return;
+  const interactive = options?.interactive !== false;
+  const persist = options?.persist !== false;
   if (isPlatformChecking(platform)) {
     if (platform === 'ykt') {
       window.platformInteractiveLoginPending.ykt = false;
@@ -512,7 +515,7 @@ function togglePlatformSelection(platform) {
     window.platformLoadedOnce[platform] = false;
     bumpPlatformLoadVersion(platform);
     setPlatformLoginState(platform, 'offline');
-    savePlatformEnabledToStorage().catch(() => {});
+    if (persist) savePlatformEnabledToStorage().catch(() => {});
     refreshPlatformLoginTip();
 
     if (platform === 've') {
@@ -533,7 +536,7 @@ function togglePlatformSelection(platform) {
 
   const enabled = !isPlatformEnabled(platform);
   window.platformEnabled[platform] = enabled;
-  savePlatformEnabledToStorage().catch(() => {});
+  if (persist) savePlatformEnabledToStorage().catch(() => {});
   refreshPlatformLoginTip();
 
   if (!enabled) {
@@ -584,7 +587,7 @@ function togglePlatformSelection(platform) {
   }
 
   if (platform === 'ykt' || platform === 'mrjzy' || platform === 'jlgj') {
-    window.platformInteractiveLoginPending[platform] = true;
+    window.platformInteractiveLoginPending[platform] = !!interactive;
   }
 
   clearPlatformData(platform);
@@ -597,7 +600,7 @@ function applyPlatformEnabledSettingFromStorage(raw) {
   const next = sanitizePlatformEnabled(raw, window.platformEnabled || DEFAULT_PLATFORM_ENABLED);
   ['ve', 'ykt', 'mrjzy', 'jlgj'].forEach((platform) => {
     if (isPlatformEnabled(platform) !== !!next[platform]) {
-      togglePlatformSelection(platform);
+      togglePlatformSelection(platform, { interactive: false, persist: false });
     }
   });
 }
@@ -5721,7 +5724,7 @@ function ensureYktSection() {
 }
 
 function renderYktNeedLoginMessage() {
-  const shouldOpenAssist = isPlatformEnabled('ykt') || !!window.platformInteractiveLoginPending?.ykt;
+  const shouldOpenAssist = !!window.platformInteractiveLoginPending?.ykt;
   removeYktLoginSection();
   window.platformLoadedOnce.ykt = false;
   clearPlatformData('ykt');
@@ -5739,7 +5742,7 @@ function renderYktNeedLoginMessage() {
 }
 
 function renderMrjzyNeedLoginMessage() {
-  const shouldOpenAssist = isPlatformEnabled('mrjzy') || !!window.platformInteractiveLoginPending?.mrjzy;
+  const shouldOpenAssist = !!window.platformInteractiveLoginPending?.mrjzy;
   window.platformLoadedOnce.mrjzy = false;
   clearPlatformData('mrjzy');
   rerenderAllHomeworkAreas();
@@ -5756,11 +5759,10 @@ function renderMrjzyNeedLoginMessage() {
 }
 
 function renderJlgjNeedLoginMessage() {
-  const shouldOpenAssist = isPlatformEnabled('jlgj') || !!window.platformInteractiveLoginPending?.jlgj;
+  const shouldOpenAssist = !!window.platformInteractiveLoginPending?.jlgj;
   window.platformLoadedOnce.jlgj = false;
   clearPlatformData('jlgj');
   rerenderAllHomeworkAreas();
-  window.platformInteractiveLoginPending.jlgj = true;
   setPlatformLoginState('jlgj', 'offline');
 
   if (shouldOpenAssist) {
@@ -9322,48 +9324,56 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
 
 async function prefetchHomeworkAttachments(courseId, list) {
   const items = Array.isArray(list) ? list : [];
-  if (!items.length) return;
+  if (!items.length) {
+    window.homeworkAttachmentPendingByCourse[courseId] = false;
+    return;
+  }
 
-  const teacherId = await ensureHomeworkTeacherId(courseId);
-  if (!teacherId) return;
-  let changed = false;
+  window.homeworkAttachmentPendingByCourse[courseId] = true;
+  try {
+    const teacherId = await ensureHomeworkTeacherId(courseId);
+    if (!teacherId) return;
+    let changed = false;
 
-  await Promise.all(items.map(async (hw) => {
-    const noteId = String(hw?.id ?? hw?.noteId ?? hw?.courseNoteId ?? '').trim();
-    const noteCourseId = String(hw?.course_id ?? hw?.courseId ?? hw?.cId ?? courseId).trim();
-    const noteTeacherId = String(hw?.teacher_id ?? hw?.teacherId ?? teacherId).trim();
-    if (!noteId || !noteCourseId || !noteTeacherId) return;
+    await Promise.all(items.map(async (hw) => {
+      const noteId = String(hw?.id ?? hw?.noteId ?? hw?.courseNoteId ?? '').trim();
+      const noteCourseId = String(hw?.course_id ?? hw?.courseId ?? hw?.cId ?? courseId).trim();
+      const noteTeacherId = String(hw?.teacher_id ?? hw?.teacherId ?? teacherId).trim();
+      if (!noteId || !noteCourseId || !noteTeacherId) return;
 
-    const key = buildHomeworkAttachmentKey(noteId, noteCourseId, noteTeacherId);
-    hw.__attachmentKey = key;
+      const key = buildHomeworkAttachmentKey(noteId, noteCourseId, noteTeacherId);
+      hw.__attachmentKey = key;
 
-    const cached = window.homeworkNoteAttachmentCacheByKey[key];
-    if (cached?.loading || cached?.loaded) return;
-    window.homeworkNoteAttachmentCacheByKey[key] = { loading: true, loaded: false, picList: [] };
+      const cached = window.homeworkNoteAttachmentCacheByKey[key];
+      if (cached?.loading || cached?.loaded) return;
+      window.homeworkNoteAttachmentCacheByKey[key] = { loading: true, loaded: false, picList: [] };
 
-    const detailUrl = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=queryStudentCourseNote&id=${encodeURIComponent(noteId)}&courseId=${encodeURIComponent(noteCourseId)}&teacherId=${encodeURIComponent(noteTeacherId)}`;
-    try {
-      const { text } = await fetchText(detailUrl, {
-        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-      });
-      let detailData = null;
-      try { detailData = JSON.parse(String(text || '{}')); } catch { detailData = null; }
-      const picListRaw = Array.isArray(detailData?.picList) ? detailData.picList : [];
-      const picList = picListRaw.map((it) => {
-        const fileNameRaw = String(it?.file_name || it?.name || '').trim();
-        const fileNameNoExt = stripFileExtension(fileNameRaw) || fileNameRaw || '附件';
-        const sizeBytes = Math.max(0, Number(it?.pic_size || 0) || 0);
-        const url = normalizeHomeworkAttachmentUrl(it?.url || '');
-        return { fileName: fileNameRaw || fileNameNoExt, fileNameNoExt, sizeBytes, url };
-      }).filter((it) => !!it.url);
-      window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList };
-      if (picList.length > 0) changed = true;
-    } catch {
-      window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList: [] };
-    }
-  }));
+      const detailUrl = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=queryStudentCourseNote&id=${encodeURIComponent(noteId)}&courseId=${encodeURIComponent(noteCourseId)}&teacherId=${encodeURIComponent(noteTeacherId)}`;
+      try {
+        const { text } = await fetchText(detailUrl, {
+          headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+        });
+        let detailData = null;
+        try { detailData = JSON.parse(String(text || '{}')); } catch { detailData = null; }
+        const picListRaw = Array.isArray(detailData?.picList) ? detailData.picList : [];
+        const picList = picListRaw.map((it) => {
+          const fileNameRaw = String(it?.file_name || it?.name || '').trim();
+          const fileNameNoExt = stripFileExtension(fileNameRaw) || fileNameRaw || '附件';
+          const sizeBytes = Math.max(0, Number(it?.pic_size || 0) || 0);
+          const url = normalizeHomeworkAttachmentUrl(it?.url || '');
+          return { fileName: fileNameRaw || fileNameNoExt, fileNameNoExt, sizeBytes, url };
+        }).filter((it) => !!it.url);
+        window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList };
+        if (picList.length > 0) changed = true;
+      } catch {
+        window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList: [] };
+      }
+    }));
 
-  if (changed) renderHomeworkList(courseId);
+    if (changed) renderHomeworkList(courseId);
+  } finally {
+    window.homeworkAttachmentPendingByCourse[courseId] = false;
+  }
 }
 
 async function checkHomework(courseId) {

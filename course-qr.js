@@ -576,6 +576,7 @@ ${cardsHtml}
       if (!isPlatformEnabled('ve')) return [];
       const courses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
       const reasons = [];
+      const hasAnyAttachmentLoading = Object.values(window.homeworkNoteAttachmentCacheByKey || {}).some((cache) => cache?.loading);
       courses.forEach((c) => {
         const cid = String(c.id || c.cId || c.courseId || c.course_id || '').trim();
         if (!cid) return;
@@ -583,6 +584,8 @@ ${cardsHtml}
         const state = window.courseCardStateById?.[cid] || {};
         if (!window.courseHomeworkData?.[cid]) reasons.push(`${name}: 作业`);
         if (window.homeworkScorePendingByCourse?.[cid]) reasons.push(`${name}: 成绩`);
+        if (window.homeworkAttachmentPendingByCourse?.[cid]) reasons.push(`${name}: 作业附件`);
+        if (hasAnyAttachmentLoading) reasons.push(`${name}: 作业附件`);
         if (state.coursewareListLoading) reasons.push(`${name}: 课件列表`);
         if (state.replayListLoading) reasons.push(`${name}: 回放列表`);
         const cwCache = window.coursewareCacheByCourseId?.[cid];
@@ -692,8 +695,6 @@ ${cardsHtml}
       return [...reasons];
     };
 
-    await ensureVeCourseResourceListsForQr(showProgress, withProgressTicker);
-
     const getAllLoadingReasons = () => {
       const reasons = [...getRenderedLoadingReasons(), ...getVeLoadingReasons()];
       if (hasYktDetailPending()) reasons.push('雨课堂作业详情');
@@ -701,7 +702,7 @@ ${cardsHtml}
       return [...new Set(reasons)];
     };
 
-    // 2. Wait for VE course homework + scores + courseware/replay loading to be ready
+    // 2. Wait for VE homework, scores, and homework attachments before starting QR-only resource fetching.
     const isVeDataReady = () => {
       if (!isPlatformEnabled('ve')) return true;
       const courses = window.currentVeCourseList;
@@ -729,6 +730,8 @@ ${cardsHtml}
       showProgress(`正在等待其他平台：${reasons.slice(0, 2).join('；')}${reasons.length > 2 ? '…' : ''}`);
       await new Promise((r) => setTimeout(r, 500));
     }
+
+    await ensureVeCourseResourceListsForQr(showProgress, withProgressTicker);
 
     // 4. Resolve courseware RP links (download URLs for course materials)
     const courses = isPlatformEnabled('ve') ? window.currentVeCourseList : [];
