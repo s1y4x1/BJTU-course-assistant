@@ -4338,6 +4338,9 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
       setResourceSpaceCount(0);
       setResourceSpaceStatus('未登录或登录已失效，请先登录智慧课程平台', 'warning');
       renderResourceSpaceList();
+      handleLoginRequired(() => {
+        loadResourceSpaceForCurrentAccount(searchName);
+      }, null, '登录已失效，请输入账号登录');
       return;
     }
 
@@ -6976,7 +6979,6 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
       setCourseCoursewareLoading(courseIdInt, false);
       if (payload.accountSwitched) {
         showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载', 'info', 3000);
-        // 使用统一流程完成账号切换同步
         try {
           await syncAccountInfoAndReloadVeCourses({ userId: payload.accountSwitched, reloadCourses: true, reloadResourceSpace: true });
         } catch { /* ignore */ }
@@ -6985,9 +6987,13 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
       if (shouldRender()) {
         resultArea.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
         const sp = resultArea.querySelector('span');
-        if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
+        if (sp) sp.addEventListener('click', () => handleLoginRequired(() => {
+          loadCoursewareList(btn, courseIdInt, courseNum, fzId);
+        }, null, '登录已失效，请稍后重试或重新登录'));
       }
-      promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+      handleLoginRequired(() => {
+        loadCoursewareList(btn, courseIdInt, courseNum, fzId);
+      }, null, '登录已失效，请稍后重试或重新登录');
       return;
     }
 
@@ -7236,15 +7242,16 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
       }
       if (!loginHandled) {
         loginHandled = true;
-        const currentUser = await detectUserIdFromPersonalCenter();
-        if (!currentUser) {
-          if (linkContainer) {
-            linkContainer.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-            const sp = linkContainer.querySelector('span');
-            if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
-          }
-          promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+        if (linkContainer) {
+          linkContainer.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
+          const sp = linkContainer.querySelector('span');
+          if (sp) sp.addEventListener('click', () => handleLoginRequired(() => {
+            startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
+          }, null, '登录已失效，请稍后重试或重新登录'));
         }
+        handleLoginRequired(() => {
+          startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
+        }, null, '登录已失效，请稍后重试或重新登录');
       }
     }
   }));
@@ -8922,7 +8929,9 @@ async function loadCourses() {
       isLoginSessionValid = false;
       setPlatformLoginState('ve', 'offline');
       if (usernameInput.value.trim()) {
-        promptLoginIfPossible('请输入账号登录');
+        handleLoginRequired(() => {
+          loadCourses();
+        }, null, '请输入账号登录');
       }
       renderCourseList([]);
       rematchExternalByVeCourses();
@@ -8939,7 +8948,9 @@ async function loadCourses() {
         isLoginSessionValid = false;
         setPlatformLoginState('ve', 'offline');
         if (usernameInput.value.trim()) {
-          promptLoginIfPossible('请输入账号登录');
+          handleLoginRequired(() => {
+            loadCourses();
+          }, null, '请输入账号登录');
         }
         renderCourseList([]);
         rematchExternalByVeCourses();
@@ -8978,7 +8989,9 @@ async function loadCourses() {
     if (likelyLoginInvalid) {
       isLoginSessionValid = false;
       if (usernameInput.value.trim()) {
-        promptLoginIfPossible('请输入账号登录');
+        handleLoginRequired(() => {
+          loadCourses();
+        }, null, '请输入账号登录');
       }
     } else {
       showToast('课程加载失败: ' + errMsg, 'error');
@@ -9944,25 +9957,14 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       if (!linksDiv) return false;
       if (isStale()) return false;
 
-      const currentUser = await detectUserIdFromPersonalCenter();
-      if (currentUser && lastValidUsername && currentUser !== lastValidUsername) {
-        showToast('检测到当前账号已变更为 ' + currentUser + '，正在切换并重新加载', 'info', 3000);
-        usernameInput.value = currentUser;
-        await setLocal('username', currentUser);
-        lastValidUsername = currentUser;
-        resetAccountSwitchInterruption();
-        isLoginSessionValid = true;
-        // 使用统一流程完成账号切换同步
-        try {
-          await syncAccountInfoAndReloadVeCourses({ userId: currentUser, reloadCourses: true, reloadResourceSpace: true });
-        } catch { /* ignore */ }
-        return false;
-      }
-
       linksDiv.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
       const sp = linksDiv.querySelector('span');
-      if (sp) sp.addEventListener('click', () => promptLoginIfPossible('登录已失效，请稍后重试或重新登录'));
-      promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+      if (sp) sp.addEventListener('click', () => handleLoginRequired(() => {
+        fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId);
+      }, null, '登录已失效，请稍后重试或重新登录'));
+      handleLoginRequired(() => {
+        fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId);
+      }, null, '登录已失效，请稍后重试或重新登录');
       return false;
     }
 
@@ -10032,8 +10034,12 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
     if (data?.flag === false || (data?.STATUS === '1' && String(data?.ERRMSG || '').includes('不合法'))) {
       if (isStale()) return;
       span.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-      span.onclick = () => promptLoginIfPossible(VE_LOGIN_REQUIRED_HTML);
-      promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
+      span.onclick = () => handleLoginRequired(() => {
+        window.__fetchVideoDetail(rpId, courseId, xkhId, teacherId, btnEl);
+      }, null, VE_LOGIN_REQUIRED_HTML);
+      handleLoginRequired(() => {
+        window.__fetchVideoDetail(rpId, courseId, xkhId, teacherId, btnEl);
+      }, null, '登录已失效，请稍后重试或重新登录');
       return;
     }
     const html = data?.html || '';
@@ -11402,10 +11408,10 @@ if (resourceSpaceList) {
           if (rpUrl) {
             item.url = rpUrl;
           } else if (result?.loginExpired) {
-            const userId = await detectUserIdFromPersonalCenter();
-            if (!userId) {
-              promptLoginIfPossible('登录已失效，请稍后重试或重新登录');
-            }
+            handleLoginRequired(() => {
+              const btn = document.querySelector(`button[data-action="resource-download"][data-resource-id="${CSS.escape(item.id)}"]`);
+              if (btn) btn.click();
+            }, null, '登录已失效，请稍后重试或重新登录');
             showToast('获取下载链接失败', 'error', 1800);
             return;
           } else {
