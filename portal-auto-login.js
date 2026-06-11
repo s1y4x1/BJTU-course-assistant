@@ -128,17 +128,17 @@ async function portalLoginAutoLoginInjected(context) {
     return arr[arr.length - 1][2];
   }
   function isCaptchaErrorMessage(msg = '') {
-    return /验证码|驗證碼|passcode|请输入正确的验证码|請輸入正確的驗證碼/i.test(String(msg || ''));
+    return /验证码/i.test(String(msg || ''));
   }
   function isAccountLockedMessage(msg = '') {
-    return /锁定|鎖定|错误次数过多|錯誤次數過多|稍后再试|稍後再試/i.test(String(msg || ''));
+    return /锁定|错误次数过多/i.test(String(msg || ''));
   }
   function isCredentialErrorMessage(msg = '') {
     const t = String(msg || '');
     if (!t) return false;
     if (isCaptchaErrorMessage(t)) return false;
     if (isAccountLockedMessage(t)) return false;
-    return /账号|帳號|用户名|用戶名|密码|密碼|口令|学号|工号|登录失败|登錄失敗|账号或密码|帳號或密碼/i.test(t);
+    return /账号或密码/i.test(t);
   }
   function getDefaultPortalPasswordMd5(loginName) {
     const id = String(loginName || '').trim();
