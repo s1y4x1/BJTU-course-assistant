@@ -19,12 +19,24 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .btn { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
         .btn:hover { background-color: #45a049; }
         .file-item { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; background:#fff; }
-        .progress-bar-container { width: 100%; background-color: #f1f1f1; height: 20px; border-radius: 10px; margin-top: 5px; overflow: hidden; }
-        .progress-bar { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.2s; text-align: center; line-height: 20px; color: white; font-size: 12px; }
+        .progress-bar-container { width: 100%; background-color: #e5e7eb; height: 3px; border-radius: 0; margin-top: 5px; overflow: hidden; }
+        .progress-bar { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.2s; text-align: left; line-height: 0; color: transparent; font-size: 0; border-radius: 0; overflow: hidden; }
         .status { margin-top: 5px; font-size: 14px; }
         .success { color: green; }
         .error { color: red; }
         .url-link { word-break: break-all; }
+        .file-size-emphasis {
+            display: inline-block;
+            vertical-align: baseline;
+            white-space: nowrap;
+        }
+        .file-size-separator,
+        .file-size-placeholder {
+            font-size: 12px;
+            font-weight: 500;
+            color: #64748b;
+            white-space: nowrap;
+        }
         .config-area { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 8px; }
         input[type="text"], input[type="number"], input[type="password"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
         .spinner {
@@ -765,7 +777,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         .upload-duplicate-row {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             gap: 8px;
             padding: 8px;
             border-radius: 6px;
@@ -778,8 +790,14 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             margin-bottom: 0;
         }
         .upload-duplicate-row input {
-            margin-top: 3px;
             flex: 0 0 auto;
+        }
+        .upload-duplicate-fileline {
+            min-width: 0;
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            flex-wrap: wrap;
         }
         .upload-duplicate-name {
             font-size: 13px;
@@ -787,23 +805,28 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             color: #0f172a;
             word-break: break-all;
         }
-        .upload-duplicate-meta {
+        .upload-duplicate-size {
             display: block;
-            margin-top: 2px;
-            font-size: 12px;
-            color: #64748b;
             line-height: 1.35;
+            white-space: nowrap;
         }
         .upload-duplicate-footer {
             display: flex;
             gap: 8px;
+            align-items: center;
             padding-top: 10px;
             margin-top: 10px;
             border-top: 1px solid #e2e8f0;
         }
         .upload-duplicate-secondary,
+        .upload-duplicate-cancel {
+            flex: 0 0 auto;
+            padding: 8px 14px;
+            font-size: 13px;
+        }
         .upload-duplicate-primary {
-            flex: 1 1 0;
+            flex: 1 1 auto;
+            width: 100%;
             padding: 8px 14px;
             font-size: 13px;
         }
@@ -813,11 +836,17 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .upload-duplicate-secondary:hover {
             background: #000;
         }
+        .upload-duplicate-cancel {
+            background: #64748b;
+        }
+        .upload-duplicate-cancel:hover {
+            background: #475569;
+        }
         .upload-duplicate-primary {
-            background: #1e3a8a;
+            background: #2563eb;
         }
         .upload-duplicate-primary:hover {
-            background: #1e40af;
+            background: #1d4ed8;
         }
         .version-notice-body {
             font-size: 13px;
@@ -1046,6 +1075,13 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             flex-wrap: wrap;
             justify-content: flex-end;
             font-weight: 700;
+        }
+        #total-size-info,
+        #resource-download-total-size {
+            font-size: 10px;
+            font-weight: 500;
+            color: #94a3b8;
+            text-shadow: none;
         }
         .upload-total-progress-wrap .progress-bar-container {
             margin-top: 0;
@@ -1482,6 +1518,24 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             gap: 4px;
             font-size: 12px;
             color: #4b5563;
+        }
+        .saved-upload-main {
+            min-width: 0;
+            flex: 1 1 auto;
+            display: flex;
+            align-items: baseline;
+            flex-wrap: wrap;
+        }
+        .saved-upload-name {
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .saved-upload-actions {
+            flex: 0 0 auto;
+            margin-left: 8px;
+            align-self: flex-start;
         }
 
         .course-header {

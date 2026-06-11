@@ -1267,6 +1267,23 @@ function formatSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+function buildFileSizeEmphasisStyle(bytes) {
+  const n = Math.max(0, Number(bytes) || 0);
+  return buildResourceSizeEmphasisStyle(n / (1024 * 1024));
+}
+
+function renderFileSizeText(bytes, text = '') {
+  const n = Math.max(0, Number(bytes) || 0);
+  const label = text || formatSize(n);
+  return `<span class="file-size-emphasis" style="${escapeHtml(buildFileSizeEmphasisStyle(n))}">${escapeHtml(label)}</span>`;
+}
+
+function renderFileSizePair(loaded, total) {
+  const loadedSafe = Math.max(0, Number(loaded) || 0);
+  const totalSafe = Math.max(0, Number(total) || 0);
+  return `${renderFileSizeText(loadedSafe)} <span class="file-size-separator">/</span> ${renderFileSizeText(totalSafe)}`;
+}
+
 function buildHomeworkAttachmentKey(noteId, courseId, teacherId) {
   return `${String(noteId || '').trim()}|${String(courseId || '').trim()}|${String(teacherId || '').trim()}`;
 }
@@ -1280,7 +1297,7 @@ function stripFileExtension(name) {
 }
 
 function buildHomeworkAttachmentSizeStyle(bytes) {
-  return buildResourceSizeEmphasisStyle((Number(bytes) || 0) / (1024 * 1024));
+  return buildFileSizeEmphasisStyle(bytes);
 }
 
 function normalizeHomeworkAttachmentUrl(raw) {
@@ -1526,6 +1543,7 @@ async function submitNativeHomework(courseId, hw, content, fileList) {
 function updateTotalProgress() {
   let totalSize = 0;
   let totalUploaded = 0;
+  const totalProgressWrap = totalServerBar?.closest?.('.progress-bar-container');
 
   Object.values(window.filesData).forEach(d => {
     const size = Math.max(0, Number(d?.size || 0));
@@ -1536,10 +1554,14 @@ function updateTotalProgress() {
 
   totalRecentSpeedBps = pushAndCalcRecentSpeed(totalProgressSamples, totalUploaded);
 
-  totalSizeInfoDiv.textContent = `${formatSize(totalUploaded)} / ${formatSize(totalSize)}`;
+  totalSizeInfoDiv.innerHTML = renderFileSizePair(totalUploaded, totalSize);
+  totalSizeInfoDiv.style.cssText = '';
   if (!totalSize) {
+    if (totalProgressWrap instanceof HTMLElement) totalProgressWrap.style.display = 'none';
     totalServerBar.style.width = '0%';
+    totalServerBar.textContent = '';
     if (totalPercentDiv) totalPercentDiv.textContent = '0%';
+    if (totalPercentDiv) totalPercentDiv.style.display = 'none';
     if (totalEtaDiv) totalEtaDiv.textContent = '';
     totalRecentSpeedBps = 0;
     totalProgressSamples.length = 0;
@@ -1547,8 +1569,11 @@ function updateTotalProgress() {
     return;
   }
 
+  if (totalProgressWrap instanceof HTMLElement) totalProgressWrap.style.display = '';
+  if (totalPercentDiv) totalPercentDiv.style.display = '';
   const percent = Math.min(100, Math.round((totalUploaded / totalSize) * 100));
   totalServerBar.style.width = percent + '%';
+  totalServerBar.textContent = '';
   if (totalPercentDiv) totalPercentDiv.textContent = `${percent}%`;
 
   const remaining = Math.max(0, totalSize - totalUploaded);
@@ -3589,7 +3614,10 @@ function processResourceDownloadQueue() {
   const limit = Math.max(1, Number(maxParallelUploads) || 1);
   while (window.resourceDownloadQueueRunning < limit && window.resourceDownloadQueue.length > 0) {
     const entry = window.resourceDownloadQueue.shift();
-    if (!entry || entry.cancelled) continue;
+    if (!entry || entry.cancelled) {
+      if (entry) entry.settled = true;
+      continue;
+    }
     entry.started = true;
     window.resourceDownloadQueueRunning += 1;
     (async () => {
@@ -3599,6 +3627,7 @@ function processResourceDownloadQueue() {
       } catch (err) {
         entry.reject(err);
       } finally {
+        entry.settled = true;
         window.resourceDownloadQueueRunning = Math.max(0, Number(window.resourceDownloadQueueRunning || 0) - 1);
         const rid = String(entry?.id || '').trim();
         if (rid && window.resourceDownloadQueueById[rid] === entry) {
@@ -3617,7 +3646,8 @@ function enqueueResourceDownload(item) {
   const expectedBytes = getResourceItemSizeBytes(item);
 
   const existing = window.resourceDownloadQueueById?.[id];
-  if (existing?.promise) return existing.promise;
+  if (existing?.promise && !existing.cancelled && !existing.settled) return existing.promise;
+  if (existing?.settled || existing?.cancelled) delete window.resourceDownloadQueueById[id];
 
   let resolveRef;
   let rejectRef;
@@ -3634,6 +3664,7 @@ function enqueueResourceDownload(item) {
     reject: rejectRef,
     cancelled: false,
     started: false,
+    settled: false,
     promise
   };
 
@@ -3713,7 +3744,11 @@ function setResourceItemDownloadingState(resourceId, downloading) {
   if (downloadBtn instanceof HTMLButtonElement) {
     if (downloading) {
       downloadBtn.dataset.prevAction = downloadBtn.dataset.action || 'download-saved-upload';
-      downloadBtn.dataset.action = 'cancel-saved-upload';
+      const prevAction = String(downloadBtn.dataset.prevAction || '').trim();
+      const isSavedUpload = prevAction === 'download-saved-upload'
+        || downloadBtn.classList.contains('saved-upload-download')
+        || row.hasAttribute('data-saved-upload-id');
+      downloadBtn.dataset.action = isSavedUpload ? 'cancel-saved-upload' : 'resource-cancel-download';
       downloadBtn.textContent = '取消';
       downloadBtn.classList.add('is-cancel');
     } else {
@@ -3727,6 +3762,7 @@ function setResourceItemDownloadingState(resourceId, downloading) {
 
 function updateResourceDownloadTotals() {
   if (!resourceTotalBar || !resourceTotalSizeInfo || !resourceTotalPercent || !resourceTotalSpeed || !resourceTotalEta) return;
+  const resourceProgressWrap = resourceTotalBar.closest('.progress-bar-container');
   const tasks = Object.values(window.resourceDownloadTasks || {}).filter((t) => t && t.active);
   const queuedEntries = (window.resourceDownloadQueue || []).filter((q) => q && !q.cancelled && !q.started);
   const batch = window.resourceDownloadBatch || {};
@@ -3735,30 +3771,19 @@ function updateResourceDownloadTotals() {
   const completedLoaded = Math.max(0, Number(window.resourceDownloadCompletedContribution?.loadedBytes) || 0);
   const completedTotal = Math.max(0, Number(window.resourceDownloadCompletedContribution?.totalBytes) || 0);
 
-  if (hasActiveOrQueued) {
-    if (window.resourceDownloadQueueClearTimer) {
-      clearTimeout(window.resourceDownloadQueueClearTimer);
-      window.resourceDownloadQueueClearTimer = null;
-    }
-  } else {
-    const hasResidual = completedLoaded > 0
-      || completedTotal > 0
-      || Math.max(0, Number(window.resourceDownloadQueueStatus?.totalFiles || 0)) > 0;
-    if (hasResidual && !window.resourceDownloadQueueClearTimer) {
-      window.resourceDownloadQueueClearTimer = setTimeout(() => {
-        window.resourceDownloadQueueClearTimer = null;
-        window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
-        window.resourceDownloadQueueStatus = { totalFiles: 0, savedFiles: 0 };
-        updateResourceDownloadTotals();
-      }, 3000);
-    }
+  if (hasActiveOrQueued && window.resourceDownloadQueueClearTimer) {
+    clearTimeout(window.resourceDownloadQueueClearTimer);
+    window.resourceDownloadQueueClearTimer = null;
   }
 
   if (!tasks.length && !batch.active && !queuedEntries.length && completedLoaded <= 0 && completedTotal <= 0) {
+    if (resourceProgressWrap instanceof HTMLElement) resourceProgressWrap.style.display = 'none';
     resourceTotalBar.style.width = '0%';
-    resourceTotalBar.textContent = '0%';
-    resourceTotalSizeInfo.textContent = '0 B / 0 B';
+    resourceTotalBar.textContent = '';
+    resourceTotalSizeInfo.innerHTML = renderFileSizePair(0, 0);
+    resourceTotalSizeInfo.style.cssText = '';
     resourceTotalPercent.textContent = '0%';
+    resourceTotalPercent.style.display = 'none';
     resourceTotalSpeed.textContent = '总速度: 0 KB/s';
     resourceTotalEta.textContent = '';
     refreshResourceQueueStatusText();
@@ -3798,11 +3823,14 @@ function updateResourceDownloadTotals() {
   }
 
   const percent = hasKnownTotal && totalSize > 0 ? Math.round((totalLoaded / totalSize) * 100) : 0;
+  if (resourceProgressWrap instanceof HTMLElement) resourceProgressWrap.style.display = totalSize > 0 ? '' : 'none';
+  resourceTotalPercent.style.display = totalSize > 0 ? '' : 'none';
   resourceTotalBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-  resourceTotalBar.textContent = `${Math.max(0, Math.min(100, percent))}%`;
-  resourceTotalSizeInfo.textContent = hasKnownTotal && totalSize > 0
-    ? `${formatSize(totalLoaded)} / ${formatSize(totalSize)}`
-    : `${formatSize(totalLoaded)} / --`;
+  resourceTotalBar.textContent = '';
+  resourceTotalSizeInfo.innerHTML = hasKnownTotal && totalSize > 0
+    ? renderFileSizePair(totalLoaded, totalSize)
+    : `${renderFileSizeText(totalLoaded)} <span class="file-size-separator">/</span> <span class="file-size-placeholder">--</span>`;
+  resourceTotalSizeInfo.style.cssText = '';
   resourceTotalPercent.textContent = hasKnownTotal && totalSize > 0 ? `${percent}%` : '--';
   resourceTotalSpeed.textContent = `总速度: ${formatSpeed(totalSpeed)}`;
 
@@ -3881,17 +3909,18 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
 
   const pct = Math.max(0, Math.min(100, Number(percent) || 0));
   bar.style.width = `${pct}%`;
-  bar.textContent = `${pct}%`;
+  bar.textContent = '';
 
   if (statusEl instanceof HTMLElement) statusEl.textContent = String(status || '');
 
   if (sizeEl instanceof HTMLElement) {
     const loadedSafe = Math.max(0, Number(loaded) || 0);
     const totalSafe = Math.max(0, Number(total) || 0);
+    sizeEl.style.cssText = 'margin-left:6px;';
     if (totalSafe > 0) {
-      sizeEl.textContent = `(${formatSize(loadedSafe)} / ${formatSize(totalSafe)})`;
+      sizeEl.innerHTML = `(${renderFileSizePair(loadedSafe, totalSafe)})`;
     } else if (loadedSafe > 0) {
-      sizeEl.textContent = `(${formatSize(loadedSafe)})`;
+      sizeEl.innerHTML = `(${renderFileSizeText(loadedSafe)})`;
     } else if (active) {
       sizeEl.textContent = '(未知大小)';
     } else {
@@ -4241,7 +4270,7 @@ function renderResourceSpaceList() {
           </div>
         </div>
         <div class="resource-download-progress" style="display:none;">
-          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="progress-bar-container"><div class="progress-bar"></div></div>
           <div class="resource-download-meta">
             <span class="resource-dl-status"></span>
             <span class="resource-dl-size"></span>
@@ -6803,7 +6832,7 @@ function buildCoursewareListHtml(courseId, items) {
           <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(id)}">下载</button>
         </div>
         <div class="resource-download-progress" style="display:none;">
-          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="progress-bar-container"><div class="progress-bar"></div></div>
           <div class="resource-download-meta">
             <span class="resource-dl-status"></span>
             <span class="resource-dl-size"></span>
@@ -9275,7 +9304,7 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
           </div>
         </div>
         <div class="resource-download-progress" style="display:none;">
-          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="progress-bar-container"><div class="progress-bar"></div></div>
           <div class="resource-download-meta">
             <span class="resource-dl-status"></span>
             <span class="resource-dl-size"></span>
@@ -10154,6 +10183,7 @@ function promptDuplicateUploadConfirmation(entries) {
   const modal = document.getElementById('upload-duplicate-modal');
   const listEl = document.getElementById('upload-duplicate-list');
   const invertBtn = document.getElementById('upload-duplicate-invert');
+  const cancelBtn = document.getElementById('upload-duplicate-cancel');
   const confirmBtn = document.getElementById('upload-duplicate-confirm');
   if (!(modal instanceof HTMLElement) || !(listEl instanceof HTMLElement) || !(confirmBtn instanceof HTMLButtonElement)) {
     return Promise.resolve(new Set());
@@ -10163,14 +10193,13 @@ function promptDuplicateUploadConfirmation(entries) {
     const file = entry?.file;
     const known = entry?.known || {};
     const name = String(file?.name || known.fileName || '(未命名)').trim();
-    const source = String(known.source || '已上传').trim();
-    const size = formatSize(Number(file?.size || known.fileSize || 0));
+    const sizeBytes = Number(file?.size || known.fileSize || 0);
     return `
       <label class="upload-duplicate-row">
         <input type="checkbox" data-duplicate-index="${idx}">
-        <span style="min-width:0;">
+        <span class="upload-duplicate-fileline">
           <span class="upload-duplicate-name">${escapeHtml(name)}</span>
-          <span class="upload-duplicate-meta">${escapeHtml(source)} · ${escapeHtml(size)}</span>
+          <span class="upload-duplicate-size">${renderFileSizeText(sizeBytes)}</span>
         </span>
       </label>
     `;
@@ -10181,6 +10210,8 @@ function promptDuplicateUploadConfirmation(entries) {
       modal.style.display = 'none';
       confirmBtn.removeEventListener('click', onConfirm);
       if (invertBtn instanceof HTMLButtonElement) invertBtn.removeEventListener('click', onInvert);
+      if (cancelBtn instanceof HTMLButtonElement) cancelBtn.removeEventListener('click', onCancel);
+      modal.removeEventListener('mousedown', onMaskMouseDown);
     };
     const onInvert = () => {
       listEl.querySelectorAll('input[type="checkbox"][data-duplicate-index]').forEach((el) => {
@@ -10195,8 +10226,17 @@ function promptDuplicateUploadConfirmation(entries) {
       cleanup();
       resolve(selected);
     };
+    const onCancel = () => {
+      cleanup();
+      resolve(null);
+    };
+    const onMaskMouseDown = (e) => {
+      if (e.target === modal) onCancel();
+    };
     if (invertBtn instanceof HTMLButtonElement) invertBtn.addEventListener('click', onInvert);
+    if (cancelBtn instanceof HTMLButtonElement) cancelBtn.addEventListener('click', onCancel);
     confirmBtn.addEventListener('click', onConfirm);
+    modal.addEventListener('mousedown', onMaskMouseDown);
     modal.style.display = 'flex';
   });
 }
@@ -10218,6 +10258,7 @@ function renderAlreadyUploadedFile(file, fileId, known) {
   const source = escapeHtml(String(known?.source || '已上传').trim());
   const safeName = escapeHtml(String(file?.name || known?.fileName || '(未命名)').trim());
   const safeUrl = escapeHtml(url);
+  const sizeBytes = Number(file?.size || known?.fileSize || 0);
   const checkboxHtml = hasVisitName
     ? `<label class="upload-select-wrap"><input type="checkbox" class="submit-file-check" data-file-id="${escapeHtml(fileId)}"> 作为作业附件</label>`
     : '<span class="upload-select-wrap" style="display:none;"></span>';
@@ -10227,7 +10268,7 @@ function renderAlreadyUploadedFile(file, fileId, known) {
         ${checkboxHtml}
         <strong>${safeName}</strong>
         <span class="inline-status" style="font-size:12px; margin-left:8px; color:#2e7d32;">${source}</span>
-        <span class="size-progress" style="font-size:12px; color:#666; margin-left:5px;">(${escapeHtml(formatSize(Number(file?.size || known?.fileSize || 0)))})</span>
+        <span class="size-progress" style="margin-left:5px;">(${renderFileSizeText(sizeBytes)})</span>
       </div>
       <div></div>
     </div>
@@ -10272,7 +10313,7 @@ function uploadFile(file, fileId) {
         </label>
         <strong>${file.name}</strong>
         <span class="inline-status" style="font-size:12px; margin-left:8px; color:#6b7280;">排队中…</span>
-        <span class="size-progress" style="font-size:12px; color:#666; margin-left:5px;">(${formatSize(0)} / ${formatSize(file.size)})</span>
+        <span class="size-progress" style="margin-left:5px;">(${renderFileSizePair(0, file.size)})</span>
         <span class="speed-display" style="font-size:12px; color:#666; margin-left:10px;"></span>
         <span class="eta-display" style="font-size:12px; color:#6b7280; margin-left:10px;"></span>
       </div>
@@ -10281,7 +10322,7 @@ function uploadFile(file, fileId) {
         <button class="btn cancel-btn" style="padding:2px 8px; font-size:12px; background-color:#f44336;">取消</button>
       </div>
     </div>
-    <div class="progress-bar-container"><div class="progress-bar" style="width:0%">0%</div></div>
+    <div class="progress-bar-container"><div class="progress-bar" style="width:0%"></div></div>
   `;
   fileList.prepend(item);
 
@@ -10449,8 +10490,8 @@ function uploadFile(file, fileId) {
           ? Math.min(100, Math.round((visibleLoaded / fileSize) * 100))
           : Math.min(100, Math.round((e.loaded / e.total) * 100));
         progressBar.style.width = percent + '%';
-        progressBar.textContent = percent + '%';
-        sizeProgressDisplay.textContent = `(${formatSize(visibleLoaded)} / ${formatSize(fileSize)})`;
+        progressBar.textContent = '';
+        sizeProgressDisplay.innerHTML = `(${renderFileSizePair(visibleLoaded, fileSize)})`;
 
         // speed: update on every progress event so very fast uploads still show non-zero throughput.
         const now = Date.now();
@@ -10504,8 +10545,8 @@ function uploadFile(file, fileId) {
           if (data.visitName) {
             const convertedUrl = convertVisitNameToUrl(data.visitName);
             progressBar.style.width = '100%';
-            progressBar.textContent = '100%';
-            sizeProgressDisplay.textContent = `(${formatSize(file.size)} / ${formatSize(file.size)})`;
+            progressBar.textContent = '';
+            sizeProgressDisplay.innerHTML = `(${renderFileSizePair(file.size, file.size)})`;
             setInlineStatus('上传完成', 'success');
 
             addSavedUpload(file, data, convertedUrl);
@@ -10890,14 +10931,16 @@ async function processFilesForUpload(files) {
   let skippedDuplicateCount = 0;
   if (duplicateEntries.length > 0) {
     const selectedDuplicateIndexes = await promptDuplicateUploadConfirmation(duplicateEntries);
-    duplicateEntries.forEach((entry, idx) => {
-      if (selectedDuplicateIndexes.has(idx)) {
-        pendingFiles.push(entry.file);
-        return;
-      }
-      const fileId = Math.random().toString(36).slice(2);
-      if (renderAlreadyUploadedFile(entry.file, fileId, entry.known)) skippedDuplicateCount++;
-    });
+    if (selectedDuplicateIndexes instanceof Set) {
+      duplicateEntries.forEach((entry, idx) => {
+        if (selectedDuplicateIndexes.has(idx)) {
+          pendingFiles.push(entry.file);
+          return;
+        }
+        const fileId = Math.random().toString(36).slice(2);
+        if (renderAlreadyUploadedFile(entry.file, fileId, entry.known)) skippedDuplicateCount++;
+      });
+    }
   }
 
   if (skippedDuplicateCount > 0) {
@@ -11820,26 +11863,28 @@ function renderSavedUploadsSection() {
     if (!entryId) return '';
     const synthFileId = `saved_${entryId}`;
     const name = escapeHtml(it.fileName || '(未命名)');
-    const size = escapeHtml(formatSavedUploadSize(it.fileSize));
+    const sizeBytes = Number(it.fileSize || 0);
+    const size = renderFileSizeText(sizeBytes, formatSavedUploadSize(sizeBytes));
     const url = String(it.url || '').trim();
     const safeUrl = escapeHtml(url);
     const safeHref = escapeHtml(url);
     const safeEntryId = escapeHtml(entryId);
     const safeSynthFileId = escapeHtml(synthFileId);
     const timeText = it.savedAt ? new Date(it.savedAt).toLocaleString('zh-CN', { hour12: false }) : '';
+    const timeHtml = timeText ? ` <span class="resource-time-inline">上传时间: ${escapeHtml(timeText)}</span>` : '';
     return `
       <div class="file-item" data-saved-upload-id="${safeEntryId}" data-resource-id="${safeSynthFileId}">
         <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
-          <div>
+          <div class="saved-upload-main">
             <label class="upload-select-wrap">
               <input type="checkbox" class="submit-file-check" data-file-id="${safeSynthFileId}">
               作为作业附件
             </label>
-            <strong>${name}</strong>
+            <strong class="saved-upload-name">${name}</strong>
             <span class="inline-status" style="font-size:12px; margin-left:8px; color:#2e7d32;">已上传</span>
-            <span class="size-progress" style="font-size:12px; color:#666; margin-left:5px;">(${size}${timeText ? ' · ' + escapeHtml(timeText) : ''})</span>
+            <span class="size-progress" style="margin-left:5px;">${size}</span>${timeHtml}
           </div>
-          <div>
+          <div class="saved-upload-actions">
             <button type="button" class="btn saved-upload-delete" data-action="delete-saved-upload" data-saved-upload-id="${safeEntryId}" style="padding:2px 8px; font-size:12px; background-color:#f44336;">删除</button>
           </div>
         </div>
@@ -11849,7 +11894,7 @@ function renderSavedUploadsSection() {
           <button type="button" class="btn saved-upload-download" data-action="download-saved-upload" data-saved-upload-id="${safeEntryId}" data-url="${safeHref}" data-filename="${escapeHtml(it.fileName || '')}" style="padding:2px 8px; font-size:12px; white-space:nowrap; background:#1e3a8a;">下载</button>
         </div>
         <div class="resource-download-progress" style="display:none;">
-          <div class="progress-bar-container"><div class="progress-bar">0%</div></div>
+          <div class="progress-bar-container"><div class="progress-bar"></div></div>
           <div class="resource-download-meta">
             <span class="resource-dl-status"></span>
             <span class="resource-dl-size"></span>
@@ -11985,6 +12030,8 @@ function setupSavedUploadsUi() {
 // -------------------- Init --------------------
 (async function init() {
   setupRightColumnResizer();
+  updateTotalProgress();
+  updateResourceDownloadTotals();
   await loadPlatformEnabledFromStorage();
   await loadPopupCacheEnabledSetting();
   await loadAutoLoadCourseResourcesSetting();
