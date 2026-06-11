@@ -42,13 +42,51 @@ let versionDownloadInProgress = false;
 let versionDownloadMinimized = false;
 let versionDownloadPhase = 'downloading';
 let versionIgnoredTag = '';
+let lastCompletedDownloadId = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_RELEASES_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases?per_page=100';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
+const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 
 function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
 }
+
+function showUpdateDownloadCompleteNotification(downloadId) {
+  if (typeof chrome === 'undefined' || !chrome.notifications || !chrome.downloads) return;
+  lastCompletedDownloadId = downloadId;
+  chrome.notifications.create(VERSION_UPDATE_NOTIFICATION_ID, {
+    type: 'basic',
+    iconUrl: 'icons/512.png',
+    title: 'BJTU 课程助手更新',
+    message: '请打开下载目录，解压覆盖更新扩展目录并到「扩展管理」页面「重新加载」扩展以完成更新。',
+    buttons: [{ title: '打开下载目录' }, { title: '打开扩展管理' }],
+    requireInteraction: true
+  }, () => void chrome.runtime.lastError);
+}
+
+function setupUpdateNotificationClickListener() {
+  if (typeof chrome === 'undefined' || !chrome.notifications || !chrome.downloads) return;
+  chrome.notifications.onClicked.addListener((notifId) => {
+    if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
+    if (lastCompletedDownloadId) {
+      chrome.downloads.open(lastCompletedDownloadId, () => void chrome.runtime.lastError);
+    }
+    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
+  });
+  chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
+    if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
+    if (buttonIndex === 0) {
+      if (lastCompletedDownloadId) {
+        chrome.downloads.open(lastCompletedDownloadId, () => void chrome.runtime.lastError);
+      }
+    } else if (buttonIndex === 1) {
+      chrome.tabs.create({ url: 'about:extensions' });
+    }
+    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
+  });
+}
+setupUpdateNotificationClickListener();
 
 function syncVersionNoticeDownloadButton(buttonText) {
   const btn = document.getElementById('version-notice-download');
@@ -391,11 +429,12 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
         chrome.downloads.onChanged.removeListener(onChanged);
         if (!resolved) {
           resolved = true;
+          showUpdateDownloadCompleteNotification(downloadId);
           setVersionDownloadProgressUi({
             visible: true,
             status: '已完成',
             title: '下载成功',
-            body: '请打开下载目录，解压覆盖更新扩展目录并到 about:extensions 扩展管理页面**重新加载**扩展以完成更新。',
+            body: '请打开下载目录，解压覆盖更新扩展目录并到「扩展管理」页面**重新加载**扩展以完成更新。',
             phase: 'finished'
           });
           resolve();
