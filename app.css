@@ -68,7 +68,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             padding: 15px;
             padding-left: 12px;
             border-radius: 8px;
-            max-height: calc(100vh - 80px);
+            height: calc(100vh - 40px);
             overflow-y: auto;
             overflow-x: hidden;
             box-sizing: border-box;
@@ -99,7 +99,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
                 max-width: 100%;
                 box-sizing: border-box;
             }
-            .right-column { position: static; padding-left: 15px; max-height: none; min-height: 0; overflow: visible; }
+            .right-column { position: static; padding-left: 15px; height: auto; max-height: none; min-height: 0; overflow: visible; }
             .right-column-resizer { display: none; }
         }
 
@@ -512,6 +512,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             width: 100%;
             min-width: 0;
             max-width: none;
+            height: auto;
             min-height: 0;
             position: static;
             top: auto;
