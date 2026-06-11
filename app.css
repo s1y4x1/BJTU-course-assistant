@@ -677,6 +677,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         .version-notice-modal { z-index: 10002; }
         .version-download-modal { z-index: 10001; }
+        .upload-duplicate-modal { z-index: 10003; }
         .version-modal-card {
             width: min(560px, 92vw);
             background: #fff;
@@ -694,6 +695,12 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .version-download-modal .version-modal-card {
             padding: 16px 16px 14px;
             box-shadow: 0 18px 42px rgba(0,0,0,0.25);
+        }
+        .upload-duplicate-modal .version-modal-card {
+            max-height: min(78vh, 680px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         .version-modal-header {
             display: flex;
@@ -734,6 +741,83 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             font-size: 18px;
             font-weight: 700;
             color: #111827;
+        }
+        .upload-duplicate-title {
+            font-size: 18px;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1.25;
+        }
+        .upload-duplicate-question {
+            font-size: 13px;
+            color: #334155;
+            margin: 0 0 10px;
+            line-height: 1.5;
+        }
+        .upload-duplicate-list {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f8fafc;
+            padding: 6px;
+        }
+        .upload-duplicate-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 6px;
+            background: #fff;
+            border: 1px solid #eef2f7;
+            margin-bottom: 6px;
+            cursor: pointer;
+        }
+        .upload-duplicate-row:last-child {
+            margin-bottom: 0;
+        }
+        .upload-duplicate-row input {
+            margin-top: 3px;
+            flex: 0 0 auto;
+        }
+        .upload-duplicate-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
+            word-break: break-all;
+        }
+        .upload-duplicate-meta {
+            display: block;
+            margin-top: 2px;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.35;
+        }
+        .upload-duplicate-footer {
+            display: flex;
+            gap: 8px;
+            padding-top: 10px;
+            margin-top: 10px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .upload-duplicate-secondary,
+        .upload-duplicate-primary {
+            flex: 1 1 0;
+            padding: 8px 14px;
+            font-size: 13px;
+        }
+        .upload-duplicate-secondary {
+            background: #111827;
+        }
+        .upload-duplicate-secondary:hover {
+            background: #000;
+        }
+        .upload-duplicate-primary {
+            background: #1e3a8a;
+        }
+        .upload-duplicate-primary:hover {
+            background: #1e40af;
         }
         .version-notice-body {
             font-size: 13px;

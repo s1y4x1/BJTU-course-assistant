@@ -1528,8 +1528,10 @@ function updateTotalProgress() {
   let totalUploaded = 0;
 
   Object.values(window.filesData).forEach(d => {
-    totalSize += d.size;
-    totalUploaded += d.uploaded || 0;
+    const size = Math.max(0, Number(d?.size || 0));
+    const uploaded = Math.max(0, Number(d?.uploaded || 0));
+    totalSize += size;
+    totalUploaded += Math.min(uploaded, size);
   });
 
   totalRecentSpeedBps = pushAndCalcRecentSpeed(totalProgressSamples, totalUploaded);
@@ -1545,7 +1547,7 @@ function updateTotalProgress() {
     return;
   }
 
-  const percent = Math.round((totalUploaded / totalSize) * 100);
+  const percent = Math.min(100, Math.round((totalUploaded / totalSize) * 100));
   totalServerBar.style.width = percent + '%';
   if (totalPercentDiv) totalPercentDiv.textContent = `${percent}%`;
 
@@ -10046,9 +10048,221 @@ function handleLoginRequired(retryCallback, cancelCallback, message) {
   }
 }
 
+function normalizeUploadDuplicateName(name) {
+  return String(name || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .trim()
+    .toLowerCase();
+}
+
+function isSameUploadFileSize(a, b) {
+  const na = Number(a);
+  const nb = Number(b);
+  if (!Number.isFinite(na) || !Number.isFinite(nb)) return false;
+  return Math.max(0, Math.round(na)) === Math.max(0, Math.round(nb));
+}
+
+function isApproxSameUploadFileSize(a, b) {
+  const na = Number(a);
+  const nb = Number(b);
+  if (!Number.isFinite(na) || !Number.isFinite(nb) || na < 0 || nb < 0) return false;
+  const diff = Math.abs(na - nb);
+  return diff <= Math.max(64 * 1024, Math.max(na, nb) * 0.01);
+}
+
+function buildUploadMetaFromKnownFile(file, known) {
+  const nameParts = splitFileName(file?.name || known?.fileName || known?.name || '');
+  return {
+    fileNameNoExt: String(nameParts.fileNameNoExt || safeDecodeUploadNamePart(known?.fileNameNoExt) || '').trim(),
+    fileExtName: String(nameParts.fileExtName || known?.fileExtName || '').trim(),
+    fileSize: Number(known?.fileSize || file?.size || 0),
+    visitName: String(known?.visitName || '').trim(),
+    pid: '',
+    ftype: 'insert',
+    fileName: String(file?.name || known?.fileName || known?.name || '').trim(),
+    url: String(known?.url || '').trim()
+  };
+}
+
+function safeDecodeUploadNamePart(v) {
+  const raw = String(v || '');
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function findAlreadyUploadedFile(file) {
+  const fileName = normalizeUploadDuplicateName(file?.name || '');
+  const fileSize = Number(file?.size || 0);
+  if (!fileName) return null;
+
+  const savedList = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles : [];
+  const saved = savedList.find((it) => (
+    normalizeUploadDuplicateName(it?.fileName) === fileName &&
+    isSameUploadFileSize(it?.fileSize, fileSize) &&
+    String(it?.visitName || '').trim() &&
+    String(it?.url || '').trim()
+  ));
+  if (saved) {
+    return {
+      source: '本地记录',
+      fileName: String(saved.fileName || file?.name || '').trim(),
+      fileSize: Number(saved.fileSize || fileSize || 0),
+      visitName: String(saved.visitName || '').trim(),
+      url: String(saved.url || '').trim()
+    };
+  }
+
+  const current = Object.values(window.uploadedFileMetaById || {}).find((meta) => {
+    if (!meta?.visitName) return false;
+    const metaName = normalizeUploadDuplicateName(
+      meta.fileName || `${safeDecodeUploadNamePart(meta.fileNameNoExt)}${meta.fileExtName ? '.' + meta.fileExtName : ''}`
+    );
+    return metaName === fileName && isSameUploadFileSize(meta.fileSize, fileSize);
+  });
+  if (current) {
+    return {
+      source: '本页已上传',
+      ...buildUploadMetaFromKnownFile(file, current)
+    };
+  }
+
+  const resource = (Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : []).find((it) => (
+    normalizeUploadDuplicateName(it?.name) === fileName &&
+    isApproxSameUploadFileSize(getResourceItemSizeBytes(it), fileSize) &&
+    String(it?.url || '').trim()
+  ));
+  if (resource) {
+    return {
+      source: '资源空间',
+      fileName: String(resource.name || file?.name || '').trim(),
+      fileSize,
+      visitName: '',
+      url: String(resource.url || '').trim()
+    };
+  }
+
+  return null;
+}
+
+function promptDuplicateUploadConfirmation(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return Promise.resolve(new Set());
+  const modal = document.getElementById('upload-duplicate-modal');
+  const listEl = document.getElementById('upload-duplicate-list');
+  const invertBtn = document.getElementById('upload-duplicate-invert');
+  const confirmBtn = document.getElementById('upload-duplicate-confirm');
+  if (!(modal instanceof HTMLElement) || !(listEl instanceof HTMLElement) || !(confirmBtn instanceof HTMLButtonElement)) {
+    return Promise.resolve(new Set());
+  }
+
+  listEl.innerHTML = list.map((entry, idx) => {
+    const file = entry?.file;
+    const known = entry?.known || {};
+    const name = String(file?.name || known.fileName || '(未命名)').trim();
+    const source = String(known.source || '已上传').trim();
+    const size = formatSize(Number(file?.size || known.fileSize || 0));
+    return `
+      <label class="upload-duplicate-row">
+        <input type="checkbox" data-duplicate-index="${idx}">
+        <span style="min-width:0;">
+          <span class="upload-duplicate-name">${escapeHtml(name)}</span>
+          <span class="upload-duplicate-meta">${escapeHtml(source)} · ${escapeHtml(size)}</span>
+        </span>
+      </label>
+    `;
+  }).join('');
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      modal.style.display = 'none';
+      confirmBtn.removeEventListener('click', onConfirm);
+      if (invertBtn instanceof HTMLButtonElement) invertBtn.removeEventListener('click', onInvert);
+    };
+    const onInvert = () => {
+      listEl.querySelectorAll('input[type="checkbox"][data-duplicate-index]').forEach((el) => {
+        if (el instanceof HTMLInputElement) el.checked = !el.checked;
+      });
+    };
+    const onConfirm = () => {
+      const selected = new Set();
+      listEl.querySelectorAll('input[type="checkbox"][data-duplicate-index]:checked').forEach((el) => {
+        if (el instanceof HTMLInputElement) selected.add(Number(el.dataset.duplicateIndex));
+      });
+      cleanup();
+      resolve(selected);
+    };
+    if (invertBtn instanceof HTMLButtonElement) invertBtn.addEventListener('click', onInvert);
+    confirmBtn.addEventListener('click', onConfirm);
+    modal.style.display = 'flex';
+  });
+}
+
+function renderAlreadyUploadedFile(file, fileId, known) {
+  const url = String(known?.url || '').trim();
+  if (!url) return false;
+  const hasVisitName = !!String(known?.visitName || '').trim();
+  if (!window.filesData) window.filesData = {};
+  window.filesData[fileId] = { size: Number(file?.size || 0), uploaded: Number(file?.size || 0) };
+  if (hasVisitName) {
+    window.uploadedFileMetaById[fileId] = buildUploadMetaFromKnownFile(file, known);
+  }
+
+  const item = document.createElement('div');
+  item.className = 'file-item';
+  item.dataset.uploadFileId = fileId;
+  item.dataset.duplicateUpload = '1';
+  const source = escapeHtml(String(known?.source || '已上传').trim());
+  const safeName = escapeHtml(String(file?.name || known?.fileName || '(未命名)').trim());
+  const safeUrl = escapeHtml(url);
+  const checkboxHtml = hasVisitName
+    ? `<label class="upload-select-wrap"><input type="checkbox" class="submit-file-check" data-file-id="${escapeHtml(fileId)}"> 作为作业附件</label>`
+    : '<span class="upload-select-wrap" style="display:none;"></span>';
+  item.innerHTML = `
+    <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+      <div>
+        ${checkboxHtml}
+        <strong>${safeName}</strong>
+        <span class="inline-status" style="font-size:12px; margin-left:8px; color:#2e7d32;">${source}</span>
+        <span class="size-progress" style="font-size:12px; color:#666; margin-left:5px;">(${escapeHtml(formatSize(Number(file?.size || known?.fileSize || 0)))})</span>
+      </div>
+      <div></div>
+    </div>
+    <div class="upload-link-row">
+      <a class="url-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>
+      <button type="button" class="btn duplicate-upload-copy" style="padding:2px 8px; font-size:12px; white-space:nowrap;">复制</button>
+    </div>
+  `;
+  const copyBtn = item.querySelector('.duplicate-upload-copy');
+  if (copyBtn instanceof HTMLButtonElement) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(url).then(() => {
+        const original = copyBtn.textContent;
+        copyBtn.textContent = '已复制';
+        setTimeout(() => { copyBtn.textContent = original; }, 1500);
+      });
+    });
+  }
+  fileList.prepend(item);
+  refreshUploadSelectVisibility();
+  updateTotalProgress();
+  return true;
+}
+
+function enqueueUploadFile(file) {
+  const fileId = Math.random().toString(36).slice(2);
+  window.filesData[fileId] = { size: file.size, uploaded: 0 };
+  uploadFile(file, fileId);
+  return fileId;
+}
+
 function uploadFile(file, fileId) {
   const item = document.createElement('div');
   item.className = 'file-item';
+  item.dataset.uploadFileId = fileId;
   item.innerHTML = `
     <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
       <div>
@@ -10227,10 +10441,16 @@ function uploadFile(file, fileId) {
 
       xhr.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
-        const percent = Math.round((e.loaded / e.total) * 100);
+        const fileSize = Math.max(0, Number(file.size || 0));
+        const visibleLoaded = fileSize > 0
+          ? Math.min(fileSize, Math.max(0, Number(e.loaded || 0)))
+          : Math.max(0, Number(e.loaded || 0));
+        const percent = fileSize > 0
+          ? Math.min(100, Math.round((visibleLoaded / fileSize) * 100))
+          : Math.min(100, Math.round((e.loaded / e.total) * 100));
         progressBar.style.width = percent + '%';
         progressBar.textContent = percent + '%';
-        sizeProgressDisplay.textContent = `(${formatSize(e.loaded)} / ${formatSize(file.size)})`;
+        sizeProgressDisplay.textContent = `(${formatSize(visibleLoaded)} / ${formatSize(fileSize)})`;
 
         // speed: update on every progress event so very fast uploads still show non-zero throughput.
         const now = Date.now();
@@ -10249,7 +10469,7 @@ function uploadFile(file, fileId) {
         if (Number.isFinite(speedForEta) && speedForEta >= 0) {
           speedDisplay.textContent = formatSpeed(speedForEta);
           window.activeSpeeds[speedId] = speedForEta;
-          const remainingBytes = Math.max(0, e.total - e.loaded);
+          const remainingBytes = fileSize > 0 ? Math.max(0, fileSize - visibleLoaded) : Math.max(0, e.total - e.loaded);
           if (etaDisplay) {
             etaDisplay.textContent = remainingBytes > 0 && speedForEta > 0
               ? `剩余: ${formatEta(remainingBytes / speedForEta)}`
@@ -10261,7 +10481,7 @@ function uploadFile(file, fileId) {
         lastTime = now;
 
         if (window.filesData[fileId]) {
-          window.filesData[fileId].uploaded = e.loaded;
+          window.filesData[fileId].uploaded = visibleLoaded;
           updateTotalProgress();
         }
       };
@@ -10283,6 +10503,9 @@ function uploadFile(file, fileId) {
           const data = JSON.parse(xhr.responseText || '{}');
           if (data.visitName) {
             const convertedUrl = convertVisitNameToUrl(data.visitName);
+            progressBar.style.width = '100%';
+            progressBar.textContent = '100%';
+            sizeProgressDisplay.textContent = `(${formatSize(file.size)} / ${formatSize(file.size)})`;
             setInlineStatus('上传完成', 'success');
 
             addSavedUpload(file, data, convertedUrl);
@@ -10294,7 +10517,9 @@ function uploadFile(file, fileId) {
               fileSize: Number(data.fileSize || file.size || 0),
               visitName: String(data.visitName || '').trim(),
               pid: '',
-              ftype: 'insert'
+              ftype: 'insert',
+              fileName: String(file.name || '').trim(),
+              url: convertedUrl
             };
             if (uploadSelectWrap instanceof HTMLElement) {
               uploadSelectWrap.style.display = 'none';
@@ -10646,27 +10871,52 @@ fileList.addEventListener('click', (e) => {
   cb.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
-function processFilesForUpload(files) {
+async function processFilesForUpload(files) {
   if (!files || !files.length) return;
+  const filesList = Array.from(files).filter(Boolean);
+  if (!filesList.length) return;
+
+  const pendingFiles = [];
+  const duplicateEntries = [];
+  filesList.forEach((f) => {
+    const known = findAlreadyUploadedFile(f);
+    if (known) {
+      duplicateEntries.push({ file: f, known });
+      return;
+    }
+    pendingFiles.push(f);
+  });
+
+  let skippedDuplicateCount = 0;
+  if (duplicateEntries.length > 0) {
+    const selectedDuplicateIndexes = await promptDuplicateUploadConfirmation(duplicateEntries);
+    duplicateEntries.forEach((entry, idx) => {
+      if (selectedDuplicateIndexes.has(idx)) {
+        pendingFiles.push(entry.file);
+        return;
+      }
+      const fileId = Math.random().toString(36).slice(2);
+      if (renderAlreadyUploadedFile(entry.file, fileId, entry.known)) skippedDuplicateCount++;
+    });
+  }
+
+  if (skippedDuplicateCount > 0) {
+    showToast(`已复用 ${skippedDuplicateCount} 个已上传文件`, 'info', 1800);
+  }
+  if (!pendingFiles.length) {
+    updateTotalProgress();
+    return;
+  }
 
   if (!isLoginSessionValid) {
-    const filesList = Array.from(files);
     handleLoginRequired(() => {
-      filesList.forEach(f => {
-        const fileId = Math.random().toString(36).slice(2);
-        window.filesData[fileId] = { size: f.size, uploaded: 0 };
-        uploadFile(f, fileId);
-      });
+      pendingFiles.forEach(enqueueUploadFile);
       updateTotalProgress();
     });
     return;
   }
 
-  Array.from(files).forEach(f => {
-    const fileId = Math.random().toString(36).slice(2);
-    window.filesData[fileId] = { size: f.size, uploaded: 0 };
-    uploadFile(f, fileId);
-  });
+  pendingFiles.forEach(enqueueUploadFile);
   updateTotalProgress();
 }
 
