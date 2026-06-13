@@ -63,6 +63,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             flex: 0 1 auto;
             min-width: 480px;
             position: sticky;
+            top: 20px;
             background: #f9f9f9;
             padding: 15px 15px 0;
             height: calc(100vh - 70px);
