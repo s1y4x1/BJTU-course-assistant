@@ -10321,7 +10321,7 @@ function uploadFile(file, fileId) {
   item.innerHTML = `
     <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
       <div>
-        <label class="upload-select-wrap">
+        <label class="upload-select-wrap" style="display:none;">
           <input type="checkbox" class="submit-file-check" data-file-id="${fileId}">
           作为作业附件
         </label>
