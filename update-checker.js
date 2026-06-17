@@ -30,6 +30,7 @@ function compareVersionText(a, b) {
 
 let versionButtonMode = 'loading';
 let versionButtonDownloadUrl = '';
+let versionButtonLatestZipballUrl = '';
 let versionButtonLocalVersion = '';
 let versionButtonLatestVersion = '';
 let versionButtonLatestDisplayVersion = '';
@@ -88,6 +89,13 @@ function setupUpdateNotificationClickListener() {
 }
 setupUpdateNotificationClickListener();
 
+function getVersionDownloadButtonLabel(mode, source) {
+  const src = String(source || 'zipball').trim();
+  if (mode === 'latest') return src === 'zipball' ? '下载修复包' : '下载尝鲜包';
+  if (mode === 'ahead') return src === 'zipball' ? '下载正式版' : '下载开发版';
+  return src === 'zipball' ? '下载更新' : '下载开发版';
+}
+
 function syncVersionNoticeDownloadButton(buttonText) {
   const btn = document.getElementById('version-notice-download');
   if (!(btn instanceof HTMLButtonElement)) return;
@@ -97,7 +105,9 @@ function syncVersionNoticeDownloadButton(buttonText) {
   } else if (buttonText) {
     btn.textContent = buttonText;
   } else {
-    btn.textContent = versionButtonMode === 'ahead' ? '下载正式版' : '下载更新';
+    const sourceSelect = document.getElementById('version-source-select');
+    const source = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
+    btn.textContent = getVersionDownloadButtonLabel(versionButtonMode, source);
   }
 }
 
@@ -240,12 +250,18 @@ function ensureVersionNoticeModal() {
     delete modal.dataset.mdownMask;
   });
 
+  const sourceSelect = modal.querySelector('#version-source-select');
+  if (sourceSelect instanceof HTMLSelectElement) {
+    sourceSelect.addEventListener('change', () => syncVersionNoticeDownloadButton());
+  }
   const downloadBtn = modal.querySelector('#version-notice-download');
   if (downloadBtn instanceof HTMLButtonElement) {
     downloadBtn.addEventListener('click', () => {
       modal.style.display = 'none';
+      const selectedUrl = sourceSelect instanceof HTMLSelectElement && sourceSelect.value === 'zipball' && versionButtonLatestZipballUrl
+        ? versionButtonLatestZipballUrl : VERSION_DOWNLOAD_URL;
       if (typeof popupMode !== 'undefined' && popupMode) {
-        startVersionDownloadWithFallback().catch(() => {
+        startVersionDownloadWithFallback(selectedUrl).catch(() => {
           versionDownloadInProgress = false;
           syncVersionNoticeDownloadButton();
           showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
@@ -256,7 +272,7 @@ function ensureVersionNoticeModal() {
         openVersionDownloadProgressModal();
         return;
       }
-      startVersionDownloadWithFallback().catch(() => {
+      startVersionDownloadWithFallback(selectedUrl).catch(() => {
         versionDownloadInProgress = false;
         syncVersionNoticeDownloadButton();
         showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
@@ -310,11 +326,20 @@ function openVersionNoticeModal(overrideMode) {
     bodyEl.innerHTML = renderMarkdownBasic(versionButtonLatestBodyMarkdown);
   }
   if (downloadBtn instanceof HTMLButtonElement) {
-    if (mode === 'outdated' || mode === 'ahead') {
-      downloadBtn.style.display = 'block';
-    } else {
-      downloadBtn.style.display = 'none';
+    downloadBtn.style.display = 'block';
+  }
+  const sourceSelect = modal.querySelector('#version-source-select');
+  if (sourceSelect instanceof HTMLSelectElement) {
+    const isLatest = mode === 'latest';
+    const optZipball = sourceSelect.querySelector('option[value="zipball"]');
+    const optMaster = sourceSelect.querySelector('option[value="master"]');
+    if (optZipball instanceof HTMLOptionElement) {
+      optZipball.textContent = isLatest ? '修复' : '正式版';
     }
+    if (optMaster instanceof HTMLOptionElement) {
+      optMaster.textContent = isLatest ? '尝鲜' : '开发版';
+    }
+    sourceSelect.value = 'zipball';
   }
   if (ignoreBtn instanceof HTMLButtonElement) {
     if (mode === 'outdated') {
@@ -500,7 +525,7 @@ function buildVersionDownloadFileName(versionText = '') {
   return 'BJTU 课程助手.zip';
 }
 
-async function startVersionDownloadWithFallback() {
+async function startVersionDownloadWithFallback(downloadUrl) {
   if (versionDownloadInProgress) {
     openVersionDownloadProgressModal();
     return;
@@ -511,7 +536,7 @@ async function startVersionDownloadWithFallback() {
   syncVersionNoticeDownloadButton();
   showToast('已发送下载请求，浏览器正在连接…', 'info', 2000);
   const fileName = buildVersionDownloadFileName(versionButtonLatestVersion);
-  const primaryUrl = VERSION_DOWNLOAD_URL;
+  const primaryUrl = String(downloadUrl || versionButtonDownloadUrl || VERSION_DOWNLOAD_URL).trim() || VERSION_DOWNLOAD_URL;
 
   try {
     await downloadVersionByUrlWithProgress(primaryUrl, fileName);
@@ -531,11 +556,12 @@ async function startVersionDownloadWithFallback() {
   syncVersionNoticeDownloadButton();
 }
 
-function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestDisplayVersion = '', latestPublishedAt = '', downloadUrl = '', body = '' } = {}) {
+function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestDisplayVersion = '', latestPublishedAt = '', downloadUrl = '', body = '', zipballUrl = '' } = {}) {
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
+  versionButtonLatestZipballUrl = String(zipballUrl || '').trim();
   versionButtonLocalVersion = String(localVersion || '').trim();
   versionButtonLatestVersion = String(latestVersion || '').trim();
   versionButtonLatestDisplayVersion = String(latestDisplayVersion || latestVersion || '').trim();
@@ -569,7 +595,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
 }
 
 function pickReleaseDownloadUrl(releaseData) {
-  return VERSION_DOWNLOAD_URL;
+  return String(releaseData?.zipball_url || VERSION_DOWNLOAD_URL).trim() || VERSION_DOWNLOAD_URL;
 }
 
 function getReleaseTagVersion(releaseData) {
@@ -714,6 +740,7 @@ async function loadVersionInfo() {
         latestVersion: latestTag,
         latestDisplayVersion,
         latestPublishedAt: latestRelease?.published_at || '',
+        zipballUrl: latestRelease?.zipball_url || '',
         body: historyBody
       });
       return;
@@ -727,6 +754,7 @@ async function loadVersionInfo() {
         latestDisplayVersion,
         latestPublishedAt: latestRelease?.published_at || '',
         downloadUrl: pickReleaseDownloadUrl(latestRelease),
+        zipballUrl: latestRelease?.zipball_url || '',
         body: mergedBody
       });
       const ignoredSameVersion = normalizeVersionText(versionIgnoredTag) === normalizeVersionText(latestTag);
@@ -748,7 +776,7 @@ async function loadVersionInfo() {
     versionButtonLocalReleaseVersion = localRelease ? getReleaseDisplayVersion(localRelease) : localVersion;
     versionButtonLocalPublishedAt = localRelease?.published_at || '';
     const aheadBody = buildAllReleaseNotes(releases, latestTag);
-    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '', body: aheadBody });
+    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '', zipballUrl: latestRelease?.zipball_url || '', body: aheadBody });
   } catch (err) {
     setVersionButtonState('failure', { localVersion });
     const msg = String(err?.message || '').trim();
