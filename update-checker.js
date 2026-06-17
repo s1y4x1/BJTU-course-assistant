@@ -458,32 +458,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     let downloadId = null;
-
-    const onChanged = (delta) => {
-      if (delta.id !== downloadId) return;
-      if (delta.state?.current === 'complete') {
-        chrome.downloads.onChanged.removeListener(onChanged);
-        if (!resolved) {
-          resolved = true;
-          showUpdateDownloadCompleteNotification(downloadId);
-          setVersionDownloadProgressUi({
-            visible: true,
-            status: '已完成',
-            title: '下载成功',
-            body: '请打开下载目录，解压覆盖更新扩展目录并到「扩展管理」页面**重新加载**扩展以完成更新。',
-            phase: 'finished'
-          });
-          resolve();
-        }
-      } else if (delta.state?.current === 'interrupted') {
-        chrome.downloads.onChanged.removeListener(onChanged);
-        if (!resolved) {
-          resolved = true;
-          reject(new Error('下载中断'));
-        }
-      }
-    };
-    chrome.downloads.onChanged.addListener(onChanged);
+    let pollTimer = null;
 
     chrome.downloads.download({
       url: finalUrl,
@@ -492,7 +467,6 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
       conflictAction: 'uniquify'
     }, (id) => {
       if (chrome.runtime.lastError) {
-        chrome.downloads.onChanged.removeListener(onChanged);
         if (!resolved) {
           resolved = true;
           reject(new Error(chrome.runtime.lastError.message || '下载启动失败'));
@@ -507,10 +481,39 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
       versionDownloadMinimized = true;
       showToast('浏览器后台下载中…', 'info', 2000);
 
+      // 轮询 Chrome 下载记录，监测真正下载的更新包
+      pollTimer = setInterval(() => {
+        chrome.downloads.search({ id: downloadId }, (items) => {
+          if (!items || !items.length) return;
+          const item = items[0];
+          if (item.state === 'complete') {
+            clearInterval(pollTimer);
+            if (!resolved) {
+              resolved = true;
+              showUpdateDownloadCompleteNotification(downloadId);
+              setVersionDownloadProgressUi({
+                visible: true,
+                status: '已完成',
+                title: '下载成功',
+                body: '请打开下载目录，解压覆盖更新扩展目录并到「扩展管理」页面**重新加载**扩展以完成更新。',
+                phase: 'finished'
+              });
+              resolve();
+            }
+          } else if (item.state === 'interrupted') {
+            clearInterval(pollTimer);
+            if (!resolved) {
+              resolved = true;
+              reject(new Error('下载中断'));
+            }
+          }
+        });
+      }, 1000);
+
       // 兜底超时：2 分钟后若未完成则视为失败
       setTimeout(() => {
         if (!resolved) {
-          chrome.downloads.onChanged.removeListener(onChanged);
+          clearInterval(pollTimer);
           resolved = true;
           reject(new Error('下载超时'));
         }
