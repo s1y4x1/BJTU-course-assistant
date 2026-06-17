@@ -59,6 +59,22 @@
         自动获取课件/回放列表
       </label>
       <div class="tip">关闭自动识别后，扩展页面和智慧课程平台登录页均改为手动输入验证码。关闭自动获取后，仅在点击课件/回放按钮或生成课程列表 HTML 时获取课件/回放列表。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="checkbox" id="headerQrEnabled" style="width:auto;" />
+        <span>鼠标悬停标题时生成列表二维码</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="checkbox" id="linkQrEnabled" style="width:auto;" checked />
+        <span>鼠标悬停链接时显示二维码</span>
+      </label>
+      <div class="tip">「标题」包含课程助手、文件上传、资源空间。「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
+        <span>在本地存储以后上传的文件链接</span>
+      </label>
+      <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
+      <button id="bindPortalUsernameBtn" type="button">通过 MIS 绑定 username</button>
+      <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配，以实现智慧课程平台快速登录。</div>
     </div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
       <input type="checkbox" id="enableYkt" style="width:auto;" />
@@ -73,26 +89,6 @@
       接龙管家
     </label>
     <div class="tip">仅选中的平台会在打开扩展页面时异步加载一次；从未选中改为选中时会重新加载该平台。</div>
-  </div>
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div class="section-title">二维码生成</div>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-      <input type="checkbox" id="headerQrEnabled" style="width:auto;" checked />
-      <span>鼠标悬停标题时生成列表二维码</span>
-    </label>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-      <input type="checkbox" id="linkQrEnabled" style="width:auto;" checked />
-      <span>鼠标悬停链接时显示二维码</span>
-    </label>
-    <div class="tip">「标题」包含课程助手、文件上传、资源空间。「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
-  </div>
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div class="section-title">文件上传</div>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-      <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
-      <span>在本地存储以后上传的文件链接</span>
-    </label>
-    <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">弹出窗口</div>
@@ -113,11 +109,7 @@
       <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存；如需更新，请重启平台或全屏打开。</div>
     </div>
   </div>
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div class="section-title">智慧课程平台快速登录</div>
-    <button id="bindPortalUsernameBtn" type="button">通过 MIS 绑定 username</button>
-    <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配。</div>
-  </div>
+
   <div id="msg"></div>
   <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>
   <script src="options.js"></script>

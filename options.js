@@ -71,7 +71,6 @@ function goBackToApp() {
   const { autoCaptcha } = await chrome.storage.local.get(['autoCaptcha']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
-  const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
   const { popupUseFullscreenCacheEnabled } = await chrome.storage.local.get(['popupUseFullscreenCacheEnabled']);
   const enabled = normalizePlatformEnabled(platformEnabled);
@@ -93,8 +92,8 @@ function goBackToApp() {
     ? DEFAULT_SAVE_UPLOADS_ENABLED
     : !!saveUploadedFilesEnabled;
   document.getElementById('saveUploadsEnabled').checked = saveUploadsVal;
-  const headerQrVal = headerQrEnabled === undefined ? true : !!headerQrEnabled;
-  document.getElementById('headerQrEnabled').checked = headerQrVal;
+  document.getElementById('headerQrEnabled').checked = false;
+  document.getElementById('headerQrEnabled').disabled = true;
   const linkQrVal = linkQrEnabled === undefined ? true : !!linkQrEnabled;
   document.getElementById('linkQrEnabled').checked = linkQrVal;
   const popupCacheVal = popupUseFullscreenCacheEnabled === undefined
@@ -163,7 +162,10 @@ function goBackToApp() {
       if (changes.autoCaptcha) applyBooleanUi('autoCaptcha', changes.autoCaptcha.newValue, true);
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
-      if (changes.headerQrEnabled) applyBooleanUi('headerQrEnabled', changes.headerQrEnabled.newValue, true);
+      if (changes.headerQrEnabled) {
+        const el = document.getElementById('headerQrEnabled');
+        if (el instanceof HTMLInputElement) { el.checked = false; el.disabled = true; }
+      }
       if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, true);
       if (changes.popupUseFullscreenCacheEnabled) {
         applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
@@ -199,12 +201,18 @@ function goBackToApp() {
     setMsg('已应用更改');
   });
 
-  document.getElementById('headerQrEnabled').addEventListener('change', async () => {
-    await chrome.storage.local.set({
-      headerQrEnabled: !!document.getElementById('headerQrEnabled').checked
-    });
-    setMsg('已应用更改');
-  });
+  (() => {
+    const cb = document.getElementById('headerQrEnabled');
+    const label = cb?.closest('label');
+    if (label) {
+      label.addEventListener('click', (e) => {
+        e.preventDefault();
+        cb.checked = false;
+        setMsg('此功能所需条件已被智慧课程平台禁用', false);
+        chrome.storage.local.set({ headerQrEnabled: false });
+      });
+    }
+  })();
 
   document.getElementById('linkQrEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
@@ -289,7 +297,8 @@ function goBackToApp() {
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
     document.getElementById('saveUploadsEnabled').checked = true;
-    document.getElementById('headerQrEnabled').checked = true;
+    document.getElementById('headerQrEnabled').checked = false;
+    document.getElementById('headerQrEnabled').disabled = true;
     document.getElementById('linkQrEnabled').checked = true;
     document.getElementById('popupUseFullscreenCacheEnabled').checked = true;
     updatePopupCacheDisabled();
@@ -297,7 +306,7 @@ function goBackToApp() {
     await chrome.storage.local.set({ autoCaptcha: true });
     await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
-    await chrome.storage.local.set({ headerQrEnabled: true });
+    await chrome.storage.local.set({ headerQrEnabled: false });
     await chrome.storage.local.set({ linkQrEnabled: true });
     await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
     setMsg('已恢复默认配置');
