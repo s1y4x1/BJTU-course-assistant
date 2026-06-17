@@ -269,6 +269,61 @@ function goBackToApp() {
     });
   }
 
+  document.getElementById('exportBindDataBtn').addEventListener('click', async () => {
+    const { loginAccountHistory } = await chrome.storage.local.get(['loginAccountHistory']);
+    const list = Array.isArray(loginAccountHistory) ? loginAccountHistory : [];
+    const withQuick = list.filter(it => String(it?.quickUsername || '').trim());
+    if (!withQuick.length) {
+      setMsg('没有找到已绑定 MIS 的账号', false);
+      return;
+    }
+    const lines = [];
+    for (const acc of withQuick) {
+      const loginName = String(acc.loginName || acc.userId || '').trim();
+      const quickUsername = String(acc.quickUsername || '').trim();
+      if (!loginName || !quickUsername) continue;
+      try {
+        lines.push(`${loginName}:${atob(quickUsername)}`);
+      } catch { /* skip invalid base64 */ }
+    }
+    if (!lines.length) {
+      setMsg('没有找到有效的绑定数据', false);
+      return;
+    }
+    const encoded = btoa(lines.join('\n'));
+    try {
+      await navigator.clipboard.writeText(encoded);
+    } catch {
+      setMsg('复制到剪贴板失败', false);
+      return;
+    }
+    document.getElementById('exportBindModal').style.display = 'flex';
+  });
+
+  document.getElementById('exportBindGithubBtn').addEventListener('click', () => {
+    document.getElementById('exportBindModal').style.display = 'none';
+    chrome.tabs.create({ url: 'https://github.com/s1y4x1/BJTU-course-assistant/discussions/2', active: true });
+  });
+
+  document.getElementById('exportBindWjxBtn').addEventListener('click', () => {
+    document.getElementById('exportBindModal').style.display = 'none';
+    chrome.tabs.create({ url: 'https://v.wjx.cn/vm/eW3zqxc.aspx', active: true });
+  });
+
+  document.getElementById('exportBindCloseBtn').addEventListener('click', () => {
+    document.getElementById('exportBindModal').style.display = 'none';
+  });
+
+  document.getElementById('exportBindModal').addEventListener('mousedown', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.dataset.mdownMask = '1';
+  });
+  document.getElementById('exportBindModal').addEventListener('mouseup', (e) => {
+    if (e.target === e.currentTarget && e.currentTarget.dataset.mdownMask === '1') {
+      e.currentTarget.style.display = 'none';
+    }
+    e.currentTarget.dataset.mdownMask = '';
+  });
+
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
     const st = message.payload || {};

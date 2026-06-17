@@ -74,6 +74,7 @@
       </label>
       <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
       <button id="bindPortalUsernameBtn" type="button">通过 MIS 绑定 username</button>
+      <button id="exportBindDataBtn" type="button" style="background:#6b7280;">导出 MIS 绑定数据</button>
       <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配，以实现智慧课程平台快速登录。</div>
     </div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
@@ -112,6 +113,16 @@
 
   <div id="msg"></div>
   <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>
+  <div id="exportBindModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:20px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+      <div style="font-size:14px;margin-bottom:14px;line-height:1.5;">已复制绑定数据到剪贴板。如果您愿意帮助我们改进，请选择：</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button id="exportBindGithubBtn" type="button" style="margin-top:0;">我有 Github 账号</button>
+        <button id="exportBindWjxBtn" type="button" style="margin-top:0;background:#6b7280;">我没有 Github 账号</button>
+        <button id="exportBindCloseBtn" type="button" style="margin-top:0;background:#9ca3af;">取消</button>
+      </div>
+    </div>
+  </div>
   <script src="options.js"></script>
 </body>
 </html>
