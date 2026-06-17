@@ -3752,10 +3752,13 @@ function setResourceItemDownloadingState(resourceId, downloading) {
       downloadBtn.dataset.action = isSavedUpload ? 'cancel-saved-upload' : 'resource-cancel-download';
       downloadBtn.textContent = '取消';
       downloadBtn.classList.add('is-cancel');
+      downloadBtn.style.background = '#dc2626';
     } else {
-      downloadBtn.dataset.action = downloadBtn.dataset.prevAction || 'download-saved-upload';
+      const isSavedUpload = downloadBtn.classList.contains('saved-upload-download') || row.hasAttribute('data-saved-upload-id');
+      downloadBtn.dataset.action = isSavedUpload ? 'download-saved-upload' : 'resource-download';
       downloadBtn.textContent = '下载';
       downloadBtn.classList.remove('is-cancel');
+      downloadBtn.style.background = '#1e3a8a';
       downloadBtn.disabled = false;
     }
   }
@@ -4060,11 +4063,15 @@ async function downloadResourceItemWithProgress(item) {
     task.abortController = null;
     task.xhr = null;
     task.chromeDownloadId = null;
+    delete window.resourceDownloadTasks[id];
+    const qEntry = window.resourceDownloadQueueById?.[id];
+    if (qEntry) {
+      qEntry.settled = true;
+      delete window.resourceDownloadQueueById[id];
+    }
     setResourceItemDownloadingState(id, false);
     updateResourceDownloadTotals();
     setTimeout(() => {
-      const latest = getResourceDownloadTask(id);
-      if (latest && latest.active) return;
       setResourceDownloadUi(id, { active: false, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '' });
     }, 1800);
   };
@@ -10295,9 +10302,7 @@ function renderAlreadyUploadedFile(file, fileId, known) {
   if (copyBtn instanceof HTMLButtonElement) {
     copyBtn.addEventListener('click', () => {
       navigator.clipboard.writeText(url).then(() => {
-        const original = copyBtn.textContent;
-        copyBtn.textContent = '已复制';
-        setTimeout(() => { copyBtn.textContent = original; }, 1500);
+        showToast('链接已复制', 'success', 1200);
       });
     });
   }
@@ -10603,9 +10608,7 @@ function uploadFile(file, fileId) {
               btn.textContent = '复制';
               btn.addEventListener('click', () => {
                 navigator.clipboard.writeText(convertedUrl).then(() => {
-                  const original = btn.textContent;
-                  btn.textContent = '已复制';
-                  setTimeout(() => btn.textContent = original, 1500);
+                  showToast('链接已复制', 'success', 1200);
                 });
               });
               row.appendChild(a);
@@ -11988,9 +11991,7 @@ function setupSavedUploadsUi() {
           const entry = (window.savedUploadedFiles || []).find((it) => it && it.id === id);
           if (entry && entry.url) {
             navigator.clipboard.writeText(entry.url).then(() => {
-              const original = actionEl.textContent;
-              actionEl.textContent = '已复制';
-              setTimeout(() => { actionEl.textContent = original; }, 1500);
+              showToast('链接已复制', 'success', 1200);
             }).catch(() => {
               if (typeof showToast === 'function') {
                 showToast('复制失败，请手动复制链接', 'error', 2000);
