@@ -6,6 +6,7 @@ function convertVisitNameToUrl(visitName) {
   let path = raw.replace(/^W:\\Root\\?/i, '');
   path = path.replace(/\\/g, '/');
   if (!path.startsWith('/')) path = '/' + path;
+  if (path.startsWith('/rp/')) return `${FILE_BASE || 'http://123.121.147.7:8081'}${path}`.replace(/([^:]\/\/+)\/\/+?/g, '$1/');
   return `${BASE}${path}`.replace(/([^:]\/\/+)\/\/+?/g, '$1/');
 }
 

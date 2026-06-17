@@ -974,8 +974,11 @@ async function portalLoginAutoLoginInjected(context) {
     let gotResolve = null;
     const got = await new Promise((resolve) => {
       gotResolve = resolve;
-      mask.addEventListener('click', (e) => {
-        if (e.target === mask) btnClose.click();
+      let maskDown = false;
+      mask.addEventListener('mousedown', (e) => { maskDown = e.target === mask; });
+      mask.addEventListener('mouseup', (e) => {
+        if (maskDown && e.target === mask) btnClose.click();
+        maskDown = false;
       });
       btnClose.addEventListener('click', () => {
         flowState.forceRetry = false;

@@ -1,4 +1,5 @@
 const BASE = 'http://123.121.147.7:88';
+const FILE_BASE = 'http://123.121.147.7:8081';
 const BASE_VE = `${BASE}/ve/`;
 const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#1565c0; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
 const VE_LOGIN_REQUIRED_HTML = `如需查看${VE_LOGIN_LINK_HTML}作业，请前往登录`;
@@ -1306,6 +1307,7 @@ function normalizeHomeworkAttachmentUrl(raw) {
   if (!text) return '';
   if (/^https?:\/\//i.test(text)) return text;
   const normalized = text.startsWith('/') ? text : `/${text}`;
+  if (normalized.startsWith('/rp/')) return `${FILE_BASE}${normalized}`;
   return `${BASE}${normalized}`;
 }
 
@@ -2833,15 +2835,17 @@ function hideCaptchaModal() {
 }
 
 if (captchaModal instanceof HTMLElement) {
-  captchaModal.addEventListener('mousedown', (e) => {
-    if (e.target === captchaModal) {
-      // 点遮罩等价于点取消
+  let maskDown = false;
+  captchaModal.addEventListener('mousedown', (e) => { maskDown = e.target === captchaModal; });
+  captchaModal.addEventListener('mouseup', (e) => {
+    if (maskDown && e.target === captchaModal) {
       if (captchaModalCancelHandler) {
         try { captchaModalCancelHandler(); } catch {}
       } else {
         hideCaptchaModal();
       }
     }
+    maskDown = false;
   });
 }
 const loginModalClose = document.getElementById('login-modal-close');
@@ -3488,7 +3492,10 @@ function normalizeResourceUrl(v) {
   const raw = String(v || '').trim();
   if (!raw) return '';
   if (/^https?:\/\//i.test(raw)) return raw;
-  if (raw.startsWith('/')) return `${BASE}${raw}`;
+  if (raw.startsWith('/')) {
+    if (raw.startsWith('/rp/')) return `${FILE_BASE}${raw}`;
+    return `${BASE}${raw}`;
+  }
   return `${BASE_VE}${raw}`;
 }
 
@@ -5213,8 +5220,11 @@ function ensureYktLoginAssistPopup() {
   if (closeBtn instanceof HTMLButtonElement) {
     closeBtn.addEventListener('click', () => closeYktLoginAssistPopup(true));
   }
-  mask.addEventListener('click', (e) => {
-    if (e.target === mask) closeYktLoginAssistPopup(true);
+  let maskDown = false;
+  mask.addEventListener('mousedown', (e) => { maskDown = e.target === mask; });
+  mask.addEventListener('mouseup', (e) => {
+    if (maskDown && e.target === mask) closeYktLoginAssistPopup(true);
+    maskDown = false;
   });
 
   const frame = mask.querySelector('#ykt-login-assist-frame');
@@ -5452,8 +5462,11 @@ function ensureMrjzyLoginAssistPopup() {
   if (closeBtn instanceof HTMLButtonElement) {
     closeBtn.addEventListener('click', () => closeMrjzyLoginAssistPopup(true));
   }
-  mask.addEventListener('click', (e) => {
-    if (e.target === mask) closeMrjzyLoginAssistPopup(true);
+  let maskDown = false;
+  mask.addEventListener('mousedown', (e) => { maskDown = e.target === mask; });
+  mask.addEventListener('mouseup', (e) => {
+    if (maskDown && e.target === mask) closeMrjzyLoginAssistPopup(true);
+    maskDown = false;
   });
 
   const qr = mask.querySelector('#mrjzy-login-assist-qr');

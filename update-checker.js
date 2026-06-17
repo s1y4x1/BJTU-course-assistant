@@ -230,8 +230,11 @@ function ensureVersionNoticeModal() {
       modal.style.display = 'none';
     });
   }
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.style.display = 'none';
+  let maskDown = false;
+  modal.addEventListener('mousedown', (e) => { maskDown = e.target === modal; });
+  modal.addEventListener('mouseup', (e) => {
+    if (maskDown && e.target === modal) modal.style.display = 'none';
+    maskDown = false;
   });
 
   const downloadBtn = modal.querySelector('#version-notice-download');
@@ -351,12 +354,16 @@ function ensureVersionDownloadModal() {
       showToast('已最小化，后台静默下载中...', 'info', 1400);
     });
   }
-  modal.addEventListener('click', (e) => {
-    if (e.target !== modal) return;
-    if (versionDownloadPhase !== 'downloading') return;
-    versionDownloadMinimized = true;
-    modal.style.display = 'none';
-    showToast('已最小化，后台静默下载中...', 'info', 1400);
+  let maskDown = false;
+  modal.addEventListener('mousedown', (e) => { maskDown = e.target === modal; });
+  modal.addEventListener('mouseup', (e) => {
+    if (maskDown && e.target === modal) {
+      if (versionDownloadPhase !== 'downloading') return;
+      versionDownloadMinimized = true;
+      modal.style.display = 'none';
+      showToast('已最小化，后台静默下载中...', 'info', 1400);
+    }
+    maskDown = false;
   });
   return modal;
 }
