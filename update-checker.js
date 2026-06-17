@@ -230,11 +230,14 @@ function ensureVersionNoticeModal() {
       modal.style.display = 'none';
     });
   }
-  let maskDown = false;
-  modal.addEventListener('mousedown', (e) => { maskDown = e.target === modal; });
+  modal.addEventListener('mousedown', (e) => {
+    modal.dataset.mdownMask = e.target === modal ? '1' : '0';
+  });
   modal.addEventListener('mouseup', (e) => {
-    if (maskDown && e.target === modal) modal.style.display = 'none';
-    maskDown = false;
+    if (e.target === modal && modal.dataset.mdownMask === '1') {
+      modal.style.display = 'none';
+    }
+    delete modal.dataset.mdownMask;
   });
 
   const downloadBtn = modal.querySelector('#version-notice-download');
@@ -354,16 +357,17 @@ function ensureVersionDownloadModal() {
       showToast('已最小化，后台静默下载中...', 'info', 1400);
     });
   }
-  let maskDown = false;
-  modal.addEventListener('mousedown', (e) => { maskDown = e.target === modal; });
+  modal.addEventListener('mousedown', (e) => {
+    modal.dataset.mdownMask = e.target === modal ? '1' : '0';
+  });
   modal.addEventListener('mouseup', (e) => {
-    if (maskDown && e.target === modal) {
+    if (e.target === modal && modal.dataset.mdownMask === '1') {
       if (versionDownloadPhase !== 'downloading') return;
       versionDownloadMinimized = true;
       modal.style.display = 'none';
       showToast('已最小化，后台静默下载中...', 'info', 1400);
     }
-    maskDown = false;
+    delete modal.dataset.mdownMask;
   });
   return modal;
 }

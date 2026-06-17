@@ -2750,9 +2750,13 @@ function dismissLoginModal({ abort = true } = {}) {
 
 if (loginModal) {
   loginModal.addEventListener('mousedown', (e) => {
-    if (e.target === loginModal) {
+    loginModal.dataset.mdownMask = e.target === loginModal ? '1' : '0';
+  });
+  loginModal.addEventListener('mouseup', (e) => {
+    if (e.target === loginModal && loginModal.dataset.mdownMask === '1') {
       dismissLoginModal();
     }
+    delete loginModal.dataset.mdownMask;
   });
 }
 
@@ -2835,17 +2839,19 @@ function hideCaptchaModal() {
 }
 
 if (captchaModal instanceof HTMLElement) {
-  let maskDown = false;
-  captchaModal.addEventListener('mousedown', (e) => { maskDown = e.target === captchaModal; });
+  captchaModal.addEventListener('mousedown', (e) => {
+    captchaModal.dataset.mdownMask = e.target === captchaModal ? '1' : '0';
+  });
   captchaModal.addEventListener('mouseup', (e) => {
-    if (maskDown && e.target === captchaModal) {
+    if (e.target === captchaModal && captchaModal.dataset.mdownMask === '1') {
+      // 点遮罩等价于点取消
       if (captchaModalCancelHandler) {
         try { captchaModalCancelHandler(); } catch {}
       } else {
         hideCaptchaModal();
       }
     }
-    maskDown = false;
+    delete captchaModal.dataset.mdownMask;
   });
 }
 const loginModalClose = document.getElementById('login-modal-close');
@@ -5220,11 +5226,14 @@ function ensureYktLoginAssistPopup() {
   if (closeBtn instanceof HTMLButtonElement) {
     closeBtn.addEventListener('click', () => closeYktLoginAssistPopup(true));
   }
-  let maskDown = false;
-  mask.addEventListener('mousedown', (e) => { maskDown = e.target === mask; });
+  mask.addEventListener('mousedown', (e) => {
+    mask.dataset.mdownMask = e.target === mask ? '1' : '0';
+  });
   mask.addEventListener('mouseup', (e) => {
-    if (maskDown && e.target === mask) closeYktLoginAssistPopup(true);
-    maskDown = false;
+    if (e.target === mask && mask.dataset.mdownMask === '1') {
+      closeYktLoginAssistPopup(true);
+    }
+    delete mask.dataset.mdownMask;
   });
 
   const frame = mask.querySelector('#ykt-login-assist-frame');
@@ -5462,11 +5471,14 @@ function ensureMrjzyLoginAssistPopup() {
   if (closeBtn instanceof HTMLButtonElement) {
     closeBtn.addEventListener('click', () => closeMrjzyLoginAssistPopup(true));
   }
-  let maskDown = false;
-  mask.addEventListener('mousedown', (e) => { maskDown = e.target === mask; });
+  mask.addEventListener('mousedown', (e) => {
+    mask.dataset.mdownMask = e.target === mask ? '1' : '0';
+  });
   mask.addEventListener('mouseup', (e) => {
-    if (maskDown && e.target === mask) closeMrjzyLoginAssistPopup(true);
-    maskDown = false;
+    if (e.target === mask && mask.dataset.mdownMask === '1') {
+      closeMrjzyLoginAssistPopup(true);
+    }
+    delete mask.dataset.mdownMask;
   });
 
   const qr = mask.querySelector('#mrjzy-login-assist-qr');
@@ -10245,7 +10257,8 @@ function promptDuplicateUploadConfirmation(entries) {
       confirmBtn.removeEventListener('click', onConfirm);
       if (invertBtn instanceof HTMLButtonElement) invertBtn.removeEventListener('click', onInvert);
       if (cancelBtn instanceof HTMLButtonElement) cancelBtn.removeEventListener('click', onCancel);
-      modal.removeEventListener('mousedown', onMaskMouseDown);
+      modal.removeEventListener('mousedown', onMaskPointerDown);
+      modal.removeEventListener('mouseup', onMaskPointerUp);
     };
     const onInvert = () => {
       listEl.querySelectorAll('input[type="checkbox"][data-duplicate-index]').forEach((el) => {
@@ -10264,13 +10277,20 @@ function promptDuplicateUploadConfirmation(entries) {
       cleanup();
       resolve(null);
     };
-    const onMaskMouseDown = (e) => {
-      if (e.target === modal) onCancel();
+    const onMaskPointerDown = (e) => {
+      modal.dataset.mdownMask = e.target === modal ? '1' : '0';
+    };
+    const onMaskPointerUp = (e) => {
+      if (e.target === modal && modal.dataset.mdownMask === '1') {
+        onCancel();
+      }
+      delete modal.dataset.mdownMask;
     };
     if (invertBtn instanceof HTMLButtonElement) invertBtn.addEventListener('click', onInvert);
     if (cancelBtn instanceof HTMLButtonElement) cancelBtn.addEventListener('click', onCancel);
     confirmBtn.addEventListener('click', onConfirm);
-    modal.addEventListener('mousedown', onMaskMouseDown);
+    modal.addEventListener('mousedown', onMaskPointerDown);
+    modal.addEventListener('mouseup', onMaskPointerUp);
     modal.style.display = 'flex';
   });
 }
