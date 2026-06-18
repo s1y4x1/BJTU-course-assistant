@@ -10828,18 +10828,18 @@ async function readEntryFiles(entry, basePath = '') {
 async function clipboardDataToFiles(dt) {
   if (!dt) return [];
   const items = Array.from(dt.items || []);
-  const files = [];
-  for (const item of items) {
+  // 先同步提取所有 entry，避免 async 中 DataTransfer 作废导致后续条目丢失
+  const tasks = items.map((item) => {
     const entry = typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
-    if (entry) {
-      files.push(...await readEntryFiles(entry));
-      continue;
-    }
+    if (entry) return readEntryFiles(entry);
     if (item.kind === 'file') {
       const file = item.getAsFile();
-      if (file) files.push(file);
+      return file ? [file] : [];
     }
-  }
+    return [];
+  });
+  const nested = await Promise.all(tasks);
+  const files = nested.flat();
   if (!files.length && dt.files?.length) files.push(...Array.from(dt.files));
   return files;
 }
