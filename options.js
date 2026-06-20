@@ -68,7 +68,6 @@ function goBackToApp() {
   const { platformEnabled } = await chrome.storage.local.get(['platformEnabled']);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
-  const { autoCaptcha } = await chrome.storage.local.get(['autoCaptcha']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
@@ -79,8 +78,6 @@ function goBackToApp() {
   document.getElementById('enableYkt').checked = !!enabled.ykt;
   document.getElementById('enableMrjzy').checked = !!enabled.mrjzy;
   document.getElementById('enableJlgj').checked = !!enabled.jlgj;
-  const autoCaptchaVal = autoCaptcha === undefined ? true : !!autoCaptcha;
-  document.getElementById('autoCaptcha').checked = autoCaptchaVal;
   const autoLoadResourcesVal = autoLoadCourseResourcesEnabled === undefined
     ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
     : !!autoLoadCourseResourcesEnabled;
@@ -159,7 +156,6 @@ function goBackToApp() {
       if (area !== 'local') return;
       if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
-      if (changes.autoCaptcha) applyBooleanUi('autoCaptcha', changes.autoCaptcha.newValue, true);
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
       if (changes.headerQrEnabled) {
@@ -181,11 +177,6 @@ function goBackToApp() {
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
-
-  document.getElementById('autoCaptcha').addEventListener('change', async () => {
-    await chrome.storage.local.set({ autoCaptcha: !!document.getElementById('autoCaptcha').checked });
-    setMsg('已应用更改');
-  });
 
   document.getElementById('autoLoadCourseResourcesEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
@@ -250,7 +241,11 @@ function goBackToApp() {
       bindBtn.disabled = true;
       const bindUrl = 'http://123.121.147.7:88/oauth/api/user/thirdLogin';
       try {
-        const resp = await chrome.runtime.sendMessage({ type: 'START_BIND_PORTAL_USERNAME' });
+        const { username } = await chrome.storage.local.get(['username']);
+        const resp = await chrome.runtime.sendMessage({
+          type: 'START_BIND_PORTAL_USERNAME',
+          payload: { loginName: String(username || '').trim() }
+        });
         if (!resp?.ok) {
           await chrome.tabs.create({ url: bindUrl, active: true });
           setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
@@ -347,7 +342,6 @@ function goBackToApp() {
     document.getElementById('enableYkt').checked = false;
     document.getElementById('enableMrjzy').checked = false;
     document.getElementById('enableJlgj').checked = false;
-    document.getElementById('autoCaptcha').checked = true;
     document.getElementById('autoLoadCourseResourcesEnabled').checked = true;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
@@ -358,7 +352,6 @@ function goBackToApp() {
     document.getElementById('popupUseFullscreenCacheEnabled').checked = true;
     updatePopupCacheDisabled();
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
-    await chrome.storage.local.set({ autoCaptcha: true });
     await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
     await chrome.storage.local.set({ headerQrEnabled: false });

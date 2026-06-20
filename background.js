@@ -1,14 +1,11 @@
 ﻿importScripts('md5.js');
-importScripts('portal-auto-login.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
-const portalLoginCtxByTab = new Map(); // tabId -> { username, passcode, passwordMd5, autoCode, fromExtension }
-const portalUsernameBindByTab = new Map(); // tabId -> { ts }
+const portalUsernameBindByTab = new Map(); // tabId -> { ts, loginName }
 const portalDetectedQuickUsernameByTab = new Map(); // tabId -> quickUsername seen during ordinary MIS redirects
 const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
-const portalHandledByTab = new Map(); // tabId -> { url, ts }
-const portalInjectionDoneByTab = new Set(); // tabId -> injected once for current page load
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
+const ACCOUNT_LIST_KEY = 'accountList';
 let latestResponseJsessionid = null;
 
 function notifyPortalUsernameBindStatus(status) {
@@ -27,6 +24,30 @@ try {
     'portalUsernameBindStatus'
   ]).catch(() => {});
 } catch {}
+
+// 下载完成系统通知点击处理（持久上下文，弹窗关闭后仍有效）
+const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
+chrome.notifications.onClicked.addListener((notifId) => {
+  if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
+  chrome.storage.local.get(['_VERSION_UPDATE_DOWNLOAD_ID'], (result) => {
+    const id = result._VERSION_UPDATE_DOWNLOAD_ID;
+    if (id) chrome.downloads.open(id, () => void chrome.runtime.lastError);
+    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
+  });
+});
+chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
+  if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
+  if (buttonIndex === 0) {
+    chrome.storage.local.get(['_VERSION_UPDATE_DOWNLOAD_ID'], (result) => {
+      const id = result._VERSION_UPDATE_DOWNLOAD_ID;
+      if (id) chrome.downloads.open(id, () => void chrome.runtime.lastError);
+      chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
+    });
+  } else if (buttonIndex === 1) {
+    chrome.tabs.create({ url: 'about:extensions' });
+    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
+  }
+});
 
 function normalizePortalLoginAccountHistory(rawList) {
   const list = Array.isArray(rawList) ? rawList : [];
@@ -80,27 +101,6 @@ async function savePortalLoginAccountRecord(userId, patch = {}) {
   return record;
 }
 
-async function injectScriptsWithEntry(tabId, world, entryFiles, entryFunc, entryArgs) {
-  // Inject entry files (md5.js, tesseract.min.js) in order, then run the entry function
-  for (const file of entryFiles) {
-    await chrome.scripting.executeScript({ target: { tabId }, world, files: [file] });
-  }
-  return new Promise((resolve) => {
-    chrome.scripting.executeScript({
-      target: { tabId },
-      world,
-      func: entryFunc,
-      args: entryArgs
-    }, (results) => {
-      const err = chrome.runtime.lastError;
-      if (err) { resolve({ ok: false, error: err.message || String(err) }); return; }
-      const result = Array.isArray(results) && results[0] ? results[0].result : null;
-      if (!result || result.ok !== true) { resolve({ ok: false, error: result?.reason || 'inject-failed' }); return; }
-      resolve({ ok: true, meta: result });
-    });
-  });
-}
-
 // Manage action popup according to openMode ('popup' or 'page')
 let currentOpenMode = '';
 async function refreshActionPopupFromStorage() {
@@ -135,47 +135,6 @@ chrome.runtime.onStartup.addListener(() => {
 
 refreshActionPopupFromStorage().catch(() => {});
 
-function isPortalLoginUrl(url) {
-  const u = String(url || '');
-  // 所有 VE 页面均注入检测脚本，由注入脚本判断是否需要弹出登录框
-  return /^http:\/\/123\.121\.147\.7:88\//i.test(u);
-}
-
-function shouldSkipRecent(tabId, url) {
-  const rec = portalHandledByTab.get(tabId);
-  if (!rec) return false;
-  const same = rec.url === url;
-  const recent = (Date.now() - rec.ts) < 4000;
-  return same && recent;
-}
-
-async function injectPortalAutoLogin(tabId, ctx = null) {
-  const enrichedCtx = ctx && typeof ctx === 'object' ? { ...ctx } : {};
-  if (!Array.isArray(enrichedCtx.accountHistory)) {
-    enrichedCtx.accountHistory = await getPortalLoginAccountHistory();
-  }
-
-  // Pre-compute extension URLs and storage values; the injected page context cannot
-  // reliably create extension-packaged OCR workers, so prefer the isolated world.
-  enrichedCtx._tesseractWorkerUrl = chrome.runtime.getURL('vendor/tesseract/worker.min.js');
-  enrichedCtx._tesseractCoreUrl = chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js');
-  enrichedCtx._tesseractLangUrl = chrome.runtime.getURL('vendor/tesseract');
-  enrichedCtx._portalModalUrl = chrome.runtime.getURL('portal-modal.html');
-  try {
-    const r = await chrome.storage.local.get(['autoCaptcha']);
-    enrichedCtx._autoCaptchaEnabled = r.autoCaptcha === undefined ? true : !!r.autoCaptcha;
-  } catch {
-    enrichedCtx._autoCaptchaEnabled = true;
-  }
-
-  const sharedFiles = ['md5.js', 'vendor/tesseract/tesseract.min.js'];
-  // Try ISOLATED first so Tesseract can boot its extension-packaged worker/WASM.
-  let isolatedRes;
-  try { isolatedRes = await injectScriptsWithEntry(tabId, 'ISOLATED', sharedFiles, portalLoginAutoLoginInjected, [enrichedCtx]); } catch { isolatedRes = null; }
-  if (isolatedRes?.ok) return isolatedRes;
-  return await injectScriptsWithEntry(tabId, 'MAIN', sharedFiles, portalLoginAutoLoginInjected, [enrichedCtx]);
-}
-
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'OPEN_APP') {
     (async () => {
@@ -197,29 +156,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === 'OPEN_PORTAL_LOGIN_TAB') {
-    const payload = message?.payload || {};
-    chrome.tabs.create({ url: 'http://123.121.147.7:88/ve/', active: true }, (tab) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        sendResponse({ ok: false, error: err.message || String(err) });
-        return;
-      }
-      const tabId = tab?.id || null;
-      if (tabId) {
-        portalLoginCtxByTab.set(tabId, {
-          username: String(payload.username || ''),
-          passcode: String(payload.passcode || ''),
-          passwordMd5: String(payload.passwordMd5 || ''),
-          autoCode: String(payload.autoCode || ''),
-          fromExtension: true
-        });
-      }
-      sendResponse({ ok: true, tabId });
-    });
-    return true;
-  }
-
   if (message?.type === 'GET_LATEST_RESPONSE_JSESSIONID') {
     const maxAgeMs = Math.max(0, Number(message?.maxAgeMs || 15000));
     const rec = latestResponseJsessionid;
@@ -229,6 +165,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === 'START_BIND_PORTAL_USERNAME') {
+    const requestedLoginName = String(message?.payload?.loginName || '').trim();
     chrome.tabs.create({ url: 'http://123.121.147.7:88/oauth/api/user/thirdLogin', active: true }, async (tab) => {
       const err = chrome.runtime.lastError;
       if (err) {
@@ -237,7 +174,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       const tabId = tab?.id || null;
       if (tabId) {
-        portalUsernameBindByTab.set(tabId, { ts: Date.now() });
+        const stored = requestedLoginName ? null : await chrome.storage.local.get(['username']);
+        const loginName = requestedLoginName || String(stored?.username || '').trim();
+        portalUsernameBindByTab.set(tabId, { ts: Date.now(), loginName });
         notifyPortalUsernameBindStatus({ status: 'started', tabId, ts: Date.now() });
       }
       sendResponse({ ok: true, tabId });
@@ -247,12 +186,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  portalLoginCtxByTab.delete(tabId);
-  portalHandledByTab.delete(tabId);
   portalUsernameBindByTab.delete(tabId);
   portalDetectedQuickUsernameByTab.delete(tabId);
   portalQuickUsernameToastByTab.delete(tabId);
-  portalInjectionDoneByTab.delete(tabId);
 });
 
 function extractPortalQuickUsername(url) {
@@ -278,48 +214,37 @@ function isEncodedPortalQuickUsername(value) {
   }
 }
 
-async function fetchBoundPortalAccountInfo(tabId, quickUsername) {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'ISOLATED',
-    func: async () => {
-      const parseJson = (text) => {
-        const s = String(text || '{}').trim();
-        return JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
-      };
-      for (let i = 0; i < 25; i++) {
-        try {
-          const res = await fetch('/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo', {
-            credentials: 'include',
-            cache: 'no-store',
-            headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-          });
-          const text = await res.text();
-          if (!String(text || '').includes('login-page')) {
-            const data = parseJson(text);
-            if (String(data?.STATUS) === '0' && data?.result) return data.result;
-          }
-        } catch {}
-        await new Promise((r) => setTimeout(r, 300));
-      }
-      return null;
-    }
-  });
-  const info = Array.isArray(results) && results[0] ? results[0].result : null;
-  const loginName = String(info?.loginName || info?.userId || info?.userID || info?.stuId || info?.teacherId || '').trim();
-  if (!loginName) return null;
-  const before = await getPortalLoginAccountHistory();
-  const prev = before.find((it) => String(it?.userId || '').trim() === loginName || String(it?.loginName || '').trim() === loginName) || null;
-  const prevQuickUsername = String(prev?.quickUsername || '').trim();
+async function fetchBoundPortalAccountInfo(_tabId, quickUsername, preferredLoginName = '') {
+  const quick = String(quickUsername || '').trim();
+  if (!quick) return null;
+  const stored = await chrome.storage.local.get([ACCOUNT_LIST_KEY, LOGIN_ACCOUNT_HISTORY_KEY, 'username']);
+  const loginName = String(preferredLoginName || stored?.username || '').trim();
+  const list = stored?.[ACCOUNT_LIST_KEY] && typeof stored[ACCOUNT_LIST_KEY] === 'object'
+    ? stored[ACCOUNT_LIST_KEY]
+    : {};
+  const history = normalizePortalLoginAccountHistory(stored?.[LOGIN_ACCOUNT_HISTORY_KEY]);
+  const prev = history.find((item) => item.userId === loginName || item.loginName === loginName) || null;
+  const account = list[loginName] || prev;
+  if (!loginName || !account) return null;
+  const previousQuickUsername = String(account.quickUsername || prev?.quickUsername || '').trim();
+  list[loginName] = {
+    roleName: String(account.roleName || '').trim(),
+    userName: String(account.userName || '').trim(),
+    password: String(account.password || account.passwordMd5 || '').trim(),
+    quickUsername: quick
+  };
+  await chrome.storage.local.set({ [ACCOUNT_LIST_KEY]: list });
+
   const record = await savePortalLoginAccountRecord(loginName, {
     loginName,
-    userName: String(info?.userName || '').trim(),
-    roleName: String(info?.roleName || '').trim(),
-    quickUsername
+    userName: String(account.userName || '').trim(),
+    roleName: String(account.roleName || '').trim(),
+    passwordMd5: String(account.password || account.passwordMd5 || '').trim(),
+    quickUsername: quick
   });
   return record ? {
     ...record,
-    quickUsernameChanged: !!quickUsername && prevQuickUsername !== String(quickUsername || '').trim()
+    quickUsernameChanged: previousQuickUsername !== quick
   } : null;
 }
 
@@ -369,11 +294,6 @@ async function showPortalQuickUsernameBoundToast(tabId) {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const url = String(changeInfo?.url || tab?.url || '');
 
-  // Clear injection-done flag on new navigation (loading), so each page load gets exactly one injection
-  if (changeInfo.status === 'loading') {
-    portalInjectionDoneByTab.delete(tabId);
-  }
-
   let quickUsername = extractPortalQuickUsername(url);
   if (quickUsername) {
     portalDetectedQuickUsernameByTab.set(tabId, quickUsername);
@@ -390,7 +310,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   if (changeInfo.status === 'complete' && quickUsername && portalUsernameBindByTab.has(tabId)) {
       try {
-        const record = await fetchBoundPortalAccountInfo(tabId, quickUsername);
+        const record = await fetchBoundPortalAccountInfo(tabId, quickUsername, bindState?.loginName);
         notifyPortalUsernameBindStatus({
           status: record ? 'done' : 'detected',
           tabId,
@@ -429,26 +349,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
   }
 
-  if (changeInfo.status !== 'complete') return;
-  if (!isPortalLoginUrl(url)) return;
-  if (shouldSkipRecent(tabId, url)) return;
-  // Each page load gets exactly one injection attempt; cleared on next 'loading' event
-  if (portalInjectionDoneByTab.has(tabId)) return;
-  portalInjectionDoneByTab.add(tabId);
-
-  // Set handled timestamp synchronously BEFORE any async operation to prevent concurrent events
-  portalHandledByTab.set(tabId, { url, ts: Date.now() });
-
-  // Check DOM for existing modal to avoid double popup across worlds/events
-  const [{ result: modalExists } = {}] = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'ISOLATED',
-    func: () => !!document.getElementById('__bjtu_login_modal__') || !!document.getElementById('__bjtu_auto_login_overlay__')
-  }).catch(() => [{}]);
-  if (modalExists) return;
-
-  const ctx = portalLoginCtxByTab.get(tabId) || null;
-  await injectPortalAutoLogin(tabId, ctx);
 });
 
 chrome.action.onClicked.addListener(async () => {
@@ -493,7 +393,7 @@ function extractJsessionidFromSetCookie(value) {
 function isLoginResponse(details) {
   const url = String(details?.url || '');
   const method = String(details?.method || '').toUpperCase();
-  return method === 'POST' && /\/ve\/s\.shtml(?:[?#]|$)/i.test(url);
+  return (method === 'GET' || method === 'POST') && /\/ve\/s\.shtml(?:[?#]|$)/i.test(url);
 }
 
 function extractJsessionidFromCookieHeader(value) {

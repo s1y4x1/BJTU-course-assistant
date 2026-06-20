@@ -222,31 +222,46 @@
         </div>
     </div>
 
-    <!-- 验证码弹窗 -->
-    <div id="captcha-modal" class="captcha-modal-mask" style="display: none;">
-        <div class="captcha-modal-card">
-            <div class="captcha-modal-header">
-                <div id="captcha-modal-title" class="captcha-modal-title">输入验证码</div>
+    <div id="account-init-modal" class="version-modal-mask" style="display:none;">
+        <div class="version-modal-card account-init-card">
+            <div class="version-modal-header">
+                <div class="version-download-title">初始化登录账号列表</div>
             </div>
-            <div id="captcha-modal-body" class="captcha-modal-body">
-                <div class="captcha-modal-image-wrap">
-                    <img id="captcha-modal-img" alt="验证码图片" title="点击验证码图片刷新" />
-                    <div id="captcha-modal-spinner" class="captcha-modal-spinner" style="display:none;">
-                        <span class="spinner"></span>
-                    </div>
+            <div id="account-init-status" class="account-init-status">正在准备…</div>
+            <div class="progress-bar-container">
+                <div id="account-init-progress-bar" class="progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="account-recovery-modal" class="version-modal-mask" style="display:none;">
+        <div class="version-modal-card account-recovery-card">
+            <div class="version-modal-header">
+                <div class="version-download-title">账号或密码错误</div>
+            </div>
+            <div id="account-recovery-message" class="account-recovery-message"></div>
+            <div id="account-recovery-choice" class="account-recovery-actions">
+                <button id="account-recovery-reinitialize" class="btn" type="button">重新初始化账号列表</button>
+                <button id="account-recovery-manual-btn" class="btn" type="button">手动输入密码</button>
+                <button id="account-recovery-cancel" class="btn" type="button">取消</button>
+            </div>
+            <div id="account-recovery-manual" style="display:none;">
+                <div class="account-recovery-password-row">
+                    <input id="account-recovery-password-plain" type="text" autocomplete="current-password" placeholder="密码明文">
+                    <button id="account-recovery-default" class="btn" type="button">填入默认密码</button>
                 </div>
-                <input id="captcha-modal-input" type="text" maxlength="4" placeholder="验证码（自动识别）" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;text-align:center;letter-spacing:4px;">
-                <div id="captcha-modal-status" class="captcha-modal-status">正在准备验证码…</div>
-                <div class="captcha-modal-actions">
-                    <button id="captcha-modal-cancel" class="btn captcha-cancel-btn" type="button">取消</button>
+                <input id="account-recovery-password-md5" type="text" maxlength="32" spellcheck="false" placeholder="密码 MD5（根据明文自动计算，也可单独输入）">
+                <div class="account-recovery-actions">
+                    <button id="account-recovery-submit" class="btn" type="button">登录</button>
+                    <button id="account-recovery-manual-cancel" class="btn" type="button">取消</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="vendor/qrcode/qrcode.min.js"></script>
-    <script src="vendor/tesseract/tesseract.min.js"></script>
     <script src="md5.js"></script>
+    <script src="account-login.js"></script>
     <script src="qr-utils.js"></script>
     <script src="popup-cache.js"></script>
     <script src="app.js"></script>

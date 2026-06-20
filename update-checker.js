@@ -56,6 +56,7 @@ function isVersionDownloadingNow() {
 function showUpdateDownloadCompleteNotification(downloadId) {
   if (typeof chrome === 'undefined' || !chrome.notifications || !chrome.downloads) return;
   lastCompletedDownloadId = downloadId;
+  chrome.storage.local.set({ _VERSION_UPDATE_DOWNLOAD_ID: downloadId }).catch(() => {});
   chrome.notifications.create(VERSION_UPDATE_NOTIFICATION_ID, {
     type: 'basic',
     iconUrl: 'icons/512.png',
@@ -65,29 +66,6 @@ function showUpdateDownloadCompleteNotification(downloadId) {
     requireInteraction: true
   }, () => void chrome.runtime.lastError);
 }
-
-function setupUpdateNotificationClickListener() {
-  if (typeof chrome === 'undefined' || !chrome.notifications || !chrome.downloads) return;
-  chrome.notifications.onClicked.addListener((notifId) => {
-    if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
-    if (lastCompletedDownloadId) {
-      chrome.downloads.open(lastCompletedDownloadId, () => void chrome.runtime.lastError);
-    }
-    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
-  });
-  chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
-    if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
-    if (buttonIndex === 0) {
-      if (lastCompletedDownloadId) {
-        chrome.downloads.open(lastCompletedDownloadId, () => void chrome.runtime.lastError);
-      }
-    } else if (buttonIndex === 1) {
-      chrome.tabs.create({ url: 'about:extensions' });
-    }
-    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
-  });
-}
-setupUpdateNotificationClickListener();
 
 function getVersionDownloadButtonLabel(mode, source) {
   const src = String(source || 'zipball').trim();

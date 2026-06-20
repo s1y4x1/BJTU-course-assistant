@@ -34,8 +34,6 @@ const MRJZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCod
 const MRJZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
 const PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS = 1000;
 const DEFAULT_PLATFORM_SESSION_ID = 'D571D57D255EA0BECF299C45D4C0468A';
-const AUXILIARY_LOGIN_ID = '8888';
-const AUXILIARY_LOGIN_PASSWORD_MD5 = 'a8376785625a7dc956506a7a444b720c';
 
 // Platform header `sessionId` is maintained at runtime (NOT saved in settings).
 let runtimePlatformSessionId = DEFAULT_PLATFORM_SESSION_ID;
@@ -55,6 +53,7 @@ const totalEtaDiv = document.getElementById('total-eta');
 const copyAllBtn = document.getElementById('copy-all-btn');
 function parseVeJson(text) {
   const s = String(text || '{}').trim();
+  if (s === '{}') return {};
   return JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
 }
 
@@ -172,6 +171,7 @@ window.jlgjCourseGroupsSnapshot = []; // [{token,name,groupId,homeworks}]
 window.jlgjRequestHeaders = {}; // {authorization,xApiRequestPayload}
 window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomeworkCount,hasReplay}}
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
+window.veReplayScheduleByCourseId = {}; // {courseId: {list,promise,loaded,error}}
 window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.platformNeedLogin = { ve: false, ykt: false, mrjzy: false, jlgj: false };
 window.platformLoginState = { ve: 'checking', ykt: 'checking', mrjzy: 'checking', jlgj: 'checking' }; // checking|offline|online
@@ -198,7 +198,6 @@ window.externalPlatformLoadVersion = 0;
 window.courseListLoadVersion = 0;
 window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded,teachers:[]}}
 window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
-window.veUserNameByTeacherId = {}; // {teacherId:{name:string|null,promise:Promise|null}} — 学生账号用 getUserInfo 解析教师姓名
 window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
 window.coursewareItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
@@ -206,7 +205,7 @@ window.coursewareItemsByCourseId = {}; // {courseId: CoursewareItem[]}
 window.homeworkAttachmentItemsById = {}; // {resourceId: {id,name,url,extName,courseId,sizeMbRaw,sizeMb}}
 window.homeworkAttachmentItemsByCourseId = {}; // {courseId: HomeworkAttachmentItem[]}
 window.resourceSpaceLoadVersion = 0;
-window.currentAccountLoginName = ''; // loginName from getUserInfo
+window.currentAccountLoginName = '';
 window.isTeacherAccount = false; // teacher role detected
 window.resourceDownloadTasks = {}; // {resourceId: {active,loaded,total,speed,samples,lastUiTs,abortController,xhr,cancelled,chromeDownloadId}}
 window.resourceDownloadBatch = {
@@ -573,16 +572,17 @@ function togglePlatformSelection(platform, options = {}) {
     window.platformLoadedOnce.ve = false;
     setPlatformLoginState('ve', 'checking');
     if (isPlatformEnabled('ve')) {
-      loadCourses().catch(() => {});
-      const knownUserId = String(usernameInput.value || lastValidUsername || '').trim();
-      if (knownUserId) {
-        syncAccountInfoAndReloadVeCourses({
-          userId: knownUserId,
-          detectFromPortal: false,
+      void (async () => {
+        await loadAutoLoadCourseResourcesSetting();
+        await refreshCurrentVeAccountFromSession({
           reloadCourses: false,
-          reloadResourceSpace: true
-        }).catch(() => {});
-      }
+          reloadResourceSpace: false
+        }).catch(() => null);
+        await Promise.allSettled([
+          loadCourses(),
+          loadResourceSpaceForCurrentAccount()
+        ]);
+      })();
     }
     return;
   }
@@ -617,11 +617,6 @@ function setupOptionsStorageLiveSync() {
       applyPlatformEnabledSettingFromStorage(changes.platformEnabled.newValue);
       window.__headerQrUrl = '';
       window.__sectionQrCache = {};
-    }
-
-    if (changes.autoCaptcha) {
-      const enabled = changes.autoCaptcha.newValue === undefined ? true : !!changes.autoCaptcha.newValue;
-      showToast(enabled ? '已启用自动识别验证码' : '已关闭自动识别验证码，将改为手动输入', 'info', 1600);
     }
 
     if (changes.saveUploadedFilesEnabled) {
@@ -811,7 +806,6 @@ let totalRecentSpeedBps = 0;
 
 let lastValidUsername = '';
 let pendingUsernameChange = null; // { from: string, to: string } | null
-let loginAccountValidationCache = null; // { userId, ts, validation }
 let isLoginInProgress = false;
 let loginCancelRequested = false;
 let loginAbortController = null;
@@ -1594,59 +1588,53 @@ function updateTotalProgress() {
   updateTotalSpeed();
 }
 
-async function fetchUserInfoRemote(userId = '') {
+async function fetchCurrentVeUserInfo() {
   try {
-    const url = String(userId || '').trim()
-      ? `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(userId)}`
-      : `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo`;
-    const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
-    const data = JSON.parse(text);
-    if (String(data.STATUS) === '0' && data.result) {
-      return data.result;
-    }
-    return null;
+    const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo`;
+    const { text, res } = await fetchText(url, {
+      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+    });
+    if (isLikelyLoginPageHtml(text, res?.url)) return null;
+    const data = parseVeJson(text);
+    if (String(data?.STATUS) !== '0' || !data?.result) return null;
+    return data.result;
   } catch {
     return null;
   }
 }
 
-// 通过工号 getUserInfo 解析教师真实姓名（学生账号下使用，覆盖同课教师列表的原始姓名）
-// 缓存：window.veUserNameByTeacherId[worknumber] = { name: string|null, promise: Promise|null }
-// - 成功结果会缓存（避免重复请求）
-// - 失败结果不缓存（下次调用会自动重试）
-// - 进行中的 promise 用于并发去重
-async function resolveVeUserNameByWorknumber(worknumber) {
-  const tid = String(worknumber || '').trim();
-  if (!tid) return null;
-  if (!window.veUserNameByTeacherId) window.veUserNameByTeacherId = {};
-  const cache = window.veUserNameByTeacherId;
-  const existing = cache[tid];
-  if (existing && existing.name) return existing.name;
-  if (existing && existing.promise) return existing.promise;
-  const entry = existing || { name: null, promise: null };
-  cache[tid] = entry;
-  const infoUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(tid)}`;
-  const promise = (async () => {
-    try {
-      const { text } = await fetchText(infoUrl, {
-        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-      });
-      const data = parseVeJson(text);
-      if (data && String(data.STATUS) === '0' && data.result) {
-        const name = String(data.result.userName || '').trim();
-        if (name) entry.name = name;
-        return entry.name || null;
-      }
-      return null;
-    } catch {
-      // 失败不缓存，下次调用会重新尝试
-      return null;
-    } finally {
-      entry.promise = null;
-    }
-  })();
-  entry.promise = promise;
-  return promise;
+async function refreshCurrentVeAccountFromSession({
+  reloadCourses = false,
+  reloadResourceSpace = false
+} = {}) {
+  if (!isPlatformEnabled('ve')) return null;
+  const info = await fetchCurrentVeUserInfo();
+  if (!info) return null;
+  const userId = String(info.loginName || info.userId || '').trim();
+  if (!userId) return null;
+  return syncAccountInfoAndReloadVeCourses({
+    userId,
+    reloadCourses,
+    reloadResourceSpace,
+    knownUserInfo: info
+  });
+}
+
+function getLocalAccountInfo(userId = '') {
+  const uid = String(userId || '').trim();
+  if (!uid) return null;
+  const catalog = globalThis.BjtuAccountLogin?.getAccount?.(uid) || null;
+  const history = findLoginAccountRecord(uid);
+  const source = catalog || history;
+  if (!source) return null;
+  return {
+    loginName: String(source.loginName || source.userId || uid).trim(),
+    userId: uid,
+    userName: String(source.userName || '').trim(),
+    roleName: String(source.roleName || '').trim(),
+    passwordMd5: String(source.password || source.passwordMd5 || '').trim(),
+    quickUsername: String(source.quickUsername || history?.quickUsername || '').trim()
+  };
 }
 
 function setWelcomeMessage(info) {
@@ -1659,28 +1647,23 @@ function setWelcomeMessage(info) {
 
 async function syncAccountInfoAndReloadVeCourses({
   userId = '',
-  detectFromPortal = false,
   reloadCourses = true,
   reloadResourceSpace = true,
-  expectedUserId = '',
   knownUserInfo = null
 } = {}) {
-  // 若要重载课程，先中止所有进行中的课件/回放请求
-  if (reloadCourses) {
-    prioritizeAccountSwitch();
-  }
-  let finalUser = String(userId || '').trim();
-  if (!finalUser && detectFromPortal) {
-    try {
-      const detected = String(await detectUserIdFromPersonalCenter() || '').trim();
-      if (detected) finalUser = detected;
-    } catch {
-      // ignore
-    }
-  }
-  if (!finalUser) {
-    finalUser = String(usernameInput.value || '').trim() || String(lastValidUsername || '').trim();
-  }
+  if (reloadCourses) prioritizeAccountSwitch();
+
+  const finalUser = String(userId || usernameInput.value || lastValidUsername || '').trim();
+  const localInfo = getLocalAccountInfo(finalUser);
+  const info = knownUserInfo
+    ? {
+        ...(localInfo || {}),
+        ...knownUserInfo,
+        loginName: String(knownUserInfo.loginName || localInfo?.loginName || finalUser).trim(),
+        passwordMd5: String(localInfo?.passwordMd5 || '').trim(),
+        quickUsername: String(localInfo?.quickUsername || '').trim()
+      }
+    : localInfo;
 
   if (finalUser) {
     usernameInput.value = finalUser;
@@ -1691,17 +1674,16 @@ async function syncAccountInfoAndReloadVeCourses({
   pendingUsernameChange = null;
   renderLoginAccountHistorySelect(finalUser);
   updateJsessionidState();
-  const jsessionSyncPromise = syncJsessionidToUi().catch(() => {});
   resetAccountSwitchInterruption();
 
-  const shouldFetchUserInfo = isPlatformEnabled('ve');
-  const userInfoPromise = knownUserInfo
-    ? Promise.resolve(knownUserInfo)
-    : shouldFetchUserInfo
-      ? fetchUserInfoRemote().catch(() => null)
-      : Promise.resolve(null);
-  const reloadPromises = [];
+  const roleName = String(info?.roleName || '').trim();
+  window.isTeacherAccount = /教师|老师|助教/.test(roleName);
+  window.currentAccountLoginName = String(info?.loginName || finalUser).trim();
+  setWelcomeMessage(info);
 
+  if (finalUser) await rememberLoggedInAccount(finalUser, info);
+
+  const reloadPromises = [syncJsessionidToUi().catch(() => {})];
   if (reloadCourses && isPlatformEnabled('ve')) {
     window.__headerQrUrl = '';
     reloadPromises.push(loadCourses().catch(() => {}));
@@ -1709,40 +1691,13 @@ async function syncAccountInfoAndReloadVeCourses({
   if (reloadResourceSpace) {
     reloadPromises.push(loadResourceSpaceForCurrentAccount().catch(() => {}));
   }
-
-  const info = await userInfoPromise;
-  const loginName = String(info?.loginName || '').trim();
-  const detectedUser = String(info?.userId || info?.userID || info?.USERID || info?.stuId || info?.teacherId || '').trim();
-  const displayId = loginName || detectedUser;
-  const expected = String(expectedUserId || '').trim();
-  const accountMismatch = !!(expected && displayId && displayId !== expected);
-
-  if (displayId) {
-    finalUser = displayId;
-    usernameInput.value = finalUser;
-    await setLocal('username', finalUser);
-    lastValidUsername = finalUser;
-    renderLoginAccountHistorySelect(finalUser);
-  }
-
-  const roleName = String(info?.roleName || '').trim();
-  const teacherFlag = String(info?.isTeacher || '').trim();
-  window.isTeacherAccount = !!(roleName.includes('教师') || roleName.includes('老师') || roleName.includes('助教') || teacherFlag === '1' || teacherFlag === 'true');
-  window.currentAccountLoginName = String(info?.loginName || '').trim() || String(info?.userId || detectedUser || finalUser || '').trim();
-
-  setWelcomeMessage(info);
-  if (finalUser) {
-    await rememberLoggedInAccount(finalUser, info);
-  }
-
-  await jsessionSyncPromise;
   await Promise.allSettled(reloadPromises);
-  return { userId: finalUser, info, accountMismatch };
+  return { userId: finalUser, info, accountMismatch: false };
 }
 
 function startVeStartupAccountInfoLoad() {
   if (!isPlatformEnabled('ve')) return Promise.resolve(null);
-  return syncAccountInfoAndReloadVeCourses({
+  return refreshCurrentVeAccountFromSession({
     reloadCourses: false,
     reloadResourceSpace: false
   }).catch(() => null);
@@ -1803,7 +1758,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
     opt.hidden = true;
     const selectedName = String(selectedRecord.userName || selectedRecord.userId || '未知用户').trim();
     const selectedRole = String(selectedRecord.roleName || '').trim();
-    const selectedQuick = selectedRecord.quickUsername ? ' [免验证码]' : '';
+    const selectedQuick = selectedRecord.quickUsername ? ' [快速]' : '';
     // 选中项只显示 userName
     opt.textContent = `${selectedRole}${selectedName}${selectedQuick}`;
     accountHistorySelect.appendChild(opt);
@@ -1818,7 +1773,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
       const roleName = String(it.roleName || '').trim();
       const loginName = String(it.loginName || '').trim();
       const loginSuffix = loginName ? ` (${loginName})` : '';
-      const quickSuffix = it.quickUsername ? ' [免验证码]' : '';
+      const quickSuffix = it.quickUsername ? ' [快速]' : '';
       // 展开列表显示 userName(loginName)
       opt.textContent = `${roleName}${userName}${loginSuffix}${quickSuffix}`;
       accountHistorySelect.appendChild(opt);
@@ -2036,6 +1991,7 @@ async function rememberLoggedInAccount(userId, info = null) {
   };
   if (idx >= 0) loginAccountHistory.splice(idx, 1);
   loginAccountHistory.unshift(record);
+  await globalThis.BjtuAccountLogin?.updatePassword?.(uid, record.passwordMd5);
   await saveLoginAccountHistory();
   renderLoginAccountHistorySelect(uid);
 }
@@ -2103,15 +2059,6 @@ async function fetchText(url, options = {}) {
   return { res, text };
 }
 
-async function detectUserIdFromPersonalCenter() {
-  try {
-    const info = await fetchUserInfoRemote();
-    return String(info?.loginName || info?.userId || info?.userID || info?.stuId || info?.teacherId || '').trim();
-  } catch {
-    return '';
-  }
-}
-
 function parseAlertMsg(html) {
   const arr = [...String(html || '').matchAll(/alert\((['"])(.*?)\1\)/g)];
   if (!arr.length) return '';
@@ -2131,71 +2078,6 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
 }
 
 // -------------------- Login --------------------
-function isCaptchaErrorMessage(msg = '') {
-  return /验证码/i.test(String(msg || ''));
-}
-
-function isCredentialErrorMessage(msg = '') {
-  const t = String(msg || '');
-  if (!t || isCaptchaErrorMessage(t)) return false;
-  if (isAccountLockedMessage(t)) return false;
-  return /账号或密码/i.test(t);
-}
-
-function isAccountLockedMessage(msg = '') {
-  return /锁定|错误次数过多/i.test(String(msg || ''));
-}
-
-function getDefaultPortalPasswordMd5(loginName) {
-  const id = String(loginName || '').trim();
-  if (id === AUXILIARY_LOGIN_ID) return AUXILIARY_LOGIN_PASSWORD_MD5;
-  return md5(`Bjtu@${id}`);
-}
-
-function looksLikeLoginSuccess(html) {
-  const t = String(html || '');
-  return t.includes('跳转首页') || t.includes('top.location') || t.includes('退出登录') || t.includes('index.shtml?method=index&type=qxkt');
-}
-
-async function fetchPasswordMd5FromServer(userId) {
-  const uid = String(userId || '').trim();
-  if (!uid) return '';
-  const infoUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(uid)}`;
-  const { text: infoText } = await fetchText(infoUrl, {
-    headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-  });
-  if ((infoText || '').includes('login-page') || isSessionEndedHtml(infoText)) return '';
-
-  const studentUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=studentInfo&stuId=${encodeURIComponent(uid)}`;
-  const teacherUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=personInfo&teacherId=${encodeURIComponent(uid)}`;
-  const urls = (infoText || '').includes('学生') ? [studentUrl, teacherUrl] : [teacherUrl, studentUrl];
-  for (const url of urls) {
-    const { text } = await fetchText(url);
-    if ((text || '').includes('login-page') || isSessionEndedHtml(text)) return '';
-    const m = String(text || '').match(/(?:id|name)=["']oldpassword["'][^>]*value=["']([^"']+)["']/i)
-      || String(text || '').match(/value=["']([^"']+)["'][^>]*(?:id|name)=["']oldpassword["']/i);
-    if (m?.[1]) return String(m[1] || '').trim();
-  }
-  return '';
-}
-
-async function fetchPasswordMd5WithKnownInfo(userId, userInfoRawText) {
-  const uid = String(userId || '').trim();
-  if (!uid) return '';
-  const isStudent = String(userInfoRawText || '').includes('学生');
-  const studentUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=studentInfo&stuId=${encodeURIComponent(uid)}`;
-  const teacherUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=personInfo&teacherId=${encodeURIComponent(uid)}`;
-  const urls = isStudent ? [studentUrl, teacherUrl] : [teacherUrl, studentUrl];
-  for (const url of urls) {
-    const { text } = await fetchText(url);
-    if ((text || '').includes('login-page') || isSessionEndedHtml(text)) return '';
-    const m = String(text || '').match(/(?:id|name)=["']oldpassword["'][^>]*value=["']([^"']+)["']/i)
-      || String(text || '').match(/value=["']([^"']+)["'][^>]*(?:id|name)=["']oldpassword["']/i);
-    if (m?.[1]) return String(m[1] || '').trim();
-  }
-  return '';
-}
-
 function getLoginFallbackUsername(targetUsername = '') {
   const target = String(targetUsername || '').trim();
   const pendingFrom = String(pendingUsernameChange?.from || '').trim();
@@ -2223,74 +2105,18 @@ async function restoreLoginFallbackUsername(targetUsername = '') {
   return fallback;
 }
 
-async function validateAccountByGetUserInfo(userId, { signal } = {}) {
-  const uid = String(userId || '').trim();
-  if (!uid) return { ok: false, reason: 'empty-username', message: '请输入账号' };
-  const infoUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo&userId=${encodeURIComponent(uid)}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  const externalAbortHandler = () => {
-    try { controller.abort(); } catch { /* ignore */ }
-  };
-  if (signal instanceof AbortSignal) {
-    if (signal.aborted) {
-      try { controller.abort(); } catch { /* ignore */ }
-    } else {
-      signal.addEventListener('abort', externalAbortHandler, { once: true });
-    }
-  }
-  try {
-    const { res, text } = await fetchText(infoUrl, {
-      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' },
-      signal: controller.signal
-    });
-    const htmlOrText = String(text || '');
-    if (htmlOrText.includes('login-page') || isSessionEndedHtml(htmlOrText) || isLikelyLoginPageHtml(htmlOrText, res?.url)) {
-      return { ok: false, reason: 'session-invalid', message: '未登录或会话已失效' };
-    }
-    const data = parseVeJson(htmlOrText);
-    if (data && String(data.STATUS) === '4') {
-      return { ok: false, reason: 'invalid-account', message: '该账号不存在' };
-    }
-    return { ok: true, info: data, status: data?.STATUS || '', rawText: htmlOrText };
-  } catch (e) {
-    if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
-    return { ok: false, reason: 'network', message: '账号验证失败，请稍后重试' };
-  } finally {
-    clearTimeout(timeoutId);
-    if (signal instanceof AbortSignal) {
-      try { signal.removeEventListener('abort', externalAbortHandler); } catch { /* ignore */ }
-    }
-  }
-}
-
 async function validateUsernameBeforeLoginStart(userId, { signal } = {}) {
   const uid = String(userId || '').trim();
   if (!uid) return { ok: false, status: 'empty', message: '请输入账号' };
-  const knownAccount = findLoginAccountRecord(uid);
-  if (knownAccount) {
-    return { ok: true, status: 'needs-post-login', info: knownAccount };
+  if (signal?.aborted) return { ok: false, status: 'cancelled', message: '已取消' };
+  try {
+    await globalThis.BjtuAccountLogin?.ensureInitialized?.({ showProgress: true });
+  } catch {
+    return { ok: false, status: 'unknown', message: '账号列表初始化失败' };
   }
-  const cachedValidation = loginAccountValidationCache
-    && loginAccountValidationCache.userId === uid
-    && Date.now() - Number(loginAccountValidationCache.ts || 0) < 10000
-    ? loginAccountValidationCache.validation
-    : null;
-  const validation = cachedValidation || await validateAccountByGetUserInfo(uid, { signal });
-  loginAccountValidationCache = { userId: uid, ts: Date.now(), validation };
-  if (!validation.ok) {
-    if (validation.reason === 'invalid-account') {
-      return { ok: false, status: 'invalid', message: '该账号不存在' };
-    }
-    if (validation.reason === 'cancelled') {
-      return { ok: false, status: 'cancelled', message: '已取消' };
-    }
-    if (validation.reason !== 'session-invalid') {
-      return { ok: false, status: 'unknown', message: validation.message || '账号验证失败，请稍后重试' };
-    }
-  }
-  const info = validation.info?.result || validation.info || null;
-  return { ok: true, status: 'needs-post-login', info };
+  if (signal?.aborted) return { ok: false, status: 'cancelled', message: '已取消' };
+  const info = getLocalAccountInfo(uid);
+  return { ok: true, status: 'needs-post-login', info, accountMissing: !info };
 }
 
 async function saveLoginAccountCredential(userId, passwordMd5 = '') {
@@ -2311,421 +2137,33 @@ async function saveLoginAccountCredential(userId, passwordMd5 = '') {
   renderLoginAccountHistorySelect(uid);
 }
 
-let veTessWorkerPromise = null;
-
-async function getVeTessWorker() {
-  if (veTessWorkerPromise) return veTessWorkerPromise;
-  veTessWorkerPromise = (async () => {
-    const T = globalThis.Tesseract;
-    if (!T || typeof T.createWorker !== 'function') throw new Error('Tesseract 未加载');
-    const options = {
-      logger: () => {},
-      workerBlobURL: false,
-      workerPath: chrome.runtime.getURL('vendor/tesseract/worker.min.js'),
-      corePath: chrome.runtime.getURL('vendor/tesseract/tesseract-core-simd.wasm.js')
-    };
-    let worker;
-    try {
-      worker = await T.createWorker('eng', 1, options);
-    } catch {
-      worker = await T.createWorker('eng', 1, options);
-    }
-    if (worker.setParameters) {
-      await worker.setParameters({
-        tessedit_char_whitelist: '0123456789',
-        tessedit_pageseg_mode: '7'
-      });
-    }
-    return worker;
-  })();
-  return veTessWorkerPromise;
-}
-
-function preprocessCaptchaImageToCanvas(img) {
-  const w = Math.max(1, img.naturalWidth || img.width || 1);
-  const h = Math.max(1, img.naturalHeight || img.height || 1);
-  const canvas = document.createElement('canvas');
-  canvas.width = w * 2;
-  canvas.height = h * 2;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  for (let i = 0; i < data.data.length; i += 4) {
-    const gray = 0.299 * data.data[i] + 0.587 * data.data[i + 1] + 0.114 * data.data[i + 2];
-    const v = gray < 160 ? 0 : 255;
-    data.data[i] = v;
-    data.data[i + 1] = v;
-    data.data[i + 2] = v;
-    data.data[i + 3] = 255;
-  }
-  ctx.putImageData(data, 0, 0);
-  return canvas;
-}
-
-async function loadImageFromBlob(blob) {
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = new Image();
-    img.decoding = 'async';
-    img.src = url;
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-    });
-    return img;
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-}
-
-async function fetchPortalCaptchaImageUrl({ signal } = {}) {
-  const fetchController = new AbortController();
-  const fetchTimeout = setTimeout(() => fetchController.abort(), 5000);
-  const externalAbortHandler = () => {
-    try { fetchController.abort(); } catch { /* ignore */ }
-  };
-  if (signal instanceof AbortSignal) {
-    if (signal.aborted) {
-      try { fetchController.abort(); } catch { /* ignore */ }
-    } else {
-      signal.addEventListener('abort', externalAbortHandler, { once: true });
-    }
-  }
-  try {
-    await enforceJsessionidBeforeLoginRequest();
-    const res = await fetch(`${BASE_VE}GetImg?t=${Date.now()}`, {
-      credentials: 'include',
-      cache: 'no-store',
-      headers: { Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' },
-      signal: fetchController.signal
-    });
-    const blob = await res.blob();
-    return { blob, imageUrl: URL.createObjectURL(blob) };
-  } finally {
-    clearTimeout(fetchTimeout);
-    if (signal instanceof AbortSignal) {
-      try { signal.removeEventListener('abort', externalAbortHandler); } catch {}
-    }
-  }
-}
-
-async function recognizePortalCaptchaInExtension({ signal } = {}) {
-  const OVERALL_TIMEOUT_MS = 8000;
-  const TESS_TIMEOUT_MS = 6000;
-  const overallTimer = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('recognize-overall-timeout')), OVERALL_TIMEOUT_MS);
-  });
-  let imageUrl = null;
-  const work = (async () => {
-    const fetched = await fetchPortalCaptchaImageUrl({ signal });
-    imageUrl = fetched.imageUrl;
-    const img = await loadImageFromBlob(fetched.blob);
-    const worker = await getVeTessWorker();
-    const canvas = preprocessCaptchaImageToCanvas(img);
-    const tessRace = Promise.race([
-      worker.recognize(canvas),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('tess-timeout')), TESS_TIMEOUT_MS))
-    ]);
-    const { data } = await tessRace;
-    return { code: String(data?.text || '').replace(/\D/g, '').slice(0, 4), imageUrl };
-  })();
-  try {
-    return await Promise.race([work, overallTimer]);
-  } catch {
-    if (imageUrl) { try { URL.revokeObjectURL(imageUrl); } catch {} }
-    return null;
-  }
-}
-
-
-
-async function loginPostInExtension(username, passwordMd5, passcode, { signal } = {}) {
+async function loginPasswordGet(username, passwordMd5, { signal } = {}) {
   await enforceJsessionidBeforeLoginRequest();
-  const body = new URLSearchParams({
-    login: 'main_2',
-    qxkt_type: '',
-    qxkt_url: '',
-    username: String(username || ''),
-    password: String(passwordMd5 || ''),
-    passcode: String(passcode || '')
-  });
-  const { res, text } = await fetchText(`${BASE_VE}s.shtml`, {
-    method: 'POST',
-    omitSessionId: true,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      Origin: BASE
-    },
-    body: body.toString(),
-    signal
-  });
-  await syncJsessionidFromResponse(res);
-  const alertMsg = parseAlertMsg(text);
-  if (alertMsg && isCaptchaErrorMessage(alertMsg)) return { ok: false, reason: 'captcha', message: alertMsg };
-  if (alertMsg && isAccountLockedMessage(alertMsg)) return { ok: false, reason: 'locked', message: alertMsg };
-  if (alertMsg && isCredentialErrorMessage(alertMsg)) return { ok: false, reason: 'credential', message: alertMsg };
-  if (looksLikeLoginSuccess(text)) return { ok: true };
-  return { ok: false, reason: 'other', message: alertMsg || '登录失败' };
-}
-
-async function waitForManualCaptchaCode({ imageUrl = null, status = '请输入验证码', level = 'info', signal, allowEmptyAutoRetry = false } = {}) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const cleanup = () => {
-      if (captchaModalInput instanceof HTMLInputElement) {
-        try { captchaModalInput.removeEventListener('keydown', onKeyDown); } catch {}
-        try { captchaModalInput.removeEventListener('input', onInput); } catch {}
-      }
-      if (captchaModalImg instanceof HTMLImageElement) {
-        try { captchaModalImg.removeEventListener('click', refresh); } catch {}
-      }
-      if (signal instanceof AbortSignal) {
-        try { signal.removeEventListener('abort', onAbort); } catch {}
-      }
-    };
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(result);
-    };
-    const submit = () => {
-      const code = String(captchaModalInput?.value || '').replace(/\D/g, '').slice(0, 4);
-      if (!code && allowEmptyAutoRetry) {
-        finish({ action: 'auto-retry' });
-        return;
-      }
-      if (!/^\d{4}$/.test(code)) {
-        setCaptchaModalStatus(allowEmptyAutoRetry ? '请输入4位数字验证码，或留空回车继续自动识别' : '请输入4位数字验证码', 'warning');
-        if (captchaModalInput instanceof HTMLInputElement) captchaModalInput.focus();
-        return;
-      }
-      finish({ action: 'submit', code });
-    };
-    const refresh = () => finish({ action: 'refresh' });
-    const cancel = () => finish({ action: 'cancel' });
-    const onKeyDown = (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        submit();
-      }
-    };
-    const onInput = () => {
-      if (!(captchaModalInput instanceof HTMLInputElement)) return;
-      const code = String(captchaModalInput.value || '').replace(/\D/g, '').slice(0, 4);
-      if (captchaModalInput.value !== code) captchaModalInput.value = code;
-      if (code.length === 4) submit();
-    };
-    const onAbort = () => finish({ action: 'cancel' });
-    if (captchaModalInput instanceof HTMLInputElement) {
-      captchaModalInput.value = '';
-      captchaModalInput.placeholder = '请输入4位验证码';
-      captchaModalInput.addEventListener('keydown', onKeyDown);
-      captchaModalInput.addEventListener('input', onInput);
-    }
-    if (captchaModalImg instanceof HTMLImageElement) {
-      captchaModalImg.addEventListener('click', refresh);
-    }
-    if (signal instanceof AbortSignal) {
-      if (signal.aborted) return finish({ action: 'cancel' });
-      signal.addEventListener('abort', onAbort, { once: true });
-    }
-    showCaptchaModal({
-      imageUrl,
-      status,
-      level,
-      spinner: false,
-      cancelHandler: cancel
-    });
-    if (captchaModalInput instanceof HTMLInputElement) {
-      setTimeout(() => captchaModalInput.focus(), 0);
-    }
-  });
-}
-
-async function loginPostWithManualCaptchaInExtension(username, passwordMd5, { signal, allowEmptyAutoRetry = false } = {}) {
-  let last = { ok: false, reason: 'captcha', message: '验证码错误' };
-  try {
-    for (let i = 0; i < 5; i++) {
-      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
-      let fetched = null;
-      let userCancelled = false;
-      try {
-        showCaptchaModal({
-          imageUrl: null,
-          status: '正在加载验证码…',
-          level: 'info',
-          spinner: true,
-          cancelHandler: () => {
-            userCancelled = true;
-            hideCaptchaModal();
-          }
-        });
-        fetched = await fetchPortalCaptchaImageUrl({ signal });
-      } catch {
-        if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
-        return { ok: false, reason: 'captcha', message: '验证码加载失败' };
-      }
-      if (userCancelled) return { ok: false, reason: 'manual-captcha-cancelled', message: '登录失败' };
-      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
-      const prompt = await waitForManualCaptchaCode({
-        imageUrl: fetched.imageUrl,
-        status: i === 0
-          ? (allowEmptyAutoRetry ? '请输入验证码，或留空回车继续自动识别' : '请输入验证码后提交')
-          : `验证码错误：${last.message || '请重新输入'}${allowEmptyAutoRetry ? '；可留空回车继续自动识别' : ''}`,
-        level: i === 0 ? 'info' : 'warning',
-        signal,
-        allowEmptyAutoRetry
-      });
-      if (prompt.action === 'cancel') return { ok: false, reason: 'manual-captcha-cancelled', message: '登录失败' };
-      if (prompt.action === 'refresh') continue;
-      if (prompt.action === 'auto-retry') return { ok: false, reason: 'auto-retry', message: '继续自动识别' };
-      showCaptchaModal({
-        imageUrl: fetched.imageUrl,
-        status: '正在提交登录…',
-        level: 'info',
-        spinner: true,
-        cancelHandler: () => {
-          userCancelled = true;
-          hideCaptchaModal();
-        }
-      });
-      last = await loginPostInExtension(username, passwordMd5, prompt.code, { signal });
-      if (userCancelled) return { ok: false, reason: 'manual-captcha-cancelled', message: '登录失败' };
-      if (last.ok || last.reason !== 'captcha') {
-        hideCaptchaModal();
-        return last;
-      }
-      showToast(last.message || '验证码错误', 'warning', 1600);
-    }
-    return last;
-  } finally {
-    hideCaptchaModal();
+  const result = await globalThis.BjtuAccountLogin.loginWithPassword(username, passwordMd5, { signal });
+  if (result?.reason === 'password-reset') {
+    const resetUrl = BASE_VE + 'CheckEmail.shtml?method=resetPassword&username=' + encodeURIComponent(String(username || '').trim());
+    chrome.tabs.create({ url: resetUrl, active: true }).catch(() => {});
   }
-}
-
-async function loginPostWithCaptchaInExtension(username, passwordMd5, { signal } = {}) {
-  const autoCaptcha = await getLocal('autoCaptcha', 'true');
-  if (autoCaptcha !== 'true' && autoCaptcha !== true) {
-    return loginPostWithManualCaptchaInExtension(username, passwordMd5, { signal });
-  }
-  let last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
-  let stopCaptchaAutoRetry = false;
-  const cancelHandler = () => {
-    stopCaptchaAutoRetry = true;
-    last = { ok: false, reason: 'manual-captcha-cancelled', message: '登录失败' };
-    hideCaptchaModal();
-  };
-  try {
-    for (let i = 0; i < 3; i++) {
-      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
-      if (stopCaptchaAutoRetry) return last;
-      showCaptchaModal({
-        imageUrl: null,
-        status: `正在识别验证码 (${i + 1}/3)…`,
-        level: 'info',
-        spinner: false,
-        cancelHandler
-      });
-      const result = await recognizePortalCaptchaInExtension({ signal });
-      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
-      if (stopCaptchaAutoRetry) return last;
-      const code = String(result?.code || '').trim();
-      const imageUrl = result?.imageUrl || null;
-      if (!/^\d{4}$/.test(code)) {
-        last = { ok: false, reason: 'captcha', message: '验证码识别失败' };
-        showCaptchaModal({
-          imageUrl,
-          status: `本轮识别失败 (${i + 1}/3)，正在重新识别…`,
-          level: 'warning',
-          spinner: false,
-          cancelHandler
-        });
-        await new Promise((resolve) => setTimeout(resolve, 350));
-        if (stopCaptchaAutoRetry) return last;
-        continue;
-      }
-      if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '已取消' };
-      if (stopCaptchaAutoRetry) return last;
-      if (captchaModalInput instanceof HTMLInputElement) {
-        captchaModalInput.value = code;
-      }
-      showCaptchaModal({
-        imageUrl,
-        status: `正在提交登录…`,
-        level: 'info',
-        spinner: false,
-        cancelHandler
-      });
-      last = await loginPostInExtension(username, passwordMd5, code, { signal });
-      if (last.ok || last.reason !== 'captcha') {
-        hideCaptchaModal();
-        return last;
-      }
-      showToast(last.message || '验证码错误', 'warning', 1600);
-      if (stopCaptchaAutoRetry) return last;
-      if (i < 2) {
-        showCaptchaModal({
-          imageUrl,
-          status: `验证码错误：${last.message || '请重试'}，正在重新识别 (${i + 2}/3)…`,
-          level: 'warning',
-          spinner: false,
-          cancelHandler
-        });
-      } else {
-        showCaptchaModal({
-          imageUrl,
-          status: `验证码连续错误，请手动输入验证码，或留空回车继续自动识别`,
-          level: 'warning',
-          spinner: false,
-          cancelHandler
-        });
-        const manualResult = await loginPostWithManualCaptchaInExtension(username, passwordMd5, {
-          signal,
-          allowEmptyAutoRetry: true
-        });
-        if (manualResult?.reason === 'auto-retry') {
-          i = -1;
-          last = { ok: false, reason: 'captcha', message: '继续自动识别' };
-          continue;
-        }
-        return manualResult;
-      }
-    }
-    return last;
-  } finally {
-    hideCaptchaModal();
-  }
+  return result;
 }
 
 async function loginGet(username, { signal } = {}) {
-  const account = findLoginAccountRecord(username);
+  const account = getLocalAccountInfo(username);
   const quickUsername = String(account?.quickUsername || '').trim();
   if (!quickUsername) {
-    return { ok: false, reason: 'needs-post-login', message: '需要验证码登录' };
+    return { ok: false, reason: 'needs-password', message: '未绑定快速登录 username' };
   }
-  const url = `${BASE_VE}s.shtml?loginType=2&login=main_2&username=${encodeURIComponent(quickUsername)}`;
-  const { res, text } = await fetchText(url, { method: 'GET', credentials: 'include', signal });
-  await syncJsessionidFromResponse(res);
-  if (text.includes('账号或密码错误')) {
-    return { ok: false, reason: 'invalid-account', message: '绑定的快速登录 username 已失效' };
+  const result = await globalThis.BjtuAccountLogin.loginWithQuickUsername(quickUsername, { signal });
+  if (!result.ok && result.reason === 'credential') {
+    return { ...result, reason: 'invalid-account', message: '绑定的快速登录 username 已失效' };
   }
-  if (text.includes('index.shtml?method=index&type=qxkt')) {
-    return { ok: true };
-  }
-  return { ok: false, reason: 'other', message: '登录失败' };
+  return result;
 }
 
 
 
 function hideLoginModal() {
   loginModal.style.display = 'none';
-}
-
-function showLoginModal() {
-  if (loginModal) loginModal.style.display = 'flex';
 }
 
 function dismissLoginModal({ abort = true } = {}) {
@@ -2740,7 +2178,6 @@ function dismissLoginModal({ abort = true } = {}) {
     if (backTo) {
       syncAccountInfoAndReloadVeCourses({
         userId: backTo,
-        detectFromPortal: false,
         reloadCourses: false,
         reloadResourceSpace: true
       }).catch(() => {});
@@ -2760,225 +2197,9 @@ if (loginModal) {
   });
 }
 
-const captchaModal = document.getElementById('captcha-modal');
-const captchaModalImg = document.getElementById('captcha-modal-img');
-const captchaModalStatus = document.getElementById('captcha-modal-status');
-const captchaModalInput = document.getElementById('captcha-modal-input');
-const captchaModalSpinner = document.getElementById('captcha-modal-spinner');
-const captchaModalCancel = document.getElementById('captcha-modal-cancel');
-let currentCaptchaImageUrl = null;
-let captchaModalCancelHandler = null;
-
-function setCaptchaModalStatus(text, level = 'info') {
-  if (!(captchaModalStatus instanceof HTMLElement)) return;
-  captchaModalStatus.classList.remove('is-error', 'is-warning');
-  if (level === 'error') captchaModalStatus.classList.add('is-error');
-  else if (level === 'warning') captchaModalStatus.classList.add('is-warning');
-  captchaModalStatus.textContent = String(text || '');
-}
-
-function setCaptchaModalSpinner(visible) {
-  if (!(captchaModalSpinner instanceof HTMLElement)) return;
-  captchaModalSpinner.style.display = visible ? 'flex' : 'none';
-}
-
-function setCaptchaModalImage(imageUrl) {
-  if (imageUrl && imageUrl === currentCaptchaImageUrl) {
-    if (captchaModalImg instanceof HTMLImageElement) captchaModalImg.src = imageUrl;
-    return;
-  }
-  if (currentCaptchaImageUrl) {
-    try { URL.revokeObjectURL(currentCaptchaImageUrl); } catch {}
-    currentCaptchaImageUrl = null;
-  }
-  if (imageUrl) {
-    currentCaptchaImageUrl = imageUrl;
-    if (captchaModalImg instanceof HTMLImageElement) captchaModalImg.src = imageUrl;
-  } else {
-    if (captchaModalImg instanceof HTMLImageElement) captchaModalImg.removeAttribute('src');
-  }
-}
-
-function showCaptchaModal({
-  imageUrl = null,
-  status = '正在准备验证码…',
-  level = 'info',
-  spinner = false,
-  cancelHandler = null
-} = {}) {
-  if (!(captchaModal instanceof HTMLElement)) return;
-  setCaptchaModalImage(imageUrl);
-  setCaptchaModalStatus(status, level);
-  setCaptchaModalSpinner(spinner);
-  // 绑定/解绑取消按钮；验证码图片点击由具体等待流程绑定为刷新。
-  if (captchaModalCancel instanceof HTMLButtonElement) {
-    if (captchaModalCancelHandler) {
-      try { captchaModalCancel.removeEventListener('click', captchaModalCancelHandler); } catch {}
-    }
-    captchaModalCancelHandler = typeof cancelHandler === 'function' ? cancelHandler : null;
-    if (captchaModalCancelHandler) {
-      captchaModalCancel.addEventListener('click', captchaModalCancelHandler);
-      captchaModalCancel.textContent = '取消';
-      captchaModalCancel.style.display = '';
-    } else {
-      captchaModalCancel.style.display = 'none';
-    }
-  }
-  captchaModal.style.display = 'flex';
-}
-
-function hideCaptchaModal() {
-  if (!(captchaModal instanceof HTMLElement)) return;
-  captchaModal.style.display = 'none';
-  setCaptchaModalImage(null);
-  setCaptchaModalSpinner(false);
-  if (captchaModalCancel instanceof HTMLButtonElement && captchaModalCancelHandler) {
-    try { captchaModalCancel.removeEventListener('click', captchaModalCancelHandler); } catch {}
-    captchaModalCancelHandler = null;
-  }
-}
-
-if (captchaModal instanceof HTMLElement) {
-  captchaModal.addEventListener('mousedown', (e) => {
-    captchaModal.dataset.mdownMask = e.target === captchaModal ? '1' : '0';
-  });
-  captchaModal.addEventListener('mouseup', (e) => {
-    if (e.target === captchaModal && captchaModal.dataset.mdownMask === '1') {
-      // 点遮罩等价于点取消
-      if (captchaModalCancelHandler) {
-        try { captchaModalCancelHandler(); } catch {}
-      } else {
-        hideCaptchaModal();
-      }
-    }
-    delete captchaModal.dataset.mdownMask;
-  });
-}
 const loginModalClose = document.getElementById('login-modal-close');
 if (loginModalClose instanceof HTMLButtonElement) {
   loginModalClose.addEventListener('click', () => dismissLoginModal());
-}
-
-let portalLoginTabId = null;
-
-async function ensurePortalLoginTab(active = false) {
-  try {
-    if (portalLoginTabId) {
-      const tab = await chrome.tabs.get(portalLoginTabId);
-      if (tab?.id) {
-        await chrome.tabs.update(tab.id, { active });
-        return tab;
-      }
-    }
-  } catch {
-    portalLoginTabId = null;
-  }
-
-  const tab = await chrome.tabs.create({ url: `${BASE_VE}`, active });
-  portalLoginTabId = tab?.id || null;
-  return tab;
-}
-
-async function closePortalLoginTab() {
-  if (!portalLoginTabId) return;
-  try {
-    await chrome.tabs.remove(portalLoginTabId);
-  } catch {
-    // ignore
-  }
-  portalLoginTabId = null;
-}
-
-async function openPortalForInitialLogin() {
-  await doLoginFlow();
-}
-
-let lastPortalLoginTime = 0;
-async function openPortalLoginForInvalidSession() {
-  if (Date.now() - lastPortalLoginTime < 1200) return;
-  lastPortalLoginTime = Date.now();
-  const username = String(usernameInput.value || '').trim();
-  const account = findLoginAccountRecord(username);
-  const tabResp = await chrome.runtime.sendMessage({
-    type: 'OPEN_PORTAL_LOGIN_TAB',
-    payload: {
-      username,
-      passwordMd5: String(account?.passwordMd5 || '').trim()
-    }
-  });
-  if (!tabResp?.ok) {
-    showToast(tabResp?.error || '无法打开智慧课程平台登录页', 'error');
-    return;
-  }
-  const synced = await waitAndSyncLoginFromPortal(tabResp.tabId, 180000, username);
-  if (!synced) showToast('登录未完成或超时', 'warning');
-}
-
-async function routeLoginBySessionValidityForSwitch(targetUsername, _modalMessage) {
-  jsessionidInput.value = '';
-  isLoginSessionValid = true;
-  usernameInput.value = targetUsername;
-  await doLoginFlow();
-}
-
-async function waitTabComplete(tabId, timeoutMs = 15000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab && tab.status === 'complete') return true;
-    } catch {
-      return false;
-    }
-    await new Promise(r => setTimeout(r, 150));
-  }
-  return false;
-}
-
-async function waitAndSyncLoginFromPortal(tabIdToClose = null, maxWaitMs = 120000, expectedUserId = '') {
-  const expected = String(expectedUserId || '').trim();
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    try {
-      const detected = await detectUserIdFromPersonalCenter();
-      if (detected) {
-        if (expected && String(detected) !== expected) {
-          await new Promise(r => setTimeout(r, 300));
-          continue;
-        }
-        await syncJsessionidToUi();
-        loginCancelRequested = false;
-        await closePortalLoginTab();
-        hideLoginModal();
-        try {
-          await syncAccountInfoAndReloadVeCourses({ userId: detected, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true });
-        } catch {
-          // ignore
-        }
-        showToast('登录成功', 'success', 1800);
-
-        if (isPlatformEnabled('jlgj') || window.platformInteractiveLoginPending?.jlgj) {
-          closeJlgjLoginAssistPopup(false);
-          scheduleJlgjLoginAssistRecheck(180);
-        }
-
-        if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
-
-        runPendingLoginCallbacks();
-
-        if (isPlatformEnabled('ve')) {
-          await loadCourses();
-        }
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-    await new Promise(r => setTimeout(r, 100));
-  }
-  await closePortalLoginTab();
-  if (tabIdToClose) chrome.tabs.remove(tabIdToClose).catch(() => {});
-  return false;
 }
 
 async function handleLoginSuccess(username) {
@@ -3000,87 +2221,36 @@ async function handleLoginSuccess(username) {
   runPendingLoginCallbacks();
   showToast('登录成功', 'success');
 
-  try {
-    const synced = await syncAccountInfoAndReloadVeCourses({
-      userId: finalUser,
-      detectFromPortal: false,
-      reloadCourses: true,
-      reloadResourceSpace: true,
-      expectedUserId: finalUser
-    });
-    if (synced?.accountMismatch) {
-      showToast(`登录后检测到仍是账号 ${synced.userId}，未切换到 ${finalUser}`, 'error', 3500);
-      isLoginSessionValid = false;
-    }
-  } catch {
-    // ignore
-  }
-}
-
-async function bootstrapSessionForGetPassword(excludeUserId, { signal } = {}) {
-  const exclude = String(excludeUserId || '').trim();
-  const candidates = normalizeLoginAccountHistoryList(loginAccountHistory);
-
-  for (const account of candidates) {
-    if (loginCancelRequested || signal?.aborted) return null;
-    if (account.userId === exclude || account.loginName === exclude) continue;
-    if (account.quickUsername) {
-      const result = await loginGet(account.userId, { signal });
-      if (result.ok) {
-        showToast(`已通过 ${getAccountDisplayName(account.userId) || account.userId} 建立登录态`, 'info', 1500);
-        return account;
-      }
-    }
-  }
-
-  for (const account of candidates) {
-    if (loginCancelRequested || signal?.aborted) return null;
-    if (account.userId === exclude || account.loginName === exclude) continue;
-    if (account.passwordMd5) {
-      const result = await loginPostWithCaptchaInExtension(account.userId, account.passwordMd5, { signal });
-      if (result.ok) {
-        showToast(`已通过 ${getAccountDisplayName(account.userId) || account.userId} 建立登录态`, 'info', 1500);
-        return account;
-      }
-    }
-  }
-
-  if (candidates.length === 0) {
-    const helperId = AUXILIARY_LOGIN_ID;
-    const helperPw = AUXILIARY_LOGIN_PASSWORD_MD5;
-    const result = await loginPostWithCaptchaInExtension(helperId, helperPw, { signal });
-    if (result.ok) {
-      showToast(`已通过辅助账号 ${helperId} 建立登录态`, 'info', 1500);
-      return { userId: helperId };
-    }
-  }
-
-  return null;
+  await loadAutoLoadCourseResourcesSetting().catch(() => {});
+  await syncAccountInfoAndReloadVeCourses({
+    userId: finalUser,
+    reloadCourses: true,
+    reloadResourceSpace: true
+  }).catch(() => {});
 }
 
 async function doLoginFlow() {
   if (isLoginInProgress) return;
-  const username = usernameInput.value.trim();
+  const username = String(usernameInput.value || '').trim();
   if (!username) {
     showToast('请输入账号，或改为填写 JSESSIONID', 'warning');
     return;
   }
+
   loginFlowUsernameSet = true;
   usernameChangeVersion += 1;
-  try { usernameChangeAbortController?.abort(); } catch { /* ignore */ }
+  try { usernameChangeAbortController?.abort(); } catch {}
   prioritizeAccountSwitch();
   const wasSwitchingAccount = !!pendingUsernameChange;
-  const accountAtStart = findLoginAccountRecord(username);
-  let restoredAfterLoginFailure = false;
-  const restoreAfterLoginFailureIfNeeded = async () => {
-    if (restoredAfterLoginFailure) return '';
+  let restoredAfterFailure = false;
+  const restoreAfterFailure = async () => {
+    if (restoredAfterFailure) return;
+    restoredAfterFailure = true;
     const fallback = await restoreLoginFallbackUsername(username);
-    if (fallback) restoredAfterLoginFailure = true;
-    return fallback;
-  };
-  const handleLoginFailureBeforeReturn = async (result, fallbackMessage = '登录失败', type = 'error') => {
-    await restoreAfterLoginFailureIfNeeded();
-    showToast(result?.message || fallbackMessage, type, 3000);
+    if (fallback) {
+      await resumeVeAfterAccountSwitchFailure();
+      await loadResourceSpaceForCurrentAccount().catch(() => {});
+    }
   };
 
   if (loginBtn) {
@@ -3091,174 +2261,105 @@ async function doLoginFlow() {
   isLoginInProgress = true;
   loginCancelRequested = false;
   loginAbortController = new AbortController();
-  const loginSignal = loginAbortController.signal;
+  const signal = loginAbortController.signal;
 
   try {
-    // Step 1: per RULES.md, only unknown accounts need getUserInfo(loginName) STATUS 4 check.
-    let validation = { ok: true, info: null, status: '', rawText: '' };
-    if (!accountAtStart) {
-      showToast('正在验证账号…', 'info', 5000);
-      const cachedValidation = loginAccountValidationCache
-        && loginAccountValidationCache.userId === username
-        && Date.now() - Number(loginAccountValidationCache.ts || 0) < 10000
-        ? loginAccountValidationCache.validation
-        : null;
-      validation = cachedValidation || await validateAccountByGetUserInfo(username, { signal: loginSignal });
-      loginAccountValidationCache = { userId: username, ts: Date.now(), validation };
-      if (loginCancelRequested || loginSignal?.aborted) return;
-      if (!validation.ok) {
-        if (validation.reason === 'invalid-account') {
-          await restoreLoginFallbackUsername(username);
-          showToast(`账号${username}不存在，请检查后重试`, 'error', 3000);
+    showToast('正在读取账号列表…', 'info', 0);
+    await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
+    if (signal.aborted || loginCancelRequested) return;
+
+    let account = getLocalAccountInfo(username);
+    let manualPassword = '';
+    let recoveryMessage = account
+      ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
+      : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      if (signal.aborted || loginCancelRequested) return;
+
+      if (!manualPassword && account?.quickUsername) {
+        showToast('正在快速登录…', 'info', 0);
+        const quickResult = await loginGet(username, { signal });
+        if (signal.aborted || loginCancelRequested) return;
+        if (quickResult.ok) {
+          await handleLoginSuccess(username);
           return;
-        } else if (validation.reason === 'cancelled') {
-          return;
-        } else if (validation.reason !== 'session-invalid') {
-          await restoreAfterLoginFailureIfNeeded();
-          showToast(validation.message || '账号验证失败，请稍后重试', 'warning', 2500);
+        }
+        if (quickResult.reason === 'locked') {
+          await restoreAfterFailure();
+          showToast(quickResult.message || '账号已锁定，请稍后再试', 'error', 4000);
           return;
         }
       }
-    }
 
-    // Step 2+3: getUserInfo() (no params) -> session check
-    let loginStatus = false;
-    let currentSessionInfo = null;
-    try {
-      showToast('正在检查登录状态…', 'info', 0);
-      currentSessionInfo = await fetchUserInfoRemote();
-      loginStatus = currentSessionInfo && typeof currentSessionInfo === 'object';
-    } catch {
-      loginStatus = false;
-    }
+      const passwordMd5 = String(manualPassword || account?.passwordMd5 || '').trim();
+      manualPassword = '';
+      if (passwordMd5) {
+        showToast('正在登录…', 'info', 0);
+        const result = await loginPasswordGet(username, passwordMd5, { signal });
+        if (signal.aborted || loginCancelRequested) return;
+        if (result.ok) {
+          await saveLoginAccountCredential(username, passwordMd5);
+          await handleLoginSuccess(username);
+          return;
+        }
+        if (result.reason === 'locked' || result.reason === 'password-reset') {
+          await restoreAfterFailure();
+          showToast(result.message || '登录失败', 'error', 4000);
+          return;
+        }
+        if (result.reason !== 'credential') {
+          await restoreAfterFailure();
+          showToast(result.message || '登录失败', 'error', 3000);
+          return;
+        }
+        recoveryMessage = result.message || '账号或密码错误';
+      }
 
-    const currentUser = currentSessionInfo && typeof currentSessionInfo === 'object'
-      ? String(currentSessionInfo.loginName || currentSessionInfo.userId || '').trim()
-      : '';
-
-    if (loginStatus && currentUser === username) {
-      showToast('当前已登录该账号', 'success', 2000);
-      isLoginSessionValid = true;
-      usernameInput.value = username;
-      await syncAccountInfoAndReloadVeCourses({
-        userId: username,
-        detectFromPortal: false,
-        reloadCourses: true,
-        reloadResourceSpace: true,
-        expectedUserId: username,
-        knownUserInfo: currentSessionInfo
-      });
-      return;
-    }
-
-    // Step 4: Try login per RULES.md flow
-    //   if quickUsername != "" → quick login (no login state needed)
-    //   elif passwordMd5 != "" → password login (captcha retry 3x, password error → 获取密码)
-    //   else → default password login (captcha retry, password error → 获取密码)
-    const account = accountAtStart || findLoginAccountRecord(username);
-    const quickUsername = String(account?.quickUsername || '').trim();
-    let passwordMd5 = String(account?.passwordMd5 || '').trim();
-
-    if (quickUsername) {
-      showToast('正在通过免验证码登录…', 'info', 0);
-      const quickResult = await loginGet(username, { signal: loginSignal });
-      if (loginCancelRequested || loginSignal?.aborted) return;
-      if (quickResult.ok) {
-        await handleLoginSuccess(username);
+      const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage);
+      if (signal.aborted || loginCancelRequested) return;
+      if (recovery?.action === 'cancel') {
+        await restoreAfterFailure();
+        showToast('登录失败，已恢复原账号', 'warning', 2200);
         return;
       }
-      if (quickResult.reason !== 'invalid-account') {
-        await handleLoginFailureBeforeReturn(quickResult, '快速登录失败', 'warning');
-        return;
+      if (recovery?.action === 'reinitialize') {
+        try {
+          await globalThis.BjtuAccountLogin.initialize({ force: true, showProgress: true });
+          account = getLocalAccountInfo(username);
+          recoveryMessage = account
+            ? '账号列表已更新，正在使用最新密码重试。'
+            : '重新初始化后仍未找到该账号，可手动输入密码或取消。';
+          if (account) continue;
+        } catch (error) {
+          recoveryMessage = '账号列表初始化失败：' + String(error?.message || error);
+        }
+        continue;
       }
-      showToast('快速登录已过期，尝试密码登录…', 'info', 0);
-    }
-
-    // Try password login (saved password or default password)
-    const tryPasswordLogin = async (pw) => {
-      const result = await loginPostWithCaptchaInExtension(username, pw, { signal: loginSignal });
-      if (loginCancelRequested || loginSignal?.aborted) return null;
-      if (result.ok) {
-        await saveLoginAccountCredential(username, pw);
-        await handleLoginSuccess(username);
-        return { success: true };
-      }
-      if (result.reason === 'cancelled') return { cancelled: true };
-      return result;
-    };
-
-    if (passwordMd5) {
-      showToast('正在登录…', 'info', 0);
-      const pwResult = await tryPasswordLogin(passwordMd5);
-      if (pwResult === null || pwResult.success || pwResult.cancelled) return;
-      if (pwResult.reason !== 'credential') {
-        await handleLoginFailureBeforeReturn(pwResult, '登录失败');
-        return;
-      }
-      // password error → 获取密码 (fall through)
-    } else {
-      // No saved password → try default password
-      showToast('正在登录…', 'info', 0);
-      const defaultPw = getDefaultPortalPasswordMd5(username);
-      const defResult = await tryPasswordLogin(defaultPw);
-      if (defResult === null || defResult.success || defResult.cancelled) return;
-      if (defResult.reason !== 'credential') {
-        await handleLoginFailureBeforeReturn(defResult, '登录失败');
-        return;
-      }
-      // default password error → 获取密码 (fall through)
-      passwordMd5 = defaultPw;
-    }
-
-    // Step 5: 获取密码 per RULES.md
-    //   a) Ensure login state
-    //   b) Read password from studentInfo/personInfo
-    //   c) Save password → retry password login
-    if (!loginStatus) {
-      showToast('正在建立登录态…', 'info', 0);
-      const bootstrapped = await bootstrapSessionForGetPassword(username, { signal: loginSignal });
-      if (loginCancelRequested || loginSignal?.aborted) return;
-      if (!bootstrapped) {
-        await restoreAfterLoginFailureIfNeeded();
-        showToast('无法建立登录态，请手动打开智慧课程平台登录后刷新，或填写 JSESSIONID', 'error', 4000);
-        return;
+      if (recovery?.action === 'password' && recovery.password) {
+        manualPassword = String(recovery.password).trim();
+        continue;
       }
     }
 
-    let fetchedPw = '';
-    if (validation.rawText) {
-      fetchedPw = await fetchPasswordMd5WithKnownInfo(username, validation.rawText).catch(() => '');
-    }
-    if (!fetchedPw) {
-      fetchedPw = await fetchPasswordMd5FromServer(username).catch(() => '');
-    }
-    if (!fetchedPw) fetchedPw = getDefaultPortalPasswordMd5(username);
-    passwordMd5 = fetchedPw;
-
-    showToast('正在登录…', 'info', 0);
-    const finalResult = await tryPasswordLogin(passwordMd5);
-    if (finalResult === null || finalResult.success || finalResult.cancelled) return;
-    if (finalResult.reason === 'credential') {
-      await restoreAfterLoginFailureIfNeeded();
-      showToast('账号或密码错误', 'error', 3000);
-      return;
-    }
-    await handleLoginFailureBeforeReturn(finalResult, '登录失败');
-  } catch (e) {
-    if (loginCancelRequested || loginSignal?.aborted) return;
-    console.error('Login error:', e);
-    await restoreAfterLoginFailureIfNeeded();
-    showToast('登录过程中出现异常', 'error');
+    await restoreAfterFailure();
+    showToast('登录尝试次数过多，已恢复原账号', 'error', 3000);
+  } catch (error) {
+    if (signal.aborted || loginCancelRequested) return;
+    console.error('Login error:', error);
+    await restoreAfterFailure();
+    showToast('登录过程中出现异常：' + String(error?.message || error), 'error', 3500);
   } finally {
     const switchModalClosed = !loginModal || loginModal.style.display === 'none';
     if (wasSwitchingAccount && pendingUsernameChange && switchModalClosed) {
       if (isPlatformEnabled('ve')) {
-        try { await loadCourses(); } catch { /* ignore */ }
+        try { await loadCourses(); } catch {}
       }
-      try { await loadResourceSpaceForCurrentAccount(); } catch { /* ignore */ }
+      try { await loadResourceSpaceForCurrentAccount(); } catch {}
     }
     isLoginInProgress = false;
     loginFlowUsernameSet = false;
+    loginAbortController = null;
     if (loginBtn) {
       loginBtn.disabled = false;
       loginBtn.style.opacity = '1';
@@ -4321,6 +3422,7 @@ async function fetchResourceSpaceListRaw(rows = 10, searchName = '') {
     body
   });
   if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, total: 0, result: [] };
+  if (String(text || '').trim() === '{}') return { loginRequired: false, total: 0, result: [] };
   let data = null;
   try { data = parseVeJson(text); } catch { data = null; }
   if (!data || typeof data !== 'object') return { loginRequired: true, total: 0, result: [] };
@@ -4504,139 +3606,146 @@ async function hydrateVeTeacherMeta(courseId, courseNum, fzId) {
   updateVeTeacherMetaUi(cid);
 }
 
-function formatVeClassNumber(n) {
-  const num = Math.max(1, Math.min(99, Number(n) || 1));
-  return String(num).padStart(2, '0');
+function normalizeVeReplayScheduleItem(item, index = 0) {
+  const raw = item && typeof item === 'object' ? item : {};
+  const videoId = String(raw.videoId || raw.params?.videoId || '').trim();
+  const classBeginTime = String(raw.classBeginTime || '').trim();
+  const classEndTime = String(raw.classEndTime || '').trim();
+  const courseBetween = String(raw.courseBetween || '').trim();
+  return {
+    ...raw,
+    rpId: videoId,
+    videoId,
+    rpName: courseBetween || [classBeginTime, classEndTime].filter(Boolean).join(' - ') || ('第 ' + (index + 1) + ' 次课程'),
+    roomName: String(raw.classRoom || raw.roomName || '').trim(),
+    teacherId: String(raw.teacherId || '').trim(),
+    teacherName: String(raw.teacherName || '').trim(),
+    courseNum: String(raw.courseNum || '').trim(),
+    content: String(raw.content || '').trim()
+  };
 }
 
-function buildVeXkhPrefix(courseNum, fzId) {
-  const raw = String(fzId || '').trim();
-  if (raw.length > 2) return raw.slice(0, -2);
-  const seq = String(courseNum || '').trim();
-  return `2025-2026-2-2${seq}`;
-}
+async function fetchVeReplaySchedule(courseId, { forceReload = false } = {}) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return [];
+  const existing = window.veReplayScheduleByCourseId?.[cid];
+  if (!forceReload && existing?.loaded) return Array.isArray(existing.list) ? existing.list : [];
+  if (!forceReload && existing?.promise) return existing.promise;
 
-async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null) {
-  const courseIdPart = String(courseNum || '').trim();
-  if (!courseIdPart) return [];
-
-  const prefix = buildVeXkhPrefix(courseIdPart, fzId);
-  const rows = []; // [{teacherName,teacherId,roomName,xkhId,classNo}]
-  const seen = new Set();
-  const controllers = new Map();
-  let stopAt = Number.POSITIVE_INFINITY;
-  let nextClassNo = 1;
-  const MAX_CLASS_NO = 99;
-  const WORKERS = 6;
-
-  const emitUpdate = (done = false) => {
-    if (typeof onUpdate !== 'function') return;
-    const sorted = rows
-      .slice()
-      .sort((a, b) => Number(a.classNo || 0) - Number(b.classNo || 0))
-      .map((it) => ({
-        teacherName: it.teacherName,
-        teacherId: it.teacherId,
-        roomName: it.roomName,
-        xkhId: it.xkhId
-      }));
-    onUpdate(sorted, { done, error: false });
-  };
-
-  const markStop = (classNo) => {
-    if (!Number.isFinite(Number(classNo))) return;
-    const n = Number(classNo);
-    if (n >= stopAt) return;
-    stopAt = n;
-    controllers.forEach((ctrl, key) => {
-      if (Number(key) > stopAt) {
-        try { ctrl.abort(); } catch { /* ignore */ }
-      }
-    });
-  };
-
-  const fetchOne = async (classNo) => {
-    if (classNo > stopAt) return;
-    const xkhId = `${prefix}${formatVeClassNumber(classNo)}`;
-    const url = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhId)}`;
-    const controller = new AbortController();
-    controllers.set(classNo, controller);
-
+  const task = (async () => {
     try {
+      const url = BASE_VE + 'back/rp/common/teachCalendar.shtml?method=toDisplyTeachCourses&courseId=' + encodeURIComponent(cid);
       const { text, res } = await fetchText(url, {
-        signal: controller.signal,
-        headers: {
-          Accept: 'application/json, text/javascript, */*; q=0.01',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' },
+        signal: window.globalVeAbortController?.signal
       });
-
-      if (isLikelyLoginPageHtml(text, res?.url)) {
-        markStop(classNo);
-        return;
-      }
-
-      let data = null;
-      try {
-        data = parseVeJson(text);
-      } catch {
-        markStop(classNo);
-        return;
-      }
+      if (isLikelyLoginPageHtml(text, res?.url)) throw new Error('LOGIN_REQUIRED');
+      const data = parseVeJson(text);
       if (String(data?.STATUS) !== '0') {
-        markStop(classNo);
-        return;
+        const message = String(data?.message || data?.ERRMSG || '').trim();
+        if (/没有|暂无|无回放|无数据/.test(message)) {
+          window.veReplayScheduleByCourseId[cid] = { list: [], loaded: true, error: false, promise: null };
+          return [];
+        }
+        throw new Error(message || '获取回放失败');
       }
+      const list = (Array.isArray(data?.courseSchedList) ? data.courseSchedList : [])
+        .map((item, index) => ({
+          ...normalizeVeReplayScheduleItem(item, index),
+          queriedCourseId: cid
+        }));
+      window.veReplayScheduleByCourseId[cid] = { list, loaded: true, error: false, promise: null };
+      return list;
+    } catch (error) {
+      window.veReplayScheduleByCourseId[cid] = { list: [], loaded: false, error: true, promise: null };
+      throw error;
+    }
+  })();
+  window.veReplayScheduleByCourseId[cid] = { list: [], loaded: false, error: false, promise: task };
+  return task;
+}
 
-      const item = Array.isArray(data?.result) && data.result.length ? data.result[0] : null;
-      const teacherName = String(item?.teacherName || '').trim();
+async function fetchVeCourseTeachersByCourseId(courseId, onUpdate = null) {
+  const startCourseId = Number.parseInt(String(courseId || '').trim(), 10);
+  const firstSchedules = await fetchVeReplaySchedule(courseId);
+  const firstWithReplay = firstSchedules.filter((item) => !!item?.rpId);
+  if (!firstWithReplay.length) {
+    if (typeof onUpdate === 'function') onUpdate([], { done: true, error: false, noReplay: true });
+    return { rows: [], noReplay: true, error: false };
+  }
+
+  const baselineCourseNum = String(firstWithReplay[0]?.courseNum || '').trim();
+  const rows = [];
+  const seen = new Set();
+  const addSchedules = (schedules) => {
+    schedules.forEach((item) => {
+      if (!item?.rpId) return;
+      const courseNum = String(item?.courseNum || '').trim();
+      if (baselineCourseNum && courseNum && courseNum !== baselineCourseNum) return;
       const teacherId = String(item?.teacherId || '').trim();
+      const teacherName = String(item?.teacherName || '').trim();
       const roomName = String(item?.roomName || '').trim();
-      const hasContent = !!(teacherName || teacherId || roomName);
-      if (!hasContent) {
-        markStop(classNo);
-        return;
-      }
-
-      const key = `${teacherId}__${teacherName}__${roomName}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        rows.push({ teacherName, teacherId, roomName, xkhId, classNo });
-        emitUpdate(false);
-      }
-    } catch (err) {
-      if (err?.name === 'AbortError') return;
-      markStop(classNo);
-    } finally {
-      controllers.delete(classNo);
+      if (!teacherId && !teacherName && !roomName) return;
+      const queriedCourseId = String(item?.queriedCourseId || item?.courseId || '').trim();
+      const key = [queriedCourseId, teacherId, teacherName, roomName].join('__');
+      if (seen.has(key)) return;
+      seen.add(key);
+      rows.push({ teacherName, teacherId, roomName, xkhId: queriedCourseId });
+    });
+    rows.sort((a, b) => Number(a.xkhId || 0) - Number(b.xkhId || 0));
+  };
+  const emit = (state = {}) => {
+    if (typeof onUpdate === 'function') {
+      onUpdate(rows.slice(), { done: false, error: false, noReplay: false, ...state });
     }
   };
 
+  addSchedules(firstWithReplay);
+  emit();
+
+  if (!Number.isFinite(startCourseId)) {
+    emit({ done: true });
+    return { rows, noReplay: false, error: false };
+  }
+
+  const workerCount = 5;
+  const maxScanCount = 100;
+  let nextCourseId = startCourseId + 1;
+  let stopCourseId = Number.POSITIVE_INFINITY;
+  let firstError = null;
+
+  const markStop = (id) => {
+    stopCourseId = Math.min(stopCourseId, Number(id));
+  };
   const worker = async () => {
     while (true) {
-      const classNo = nextClassNo;
-      nextClassNo += 1;
-      if (classNo > MAX_CLASS_NO) return;
-      if (classNo > stopAt) return;
-      await fetchOne(classNo);
+      const currentId = nextCourseId;
+      nextCourseId += 1;
+      if (currentId >= stopCourseId || currentId > startCourseId + maxScanCount) return;
+      try {
+        const schedules = await fetchVeReplaySchedule(currentId);
+        if (currentId >= stopCourseId) continue;
+        const withReplay = schedules.filter((item) => !!item?.rpId);
+        if (!withReplay.length) {
+          markStop(currentId);
+          continue;
+        }
+        addSchedules(withReplay);
+        emit();
+      } catch (error) {
+        if (!firstError) firstError = error;
+        markStop(currentId);
+      }
     }
   };
 
-  const workerCount = Math.max(1, Math.min(WORKERS, MAX_CLASS_NO));
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-  if (typeof onUpdate === 'function') {
-    emitUpdate(true);
+  if (Number.isFinite(stopCourseId)) {
+    const kept = rows.filter((row) => Number(row?.xkhId || 0) < stopCourseId);
+    rows.splice(0, rows.length, ...kept);
   }
-  return rows
-    .slice()
-    .sort((a, b) => Number(a.classNo || 0) - Number(b.classNo || 0))
-    .map((it) => ({
-      teacherName: it.teacherName,
-      teacherId: it.teacherId,
-      roomName: it.roomName,
-      xkhId: it.xkhId
-    }));
+  emit({ done: true, error: !!firstError });
+  return { rows, noReplay: false, error: !!firstError };
 }
 
 function renderVeCourseTeachersPopHtml(meta) {
@@ -4667,8 +3776,12 @@ function renderVeCourseTeachersPopHtml(meta) {
     return '<div class="ve-course-teacher-loading warning">获取同课教师失败，请稍后重试</div>';
   }
 
+  if (meta.noReplay) {
+    return '<div style="font-size:12px; color:#64748b;">无法获取无回放课程的同课教师</div>';
+  }
+
   if (!tableHtml) {
-    return '<div style="font-size:12px; color:#64748b;">未查询到同课其他教师<br>无法获取无回放课程</div>';
+    return '<div style="font-size:12px; color:#64748b;">未查询到同课其他教师</div>';
   }
   return tableHtml;
 }
@@ -4752,10 +3865,16 @@ function updateVeCourseTeachersPopUi(courseId) {
       statusText.textContent = rows.length ? '获取同课教师失败，已显示部分结果' : '获取同课教师失败，请稍后重试';
       return;
     }
+    if (meta.noReplay) {
+      statusLine.style.display = 'flex';
+      if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
+      statusText.textContent = '无法获取无回放课程的同课教师';
+      return;
+    }
     if (!rows.length) {
       statusLine.style.display = 'flex';
       if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
-      statusText.innerHTML = '未查询到同课其他教师<br>无法获取无回放课程';
+      statusText.textContent = '未查询到同课其他教师';
     }
   });
 }
@@ -4773,11 +3892,11 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
     return Promise.resolve();
   }
 
-  const loadingMeta = { ...existing, rows: Array.isArray(existing.rows) ? existing.rows : [], loading: true, loaded: false, error: false, promise: null };
+  const loadingMeta = { ...existing, rows: Array.isArray(existing.rows) ? existing.rows : [], loading: true, loaded: false, error: false, noReplay: false, promise: null };
   window.veCourseTeachersMetaByCourseId[cid] = loadingMeta;
   updateVeCourseTeachersPopUi(cid);
 
-  const p = fetchVeCourseTeachersByCourseNum(courseNum, fzId, (rows, state) => {
+  const p = fetchVeCourseTeachersByCourseId(cid, (rows, state) => {
     const latest = window.veCourseTeachersMetaByCourseId?.[cid] || {};
     window.veCourseTeachersMetaByCourseId[cid] = {
       ...latest,
@@ -4785,15 +3904,21 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
       loading: state?.done !== true,
       loaded: state?.done === true,
       error: !!state?.error,
+      noReplay: !!state?.noReplay,
       promise: latest.promise || null
     };
     updateVeCourseTeachersPopUi(cid);
-    hydrateVeUserNamesForCourseTeachers(cid).catch(() => {});
   })
-    .then((rows) => {
-      window.veCourseTeachersMetaByCourseId[cid] = { rows: Array.isArray(rows) ? rows : [], loading: false, loaded: true, error: false, promise: null };
+    .then((result) => {
+      window.veCourseTeachersMetaByCourseId[cid] = {
+        rows: Array.isArray(result?.rows) ? result.rows : [],
+        loading: false,
+        loaded: true,
+        error: !!result?.error,
+        noReplay: !!result?.noReplay,
+        promise: null
+      };
       updateVeCourseTeachersPopUi(cid);
-      hydrateVeUserNamesForCourseTeachers(cid).catch(() => {});
     })
     .catch(() => {
       window.veCourseTeachersMetaByCourseId[cid] = { rows: [], loading: false, loaded: true, error: true, promise: null };
@@ -4801,79 +3926,7 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
     });
 
   window.veCourseTeachersMetaByCourseId[cid] = { ...loadingMeta, promise: p };
-  hydrateVeUserNamesForCourseTeachers(cid).catch(() => {});
   return p;
-}
-
-// 学生账号下，通过工号 getUserInfo 解析同课其他教师的真实 userName，覆盖原始教师姓名
-async function hydrateVeUserNamesForCourseTeachers(courseId) {
-  const cid = String(courseId || '').trim();
-  if (!cid) return;
-  // 仅学生账号触发：教师/助教账号下，原始教师姓名已经是权威，无需覆盖
-  if (window.isTeacherAccount) return;
-  const meta = window.veCourseTeachersMetaByCourseId?.[cid];
-  if (!meta || !Array.isArray(meta.rows) || !meta.rows.length) return;
-  const rows = meta.rows;
-  if (!window.veUserNameByTeacherId) window.veUserNameByTeacherId = {};
-  const cache = window.veUserNameByTeacherId;
-
-  // 收集本课程涉及的所有工号
-  const teacherIds = new Set();
-  for (const row of rows) {
-    const tid = String(row?.teacherId || '').trim();
-    if (tid) teacherIds.add(tid);
-  }
-  if (!teacherIds.size) return;
-
-  let redrawNeeded = false;
-  const pending = [];
-  for (const tid of teacherIds) {
-    const entry = cache[tid] || { name: null, promise: null };
-    cache[tid] = entry;
-    // 已有解析结果：直接覆盖原始姓名
-    if (entry.name) {
-      for (const row of rows) {
-        if (String(row?.teacherId || '').trim() === tid && String(row.teacherName || '').trim() !== entry.name) {
-          row.teacherName = entry.name;
-          redrawNeeded = true;
-        }
-      }
-      continue;
-    }
-    // 正在请求中：让出，等待结果
-    if (entry.promise) {
-      pending.push(entry.promise.then((name) => {
-        if (!name) return;
-        for (const row of rows) {
-          if (String(row?.teacherId || '').trim() === tid && String(row.teacherName || '').trim() !== name) {
-            row.teacherName = name;
-            redrawNeeded = true;
-          }
-        }
-      }).catch(() => {}));
-      continue;
-    }
-    // 发起新请求
-    const p = resolveVeUserNameByWorknumber(tid).then((name) => {
-      if (!name) return;
-      for (const row of rows) {
-        if (String(row?.teacherId || '').trim() === tid && String(row.teacherName || '').trim() !== name) {
-          row.teacherName = name;
-          redrawNeeded = true;
-        }
-      }
-    }).catch(() => {});
-    pending.push(p);
-  }
-  if (redrawNeeded) {
-    updateVeCourseTeachersPopUi(cid);
-  }
-  if (pending.length) {
-    Promise.all(pending).then(() => {
-      // 最后再做一次重绘，确保所有并发结果都反映到 UI
-      updateVeCourseTeachersPopUi(cid);
-    }).catch(() => {});
-  }
 }
 
 async function switchToTeacherAccount(teacherId) {
@@ -6937,10 +5990,6 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
   const hasLoginKeywords = alertMsg?.includes('登录') || alertMsg?.includes('不合法') || String(text).includes('不合法') || String(text).includes('无权');
 
   if (isLoginRedirect || hasLoginKeywords) {
-    const currentUser = await detectUserIdFromPersonalCenter();
-    if (currentUser && lastValidUsername && currentUser !== lastValidUsername) {
-      return { loginRequired: true, accountSwitched: currentUser, items: [] };
-    }
     return { loginRequired: true, items: [] };
   }
 
@@ -7481,13 +6530,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
   setCourseReplayLoading(courseIdInt, true);
 
   try {
-    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList&calendarId=&courseId=${encodeURIComponent(courseNum || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || getCurrentXqCode())}`;
-    const { text: calText } = await fetchText(calUrl, {
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-        Accept: 'application/json, text/javascript, */*; q=0.01'
-      }
-    });
+    const list = (await fetchVeReplaySchedule(courseIdInt)).filter((it) => !!it.rpId);
     if (isStale()) {
       btn.classList.remove('replay-list-loading');
       btn.classList.remove('replay-link-progress');
@@ -7495,16 +6538,6 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
       setCourseReplayLoading(courseIdInt, false);
       return;
     }
-    const data = parseVeJson(calText);
-    if (String(data.STATUS) !== '0') {
-      btn.classList.remove('replay-list-loading');
-      btn.style.display = 'none';
-      if (shouldTouchVisibleArea) toggleResultAreaAnimated(resultArea, false, { immediate: true });
-      setCourseReplayState(courseIdInt, false);
-      return;
-    }
-
-    const list = (data.result || []).filter((it) => !!it.rpId);
     if (!list.length) {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
@@ -7513,19 +6546,21 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
       return;
     }
 
-    const replayListHtml = `
-      <div class="replay-loading-indicator" style="margin-bottom: 10px; padding: 5px; color: #888; font-size: 12px; display: flex; align-items: center; gap: 6px;">
-        <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中…
-      </div>
-    ` + list.map((item, index) => {
+    const replayListHtml = list.map((item, index) => {
       const rpId = String(item.rpId || '');
-      const title = `${item.roomName || ''} ${item.rpName || '未知时间'}`;
+      const title = [item.roomName, item.rpName || '未知时间'].filter(Boolean).join(' ');
       const linkContainerId = `video-link-${courseIdInt}-${index}`;
+      const detailHtml = item.content
+        ? renderExpandableHtml(
+            escapeHtml(item.content),
+            { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
+          )
+        : '';
       return `
         <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;" data-rp-id="${rpId}">
-          <div style="font-weight: bold; color: #4a148c; font-size: 15px;">${title}</div>
+          <div style="font-weight: bold; color: #4a148c; font-size: 15px;">${escapeHtml(title)}</div>
           <div style="margin-top: 5px;">
-            <div class="replay-content-area" data-rp-id="${rpId}"></div>
+            <div class="replay-content-area" data-rp-id="${rpId}">${detailHtml}</div>
             <div id="${linkContainerId}" class="video-links" style="font-size: 12px; color: #9C27B0; margin-top: 5px; font-weight: bold; word-break: break-all;">
               <span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中…
             </div>
@@ -7538,8 +6573,16 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
       html: replayListHtml,
       list,
       loaded: true,
-      contentLoaded: false,
-      contentMap: {},
+      contentLoaded: true,
+      contentMap: Object.fromEntries(list.map((item) => [
+        String(item.rpId || ''),
+        item.content
+          ? renderExpandableHtml(
+              escapeHtml(item.content),
+              { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
+            )
+          : ''
+      ])),
       linksFetched: false,
       linksFetching: false
     };
@@ -7649,77 +6692,6 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   flushPendingCourseCardSortIfIdle();
 }
 
-async function lazyLoadReplayContent(courseIdInt) {
-  const cache = window.videoReplayCacheByCourseId?.[courseIdInt];
-  if (!cache) return;
-
-  const card = document.getElementById(`course-${courseIdInt}`)?.closest('.file-item');
-  const scope = card instanceof HTMLElement ? card : document;
-
-  if (cache.contentLoaded && cache.contentMap) {
-    // Re-apply cached content to DOM (for re-expand)
-    Object.entries(cache.contentMap).forEach(([videoId, detailHtml]) => {
-      const els = scope.querySelectorAll(`.replay-content-area[data-rp-id="${videoId}"]`);
-      els.forEach((el) => {
-        if (el instanceof HTMLElement) el.innerHTML = detailHtml;
-      });
-    });
-    const indicator = scope.querySelector('.replay-loading-indicator');
-    if (indicator instanceof HTMLElement) indicator.style.display = 'none';
-    return;
-  }
-
-  try {
-    const calUrl = `${BASE_VE}back/rp/common/teachCalendar.shtml?method=toDisplyTeachCourses&courseId=${encodeURIComponent(courseIdInt)}`;
-    const { text: calText } = await fetchText(calUrl, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
-    const data = JSON.parse(calText);
-    if (String(data.STATUS) !== '0') return;
-
-    cache.contentMap = {};
-    const oldList = data.courseSchedList || [];
-    oldList.forEach((oldItem) => {
-      const videoId = String(oldItem.videoId || '').trim();
-      if (!videoId) return;
-      const contentText = String(oldItem.content || '').trim();
-      const detailHtml = contentText
-        ? renderExpandableHtml(
-            escapeHtml(contentText),
-            { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
-          )
-        : '';
-      cache.contentMap[videoId] = detailHtml;
-      const els = scope.querySelectorAll(`.replay-content-area[data-rp-id="${videoId}"]`);
-      els.forEach((el) => {
-        if (el instanceof HTMLElement) {
-          el.innerHTML = detailHtml;
-          // 回放详情不超过3行则不折叠
-          const box = el.querySelector('.expandable-box');
-          if (box instanceof HTMLElement) {
-            const body = box.querySelector('.expandable-body');
-            if (body instanceof HTMLElement) {
-              // 临时设为 collapsed 高度来测量
-              const prevMaxH = body.style.maxHeight;
-              body.style.maxHeight = '';
-              if (body.scrollHeight <= body.clientHeight + 2) {
-                box.classList.add('no-toggle');
-                box.classList.remove('expanded');
-                box.dataset.expanded = '0';
-              }
-              body.style.maxHeight = prevMaxH;
-            }
-          }
-        }
-      });
-    });
-
-    cache.contentLoaded = true;
-    const indicator = scope.querySelector('.replay-loading-indicator');
-    if (indicator instanceof HTMLElement) indicator.style.display = 'none';
-  } catch {
-    cache.contentLoaded = false;
-  }
-}
-
 function toggleReplayFromCache(btn, courseIdInt) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
@@ -7781,7 +6753,6 @@ function toggleReplayFromCache(btn, courseIdInt) {
   const courseNum = String(btn.dataset.courseNum || '').trim();
   const fzId = String(btn.dataset.fzId || '').trim();
   startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId).catch(() => {});
-  lazyLoadReplayContent(courseIdInt).catch(() => {});
 }
 
 function collectCourseMatchMap(courses) {
@@ -9875,88 +8846,6 @@ async function prefetchCourseScores(courseId) {
 }
 
 // Videos (best-effort implementation)
-window.getVideoLinks = async function(btn, courseIdInt, courseNum, fzId) {
-  const card = btn.closest('.file-item');
-  const resultArea = card.querySelector('.result-area');
-  if (!resultArea) return;
-
-  if (isResultAreaOpen(resultArea)) {
-    toggleResultAreaAnimated(resultArea, false);
-    resultArea.innerHTML = '';
-    btn.textContent = '回放下载';
-    return;
-  }
-
-  toggleResultAreaAnimated(resultArea, true);
-  resultArea.innerHTML = '<div class="spinner" style="border-color:#9C27B0; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取大纲…</span>';
-  btn.textContent = '收起';
-
-  const xqCode = String(btn.dataset.xqCode || getCurrentXqCode());
-
-  try {
-    const calUrl = `${BASE_VE}back/course/courseInfo.shtml?method=queryRecordResourceForCourseList&calendarId=&courseId=${encodeURIComponent(courseNum || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || '')}`;
-    const { text: calText } = await fetchText(calUrl, {
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-        Accept: 'application/json, text/javascript, */*; q=0.01'
-      },
-      signal: window.globalVeAbortController?.signal
-    });
-    const data = parseVeJson(calText);
-
-    if (String(data.STATUS) === '0') {
-      const list = data.result || [];
-      if (!list.length) {
-        resultArea.innerHTML = '暂无课程安排';
-        return;
-      }
-
-      resultArea.innerHTML = `
-        <div class="replay-loading-indicator" style="margin-bottom: 10px; padding: 5px; color: #888; font-size: 12px; display: flex; align-items: center; gap: 6px;">
-          <span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#9C27B0; border-top-color:transparent;"></span> 加载详情中…
-        </div>
-      ` + list.map((item, index) => {
-        const rpId = String(item.rpId || '');
-        const title = `${item.roomName || ''} ${item.rpName || '未知时间'}`;
-        const linkContainerId = `video-link-${courseIdInt}-${index}`;
-        return `
-          <div style="margin-bottom: 10px; padding: 5px; background: #e1bee733; border-radius: 4px; border-left: 3px solid #9C27B0;" data-rp-id="${rpId}">
-            <div style="font-weight: bold; color: #4a148c; font-size: 15px;">${title}</div>
-            <div style="margin-top: 5px;">
-              <div class="replay-content-area" data-rp-id="${rpId}"></div>
-              <div id="${linkContainerId}" class="video-links" style="font-size: 12px; color: #9C27B0; margin-top: 5px; font-weight: bold; word-break: break-all;">
-                ${rpId ? '<span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #9C27B0; border-top-color: transparent;"></span> 获取中…' : '<span style="color: #999; font-weight: normal;">无回放</span>'}
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      list.forEach((item, index) => {
-        if (item.rpId) {
-          const linkContainerId = `video-link-${courseIdInt}-${index}`;
-          fetchVideoLinkInternal(linkContainerId, item.rpId, courseNum, fzId, item.teacherId || '');
-        }
-      });
-
-      if (!window.videoReplayCacheByCourseId[courseIdInt]) {
-        window.videoReplayCacheByCourseId[courseIdInt] = { contentLoaded: false, contentMap: {} };
-      }
-      lazyLoadReplayContent(courseIdInt).catch(() => {});
-      return;
-    }
-
-    if (String(data.STATUS) === '2') {
-      resultArea.innerHTML = `<span style="color: #999;">${data.message || '没有当学期课表信息'}</span>`;
-      return;
-    }
-
-    resultArea.innerHTML = `<span class="error">${data.message || '获取失败'}</span>`;
-  } catch (e) {
-    resultArea.innerHTML = `<span class="error">请求出错: ${e.message}</span>`;
-  }
-};
-
 async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId) {
   const getLinksDiv = () => document.getElementById(containerId);
   const courseListVersion = getCourseListLoadVersionSnapshot();
@@ -11609,161 +10498,33 @@ document.addEventListener('click', (e) => {
 let initialUsernameSet = true;
 let loginFlowUsernameSet = false;
 usernameInput.addEventListener('change', async () => {
-  // Skip programmatic value sets during startup or login flow to avoid duplicate loads
   if (initialUsernameSet) { initialUsernameSet = false; return; }
-  if (loginFlowUsernameSet) return;
-  const u = usernameInput.value.trim();
+  if (loginFlowUsernameSet || isLoginInProgress) return;
+
+  const username = String(usernameInput.value || '').trim();
   usernameChangeVersion += 1;
-  const changeVersion = usernameChangeVersion;
-  try { usernameChangeAbortController?.abort(); } catch { /* ignore */ }
+  try { usernameChangeAbortController?.abort(); } catch {}
   usernameChangeAbortController = new AbortController();
-  const changeSignal = usernameChangeAbortController.signal;
-  const isCurrentUsernameChange = () => changeVersion === usernameChangeVersion && usernameInput.value.trim() === u;
-  const isManualSwitch = !!u && !!lastValidUsername && u !== String(lastValidUsername || '').trim();
-  const isHighPrioritySwitch = !!u && String(highPrioritySwitchTarget || '').trim() === u;
-  if (!isHighPrioritySwitch && highPrioritySwitchTarget && String(highPrioritySwitchTarget).trim() !== u) {
-    highPrioritySwitchTarget = '';
-  }
-  if (isHighPrioritySwitch || isManualSwitch) {
-    highPrioritySwitchTarget = '';
-    if (!accountSwitchInterruptionArmed) {
-      prioritizeAccountSwitch();
-    }
-    // show logging toast before sending GET to /ve/s.shtml
-    showToast('正在检查账号…', 'info', 0);
-    const validResult = await validateUsernameBeforeLoginStart(u, { signal: changeSignal });
-    if (!isCurrentUsernameChange()) return;
-    if (!validResult.ok && validResult.status === 'cancelled') return;
-    if (!validResult.ok && validResult.status === 'invalid') {
-      showToast('该账号不存在，已恢复原账号', 'error');
-      await restoreLoginFallbackUsername(u);
-      pendingUsernameChange = null;
-      resetAccountSwitchInterruption();
-      return;
-    }
-    if (!validResult.ok) {
-      showToast('无法验证账号有效性，请稍后重试', 'warning');
-      await restoreLoginFallbackUsername(u);
-      pendingUsernameChange = null;
-      resetAccountSwitchInterruption();
-      return;
-    }
-    if (validResult.status === 'needs-post-login') {
-      pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: u } : null;
-      await routeLoginBySessionValidityForSwitch(u, '需要验证码登录');
-      return;
-    }
-    pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: u } : null;
-    isLoginSessionValid = true;
-    setWelcomeMessage(validResult.ok ? validResult.info : null);
-    renderLoginAccountHistorySelect(u);
-    // Directly complete post-login synchronization (no extra s.shtml)
-    try {
-      lastValidUsername = u;
-      await setLocal('username', u);
-      await syncJsessionidToUi().catch(() => {});
-      runPendingLoginCallbacks();
-      // reload courses and resource space asynchronously but start now
-      (async () => {
-        try { await syncAccountInfoAndReloadVeCourses({ userId: u, detectFromPortal: false, reloadCourses: true, reloadResourceSpace: true }); } catch {}
-      })();
-      showToast('登录成功', 'success', 1500);
-    } catch (e) {
-      // fallback to normal route if any step fails
-      try { await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号', validResult.ok ? validResult.info : null); } catch {}
-    }
-    return;
-  }
-  const isFirstLogin = !lastValidUsername;
-  if (isFirstLogin) showToast('正在检查账号…', 'info', 0);
-  updateJsessionidState();
-  if (!u) {
-    // treat as cleared
+
+  if (!username) {
     await setLocal('username', '');
     setWelcomeMessage(null);
     renderLoginAccountHistorySelect('');
     lastValidUsername = '';
     pendingUsernameChange = null;
     resetAccountSwitchInterruption();
-    // keep jsessionid for manual mode; do not force modal
     isLoginSessionValid = false;
     showToast('账号已清空：可直接填写 JSESSIONID', 'info', 2500);
     await loadResourceSpaceForCurrentAccount();
     return;
   }
 
-  // Validate userId first; if invalid -> revert to last valid
-  const result = await validateUsernameBeforeLoginStart(u, { signal: changeSignal });
-  if (!isCurrentUsernameChange()) return;
-  if (!result.ok && result.status === 'cancelled') return;
-  if (!result.ok) {
-    // "invalid" means the account does not exist. Other failures may be due to session/network.
-    if (result.status === 'invalid') {
-      showToast('该账号不存在，已恢复原账号', 'error');
-      await restoreLoginFallbackUsername(u);
-      pendingUsernameChange = null;
-      resetAccountSwitchInterruption();
-      return;
-    }
-    showToast('无法验证账号有效性，请稍后重试', 'warning');
-    await restoreLoginFallbackUsername(u);
-    pendingUsernameChange = null;
-    resetAccountSwitchInterruption();
-    return;
-  } else {
-    // valid
-    pendingUsernameChange = isFirstLogin ? null : { from: lastValidUsername, to: u };
-    setWelcomeMessage(result.info);
+  if (username !== String(lastValidUsername || '').trim()) {
+    pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: username } : null;
+    if (!accountSwitchInterruptionArmed) prioritizeAccountSwitch();
   }
-
-  if (result.status === 'needs-post-login') {
-    isLoginSessionValid = true;
-    await doLoginFlow();
-    return;
-  }
-
-  try {
-    // For first login, skip redundant detectUserIdFromPersonalCenter
-    const detected = isFirstLogin ? u : await detectUserIdFromPersonalCenter();
-    if (detected === u) {
-      isLoginSessionValid = true;
-      lastValidUsername = u;
-      await setLocal('username', u);
-      pendingUsernameChange = null;
-      resetAccountSwitchInterruption();
-      await syncJsessionidToUi();
-      let info = result.ok ? result.info : null;
-      if (!info) {
-        try {
-          info = await fetchUserInfoRemote(u);
-        } catch {
-          info = null;
-        }
-      }
-      setWelcomeMessage(info);
-      await rememberLoggedInAccount(u, info);
-      renderLoginAccountHistorySelect(u);
-      showToast('登录成功', 'success', 1500);
-      if (isPlatformEnabled('ve')) loadCourses();
-      await loadResourceSpaceForCurrentAccount();
-    } else if (detected) {
-      // Existing valid login session: switch account inside extension flow only.
-      pendingUsernameChange = { from: detected, to: u };
-      isLoginSessionValid = true;
-      await routeLoginBySessionValidityForSwitch(u, '已检测到有效登录状态：将在扩展页内切换账号', result.ok ? result.info : null);
-    } else {
-      if (isFirstLogin) {
-        isLoginSessionValid = true;
-        await doLoginFlow();
-      } else {
-        isLoginSessionValid = true;
-        await doLoginFlow();
-      }
-    }
-  } catch (err) {
-    isLoginSessionValid = true;
-    await doLoginFlow();
-  }
+  highPrioritySwitchTarget = '';
+  await doLoginFlow();
 });
 
 if (accountHistorySelect instanceof HTMLSelectElement) {
@@ -12122,12 +10883,17 @@ function setupSavedUploadsUi() {
 
   setupFullscreenCourseCacheObserver();
 
-  // VE enabled startup must always dispatch these 3 requests concurrently:
-  // getUserInfo + getCourseList + resourceSpaceList.
+  await loadLoginAccountHistory();
+  try {
+    await globalThis.BjtuAccountLogin?.ensureInitialized?.({ showProgress: true });
+  } catch (error) {
+    showToast('账号列表初始化失败：' + String(error?.message || error), 'error', 4000);
+  }
+
+  // Start enabled-platform and resource-space loading concurrently.
   const startupPlatformLoadPromise = triggerInitialPlatformLoads();
   const startupResourceSpacePromise = loadResourceSpaceForCurrentAccount().catch(() => {});
 
-  await loadLoginAccountHistory();
   await loadCurrentXqOptions().catch(() => {});
 
   // 本地保存已上传文件：加载并绑定 UI
@@ -12147,8 +10913,6 @@ function setupSavedUploadsUi() {
     }
   }
   adjustParallelLimitWidth();
-  // start getUserInfo after we've loaded the saved username so the call mirrors
-  // the re-enable flow (which reads current username before calling getUserInfo).
   const veStartupAccountInfoPromise = startVeStartupAccountInfoLoad();
   const settled = await Promise.allSettled([veStartupAccountInfoPromise, startupPlatformLoadPromise, startupResourceSpacePromise]);
   const startupAccountInfo = (settled[0] && settled[0].status === 'fulfilled') ? settled[0].value : null;

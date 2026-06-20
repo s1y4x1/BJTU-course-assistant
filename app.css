@@ -21,6 +21,63 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .file-item { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; background:#fff; }
         .progress-bar-container { width: 100%; background-color: #e5e7eb; height: 3px; border-radius: 0; margin-top: 5px; overflow: hidden; }
         .progress-bar { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.2s; text-align: left; line-height: 0; color: transparent; font-size: 0; border-radius: 0; overflow: hidden; }
+
+        .account-init-card,
+        .account-recovery-card {
+            width: min(420px, calc(100vw - 32px));
+        }
+        .account-init-status,
+        .account-recovery-message {
+            margin: 10px 0;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .account-init-card .progress-bar-container {
+            margin: 10px 0 4px;
+        }
+        .account-recovery-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .account-recovery-actions .btn {
+            flex: 1;
+        }
+        .account-recovery-password-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        #account-recovery-password-plain,
+        #account-recovery-password-md5 {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        #account-recovery-password-md5 {
+            margin-top: 8px;
+            font-family: Consolas, monospace;
+        }
+        #account-recovery-reinitialize { background:#2563eb; }
+        #account-recovery-reinitialize:hover { background:#1d4ed8; }
+        #account-recovery-manual-btn { background:#d97706; }
+        #account-recovery-manual-btn:hover { background:#b45309; }
+        #account-recovery-cancel,
+        #account-recovery-manual-cancel { background:#64748b; }
+        #account-recovery-cancel:hover,
+        #account-recovery-manual-cancel:hover { background:#475569; }
+        #account-recovery-default {
+            background:#e0f2fe;
+            color:#075985;
+            border:1px solid #7dd3fc;
+            white-space:nowrap;
+        }
+        #account-recovery-default:hover { background:#bae6fd; }
         .status { margin-top: 5px; font-size: 14px; }
         .success { color: green; }
         .error { color: red; }
@@ -951,115 +1008,6 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .modal-close-btn:hover {
             background: #475569;
         }
-        /* 验证码弹窗 */
-        .captcha-modal-mask {
-            position: fixed;
-            inset: 0;
-            background: rgba(15,23,42,0.45);
-            z-index: 1100;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 12px;
-        }
-        .captcha-modal-card {
-            width: min(340px, 92vw);
-            background: #fff;
-            border-radius: 12px;
-            border: 1px solid #e8edf5;
-            box-shadow: 0 18px 42px rgba(0,0,0,0.25);
-            padding: 14px 14px 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .captcha-modal-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            flex-shrink: 0;
-        }
-        .captcha-modal-title {
-            font-size: 15px;
-            font-weight: 700;
-            color: #1f2937;
-        }
-        .captcha-modal-body {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .captcha-modal-image-wrap {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 8px;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            background: #f8fafc;
-            min-height: 60px;
-        }
-        .captcha-modal-image-wrap img {
-            max-width: 100%;
-            max-height: 64px;
-            object-fit: contain;
-            cursor: pointer;
-            background: #fff;
-            border-radius: 4px;
-        }
-        .captcha-modal-spinner {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            pointer-events: none;
-        }
-        .captcha-modal-status {
-            font-size: 13px;
-            color: #0f766e;
-            background: #ecfeff;
-            border: 1px solid #a5f3fc;
-            border-radius: 8px;
-            padding: 6px 10px;
-            min-height: 1.2em;
-            word-break: break-all;
-        }
-        .captcha-modal-status.is-error {
-            color: #c62828;
-            background: #fef2f2;
-            border-color: #fecaca;
-        }
-        .captcha-modal-status.is-warning {
-            color: #b45309;
-            background: #fffbeb;
-            border-color: #fde68a;
-        }
-        .captcha-modal-actions {
-            display: flex;
-            gap: 8px;
-            justify-content: flex-end;
-        }
-        .captcha-refresh-btn {
-            background: #fff;
-            color: #334155;
-            border: 1px solid #cbd5e1;
-        }
-        .captcha-refresh-btn:hover { background: #f1f5f9; }
-        .captcha-cancel-btn {
-            background: #dc2626;
-            color: #fff;
-            border-radius: 6px;
-            padding: 6px 18px;
-            font-size: 13px;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-        }
-        .captcha-cancel-btn:hover { background: #b91c1c; }
         .top-inline-controls #account-history-select {
             margin-left: 4px;
             margin-right: 4px;
