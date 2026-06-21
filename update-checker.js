@@ -43,6 +43,8 @@ let versionDownloadInProgress = false;
 let versionDownloadMinimized = false;
 let versionDownloadPhase = 'downloading';
 let versionIgnoredTag = '';
+let versionDownloadSelectedSource = 'zipball';
+let versionDownloadSelectedUrl = '';
 let lastCompletedDownloadId = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_RELEASES_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases?per_page=100';
@@ -236,10 +238,11 @@ function ensureVersionNoticeModal() {
   if (downloadBtn instanceof HTMLButtonElement) {
     downloadBtn.addEventListener('click', () => {
       modal.style.display = 'none';
-      const selectedUrl = sourceSelect instanceof HTMLSelectElement && sourceSelect.value === 'zipball' && versionButtonLatestZipballUrl
+      const selectedSource = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
+      const selectedUrl = selectedSource === 'zipball' && versionButtonLatestZipballUrl
         ? versionButtonLatestZipballUrl : VERSION_DOWNLOAD_URL;
       if (typeof popupMode !== 'undefined' && popupMode) {
-        startVersionDownloadWithFallback(selectedUrl).catch(() => {
+        startVersionDownloadWithFallback(selectedUrl, selectedSource).catch(() => {
           versionDownloadInProgress = false;
           syncVersionNoticeDownloadButton();
           showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
@@ -250,7 +253,7 @@ function ensureVersionNoticeModal() {
         openVersionDownloadProgressModal();
         return;
       }
-      startVersionDownloadWithFallback(selectedUrl).catch(() => {
+      startVersionDownloadWithFallback(selectedUrl, selectedSource).catch(() => {
         versionDownloadInProgress = false;
         syncVersionNoticeDownloadButton();
         showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
@@ -345,7 +348,7 @@ function ensureVersionDownloadModal() {
   const retryBtn = document.getElementById('version-download-retry');
   if (retryBtn instanceof HTMLButtonElement) {
     retryBtn.addEventListener('click', () => {
-      startVersionDownloadWithFallback().catch(() => {
+      startVersionDownloadWithFallback(versionDownloadSelectedUrl, versionDownloadSelectedSource).catch(() => {
         versionDownloadInProgress = false;
         showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
       });
@@ -500,13 +503,14 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
   });
 }
 
-function buildVersionDownloadFileName(versionText = '') {
+function buildVersionDownloadFileName(versionText = '', includeVersion = true) {
+  if (!includeVersion) return 'BJTU 课程助手.zip';
   const normalized = normalizeVersionText(versionText).replace(/[^0-9.]/g, '');
   if (normalized) return `BJTU 课程助手 ${normalized}.zip`;
   return 'BJTU 课程助手.zip';
 }
 
-async function startVersionDownloadWithFallback(downloadUrl) {
+async function startVersionDownloadWithFallback(downloadUrl, source = '') {
   if (versionDownloadInProgress) {
     openVersionDownloadProgressModal();
     return;
@@ -516,8 +520,12 @@ async function startVersionDownloadWithFallback(downloadUrl) {
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
   showToast('已发送下载请求，浏览器正在连接…', 'info', 2000);
-  const fileName = buildVersionDownloadFileName(versionButtonLatestVersion);
   const primaryUrl = String(downloadUrl || versionButtonDownloadUrl || VERSION_DOWNLOAD_URL).trim() || VERSION_DOWNLOAD_URL;
+  const selectedSource = String(source || versionDownloadSelectedSource || '').trim()
+    || (primaryUrl === VERSION_DOWNLOAD_URL ? 'master' : 'zipball');
+  versionDownloadSelectedSource = selectedSource;
+  versionDownloadSelectedUrl = primaryUrl;
+  const fileName = buildVersionDownloadFileName(versionButtonLatestVersion, selectedSource !== 'master');
 
   try {
     await downloadVersionByUrlWithProgress(primaryUrl, fileName);

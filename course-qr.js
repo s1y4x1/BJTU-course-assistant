@@ -1,10 +1,10 @@
 (async function setupCourseHeaderQr() {
-  window.__headerQrEnabled = true;
+  window.__headerQrEnabled = false;
   try {
     const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
-    window.__headerQrEnabled = headerQrEnabled !== false;
+    window.__headerQrEnabled = headerQrEnabled === true;
   } catch {
-    // allow on error (non-extension context)
+    window.__headerQrEnabled = false;
   }
   const HEADER_QR_TOOLTIP_ID = '__bjtu_header_qr_tooltip__';
   let headerTooltip = document.getElementById(HEADER_QR_TOOLTIP_ID);
@@ -31,9 +31,7 @@
         window.__sectionQrCache = {};
       }
       if (changes.headerQrEnabled) {
-        window.__headerQrEnabled = changes.headerQrEnabled.newValue === undefined
-          ? true
-          : !!changes.headerQrEnabled.newValue;
+        window.__headerQrEnabled = changes.headerQrEnabled.newValue === true;
         if (!window.__headerQrEnabled) {
           headerQrHoverActive = false;
           headerTooltip.style.display = 'none';

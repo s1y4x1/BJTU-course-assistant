@@ -64,6 +64,26 @@
       ],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://123.121.147.7:88/ve/*"
+      ],
+      "js": [
+        "md5.js",
+        "portal-login.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "portal-login.html"
+      ],
+      "matches": [
+        "http://123.121.147.7:88/*"
+      ]
     }
   ]
 }

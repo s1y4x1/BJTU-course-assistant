@@ -70,6 +70,7 @@ function goBackToApp() {
   const { openMode } = await chrome.storage.local.get(['openMode']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
+  const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
   const { popupUseFullscreenCacheEnabled } = await chrome.storage.local.get(['popupUseFullscreenCacheEnabled']);
   const enabled = normalizePlatformEnabled(platformEnabled);
@@ -91,6 +92,9 @@ function goBackToApp() {
   document.getElementById('saveUploadsEnabled').checked = saveUploadsVal;
   document.getElementById('headerQrEnabled').checked = false;
   document.getElementById('headerQrEnabled').disabled = true;
+  if (headerQrEnabled !== false) {
+    await chrome.storage.local.set({ headerQrEnabled: false });
+  }
   const linkQrVal = linkQrEnabled === undefined ? true : !!linkQrEnabled;
   document.getElementById('linkQrEnabled').checked = linkQrVal;
   const popupCacheVal = popupUseFullscreenCacheEnabled === undefined

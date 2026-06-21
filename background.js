@@ -136,7 +136,112 @@ chrome.runtime.onStartup.addListener(() => {
 
 refreshActionPopupFromStorage().catch(() => {});
 
+function parsePortalLoginResponse(text) {
+  const source = String(text || '');
+  const alerts = [...source.matchAll(/alert\s*\(\s*(['"])(.*?)\1\s*\)/gis)];
+  const message = String(alerts.at(-1)?.[2] || '').trim();
+  if (/错误次数过多|锁定10分钟/i.test(message)) return { ok: false, reason: 'locked', message };
+  if (/账号或密码错误/i.test(message)) return { ok: false, reason: 'credential', message };
+  if (/默认密码[\s\S]*弱密码[\s\S]*重置密码/i.test(source)) {
+    return { ok: false, reason: 'password-reset', message: '需要重置密码后重新登录' };
+  }
+  if (/index\.shtml\?method=index&type=qxkt/i.test(source)) return { ok: true };
+  return { ok: false, reason: 'other', message: message || '登录失败' };
+}
+
+async function getPortalCurrentUserInfo() {
+  try {
+    const res = await fetch('http://123.121.147.7:88/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo', {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+    });
+    const source = String(await res.text() || '').trim();
+    const data = JSON.parse(source.startsWith('{}') && source.length > 2 ? source.slice(2) : source);
+    return String(data?.STATUS) === '0' && data?.result ? data.result : null;
+  } catch {
+    return null;
+  }
+}
+
+async function requestPortalLogin(url) {
+  const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+  return parsePortalLoginResponse(await res.text());
+}
+
+async function performPortalPageLogin(payload = {}) {
+  const loginName = String(payload?.loginName || '').trim();
+  if (!loginName) return { ok: false, reason: 'empty', message: '请输入账号' };
+  const currentUser = await getPortalCurrentUserInfo();
+  if (String(currentUser?.loginName || '').trim() === loginName) {
+    return { ok: true, alreadyLoggedIn: true, userInfo: currentUser };
+  }
+
+  await globalThis.BjtuAccountStore.migrateLegacy();
+  const account = await globalThis.BjtuAccountStore.get(loginName);
+  const history = await getPortalLoginAccountHistory();
+  const historyRecord = history.find((item) => item.loginName === loginName || item.userId === loginName) || null;
+  const source = account || historyRecord;
+  const plain = String(payload?.passwordPlain || '');
+  const directMd5 = String(payload?.passwordMd5 || '').trim().toLowerCase();
+  const manualPassword = plain
+    ? globalThis.md5(plain)
+    : (/^[0-9a-f]{32}$/.test(directMd5) ? directMd5 : '');
+
+  if (!manualPassword) {
+    const quickUsername = String(source?.quickUsername || '').trim();
+    if (quickUsername) {
+      const quickUrl = 'http://123.121.147.7:88/ve/s.shtml?loginType=2&login=main_2&username=' + encodeURIComponent(quickUsername);
+      const quickResult = await requestPortalLogin(quickUrl);
+      if (quickResult.ok) return quickResult;
+      if (quickResult.reason === 'locked' || quickResult.reason === 'password-reset') return quickResult;
+    }
+  }
+
+  const password = manualPassword || String(source?.password || source?.passwordMd5 || '').trim();
+  if (!password) {
+    return {
+      ok: false,
+      reason: source ? 'needs-password' : 'account-not-found',
+      message: source ? '未找到可用密码，请手动输入' : '账号不在本地账号列表中，请手动输入密码'
+    };
+  }
+  const passwordUrl = 'http://123.121.147.7:88/ve/s.shtml?login=main_2&goLogin=1&username='
+    + encodeURIComponent(loginName) + '&password=' + encodeURIComponent(password);
+  const result = await requestPortalLogin(passwordUrl);
+  if (!result.ok) return result;
+
+  if (account) await globalThis.BjtuAccountStore.update(loginName, { password });
+  await savePortalLoginAccountRecord(loginName, {
+    loginName,
+    userName: String(source?.userName || '').trim(),
+    roleName: String(source?.roleName || '').trim(),
+    passwordMd5: password,
+    quickUsername: String(source?.quickUsername || '').trim()
+  });
+  return result;
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'PORTAL_LOGIN_CONTEXT') {
+    (async () => {
+      const stored = await chrome.storage.local.get(['username']);
+      sendResponse({
+        ok: true,
+        username: String(stored?.username || '').trim(),
+        history: await getPortalLoginAccountHistory()
+      });
+    })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
+  if (message?.type === 'PORTAL_LOGIN_SUBMIT') {
+    performPortalPageLogin(message?.payload)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
+    return true;
+  }
+
   if (message?.type === 'OPEN_APP') {
     (async () => {
       try {

@@ -3703,87 +3703,126 @@ async function fetchVeReplaySchedule(courseId, { forceReload = false } = {}) {
   return task;
 }
 
-async function fetchVeCourseTeachersByCourseId(courseId, onUpdate = null) {
-  const startCourseId = Number.parseInt(String(courseId || '').trim(), 10);
-  const firstSchedules = await fetchVeReplaySchedule(courseId);
-  const firstWithReplay = firstSchedules.filter((item) => !!item?.rpId);
-  if (!firstWithReplay.length) {
-    if (typeof onUpdate === 'function') onUpdate([], { done: true, error: false, noReplay: true });
-    return { rows: [], noReplay: true, error: false };
-  }
+function formatVeClassNumber(n) {
+  return String(Math.max(1, Math.min(99, Number(n) || 1))).padStart(2, '0');
+}
 
-  const baselineCourseNum = String(firstWithReplay[0]?.courseNum || '').trim();
+function buildVeXkhPrefix(courseNum, fzId) {
+  const raw = String(fzId || '').trim();
+  if (raw.length > 2) return raw.slice(0, -2);
+  return String(courseNum || '').trim();
+}
+
+async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null) {
+  const courseIdPart = String(courseNum || '').trim();
+  if (!courseIdPart) return { rows: [], error: false, permissionDenied: false };
+
+  const prefix = buildVeXkhPrefix(courseIdPart, fzId);
   const rows = [];
   const seen = new Set();
-  const addSchedules = (schedules) => {
-    schedules.forEach((item) => {
-      if (!item?.rpId) return;
-      const courseNum = String(item?.courseNum || '').trim();
-      if (baselineCourseNum && courseNum && courseNum !== baselineCourseNum) return;
-      const teacherId = String(item?.teacherId || '').trim();
-      const teacherName = String(item?.teacherName || '').trim();
-      const roomName = String(item?.roomName || '').trim();
-      if (!teacherId && !teacherName && !roomName) return;
-      const queriedCourseId = String(item?.queriedCourseId || item?.courseId || '').trim();
-      const key = [queriedCourseId, teacherId, teacherName, roomName].join('__');
-      if (seen.has(key)) return;
-      seen.add(key);
-      rows.push({ teacherName, teacherId, roomName, xkhId: queriedCourseId });
-    });
-    rows.sort((a, b) => Number(a.xkhId || 0) - Number(b.xkhId || 0));
-  };
-  const emit = (state = {}) => {
-    if (typeof onUpdate === 'function') {
-      onUpdate(rows.slice(), { done: false, error: false, noReplay: false, ...state });
-    }
-  };
-
-  addSchedules(firstWithReplay);
-  emit();
-
-  if (!Number.isFinite(startCourseId)) {
-    emit({ done: true });
-    return { rows, noReplay: false, error: false };
-  }
-
-  const workerCount = 5;
-  const maxScanCount = 100;
-  let nextCourseId = startCourseId + 1;
-  let stopCourseId = Number.POSITIVE_INFINITY;
+  const controllers = new Map();
+  let stopAt = Number.POSITIVE_INFINITY;
+  let nextClassNo = 1;
   let firstError = null;
+  let permissionDenied = false;
+  const maxClassNo = 99;
+  const workerCount = 6;
 
-  const markStop = (id) => {
-    stopCourseId = Math.min(stopCourseId, Number(id));
+  const visibleRows = () => rows
+    .filter((row) => Number(row.classNo || 0) <= stopAt)
+    .sort((a, b) => Number(a.classNo || 0) - Number(b.classNo || 0))
+    .map(({ teacherName, teacherId, roomName, xkhId }) => ({ teacherName, teacherId, roomName, xkhId }));
+  const emit = (done = false) => {
+    if (typeof onUpdate === 'function') {
+      onUpdate(visibleRows(), { done, error: !!firstError, permissionDenied });
+    }
   };
-  const worker = async () => {
-    while (true) {
-      const currentId = nextCourseId;
-      nextCourseId += 1;
-      if (currentId >= stopCourseId || currentId > startCourseId + maxScanCount) return;
-      try {
-        const schedules = await fetchVeReplaySchedule(currentId);
-        if (currentId >= stopCourseId) continue;
-        const withReplay = schedules.filter((item) => !!item?.rpId);
-        if (!withReplay.length) {
-          markStop(currentId);
-          continue;
-        }
-        addSchedules(withReplay);
-        emit();
-      } catch (error) {
-        if (!firstError) firstError = error;
-        markStop(currentId);
+  const markStop = (classNo) => {
+    stopAt = Math.min(stopAt, Number(classNo));
+    controllers.forEach((controller, key) => {
+      if (Number(key) > stopAt) {
+        try { controller.abort(); } catch {}
       }
+    });
+  };
+  const denyPermission = () => {
+    permissionDenied = true;
+    stopAt = 0;
+    controllers.forEach((controller) => {
+      try { controller.abort(); } catch {}
+    });
+  };
+
+  const fetchOne = async (classNo) => {
+    if (classNo > stopAt || permissionDenied) return;
+    const xkhId = prefix + formatVeClassNumber(classNo);
+    const controller = new AbortController();
+    controllers.set(classNo, controller);
+    try {
+      const url = BASE_VE + '/back/course/courseInfo.shtml?method=queryRecordResourceForCourseList';
+      const body = new URLSearchParams({ courseId: courseIdPart, xkhId });
+      const { text, res } = await fetchText(url, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+          Accept: 'application/json, text/javascript, */*; q=0.01'
+        },
+        body: body.toString()
+      });
+      if (String(text || '').trim() === '{}') {
+        denyPermission();
+        return;
+      }
+      if (isLikelyLoginPageHtml(text, res?.url)) {
+        markStop(classNo);
+        return;
+      }
+      let data;
+      try { data = parseVeJson(text); } catch {
+        markStop(classNo);
+        return;
+      }
+      if (String(data?.STATUS) !== '0') {
+        markStop(classNo);
+        return;
+      }
+      const item = Array.isArray(data?.result) && data.result.length ? data.result[0] : null;
+      const teacherName = String(item?.teacherName || '').trim();
+      const teacherId = String(item?.teacherId || '').trim();
+      const roomName = String(item?.roomName || '').trim();
+      if (!teacherName && !teacherId && !roomName) {
+        markStop(classNo);
+        return;
+      }
+      const key = [teacherId, teacherName, roomName].join('__');
+      if (!seen.has(key)) {
+        seen.add(key);
+        rows.push({ teacherName, teacherId, roomName, xkhId, classNo });
+        emit(false);
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        if (!firstError) firstError = error;
+        markStop(classNo);
+      }
+    } finally {
+      controllers.delete(classNo);
     }
   };
 
+  const worker = async () => {
+    while (!permissionDenied) {
+      const classNo = nextClassNo;
+      nextClassNo += 1;
+      if (classNo > maxClassNo || classNo > stopAt) return;
+      await fetchOne(classNo);
+    }
+  };
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  if (Number.isFinite(stopCourseId)) {
-    const kept = rows.filter((row) => Number(row?.xkhId || 0) < stopCourseId);
-    rows.splice(0, rows.length, ...kept);
-  }
-  emit({ done: true, error: !!firstError });
-  return { rows, noReplay: false, error: !!firstError };
+  emit(true);
+  return { rows: visibleRows(), error: !!firstError, permissionDenied };
 }
 
 function renderVeCourseTeachersPopHtml(meta) {
@@ -3805,6 +3844,10 @@ function renderVeCourseTeachersPopHtml(meta) {
       return `${tableHtml}<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取更多同课教师…</span></div>`;
     }
     return '<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取同课教师…</span></div>';
+  }
+
+  if (meta.permissionDenied) {
+    return '<div style="font-size:12px; color:#d97706;">学生账号无权限</div>';
   }
 
   if (meta.error) {
@@ -3896,6 +3939,13 @@ function updateVeCourseTeachersPopUi(courseId) {
       statusText.textContent = rows.length ? '正在获取更多同课教师…' : '正在获取同课教师…';
       return;
     }
+    if (meta.permissionDenied) {
+      statusLine.style.display = 'flex';
+      statusLine.classList.add('warning');
+      if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
+      statusText.textContent = '学生账号无权限';
+      return;
+    }
     if (meta.error) {
       statusLine.style.display = 'flex';
       statusLine.classList.add('warning');
@@ -3930,11 +3980,11 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
     return Promise.resolve();
   }
 
-  const loadingMeta = { ...existing, rows: Array.isArray(existing.rows) ? existing.rows : [], loading: true, loaded: false, error: false, noReplay: false, promise: null };
+  const loadingMeta = { ...existing, rows: Array.isArray(existing.rows) ? existing.rows : [], loading: true, loaded: false, error: false, noReplay: false, permissionDenied: false, promise: null };
   window.veCourseTeachersMetaByCourseId[cid] = loadingMeta;
   updateVeCourseTeachersPopUi(cid);
 
-  const p = fetchVeCourseTeachersByCourseId(cid, (rows, state) => {
+  const p = fetchVeCourseTeachersByCourseNum(courseNum, fzId, (rows, state) => {
     const latest = window.veCourseTeachersMetaByCourseId?.[cid] || {};
     window.veCourseTeachersMetaByCourseId[cid] = {
       ...latest,
@@ -3943,6 +3993,7 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
       loaded: state?.done === true,
       error: !!state?.error,
       noReplay: !!state?.noReplay,
+      permissionDenied: !!state?.permissionDenied,
       promise: latest.promise || null
     };
     updateVeCourseTeachersPopUi(cid);
@@ -3954,6 +4005,7 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
         loaded: true,
         error: !!result?.error,
         noReplay: !!result?.noReplay,
+        permissionDenied: !!result?.permissionDenied,
         promise: null
       };
       updateVeCourseTeachersPopUi(cid);
