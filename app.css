@@ -596,8 +596,25 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             margin-bottom: 8px;
         }
         body.popup-mode .top-inline-controls {
+            display: flex;
             gap: 8px;
-            flex-wrap: nowrap;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        body.popup-mode .top-inline-controls #account-history-select {
+            flex: 0 0 auto;
+            width: auto;
+            min-width: 0;
+            max-width: 100%;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        .popup-window-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: auto;
+            white-space: nowrap;
         }
         .popup-fullscreen-btn {
             display: none;
@@ -612,7 +629,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         body.popup-mode .popup-fullscreen-btn {
             display: inline-flex;
-            margin-left: auto;
+            margin-left: 0;
             align-items: center;
             justify-content: center;
         }
@@ -633,7 +650,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         body.popup-mode #open-options-btn {
             display: inline-flex;
-            margin-left: 6px;
+            margin-left: 0;
         }
         body.popup-mode #parallel-limit,
         body.popup-mode #username-input,
