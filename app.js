@@ -198,6 +198,7 @@ window.externalPlatformLoadVersion = 0;
 window.courseListLoadVersion = 0;
 window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded,teachers:[]}}
 window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
+window.veCourseTeachersCacheByPrefix = {}; // {courseNumberWithoutSequence:{rows}}
 window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
 window.coursewareItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
@@ -3970,12 +3971,32 @@ function updateVeCourseTeachersPopUi(courseId) {
 async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
   const cid = String(courseId || '').trim();
   if (!cid) return;
+  const cacheKey = buildVeXkhPrefix(courseNum, fzId).toUpperCase();
   const existing = window.veCourseTeachersMetaByCourseId?.[cid] || {};
   if (existing.loading) {
     updateVeCourseTeachersPopUi(cid);
     return existing.promise || Promise.resolve();
   }
-  if (existing.loaded) {
+  if (existing.loaded && !existing.permissionDenied) {
+    updateVeCourseTeachersPopUi(cid);
+    return Promise.resolve();
+  }
+  if (existing.permissionDenied && !window.isTeacherAccount) {
+    updateVeCourseTeachersPopUi(cid);
+    return Promise.resolve();
+  }
+
+  const cached = cacheKey ? window.veCourseTeachersCacheByPrefix?.[cacheKey] : null;
+  if (cached && Array.isArray(cached.rows)) {
+    window.veCourseTeachersMetaByCourseId[cid] = {
+      rows: cached.rows,
+      loading: false,
+      loaded: true,
+      error: false,
+      noReplay: false,
+      permissionDenied: false,
+      promise: null
+    };
     updateVeCourseTeachersPopUi(cid);
     return Promise.resolve();
   }
@@ -3999,8 +4020,12 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
     updateVeCourseTeachersPopUi(cid);
   })
     .then((result) => {
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      if (cacheKey && !result?.error && !result?.permissionDenied && !result?.noReplay) {
+        window.veCourseTeachersCacheByPrefix[cacheKey] = { rows };
+      }
       window.veCourseTeachersMetaByCourseId[cid] = {
-        rows: Array.isArray(result?.rows) ? result.rows : [],
+        rows,
         loading: false,
         loaded: true,
         error: !!result?.error,
@@ -5724,6 +5749,13 @@ function setCourseReplayState(courseId, hasReplay) {
   flushPendingCourseCardSortIfIdle();
 }
 
+function syncCoursewareButtonAvailability(btn, courseId) {
+  if (!(btn instanceof HTMLElement)) return;
+  const cache = window.coursewareCacheByCourseId?.[courseId];
+  if (!cache?.loaded) return;
+  btn.style.display = Array.isArray(cache.items) && cache.items.length ? '' : 'none';
+}
+
 function setCourseReplayLoading(courseId, isLoading) {
   const state = ensureCourseCardState(courseId);
   state.replayListLoading = !!isLoading;
@@ -6193,11 +6225,15 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
     startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
   } catch (e) {
     setCourseCoursewareLoading(courseIdInt, false);
-    if (shouldRender()) {
+    if (e?.name !== 'AbortError' && shouldRender()) {
       resultArea.innerHTML = `<span class="error">课件加载失败: ${escapeHtml(String(e?.message || e))}</span>`;
     }
   } finally {
+    if (window.activeCoursewareAbortControllers[courseNum] === cwAbortController) {
+      delete window.activeCoursewareAbortControllers[courseNum];
+    }
     setCoursewareButtonLoading(btn, false);
+    syncCoursewareButtonAvailability(btn, courseIdInt);
     syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
   }
 }
@@ -6249,6 +6285,7 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
     setCourseCoursewareLoading(courseIdInt, false);
   } finally {
     setCoursewareButtonLoading(btn, false);
+    syncCoursewareButtonAvailability(btn, courseIdInt);
     syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
   }
 }
