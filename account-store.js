@@ -94,15 +94,36 @@
     return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
   }
 
-  async function replaceAll(source) {
+  async function replaceAll(source, onProgress = null) {
     const isArray = Array.isArray(source);
     const safeSource = source && typeof source === 'object' ? source : {};
     const keys = isArray ? safeSource.map((_value, index) => index) : Object.keys(safeSource);
+    let teacherTotal = 0;
+    let studentTotal = 0;
+    keys.forEach((key) => {
+      const value = safeSource[key];
+      if (String(value?.roleName || '').trim() === '学生') studentTotal += 1;
+      else teacherTotal += 1;
+    });
     const db = await open();
     let transaction = db.transaction(STORE_NAME, 'readwrite');
     transaction.objectStore(STORE_NAME).clear();
     await transactionDone(transaction);
     let storedCount = 0;
+    let teacherWritten = 0;
+    let studentWritten = 0;
+    const reportProgress = () => {
+      if (typeof onProgress !== 'function') return;
+      onProgress({
+        written: storedCount,
+        total: keys.length,
+        teacherWritten,
+        teacherTotal,
+        studentWritten,
+        studentTotal
+      });
+    };
+    reportProgress();
     for (let offset = 0; offset < keys.length; offset += 2000) {
       transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
@@ -112,8 +133,11 @@
         if (!record) return;
         store.put(record);
         storedCount += 1;
+        if (record.roleName === '学生') studentWritten += 1;
+        else teacherWritten += 1;
       });
       await transactionDone(transaction);
+      reportProgress();
     }
     return storedCount;
   }

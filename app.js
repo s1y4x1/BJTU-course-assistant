@@ -2229,6 +2229,27 @@ async function handleLoginSuccess(username) {
   }).catch(() => {});
 }
 
+async function handleAlreadyLoggedIn(username, userInfo) {
+  if (!isPlatformEnabled('ve')) {
+    window.platformEnabled.ve = true;
+    savePlatformEnabledToStorage().catch(() => {});
+  }
+  window.platformLoadedOnce.ve = false;
+  setPlatformLoginState('ve', 'checking');
+  isLoginSessionValid = true;
+  loginCancelRequested = false;
+  hideLoginModal();
+  runPendingLoginCallbacks();
+  showToast('已登录该账号', 'success', 1800);
+  await loadAutoLoadCourseResourcesSetting().catch(() => {});
+  await syncAccountInfoAndReloadVeCourses({
+    userId: String(username || '').trim(),
+    reloadCourses: true,
+    reloadResourceSpace: true,
+    knownUserInfo: userInfo || null
+  }).catch(() => {});
+}
+
 async function doLoginFlow() {
   if (isLoginInProgress) return;
   const username = String(usernameInput.value || '').trim();
@@ -2264,6 +2285,14 @@ async function doLoginFlow() {
   const signal = loginAbortController.signal;
 
   try {
+    showToast('正在检查当前登录账号…', 'info', 0);
+    const currentUser = await globalThis.BjtuAccountLogin.getCurrentUserInfo({ signal });
+    if (signal.aborted || loginCancelRequested) return;
+    if (String(currentUser?.loginName || '').trim() === username) {
+      await handleAlreadyLoggedIn(username, currentUser);
+      return;
+    }
+
     showToast('正在读取账号列表…', 'info', 0);
     await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
     if (signal.aborted || loginCancelRequested) return;
@@ -2330,7 +2359,16 @@ async function doLoginFlow() {
           recoveryMessage = account
             ? '账号列表已更新，正在使用最新密码重试。'
             : '重新初始化后仍未找到该账号，可手动输入密码或取消。';
-          if (account) continue;
+          if (account) {
+            const currentAfterInitialize = await globalThis.BjtuAccountLogin.getCurrentUserInfo({ signal });
+            if (String(currentAfterInitialize?.loginName || '').trim() === username) {
+              await handleAlreadyLoggedIn(username, currentAfterInitialize);
+              return;
+            }
+            attempt = -1;
+            showToast('账号列表已更新，正在重新登录…', 'info', 0);
+            continue;
+          }
         } catch (error) {
           recoveryMessage = '账号列表初始化失败：' + String(error?.message || error);
         }

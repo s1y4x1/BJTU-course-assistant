@@ -6,6 +6,7 @@
   const ACCOUNT_LIST_VERSION = 3;
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_URL = BASE_VE + 's.shtml?username=admin&password=a85fb6a51c8e861bb394d00f598f41b3&login=main_2&goLogin=1';
+  const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
   const accountCache = new Map();
@@ -26,16 +27,65 @@
     return decodeBuffer(await res.arrayBuffer(), res.headers.get('content-type'));
   }
 
+  async function getCurrentUserInfo({ signal } = {}) {
+    try {
+      const res = await fetch(CURRENT_USER_URL, {
+        credentials: 'include',
+        cache: 'no-store',
+        signal,
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+      });
+      if (!res.ok) return null;
+      const source = String(await decodeResponse(res) || '').trim();
+      const data = JSON.parse(source.startsWith('{}') && source.length > 2 ? source.slice(2) : source);
+      return String(data?.STATUS) === '0' && data?.result ? data.result : null;
+    } catch (error) {
+      if (signal?.aborted || error?.name === 'AbortError') throw error;
+      return null;
+    }
+  }
+
+  async function waitForPostRetry(attempt, signal) {
+    await new Promise((resolve, reject) => {
+      const delay = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, 400 * (attempt + 1));
+      const onAbort = () => {
+        clearTimeout(delay);
+        signal?.removeEventListener('abort', onAbort);
+        reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+      };
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  async function fetchWithPostRetry(url, options = {}, maxRetries = 3) {
+    const method = String(options?.method || 'GET').toUpperCase();
+    for (let attempt = 0; ; attempt += 1) {
+      let res;
+      try {
+        res = await fetch(url, options);
+      } catch (error) {
+        const aborted = options?.signal?.aborted || error?.name === 'AbortError';
+        if (method !== 'POST' || aborted || attempt >= maxRetries) throw error;
+        await waitForPostRetry(attempt, options?.signal);
+        continue;
+      }
+      if (method !== 'POST' || res.status !== 500 || attempt >= maxRetries) return res;
+      try { await res.body?.cancel(); } catch {}
+      await waitForPostRetry(attempt, options?.signal);
+    }
+  }
+
   async function fetchHtml(url, options = {}, onProgress = null) {
     const { headers: optionHeaders, ...rest } = options;
-    const res = await fetch(url, {
+    const res = await fetchWithPostRetry(url, {
       credentials: 'include',
       cache: 'no-store',
       ...rest,
-      headers: {
-        sessionId: 'D571D57D255EA0BECF299C45D4C0468A',
-        ...(optionHeaders || {})
-      }
+      headers: { ...(optionHeaders || {}) }
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     if (typeof onProgress === 'function' && res.body?.getReader) {
@@ -64,14 +114,11 @@
 
   async function streamHtml(url, options = {}, onText = null) {
     const { headers: optionHeaders, responseEncoding = '', ...rest } = options;
-    const res = await fetch(url, {
+    const res = await fetchWithPostRetry(url, {
       credentials: 'include',
       cache: 'no-store',
       ...rest,
-      headers: {
-        sessionId: 'D571D57D255EA0BECF299C45D4C0468A',
-        ...(optionHeaders || {})
-      }
+      headers: { ...(optionHeaders || {}) }
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     if (!res.body?.getReader) {
@@ -204,7 +251,7 @@
     }
   }
 
-  function setListProgress(type, parsed, total, pendingLabel = '正在读取总数') {
+  function setListProgress(type, parsed, total, pendingLabel = '正在读取总数', phase = '') {
     const bar = document.getElementById('account-init-' + type + '-progress-bar');
     const label = document.getElementById('account-init-' + type + '-label');
     const safeParsed = Math.max(0, Number(parsed) || 0);
@@ -213,9 +260,10 @@
     if (bar instanceof HTMLElement) bar.style.width = percent + '%';
     if (label instanceof HTMLElement) {
       const name = type === 'teacher' ? '教职工' : '学生';
+      const prefix = name + (phase ? phase : '') + '：';
       label.textContent = safeTotal > 0
-        ? (name + '：' + safeParsed + ' / ' + safeTotal)
-        : (name + '：' + pendingLabel);
+        ? (prefix + safeParsed + ' / ' + safeTotal)
+        : (prefix + pendingLabel);
     }
   }
 
@@ -264,16 +312,21 @@
   async function initialize({ force = false, showProgress = true } = {}) {
     if (initializationPromise) return initializationPromise;
     initializationPromise = (async () => {
-      const existingCount = await load();
-      const versionState = await chrome.storage.local.get([ACCOUNT_LIST_VERSION_KEY]);
-      const isCurrentVersion = Number(versionState?.[ACCOUNT_LIST_VERSION_KEY] || 0) === ACCOUNT_LIST_VERSION;
-      if (!force && isCurrentVersion && existingCount > 0) return existingCount;
       try {
-        if (showProgress) setProgress(1, '正在登录管理员账号…');
-        const adminRes = await fetch(ADMIN_LOGIN_URL, { credentials: 'include', cache: 'no-store' });
-        const adminText = await decodeResponse(adminRes);
-        const adminResult = parseLoginResponse(adminText);
-        if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号登录失败');
+        const existingCount = await load();
+        const versionState = await chrome.storage.local.get([ACCOUNT_LIST_VERSION_KEY]);
+        const isCurrentVersion = Number(versionState?.[ACCOUNT_LIST_VERSION_KEY] || 0) === ACCOUNT_LIST_VERSION;
+        if (!force && isCurrentVersion && existingCount > 0) return existingCount;
+
+        if (showProgress) setProgress(1, '正在检查管理员登录状态…');
+        const currentUser = await getCurrentUserInfo();
+        if (String(currentUser?.loginName || '').trim() !== 'admin') {
+          if (showProgress) setProgress(1, '正在登录管理员账号…');
+          const adminRes = await fetch(ADMIN_LOGIN_URL, { credentials: 'include', cache: 'no-store' });
+          const adminText = await decodeResponse(adminRes);
+          const adminResult = parseLoginResponse(adminText);
+          if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号登录失败');
+        }
 
         const state = {
           teacher: { parsed: 0, total: 0 },
@@ -288,7 +341,14 @@
         updateProgress();
 
         const loadTeachers = async () => {
-          const indexHtml = await fetchHtml(TEACHER_URL);
+          const countBody = new URLSearchParams({
+            cdeparcode: '', key: '', keycate: '1', page: '1'
+          });
+          const indexHtml = await fetchHtml(TEACHER_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: countBody.toString()
+          });
           const total = parseCount(indexHtml, /查询到\s*(\d+)\s*条记录/i, '教职工');
           state.teacher.total = total;
           updateProgress();
@@ -310,7 +370,15 @@
         };
 
         const loadStudents = async () => {
-          const indexHtml = await fetchHtml(STUDENT_URL);
+          const countBody = new URLSearchParams({
+            crolename: '', crolecode: '', stu_no: '', page: '1', stu_name: '', sex: '',
+            school_id: '', grade_id: '', class_id: '', xj_status: '1', pagesize: ''
+          });
+          const indexHtml = await fetchHtml(STUDENT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: countBody.toString()
+          });
           const total = parseCount(indexHtml, /共\s*(\d+)\s*条记录/i, '学生');
           state.student.total = total;
           updateProgress();
@@ -336,15 +404,20 @@
         const next = { ...teachers, ...students };
         if (!Object.keys(next).length) throw new Error('账号列表为空');
 
-        if (showProgress) {
-          setProgress(100, '账号列表解析完成');
-          setProgress(100, '', false);
-        }
+        const teacherCount = Object.keys(teachers).length;
+        const studentCount = Object.keys(students).length;
+        if (showProgress) setProgress(100, '正在准备写入账号数据库…');
         await preserveLocalBindings(next);
-        await global.BjtuAccountStore.replaceAll(next);
+        await global.BjtuAccountStore.replaceAll(next, (progress) => {
+          if (!showProgress) return;
+          setProgress(100, '正在写入账号数据库…');
+          setListProgress('teacher', progress?.teacherWritten, teacherCount, '正在写入', '写入');
+          setListProgress('student', progress?.studentWritten, studentCount, '正在写入', '写入');
+        });
         await chrome.storage.local.set({ [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION });
         await syncHistoryWithAccountList(next);
         accountCache.clear();
+        if (showProgress) setProgress(100, '', false);
         return Object.keys(next).length;
       } catch (error) {
         if (showProgress) {
@@ -527,6 +600,7 @@
     load,
     initialize,
     ensureInitialized: (options = {}) => initialize({ ...options, force: false }),
+    getCurrentUserInfo,
     getAccount,
     updateQuickUsername,
     updatePassword,
