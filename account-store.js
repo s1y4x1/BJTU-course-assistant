@@ -2,7 +2,7 @@
   'use strict';
 
   const DB_NAME = 'bjtu-course-assistant';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_NAME = 'accounts';
   const LEGACY_KEY = 'accountList';
   let dbPromise = null;
@@ -15,7 +15,7 @@
       roleName: String(value.roleName || '').trim(),
       userName: String(value.userName || '').trim(),
       password: String(value.password || value.passwordMd5 || '').trim(),
-      quickUsername: String(value.quickUsername || '').trim()
+      quickUsername: String(value.quickUsername || value.username || '').trim()
     };
   }
 
@@ -45,6 +45,9 @@
           : db.createObjectStore(STORE_NAME, { keyPath: 'loginName' });
         if (!store.indexNames.contains('quickUsername')) {
           store.createIndex('quickUsername', 'quickUsername', { unique: false });
+        }
+        if (!store.indexNames.contains('userName')) {
+          store.createIndex('userName', 'userName', { unique: false });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -92,6 +95,40 @@
     const index = transaction.objectStore(STORE_NAME).index('quickUsername');
     const values = await requestResult(index.getAll(IDBKeyRange.lowerBound('', true)));
     return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
+  }
+
+  async function search({ loginName = '', userName = '', limit = 100 } = {}) {
+    const loginQuery = String(loginName || '').trim();
+    const nameQuery = String(userName || '').trim();
+    if (!loginQuery && !nameQuery) return { accounts: [], hasMore: false };
+    const maxItems = Math.max(1, Math.min(200000, Number(limit) || 100));
+    const db = await open();
+    const transaction = db.transaction(STORE_NAME);
+    const store = transaction.objectStore(STORE_NAME);
+    const source = loginQuery ? store : store.index('userName');
+    const query = loginQuery || nameQuery;
+    const range = IDBKeyRange.bound(query, query + '\uffff');
+    return new Promise((resolve, reject) => {
+      const rows = [];
+      const request = source.openCursor(range);
+      request.onerror = () => reject(request.error || new Error('账号搜索失败'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve({ accounts: rows, hasMore: false });
+          return;
+        }
+        const record = normalize(cursor.value?.loginName, cursor.value);
+        const matchesLogin = !loginQuery || String(record?.loginName || '').startsWith(loginQuery);
+        const matchesName = !nameQuery || String(record?.userName || '').includes(nameQuery);
+        if (record && matchesLogin && matchesName) rows.push(record);
+        if (rows.length > maxItems) {
+          resolve({ accounts: rows.slice(0, maxItems), hasMore: true });
+          return;
+        }
+        cursor.continue();
+      };
+    });
   }
 
   async function replaceAll(source, onProgress = null) {
@@ -157,6 +194,7 @@
     count,
     put,
     update,
+    search,
     getQuickAccounts,
     replaceAll,
     migrateLegacy

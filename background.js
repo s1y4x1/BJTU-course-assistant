@@ -226,12 +226,54 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'PORTAL_LOGIN_CONTEXT') {
     (async () => {
       const stored = await chrome.storage.local.get(['username']);
+      const history = await getPortalLoginAccountHistory();
+      const mergedHistory = await Promise.all(history.map(async (record) => {
+        const loginName = String(record?.loginName || record?.userId || '').trim();
+        const account = loginName ? await globalThis.BjtuAccountStore.get(loginName) : null;
+        return {
+          ...record,
+          quickUsername: String(record?.quickUsername || account?.quickUsername || '').trim()
+        };
+      }));
       sendResponse({
         ok: true,
         username: String(stored?.username || '').trim(),
-        history: await getPortalLoginAccountHistory()
+        history: mergedHistory
       });
     })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
+  if (message?.type === 'PORTAL_SEARCH_ACCOUNTS') {
+    const showAll = message?.payload?.showAll === true;
+    Promise.all([
+      globalThis.BjtuAccountStore.search({
+        loginName: message?.payload?.loginName,
+        userName: message?.payload?.userName,
+        limit: showAll ? 200000 : 100
+      }),
+      getPortalLoginAccountHistory()
+    ])
+      .then(([searchResult, history]) => {
+        const accounts = Array.isArray(searchResult?.accounts) ? searchResult.accounts : [];
+        const historyById = new Map(history.map((record) => [
+          String(record?.loginName || record?.userId || '').trim(),
+          record
+        ]));
+        sendResponse({
+          ok: true,
+          hasMore: !!searchResult?.hasMore,
+          accounts: accounts.map((account) => ({
+            ...account,
+            quickUsername: String(
+              account?.quickUsername
+              || historyById.get(String(account?.loginName || '').trim())?.quickUsername
+              || ''
+            ).trim()
+          }))
+        });
+      })
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error), accounts: [] }));
     return true;
   }
 
@@ -320,29 +362,61 @@ function isEncodedPortalQuickUsername(value) {
   }
 }
 
-async function fetchBoundPortalAccountInfo(_tabId, quickUsername, preferredLoginName = '') {
+async function getPortalCurrentUserInfoFromTab(tabId) {
+  if (!tabId) return null;
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'ISOLATED',
+    func: async () => {
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        try {
+          const res = await fetch('/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo', {
+            credentials: 'include',
+            cache: 'no-store',
+            headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+          });
+          const source = String(await res.text() || '').trim();
+          const data = JSON.parse(source.startsWith('{}') && source.length > 2 ? source.slice(2) : source);
+          if (String(data?.STATUS) === '0' && data?.result?.loginName) return data.result;
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      return null;
+    }
+  }).catch(() => []);
+  return Array.isArray(results) && results[0] ? results[0].result || null : null;
+}
+
+async function fetchBoundPortalAccountInfo(tabId, quickUsername, _preferredLoginName = '') {
   const quick = String(quickUsername || '').trim();
   if (!quick) return null;
+  const currentUser = await getPortalCurrentUserInfoFromTab(tabId);
+  const loginName = String(currentUser?.loginName || '').trim();
+  if (!loginName) return null;
+
   await globalThis.BjtuAccountStore.migrateLegacy();
-  const stored = await chrome.storage.local.get([LOGIN_ACCOUNT_HISTORY_KEY, 'username']);
-  const loginName = String(preferredLoginName || stored?.username || '').trim();
+  const stored = await chrome.storage.local.get([LOGIN_ACCOUNT_HISTORY_KEY]);
   const history = normalizePortalLoginAccountHistory(stored?.[LOGIN_ACCOUNT_HISTORY_KEY]);
   const prev = history.find((item) => item.userId === loginName || item.loginName === loginName) || null;
-  const account = await globalThis.BjtuAccountStore.get(loginName) || prev;
-  if (!loginName || !account) return null;
+  const account = await globalThis.BjtuAccountStore.get(loginName) || prev || {
+    loginName,
+    userName: String(currentUser?.userName || '').trim(),
+    roleName: String(currentUser?.roleName || '').trim(),
+    password: ''
+  };
   const previousQuickUsername = String(account.quickUsername || prev?.quickUsername || '').trim();
   await globalThis.BjtuAccountStore.put({
     loginName,
-    roleName: String(account.roleName || '').trim(),
-    userName: String(account.userName || '').trim(),
+    roleName: String(currentUser?.roleName || account.roleName || '').trim(),
+    userName: String(currentUser?.userName || account.userName || '').trim(),
     password: String(account.password || account.passwordMd5 || '').trim(),
     quickUsername: quick
   });
 
   const record = await savePortalLoginAccountRecord(loginName, {
     loginName,
-    userName: String(account.userName || '').trim(),
-    roleName: String(account.roleName || '').trim(),
+    userName: String(currentUser?.userName || account.userName || '').trim(),
+    roleName: String(currentUser?.roleName || account.roleName || '').trim(),
     passwordMd5: String(account.password || account.passwordMd5 || '').trim(),
     quickUsername: quick
   });
@@ -388,7 +462,7 @@ async function showPortalQuickUsernameBoundToast(tabId) {
           setTimeout(() => toast.remove(), 280);
         }, 3600);
       },
-      args: ['已为您成功绑定智慧课程平台免验证码快速登录']
+      args: ['已为您成功绑定智慧课程平台快速登录']
     });
   } catch {
     // ignore
