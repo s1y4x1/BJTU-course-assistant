@@ -1620,10 +1620,10 @@ async function refreshCurrentVeAccountFromSession({
   });
 }
 
-function getLocalAccountInfo(userId = '') {
+async function getLocalAccountInfo(userId = '') {
   const uid = String(userId || '').trim();
   if (!uid) return null;
-  const catalog = globalThis.BjtuAccountLogin?.getAccount?.(uid) || null;
+  const catalog = await globalThis.BjtuAccountLogin?.getAccount?.(uid) || null;
   const history = findLoginAccountRecord(uid);
   const source = catalog || history;
   if (!source) return null;
@@ -1654,7 +1654,7 @@ async function syncAccountInfoAndReloadVeCourses({
   if (reloadCourses) prioritizeAccountSwitch();
 
   const finalUser = String(userId || usernameInput.value || lastValidUsername || '').trim();
-  const localInfo = getLocalAccountInfo(finalUser);
+  const localInfo = await getLocalAccountInfo(finalUser);
   const info = knownUserInfo
     ? {
         ...(localInfo || {}),
@@ -2115,7 +2115,7 @@ async function validateUsernameBeforeLoginStart(userId, { signal } = {}) {
     return { ok: false, status: 'unknown', message: '账号列表初始化失败' };
   }
   if (signal?.aborted) return { ok: false, status: 'cancelled', message: '已取消' };
-  const info = getLocalAccountInfo(uid);
+  const info = await getLocalAccountInfo(uid);
   return { ok: true, status: 'needs-post-login', info, accountMissing: !info };
 }
 
@@ -2148,7 +2148,7 @@ async function loginPasswordGet(username, passwordMd5, { signal } = {}) {
 }
 
 async function loginGet(username, { signal } = {}) {
-  const account = getLocalAccountInfo(username);
+  const account = await getLocalAccountInfo(username);
   const quickUsername = String(account?.quickUsername || '').trim();
   if (!quickUsername) {
     return { ok: false, reason: 'needs-password', message: '未绑定快速登录 username' };
@@ -2268,7 +2268,7 @@ async function doLoginFlow() {
     await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
     if (signal.aborted || loginCancelRequested) return;
 
-    let account = getLocalAccountInfo(username);
+    let account = await getLocalAccountInfo(username);
     let manualPassword = '';
     let recoveryMessage = account
       ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
@@ -2326,7 +2326,7 @@ async function doLoginFlow() {
       if (recovery?.action === 'reinitialize') {
         try {
           await globalThis.BjtuAccountLogin.initialize({ force: true, showProgress: true });
-          account = getLocalAccountInfo(username);
+          account = await getLocalAccountInfo(username);
           recoveryMessage = account
             ? '账号列表已更新，正在使用最新密码重试。'
             : '重新初始化后仍未找到该账号，可手动输入密码或取消。';

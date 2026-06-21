@@ -1,11 +1,12 @@
 ﻿importScripts('md5.js');
 
+importScripts('account-store.js');
+
 const APP_URL = chrome.runtime.getURL('app.html');
 const portalUsernameBindByTab = new Map(); // tabId -> { ts, loginName }
 const portalDetectedQuickUsernameByTab = new Map(); // tabId -> quickUsername seen during ordinary MIS redirects
 const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
-const ACCOUNT_LIST_KEY = 'accountList';
 let latestResponseJsessionid = null;
 
 function notifyPortalUsernameBindStatus(status) {
@@ -217,23 +218,21 @@ function isEncodedPortalQuickUsername(value) {
 async function fetchBoundPortalAccountInfo(_tabId, quickUsername, preferredLoginName = '') {
   const quick = String(quickUsername || '').trim();
   if (!quick) return null;
-  const stored = await chrome.storage.local.get([ACCOUNT_LIST_KEY, LOGIN_ACCOUNT_HISTORY_KEY, 'username']);
+  await globalThis.BjtuAccountStore.migrateLegacy();
+  const stored = await chrome.storage.local.get([LOGIN_ACCOUNT_HISTORY_KEY, 'username']);
   const loginName = String(preferredLoginName || stored?.username || '').trim();
-  const list = stored?.[ACCOUNT_LIST_KEY] && typeof stored[ACCOUNT_LIST_KEY] === 'object'
-    ? stored[ACCOUNT_LIST_KEY]
-    : {};
   const history = normalizePortalLoginAccountHistory(stored?.[LOGIN_ACCOUNT_HISTORY_KEY]);
   const prev = history.find((item) => item.userId === loginName || item.loginName === loginName) || null;
-  const account = list[loginName] || prev;
+  const account = await globalThis.BjtuAccountStore.get(loginName) || prev;
   if (!loginName || !account) return null;
   const previousQuickUsername = String(account.quickUsername || prev?.quickUsername || '').trim();
-  list[loginName] = {
+  await globalThis.BjtuAccountStore.put({
+    loginName,
     roleName: String(account.roleName || '').trim(),
     userName: String(account.userName || '').trim(),
     password: String(account.password || account.passwordMd5 || '').trim(),
     quickUsername: quick
-  };
-  await chrome.storage.local.set({ [ACCOUNT_LIST_KEY]: list });
+  });
 
   const record = await savePortalLoginAccountRecord(loginName, {
     loginName,

@@ -2,31 +2,14 @@
   'use strict';
 
   const BASE_VE = 'http://123.121.147.7:88/ve/';
-  const ACCOUNT_LIST_KEY = 'accountList';
   const ACCOUNT_LIST_VERSION_KEY = 'accountListVersion';
-  const ACCOUNT_LIST_VERSION = 2;
+  const ACCOUNT_LIST_VERSION = 3;
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_URL = BASE_VE + 's.shtml?username=admin&password=a85fb6a51c8e861bb394d00f598f41b3&login=main_2&goLogin=1';
-  const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93&page=2&sr=ch';
+  const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
-  let accountList = null;
+  const accountCache = new Map();
   let initializationPromise = null;
-
-  function normalizeAccountList(raw) {
-    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-    const result = {};
-    Object.entries(source).forEach(([key, value]) => {
-      const loginName = String(key || value?.loginName || '').trim();
-      if (!loginName || !value || typeof value !== 'object') return;
-      result[loginName] = {
-        roleName: String(value.roleName || '').trim(),
-        userName: String(value.userName || '').trim(),
-        password: String(value.password || value.passwordMd5 || '').trim(),
-        quickUsername: String(value.quickUsername || '').trim()
-      };
-    });
-    return result;
-  }
 
   function decodeBuffer(buf, contentType = '') {
     const type = String(contentType || '').toLowerCase();
@@ -93,14 +76,14 @@
     if (!res.ok) throw new Error('HTTP ' + res.status);
     if (!res.body?.getReader) {
       const text = await decodeResponse(res);
-      if (typeof onText === 'function') onText(text, true);
+      if (typeof onText === 'function') await onText(text, true);
       return;
     }
 
     const type = String(res.headers.get('content-type') || '').toLowerCase();
-    const encoding = type.includes('utf-8')
+    const encoding = responseEncoding || (type.includes('utf-8')
       ? 'utf-8'
-      : (type.includes('gbk') || type.includes('gb2312') ? 'gbk' : (responseEncoding || 'utf-8'));
+      : (type.includes('gbk') || type.includes('gb2312') ? 'gbk' : 'utf-8'));
     const decoder = new TextDecoder(encoding);
     const reader = res.body.getReader();
     while (true) {
@@ -108,11 +91,11 @@
       if (done) break;
       if (!value) continue;
       const text = decoder.decode(value, { stream: true });
-      if (text && typeof onText === 'function') onText(text, false);
+      if (text && typeof onText === 'function') await onText(text, false);
     }
     const tail = decoder.decode();
-    if (tail && typeof onText === 'function') onText(tail, false);
-    if (typeof onText === 'function') onText('', true);
+    if (tail && typeof onText === 'function') await onText(tail, false);
+    if (typeof onText === 'function') await onText('', true);
   }
 
   function parseCount(html, pattern, label) {
@@ -122,70 +105,89 @@
     return Math.floor(count);
   }
 
-  function parseLoginCall(row) {
-    const source = String(row?.innerHTML || '');
-    const match = source.match(/goLogin\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([0-9a-f]{32})['"]\s*\)/i);
+  function parseLoginCall(source) {
+    const match = String(source || '').match(/goLogin\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([0-9a-f]{32})['"]\s*\)/i);
     return match ? { loginName: String(match[1]).trim(), password: String(match[2]).trim() } : null;
   }
 
-  function parseTeacherAccounts(html) {
-    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-    const result = {};
-    doc.querySelectorAll('tr').forEach((row) => {
-      const login = parseLoginCall(row);
-      if (!login?.loginName) return;
-      const nameAnchor = [...row.querySelectorAll('a')].find((a) => /edit\.jsp\?id=/i.test(String(a.getAttribute('onclick') || '')));
-      const roleEl = row.querySelector('.roleHide');
-      result[login.loginName] = {
-        roleName: String(roleEl?.getAttribute('title') || roleEl?.textContent || '老师').trim() || '老师',
-        userName: String(nameAnchor?.textContent || '').trim(),
-        password: login.password,
-        quickUsername: ''
-      };
-    });
-    return result;
+  function decodeHtmlText(value) {
+    return String(value || '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&#(\d+);/g, (_all, code) => String.fromCodePoint(Number(code)))
+      .trim();
   }
 
-  function parseStudentAccounts(html) {
-    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-    const result = {};
-    doc.querySelectorAll('tr').forEach((row) => {
-      const login = parseLoginCall(row);
-      if (!login?.loginName) return;
-      const titledCells = [...row.querySelectorAll('td[title]')];
-      const accountIndex = titledCells.findIndex((td) => String(td.getAttribute('title') || '').trim() === login.loginName);
-      const name = accountIndex >= 0 ? String(titledCells[accountIndex + 1]?.getAttribute('title') || titledCells[accountIndex + 1]?.textContent || '').trim() : '';
-      result[login.loginName] = {
+  function parseAccountRow(row, type) {
+    const login = parseLoginCall(row);
+    if (!login?.loginName) return null;
+    if (type === 'student') {
+      const titledCells = [...String(row).matchAll(/<td\b[^>]*\btitle\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/td>/gi)]
+        .map((match) => decodeHtmlText(match[2] || match[3]));
+      const accountIndex = titledCells.findIndex((value) => value === login.loginName);
+      return {
+        loginName: login.loginName,
         roleName: '学生',
-        userName: name,
+        userName: accountIndex >= 0 ? String(titledCells[accountIndex + 1] || '').trim() : '',
         password: login.password,
         quickUsername: ''
       };
-    });
-    return result;
+    }
+    const nameMatch = String(row).match(/<a\b[^>]*\bonclick\s*=\s*"[^"]*edit\.jsp\?id=[^"]*"[^>]*>([\s\S]*?)<\/a>/i)
+      || String(row).match(/<a\b[^>]*\bonclick\s*=\s*'[^']*edit\.jsp\?id=[^']*'[^>]*>([\s\S]*?)<\/a>/i);
+    const roleMatch = String(row).match(/<p\b[^>]*\bclass\s*=\s*(["'])roleHide\1[^>]*\btitle\s*=\s*(["'])(.*?)\2/i);
+    return {
+      loginName: login.loginName,
+      roleName: decodeHtmlText(roleMatch?.[3] || '老师') || '老师',
+      userName: decodeHtmlText(nameMatch?.[1] || ''),
+      password: login.password,
+      quickUsername: ''
+    };
   }
 
-  function createStreamingAccountParser(parseChunk, onParsed) {
+  function createStreamingAccountParser(type, onParsed) {
     const result = {};
     let pending = '';
     let parsedCount = 0;
-    const parseAvailable = (final = false) => {
-      let end = final ? pending.length : pending.toLowerCase().lastIndexOf('</tr>');
-      if (!final && end >= 0) end += 5;
-      if (end <= 0) return;
-      const chunk = pending.slice(0, end);
-      pending = pending.slice(end);
-      const parsed = parseChunk(chunk);
-      Object.entries(parsed).forEach(([loginName, account]) => {
-        if (!Object.prototype.hasOwnProperty.call(result, loginName)) parsedCount += 1;
-        result[loginName] = account;
-      });
+    const parseAvailable = async (final = false) => {
+      let processed = 0;
+      while (true) {
+        const start = pending.search(/<tr\b/i);
+        if (start < 0) {
+          if (final) pending = '';
+          else if (pending.length > 4096) pending = pending.slice(-4096);
+          break;
+        }
+        const rest = pending.slice(start);
+        const closeMatch = /<\/tr\s*>/i.exec(rest);
+        if (!closeMatch) {
+          pending = rest;
+          break;
+        }
+        const end = start + closeMatch.index + closeMatch[0].length;
+        const account = parseAccountRow(pending.slice(start, end), type);
+        pending = pending.slice(end);
+        if (account?.loginName) {
+          if (!Object.prototype.hasOwnProperty.call(result, account.loginName)) parsedCount += 1;
+          result[account.loginName] = account;
+          processed += 1;
+        }
+        if (processed > 0 && processed % 250 === 0) {
+          if (typeof onParsed === 'function') onParsed(parsedCount);
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
       if (typeof onParsed === 'function') onParsed(parsedCount);
     };
     return {
-      push(text, final = false) {
+      async push(text, final = false) {
         if (text) pending += String(text);
-        parseAvailable(final);
+        await parseAvailable(final);
       },
       result
     };
@@ -193,26 +195,42 @@
 
   function setProgress(percent, status, visible = true) {
     const modal = document.getElementById('account-init-modal');
-    const bar = document.getElementById('account-init-progress-bar');
     const text = document.getElementById('account-init-status');
     if (modal instanceof HTMLElement) modal.style.display = visible ? 'flex' : 'none';
-    if (bar instanceof HTMLElement) bar.style.width = Math.max(0, Math.min(100, Number(percent) || 0)) + '%';
     if (text instanceof HTMLElement) text.textContent = String(status || '');
+    if (!visible) {
+      setListProgress('teacher', 0, 0, '正在等待');
+      setListProgress('student', 0, 0, '正在等待');
+    }
+  }
+
+  function setListProgress(type, parsed, total, pendingLabel = '正在读取总数') {
+    const bar = document.getElementById('account-init-' + type + '-progress-bar');
+    const label = document.getElementById('account-init-' + type + '-label');
+    const safeParsed = Math.max(0, Number(parsed) || 0);
+    const safeTotal = Math.max(0, Number(total) || 0);
+    const percent = safeTotal > 0 ? Math.min(100, (safeParsed / safeTotal) * 100) : 0;
+    if (bar instanceof HTMLElement) bar.style.width = percent + '%';
+    if (label instanceof HTMLElement) {
+      const name = type === 'teacher' ? '教职工' : '学生';
+      label.textContent = safeTotal > 0
+        ? (name + '：' + safeParsed + ' / ' + safeTotal)
+        : (name + '：' + pendingLabel);
+    }
   }
 
   async function load() {
-    if (accountList) return accountList;
-    const stored = await chrome.storage.local.get([ACCOUNT_LIST_KEY]);
-    accountList = normalizeAccountList(stored?.[ACCOUNT_LIST_KEY]);
-    return accountList;
+    await global.BjtuAccountStore.migrateLegacy();
+    return global.BjtuAccountStore.count();
   }
 
   async function preserveLocalBindings(next) {
-    const stored = await chrome.storage.local.get([ACCOUNT_LIST_KEY, HISTORY_KEY]);
-    const previous = normalizeAccountList(stored?.[ACCOUNT_LIST_KEY]);
-    Object.entries(previous).forEach(([loginName, record]) => {
+    const previous = await global.BjtuAccountStore.getQuickAccounts();
+    previous.forEach((record) => {
+      const loginName = String(record?.loginName || '').trim();
       if (next[loginName] && record.quickUsername) next[loginName].quickUsername = record.quickUsername;
     });
+    const stored = await chrome.storage.local.get([HISTORY_KEY]);
     const history = Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [];
     history.forEach((record) => {
       const loginName = String(record?.loginName || record?.userId || '').trim();
@@ -246,10 +264,10 @@
   async function initialize({ force = false, showProgress = true } = {}) {
     if (initializationPromise) return initializationPromise;
     initializationPromise = (async () => {
-      const existing = await load();
+      const existingCount = await load();
       const versionState = await chrome.storage.local.get([ACCOUNT_LIST_VERSION_KEY]);
       const isCurrentVersion = Number(versionState?.[ACCOUNT_LIST_VERSION_KEY] || 0) === ACCOUNT_LIST_VERSION;
-      if (!force && isCurrentVersion && Object.keys(existing).length) return existing;
+      if (!force && isCurrentVersion && existingCount > 0) return existingCount;
       try {
         if (showProgress) setProgress(1, '正在登录管理员账号…');
         const adminRes = await fetch(ADMIN_LOGIN_URL, { credentials: 'include', cache: 'no-store' });
@@ -258,21 +276,14 @@
         if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号登录失败');
 
         const state = {
-          teacher: { parsed: 0, total: 0, label: '正在读取总数' },
-          student: { parsed: 0, total: 0, label: '正在读取总数' }
+          teacher: { parsed: 0, total: 0 },
+          student: { parsed: 0, total: 0 }
         };
         const updateProgress = () => {
           if (!showProgress) return;
-          const teacherRatio = state.teacher.total > 0 ? Math.min(1, state.teacher.parsed / state.teacher.total) : 0;
-          const studentRatio = state.student.total > 0 ? Math.min(1, state.student.parsed / state.student.total) : 0;
-          const percent = 3 + ((teacherRatio + studentRatio) / 2) * 96;
-          const teacherText = state.teacher.total > 0
-            ? ('教职工 ' + state.teacher.parsed + '/' + state.teacher.total)
-            : '教职工：正在读取总数';
-          const studentText = state.student.total > 0
-            ? ('学生 ' + state.student.parsed + '/' + state.student.total)
-            : '学生：正在读取总数';
-          setProgress(percent, teacherText + '；' + studentText);
+          setProgress(0, '正在获取并解析账号列表…');
+          setListProgress('teacher', state.teacher.parsed, state.teacher.total);
+          setListProgress('student', state.student.parsed, state.student.total);
         };
         updateProgress();
 
@@ -281,12 +292,12 @@
           const total = parseCount(indexHtml, /查询到\s*(\d+)\s*条记录/i, '教职工');
           state.teacher.total = total;
           updateProgress();
-          const parser = createStreamingAccountParser(parseTeacherAccounts, (parsed) => {
+          const parser = createStreamingAccountParser('teacher', (parsed) => {
             state.teacher.parsed = parsed;
             updateProgress();
           });
           const body = new URLSearchParams({
-            cdeparcode: '', key: '', keycate: '2', pagerecords: String(total), page: '1'
+            cdeparcode: '', key: '', keycate: '1', pagerecords: String(total), page: '1'
           });
           await streamHtml(TEACHER_URL, {
             method: 'POST',
@@ -303,7 +314,7 @@
           const total = parseCount(indexHtml, /共\s*(\d+)\s*条记录/i, '学生');
           state.student.total = total;
           updateProgress();
-          const parser = createStreamingAccountParser(parseStudentAccounts, (parsed) => {
+          const parser = createStreamingAccountParser('student', (parsed) => {
             state.student.parsed = parsed;
             updateProgress();
           });
@@ -330,13 +341,11 @@
           setProgress(100, '', false);
         }
         await preserveLocalBindings(next);
-        await chrome.storage.local.set({
-          [ACCOUNT_LIST_KEY]: next,
-          [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION
-        });
+        await global.BjtuAccountStore.replaceAll(next);
+        await chrome.storage.local.set({ [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION });
         await syncHistoryWithAccountList(next);
-        accountList = next;
-        return next;
+        accountCache.clear();
+        return Object.keys(next).length;
       } catch (error) {
         if (showProgress) {
           setProgress(100, '账号列表初始化失败：' + String(error?.message || error));
@@ -351,9 +360,13 @@
     return initializationPromise;
   }
 
-  function getAccount(loginName) {
+  async function getAccount(loginName) {
     const id = String(loginName || '').trim();
-    const record = accountList?.[id];
+    if (!id) return null;
+    const cached = accountCache.get(id);
+    if (cached) return { loginName: id, ...cached };
+    const record = await global.BjtuAccountStore.get(id);
+    if (record) accountCache.set(id, record);
     return record ? { loginName: id, ...record } : null;
   }
 
@@ -362,10 +375,9 @@
     const quick = String(quickUsername || '').trim();
     if (!id || !quick) return null;
     await load();
-    if (!accountList[id]) return null;
-    accountList[id] = { ...accountList[id], quickUsername: quick };
-    await chrome.storage.local.set({ [ACCOUNT_LIST_KEY]: accountList });
-    return getAccount(id);
+    const record = await global.BjtuAccountStore.update(id, { quickUsername: quick });
+    if (record) accountCache.set(id, record);
+    return record ? { loginName: id, ...record } : null;
   }
 
   async function updatePassword(loginName, password) {
@@ -373,10 +385,9 @@
     const value = String(password || '').trim();
     if (!id || !value) return null;
     await load();
-    if (!accountList[id]) return null;
-    accountList[id] = { ...accountList[id], password: value };
-    await chrome.storage.local.set({ [ACCOUNT_LIST_KEY]: accountList });
-    return getAccount(id);
+    const record = await global.BjtuAccountStore.update(id, { password: value });
+    if (record) accountCache.set(id, record);
+    return record ? { loginName: id, ...record } : null;
   }
 
   function parseLoginResponse(text) {
@@ -524,8 +535,4 @@
     requestRecovery
   };
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes[ACCOUNT_LIST_KEY]) return;
-    accountList = normalizeAccountList(changes[ACCOUNT_LIST_KEY].newValue);
-  });
 })(globalThis);

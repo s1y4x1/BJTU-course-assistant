@@ -34,8 +34,19 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             line-height: 1.6;
         }
         .account-init-card .progress-bar-container {
-            margin: 10px 0 4px;
+            margin: 4px 0 0;
         }
+        .account-init-progress-row {
+            margin-top: 12px;
+        }
+        .account-init-progress-label {
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.4;
+            font-variant-numeric: tabular-nums;
+        }
+        #account-init-teacher-progress-bar { background-color: #2563eb; }
+        #account-init-student-progress-bar { background-color: #16a34a; }
         .account-recovery-actions {
             display: flex;
             gap: 8px;

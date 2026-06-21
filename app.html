@@ -228,8 +228,17 @@
                 <div class="version-download-title">初始化登录账号列表</div>
             </div>
             <div id="account-init-status" class="account-init-status">正在准备…</div>
-            <div class="progress-bar-container">
-                <div id="account-init-progress-bar" class="progress-bar"></div>
+            <div class="account-init-progress-row">
+                <div id="account-init-teacher-label" class="account-init-progress-label">教职工：正在等待</div>
+                <div class="progress-bar-container">
+                    <div id="account-init-teacher-progress-bar" class="progress-bar"></div>
+                </div>
+            </div>
+            <div class="account-init-progress-row">
+                <div id="account-init-student-label" class="account-init-progress-label">学生：正在等待</div>
+                <div class="progress-bar-container">
+                    <div id="account-init-student-progress-bar" class="progress-bar"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -261,6 +270,7 @@
 
     <script src="vendor/qrcode/qrcode.min.js"></script>
     <script src="md5.js"></script>
+    <script src="account-store.js"></script>
     <script src="account-login.js"></script>
     <script src="qr-utils.js"></script>
     <script src="popup-cache.js"></script>
