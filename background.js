@@ -191,7 +191,7 @@ async function performPortalPageLogin(payload = {}) {
   if (!manualPassword) {
     const quickUsername = String(source?.quickUsername || '').trim();
     if (quickUsername) {
-      const quickUrl = 'http://123.121.147.7:88/ve/s.shtml?loginType=2&login=main_2&username=' + encodeURIComponent(quickUsername);
+      const quickUrl = 'http://123.121.147.7:88/ve/s.shtml?loginType=2&login=main_2&goLogin=1&username=' + encodeURIComponent(quickUsername);
       const quickResult = await requestPortalLogin(quickUrl);
       if (quickResult.ok) return quickResult;
       if (quickResult.reason === 'locked' || quickResult.reason === 'password-reset') return quickResult;

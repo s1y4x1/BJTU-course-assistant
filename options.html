@@ -10,7 +10,7 @@
     label { display: block; margin: 12px 0 6px; }
     input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
     button { margin-top: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
-    .tip { margin-top: 12px; color: #666; font-size: 13px; }
+    .tip { margin-bottom: 12px; color: #666; font-size: 13px; }
     #msg {
       position: fixed;
       top: 14px;
@@ -65,6 +65,17 @@
         自动获取课件/回放列表
       </label>
       <div class="tip">关闭后，仅在点击课件/回放按钮或生成课程列表 HTML 时获取课件/回放列表。</div>
+      <div style="margin-top:10px;">
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="injectPortalLoginOnLoginPage" style="width:auto;" checked />
+          智慧课程平台登录页
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="injectPortalLoginOnTimeoutPage" style="width:auto;" checked />
+          “会话结束”超时页
+        </label>
+        <div class="tip">控制在这些页面上是否注入登录弹窗。</div>
+      </div>
       <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
         <input type="checkbox" id="headerQrEnabled" style="width:auto;" />
         <span>鼠标悬停标题时生成列表二维码</span>

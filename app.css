@@ -50,6 +50,9 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         #account-init-import {
             background: #2563eb;
         }
+        #account-init-skip {
+            background: #64748b;
+        }
         .account-init-progress-label {
             color: #475569;
             font-size: 12px;

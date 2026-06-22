@@ -73,6 +73,13 @@ function goBackToApp() {
   const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
   const { popupUseFullscreenCacheEnabled } = await chrome.storage.local.get(['popupUseFullscreenCacheEnabled']);
+  const {
+    injectPortalLoginOnLoginPage,
+    injectPortalLoginOnTimeoutPage
+  } = await chrome.storage.local.get([
+    'injectPortalLoginOnLoginPage',
+    'injectPortalLoginOnTimeoutPage'
+  ]);
   const enabled = normalizePlatformEnabled(platformEnabled);
 
   document.getElementById('enableVe').checked = !!enabled.ve;
@@ -101,6 +108,8 @@ function goBackToApp() {
     ? DEFAULT_POPUP_CACHE_ENABLED
     : !!popupUseFullscreenCacheEnabled;
   document.getElementById('popupUseFullscreenCacheEnabled').checked = popupCacheVal;
+  document.getElementById('injectPortalLoginOnLoginPage').checked = injectPortalLoginOnLoginPage !== false;
+  document.getElementById('injectPortalLoginOnTimeoutPage').checked = injectPortalLoginOnTimeoutPage !== false;
   updatePopupCacheDisabled();
 
   // apply changes immediately when inputs change
@@ -170,6 +179,12 @@ function goBackToApp() {
       if (changes.popupUseFullscreenCacheEnabled) {
         applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
       }
+      if (changes.injectPortalLoginOnLoginPage) {
+        applyBooleanUi('injectPortalLoginOnLoginPage', changes.injectPortalLoginOnLoginPage.newValue, true);
+      }
+      if (changes.injectPortalLoginOnTimeoutPage) {
+        applyBooleanUi('injectPortalLoginOnTimeoutPage', changes.injectPortalLoginOnTimeoutPage.newValue, true);
+      }
     });
   } catch {
     // ignore non-extension contexts
@@ -187,6 +202,13 @@ function goBackToApp() {
       autoLoadCourseResourcesEnabled: !!document.getElementById('autoLoadCourseResourcesEnabled').checked
     });
     setMsg('已应用更改');
+  });
+
+  ['injectPortalLoginOnLoginPage', 'injectPortalLoginOnTimeoutPage'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', async () => {
+      await chrome.storage.local.set({ [id]: !!document.getElementById(id).checked });
+      setMsg('已应用更改');
+    });
   });
 
   document.getElementById('saveUploadsEnabled').addEventListener('change', async () => {
@@ -392,6 +414,8 @@ function goBackToApp() {
     document.getElementById('headerQrEnabled').disabled = true;
     document.getElementById('linkQrEnabled').checked = true;
     document.getElementById('popupUseFullscreenCacheEnabled').checked = true;
+    document.getElementById('injectPortalLoginOnLoginPage').checked = true;
+    document.getElementById('injectPortalLoginOnTimeoutPage').checked = true;
     updatePopupCacheDisabled();
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
@@ -399,6 +423,10 @@ function goBackToApp() {
     await chrome.storage.local.set({ headerQrEnabled: false });
     await chrome.storage.local.set({ linkQrEnabled: true });
     await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
+    await chrome.storage.local.set({
+      injectPortalLoginOnLoginPage: true,
+      injectPortalLoginOnTimeoutPage: true
+    });
     setMsg('已恢复默认配置');
   });
 })();

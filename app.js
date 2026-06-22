@@ -2114,7 +2114,7 @@ async function validateUsernameBeforeLoginStart(userId, { signal } = {}) {
   if (!uid) return { ok: false, status: 'empty', message: '请输入账号' };
   if (signal?.aborted) return { ok: false, status: 'cancelled', message: '已取消' };
   try {
-    await globalThis.BjtuAccountLogin?.ensureInitialized?.({ showProgress: true });
+    await globalThis.BjtuAccountLogin?.ensureInitialized?.({ showProgress: true, promptAfterSkip: true });
   } catch {
     return { ok: false, status: 'unknown', message: '账号列表初始化失败' };
   }
@@ -2298,7 +2298,7 @@ async function doLoginFlow() {
     }
 
     showToast('正在读取账号列表…', 'info', 0);
-    await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
+    await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true, promptAfterSkip: true });
     if (signal.aborted || loginCancelRequested) return;
 
     let account = await getLocalAccountInfo(username);

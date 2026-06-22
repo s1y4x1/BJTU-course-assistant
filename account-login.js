@@ -5,6 +5,7 @@
   const ACCOUNT_LIST_VERSION_KEY = 'accountListVersion';
   const ACCOUNT_LIST_REVISION_KEY = 'accountListRevision';
   const ACCOUNT_LIST_WRITING_KEY = 'accountListWriting';
+  const ACCOUNT_LIST_SKIPPED_KEY = 'accountListInitializationSkipped';
   const ACCOUNT_LIST_WRITE_LOCK = 'bjtu-account-list-write';
   const ACCOUNT_LIST_VERSION = 3;
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
@@ -404,6 +405,7 @@
         [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
         [ACCOUNT_LIST_REVISION_KEY]: Date.now()
       });
+      await chrome.storage.local.remove([ACCOUNT_LIST_SKIPPED_KEY]);
       await syncHistoryWithAccountList(accounts);
       accountCache.clear();
       return total;
@@ -445,6 +447,7 @@
       const actions = document.getElementById('account-init-actions');
       const remote = document.getElementById('account-init-remote');
       const importButton = document.getElementById('account-init-import');
+      const skipButton = document.getElementById('account-init-skip');
       const fileInput = document.getElementById('account-init-file');
       if (!(actions instanceof HTMLElement) || !(fileInput instanceof HTMLInputElement)) {
         resolve({ source: 'remote' });
@@ -453,6 +456,7 @@
       const cleanup = () => {
         remote?.removeEventListener('click', onRemote);
         importButton?.removeEventListener('click', onImport);
+        skipButton?.removeEventListener('click', onSkip);
         fileInput.removeEventListener('change', onFile);
         actions.style.display = 'none';
       };
@@ -463,6 +467,10 @@
       const onImport = () => {
         fileInput.value = '';
         fileInput.click();
+      };
+      const onSkip = () => {
+        cleanup();
+        resolve({ source: 'skip' });
       };
       const onFile = async () => {
         const file = fileInput.files?.[0];
@@ -477,6 +485,7 @@
       };
       remote?.addEventListener('click', onRemote);
       importButton?.addEventListener('click', onImport);
+      skipButton?.addEventListener('click', onSkip);
       fileInput.addEventListener('change', onFile);
       actions.style.display = 'flex';
       setProgress(0, '请选择账号列表初始化方式');
@@ -504,7 +513,7 @@
     if (changed) await chrome.storage.local.set({ [HISTORY_KEY]: updated });
   }
 
-  async function initialize({ force = false, showProgress = true } = {}) {
+  async function initialize({ force = false, showProgress = true, promptAfterSkip = false } = {}) {
     if (initializationPromise) return initializationPromise;
     initializationPromise = (async () => {
       let remoteMarker = null;
@@ -515,10 +524,25 @@
         const versionState = await chrome.storage.local.get([ACCOUNT_LIST_VERSION_KEY]);
         const isCurrentVersion = Number(versionState?.[ACCOUNT_LIST_VERSION_KEY] || 0) === ACCOUNT_LIST_VERSION;
         if (!force && isCurrentVersion && existingCount > 0) return existingCount;
+        const skippedState = await chrome.storage.local.get([ACCOUNT_LIST_SKIPPED_KEY]);
+        if (!force && skippedState?.[ACCOUNT_LIST_SKIPPED_KEY] === true && !promptAfterSkip) {
+          return existingCount;
+        }
 
         if (showProgress) {
           const source = await requestInitializationSource();
+          if (source.source === 'skip') {
+            await chrome.storage.local.set({ [ACCOUNT_LIST_SKIPPED_KEY]: true });
+            setProgress(0, '', false);
+            global.showToast?.(
+              '已跳过账号列表初始化，当您想使用此扩展登录智慧课程平台时，将再次询问您是否进行初始化',
+              'info',
+              5000
+            );
+            return existingCount;
+          }
           if (source.source === 'import') {
+            await chrome.storage.local.remove([ACCOUNT_LIST_SKIPPED_KEY]);
             setProgress(100, '', false);
             return Number(source.count || 0);
           }
@@ -664,6 +688,7 @@
           [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
           [ACCOUNT_LIST_REVISION_KEY]: Date.now()
         });
+        await chrome.storage.local.remove([ACCOUNT_LIST_SKIPPED_KEY]);
         await syncHistoryWithAccountList(next);
         accountCache.clear();
         if (showProgress) setProgress(100, '', false);
@@ -738,7 +763,7 @@
   }
 
   async function loginWithQuickUsername(quickUsername, { signal } = {}) {
-    const url = BASE_VE + 's.shtml?loginType=2&login=main_2&username=' + encodeURIComponent(String(quickUsername || '').trim());
+    const url = BASE_VE + 's.shtml?loginType=2&login=main_2&goLogin=1&username=' + encodeURIComponent(String(quickUsername || '').trim());
     const res = await fetch(url, { credentials: 'include', cache: 'no-store', signal });
     return parseLoginResponse(await decodeResponse(res));
   }

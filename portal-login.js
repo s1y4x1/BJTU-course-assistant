@@ -9,6 +9,12 @@
   const isTimeoutPage = title.includes('会话结束')
     || (bodyText.includes('会话结束,请退出系统') && bodyText.includes('重新登录'));
   if (!isLoginPage && !isTimeoutPage) return;
+  const injectionOptions = await chrome.storage.local.get([
+    'injectPortalLoginOnLoginPage',
+    'injectPortalLoginOnTimeoutPage'
+  ]);
+  if (isLoginPage && injectionOptions.injectPortalLoginOnLoginPage === false) return;
+  if (isTimeoutPage && injectionOptions.injectPortalLoginOnTimeoutPage === false) return;
 
   const sendMessage = (message) => new Promise((resolve) => {
     chrome.runtime.sendMessage(message, (response) => {
