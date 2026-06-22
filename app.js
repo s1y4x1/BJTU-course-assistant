@@ -5189,6 +5189,8 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbo
   let reloadedOwnedTab = false;
   let loginPending = false;
   let loginPopupPrepared = false;
+  let loginSuccessDetected = false;
+  let loginPageClosedUnauthenticated = false;
 
   const pickReadyTab = async () => {
     if (typeof shouldAbort === 'function' && shouldAbort()) return null;
@@ -5207,6 +5209,10 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbo
       const ready = await chrome.tabs.get(ownedTabId);
       return ready?.id ? ready : null;
     } catch {
+      if (loginPending && !loginSuccessDetected) {
+        loginPageClosedUnauthenticated = true;
+        return null;
+      }
       ownedTabId = null;
       return null;
     }
@@ -5220,6 +5226,14 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbo
       try {
         const tab = await pickReadyTab();
         if (!tab?.id) {
+          if (loginPageClosedUnauthenticated) {
+            return {
+              tabId: null,
+              ok: false,
+              unauthorized: true,
+              loginPageClosedUnauthenticated: true
+            };
+          }
           await new Promise((r) => setTimeout(r, 450));
           continue;
         }
@@ -5243,6 +5257,8 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbo
           await new Promise((r) => setTimeout(r, 600));
           continue;
         }
+
+        if (loginPending) loginSuccessDetected = true;
 
         const stateRes = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -7819,6 +7835,12 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     );
     if (listResp?.tabId && Number.isFinite(Number(listResp.tabId))) {
       bgTab = { id: Number(listResp.tabId) };
+    }
+    if (listResp?.loginPageClosedUnauthenticated) {
+      if (isPlatformEnabled('jlgj')) {
+        togglePlatformSelection('jlgj', { interactive: false, persist: true });
+      }
+      return;
     }
     if (isStale() || !isPlatformEnabled('jlgj') || listResp?.aborted) return;
 
