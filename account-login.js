@@ -272,18 +272,26 @@
     return global.BjtuAccountStore.count();
   }
 
-  async function preserveLocalBindings(next) {
+  async function readLocalBindings() {
+    const bindings = new Map();
     const previous = await global.BjtuAccountStore.getQuickAccounts();
     previous.forEach((record) => {
       const loginName = String(record?.loginName || '').trim();
-      if (next[loginName] && record.quickUsername) next[loginName].quickUsername = record.quickUsername;
+      if (loginName && record.quickUsername) bindings.set(loginName, String(record.quickUsername).trim());
     });
     const stored = await chrome.storage.local.get([HISTORY_KEY]);
     const history = Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [];
     history.forEach((record) => {
       const loginName = String(record?.loginName || record?.userId || '').trim();
-      if (!loginName || !next[loginName]) return;
       const quickUsername = String(record?.quickUsername || '').trim();
+      if (loginName && quickUsername) bindings.set(loginName, quickUsername);
+    });
+    return bindings;
+  }
+
+  function preserveLocalBindings(next, bindings) {
+    Object.keys(next || {}).forEach((loginName) => {
+      const quickUsername = bindings?.get(loginName);
       if (quickUsername) next[loginName].quickUsername = quickUsername;
     });
   }
@@ -329,14 +337,26 @@
         }
 
         const state = {
-          teacher: { parsed: 0, total: 0 },
-          student: { parsed: 0, total: 0 }
+          teacher: { parsed: 0, written: 0, total: 0, phase: 'load' },
+          student: { parsed: 0, written: 0, total: 0, phase: 'load' }
         };
+        const localBindings = await readLocalBindings();
+        let databaseCleared = false;
+        let writeQueue = Promise.resolve();
         const updateProgress = () => {
           if (!showProgress) return;
-          setProgress(0, '正在获取并解析账号列表…');
-          setListProgress('teacher', state.teacher.parsed, state.teacher.total);
-          setListProgress('student', state.student.parsed, state.student.total);
+          setProgress(0, '正在获取并写入账号列表…');
+          ['teacher', 'student'].forEach((type) => {
+            const roleState = state[type];
+            const isWriting = roleState.phase === 'write' || roleState.phase === 'done';
+            setListProgress(
+              type,
+              isWriting ? roleState.written : roleState.parsed,
+              roleState.total,
+              isWriting ? '正在写入' : '正在读取总数',
+              isWriting ? '写入' : ''
+            );
+          });
         };
         updateProgress();
 
@@ -400,20 +420,43 @@
           return parser.result;
         };
 
-        const [teachers, students] = await Promise.all([loadTeachers(), loadStudents()]);
+        const writeRole = (type, accounts) => {
+          preserveLocalBindings(accounts, localBindings);
+          const total = Object.keys(accounts).length;
+          state[type].phase = 'write';
+          state[type].written = 0;
+          updateProgress();
+          writeQueue = writeQueue.then(async () => {
+            if (!databaseCleared) {
+              await global.BjtuAccountStore.clear();
+              databaseCleared = true;
+            }
+            await global.BjtuAccountStore.putAll(accounts, (progress) => {
+              if (!showProgress) return;
+              setProgress(100, '正在获取并写入账号列表…');
+              const written = type === 'teacher' ? progress?.teacherWritten : progress?.studentWritten;
+              state[type].written = Number(written || 0);
+              setListProgress(type, state[type].written, total, '正在写入', '写入');
+            });
+            state[type].phase = 'done';
+            state[type].written = total;
+            updateProgress();
+          });
+          return writeQueue;
+        };
+
+        const teacherTask = loadTeachers().then(async (accounts) => {
+          await writeRole('teacher', accounts);
+          return accounts;
+        });
+        const studentTask = loadStudents().then(async (accounts) => {
+          await writeRole('student', accounts);
+          return accounts;
+        });
+        const [teachers, students] = await Promise.all([teacherTask, studentTask]);
         const next = { ...teachers, ...students };
         if (!Object.keys(next).length) throw new Error('账号列表为空');
 
-        const teacherCount = Object.keys(teachers).length;
-        const studentCount = Object.keys(students).length;
-        if (showProgress) setProgress(100, '正在准备写入账号数据库…');
-        await preserveLocalBindings(next);
-        await global.BjtuAccountStore.replaceAll(next, (progress) => {
-          if (!showProgress) return;
-          setProgress(100, '正在写入账号数据库…');
-          setListProgress('teacher', progress?.teacherWritten, teacherCount, '正在写入', '写入');
-          setListProgress('student', progress?.studentWritten, studentCount, '正在写入', '写入');
-        });
         await chrome.storage.local.set({ [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION });
         await syncHistoryWithAccountList(next);
         accountCache.clear();

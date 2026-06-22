@@ -132,6 +132,18 @@
   }
 
   async function replaceAll(source, onProgress = null) {
+    await clear();
+    return putAll(source, onProgress);
+  }
+
+  async function clear() {
+    const db = await open();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    transaction.objectStore(STORE_NAME).clear();
+    await transactionDone(transaction);
+  }
+
+  async function putAll(source, onProgress = null) {
     const isArray = Array.isArray(source);
     const safeSource = source && typeof source === 'object' ? source : {};
     const keys = isArray ? safeSource.map((_value, index) => index) : Object.keys(safeSource);
@@ -143,9 +155,7 @@
       else teacherTotal += 1;
     });
     const db = await open();
-    let transaction = db.transaction(STORE_NAME, 'readwrite');
-    transaction.objectStore(STORE_NAME).clear();
-    await transactionDone(transaction);
+    let transaction;
     let storedCount = 0;
     let teacherWritten = 0;
     let studentWritten = 0;
@@ -196,6 +206,8 @@
     update,
     search,
     getQuickAccounts,
+    clear,
+    putAll,
     replaceAll,
     migrateLegacy
   };
