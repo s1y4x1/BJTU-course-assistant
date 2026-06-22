@@ -513,7 +513,7 @@
     if (changed) await chrome.storage.local.set({ [HISTORY_KEY]: updated });
   }
 
-  async function initialize({ force = false, showProgress = true, promptAfterSkip = false } = {}) {
+  async function initialize({ force = false, showProgress = true } = {}) {
     if (initializationPromise) return initializationPromise;
     initializationPromise = (async () => {
       let remoteMarker = null;
@@ -525,7 +525,7 @@
         const isCurrentVersion = Number(versionState?.[ACCOUNT_LIST_VERSION_KEY] || 0) === ACCOUNT_LIST_VERSION;
         if (!force && isCurrentVersion && existingCount > 0) return existingCount;
         const skippedState = await chrome.storage.local.get([ACCOUNT_LIST_SKIPPED_KEY]);
-        if (!force && skippedState?.[ACCOUNT_LIST_SKIPPED_KEY] === true && !promptAfterSkip) {
+        if (!force && skippedState?.[ACCOUNT_LIST_SKIPPED_KEY] === true) {
           return existingCount;
         }
 
@@ -535,7 +535,7 @@
             await chrome.storage.local.set({ [ACCOUNT_LIST_SKIPPED_KEY]: true });
             setProgress(0, '', false);
             global.showToast?.(
-              '已跳过账号列表初始化，当您想使用此扩展登录智慧课程平台时，将再次询问您是否进行初始化',
+              '已跳过账号列表初始化；登录时可在“账号或密码错误”窗口中重新初始化账号列表',
               'info',
               5000
             );
