@@ -5,7 +5,7 @@
   const ACCOUNT_LIST_VERSION_KEY = 'accountListVersion';
   const ACCOUNT_LIST_VERSION = 3;
   const HISTORY_KEY = 'loginAccountHistory';
-  const ADMIN_LOGIN_URL = BASE_VE + 's.shtml?username=admin&password=a85fb6a51c8e861bb394d00f598f41b3&login=main_2&goLogin=1';
+  const ADMIN_LOGIN_URL = BASE_VE + 's.shtml?username=admin&password=3115b155e14c1fb027ef459be500e8fd&login=main_2&goLogin=1';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
