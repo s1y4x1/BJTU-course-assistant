@@ -717,7 +717,7 @@ function setupRightColumnResizer() {
     }
     rightColumnResizer.style.display = 'block';
     const rect = rightColumn.getBoundingClientRect();
-    rightColumnResizer.style.left = `${Math.round(rect.left + 3)}px`;
+    rightColumnResizer.style.left = `${Math.round(rect.left)}px`;
     rightColumnResizer.style.top = `${Math.round(rect.top)}px`;
     rightColumnResizer.style.height = `${Math.max(0, Math.round(rect.height))}px`;
   };
@@ -727,6 +727,7 @@ function setupRightColumnResizer() {
     requestAnimationFrame(() => syncResizerGeometry());
     setTimeout(() => syncResizerGeometry(), 120);
   };
+  window.syncRightColumnResizer = scheduleResizerSync;
 
   applyResponsiveWidth();
   scheduleResizerSync();
@@ -891,6 +892,8 @@ async function resumeVeAfterAccountSwitchFailure() {
     await loadCourses();
   } catch {
     // ignore
+  } finally {
+    window.syncRightColumnResizer?.();
   }
 }
 
@@ -2395,6 +2398,7 @@ async function doLoginFlow() {
         try { await loadCourses(); } catch {}
       }
       try { await loadResourceSpaceForCurrentAccount(); } catch {}
+      window.syncRightColumnResizer?.();
     }
     isLoginInProgress = false;
     loginFlowUsernameSet = false;
@@ -4967,7 +4971,10 @@ function renderJlgjNeedLoginMessage() {
   setPlatformLoginState('jlgj', 'offline');
 
   if (shouldOpenAssist) {
-    openJlgjLoginAssistPopup(true);
+    chrome.tabs.query({ url: ['https://i.jielong.com/login*'] }).then((tabs) => {
+      const tab = (tabs || []).find((item) => Number(item?.id || 0) > 0);
+      if (tab?.id) void showJlgjQrFrameInBackgroundTab(tab.id);
+    }).catch(() => {});
     return;
   }
 
@@ -5041,6 +5048,55 @@ async function fetchJlgjJson(url) {
 async function openJlgjBackgroundTab() {
   const tab = await chrome.tabs.create({ url: 'https://i.jielong.com/my-class#bjtu-bg', active: false });
   return tab;
+}
+
+async function showJlgjQrFrameInBackgroundTab(tabId) {
+  const id = Number(tabId || 0);
+  if (!id) return null;
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: id },
+      world: 'MAIN',
+      func: async () => {
+        const deadline = Date.now() + 12000;
+        while (Date.now() < deadline) {
+          const frame = Array.from(document.querySelectorAll('iframe')).find((item) =>
+            String(item.src || '').startsWith('https://open.weixin.qq.com/connect/qrconnect?')
+          );
+          if (frame) return true;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        return false;
+      }
+    });
+    if (result?.[0]?.result !== true) return null;
+  } catch {
+    return null;
+  }
+
+  try {
+    const tab = await chrome.tabs.get(id);
+    await chrome.tabs.update(id, { active: true });
+    if (tab?.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+    return { tabId: id, windowId: tab?.windowId || null };
+  } catch {
+    return null;
+  }
+}
+
+async function hasJlgjQrFrame(tabId) {
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: Number(tabId) },
+      world: 'MAIN',
+      func: () => Array.from(document.querySelectorAll('iframe')).some((item) =>
+        String(item.src || '').startsWith('https://open.weixin.qq.com/connect/qrconnect?')
+      )
+    });
+    return result?.[0]?.result === true;
+  } catch {
+    return false;
+  }
 }
 
 async function waitForJlgjAuthHeaders(timeoutMs = 5000, minTs = 0) {
@@ -5127,17 +5183,21 @@ async function fetchJlgjJsonFromPageContext(url, existingTabId = null) {
   }
 }
 
-async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
+async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbort = null) {
   const start = Date.now();
   let ownedTabId = null;
   let reloadedOwnedTab = false;
+  let loginPending = false;
+  let loginPopupPrepared = false;
 
   const pickReadyTab = async () => {
+    if (typeof shouldAbort === 'function' && shouldAbort()) return null;
     const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*#bjtu-bg'] });
     const existing = (tabs || []).find((t) => Number.isFinite(Number(t?.id)) && t.status === 'complete');
     if (existing?.id) return existing;
 
     if (!ownedTabId) {
+      if (typeof shouldAbort === 'function' && shouldAbort()) return null;
       const created = await openJlgjBackgroundTab();
       ownedTabId = Number(created?.id || 0) || null;
     }
@@ -5153,7 +5213,10 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
   };
 
   try {
-    while (Date.now() - start < timeoutMs) {
+    while (Date.now() - start < (loginPending ? 30 * 60 * 1000 : timeoutMs)) {
+      if (typeof shouldAbort === 'function' && shouldAbort()) {
+        return { tabId: ownedTabId, ok: false, aborted: true };
+      }
       try {
         const tab = await pickReadyTab();
         if (!tab?.id) {
@@ -5161,13 +5224,24 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
           continue;
         }
 
+        const qrFrameVisible = await hasJlgjQrFrame(tab.id);
+        if (qrFrameVisible) {
+          loginPending = true;
+          if (!loginPopupPrepared) {
+            loginPopupPrepared = !!(await showJlgjQrFrameInBackgroundTab(tab.id));
+          }
+          await new Promise((r) => setTimeout(r, 600));
+          continue;
+        }
+
         const tabUrl = String(tab?.url || '');
         if (/https:\/\/i\.jielong\.com\/login/i.test(tabUrl)) {
-          if (ownedTabId && Number(tab.id) === Number(ownedTabId)) {
-            try { await chrome.tabs.remove(ownedTabId); } catch { /* ignore */ }
-            ownedTabId = null;
+          loginPending = true;
+          if (!loginPopupPrepared) {
+            loginPopupPrepared = !!(await showJlgjQrFrameInBackgroundTab(tab.id));
           }
-          return { ok: false, status: 401, data: null, unauthorized: true, loginRedirect: true };
+          await new Promise((r) => setTimeout(r, 600));
+          continue;
         }
 
         const stateRes = await chrome.scripting.executeScript({
@@ -5197,6 +5271,14 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
 
         if (state.hasData && state.isComplete) {
           const snap = state.dataSnap;
+          if (Number(snap?.userGroupPages?.status || 0) === 401) {
+            loginPending = true;
+            if (!loginPopupPrepared) {
+              loginPopupPrepared = !!(await showJlgjQrFrameInBackgroundTab(tab.id));
+            }
+            await new Promise((r) => setTimeout(r, 600));
+            continue;
+          }
           return {
             tabId: Number(tab.id || ownedTabId || 0) || null,
             ok: snap.userGroupPages.ok,
@@ -5226,7 +5308,16 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000) {
       }
       await new Promise((r) => setTimeout(r, 600));
     }
-    if (ownedTabId) chrome.tabs.remove(ownedTabId).catch(()=>{}); return { tabId: ownedTabId, ok: false, status: 0, data: null, unauthorized: false, timeout: true };
+    return {
+      tabId: ownedTabId,
+      ok: false,
+      status: loginPending ? 401 : 0,
+      data: null,
+      unauthorized: loginPending,
+      loginRedirect: loginPending,
+      keepOpen: loginPending,
+      timeout: true
+    };
   } catch {
     return { tabId: ownedTabId, ok: false, status: 0, data: null, unauthorized: true };
   }
@@ -7669,6 +7760,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
   setPlatformLoginState('jlgj', 'checking');
 
   let bgTab = null;
+  let keepBgTabOpen = false;
   // Cleanup orphaned background tabs from previous popup sessions
   try {
     const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*'] });
@@ -7721,12 +7813,16 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       return fetchJlgjJsonFromPageContext(u, bgTab.id);
     };
 
-    let listResp = await waitAndFetchJlgjGroupListFromBrowser(30000);
-    if (isStale()) return;
-
+    let listResp = await waitAndFetchJlgjGroupListFromBrowser(
+      30000,
+      () => isStale() || !isPlatformEnabled('jlgj')
+    );
     if (listResp?.tabId && Number.isFinite(Number(listResp.tabId))) {
       bgTab = { id: Number(listResp.tabId) };
     }
+    if (isStale() || !isPlatformEnabled('jlgj') || listResp?.aborted) return;
+
+    keepBgTabOpen = !!listResp?.keepOpen;
 
     if (listResp?.unauthorized) {
       window.platformLoadedOnce.jlgj = true;
@@ -8014,7 +8110,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       rebuildJlgjRender();
     }
   } finally {
-    if (bgTab?.id) {
+    if (bgTab?.id && !keepBgTabOpen) {
       try { await chrome.tabs.remove(bgTab.id); } catch { /* ignore */ }
     }
   }

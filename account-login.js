@@ -3,7 +3,12 @@
 
   const BASE_VE = 'http://123.121.147.7:88/ve/';
   const ACCOUNT_LIST_VERSION_KEY = 'accountListVersion';
+  const ACCOUNT_LIST_REVISION_KEY = 'accountListRevision';
+  const ACCOUNT_LIST_WRITING_KEY = 'accountListWriting';
+  const ACCOUNT_LIST_WRITE_LOCK = 'bjtu-account-list-write';
   const ACCOUNT_LIST_VERSION = 3;
+  const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
+  const ACCOUNT_FILE_VERSION = 1;
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_URL = BASE_VE + 's.shtml?username=admin&password=3115b155e14c1fb027ef459be500e8fd&login=main_2&goLogin=1';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
@@ -292,7 +297,189 @@
   function preserveLocalBindings(next, bindings) {
     Object.keys(next || {}).forEach((loginName) => {
       const quickUsername = bindings?.get(loginName);
-      if (quickUsername) next[loginName].quickUsername = quickUsername;
+      if (quickUsername && !next[loginName].quickUsername) next[loginName].quickUsername = quickUsername;
+    });
+  }
+
+  function createWritingMarker() {
+    return {
+      token: Date.now() + '-' + Math.random(),
+      startedAt: Date.now(),
+      heartbeatAt: Date.now()
+    };
+  }
+
+  async function acquireWritingLock() {
+    if (!navigator.locks?.request) return () => {};
+    let releaseLock;
+    let markAcquired;
+    const acquired = new Promise((resolve) => { markAcquired = resolve; });
+    const released = new Promise((resolve) => { releaseLock = resolve; });
+    navigator.locks.request(ACCOUNT_LIST_WRITE_LOCK, async () => {
+      markAcquired();
+      await released;
+    }).catch(() => markAcquired());
+    await acquired;
+    return () => releaseLock?.();
+  }
+
+  function startWritingHeartbeat(marker) {
+    return setInterval(async () => {
+      try {
+        const current = await chrome.storage.local.get([ACCOUNT_LIST_WRITING_KEY]);
+        if (current?.[ACCOUNT_LIST_WRITING_KEY]?.token !== marker.token) return;
+        marker.heartbeatAt = Date.now();
+        await chrome.storage.local.set({ [ACCOUNT_LIST_WRITING_KEY]: marker });
+      } catch {
+        // A transient storage failure must not interrupt account initialization.
+      }
+    }, 2000);
+  }
+
+  async function clearWritingMarker(marker, heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    const current = await chrome.storage.local.get([ACCOUNT_LIST_WRITING_KEY]);
+    if (current?.[ACCOUNT_LIST_WRITING_KEY]?.token === marker.token) {
+      await chrome.storage.local.remove([ACCOUNT_LIST_WRITING_KEY]);
+    }
+  }
+
+  function parseAccountFile(source) {
+    let payload;
+    try {
+      payload = typeof source === 'string' ? JSON.parse(source) : source;
+    } catch {
+      throw new Error('文件不是有效的 JSON');
+    }
+    if (!payload || payload.format !== ACCOUNT_FILE_FORMAT || Number(payload.version) !== ACCOUNT_FILE_VERSION) {
+      throw new Error('不支持的账号列表文件格式或版本');
+    }
+    if (!Array.isArray(payload.accounts) || !payload.accounts.length) {
+      throw new Error('文件中没有账号记录');
+    }
+    if (payload.accounts.length > 300000) throw new Error('账号记录数量异常');
+    const accounts = Object.create(null);
+    payload.accounts.forEach((value, index) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('第 ' + (index + 1) + ' 条账号记录无效');
+      }
+      const loginName = String(value.loginName || '').trim();
+      const password = String(value.password || '').trim().toLowerCase();
+      if (!loginName || loginName.length > 128) throw new Error('第 ' + (index + 1) + ' 条账号缺少有效账号');
+      if (Object.prototype.hasOwnProperty.call(accounts, loginName)) {
+        throw new Error('文件中存在重复账号：' + loginName);
+      }
+      if (password && !/^[0-9a-f]{32}$/.test(password)) {
+        throw new Error('账号 ' + loginName + ' 的密码 MD5 无效');
+      }
+      accounts[loginName] = {
+        loginName,
+        roleName: String(value.roleName || '').trim().slice(0, 256),
+        userName: String(value.userName || '').trim().slice(0, 256),
+        password,
+        quickUsername: String(value.quickUsername || '').trim()
+      };
+    });
+    return accounts;
+  }
+
+  async function importAccountFile(source, { showProgress = false } = {}) {
+    const accounts = parseAccountFile(source);
+    const localBindings = await readLocalBindings();
+    preserveLocalBindings(accounts, localBindings);
+    const total = Object.keys(accounts).length;
+    const releaseWritingLock = await acquireWritingLock();
+    const marker = createWritingMarker();
+    await chrome.storage.local.set({ [ACCOUNT_LIST_WRITING_KEY]: marker });
+    const heartbeatTimer = startWritingHeartbeat(marker);
+    try {
+      if (showProgress) setProgress(0, '正在导入账号列表…');
+      await global.BjtuAccountStore.replaceAll(accounts, (progress) => {
+        if (!showProgress) return;
+        setProgress(100, '正在导入账号列表…（' + Number(progress?.written || 0) + ' / ' + total + '）');
+        setListProgress('teacher', progress?.teacherWritten, progress?.teacherTotal, '正在写入', '写入');
+        setListProgress('student', progress?.studentWritten, progress?.studentTotal, '正在写入', '写入');
+      });
+      await chrome.storage.local.set({
+        [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
+        [ACCOUNT_LIST_REVISION_KEY]: Date.now()
+      });
+      await syncHistoryWithAccountList(accounts);
+      accountCache.clear();
+      return total;
+    } finally {
+      await clearWritingMarker(marker, heartbeatTimer);
+      releaseWritingLock();
+    }
+  }
+
+  async function exportAccountFile() {
+    const state = await chrome.storage.local.get([ACCOUNT_LIST_WRITING_KEY]);
+    const writingState = state?.[ACCOUNT_LIST_WRITING_KEY];
+    const heartbeatAt = Number(writingState?.heartbeatAt || 0);
+    const lockState = navigator.locks?.query ? await navigator.locks.query() : null;
+    const hasActiveLock = !!lockState?.held?.some((lock) => lock.name === ACCOUNT_LIST_WRITE_LOCK);
+    const hasRecentHeartbeat = heartbeatAt && Date.now() - heartbeatAt < 7000;
+    if (hasActiveLock || (!lockState && hasRecentHeartbeat)) {
+      throw new Error('账号列表仍在获取或写入，请完成后再导出');
+    }
+    if (writingState) await chrome.storage.local.remove([ACCOUNT_LIST_WRITING_KEY]);
+    const accounts = await global.BjtuAccountStore.getAll();
+    if (!accounts.length) throw new Error('账号列表为空');
+    const studentCount = accounts.filter((account) => account.roleName === '学生').length;
+    return {
+      format: ACCOUNT_FILE_FORMAT,
+      version: ACCOUNT_FILE_VERSION,
+      exportedAt: new Date().toISOString(),
+      summary: {
+        total: accounts.length,
+        teacher: accounts.length - studentCount,
+        student: studentCount
+      },
+      accounts
+    };
+  }
+
+  function requestInitializationSource() {
+    return new Promise((resolve) => {
+      const actions = document.getElementById('account-init-actions');
+      const remote = document.getElementById('account-init-remote');
+      const importButton = document.getElementById('account-init-import');
+      const fileInput = document.getElementById('account-init-file');
+      if (!(actions instanceof HTMLElement) || !(fileInput instanceof HTMLInputElement)) {
+        resolve({ source: 'remote' });
+        return;
+      }
+      const cleanup = () => {
+        remote?.removeEventListener('click', onRemote);
+        importButton?.removeEventListener('click', onImport);
+        fileInput.removeEventListener('change', onFile);
+        actions.style.display = 'none';
+      };
+      const onRemote = () => {
+        cleanup();
+        resolve({ source: 'remote' });
+      };
+      const onImport = () => {
+        fileInput.value = '';
+        fileInput.click();
+      };
+      const onFile = async () => {
+        const file = fileInput.files?.[0];
+        if (!file) return;
+        try {
+          const count = await importAccountFile(await file.text(), { showProgress: true });
+          cleanup();
+          resolve({ source: 'import', count });
+        } catch (error) {
+          setProgress(0, '导入失败：' + String(error?.message || error));
+        }
+      };
+      remote?.addEventListener('click', onRemote);
+      importButton?.addEventListener('click', onImport);
+      fileInput.addEventListener('change', onFile);
+      actions.style.display = 'flex';
+      setProgress(0, '请选择账号列表初始化方式');
     });
   }
 
@@ -320,11 +507,27 @@
   async function initialize({ force = false, showProgress = true } = {}) {
     if (initializationPromise) return initializationPromise;
     initializationPromise = (async () => {
+      let remoteMarker = null;
+      let remoteHeartbeatTimer = null;
+      let releaseRemoteWritingLock = null;
       try {
         const existingCount = await load();
         const versionState = await chrome.storage.local.get([ACCOUNT_LIST_VERSION_KEY]);
         const isCurrentVersion = Number(versionState?.[ACCOUNT_LIST_VERSION_KEY] || 0) === ACCOUNT_LIST_VERSION;
         if (!force && isCurrentVersion && existingCount > 0) return existingCount;
+
+        if (showProgress) {
+          const source = await requestInitializationSource();
+          if (source.source === 'import') {
+            setProgress(100, '', false);
+            return Number(source.count || 0);
+          }
+        }
+
+        releaseRemoteWritingLock = await acquireWritingLock();
+        remoteMarker = createWritingMarker();
+        await chrome.storage.local.set({ [ACCOUNT_LIST_WRITING_KEY]: remoteMarker });
+        remoteHeartbeatTimer = startWritingHeartbeat(remoteMarker);
 
         if (showProgress) setProgress(1, '正在检查管理员登录状态…');
         const currentUser = await getCurrentUserInfo();
@@ -457,7 +660,10 @@
         const next = { ...teachers, ...students };
         if (!Object.keys(next).length) throw new Error('账号列表为空');
 
-        await chrome.storage.local.set({ [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION });
+        await chrome.storage.local.set({
+          [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
+          [ACCOUNT_LIST_REVISION_KEY]: Date.now()
+        });
         await syncHistoryWithAccountList(next);
         accountCache.clear();
         if (showProgress) setProgress(100, '', false);
@@ -470,6 +676,10 @@
         }
         throw error;
       } finally {
+        if (remoteMarker) {
+          await clearWritingMarker(remoteMarker, remoteHeartbeatTimer);
+        }
+        releaseRemoteWritingLock?.();
         initializationPromise = null;
       }
     })();
@@ -647,9 +857,15 @@
     getAccount,
     updateQuickUsername,
     updatePassword,
+    importAccountFile,
+    exportAccountFile,
     loginWithPassword,
     loginWithQuickUsername,
     requestRecovery
   };
+
+  chrome.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes?.[ACCOUNT_LIST_REVISION_KEY]) accountCache.clear();
+  });
 
 })(globalThis);

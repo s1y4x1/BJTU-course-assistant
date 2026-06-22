@@ -39,6 +39,17 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .account-init-progress-row {
             margin-top: 12px;
         }
+        .account-init-actions {
+            display: flex;
+            gap: 8px;
+            margin: 10px 0 4px;
+        }
+        .account-init-actions .btn {
+            flex: 1;
+        }
+        #account-init-import {
+            background: #2563eb;
+        }
         .account-init-progress-label {
             color: #475569;
             font-size: 12px;

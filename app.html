@@ -230,6 +230,11 @@
                 <div class="version-download-title">初始化登录账号列表</div>
             </div>
             <div id="account-init-status" class="account-init-status">正在准备…</div>
+            <div id="account-init-actions" class="account-init-actions" style="display:none;">
+                <button id="account-init-remote" class="btn" type="button">从平台获取</button>
+                <button id="account-init-import" class="btn" type="button">导入 JSON</button>
+                <input id="account-init-file" type="file" accept=".json,application/json" hidden>
+            </div>
             <div class="account-init-progress-row">
                 <div id="account-init-teacher-label" class="account-init-progress-label">教职工：正在等待</div>
                 <div class="progress-bar-container">

@@ -36,6 +36,16 @@
     .back-home-link:hover { text-decoration: underline; }
     .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
     .is-disabled { opacity: 0.5; pointer-events: none; }
+    .account-progress-mask { position:fixed; inset:0; z-index:10001; background:rgba(15,23,42,.45); align-items:center; justify-content:center; }
+    .account-progress-card { width:min(420px,calc(100vw - 32px)); box-sizing:border-box; padding:18px; border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(0,0,0,.25); }
+    .account-progress-title { font-size:16px; font-weight:600; color:#111827; }
+    .account-init-status { margin:10px 0; color:#334155; font-size:13px; line-height:1.6; }
+    .account-init-progress-row { margin-top:12px; }
+    .account-init-progress-label { color:#475569; font-size:12px; line-height:1.4; font-variant-numeric:tabular-nums; }
+    .progress-bar-container { width:100%; height:3px; margin-top:5px; overflow:hidden; background:#e5e7eb; }
+    .progress-bar { height:100%; width:0; transition:width .2s; }
+    #account-init-teacher-progress-bar { background:#2563eb; }
+    #account-init-student-progress-bar { background:#16a34a; }
   </style>
 </head>
 <body>
@@ -72,6 +82,12 @@
       <button id="bindPortalUsernameBtn" type="button">通过 MIS 绑定 username</button>
       <button id="exportBindDataBtn" type="button" style="background:#6b7280;">导出 MIS 绑定数据</button>
       <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配，以实现智慧课程平台快速登录。</div>
+      <div style="margin-top:4px;">
+        <button id="importAccountListBtn" type="button">导入账号列表</button>
+        <button id="exportAccountListBtn" type="button" style="background:#6b7280;">导出账号列表</button>
+        <input id="importAccountListFile" type="file" accept=".json,application/json" hidden>
+        <div class="tip">JSON 文件包含解析后的账号、姓名、角色、密码 MD5 和快速登录数据，请妥善保管。导入会替换当前账号列表。</div>
+      </div>
     </div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
       <input type="checkbox" id="enableYkt" style="width:auto;" />
@@ -103,11 +119,24 @@
         <input type="checkbox" id="popupUseFullscreenCacheEnabled" style="width:auto;" checked />
         <span>弹出窗口使用上次全屏页面缓存</span>
       </label>
-      <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存；如需更新，请重启平台或全屏打开。</div>
+      <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。<br>关闭时，只启用智慧课程平台，其他平台需每次手动启用（设计如此）。</div>
     </div>
   </div>
-
   <div id="msg"></div>
+  <div id="account-init-modal" class="account-progress-mask" style="display:none;">
+    <div class="account-progress-card">
+      <div class="account-progress-title">导入登录账号列表</div>
+      <div id="account-init-status" class="account-init-status">正在准备…</div>
+      <div class="account-init-progress-row">
+        <div id="account-init-teacher-label" class="account-init-progress-label">教职工：正在等待</div>
+        <div class="progress-bar-container"><div id="account-init-teacher-progress-bar" class="progress-bar"></div></div>
+      </div>
+      <div class="account-init-progress-row">
+        <div id="account-init-student-label" class="account-init-progress-label">学生：正在等待</div>
+        <div class="progress-bar-container"><div id="account-init-student-progress-bar" class="progress-bar"></div></div>
+      </div>
+    </div>
+  </div>
   <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>
   <div id="exportBindModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:12px;padding:20px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
@@ -119,6 +148,8 @@
       </div>
     </div>
   </div>
+  <script src="account-store.js"></script>
+  <script src="account-login.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

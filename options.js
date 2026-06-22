@@ -337,6 +337,44 @@ function goBackToApp() {
     }
   });
 
+  const importAccountListBtn = document.getElementById('importAccountListBtn');
+  const importAccountListFile = document.getElementById('importAccountListFile');
+  importAccountListBtn?.addEventListener('click', () => {
+    importAccountListFile.value = '';
+    importAccountListFile.click();
+  });
+  importAccountListFile?.addEventListener('change', async () => {
+    const file = importAccountListFile.files?.[0];
+    if (!file) return;
+    importAccountListBtn.disabled = true;
+    try {
+      const count = await globalThis.BjtuAccountLogin.importAccountFile(await file.text(), { showProgress: true });
+      setMsg('已导入 ' + count + ' 个账号');
+    } catch (error) {
+      setMsg('导入失败：' + String(error?.message || error), false);
+    } finally {
+      const progressModal = document.getElementById('account-init-modal');
+      if (progressModal) progressModal.style.display = 'none';
+      importAccountListBtn.disabled = false;
+    }
+  });
+  document.getElementById('exportAccountListBtn')?.addEventListener('click', async () => {
+    try {
+      const payload = await globalThis.BjtuAccountLogin.exportAccountFile();
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'bjtu-account-list-' + new Date().toISOString().slice(0, 10) + '.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMsg('已导出教职工 ' + Number(payload.summary?.teacher || 0)
+        + ' 个、学生 ' + Number(payload.summary?.student || 0) + ' 个');
+    } catch (error) {
+      setMsg('导出失败：' + String(error?.message || error), false);
+    }
+  });
+
   // Reset: restore defaults. Platform display/load should only check VE.
   document.getElementById('resetBtn').addEventListener('click', async () => {
     const defaultPlatform = { jlgj: false, mrjzy: false, ve: true, ykt: false };

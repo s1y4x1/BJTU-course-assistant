@@ -72,6 +72,12 @@
     return Number(await requestResult(db.transaction(STORE_NAME).objectStore(STORE_NAME).count()) || 0);
   }
 
+  async function getAll() {
+    const db = await open();
+    const values = await requestResult(db.transaction(STORE_NAME).objectStore(STORE_NAME).getAll());
+    return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
+  }
+
   async function put(value) {
     const record = normalize(value?.loginName, value);
     if (!record) return null;
@@ -201,6 +207,7 @@
 
   global.BjtuAccountStore = {
     get,
+    getAll,
     count,
     put,
     update,
