@@ -257,7 +257,7 @@
     }
   }
 
-  function setListProgress(type, parsed, total, pendingLabel = '正在读取总数', phase = '') {
+  function setListProgress(type, parsed, total, pendingLabel = '正在读取总数', phase = '', currentPrefixes = []) {
     const bar = document.getElementById('account-init-' + type + '-progress-bar');
     const label = document.getElementById('account-init-' + type + '-label');
     const safeParsed = Math.max(0, Number(parsed) || 0);
@@ -267,8 +267,11 @@
     if (label instanceof HTMLElement) {
       const name = type === 'teacher' ? '教职工' : '学生';
       const prefix = name + (phase ? phase : '') + '：';
+      const writingText = Array.isArray(currentPrefixes) && currentPrefixes.length
+        ? '；正在写入：' + currentPrefixes.join('、')
+        : '';
       label.textContent = safeTotal > 0
-        ? (prefix + safeParsed + ' / ' + safeTotal)
+        ? (prefix + safeParsed + ' / ' + safeTotal + writingText)
         : (prefix + pendingLabel);
     }
   }
@@ -398,8 +401,8 @@
       await global.BjtuAccountStore.replaceAll(accounts, (progress) => {
         if (!showProgress) return;
         setProgress(100, '正在导入账号列表…（' + Number(progress?.written || 0) + ' / ' + total + '）');
-        setListProgress('teacher', progress?.teacherWritten, progress?.teacherTotal, '正在写入', '写入');
-        setListProgress('student', progress?.studentWritten, progress?.studentTotal, '正在写入', '写入');
+        setListProgress('teacher', progress?.teacherWritten, progress?.teacherTotal, '正在写入', '写入', progress?.teacherCurrentPrefixes);
+        setListProgress('student', progress?.studentWritten, progress?.studentTotal, '正在写入', '写入', progress?.studentCurrentPrefixes);
       });
       await chrome.storage.local.set({
         [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
@@ -570,8 +573,8 @@
         }
 
         const state = {
-          teacher: { parsed: 0, written: 0, total: 0, phase: 'load' },
-          student: { parsed: 0, written: 0, total: 0, phase: 'load' }
+          teacher: { parsed: 0, written: 0, total: 0, phase: 'load', currentPrefixes: [] },
+          student: { parsed: 0, written: 0, total: 0, phase: 'load', currentPrefixes: [] }
         };
         const localBindings = await readLocalBindings();
         let databaseCleared = false;
@@ -587,7 +590,8 @@
               isWriting ? roleState.written : roleState.parsed,
               roleState.total,
               isWriting ? '正在写入' : '正在读取总数',
-              isWriting ? '写入' : ''
+              isWriting ? '写入' : '',
+              isWriting ? roleState.currentPrefixes : []
             );
           });
         };
@@ -669,10 +673,13 @@
               setProgress(100, '正在获取并写入账号列表…');
               const written = type === 'teacher' ? progress?.teacherWritten : progress?.studentWritten;
               state[type].written = Number(written || 0);
-              setListProgress(type, state[type].written, total, '正在写入', '写入');
+              const prefixes = type === 'teacher' ? progress?.teacherCurrentPrefixes : progress?.studentCurrentPrefixes;
+              state[type].currentPrefixes = Array.isArray(prefixes) ? prefixes : [];
+              setListProgress(type, state[type].written, total, '正在写入', '写入', state[type].currentPrefixes);
             });
             state[type].phase = 'done';
             state[type].written = total;
+            state[type].currentPrefixes = [];
             updateProgress();
           });
           return writeQueue;
