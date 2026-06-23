@@ -475,12 +475,18 @@
       const onFile = async () => {
         const file = fileInput.files?.[0];
         if (!file) return;
+        cleanup();
         try {
           const count = await importAccountFile(await file.text(), { showProgress: true });
-          cleanup();
+          setProgress(100, '', false);
           resolve({ source: 'import', count });
         } catch (error) {
           setProgress(0, '导入失败：' + String(error?.message || error));
+          remote?.addEventListener('click', onRemote);
+          importButton?.addEventListener('click', onImport);
+          skipButton?.addEventListener('click', onSkip);
+          fileInput.addEventListener('change', onFile);
+          actions.style.display = 'flex';
         }
       };
       remote?.addEventListener('click', onRemote);
