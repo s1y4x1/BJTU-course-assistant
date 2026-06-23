@@ -288,13 +288,6 @@
       const loginName = String(record?.loginName || '').trim();
       if (loginName && record.quickUsername) bindings.set(loginName, String(record.quickUsername).trim());
     });
-    const stored = await chrome.storage.local.get([HISTORY_KEY]);
-    const history = Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [];
-    history.forEach((record) => {
-      const loginName = String(record?.loginName || record?.userId || '').trim();
-      const quickUsername = String(record?.quickUsername || '').trim();
-      if (loginName && quickUsername) bindings.set(loginName, quickUsername);
-    });
     return bindings;
   }
 
@@ -418,7 +411,7 @@
     }
   }
 
-  async function exportAccountFile() {
+  async function exportAccountFile({ showProgress = false } = {}) {
     const state = await chrome.storage.local.get([ACCOUNT_LIST_WRITING_KEY]);
     const writingState = state?.[ACCOUNT_LIST_WRITING_KEY];
     const heartbeatAt = Number(writingState?.heartbeatAt || 0);
@@ -429,9 +422,30 @@
       throw new Error('账号列表仍在获取或写入，请完成后再导出');
     }
     if (writingState) await chrome.storage.local.remove([ACCOUNT_LIST_WRITING_KEY]);
-    const accounts = await global.BjtuAccountStore.getAll();
+    if (showProgress) {
+      setProgress(0, '正在读取账号列表…');
+      setListProgress('teacher', 0, 0, '正在读取');
+      setListProgress('student', 0, 0, '正在读取');
+    }
+    const accounts = await global.BjtuAccountStore.getAll((progress) => {
+      if (!showProgress) return;
+      const total = Number(progress?.total || 0);
+      const read = Number(progress?.read || 0);
+      const teacherRead = Number(progress?.teacherRead || 0);
+      const studentRead = Number(progress?.studentRead || 0);
+      const teacherTotal = Math.max(teacherRead, total - studentRead);
+      const studentTotal = Math.max(studentRead, total - teacherRead);
+      setProgress(total > 0 ? Math.min(100, (read / total) * 100) : 0, '正在导出账号列表…（' + read + ' / ' + total + '）');
+      setListProgress('teacher', teacherRead, teacherTotal, '正在读取', '读取');
+      setListProgress('student', studentRead, studentTotal, '正在读取', '读取');
+    });
     if (!accounts.length) throw new Error('账号列表为空');
     const studentCount = accounts.filter((account) => account.roleName === '学生').length;
+    if (showProgress) {
+      setProgress(100, '正在生成导出文件…（' + accounts.length + ' / ' + accounts.length + '）');
+      setListProgress('teacher', accounts.length - studentCount, accounts.length - studentCount, '正在生成', '读取');
+      setListProgress('student', studentCount, studentCount, '正在生成', '读取');
+    }
     return {
       format: ACCOUNT_FILE_FORMAT,
       version: ACCOUNT_FILE_VERSION,
@@ -504,22 +518,14 @@
   async function syncHistoryWithAccountList(next) {
     const stored = await chrome.storage.local.get([HISTORY_KEY]);
     const history = Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [];
-    let changed = false;
     const updated = history.map((record) => {
       const loginName = String(record?.loginName || record?.userId || '').trim();
-      const account = next[loginName];
-      if (!account) return record;
-      changed = true;
       return {
-        ...record,
         loginName,
-        userName: String(account.userName || record?.userName || '').trim(),
-        roleName: String(account.roleName || record?.roleName || '').trim(),
-        passwordMd5: String(account.password || '').trim(),
-        quickUsername: String(account.quickUsername || record?.quickUsername || '').trim()
+        lastLoginAt: Number(record?.lastLoginAt || 0) || 0
       };
-    });
-    if (changed) await chrome.storage.local.set({ [HISTORY_KEY]: updated });
+    }).filter((record) => record.loginName);
+    await chrome.storage.local.set({ [HISTORY_KEY]: updated });
   }
 
   async function initialize({ force = false, showProgress = true } = {}) {

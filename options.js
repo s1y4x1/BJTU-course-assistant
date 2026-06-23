@@ -361,6 +361,10 @@ function goBackToApp() {
 
   const importAccountListBtn = document.getElementById('importAccountListBtn');
   const importAccountListFile = document.getElementById('importAccountListFile');
+  const setAccountProgressTitle = (title) => {
+    const el = document.querySelector('#account-init-modal .account-progress-title');
+    if (el instanceof HTMLElement) el.textContent = String(title || '账号列表');
+  };
   importAccountListBtn?.addEventListener('click', () => {
     importAccountListFile.value = '';
     importAccountListFile.click();
@@ -370,6 +374,7 @@ function goBackToApp() {
     if (!file) return;
     importAccountListBtn.disabled = true;
     try {
+      setAccountProgressTitle('导入登录账号列表');
       const count = await globalThis.BjtuAccountLogin.importAccountFile(await file.text(), { showProgress: true });
       setMsg('已导入 ' + count + ' 个账号');
     } catch (error) {
@@ -380,9 +385,12 @@ function goBackToApp() {
       importAccountListBtn.disabled = false;
     }
   });
-  document.getElementById('exportAccountListBtn')?.addEventListener('click', async () => {
+  const exportAccountListBtn = document.getElementById('exportAccountListBtn');
+  exportAccountListBtn?.addEventListener('click', async () => {
+    exportAccountListBtn.disabled = true;
+    setAccountProgressTitle('导出登录账号列表');
     try {
-      const payload = await globalThis.BjtuAccountLogin.exportAccountFile();
+      const payload = await globalThis.BjtuAccountLogin.exportAccountFile({ showProgress: true });
       const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -394,6 +402,10 @@ function goBackToApp() {
         + ' 个、学生 ' + Number(payload.summary?.student || 0) + ' 个');
     } catch (error) {
       setMsg('导出失败：' + String(error?.message || error), false);
+    } finally {
+      const progressModal = document.getElementById('account-init-modal');
+      if (progressModal) progressModal.style.display = 'none';
+      exportAccountListBtn.disabled = false;
     }
   });
 

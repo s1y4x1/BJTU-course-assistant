@@ -54,21 +54,26 @@ function normalizePortalLoginAccountHistory(rawList) {
   const list = Array.isArray(rawList) ? rawList : [];
   return list
     .map((it) => {
-      const userId = String(it?.userId || '').trim();
-      if (!userId) return null;
+      const loginName = String(it?.loginName || it?.userId || '').trim();
+      if (!loginName) return null;
       const lastLoginAt = Number(it?.lastLoginAt || 0);
       return {
-        userId,
-        loginName: String(it?.loginName || userId).trim(),
-        userName: String(it?.userName || '').trim(),
-        roleName: String(it?.roleName || '').trim(),
-        passwordMd5: String(it?.passwordMd5 || '').trim(),
-        quickUsername: String(it?.quickUsername || it?.username || '').trim(),
+        userId: loginName,
+        loginName,
         lastLoginAt: Number.isFinite(lastLoginAt) ? lastLoginAt : 0
       };
     })
     .filter(Boolean)
     .sort((a, b) => Number(b.lastLoginAt || 0) - Number(a.lastLoginAt || 0));
+}
+
+function serializePortalLoginAccountHistory(rawList) {
+  return normalizePortalLoginAccountHistory(rawList)
+    .map((record) => ({
+      loginName: String(record?.loginName || record?.userId || '').trim(),
+      lastLoginAt: Number(record?.lastLoginAt || 0) || 0
+    }))
+    .filter((record) => record.loginName);
 }
 
 async function getPortalLoginAccountHistory() {
@@ -80,25 +85,33 @@ async function getPortalLoginAccountHistory() {
   }
 }
 
+async function getEnrichedPortalLoginAccountHistory() {
+  const history = await getPortalLoginAccountHistory();
+  return Promise.all(history.map(async (record) => {
+    const account = await globalThis.BjtuAccountStore.get(record.loginName).catch(() => null);
+    return {
+      ...record,
+      userName: String(account?.userName || '').trim(),
+      roleName: String(account?.roleName || '').trim(),
+      passwordMd5: String(account?.password || '').trim(),
+      quickUsername: String(account?.quickUsername || '').trim()
+    };
+  }));
+}
+
 async function savePortalLoginAccountRecord(userId, patch = {}) {
-  const uid = String(userId || '').trim();
-  if (!uid) return null;
+  const loginName = String(patch?.loginName || userId || '').trim();
+  if (!loginName) return null;
   const list = await getPortalLoginAccountHistory();
-  const idx = list.findIndex((it) => String(it?.userId || '').trim() === uid);
-  const prev = idx >= 0 ? list[idx] : {};
+  const idx = list.findIndex((it) => String(it?.loginName || it?.userId || '').trim() === loginName);
   const record = {
-    ...prev,
-    userId: uid,
-    loginName: String(patch.loginName || prev.loginName || uid).trim(),
-    userName: String(patch.userName || prev.userName || '').trim(),
-    roleName: String(patch.roleName || prev.roleName || '').trim(),
-    passwordMd5: String(patch.passwordMd5 || prev.passwordMd5 || '').trim(),
-    quickUsername: String(patch.quickUsername || patch.username || prev.quickUsername || '').trim(),
+    userId: loginName,
+    loginName,
     lastLoginAt: Date.now()
   };
   if (idx >= 0) list.splice(idx, 1);
   list.unshift(record);
-  await chrome.storage.local.set({ [LOGIN_ACCOUNT_HISTORY_KEY]: normalizePortalLoginAccountHistory(list) });
+  await chrome.storage.local.set({ [LOGIN_ACCOUNT_HISTORY_KEY]: serializePortalLoginAccountHistory(list) });
   return record;
 }
 
@@ -149,6 +162,21 @@ function parsePortalLoginResponse(text) {
   return { ok: false, reason: 'other', message: message || '登录失败' };
 }
 
+function decodePortalResponseBuffer(buf, contentType = '') {
+  const type = String(contentType || '').toLowerCase();
+  if (type.includes('gbk') || type.includes('gb2312')) {
+    return new TextDecoder('gbk').decode(buf);
+  }
+  const utf8 = new TextDecoder('utf-8').decode(buf);
+  if (!utf8.includes('�')) return utf8;
+  const gbk = new TextDecoder('gbk').decode(buf);
+  return gbk && !gbk.includes('�') ? gbk : utf8;
+}
+
+async function decodePortalResponse(res) {
+  return decodePortalResponseBuffer(await res.arrayBuffer(), res.headers.get('content-type'));
+}
+
 async function getPortalCurrentUserInfo() {
   try {
     const res = await fetch('http://123.121.147.7:88/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo', {
@@ -166,20 +194,22 @@ async function getPortalCurrentUserInfo() {
 
 async function requestPortalLogin(url) {
   const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
-  return parsePortalLoginResponse(await res.text());
+  return parsePortalLoginResponse(await decodePortalResponse(res));
 }
 
 async function performPortalPageLogin(payload = {}) {
   const loginName = String(payload?.loginName || '').trim();
   if (!loginName) return { ok: false, reason: 'empty', message: '请输入账号' };
-  const currentUser = await getPortalCurrentUserInfo();
-  if (String(currentUser?.loginName || '').trim() === loginName) {
-    return { ok: true, alreadyLoggedIn: true, userInfo: currentUser };
+  if (!payload?.skipCurrentCheck) {
+    const currentUser = await getPortalCurrentUserInfo();
+    if (String(currentUser?.loginName || '').trim() === loginName) {
+      return { ok: true, alreadyLoggedIn: true, userInfo: currentUser };
+    }
   }
 
   await globalThis.BjtuAccountStore.migrateLegacy();
   const account = await globalThis.BjtuAccountStore.get(loginName);
-  const history = await getPortalLoginAccountHistory();
+  const history = await getEnrichedPortalLoginAccountHistory();
   const historyRecord = history.find((item) => item.loginName === loginName || item.userId === loginName) || null;
   const source = account || historyRecord;
   const plain = String(payload?.passwordPlain || '');
@@ -211,30 +241,35 @@ async function performPortalPageLogin(payload = {}) {
   const result = await requestPortalLogin(passwordUrl);
   if (!result.ok) return result;
 
-  if (account) await globalThis.BjtuAccountStore.update(loginName, { password });
-  await savePortalLoginAccountRecord(loginName, {
-    loginName,
-    userName: String(source?.userName || '').trim(),
-    roleName: String(source?.roleName || '').trim(),
-    passwordMd5: password,
-    quickUsername: String(source?.quickUsername || '').trim()
+  const userInfo = await getPortalCurrentUserInfo();
+  const finalLoginName = String(userInfo?.loginName || loginName).trim();
+  const finalAccount = finalLoginName === loginName ? account : await globalThis.BjtuAccountStore.get(finalLoginName);
+  const finalHistory = finalLoginName === loginName
+    ? historyRecord
+    : history.find((item) => item.loginName === finalLoginName || item.userId === finalLoginName) || null;
+  const finalSource = finalAccount || finalHistory || source || {};
+  await globalThis.BjtuAccountStore.put({
+    loginName: finalLoginName,
+    userName: String(userInfo?.userName || finalSource?.userName || '').trim(),
+    roleName: String(userInfo?.roleName || finalSource?.roleName || '').trim(),
+    password,
+    quickUsername: String(finalSource?.quickUsername || '').trim()
   });
-  return result;
+  await savePortalLoginAccountRecord(finalLoginName, {
+    loginName: finalLoginName,
+    userName: String(userInfo?.userName || finalSource?.userName || '').trim(),
+    roleName: String(userInfo?.roleName || finalSource?.roleName || '').trim(),
+    passwordMd5: password,
+    quickUsername: String(finalSource?.quickUsername || '').trim()
+  });
+  return { ...result, userInfo };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'PORTAL_LOGIN_CONTEXT') {
     (async () => {
       const stored = await chrome.storage.local.get(['username']);
-      const history = await getPortalLoginAccountHistory();
-      const mergedHistory = await Promise.all(history.map(async (record) => {
-        const loginName = String(record?.loginName || record?.userId || '').trim();
-        const account = loginName ? await globalThis.BjtuAccountStore.get(loginName) : null;
-        return {
-          ...record,
-          quickUsername: String(record?.quickUsername || account?.quickUsername || '').trim()
-        };
-      }));
+      const mergedHistory = await getEnrichedPortalLoginAccountHistory();
       sendResponse({
         ok: true,
         username: String(stored?.username || '').trim(),
@@ -252,7 +287,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         userName: message?.payload?.userName,
         limit: showAll ? 200000 : 100
       }),
-      getPortalLoginAccountHistory()
+      getEnrichedPortalLoginAccountHistory()
     ])
       .then(([searchResult, history]) => {
         const accounts = Array.isArray(searchResult?.accounts) ? searchResult.accounts : [];
@@ -284,18 +319,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === 'PORTAL_CHECK_LOGIN_STATUS') {
+    (async () => {
+      const loginName = String(message?.payload?.loginName || '').trim();
+      const currentUser = await getPortalCurrentUserInfo();
+      sendResponse({
+        ok: true,
+        loggedIn: !!currentUser,
+        alreadyLoggedIn: !!loginName && String(currentUser?.loginName || '').trim() === loginName,
+        userInfo: currentUser || null
+      });
+    })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
   if (message?.type === 'OPEN_APP') {
     (async () => {
       try {
-        const tabs = await chrome.tabs.query({ url: APP_URL });
+        const targetUrl = message?.payload?.accountInit
+          ? chrome.runtime.getURL('app.html?accountInit=1')
+          : APP_URL;
+        const tabs = (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL));
         if (Array.isArray(tabs) && tabs.length) {
           const t = tabs[0];
-          try { await chrome.tabs.update(t.id, { active: true }); } catch (e) {}
+          try { await chrome.tabs.update(t.id, { active: true, url: targetUrl }); } catch (e) {}
           try { await chrome.windows.update(t.windowId, { focused: true }); } catch (e) {}
           sendResponse({ ok: true, reused: true, tabId: t.id });
           return;
         }
-        const newTab = await chrome.tabs.create({ url: APP_URL });
+        const newTab = await chrome.tabs.create({ url: targetUrl });
         sendResponse({ ok: true, reused: false, tabId: newTab?.id || null });
       } catch (e) {
         sendResponse({ ok: false, error: String(e?.message || e) });

@@ -74,10 +74,50 @@
     return Number(await requestResult(db.transaction(STORE_NAME).objectStore(STORE_NAME).count()) || 0);
   }
 
-  async function getAll() {
+  async function getAll(onProgress = null) {
     const db = await open();
-    const values = await requestResult(db.transaction(STORE_NAME).objectStore(STORE_NAME).getAll());
-    return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
+    if (typeof onProgress !== 'function') {
+      const values = await requestResult(db.transaction(STORE_NAME).objectStore(STORE_NAME).getAll());
+      return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
+    }
+    const total = await count();
+    const transaction = db.transaction(STORE_NAME);
+    const store = transaction.objectStore(STORE_NAME);
+    const rows = [];
+    let read = 0;
+    let teacherRead = 0;
+    let studentRead = 0;
+    const reportProgress = () => onProgress({
+      read,
+      total,
+      teacherRead,
+      studentRead
+    });
+    reportProgress();
+    const done = transactionDone(transaction);
+    await new Promise((resolve, reject) => {
+      const request = store.openCursor();
+      request.onerror = () => reject(request.error || new Error('账号列表读取失败'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          reportProgress();
+          resolve();
+          return;
+        }
+        const record = normalize(cursor.value?.loginName, cursor.value);
+        if (record) {
+          rows.push(record);
+          read += 1;
+          if (record.roleName === '学生') studentRead += 1;
+          else teacherRead += 1;
+          if (read % WRITE_PROGRESS_STEP === 0) reportProgress();
+        }
+        cursor.continue();
+      };
+    });
+    await done;
+    return rows;
   }
 
   async function put(value) {

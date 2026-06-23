@@ -47,6 +47,12 @@
   const manual = mask.querySelector('#__bjtu_portal_manual_password__');
   const plain = mask.querySelector('#__bjtu_portal_password_plain__');
   const md5Input = mask.querySelector('#__bjtu_portal_password_md5__');
+  const recoveryMask = mask.querySelector('#__bjtu_portal_recovery_mask__');
+  const recoveryMessage = mask.querySelector('#__bjtu_portal_recovery_message__');
+  const recoveryChoice = mask.querySelector('#__bjtu_portal_recovery_choice__');
+  const recoveryManual = mask.querySelector('#__bjtu_portal_recovery_manual__');
+  const recoveryPlain = mask.querySelector('#__bjtu_portal_recovery_plain__');
+  const recoveryMd5 = mask.querySelector('#__bjtu_portal_recovery_md5__');
   let searchTimer = null;
   let searchSerial = 0;
   let selectedLoginName = '';
@@ -197,6 +203,99 @@
     if (md5Input instanceof HTMLInputElement && typeof md5 === 'function') md5Input.value = md5(plain.value);
   });
 
+  function requestRecovery(loginName, message) {
+    return new Promise((resolve) => {
+      if (!(recoveryMask instanceof HTMLElement)) return resolve({ action: 'manual' });
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        recoveryMask.style.display = 'none';
+        resolve(value);
+      };
+      const onReinit = async () => {
+        await sendMessage({ type: 'OPEN_APP', payload: { accountInit: true } });
+        finish({ action: 'cancel' });
+      };
+      const onManual = () => {
+        if (recoveryChoice instanceof HTMLElement) recoveryChoice.style.display = 'none';
+        if (recoveryManual instanceof HTMLElement) recoveryManual.style.display = 'block';
+        if (recoveryPlain instanceof HTMLInputElement) {
+          recoveryPlain.value = '';
+          recoveryPlain.focus();
+        }
+        if (recoveryMd5 instanceof HTMLInputElement) recoveryMd5.value = '';
+      };
+      const onDefault = () => {
+        if (!(recoveryPlain instanceof HTMLInputElement)) return;
+        recoveryPlain.value = 'Bjtu@' + String(loginName || '').trim();
+        if (recoveryMd5 instanceof HTMLInputElement && typeof md5 === 'function') recoveryMd5.value = md5(recoveryPlain.value);
+        recoveryPlain.focus();
+      };
+      const onPlainInput = () => {
+        if (!(recoveryPlain instanceof HTMLInputElement) || !(recoveryMd5 instanceof HTMLInputElement) || typeof md5 !== 'function') return;
+        recoveryMd5.value = recoveryPlain.value ? md5(recoveryPlain.value) : '';
+      };
+      const onMd5Input = () => {
+        if (!(recoveryMd5 instanceof HTMLInputElement)) return;
+        recoveryMd5.value = String(recoveryMd5.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 32).toLowerCase();
+      };
+      const onSubmit = () => {
+        const password = String(recoveryPlain?.value || '')
+          ? (typeof md5 === 'function' ? md5(String(recoveryPlain.value || '')) : '')
+          : String(recoveryMd5?.value || '').trim().toLowerCase();
+        if (!/^[0-9a-f]{32}$/.test(password)) {
+          recoveryMd5?.focus();
+          return;
+        }
+        finish({ action: 'password', password });
+      };
+      const onCancel = () => finish({ action: 'cancel' });
+      const onKeyDown = (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        onSubmit();
+      };
+      const onMaskDown = (event) => { recoveryMask.dataset.maskDown = event.target === recoveryMask ? '1' : '0'; };
+      const onMaskUp = (event) => {
+        if (event.target === recoveryMask && recoveryMask.dataset.maskDown === '1') onCancel();
+        delete recoveryMask.dataset.maskDown;
+      };
+      const cleanup = () => {
+        mask.querySelector('#__bjtu_portal_recovery_reinitialize__')?.removeEventListener('click', onReinit);
+        mask.querySelector('#__bjtu_portal_recovery_manual_btn__')?.removeEventListener('click', onManual);
+        mask.querySelector('#__bjtu_portal_recovery_cancel__')?.removeEventListener('click', onCancel);
+        mask.querySelector('#__bjtu_portal_recovery_default__')?.removeEventListener('click', onDefault);
+        mask.querySelector('#__bjtu_portal_recovery_submit__')?.removeEventListener('click', onSubmit);
+        mask.querySelector('#__bjtu_portal_recovery_manual_cancel__')?.removeEventListener('click', onCancel);
+        recoveryPlain?.removeEventListener('input', onPlainInput);
+        recoveryMd5?.removeEventListener('input', onMd5Input);
+        recoveryPlain?.removeEventListener('keydown', onKeyDown);
+        recoveryMd5?.removeEventListener('keydown', onKeyDown);
+        recoveryMask.removeEventListener('mousedown', onMaskDown);
+        recoveryMask.removeEventListener('mouseup', onMaskUp);
+      };
+
+      if (recoveryMessage instanceof HTMLElement) recoveryMessage.textContent = String(message || '账号或密码错误');
+      if (recoveryChoice instanceof HTMLElement) recoveryChoice.style.display = 'flex';
+      if (recoveryManual instanceof HTMLElement) recoveryManual.style.display = 'none';
+      mask.querySelector('#__bjtu_portal_recovery_reinitialize__')?.addEventListener('click', onReinit);
+      mask.querySelector('#__bjtu_portal_recovery_manual_btn__')?.addEventListener('click', onManual);
+      mask.querySelector('#__bjtu_portal_recovery_cancel__')?.addEventListener('click', onCancel);
+      mask.querySelector('#__bjtu_portal_recovery_default__')?.addEventListener('click', onDefault);
+      mask.querySelector('#__bjtu_portal_recovery_submit__')?.addEventListener('click', onSubmit);
+      mask.querySelector('#__bjtu_portal_recovery_manual_cancel__')?.addEventListener('click', onCancel);
+      recoveryPlain?.addEventListener('input', onPlainInput);
+      recoveryMd5?.addEventListener('input', onMd5Input);
+      recoveryPlain?.addEventListener('keydown', onKeyDown);
+      recoveryMd5?.addEventListener('keydown', onKeyDown);
+      recoveryMask.addEventListener('mousedown', onMaskDown);
+      recoveryMask.addEventListener('mouseup', onMaskUp);
+      recoveryMask.style.display = 'flex';
+    });
+  }
+
   async function submit(requestedLoginName = '') {
     if (loginRunning) return;
     const loginName = String(requestedLoginName || username?.value || '').trim();
@@ -213,13 +312,27 @@
     selectedLoginName = loginName;
     if (username instanceof HTMLInputElement) username.value = loginName;
     loginRunning = true;
-    setStatus('正在检查登录状态并登录…');
+    setStatus('正在检查登录状态…');
+    const statusResponse = await sendMessage({
+      type: 'PORTAL_CHECK_LOGIN_STATUS',
+      payload: { loginName }
+    });
+    if (statusResponse?.alreadyLoggedIn) {
+      loginRunning = false;
+      setStatus('已登录该账号', 'success');
+      setTimeout(() => {
+        location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
+      }, 350);
+      return;
+    }
+    setStatus('正在登录…');
     const response = await sendMessage({
       type: 'PORTAL_LOGIN_SUBMIT',
       payload: {
         loginName,
         passwordPlain: String(plain?.value || ''),
-        passwordMd5: String(md5Input?.value || '').trim()
+        passwordMd5: String(md5Input?.value || '').trim(),
+        skipCurrentCheck: true
       }
     });
     loginRunning = false;
@@ -230,7 +343,18 @@
       }, 350);
       return;
     }
-    if (response?.reason === 'needs-password' || response?.reason === 'account-not-found') {
+    if (response?.reason === 'credential' || response?.reason === 'account-not-found') {
+      const recovery = await requestRecovery(loginName, response?.message || '账号或密码错误');
+      if (recovery?.action === 'password' && recovery.password) {
+        if (plain instanceof HTMLInputElement) plain.value = '';
+        if (md5Input instanceof HTMLInputElement) md5Input.value = recovery.password;
+        void submit(loginName);
+        return;
+      }
+      setStatus('登录失败', 'error');
+      return;
+    }
+    if (response?.reason === 'needs-password') {
       showManualPassword(loginName);
     }
     setStatus(response?.message || '登录失败', 'error');

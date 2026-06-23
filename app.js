@@ -123,7 +123,9 @@ if (location.protocol !== 'chrome-extension:' || !extensionRuntimeId) {
   throw new Error('Direct app.html open is not supported outside the extension runtime.');
 }
 
-const popupMode = new URLSearchParams(String(location.search || '')).get('popup') === '1';
+const appSearchParams = new URLSearchParams(String(location.search || ''));
+const popupMode = appSearchParams.get('popup') === '1';
+const forceAccountListInitialization = appSearchParams.get('accountInit') === '1';
 if (popupMode) {
   document.body.classList.add('popup-mode');
 }
@@ -404,7 +406,7 @@ async function triggerInitialPlatformLoads() {
   if (isPlatformEnabled('mrjzy')) triggerExternalPlatformLoad('mrjzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
   if (isPlatformEnabled('ve')) {
-    await loadCourses();
+    await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: false });
   } else {
     window.currentVeCourseList = [];
     renderCourseList([]);
@@ -575,14 +577,7 @@ function togglePlatformSelection(platform, options = {}) {
     if (isPlatformEnabled('ve')) {
       void (async () => {
         await loadAutoLoadCourseResourcesSetting();
-        await refreshCurrentVeAccountFromSession({
-          reloadCourses: false,
-          reloadResourceSpace: false
-        }).catch(() => null);
-        await Promise.allSettled([
-          loadCourses(),
-          loadResourceSpaceForCurrentAccount()
-        ]);
+        await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
       })();
     }
     return;
@@ -656,13 +651,12 @@ function setupPortalUsernameBindMessageListener() {
       const st = message.payload || {};
       if (st.status !== 'done') return;
       showToast(`已绑定快速登录 username：${st.userId || st.quickUsername || ''}`, 'success', 1800);
-      loadLoginAccountHistory().catch(() => {});
       if (isPlatformEnabled('ve')) {
         await loadAutoLoadCourseResourcesSetting().catch(() => {});
         window.platformLoadedOnce.ve = false;
         setPlatformLoginState('ve', 'checking');
-        loadCourses().catch(() => {});
-        loadResourceSpaceForCurrentAccount().catch(() => {});
+        await loadLoginAccountHistory().catch(() => {});
+        await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
       }
     })();
   });
@@ -1592,6 +1586,8 @@ function updateTotalProgress() {
   updateTotalSpeed();
 }
 
+let currentVeUserInfoPromise = null;
+
 async function fetchCurrentVeUserInfo() {
   try {
     const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo`;
@@ -1607,12 +1603,20 @@ async function fetchCurrentVeUserInfo() {
   }
 }
 
+function fetchCurrentVeUserInfoOnce() {
+  if (!currentVeUserInfoPromise) {
+    currentVeUserInfoPromise = fetchCurrentVeUserInfo()
+      .finally(() => { currentVeUserInfoPromise = null; });
+  }
+  return currentVeUserInfoPromise;
+}
+
 async function refreshCurrentVeAccountFromSession({
   reloadCourses = false,
   reloadResourceSpace = false
 } = {}) {
   if (!isPlatformEnabled('ve')) return null;
-  const info = await fetchCurrentVeUserInfo();
+  const info = await fetchCurrentVeUserInfoOnce();
   if (!info) return null;
   const userId = String(info.loginName || info.userId || '').trim();
   if (!userId) return null;
@@ -1622,6 +1626,20 @@ async function refreshCurrentVeAccountFromSession({
     reloadResourceSpace,
     knownUserInfo: info
   });
+}
+
+async function reloadVePlatformFromSession({
+  reloadCourses = true,
+  reloadResourceSpace = true
+} = {}) {
+  if (!isPlatformEnabled('ve')) return null;
+  const synced = await refreshCurrentVeAccountFromSession({ reloadCourses, reloadResourceSpace });
+  if (synced) return synced;
+  const tasks = [];
+  if (reloadCourses) tasks.push(loadCourses().catch(() => {}));
+  if (reloadResourceSpace) tasks.push(loadResourceSpaceForCurrentAccount().catch(() => {}));
+  await Promise.allSettled(tasks);
+  return null;
 }
 
 async function getLocalAccountInfo(userId = '') {
@@ -1711,16 +1729,15 @@ function normalizeLoginAccountHistoryList(rawList) {
   const list = Array.isArray(rawList) ? rawList : [];
   return list
     .map((it) => {
-      const userId = String(it?.userId || '').trim();
-      if (!userId) return null;
+      const loginName = String(it?.loginName || it?.userId || '').trim();
+      if (!loginName) return null;
       const userName = String(it?.userName || '').trim();
       const roleName = String(it?.roleName || '').trim();
-      const loginName = String(it?.loginName || userId).trim();
       const passwordMd5 = String(it?.passwordMd5 || '').trim();
       const quickUsername = String(it?.quickUsername || it?.username || '').trim();
       const lastLoginAt = Number(it?.lastLoginAt || 0);
       return {
-        userId,
+        userId: loginName,
         userName,
         roleName,
         loginName,
@@ -1731,6 +1748,37 @@ function normalizeLoginAccountHistoryList(rawList) {
     })
     .filter(Boolean)
     .sort((a, b) => Number(b.lastLoginAt || 0) - Number(a.lastLoginAt || 0));
+}
+
+function serializeLoginAccountHistoryList(rawList) {
+  return normalizeLoginAccountHistoryList(rawList)
+    .map((it) => ({
+      loginName: String(it?.loginName || it?.userId || '').trim(),
+      lastLoginAt: Number(it?.lastLoginAt || 0) || 0
+    }))
+    .filter((it) => it.loginName);
+}
+
+async function readAccountInfoFromIndexedDb(loginName) {
+  try {
+    return await globalThis.BjtuAccountLogin?.getAccount?.(loginName) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function enrichLoginAccountHistoryList(list) {
+  const normalized = normalizeLoginAccountHistoryList(list);
+  return Promise.all(normalized.map(async (record) => {
+    const account = await readAccountInfoFromIndexedDb(record.loginName);
+    return {
+      ...record,
+      userName: String(account?.userName || record.userName || '').trim(),
+      roleName: String(account?.roleName || record.roleName || '').trim(),
+      passwordMd5: String(account?.password || record.passwordMd5 || '').trim(),
+      quickUsername: String(account?.quickUsername || record.quickUsername || '').trim()
+    };
+  }));
 }
 
 function renderLoginAccountHistorySelect(currentUserId = '') {
@@ -1965,7 +2013,7 @@ function findLoginAccountRecord(userId) {
 async function loadLoginAccountHistory() {
   try {
     const raw = await getLocal(LOGIN_ACCOUNT_HISTORY_KEY, []);
-    loginAccountHistory = normalizeLoginAccountHistoryList(raw);
+    loginAccountHistory = await enrichLoginAccountHistoryList(raw);
   } catch {
     loginAccountHistory = [];
   }
@@ -1973,14 +2021,14 @@ async function loadLoginAccountHistory() {
 
 async function saveLoginAccountHistory() {
   loginAccountHistory = normalizeLoginAccountHistoryList(loginAccountHistory);
-  await setLocal(LOGIN_ACCOUNT_HISTORY_KEY, loginAccountHistory);
+  await setLocal(LOGIN_ACCOUNT_HISTORY_KEY, serializeLoginAccountHistoryList(loginAccountHistory));
 }
 
 async function rememberLoggedInAccount(userId, info = null) {
   const uid = String(userId || '').trim();
   if (!uid) return;
   const nextInfo = info && typeof info === 'object' ? info : {};
-  const idx = loginAccountHistory.findIndex((it) => String(it?.userId || '').trim() === uid);
+  const idx = loginAccountHistory.findIndex((it) => String(it?.loginName || it?.userId || '').trim() === uid);
   const prev = idx >= 0 ? loginAccountHistory[idx] : null;
   // loginName: 优先 API 返回的 loginName，其次用已有记录的 loginName，最后用 userId 初始化
   const loginName = String(nextInfo.loginName || prev?.loginName || uid).trim();
@@ -1995,7 +2043,17 @@ async function rememberLoggedInAccount(userId, info = null) {
   };
   if (idx >= 0) loginAccountHistory.splice(idx, 1);
   loginAccountHistory.unshift(record);
-  await globalThis.BjtuAccountLogin?.updatePassword?.(uid, record.passwordMd5);
+  if (record.loginName && (record.userName || record.roleName || record.passwordMd5)) {
+    await globalThis.BjtuAccountStore?.put?.({
+      loginName: record.loginName,
+      userName: record.userName,
+      roleName: record.roleName,
+      password: record.passwordMd5,
+      quickUsername: record.quickUsername
+    });
+  } else {
+    await globalThis.BjtuAccountLogin?.updatePassword?.(uid, record.passwordMd5);
+  }
   await saveLoginAccountHistory();
   renderLoginAccountHistorySelect(uid);
 }
@@ -2126,17 +2184,27 @@ async function validateUsernameBeforeLoginStart(userId, { signal } = {}) {
 async function saveLoginAccountCredential(userId, passwordMd5 = '') {
   const uid = String(userId || '').trim();
   if (!uid) return;
-  const idx = loginAccountHistory.findIndex((it) => String(it?.userId || '').trim() === uid || String(it?.loginName || '').trim() === uid);
+  const idx = loginAccountHistory.findIndex((it) => String(it?.loginName || it?.userId || '').trim() === uid);
   const prev = idx >= 0 ? loginAccountHistory[idx] : { userId: uid, loginName: uid };
   const record = {
     ...prev,
-    userId: String(prev.userId || uid).trim(),
-    loginName: String(prev.loginName || uid).trim(),
+    userId: uid,
+    loginName: uid,
     passwordMd5: String(passwordMd5 || '').trim(),
     lastLoginAt: Date.now()
   };
   if (idx >= 0) loginAccountHistory.splice(idx, 1);
   loginAccountHistory.unshift(record);
+  if (passwordMd5) {
+    const account = await readAccountInfoFromIndexedDb(uid);
+    await globalThis.BjtuAccountStore?.put?.({
+      loginName: uid,
+      userName: String(account?.userName || '').trim(),
+      roleName: String(account?.roleName || '').trim(),
+      password: String(passwordMd5 || '').trim(),
+      quickUsername: String(account?.quickUsername || '').trim()
+    });
+  }
   await saveLoginAccountHistory();
   renderLoginAccountHistorySelect(uid);
 }
@@ -2226,8 +2294,7 @@ async function handleLoginSuccess(username) {
   showToast('登录成功', 'success');
 
   await loadAutoLoadCourseResourcesSetting().catch(() => {});
-  await syncAccountInfoAndReloadVeCourses({
-    userId: finalUser,
+  await reloadVePlatformFromSession({
     reloadCourses: true,
     reloadResourceSpace: true
   }).catch(() => {});
@@ -10793,8 +10860,11 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     await reconcileJsessionidCookies(v);
     isLoginSessionValid = true;
     showToast('已保存 JSESSIONID，正在验证…', 'info', 1500);
-    if (isPlatformEnabled('ve')) loadCourses();
-    await loadResourceSpaceForCurrentAccount();
+    if (isPlatformEnabled('ve')) {
+      await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
+    } else {
+      await loadResourceSpaceForCurrentAccount();
+    }
   });
 
 // -------------------- Saved Uploads (本地保存本次上传过的文件) --------------------
@@ -11130,7 +11200,11 @@ function setupSavedUploadsUi() {
 
   await loadLoginAccountHistory();
   try {
-    await globalThis.BjtuAccountLogin?.ensureInitialized?.({ showProgress: true });
+    if (forceAccountListInitialization) {
+      await globalThis.BjtuAccountLogin?.initialize?.({ force: true, showProgress: true });
+    } else {
+      await globalThis.BjtuAccountLogin?.ensureInitialized?.({ showProgress: true });
+    }
   } catch (error) {
     showToast('账号列表初始化失败：' + String(error?.message || error), 'error', 4000);
   }
@@ -11158,7 +11232,9 @@ function setupSavedUploadsUi() {
     }
   }
   adjustParallelLimitWidth();
-  const veStartupAccountInfoPromise = startVeStartupAccountInfoLoad();
+  const veStartupAccountInfoPromise = isPlatformEnabled('ve')
+    ? startupPlatformLoadPromise
+    : Promise.resolve(null);
   const settled = await Promise.allSettled([veStartupAccountInfoPromise, startupPlatformLoadPromise, startupResourceSpacePromise]);
   const startupAccountInfo = (settled[0] && settled[0].status === 'fulfilled') ? settled[0].value : null;
   if (startupAccountInfo?.info) {
