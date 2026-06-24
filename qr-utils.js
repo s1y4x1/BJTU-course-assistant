@@ -92,9 +92,15 @@ function buildQrImageUrl(content, size = 220) {
     // ignore
   }
 
+  const getQrUrl = (link) => {
+    const explicit = link?.dataset?.qrUrl;
+    if (explicit) return String(explicit || '').trim();
+    return String(link?.href || '').trim();
+  };
+
   const maybeShow = (link) => {
     if (!window.__linkQrEnabled) return;
-    const url = link.href;
+    const url = getQrUrl(link);
     if (!url || url === '#' || /^javascript:/i.test(url)) return;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
     const rect = link.getBoundingClientRect();
@@ -128,7 +134,7 @@ function buildQrImageUrl(content, size = 220) {
   document.addEventListener('mouseover', (e) => {
     if (!window.__linkQrEnabled) return;
     if (!(e.target instanceof Element)) return;
-    const link = e.target.closest('a.resource-url, a.url-link, .video-links a, a[href*="batchDownload"]');
+    const link = e.target.closest('a.resource-url, a.url-link, .video-links a, a[href*="batchDownload"], [data-qr-url]');
     if (!link) return;
     if (link.closest('#' + TOOLTIP_ID)) return;
     maybeShow(link);
@@ -136,7 +142,7 @@ function buildQrImageUrl(content, size = 220) {
 
   document.addEventListener('mouseout', (e) => {
     if (!(e.target instanceof Element)) return;
-    const link = e.target.closest('a.resource-url, a.url-link, .video-links a, a[href*="batchDownload"]');
+    const link = e.target.closest('a.resource-url, a.url-link, .video-links a, a[href*="batchDownload"], [data-qr-url]');
     if (!link) return;
     maybeHide(link, e.relatedTarget);
   }, true);

@@ -1333,6 +1333,31 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             background: transparent;
             color: #0284c7;
         }
+        .force-score-publish-row {
+            display: flex;
+            justify-content: center;
+            margin: 4px 0 6px;
+        }
+        .force-score-publish-btn {
+            background: #0f766e;
+            padding: 4px 10px;
+            font-size: 12px;
+            line-height: 1.25;
+        }
+        .force-score-publish-btn:hover {
+            background: #115e59;
+        }
+        .force-score-publish-btn.force-score-publish-progress,
+        .force-score-publish-btn.force-score-publish-progress:hover {
+            background: linear-gradient(
+                90deg,
+                #0f766e 0 var(--force-score-progress, 0%),
+                #8dd4cb var(--force-score-progress, 0%) 100%
+            ) !important;
+            color: #fff !important;
+            cursor: not-allowed;
+            transition: background 0.25s ease;
+        }
         .homework-group > .hw-card-item:first-child,
         .homework-group > div:first-child .hw-card-item:first-of-type,
         .homework-toggle-row + .homework-group > .hw-card-item:first-child,

@@ -186,6 +186,7 @@ window.platformLoadVersion = { ve: 0, ykt: 0, mrjzy: 0, jlgj: 0 };
 window.currentVeCourseList = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
+window.homeworkScoreForcePublishStateByCourse = {}; // {courseId:{running,progress,ids:[]}}
 window.homeworkNoteAttachmentCacheByKey = {}; // {"noteId|courseId|teacherId": {loading,loaded,picList}}
 window.homeworkAttachmentPendingByCourse = {}; // {courseId: boolean}
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
@@ -6733,8 +6734,31 @@ function toggleHomeworkGroupDom(courseId, key, expanded) {
 
   group.dataset.expanded = expanded ? '1' : '0';
   group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+  if (kind === 'done') syncForcePublishScoreButtonRow(courseId, expanded);
   animateHomeworkGroupVisibility(group, expanded);
   return true;
+}
+
+function syncForcePublishScoreButtonRow(courseId, expanded) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const area = document.getElementById(`homework-area-${cid}`);
+  if (!(area instanceof HTMLElement)) return;
+  area.querySelectorAll('.force-score-publish-row').forEach((el) => {
+    if (el instanceof HTMLElement && String(el.dataset.courseId || '').trim() === cid) el.remove();
+  });
+  if (!expanded || window.isTeacherAccount) return;
+  const html = renderForcePublishScoreButton(cid);
+  if (!html) return;
+  const doneRow = area.querySelector('.homework-toggle-row--done');
+  if (!(doneRow instanceof HTMLElement)) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = html.trim();
+  const row = holder.firstElementChild;
+  if (!(row instanceof HTMLElement)) return;
+  row.dataset.courseId = cid;
+  doneRow.insertAdjacentElement('afterend', row);
+  updateForcePublishScoreButtonState(cid);
 }
 
 function animateHomeworkGroupVisibility(group, expanded) {
@@ -8531,6 +8555,8 @@ function renderCourseList(courses) {
       }
     }
     if (btnAssessment) {
+      const assessmentUrl = getCourseAssessmentWorkbookUrl(courseId);
+      if (assessmentUrl) btnAssessment.dataset.qrUrl = assessmentUrl;
       btnAssessment.__courseActionBound = true;
       btnAssessment.addEventListener('click', (ev) => {
         ev.preventDefault();
@@ -8678,10 +8704,15 @@ function updateAssessmentButtonVisibility(courseId) {
   btn.style.display = shouldShowCourseAssessmentButton(courseId) ? '' : 'none';
 }
 
+function getCourseAssessmentWorkbookUrl(courseId) {
+  const cid = String(courseId || '').trim();
+  return cid ? `${BASE_VE}back/coursePlatform/homeWork.shtml?method=exportProcessAssessmentList&cId=${encodeURIComponent(cid)}` : '';
+}
+
 function downloadCourseAssessmentWorkbook(courseId) {
   const cid = String(courseId || '').trim();
   if (!cid || !window.isTeacherAccount) return;
-  const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=exportProcessAssessmentList&cId=${encodeURIComponent(cid)}`;
+  const url = getCourseAssessmentWorkbookUrl(cid);
   try {
     chrome.downloads.download({
       url,
@@ -8802,6 +8833,120 @@ async function checkHomework(courseId) {
     console.error(`[VE] fetch error for ${courseId}: ${e.message}`);
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
+  }
+}
+
+function getHomeworkPublishScoreId(hw) {
+  return String(hw?.id ?? hw?.noteId ?? hw?.courseNoteId ?? hw?.snId ?? hw?.noteSnId ?? hw?.upId ?? '').trim();
+}
+
+function isHomeworkScoreUnpublished(hw) {
+  const text = `${String(hw?.lastScore ?? hw?.last_score ?? '')} ${String(hw?.scoreStatus ?? hw?.score_status ?? '')}`;
+  return /暂未公布/.test(text);
+}
+
+function getUnpublishedDoneScoreHomeworkIds(courseId) {
+  if (window.isTeacherAccount) return [];
+  const list = window.courseHomeworkData?.[courseId]?.list || [];
+  if (!Array.isArray(list) || !list.length) return [];
+  const seen = new Set();
+  const ids = [];
+  list.forEach((hw) => {
+    if (!isNativeHomeworkDone(hw)) return;
+    if (!isHomeworkScoreUnpublished(hw)) return;
+    const id = getHomeworkPublishScoreId(hw);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  });
+  return ids;
+}
+
+function renderForcePublishScoreButton(courseId) {
+  const state = window.homeworkScoreForcePublishStateByCourse?.[courseId] || {};
+  const ids = Array.isArray(state.ids) && state.ids.length ? state.ids : getUnpublishedDoneScoreHomeworkIds(courseId);
+  if (!ids.length) return '';
+  const running = !!state.running;
+  const progress = Math.max(0, Math.min(100, Number(state.progress || 0) || 0));
+  return `<div class="force-score-publish-row" data-course-id="${escapeHtml(String(courseId))}"><button class="btn force-score-publish-btn ${running ? 'force-score-publish-progress' : ''}" data-action="force-publish-scores" data-course-id="${escapeHtml(String(courseId))}" ${running ? 'disabled' : ''} style="--force-score-progress:${progress}%;">强制公布获取成绩，随后立即取消公布</button></div>`;
+}
+
+function updateForcePublishScoreButtonState(courseId) {
+  const btn = courseListDiv?.querySelector?.(`button[data-action="force-publish-scores"][data-course-id="${CSS.escape(String(courseId || ''))}"]`);
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const state = window.homeworkScoreForcePublishStateByCourse?.[courseId] || {};
+  const running = !!state.running;
+  const progress = Math.max(0, Math.min(100, Number(state.progress || 0) || 0));
+  btn.disabled = running;
+  btn.classList.toggle('force-score-publish-progress', running);
+  btn.style.setProperty('--force-score-progress', `${progress}%`);
+}
+
+async function setHomeworkScoreDisplayStatus(homeworkId, isOpen, signal = null) {
+  const id = String(homeworkId || '').trim();
+  if (!id) return;
+  const url = `${BASE_VE}back/rp/common/courseTeachTask.shtml?method=updateWorkScoreDisplyStatus&id=${encodeURIComponent(id)}&isOpen=${encodeURIComponent(String(isOpen))}`;
+  const { text, res } = await fetchText(url, {
+    headers: { Accept: 'application/json, text/javascript, */*; q=0.01' },
+    signal
+  });
+  if (isLikelyLoginPageHtml(text, res?.url)) throw new Error('LOGIN_REQUIRED');
+}
+
+async function forcePublishScoresThenRestore(courseId, btn = null) {
+  const cid = String(courseId || '').trim();
+  if (!cid || window.isTeacherAccount) return;
+  const previousIds = window.homeworkScoreForcePublishStateByCourse?.[cid]?.ids || [];
+  const ids = getUnpublishedDoneScoreHomeworkIds(cid);
+  const targetIds = ids.length ? ids : (Array.isArray(previousIds) ? previousIds : []);
+  if (!targetIds.length) {
+    showToast('没有暂未公布成绩的已交作业', 'info', 1600);
+    return;
+  }
+  const state = { running: true, progress: 0, ids: targetIds };
+  window.homeworkScoreForcePublishStateByCourse[cid] = state;
+  updateForcePublishScoreButtonState(cid);
+  if (btn instanceof HTMLButtonElement) btn.disabled = true;
+
+  const totalSteps = targetIds.length * 2 + 1;
+  let doneSteps = 0;
+  const openedIds = [];
+  const closedIds = new Set();
+  const tick = () => {
+    doneSteps += 1;
+    state.progress = Math.min(100, (doneSteps / totalSteps) * 100);
+    updateForcePublishScoreButtonState(cid);
+  };
+
+  try {
+    for (const id of targetIds) {
+      await setHomeworkScoreDisplayStatus(id, 1, window.globalVeAbortController?.signal || null);
+      openedIds.push(id);
+      tick();
+    }
+    await checkHomework(cid);
+    tick();
+    for (const id of targetIds) {
+      await setHomeworkScoreDisplayStatus(id, 2, window.globalVeAbortController?.signal || null);
+      closedIds.add(id);
+      tick();
+    }
+    state.progress = 100;
+    showToast('已获取暂未公布作业成绩，并取消公布', 'success', 2200);
+  } catch (error) {
+    if (String(error?.message || error) === 'LOGIN_REQUIRED') {
+      handleLoginRequired(() => forcePublishScoresThenRestore(cid), null, VE_LOGIN_REQUIRED_HTML);
+    } else {
+      showToast('强制公布获取成绩失败：' + String(error?.message || error), 'error', 3200);
+    }
+  } finally {
+    const leftOpenIds = openedIds.filter((id) => !closedIds.has(id));
+    if (leftOpenIds.length) {
+      await Promise.allSettled(leftOpenIds.map((id) => setHomeworkScoreDisplayStatus(id, 2, window.globalVeAbortController?.signal || null)));
+    }
+    state.running = false;
+    state.progress = 100;
+    updateForcePublishScoreButtonState(cid);
   }
 }
 
@@ -8932,6 +9077,7 @@ function renderHomeworkList(courseId) {
   // 教师账号：doneToggleRow 始终使用原文案
   const isTeacherMode2 = !!window.isTeacherAccount;
   const doneToggleRowHtml = totalDoneCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--done">${renderHomeworkToggle('done', 'toggle-done', data.showDone, totalDoneCount, '查看已交作业', '收起已交作业', 'down', 'up')}</div>` : '';
+  const forcePublishScoreButtonHtml = (!isTeacherMode2 && data.showDone) ? renderForcePublishScoreButton(courseId) : '';
 
   const renderNativeHomeworkItems = (items) => (items || []).map((hw) => {
     const originalIdx = list.indexOf(hw);
@@ -9121,7 +9267,7 @@ function renderHomeworkList(courseId) {
     ? `<div class="homework-group homework-group--pending" data-homework-group="teacher-active">${teacherNonOverdueHtml}</div>`
     : '';
 
-  area.innerHTML = `${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
+  area.innerHTML = `${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${forcePublishScoreButtonHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
   applyExpandableAutoToggle();
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
@@ -10552,6 +10698,14 @@ courseListDiv.addEventListener('click', async (e) => {
     const courseId = String(actionEl.dataset.courseId || '').trim();
     if (!courseId) return;
     window.toggleDoneView(courseId);
+    return;
+  }
+  if (action === 'force-publish-scores') {
+    const courseId = String(actionEl.dataset.courseId || '').trim();
+    if (!courseId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    await forcePublishScoresThenRestore(courseId, actionEl instanceof HTMLButtonElement ? actionEl : null);
     return;
   }
   if (action === 'toggle-homework') {
