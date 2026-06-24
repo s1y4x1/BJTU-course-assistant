@@ -291,9 +291,7 @@ function goBackToApp() {
   }
 
   document.getElementById('exportBindDataBtn').addEventListener('click', async () => {
-    const { loginAccountHistory } = await chrome.storage.local.get(['loginAccountHistory']);
-    const list = Array.isArray(loginAccountHistory) ? loginAccountHistory : [];
-    const withQuick = list.filter(it => String(it?.quickUsername || '').trim());
+    const withQuick = await globalThis.BjtuAccountStore.getQuickAccounts();
     if (!withQuick.length) {
       setMsg('没有找到已绑定 MIS 的账号', false);
       return;
