@@ -8481,9 +8481,10 @@ function renderCourseList(courses) {
             </span>
           </div>
         </div>
-        <div class="course-actions" style="display:flex; gap:8px;">
+        <div class="course-actions" style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
           <button class="btn" style="background:#1e3a8a;" data-action="courseware">课件下载</button>
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
+          <button class="btn" style="background:#0f766e; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="assessment" data-course-id="${escapeHtml(String(courseId || ''))}">下载课程考核记录表</button>
         </div>
       </div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
@@ -8494,6 +8495,7 @@ function renderCourseList(courses) {
     // bind actions
     const btnCourseware = card.querySelector('button[data-action="courseware"]');
     const btnVideos = card.querySelector('button[data-action="videos"]');
+    const btnAssessment = card.querySelector('button[data-action="assessment"]');
     if (btnCourseware) {
       btnCourseware.dataset.courseNum = String(courseNumRaw || '');
       btnCourseware.dataset.fzId = String(fzId || '');
@@ -8527,6 +8529,15 @@ function renderCourseList(courses) {
         btnVideos.style.setProperty('--replay-progress', '0%');
         btnVideos.innerHTML = `回放下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
       }
+    }
+    if (btnAssessment) {
+      btnAssessment.__courseActionBound = true;
+      btnAssessment.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        downloadCourseAssessmentWorkbook(courseId);
+      });
+      updateAssessmentButtonVisibility(courseId);
     }
 
     hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
@@ -8648,6 +8659,43 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
   return `<div style="margin-top:6px;">${rows}</div>`;
 }
 
+function getHomeworkSubmitCountValue(hw) {
+  const raw = hw?.submitCount ?? hw?.submit_count ?? hw?.subCount ?? hw?.submitNum ?? hw?.submittedCount ?? '';
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function shouldShowCourseAssessmentButton(courseId) {
+  if (!window.isTeacherAccount) return false;
+  const list = window.courseHomeworkData?.[courseId]?.list || [];
+  if (!Array.isArray(list) || !list.length) return false;
+  return list.some((hw) => getHomeworkSubmitCountValue(hw) > 0);
+}
+
+function updateAssessmentButtonVisibility(courseId) {
+  const btn = document.querySelector(`button[data-action="assessment"][data-course-id="${CSS.escape(String(courseId || ''))}"]`);
+  if (!(btn instanceof HTMLButtonElement)) return;
+  btn.style.display = shouldShowCourseAssessmentButton(courseId) ? '' : 'none';
+}
+
+function downloadCourseAssessmentWorkbook(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid || !window.isTeacherAccount) return;
+  const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=exportProcessAssessmentList&cId=${encodeURIComponent(cid)}`;
+  try {
+    chrome.downloads.download({
+      url,
+      filename: sanitizeDownloadFileName(`课程考核记录表-${cid}.xls`, '课程考核记录表.xls'),
+      saveAs: false
+    }, () => {
+      const err = chrome.runtime?.lastError?.message || '';
+      if (err) showToast('课程考核记录表下载失败：' + err, 'error', 3000);
+    });
+  } catch (error) {
+    showToast('课程考核记录表下载失败：' + String(error?.message || error), 'error', 3000);
+  }
+}
+
 async function prefetchHomeworkAttachments(courseId, list) {
   const items = Array.isArray(list) ? list : [];
   if (!items.length) {
@@ -8745,10 +8793,8 @@ async function checkHomework(courseId) {
     const list = mergedList;
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
-    // Concurrently fetch scores and attachments, wait for scores to complete before returning
+    // Concurrently fetch attachments; homework score lookup uses returned list fields only.
     const attachmentPrefetchPromise = prefetchHomeworkAttachments(courseId, list);
-    await prefetchCourseScores(courseId);
-    // After scores are fetched, courseware/replay can load; attachments continue in background
     attachmentPrefetchPromise.finally(() => {
       recomputeCourseHomeworkState(courseId);
     }).catch(() => {});
@@ -8770,6 +8816,7 @@ function renderHomeworkList(courseId) {
     window.courseHomeworkData[courseId].showDone = fallbackShowDone;
   }
   const list = data.list || [];
+  updateAssessmentButtonVisibility(courseId);
   syncHomeworkAttachmentItemsIndex(courseId, []);
 
   const classify = (items, isDoneFn, isOverdueFn) => {
@@ -8914,7 +8961,6 @@ function renderHomeworkList(courseId) {
     const deadline = hw.end_time || hw.endTime || '';
     const statusHtml = isTeacherMode ? '' : (isDone ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : ''));
 
-    const scoreStatus = hw.lastScore ?? hw.last_score ?? hw.scoreStatus ?? hw.score_status ?? hw.lastScoreText ?? hw.last_score_text ?? '';
     const obtainedScore = hw.lastScore ?? hw.oldScore ?? hw.old_score ?? hw.finalScore ?? hw.final_score ?? '';
     const fullScore = hw.score ?? hw.fullScore ?? hw.maxScore ?? hw.totalScore ?? '';
     const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? '';
@@ -8925,14 +8971,15 @@ function renderHomeworkList(courseId) {
     const cachedScore = window.homeworkScoreCacheByKey[scoreKey];
 
     let scoreHtml = '';
-    const pendingText = `${String(scoreStatus || '').trim()} ${String(obtainedScore || '').trim()}`;
-    const isPendingScore = isDone && /暂未公布/.test(pendingText) && upId && snId;
-    if (cachedScore !== undefined && cachedScore !== null) {
+    if (isTeacherMode) {
+      const shownTotal = String(fullScore || '').trim();
+      if (shownTotal) {
+        scoreHtml = `<span style="font-weight:bold; color:#1d4ed8; margin-left:5px;">[总分 ${escapeHtml(shownTotal)}]</span>`;
+      }
+    } else if (cachedScore !== undefined && cachedScore !== null) {
       const totalStr = fullScore ? `/${fullScore}` : '';
       scoreHtml = `<span style="font-weight:bold; color:#E91E63; margin-left:5px;">[${escapeHtml(String(cachedScore))}${escapeHtml(totalStr)}]</span>`;
-    } else if (isPendingScore) {
-      scoreHtml = `<span class="async-score" data-pending="1" data-upid="${String(upId)}" data-snid="${String(snId)}" data-full="${String(fullScore || '')}" style="font-weight:bold; color:#E91E63; margin-left:5px;">[正在查询…]</span>`;
-    } else if (isDone && !isTeacherMode) {
+    } else if (isDone) {
       const shown = String(obtainedScore || '').trim();
       if (shown) {
         const totalStr = fullScore ? `/${fullScore}` : '';
@@ -8961,6 +9008,11 @@ function renderHomeworkList(courseId) {
     });
     const viewBtnColor = isTeacherMode ? '#1d4ed8' : (isDone ? '#2E7D32' : '#0ea5e9');
     const countdownSpan = (!isTeacherMode && !isDone && !overdue && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
+    const submitCount = hw.submitCount ?? hw.submit_count ?? hw.subCount ?? '';
+    const allCount = hw.allCount ?? hw.all_count ?? hw.totalCount ?? '';
+    const submitCountHtml = submitCount !== '' || allCount !== ''
+      ? `<span style="margin-left:10px; white-space:nowrap;">提交人数: <span style="font-weight:700; color:#111827;">${escapeHtml(String(submitCount || 0))}/${escapeHtml(String(allCount || 0))}</span></span>`
+      : '';
 
     // 教师账号：作业ID（用于批量下载）
     const homeworkId = String(hw.snId || hw.noteId || hw.courseNoteId || hw.id || hw.upId || '').trim();
@@ -8993,7 +9045,7 @@ function renderHomeworkList(courseId) {
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
             <div style="font-weight:bold; color:${titleColor};">${title}</div>
-            <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}</div>
+            <div style="font-size:12px; color:#666; display:flex; align-items:center; gap:0; flex-wrap:wrap;">截止: <span style="font-weight:700; color:#000; margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
             ${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}
