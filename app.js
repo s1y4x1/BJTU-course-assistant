@@ -858,8 +858,10 @@ function abortAllCoursewareReplayFetches() {
     }
   });
   Object.values(window.coursewareCacheByCourseId || {}).forEach((cache) => {
-    if (cache && !cache.loaded) {
-      cache.loaded = false;
+    if (cache) {
+      cache.rpLinksFetching = false;
+      cache.rpLinksFetched = false;
+      if (!cache.loaded) cache.loaded = false;
     }
   });
 
@@ -2158,9 +2160,26 @@ async function restartVePlatformForLoginExpired(reason = '登录已失效，正�
   showToast(reason, 'info', 2200);
   window.veLoginExpiredRestartPromise = (async () => {
     try {
+      abortAllCoursewareReplayFetches();
+      window.platformEnabled.ve = false;
+      window.platformLoadedOnce.ve = false;
+      window.currentVeCourseList = [];
+      setPlatformLoginState('ve', 'offline');
+      refreshPlatformLoginTip();
+      renderCourseList([]);
+      rematchExternalByVeCourses();
+      rerenderAllHomeworkAreas();
+      if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
+      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
+      if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      window.platformEnabled.ve = true;
+      window.platformLoadedOnce.ve = false;
+      setPlatformLoginState('ve', 'checking');
+      refreshPlatformLoginTip();
+      await loadAutoLoadCourseResourcesSetting();
       await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
-    } catch {
-      handleLoginRequired(() => reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true }), null, VE_LOGIN_REQUIRED_HTML);
     } finally {
       setTimeout(() => { window.veLoginExpiredRestartPromise = null; }, 600);
     }
@@ -3219,6 +3238,10 @@ async function downloadResourceItemWithProgress(item) {
     const result = await fetchCoursewareRpUrl(item.rpId);
     rawUrl = String(result?.url || '').trim();
     if (rawUrl) item.url = rawUrl;
+    else if (result?.loginExpired) {
+      await restartVePlatformForLoginExpired('课件下载链接获取失败，正在重启智慧课程平台…');
+      throw new Error('登录已失效，正在重启智慧课程平台');
+    }
   }
   if (!rawUrl) throw new Error('资源链接无效');
 
@@ -5987,11 +6010,29 @@ function spinnerPhaseDelayStyle(periodMs = 1000) {
 function syncCourseActionLoadingSpinnerPhase(scope = courseListDiv) {
   if (!(scope instanceof HTMLElement)) return;
   const delay = `-${Date.now() % 1000}ms`;
-  scope.querySelectorAll('button[data-action="videos"].replay-list-loading .spinner, button[data-action="courseware"].courseware-list-loading .spinner').forEach((el) => {
+  scope.querySelectorAll('button[data-action="videos"].replay-list-loading .spinner, button[data-action="courseware"].courseware-list-loading .spinner, button[data-action="videos"].replay-link-progress .spinner, button[data-action="courseware"].courseware-link-progress .spinner').forEach((el) => {
     if (el instanceof HTMLElement) {
       el.style.animationDelay = delay;
     }
   });
+}
+
+function getCombinedAbortSignal(...signals) {
+  const validSignals = signals.filter((signal) => signal instanceof AbortSignal);
+  if (!validSignals.length) return undefined;
+  if (validSignals.length === 1) return validSignals[0];
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
+    return AbortSignal.any(validSignals);
+  }
+  const controller = new AbortController();
+  const abort = () => {
+    try { controller.abort(); } catch { /* ignore */ }
+  };
+  validSignals.forEach((signal) => {
+    if (signal.aborted) abort();
+    else signal.addEventListener('abort', abort, { once: true });
+  });
+  return controller.signal;
 }
 
 function setCoursewareButtonLoading(btn, isLoading) {
@@ -6126,10 +6167,10 @@ function syncCourseActionButtonText(card, activeView = '') {
   const replayBtn = card.querySelector('button[data-action="videos"]');
   const coursewareBtn = card.querySelector('button[data-action="courseware"]');
 
-  if (replayBtn && !replayBtn.classList.contains('replay-list-loading')) {
+  if (replayBtn && !replayBtn.classList.contains('replay-list-loading') && !replayBtn.classList.contains('replay-link-progress')) {
     replayBtn.textContent = activeView === 'replay' ? '收起' : '回放下载';
   }
-  if (coursewareBtn && !coursewareBtn.classList.contains('courseware-list-loading')) {
+  if (coursewareBtn && !coursewareBtn.classList.contains('courseware-list-loading') && !coursewareBtn.classList.contains('courseware-link-progress')) {
     coursewareBtn.textContent = activeView === 'courseware' ? '收起' : '课件下载';
   }
 }
@@ -6231,7 +6272,7 @@ function buildCoursewareListHtml(courseId, items) {
           ${hasUrl
             ? `<a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(displayUrl)}</a>`
             : needsRpFetch
-              ? `<span id="${escapeHtml(rpLinkContainerId)}" class="courseware-rp-link" style="color:#999;font-size:12px;">获取链接中…</span>`
+              ? `<span id="${escapeHtml(rpLinkContainerId)}" class="courseware-rp-link" style="color:#999;font-size:12px;"><span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #1e3a8a; border-top-color: transparent;"></span> 获取链接中…</span>`
               : `<span class="resource-url" style="color:#999;">无下载链接</span>`
           }
           ${hasUrl ? `<button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>` : ''}
@@ -6541,7 +6582,7 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   });
 }
 
-async function fetchCoursewareRpUrl(rpId) {
+async function fetchCoursewareRpUrl(rpId, { signal = null, onLinkExpired = null } = {}) {
   if (!rpId) return { url: '' };
   try {
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
@@ -6557,23 +6598,31 @@ async function fetchCoursewareRpUrl(rpId) {
         'Accept': 'application/json, text/javascript, */*; q=0.01'
       },
       body: postBody.toString(),
-      signal: window.globalVeAbortController?.signal
+      signal: getCombinedAbortSignal(window.globalVeAbortController?.signal, signal)
     });
 
     if (isLikelyLoginPageHtml(text, res?.url)) {
+      if (typeof onLinkExpired === 'function') onLinkExpired();
       return { url: '', loginExpired: true };
     }
 
     const data = parseVeJson(text);
     if (data.flag === true || String(data.STATUS) === '0') {
-      return { url: String(data.rpUrl || data.html || '').trim() };
-    }
-    if (data.flag === false) {
+      const url = String(data.rpUrl || data.html || '').trim();
+      if (url) return { url };
+      if (typeof onLinkExpired === 'function') onLinkExpired();
       return { url: '', loginExpired: true };
     }
-    return { url: '' };
-  } catch {
-    return { url: '' };
+    if (data.flag === false) {
+      if (typeof onLinkExpired === 'function') onLinkExpired();
+      return { url: '', loginExpired: true };
+    }
+    if (typeof onLinkExpired === 'function') onLinkExpired();
+    return { url: '', loginExpired: true };
+  } catch (error) {
+    if (error?.name === 'AbortError') return { url: '', aborted: true };
+    if (typeof onLinkExpired === 'function') onLinkExpired();
+    return { url: '', loginExpired: true };
   }
 }
 
@@ -6596,8 +6645,12 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
   if (!cache) return;
   cache.rpLinksFetching = true;
 
+  const activeView = String(card.dataset.resultView || '').trim();
+  const baseText = activeView === 'courseware' ? '收起' : '课件下载';
   btn.classList.add('courseware-link-progress');
   btn.style.setProperty('--courseware-progress', '0%');
+  btn.innerHTML = `${baseText} <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
+  const batchAbortController = new AbortController();
 
   const totalLinks = rpItems.length;
   let doneLinks = 0;
@@ -6615,7 +6668,14 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
   let loginExpiredSeen = false;
 
   await Promise.allSettled(rpItems.map(async (item) => {
-    const result = await fetchCoursewareRpUrl(item.rpId).finally(onOneLinkDone);
+    if (batchAbortController.signal.aborted) return;
+    const result = await fetchCoursewareRpUrl(item.rpId, {
+      signal: batchAbortController.signal,
+      onLinkExpired: () => {
+        loginExpiredSeen = true;
+        try { batchAbortController.abort(); } catch { /* ignore */ }
+      }
+    }).finally(onOneLinkDone);
     if (isStale()) return;
     const rpUrl = String(result?.url || '').trim();
     if (rpUrl) {
@@ -6641,6 +6701,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
       }
     } else if (result?.loginExpired) {
       loginExpiredSeen = true;
+      try { batchAbortController.abort(); } catch { /* ignore */ }
       const linkContainer = resultArea.querySelector(`[id="courseware-rp-link-${item.id.replace(/["\\]/g, '')}"]`);
       if (linkContainer) {
         linkContainer.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
@@ -6657,6 +6718,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
     cache.rpLinksFetching = false;
     btn.classList.remove('courseware-link-progress');
     btn.style.removeProperty('--courseware-progress');
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
     return;
   }
 
@@ -6668,6 +6730,9 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
     cache.html = newHtml;
     resultArea.innerHTML = newHtml;
   }
+  btn.classList.remove('courseware-link-progress');
+  btn.style.removeProperty('--courseware-progress');
+  syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
 }
 
 function recomputeCourseHomeworkState(courseId) {
@@ -6994,8 +7059,12 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   }
 
   cache.linksFetching = true;
+  const activeView = String(card.dataset.resultView || '').trim();
+  const baseText = activeView === 'replay' ? '收起' : '回放下载';
   btn.classList.add('replay-link-progress');
   btn.style.setProperty('--replay-progress', '0%');
+  btn.innerHTML = `${baseText} <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#9c27b0; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
+  const batchAbortController = new AbortController();
 
   const shadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${String(courseIdInt)}"]`);
   const shadowHasContent = (shadowArea instanceof HTMLElement) && !!String(shadowArea.innerHTML || '').trim();
@@ -7013,19 +7082,28 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
     }
   };
 
+  let loginExpiredSeen = false;
   const linkResults = await Promise.allSettled(list.map((item, index) => {
     const linkContainerId = `video-link-${courseIdInt}-${index}`;
-    return fetchVideoLinkInternal(linkContainerId, item.rpId, courseNum, fzId, item.teacherId || '')
+    if (batchAbortController.signal.aborted) return Promise.resolve(false);
+    return fetchVideoLinkInternal(linkContainerId, item.rpId, courseNum, fzId, item.teacherId || '', {
+      signal: batchAbortController.signal,
+      onLinkExpired: () => {
+        loginExpiredSeen = true;
+        try { batchAbortController.abort(); } catch { /* ignore */ }
+      }
+    })
       .finally(onOneLinkDone);
   }));
 
-  const hasLoginRequired = linkResults.some((result) => result.status === 'fulfilled' && result.value === 'LOGIN_REQUIRED');
+  const hasLoginRequired = loginExpiredSeen || linkResults.some((result) => result.status === 'fulfilled' && result.value === 'LOGIN_REQUIRED');
   if (hasLoginRequired) {
     cache.linksFetching = false;
     cache.linksFetched = false;
     setCourseReplayLoading(courseIdInt, false);
     btn.classList.remove('replay-link-progress');
     btn.style.removeProperty('--replay-progress');
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
     flushPendingCourseCardSortIfIdle();
     return;
   }
@@ -7035,6 +7113,7 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
     setCourseReplayLoading(courseIdInt, false);
     btn.classList.remove('replay-link-progress');
     btn.style.removeProperty('--replay-progress');
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
     flushPendingCourseCardSortIfIdle();
     return;
   }
@@ -7054,6 +7133,9 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
     resultArea.innerHTML = cache.html;
     toggleResultAreaAnimated(resultArea, true, { immediate: true });
   }
+  btn.classList.remove('replay-link-progress');
+  btn.style.removeProperty('--replay-progress');
+  syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
   flushPendingCourseCardSortIfIdle();
 }
 
@@ -9409,7 +9491,7 @@ async function prefetchCourseScores(courseId) {
 }
 
 // Videos (best-effort implementation)
-async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId) {
+async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId, { signal = null, onLinkExpired = null } = {}) {
   const getLinksDiv = () => document.getElementById(containerId);
   const courseListVersion = getCourseListLoadVersionSnapshot();
   const isStale = () => isCourseListLoadStale(courseListVersion);
@@ -9429,10 +9511,11 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
         'Accept': 'application/json, text/javascript, */*; q=0.01'
       },
       body: postBody.toString(),
-      signal: window.globalVeAbortController?.signal
+      signal: getCombinedAbortSignal(window.globalVeAbortController?.signal, signal)
     });
 
     if (isLikelyLoginPageHtml(text, res?.url)) {
+      if (typeof onLinkExpired === 'function') onLinkExpired();
       const linksDiv = getLinksDiv();
       if (linksDiv) linksDiv.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
       await restartVePlatformForLoginExpired('回放下载链接登录已失效，正在重启智慧课程平台…');
@@ -9448,6 +9531,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       if (!linksDiv) return false;
       if (isStale()) return false;
 
+      if (typeof onLinkExpired === 'function') onLinkExpired();
       linksDiv.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
       await restartVePlatformForLoginExpired('回放下载链接登录已失效，正在重启智慧课程平台…');
       return 'LOGIN_REQUIRED';
@@ -9481,15 +9565,20 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
     const linksDiv = getLinksDiv();
     if (!linksDiv) return false;
     if (isStale()) return false;
+    if (typeof onLinkExpired === 'function') onLinkExpired();
     linksDiv.style.color = '#9C27B0';
     linksDiv.style.fontWeight = 'bold';
-    linksDiv.innerHTML = `<span style="color:#999; font-weight: normal;">${detailData.message || detailData.ERRMSG || '无数据'}</span>`;
-    return false;
+    linksDiv.innerHTML = '<span class="error" style="color:#f44336;">[链接获取失败，正在重启]</span>';
+    await restartVePlatformForLoginExpired('回放下载链接获取失败，正在重启智慧课程平台…');
+    return 'LOGIN_REQUIRED';
   } catch (e) {
     const linksDiv = getLinksDiv();
+    if (e?.name === 'AbortError') return false;
     if (String(e?.message || e) === 'LOGIN_REQUIRED') return 'LOGIN_REQUIRED';
-    if (linksDiv) linksDiv.innerHTML = '<span style="color: #f44336;">Err</span>';
-    return false;
+    if (typeof onLinkExpired === 'function') onLinkExpired();
+    if (linksDiv) linksDiv.innerHTML = '<span class="error" style="color:#f44336;">[链接获取失败，正在重启]</span>';
+    await restartVePlatformForLoginExpired('回放下载链接获取失败，正在重启智慧课程平台…');
+    return 'LOGIN_REQUIRED';
   }
 }
 
@@ -10907,10 +10996,7 @@ if (resourceSpaceList) {
           if (rpUrl) {
             item.url = rpUrl;
           } else if (result?.loginExpired) {
-            handleLoginRequired(() => {
-              const btn = document.querySelector(`button[data-action="resource-download"][data-resource-id="${CSS.escape(item.id)}"]`);
-              if (btn) btn.click();
-            }, null, '登录已失效，请稍后重试或重新登录');
+            await restartVePlatformForLoginExpired('课件下载链接获取失败，正在重启智慧课程平台…');
             showToast('获取下载链接失败', 'error', 1800);
             return;
           } else {
