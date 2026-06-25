@@ -16,7 +16,92 @@
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
   const accountCache = new Map();
+  const gbkEncodeCache = new Map();
   let initializationPromise = null;
+
+  function decodeJsStringLiteral(value) {
+    return String(value || '')
+      .replace(/\\u([0-9a-f]{4})/gi, (_all, code) => String.fromCharCode(parseInt(code, 16)))
+      .replace(/\\x([0-9a-f]{2})/gi, (_all, code) => String.fromCharCode(parseInt(code, 16)))
+      .replace(/\\(['"\\])/g, '$1');
+  }
+
+  function decodePercentBytes(value, encoding = 'gbk') {
+    const source = String(value || '');
+    if (!/%[0-9a-f]{2}/i.test(source)) return source;
+    const chunks = [];
+    let bytes = [];
+    const flush = () => {
+      if (!bytes.length) return;
+      try {
+        chunks.push(new TextDecoder(encoding).decode(new Uint8Array(bytes)));
+      } catch {
+        chunks.push(new TextDecoder('utf-8').decode(new Uint8Array(bytes)));
+      }
+      bytes = [];
+    };
+    for (let i = 0; i < source.length;) {
+      if (source[i] === '%' && /^[0-9a-f]{2}$/i.test(source.slice(i + 1, i + 3))) {
+        bytes.push(parseInt(source.slice(i + 1, i + 3), 16));
+        i += 3;
+      } else {
+        flush();
+        chunks.push(source[i]);
+        i += 1;
+      }
+    }
+    flush();
+    return chunks.join('');
+  }
+
+  function normalizeLoginNameText(value) {
+    const raw = decodeJsStringLiteral(value).trim();
+    if (!raw) return '';
+    try {
+      const utf8 = decodeURIComponent(raw).trim();
+      if (utf8) return utf8;
+    } catch {
+      // fall back to GBK below
+    }
+    const gbk = decodePercentBytes(raw, 'gbk').trim();
+    if (gbk && !gbk.includes('�')) return gbk;
+    return raw;
+  }
+
+  function gbkBytesForChar(ch) {
+    if (gbkEncodeCache.has(ch)) return gbkEncodeCache.get(ch);
+    const code = ch.codePointAt(0);
+    if (code <= 0x7f) {
+      const bytes = [code];
+      gbkEncodeCache.set(ch, bytes);
+      return bytes;
+    }
+    for (let hi = 0x81; hi <= 0xfe; hi += 1) {
+      for (let lo = 0x40; lo <= 0xfe; lo += 1) {
+        if (lo === 0x7f) continue;
+        try {
+          if (new TextDecoder('gbk').decode(new Uint8Array([hi, lo])) === ch) {
+            const bytes = [hi, lo];
+            gbkEncodeCache.set(ch, bytes);
+            return bytes;
+          }
+        } catch {
+          // try next code point
+        }
+      }
+    }
+    const fallback = Array.from(unescape(encodeURIComponent(ch))).map((c) => c.charCodeAt(0));
+    gbkEncodeCache.set(ch, fallback);
+    return fallback;
+  }
+
+  function gbkUrlEncode(value) {
+    const safe = /^[A-Za-z0-9_.~-]$/;
+    return Array.from(String(value || '')).map((ch) => {
+      if (safe.test(ch)) return ch;
+      return gbkBytesForChar(ch).map((b) => '%' + b.toString(16).toUpperCase().padStart(2, '0')).join('');
+    }).join('');
+  }
 
   function decodeBuffer(buf, contentType = '') {
     const type = String(contentType || '').toLowerCase();
@@ -160,7 +245,7 @@
 
   function parseLoginCall(source) {
     const match = String(source || '').match(/goLogin\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([0-9a-f]{32})['"]\s*\)/i);
-    return match ? { loginName: String(match[1]).trim(), password: String(match[2]).trim() } : null;
+    return match ? { loginName: normalizeLoginNameText(match[1]), password: String(match[2]).trim() } : null;
   }
 
   function decodeHtmlText(value) {
@@ -583,7 +668,6 @@
           student: { parsed: 0, written: 0, total: 0, phase: 'load', currentPrefixes: [] }
         };
         const localBindings = await readLocalBindings();
-        let databaseCleared = false;
         let writeQueue = Promise.resolve();
         const updateProgress = () => {
           if (!showProgress) return;
@@ -670,10 +754,6 @@
           state[type].written = 0;
           updateProgress();
           writeQueue = writeQueue.then(async () => {
-            if (!databaseCleared) {
-              await global.BjtuAccountStore.clear();
-              databaseCleared = true;
-            }
             await global.BjtuAccountStore.putAll(accounts, (progress) => {
               if (!showProgress) return;
               setProgress(100, '正在获取并写入账号列表…');
@@ -735,9 +815,17 @@
     if (!id) return null;
     const cached = accountCache.get(id);
     if (cached) return { loginName: id, ...cached };
-    const record = await global.BjtuAccountStore.get(id);
+    let record = await global.BjtuAccountStore.get(id);
+    if (!record) {
+      const normalizedId = normalizeLoginNameText(id);
+      if (normalizedId && normalizedId !== id) record = await global.BjtuAccountStore.get(normalizedId);
+    }
+    if (!record && /[^\x00-\x7f]/.test(id)) {
+      const encodedId = gbkUrlEncode(id);
+      if (encodedId && encodedId !== id) record = await global.BjtuAccountStore.get(encodedId);
+    }
     if (record) accountCache.set(id, record);
-    return record ? { loginName: id, ...record } : null;
+    return record ? { loginName: record.loginName || id, ...record } : null;
   }
 
   async function updateQuickUsername(loginName, quickUsername) {
@@ -775,7 +863,7 @@
 
   async function loginWithPassword(loginName, password, { signal } = {}) {
     const url = BASE_VE + 's.shtml?login=main_2&goLogin=1&username='
-      + encodeURIComponent(String(loginName || '').trim())
+      + gbkUrlEncode(String(loginName || '').trim())
       + '&password=' + encodeURIComponent(String(password || '').trim());
     const res = await fetch(url, { credentials: 'include', cache: 'no-store', signal });
     return parseLoginResponse(await decodeResponse(res));

@@ -1837,11 +1837,24 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
   isSyncingAccountHistorySelect = false;
 }
 
+const ACCOUNT_HISTORY_SELECT_EXTRA_PX = 20;
+
 function adjustAccountHistorySelectWidth() {
   if (!(accountHistorySelect instanceof HTMLSelectElement)) return;
   const selectedText = String(accountHistorySelect.selectedOptions?.[0]?.text || accountHistorySelect.value || '').trim();
-  const scaledChars = Math.ceil(selectedText.length * 1.6)+1;
-  accountHistorySelect.style.width = `calc(${scaledChars}ch + 36px)`;
+  if (!selectedText) {
+    accountHistorySelect.style.width = '';
+    return;
+  }
+  const cs = getComputedStyle(accountHistorySelect);
+  const canvas = adjustAccountHistorySelectWidth._canvas || (adjustAccountHistorySelectWidth._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.font = `${cs.fontStyle || 'normal'} ${cs.fontVariant || 'normal'} ${cs.fontWeight || '400'} ${cs.fontSize || '14px'} / ${cs.lineHeight || 'normal'} ${cs.fontFamily || 'sans-serif'}`;
+  const textWidth = Math.ceil(ctx.measureText(selectedText).width);
+  const borderPadding = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
+    .reduce((sum, key) => sum + (parseFloat(cs[key]) || 0), 0);
+  accountHistorySelect.style.width = `${Math.ceil(textWidth + borderPadding + ACCOUNT_HISTORY_SELECT_EXTRA_PX)}px`;
 }
 
 function normalizeCurrentXqOptions(rawList) {
@@ -11048,6 +11061,7 @@ usernameInput.addEventListener('change', async () => {
 if (accountHistorySelect instanceof HTMLSelectElement) {
   accountHistorySelect.addEventListener('change', () => {
     if (isSyncingAccountHistorySelect) return;
+    adjustAccountHistorySelectWidth();
     const picked = String(accountHistorySelect.value || '').trim();
     if (!picked) return;
     const current = String(usernameInput.value || '').trim();

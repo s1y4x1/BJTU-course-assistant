@@ -121,8 +121,12 @@
   }
 
   async function put(value) {
-    const record = normalize(value?.loginName, value);
+    let record = normalize(value?.loginName, value);
     if (!record) return null;
+    if (!record.quickUsername) {
+      const current = await get(record.loginName);
+      if (current?.quickUsername) record = { ...record, quickUsername: current.quickUsername };
+    }
     const db = await open();
     const transaction = db.transaction(STORE_NAME, 'readwrite');
     transaction.objectStore(STORE_NAME).put(record);
@@ -259,6 +263,17 @@
       else teacherTotal += 1;
     });
     const db = await open();
+    const existingQuickUsernames = new Map();
+    try {
+      const quickRows = await getQuickAccounts();
+      quickRows.forEach((row) => {
+        const loginName = String(row?.loginName || '').trim();
+        const quickUsername = String(row?.quickUsername || '').trim();
+        if (loginName && quickUsername) existingQuickUsernames.set(loginName, quickUsername);
+      });
+    } catch {
+      // If reading existing quick bindings fails, continue with incoming data.
+    }
     let transaction;
     let storedCount = 0;
     let teacherWritten = 0;
@@ -291,8 +306,11 @@
       const store = transaction.objectStore(STORE_NAME);
       keys.slice(offset, offset + WRITE_BATCH_SIZE).forEach((key) => {
         const value = safeSource[key];
-        const record = normalize(isArray ? value?.loginName : key, value);
+        let record = normalize(isArray ? value?.loginName : key, value);
         if (!record) return;
+        if (!record.quickUsername && existingQuickUsernames.has(record.loginName)) {
+          record = { ...record, quickUsername: existingQuickUsernames.get(record.loginName) };
+        }
         store.put(record);
         storedCount += 1;
         if (record.roleName === '学生') {
