@@ -2153,6 +2153,21 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
   return false;
 }
 
+async function restartVePlatformForLoginExpired(reason = '登录已失效，正在重启智慧课程平台…') {
+  if (window.veLoginExpiredRestartPromise) return window.veLoginExpiredRestartPromise;
+  showToast(reason, 'info', 2200);
+  window.veLoginExpiredRestartPromise = (async () => {
+    try {
+      await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
+    } catch {
+      handleLoginRequired(() => reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true }), null, VE_LOGIN_REQUIRED_HTML);
+    } finally {
+      setTimeout(() => { window.veLoginExpiredRestartPromise = null; }, 600);
+    }
+  })();
+  return window.veLoginExpiredRestartPromise;
+}
+
 // -------------------- Login --------------------
 function getLoginFallbackUsername(targetUsername = '') {
   const target = String(targetUsername || '').trim();
@@ -5981,31 +5996,24 @@ function syncCourseActionLoadingSpinnerPhase(scope = courseListDiv) {
 
 function setCoursewareButtonLoading(btn, isLoading) {
   if (!btn) return;
-  const currentCountRaw = Number(btn.dataset.coursewareLoadingCount || 0);
-  const currentCount = Number.isFinite(currentCountRaw) ? Math.max(0, currentCountRaw) : 0;
   if (isLoading) {
-    const nextCount = currentCount + 1;
-    btn.dataset.coursewareLoadingCount = String(nextCount);
+    btn.dataset.coursewareLoading = '1';
     if (btn.classList.contains('courseware-list-loading')) {
       btn.disabled = true;
+      btn.style.opacity = '1';
       btn.style.pointerEvents = 'none';
       return;
     }
     btn.disabled = true;
+    btn.style.opacity = '1';
     btn.style.pointerEvents = 'none';
     btn.classList.add('courseware-list-loading');
     btn.innerHTML = `课件下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
     return;
   }
 
-  const nextCount = Math.max(0, currentCount - 1);
-  btn.dataset.coursewareLoadingCount = String(nextCount);
-  if (nextCount > 0) {
-    btn.disabled = true;
-    btn.style.pointerEvents = 'none';
-    return;
-  }
-
+  delete btn.dataset.coursewareLoading;
+  delete btn.dataset.coursewareLoadingCount;
   btn.disabled = false;
   btn.style.pointerEvents = 'auto';
   btn.classList.remove('courseware-list-loading');
@@ -6376,15 +6384,9 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
         return;
       }
       if (shouldRender()) {
-        resultArea.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-        const sp = resultArea.querySelector('span');
-        if (sp) sp.addEventListener('click', () => handleLoginRequired(() => {
-          loadCoursewareList(btn, courseIdInt, courseNum, fzId);
-        }, null, '登录已失效，请稍后重试或重新登录'));
+        resultArea.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
       }
-      handleLoginRequired(() => {
-        loadCoursewareList(btn, courseIdInt, courseNum, fzId);
-      }, null, '登录已失效，请稍后重试或重新登录');
+      await restartVePlatformForLoginExpired('课件列表登录已失效，正在重启智慧课程平台…');
       return;
     }
 
@@ -6450,6 +6452,7 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
         } catch { /* ignore */ }
         return;
       }
+      await restartVePlatformForLoginExpired('课件列表登录已失效，正在重启智慧课程平台…');
       return;
     }
 
@@ -6545,7 +6548,7 @@ async function fetchCoursewareRpUrl(rpId) {
     const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: String(rpId) });
     const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480`;
 
-    const { text } = await fetchText(postUrl, {
+    const { text, res } = await fetchText(postUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -6556,6 +6559,10 @@ async function fetchCoursewareRpUrl(rpId) {
       body: postBody.toString(),
       signal: window.globalVeAbortController?.signal
     });
+
+    if (isLikelyLoginPageHtml(text, res?.url)) {
+      return { url: '', loginExpired: true };
+    }
 
     const data = parseVeJson(text);
     if (data.flag === true || String(data.STATUS) === '0') {
@@ -6605,6 +6612,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
   };
 
   let loginHandled = false;
+  let loginExpiredSeen = false;
 
   await Promise.allSettled(rpItems.map(async (item) => {
     const result = await fetchCoursewareRpUrl(item.rpId).finally(onOneLinkDone);
@@ -6632,25 +6640,25 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
         }
       }
     } else if (result?.loginExpired) {
+      loginExpiredSeen = true;
       const linkContainer = resultArea.querySelector(`[id="courseware-rp-link-${item.id.replace(/["\\]/g, '')}"]`);
       if (linkContainer) {
-        linkContainer.innerHTML = '<span style="color:#f44336;">Err</span>';
+        linkContainer.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
       }
       if (!loginHandled) {
         loginHandled = true;
-        if (linkContainer) {
-          linkContainer.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-          const sp = linkContainer.querySelector('span');
-          if (sp) sp.addEventListener('click', () => handleLoginRequired(() => {
-            startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
-          }, null, '登录已失效，请稍后重试或重新登录'));
-        }
-        handleLoginRequired(() => {
-          startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
-        }, null, '登录已失效，请稍后重试或重新登录');
+        await restartVePlatformForLoginExpired('课件下载链接登录已失效，正在重启智慧课程平台…');
       }
     }
   }));
+
+  if (loginExpiredSeen) {
+    cache.rpLinksFetched = false;
+    cache.rpLinksFetching = false;
+    btn.classList.remove('courseware-link-progress');
+    btn.style.removeProperty('--courseware-progress');
+    return;
+  }
 
   cache.rpLinksFetched = true;
   cache.rpLinksFetching = false;
@@ -6947,13 +6955,21 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
     btn.textContent = '回放下载';
     setCourseReplayState(courseIdInt, true);
 
-  } catch {
+  } catch (error) {
     btn.classList.remove('replay-list-loading');
     btn.classList.remove('replay-link-progress');
     btn.style.removeProperty('--replay-progress');
-    btn.style.display = 'none';
-    if (shouldTouchVisibleArea) toggleResultAreaAnimated(resultArea, false, { immediate: true });
-    setCourseReplayState(courseIdInt, false);
+    if (String(error?.message || error) === 'LOGIN_REQUIRED') {
+      btn.disabled = false;
+      btn.style.pointerEvents = 'auto';
+      btn.textContent = '回放下载';
+      setCourseReplayLoading(courseIdInt, false);
+      await restartVePlatformForLoginExpired('回放列表登录已失效，正在重启智慧课程平台…');
+    } else {
+      btn.style.display = 'none';
+      if (shouldTouchVisibleArea) toggleResultAreaAnimated(resultArea, false, { immediate: true });
+      setCourseReplayState(courseIdInt, false);
+    }
   }
 }
 
@@ -6997,11 +7013,22 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
     }
   };
 
-  await Promise.allSettled(list.map((item, index) => {
+  const linkResults = await Promise.allSettled(list.map((item, index) => {
     const linkContainerId = `video-link-${courseIdInt}-${index}`;
     return fetchVideoLinkInternal(linkContainerId, item.rpId, courseNum, fzId, item.teacherId || '')
       .finally(onOneLinkDone);
   }));
+
+  const hasLoginRequired = linkResults.some((result) => result.status === 'fulfilled' && result.value === 'LOGIN_REQUIRED');
+  if (hasLoginRequired) {
+    cache.linksFetching = false;
+    cache.linksFetched = false;
+    setCourseReplayLoading(courseIdInt, false);
+    btn.classList.remove('replay-link-progress');
+    btn.style.removeProperty('--replay-progress');
+    flushPendingCourseCardSortIfIdle();
+    return;
+  }
 
   if (isStale()) {
     cache.linksFetching = false;
@@ -8796,7 +8823,7 @@ async function prefetchHomeworkAttachments(courseId, list) {
 
 async function checkHomework(courseId) {
   const area = document.getElementById(`homework-area-${courseId}`);
-  if (!area) return;
+  if (!area) return false;
   const hasMatchedExternal = ((window.yktMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
     || ((window.mrjzyMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
     || ((window.jlgjMatchedHomeworkByCourseId?.[courseId] || []).length > 0);
@@ -8818,7 +8845,12 @@ async function checkHomework(courseId) {
     for (const subType of subTypes) {
       const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=getHomeWorkList&cId=${encodeURIComponent(courseId)}&subType=${subType}&page=1&pagesize=10`;
       try {
-        const { text } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+        const { text, res } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+        if (isLikelyLoginPageHtml(text, res?.url) || (res && res.redirected && /\/ve\/(?:Timeout|Login_2)\.jsp/i.test(String(res.url || '')))) {
+          const err = new Error('LOGIN_REQUIRED');
+          err.loginRequired = true;
+          throw err;
+        }
         const data = JSON.parse(text);
         if (String(data.STATUS) !== '0') continue;
         const list = data.courseNoteList || data.list || [];
@@ -8830,7 +8862,8 @@ async function checkHomework(courseId) {
           }
           mergedList.push(hw);
         });
-      } catch {
+      } catch (error) {
+        if (error?.loginRequired || String(error?.message || '') === 'LOGIN_REQUIRED') throw error;
         // continue with other subTypes
       }
     }
@@ -8842,10 +8875,16 @@ async function checkHomework(courseId) {
     attachmentPrefetchPromise.finally(() => {
       recomputeCourseHomeworkState(courseId);
     }).catch(() => {});
+    return true;
   } catch (e) {
+    if (e?.loginRequired || String(e?.message || '') === 'LOGIN_REQUIRED') {
+      await restartVePlatformForLoginExpired('作业列表登录已失效，正在重启智慧课程平台…');
+      return false;
+    }
     console.error(`[VE] fetch error for ${courseId}: ${e.message}`);
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
+    return false;
   }
 }
 
@@ -8937,7 +8976,8 @@ async function forcePublishScoresThenRestore(courseId, btn = null) {
       openedIds.push(id);
       tick();
     }
-    await checkHomework(cid);
+    const refreshed = await checkHomework(cid);
+    if (refreshed === false) return;
     tick();
     for (const id of targetIds) {
       await setHomeworkScoreDisplayStatus(id, 2, window.globalVeAbortController?.signal || null);
@@ -8948,7 +8988,7 @@ async function forcePublishScoresThenRestore(courseId, btn = null) {
     showToast('已获取暂未公布作业成绩，并取消公布', 'success', 2200);
   } catch (error) {
     if (String(error?.message || error) === 'LOGIN_REQUIRED') {
-      handleLoginRequired(() => forcePublishScoresThenRestore(cid), null, VE_LOGIN_REQUIRED_HTML);
+      await restartVePlatformForLoginExpired('获取作业成绩时登录已失效，正在重启智慧课程平台…');
     } else {
       showToast('强制公布获取成绩失败：' + String(error?.message || error), 'error', 3200);
     }
@@ -9380,7 +9420,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
     const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: String(videoId) });
     const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480&courseId=${encodeURIComponent(courseNum)}&dataSource=1&cId=122618&xkhId=${encodeURIComponent(fzId)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&teacherId=${encodeURIComponent(teacherId)}`;
 
-    const { text } = await fetchText(postUrl, {
+    const { text, res } = await fetchText(postUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -9392,6 +9432,13 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       signal: window.globalVeAbortController?.signal
     });
 
+    if (isLikelyLoginPageHtml(text, res?.url)) {
+      const linksDiv = getLinksDiv();
+      if (linksDiv) linksDiv.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
+      await restartVePlatformForLoginExpired('回放下载链接登录已失效，正在重启智慧课程平台…');
+      return 'LOGIN_REQUIRED';
+    }
+
     if (isStale()) return false;
 
     const detailData = parseVeJson(text);
@@ -9401,15 +9448,9 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
       if (!linksDiv) return false;
       if (isStale()) return false;
 
-      linksDiv.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-      const sp = linksDiv.querySelector('span');
-      if (sp) sp.addEventListener('click', () => handleLoginRequired(() => {
-        fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId);
-      }, null, '登录已失效，请稍后重试或重新登录'));
-      handleLoginRequired(() => {
-        fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId);
-      }, null, '登录已失效，请稍后重试或重新登录');
-      return false;
+      linksDiv.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
+      await restartVePlatformForLoginExpired('回放下载链接登录已失效，正在重启智慧课程平台…');
+      return 'LOGIN_REQUIRED';
     }
 
     // New/alt format: {flag:true, html:"<a...>"}
@@ -9446,6 +9487,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
     return false;
   } catch (e) {
     const linksDiv = getLinksDiv();
+    if (String(e?.message || e) === 'LOGIN_REQUIRED') return 'LOGIN_REQUIRED';
     if (linksDiv) linksDiv.innerHTML = '<span style="color: #f44336;">Err</span>';
     return false;
   }
@@ -9461,7 +9503,7 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
     const postUrl = `${BASE_VE}back/resourceSpace.shtml`;
     const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId: rpId });
     const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480&courseId=${encodeURIComponent(courseId)}&dataSource=1&cId=122618&xkhId=${encodeURIComponent(xkhId)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&teacherId=${encodeURIComponent(teacherId)}`;
-    const { text } = await fetchText(postUrl, {
+    const { text, res } = await fetchText(postUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -9474,16 +9516,17 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
 
     if (isStale()) return;
 
+    if (isLikelyLoginPageHtml(text, res?.url)) {
+      span.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
+      await restartVePlatformForLoginExpired('回放下载链接登录已失效，正在重启智慧课程平台…');
+      return;
+    }
+
     const data = JSON.parse(text);
     if (data?.flag === false || (data?.STATUS === '1' && String(data?.ERRMSG || '').includes('不合法'))) {
       if (isStale()) return;
-      span.innerHTML = '<span class="error" style="cursor:pointer; color:blue;">[登录已失效]</span>';
-      span.onclick = () => handleLoginRequired(() => {
-        window.__fetchVideoDetail(rpId, courseId, xkhId, teacherId, btnEl);
-      }, null, VE_LOGIN_REQUIRED_HTML);
-      handleLoginRequired(() => {
-        window.__fetchVideoDetail(rpId, courseId, xkhId, teacherId, btnEl);
-      }, null, '登录已失效，请稍后重试或重新登录');
+      span.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
+      await restartVePlatformForLoginExpired('回放下载链接登录已失效，正在重启智慧课程平台…');
       return;
     }
     const html = data?.html || '';
