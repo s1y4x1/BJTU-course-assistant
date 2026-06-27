@@ -94,16 +94,23 @@ function goBackToApp() {
   ]);
   const enabled = normalizePlatformEnabled(platformEnabled);
   const visible = normalizePlatformVisible(platformVisible);
+  const effectiveEnabled = Object.fromEntries(Object.keys(DEFAULT_PLATFORM_ENABLED).map((key) => [
+    key,
+    !!enabled[key] && !!visible[key]
+  ]));
 
-  document.getElementById('enableVe').checked = !!enabled.ve;
-  document.getElementById('enableYkt').checked = !!enabled.ykt;
-  document.getElementById('enableMrjzy').checked = !!enabled.mrjzy;
-  document.getElementById('enableJlgj').checked = !!enabled.jlgj;
-  document.getElementById('enableMooc').checked = !!enabled.mooc;
+  document.getElementById('enableVe').checked = !!effectiveEnabled.ve;
+  document.getElementById('enableYkt').checked = !!effectiveEnabled.ykt;
+  document.getElementById('enableMrjzy').checked = !!effectiveEnabled.mrjzy;
+  document.getElementById('enableJlgj').checked = !!effectiveEnabled.jlgj;
+  document.getElementById('enableMooc').checked = !!effectiveEnabled.mooc;
   Object.entries(visible).forEach(([key, value]) => {
     const id = 'show' + key.charAt(0).toUpperCase() + key.slice(1);
     document.getElementById(id).checked = !!value;
   });
+  if (Object.keys(effectiveEnabled).some((key) => effectiveEnabled[key] !== enabled[key])) {
+    await chrome.storage.local.set({ platformEnabled: effectiveEnabled });
+  }
   document.getElementById('injectMoocHelperEnabled').checked = injectMoocHelperEnabled !== false;
   const autoLoadResourcesVal = autoLoadCourseResourcesEnabled === undefined
     ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
@@ -134,11 +141,11 @@ function goBackToApp() {
   // apply changes immediately when inputs change
   const applyPlatform = async () => {
     const pe = {
-      ve: !!document.getElementById('enableVe').checked,
-      ykt: !!document.getElementById('enableYkt').checked,
-      mrjzy: !!document.getElementById('enableMrjzy').checked,
-      jlgj: !!document.getElementById('enableJlgj').checked,
-      mooc: !!document.getElementById('enableMooc').checked
+      ve: !!document.getElementById('showVe').checked && !!document.getElementById('enableVe').checked,
+      ykt: !!document.getElementById('showYkt').checked && !!document.getElementById('enableYkt').checked,
+      mrjzy: !!document.getElementById('showMrjzy').checked && !!document.getElementById('enableMrjzy').checked,
+      jlgj: !!document.getElementById('showJlgj').checked && !!document.getElementById('enableJlgj').checked,
+      mooc: !!document.getElementById('showMooc').checked && !!document.getElementById('enableMooc').checked
     };
     await chrome.storage.local.set({ platformEnabled: pe });
     await chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
@@ -152,6 +159,7 @@ function goBackToApp() {
       const shown = !!document.getElementById(`show${cap}`).checked;
       visibleState[key] = shown;
       const enableInput = document.getElementById(`enable${cap}`);
+      if (!shown) enableInput.checked = false;
       enableInput.disabled = !shown;
       enableInput.closest('label')?.classList.toggle('is-disabled', !shown);
     });
@@ -164,11 +172,17 @@ function goBackToApp() {
 
   const applyPlatformVisible = async () => {
     const value = {};
+    const enabledValue = {};
     ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((key) => {
       const cap = key.charAt(0).toUpperCase() + key.slice(1);
-      value[key] = !!document.getElementById(`show${cap}`).checked;
+      const shown = !!document.getElementById(`show${cap}`).checked;
+      const enableInput = document.getElementById(`enable${cap}`);
+      value[key] = shown;
+      if (!shown) enableInput.checked = false;
+      enabledValue[key] = shown && !!enableInput.checked;
     });
-    await chrome.storage.local.set({ platformVisible: value });
+    await chrome.storage.local.set({ platformVisible: value, platformEnabled: enabledValue });
+    await chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
     updatePlatformDetailDisabled();
     setMsg('已应用更改');
   };
