@@ -679,42 +679,79 @@ function formatReleasePublishedAt(publishedAt) {
   return relativeText ? `${absoluteText}（${relativeText}）` : absoluteText;
 }
 
+async function fetchFallbackLatestRelease() {
+  if (typeof popupMode !== 'undefined' && popupMode) {
+    throw new Error('弹出窗口不打开备用更新源页面');
+  }
+  const response = await chrome.runtime.sendMessage({ type: 'READ_FALLBACK_UPDATE_SOURCE' });
+  if (!response?.ok) throw new Error(response?.message || '备用更新源后台页面读取失败');
+  const source = String(response.text || '');
+  const prefix = '$content_add0 = ';
+  const line = source.split(/\r?\n/).find((item) => String(item || '').trimStart().startsWith(prefix));
+  if (!line) throw new Error('备用更新源缺少 $content_add0');
+  const statement = String(line).trimStart();
+  const semicolonIndex = statement.lastIndexOf(';');
+  if (semicolonIndex < prefix.length) throw new Error('备用更新源数据格式错误');
+  const outer = JSON.parse(statement.slice(prefix.length, semicolonIndex).trim());
+  const contentHtml = String(outer?.dat?.qrcode_compontent?.[0]?.content_html || '').trim();
+  if (!contentHtml) throw new Error('备用更新源缺少 content_html');
+  const withoutParagraph = contentHtml
+    .replace(/^\s*<p(?:\s[^>]*)?>/i, '')
+    .replace(/<\/p>\s*$/i, '');
+  const parsedHtml = new DOMParser().parseFromString(withoutParagraph, 'text/html');
+  const releaseInfo = JSON.parse(String(parsedHtml.body?.textContent || '').trim());
+  const tag = String(releaseInfo?.ver || '').trim();
+  const url = String(releaseInfo?.url || '').trim();
+  if (!tag || !url) throw new Error('备用更新源缺少版本号或下载地址');
+  return {
+    tag_name: tag,
+    name: String(releaseInfo?.name || tag).trim() || tag,
+    body: String(releaseInfo?.desc || '').trim(),
+    zipball_url: url,
+    draft: false,
+    prerelease: false,
+    published_at: ''
+  };
+}
+
 async function loadVersionInfo() {
   const localVersion = String(chrome.runtime.getManifest().version || '').trim();
   versionIgnoredTag = String(await getLocal(VERSION_IGNORE_KEY, '') || '').trim();
   setVersionButtonState('loading', { localVersion });
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
-    let releasesRes;
+    let releases;
     try {
-      releasesRes = await fetch(VERSION_RELEASES_API_URL, {
-        cache: 'no-store',
-        headers: { Accept: 'application/vnd.github+json' },
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-    if (!releasesRes.ok) {
-      let apiMessage = '';
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
+      let releasesRes;
       try {
-        const failData = await releasesRes.json();
-        apiMessage = String(failData?.message || '').trim();
-      } catch {
-        try {
-          apiMessage = String(await releasesRes.text()).trim();
-        } catch {
-          apiMessage = '';
-        }
+        releasesRes = await fetch(VERSION_RELEASES_API_URL, {
+          cache: 'no-store',
+          headers: { Accept: 'application/vnd.github+json' },
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw new Error(apiMessage || `GitHub request failed (${releasesRes.status})`);
-    }
-
-    const releases = await releasesRes.json();
-    if (!Array.isArray(releases) || !releases.length) {
-      throw new Error('Missing releases');
+      if (!releasesRes.ok) {
+        let apiMessage = '';
+        try {
+          const failData = await releasesRes.json();
+          apiMessage = String(failData?.message || '').trim();
+        } catch {
+          try { apiMessage = String(await releasesRes.text()).trim(); } catch { apiMessage = ''; }
+        }
+        throw new Error(apiMessage || `GitHub request failed (${releasesRes.status})`);
+      }
+      releases = await releasesRes.json();
+      if (!Array.isArray(releases) || !releases.length) throw new Error('Missing releases');
+    } catch (githubError) {
+      try {
+        releases = [await fetchFallbackLatestRelease()];
+      } catch (fallbackError) {
+        throw new Error(`Github：${String(githubError?.message || githubError)}；备用更新源：${String(fallbackError?.message || fallbackError)}`);
+      }
     }
     const latestRelease = pickLatestStableRelease(releases);
     const latestTag = getReleaseTagVersion(latestRelease);
@@ -769,7 +806,7 @@ async function loadVersionInfo() {
   } catch (err) {
     setVersionButtonState('failure', { localVersion });
     const msg = String(err?.message || '').trim();
-    const base = '检查更新失败：无法连接到 Github';
+    const base = '检查更新失败：无法连接更新源';
     const text = msg ? `${base}\n${msg}` : base;
     showToast(text, 'error', 2600, false, { preserveInfoToasts: true });
   }

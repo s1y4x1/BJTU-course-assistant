@@ -3,6 +3,7 @@
 importScripts('account-store.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
+const FALLBACK_UPDATE_SOURCE_URL = 'https://v.mbm07.cn/k77wan/M666G_vogmjBIG';
 const portalUsernameBindByTab = new Map(); // tabId -> { ts, loginName }
 const portalDetectedQuickUsernameByTab = new Map(); // tabId -> quickUsername seen during ordinary MIS redirects
 const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
@@ -446,6 +447,46 @@ async function waitForTabComplete(tabId, timeoutMs = 15000) {
   });
 }
 
+async function readFallbackUpdateSourceViaTab() {
+  let tabId = null;
+  try {
+    const tab = await chrome.tabs.create({
+      url: FALLBACK_UPDATE_SOURCE_URL,
+      active: false
+    });
+    tabId = Number(tab?.id || 0) || null;
+    if (!tabId) throw new Error('无法创建备用更新源后台页面');
+    await waitForTabComplete(tabId, 15000).catch(() => {
+      throw new Error('备用更新源页面加载超时');
+    });
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async () => {
+        try {
+          const response = await fetch(location.href, {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store'
+          });
+          if (response.ok) {
+            const source = await response.text();
+            if (source.trim()) return source;
+          }
+        } catch {
+          // Fall back to DOM source below.
+        }
+        return String(document.documentElement?.textContent || document.documentElement?.innerHTML || '');
+      }
+    });
+    const text = String(results?.[0]?.result || '');
+    if (!text.trim()) throw new Error('备用更新源页面内容为空');
+    return text;
+  } finally {
+    if (tabId) await chrome.tabs.remove(tabId).catch(() => {});
+  }
+}
+
 async function ensureMoocOriginTab() {
   if (moocActiveRequestTabId) {
     const activeTab = await chrome.tabs.get(Number(moocActiveRequestTabId)).catch(() => null);
@@ -587,6 +628,20 @@ async function handleMoocRequest(action, payload) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'READ_FALLBACK_UPDATE_SOURCE') {
+    const senderUrl = String(_sender?.url || '');
+    let fromPopup = false;
+    try { fromPopup = new URL(senderUrl).searchParams.get('popup') === '1'; } catch { fromPopup = /[?&]popup=1(?:&|$)/.test(senderUrl); }
+    if (fromPopup) {
+      sendResponse({ ok: false, message: '弹出窗口不打开备用更新源页面' });
+      return false;
+    }
+    readFallbackUpdateSourceViaTab()
+      .then((text) => sendResponse({ ok: true, text }))
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
   if (message?.type === 'MOOC_RELEASE_HELPER_TABS') {
     [...moocHelperTabIds].forEach((tabId) => closeMoocHelperTab(tabId));
     moocActiveRequestTabId = null;
