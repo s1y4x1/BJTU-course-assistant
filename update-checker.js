@@ -701,8 +701,12 @@ async function fetchFallbackLatestRelease() {
   const parsedHtml = new DOMParser().parseFromString(withoutParagraph, 'text/html');
   const releaseInfo = JSON.parse(String(parsedHtml.body?.textContent || '').trim());
   const tag = String(releaseInfo?.ver || '').trim();
-  const url = String(releaseInfo?.url || '').trim();
-  if (!tag || !url) throw new Error('备用更新源缺少版本号或下载地址');
+  const rawUrl = String(releaseInfo?.url || '').trim();
+  if (!tag || !rawUrl) throw new Error('备用更新源缺少版本号或下载地址');
+  const relativePath = rawUrl
+    .replace(/^https?:\/\/123\.121\.147\.7:8081\/rp\//i, '')
+    .replace(/^\/+/, '');
+  const url = `http://123.121.147.7:8081/rp/${relativePath}`;
   return {
     tag_name: tag,
     name: String(releaseInfo?.name || tag).trim() || tag,

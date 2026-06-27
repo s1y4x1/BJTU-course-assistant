@@ -1,11 +1,5 @@
 (async function setupCourseHeaderQr() {
   window.__headerQrEnabled = false;
-  try {
-    const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
-    window.__headerQrEnabled = headerQrEnabled === true;
-  } catch {
-    window.__headerQrEnabled = false;
-  }
   const HEADER_QR_TOOLTIP_ID = '__bjtu_header_qr_tooltip__';
   let headerTooltip = document.getElementById(HEADER_QR_TOOLTIP_ID);
   if (!headerTooltip) {
@@ -29,14 +23,6 @@
       if (changes.platformEnabled) {
         window.__headerQrUrl = '';
         window.__sectionQrCache = {};
-      }
-      if (changes.headerQrEnabled) {
-        window.__headerQrEnabled = changes.headerQrEnabled.newValue === true;
-        if (!window.__headerQrEnabled) {
-          headerQrHoverActive = false;
-          headerTooltip.style.display = 'none';
-          document.querySelectorAll('[id^="__bjtu_section_qr_"]').forEach((el) => { el.style.display = 'none'; });
-        }
       }
     });
   } catch {}

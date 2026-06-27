@@ -23,7 +23,8 @@ try {
   chrome.storage.local.remove([
     'latestResponseJsessionid',
     'latestSentLoginJsessionid',
-    'portalUsernameBindStatus'
+    'portalUsernameBindStatus',
+    'headerQrEnabled'
   ]).catch(() => {});
 } catch {}
 

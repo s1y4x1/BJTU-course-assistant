@@ -34,6 +34,19 @@ function formatHomeworkReminderMinutes(minutes) {
   return `提前 ${minutes} 分钟`;
 }
 
+function formatShanghaiDateForFile(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts
+    .filter((part) => part.type !== 'literal')
+    .map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
   return {
@@ -98,7 +111,6 @@ function goBackToApp() {
   const { openMode } = await chrome.storage.local.get(['openMode']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
-  const { headerQrEnabled } = await chrome.storage.local.get(['headerQrEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
   const { popupUseFullscreenCacheEnabled } = await chrome.storage.local.get(['popupUseFullscreenCacheEnabled']);
   const {
@@ -141,9 +153,6 @@ function goBackToApp() {
   document.getElementById('saveUploadsEnabled').checked = saveUploadsVal;
   document.getElementById('headerQrEnabled').checked = false;
   document.getElementById('headerQrEnabled').disabled = true;
-  if (headerQrEnabled !== false) {
-    await chrome.storage.local.set({ headerQrEnabled: false });
-  }
   const linkQrVal = linkQrEnabled === undefined ? true : !!linkQrEnabled;
   document.getElementById('linkQrEnabled').checked = linkQrVal;
   const popupCacheVal = popupUseFullscreenCacheEnabled === undefined
@@ -287,10 +296,6 @@ function goBackToApp() {
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
-      if (changes.headerQrEnabled) {
-        const el = document.getElementById('headerQrEnabled');
-        if (el instanceof HTMLInputElement) { el.checked = false; el.disabled = true; }
-      }
       if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, true);
       if (changes.popupUseFullscreenCacheEnabled) {
         applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
@@ -358,7 +363,6 @@ function goBackToApp() {
         e.preventDefault();
         cb.checked = false;
         setMsg('此功能所需条件已被智慧课程平台禁用', false);
-        chrome.storage.local.set({ headerQrEnabled: false });
       });
     }
   })();
@@ -550,7 +554,7 @@ function goBackToApp() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'bjtu-account-list-' + new Date().toISOString().slice(0, 10) + '.json';
+      link.download = 'bjtu-account-list-' + formatShanghaiDateForFile() + '.json';
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMsg('已导出教职工 ' + Number(payload.summary?.teacher || 0)
@@ -603,7 +607,6 @@ function goBackToApp() {
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
-    await chrome.storage.local.set({ headerQrEnabled: false });
     await chrome.storage.local.set({ linkQrEnabled: true });
     await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
     await chrome.storage.local.set({
