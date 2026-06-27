@@ -227,7 +227,7 @@
     const direction = expanded ? 'up' : 'down';
     const label = `${expanded ? expandedText : collapsedText} (${count})`;
     return `<div class="homework-toggle-row homework-toggle-row--${kind}">
-      <button class="btn homework-toggle-btn ${expanded ? 'is-expanded' : ''} homework-toggle-btn--${direction}" data-mooc-action="toggle-${kind}" data-course-id="${env.escape(courseId)}" aria-expanded="${expanded ? 'true' : 'false'}">
+      <button class="btn homework-toggle-btn ${expanded ? 'is-expanded' : ''} homework-toggle-btn--${direction}" data-mooc-action="toggle-${kind}" data-course-id="${env.escape(courseId)}" data-count="${env.escape(String(count))}" data-collapsed-text="${env.escape(collapsedText)}" data-expanded-text="${env.escape(expandedText)}" aria-expanded="${expanded ? 'true' : 'false'}">
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
         <span class="homework-toggle-label">${env.escape(label)}</span>
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
@@ -267,6 +267,7 @@
       env.courseList.appendChild(card);
     });
     env.updateEmpty?.();
+    env.sortCourseCards?.();
     env.scheduleCache?.();
     setTimeout(() => {
       env.applyExpandableAutoToggle?.(env.courseList);
@@ -500,10 +501,38 @@
     const course = courses.find((item) => item.id === String(button.dataset.courseId || ''));
     if (!course) return;
     if (button.dataset.moocAction === 'toggle-overdue' || button.dataset.moocAction === 'toggle-done') {
+      if (button.dataset.animating === '1') return;
       const kind = button.dataset.moocAction === 'toggle-overdue' ? 'overdue' : 'done';
       const state = expandedGroups.get(course.id) || { overdue: false, done: false };
-      expandedGroups.set(course.id, { ...state, [kind]: !state[kind] });
-      render();
+      const expanded = !state[kind];
+      expandedGroups.set(course.id, { ...state, [kind]: expanded });
+
+      const card = button.closest('.mooc-standalone-card');
+      const group = card?.querySelector(`.homework-group[data-homework-group="${kind}"]`);
+      if (!(group instanceof HTMLElement) || typeof env.animateHomeworkGroupVisibility !== 'function') {
+        render();
+        return;
+      }
+
+      const count = String(button.dataset.count || '').trim();
+      const text = expanded ? button.dataset.expandedText : button.dataset.collapsedText;
+      const label = button.querySelector('.homework-toggle-label');
+      if (label) label.textContent = `${text || ''}${count ? ` (${count})` : ''}`;
+      button.classList.toggle('is-expanded', expanded);
+      button.classList.remove('homework-toggle-btn--up', 'homework-toggle-btn--down');
+      button.classList.add(expanded ? 'homework-toggle-btn--up' : 'homework-toggle-btn--down');
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      button.dataset.animating = '1';
+      group.dataset.expanded = expanded ? '1' : '0';
+      group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+      env.animateHomeworkGroupVisibility(group, expanded);
+      setTimeout(() => {
+        delete button.dataset.animating;
+        if (expanded) {
+          env.applyExpandableAutoToggle?.(card);
+          env.updateCountdowns?.();
+        }
+      }, 240);
       return;
     }
     if (button.dataset.moocAction === 'course') runTasks(course.tasks);

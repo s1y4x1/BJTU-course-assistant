@@ -11732,6 +11732,8 @@ function setupSavedUploadsUi() {
     isDetailExpanded: isHomeworkDetailExpanded,
     applyExpandableAutoToggle,
     updateCountdowns: updateAllCountdowns,
+    animateHomeworkGroupVisibility,
+    sortCourseCards: () => sortCourseCardsWithGuard(),
     loginRequired: () => openMoocLoginAssistPopup(true)
   });
   await loadPopupCacheEnabledSetting();
