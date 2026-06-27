@@ -24,10 +24,12 @@
       line-height: 1.4;
       opacity: 0;
       pointer-events: none;
+      user-select: text;
+      cursor: copy;
       transform: translate(-50%, -8px);
       transition: opacity .16s ease, transform .16s ease;
     }
-    #msg.show { opacity: 1; transform: translate(-50%, 0); }
+    #msg.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
     #msg.ok { border: 1px solid #86efac; background: #f0fdf4; color: #166534; }
     #msg.err { border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; }
     .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

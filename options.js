@@ -1,12 +1,29 @@
 let msgHideTimer = null;
+function scheduleMsgHide(msg, delay) {
+  if (msgHideTimer) clearTimeout(msgHideTimer);
+  msgHideTimer = setTimeout(() => msg.classList.remove('show'), delay);
+}
+
 function setMsg(text, ok = true) {
   const msg = document.getElementById('msg');
   msg.textContent = text;
   msg.className = `${ok ? 'ok' : 'err'} show`;
-  if (msgHideTimer) clearTimeout(msgHideTimer);
-  msgHideTimer = setTimeout(() => {
-    msg.classList.remove('show');
-  }, ok ? 1800 : 3200);
+  msg.title = '点击复制通知内容并关闭';
+  const delay = ok ? 1800 : 3200;
+  msg.onmouseenter = () => {
+    if (msgHideTimer) clearTimeout(msgHideTimer);
+  };
+  msg.onmouseleave = () => scheduleMsgHide(msg, delay);
+  if (msg.dataset.copyBound !== '1') {
+    msg.dataset.copyBound = '1';
+    msg.addEventListener('click', () => {
+      const content = String(msg.textContent || '');
+      if (content) navigator.clipboard.writeText(content).catch(() => {});
+      if (msgHideTimer) clearTimeout(msgHideTimer);
+      msg.classList.remove('show');
+    });
+  }
+  scheduleMsgHide(msg, delay);
 }
 
 const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };

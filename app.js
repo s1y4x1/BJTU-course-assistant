@@ -1228,6 +1228,16 @@ function promptLoginIfPossible(message) {
 }
 
 // -------------------- UI helpers --------------------
+function dismissToastAfterCopy(toast) {
+  if (!(toast instanceof HTMLElement) || !toast.isConnected || toast.dataset.dismissing === '1') return;
+  toast.dataset.dismissing = '1';
+  const content = String(toast.textContent || '').trim();
+  if (content) navigator.clipboard.writeText(content).catch(() => {});
+  toast.style.animation = 'fadeOutUp 0.25s ease-in forwards';
+  toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  setTimeout(() => toast.remove(), 300);
+}
+
 function showToast(message, type = 'success', duration = 3000, allowHtml = false, options = {}) {
   const container = document.getElementById('toast-container');
   const preserveInfoToasts = !!options?.preserveInfoToasts;
@@ -1239,6 +1249,7 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
   const text = String(message || '');
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
+  toast.title = '点击复制通知内容并关闭';
   toast.style.whiteSpace = 'pre-line';
   if (allowHtml) {
     toast.innerHTML = text;
@@ -1259,11 +1270,9 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
     }, duration);
   }
 
-  // Click to dismiss
+  // Click to copy the visible message and dismiss.
   toast.addEventListener('click', () => {
-    if (!toast.isConnected) return;
-    toast.style.animation = 'fadeOutUp 0.25s ease-in forwards';
-    toast.addEventListener('animationend', () => toast.remove());
+    dismissToastAfterCopy(toast);
   });
 }
 
@@ -1278,6 +1287,7 @@ function showBackgroundPortalLoginPendingToast() {
   toast.className = 'toast info';
   toast.dataset.sticky = '1';
   toast.dataset.stickyToast = 'bg-login';
+  toast.title = '点击复制通知内容并关闭';
   toast.style.whiteSpace = 'pre-line';
   toast.textContent = '正在后台登录中…';
   const spinner = document.createElement('span');
@@ -1285,11 +1295,9 @@ function showBackgroundPortalLoginPendingToast() {
   toast.appendChild(spinner);
   container.appendChild(toast);
 
-  // Click to dismiss sticky toast too
+  // Click to copy and dismiss sticky toast too.
   toast.addEventListener('click', () => {
-    if (!toast.isConnected) return;
-    toast.style.animation = 'fadeOutUp 0.25s ease-in forwards';
-    toast.addEventListener('animationend', () => toast.remove());
+    dismissToastAfterCopy(toast);
   });
 }
 

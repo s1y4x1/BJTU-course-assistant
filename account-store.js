@@ -2,7 +2,7 @@
   'use strict';
 
   const DB_NAME = 'bjtu-course-assistant';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const STORE_NAME = 'accounts';
   const LEGACY_KEY = 'accountList';
   const WRITE_BATCH_SIZE = 1000;
@@ -51,8 +51,18 @@
         if (!store.indexNames.contains('userName')) {
           store.createIndex('userName', 'userName', { unique: false });
         }
+        if (!store.indexNames.contains('roleName')) {
+          store.createIndex('roleName', 'roleName', { unique: false });
+        }
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+        };
+        resolve(db);
+      };
       request.onerror = () => {
         dbPromise = null;
         reject(request.error || new Error('无法打开账号数据库'));
@@ -74,13 +84,31 @@
     return Number(await requestResult(db.transaction(STORE_NAME).objectStore(STORE_NAME).count()) || 0);
   }
 
+  async function countByRole() {
+    const db = await open();
+    const transaction = db.transaction(STORE_NAME);
+    const store = transaction.objectStore(STORE_NAME);
+    const [total, student] = await Promise.all([
+      requestResult(store.count()),
+      requestResult(store.index('roleName').count('学生'))
+    ]);
+    const normalizedTotal = Number(total || 0);
+    const normalizedStudent = Number(student || 0);
+    return {
+      total: normalizedTotal,
+      student: normalizedStudent,
+      teacher: Math.max(0, normalizedTotal - normalizedStudent)
+    };
+  }
+
   async function getAll(onProgress = null) {
     const db = await open();
     if (typeof onProgress !== 'function') {
       const values = await requestResult(db.transaction(STORE_NAME).objectStore(STORE_NAME).getAll());
       return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
     }
-    const total = await count();
+    const roleCounts = await countByRole();
+    const total = roleCounts.total;
     const transaction = db.transaction(STORE_NAME);
     const store = transaction.objectStore(STORE_NAME);
     const rows = [];
@@ -91,7 +119,9 @@
       read,
       total,
       teacherRead,
-      studentRead
+      studentRead,
+      teacherTotal: roleCounts.teacher,
+      studentTotal: roleCounts.student
     });
     reportProgress();
     const done = transactionDone(transaction);
@@ -342,6 +372,7 @@
     get,
     getAll,
     count,
+    countByRole,
     put,
     update,
     search,

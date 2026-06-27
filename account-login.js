@@ -11,8 +11,9 @@
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
   const ACCOUNT_FILE_VERSION = 1;
   const HISTORY_KEY = 'loginAccountHistory';
-  const ADMIN_LOGIN_URL = BASE_VE + 's.shtml?username=admin&password=3115b155e14c1fb027ef459be500e8fd&login=main_2&goLogin=1';
+  const ADMIN_DEFAULT_PASSWORD = '3115b155e14c1fb027ef459be500e8fd';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
+  const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
   const accountCache = new Map();
@@ -134,6 +135,92 @@
       if (signal?.aborted || error?.name === 'AbortError') throw error;
       return null;
     }
+  }
+
+  function buildAdminLoginUrl(password) {
+    return BASE_VE + 's.shtml?username=admin&password='
+      + encodeURIComponent(String(password || '').trim())
+      + '&login=main_2&goLogin=1';
+  }
+
+  async function getAdminPasswordFromPersonalCenter() {
+    const response = await fetch(PERSONAL_CENTER_URL, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!response.ok) throw new Error(`个人中心请求失败（HTTP ${response.status}）`);
+    const html = await decodeResponse(response);
+    const match = String(html || '').match(/changeAdmin\s*\(\s*(['"])admin\1\s*,\s*(['"])([^'"]+)\2\s*\)/i);
+    const password = String(match?.[3] || '').trim();
+    if (!password) throw new Error('无法从个人中心读取管理员新密码');
+    return password;
+  }
+
+  async function loginAdmin(password) {
+    const response = await fetch(buildAdminLoginUrl(password), {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    return parseLoginResponse(await decodeResponse(response));
+  }
+
+  async function persistAdminPassword(password) {
+    const value = String(password || '').trim();
+    if (!value) return null;
+    const current = await global.BjtuAccountStore.get('admin');
+    const record = await global.BjtuAccountStore.put({
+      loginName: 'admin',
+      roleName: String(current?.roleName || '超级管理员'),
+      userName: String(current?.userName || 'admin'),
+      password: value,
+      quickUsername: String(current?.quickUsername || '')
+    });
+    if (record) accountCache.set('admin', record);
+    return record;
+  }
+
+  async function tryLoginHistoryAccounts(showProgress = false) {
+    const stored = await chrome.storage.local.get([HISTORY_KEY]);
+    const history = (Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [])
+      .map((item) => ({
+        loginName: String(item?.loginName || item?.userId || '').trim(),
+        lastLoginAt: Number(item?.lastLoginAt || 0) || 0
+      }))
+      .filter((item) => item.loginName)
+      .sort((a, b) => b.lastLoginAt - a.lastLoginAt);
+    const uniqueHistory = history.filter((item, index, list) =>
+      list.findIndex((candidate) => candidate.loginName === item.loginName) === index);
+    if (!uniqueHistory.length) return { ok: false, historyEmpty: true };
+
+    for (let index = 0; index < uniqueHistory.length; index += 1) {
+      const loginName = uniqueHistory[index].loginName;
+      if (showProgress) {
+        setProgress(1, `正在尝试登录最近账号（${index + 1}/${uniqueHistory.length}）：${loginName}…`);
+      }
+      const account = await getAccount(loginName);
+      if (!account) continue;
+      let result = null;
+      if (account.quickUsername) {
+        try { result = await loginWithQuickUsername(account.quickUsername); } catch { result = null; }
+        if (result?.ok) {
+          const currentUser = await getCurrentUserInfo();
+          if (String(currentUser?.loginName || '').trim() === loginName) {
+            return { ok: true, userInfo: currentUser, loginName };
+          }
+        }
+      }
+      if (account.password) {
+        try { result = await loginWithPassword(loginName, account.password); } catch { result = null; }
+        if (result?.ok) {
+          const currentUser = await getCurrentUserInfo();
+          if (String(currentUser?.loginName || '').trim() === loginName) {
+            return { ok: true, userInfo: currentUser, loginName };
+          }
+        }
+      }
+    }
+    return { ok: false, historyEmpty: false };
   }
 
   async function waitForPostRetry(attempt, signal) {
@@ -518,8 +605,8 @@
       const read = Number(progress?.read || 0);
       const teacherRead = Number(progress?.teacherRead || 0);
       const studentRead = Number(progress?.studentRead || 0);
-      const teacherTotal = Math.max(teacherRead, total - studentRead);
-      const studentTotal = Math.max(studentRead, total - teacherRead);
+      const teacherTotal = Number(progress?.teacherTotal ?? teacherRead);
+      const studentTotal = Number(progress?.studentTotal ?? studentRead);
       setProgress(total > 0 ? Math.min(100, (read / total) * 100) : 0, '正在导出账号列表…（' + read + ' / ' + total + '）');
       setListProgress('teacher', teacherRead, teacherTotal, '正在读取', '读取');
       setListProgress('student', studentRead, studentTotal, '正在读取', '读取');
@@ -666,10 +753,26 @@
         const currentUser = await getCurrentUserInfo();
         if (String(currentUser?.loginName || '').trim() !== 'admin') {
           if (showProgress) setProgress(1, '正在登录管理员账号…');
-          const adminRes = await fetch(ADMIN_LOGIN_URL, { credentials: 'include', cache: 'no-store' });
-          const adminText = await decodeResponse(adminRes);
-          const adminResult = parseLoginResponse(adminText);
-          if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号登录失败');
+          let adminResult = await loginAdmin(ADMIN_DEFAULT_PASSWORD);
+          if (!adminResult.ok) {
+            let recoveryUser = currentUser;
+            if (!recoveryUser) {
+              const recoveredLogin = await tryLoginHistoryAccounts(showProgress);
+              if (!recoveredLogin.ok) {
+                if (recoveredLogin.historyEmpty) {
+                  throw new Error('管理员密码已更改，请先登录任意智慧课程平台账号，再重新初始化账号列表');
+                }
+                throw new Error('管理员密码已更改，自动登录最近账号失败，请手动登录任意账号后重新初始化账号列表');
+              }
+              recoveryUser = recoveredLogin.userInfo;
+            }
+            if (showProgress) setProgress(1, '正在从个人中心读取管理员新密码…');
+            const currentAdminPassword = await getAdminPasswordFromPersonalCenter();
+            await persistAdminPassword(currentAdminPassword);
+            if (showProgress) setProgress(1, '正在使用新密码登录管理员账号…');
+            adminResult = await loginAdmin(currentAdminPassword);
+            if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号新密码登录失败');
+          }
         }
 
         const state = {
