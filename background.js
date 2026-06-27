@@ -32,7 +32,7 @@ const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const HOMEWORK_REMINDER_NOTIFICATION_PREFIX = 'bjtu-homework-reminder:';
 chrome.notifications.onClicked.addListener((notifId) => {
   if (String(notifId || '').startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX)) {
-    chrome.tabs.create({ url: APP_URL }).catch(() => {});
+    focusExistingAppTabOrOpen().catch(() => {});
     chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
     return;
   }
@@ -47,6 +47,19 @@ chrome.notifications.onClicked.addListener((notifId) => {
 const HOMEWORK_REMINDER_ALARM = 'bjtu-homework-reminder-check';
 const HOMEWORK_REMINDER_SNAPSHOT_KEY = 'homeworkReminderSnapshot';
 const HOMEWORK_REMINDER_NOTIFIED_KEY = 'homeworkReminderNotified';
+const HOMEWORK_REMINDER_OBSERVED_KEY = 'homeworkReminderObserved';
+
+async function focusExistingAppTabOrOpen() {
+  const tabs = (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL));
+  if (tabs.length) {
+    const tab = tabs[0];
+    await chrome.tabs.update(tab.id, { active: true }).catch(() => null);
+    if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
+    return tab.id;
+  }
+  const tab = await chrome.tabs.create({ url: APP_URL, active: true });
+  return tab?.id || null;
+}
 
 function normalizeHomeworkReminderMinutes(value) {
   const source = Array.isArray(value) ? value : [120];
@@ -84,7 +97,8 @@ async function checkHomeworkDeadlineReminders() {
     'homeworkReminderEnabled',
     'homeworkReminderMinutes',
     HOMEWORK_REMINDER_SNAPSHOT_KEY,
-    HOMEWORK_REMINDER_NOTIFIED_KEY
+    HOMEWORK_REMINDER_NOTIFIED_KEY,
+    HOMEWORK_REMINDER_OBSERVED_KEY
   ]);
   if (data.homeworkReminderEnabled === false) {
     const active = await chrome.notifications.getAll().catch(() => ({}));
@@ -101,6 +115,9 @@ async function checkHomeworkDeadlineReminders() {
   const notified = data[HOMEWORK_REMINDER_NOTIFIED_KEY] && typeof data[HOMEWORK_REMINDER_NOTIFIED_KEY] === 'object'
     ? { ...data[HOMEWORK_REMINDER_NOTIFIED_KEY] }
     : {};
+  const observed = data[HOMEWORK_REMINDER_OBSERVED_KEY] && typeof data[HOMEWORK_REMINDER_OBSERVED_KEY] === 'object'
+    ? { ...data[HOMEWORK_REMINDER_OBSERVED_KEY] }
+    : {};
   const now = Date.now();
 
   for (const item of items) {
@@ -108,11 +125,14 @@ async function checkHomeworkDeadlineReminders() {
     const remainingMinutes = (deadline - now) / 60000;
     if (!deadline || remainingMinutes <= 0) continue;
     const taskKey = `${account}|${String(item?.key || '')}`;
+    const previousRemaining = Number(observed[taskKey]?.remainingMinutes);
     const eligible = nodes.filter((minutes) => remainingMinutes <= minutes);
+    observed[taskKey] = { remainingMinutes, deadline, lastSeenAt: now };
     if (!eligible.length) continue;
     const pendingNodes = eligible.filter((minutes) => !notified[`${taskKey}|${minutes}`]);
     if (!pendingNodes.length) continue;
     const selectedNode = pendingNodes[0];
+    const crossedNormally = Number.isFinite(previousRemaining) && previousRemaining > selectedNode;
     eligible.forEach((minutes) => {
       notified[`${taskKey}|${minutes}`] = { notifiedAt: now, deadline };
     });
@@ -120,7 +140,7 @@ async function checkHomeworkDeadlineReminders() {
     await chrome.notifications.create(notificationId, {
       type: 'basic',
       iconUrl: 'icons/512.png',
-      title: `未交作业将在 ${formatReminderDuration(selectedNode)}内截止`,
+      title: `${String(item?.courseName || '未知课程')}作业将在 ${formatReminderDuration(selectedNode)}${crossedNormally ? '后' : '内'}截止`,
       message: `${String(item?.platform || '课程平台')} · ${String(item?.courseName || '未知课程')}\n${String(item?.title || '未交作业')} · ${formatReminderDeadline(deadline)}`,
       priority: 2
     });
@@ -130,7 +150,13 @@ async function checkHomeworkDeadlineReminders() {
   Object.keys(notified).forEach((key) => {
     if (Number(notified[key]?.notifiedAt || 0) < oldest) delete notified[key];
   });
-  await chrome.storage.local.set({ [HOMEWORK_REMINDER_NOTIFIED_KEY]: notified });
+  Object.keys(observed).forEach((key) => {
+    if (Number(observed[key]?.lastSeenAt || 0) < oldest) delete observed[key];
+  });
+  await chrome.storage.local.set({
+    [HOMEWORK_REMINDER_NOTIFIED_KEY]: notified,
+    [HOMEWORK_REMINDER_OBSERVED_KEY]: observed
+  });
 }
 
 function ensureHomeworkReminderAlarm() {
