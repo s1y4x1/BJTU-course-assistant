@@ -572,6 +572,15 @@
       };
       const onSkip = () => {
         cleanup();
+        try {
+          const url = new URL(location.href);
+          if (url.searchParams.has('accountInit')) {
+            url.searchParams.delete('accountInit');
+            history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+          }
+        } catch {
+          // URL cleanup is best-effort and must not prevent skipping initialization.
+        }
         resolve({ source: 'skip' });
       };
       const onFile = async () => {
