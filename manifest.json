@@ -17,6 +17,7 @@
     "webRequest",
     "scripting",
     "downloads",
+    "alarms",
     "unlimitedStorage",
     "notifications"
   ],

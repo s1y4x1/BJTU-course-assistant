@@ -1,5 +1,6 @@
 var POPUP_CACHE_ENABLED_KEY = window.POPUP_CACHE_ENABLED_KEY = 'popupUseFullscreenCacheEnabled';
 var POPUP_FULLSCREEN_CACHE_KEY = window.POPUP_FULLSCREEN_CACHE_KEY = 'popupFullscreenCourseCache';
+var HOMEWORK_REMINDER_SNAPSHOT_KEY = 'homeworkReminderSnapshot';
 
 window.popupUseFullscreenCacheEnabled = true;
 window.__popupUsingFullscreenCache = false;
@@ -158,8 +159,67 @@ async function saveFullscreenCourseCache() {
   }
 }
 
+function detectReminderPlatform(item, courseCard) {
+  if (item.classList.contains('mooc-task') || String(courseCard?.id || '').startsWith('course-mooc-')) return '中国大学MOOC';
+  const hrefs = Array.from(item.querySelectorAll('a[href]')).map((link) => String(link.href || '')).join(' ');
+  if (/yuketang\.cn|xuetangx\.com/i.test(hrefs)) return '雨课堂';
+  if (/lulufind\.com|mrzuoye\.com/i.test(hrefs)) return '每日交作业';
+  if (/jielong\.com/i.test(hrefs)) return '接龙管家';
+  return '智慧课程平台';
+}
+
+function collectHomeworkReminderSnapshot() {
+  if (!courseListDiv) return [];
+  const now = Date.now();
+  const seen = new Set();
+  const items = [];
+  courseListDiv.querySelectorAll('.deadline-countdown[data-deadline]').forEach((countdown) => {
+    const deadline = typeof parseDeadlineToTs === 'function'
+      ? parseDeadlineToTs(countdown.dataset.deadline)
+      : Number(countdown.dataset.deadline || 0);
+    if (!deadline || deadline <= now) return;
+    const homework = countdown.closest('.hw-card-item');
+    const courseCard = countdown.closest('.file-item');
+    if (!(homework instanceof HTMLElement) || !(courseCard instanceof HTMLElement)) return;
+    if (homework.dataset.homeworkDone === '1') return;
+    const courseName = String(courseCard.querySelector('.course-card-title')?.textContent || '未知课程').replace(/\s+/g, ' ').trim();
+    const titleElement = homework.querySelector('.mooc-task-title')
+      || Array.from(homework.querySelectorAll('div')).find((node) => node instanceof HTMLElement && node.style.fontWeight === 'bold');
+    const title = String(titleElement?.textContent || '未交作业').replace(/\s+/g, ' ').trim();
+    const platform = detectReminderPlatform(homework, courseCard);
+    const actionUrl = String(homework.querySelector('a.btn[href]')?.href || courseCard.querySelector('.course-card-title a[href]')?.href || '');
+    const key = `${platform}|${courseName}|${title}|${deadline}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ key, platform, courseName, title, deadline, actionUrl });
+  });
+  return items;
+}
+
+let homeworkReminderSnapshotTimer = null;
+function scheduleHomeworkReminderSnapshotSave(delayMs = 500) {
+  if (popupMode) return;
+  if (homeworkReminderSnapshotTimer) clearTimeout(homeworkReminderSnapshotTimer);
+  homeworkReminderSnapshotTimer = setTimeout(async () => {
+    homeworkReminderSnapshotTimer = null;
+    try {
+      await chrome.storage.local.set({
+        [HOMEWORK_REMINDER_SNAPSHOT_KEY]: {
+          version: 1,
+          updatedAt: Date.now(),
+          account: String(window.currentAccountLoginName || ''),
+          items: collectHomeworkReminderSnapshot()
+        }
+      });
+    } catch (error) {
+      try { console.warn('[bjtu] save homework reminder snapshot failed:', error); } catch {}
+    }
+  }, Math.max(100, Number(delayMs) || 500));
+}
+
 let popupCourseCacheSaveTimer = null;
 function scheduleFullscreenCourseCacheSave(delayMs = 900) {
+  if (!popupMode) scheduleHomeworkReminderSnapshotSave(Math.min(500, Number(delayMs) || 500));
   if (popupMode || !window.popupUseFullscreenCacheEnabled) return;
   if (popupCourseCacheSaveTimer) clearTimeout(popupCourseCacheSaveTimer);
   popupCourseCacheSaveTimer = setTimeout(() => {
@@ -169,11 +229,17 @@ function scheduleFullscreenCourseCacheSave(delayMs = 900) {
 }
 
 function setupFullscreenCourseCacheObserver() {
-  if (popupMode || !window.popupUseFullscreenCacheEnabled || !courseListDiv) return;
+  if (popupMode || !courseListDiv) return;
   try {
-    const mo = new MutationObserver(() => scheduleFullscreenCourseCacheSave());
+    const mo = new MutationObserver((mutations) => {
+      const relevant = mutations.some((mutation) => {
+        const target = mutation.target instanceof Element ? mutation.target : mutation.target?.parentElement;
+        return !(target instanceof Element && target.closest('.deadline-countdown'));
+      });
+      if (relevant) scheduleFullscreenCourseCacheSave();
+    });
     mo.observe(courseListDiv, { childList: true, subtree: true, attributes: true, characterData: true });
-    if (resourceSpaceList) mo.observe(resourceSpaceList, { childList: true, subtree: true, attributes: true, characterData: true });
+    if (window.popupUseFullscreenCacheEnabled && resourceSpaceList) mo.observe(resourceSpaceList, { childList: true, subtree: true, attributes: true, characterData: true });
   } catch {
     // ignore
   }

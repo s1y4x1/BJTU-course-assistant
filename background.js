@@ -28,7 +28,13 @@ try {
 
 // 下载完成系统通知点击处理（持久上下文，弹窗关闭后仍有效）
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
+const HOMEWORK_REMINDER_NOTIFICATION_PREFIX = 'bjtu-homework-reminder:';
 chrome.notifications.onClicked.addListener((notifId) => {
+  if (String(notifId || '').startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX)) {
+    chrome.tabs.create({ url: APP_URL }).catch(() => {});
+    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
+    return;
+  }
   if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
   chrome.storage.local.get(['_VERSION_UPDATE_DOWNLOAD_ID'], (result) => {
     const id = result._VERSION_UPDATE_DOWNLOAD_ID;
@@ -36,6 +42,124 @@ chrome.notifications.onClicked.addListener((notifId) => {
     chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
   });
 });
+
+const HOMEWORK_REMINDER_ALARM = 'bjtu-homework-reminder-check';
+const HOMEWORK_REMINDER_SNAPSHOT_KEY = 'homeworkReminderSnapshot';
+const HOMEWORK_REMINDER_NOTIFIED_KEY = 'homeworkReminderNotified';
+
+function normalizeHomeworkReminderMinutes(value) {
+  const source = Array.isArray(value) ? value : [120];
+  return [...new Set(source.map(Number)
+    .filter((minutes) => Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600)
+    .map((minutes) => Math.round(minutes)))]
+    .sort((a, b) => a - b);
+}
+
+function homeworkReminderHash(value) {
+  let hash = 2166136261;
+  for (const ch of String(value || '')) {
+    hash ^= ch.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function formatReminderDuration(minutes) {
+  const value = Number(minutes || 0);
+  if (value % 1440 === 0) return `${value / 1440} 天`;
+  if (value % 60 === 0) return `${value / 60} 小时`;
+  return `${value} 分钟`;
+}
+
+function formatReminderDeadline(timestamp) {
+  const date = new Date(Number(timestamp || 0));
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+async function checkHomeworkDeadlineReminders() {
+  const data = await chrome.storage.local.get([
+    'homeworkReminderEnabled',
+    'homeworkReminderMinutes',
+    HOMEWORK_REMINDER_SNAPSHOT_KEY,
+    HOMEWORK_REMINDER_NOTIFIED_KEY
+  ]);
+  if (data.homeworkReminderEnabled === false) {
+    const active = await chrome.notifications.getAll().catch(() => ({}));
+    await Promise.all(Object.keys(active || {})
+      .filter((id) => id.startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX))
+      .map((id) => chrome.notifications.clear(id).catch(() => false)));
+    return;
+  }
+  const nodes = normalizeHomeworkReminderMinutes(data.homeworkReminderMinutes);
+  if (!nodes.length) return;
+  const snapshot = data[HOMEWORK_REMINDER_SNAPSHOT_KEY];
+  const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const account = String(snapshot?.account || 'default');
+  const notified = data[HOMEWORK_REMINDER_NOTIFIED_KEY] && typeof data[HOMEWORK_REMINDER_NOTIFIED_KEY] === 'object'
+    ? { ...data[HOMEWORK_REMINDER_NOTIFIED_KEY] }
+    : {};
+  const now = Date.now();
+
+  for (const item of items) {
+    const deadline = Number(item?.deadline || 0);
+    const remainingMinutes = (deadline - now) / 60000;
+    if (!deadline || remainingMinutes <= 0) continue;
+    const taskKey = `${account}|${String(item?.key || '')}`;
+    const eligible = nodes.filter((minutes) => remainingMinutes <= minutes);
+    if (!eligible.length) continue;
+    const pendingNodes = eligible.filter((minutes) => !notified[`${taskKey}|${minutes}`]);
+    if (!pendingNodes.length) continue;
+    const selectedNode = pendingNodes[0];
+    eligible.forEach((minutes) => {
+      notified[`${taskKey}|${minutes}`] = { notifiedAt: now, deadline };
+    });
+    const notificationId = `${HOMEWORK_REMINDER_NOTIFICATION_PREFIX}${homeworkReminderHash(`${taskKey}|${selectedNode}`)}`;
+    await chrome.notifications.create(notificationId, {
+      type: 'basic',
+      iconUrl: 'icons/512.png',
+      title: `未交作业将在 ${formatReminderDuration(selectedNode)}内截止`,
+      message: `${String(item?.platform || '课程平台')} · ${String(item?.courseName || '未知课程')}\n${String(item?.title || '未交作业')} · ${formatReminderDeadline(deadline)}`,
+      priority: 2
+    });
+  }
+
+  const oldest = now - 60 * 24 * 60 * 60 * 1000;
+  Object.keys(notified).forEach((key) => {
+    if (Number(notified[key]?.notifiedAt || 0) < oldest) delete notified[key];
+  });
+  await chrome.storage.local.set({ [HOMEWORK_REMINDER_NOTIFIED_KEY]: notified });
+}
+
+function ensureHomeworkReminderAlarm() {
+  chrome.alarms.create(HOMEWORK_REMINDER_ALARM, { delayInMinutes: 1, periodInMinutes: 1 });
+}
+
+let homeworkReminderCheckPromise = null;
+function scheduleHomeworkReminderCheck() {
+  if (homeworkReminderCheckPromise) return homeworkReminderCheckPromise;
+  homeworkReminderCheckPromise = checkHomeworkDeadlineReminders()
+    .catch(() => {})
+    .finally(() => { homeworkReminderCheckPromise = null; });
+  return homeworkReminderCheckPromise;
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm?.name === HOMEWORK_REMINDER_ALARM) scheduleHomeworkReminderCheck();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  ensureHomeworkReminderAlarm();
+  scheduleHomeworkReminderCheck();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureHomeworkReminderAlarm();
+  scheduleHomeworkReminderCheck();
+});
+
+ensureHomeworkReminderAlarm();
 chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
   if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
   if (buttonIndex === 0) {
@@ -136,6 +260,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.openMode) {
     refreshActionPopupFromStorage().catch(() => {});
+  }
+  if (changes.homeworkReminderSnapshot || changes.homeworkReminderEnabled || changes.homeworkReminderMinutes) {
+    scheduleHomeworkReminderCheck();
   }
 });
 

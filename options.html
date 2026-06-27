@@ -55,6 +55,12 @@
     @keyframes optionsSpin { to { transform:rotate(360deg); } }
     html.options-loading #options-controlled-content { display:none; }
     html.options-loading #options-loading-placeholder { display:flex; }
+    .reminder-editor { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; margin-top:8px; }
+    .reminder-editor input, .reminder-editor select { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+    .reminder-editor button { margin:0; height:34px; }
+    .reminder-node-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+    .reminder-node { display:inline-flex; align-items:center; gap:6px; padding:4px 5px 4px 9px; border:1px solid #bfdbfe; border-radius:6px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
+    .reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; line-height:22px; }
   </style>
 </head>
 <body>
@@ -142,6 +148,24 @@
       </label>
       <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。<br>关闭时，只启用智慧课程平台，其他平台需每次手动启用（设计如此）。</div>
     </div>
+  </div>
+  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div class="section-title">作业截止提醒</div>
+    <label style="display:flex; align-items:center; gap:8px; margin:0;">
+      <input type="checkbox" id="homeworkReminderEnabled" style="width:auto;" checked />
+      后台监控未交作业并发送系统通知
+    </label>
+    <div id="homeworkReminderEditor" class="reminder-editor">
+      <input type="number" id="homeworkReminderValue" min="1" step="1" value="2" aria-label="提醒时间" />
+      <select id="homeworkReminderUnit" aria-label="提醒时间单位">
+        <option value="1">分钟</option>
+        <option value="60" selected>小时</option>
+        <option value="1440">天</option>
+      </select>
+      <button id="addHomeworkReminderNode" type="button">添加</button>
+    </div>
+    <div id="homeworkReminderNodeList" class="reminder-node-list"></div>
+    <div class="tip" style="margin-top:8px;">提醒基于各平台最近一次成功加载的未交作业数据；可添加多个提醒节点。</div>
   </div>
   </main>
   <div id="msg"></div>

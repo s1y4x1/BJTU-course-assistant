@@ -17,6 +17,22 @@ const DEFAULT_OPEN_MODE = 'popup';
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
 const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = true;
+const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
+const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
+
+function normalizeHomeworkReminderMinutes(value) {
+  const source = Array.isArray(value) ? value : DEFAULT_HOMEWORK_REMINDER_MINUTES;
+  return [...new Set(source.map(Number)
+    .filter((minutes) => Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600)
+    .map((minutes) => Math.round(minutes)))]
+    .sort((a, b) => b - a);
+}
+
+function formatHomeworkReminderMinutes(minutes) {
+  if (minutes % 1440 === 0) return `提前 ${minutes / 1440} 天`;
+  if (minutes % 60 === 0) return `提前 ${minutes / 60} 小时`;
+  return `提前 ${minutes} 分钟`;
+}
 
 function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
@@ -75,8 +91,8 @@ function goBackToApp() {
 }
 
 (async function init() {
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -136,6 +152,32 @@ function goBackToApp() {
   document.getElementById('popupUseFullscreenCacheEnabled').checked = popupCacheVal;
   document.getElementById('injectPortalLoginOnLoginPage').checked = injectPortalLoginOnLoginPage !== false;
   document.getElementById('injectPortalLoginOnTimeoutPage').checked = injectPortalLoginOnTimeoutPage !== false;
+  document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
+    ? DEFAULT_HOMEWORK_REMINDER_ENABLED
+    : !!homeworkReminderEnabled;
+  let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
+
+  const updateHomeworkReminderDisabled = () => {
+    const disabled = !document.getElementById('homeworkReminderEnabled').checked;
+    const editor = document.getElementById('homeworkReminderEditor');
+    editor.classList.toggle('is-disabled', disabled);
+    editor.querySelectorAll('input,select,button').forEach((control) => { control.disabled = disabled; });
+  };
+  const renderHomeworkReminderNodes = () => {
+    const list = document.getElementById('homeworkReminderNodeList');
+    list.innerHTML = currentHomeworkReminderMinutes.map((minutes) => `
+      <span class="reminder-node">${formatHomeworkReminderMinutes(minutes)}<button type="button" data-remove-reminder-minutes="${minutes}" title="删除" aria-label="删除 ${formatHomeworkReminderMinutes(minutes)}">×</button></span>
+    `).join('');
+  };
+  const persistHomeworkReminderSettings = async () => {
+    await chrome.storage.local.set({
+      homeworkReminderEnabled: !!document.getElementById('homeworkReminderEnabled').checked,
+      homeworkReminderMinutes: currentHomeworkReminderMinutes
+    });
+    setMsg('已应用更改');
+  };
+  renderHomeworkReminderNodes();
+  updateHomeworkReminderDisabled();
   updatePopupCacheDisabled();
 
   // apply changes immediately when inputs change
@@ -253,6 +295,14 @@ function goBackToApp() {
       if (changes.popupUseFullscreenCacheEnabled) {
         applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
       }
+      if (changes.homeworkReminderEnabled) {
+        applyBooleanUi('homeworkReminderEnabled', changes.homeworkReminderEnabled.newValue, DEFAULT_HOMEWORK_REMINDER_ENABLED);
+        updateHomeworkReminderDisabled();
+      }
+      if (changes.homeworkReminderMinutes) {
+        currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(changes.homeworkReminderMinutes.newValue);
+        renderHomeworkReminderNodes();
+      }
       if (changes.injectPortalLoginOnLoginPage) {
         applyBooleanUi('injectPortalLoginOnLoginPage', changes.injectPortalLoginOnLoginPage.newValue, true);
       }
@@ -325,6 +375,31 @@ function goBackToApp() {
       popupUseFullscreenCacheEnabled: !!document.getElementById('popupUseFullscreenCacheEnabled').checked
     });
     setMsg('已应用更改');
+  });
+
+  document.getElementById('homeworkReminderEnabled').addEventListener('change', async () => {
+    updateHomeworkReminderDisabled();
+    await persistHomeworkReminderSettings();
+  });
+  document.getElementById('addHomeworkReminderNode').addEventListener('click', async () => {
+    const value = Number(document.getElementById('homeworkReminderValue').value || 0);
+    const unit = Number(document.getElementById('homeworkReminderUnit').value || 1);
+    const minutes = Math.round(value * unit);
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 525600) {
+      setMsg('提醒时间必须在 1 分钟到 365 天之间', false);
+      return;
+    }
+    currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes([...currentHomeworkReminderMinutes, minutes]);
+    renderHomeworkReminderNodes();
+    await persistHomeworkReminderSettings();
+  });
+  document.getElementById('homeworkReminderNodeList').addEventListener('click', async (event) => {
+    const button = event.target instanceof Element ? event.target.closest('[data-remove-reminder-minutes]') : null;
+    if (!(button instanceof HTMLElement)) return;
+    const minutes = Number(button.dataset.removeReminderMinutes || 0);
+    currentHomeworkReminderMinutes = currentHomeworkReminderMinutes.filter((item) => item !== minutes);
+    renderHomeworkReminderNodes();
+    await persistHomeworkReminderSettings();
   });
 
   // "BJTU 上传助手" link: navigate to app.html
@@ -495,7 +570,9 @@ function goBackToApp() {
     await chrome.storage.local.set({
       platformEnabled: defaultPlatform,
       platformVisible: { ...DEFAULT_PLATFORM_VISIBLE },
-      injectMoocHelperEnabled: true
+      injectMoocHelperEnabled: true,
+      homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
+      homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES
     });
     await chrome.storage.sync.remove(['platformEnabled']);
     document.getElementById('enableVe').checked = true;
@@ -507,6 +584,10 @@ function goBackToApp() {
       document.getElementById(id).checked = true;
     });
     document.getElementById('injectMoocHelperEnabled').checked = true;
+    document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
+    currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];
+    renderHomeworkReminderNodes();
+    updateHomeworkReminderDisabled();
     updatePlatformDetailDisabled();
     document.getElementById('autoLoadCourseResourcesEnabled').checked = true;
     document.getElementById('openModePopup').checked = true;
