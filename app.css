@@ -163,7 +163,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             position: sticky;
             top: 70px;
             background: #f9f9f9;
-            padding: 15px 15px 0;
+            padding: 15px 10px 0;
             height: calc(100vh - 70px);
             overflow-y: auto;
             overflow-x: hidden;
@@ -174,13 +174,25 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             left: 0;
             top: 0;
             height: 0;
-            width: 2px;
+            width: 12px;
+            transform: translateX(-6px);
             border-radius: 0;
-            background: rgba(148,163,184,0.9);
+            background: transparent;
             cursor: col-resize;
             z-index: 10000;
+            touch-action: none;
         }
-        .right-column-resizer:hover { background: rgba(59,130,246,0.9); }
+        .right-column-resizer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 5px;
+            width: 2px;
+            background: rgba(148,163,184,0.9);
+        }
+        .right-column-resizer:hover::after,
+        .right-column.dragging .right-column-resizer::after { background: rgba(59,130,246,0.9); }
         .right-column.dragging { user-select: none; }
         @media (max-width: 900px), (orientation: portrait) {
             body { padding: 12px; }
@@ -1591,10 +1603,21 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             align-items: flex-start;
             justify-content: space-between;
             gap: 8px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
+        }
+        .course-header > span:first-child {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+        .course-header .platform-options-slot {
+            flex: 1 1 auto;
+            min-width: 0;
         }
         .platform-status-actions {
             display: flex;
+            flex: 1 1 auto;
+            width: 100%;
+            min-width: 0;
             align-items: center;
             gap: 4px;
             flex-wrap: wrap;
@@ -1696,6 +1719,8 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .mooc-task-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:0 1 230px; min-width:0; }
         .mooc-task-button-row { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
         .mooc-task-actions .btn { box-sizing:border-box; max-width:100%; height:auto; min-height:0; padding:2px 8px; font-size:12px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; text-align:center; }
+        .hw-card-item[data-homework-done="0"] .btn,
+        .mooc-task-actions .btn { white-space:nowrap; overflow-wrap:normal; flex-shrink:0; }
         .mooc-complete-all-btn { box-sizing:border-box; max-width:100%; height:auto; min-height:26px; padding:4px 8px; white-space:normal; line-height:1.3; overflow-wrap:anywhere; text-align:center; }
         .mooc-go-btn, .mooc-gins-btn, .mooc-complete-all-btn { background:#00cc7e; color:#fff; text-decoration:none; }
         .mooc-score { color:#e91e63; font-size:12px; font-weight:700; }

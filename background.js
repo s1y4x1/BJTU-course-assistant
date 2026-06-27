@@ -709,7 +709,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const tabs = (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL));
         if (Array.isArray(tabs) && tabs.length) {
           const t = tabs[0];
-          try { await chrome.tabs.update(t.id, { active: true, url: targetUrl }); } catch (e) {}
+          const shouldNavigate = !!message?.payload?.accountInit && String(t.url || '') !== targetUrl;
+          try {
+            await chrome.tabs.update(t.id, shouldNavigate ? { active: true, url: targetUrl } : { active: true });
+          } catch (e) {}
           try { await chrome.windows.update(t.windowId, { focused: true }); } catch (e) {}
           sendResponse({ ok: true, reused: true, tabId: t.id });
           return;
