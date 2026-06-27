@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="app-options-loading">
 
 <head>
     <meta charset="UTF-8">
@@ -43,10 +43,13 @@
             <div class="upload-section-header" style="display:flex; align-items:center; justify-content:space-between; margin: 0 0 10px;">
                 <h1 style="margin: 0;">文件上传</h1>
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <label class="save-uploads-toggle" style="display:flex; align-items:center; gap:6px; font-size:12px; color:#475569; cursor:pointer;">
-                        <input type="checkbox" id="save-uploads-enabled" checked>
-                        <span>在本地存储以后上传的文件链接</span>
-                    </label>
+                    <span class="options-controlled-slot save-uploads-options-slot">
+                        <label class="save-uploads-toggle" data-options-controlled style="display:flex; align-items:center; gap:6px; font-size:12px; color:#475569; cursor:pointer;">
+                            <input type="checkbox" id="save-uploads-enabled" checked>
+                            <span>在本地存储以后上传的文件链接</span>
+                        </label>
+                        <span class="options-loading-placeholder" aria-label="正在加载扩展选项"><span class="options-loading-spinner"></span></span>
+                    </span>
                     <button id="invert-save-uploads-btn" class="btn" style="background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2;">反选</button>
                 </div>
             </div>
@@ -122,7 +125,8 @@
             <div class="right-column-resizer" id="right-column-resizer" title="拖动调整课程助手宽度"></div>
             <h2 class="course-header">
                 <span>课程助手</span>
-                <span class="platform-status-actions">
+                <span class="options-controlled-slot platform-options-slot">
+                <span class="platform-status-actions" data-options-controlled>
                     <span id="ve-status-btn" class="platform-status-btn checking" title="智慧课程平台加载中">
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="ve"
                             aria-label="切换智慧课程平台"></button>
@@ -153,6 +157,8 @@
                         <a class="platform-link" href="https://www.icourse163.org/" target="_blank"
                             rel="noopener noreferrer">中国大学MOOC</a>
                     </span>
+                </span>
+                <span class="options-loading-placeholder" aria-label="正在加载平台选项"><span class="options-loading-spinner"></span></span>
                 </span>
             </h2>
             <div id="course-list"></div>

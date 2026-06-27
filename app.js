@@ -2200,6 +2200,19 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
   return false;
 }
 
+async function loadSaveUploadsEnabledSetting() {
+  try {
+    const data = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
+    window.saveUploadedFilesEnabled = data.saveUploadedFilesEnabled === undefined
+      ? true
+      : !!data.saveUploadedFilesEnabled;
+  } catch {
+    window.saveUploadedFilesEnabled = true;
+  }
+  const input = document.getElementById('save-uploads-enabled');
+  if (input instanceof HTMLInputElement) input.checked = !!window.saveUploadedFilesEnabled;
+}
+
 function applyExpandableAutoToggle(root = document) {
   root.querySelectorAll('.expandable-box').forEach((box) => {
     if (!(box instanceof HTMLElement)) return;
@@ -11738,7 +11751,9 @@ function setupSavedUploadsUi() {
   });
   await loadPopupCacheEnabledSetting();
   await loadAutoLoadCourseResourcesSetting();
+  await loadSaveUploadsEnabledSetting();
   setupOptionsStorageLiveSync();
+  document.documentElement.classList.remove('app-options-loading');
   setupPortalUsernameBindMessageListener();
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {

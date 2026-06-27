@@ -11,6 +11,22 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         @keyframes toastEnter { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes fadeOutUp { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-12px); opacity: 0; } }
 
+        .options-controlled-slot { display:inline-flex; align-items:center; min-height:20px; }
+        .options-loading-placeholder { display:none; align-items:center; justify-content:center; min-width:24px; min-height:20px; }
+        .options-loading-spinner {
+            width:12px;
+            height:12px;
+            box-sizing:border-box;
+            border:2px solid #cbd5e1;
+            border-top-color:#4CAF50;
+            border-radius:50%;
+            animation:spin .75s linear infinite;
+        }
+        html.app-options-loading .options-controlled-slot > [data-options-controlled] { display:none !important; }
+        html.app-options-loading .options-controlled-slot > .options-loading-placeholder { display:inline-flex; }
+        .platform-options-slot { min-width:24px; justify-content:flex-end; }
+        .save-uploads-options-slot { min-width:24px; }
+
         #drop-zone { border: 2px dashed #ccc; border-radius: 20px; width: 100%; padding: 40px; text-align: center; box-sizing: border-box; margin-bottom: 4px; transition: border-color 0.3s; cursor: pointer; }
         #drop-zone.dragover { border-color: #4CAF50; background-color: #f0f9f0; }
 #drop-zone.dragover-invalid { border-color: #f44336; background-color: #fff0f0; }

@@ -531,4 +531,5 @@ function goBackToApp() {
     });
     setMsg('已恢复默认配置');
   });
+  document.documentElement.classList.remove('options-loading');
 })();
