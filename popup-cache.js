@@ -133,6 +133,7 @@ async function saveFullscreenCourseCache() {
     jlgjMatchedHomeworkByCourseId: safeStorageClone(window.jlgjMatchedHomeworkByCourseId, {}),
     jlgjStandaloneCourses: safeStorageClone(window.jlgjStandaloneCourses, []),
     jlgjCourseGroupsSnapshot: safeStorageClone(window.jlgjCourseGroupsSnapshot, []),
+    moocCourses: safeStorageClone(window.BjtuMoocPlatform?.getCourses?.(), []),
     courseCardStateById: safeStorageClone(window.courseCardStateById, {}),
     videoReplayCacheByCourseId: safeStorageClone(window.videoReplayCacheByCourseId, {}),
     coursewareCacheByCourseId: safeStorageClone(window.coursewareCacheByCourseId, {}),
@@ -216,6 +217,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.jlgjMatchedHomeworkByCourseId = cache.jlgjMatchedHomeworkByCourseId || {};
   window.jlgjStandaloneCourses = Array.isArray(cache.jlgjStandaloneCourses) ? cache.jlgjStandaloneCourses : [];
   window.jlgjCourseGroupsSnapshot = Array.isArray(cache.jlgjCourseGroupsSnapshot) ? cache.jlgjCourseGroupsSnapshot : [];
+  window.BjtuMoocPlatform?.restore(cache.moocCourses || []);
   window.courseCardStateById = cache.courseCardStateById || {};
   window.videoReplayCacheByCourseId = cache.videoReplayCacheByCourseId || {};
   window.coursewareCacheByCourseId = cache.coursewareCacheByCourseId || {};
@@ -240,6 +242,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
     xqSelect.value = String(cache.xqSelectValue || '');
   }
   refreshPlatformLoginTip();
+  applyPlatformVisibility();
   showPopupCacheNotice(cache);
   return true;
 }

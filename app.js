@@ -9,6 +9,8 @@ const MRJZY_LOGIN_LINK_HTML = '<a href="https://zuoye.lulufind.com/" target="_bl
 const MRJZY_LOGIN_REQUIRED_HTML = `如需查看${MRJZY_LOGIN_LINK_HTML}作业，请前往登录`;
 const JLGJ_LOGIN_LINK_HTML = '<a href="https://i.jielong.com/my-class" target="_blank" rel="noopener noreferrer" style="color:#ffd243; text-decoration:none; font-weight:600;">接龙管家</a>';
 const JLGJ_LOGIN_REQUIRED_HTML = `如需查看${JLGJ_LOGIN_LINK_HTML}作业，请前往登录`;
+const MOOC_LOGIN_LINK_HTML = '<a href="https://www.icourse163.org/" target="_blank" rel="noopener noreferrer" style="color:#00cc7e; text-decoration:none; font-weight:600;">中国大学MOOC</a>';
+const MOOC_LOGIN_REQUIRED_HTML = `如需查看${MOOC_LOGIN_LINK_HTML}课程，请前往登录`;
 const YKT_BASE = 'https://www.yuketang.cn';
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
 const YKT_COURSE_LIST_API = `${YKT_BASE}/v2/api/web/courses/list?identity=2`;
@@ -32,6 +34,7 @@ const YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX = 'https://www.yuketang.cn/authorize/w
 const MRJZY_QR_GEN_API = 'https://api-prod.lulufind.com/api/v1/auth/genQrCode';
 const MRJZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCode';
 const MRJZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
+const MOOC_LOGIN_ASSIST_URL = 'https://www.icourse163.org/passport/sns/doOAuth.htm?snsType=6&oauthType=login';
 const PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS = 1000;
 const DEFAULT_PLATFORM_SESSION_ID = 'D571D57D255EA0BECF299C45D4C0468A';
 
@@ -95,6 +98,7 @@ const veStatusBtn = document.getElementById('ve-status-btn');
 const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrjzyStatusBtn = document.getElementById('mrjzy-status-btn');
 const jlgjStatusBtn = document.getElementById('jlgj-status-btn');
+const moocStatusBtn = document.getElementById('mooc-status-btn');
 const popupOpenFullscreenBtn = document.getElementById('popup-open-fullscreen');
 
 // Login modal
@@ -139,6 +143,7 @@ if (usernameInput) {
     } else if (!value || value === current) {
       resetAccountSwitchInterruption();
     }
+    updateJsessionidState();
   });
   usernameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -175,14 +180,16 @@ window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomework
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.veReplayScheduleByCourseId = {}; // {courseId: {list,promise,loaded,error}}
 window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
-window.platformNeedLogin = { ve: false, ykt: false, mrjzy: false, jlgj: false };
-window.platformLoginState = { ve: 'checking', ykt: 'checking', mrjzy: 'checking', jlgj: 'checking' }; // checking|offline|online
-window.platformLoginChecked = { ve: false, ykt: false, mrjzy: false, jlgj: false };
-window.platformInteractiveLoginPending = { ykt: false, mrjzy: false, jlgj: false };
-const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrjzy: false, ve: true, ykt: false };
+window.platformNeedLogin = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false };
+window.platformLoginState = { ve: 'checking', ykt: 'checking', mrjzy: 'checking', jlgj: 'checking', mooc: 'checking' }; // checking|offline|online
+window.platformLoginChecked = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false };
+window.platformInteractiveLoginPending = { ykt: false, mrjzy: false, jlgj: false, mooc: false };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };
+const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true };
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
-window.platformLoadedOnce = { ve: false, ykt: false, mrjzy: false, jlgj: false };
-window.platformLoadVersion = { ve: 0, ykt: 0, mrjzy: 0, jlgj: 0 };
+window.platformVisible = { ...DEFAULT_PLATFORM_VISIBLE };
+window.platformLoadedOnce = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false };
+window.platformLoadVersion = { ve: 0, ykt: 0, mrjzy: 0, jlgj: 0, mooc: 0 };
 window.currentVeCourseList = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
@@ -243,11 +250,15 @@ let jlgjLoginAssistRetryTimer = null;
 let jlgjLoginAssistPollTimer = null;
 let jlgjLoginAssistPopupWindowId = null;
 let jlgjLoginAssistPopupTabId = null;
+let moocLoginAssistPollTimer = null;
+let moocLoginAssistChecking = false;
+let moocLoginAssistPopupWindowId = null;
+let moocLoginAssistPopupTabId = null;
 
 function normalizePlatformId(platform) {
   const p = String(platform || '').trim();
   if (p === 'mrjzy') return 'mrjzy';
-  return ['ve', 'ykt', 'jlgj'].includes(p) ? p : 've';
+  return ['ve', 'ykt', 'jlgj', 'mooc'].includes(p) ? p : 've';
 }
 
 function isPlatformEnabled(platform) {
@@ -259,10 +270,26 @@ function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
   const src = (raw && typeof raw === 'object') ? raw : null;
   return {
     jlgj: typeof src?.jlgj === 'boolean' ? src.jlgj : !!fallback.jlgj,
+    mooc: typeof src?.mooc === 'boolean' ? src.mooc : !!fallback.mooc,
     mrjzy: typeof src?.mrjzy === 'boolean' ? src.mrjzy : !!fallback.mrjzy,
     ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
     ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt
   };
+}
+
+function sanitizePlatformVisible(raw, fallback = DEFAULT_PLATFORM_VISIBLE) {
+  const src = (raw && typeof raw === 'object') ? raw : null;
+  return Object.fromEntries(Object.keys(DEFAULT_PLATFORM_VISIBLE).map((key) => [
+    key,
+    typeof src?.[key] === 'boolean' ? src[key] : !!fallback[key]
+  ]));
+}
+
+function applyPlatformVisibility() {
+  const buttons = { ve: veStatusBtn, ykt: yktStatusBtn, mrjzy: mrjzyStatusBtn, jlgj: jlgjStatusBtn, mooc: moocStatusBtn };
+  Object.entries(buttons).forEach(([key, button]) => {
+    if (button) button.style.display = window.platformVisible?.[key] === false ? 'none' : '';
+  });
 }
 
 async function loadPlatformEnabledFromStorage() {
@@ -285,7 +312,7 @@ async function savePlatformEnabledToStorage() {
 
 function disablePlatformAfterLoginFailure(platform) {
   const p = normalizePlatformId(platform);
-  if (!['ve', 'ykt', 'mrjzy', 'jlgj'].includes(p)) return;
+  if (!['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].includes(p)) return;
   if (!window.platformEnabled?.[p]) return;
 
   window.platformEnabled[p] = false;
@@ -342,6 +369,8 @@ function clearPlatformData(platform) {
     window.jlgjStandaloneCourses = [];
     window.jlgjCourseGroupsSnapshot = [];
     clearJlgjStandaloneCards();
+  } else if (platform === 'mooc') {
+    window.BjtuMoocPlatform?.clear();
   }
 }
 
@@ -377,7 +406,7 @@ if (popupOpenFullscreenBtn) {
 
 function triggerExternalPlatformLoad(platform, forceReload = false) {
   platform = normalizePlatformId(platform);
-  if (!['ykt', 'mrjzy', 'jlgj'].includes(platform)) return;
+  if (!['ykt', 'mrjzy', 'jlgj', 'mooc'].includes(platform)) return;
   if (!isPlatformEnabled(platform)) return;
   if (!forceReload && window.platformLoadedOnce?.[platform]) return;
 
@@ -395,9 +424,12 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   } else if (platform === 'mrjzy') {
     setPlatformLoginState('mrjzy', 'checking');
     scheduleMrjzyLoad(veCourses, version).catch(() => renderMrjzyNeedLoginMessage());
-  } else {
+  } else if (platform === 'jlgj') {
     setPlatformLoginState('jlgj', 'checking');
     scheduleJlgjLoad(veCourses, version).catch(() => renderJlgjNeedLoginMessage());
+  } else {
+    setPlatformLoginState('mooc', 'checking');
+    window.BjtuMoocPlatform?.load().catch(() => {});
   }
 }
 
@@ -412,6 +444,7 @@ async function triggerInitialPlatformLoads() {
     window.currentVeCourseList = [];
     renderCourseList([]);
   }
+  if (isPlatformEnabled('mooc')) triggerExternalPlatformLoad('mooc', false);
 }
 
 function rematchExternalByVeCourses() {
@@ -499,7 +532,7 @@ function isPlatformChecking(platform) {
 
 function togglePlatformSelection(platform, options = {}) {
   platform = normalizePlatformId(platform);
-  if (!platform || !['ve', 'ykt', 'mrjzy', 'jlgj'].includes(platform)) return;
+  if (!platform || !['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].includes(platform)) return;
   const interactive = options?.interactive !== false;
   const persist = options?.persist !== false;
   if (isPlatformChecking(platform)) {
@@ -514,6 +547,10 @@ function togglePlatformSelection(platform, options = {}) {
     if (platform === 'jlgj') {
       window.platformInteractiveLoginPending.jlgj = false;
       closeJlgjLoginAssistPopup(true);
+    }
+    if (platform === 'mooc') {
+      window.platformInteractiveLoginPending.mooc = false;
+      closeMoocLoginAssistPopup(true);
     }
     window.platformEnabled[platform] = false;
     window.platformLoadedOnce[platform] = false;
@@ -556,6 +593,10 @@ function togglePlatformSelection(platform, options = {}) {
       window.platformInteractiveLoginPending.jlgj = false;
       closeJlgjLoginAssistPopup(true);
     }
+    if (platform === 'mooc') {
+      window.platformInteractiveLoginPending.mooc = false;
+      closeMoocLoginAssistPopup(true);
+    }
     window.platformLoadedOnce[platform] = false;
     if (platform === 've') {
       window.currentVeCourseList = [];
@@ -596,7 +637,7 @@ function togglePlatformSelection(platform, options = {}) {
 
 function applyPlatformEnabledSettingFromStorage(raw) {
   const next = sanitizePlatformEnabled(raw, window.platformEnabled || DEFAULT_PLATFORM_ENABLED);
-  ['ve', 'ykt', 'mrjzy', 'jlgj'].forEach((platform) => {
+  ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((platform) => {
     if (isPlatformEnabled(platform) !== !!next[platform]) {
       togglePlatformSelection(platform, { interactive: false, persist: false });
     }
@@ -614,6 +655,10 @@ function setupOptionsStorageLiveSync() {
       applyPlatformEnabledSettingFromStorage(changes.platformEnabled.newValue);
       window.__headerQrUrl = '';
       window.__sectionQrCache = {};
+    }
+    if (changes.platformVisible) {
+      window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
+      applyPlatformVisibility();
     }
 
     if (changes.saveUploadedFilesEnabled) {
@@ -2153,6 +2198,41 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
   const u = String(resUrl || '');
   if (u.includes('/ve/s.shtml') || u.includes('/ve/Login_2.jsp') || u.includes('/ve/Timeout.jsp') || isSessionEndedHtml(t)) return true;
   return false;
+}
+
+function applyExpandableAutoToggle(root = document) {
+  root.querySelectorAll('.expandable-box').forEach((box) => {
+    if (!(box instanceof HTMLElement)) return;
+    // Hidden overdue/done groups cannot be measured reliably; they are measured after the group is expanded and rerendered.
+    if (!box.getClientRects().length) return;
+    const body = box.querySelector('.expandable-body');
+    if (!(body instanceof HTMLElement)) return;
+    const collapsedLimit = body.style.maxHeight || 'calc(1.5em * 3 + 2px)';
+    const prev = body.style.maxHeight;
+    const prevOverflow = body.style.overflow;
+    if (box.classList.contains('expanded')) {
+      body.style.maxHeight = collapsedLimit;
+      body.style.overflow = 'auto';
+    }
+    const canFitInCollapsed = body.scrollHeight <= body.clientHeight + 2;
+    box.classList.toggle('no-toggle', canFitInCollapsed);
+    if (canFitInCollapsed) {
+      box.classList.remove('expanded');
+      box.dataset.expanded = '0';
+    }
+    body.style.maxHeight = prev;
+    body.style.overflow = prevOverflow;
+  });
+}
+
+async function loadPlatformVisibleFromStorage() {
+  try {
+    const data = await chrome.storage.local.get(['platformVisible']);
+    window.platformVisible = sanitizePlatformVisible(data?.platformVisible, DEFAULT_PLATFORM_VISIBLE);
+  } catch {
+    window.platformVisible = { ...DEFAULT_PLATFORM_VISIBLE };
+  }
+  applyPlatformVisibility();
 }
 
 async function restartVePlatformForLoginExpired(reason = '登录已失效，正在重启智慧课程平台…') {
@@ -4317,6 +4397,7 @@ function isAnyExternalPlatformChecking() {
     isPlatformEnabled('ykt') && window.platformLoginState?.ykt === 'checking'
     || isPlatformEnabled('mrjzy') && window.platformLoginState?.mrjzy === 'checking'
     || isPlatformEnabled('jlgj') && window.platformLoginState?.jlgj === 'checking'
+    || isPlatformEnabled('mooc') && window.platformLoginState?.mooc === 'checking'
   );
 }
 
@@ -4380,7 +4461,7 @@ function removeMrjzyLoginTip() {
 
 function completeExternalLoginAssist(platform, forceReload = true) {
   const p = normalizePlatformId(platform);
-  if (!['ykt', 'mrjzy', 'jlgj'].includes(p)) return;
+  if (!['ykt', 'mrjzy', 'jlgj', 'mooc'].includes(p)) return;
   if (!window.platformEnabled?.[p]) {
     window.platformEnabled[p] = true;
     savePlatformEnabledToStorage().catch(() => {});
@@ -4581,6 +4662,103 @@ function openYktLoginAssistPopup(force = false) {
   };
   openPopup().catch(() => {
     showToast('打开雨课堂登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
+  });
+}
+
+function stopMoocLoginAssistWatcher() {
+  if (moocLoginAssistPollTimer) {
+    clearInterval(moocLoginAssistPollTimer);
+    moocLoginAssistPollTimer = null;
+  }
+  moocLoginAssistChecking = false;
+}
+
+function closeMoocLoginAssistPopup(cancelPending = false) {
+  if (moocLoginAssistPopupWindowId) {
+    chrome.windows.remove(Number(moocLoginAssistPopupWindowId)).catch(() => {});
+  }
+  moocLoginAssistPopupWindowId = null;
+  moocLoginAssistPopupTabId = null;
+  stopMoocLoginAssistWatcher();
+  if (cancelPending) window.platformInteractiveLoginPending.mooc = false;
+}
+
+async function checkMoocLoginAssistStatus() {
+  if (moocLoginAssistChecking || !window.platformInteractiveLoginPending?.mooc) return false;
+  moocLoginAssistChecking = true;
+  try {
+    if (moocLoginAssistPopupTabId) {
+      const tab = await chrome.tabs.get(Number(moocLoginAssistPopupTabId)).catch(() => null);
+      if (!tab) {
+        moocLoginAssistPopupWindowId = null;
+        moocLoginAssistPopupTabId = null;
+        window.platformInteractiveLoginPending.mooc = false;
+        stopMoocLoginAssistWatcher();
+        return false;
+      }
+      if (!String(tab?.url || '').startsWith('https://www.icourse163.org/')) return false;
+    }
+    const response = await chrome.runtime.sendMessage({
+      type: 'MOOC_LOGIN_STATUS',
+      tabId: moocLoginAssistPopupTabId || null
+    });
+    if (!response?.ok || !response.loggedIn) return false;
+    stopMoocLoginAssistWatcher();
+    completeExternalLoginAssist('mooc', true);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    moocLoginAssistChecking = false;
+  }
+}
+
+function startMoocLoginAssistWatcher() {
+  stopMoocLoginAssistWatcher();
+  moocLoginAssistPollTimer = setInterval(() => void checkMoocLoginAssistStatus(), PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS);
+  void checkMoocLoginAssistStatus();
+}
+
+function openMoocLoginAssistPopup(force = false) {
+  if (!force && !isPlatformEnabled('mooc')) return;
+  window.platformInteractiveLoginPending.mooc = true;
+  if (moocLoginAssistPopupWindowId && moocLoginAssistPopupTabId) {
+    chrome.windows.update(Number(moocLoginAssistPopupWindowId), { focused: true }).catch(() => {});
+    startMoocLoginAssistWatcher();
+    return;
+  }
+  const openPopup = async () => {
+    const popupWidth = 420;
+    const popupHeight = 600;
+    let left;
+    let top;
+    try {
+      const currentWin = await chrome.windows.getCurrent();
+      if ([currentWin?.left, currentWin?.top, currentWin?.width, currentWin?.height].every((value) => Number.isFinite(Number(value)))) {
+        left = Math.max(0, Number(currentWin.left) + Math.round((Number(currentWin.width) - popupWidth) / 2));
+        top = Math.max(0, Number(currentWin.top) + Math.round((Number(currentWin.height) - popupHeight) / 2));
+      }
+    } catch {
+      left = undefined;
+      top = undefined;
+    }
+    const created = await chrome.windows.create({
+      url: MOOC_LOGIN_ASSIST_URL,
+      type: 'popup',
+      focused: true,
+      width: popupWidth,
+      height: popupHeight,
+      left,
+      top
+    });
+    moocLoginAssistPopupWindowId = Number(created?.id || 0) || null;
+    const tab = Array.isArray(created?.tabs) && created.tabs.length ? created.tabs[0] : null;
+    moocLoginAssistPopupTabId = Number(tab?.id || 0) || null;
+    startMoocLoginAssistWatcher();
+  };
+  openPopup().catch(() => {
+    window.platformInteractiveLoginPending.mooc = false;
+    showToast('打开中国大学MOOC登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
   });
 }
 
@@ -4907,7 +5085,7 @@ function openMrjzyLoginAssistPopup(force = false) {
 
 function showPlatformNeedLoginToast(platform) {
   const p = String(platform || '').trim();
-  if (!['ve', 'ykt', 'mrjzy', 'jlgj'].includes(p)) return;
+  if (!['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].includes(p)) return;
   if (!window.__platformOfflineToastById) window.__platformOfflineToastById = {};
   const now = Date.now();
   const lastAt = Number(window.__platformOfflineToastById[p] || 0);
@@ -4927,7 +5105,7 @@ function showPlatformNeedLoginToast(platform) {
     showToast(MRJZY_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
     return;
   }
-  showToast(JLGJ_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
+  showToast(p === 'mooc' ? MOOC_LOGIN_REQUIRED_HTML : JLGJ_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
 }
 
 function setPlatformLoginState(platform, state) {
@@ -4946,6 +5124,10 @@ function setPlatformLoginState(platform, state) {
   if (p === 'jlgj' && s === 'online') {
     window.platformInteractiveLoginPending.jlgj = false;
     closeJlgjLoginAssistPopup(false);
+  }
+  if (p === 'mooc' && s === 'online') {
+    window.platformInteractiveLoginPending.mooc = false;
+    closeMoocLoginAssistPopup(false);
   }
   if (s === 'online' || s === 'offline') {
     window.platformLoginChecked[p] = true;
@@ -4972,7 +5154,7 @@ function refreshPlatformLoginTip() {
     const id = String(btn.id || '');
     const platform = id.includes('ve-status-btn')
       ? 've'
-      : (id.includes('mrjzy-status-btn') ? 'mrjzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : 'ykt'));
+      : (id.includes('mrjzy-status-btn') ? 'mrjzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : (id.includes('mooc-status-btn') ? 'mooc' : 'ykt')));
     const enabled = isPlatformEnabled(platform);
     const treatAsUnselected = !enabled || state === 'offline';
     if (!treatAsUnselected) {
@@ -4992,6 +5174,8 @@ function refreshPlatformLoginTip() {
   apply(yktStatusBtn, window.platformLoginState?.ykt || 'checking', '雨课堂');
   apply(mrjzyStatusBtn, window.platformLoginState?.mrjzy || 'checking', '每日交作业');
   apply(jlgjStatusBtn, window.platformLoginState?.jlgj || 'checking', '接龙管家');
+  apply(moocStatusBtn, window.platformLoginState?.mooc || 'checking', '中国大学MOOC');
+  applyPlatformVisibility();
 
   // Login warnings are shown on offline-transition only (one platform at a time).
 }
@@ -5012,7 +5196,7 @@ function shouldShowNoCoursePlaceholder() {
   if (!courseListDiv) return false;
   if (courseListDiv.querySelector('.file-item')) return false;
 
-  const selected = ['ve', 'ykt', 'mrjzy', 'jlgj'].filter((p) => isPlatformEnabled(p));
+  const selected = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].filter((p) => isPlatformEnabled(p));
   if (!selected.length) return true;
 
   const allOffline = selected.every((p) => (window.platformLoginState?.[p] || 'checking') === 'offline');
@@ -5167,6 +5351,20 @@ async function fetchJlgjJson(url) {
 async function openJlgjBackgroundTab() {
   const tab = await chrome.tabs.create({ url: 'https://i.jielong.com/my-class#bjtu-bg', active: false });
   return tab;
+}
+
+async function closeJlgjBackgroundTabAndReturnToApp(tabId) {
+  const id = Number(tabId || 0);
+  if (!id) return;
+  try {
+    const tab = await chrome.tabs.get(id);
+    if (tab?.active) {
+      await chrome.runtime.sendMessage({ type: 'OPEN_APP' }).catch(() => null);
+    }
+  } catch {
+    // The login tab may already have been closed by the user.
+  }
+  try { await chrome.tabs.remove(id); } catch { /* ignore */ }
 }
 
 async function showJlgjQrFrameInBackgroundTab(tabId) {
@@ -8346,7 +8544,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     }
   } finally {
     if (bgTab?.id && !keepBgTabOpen) {
-      try { await chrome.tabs.remove(bgTab.id); } catch { /* ignore */ }
+      await closeJlgjBackgroundTabAndReturnToApp(bgTab.id);
     }
   }
 }
@@ -8560,7 +8758,7 @@ function autoLoadCourseResourcesForCard(card) {
     const id = String(card.id || '').trim();
     courseId = id.startsWith('course-') ? id.slice('course-'.length) : '';
   }
-  if (!courseId || /^(ykt|mrjzy|jlgj)-/.test(courseId)) return;
+  if (!courseId || /^(ykt|mrjzy|jlgj|mooc)-/.test(courseId)) return;
 
   const meta = card.querySelector('.ve-course-num-wrap');
   const btnCourseware = card.querySelector('button[data-action="courseware"]');
@@ -8587,6 +8785,7 @@ function autoLoadCourseResourcesForRenderedCourses() {
 function renderCourseList(courses) {
   courseListDiv.innerHTML = '';
   if (!courses || !courses.length) {
+    if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
     updateCourseListEmptyPlaceholder();
     return;
   }
@@ -8710,6 +8909,7 @@ function renderCourseList(courses) {
       });
     }
   });
+  if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
 
 }
 
@@ -8925,15 +9125,24 @@ async function checkHomework(courseId) {
       return key;
     };
     for (const subType of subTypes) {
-      const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=getHomeWorkList&cId=${encodeURIComponent(courseId)}&subType=${subType}&page=1&pagesize=10`;
+      const payload = { page: 1, pagesize: 10 };
       try {
-        const { text, res } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
-        if (isLikelyLoginPageHtml(text, res?.url) || (res && res.redirected && /\/ve\/(?:Timeout|Login_2)\.jsp/i.test(String(res.url || '')))) {
-          const err = new Error('LOGIN_REQUIRED');
-          err.loginRequired = true;
-          throw err;
+        const fetchPage = async () => {
+          const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=getHomeWorkList&cId=${encodeURIComponent(courseId)}&subType=${subType}&page=${payload.page}&pagesize=${payload.pagesize}`;
+          const { text, res } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
+          if (isLikelyLoginPageHtml(text, res?.url) || (res && res.redirected && /\/ve\/(?:Timeout|Login_2)\.jsp/i.test(String(res.url || '')))) {
+            const err = new Error('LOGIN_REQUIRED');
+            err.loginRequired = true;
+            throw err;
+          }
+          return JSON.parse(text);
+        };
+        let data = await fetchPage();
+        const total = Number(data?.total || 0);
+        if (Number.isFinite(total) && total > payload.pagesize) {
+          payload.pagesize = total;
+          data = await fetchPage();
         }
-        const data = JSON.parse(text);
         if (String(data.STATUS) !== '0') continue;
         const list = data.courseNoteList || data.list || [];
         list.forEach((hw) => {
@@ -8942,7 +9151,7 @@ async function checkHomework(courseId) {
             if (seenKeys.has(key)) return;
             seenKeys.add(key);
           }
-          mergedList.push(hw);
+          mergedList.push({ ...hw, subType: hw?.subType ?? subType });
         });
       } catch (error) {
         if (error?.loginRequired || String(error?.message || '') === 'LOGIN_REQUIRED') throw error;
@@ -9237,6 +9446,8 @@ function renderHomeworkList(courseId) {
       ? (overdue ? '#6d28d9' : '#1d4ed8')
       : (isDone ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100'));
     const title = hw.title || hw.workTitle || hw.courseNoteTitle || '作业';
+    const homeworkTypeLabel = ({ 0: '作业', 1: '课程报告', 2: '实验' })[Number(hw.subType ?? hw.sub_type)] || '作业';
+    const homeworkTypeBadge = `<span style="display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; font-size:10px; line-height:1.3; vertical-align:1px;">${homeworkTypeLabel}</span>`;
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
     const deadline = hw.end_time || hw.endTime || '';
@@ -9325,7 +9536,7 @@ function renderHomeworkList(courseId) {
       <div class="hw-card-item" data-homework-done="${isTeacherMode ? '0' : (isDone ? '1' : '0')}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
-            <div style="font-weight:bold; color:${titleColor};">${title}</div>
+            <div style="font-weight:bold; color:${titleColor};">${homeworkTypeBadge}${escapeHtml(title)}</div>
             <div style="font-size:12px; color:#666; display:flex; align-items:center; gap:0; flex-wrap:wrap;">截止: <span style="font-weight:700; color:#000; margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
@@ -11174,6 +11385,7 @@ usernameInput.addEventListener('change', async () => {
     pendingUsernameChange = null;
     resetAccountSwitchInterruption();
     isLoginSessionValid = false;
+    updateJsessionidState();
     showToast('账号已清空：可直接填写 JSESSIONID', 'info', 2500);
     await loadResourceSpaceForCurrentAccount();
     return;
@@ -11506,13 +11718,29 @@ function setupSavedUploadsUi() {
   updateTotalProgress();
   updateResourceDownloadTotals();
   await loadPlatformEnabledFromStorage();
+  await loadPlatformVisibleFromStorage();
+  window.BjtuMoocPlatform?.init({
+    courseList: courseListDiv,
+    escape: escapeHtml,
+    toast: showToast,
+    setState: (state) => setPlatformLoginState('mooc', state),
+    setLoaded: (loaded) => { window.platformLoadedOnce.mooc = !!loaded; },
+    updateEmpty: updateCourseListEmptyPlaceholder,
+    scheduleCache: () => scheduleFullscreenCourseCacheSave(200),
+    normalizeHtml: normalizeHomeworkContent,
+    renderExpandable: renderExpandableHtml,
+    isDetailExpanded: isHomeworkDetailExpanded,
+    applyExpandableAutoToggle,
+    updateCountdowns: updateAllCountdowns,
+    loginRequired: () => openMoocLoginAssistPopup(true)
+  });
   await loadPopupCacheEnabledSetting();
   await loadAutoLoadCourseResourcesSetting();
   setupOptionsStorageLiveSync();
   setupPortalUsernameBindMessageListener();
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {
-    window.platformEnabled = { jlgj: false, mrjzy: false, ve: true, ykt: false };
+    window.platformEnabled = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };
   }
   if (popupMode || !window.__updateCheckerLoaded) {
     const versionInfoEl = document.getElementById('version-info');

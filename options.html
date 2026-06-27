@@ -36,6 +36,10 @@
     .back-home-link:hover { text-decoration: underline; }
     .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
     .is-disabled { opacity: 0.5; pointer-events: none; }
+    .platform-option { margin:8px 0; }
+    .platform-option > label { display:flex; align-items:center; gap:8px; margin:0; font-weight:600; }
+    .platform-option-detail { margin:5px 0 10px 24px; padding:7px 10px; border-left:3px solid #d1d5db; background:#fff; border-radius:6px; }
+    .platform-option-detail label { display:flex; align-items:center; gap:8px; margin:4px 0; font-weight:400; }
     .account-progress-mask { position:fixed; inset:0; z-index:10001; background:rgba(15,23,42,.45); align-items:center; justify-content:center; }
     .account-progress-card { width:min(420px,calc(100vw - 32px)); box-sizing:border-box; padding:18px; border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(0,0,0,.25); }
     .account-progress-title { font-size:16px; font-weight:600; color:#111827; }
@@ -55,11 +59,11 @@
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">平台显示与加载</div>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-      <input type="checkbox" id="enableVe" style="width:auto;" checked />
-      智慧课程平台
-    </label>
-    <div style="margin:2px 0 10px 24px; padding:8px 10px; border-left:3px solid #bfdbfe; background:#eff6ff; border-radius:6px;">
+    <div class="platform-option">
+      <label><input type="checkbox" id="showVe" style="width:auto;" checked />智慧课程平台</label>
+    </div>
+    <div id="vePlatformDetail" class="platform-option-detail" style="border-left-color:#bfdbfe;background:#eff6ff;">
+      <label><input type="checkbox" id="enableVe" style="width:auto;" checked />启用</label>
       <label style="display:flex; align-items:center; gap:8px; margin:0;">
         <input type="checkbox" id="autoLoadCourseResourcesEnabled" style="width:auto;" checked />
         自动获取课件/回放列表
@@ -100,19 +104,18 @@
         <div class="tip">JSON 文件包含解析后的账号、姓名、角色、密码 MD5 和快速登录数据，请妥善保管。导入会替换当前账号列表。</div>
       </div>
     </div>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-      <input type="checkbox" id="enableYkt" style="width:auto;" />
-      雨课堂
-    </label>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-      <input type="checkbox" id="enableMrjzy" style="width:auto;" />
-      每日交作业
-    </label>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-      <input type="checkbox" id="enableJlgj" style="width:auto;" />
-      接龙管家
-    </label>
-    <div class="tip">仅选中的平台会在打开扩展页面时异步加载一次；从未选中改为选中时会重新加载该平台。</div>
+    <div class="platform-option"><label><input type="checkbox" id="showYkt" style="width:auto;" checked />雨课堂</label></div>
+    <div id="yktPlatformDetail" class="platform-option-detail"><label><input type="checkbox" id="enableYkt" style="width:auto;" />启用</label></div>
+    <div class="platform-option"><label><input type="checkbox" id="showMrjzy" style="width:auto;" checked />每日交作业</label></div>
+    <div id="mrjzyPlatformDetail" class="platform-option-detail"><label><input type="checkbox" id="enableMrjzy" style="width:auto;" />启用</label></div>
+    <div class="platform-option"><label><input type="checkbox" id="showJlgj" style="width:auto;" checked />接龙管家</label></div>
+    <div id="jlgjPlatformDetail" class="platform-option-detail"><label><input type="checkbox" id="enableJlgj" style="width:auto;" />启用</label></div>
+    <div class="platform-option"><label><input type="checkbox" id="showMooc" style="width:auto;" checked />中国大学MOOC</label></div>
+    <div id="moocPlatformDetail" class="platform-option-detail" style="border-left-color:#00cc7e;background:#ecfdf5;">
+      <label><input type="checkbox" id="enableMooc" style="width:auto;" />启用</label>
+      <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />在中国大学MOOC页面注入GinsMooc操作按钮</label>
+    </div>
+    <div class="tip">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">弹出窗口</div>

@@ -265,7 +265,247 @@ async function performPortalPageLogin(payload = {}) {
   return { ...result, userInfo };
 }
 
+const MOOC_API = {
+  courseList: 'https://www.icourse163.org/web/j/learnerCourseRpcBean.getMyLearnedCoursePanelList.rpc',
+  courseDetail: 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc',
+  quizPaper: 'https://www.icourse163.org/web/j/mocQuizRpcBean.getOpenQuizPaperDto.rpc',
+  homeworkPaper: 'https://www.icourse163.org/web/j/mocQuizRpcBean.getOpenHomeworkPaperDto.rpc',
+  submit: 'https://www.icourse163.org/web/j/mocQuizRpcBean.submitAnswers.rpc',
+  answer: 'https://ginnnnnn.top/api/mooc/test/'
+};
+
+let moocOriginTabPromise = null;
+let moocActiveRequestTabId = null;
+const moocHelperTabIds = new Set();
+const moocHelperCloseTimers = new Map();
+
+function scheduleMoocHelperTabClose(tabId, delayMs = 120000) {
+  if (!moocHelperTabIds.has(tabId)) return;
+  const oldTimer = moocHelperCloseTimers.get(tabId);
+  if (oldTimer) clearTimeout(oldTimer);
+  const timer = setTimeout(() => {
+    moocHelperCloseTimers.delete(tabId);
+    moocHelperTabIds.delete(tabId);
+    chrome.tabs.remove(tabId).catch(() => {});
+  }, delayMs);
+  moocHelperCloseTimers.set(tabId, timer);
+}
+
+function closeMoocHelperTab(tabId) {
+  if (!moocHelperTabIds.has(tabId)) return;
+  const timer = moocHelperCloseTimers.get(tabId);
+  if (timer) clearTimeout(timer);
+  moocHelperCloseTimers.delete(tabId);
+  moocHelperTabIds.delete(tabId);
+  if (Number(moocActiveRequestTabId) === Number(tabId)) moocActiveRequestTabId = null;
+  chrome.tabs.remove(tabId).catch(() => {});
+}
+
+async function waitForTabComplete(tabId, timeoutMs = 15000) {
+  const current = await chrome.tabs.get(tabId).catch(() => null);
+  if (current?.status === 'complete') return current;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      reject(new Error('中国大学MOOC页面加载超时'));
+    }, timeoutMs);
+    const onUpdated = (updatedId, changeInfo, tab) => {
+      if (updatedId !== tabId || changeInfo.status !== 'complete') return;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve(tab);
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+async function ensureMoocOriginTab() {
+  if (moocActiveRequestTabId) {
+    const activeTab = await chrome.tabs.get(Number(moocActiveRequestTabId)).catch(() => null);
+    if (activeTab?.id && String(activeTab.url || '').startsWith('https://www.icourse163.org/')) {
+      return activeTab.status === 'complete' ? activeTab : waitForTabComplete(activeTab.id);
+    }
+    moocActiveRequestTabId = null;
+  }
+  if (!moocOriginTabPromise) {
+    moocOriginTabPromise = chrome.tabs.create({
+      url: 'https://www.icourse163.org/',
+      active: false
+    }).then((tab) => {
+      if (!tab?.id) throw new Error('无法创建中国大学MOOC请求页面');
+      moocHelperTabIds.add(tab.id);
+      moocActiveRequestTabId = tab.id;
+      return waitForTabComplete(tab.id);
+    }).finally(() => {
+      moocOriginTabPromise = null;
+    });
+  }
+  return moocOriginTabPromise;
+}
+
+async function handleMoocRequest(action, payload) {
+  const tab = await ensureMoocOriginTab();
+  const csrfCookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'NTESSTUDYSI' }).catch(() => null);
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: 'MAIN',
+    func: async (requestAction, requestPayload, api, providedCsrfKey) => {
+      const getCookie = (name) => {
+        const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+        return match ? decodeURIComponent(match[1]) : '';
+      };
+      if (requestAction === 'course-page') {
+        try {
+          const target = new URL(String(requestPayload?.url || ''), location.origin);
+          if (target.origin !== location.origin || !target.pathname.startsWith('/learn/')) {
+            return { ok: false, message: '无效的中国大学MOOC课程地址' };
+          }
+          const response = await fetch(target.href, {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store',
+            headers: { Accept: 'text/html,application/xhtml+xml' },
+            referrer: location.href
+          });
+          if (!response.ok) return { ok: false, message: `课程主页 HTTP ${response.status}` };
+          const html = await response.text();
+          const match = html.match(/window\.teachers\s*=\s*(\[[\s\S]*?\])\s*;?/);
+          if (!match) return { ok: true, data: [] };
+          const teachers = [];
+          const teacherPattern = /\{[\s\S]*?\bname\s*:\s*(['"])(.*?)\1[\s\S]*?\bhref\s*:\s*(['"])(.*?)\3[\s\S]*?\}/g;
+          for (const teacherMatch of match[1].matchAll(teacherPattern)) {
+            teachers.push({ name: teacherMatch[2], href: teacherMatch[4] });
+          }
+          return {
+            ok: true,
+            data: teachers.map((teacher) => ({
+              name: String(teacher?.name || '').trim(),
+              href: String(teacher?.href || '').trim()
+            })).filter((teacher) => teacher.name)
+          };
+        } catch (error) {
+          return { ok: false, message: String(error?.message || error || '课程教师解析失败') };
+        }
+      }
+      const csrfKey = String(providedCsrfKey || getCookie('NTESSTUDYSI') || '').trim();
+      if (!csrfKey) return { ok: false, code: 'missing-csrf', message: '无法读取中国大学MOOC的 NTESSTUDYSI Cookie' };
+      const parseResponse = async (response) => {
+        if (response.status === 401 || response.status === 403) return { ok: false, message: `中国大学MOOC请求被拒绝（HTTP ${response.status}）` };
+        if (!response.ok) return { ok: false, message: `HTTP ${response.status} ${response.statusText}` };
+        const data = await response.json();
+        if (Number(data?.code) === -1002) return { ok: false, message: data?.message || '中国大学MOOC拒绝了当前请求' };
+        if (data?.code !== undefined && Number(data.code) !== 0) {
+          return { ok: false, message: data?.message || `接口返回错误 ${data.code}` };
+        }
+        return { ok: true, data };
+      };
+      const postJson = (url, body) => fetch(`${url}?csrfKey=${encodeURIComponent(csrfKey)}`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8',
+          Accept: 'application/json, text/plain, */*'
+        },
+        referrer: location.href,
+        body: JSON.stringify(body || {})
+      }).then(parseResponse);
+
+      if (requestAction === 'course-list') {
+        let pageSize = 8;
+        for (let pass = 0; pass < 2; pass++) {
+          const result = await fetch(`${api.courseList}?csrfKey=${encodeURIComponent(csrfKey)}`, {
+            method: 'POST',
+            credentials: 'include',
+            cache: 'no-store',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+              Accept: 'application/json, text/plain, */*'
+            },
+            referrer: location.href,
+            body: new URLSearchParams({ type: '10', p: '1', psize: String(pageSize), courseType: '1' }).toString()
+          }).then(parseResponse);
+          if (!result.ok) return result;
+          const total = Number(result.data?.result?.pagination?.totleCount || 0);
+          if (pass === 0 && total > pageSize) {
+            pageSize = total;
+            continue;
+          }
+          return { ok: true, data: Array.isArray(result.data?.result?.result) ? result.data.result.result : [] };
+        }
+        return { ok: true, data: [] };
+      }
+      if (requestAction === 'course-detail') return postJson(api.courseDetail, { termId: Number(requestPayload?.tid) });
+      if (requestAction === 'quiz-paper') return postJson(api.quizPaper, { tid: Number(requestPayload?.tid) });
+      if (requestAction === 'homework-paper') return postJson(api.homeworkPaper, { tid: Number(requestPayload?.tid), withStdAnswerAndAnalyse: false });
+      if (requestAction === 'submit') return postJson(api.submit, { paperDto: requestPayload?.paperDto, preview: false });
+      if (requestAction === 'gins-answer') {
+        const tid = String(requestPayload?.tid || '').replace(/[^0-9]/g, '');
+        if (!tid) return { ok: false, message: '无效的作业编号' };
+        const response = await fetch(api.answer + tid, { cache: 'no-store' });
+        if (!response.ok) return { ok: false, message: `GinsMooc HTTP ${response.status}` };
+        return { ok: true, data: await response.json() };
+      }
+      return { ok: false, message: '不支持的中国大学MOOC操作' };
+    },
+    args: [String(action || ''), payload || {}, MOOC_API, String(csrfCookie?.value || '')]
+  });
+  const result = results?.[0]?.result;
+  if (!result?.ok) {
+    if (result?.code === 'not-logged-in') closeMoocHelperTab(tab.id);
+    throw Object.assign(new Error(result?.message || '中国大学MOOC请求失败'), { code: result?.code || '' });
+  }
+  scheduleMoocHelperTabClose(tab.id);
+  return result.data;
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'MOOC_RELEASE_HELPER_TABS') {
+    [...moocHelperTabIds].forEach((tabId) => closeMoocHelperTab(tabId));
+    moocActiveRequestTabId = null;
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type === 'MOOC_LOGIN_STATUS') {
+    (async () => {
+      const preferredTabId = Number(message?.tabId || 0);
+      let tab = null;
+      if (preferredTabId) {
+        const preferred = await chrome.tabs.get(preferredTabId).catch(() => null);
+        if (preferred?.id && String(preferred.url || '').startsWith('https://www.icourse163.org/')) {
+          tab = preferred.status === 'complete' ? preferred : await waitForTabComplete(preferred.id);
+          moocActiveRequestTabId = preferred.id;
+        }
+      }
+      if (!tab) tab = await ensureMoocOriginTab();
+      const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' });
+      const loggedIn = !!String(cookie?.value || '').trim();
+      if (!loggedIn) closeMoocHelperTab(tab.id);
+      else scheduleMoocHelperTabClose(tab.id);
+      sendResponse({
+        ok: true,
+        loggedIn,
+        tabId: Number(tab?.id || 0) || null,
+        temporaryTab: moocHelperTabIds.has(tab.id)
+      });
+    })().catch((error) => {
+      sendResponse({ ok: false, loggedIn: false, message: String(error?.message || error) });
+    });
+    return true;
+  }
+
+  if (message?.type === 'MOOC_REQUEST') {
+    handleMoocRequest(String(message.action || ''), message.payload || {})
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((error) => sendResponse({
+        ok: false,
+        code: String(error?.code || ''),
+        message: String(error?.message || error || '中国大学MOOC请求失败')
+      }));
+    return true;
+  }
+
   if (message?.type === 'PORTAL_LOGIN_CONTEXT') {
     (async () => {
       const stored = await chrome.storage.local.get(['username']);
@@ -386,6 +626,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  const moocTimer = moocHelperCloseTimers.get(tabId);
+  if (moocTimer) clearTimeout(moocTimer);
+  moocHelperCloseTimers.delete(tabId);
+  moocHelperTabIds.delete(tabId);
   portalUsernameBindByTab.delete(tabId);
   portalDetectedQuickUsernameByTab.delete(tabId);
   portalQuickUsernameToastByTab.delete(tabId);

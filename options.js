@@ -9,7 +9,8 @@ function setMsg(text, ok = true) {
   }, ok ? 1800 : 3200);
 }
 
-const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mrjzy: false, ve: true, ykt: false };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };
+const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true };
 
 const DEFAULT_OPEN_MODE = 'popup';
 
@@ -21,10 +22,19 @@ function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
   return {
     jlgj: typeof src.jlgj === 'boolean' ? src.jlgj : DEFAULT_PLATFORM_ENABLED.jlgj,
+    mooc: typeof src.mooc === 'boolean' ? src.mooc : DEFAULT_PLATFORM_ENABLED.mooc,
     mrjzy: typeof src.mrjzy === 'boolean' ? src.mrjzy : DEFAULT_PLATFORM_ENABLED.mrjzy,
     ve: typeof src.ve === 'boolean' ? src.ve : DEFAULT_PLATFORM_ENABLED.ve,
     ykt: typeof src.ykt === 'boolean' ? src.ykt : DEFAULT_PLATFORM_ENABLED.ykt
   };
+}
+
+function normalizePlatformVisible(raw) {
+  const src = (raw && typeof raw === 'object') ? raw : {};
+  return Object.fromEntries(Object.keys(DEFAULT_PLATFORM_VISIBLE).map((key) => [
+    key,
+    typeof src[key] === 'boolean' ? src[key] : DEFAULT_PLATFORM_VISIBLE[key]
+  ]));
 }
 
 function goBackToApp() {
@@ -65,7 +75,9 @@ function goBackToApp() {
 }
 
 (async function init() {
-  const { platformEnabled } = await chrome.storage.local.get(['platformEnabled']);
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled'
+  ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
@@ -81,11 +93,18 @@ function goBackToApp() {
     'injectPortalLoginOnTimeoutPage'
   ]);
   const enabled = normalizePlatformEnabled(platformEnabled);
+  const visible = normalizePlatformVisible(platformVisible);
 
   document.getElementById('enableVe').checked = !!enabled.ve;
   document.getElementById('enableYkt').checked = !!enabled.ykt;
   document.getElementById('enableMrjzy').checked = !!enabled.mrjzy;
   document.getElementById('enableJlgj').checked = !!enabled.jlgj;
+  document.getElementById('enableMooc').checked = !!enabled.mooc;
+  Object.entries(visible).forEach(([key, value]) => {
+    const id = 'show' + key.charAt(0).toUpperCase() + key.slice(1);
+    document.getElementById(id).checked = !!value;
+  });
+  document.getElementById('injectMoocHelperEnabled').checked = injectMoocHelperEnabled !== false;
   const autoLoadResourcesVal = autoLoadCourseResourcesEnabled === undefined
     ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
     : !!autoLoadCourseResourcesEnabled;
@@ -118,12 +137,42 @@ function goBackToApp() {
       ve: !!document.getElementById('enableVe').checked,
       ykt: !!document.getElementById('enableYkt').checked,
       mrjzy: !!document.getElementById('enableMrjzy').checked,
-      jlgj: !!document.getElementById('enableJlgj').checked
+      jlgj: !!document.getElementById('enableJlgj').checked,
+      mooc: !!document.getElementById('enableMooc').checked
     };
     await chrome.storage.local.set({ platformEnabled: pe });
     await chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
     setMsg('已应用更改');
   };
+
+  const updatePlatformDetailDisabled = () => {
+    const visibleState = {};
+    ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((key) => {
+      const cap = key.charAt(0).toUpperCase() + key.slice(1);
+      const shown = !!document.getElementById(`show${cap}`).checked;
+      visibleState[key] = shown;
+      const enableInput = document.getElementById(`enable${cap}`);
+      enableInput.disabled = !shown;
+      enableInput.closest('label')?.classList.toggle('is-disabled', !shown);
+    });
+    ['autoLoadCourseResourcesEnabled', 'linkQrEnabled'].forEach((id) => {
+      const input = document.getElementById(id);
+      input.disabled = !visibleState.ve;
+      input.closest('label')?.classList.toggle('is-disabled', !visibleState.ve);
+    });
+  };
+
+  const applyPlatformVisible = async () => {
+    const value = {};
+    ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((key) => {
+      const cap = key.charAt(0).toUpperCase() + key.slice(1);
+      value[key] = !!document.getElementById(`show${cap}`).checked;
+    });
+    await chrome.storage.local.set({ platformVisible: value });
+    updatePlatformDetailDisabled();
+    setMsg('已应用更改');
+  };
+  updatePlatformDetailDisabled();
 
   const applyOpenMode = async () => {
     const v = document.getElementById('openModePage').checked ? 'page' : 'popup';
@@ -151,6 +200,15 @@ function goBackToApp() {
     setChecked('enableYkt', enabled.ykt);
     setChecked('enableMrjzy', enabled.mrjzy);
     setChecked('enableJlgj', enabled.jlgj);
+    setChecked('enableMooc', enabled.mooc);
+  }
+
+  function applyPlatformVisibleUi(raw) {
+    const visible = normalizePlatformVisible(raw);
+    Object.entries(visible).forEach(([key, value]) => {
+      setChecked('show' + key.charAt(0).toUpperCase() + key.slice(1), value);
+    });
+    updatePlatformDetailDisabled();
   }
 
   function applyOpenModeUi(raw) {
@@ -168,6 +226,8 @@ function goBackToApp() {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
+      if (changes.platformVisible) applyPlatformVisibleUi(changes.platformVisible.newValue);
+      if (changes.injectMoocHelperEnabled) applyBooleanUi('injectMoocHelperEnabled', changes.injectMoocHelperEnabled.newValue, true);
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
@@ -194,6 +254,14 @@ function goBackToApp() {
   document.getElementById('enableYkt').addEventListener('change', applyPlatform);
   document.getElementById('enableMrjzy').addEventListener('change', applyPlatform);
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
+  document.getElementById('enableMooc').addEventListener('change', applyPlatform);
+  ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', applyPlatformVisible);
+  });
+  document.getElementById('injectMoocHelperEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({ injectMoocHelperEnabled: !!document.getElementById('injectMoocHelperEnabled').checked });
+    setMsg('已应用更改');
+  });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
 
@@ -409,13 +477,23 @@ function goBackToApp() {
 
   // Reset: restore defaults. Platform display/load should only check VE.
   document.getElementById('resetBtn').addEventListener('click', async () => {
-    const defaultPlatform = { jlgj: false, mrjzy: false, ve: true, ykt: false };
-    await chrome.storage.local.set({ platformEnabled: defaultPlatform });
+    const defaultPlatform = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };
+    await chrome.storage.local.set({
+      platformEnabled: defaultPlatform,
+      platformVisible: { ...DEFAULT_PLATFORM_VISIBLE },
+      injectMoocHelperEnabled: true
+    });
     await chrome.storage.sync.remove(['platformEnabled']);
     document.getElementById('enableVe').checked = true;
     document.getElementById('enableYkt').checked = false;
     document.getElementById('enableMrjzy').checked = false;
     document.getElementById('enableJlgj').checked = false;
+    document.getElementById('enableMooc').checked = false;
+    ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc'].forEach((id) => {
+      document.getElementById(id).checked = true;
+    });
+    document.getElementById('injectMoocHelperEnabled').checked = true;
+    updatePlatformDetailDisabled();
     document.getElementById('autoLoadCourseResourcesEnabled').checked = true;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;

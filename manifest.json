@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BJTU 课程助手",
-  "description": "把智慧课程平台当网盘用，上传下载不限速。支持智慧课程平台查看作业数据、提交作业、下载课件、回放视频；查看雨课堂、每日交作业、接龙管家。",
-  "version": "11.1.11",
+  "description": "聚合智慧课程平台、中国大学MOOC、雨课堂、每日交作业和接龙管家的课程与作业。",
+  "version": "11.2.2",
   "default_locale": "zh_CN",
   "icons": {
     "16": "icons/16.png",
@@ -35,7 +35,9 @@
     "https://127.0.0.1/*",
     "https://i-api.jielong.com/*",
     "https://www.jielong.com/*",
-    "https://i.jielong.com/*"
+    "https://i.jielong.com/*",
+    "https://www.icourse163.org/*",
+    "https://ginnnnnn.top/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';"
@@ -55,6 +57,15 @@
     "service_worker": "background.js"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://www.icourse163.org/*"
+      ],
+      "js": [
+        "mooc-inject.js"
+      ],
+      "run_at": "document_idle"
+    },
     {
       "matches": [
         "https://i.jielong.com/*"
@@ -79,10 +90,12 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "portal-login.html"
+        "portal-login.html",
+        "MOOC.js"
       ],
       "matches": [
-        "http://123.121.147.7:88/*"
+        "http://123.121.147.7:88/*",
+        "https://www.icourse163.org/*"
       ]
     }
   ]

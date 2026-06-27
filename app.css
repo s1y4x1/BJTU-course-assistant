@@ -1572,17 +1572,18 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             border-bottom: 2px solid #ddd;
             padding-bottom: 10px;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
             gap: 8px;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
         }
         .platform-status-actions {
             display: flex;
             align-items: center;
             gap: 4px;
-            flex-wrap: nowrap;
-            white-space: nowrap;
+            flex-wrap: wrap;
+            white-space: normal;
+            justify-content: flex-end;
         }
         .platform-status-btn {
             border: 0;
@@ -1663,6 +1664,53 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .platform-status-btn.unselected.unselected-checked-checking .platform-link { color: #374151; }
         .platform-status-btn .platform-link:hover {
             text-decoration: underline;
+        }
+
+        .mooc-standalone-card { background:#fff; }
+        .mooc-course-head, .mooc-task-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+        .mooc-course-identity, .mooc-task-main { min-width:0; flex:1; }
+        .mooc-course-identity a { color:#00cc7e; text-decoration:none; line-height:1.3; }
+        .mooc-course-meta, .mooc-task-meta { margin-top:2px; font-size:12px; color:#666; line-height:1.4; }
+        .mooc-task-meta, .mooc-task-meta > span { font-size:12px; }
+        .mooc-deadline { margin-left:3px; font-weight:700; color:#000; }
+        .mooc-homework-area { margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666; }
+        .mooc-task { border:1px solid; border-radius:6px; padding:8px; margin-top:8px; }
+        .mooc-task-title { font-weight:700; overflow-wrap:anywhere; }
+        .mooc-task-kind { display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; font-size:10px; line-height:1.3; }
+        .mooc-task-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:0 1 230px; min-width:0; }
+        .mooc-task-button-row { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+        .mooc-task-actions .btn { box-sizing:border-box; max-width:100%; height:auto; min-height:0; padding:2px 8px; font-size:12px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; text-align:center; }
+        .mooc-complete-all-btn { box-sizing:border-box; max-width:100%; height:auto; min-height:26px; padding:4px 8px; white-space:normal; line-height:1.3; overflow-wrap:anywhere; text-align:center; }
+        .mooc-go-btn, .mooc-gins-btn, .mooc-complete-all-btn { background:#00cc7e; color:#fff; text-decoration:none; }
+        .mooc-score { color:#e91e63; font-size:12px; font-weight:700; }
+        .mooc-task-detail { margin-top:6px; padding-top:6px; border-top:1px dashed; font-size:12px; color:#374151; line-height:1.45; }
+        .mooc-question-detail { padding:5px 6px; border-radius:5px; background:rgba(255,255,255,.46); margin-top:4px; }
+        .mooc-question-detail:first-child { margin-top:0; }
+        .mooc-question-title { font-weight:700; color:#1f2937; overflow-wrap:anywhere; }
+        .mooc-question-lines { margin-top:2px; color:#4b5563; overflow-wrap:anywhere; }
+        .mooc-question-detail p { margin:.2em 0; }
+        .mooc-question-detail ul, .mooc-question-detail ol { margin:.2em 0; padding-left:1.15em; }
+        .mooc-question-detail li { margin:.08em 0; }
+        .mooc-correct-mark { color:#16a34a; font-weight:700; }
+        .mooc-empty { color:#999; }
+        .mooc-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#00cc7e; border-top-color:transparent; }
+        .mooc-progress-mask { z-index:10005; }
+        .mooc-progress-mask.show { display:flex; }
+        .mooc-progress-card { width:min(560px,calc(100vw - 32px)); box-sizing:border-box; max-height:min(76vh,680px); display:flex; flex-direction:column; overflow:hidden; }
+        .mooc-progress-title { font-size:18px; font-weight:700; color:#0f172a; }
+        .mooc-progress-title a { color:#00cc7e; text-decoration:none; }
+        .mooc-progress-summary { margin:4px 0 8px; color:#334155; font-size:13px; overflow-wrap:anywhere; }
+        .mooc-progress-bar { background:#00cc7e; }
+        .mooc-progress-log { margin-top:10px; overflow:auto; min-height:80px; font-size:12px; line-height:1.5; color:#475569; }
+        .mooc-progress-line { padding:3px 0; overflow-wrap:anywhere; }
+        .mooc-progress-line.success { color:#00a866; }
+        .mooc-progress-line.error { color:#b91c1c; }
+        @media (max-width:600px) {
+            .mooc-course-head, .mooc-task-head { flex-direction:column; }
+            .mooc-task-actions { width:100%; flex-basis:auto; align-items:stretch; }
+            .mooc-task-button-row { align-items:stretch; }
+            .mooc-task-button-row .btn { flex:1 1 160px; }
+            .mooc-complete-all-btn { width:100%; }
         }
         .platform-status-btn.unselected .dot {
             background: transparent;
