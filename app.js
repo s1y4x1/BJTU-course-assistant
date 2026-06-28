@@ -4338,12 +4338,11 @@ function calcCourseRank(state) {
   if ((state?.pendingHomeworkCount || 0) > 0) return 0;
   if ((state?.overdueHomeworkCount || 0) > 0) return 1;
   if ((state?.allHomeworkCount || 0) > 0) return 2;
-  if (state?.hasReplay && state?.hasCourseware) return 3;
-  if (state?.hasReplay) return 4;
-  if (state?.hasCourseware) return 5;
-  if (state?.replayListLoading && state?.coursewareListLoading) return 6;
-  if (state?.replayListLoading) return 7;
-  if (state?.coursewareListLoading) return 8;
+  const hasReplay = !!state?.hasReplay && !state?.replayListLoading;
+  const hasCourseware = !!state?.hasCourseware && !state?.coursewareListLoading;
+  if (hasReplay && hasCourseware) return 3;
+  if (hasReplay) return 4;
+  if (hasCourseware) return 5;
   return 9;
 }
 
@@ -9145,6 +9144,11 @@ async function checkHomework(courseId) {
       ).trim();
       return key;
     };
+    const previousHomeworkByKey = new Map(
+      (window.courseHomeworkData?.[courseId]?.list || [])
+        .map((hw) => [getHwKey(hw), hw])
+        .filter(([key]) => !!key)
+    );
     for (const subType of subTypes) {
       const payload = { page: 1, pagesize: 10 };
       try {
@@ -9172,7 +9176,14 @@ async function checkHomework(courseId) {
             if (seenKeys.has(key)) return;
             seenKeys.add(key);
           }
-          mergedList.push({ ...hw, subType: hw?.subType ?? subType });
+          const previousHomework = key ? previousHomeworkByKey.get(key) : null;
+          mergedList.push({
+            ...hw,
+            subType: hw?.subType ?? subType,
+            ...(previousHomework?.__attachmentKey
+              ? { __attachmentKey: previousHomework.__attachmentKey }
+              : {})
+          });
         });
       } catch (error) {
         if (error?.loginRequired || String(error?.message || '') === 'LOGIN_REQUIRED') throw error;

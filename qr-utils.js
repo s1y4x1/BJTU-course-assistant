@@ -2,6 +2,7 @@
 
 const QR_MIN_DISPLAY_SIZE = 90;
 const QR_MIN_MODULE_SIZE = 2;
+const QR_QUIET_ZONE_MODULES = 4;
 
 function convertVisitNameToUrl(visitName) {
   const raw = String(visitName || '').trim();
@@ -30,35 +31,26 @@ function buildQrImageData(content, size = QR_MIN_DISPLAY_SIZE) {
     throw new Error('二维码数据无效');
   }
 
-  const marginModules = 2;
-  const pixelPerModule = Math.max(QR_MIN_MODULE_SIZE, Math.ceil(safeSize / (moduleCount + marginModules * 2)));
-  const canvasSize = (moduleCount + marginModules * 2) * pixelPerModule;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasSize;
-  canvas.height = canvasSize;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('二维码画布创建失败');
-  }
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvasSize, canvasSize);
-  ctx.fillStyle = '#000000';
-
+  const contentSize = Math.max(safeSize, moduleCount * QR_MIN_MODULE_SIZE);
+  const pixelPerModule = contentSize / moduleCount;
+  const quietZoneSize = QR_QUIET_ZONE_MODULES * QR_MIN_MODULE_SIZE;
+  const displaySize = contentSize + quietZoneSize * 2;
+  const pathParts = [];
   for (let row = 0; row < moduleCount; row += 1) {
     for (let col = 0; col < moduleCount; col += 1) {
       if (!qr.isDark(row, col)) continue;
-      const x = (col + marginModules) * pixelPerModule;
-      const y = (row + marginModules) * pixelPerModule;
-      ctx.fillRect(x, y, pixelPerModule, pixelPerModule);
+      pathParts.push(`M${col} ${row}h1v1h-1z`);
     }
   }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${displaySize} ${displaySize}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="white"/><path d="${pathParts.join('')}" transform="translate(${quietZoneSize} ${quietZoneSize}) scale(${pixelPerModule})" fill="black"/></svg>`;
 
   return {
-    url: canvas.toDataURL('image/png'),
+    url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
     moduleCount,
     pixelPerModule,
-    displaySize: canvasSize
+    contentSize,
+    quietZoneSize,
+    displaySize
   };
 }
 
