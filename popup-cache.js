@@ -117,6 +117,18 @@ function getCollapsedCourseListHtmlForPopup() {
   return String(clone.innerHTML || '');
 }
 
+function getCollapsedCourseHomeworkDataForPopup() {
+  const data = safeStorageClone(window.courseHomeworkData, {});
+  Object.values(data).forEach((course) => {
+    if (!course) return;
+    course.showOverdue = false;
+    course.showDone = false;
+    delete course.justExpanded;
+    delete course.justCollapsed;
+  });
+  return data;
+}
+
 function normalizeRestoredCachesForPopup() {
   Object.values(window.coursewareCacheByCourseId || {}).forEach((cache) => {
     if (!cache) return;
@@ -167,7 +179,7 @@ async function saveFullscreenCourseCache() {
     platformLoadedOnce: safeStorageClone(window.platformLoadedOnce, {}),
     platformNeedLogin: safeStorageClone(window.platformNeedLogin, {}),
     currentVeCourseList: safeStorageClone(window.currentVeCourseList, []),
-    courseHomeworkData: safeStorageClone(window.courseHomeworkData, {}),
+    courseHomeworkData: getCollapsedCourseHomeworkDataForPopup(),
     yktMatchedHomeworkByCourseId: safeStorageClone(window.yktMatchedHomeworkByCourseId, {}),
     yktMatchedCourseLinkByCourseId: safeStorageClone(window.yktMatchedCourseLinkByCourseId, {}),
     yktStandaloneCourses: safeStorageClone(window.yktStandaloneCourses, []),

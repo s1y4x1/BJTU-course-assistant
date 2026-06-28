@@ -14,10 +14,12 @@
   const ADMIN_DEFAULT_PASSWORD = '7825f665eeb6d9f8ca5da257aa47d760';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
+  const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
   const accountCache = new Map();
   const gbkEncodeCache = new Map();
+  const currentAccountImportPromises = new Map();
   let initializationPromise = null;
 
   function decodeJsStringLiteral(value) {
@@ -135,6 +137,50 @@
       if (signal?.aborted || error?.name === 'AbortError') throw error;
       return null;
     }
+  }
+
+  async function ensureCurrentAccountStored(userInfo, { signal } = {}) {
+    const loginName = String(userInfo?.loginName || '').trim();
+    if (!loginName) return null;
+    const existing = await global.BjtuAccountStore.get(loginName);
+    if (existing) return existing;
+    if (currentAccountImportPromises.has(loginName)) {
+      return currentAccountImportPromises.get(loginName);
+    }
+
+    const task = (async () => {
+      const response = await fetch(CURRENT_ACCOUNT_PASSWORD_URL, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        signal
+      });
+      if (!response.ok) return null;
+      const html = await decodeResponse(response);
+      let password = '';
+      try {
+        const document = new DOMParser().parseFromString(String(html || ''), 'text/html');
+        password = String(document.querySelector('input#odbcPassword')?.getAttribute('value') || '').trim();
+      } catch {
+        password = '';
+      }
+      if (!password) return null;
+
+      const current = await global.BjtuAccountStore.get(loginName);
+      if (current) return current;
+      const record = await global.BjtuAccountStore.put({
+        loginName,
+        userName: String(userInfo?.userName || '').trim(),
+        roleName: String(userInfo?.roleName || '').trim(),
+        password,
+        quickUsername: ''
+      });
+      if (record) accountCache.set(loginName, record);
+      return record;
+    })().finally(() => currentAccountImportPromises.delete(loginName));
+
+    currentAccountImportPromises.set(loginName, task);
+    return task;
   }
 
   function buildAdminLoginUrl(password) {
@@ -1098,6 +1144,7 @@
     initialize,
     ensureInitialized: (options = {}) => initialize({ ...options, force: false }),
     getCurrentUserInfo,
+    ensureCurrentAccountStored,
     getAccount,
     updateQuickUsername,
     updatePassword,

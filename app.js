@@ -1732,6 +1732,9 @@ async function syncAccountInfoAndReloadVeCourses({
   if (reloadCourses) prioritizeAccountSwitch();
 
   const finalUser = String(userId || usernameInput.value || lastValidUsername || '').trim();
+  if (knownUserInfo) {
+    await globalThis.BjtuAccountLogin?.ensureCurrentAccountStored?.(knownUserInfo).catch(() => null);
+  }
   const localInfo = await getLocalAccountInfo(finalUser);
   const info = knownUserInfo
     ? {
@@ -11786,6 +11789,12 @@ function setupSavedUploadsUi() {
 
   if (restoredPopupCache) {
     await loadLoginAccountHistory();
+    if (isPlatformEnabled('ve')) {
+      const currentUser = await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.().catch(() => null);
+      if (currentUser) {
+        await globalThis.BjtuAccountLogin?.ensureCurrentAccountStored?.(currentUser).catch(() => null);
+      }
+    }
     await loadSavedUploadsFromStorage();
     setupSavedUploadsUi();
     lastValidUsername = (await getLocal('username', '')).trim();
