@@ -934,7 +934,7 @@ ${cardsHtml}
       setStatus('正在生成二维码…');
       await new Promise((r) => setTimeout(r, 50));
       try {
-        headerQrImg.src = buildQrImageUrl(url, 160);
+        applyQrImageToElement(headerQrImg, url, 160, true);
         setStatus('');
         hideQrLoading();
       } catch {
@@ -1042,7 +1042,7 @@ ${cardsHtml}
       const cachedUrl = window.__sectionQrCache[cacheUrlKey];
       if (!cachedUrl) return false;
       try {
-        secQrImg.src = buildQrImageUrl(cachedUrl, 160);
+        applyQrImageToElement(secQrImg, cachedUrl, 160, true);
         secHideLoading();
         return true;
       } catch { return false; }
@@ -1096,7 +1096,7 @@ ${cardsHtml}
       }
 
       try {
-        secQrImg.src = buildQrImageUrl(url, 160);
+        applyQrImageToElement(secQrImg, url, 160, true);
         secHideLoading();
         if (secQrStatus) secQrStatus.textContent = '';
         window.__sectionQrCache[cacheUrlKey] = url;
@@ -1252,7 +1252,7 @@ ${cardsHtml}
     }
     try {
       hideQrLoading();
-      headerQrImg.src = buildQrImageUrl(window.__headerQrUrl, 160);
+      applyQrImageToElement(headerQrImg, window.__headerQrUrl, 160, true);
     } catch { return; }
     if (headerQrStatus) headerQrStatus.textContent = '';
     const rect = courseHeaderEl.getBoundingClientRect();

@@ -5082,7 +5082,7 @@ async function refreshMrjzyLoginAssistQrCode(fromUserClick = false) {
     if (serial !== mrjzyLoginAssistCodeSerial) return;
     mrjzyLoginAssistCurrentCode = code;
     const qrUrl = `${MRJZY_QR_SCAN_LINK_BASE}${code}`;
-    qrImg.src = buildQrImageUrl(qrUrl, 220);
+    applyQrImageToElement(qrImg, qrUrl, 220);
     if (statusEl instanceof HTMLElement) {
       statusEl.textContent = '';
     }

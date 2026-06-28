@@ -27,6 +27,19 @@
     }
   };
 
+  async function acquireHelperTab() {
+    const response = await chrome.runtime.sendMessage({ type: 'MOOC_ACQUIRE_HELPER_TAB' });
+    if (!response?.ok || !response.leaseId) {
+      throw new Error(response?.message || '无法创建中国大学MOOC后台页面');
+    }
+    return String(response.leaseId);
+  }
+
+  async function releaseHelperTab(leaseId) {
+    if (!leaseId) return;
+    await chrome.runtime.sendMessage({ type: 'MOOC_RELEASE_HELPER_TAB', leaseId }).catch(() => null);
+  }
+
   const formatTime = (value) => {
     const d = new Date(Number(value || 0));
     if (!Number(value) || Number.isNaN(d.getTime())) return '无期限';
@@ -58,6 +71,24 @@
       if (attempt < 9) await sleep(Math.min(400 * (attempt + 1), 2000));
     }
     throw lastError || new Error(emptyMessage);
+  }
+
+  async function requestTeachersWithRetry(url) {
+    let lastError = null;
+    let lastEmptyResult = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const teachers = await request('course-page', { url });
+        if (Array.isArray(teachers) && teachers.length) return teachers;
+        lastEmptyResult = Array.isArray(teachers) ? teachers : [];
+        lastError = new Error('课程教师解析为空');
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < 4) await sleep(400 * (attempt + 1));
+    }
+    if (lastEmptyResult.length) return lastEmptyResult;
+    throw lastError || new Error('课程教师获取失败');
   }
 
   function buildTask(test, type, chapterName) {
@@ -326,9 +357,11 @@
 
   async function load() {
     const serial = ++loadSerial;
+    let helperLeaseId = '';
     env.setState('checking');
     clearCards();
     try {
+      helperLeaseId = await acquireHelperTab();
       await checkLogin();
       const panels = await request('course-list');
       if (serial !== loadSerial) return;
@@ -342,7 +375,7 @@
           try {
             const [detailResult, teacherResult] = await Promise.allSettled([
               request('course-detail', { tid: Number(old.tid) }),
-              request('course-page', { url: old.url })
+              requestTeachersWithRetry(old.url)
             ]);
             if (detailResult.status === 'rejected') throw detailResult.reason;
             const response = detailResult.value;
@@ -380,7 +413,7 @@
         env.toast(`中国大学MOOC加载失败：${error?.message || error}`, 'error');
       }
     } finally {
-      await chrome.runtime.sendMessage({ type: 'MOOC_RELEASE_HELPER_TABS' }).catch(() => null);
+      await releaseHelperTab(helperLeaseId);
     }
   }
 
@@ -447,6 +480,7 @@
   async function runTasks(tasks, inspectUnavailable = false) {
     if (operationRunning) return;
     operationRunning = true;
+    let helperLeaseId = '';
     const mask = ensureModal();
     const close = mask.querySelector('[data-mooc-close]');
     mask.querySelector('.mooc-progress-log').innerHTML = '';
@@ -457,6 +491,7 @@
     let succeeded = 0;
     let inspected = 0;
     try {
+      helperLeaseId = await acquireHelperTab();
       if (!candidates.length) throw new Error('没有待完成的任务（均已完成或已截止）');
       for (let i = 0; i < candidates.length; i++) {
         const task = candidates[i];
@@ -487,9 +522,8 @@
       close.disabled = false;
       if (succeeded > 0) {
         await load().catch(() => {});
-      } else {
-        await chrome.runtime.sendMessage({ type: 'MOOC_RELEASE_HELPER_TABS' }).catch(() => null);
       }
+      await releaseHelperTab(helperLeaseId);
     }
   }
 

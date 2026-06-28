@@ -1,5 +1,8 @@
 // Shared QR utilities used by both app.js (MRJZY login, resource upload) and course-qr.js (header QR tooltip)
 
+const QR_MIN_DISPLAY_SIZE = 90;
+const QR_MIN_MODULE_SIZE = 2;
+
 function convertVisitNameToUrl(visitName) {
   const raw = String(visitName || '').trim();
   if (!raw) return '';
@@ -10,10 +13,10 @@ function convertVisitNameToUrl(visitName) {
   return `${BASE}${path}`.replace(/([^:]\/\/+)\/\/+?/g, '$1/');
 }
 
-function buildQrImageUrl(content, size = 220) {
+function buildQrImageData(content, size = QR_MIN_DISPLAY_SIZE) {
   const text = String(content || '').trim();
   if (!text) return '';
-  const safeSize = Math.max(120, Number(size) || 220);
+  const safeSize = Math.max(QR_MIN_DISPLAY_SIZE, Number(size) || QR_MIN_DISPLAY_SIZE);
   if (typeof qrcode !== 'function') {
     throw new Error('本地二维码库未加载');
   }
@@ -28,7 +31,7 @@ function buildQrImageUrl(content, size = 220) {
   }
 
   const marginModules = 2;
-  const pixelPerModule = Math.max(2, Math.floor(safeSize / (moduleCount + marginModules * 2)));
+  const pixelPerModule = Math.max(QR_MIN_MODULE_SIZE, Math.ceil(safeSize / (moduleCount + marginModules * 2)));
   const canvasSize = (moduleCount + marginModules * 2) * pixelPerModule;
   const canvas = document.createElement('canvas');
   canvas.width = canvasSize;
@@ -51,7 +54,32 @@ function buildQrImageUrl(content, size = 220) {
     }
   }
 
-  return canvas.toDataURL('image/png');
+  return {
+    url: canvas.toDataURL('image/png'),
+    moduleCount,
+    pixelPerModule,
+    displaySize: canvasSize
+  };
+}
+
+function buildQrImageUrl(content, size = QR_MIN_DISPLAY_SIZE) {
+  return buildQrImageData(content, size).url;
+}
+
+function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resizeRelativeParent = false) {
+  if (!(image instanceof HTMLImageElement)) throw new Error('二维码图片元素无效');
+  const qrImage = buildQrImageData(content, size);
+  image.src = qrImage.url;
+  image.style.width = `${qrImage.displaySize}px`;
+  image.style.height = `${qrImage.displaySize}px`;
+  if (resizeRelativeParent) {
+    const parent = image.parentElement;
+    if (parent instanceof HTMLElement && getComputedStyle(parent).position === 'relative') {
+      parent.style.width = `${qrImage.displaySize}px`;
+      parent.style.height = `${qrImage.displaySize}px`;
+    }
+  }
+  return qrImage;
 }
 
 (async function initDownloadQRTooltips() {
@@ -106,11 +134,13 @@ function buildQrImageUrl(content, size = 220) {
     const rect = link.getBoundingClientRect();
 
     try {
-      qrImg.src = buildQrImageUrl(url, 130);
+      applyQrImageToElement(qrImg, url, 130);
     } catch (e) {
       qrImg.alt = 'QR失败';
       qrImg.style.display = 'none';
       qrImg.src = '';
+      tooltip.style.display = 'none';
+      return;
     }
     qrImg.style.display = 'block';
     tooltip.style.display = 'flex';

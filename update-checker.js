@@ -48,6 +48,7 @@ let versionDownloadSelectedUrl = '';
 let lastCompletedDownloadId = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_RELEASES_API_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/releases?per_page=100';
+const VERSION_FALLBACK_LATEST_URL = 'https://s1y4x1.github.io/release.json';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 
@@ -149,12 +150,13 @@ function renderMarkdownBasic(markdownText) {
       return;
     }
 
-    const releaseHeader = trimmed.match(/^@@release\|(.+)\|(.+)$/);
+    const releaseHeader = trimmed.match(/^@@release\|([^|]+)\|(.*)$/);
     if (releaseHeader) {
       closeAllLists();
       const versionText = parseInlineMarkdown(releaseHeader[1]);
       const timeText = parseInlineMarkdown(releaseHeader[2]);
-      out.push(`<div style="display:flex; align-items:baseline; gap:8px; margin:0 0 6px; color:#0f172a; line-height:1.25;"><span style="font-size:16px; font-weight:700;">${versionText}</span><span style="font-size:12px; font-weight:500; color:#64748b;">${timeText}</span></div>`);
+      const timeHtml = timeText ? `<span style="font-size:12px; font-weight:500; color:#64748b;">${timeText}</span>` : '';
+      out.push(`<div style="display:flex; align-items:baseline; gap:8px; margin:0 0 6px; color:#0f172a; line-height:1.25;"><span style="font-size:16px; font-weight:700;">${versionText}</span>${timeHtml}</div>`);
       return;
     }
 
@@ -679,27 +681,38 @@ function formatReleasePublishedAt(publishedAt) {
   return relativeText ? `${absoluteText}（${relativeText}）` : absoluteText;
 }
 
-async function fetchFallbackLatestRelease() {
-  if (typeof popupMode !== 'undefined' && popupMode) {
-    throw new Error('弹出窗口不打开备用更新源页面');
+function parseFallbackReleaseTime(url) {
+  const source = String(url || '').trim();
+  const fileName = source.split(/[/?#]/).filter(Boolean).at(-1) || '';
+  const match = fileName.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d+)\.zip$/i);
+  if (!match) return { publishedAt: '' };
+  const [, year, month, day, hour, minute, remainder] = match;
+  const pathDate = source.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//);
+  if (pathDate && `${pathDate[1]}${pathDate[2]}${pathDate[3]}` !== `${year}${month}${day}`) {
+    return { publishedAt: '' };
   }
-  const response = await chrome.runtime.sendMessage({ type: 'READ_FALLBACK_UPDATE_SOURCE' });
-  if (!response?.ok) throw new Error(response?.message || '备用更新源后台页面读取失败');
-  const source = String(response.text || '');
-  const prefix = '$content_add0 = ';
-  const line = source.split(/\r?\n/).find((item) => String(item || '').trimStart().startsWith(prefix));
-  if (!line) throw new Error('备用更新源缺少 $content_add0');
-  const statement = String(line).trimStart();
-  const semicolonIndex = statement.lastIndexOf(';');
-  if (semicolonIndex < prefix.length) throw new Error('备用更新源数据格式错误');
-  const outer = JSON.parse(statement.slice(prefix.length, semicolonIndex).trim());
-  const contentHtml = String(outer?.dat?.qrcode_compontent?.[0]?.content_html || '').trim();
-  if (!contentHtml) throw new Error('备用更新源缺少 content_html');
-  const withoutParagraph = contentHtml
-    .replace(/^\s*<p(?:\s[^>]*)?>/i, '')
-    .replace(/<\/p>\s*$/i, '');
-  const parsedHtml = new DOMParser().parseFromString(withoutParagraph, 'text/html');
-  const releaseInfo = JSON.parse(String(parsedHtml.body?.textContent || '').trim());
+  const second = remainder.slice(0, 2).padEnd(2, '0');
+  const fraction = remainder.slice(2);
+  const millisecond = fraction.slice(0, 3).padEnd(3, '0');
+  return { publishedAt: `${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond}+08:00` };
+}
+
+async function fetchFallbackLatestRelease() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6500);
+  let response;
+  try {
+    response = await fetch(VERSION_FALLBACK_LATEST_URL, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  if (!response.ok) throw new Error(`备用更新源请求失败 (${response.status})`);
+  const releaseInfo = await response.json();
   const tag = String(releaseInfo?.ver || '').trim();
   const rawUrl = String(releaseInfo?.url || '').trim();
   if (!tag || !rawUrl) throw new Error('备用更新源缺少版本号或下载地址');
@@ -707,6 +720,7 @@ async function fetchFallbackLatestRelease() {
     .replace(/^https?:\/\/123\.121\.147\.7:8081\/rp\//i, '')
     .replace(/^\/+/, '');
   const url = `http://123.121.147.7:8081/rp/${relativePath}`;
+  const releaseTime = parseFallbackReleaseTime(url);
   return {
     tag_name: tag,
     name: String(releaseInfo?.name || tag).trim() || tag,
@@ -714,7 +728,7 @@ async function fetchFallbackLatestRelease() {
     zipball_url: url,
     draft: false,
     prerelease: false,
-    published_at: ''
+    published_at: releaseTime.publishedAt
   };
 }
 

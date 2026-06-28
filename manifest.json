@@ -39,7 +39,7 @@
     "https://i.jielong.com/*",
     "https://www.icourse163.org/*",
     "https://ginnnnnn.top/*",
-    "https://v.mbm07.cn/*"
+    "https://s1y4x1.github.io/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';"
