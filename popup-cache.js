@@ -58,6 +58,50 @@ function collapseRestoredCoursePanelsForPopup(root) {
     }
     card.querySelectorAll('.replay-shadow-area').forEach((el) => el.remove());
   });
+  root.querySelectorAll('.expandable-box').forEach((box) => {
+    if (!(box instanceof HTMLElement)) return;
+    box.classList.remove('expanded');
+    box.dataset.expanded = '0';
+    const body = box.querySelector('.expandable-body');
+    if (body instanceof HTMLElement) {
+      body.style.removeProperty('max-height');
+      body.style.removeProperty('overflow');
+      body.style.removeProperty('overflow-x');
+      body.style.removeProperty('overflow-y');
+    }
+    const toggle = box.querySelector('.expandable-toggle');
+    if (toggle instanceof HTMLElement) {
+      toggle.textContent = toggle.dataset.openText || '点击展开详情';
+    }
+  });
+  root.querySelectorAll('.homework-group[data-homework-group="overdue"], .homework-group[data-homework-group="done"]').forEach((group) => {
+    if (!(group instanceof HTMLElement)) return;
+    group.classList.add('is-hidden');
+    group.classList.remove('homework-group-animating');
+    group.dataset.expanded = '0';
+    group.setAttribute('aria-hidden', 'true');
+    group.style.removeProperty('max-height');
+    group.style.removeProperty('opacity');
+    group.style.removeProperty('transform');
+    group.style.removeProperty('overflow');
+  });
+  root.querySelectorAll('.homework-toggle-btn[data-homework-toggle-kind], .homework-toggle-btn[data-mooc-action="toggle-overdue"], .homework-toggle-btn[data-mooc-action="toggle-done"]').forEach((btn) => {
+    if (!(btn instanceof HTMLElement)) return;
+    btn.classList.remove('is-expanded', 'homework-toggle-btn--up');
+    btn.classList.add('homework-toggle-btn--down');
+    btn.setAttribute('aria-expanded', 'false');
+    delete btn.dataset.animating;
+    const label = btn.querySelector('.homework-toggle-label');
+    const count = String(btn.dataset.count || '').trim();
+    const collapsedText = String(btn.dataset.collapsedText || '').trim();
+    if (label instanceof HTMLElement && collapsedText) {
+      label.textContent = `${collapsedText}${count ? ` (${count})` : ''}`;
+    }
+  });
+  root.querySelectorAll('.force-score-publish-row').forEach((el) => el.remove());
+  root.querySelectorAll('.submit-panel').forEach((panel) => {
+    if (panel instanceof HTMLElement) panel.style.display = 'none';
+  });
   root.querySelectorAll('button[data-action="courseware"]').forEach((btn) => {
     resetCachedPanelButton(btn, '课件下载', 'courseware-link-progress', '--courseware-progress');
   });
@@ -273,6 +317,16 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.platformNeedLogin = { ...window.platformNeedLogin, ...(cache.platformNeedLogin || {}) };
   window.currentVeCourseList = Array.isArray(cache.currentVeCourseList) ? cache.currentVeCourseList : [];
   window.courseHomeworkData = cache.courseHomeworkData || {};
+  Object.values(window.courseHomeworkData).forEach((data) => {
+    if (!data) return;
+    data.showOverdue = false;
+    data.showDone = false;
+    data.justExpanded = false;
+    data.justCollapsed = false;
+  });
+  window.courseShowOverdueById = {};
+  window.courseShowDoneById = {};
+  window.homeworkDetailExpandedByCourse = {};
   window.yktMatchedHomeworkByCourseId = cache.yktMatchedHomeworkByCourseId || {};
   window.yktMatchedCourseLinkByCourseId = cache.yktMatchedCourseLinkByCourseId || {};
   window.yktStandaloneCourses = Array.isArray(cache.yktStandaloneCourses) ? cache.yktStandaloneCourses : [];
