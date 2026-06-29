@@ -123,10 +123,32 @@ async function getWritableVersionUpdateDirectory() {
   const handle = await readVersionUpdateDirectoryHandle();
   if (!handle || typeof handle.queryPermission !== 'function') return null;
   try {
-    return await handle.queryPermission({ mode: 'readwrite' }) === 'granted' ? handle : null;
+    if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted') return null;
+    await validateVersionUpdateDirectory(handle);
+    return handle;
   } catch {
+    await storeVersionUpdateDirectoryHandle(null).catch(() => {});
     return null;
   }
+}
+
+async function validateVersionUpdateDirectory(handle) {
+  if (!handle || handle.kind !== 'directory') throw new Error('请选择扩展安装目录');
+  try {
+    const manifestHandle = await handle.getFileHandle('manifest.json');
+    const manifest = JSON.parse(await (await manifestHandle.getFile()).text());
+    const currentManifest = chrome.runtime.getManifest();
+    if (Number(manifest?.manifest_version) !== Number(currentManifest.manifest_version)
+      || String(manifest?.name || '').trim() !== String(currentManifest.name || '').trim()) {
+      throw new Error('manifest.json 不属于当前扩展');
+    }
+    await handle.getFileHandle('app.html');
+    await handle.getFileHandle('update-checker.js');
+  } catch (error) {
+    if (String(error?.message || '').includes('不属于当前扩展')) throw error;
+    throw new Error('所选目录不是 BJTU 课程助手的扩展安装目录');
+  }
+  return handle;
 }
 
 function cancelVersionRefreshCountdown() {
@@ -634,9 +656,9 @@ function showVersionUpdateDirectoryRequired(downloadUrl, source, fullExtraction)
   versionPendingDirectoryUpdate = { downloadUrl, source, fullExtraction };
   setVersionDownloadProgressUi({
     visible: true,
-    status: '等待选择更新目录',
+    status: '请勿选择包含其他文件的文件夹',
     title: '选择扩展更新目录',
-    body: '请选择“下载”目录中的 BJTU-course-assistant 文件夹。授权后，更新文件将直接覆盖写入，不再经过浏览器下载。',
+    body: '请选择专门用于 BJTU 课程助手的扩展安装目录。不要选择“下载”“桌面”等根目录，也不要选择包含个人文件或其他项目的文件夹；全量更新可能清空所选目录。扩展只会写入更新包中的代码与资源，不会在该目录保存 ZIP、缓存、配置、标记或临时文件。',
     phase: 'directory'
   });
   const modal = document.getElementById('version-download-modal');
@@ -668,12 +690,14 @@ async function selectVersionUpdateDirectoryAndResume() {
       }
       handle = await window.showDirectoryPicker({
         id: 'bjtu-update-dir',
-        mode: 'readwrite',
-        startIn: 'downloads'
+        mode: 'readwrite'
       });
     }
-    if (String(handle?.name || '').toLowerCase() !== 'bjtu-course-assistant') {
-      throw new Error('请选择名为 BJTU-course-assistant 的文件夹');
+    try {
+      await validateVersionUpdateDirectory(handle);
+    } catch (error) {
+      await storeVersionUpdateDirectoryHandle(null).catch(() => {});
+      throw error;
     }
     await storeVersionUpdateDirectoryHandle(handle);
     const pending = versionPendingDirectoryUpdate;
@@ -911,6 +935,7 @@ async function fetchUpdateArchiveWithProgress(url) {
 async function clearVersionUpdateDirectory() {
   const root = versionUpdateDirectoryHandle;
   if (!root) throw new Error('尚未授权更新目录');
+  await validateVersionUpdateDirectory(root);
   setVersionDownloadProgressUi({
     visible: true,
     status: '正在删除旧文件…',
@@ -961,47 +986,28 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
   const files = selectUpdateArchiveFiles(archiveFiles, updateRule);
   if (!files.length) throw new Error('更新压缩包中没有可写入文件');
 
-  const nonJavaScriptFiles = files.filter((item) => !/\.js$/i.test(String(item.path || '')));
-  const javaScriptFiles = files.filter((item) => /\.js$/i.test(String(item.path || '')));
   let completedCount = 0;
-
-  if (nonJavaScriptFiles.length) {
+  setVersionDownloadProgressUi({
+    visible: true,
+    status: `正在并行覆盖：0 / ${files.length}`,
+    title: '正在覆盖解压',
+    body: '正在将更新文件直接覆盖到 BJTU-course-assistant 目录。',
+    phase: 'extracting'
+  });
+  const results = await Promise.allSettled(files.map(async (item) => {
+    await writeBytesToVersionUpdateDirectory(await inflateZipEntry(item.entry), item.path);
+    completedCount += 1;
+    setVersionDownloadBar({ visible: true, percent: (completedCount / files.length) * 100 });
     setVersionDownloadProgressUi({
       visible: true,
-      status: `正在并行覆盖：0 / ${nonJavaScriptFiles.length}`,
+      status: `正在并行覆盖：${completedCount} / ${files.length} · ${item.path}`,
       title: '正在覆盖解压',
       body: '正在将更新文件直接覆盖到 BJTU-course-assistant 目录。',
       phase: 'extracting'
     });
-    const results = await Promise.allSettled(nonJavaScriptFiles.map(async (item) => {
-      await writeBytesToVersionUpdateDirectory(await inflateZipEntry(item.entry), item.path);
-      completedCount += 1;
-      setVersionDownloadBar({ visible: true, percent: (completedCount / files.length) * 100 });
-      setVersionDownloadProgressUi({
-        visible: true,
-        status: `正在并行覆盖：${completedCount} / ${nonJavaScriptFiles.length} · ${item.path}`,
-        title: '正在覆盖解压',
-        body: '正在将更新文件直接覆盖到 BJTU-course-assistant 目录。',
-        phase: 'extracting'
-      });
-    }));
-    const failedResult = results.find((result) => result.status === 'rejected');
-    if (failedResult) throw failedResult.reason;
-  }
-
-  for (let index = 0; index < javaScriptFiles.length; index += 1) {
-    const item = javaScriptFiles[index];
-    setVersionDownloadProgressUi({
-      visible: true,
-      status: `正在覆盖 JavaScript：${index + 1} / ${javaScriptFiles.length} · ${item.path}`,
-      title: '正在覆盖解压',
-      body: '正在串行覆盖 JavaScript 文件。',
-      phase: 'extracting'
-    });
-    await writeBytesToVersionUpdateDirectory(await inflateZipEntry(item.entry), item.path);
-    completedCount += 1;
-    setVersionDownloadBar({ visible: true, percent: (completedCount / files.length) * 100 });
-  }
+  }));
+  const failedResult = results.find((result) => result.status === 'rejected');
+  if (failedResult) throw failedResult.reason;
   return files.length;
 }
 
