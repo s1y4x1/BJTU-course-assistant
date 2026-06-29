@@ -50,6 +50,7 @@ let versionButtonLatestReload = true;
 let versionButtonLatestForce = false;
 let versionButtonLatestUpdate = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
+const VERSION_PRIMARY_LATEST_URL = 'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json';
 const VERSION_FALLBACK_LATEST_URL = 'https://s1y4x1.github.io/release.json';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
@@ -454,11 +455,16 @@ function ensureVersionDownloadModal() {
   });
   modal.addEventListener('mouseup', (e) => {
     if (e.target === modal && modal.dataset.mdownMask === '1') {
-      if (modal.dataset.locked === '1') return;
-      if (versionDownloadPhase !== 'downloading') return;
-      versionDownloadMinimized = true;
-      modal.style.display = 'none';
-      showToast('已最小化，后台静默下载中...', 'info', 1400);
+      if (modal.dataset.locked !== '1') {
+        if (versionDownloadPhase === 'finished') {
+          cancelVersionRefreshCountdown();
+          modal.style.display = 'none';
+        } else if (versionDownloadPhase === 'downloading') {
+          versionDownloadMinimized = true;
+          modal.style.display = 'none';
+          showToast('已最小化，后台静默下载中...', 'info', 1400);
+        }
+      }
     }
     delete modal.dataset.mdownMask;
   });
@@ -546,7 +552,7 @@ function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVers
   const reloadBody = writtenFileCount > 0
     ? `已覆盖写入 ${writtenFileCount} 个文件。必须到「扩展管理」页面**重新加载**扩展。`
     : '必须到「扩展管理」页面**重新加载**扩展。';
-  modal.dataset.locked = reloadRequired ? '1' : '0';
+  modal.dataset.locked = reloadRequired && versionButtonLatestForce ? '1' : '0';
   setVersionDownloadProgressUi({
     visible: true,
     status: '已完成',
@@ -1219,12 +1225,12 @@ function formatReleasePublishedAt(publishedAt) {
   return relativeText ? `${absoluteText}（${relativeText}）` : absoluteText;
 }
 
-async function fetchFallbackLatestRelease() {
+async function fetchLatestReleaseFromUrl(sourceUrl) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 6500);
   let response;
   try {
-    response = await fetch(VERSION_FALLBACK_LATEST_URL, {
+    response = await fetch(sourceUrl, {
       method: 'GET',
       cache: 'no-store',
       headers: { Accept: 'application/json' },
@@ -1233,18 +1239,18 @@ async function fetchFallbackLatestRelease() {
   } finally {
     clearTimeout(timeoutId);
   }
-  if (!response.ok) throw new Error(`备用更新源请求失败 (${response.status})`);
+  if (!response.ok) throw new Error(`更新源请求失败 (${response.status})`);
   const releaseInfo = await response.json();
   const tag = String(releaseInfo?.ver || '').trim();
   const rawUrl = String(releaseInfo?.url || '').trim();
-  if (!tag || !rawUrl) throw new Error('备用更新源缺少版本号或下载地址');
+  if (!tag || !rawUrl) throw new Error('更新源缺少版本号或下载地址');
   let url;
   try {
     url = new URL(rawUrl).href;
   } catch {
-    throw new Error('备用更新源下载地址无效');
+    throw new Error('更新源下载地址无效');
   }
-  if (!/^https?:\/\//i.test(url)) throw new Error('备用更新源下载地址协议无效');
+  if (!/^https?:\/\//i.test(url)) throw new Error('更新源下载地址协议无效');
   return {
     tag_name: tag,
     name: String(releaseInfo?.name || tag).trim() || tag,
@@ -1257,6 +1263,19 @@ async function fetchFallbackLatestRelease() {
     force: releaseInfo?.force === true,
     update: Array.isArray(releaseInfo?.update) ? releaseInfo.update : null
   };
+}
+
+async function fetchFallbackLatestRelease() {
+  const sourceUrls = [VERSION_PRIMARY_LATEST_URL, VERSION_FALLBACK_LATEST_URL];
+  let lastError = null;
+  for (const sourceUrl of sourceUrls) {
+    try {
+      return await fetchLatestReleaseFromUrl(sourceUrl);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('所有更新源均不可用');
 }
 
 async function loadVersionInfo() {
