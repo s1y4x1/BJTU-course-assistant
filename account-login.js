@@ -11,7 +11,7 @@
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
   const ACCOUNT_FILE_VERSION = 1;
   const HISTORY_KEY = 'loginAccountHistory';
-  const ADMIN_DEFAULT_PASSWORD = '7825f665eeb6d9f8ca5da257aa47d760';
+  const ADMIN_DEFAULT_PASSWORD = '2737191fe9630464558f634fcb98779f';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
