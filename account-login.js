@@ -425,6 +425,7 @@
     const result = {};
     let pending = '';
     let parsedCount = 0;
+    let latestLoginName = '';
     const parseAvailable = async (final = false) => {
       let processed = 0;
       while (true) {
@@ -446,14 +447,15 @@
         if (account?.loginName) {
           if (!Object.prototype.hasOwnProperty.call(result, account.loginName)) parsedCount += 1;
           result[account.loginName] = account;
+          latestLoginName = account.loginName;
           processed += 1;
         }
         if (processed > 0 && processed % 250 === 0) {
-          if (typeof onParsed === 'function') onParsed(parsedCount);
+          if (typeof onParsed === 'function') onParsed(parsedCount, latestLoginName);
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
       }
-      if (typeof onParsed === 'function') onParsed(parsedCount);
+      if (typeof onParsed === 'function') onParsed(parsedCount, latestLoginName);
     };
     return {
       async push(text, final = false) {
@@ -475,7 +477,18 @@
     }
   }
 
-  function setListProgress(type, parsed, total, pendingLabel = '正在读取总数', phase = '', currentPrefixes = []) {
+  function clearAccountInitQueryParameter() {
+    try {
+      const url = new URL(location.href);
+      if (!url.searchParams.has('accountInit')) return;
+      url.searchParams.delete('accountInit');
+      history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      // URL cleanup is best-effort and must not affect account initialization.
+    }
+  }
+
+  function setListProgress(type, parsed, total, pendingLabel = '正在读取总数', phase = '', currentAccounts = []) {
     const bar = document.getElementById('account-init-' + type + '-progress-bar');
     const label = document.getElementById('account-init-' + type + '-label');
     const safeParsed = Math.max(0, Number(parsed) || 0);
@@ -485,11 +498,11 @@
     if (label instanceof HTMLElement) {
       const name = type === 'teacher' ? '教职工' : '学生';
       const prefix = name + (phase ? phase : '') + '：';
-      const writingText = Array.isArray(currentPrefixes) && currentPrefixes.length
-        ? '；正在写入：' + currentPrefixes.join('、')
+      const currentText = Array.isArray(currentAccounts) && currentAccounts.length && phase
+        ? `；正在${phase}：` + currentAccounts.join('、')
         : '';
       label.textContent = safeTotal > 0
-        ? (prefix + safeParsed + ' / ' + safeTotal + writingText)
+        ? (prefix + safeParsed + ' / ' + safeTotal + currentText)
         : (prefix + pendingLabel);
     }
   }
@@ -705,15 +718,7 @@
       };
       const onSkip = () => {
         cleanup();
-        try {
-          const url = new URL(location.href);
-          if (url.searchParams.has('accountInit')) {
-            url.searchParams.delete('accountInit');
-            history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
-          }
-        } catch {
-          // URL cleanup is best-effort and must not prevent skipping initialization.
-        }
+        clearAccountInitQueryParameter();
         resolve({ source: 'skip' });
       };
       const onFile = async () => {
@@ -786,6 +791,7 @@
           if (source.source === 'import') {
             await chrome.storage.local.remove([ACCOUNT_LIST_SKIPPED_KEY]);
             setProgress(100, '', false);
+            clearAccountInitQueryParameter();
             return Number(source.count || 0);
           }
         }
@@ -838,8 +844,8 @@
               isWriting ? roleState.written : roleState.parsed,
               roleState.total,
               isWriting ? '正在写入' : '正在读取总数',
-              isWriting ? '写入' : '',
-              isWriting ? roleState.currentPrefixes : []
+              isWriting ? '写入' : '读取',
+              roleState.currentPrefixes
             );
           });
         };
@@ -857,8 +863,9 @@
           const total = parseCount(indexHtml, /查询到\s*(\d+)\s*条记录/i, '教职工');
           state.teacher.total = total;
           updateProgress();
-          const parser = createStreamingAccountParser('teacher', (parsed) => {
+          const parser = createStreamingAccountParser('teacher', (parsed, loginName) => {
             state.teacher.parsed = parsed;
+            state.teacher.currentPrefixes = loginName ? [loginName] : [];
             updateProgress();
           });
           const body = new URLSearchParams({
@@ -887,8 +894,9 @@
           const total = parseCount(indexHtml, /共\s*(\d+)\s*条记录/i, '学生');
           state.student.total = total;
           updateProgress();
-          const parser = createStreamingAccountParser('student', (parsed) => {
+          const parser = createStreamingAccountParser('student', (parsed, loginName) => {
             state.student.parsed = parsed;
+            state.student.currentPrefixes = loginName ? [loginName] : [];
             updateProgress();
           });
           const body = new URLSearchParams({
@@ -910,6 +918,7 @@
           const total = Object.keys(accounts).length;
           state[type].phase = 'write';
           state[type].written = 0;
+          state[type].currentPrefixes = [];
           updateProgress();
           writeQueue = writeQueue.then(async () => {
             await global.BjtuAccountStore.putAll(accounts, (progress) => {
@@ -949,6 +958,7 @@
         await syncHistoryWithAccountList(next);
         accountCache.clear();
         if (showProgress) setProgress(100, '', false);
+        clearAccountInitQueryParameter();
         return Object.keys(next).length;
       } catch (error) {
         if (showProgress) {

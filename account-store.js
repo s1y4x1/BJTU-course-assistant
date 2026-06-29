@@ -6,6 +6,7 @@
   const STORE_NAME = 'accounts';
   const LEGACY_KEY = 'accountList';
   const WRITE_BATCH_SIZE = 1000;
+  const READ_PROGRESS_STEP = 1000;
   const WRITE_PROGRESS_STEP = 1000;
   let dbPromise = null;
 
@@ -141,7 +142,7 @@
           read += 1;
           if (record.roleName === '学生') studentRead += 1;
           else teacherRead += 1;
-          if (read % WRITE_PROGRESS_STEP === 0) reportProgress();
+          if (read % READ_PROGRESS_STEP === 0) reportProgress();
         }
         cursor.continue();
       };
