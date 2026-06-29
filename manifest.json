@@ -39,6 +39,7 @@
     "https://i.jielong.com/*",
     "https://www.icourse163.org/*",
     "https://ginnnnnn.top/*",
+    "https://codeload.github.com/*",
     "https://s1y4x1.github.io/*"
   ],
   "content_security_policy": {

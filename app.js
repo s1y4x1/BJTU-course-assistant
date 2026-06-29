@@ -719,6 +719,7 @@ function setupRightColumnResizer() {
   if (!rightColumn || !rightColumnResizer) return;
   const STORAGE_KEY = 'courseHelperWidthPx';
   const BASE_MIN_W = 480;
+  const DEFAULT_W = 576;
 
   const isAdaptiveLayout = () => window.matchMedia('(max-width: 900px), (orientation: portrait)').matches;
 
@@ -737,10 +738,11 @@ function setupRightColumnResizer() {
     }
     rightColumn.style.minWidth = '';
     const { minW, maxW } = getBounds();
-    let target = Math.round((minW + maxW) / 2);
+    let target = DEFAULT_W;
     try {
-      const saved = Number(localStorage.getItem(STORAGE_KEY) || 0);
-      if (Number.isFinite(saved)) {
+      const savedValue = localStorage.getItem(STORAGE_KEY);
+      const saved = Number(savedValue);
+      if (savedValue !== null && Number.isFinite(saved) && saved > 0) {
         target = saved;
       }
     } catch {

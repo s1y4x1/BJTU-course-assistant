@@ -23,7 +23,8 @@ try {
     'latestResponseJsessionid',
     'latestSentLoginJsessionid',
     'portalUsernameBindStatus',
-    'headerQrEnabled'
+    'headerQrEnabled',
+    '_VERSION_UPDATE_DOWNLOAD_ID'
   ]).catch(() => {});
 } catch {}
 
@@ -37,11 +38,8 @@ chrome.notifications.onClicked.addListener((notifId) => {
     return;
   }
   if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
-  chrome.storage.local.get(['_VERSION_UPDATE_DOWNLOAD_ID'], (result) => {
-    const id = result._VERSION_UPDATE_DOWNLOAD_ID;
-    if (id) chrome.downloads.open(id, () => void chrome.runtime.lastError);
-    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
-  });
+  chrome.tabs.create({ url: 'about:extensions' });
+  chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
 });
 
 const HOMEWORK_REMINDER_ALARM = 'bjtu-homework-reminder-check';
@@ -190,12 +188,6 @@ ensureHomeworkReminderAlarm();
 chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
   if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
   if (buttonIndex === 0) {
-    chrome.storage.local.get(['_VERSION_UPDATE_DOWNLOAD_ID'], (result) => {
-      const id = result._VERSION_UPDATE_DOWNLOAD_ID;
-      if (id) chrome.downloads.open(id, () => void chrome.runtime.lastError);
-      chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
-    });
-  } else if (buttonIndex === 1) {
     chrome.tabs.create({ url: 'about:extensions' });
     chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
   }
