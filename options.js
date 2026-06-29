@@ -33,7 +33,7 @@ const DEFAULT_OPEN_MODE = 'popup';
 
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
-const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = true;
+const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 
@@ -610,7 +610,7 @@ function goBackToApp() {
     renderHomeworkReminderNodes();
     updateHomeworkReminderDisabled();
     updatePlatformDetailDisabled();
-    document.getElementById('autoLoadCourseResourcesEnabled').checked = true;
+    document.getElementById('autoLoadCourseResourcesEnabled').checked = DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
     document.getElementById('saveUploadsEnabled').checked = true;

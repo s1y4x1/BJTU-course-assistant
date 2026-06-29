@@ -1039,6 +1039,13 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .version-notice-download-btn:hover {
             background: #1e40af;
         }
+        #auto-load-resources-disabled-notice .version-notice-download-btn:disabled,
+        #auto-load-resources-disabled-notice .version-notice-download-btn:disabled:hover {
+            background: #94a3b8;
+            color: #f8fafc;
+            cursor: not-allowed;
+            opacity: 1;
+        }
         .version-notice-ignore-btn {
             margin-top: 8px;
             width: 100%;

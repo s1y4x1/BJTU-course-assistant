@@ -199,7 +199,7 @@ window.homeworkAttachmentPendingByCourse = {}; // {courseId: boolean}
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
 window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}]
 window.saveUploadedFilesEnabled = true;
-window.autoLoadCourseResourcesEnabled = true;
+window.autoLoadCourseResourcesEnabled = false;
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
 window.courseShowOverdueById = {};
 window.courseShowDoneById = {};
@@ -324,20 +324,91 @@ function disablePlatformAfterLoginFailure(platform) {
 }
 
 const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
+const AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY = 'autoLoadCourseResourcesDefaultOffState';
+
+async function migrateAutoLoadCourseResourcesDefaultOff() {
+  try {
+    const data = await chrome.storage.local.get([
+      AUTO_LOAD_COURSE_RESOURCES_KEY,
+      AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY
+    ]);
+    const storedState = String(data[AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY] || '').trim();
+    if (storedState === 'pending' || storedState === 'done') {
+      return storedState === 'pending';
+    }
+
+    const shouldNotify = data[AUTO_LOAD_COURSE_RESOURCES_KEY] === true;
+    const nextState = shouldNotify ? 'pending' : 'done';
+    await chrome.storage.local.set({
+      [AUTO_LOAD_COURSE_RESOURCES_KEY]: false,
+      [AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY]: nextState
+    });
+    return shouldNotify;
+  } catch {
+    return false;
+  }
+}
+
+function showAutoLoadCourseResourcesDisabledNotice() {
+  if (document.getElementById('auto-load-resources-disabled-notice')) return;
+  const modal = document.createElement('div');
+  modal.id = 'auto-load-resources-disabled-notice';
+  modal.className = 'version-modal-mask';
+  modal.style.zIndex = '10020';
+  modal.innerHTML = `
+    <div class="version-modal-card" role="alertdialog" aria-modal="true" aria-labelledby="auto-load-resources-disabled-title">
+      <div id="auto-load-resources-disabled-title" class="version-download-title">选项已调整</div>
+      <div class="version-download-body" style="margin-top:10px;line-height:1.65;">
+        已为您关闭「自动获取课件/回放列表」选项以减少请求数，您可以在<a href="#" data-action="open-extension-options" style="color:#0369a1;font-weight:700;text-decoration:underline;">扩展选项</a>中重新开启
+      </div>
+      <button type="button" class="btn version-notice-download-btn" data-action="acknowledge" style="margin-top:12px;" disabled>我知道了（2 秒）</button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.style.display = 'flex';
+  const optionsLink = modal.querySelector('[data-action="open-extension-options"]');
+  optionsLink?.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (typeof popupMode !== 'undefined' && popupMode) {
+      window.location.href = 'options.html?popup=1';
+      return;
+    }
+    chrome.runtime.openOptionsPage?.();
+  });
+  const acknowledge = modal.querySelector('[data-action="acknowledge"]');
+  acknowledge?.addEventListener('click', async () => {
+    await chrome.storage.local.set({ [AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY]: 'done' }).catch(() => {});
+    modal.remove();
+  });
+  const unlockAt = Date.now() + 2000;
+  const countdownTimer = setInterval(() => {
+    if (!(acknowledge instanceof HTMLButtonElement) || !acknowledge.isConnected) {
+      clearInterval(countdownTimer);
+      return;
+    }
+    const seconds = Math.ceil((unlockAt - Date.now()) / 1000);
+    if (seconds > 0) {
+      acknowledge.textContent = `我知道了（${seconds} 秒）`;
+      return;
+    }
+    clearInterval(countdownTimer);
+    acknowledge.textContent = '我知道了';
+    acknowledge.disabled = false;
+  }, 100);
+}
 
 async function loadAutoLoadCourseResourcesSetting() {
   try {
     const data = await chrome.storage.local.get([AUTO_LOAD_COURSE_RESOURCES_KEY]);
     window.autoLoadCourseResourcesEnabled = data[AUTO_LOAD_COURSE_RESOURCES_KEY] === undefined
-      ? true
+      ? false
       : !!data[AUTO_LOAD_COURSE_RESOURCES_KEY];
   } catch {
-    window.autoLoadCourseResourcesEnabled = true;
+    window.autoLoadCourseResourcesEnabled = false;
   }
 }
 
 function isAutoLoadCourseResourcesEnabled() {
-  return window.autoLoadCourseResourcesEnabled !== false;
+  return window.autoLoadCourseResourcesEnabled === true;
 }
 
 function bumpPlatformLoadVersion(platform) {
@@ -678,7 +749,7 @@ function setupOptionsStorageLiveSync() {
 
     if (changes[AUTO_LOAD_COURSE_RESOURCES_KEY]) {
       window.autoLoadCourseResourcesEnabled = changes[AUTO_LOAD_COURSE_RESOURCES_KEY].newValue === undefined
-        ? true
+        ? false
         : !!changes[AUTO_LOAD_COURSE_RESOURCES_KEY].newValue;
       if (window.autoLoadCourseResourcesEnabled) {
         autoLoadCourseResourcesForRenderedCourses();
@@ -11774,10 +11845,12 @@ function setupSavedUploadsUi() {
     loginRequired: () => openMoocLoginAssistPopup(true)
   });
   await loadPopupCacheEnabledSetting();
+  const showAutoLoadResourcesDisabledNotice = await migrateAutoLoadCourseResourcesDefaultOff();
   await loadAutoLoadCourseResourcesSetting();
   await loadSaveUploadsEnabledSetting();
   setupOptionsStorageLiveSync();
   document.documentElement.classList.remove('app-options-loading');
+  if (showAutoLoadResourcesDisabledNotice) showAutoLoadCourseResourcesDisabledNotice();
   setupPortalUsernameBindMessageListener();
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {
