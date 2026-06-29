@@ -545,6 +545,15 @@ function setVersionDownloadBar({ visible = true, percent = 0, indeterminate = fa
   container.setAttribute('aria-valuenow', String(Math.round(normalizedPercent)));
 }
 
+function setVersionDownloadReleaseNotes(markdownText = '') {
+  const container = document.getElementById('version-download-release-notes');
+  const body = document.getElementById('version-download-release-notes-body');
+  if (!(container instanceof HTMLElement) || !(body instanceof HTMLElement)) return;
+  const notes = String(markdownText || '').trim();
+  container.style.display = notes ? '' : 'none';
+  body.innerHTML = notes ? renderMarkdownBasic(notes) : '';
+}
+
 function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion } = {}) {
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
@@ -1056,6 +1065,9 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
 
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
+  setVersionDownloadReleaseNotes(
+    versionButtonLatestForce ? (versionButtonLatestBodyMarkdown || '暂无更新说明。') : ''
+  );
   setVersionDownloadBar({ visible: true, indeterminate: true });
   setVersionDownloadProgressUi({
     visible: true,
@@ -1367,6 +1379,7 @@ async function loadVersionInfo() {
           await handoffUpdateToFullscreen(pickReleaseDownloadUrl(latestRelease), 'zipball');
           return;
         }
+        setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
         setVersionDownloadCompletionUi({
           reloadRequired: true,
           fileCount: Number(pendingReload?.fileCount) > 0 ? Number(pendingReload.fileCount) : null,
