@@ -56,7 +56,20 @@ const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
 const VERSION_PENDING_RELOAD_KEY = 'pendingUpdateReload';
 const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
+const versionDownloadFilenameRequests = new Map();
 let versionRefreshCountdownTimer = null;
+
+function handleVersionDownloadFilename(item, suggest) {
+  const request = Array.from(versionDownloadFilenameRequests.values()).find((entry) => (
+    entry.downloadId === item?.id || entry.url === String(item?.url || '')
+  ));
+  if (!request) return;
+  suggest({ filename: request.path, conflictAction: 'overwrite' });
+}
+
+if (typeof chrome !== 'undefined' && chrome.downloads?.onDeterminingFilename) {
+  chrome.downloads.onDeterminingFilename.addListener(handleVersionDownloadFilename);
+}
 
 function cancelVersionRefreshCountdown() {
   if (versionRefreshCountdownTimer) clearInterval(versionRefreshCountdownTimer);
@@ -503,22 +516,43 @@ function setVersionDownloadProgressUi({
     if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
     if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
   }
+  if (phase === 'finished' || phase === 'failed') setVersionDownloadBar({ visible: false });
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
   if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件...');
   if (statusEl) statusEl.textContent = phase === 'finished' ? '' : String(status || '下载中...');
 }
 
+function setVersionDownloadBar({ visible = true, percent = 0, indeterminate = false } = {}) {
+  const container = document.getElementById('version-download-progress');
+  const bar = document.getElementById('version-download-progress-bar');
+  if (!(container instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
+  container.style.display = visible ? '' : 'none';
+  container.classList.toggle('indeterminate', visible && indeterminate);
+  if (!visible) return;
+  if (indeterminate) {
+    container.removeAttribute('aria-valuenow');
+    return;
+  }
+  const normalizedPercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  bar.style.width = `${normalizedPercent}%`;
+  container.setAttribute('aria-valuenow', String(Math.round(normalizedPercent)));
+}
+
 function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion } = {}) {
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
+  const writtenFileCount = Math.max(0, Number(fileCount) || 0);
+  const reloadBody = writtenFileCount > 0
+    ? `已覆盖写入 ${writtenFileCount} 个文件。必须到「扩展管理」页面**重新加载**扩展。`
+    : '必须到「扩展管理」页面**重新加载**扩展。';
   modal.dataset.locked = reloadRequired ? '1' : '0';
   setVersionDownloadProgressUi({
     visible: true,
     status: '已完成',
     title: reloadRequired ? '更新文件已覆盖解压' : '更新已完成，刷新页面生效',
     body: reloadRequired
-      ? `已覆盖写入 ${Number(fileCount || 0)} 个文件。必须到「扩展管理」页面**重新加载**扩展。`
+      ? reloadBody
       : `已更新到 ${String(displayVersion || versionButtonLatestDisplayVersion || versionButtonLatestVersion)}，刷新页面后生效。`,
     phase: 'finished'
   });
@@ -705,7 +739,7 @@ async function downloadBlobToUpdatePath(bytes, relativePath) {
     };
     const cleanup = () => {
       chrome.downloads.onChanged.removeListener(onChanged);
-      chrome.downloads.onDeterminingFilename.removeListener(onDeterminingFilename);
+      versionDownloadFilenameRequests.delete(blobUrl);
       if (timeoutId) clearTimeout(timeoutId);
       if (keepHintTimer) clearTimeout(keepHintTimer);
       if (interruptedCheckTimer) clearTimeout(interruptedCheckTimer);
@@ -756,14 +790,9 @@ async function downloadBlobToUpdatePath(bytes, relativePath) {
         }, 800);
       }
     };
-    const onDeterminingFilename = (item, suggest) => {
-      const matchesCurrentDownload = item?.id === downloadId
-        || (!Number.isInteger(downloadId) && String(item?.url || '') === blobUrl);
-      if (!matchesCurrentDownload) return;
-      suggest({ filename: downloadPath, conflictAction: 'overwrite' });
-    };
     chrome.downloads.onChanged.addListener(onChanged);
-    chrome.downloads.onDeterminingFilename.addListener(onDeterminingFilename);
+    const filenameRequest = { url: blobUrl, path: downloadPath, downloadId: null };
+    versionDownloadFilenameRequests.set(blobUrl, filenameRequest);
     chrome.downloads.download({
       url: blobUrl,
       filename: downloadPath,
@@ -776,6 +805,7 @@ async function downloadBlobToUpdatePath(bytes, relativePath) {
         return;
       }
       downloadId = id;
+      filenameRequest.downloadId = id;
       if (isJavaScriptFile) keepHintTimer = setTimeout(showKeepHint, 2500);
       timeoutId = setTimeout(() => {
         finish(new Error(`写入文件超时：${relativePath}`));
@@ -788,6 +818,7 @@ async function fetchUpdateArchiveWithProgress(url) {
   const controller = new AbortController();
   let idleTimer = null;
   const startedAt = Date.now();
+  setVersionDownloadBar({ visible: true, indeterminate: true });
   const resetIdleTimeout = () => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => controller.abort('timeout'), 30000);
@@ -808,8 +839,10 @@ async function fetchUpdateArchiveWithProgress(url) {
     clearInterval(connectingTimer);
     if (!response.ok) throw new Error(`下载更新压缩包失败（HTTP ${response.status}）`);
     const total = Math.max(0, Number(response.headers.get('content-length') || 0));
+    setVersionDownloadBar({ visible: true, percent: 0, indeterminate: total <= 0 });
     if (!response.body?.getReader) {
       const bytes = new Uint8Array(await response.arrayBuffer());
+      setVersionDownloadBar({ visible: true, percent: 100 });
       setVersionDownloadProgressUi({ visible: true, status: `100% · ${formatDownloadBytes(bytes.byteLength)}`, title: '正在下载更新压缩包', body: '更新压缩包下载完成，正在准备覆盖解压。', phase: 'downloading' });
       return bytes;
     }
@@ -824,6 +857,7 @@ async function fetchUpdateArchiveWithProgress(url) {
       chunks.push(value);
       received += value.byteLength;
       const percent = total > 0 ? Math.min(100, Math.floor((received / total) * 100)) : 0;
+      setVersionDownloadBar({ visible: true, percent, indeterminate: total <= 0 });
       setVersionDownloadProgressUi({
         visible: true,
         status: total > 0
@@ -834,6 +868,7 @@ async function fetchUpdateArchiveWithProgress(url) {
         phase: 'downloading'
       });
     }
+    setVersionDownloadBar({ visible: true, percent: 100 });
     const bytes = new Uint8Array(received);
     let offset = 0;
     chunks.forEach((chunk) => {
@@ -901,6 +936,7 @@ function selectUpdateArchiveFiles(files, updateRule) {
 }
 
 async function extractUpdateArchiveToDownloads(archiveBytes, updateRule = null) {
+  setVersionDownloadBar({ visible: true, percent: 0 });
   setVersionDownloadProgressUi({
     visible: true,
     status: '正在解析更新压缩包…',
@@ -921,16 +957,46 @@ async function extractUpdateArchiveToDownloads(archiveBytes, updateRule = null) 
   const files = selectUpdateArchiveFiles(archiveFiles, updateRule);
   if (!files.length) throw new Error('更新压缩包中没有可写入文件');
 
-  for (let index = 0; index < files.length; index += 1) {
-    const item = files[index];
+  const nonJavaScriptFiles = files.filter((item) => !/\.js$/i.test(String(item.path || '')));
+  const javaScriptFiles = files.filter((item) => /\.js$/i.test(String(item.path || '')));
+  let completedCount = 0;
+
+  if (nonJavaScriptFiles.length) {
     setVersionDownloadProgressUi({
       visible: true,
-      status: `正在覆盖：${index + 1} / ${files.length} · ${item.path}`,
+      status: `正在并行覆盖：0 / ${nonJavaScriptFiles.length}`,
       title: '正在覆盖解压',
       body: '正在将更新文件覆盖到下载目录/BJTU-course-assistant/。',
       phase: 'extracting'
     });
+    const results = await Promise.allSettled(nonJavaScriptFiles.map(async (item) => {
+      await downloadBlobToUpdatePath(await inflateZipEntry(item.entry), item.path);
+      completedCount += 1;
+      setVersionDownloadBar({ visible: true, percent: (completedCount / files.length) * 100 });
+      setVersionDownloadProgressUi({
+        visible: true,
+        status: `正在并行覆盖：${completedCount} / ${nonJavaScriptFiles.length} · ${item.path}`,
+        title: '正在覆盖解压',
+        body: '正在将更新文件覆盖到下载目录/BJTU-course-assistant/。',
+        phase: 'extracting'
+      });
+    }));
+    const failedResult = results.find((result) => result.status === 'rejected');
+    if (failedResult) throw failedResult.reason;
+  }
+
+  for (let index = 0; index < javaScriptFiles.length; index += 1) {
+    const item = javaScriptFiles[index];
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: `正在覆盖 JavaScript：${index + 1} / ${javaScriptFiles.length} · ${item.path}`,
+      title: '正在覆盖解压',
+      body: '正在串行覆盖 JavaScript 文件；如浏览器拦截，请点击“保留”。',
+      phase: 'extracting'
+    });
     await downloadBlobToUpdatePath(await inflateZipEntry(item.entry), item.path);
+    completedCount += 1;
+    setVersionDownloadBar({ visible: true, percent: (completedCount / files.length) * 100 });
   }
   return files.length;
 }
@@ -950,6 +1016,7 @@ async function downloadVersionByUrlWithProgress(url) {
     name: versionButtonLatestDisplayVersion,
     reload: reloadRequired,
     force: forcedUpdate,
+    fileCount,
     appliedAt: Date.now()
   };
   if (reloadRequired) {
@@ -983,6 +1050,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
 
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
+  setVersionDownloadBar({ visible: true, indeterminate: true });
   setVersionDownloadProgressUi({
     visible: true,
     status: '正在连接下载源…',
@@ -1280,7 +1348,11 @@ async function loadVersionInfo() {
           await handoffUpdateToFullscreen(pickReleaseDownloadUrl(latestRelease), 'zipball');
           return;
         }
-        setVersionDownloadCompletionUi({ reloadRequired: true, fileCount: 0, displayVersion: latestDisplayVersion });
+        setVersionDownloadCompletionUi({
+          reloadRequired: true,
+          fileCount: Number(pendingReload?.fileCount) > 0 ? Number(pendingReload.fileCount) : null,
+          displayVersion: latestDisplayVersion
+        });
         showUpdateDownloadCompleteNotification();
         return;
       }

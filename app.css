@@ -1015,6 +1015,18 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             margin-top: 10px;
             gap: 8px;
         }
+        .version-download-progress {
+            margin-top: 10px;
+        }
+        .version-download-progress.indeterminate .progress-bar {
+            width: 35% !important;
+            transition: none;
+            animation: version-download-progress-indeterminate 1s linear infinite;
+        }
+        @keyframes version-download-progress-indeterminate {
+            from { transform: translateX(-110%); }
+            to { transform: translateX(290%); }
+        }
         .version-download-actions > .btn {
             flex: 1 1 0;
             width: auto;
