@@ -569,7 +569,7 @@ function normalizeUpdateEntryPath(name, commonRoot) {
   return parts.join('/');
 }
 
-function downloadBlobToUpdatePath(bytes, relativePath) {
+function downloadBlobToUpdatePath(bytes, relativePath, insideUpdateDirectory = true) {
   return new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
     let downloadId = null;
@@ -605,9 +605,10 @@ function downloadBlobToUpdatePath(bytes, relativePath) {
       }
     };
     chrome.downloads.onChanged.addListener(onChanged);
+    const downloadPath = insideUpdateDirectory ? `BJTU-course-assistant/${relativePath}` : relativePath;
     chrome.downloads.download({
       url: blobUrl,
-      filename: `BJTU-course-assistant/${relativePath}`,
+      filename: downloadPath,
       saveAs: false,
       conflictAction: 'overwrite'
     }, (id) => {
@@ -784,7 +785,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
   if (typeof chrome === 'undefined' || !chrome.downloads) throw new Error('downloads API 不可用');
 
   const archiveBytes = await fetchUpdateArchiveWithProgress(finalUrl);
-  await downloadBlobToUpdatePath(archiveBytes, fileName);
+  await downloadBlobToUpdatePath(archiveBytes, fileName, false);
   const fileCount = await extractUpdateArchiveToDownloads(archiveBytes, versionButtonLatestUpdate);
   const reloadRequired = versionButtonLatestReload;
   const forcedUpdate = versionButtonLatestForce;
@@ -817,10 +818,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
   if (reloadRequired) showUpdateDownloadCompleteNotification();
 }
 
-function buildVersionDownloadFileName(versionText = '', includeVersion = true) {
-  if (!includeVersion) return 'BJTU 课程助手.zip';
-  const normalized = normalizeVersionText(versionText).replace(/[^0-9.]/g, '');
-  if (normalized) return `BJTU 课程助手 ${normalized}.zip`;
+function buildVersionDownloadFileName() {
   return 'BJTU 课程助手.zip';
 }
 
@@ -845,7 +843,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '') {
     || (primaryUrl === VERSION_DOWNLOAD_URL ? 'master' : 'zipball');
   versionDownloadSelectedSource = selectedSource;
   versionDownloadSelectedUrl = primaryUrl;
-  const fileName = buildVersionDownloadFileName(versionButtonLatestVersion, selectedSource !== 'master');
+  const fileName = buildVersionDownloadFileName();
 
   try {
     await downloadVersionByUrlWithProgress(primaryUrl, fileName);
