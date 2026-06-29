@@ -456,7 +456,7 @@ function ensureVersionDownloadModal() {
   modal.addEventListener('mouseup', (e) => {
     if (e.target === modal && modal.dataset.mdownMask === '1') {
       if (modal.dataset.locked !== '1') {
-        if (versionDownloadPhase === 'finished') {
+        if (versionDownloadPhase === 'finished' || versionDownloadPhase === 'failed') {
           cancelVersionRefreshCountdown();
           modal.style.display = 'none';
         } else if (versionDownloadPhase === 'downloading') {
@@ -474,7 +474,7 @@ function ensureVersionDownloadModal() {
 function setVersionDownloadRetryVisible(visible) {
   const actions = document.getElementById('version-download-actions');
   if (actions instanceof HTMLElement) {
-    actions.style.display = visible ? 'block' : 'none';
+    actions.style.display = visible ? 'flex' : 'none';
   }
 }
 
@@ -514,6 +514,8 @@ function setVersionDownloadProgressUi({
   const refreshBtn = document.getElementById('version-download-refresh');
   const closeBtn = document.getElementById('version-download-close');
 
+  if (phase === 'downloading' || phase === 'failed') modal.dataset.locked = '0';
+
   if (minBtn instanceof HTMLButtonElement) {
     minBtn.style.display = versionDownloadPhase === 'downloading' ? 'inline-block' : 'none';
   }
@@ -522,6 +524,7 @@ function setVersionDownloadProgressUi({
     if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
     if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
   }
+  if (phase === 'failed' && closeBtn instanceof HTMLElement) closeBtn.style.display = '';
   if (phase === 'finished' || phase === 'failed') setVersionDownloadBar({ visible: false });
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');

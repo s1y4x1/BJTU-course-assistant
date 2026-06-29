@@ -1063,13 +1063,6 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .version-download-retry-btn:hover {
             background: #1e40af;
         }
-        .version-download-close-btn {
-            background: #64748b;
-            color: #fff;
-        }
-        .version-download-close-btn:hover {
-            background: #475569;
-        }
         .version-notice-download-btn {
             background: #1e3a8a;
             width: 100%;
