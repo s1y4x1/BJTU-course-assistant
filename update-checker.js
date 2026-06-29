@@ -634,12 +634,64 @@ function normalizeUpdateEntryPath(name, commonRoot) {
   return parts.join('/');
 }
 
-function downloadBlobToUpdatePath(bytes, relativePath) {
+function searchChromeDownloads(query) {
+  return new Promise((resolve) => {
+    chrome.downloads.search(query, (items) => {
+      if (chrome.runtime.lastError) {
+        resolve([]);
+        return;
+      }
+      resolve(Array.isArray(items) ? items : []);
+    });
+  });
+}
+
+function removeChromeDownloadFile(downloadId) {
+  return new Promise((resolve) => {
+    chrome.downloads.removeFile(downloadId, () => {
+      void chrome.runtime.lastError;
+      resolve();
+    });
+  });
+}
+
+function eraseChromeDownloadRecord(downloadId) {
+  return new Promise((resolve) => {
+    chrome.downloads.erase({ id: downloadId }, () => {
+      void chrome.runtime.lastError;
+      resolve();
+    });
+  });
+}
+
+function isSameUpdateDownloadPath(filename, relativePath) {
+  const normalizedFilename = String(filename || '').replace(/\\/g, '/').toLowerCase();
+  const normalizedRelativePath = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
+  return normalizedFilename.endsWith(`/bjtu-course-assistant/${normalizedRelativePath}`);
+}
+
+async function clearInterruptedUpdateDownloadRecords(relativePath) {
+  const interrupted = await searchChromeDownloads({ state: 'interrupted' });
+  const matches = interrupted.filter((item) => Number.isInteger(item?.id)
+    && isSameUpdateDownloadPath(item?.filename, relativePath));
+  for (const item of matches) {
+    await removeChromeDownloadFile(item.id);
+    await eraseChromeDownloadRecord(item.id);
+  }
+}
+
+async function downloadBlobToUpdatePath(bytes, relativePath) {
+  await clearInterruptedUpdateDownloadRecords(relativePath);
   return new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+    const downloadPath = `BJTU-course-assistant/${relativePath}`;
     let downloadId = null;
     let timeoutId = null;
     let keepHintTimer = null;
+    let interruptedCheckTimer = null;
+    let settled = false;
+    const startedAt = Date.now();
+    const expectedBytes = Number(bytes?.byteLength) || 0;
     const isJavaScriptFile = /\.js$/i.test(String(relativePath || ''));
     const showKeepHint = () => {
       if (!isJavaScriptFile) return;
@@ -653,24 +705,65 @@ function downloadBlobToUpdatePath(bytes, relativePath) {
     };
     const cleanup = () => {
       chrome.downloads.onChanged.removeListener(onChanged);
+      chrome.downloads.onDeterminingFilename.removeListener(onDeterminingFilename);
       if (timeoutId) clearTimeout(timeoutId);
       if (keepHintTimer) clearTimeout(keepHintTimer);
+      if (interruptedCheckTimer) clearTimeout(interruptedCheckTimer);
       URL.revokeObjectURL(blobUrl);
+    };
+    const finish = (error = null, completedId = downloadId) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve(completedId);
+    };
+    const reconcileInterruptedDownload = async (delta) => {
+      const currentItems = await searchChromeDownloads({ id: downloadId });
+      const current = currentItems[0] || null;
+      if (current?.state === 'complete') {
+        finish(null, current.id);
+        return;
+      }
+      const recentItems = await searchChromeDownloads({ orderBy: ['-startTime'], limit: 20 });
+      const replacement = recentItems.find((item) => {
+        const startTime = Date.parse(String(item?.startTime || ''));
+        const received = Number(item?.bytesReceived) || 0;
+        return item?.state === 'complete'
+          && Number.isFinite(startTime) && startTime >= startedAt - 1000
+          && isSameUpdateDownloadPath(item?.filename, relativePath)
+          && (expectedBytes === 0 || received >= expectedBytes);
+      });
+      if (replacement) {
+        finish(null, replacement.id);
+        return;
+      }
+      const reason = String(current?.error || delta?.error?.current || '').trim();
+      finish(new Error(`覆盖文件失败：${relativePath}${reason ? `（${reason}）` : ''}`));
     };
     const onChanged = (delta) => {
       if (delta.id !== downloadId) return;
       if (isJavaScriptFile && delta.danger?.current && delta.danger.current !== 'safe') showKeepHint();
       if (!delta.state?.current) return;
       if (delta.state.current === 'complete') {
-        cleanup();
-        resolve(downloadId);
+        finish(null, downloadId);
       } else if (delta.state.current === 'interrupted') {
-        cleanup();
-        reject(new Error(`覆盖文件失败：${relativePath}`));
+        if (interruptedCheckTimer) return;
+        interruptedCheckTimer = setTimeout(() => {
+          reconcileInterruptedDownload(delta).catch(() => {
+            finish(new Error(`覆盖文件失败：${relativePath}`));
+          });
+        }, 800);
       }
     };
+    const onDeterminingFilename = (item, suggest) => {
+      const matchesCurrentDownload = item?.id === downloadId
+        || (!Number.isInteger(downloadId) && String(item?.url || '') === blobUrl);
+      if (!matchesCurrentDownload) return;
+      suggest({ filename: downloadPath, conflictAction: 'overwrite' });
+    };
     chrome.downloads.onChanged.addListener(onChanged);
-    const downloadPath = `BJTU-course-assistant/${relativePath}`;
+    chrome.downloads.onDeterminingFilename.addListener(onDeterminingFilename);
     chrome.downloads.download({
       url: blobUrl,
       filename: downloadPath,
@@ -679,15 +772,13 @@ function downloadBlobToUpdatePath(bytes, relativePath) {
     }, (id) => {
       const error = chrome.runtime.lastError;
       if (error || !Number.isInteger(id)) {
-        cleanup();
-        reject(new Error(error?.message || `无法写入文件：${relativePath}`));
+        finish(new Error(error?.message || `无法写入文件：${relativePath}`));
         return;
       }
       downloadId = id;
       if (isJavaScriptFile) keepHintTimer = setTimeout(showKeepHint, 2500);
       timeoutId = setTimeout(() => {
-        cleanup();
-        reject(new Error(`写入文件超时：${relativePath}`));
+        finish(new Error(`写入文件超时：${relativePath}`));
       }, 120000);
     });
   });
