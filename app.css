@@ -1013,6 +1013,11 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .version-download-actions {
             display: none;
             margin-top: 10px;
+            gap: 8px;
+        }
+        .version-download-actions > .btn {
+            flex: 1 1 0;
+            width: auto;
         }
         .version-download-retry-btn {
             background: #1e3a8a;

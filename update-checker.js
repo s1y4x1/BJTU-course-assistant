@@ -45,6 +45,7 @@ let versionDownloadPhase = 'downloading';
 let versionIgnoredTag = '';
 let versionDownloadSelectedSource = 'zipball';
 let versionDownloadSelectedUrl = '';
+let versionDownloadFullExtraction = false;
 let versionButtonLatestReload = true;
 let versionButtonLatestForce = false;
 let versionButtonLatestUpdate = null;
@@ -54,6 +55,43 @@ const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
 const VERSION_PENDING_RELOAD_KEY = 'pendingUpdateReload';
+const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
+let versionRefreshCountdownTimer = null;
+
+function cancelVersionRefreshCountdown() {
+  if (versionRefreshCountdownTimer) clearInterval(versionRefreshCountdownTimer);
+  versionRefreshCountdownTimer = null;
+}
+
+function removeAutoUpdateQueryParameter() {
+  try {
+    const url = new URL(location.href);
+    if (!url.searchParams.has('autoUpdate')) return;
+    url.searchParams.delete('autoUpdate');
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  } catch {}
+}
+
+function startVersionRefreshCountdown() {
+  const button = document.getElementById('version-download-refresh');
+  if (!(button instanceof HTMLButtonElement)) return;
+  cancelVersionRefreshCountdown();
+  const refreshAt = Date.now() + 2000;
+  button.style.display = '';
+  const update = () => {
+    const seconds = Math.max(0, Math.ceil((refreshAt - Date.now()) / 1000));
+    if (seconds > 0) {
+      button.textContent = `刷新（${seconds} 秒）`;
+      return;
+    }
+    cancelVersionRefreshCountdown();
+    button.textContent = '刷新';
+    removeAutoUpdateQueryParameter();
+    location.reload();
+  };
+  update();
+  versionRefreshCountdownTimer = setInterval(update, 100);
+}
 
 function isVersionDownloadingNow() {
   return !!versionDownloadInProgress && String(versionDownloadPhase || '').trim() === 'downloading';
@@ -98,6 +136,16 @@ function openVersionDownloadProgressModal() {
   if (!modal) return;
   versionDownloadMinimized = false;
   modal.style.display = 'flex';
+}
+
+async function handoffUpdateToFullscreen(url, source, fullExtraction = false) {
+  await setLocal(VERSION_FULLSCREEN_REQUEST_KEY, {
+    url: String(url || '').trim(),
+    source: String(source || 'zipball').trim(),
+    fullExtraction: fullExtraction === true,
+    requestedAt: Date.now()
+  });
+  await chrome.runtime.sendMessage({ type: 'OPEN_APP', payload: { autoUpdate: true } });
 }
 
 function parseInlineMarkdown(text) {
@@ -244,19 +292,17 @@ function ensureVersionNoticeModal() {
       const selectedSource = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
       const selectedUrl = selectedSource === 'zipball' && versionButtonLatestZipballUrl
         ? versionButtonLatestZipballUrl : VERSION_DOWNLOAD_URL;
+      const fullExtraction = versionButtonMode === 'latest' && selectedSource === 'zipball';
       if (typeof popupMode !== 'undefined' && popupMode) {
-        startVersionDownloadWithFallback(selectedUrl, selectedSource).catch(() => {
-          versionDownloadInProgress = false;
-          syncVersionNoticeDownloadButton();
-          showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
-        });
+        handoffUpdateToFullscreen(selectedUrl, selectedSource, fullExtraction)
+          .catch(() => showToast('无法打开全屏更新页面', 'error', 2600));
         return;
       }
       if (isVersionDownloadingNow()) {
         openVersionDownloadProgressModal();
         return;
       }
-      startVersionDownloadWithFallback(selectedUrl, selectedSource).catch(() => {
+      startVersionDownloadWithFallback(selectedUrl, selectedSource, fullExtraction).catch(() => {
         versionDownloadInProgress = false;
         syncVersionNoticeDownloadButton();
         showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
@@ -351,7 +397,11 @@ function ensureVersionDownloadModal() {
   const retryBtn = document.getElementById('version-download-retry');
   if (retryBtn instanceof HTMLButtonElement) {
     retryBtn.addEventListener('click', () => {
-      startVersionDownloadWithFallback(versionDownloadSelectedUrl, versionDownloadSelectedSource).catch(() => {
+      startVersionDownloadWithFallback(
+        versionDownloadSelectedUrl,
+        versionDownloadSelectedSource,
+        versionDownloadFullExtraction
+      ).catch(() => {
         versionDownloadInProgress = false;
         showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
       });
@@ -365,7 +415,16 @@ function ensureVersionDownloadModal() {
   if (closeDownloadBtn instanceof HTMLButtonElement) {
     closeDownloadBtn.addEventListener('click', () => {
       if (modal.dataset.locked === '1') return;
+      cancelVersionRefreshCountdown();
       modal.style.display = 'none';
+    });
+  }
+  const refreshBtn = document.getElementById('version-download-refresh');
+  if (refreshBtn instanceof HTMLButtonElement) {
+    refreshBtn.addEventListener('click', () => {
+      cancelVersionRefreshCountdown();
+      removeAutoUpdateQueryParameter();
+      location.reload();
     });
   }
   const minBtn = document.getElementById('version-download-minimize');
@@ -433,6 +492,7 @@ function setVersionDownloadProgressUi({
   const statusEl = document.getElementById('version-download-status');
   const minBtn = document.getElementById('version-download-minimize');
   const openExtensionsBtn = document.getElementById('version-download-open-extensions');
+  const refreshBtn = document.getElementById('version-download-refresh');
   const closeBtn = document.getElementById('version-download-close');
 
   if (minBtn instanceof HTMLButtonElement) {
@@ -440,6 +500,7 @@ function setVersionDownloadProgressUi({
   }
   if (phase !== 'finished') {
     if (openExtensionsBtn instanceof HTMLElement) openExtensionsBtn.style.display = 'none';
+    if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
     if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
   }
 
@@ -463,12 +524,16 @@ function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVers
   });
   const retryBtn = document.getElementById('version-download-retry');
   const openExtensionsBtn = document.getElementById('version-download-open-extensions');
+  const refreshBtn = document.getElementById('version-download-refresh');
   const closeBtn = document.getElementById('version-download-close');
   const actions = document.getElementById('version-download-actions');
   if (retryBtn instanceof HTMLElement) retryBtn.style.display = 'none';
   if (openExtensionsBtn instanceof HTMLElement) openExtensionsBtn.style.display = reloadRequired ? '' : 'none';
+  if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = reloadRequired ? 'none' : '';
   if (closeBtn instanceof HTMLElement) closeBtn.style.display = reloadRequired ? 'none' : '';
   if (actions instanceof HTMLElement) actions.style.display = 'flex';
+  if (reloadRequired) cancelVersionRefreshCountdown();
+  else startVersionRefreshCountdown();
 }
 
 function parseUpdateSourceTime(value) {
@@ -569,7 +634,7 @@ function normalizeUpdateEntryPath(name, commonRoot) {
   return parts.join('/');
 }
 
-function downloadBlobToUpdatePath(bytes, relativePath, insideUpdateDirectory = true) {
+function downloadBlobToUpdatePath(bytes, relativePath) {
   return new Promise((resolve, reject) => {
     const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
     let downloadId = null;
@@ -605,7 +670,7 @@ function downloadBlobToUpdatePath(bytes, relativePath, insideUpdateDirectory = t
       }
     };
     chrome.downloads.onChanged.addListener(onChanged);
-    const downloadPath = insideUpdateDirectory ? `BJTU-course-assistant/${relativePath}` : relativePath;
+    const downloadPath = `BJTU-course-assistant/${relativePath}`;
     chrome.downloads.download({
       url: blobUrl,
       filename: downloadPath,
@@ -779,14 +844,14 @@ async function extractUpdateArchiveToDownloads(archiveBytes, updateRule = null) 
   return files.length;
 }
 
-async function downloadVersionByUrlWithProgress(url, fileName) {
+async function downloadVersionByUrlWithProgress(url) {
   const finalUrl = String(url || '').trim();
   if (!finalUrl) throw new Error('下载链接为空');
   if (typeof chrome === 'undefined' || !chrome.downloads) throw new Error('downloads API 不可用');
 
   const archiveBytes = await fetchUpdateArchiveWithProgress(finalUrl);
-  await downloadBlobToUpdatePath(archiveBytes, fileName, false);
-  const fileCount = await extractUpdateArchiveToDownloads(archiveBytes, versionButtonLatestUpdate);
+  const updateRule = versionDownloadFullExtraction ? null : versionButtonLatestUpdate;
+  const fileCount = await extractUpdateArchiveToDownloads(archiveBytes, updateRule);
   const reloadRequired = versionButtonLatestReload;
   const forcedUpdate = versionButtonLatestForce;
   const appliedRecord = {
@@ -818,11 +883,7 @@ async function downloadVersionByUrlWithProgress(url, fileName) {
   if (reloadRequired) showUpdateDownloadCompleteNotification();
 }
 
-function buildVersionDownloadFileName() {
-  return 'BJTU 课程助手.zip';
-}
-
-async function startVersionDownloadWithFallback(downloadUrl, source = '') {
+async function startVersionDownloadWithFallback(downloadUrl, source = '', fullExtraction = false) {
   if (versionDownloadInProgress) {
     openVersionDownloadProgressModal();
     return;
@@ -843,10 +904,9 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '') {
     || (primaryUrl === VERSION_DOWNLOAD_URL ? 'master' : 'zipball');
   versionDownloadSelectedSource = selectedSource;
   versionDownloadSelectedUrl = primaryUrl;
-  const fileName = buildVersionDownloadFileName();
-
+  versionDownloadFullExtraction = fullExtraction === true;
   try {
-    await downloadVersionByUrlWithProgress(primaryUrl, fileName);
+    await downloadVersionByUrlWithProgress(primaryUrl);
     // 成功 UI 已在 downloadVersionByUrlWithProgress 内部处理
   } catch (err) {
     setVersionDownloadProgressUi({
@@ -1041,6 +1101,20 @@ async function fetchFallbackLatestRelease() {
 }
 
 async function loadVersionInfo() {
+  const isPopupPage = typeof popupMode !== 'undefined' && popupMode;
+  const autoUpdateRequested = !isPopupPage && (() => {
+    try {
+      return new URL(location.href).searchParams.get('autoUpdate') === '1';
+    } catch {
+      return false;
+    }
+  })();
+  let fullscreenUpdateRequest = null;
+  if (autoUpdateRequested) {
+    fullscreenUpdateRequest = await getLocal(VERSION_FULLSCREEN_REQUEST_KEY, null);
+    await setLocal(VERSION_FULLSCREEN_REQUEST_KEY, null);
+    removeAutoUpdateQueryParameter();
+  }
   const manifestVersion = String(chrome.runtime.getManifest().version || '').trim();
   let appliedWithoutReload = await getLocal(VERSION_APPLIED_WITHOUT_RELOAD_KEY, null);
   let pendingReload = await getLocal(VERSION_PENDING_RELOAD_KEY, null);
@@ -1082,6 +1156,15 @@ async function loadVersionInfo() {
         force: latestForce,
         update: latestUpdate
       });
+      const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
+      const requestIsFresh = autoUpdateRequested && requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
+      if (requestIsFresh) {
+        await startVersionDownloadWithFallback(
+          String(fullscreenUpdateRequest?.url || '').trim() || pickReleaseDownloadUrl(latestRelease),
+          String(fullscreenUpdateRequest?.source || '').trim() || 'zipball',
+          fullscreenUpdateRequest?.fullExtraction === true
+        );
+      }
       return;
     }
     if (cmp > 0) {
@@ -1102,13 +1185,41 @@ async function loadVersionInfo() {
       const pendingSameForcedReload = latestReload && latestForce
         && normalizeVersionText(pendingReload?.ver) === normalizeVersionText(latestTag);
       if (pendingSameForcedReload) {
+        if (isPopupPage) {
+          await handoffUpdateToFullscreen(pickReleaseDownloadUrl(latestRelease), 'zipball');
+          return;
+        }
         setVersionDownloadCompletionUi({ reloadRequired: true, fileCount: 0, displayVersion: latestDisplayVersion });
         showUpdateDownloadCompleteNotification();
         return;
       }
       if (latestForce) {
+        if (isPopupPage) {
+          await handoffUpdateToFullscreen(pickReleaseDownloadUrl(latestRelease), 'zipball');
+          return;
+        }
         versionNoticeShownVersion = latestTag;
-        await startVersionDownloadWithFallback(pickReleaseDownloadUrl(latestRelease), 'zipball');
+        const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
+        const requestIsFresh = autoUpdateRequested && requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
+        const requestedUrl = requestIsFresh ? String(fullscreenUpdateRequest?.url || '').trim() : '';
+        const requestedSource = requestIsFresh ? String(fullscreenUpdateRequest?.source || '').trim() : '';
+        await startVersionDownloadWithFallback(
+          requestedUrl || pickReleaseDownloadUrl(latestRelease),
+          requestedSource || 'zipball',
+          requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
+        );
+        return;
+      }
+      if (autoUpdateRequested) {
+        const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
+        const requestIsFresh = requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
+        const requestedUrl = requestIsFresh ? String(fullscreenUpdateRequest?.url || '').trim() : '';
+        const requestedSource = requestIsFresh ? String(fullscreenUpdateRequest?.source || '').trim() : '';
+        await startVersionDownloadWithFallback(
+          requestedUrl || pickReleaseDownloadUrl(latestRelease),
+          requestedSource || 'zipball',
+          requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
+        );
         return;
       }
       const ignoredSameVersion = normalizeVersionText(versionIgnoredTag) === normalizeVersionText(latestTag);
