@@ -658,7 +658,7 @@ function showVersionUpdateDirectoryRequired(downloadUrl, source, fullExtraction)
     visible: true,
     status: '请勿选择包含其他文件的文件夹',
     title: '选择扩展更新目录',
-    body: '请选择专门用于 BJTU 课程助手的扩展安装目录。不要选择“下载”“桌面”等根目录，也不要选择包含个人文件或其他项目的文件夹；全量更新可能清空所选目录。扩展只会写入更新包中的代码与资源，不会在该目录保存 ZIP、缓存、配置、标记或临时文件。',
+    body: '请选择专门用于 BJTU 课程助手的扩展安装目录。不要选择「下载」「桌面」等根目录，也不要选择包含个人文件或其他项目的文件夹；全量更新可能清空所选目录。扩展只会写入更新包中的代码与资源，不会在该目录保存 ZIP、缓存、配置、标记或临时文件。',
     phase: 'directory'
   });
   const modal = document.getElementById('version-download-modal');
