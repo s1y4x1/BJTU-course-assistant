@@ -509,13 +509,15 @@ async function triggerInitialPlatformLoads() {
   if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
   if (isPlatformEnabled('mrjzy')) triggerExternalPlatformLoad('mrjzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
+  let veStartupResult = null;
   if (isPlatformEnabled('ve')) {
-    await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: false });
+    veStartupResult = await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
   } else {
     window.currentVeCourseList = [];
     renderCourseList([]);
   }
   if (isPlatformEnabled('mooc')) triggerExternalPlatformLoad('mooc', false);
+  return veStartupResult;
 }
 
 function rematchExternalByVeCourses() {
@@ -11974,9 +11976,9 @@ function setupSavedUploadsUi() {
     showToast('账号列表初始化失败：' + String(error?.message || error), 'error', 4000);
   }
 
-  // Start enabled-platform and resource-space loading concurrently.
+  // VE startup owns both course and resource-space loading so account synchronization
+  // cannot invalidate an independent resource request and leave its loading UI stale.
   const startupPlatformLoadPromise = triggerInitialPlatformLoads();
-  const startupResourceSpacePromise = loadResourceSpaceForCurrentAccount().catch(() => {});
 
   await loadCurrentXqOptions().catch(() => {});
 
@@ -11997,10 +11999,7 @@ function setupSavedUploadsUi() {
     }
   }
   adjustParallelLimitWidth();
-  const veStartupAccountInfoPromise = isPlatformEnabled('ve')
-    ? startupPlatformLoadPromise
-    : Promise.resolve(null);
-  const settled = await Promise.allSettled([veStartupAccountInfoPromise, startupPlatformLoadPromise, startupResourceSpacePromise]);
+  const settled = await Promise.allSettled([startupPlatformLoadPromise]);
   const startupAccountInfo = (settled[0] && settled[0].status === 'fulfilled') ? settled[0].value : null;
   if (startupAccountInfo?.info) {
     setWelcomeMessage(startupAccountInfo.info);
@@ -12019,7 +12018,7 @@ function setupSavedUploadsUi() {
   // 确保 init 完成后的首次账号切换不会被 initialUsernameSet 拦截
   initialUsernameSet = false;
 
-  // startupPlatformLoadPromise and startupResourceSpacePromise already awaited above via `settled`
+  // startupPlatformLoadPromise already includes VE resource-space loading.
 })();
 
 const SEVEN_SEGMENT_MAP = {
