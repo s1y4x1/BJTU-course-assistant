@@ -111,6 +111,14 @@ html[data-color-scheme="dark"] .ve-course-teacher-loading {
   color: #cbd5e1 !important;
 }
 
+html[data-color-scheme="dark"] .ve-course-teacher-loading.warning {
+  color: #fbbf24 !important;
+}
+
+html[data-color-scheme="dark"] .paste-file-label {
+  color: #cbd5e1 !important;
+}
+
 html[data-color-scheme="dark"] .progress-bar-container:not(.result-area *),
 html[data-color-scheme="dark"] .resource-total-progress-wrap .progress-bar-container,
 html[data-color-scheme="dark"] .upload-total-progress-wrap .progress-bar-container {

@@ -4218,7 +4218,7 @@ function renderVeCourseTeachersPopHtml(meta) {
   }
 
   if (meta.permissionDenied) {
-    return '<div style="font-size:12px; color:#d97706;">学生账号无权限</div>';
+    return '<div class="ve-course-teacher-loading warning">学生账号无权限</div>';
   }
 
   if (meta.error) {
