@@ -61,7 +61,7 @@ html[data-color-scheme="dark"] #saved-uploads-section .saved-uploads-list.homewo
   color: #e5e7eb !important;
 }
 
-html[data-color-scheme="dark"] .result-area > [data-rp-id] {
+html[data-color-scheme="dark"] .result-area > [data-rp-id]:not(.file-item) {
   background: #f3e5f5 !important;
 }
 
