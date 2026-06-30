@@ -60,6 +60,34 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             gap: 8px;
             margin: 10px 0 4px;
         }
+        .account-init-quick-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .account-init-fetch-options {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 18px;
+            margin-top: 10px;
+            color: #334155;
+            font-size: 13px;
+        }
+        .account-init-fetch-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .account-init-fetch-options input,
+        .account-init-quick-option input {
+            width: auto;
+            margin: 0;
+        }
         .account-init-actions .btn {
             flex: 1;
         }

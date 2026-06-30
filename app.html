@@ -255,6 +255,14 @@
                 <div class="version-download-title">初始化登录账号列表</div>
             </div>
             <div id="account-init-status" class="account-init-status">正在准备…</div>
+            <div id="account-init-fetch-options" class="account-init-fetch-options" style="display:none;">
+                <label><input id="account-init-fetch-teachers" type="checkbox" checked><span>获取教职工</span></label>
+                <label><input id="account-init-fetch-students" type="checkbox" checked><span>获取学生</span></label>
+            </div>
+            <label id="account-init-quick-option" class="account-init-quick-option" style="display:none;">
+                <input id="account-init-fetch-quick-usernames" type="checkbox">
+                <span>获取账号同时请求极速登录用户名</span>
+            </label>
             <div id="account-init-actions" class="account-init-actions" style="display:none;">
                 <button id="account-init-remote" class="btn" type="button">从平台获取</button>
                 <button id="account-init-import" class="btn" type="button">导入 JSON</button>

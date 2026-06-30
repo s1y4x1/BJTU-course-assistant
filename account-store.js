@@ -180,6 +180,27 @@
     return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
   }
 
+  async function getCredentialAccounts() {
+    const db = await open();
+    const transaction = db.transaction(STORE_NAME);
+    const store = transaction.objectStore(STORE_NAME);
+    return new Promise((resolve, reject) => {
+      const rows = [];
+      const request = store.openCursor();
+      request.onerror = () => reject(request.error || new Error('账号凭据读取失败'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(rows);
+          return;
+        }
+        const record = normalize(cursor.value?.loginName, cursor.value);
+        if (record && (record.password || record.quickUsername)) rows.push(record);
+        cursor.continue();
+      };
+    });
+  }
+
   async function search({ loginName = '', userName = '', limit = 100 } = {}) {
     const loginQuery = String(loginName || '').trim();
     const nameQuery = String(userName || '').trim();
@@ -294,16 +315,19 @@
       else teacherTotal += 1;
     });
     const db = await open();
-    const existingQuickUsernames = new Map();
+    const existingCredentials = new Map();
     try {
-      const quickRows = await getQuickAccounts();
-      quickRows.forEach((row) => {
+      const credentialRows = await getCredentialAccounts();
+      credentialRows.forEach((row) => {
         const loginName = String(row?.loginName || '').trim();
-        const quickUsername = String(row?.quickUsername || '').trim();
-        if (loginName && quickUsername) existingQuickUsernames.set(loginName, quickUsername);
+        if (!loginName) return;
+        existingCredentials.set(loginName, {
+          password: String(row?.password || '').trim(),
+          quickUsername: String(row?.quickUsername || '').trim()
+        });
       });
     } catch {
-      // If reading existing quick bindings fails, continue with incoming data.
+      // If reading existing credentials fails, continue with incoming data.
     }
     let transaction;
     let storedCount = 0;
@@ -339,8 +363,13 @@
         const value = safeSource[key];
         let record = normalize(isArray ? value?.loginName : key, value);
         if (!record) return;
-        if (!record.quickUsername && existingQuickUsernames.has(record.loginName)) {
-          record = { ...record, quickUsername: existingQuickUsernames.get(record.loginName) };
+        const existing = existingCredentials.get(record.loginName);
+        if (existing && (!record.password || !record.quickUsername)) {
+          record = {
+            ...record,
+            password: record.password || existing.password,
+            quickUsername: record.quickUsername || existing.quickUsername
+          };
         }
         store.put(record);
         storedCount += 1;
@@ -378,6 +407,7 @@
     update,
     search,
     getQuickAccounts,
+    getCredentialAccounts,
     clear,
     putAll,
     replaceAll,

@@ -7,16 +7,18 @@
   const ACCOUNT_LIST_WRITING_KEY = 'accountListWriting';
   const ACCOUNT_LIST_SKIPPED_KEY = 'accountListInitializationSkipped';
   const ACCOUNT_LIST_WRITE_LOCK = 'bjtu-account-list-write';
-  const ACCOUNT_LIST_VERSION = 3;
+  const ACCOUNT_LIST_VERSION = 4;
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
   const ACCOUNT_FILE_VERSION = 1;
   const HISTORY_KEY = 'loginAccountHistory';
-  const ADMIN_DEFAULT_PASSWORD = '2737191fe9630464558f634fcb98779f';
+  const ADMIN_QUICK_USERNAME = 'QjQ0M0Y1MUY3OEIyNDU0MA==';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
+  const QUICK_USERNAME_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=570820F5E1FC92605C7CB3FB9872D88E&jrName=';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
+  const QUICK_USERNAME_CONCURRENCY = 5;
   const accountCache = new Map();
   const gbkEncodeCache = new Map();
   const currentAccountImportPromises = new Map();
@@ -183,90 +185,26 @@
     return task;
   }
 
-  function buildAdminLoginUrl(password) {
-    return BASE_VE + 's.shtml?username=admin&password='
-      + encodeURIComponent(String(password || '').trim())
-      + '&login=main_2&goLogin=1';
-  }
-
-  async function getAdminPasswordFromPersonalCenter() {
-    const response = await fetch(PERSONAL_CENTER_URL, {
-      method: 'GET',
-      credentials: 'include',
-      cache: 'no-store'
-    });
-    if (!response.ok) throw new Error(`个人中心请求失败（HTTP ${response.status}）`);
-    const html = await decodeResponse(response);
-    const match = String(html || '').match(/changeAdmin\s*\(\s*(['"])admin\1\s*,\s*(['"])([^'"]+)\2\s*\)/i);
-    const password = String(match?.[3] || '').trim();
-    if (!password) throw new Error('无法从个人中心读取管理员新密码');
-    return password;
-  }
-
-  async function loginAdmin(password) {
-    const response = await fetch(buildAdminLoginUrl(password), {
+  async function loginAdminWithQuickUsername() {
+    const url = BASE_VE + 's.shtml?loginType=2&login=main_2&username=' + ADMIN_QUICK_USERNAME;
+    const response = await fetch(url, {
       credentials: 'include',
       cache: 'no-store'
     });
     return parseLoginResponse(await decodeResponse(response));
   }
 
-  async function persistAdminPassword(password) {
-    const value = String(password || '').trim();
-    if (!value) return null;
+  async function ensureAdminQuickAccountStored() {
     const current = await global.BjtuAccountStore.get('admin');
     const record = await global.BjtuAccountStore.put({
       loginName: 'admin',
       roleName: String(current?.roleName || '超级管理员'),
       userName: String(current?.userName || 'admin'),
-      password: value,
-      quickUsername: String(current?.quickUsername || '')
+      password: String(current?.password || ''),
+      quickUsername: ADMIN_QUICK_USERNAME
     });
     if (record) accountCache.set('admin', record);
     return record;
-  }
-
-  async function tryLoginHistoryAccounts(showProgress = false) {
-    const stored = await chrome.storage.local.get([HISTORY_KEY]);
-    const history = (Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [])
-      .map((item) => ({
-        loginName: String(item?.loginName || item?.userId || '').trim(),
-        lastLoginAt: Number(item?.lastLoginAt || 0) || 0
-      }))
-      .filter((item) => item.loginName)
-      .sort((a, b) => b.lastLoginAt - a.lastLoginAt);
-    const uniqueHistory = history.filter((item, index, list) =>
-      list.findIndex((candidate) => candidate.loginName === item.loginName) === index);
-    if (!uniqueHistory.length) return { ok: false, historyEmpty: true };
-
-    for (let index = 0; index < uniqueHistory.length; index += 1) {
-      const loginName = uniqueHistory[index].loginName;
-      if (showProgress) {
-        setProgress(1, `正在尝试登录最近账号（${index + 1}/${uniqueHistory.length}）：${loginName}…`);
-      }
-      const account = await getAccount(loginName);
-      if (!account) continue;
-      let result = null;
-      if (account.quickUsername) {
-        try { result = await loginWithQuickUsername(account.quickUsername); } catch { result = null; }
-        if (result?.ok) {
-          const currentUser = await getCurrentUserInfo();
-          if (String(currentUser?.loginName || '').trim() === loginName) {
-            return { ok: true, userInfo: currentUser, loginName };
-          }
-        }
-      }
-      if (account.password) {
-        try { result = await loginWithPassword(loginName, account.password); } catch { result = null; }
-        if (result?.ok) {
-          const currentUser = await getCurrentUserInfo();
-          if (String(currentUser?.loginName || '').trim() === loginName) {
-            return { ok: true, userInfo: currentUser, loginName };
-          }
-        }
-      }
-    }
-    return { ok: false, historyEmpty: false };
   }
 
   async function waitForPostRetry(attempt, signal) {
@@ -369,6 +307,54 @@
     if (typeof onText === 'function') await onText('', true);
   }
 
+  async function fetchQuickUsername(loginName) {
+    const response = await fetch(QUICK_USERNAME_URL + encodeURIComponent(String(loginName || '').trim()), {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const data = JSON.parse(String(await decodeResponse(response) || '').trim());
+    return String(data?.jrName || '').trim();
+  }
+
+  async function enrichQuickUsernames(accounts, roleState, updateProgress) {
+    const rows = Object.values(accounts || {}).filter((account) => account?.loginName);
+    roleState.phase = 'quick';
+    roleState.quickProcessed = 0;
+    roleState.quickTotal = rows.length;
+    roleState.currentPrefixes = [];
+    updateProgress();
+    let cursor = 0;
+    const activeLogins = new Set();
+    const worker = async () => {
+      while (true) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= rows.length) return;
+        const account = rows[index];
+        activeLogins.add(account.loginName);
+        roleState.currentPrefixes = [...activeLogins];
+        try {
+          const quickUsername = await fetchQuickUsername(account.loginName);
+          if (quickUsername) account.quickUsername = quickUsername;
+        } catch {
+          // A missing quick username must not discard the account or abort initialization.
+        } finally {
+          activeLogins.delete(account.loginName);
+          roleState.quickProcessed += 1;
+          roleState.currentPrefixes = [...activeLogins];
+          if (roleState.quickProcessed % 10 === 0 || roleState.quickProcessed === rows.length) {
+            updateProgress();
+          }
+        }
+      }
+    };
+    const workerCount = Math.min(QUICK_USERNAME_CONCURRENCY, Math.max(1, rows.length));
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  }
+
   function parseCount(html, pattern, label) {
     const match = String(html || '').match(pattern);
     const count = Number(match?.[1] || 0);
@@ -379,6 +365,13 @@
   function parseLoginCall(source) {
     const match = String(source || '').match(/goLogin\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([0-9a-f]{32})['"]\s*\)/i);
     return match ? { loginName: normalizeLoginNameText(match[1]), password: String(match[2]).trim() } : null;
+  }
+
+  function parseAccountLogin(source) {
+    const legacy = parseLoginCall(source);
+    if (legacy?.loginName) return legacy;
+    const match = String(source || '').match(/glyjsqhyh\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+    return match ? { loginName: normalizeLoginNameText(match[1]), password: '' } : null;
   }
 
   function decodeHtmlText(value) {
@@ -395,7 +388,7 @@
   }
 
   function parseAccountRow(row, type) {
-    const login = parseLoginCall(row);
+    const login = parseAccountLogin(row);
     if (!login?.loginName) return null;
     if (type === 'student') {
       const titledCells = [...String(row).matchAll(/<td\b[^>]*\btitle\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/td>/gi)]
@@ -514,18 +507,30 @@
 
   async function readLocalBindings() {
     const bindings = new Map();
-    const previous = await global.BjtuAccountStore.getQuickAccounts();
+    const previous = typeof global.BjtuAccountStore.getCredentialAccounts === 'function'
+      ? await global.BjtuAccountStore.getCredentialAccounts()
+      : await global.BjtuAccountStore.getQuickAccounts();
     previous.forEach((record) => {
       const loginName = String(record?.loginName || '').trim();
-      if (loginName && record.quickUsername) bindings.set(loginName, String(record.quickUsername).trim());
+      if (!loginName) return;
+      bindings.set(loginName, {
+        password: String(record?.password || '').trim(),
+        quickUsername: String(record?.quickUsername || '').trim()
+      });
     });
     return bindings;
   }
 
   function preserveLocalBindings(next, bindings) {
     Object.keys(next || {}).forEach((loginName) => {
-      const quickUsername = bindings?.get(loginName);
-      if (quickUsername && !next[loginName].quickUsername) next[loginName].quickUsername = quickUsername;
+      const current = bindings?.get(loginName);
+      if (!current) return;
+      if (current.quickUsername && !next[loginName].quickUsername) {
+        next[loginName].quickUsername = current.quickUsername;
+      }
+      if (current.password && !next[loginName].password) {
+        next[loginName].password = current.password;
+      }
     });
   }
 
@@ -697,8 +702,13 @@
       const importButton = document.getElementById('account-init-import');
       const skipButton = document.getElementById('account-init-skip');
       const fileInput = document.getElementById('account-init-file');
+      const fetchOptions = document.getElementById('account-init-fetch-options');
+      const teacherCheckbox = document.getElementById('account-init-fetch-teachers');
+      const studentCheckbox = document.getElementById('account-init-fetch-students');
+      const quickOption = document.getElementById('account-init-quick-option');
+      const quickCheckbox = document.getElementById('account-init-fetch-quick-usernames');
       if (!(actions instanceof HTMLElement) || !(fileInput instanceof HTMLInputElement)) {
-        resolve({ source: 'remote' });
+        resolve({ source: 'remote', fetchTeachers: true, fetchStudents: true, fetchQuickUsernames: false });
         return;
       }
       const cleanup = () => {
@@ -707,10 +717,19 @@
         skipButton?.removeEventListener('click', onSkip);
         fileInput.removeEventListener('change', onFile);
         actions.style.display = 'none';
+        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
+        if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
       };
       const onRemote = () => {
+        const fetchTeachers = !(teacherCheckbox instanceof HTMLInputElement) || teacherCheckbox.checked;
+        const fetchStudents = !(studentCheckbox instanceof HTMLInputElement) || studentCheckbox.checked;
+        if (!fetchTeachers && !fetchStudents) {
+          setProgress(0, '请至少选择获取教职工或学生中的一类');
+          return;
+        }
+        const fetchQuickUsernames = quickCheckbox instanceof HTMLInputElement && quickCheckbox.checked;
         cleanup();
-        resolve({ source: 'remote' });
+        resolve({ source: 'remote', fetchTeachers, fetchStudents, fetchQuickUsernames });
       };
       const onImport = () => {
         fileInput.value = '';
@@ -736,12 +755,19 @@
           skipButton?.addEventListener('click', onSkip);
           fileInput.addEventListener('change', onFile);
           actions.style.display = 'flex';
+          if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'flex';
+          if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
         }
       };
       remote?.addEventListener('click', onRemote);
       importButton?.addEventListener('click', onImport);
       skipButton?.addEventListener('click', onSkip);
       fileInput.addEventListener('change', onFile);
+      if (teacherCheckbox instanceof HTMLInputElement) teacherCheckbox.checked = true;
+      if (studentCheckbox instanceof HTMLInputElement) studentCheckbox.checked = true;
+      if (quickCheckbox instanceof HTMLInputElement) quickCheckbox.checked = false;
+      if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'flex';
+      if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
       actions.style.display = 'flex';
       setProgress(0, '请选择账号列表初始化方式');
     });
@@ -760,12 +786,21 @@
     await chrome.storage.local.set({ [HISTORY_KEY]: updated });
   }
 
-  async function initialize({ force = false, showProgress = true } = {}) {
+  async function initialize({
+    force = false,
+    showProgress = true,
+    fetchTeachers = true,
+    fetchStudents = true,
+    fetchQuickUsernames = false
+  } = {}) {
     if (initializationPromise) return initializationPromise;
     initializationPromise = (async () => {
       let remoteMarker = null;
       let remoteHeartbeatTimer = null;
       let releaseRemoteWritingLock = null;
+      let shouldFetchTeachers = fetchTeachers !== false;
+      let shouldFetchStudents = fetchStudents !== false;
+      let shouldFetchQuickUsernames = fetchQuickUsernames === true;
       try {
         const existingCount = await load();
         const versionState = await chrome.storage.local.get([ACCOUNT_LIST_VERSION_KEY]);
@@ -794,6 +829,12 @@
             clearAccountInitQueryParameter();
             return Number(source.count || 0);
           }
+          shouldFetchTeachers = source.fetchTeachers !== false;
+          shouldFetchStudents = source.fetchStudents !== false;
+          shouldFetchQuickUsernames = source.fetchQuickUsernames === true;
+        }
+        if (!shouldFetchTeachers && !shouldFetchStudents) {
+          throw new Error('请至少选择获取教职工或学生中的一类');
         }
 
         releaseRemoteWritingLock = await acquireWritingLock();
@@ -801,35 +842,22 @@
         await chrome.storage.local.set({ [ACCOUNT_LIST_WRITING_KEY]: remoteMarker });
         remoteHeartbeatTimer = startWritingHeartbeat(remoteMarker);
 
+        await ensureAdminQuickAccountStored();
         if (showProgress) setProgress(1, '正在检查管理员登录状态…');
         const currentUser = await getCurrentUserInfo();
         if (String(currentUser?.loginName || '').trim() !== 'admin') {
-          if (showProgress) setProgress(1, '正在登录管理员账号…');
-          let adminResult = await loginAdmin(ADMIN_DEFAULT_PASSWORD);
-          if (!adminResult.ok) {
-            let recoveryUser = currentUser;
-            if (!recoveryUser) {
-              const recoveredLogin = await tryLoginHistoryAccounts(showProgress);
-              if (!recoveredLogin.ok) {
-                if (recoveredLogin.historyEmpty) {
-                  throw new Error('管理员密码已更改，请先登录任意智慧课程平台账号，再重新初始化账号列表');
-                }
-                throw new Error('管理员密码已更改，自动登录最近账号失败，请手动登录任意账号后重新初始化账号列表');
-              }
-              recoveryUser = recoveredLogin.userInfo;
-            }
-            if (showProgress) setProgress(1, '正在从个人中心读取管理员新密码…');
-            const currentAdminPassword = await getAdminPasswordFromPersonalCenter();
-            await persistAdminPassword(currentAdminPassword);
-            if (showProgress) setProgress(1, '正在使用新密码登录管理员账号…');
-            adminResult = await loginAdmin(currentAdminPassword);
-            if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号新密码登录失败');
+          if (showProgress) setProgress(1, '正在快速登录管理员账号…');
+          const adminResult = await loginAdminWithQuickUsername();
+          if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号快速登录失败');
+          const adminUser = await getCurrentUserInfo();
+          if (String(adminUser?.loginName || '').trim() !== 'admin') {
+            throw new Error('管理员账号快速登录后身份验证失败');
           }
         }
 
         const state = {
-          teacher: { parsed: 0, written: 0, total: 0, phase: 'load', currentPrefixes: [] },
-          student: { parsed: 0, written: 0, total: 0, phase: 'load', currentPrefixes: [] }
+          teacher: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, total: 0, phase: shouldFetchTeachers ? 'load' : 'skipped', currentPrefixes: [] },
+          student: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, total: 0, phase: shouldFetchStudents ? 'load' : 'skipped', currentPrefixes: [] }
         };
         const localBindings = await readLocalBindings();
         let writeQueue = Promise.resolve();
@@ -838,13 +866,18 @@
           setProgress(0, '正在获取并写入账号列表…');
           ['teacher', 'student'].forEach((type) => {
             const roleState = state[type];
+            if (roleState.phase === 'skipped') {
+              setListProgress(type, 0, 0, '已跳过');
+              return;
+            }
             const isWriting = roleState.phase === 'write' || roleState.phase === 'done';
+            const isFetchingQuick = roleState.phase === 'quick';
             setListProgress(
               type,
-              isWriting ? roleState.written : roleState.parsed,
-              roleState.total,
-              isWriting ? '正在写入' : '正在读取总数',
-              isWriting ? '写入' : '读取',
+              isWriting ? roleState.written : (isFetchingQuick ? roleState.quickProcessed : roleState.parsed),
+              isFetchingQuick ? roleState.quickTotal : roleState.total,
+              isWriting ? '正在写入' : (isFetchingQuick ? '正在获取极速登录名' : '正在读取总数'),
+              isWriting ? '写入' : (isFetchingQuick ? '获取极速登录名' : '读取'),
               roleState.currentPrefixes
             );
           });
@@ -878,6 +911,9 @@
             body: body.toString()
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('教职工列表解析为空');
+          if (shouldFetchQuickUsernames) {
+            await enrichQuickUsernames(parser.result, state.teacher, updateProgress);
+          }
           return parser.result;
         };
 
@@ -910,6 +946,9 @@
             body: body.toString()
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('学生列表解析为空');
+          if (shouldFetchQuickUsernames) {
+            await enrichQuickUsernames(parser.result, state.student, updateProgress);
+          }
           return parser.result;
         };
 
@@ -938,14 +977,18 @@
           return writeQueue;
         };
 
-        const teacherTask = loadTeachers().then(async (accounts) => {
-          await writeRole('teacher', accounts);
-          return accounts;
-        });
-        const studentTask = loadStudents().then(async (accounts) => {
-          await writeRole('student', accounts);
-          return accounts;
-        });
+        const teacherTask = shouldFetchTeachers
+          ? loadTeachers().then(async (accounts) => {
+            await writeRole('teacher', accounts);
+            return accounts;
+          })
+          : Promise.resolve({});
+        const studentTask = shouldFetchStudents
+          ? loadStudents().then(async (accounts) => {
+            await writeRole('student', accounts);
+            return accounts;
+          })
+          : Promise.resolve({});
         const [teachers, students] = await Promise.all([teacherTask, studentTask]);
         const next = { ...teachers, ...students };
         if (!Object.keys(next).length) throw new Error('账号列表为空');
