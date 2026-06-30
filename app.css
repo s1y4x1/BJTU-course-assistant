@@ -1,7 +1,7 @@
 body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px 20px 0; font-size: 14px; }
 
         /* Toast Notifications */
-        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10000; }
+        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 2147483647; }
         .toast { min-width: 250px; padding: 12px 20px; margin-bottom: 10px; border-radius: 8px; background-color: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; animation: toastEnter 0.25s ease-out; font-size: 14px; color: #333; opacity: 1; cursor: copy; }
         .toast.success { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
         .toast.error { background-color: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }

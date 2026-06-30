@@ -53,6 +53,7 @@ let versionPendingDirectoryUpdate = null;
 let versionButtonLatestReload = true;
 let versionButtonLatestForce = false;
 let versionButtonLatestUpdate = null;
+let versionNoticeSuppressedByDownload = false;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_PRIMARY_LATEST_URL = 'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json';
 const VERSION_FALLBACK_LATEST_URL = 'https://s1y4x1.github.io/release.json';
@@ -485,6 +486,12 @@ function openVersionNoticeModal(overrideMode) {
   syncVersionNoticeDownloadButton();
 }
 
+function suppressVersionNoticeForDownload() {
+  versionNoticeSuppressedByDownload = true;
+  const modal = document.getElementById('version-notice-modal');
+  if (modal instanceof HTMLElement) modal.style.display = 'none';
+}
+
 function ensureVersionDownloadModal() {
   const modal = document.getElementById('version-download-modal');
   if (!(modal instanceof HTMLElement)) return null;
@@ -657,6 +664,7 @@ function setVersionDownloadReleaseNotes(markdownText = '') {
 }
 
 function showVersionUpdateDirectoryRequired(downloadUrl, source, fullExtraction) {
+  suppressVersionNoticeForDownload();
   versionPendingDirectoryUpdate = { downloadUrl, source, fullExtraction };
   setVersionDownloadProgressUi({
     visible: true,
@@ -1052,10 +1060,12 @@ async function downloadVersionByUrlWithProgress(url) {
     });
   }
   setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion: versionButtonLatestDisplayVersion });
+  suppressVersionNoticeForDownload();
   if (reloadRequired) showUpdateDownloadCompleteNotification();
 }
 
 async function startVersionDownloadWithFallback(downloadUrl, source = '', fullExtraction = false) {
+  suppressVersionNoticeForDownload();
   if (versionDownloadInProgress) {
     openVersionDownloadProgressModal();
     return;
@@ -1424,7 +1434,7 @@ async function loadVersionInfo() {
         return;
       }
       const ignoredSameVersion = normalizeVersionText(versionIgnoredTag) === normalizeVersionText(latestTag);
-      if (!ignoredSameVersion && versionNoticeShownVersion !== latestTag) {
+      if (!versionNoticeSuppressedByDownload && !ignoredSameVersion && versionNoticeShownVersion !== latestTag) {
         versionNoticeShownVersion = latestTag;
         openVersionNoticeModal();
       }
