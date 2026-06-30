@@ -445,10 +445,10 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             font-size: 12px;
         }
         #resource-copy-selected-btn {
-            background: #2196F3;
+            background: #4CAF50;
         }
         #resource-copy-selected-btn:hover {
-            background: #1e88e5;
+            background: #45a049;
         }
         #resource-download-selected-btn {
             background: #1e3a8a;
@@ -492,13 +492,14 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             font-size: 14px;
             color: #64748b;
             display: flex;
+            align-items: baseline;
             gap: 12px;
             flex-wrap: wrap;
             justify-content: flex-end;
             font-weight: 700;
         }
         #resource-download-total-speed {
-            color: #2196F3;
+            color: #000;
             font-weight: 700;
         }
         .resource-row-main {
@@ -1182,6 +1183,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             font-size: 14px;
             color: #64748b;
             display: flex;
+            align-items: baseline;
             gap: 12px;
             flex-wrap: wrap;
             justify-content: flex-end;
@@ -1208,15 +1210,16 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             width: 0%;
         }
         #total-speed {
-            color: #2196F3;
+            color: #000;
             font-weight: 700;
         }
         #copy-all-btn {
             padding: 5px 10px;
             font-size: 12px;
             white-space: nowrap;
-            background-color: #2196F3;
+            background-color: #4CAF50;
         }
+        #copy-all-btn:hover { background-color: #45a049; }
         .welcome-msg-top {
             color: #4CAF50;
             font-weight: bold;
@@ -1881,12 +1884,13 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
 
         /* Saved uploads list (in 本地保存本次上传过的文件) — 与下方新上传列表保持一致 */
         #saved-uploads-section { margin-top: 8px; }
-        .saved-uploads-list {
+        #saved-uploads-section .saved-uploads-list {
             border: 1px solid #e5e7eb;
             border-radius: 8px;
             background: #fff;
             margin-top: 6px;
-            padding: 6px;
+            margin-bottom: 12px !important;
+            padding: 6px 6px 10px;
             max-height: 360px;
             overflow-y: auto;
         }

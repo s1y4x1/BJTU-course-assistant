@@ -36,6 +36,7 @@ const DEFAULT_POPUP_CACHE_ENABLED = true;
 const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
+const DEFAULT_THEME_MODE = 'system';
 
 function normalizeHomeworkReminderMinutes(value) {
   const source = Array.isArray(value) ? value : DEFAULT_HOMEWORK_REMINDER_MINUTES;
@@ -121,8 +122,8 @@ function goBackToApp() {
 }
 
 (async function init() {
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -181,6 +182,7 @@ function goBackToApp() {
   document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
     ? DEFAULT_HOMEWORK_REMINDER_ENABLED
     : !!homeworkReminderEnabled;
+  document.getElementById('themeMode').value = globalThis.BjtuTheme?.normalizeMode(themeMode) || DEFAULT_THEME_MODE;
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
 
   const updateHomeworkReminderDisabled = () => {
@@ -311,6 +313,9 @@ function goBackToApp() {
       if (changes.platformVisible) applyPlatformVisibleUi(changes.platformVisible.newValue);
       if (changes.injectMoocHelperEnabled) applyBooleanUi('injectMoocHelperEnabled', changes.injectMoocHelperEnabled.newValue, true);
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
+      if (changes.themeMode) {
+        document.getElementById('themeMode').value = globalThis.BjtuTheme?.normalizeMode(changes.themeMode.newValue) || DEFAULT_THEME_MODE;
+      }
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
       if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, true);
@@ -350,6 +355,10 @@ function goBackToApp() {
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
+  document.getElementById('themeMode').addEventListener('change', async () => {
+    await chrome.storage.local.set({ themeMode: globalThis.BjtuTheme?.normalizeMode(document.getElementById('themeMode').value) || DEFAULT_THEME_MODE });
+    setMsg('已应用更改');
+  });
 
   document.getElementById('autoLoadCourseResourcesEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
@@ -593,7 +602,8 @@ function goBackToApp() {
       platformVisible: { ...DEFAULT_PLATFORM_VISIBLE },
       injectMoocHelperEnabled: true,
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
-      homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES
+      homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
+      themeMode: DEFAULT_THEME_MODE
     });
     await chrome.storage.sync.remove(['platformEnabled']);
     document.getElementById('enableVe').checked = true;
@@ -606,6 +616,7 @@ function goBackToApp() {
     });
     document.getElementById('injectMoocHelperEnabled').checked = true;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
+    document.getElementById('themeMode').value = DEFAULT_THEME_MODE;
     currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];
     renderHomeworkReminderNodes();
     updateHomeworkReminderDisabled();

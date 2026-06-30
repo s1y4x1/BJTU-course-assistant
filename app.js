@@ -1021,7 +1021,7 @@ function updateTotalSpeed() {
     total = totalRecentSpeedBps;
   }
   const el = document.getElementById('total-speed');
-  if (el) el.textContent = `总速度: ${formatSpeed(total)}`;
+  setSpeedDisplay(el, total);
 }
 
 function formatEta(seconds) {
@@ -1395,10 +1395,70 @@ function buildFileSizeEmphasisStyle(bytes) {
   return buildResourceSizeEmphasisStyle(n / (1024 * 1024));
 }
 
+function setSpeedDisplay(element, bytesPerSecond, text = null) {
+  if (!(element instanceof HTMLElement)) return;
+  const speed = Math.max(0, Number(bytesPerSecond) || 0);
+  const label = text === null ? formatSpeed(speed) : String(text);
+  element.textContent = label;
+  if (!label) {
+    delete element.dataset.speedBytes;
+    element.style.removeProperty('font-size');
+    element.style.removeProperty('font-weight');
+    element.style.removeProperty('color');
+    element.style.removeProperty('text-shadow');
+    return;
+  }
+  element.dataset.speedBytes = String(speed);
+  const emphasis = buildFileSizeEmphasisStyle(speed);
+  const fontSize = emphasis.match(/font-size:([^;]+)/)?.[1]?.trim();
+  const fontWeight = emphasis.match(/font-weight:([^;]+)/)?.[1]?.trim();
+  const lightColor = emphasis.match(/color:([^;]+)/)?.[1]?.trim();
+  const lightShadow = emphasis.match(/text-shadow:([^;]+)/)?.[1]?.trim();
+  if (fontSize) element.style.fontSize = fontSize;
+  if (fontWeight) element.style.fontWeight = fontWeight;
+  if (document.documentElement.dataset.colorScheme === 'dark') {
+    const mb = speed / (1024 * 1024);
+    const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
+    const r = Math.round(182 + ratio * 73);
+    const g = Math.round(194 + ratio * 61);
+    const b = Math.round(209 + ratio * 46);
+    element.style.color = `rgb(${r},${g},${b})`;
+    const glowAlpha = Math.max(0, (ratio - 0.2) * 0.3).toFixed(2);
+    element.style.textShadow = Number(glowAlpha) > 0 ? `0 0 3px rgba(255,255,255,${glowAlpha})` : 'none';
+  } else {
+    if (lightColor) element.style.color = lightColor;
+    if (lightShadow) element.style.textShadow = lightShadow;
+  }
+}
+
+window.addEventListener('bjtu-theme-change', () => {
+  document.querySelectorAll('[data-speed-bytes]').forEach((element) => {
+    if (element instanceof HTMLElement) {
+      setSpeedDisplay(element, Number(element.dataset.speedBytes || 0), element.textContent || '');
+    }
+  });
+  document.querySelectorAll('[data-file-size-bytes], [data-file-size-mb]').forEach((element) => {
+    if (!(element instanceof HTMLElement)) return;
+    const style = element.dataset.fileSizeBytes !== undefined
+      ? buildFileSizeEmphasisStyle(Number(element.dataset.fileSizeBytes || 0))
+      : buildResourceSizeEmphasisStyle(Number(element.dataset.fileSizeMb || 0));
+    applyEmphasisStyle(element, style);
+  });
+});
+
+function applyEmphasisStyle(element, styleText) {
+  if (!(element instanceof HTMLElement)) return;
+  ['font-size', 'font-weight', 'color', 'text-shadow'].forEach((property) => {
+    const pattern = new RegExp(`${property}:([^;]+)`);
+    const value = String(styleText || '').match(pattern)?.[1]?.trim();
+    if (value) element.style.setProperty(property, value);
+  });
+}
+
 function renderFileSizeText(bytes, text = '') {
   const n = Math.max(0, Number(bytes) || 0);
   const label = text || formatSize(n);
-  return `<span class="file-size-emphasis" style="${escapeHtml(buildFileSizeEmphasisStyle(n))}">${escapeHtml(label)}</span>`;
+  return `<span class="file-size-emphasis" data-file-size-bytes="${n}" style="${escapeHtml(buildFileSizeEmphasisStyle(n))}">${escapeHtml(label)}</span>`;
 }
 
 function renderFileSizePair(loaded, total) {
@@ -2950,17 +3010,25 @@ function formatResourceSizeMb(rpSize) {
 function buildResourceSizeEmphasisStyle(rpSize) {
   const mb = Number(rpSize);
   if (!Number.isFinite(mb) || mb <= 0) {
-    return 'font-size:10px; font-weight:500; color:#94a3b8; text-shadow:none;';
+    const color = document.documentElement.dataset.colorScheme === 'dark' ? '#b6c2d1' : '#94a3b8';
+    return `font-size:10px; font-weight:500; color:${color}; text-shadow:none;`;
   }
 
   // Log scale keeps very large files from exploding while preserving contrast.
   const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
   const fontPx = (10 + ratio * 6).toFixed(2); // 10px -> 16px
+  const weight = Math.round(500 + ratio * 320); // 500 -> 820
+  if (document.documentElement.dataset.colorScheme === 'dark') {
+    const r = Math.round(182 + ratio * 73);
+    const g = Math.round(194 + ratio * 61);
+    const b = Math.round(209 + ratio * 46);
+    const glowAlpha = Math.max(0, (ratio - 0.2) * 0.3).toFixed(2);
+    const shadow = Number(glowAlpha) > 0 ? `0 0 3px rgba(255,255,255,${glowAlpha})` : 'none';
+    return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${r},${g},${b}); text-shadow:${shadow};`;
+  }
   const colorLight = Math.round(148 - ratio * 118); // lighter start -> deep end
   const g = Math.max(18, colorLight + 8);
   const b = Math.max(28, colorLight + 20);
-  const weight = Math.round(500 + ratio * 320); // 500 -> 820
-  // Keep low-end clean (no shadow), gradually add emphasis for larger files.
   const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
   const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35).toFixed(2);
   const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha})`;
@@ -3237,7 +3305,7 @@ function updateResourceDownloadTotals() {
     resourceTotalSizeInfo.style.cssText = '';
     resourceTotalPercent.textContent = '0%';
     resourceTotalPercent.style.display = 'none';
-    resourceTotalSpeed.textContent = '总速度: 0 KB/s';
+    setSpeedDisplay(resourceTotalSpeed, 0);
     resourceTotalEta.textContent = '';
     refreshResourceQueueStatusText();
     return;
@@ -3285,7 +3353,7 @@ function updateResourceDownloadTotals() {
     : `${renderFileSizeText(totalLoaded)} <span class="file-size-separator">/</span> <span class="file-size-placeholder">--</span>`;
   resourceTotalSizeInfo.style.cssText = '';
   resourceTotalPercent.textContent = hasKnownTotal && totalSize > 0 ? `${percent}%` : '--';
-  resourceTotalSpeed.textContent = `总速度: ${formatSpeed(totalSpeed)}`;
+  setSpeedDisplay(resourceTotalSpeed, totalSpeed);
 
   if (hasKnownTotal && totalSize > totalLoaded && totalSpeed > 0) {
     resourceTotalEta.textContent = `总剩余: ${formatEta((totalSize - totalLoaded) / totalSpeed)}`;
@@ -3382,7 +3450,7 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
   }
 
   if (speedEl instanceof HTMLElement) {
-    speedEl.textContent = active ? formatSpeed(Math.max(0, Number(speed) || 0)) : '';
+    setSpeedDisplay(speedEl, speed, active ? null : '');
   }
   if (etaEl instanceof HTMLElement) {
     if (active && Number.isFinite(Number(etaSec)) && Number(etaSec) > 0) {
@@ -3719,7 +3787,7 @@ function renderResourceSpaceList() {
             <div style="min-width:0; flex:1;">
               <div class="resource-row-title">
                 <span class="resource-name">${escapeHtml(name)}</span>
-                <span class="resource-time-inline" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>
+                <span class="resource-time-inline file-size-emphasis" data-file-size-mb="${escapeHtml(String(Number(it?.sizeMbRaw) || 0))}" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>
                 <span class="resource-time-inline">上传时间: ${escapeHtml(uploadTime)}</span>
               </div>
               <div class="resource-link-row">
@@ -6560,7 +6628,7 @@ function buildCoursewareListHtml(courseId, items) {
         <div class="resource-row-title" style="margin-bottom:4px;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin:0 4px 0 0;">
           <span class="resource-name">${escapeHtml(fileName || name)}</span>
-          ${sizeMb ? `<span class="resource-time-inline" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>` : ''}
+          ${sizeMb ? `<span class="resource-time-inline file-size-emphasis" data-file-size-mb="${escapeHtml(String(Number(item?.sizeMbRaw ?? item?.rpSize) || 0))}" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>` : ''}
         </div>
         <div class="resource-link-row">
           ${hasUrl
@@ -9077,7 +9145,7 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
         <div class="resource-row-title" style="margin-bottom:4px; cursor:pointer;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(resourceId)}" ${checked} style="margin:0 4px 0 0;">
           <span style="color:#111827; font-weight:700;">${escapeHtml(fileNameNoExt)}</span>
-          <span style="${sizeStyle}">${escapeHtml(sizeText)}</span>
+          <span class="file-size-emphasis" data-file-size-bytes="${sizeBytes}" style="${sizeStyle}">${escapeHtml(sizeText)}</span>
         </div>
         <div class="resource-link-row">
           <a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
@@ -10281,7 +10349,7 @@ function uploadFile(file, fileId) {
   const doCancelUiAndAccounting = (statusText = '已取消') => {
     setInlineStatus(statusText, 'warning');
     if (etaDisplay) etaDisplay.textContent = '';
-    speedDisplay.textContent = '';
+    setSpeedDisplay(speedDisplay, 0, '');
     progressBar.style.backgroundColor = '#999';
     showRetry();
     // remove from aggregated speed
@@ -10423,7 +10491,7 @@ function uploadFile(file, fileId) {
         const smoothed = pushAndCalcRecentSpeed(progressSamples, e.loaded, now);
         const speedForEta = smoothed > 0 ? smoothed : spd;
         if (Number.isFinite(speedForEta) && speedForEta >= 0) {
-          speedDisplay.textContent = formatSpeed(speedForEta);
+          setSpeedDisplay(speedDisplay, speedForEta);
           window.activeSpeeds[speedId] = speedForEta;
           const remainingBytes = fileSize > 0 ? Math.max(0, fileSize - visibleLoaded) : Math.max(0, e.total - e.loaded);
           if (etaDisplay) {
@@ -10444,7 +10512,7 @@ function uploadFile(file, fileId) {
 
       xhr.onload = async () => {
         xhrRef = null;
-        speedDisplay.textContent = '';
+        setSpeedDisplay(speedDisplay, 0, '');
         if (etaDisplay) etaDisplay.textContent = '';
         delete window.activeSpeeds[speedId];
         updateTotalSpeed();
@@ -10546,7 +10614,7 @@ function uploadFile(file, fileId) {
           resolve();
           return;
         }
-        speedDisplay.textContent = '';
+        setSpeedDisplay(speedDisplay, 0, '');
         if (etaDisplay) etaDisplay.textContent = '';
         delete window.activeSpeeds[speedId];
         updateTotalSpeed();

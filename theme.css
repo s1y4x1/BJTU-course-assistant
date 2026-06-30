@@ -1,0 +1,263 @@
+html[data-color-scheme="dark"] {
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+.url-link,
+.resource-url {
+  color: #60a5fa !important;
+}
+
+html[data-color-scheme="dark"] body {
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+html[data-color-scheme="dark"] input:not(.hw-card-item *):not(.result-area *),
+html[data-color-scheme="dark"] select:not(.hw-card-item *):not(.result-area *),
+html[data-color-scheme="dark"] textarea:not(.hw-card-item *):not(.result-area *) {
+  border-color: #475569 !important;
+  background: #111827 !important;
+  color: #e5e7eb !important;
+}
+
+html[data-color-scheme="dark"] input:not(.hw-card-item *):not(.result-area *)::placeholder,
+html[data-color-scheme="dark"] textarea:not(.hw-card-item *):not(.result-area *)::placeholder {
+  color: #94a3b8;
+}
+
+/* app.html and popup.html */
+html[data-color-scheme="dark"] .right-column,
+html[data-color-scheme="dark"] .config-area {
+  background: #111827;
+}
+
+html[data-color-scheme="dark"] #drop-zone {
+  border-color: #475569;
+  background: #111827;
+}
+
+html[data-color-scheme="dark"] #drop-zone.dragover { background: #102a20; }
+html[data-color-scheme="dark"] #drop-zone.dragover-invalid { background: #321919; }
+html[data-color-scheme="dark"] #drop-zone.dragover-text { background: #10243d; }
+
+html[data-color-scheme="dark"] #course-list > .file-item,
+html[data-color-scheme="dark"] #file-list > .file-item,
+html[data-color-scheme="dark"] .resource-space-list > .file-item,
+html[data-color-scheme="dark"] .saved-uploads-list > .file-item {
+  background: #111827 !important;
+  border-color: #334155 !important;
+  color: #e5e7eb;
+}
+
+html[data-color-scheme="dark"] .saved-uploads-list {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+html[data-color-scheme="dark"] #saved-uploads-section .saved-uploads-list.homework-group.homework-group-animating {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #e5e7eb !important;
+}
+
+html[data-color-scheme="dark"] .result-area > [data-rp-id] {
+  background: #f3e5f5 !important;
+}
+
+html[data-color-scheme="dark"] #course-list > .file-item > div:first-child [style*="color:#666"],
+html[data-color-scheme="dark"] #course-list > .file-item > div:first-child [style*="color: #666"] {
+  color: #cbd5e1 !important;
+}
+
+html[data-color-scheme="dark"] .hw-card-item,
+html[data-color-scheme="dark"] .result-area .file-item,
+html[data-color-scheme="dark"] .result-area [data-rp-id] {
+  color-scheme: light;
+}
+
+html[data-color-scheme="dark"] .result-area .file-item,
+html[data-color-scheme="dark"] .result-area [data-rp-id] {
+  color: #000;
+}
+
+html[data-color-scheme="dark"] .course-header,
+html[data-color-scheme="dark"] .resource-space-section,
+html[data-color-scheme="dark"] .result-area,
+html[data-color-scheme="dark"] .homework-area,
+html[data-color-scheme="dark"] .mooc-homework-area,
+html[data-color-scheme="dark"] .mooc-task-detail,
+html[data-color-scheme="dark"] .submit-panel {
+  border-color: #334155 !important;
+}
+
+html[data-color-scheme="dark"] .mooc-course-meta,
+html[data-color-scheme="dark"] .resource-time-inline:not(.result-area *):not(.file-size-emphasis),
+html[data-color-scheme="dark"] .resource-download-meta:not(.result-area *),
+html[data-color-scheme="dark"] .resource-space-status,
+html[data-color-scheme="dark"] .upload-total-meta,
+html[data-color-scheme="dark"] .resource-total-meta,
+html[data-color-scheme="dark"] .file-size-separator:not(.hw-card-item *),
+html[data-color-scheme="dark"] .file-size-placeholder:not(.hw-card-item *) {
+  color: #cbd5e1 !important;
+}
+
+html[data-color-scheme="dark"] .save-uploads-toggle,
+html[data-color-scheme="dark"] .resource-space-count,
+html[data-color-scheme="dark"] .version-source-row,
+html[data-color-scheme="dark"] .version-ignore-sub,
+html[data-color-scheme="dark"] .account-init-progress-label,
+html[data-color-scheme="dark"] .ve-course-teacher-loading {
+  color: #cbd5e1 !important;
+}
+
+html[data-color-scheme="dark"] .progress-bar-container:not(.result-area *),
+html[data-color-scheme="dark"] .resource-total-progress-wrap .progress-bar-container,
+html[data-color-scheme="dark"] .upload-total-progress-wrap .progress-bar-container {
+  background: #334155;
+}
+
+html[data-color-scheme="dark"] .version-modal-card,
+html[data-color-scheme="dark"] #login-modal .login-panel,
+html[data-color-scheme="dark"] .account-init-card,
+html[data-color-scheme="dark"] .account-recovery-card,
+html[data-color-scheme="dark"] .mooc-progress-card,
+html[data-color-scheme="dark"] .ve-teacher-pop,
+html[data-color-scheme="dark"] .ve-course-teacher-pop {
+  background: #111827 !important;
+  border-color: #334155 !important;
+  color: #e5e7eb !important;
+}
+
+html[data-color-scheme="dark"] .version-notice-title,
+html[data-color-scheme="dark"] .version-download-title,
+html[data-color-scheme="dark"] .upload-duplicate-title,
+html[data-color-scheme="dark"] #login-modal .login-panel h3,
+html[data-color-scheme="dark"] .mooc-progress-title,
+html[data-color-scheme="dark"] .account-progress-title {
+  color: #f8fafc !important;
+}
+
+html[data-color-scheme="dark"] .version-notice-body,
+html[data-color-scheme="dark"] .version-download-body,
+html[data-color-scheme="dark"] .version-download-release-notes-body,
+html[data-color-scheme="dark"] .upload-duplicate-question,
+html[data-color-scheme="dark"] .account-init-status,
+html[data-color-scheme="dark"] .account-recovery-message,
+html[data-color-scheme="dark"] .account-init-quick-option,
+html[data-color-scheme="dark"] .account-init-fetch-options,
+html[data-color-scheme="dark"] .mooc-progress-summary,
+html[data-color-scheme="dark"] .mooc-progress-log {
+  color: #cbd5e1 !important;
+}
+
+html[data-color-scheme="dark"] .version-notice-body *,
+html[data-color-scheme="dark"] .version-download-release-notes-body * {
+  color: #cbd5e1 !important;
+}
+
+html[data-color-scheme="dark"] .version-notice-body strong,
+html[data-color-scheme="dark"] .version-download-release-notes-body strong {
+  color: #f8fafc !important;
+}
+
+html[data-color-scheme="dark"] .version-notice-body a,
+html[data-color-scheme="dark"] .version-download-release-notes-body a {
+  color: #93c5fd !important;
+}
+
+html[data-color-scheme="dark"] .version-notice-footer {
+  background: #111827;
+  border-color: #334155;
+}
+
+html[data-color-scheme="dark"] .upload-duplicate-list {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+html[data-color-scheme="dark"] .upload-duplicate-row {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+html[data-color-scheme="dark"] .upload-duplicate-name,
+html[data-color-scheme="dark"] .version-download-release-notes-title {
+  color: #f8fafc;
+}
+
+html[data-color-scheme="dark"] .ve-course-teacher-table th {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+html[data-color-scheme="dark"] .ve-course-teacher-table th,
+html[data-color-scheme="dark"] .ve-course-teacher-table td {
+  border-color: #334155;
+}
+
+html[data-color-scheme="dark"] .platform-status-btn.unselected,
+html[data-color-scheme="dark"] .platform-status-btn.unselected.unselected-checked-checking {
+  background: #1e293b;
+  border-color: #475569;
+  color: #e5e7eb;
+}
+
+html[data-color-scheme="dark"] .platform-status-btn.unselected .platform-link,
+html[data-color-scheme="dark"] .platform-status-btn.unselected.unselected-checked-checking .platform-link {
+  color: #e5e7eb;
+}
+
+html[data-color-scheme="dark"] .version-btn.loading {
+  background: #1e293b;
+  border-color: #475569;
+  color: #cbd5e1;
+}
+
+html[data-color-scheme="dark"] #invert-save-uploads-btn,
+html[data-color-scheme="dark"] #resource-select-all-btn,
+html[data-color-scheme="dark"] .courseware-select-all-btn,
+html[data-color-scheme="dark"] #upload-duplicate-invert,
+html[data-color-scheme="dark"] #invert-save-uploads-btn:hover,
+html[data-color-scheme="dark"] #resource-select-all-btn:hover,
+html[data-color-scheme="dark"] .courseware-select-all-btn:hover,
+html[data-color-scheme="dark"] #upload-duplicate-invert:hover {
+  background: #fff !important;
+  border-color: #fff !important;
+  color: #000 !important;
+}
+
+html[data-color-scheme="dark"] .toast {
+  background: #1e293b;
+  color: #f8fafc;
+  border-color: #475569;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+
+html[data-color-scheme="dark"] .toast.success { background:#123524; color:#86efac; border-color:#166534; }
+html[data-color-scheme="dark"] .toast.error { background:#3b171b; color:#fca5a5; border-color:#991b1b; }
+html[data-color-scheme="dark"] .toast.warning { background:#3a2b0c; color:#fde68a; border-color:#a16207; }
+html[data-color-scheme="dark"] .toast.info { background:#102a43; color:#93c5fd; border-color:#1d4ed8; }
+
+/* options.html */
+html[data-color-scheme="dark"] #options-controlled-content > div {
+  background: #111827 !important;
+  border-color: #334155 !important;
+}
+
+html[data-color-scheme="dark"] .platform-option-detail {
+  background: #1e293b !important;
+  border-left-color: #64748b !important;
+}
+
+html[data-color-scheme="dark"] #vePlatformDetail { background:#10243d !important; border-left-color:#3b82f6 !important; }
+html[data-color-scheme="dark"] #moocPlatformDetail { background:#0c2f27 !important; border-left-color:#00cc7e !important; }
+
+html[data-color-scheme="dark"] .tip { color:#b6c2d1; }
+html[data-color-scheme="dark"] .reminder-editor input,
+html[data-color-scheme="dark"] .reminder-editor select { background:#111827; }
+html[data-color-scheme="dark"] .reminder-node { background:#172554; border-color:#1d4ed8; color:#bfdbfe; }
+html[data-color-scheme="dark"] .account-progress-card,
+html[data-color-scheme="dark"] #exportBindModal > div { background:#111827 !important; color:#e5e7eb; }
+html[data-color-scheme="dark"] #msg.ok { background:#123524; color:#86efac; border-color:#166534; }
+html[data-color-scheme="dark"] #msg.err { background:#3b171b; color:#fca5a5; border-color:#991b1b; }

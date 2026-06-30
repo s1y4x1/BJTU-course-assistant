@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BJTU 课程助手—扩展选项</title>
+  <script src="theme.js"></script>
   <style>
     body { font-family: Segoe UI, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
     h2 { margin: 0; }
@@ -64,6 +65,7 @@
     .reminder-node { display:inline-flex; align-items:center; gap:6px; padding:4px 5px 4px 9px; border:1px solid #bfdbfe; border-radius:6px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
     .reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; line-height:22px; }
   </style>
+  <link rel="stylesheet" href="theme.css" />
 </head>
 <body>
   <div class="page-header">
@@ -72,6 +74,17 @@
   </div>
   <div id="options-loading-placeholder" aria-label="正在加载扩展选项"><span class="options-page-spinner"></span></div>
   <main id="options-controlled-content">
+  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div class="section-title">外观</div>
+    <label for="themeMode" style="display:flex; align-items:center; gap:10px; margin:0;">
+      <span>颜色模式</span>
+      <select id="themeMode" style="height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff;">
+        <option value="system">跟随系统</option>
+        <option value="light">浅色</option>
+        <option value="dark">深色</option>
+      </select>
+    </label>
+  </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">平台显示与加载</div>
     <div class="platform-option">
