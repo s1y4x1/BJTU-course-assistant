@@ -151,6 +151,10 @@ async function validateVersionUpdateDirectory(handle) {
   return handle;
 }
 
+function getVersionUpdateDirectoryDisplayName() {
+  return String(versionUpdateDirectoryHandle?.name || '').trim() || '所选扩展安装目录';
+}
+
 function cancelVersionRefreshCountdown() {
   if (versionRefreshCountdownTimer) clearInterval(versionRefreshCountdownTimer);
   versionRefreshCountdownTimer = null;
@@ -196,7 +200,7 @@ function showUpdateDownloadCompleteNotification() {
     type: 'basic',
     iconUrl: 'icons/512.png',
     title: 'BJTU 课程助手更新',
-    message: '更新文件已直接覆盖写入 BJTU-course-assistant 目录，请到「扩展管理」页面重新加载扩展。',
+    message: `更新文件已直接覆盖写入 ${getVersionUpdateDirectoryDisplayName()} 目录，请到「扩展管理」页面重新加载扩展。`,
     buttons: [{ title: '打开扩展管理' }],
     requireInteraction: true
   }, () => void chrome.runtime.lastError);
@@ -940,7 +944,7 @@ async function clearVersionUpdateDirectory() {
     visible: true,
     status: '正在删除旧文件…',
     title: '正在重建更新目录',
-    body: '正在删除 BJTU-course-assistant 目录中的旧文件。',
+    body: `正在删除 ${getVersionUpdateDirectoryDisplayName()} 目录中的旧文件。`,
     phase: 'extracting'
   });
   const names = [];
@@ -970,7 +974,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
     visible: true,
     status: '正在解析更新压缩包…',
     title: '正在覆盖解压',
-    body: '正在将更新文件直接覆盖到 BJTU-course-assistant 目录。',
+    body: `正在将更新文件直接覆盖到 ${getVersionUpdateDirectoryDisplayName()} 目录。`,
     phase: 'extracting'
   });
   const bytes = archiveBytes instanceof Uint8Array ? archiveBytes : new Uint8Array(archiveBytes || 0);
@@ -991,7 +995,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
     visible: true,
     status: `正在并行覆盖：0 / ${files.length}`,
     title: '正在覆盖解压',
-    body: '正在将更新文件直接覆盖到 BJTU-course-assistant 目录。',
+    body: `正在将更新文件直接覆盖到 ${getVersionUpdateDirectoryDisplayName()} 目录。`,
     phase: 'extracting'
   });
   const results = await Promise.allSettled(files.map(async (item) => {
@@ -1002,7 +1006,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
       visible: true,
       status: `正在并行覆盖：${completedCount} / ${files.length} · ${item.path}`,
       title: '正在覆盖解压',
-      body: '正在将更新文件直接覆盖到 BJTU-course-assistant 目录。',
+      body: `正在将更新文件直接覆盖到 ${getVersionUpdateDirectoryDisplayName()} 目录。`,
       phase: 'extracting'
     });
   }));
