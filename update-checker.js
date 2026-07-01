@@ -54,6 +54,9 @@ let versionButtonLatestReload = true;
 let versionButtonLatestForce = false;
 let versionButtonLatestUpdate = null;
 let versionNoticeSuppressedByDownload = false;
+let versionLatestReleaseRequestPromise = null;
+let versionInfoLoadPromise = null;
+let versionQueuedRelease = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
 const VERSION_PRIMARY_LATEST_URL = 'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json';
 const VERSION_FALLBACK_LATEST_URL = 'https://s1y4x1.github.io/release.json';
@@ -1140,6 +1143,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
   }
   if (versionButtonMode === 'failure') {
     versionBtn.innerHTML = `<span>当前版本：${escapeHtml(localVersion || '--')}</span>`;
+    versionBtn.querySelectorAll('.version-btn-spinner').forEach((spinner) => spinner.remove());
     return;
   }
   if (versionButtonMode === 'latest') {
@@ -1268,7 +1272,12 @@ async function fetchLatestReleaseFromUrl(sourceUrl) {
     clearTimeout(timeoutId);
   }
   if (!response.ok) throw new Error(`更新源请求失败 (${response.status})`);
-  const releaseInfo = await response.json();
+  let releaseInfo;
+  try {
+    releaseInfo = JSON.parse(String(await response.text()).replace(/^\uFEFF/, ''));
+  } catch {
+    throw new Error('更新源 JSON 解析失败');
+  }
   const tag = String(releaseInfo?.ver || '').trim();
   const rawUrl = String(releaseInfo?.url || '').trim();
   if (!tag || !rawUrl) throw new Error('更新源缺少版本号或下载地址');
@@ -1294,19 +1303,46 @@ async function fetchLatestReleaseFromUrl(sourceUrl) {
 }
 
 async function fetchFallbackLatestRelease() {
-  const sourceUrls = [VERSION_PRIMARY_LATEST_URL, VERSION_FALLBACK_LATEST_URL];
-  let lastError = null;
-  for (const sourceUrl of sourceUrls) {
-    try {
-      return await fetchLatestReleaseFromUrl(sourceUrl);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError || new Error('所有更新源均不可用');
+  if (versionLatestReleaseRequestPromise) return versionLatestReleaseRequestPromise;
+  const attempts = [VERSION_PRIMARY_LATEST_URL, VERSION_FALLBACK_LATEST_URL]
+    .map((sourceUrl) => fetchLatestReleaseFromUrl(sourceUrl));
+  const allSettledPromise = Promise.allSettled(attempts);
+  versionLatestReleaseRequestPromise = Promise.any(attempts).catch(async () => {
+    const settled = await allSettledPromise;
+    const errors = settled
+      .filter((item) => item.status === 'rejected')
+      .map((item) => item.reason);
+    throw errors.find((error) => String(error?.message || '').includes('JSON'))
+      || errors.at(-1)
+      || new Error('所有更新源均不可用');
+  });
+
+  versionLatestReleaseRequestPromise.then((firstRelease) => {
+    attempts.forEach((attempt) => {
+      attempt.then((laterRelease) => {
+        if (compareVersionText(getReleaseTagVersion(laterRelease), getReleaseTagVersion(firstRelease)) > 0) {
+          queueHigherVersionRelease(laterRelease);
+        }
+      }).catch(() => {});
+    });
+  }).catch(() => {});
+
+  allSettledPromise.finally(() => {
+    versionLatestReleaseRequestPromise = null;
+  });
+  return versionLatestReleaseRequestPromise;
 }
 
-async function loadVersionInfo() {
+function queueHigherVersionRelease(release) {
+  const tag = getReleaseTagVersion(release);
+  if (!tag || compareVersionText(tag, versionButtonLatestVersion) <= 0) return;
+  if (!versionQueuedRelease || compareVersionText(tag, getReleaseTagVersion(versionQueuedRelease)) > 0) {
+    versionQueuedRelease = release;
+  }
+  if (!versionInfoLoadPromise) loadVersionInfo().catch(() => {});
+}
+
+async function loadVersionInfoInternal(releaseOverride = null) {
   const isPopupPage = typeof popupMode !== 'undefined' && popupMode;
   const autoUpdateRequested = !isPopupPage && (() => {
     try {
@@ -1339,7 +1375,7 @@ async function loadVersionInfo() {
   setVersionButtonState('loading', { localVersion });
 
   try {
-    const releases = [await fetchFallbackLatestRelease()];
+    const releases = [releaseOverride || await fetchFallbackLatestRelease()];
     const latestRelease = pickLatestStableRelease(releases);
     const latestTag = getReleaseTagVersion(latestRelease);
     const latestDisplayVersion = getReleaseDisplayVersion(latestRelease) || latestTag;
@@ -1460,6 +1496,24 @@ async function loadVersionInfo() {
     const text = msg ? `${base}\n${msg}` : base;
     showToast(text, 'error', 2600, false, { preserveInfoToasts: true });
   }
+}
+
+async function loadVersionInfo(releaseOverride = null) {
+  if (releaseOverride) queueHigherVersionRelease(releaseOverride);
+  if (versionInfoLoadPromise) return versionInfoLoadPromise;
+
+  const queued = versionQueuedRelease;
+  versionQueuedRelease = null;
+  versionInfoLoadPromise = loadVersionInfoInternal(queued || releaseOverride)
+    .finally(() => { versionInfoLoadPromise = null; });
+  await versionInfoLoadPromise;
+
+  if (versionQueuedRelease
+      && compareVersionText(getReleaseTagVersion(versionQueuedRelease), versionButtonLatestVersion) > 0) {
+    return loadVersionInfo();
+  }
+  versionQueuedRelease = null;
+  return null;
 }
 
 // -- 注册版本按钮点击事件 --

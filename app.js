@@ -1331,7 +1331,7 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
   } else {
     toast.textContent = text;
   }
-  if (text.endsWith('...') || text.includes('...') || text.endsWith('…')) {
+  if (type === 'info' && (text.endsWith('...') || text.includes('...') || text.endsWith('…'))) {
     const spinner = document.createElement('span');
     spinner.className = 'toast-spinner';
     toast.appendChild(spinner);

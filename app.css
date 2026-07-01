@@ -799,6 +799,10 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             color: #991b1b;
             cursor: pointer;
         }
+        .version-btn.failure .version-btn-spinner {
+            display: none !important;
+            animation: none !important;
+        }
         .version-btn.latest {
             background: #dcfce7;
             border-color: #86efac;
