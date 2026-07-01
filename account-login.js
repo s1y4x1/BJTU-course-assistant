@@ -185,11 +185,12 @@
     return task;
   }
 
-  async function loginAdminWithQuickUsername() {
-    const url = BASE_VE + 's.shtml?loginType=2&login=main_2&username=' + ADMIN_QUICK_USERNAME;
+  async function loginAdminWithQuickUsername({ signal } = {}) {
+    const url = BASE_VE + 's.shtml?loginType=2&login=main_2&goLogin=1&username=' + ADMIN_QUICK_USERNAME;
     const response = await fetch(url, {
       credentials: 'include',
-      cache: 'no-store'
+      cache: 'no-store',
+      signal
     });
     return parseLoginResponse(await decodeResponse(response));
   }
@@ -307,16 +308,68 @@
     if (typeof onText === 'function') await onText('', true);
   }
 
-  async function fetchQuickUsername(loginName) {
+  async function fetchQuickUsername(loginName, { signal } = {}) {
     const response = await fetch(QUICK_USERNAME_URL + encodeURIComponent(String(loginName || '').trim()), {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
+      signal,
       headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
     });
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const data = JSON.parse(String(await decodeResponse(response) || '').trim());
     return String(data?.jrName || '').trim();
+  }
+
+  function isStaffAccount(userInfo) {
+    const loginName = String(userInfo?.loginName || '').trim().toLowerCase();
+    const roleCode = String(userInfo?.roleCode || '').trim().toLowerCase();
+    const roleName = String(userInfo?.roleName || '').trim();
+    if (loginName === 'admin') return true;
+    if (roleCode) return roleCode !== 'xs';
+    return !/学生/.test(roleName) && /教师|老师|助教|管理员|督导|领导/.test(roleName);
+  }
+
+  async function ensureQuickUsernameForLogin(loginName, { currentUser = null, signal, onStatus = null } = {}) {
+    const id = String(loginName || '').trim();
+    if (!id) throw new Error('账号为空');
+    await load();
+
+    let record = await global.BjtuAccountStore.get(id);
+    if (record?.quickUsername) return { loginName: id, ...record };
+    if (id.toLowerCase() === 'admin') {
+      record = await ensureAdminQuickAccountStored();
+      return record ? { loginName: id, ...record } : null;
+    }
+
+    let activeUser = currentUser || await getCurrentUserInfo({ signal });
+    if (!isStaffAccount(activeUser)) {
+      if (typeof onStatus === 'function') onStatus('正在登录管理员账号…');
+      await ensureAdminQuickAccountStored();
+      const adminResult = await loginAdminWithQuickUsername({ signal });
+      if (!adminResult?.ok) {
+        throw new Error(adminResult?.message || '管理员极速登录失败');
+      }
+      activeUser = await getCurrentUserInfo({ signal });
+      if (String(activeUser?.loginName || '').trim().toLowerCase() !== 'admin') {
+        throw new Error('管理员登录状态校验失败');
+      }
+    }
+
+    if (typeof onStatus === 'function') onStatus('正在获取极速登录名…');
+    const quickUsername = await fetchQuickUsername(id, { signal });
+    if (!quickUsername) throw new Error('未获取到极速登录名');
+
+    record = await global.BjtuAccountStore.put({
+      loginName: id,
+      userName: String(record?.userName || '').trim(),
+      roleName: String(record?.roleName || '').trim(),
+      password: String(record?.password || '').trim(),
+      quickUsername
+    });
+    if (record) accountCache.set(id, record);
+    await chrome.storage.local.set({ [ACCOUNT_LIST_REVISION_KEY]: Date.now() });
+    return record ? { loginName: id, ...record } : null;
   }
 
   async function enrichQuickUsernames(accounts, roleState, updateProgress) {
@@ -1201,6 +1254,7 @@
     getAccount,
     updateQuickUsername,
     updatePassword,
+    ensureQuickUsernameForLogin,
     importAccountFile,
     exportAccountFile,
     loginWithPassword,

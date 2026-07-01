@@ -2661,6 +2661,23 @@ async function doLoginFlow() {
       ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
       : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
 
+    const indexedAccount = await readAccountInfoFromIndexedDb(username);
+    const needsQuickUsername = !indexedAccount || !String(indexedAccount.password || '').trim();
+    if (needsQuickUsername) {
+      try {
+        account = await globalThis.BjtuAccountLogin.ensureQuickUsernameForLogin(username, {
+          currentUser,
+          signal,
+          onStatus: (message) => showToast(message, 'info', 0)
+        });
+        account = await getLocalAccountInfo(username) || account;
+        recoveryMessage = '极速登录失败，请重新初始化账号列表或手动输入密码。';
+      } catch (error) {
+        if (signal.aborted || loginCancelRequested) return;
+        recoveryMessage = `极速登录名获取失败：${String(error?.message || error)}`;
+      }
+    }
+
     for (let attempt = 0; attempt < 6; attempt += 1) {
       if (signal.aborted || loginCancelRequested) return;
 
