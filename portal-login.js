@@ -11,7 +11,8 @@
   if (!isLoginPage && !isTimeoutPage) return;
   const injectionOptions = await chrome.storage.local.get([
     'injectPortalLoginOnLoginPage',
-    'injectPortalLoginOnTimeoutPage'
+    'injectPortalLoginOnTimeoutPage',
+    'themeMode'
   ]);
   if (isLoginPage && injectionOptions.injectPortalLoginOnLoginPage === false) return;
   if (isTimeoutPage && injectionOptions.injectPortalLoginOnTimeoutPage === false) return;
@@ -58,10 +59,38 @@
   let selectedLoginName = '';
   let loginRunning = false;
 
-  const close = () => host.remove();
+  const themeMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
+  let portalThemeMode = injectionOptions.themeMode === 'light' || injectionOptions.themeMode === 'dark'
+    ? injectionOptions.themeMode
+    : 'system';
+  const applyPortalTheme = () => {
+    const resolved = portalThemeMode === 'system' ? (themeMedia?.matches ? 'dark' : 'light') : portalThemeMode;
+    mask.dataset.colorScheme = resolved;
+  };
+  const onPortalThemeStorageChanged = (changes, area) => {
+    if (area !== 'local' || !changes.themeMode) return;
+    const value = changes.themeMode.newValue;
+    portalThemeMode = value === 'light' || value === 'dark' ? value : 'system';
+    applyPortalTheme();
+  };
+  const onPortalSystemThemeChanged = () => {
+    if (portalThemeMode === 'system') applyPortalTheme();
+  };
+  applyPortalTheme();
+  chrome.storage.onChanged.addListener(onPortalThemeStorageChanged);
+  if (typeof themeMedia?.addEventListener === 'function') themeMedia.addEventListener('change', onPortalSystemThemeChanged);
+  else if (typeof themeMedia?.addListener === 'function') themeMedia.addListener(onPortalSystemThemeChanged);
+
+  const close = () => {
+    try { chrome.storage.onChanged.removeListener(onPortalThemeStorageChanged); } catch {}
+    if (typeof themeMedia?.removeEventListener === 'function') themeMedia.removeEventListener('change', onPortalSystemThemeChanged);
+    else if (typeof themeMedia?.removeListener === 'function') themeMedia.removeListener(onPortalSystemThemeChanged);
+    host.remove();
+  };
   const setStatus = (text, type = 'info') => {
     if (!(status instanceof HTMLElement)) return;
     status.textContent = String(text || '');
+    status.dataset.statusType = type;
     const colors = type === 'error'
       ? ['#fee2e2', '#b91c1c', '#fecaca']
       : type === 'success' ? ['#dcfce7', '#15803d', '#bbf7d0'] : ['#eff6ff', '#1d4ed8', '#bfdbfe'];
