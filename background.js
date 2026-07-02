@@ -4,10 +4,18 @@ importScripts('account-store.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
+const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 
 async function restoreAppAfterAutomaticExtensionReload() {
   const stored = await chrome.storage.local.get([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => ({}));
-  if (!stored?.[VERSION_AUTO_RELOAD_HANDOFF_KEY]) return;
+  const handoff = stored?.[VERSION_AUTO_RELOAD_HANDOFF_KEY];
+  if (!handoff) return;
+  await chrome.storage.local.set({
+    [VERSION_AUTO_RELOAD_COMPLETED_KEY]: {
+      ...handoff,
+      completedAt: Date.now()
+    }
+  }).catch(() => {});
   await chrome.storage.local.remove([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => {});
   const tabs = (await chrome.tabs.query({}).catch(() => []))
     .filter((tab) => String(tab?.url || '').startsWith(APP_URL));

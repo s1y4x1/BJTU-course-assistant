@@ -65,6 +65,7 @@ const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
 const VERSION_PENDING_RELOAD_KEY = 'pendingUpdateReload';
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
+const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
 const VERSION_FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
 const VERSION_FS_DB_STORE = 'handles';
@@ -759,6 +760,31 @@ function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVers
   else startVersionRefreshCountdown();
 }
 
+function showVersionReloadMismatchUi(localVersion, sourceVersion) {
+  const modal = ensureVersionDownloadModal();
+  if (!modal) return;
+  modal.dataset.locked = '0';
+  setVersionDownloadReleaseNotes('');
+  setVersionDownloadProgressUi({
+    visible: true,
+    status: '',
+    title: '已重新加载扩展',
+    body: `当前本地扩展版本号为：${normalizeVersionText(localVersion)}，更新源中为：${normalizeVersionText(sourceVersion)}。请联系开发者询问详情。`,
+    phase: 'finished'
+  });
+  const retryBtn = document.getElementById('version-download-retry');
+  const openExtensionsBtn = document.getElementById('version-download-open-extensions');
+  const refreshBtn = document.getElementById('version-download-refresh');
+  const closeBtn = document.getElementById('version-download-close');
+  const actions = document.getElementById('version-download-actions');
+  if (retryBtn instanceof HTMLElement) retryBtn.style.display = 'none';
+  if (openExtensionsBtn instanceof HTMLElement) openExtensionsBtn.style.display = 'none';
+  if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
+  if (closeBtn instanceof HTMLElement) closeBtn.style.display = '';
+  if (actions instanceof HTMLElement) actions.style.display = 'flex';
+  cancelVersionRefreshCountdown();
+}
+
 async function scheduleAutomaticExtensionReload({ fileCount, displayVersion } = {}) {
   const writtenFileCount = Math.max(0, Number(fileCount) || 0);
   await setLocal(VERSION_AUTO_RELOAD_HANDOFF_KEY, {
@@ -1411,6 +1437,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
   const manifestVersion = String(chrome.runtime.getManifest().version || '').trim();
   let appliedWithoutReload = await getLocal(VERSION_APPLIED_WITHOUT_RELOAD_KEY, null);
   let pendingReload = await getLocal(VERSION_PENDING_RELOAD_KEY, null);
+  let completedAutoReload = await getLocal(VERSION_AUTO_RELOAD_COMPLETED_KEY, null);
   if (appliedWithoutReload?.ver && compareVersionText(manifestVersion, appliedWithoutReload.ver) >= 0) {
     appliedWithoutReload = null;
     await setLocal(VERSION_APPLIED_WITHOUT_RELOAD_KEY, null);
@@ -1418,6 +1445,8 @@ async function loadVersionInfoInternal(releaseOverride = null) {
   if (pendingReload?.ver && compareVersionText(manifestVersion, pendingReload.ver) >= 0) {
     pendingReload = null;
     await setLocal(VERSION_PENDING_RELOAD_KEY, null);
+    completedAutoReload = null;
+    await setLocal(VERSION_AUTO_RELOAD_COMPLETED_KEY, null);
   }
   const localVersion = appliedWithoutReload?.ver && compareVersionText(appliedWithoutReload.ver, manifestVersion) > 0
     ? String(appliedWithoutReload.ver)
@@ -1475,15 +1504,27 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         force: latestForce,
         update: latestUpdate
       });
-      const pendingSameForcedReload = latestReload && latestForce
+      const pendingSameReload = latestReload
         && normalizeVersionText(pendingReload?.ver) === normalizeVersionText(latestTag);
-      if (pendingSameForcedReload) {
+      if (pendingSameReload) {
+        setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
+        const lastAutoReloadAt = Number(pendingReload?.autoReloadRequestedAt) || 0;
+        const completedReloadAt = Number(completedAutoReload?.completedAt) || 0;
+        const completedSameReload = normalizeVersionText(completedAutoReload?.ver) === normalizeVersionText(latestTag)
+          && completedReloadAt >= lastAutoReloadAt;
+        const legacyReloadRecentlyRequested = !completedReloadAt
+          && lastAutoReloadAt > 0
+          && Date.now() - lastAutoReloadAt < 5 * 60 * 1000;
+        if (completedSameReload || legacyReloadRecentlyRequested) {
+          if (normalizeVersionText(manifestVersion) !== normalizeVersionText(latestTag)) {
+            showVersionReloadMismatchUi(manifestVersion, latestTag);
+          }
+          return;
+        }
         if (isPopupPage) {
           await handoffUpdateToFullscreen(pickReleaseDownloadUrl(latestRelease), 'zipball');
           return;
         }
-        setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
-        const lastAutoReloadAt = Number(pendingReload?.autoReloadRequestedAt) || 0;
         if (Date.now() - lastAutoReloadAt >= 60 * 1000) {
           pendingReload = { ...pendingReload, autoReloadRequestedAt: Date.now() };
           await setLocal(VERSION_PENDING_RELOAD_KEY, pendingReload);
@@ -1493,12 +1534,6 @@ async function loadVersionInfoInternal(releaseOverride = null) {
           });
           return;
         }
-        setVersionDownloadCompletionUi({
-          reloadRequired: true,
-          fileCount: Number(pendingReload?.fileCount) > 0 ? Number(pendingReload.fileCount) : null,
-          displayVersion: latestDisplayVersion
-        });
-        showUpdateDownloadCompleteNotification();
         return;
       }
       if (latestForce) {
