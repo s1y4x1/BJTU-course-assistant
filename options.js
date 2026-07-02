@@ -241,7 +241,7 @@ function goBackToApp() {
       input.disabled = !visibleState.ve;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.ve);
     });
-    [['autoLoadAllHomeworkDetails', 'ykt'], ['jlgjDarkModeEnabled', 'jlgj']].forEach(([id, platform]) => {
+    [['autoLoadAllHomeworkDetails', 'ykt']].forEach(([id, platform]) => {
       const input = document.getElementById(id);
       input.disabled = !visibleState[platform];
       input.closest('label')?.classList.toggle('is-disabled', !visibleState[platform]);
@@ -249,10 +249,9 @@ function goBackToApp() {
     const jlgjDark = document.getElementById('jlgjDarkModeEnabled');
     const alwaysDark = document.getElementById('jlgjAlwaysDarkModeEnabled');
     const extensionDark = document.documentElement.dataset.colorScheme === 'dark';
-    const jlgjShown = !!visibleState.jlgj;
-    jlgjDark.disabled = !jlgjShown || !extensionDark;
+    jlgjDark.disabled = !extensionDark;
     jlgjDark.closest('label')?.classList.toggle('is-disabled', jlgjDark.disabled);
-    alwaysDark.disabled = !jlgjShown || jlgjDark.disabled || !jlgjDark.checked;
+    alwaysDark.disabled = jlgjDark.disabled || !jlgjDark.checked;
     alwaysDark.closest('label')?.classList.toggle('is-disabled', alwaysDark.disabled);
   };
 

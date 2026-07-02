@@ -16,15 +16,20 @@
   };
   const isNeutral = (parts) => parts && Math.max(parts[0], parts[1], parts[2]) - Math.min(parts[0], parts[1], parts[2]) <= 18;
   const isWhite = (parts) => isNeutral(parts) && parts[3] > 0.15 && (parts[0] + parts[1] + parts[2]) / 3 >= 235;
-  const isBlack = (parts) => isNeutral(parts) && parts[3] > 0.15 && (parts[0] + parts[1] + parts[2]) / 3 <= 48;
+  const isDarkNeutral = (parts) => isNeutral(parts) && parts[3] > 0.15 && (parts[0] + parts[1] + parts[2]) / 3 <= 128;
+  const invertedNeutral = (parts) => `rgb(${parts.slice(0, 3).map((value) => Math.min(255, Math.max(0, Math.round(256 - value)))).join(', ')})`;
 
   function classify(element) {
     if (!(element instanceof HTMLElement) || element instanceof HTMLIFrameElement || element.matches('.toggle, .toggle *')) return;
     const computed = getComputedStyle(element);
     if (computed.backgroundImage === 'none' && isWhite(colorParts(computed.backgroundColor))) element.classList.add('__bjtu-jlgj-dark-bg');
-    if (isBlack(colorParts(computed.color))) element.classList.add('__bjtu-jlgj-dark-text');
+    const foreground = colorParts(computed.color);
+    if (isDarkNeutral(foreground)) {
+      element.classList.add('__bjtu-jlgj-dark-text');
+      element.style.setProperty('--bjtu-jlgj-dark-text-color', invertedNeutral(foreground));
+    }
     const borders = [computed.borderTopColor, computed.borderRightColor, computed.borderBottomColor, computed.borderLeftColor].map(colorParts);
-    if (borders.some((parts) => isWhite(parts) || isBlack(parts))) element.classList.add('__bjtu-jlgj-dark-border');
+    if (borders.some((parts) => isWhite(parts) || isDarkNeutral(parts))) element.classList.add('__bjtu-jlgj-dark-border');
   }
 
   function classifyTree(node) {
@@ -46,7 +51,7 @@
           html.${ROOT_CLASS}.__bjtu-jlgj-dark-bg,
           html.${ROOT_CLASS} .__bjtu-jlgj-dark-bg { background:#0f172a none !important; }
           html.${ROOT_CLASS}.__bjtu-jlgj-dark-text,
-          html.${ROOT_CLASS} .__bjtu-jlgj-dark-text { color:#e5e7eb !important; }
+          html.${ROOT_CLASS} .__bjtu-jlgj-dark-text { color:var(--bjtu-jlgj-dark-text-color, #e5e7eb) !important; }
           html.${ROOT_CLASS}.__bjtu-jlgj-dark-border,
           html.${ROOT_CLASS} .__bjtu-jlgj-dark-border { border-color:#334155 !important; }
           html.${ROOT_CLASS} iframe[src*="open.weixin.qq.com/connect/"][src*="qrconnect"] {
@@ -63,6 +68,9 @@
         ));
         observer.observe(root, { childList: true, subtree: true });
       }
+      [0, 120, 500, 1200].forEach((delay) => setTimeout(() => {
+        if (root.classList.contains(ROOT_CLASS)) classifyTree(root);
+      }, delay));
       return;
     }
     root.classList.remove(ROOT_CLASS);
@@ -114,6 +122,9 @@
     alwaysDarkEnabled = data?.jlgjAlwaysDarkModeEnabled === true;
     sync();
   }).catch(() => apply(false));
+
+  document.addEventListener('DOMContentLoaded', () => { if (resolvedDark() && loginDarkEnabled && alwaysDarkEnabled) classifyTree(document.documentElement); }, { once: true });
+  window.addEventListener('load', () => { if (resolvedDark() && loginDarkEnabled && alwaysDarkEnabled) classifyTree(document.documentElement); }, { once: true });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;

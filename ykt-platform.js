@@ -447,7 +447,12 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
     let requestTabId = null;
     let requestTabCreated = false;
     const ensureRequestTab = async () => {
-      if (requestTabId) return requestTabId;
+      if (requestTabId) {
+        const current = await chrome.tabs.get(requestTabId).catch(() => null);
+        if (current?.id) return requestTabId;
+        requestTabId = null;
+        requestTabCreated = false;
+      }
       const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
       let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
       if (!tab) {
@@ -467,7 +472,12 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
         try {
           if (Number(hw?.__actype) === 5) {
             const tabId = await ensureRequestTab();
-            const paper = tabId ? await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '', tabId) : null;
+            let paper = tabId ? await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '', tabId) : null;
+            if (!paper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
+              requestTabId = null;
+              const retryTabId = await ensureRequestTab();
+              paper = retryTabId ? await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '', retryTabId) : null;
+            }
             if (paper?.title) hw.title = paper.title;
             hw.exam_problems = Array.isArray(paper?.problems) ? paper.problems : [];
           } else if (Number(hw?.__actype) === 15) {
@@ -770,6 +780,23 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   const detailQueue = [];
   let yktExamSharedTabId = null;
   let yktExamSharedTabCreated = false;
+  const ensureYktExamSharedTab = async () => {
+    if (yktExamSharedTabId) {
+      const current = await chrome.tabs.get(yktExamSharedTabId).catch(() => null);
+      if (current?.id) return yktExamSharedTabId;
+      yktExamSharedTabId = null;
+      yktExamSharedTabCreated = false;
+    }
+    const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
+    let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
+    yktExamSharedTabCreated = false;
+    if (!tab) {
+      tab = await chrome.tabs.create({ url: `${YKT_BASE}/web`, active: false });
+      yktExamSharedTabCreated = true;
+    }
+    yktExamSharedTabId = Number(tab?.id || 0) || null;
+    return yktExamSharedTabId;
+  };
 
   const getCurrentBoundCourseId = (entry) => {
     const veCourses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
@@ -938,18 +965,17 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       }
 
       if (actype === 5) {
-        if (!yktExamSharedTabId) {
-          const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
-          let t = (existingTabs || []).find((tab) => tab?.id && tab.status === 'complete' && tab.active === false);
-          if (!t) {
-            t = await chrome.tabs.create({ url: `${YKT_BASE}/web`, active: false });
-            yktExamSharedTabCreated = true;
-          }
-          yktExamSharedTabId = Number(t?.id || 0) || null;
-        }
-        const p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', yktExamSharedTabId);
+        const tabId = await ensureYktExamSharedTab();
+        let p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', tabId);
         if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
-        const examPaper = await p;
+        let examPaper = await p;
+        if (!examPaper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
+          yktExamSharedTabId = null;
+          const retryTabId = await ensureYktExamSharedTab();
+          p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', retryTabId);
+          if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
+          examPaper = await p;
+        }
         if (examPaper?.title) hw.title = examPaper.title;
         hw.exam_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
       } else {

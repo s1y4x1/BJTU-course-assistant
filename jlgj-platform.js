@@ -288,12 +288,13 @@ async function showJlgjQrFrameInBackgroundTab(tabId) {
                     }
                     node.style.setProperty('background', '#0f172a none', 'important');
                   }
-                  if (neutral(foreground) && foreground[3] > 0.15 && (foreground[0] + foreground[1] + foreground[2]) / 3 <= 48) {
+                  if (neutral(foreground) && foreground[3] > 0.15 && (foreground[0] + foreground[1] + foreground[2]) / 3 <= 128) {
                     if (!node.hasAttribute('data-bjtu-jlgj-login-color')) {
                       node.dataset.bjtuJlgjLoginColor = node.style.getPropertyValue('color');
                       node.dataset.bjtuJlgjLoginColorPriority = node.style.getPropertyPriority('color');
                     }
-                    node.style.setProperty('color', '#e5e7eb', 'important');
+                    const light = foreground.slice(0, 3).map((value) => Math.min(255, Math.max(0, Math.round(256 - value))));
+                    node.style.setProperty('color', `rgb(${light.join(', ')})`, 'important');
                   }
                 });
               };
@@ -373,12 +374,13 @@ async function showJlgjLoginSuccessNotice(tabId) {
                 }
                 node.style.setProperty('background', '#0f172a none', 'important');
               }
-              if (neutral(foreground) && foreground[3] > 0.15 && (foreground[0] + foreground[1] + foreground[2]) / 3 <= 48) {
+              if (neutral(foreground) && foreground[3] > 0.15 && (foreground[0] + foreground[1] + foreground[2]) / 3 <= 128) {
                 if (!node.hasAttribute('data-bjtu-jlgj-login-color')) {
                   node.dataset.bjtuJlgjLoginColor = node.style.getPropertyValue('color');
                   node.dataset.bjtuJlgjLoginColorPriority = node.style.getPropertyPriority('color');
                 }
-                node.style.setProperty('color', '#e5e7eb', 'important');
+                const light = foreground.slice(0, 3).map((value) => Math.min(255, Math.max(0, Math.round(256 - value))));
+                node.style.setProperty('color', `rgb(${light.join(', ')})`, 'important');
               }
             });
           };
