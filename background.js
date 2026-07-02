@@ -143,10 +143,22 @@ async function checkHomeworkDeadlineReminders() {
     await Promise.all(Object.keys(active || {})
       .filter((id) => id.startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX))
       .map((id) => chrome.notifications.clear(id).catch(() => false)));
+    await chrome.storage.local.remove([
+      HOMEWORK_REMINDER_SNAPSHOT_KEY,
+      HOMEWORK_REMINDER_NOTIFIED_KEY,
+      HOMEWORK_REMINDER_OBSERVED_KEY
+    ]).catch(() => {});
     return;
   }
   const nodes = normalizeHomeworkReminderMinutes(data.homeworkReminderMinutes);
-  if (!nodes.length) return;
+  if (!nodes.length) {
+    await chrome.storage.local.remove([
+      HOMEWORK_REMINDER_SNAPSHOT_KEY,
+      HOMEWORK_REMINDER_NOTIFIED_KEY,
+      HOMEWORK_REMINDER_OBSERVED_KEY
+    ]).catch(() => {});
+    return;
+  }
   const snapshot = data[HOMEWORK_REMINDER_SNAPSHOT_KEY];
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
   const account = String(snapshot?.account || 'default');
@@ -163,7 +175,15 @@ async function checkHomeworkDeadlineReminders() {
     const remainingMinutes = (deadline - now) / 60000;
     if (!deadline || remainingMinutes <= 0) continue;
     const taskKey = `${account}|${String(item?.key || '')}`;
-    const previousRemaining = Number(observed[taskKey]?.remainingMinutes);
+    const observedDeadline = Number(observed[taskKey]?.deadline || 0);
+    const previousRemaining = observedDeadline === deadline
+      ? Number(observed[taskKey]?.remainingMinutes)
+      : NaN;
+    nodes.forEach((minutes) => {
+      const notifiedKey = `${taskKey}|${minutes}`;
+      const recordedDeadline = Number(notified[notifiedKey]?.deadline || 0);
+      if (recordedDeadline && recordedDeadline !== deadline) delete notified[notifiedKey];
+    });
     const eligible = nodes.filter((minutes) => remainingMinutes <= minutes);
     observed[taskKey] = { remainingMinutes, deadline, lastSeenAt: now };
     if (!eligible.length) continue;
@@ -186,14 +206,23 @@ async function checkHomeworkDeadlineReminders() {
 
   const oldest = now - 60 * 24 * 60 * 60 * 1000;
   Object.keys(notified).forEach((key) => {
-    if (Number(notified[key]?.notifiedAt || 0) < oldest) delete notified[key];
+    const entry = notified[key] || {};
+    const deadline = Number(entry.deadline || 0);
+    if ((deadline > 0 && deadline <= now) || Number(entry.notifiedAt || 0) < oldest) delete notified[key];
   });
   Object.keys(observed).forEach((key) => {
-    if (Number(observed[key]?.lastSeenAt || 0) < oldest) delete observed[key];
+    const entry = observed[key] || {};
+    const deadline = Number(entry.deadline || 0);
+    if ((deadline > 0 && deadline <= now) || Number(entry.lastSeenAt || 0) < oldest) delete observed[key];
   });
+  const futureSnapshotItems = items.filter((item) => Number(item?.deadline || 0) > now);
   await chrome.storage.local.set({
     [HOMEWORK_REMINDER_NOTIFIED_KEY]: notified,
-    [HOMEWORK_REMINDER_OBSERVED_KEY]: observed
+    [HOMEWORK_REMINDER_OBSERVED_KEY]: observed,
+    [HOMEWORK_REMINDER_SNAPSHOT_KEY]: {
+      ...(snapshot && typeof snapshot === 'object' ? snapshot : {}),
+      items: futureSnapshotItems
+    }
   });
 }
 
