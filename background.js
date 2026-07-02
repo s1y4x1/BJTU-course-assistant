@@ -3,6 +3,19 @@
 importScripts('account-store.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
+
+async function injectJlgjThemeIntoOpenTabs() {
+  const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*'] }).catch(() => []);
+  await Promise.allSettled((tabs || []).filter((tab) => tab?.id).map((tab) =>
+    chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['jlgj-theme.js'] })
+  ));
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.jlgjAlwaysDarkModeEnabled) void injectJlgjThemeIntoOpenTabs();
+});
+chrome.runtime.onStartup.addListener(() => { void injectJlgjThemeIntoOpenTabs(); });
+void injectJlgjThemeIntoOpenTabs();
 const portalUsernameBindByTab = new Map(); // tabId -> { ts, loginName }
 const portalDetectedQuickUsernameByTab = new Map(); // tabId -> quickUsername seen during ordinary MIS redirects
 const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
@@ -476,6 +489,12 @@ async function ensureMoocOriginTab() {
     }
     moocActiveRequestTabId = null;
   }
+  const existingTabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] }).catch(() => []);
+  const reusableTab = (existingTabs || []).find((tab) => tab?.id && tab.status === 'complete');
+  if (reusableTab?.id) {
+    moocActiveRequestTabId = reusableTab.id;
+    return reusableTab;
+  }
   if (!moocOriginTabPromise) {
     moocOriginTabPromise = chrome.tabs.create({
       url: 'https://www.icourse163.org/',
@@ -578,6 +597,55 @@ async function handleMoocRequest(action, payload) {
         referrer: location.href,
         body: JSON.stringify(body || {})
       }).then(parseResponse);
+
+      if (requestAction === 'complete-task') {
+        const tid = Number(requestPayload?.tid || 0);
+        const type = String(requestPayload?.taskType || 'quiz');
+        if (!tid) return { ok: false, message: '无效的作业编号' };
+        let paper = null;
+        let correctIds = [];
+        if (type === 'hw') {
+          for (let attempt = 0; attempt < 10; attempt++) {
+            const paperResponse = await postJson(api.homeworkPaper, { tid, withStdAnswerAndAnalyse: false });
+            if (paperResponse.ok && paperResponse.data?.result) {
+              paper = paperResponse.data.result;
+              break;
+            }
+            if (attempt < 9) await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          if (!paper) return { ok: false, message: '获取作业失败（并发限制）' };
+          paper.answers = (paper.subjectiveQList || []).map((question) => ({
+            qid: question.id,
+            type: question.type,
+            content: {
+              content: (question.judgeDtos || []).map((item) => item.msg).join('\n'),
+              attachments: []
+            }
+          }));
+        } else {
+          let answerData = { data: { questionList: [] } };
+          try {
+            const answerResponse = await fetch(api.answer + tid, { cache: 'no-store' });
+            if (answerResponse.ok) answerData = await answerResponse.json();
+          } catch { /* submit with unmatched answers */ }
+          const paperResponse = await postJson(api.quizPaper, { tid });
+          if (!paperResponse.ok || !paperResponse.data?.result) return paperResponse.ok ? { ok: false, message: '试卷数据为空' } : paperResponse;
+          paper = paperResponse.data.result;
+          correctIds = (answerData.data?.questionList || []).flatMap((question) =>
+            (question.optionList || []).filter((option) => option.answer).map((option) => option.id)
+          );
+          const correctSet = new Set(correctIds);
+          paper.answers = (paper.objectiveQList || []).map((question) => ({
+            qid: question.id,
+            type: question.type,
+            optIds: (question.optionDtos || []).filter((option) => correctSet.has(option.id)).map((option) => option.id),
+            time: Math.floor(Date.now() / 1000)
+          }));
+        }
+        const submitResponse = await postJson(api.submit, { paperDto: paper, preview: false });
+        if (!submitResponse.ok) return submitResponse;
+        return { ok: true, data: { response: submitResponse.data, paper, correctIds } };
+      }
 
       if (requestAction === 'course-list') {
         let pageSize = 8;

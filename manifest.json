@@ -75,6 +75,15 @@
         "https://i.jielong.com/*"
       ],
       "js": [
+        "jlgj-theme.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://i.jielong.com/*"
+      ],
+      "js": [
         "jlgj-capture.js"
       ],
       "run_at": "document_start",
@@ -94,12 +103,10 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "portal-login.html",
-        "MOOC.js"
+        "portal-login.html"
       ],
       "matches": [
-        "http://123.121.147.7:88/*",
-        "https://www.icourse163.org/*"
+        "http://123.121.147.7:88/*"
       ]
     }
   ]

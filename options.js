@@ -122,8 +122,8 @@ function goBackToApp() {
 }
 
 (async function init() {
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -158,6 +158,9 @@ function goBackToApp() {
     await chrome.storage.local.set({ platformEnabled: effectiveEnabled });
   }
   document.getElementById('injectMoocHelperEnabled').checked = injectMoocHelperEnabled !== false;
+  document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
+  document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
+  document.getElementById('autoLoadAllHomeworkDetails').checked = autoLoadAllHomeworkDetails === true;
   const autoLoadResourcesVal = autoLoadCourseResourcesEnabled === undefined
     ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
     : !!autoLoadCourseResourcesEnabled;
@@ -238,6 +241,43 @@ function goBackToApp() {
       input.disabled = !visibleState.ve;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.ve);
     });
+    [['autoLoadAllHomeworkDetails', 'ykt'], ['jlgjDarkModeEnabled', 'jlgj']].forEach(([id, platform]) => {
+      const input = document.getElementById(id);
+      input.disabled = !visibleState[platform];
+      input.closest('label')?.classList.toggle('is-disabled', !visibleState[platform]);
+    });
+    const jlgjDark = document.getElementById('jlgjDarkModeEnabled');
+    const alwaysDark = document.getElementById('jlgjAlwaysDarkModeEnabled');
+    const extensionDark = document.documentElement.dataset.colorScheme === 'dark';
+    const jlgjShown = !!visibleState.jlgj;
+    jlgjDark.disabled = !jlgjShown || !extensionDark;
+    jlgjDark.closest('label')?.classList.toggle('is-disabled', jlgjDark.disabled);
+    alwaysDark.disabled = !jlgjShown || jlgjDark.disabled || !jlgjDark.checked;
+    alwaysDark.closest('label')?.classList.toggle('is-disabled', alwaysDark.disabled);
+  };
+
+  let clearingJlgjDarkOptions = false;
+  const enforceJlgjDarkThemeAvailability = async () => {
+    if (document.documentElement.dataset.colorScheme === 'dark' || clearingJlgjDarkOptions) {
+      updatePlatformDetailDisabled();
+      return;
+    }
+    const loginDark = document.getElementById('jlgjDarkModeEnabled');
+    const alwaysDark = document.getElementById('jlgjAlwaysDarkModeEnabled');
+    const changed = loginDark.checked || alwaysDark.checked;
+    loginDark.checked = false;
+    alwaysDark.checked = false;
+    updatePlatformDetailDisabled();
+    if (!changed) return;
+    clearingJlgjDarkOptions = true;
+    try {
+      await chrome.storage.local.set({
+        jlgjDarkModeEnabled: false,
+        jlgjAlwaysDarkModeEnabled: false
+      });
+    } finally {
+      clearingJlgjDarkOptions = false;
+    }
   };
 
   const applyPlatformVisible = async () => {
@@ -256,7 +296,8 @@ function goBackToApp() {
     updatePlatformDetailDisabled();
     setMsg('已应用更改');
   };
-  updatePlatformDetailDisabled();
+  void enforceJlgjDarkThemeAvailability();
+  window.addEventListener('bjtu-theme-change', () => { void enforceJlgjDarkThemeAvailability(); });
 
   const applyOpenMode = async () => {
     const v = document.getElementById('openModePage').checked ? 'page' : 'popup';
@@ -312,9 +353,19 @@ function goBackToApp() {
       if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
       if (changes.platformVisible) applyPlatformVisibleUi(changes.platformVisible.newValue);
       if (changes.injectMoocHelperEnabled) applyBooleanUi('injectMoocHelperEnabled', changes.injectMoocHelperEnabled.newValue, true);
+      if (changes.jlgjDarkModeEnabled) {
+        applyBooleanUi('jlgjDarkModeEnabled', changes.jlgjDarkModeEnabled.newValue, true);
+        void enforceJlgjDarkThemeAvailability();
+      }
+      if (changes.jlgjAlwaysDarkModeEnabled) {
+        applyBooleanUi('jlgjAlwaysDarkModeEnabled', changes.jlgjAlwaysDarkModeEnabled.newValue, false);
+        void enforceJlgjDarkThemeAvailability();
+      }
+      if (changes.autoLoadAllHomeworkDetails) applyBooleanUi('autoLoadAllHomeworkDetails', changes.autoLoadAllHomeworkDetails.newValue, false);
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
       if (changes.themeMode) {
         document.getElementById('themeMode').value = globalThis.BjtuTheme?.normalizeMode(changes.themeMode.newValue) || DEFAULT_THEME_MODE;
+        setTimeout(() => { void enforceJlgjDarkThemeAvailability(); }, 0);
       }
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
@@ -352,6 +403,17 @@ function goBackToApp() {
   document.getElementById('injectMoocHelperEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({ injectMoocHelperEnabled: !!document.getElementById('injectMoocHelperEnabled').checked });
     setMsg('已应用更改');
+  });
+  ['jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', async () => {
+      await chrome.storage.local.set({ [id]: !!document.getElementById(id).checked });
+      if (id === 'jlgjDarkModeEnabled' && !document.getElementById(id).checked) {
+        document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
+        await chrome.storage.local.set({ jlgjAlwaysDarkModeEnabled: false });
+      }
+      setMsg('已应用更改');
+      if (id === 'jlgjDarkModeEnabled') updatePlatformDetailDisabled();
+    });
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
@@ -601,6 +663,9 @@ function goBackToApp() {
       platformEnabled: defaultPlatform,
       platformVisible: { ...DEFAULT_PLATFORM_VISIBLE },
       injectMoocHelperEnabled: true,
+      jlgjDarkModeEnabled: true,
+      jlgjAlwaysDarkModeEnabled: false,
+      autoLoadAllHomeworkDetails: false,
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
       themeMode: DEFAULT_THEME_MODE
@@ -615,6 +680,9 @@ function goBackToApp() {
       document.getElementById(id).checked = true;
     });
     document.getElementById('injectMoocHelperEnabled').checked = true;
+    document.getElementById('jlgjDarkModeEnabled').checked = true;
+    document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
+    document.getElementById('autoLoadAllHomeworkDetails').checked = false;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
     document.getElementById('themeMode').value = DEFAULT_THEME_MODE;
     currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];

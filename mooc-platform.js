@@ -1,3 +1,11 @@
+const MOOC_LOGIN_LINK_HTML = '<a href="https://www.icourse163.org/" target="_blank" rel="noopener noreferrer" style="color:#00cc7e; text-decoration:none; font-weight:600;">中国大学MOOC</a>';
+const MOOC_LOGIN_REQUIRED_HTML = `如需查看${MOOC_LOGIN_LINK_HTML}课程，请前往登录`;
+const MOOC_LOGIN_ASSIST_URL = 'https://www.icourse163.org/passport/sns/doOAuth.htm?snsType=6&oauthType=login';
+let moocLoginAssistPollTimer = null;
+let moocLoginAssistChecking = false;
+let moocLoginAssistPopupWindowId = null;
+let moocLoginAssistPopupTabId = null;
+
 (function () {
   'use strict';
 
@@ -447,27 +455,12 @@
   }
 
   async function completeTask(task) {
-    let paper;
-    if (task.type === 'hw') {
-      paper = await requestPaperWithRetry('homework-paper', task.id, '获取作业失败（并发限制）');
-      task.detail = { questions: buildPaperDetail(paper) };
-      taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
-      render();
-      paper.answers = (paper.subjectiveQList || []).map((question) => ({
-        qid: question.id, type: question.type,
-        content: { content: (question.judgeDtos || []).map((item) => item.msg).join('\n'), attachments: [] }
-      }));
-    } else {
-      const context = await loadObjectiveDetail(task);
-      paper = context.paper;
-      const correct = context.correctIds;
-      paper.answers = (paper.objectiveQList || []).map((q) => ({
-        qid: q.id, type: q.type,
-        optIds: (q.optionDtos || []).filter((option) => correct.has(option.id)).map((option) => option.id),
-        time: Math.floor(Date.now() / 1000)
-      }));
-    }
-    return request('submit', { paperDto: paper });
+    const completed = await request('complete-task', { taskType: task.type, tid: task.id });
+    const correctIds = new Set(Array.isArray(completed?.correctIds) ? completed.correctIds : []);
+    task.detail = { questions: buildPaperDetail(completed?.paper || {}, correctIds) };
+    taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
+    render();
+    return completed?.response;
   }
 
   function isTaskSubmittable(task) {
@@ -593,3 +586,102 @@
     }
   };
 })();
+
+
+// Login assistance UI used by app.html.
+function stopMoocLoginAssistWatcher() {
+  if (moocLoginAssistPollTimer) {
+    clearInterval(moocLoginAssistPollTimer);
+    moocLoginAssistPollTimer = null;
+  }
+  moocLoginAssistChecking = false;
+}
+
+function closeMoocLoginAssistPopup(cancelPending = false) {
+  if (moocLoginAssistPopupWindowId) {
+    chrome.windows.remove(Number(moocLoginAssistPopupWindowId)).catch(() => {});
+  }
+  moocLoginAssistPopupWindowId = null;
+  moocLoginAssistPopupTabId = null;
+  stopMoocLoginAssistWatcher();
+  if (cancelPending) window.platformInteractiveLoginPending.mooc = false;
+}
+
+async function checkMoocLoginAssistStatus() {
+  if (moocLoginAssistChecking || !window.platformInteractiveLoginPending?.mooc) return false;
+  moocLoginAssistChecking = true;
+  try {
+    if (moocLoginAssistPopupTabId) {
+      const tab = await chrome.tabs.get(Number(moocLoginAssistPopupTabId)).catch(() => null);
+      if (!tab) {
+        moocLoginAssistPopupWindowId = null;
+        moocLoginAssistPopupTabId = null;
+        window.platformInteractiveLoginPending.mooc = false;
+        stopMoocLoginAssistWatcher();
+        return false;
+      }
+      if (!String(tab?.url || '').startsWith('https://www.icourse163.org/')) return false;
+    }
+    const response = await chrome.runtime.sendMessage({
+      type: 'MOOC_LOGIN_STATUS',
+      tabId: moocLoginAssistPopupTabId || null
+    });
+    if (!response?.ok || !response.loggedIn) return false;
+    stopMoocLoginAssistWatcher();
+    completeExternalLoginAssist('mooc', true);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    moocLoginAssistChecking = false;
+  }
+}
+
+function startMoocLoginAssistWatcher() {
+  stopMoocLoginAssistWatcher();
+  moocLoginAssistPollTimer = setInterval(() => void checkMoocLoginAssistStatus(), PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS);
+  void checkMoocLoginAssistStatus();
+}
+
+function openMoocLoginAssistPopup(force = false) {
+  if (!force && !isPlatformEnabled('mooc')) return;
+  window.platformInteractiveLoginPending.mooc = true;
+  if (moocLoginAssistPopupWindowId && moocLoginAssistPopupTabId) {
+    chrome.windows.update(Number(moocLoginAssistPopupWindowId), { focused: true }).catch(() => {});
+    startMoocLoginAssistWatcher();
+    return;
+  }
+  const openPopup = async () => {
+    const popupWidth = 420;
+    const popupHeight = 600;
+    let left;
+    let top;
+    try {
+      const currentWin = await chrome.windows.getCurrent();
+      if ([currentWin?.left, currentWin?.top, currentWin?.width, currentWin?.height].every((value) => Number.isFinite(Number(value)))) {
+        left = Math.max(0, Number(currentWin.left) + Math.round((Number(currentWin.width) - popupWidth) / 2));
+        top = Math.max(0, Number(currentWin.top) + Math.round((Number(currentWin.height) - popupHeight) / 2));
+      }
+    } catch {
+      left = undefined;
+      top = undefined;
+    }
+    const created = await chrome.windows.create({
+      url: MOOC_LOGIN_ASSIST_URL,
+      type: 'popup',
+      focused: true,
+      width: popupWidth,
+      height: popupHeight,
+      left,
+      top
+    });
+    moocLoginAssistPopupWindowId = Number(created?.id || 0) || null;
+    const tab = Array.isArray(created?.tabs) && created.tabs.length ? created.tabs[0] : null;
+    moocLoginAssistPopupTabId = Number(tab?.id || 0) || null;
+    startMoocLoginAssistWatcher();
+  };
+  openPopup().catch(() => {
+    window.platformInteractiveLoginPending.mooc = false;
+    showToast('打开中国大学MOOC登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
+  });
+}
