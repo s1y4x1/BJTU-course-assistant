@@ -8975,6 +8975,11 @@ function bindCourseCardActionButtons(root = courseListDiv) {
         toggleCourseArchive(btnArchive, courseId);
       });
     }
+    if (btnArchive instanceof HTMLButtonElement) {
+      const archiveCache = window.archiveCacheByCourseId?.[String(courseId || '').trim()];
+      const archiveKnownEmpty = archiveCache?.loaded && (!Array.isArray(archiveCache.items) || !archiveCache.items.length);
+      btnArchive.style.display = archiveKnownEmpty ? 'none' : '';
+    }
   });
 }
 
@@ -9002,7 +9007,7 @@ function autoLoadCourseResourcesForCard(card) {
   if (btnVideos instanceof HTMLElement && !window.videoReplayCacheByCourseId?.[courseId]?.loaded) {
     autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode).catch(() => {});
   }
-  if (btnArchive instanceof HTMLButtonElement && window.isTeacherAccount && !window.archiveCacheByCourseId?.[courseId]?.loaded) {
+  if (btnArchive instanceof HTMLButtonElement && !window.archiveCacheByCourseId?.[courseId]?.loaded) {
     toggleCourseArchive(btnArchive, courseId, { render: false }).catch(() => {});
   }
 }
@@ -9281,7 +9286,7 @@ function updateArchiveButtonVisibility(courseId) {
   if (!(btn instanceof HTMLButtonElement)) return;
   const cache = window.archiveCacheByCourseId?.[String(courseId || '').trim()];
   const knownEmpty = cache?.loaded && (!Array.isArray(cache.items) || !cache.items.length);
-  btn.style.display = window.isTeacherAccount && !knownEmpty ? '' : 'none';
+  btn.style.display = knownEmpty ? 'none' : '';
 }
 
 function getCourseAssessmentWorkbookUrl(courseId) {
@@ -9394,7 +9399,7 @@ async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   const cid = String(courseId || '').trim();
-  if (!(btn instanceof HTMLButtonElement) || !card || !resultArea || !cid || !window.isTeacherAccount) return;
+  if (!(btn instanceof HTMLButtonElement) || !card || !resultArea || !cid) return;
   const activeView = String(card.dataset.resultView || '').trim();
   const replayCache = window.videoReplayCacheByCourseId?.[cid];
   const replayShadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${cid}"]`);
@@ -9471,7 +9476,7 @@ async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
 
 function downloadCourseArchive(courseId) {
   const cid = String(courseId || '').trim();
-  if (!cid || !window.isTeacherAccount) return;
+  if (!cid) return;
   const url = getCourseArchiveDownloadUrl(cid);
   try {
     chrome.downloads.download({
