@@ -4437,12 +4437,10 @@ async function switchToTeacherAccount(teacherId) {
     showToast('教师/助教账号为空，无法切换', 'warning', 1600);
     return;
   }
-  if (usernameInput.value.trim() === tid) {
-    showToast('当前已是该账号', 'info', 1200);
-    return;
-  }
+  pendingUsernameChange = lastValidUsername ? { from: lastValidUsername, to: tid } : null;
+  highPrioritySwitchTarget = tid;
   usernameInput.value = tid;
-  usernameInput.dispatchEvent(new Event('change', { bubbles: true }));
+  await doLoginFlow();
 }
 
 function isNativeHomeworkDone(hw) {
@@ -8930,6 +8928,30 @@ function bindCourseCardActionButtons(root = courseListDiv) {
         toggleReplayFromCache(btnVideos, courseId);
       });
     }
+
+    const btnAssessment = card.querySelector('button[data-action="assessment"]');
+    if (btnAssessment instanceof HTMLButtonElement && btnAssessment.__courseActionBound !== true) {
+      const assessmentUrl = getCourseAssessmentWorkbookUrl(courseId);
+      if (assessmentUrl) btnAssessment.dataset.qrUrl = assessmentUrl;
+      btnAssessment.__courseActionBound = true;
+      btnAssessment.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        downloadCourseAssessmentWorkbook(courseId);
+      });
+    }
+
+    const btnArchive = card.querySelector('button[data-action="archive"]');
+    if (btnArchive instanceof HTMLButtonElement && btnArchive.__courseActionBound !== true) {
+      const archiveUrl = getCourseArchiveDownloadUrl(courseId);
+      if (archiveUrl) btnArchive.dataset.qrUrl = archiveUrl;
+      btnArchive.__courseActionBound = true;
+      btnArchive.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        downloadCourseArchive(courseId);
+      });
+    }
   });
 }
 
@@ -9012,7 +9034,8 @@ function renderCourseList(courses) {
         <div class="course-actions" style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
           <button class="btn" style="background:#1e3a8a;" data-action="courseware">课件下载</button>
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
-          <button class="btn" style="background:#0f766e; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="assessment" data-course-id="${escapeHtml(String(courseId || ''))}">下载课程考核记录表</button>
+          <button class="btn" style="background:#0f766e; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="assessment" data-course-id="${escapeHtml(String(courseId || ''))}">课程考核记录表下载</button>
+          <button class="btn" style="background:#0369a1; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="archive" data-course-id="${escapeHtml(String(courseId || ''))}">归档打包下载</button>
         </div>
       </div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
@@ -9024,6 +9047,7 @@ function renderCourseList(courses) {
     const btnCourseware = card.querySelector('button[data-action="courseware"]');
     const btnVideos = card.querySelector('button[data-action="videos"]');
     const btnAssessment = card.querySelector('button[data-action="assessment"]');
+    const btnArchive = card.querySelector('button[data-action="archive"]');
     if (btnCourseware) {
       btnCourseware.dataset.courseNum = String(courseNumRaw || '');
       btnCourseware.dataset.fzId = String(fzId || '');
@@ -9068,6 +9092,17 @@ function renderCourseList(courses) {
         downloadCourseAssessmentWorkbook(courseId);
       });
       updateAssessmentButtonVisibility(courseId);
+    }
+    if (btnArchive) {
+      const archiveUrl = getCourseArchiveDownloadUrl(courseId);
+      if (archiveUrl) btnArchive.dataset.qrUrl = archiveUrl;
+      btnArchive.__courseActionBound = true;
+      btnArchive.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        downloadCourseArchive(courseId);
+      });
+      updateArchiveButtonVisibility(courseId);
     }
 
     hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
@@ -9209,6 +9244,12 @@ function updateAssessmentButtonVisibility(courseId) {
   btn.style.display = shouldShowCourseAssessmentButton(courseId) ? '' : 'none';
 }
 
+function updateArchiveButtonVisibility(courseId) {
+  const btn = document.querySelector(`button[data-action="archive"][data-course-id="${CSS.escape(String(courseId || ''))}"]`);
+  if (!(btn instanceof HTMLButtonElement)) return;
+  btn.style.display = window.isTeacherAccount ? '' : 'none';
+}
+
 function getCourseAssessmentWorkbookUrl(courseId) {
   const cid = String(courseId || '').trim();
   return cid ? `${BASE_VE}back/coursePlatform/homeWork.shtml?method=exportProcessAssessmentList&cId=${encodeURIComponent(cid)}` : '';
@@ -9229,6 +9270,28 @@ function downloadCourseAssessmentWorkbook(courseId) {
     });
   } catch (error) {
     showToast('课程考核记录表下载失败：' + String(error?.message || error), 'error', 3000);
+  }
+}
+
+function getCourseArchiveDownloadUrl(courseId) {
+  const cid = String(courseId || '').trim();
+  return cid ? `${BASE_VE}back/materialArchiving/MaterialArchivingIndex.shtml?method=batchDownloadFiles&courseId=${encodeURIComponent(cid)}` : '';
+}
+
+function downloadCourseArchive(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid || !window.isTeacherAccount) return;
+  const url = getCourseArchiveDownloadUrl(cid);
+  try {
+    chrome.downloads.download({
+      url,
+      saveAs: false
+    }, () => {
+      const err = chrome.runtime?.lastError?.message || '';
+      if (err) showToast('归档打包下载失败：' + err, 'error', 3000);
+    });
+  } catch (error) {
+    showToast('归档打包下载失败：' + String(error?.message || error), 'error', 3000);
   }
 }
 
