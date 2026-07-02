@@ -26,7 +26,7 @@
 
   let template = '';
   try {
-    template = await (await fetch(chrome.runtime.getURL('portal-login.html'))).text();
+    template = await (await fetch(chrome.runtime.getURL('ve-login-overlay.html'))).text();
   } catch {
     return;
   }

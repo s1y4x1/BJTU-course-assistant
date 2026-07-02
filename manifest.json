@@ -95,7 +95,7 @@
       ],
       "js": [
         "md5.js",
-        "portal-login.js"
+        "ve-login-overlay.js"
       ],
       "run_at": "document_idle"
     }
@@ -103,7 +103,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "portal-login.html"
+        "ve-login-overlay.html"
       ],
       "matches": [
         "http://123.121.147.7:88/*"
