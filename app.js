@@ -213,6 +213,9 @@ window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
 window.coursewareItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
 window.coursewareItemsByCourseId = {}; // {courseId: CoursewareItem[]}
+window.archiveItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
+window.archiveItemsByCourseId = {}; // {courseId: ArchiveItem[]}
+window.archiveCacheByCourseId = {}; // {courseId:{loaded,loading,items,html}}
 window.homeworkAttachmentItemsById = {}; // {resourceId: {id,name,url,extName,courseId,sizeMbRaw,sizeMb}}
 window.homeworkAttachmentItemsByCourseId = {}; // {courseId: HomeworkAttachmentItem[]}
 window.resourceSpaceLoadVersion = 0;
@@ -3118,8 +3121,9 @@ function findResourceItemElementById(resourceId) {
 function getSelectableDownloadItems() {
   const native = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
   const courseware = Object.values(window.coursewareItemsById || {});
+  const archives = Object.values(window.archiveItemsById || {});
   const attachments = Object.values(window.homeworkAttachmentItemsById || {});
-  return [...native, ...courseware, ...attachments];
+  return [...native, ...courseware, ...archives, ...attachments];
 }
 
 function findSelectableDownloadItemById(resourceId) {
@@ -3127,7 +3131,7 @@ function findSelectableDownloadItemById(resourceId) {
   if (!rid) return null;
   const native = (window.resourceSpaceItems || []).find((x) => String(x?.id || '').trim() === rid);
   if (native) return native;
-  return window.coursewareItemsById?.[rid] || window.homeworkAttachmentItemsById?.[rid] || null;
+  return window.coursewareItemsById?.[rid] || window.archiveItemsById?.[rid] || window.homeworkAttachmentItemsById?.[rid] || null;
 }
 
 function getResourceItemSizeBytes(item) {
@@ -6545,6 +6549,7 @@ function syncCourseActionButtonText(card, activeView = '') {
   if (!card) return;
   const replayBtn = card.querySelector('button[data-action="videos"]');
   const coursewareBtn = card.querySelector('button[data-action="courseware"]');
+  const archiveBtn = card.querySelector('button[data-action="archive"]');
 
   if (replayBtn && !replayBtn.classList.contains('replay-list-loading') && !replayBtn.classList.contains('replay-link-progress')) {
     replayBtn.textContent = activeView === 'replay' ? '收起' : '回放下载';
@@ -6552,6 +6557,26 @@ function syncCourseActionButtonText(card, activeView = '') {
   if (coursewareBtn && !coursewareBtn.classList.contains('courseware-list-loading') && !coursewareBtn.classList.contains('courseware-link-progress')) {
     coursewareBtn.textContent = activeView === 'courseware' ? '收起' : '课件下载';
   }
+  if (archiveBtn && !archiveBtn.classList.contains('archive-list-loading') && !archiveBtn.classList.contains('archive-link-progress')) {
+    archiveBtn.textContent = activeView === 'archive' ? '收起' : '归档下载';
+  }
+}
+
+function syncArchiveItemsIndex(courseId, items) {
+  const cid = String(courseId || '').trim();
+  const previous = Array.isArray(window.archiveItemsByCourseId?.[cid]) ? window.archiveItemsByCourseId[cid] : [];
+  previous.forEach((item) => {
+    const id = String(item?.id || '').trim();
+    if (!id) return;
+    delete window.archiveItemsById[id];
+    window.resourceSpaceSelected.delete(id);
+  });
+  const next = Array.isArray(items) ? items : [];
+  window.archiveItemsByCourseId[cid] = next;
+  next.forEach((item) => {
+    const id = String(item?.id || '').trim();
+    if (id) window.archiveItemsById[id] = item;
+  });
 }
 
 function syncCoursewareItemsIndex(courseId, items) {
@@ -6616,7 +6641,7 @@ function toggleCoursewareSelectionForCard(card) {
   refreshResourceSelectAllButton();
 }
 
-function buildCoursewareListHtml(courseId, items) {
+function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
   const list = Array.isArray(items) ? items : [];
   if (!list.length) {
     return '<div style="font-size:12px; color:#999;">暂无课件资源</div>';
@@ -6624,7 +6649,7 @@ function buildCoursewareListHtml(courseId, items) {
 
   const currentCourseId = String(courseId || '').trim();
   const selectAllToolbar = currentCourseId
-    ? `<div class="courseware-toolbar"><button class="btn courseware-select-all-btn" data-action="courseware-select-all" data-course-id="${escapeHtml(currentCourseId)}" style="background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2;">反选</button></div>`
+    ? `<div class="courseware-toolbar"><button class="btn courseware-select-all-btn" data-action="courseware-select-all" data-course-id="${escapeHtml(currentCourseId)}" style="background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2;">反选</button>${toolbarEndHtml}</div>`
     : '';
 
   const rowsHtml = list.map((item, index) => {
@@ -8943,13 +8968,11 @@ function bindCourseCardActionButtons(root = courseListDiv) {
 
     const btnArchive = card.querySelector('button[data-action="archive"]');
     if (btnArchive instanceof HTMLButtonElement && btnArchive.__courseActionBound !== true) {
-      const archiveUrl = getCourseArchiveDownloadUrl(courseId);
-      if (archiveUrl) btnArchive.dataset.qrUrl = archiveUrl;
       btnArchive.__courseActionBound = true;
       btnArchive.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        downloadCourseArchive(courseId);
+        toggleCourseArchive(btnArchive, courseId);
       });
     }
   });
@@ -8968,6 +8991,7 @@ function autoLoadCourseResourcesForCard(card) {
   const meta = card.querySelector('.ve-course-num-wrap');
   const btnCourseware = card.querySelector('button[data-action="courseware"]');
   const btnVideos = card.querySelector('button[data-action="videos"]');
+  const btnArchive = card.querySelector('button[data-action="archive"]');
   const courseNumRaw = String(btnCourseware?.dataset?.courseNum || btnVideos?.dataset?.courseNum || meta?.dataset?.courseNum || courseId).trim();
   const fzId = String(btnCourseware?.dataset?.fzId || btnVideos?.dataset?.fzId || meta?.dataset?.fzId || '').trim();
   const xqCode = String(btnVideos?.dataset?.xqCode || getCurrentXqCode() || '').trim();
@@ -8977,6 +9001,9 @@ function autoLoadCourseResourcesForCard(card) {
   }
   if (btnVideos instanceof HTMLElement && !window.videoReplayCacheByCourseId?.[courseId]?.loaded) {
     autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode).catch(() => {});
+  }
+  if (btnArchive instanceof HTMLButtonElement && window.isTeacherAccount && !window.archiveCacheByCourseId?.[courseId]?.loaded) {
+    toggleCourseArchive(btnArchive, courseId, { render: false }).catch(() => {});
   }
 }
 
@@ -9035,7 +9062,7 @@ function renderCourseList(courses) {
           <button class="btn" style="background:#1e3a8a;" data-action="courseware">课件下载</button>
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
           <button class="btn" style="background:#0f766e; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="assessment" data-course-id="${escapeHtml(String(courseId || ''))}">课程考核记录表下载</button>
-          <button class="btn" style="background:#0369a1; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="archive" data-course-id="${escapeHtml(String(courseId || ''))}">归档打包下载</button>
+          <button class="btn" style="background:#0369a1; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="archive" data-course-id="${escapeHtml(String(courseId || ''))}">归档下载</button>
         </div>
       </div>
       <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
@@ -9094,13 +9121,11 @@ function renderCourseList(courses) {
       updateAssessmentButtonVisibility(courseId);
     }
     if (btnArchive) {
-      const archiveUrl = getCourseArchiveDownloadUrl(courseId);
-      if (archiveUrl) btnArchive.dataset.qrUrl = archiveUrl;
       btnArchive.__courseActionBound = true;
       btnArchive.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        downloadCourseArchive(courseId);
+        toggleCourseArchive(btnArchive, courseId);
       });
       updateArchiveButtonVisibility(courseId);
     }
@@ -9116,6 +9141,13 @@ function renderCourseList(courses) {
         setCoursewareButtonLoading(btnCourseware, false);
         if (isAutoLoadCourseResourcesEnabled()) {
           autoLoadCourseware(btnCourseware, courseId, courseNumRaw, fzId).catch(() => {});
+        }
+      });
+    }
+    if (btnArchive) {
+      hwPromise.finally(() => {
+        if (isAutoLoadCourseResourcesEnabled()) {
+          toggleCourseArchive(btnArchive, courseId, { render: false }).catch(() => {});
         }
       });
     }
@@ -9247,7 +9279,9 @@ function updateAssessmentButtonVisibility(courseId) {
 function updateArchiveButtonVisibility(courseId) {
   const btn = document.querySelector(`button[data-action="archive"][data-course-id="${CSS.escape(String(courseId || ''))}"]`);
   if (!(btn instanceof HTMLButtonElement)) return;
-  btn.style.display = window.isTeacherAccount ? '' : 'none';
+  const cache = window.archiveCacheByCourseId?.[String(courseId || '').trim()];
+  const knownEmpty = cache?.loaded && (!Array.isArray(cache.items) || !cache.items.length);
+  btn.style.display = window.isTeacherAccount && !knownEmpty ? '' : 'none';
 }
 
 function getCourseAssessmentWorkbookUrl(courseId) {
@@ -9278,6 +9312,163 @@ function getCourseArchiveDownloadUrl(courseId) {
   return cid ? `${BASE_VE}back/materialArchiving/MaterialArchivingIndex.shtml?method=batchDownloadFiles&courseId=${encodeURIComponent(cid)}` : '';
 }
 
+function buildCourseArchiveHtml(courseId, items) {
+  const cid = String(courseId || '').trim();
+  const batchUrl = getCourseArchiveDownloadUrl(cid);
+  const batchButton = `<button class="btn" style="background:#0369a1; padding:3px 8px; margin-left:auto; font-size:11px; line-height:1.2;" data-action="archive-batch-download" data-course-id="${escapeHtml(cid)}" data-qr-url="${escapeHtml(batchUrl)}">打包下载</button>`;
+  return buildCoursewareListHtml(cid, items, batchButton);
+}
+
+async function fetchCourseArchiveItems(courseId) {
+  const cid = String(courseId || '').trim();
+  const url = `${BASE_VE}back/materialArchiving/MaterialArchivingIndex.shtml?method=queryMaterialArchivingByCourseId&course_id=${encodeURIComponent(cid)}`;
+  const { text, res } = await fetchText(url, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json, text/javascript, */*; q=0.01' },
+    signal: window.globalVeAbortController?.signal
+  });
+  if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, items: [] };
+  const data = parseVeJson(text);
+  const rawItems = Array.isArray(data?.result?.[0]?.resList) ? data.result[0].resList : [];
+  const items = rawItems.map((raw, index) => ({
+    id: `archive-${cid}-${String(raw?.id ?? index)}`,
+    sourceId: raw?.id,
+    courseId: cid,
+    name: String(raw?.name || `归档资源-${index + 1}`).trim(),
+    rpName: String(raw?.name || '').trim(),
+    extName: String(raw?.res_ext_name || '').trim(),
+    rpId: String(raw?.uuid || '').trim(),
+    examineStatus: raw?.examine_status,
+    resNo: raw?.res_no,
+    url: ''
+  }));
+
+  return { loginRequired: false, items };
+}
+
+async function startCourseArchiveLinkFetch(btn, courseId) {
+  const card = btn?.closest('.file-item');
+  const resultArea = card?.querySelector('.result-area');
+  const cid = String(courseId || '').trim();
+  const cache = window.archiveCacheByCourseId?.[cid];
+  const linkItems = Array.isArray(cache?.items) ? cache.items.filter((item) => item.rpId && !item.url) : [];
+  if (!(btn instanceof HTMLButtonElement) || !card || !resultArea || !cache || !linkItems.length || cache.linksFetching) return;
+
+  cache.linksFetching = true;
+  btn.disabled = true;
+  btn.classList.remove('archive-list-loading');
+  btn.classList.add('archive-link-progress');
+  btn.style.setProperty('--archive-progress', '0%');
+  btn.innerHTML = `收起 <span class="spinner" style="display:inline-block;width:10px;height:10px;margin-left:4px;border-width:2px;border-color:#0369a1;border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
+
+  let completed = 0;
+  let loginRequired = false;
+  await Promise.all(linkItems.map(async (item) => {
+    if (loginRequired) return;
+    const result = await fetchCoursewareRpUrl(item.rpId);
+    if (result?.loginExpired) loginRequired = true;
+    else item.url = String(result?.url || '').trim();
+    completed += 1;
+    btn.style.setProperty('--archive-progress', `${Math.round((completed / linkItems.length) * 100)}%`);
+  }));
+
+  cache.linksFetching = false;
+  btn.disabled = false;
+  btn.classList.remove('archive-link-progress');
+  btn.style.removeProperty('--archive-progress');
+  if (loginRequired) {
+    cache.linksFetched = false;
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
+    await restartVePlatformForLoginExpired('归档资源链接登录已失效，正在重启智慧课程平台…');
+    return;
+  }
+
+  cache.linksFetched = true;
+  cache.html = buildCourseArchiveHtml(cid, cache.items);
+  syncArchiveItemsIndex(cid, cache.items);
+  if (String(card.dataset.resultView || '').trim() === 'archive') resultArea.innerHTML = cache.html;
+  syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
+}
+
+async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
+  const card = btn?.closest('.file-item');
+  const resultArea = card?.querySelector('.result-area');
+  const cid = String(courseId || '').trim();
+  if (!(btn instanceof HTMLButtonElement) || !card || !resultArea || !cid || !window.isTeacherAccount) return;
+  const activeView = String(card.dataset.resultView || '').trim();
+  const replayCache = window.videoReplayCacheByCourseId?.[cid];
+  const replayShadowArea = card.querySelector(`.replay-shadow-area[data-course-id="${cid}"]`);
+  const preservePendingReplayDom = () => {
+    if (activeView !== 'replay' || !replayCache?.linksFetching) return;
+    if (!(replayShadowArea instanceof HTMLElement) || replayShadowArea.firstChild || !resultArea.firstChild) return;
+    const fragment = document.createDocumentFragment();
+    while (resultArea.firstChild) fragment.appendChild(resultArea.firstChild);
+    replayShadowArea.appendChild(fragment);
+  };
+  if (render && activeView === 'archive' && isResultAreaOpen(resultArea)) {
+    toggleResultAreaAnimated(resultArea, false);
+    card.dataset.resultView = '';
+    syncCourseActionButtonText(card, '');
+    return;
+  }
+
+  const cache = window.archiveCacheByCourseId[cid];
+  if (cache?.loaded) {
+    if (!Array.isArray(cache.items) || !cache.items.length) {
+      btn.style.display = 'none';
+      return;
+    }
+    if (!render) return;
+    preservePendingReplayDom();
+    syncArchiveItemsIndex(cid, cache.items || []);
+    resultArea.innerHTML = cache.html;
+    card.dataset.resultView = 'archive';
+    toggleResultAreaAnimated(resultArea, true);
+    syncCourseActionButtonText(card, 'archive');
+    startCourseArchiveLinkFetch(btn, cid).catch(() => {});
+    return;
+  }
+  if (cache?.loading) return;
+
+  window.archiveCacheByCourseId[cid] = { loading: true, loaded: false, items: [], html: '' };
+  btn.disabled = true;
+  btn.classList.add('archive-list-loading');
+  btn.innerHTML = `归档下载 <span class="spinner" style="display:inline-block;width:10px;height:10px;margin-left:4px;border-width:2px;border-color:#0369a1;border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
+  try {
+    const payload = await fetchCourseArchiveItems(cid);
+    if (payload.loginRequired) {
+      delete window.archiveCacheByCourseId[cid];
+      await restartVePlatformForLoginExpired('归档资源登录已失效，正在重启智慧课程平台…');
+      return;
+    }
+    if (!payload.items.length) {
+      window.archiveCacheByCourseId[cid] = { loading: false, loaded: true, items: [], html: '' };
+      syncArchiveItemsIndex(cid, []);
+      btn.style.display = 'none';
+      return;
+    }
+    const html = buildCourseArchiveHtml(cid, payload.items);
+    window.archiveCacheByCourseId[cid] = { loading: false, loaded: true, items: payload.items, html };
+    syncArchiveItemsIndex(cid, payload.items);
+    if (render) {
+      preservePendingReplayDom();
+      resultArea.innerHTML = html;
+      card.dataset.resultView = 'archive';
+      toggleResultAreaAnimated(resultArea, true);
+      await startCourseArchiveLinkFetch(btn, cid);
+    }
+  } catch (error) {
+    delete window.archiveCacheByCourseId[cid];
+    showToast('归档列表加载失败：' + String(error?.message || error), 'error', 3000);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('archive-list-loading');
+    btn.classList.remove('archive-link-progress');
+    btn.style.removeProperty('--archive-progress');
+    syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
+  }
+}
+
 function downloadCourseArchive(courseId) {
   const cid = String(courseId || '').trim();
   if (!cid || !window.isTeacherAccount) return;
@@ -9288,10 +9479,10 @@ function downloadCourseArchive(courseId) {
       saveAs: false
     }, () => {
       const err = chrome.runtime?.lastError?.message || '';
-      if (err) showToast('归档打包下载失败：' + err, 'error', 3000);
+      if (err) showToast('打包下载失败：' + err, 'error', 3000);
     });
   } catch (error) {
-    showToast('归档打包下载失败：' + String(error?.message || error), 'error', 3000);
+    showToast('打包下载失败：' + String(error?.message || error), 'error', 3000);
   }
 }
 
@@ -11519,6 +11710,12 @@ courseListDiv.addEventListener('click', async (e) => {
   }
 
   const action = String(t.dataset.action || '').trim();
+  if (action === 'archive-batch-download') {
+    e.preventDefault();
+    e.stopPropagation();
+    downloadCourseArchive(String(t.dataset.courseId || '').trim());
+    return;
+  }
   if (action === 'courseware-select-all') {
     const card = t.closest('[id^="course-"]');
     toggleCoursewareSelectionForCard(card);
