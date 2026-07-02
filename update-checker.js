@@ -416,6 +416,10 @@ function ensureVersionNoticeModal() {
   const ignoreBtn = modal.querySelector('#version-notice-ignore');
   if (ignoreBtn instanceof HTMLButtonElement) {
     ignoreBtn.addEventListener('click', async () => {
+      if (versionButtonLatestForce) {
+        ignoreBtn.style.display = 'none';
+        return;
+      }
       const tag = String(versionButtonLatestVersion || '').trim();
       if (!tag) {
         modal.style.display = 'none';
@@ -475,7 +479,7 @@ function openVersionNoticeModal(overrideMode) {
     sourceSelect.value = 'zipball';
   }
   if (ignoreBtn instanceof HTMLButtonElement) {
-    if (mode === 'outdated') {
+    if (mode === 'outdated' && !versionButtonLatestForce) {
       const ignored = String(versionIgnoredTag || '').trim();
       const latest = String(versionButtonLatestVersion || '').trim();
       if (ignored && latest && ignored === latest) {
