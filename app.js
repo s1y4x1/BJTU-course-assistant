@@ -509,6 +509,7 @@ async function triggerInitialPlatformLoads() {
   if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
   if (isPlatformEnabled('mrjzy')) triggerExternalPlatformLoad('mrjzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
+  if (isPlatformEnabled('mooc')) triggerExternalPlatformLoad('mooc', false);
   let veStartupResult = null;
   if (isPlatformEnabled('ve')) {
     veStartupResult = await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
@@ -516,7 +517,6 @@ async function triggerInitialPlatformLoads() {
     window.currentVeCourseList = [];
     renderCourseList([]);
   }
-  if (isPlatformEnabled('mooc')) triggerExternalPlatformLoad('mooc', false);
   return veStartupResult;
 }
 

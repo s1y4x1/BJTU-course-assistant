@@ -3,6 +3,24 @@
 importScripts('account-store.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
+const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
+
+async function restoreAppAfterAutomaticExtensionReload() {
+  const stored = await chrome.storage.local.get([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => ({}));
+  if (!stored?.[VERSION_AUTO_RELOAD_HANDOFF_KEY]) return;
+  await chrome.storage.local.remove([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => {});
+  const tabs = (await chrome.tabs.query({}).catch(() => []))
+    .filter((tab) => String(tab?.url || '').startsWith(APP_URL));
+  if (tabs.length) {
+    const tab = tabs[0];
+    await chrome.tabs.update(tab.id, { url: APP_URL, active: true }).catch(() => null);
+    if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
+    return;
+  }
+  await chrome.tabs.create({ url: APP_URL, active: true }).catch(() => null);
+}
+
+void restoreAppAfterAutomaticExtensionReload();
 
 async function injectJlgjThemeIntoOpenTabs() {
   const tabs = await chrome.tabs.query({ url: ['https://i.jielong.com/*'] }).catch(() => []);

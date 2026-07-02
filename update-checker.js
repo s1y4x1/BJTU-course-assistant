@@ -64,6 +64,7 @@ const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
 const VERSION_PENDING_RELOAD_KEY = 'pendingUpdateReload';
+const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
 const VERSION_FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
 const VERSION_FS_DB_STORE = 'handles';
@@ -758,6 +759,50 @@ function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVers
   else startVersionRefreshCountdown();
 }
 
+async function scheduleAutomaticExtensionReload({ fileCount, displayVersion } = {}) {
+  const writtenFileCount = Math.max(0, Number(fileCount) || 0);
+  await setLocal(VERSION_AUTO_RELOAD_HANDOFF_KEY, {
+    ver: versionButtonLatestVersion,
+    name: String(displayVersion || versionButtonLatestDisplayVersion || versionButtonLatestVersion),
+    fileCount: writtenFileCount,
+    requestedAt: Date.now()
+  });
+  removeAutoUpdateQueryParameter();
+  const modal = ensureVersionDownloadModal();
+  if (modal) modal.dataset.locked = '1';
+  setVersionDownloadProgressUi({
+    visible: true,
+    status: '正在重新加载扩展…',
+    title: '更新文件已覆盖解压',
+    body: writtenFileCount > 0
+      ? `已覆盖写入 ${writtenFileCount} 个文件，正在自动重新加载扩展。`
+      : '更新文件已写入，正在自动重新加载扩展。',
+    phase: 'finished'
+  });
+  const actions = document.getElementById('version-download-actions');
+  const retryBtn = document.getElementById('version-download-retry');
+  const openExtensionsBtn = document.getElementById('version-download-open-extensions');
+  const refreshBtn = document.getElementById('version-download-refresh');
+  const closeBtn = document.getElementById('version-download-close');
+  if (actions instanceof HTMLElement) actions.style.display = 'none';
+  if (retryBtn instanceof HTMLElement) retryBtn.style.display = 'none';
+  if (openExtensionsBtn instanceof HTMLElement) openExtensionsBtn.style.display = 'none';
+  if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
+  if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
+  cancelVersionRefreshCountdown();
+
+  setTimeout(() => {
+    try {
+      chrome.runtime.reload();
+    } catch (error) {
+      setLocal(VERSION_AUTO_RELOAD_HANDOFF_KEY, null).catch(() => {});
+      setVersionDownloadCompletionUi({ reloadRequired: true, fileCount: writtenFileCount, displayVersion });
+      showUpdateDownloadCompleteNotification();
+      showToast(`自动重新加载扩展失败：${String(error?.message || error || '未知错误')}`, 'error', 4000);
+    }
+  }, 300);
+}
+
 function parseUpdateSourceTime(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -1042,10 +1087,17 @@ async function downloadVersionByUrlWithProgress(url) {
     reload: reloadRequired,
     force: forcedUpdate,
     fileCount,
-    appliedAt: Date.now()
+    appliedAt: Date.now(),
+    autoReloadRequestedAt: reloadRequired ? Date.now() : 0
   };
   if (reloadRequired) {
     await setLocal(VERSION_PENDING_RELOAD_KEY, appliedRecord);
+    suppressVersionNoticeForDownload();
+    await scheduleAutomaticExtensionReload({
+      fileCount,
+      displayVersion: versionButtonLatestDisplayVersion
+    });
+    return;
   } else {
     await setLocal(VERSION_APPLIED_WITHOUT_RELOAD_KEY, appliedRecord);
     await setLocal(VERSION_PENDING_RELOAD_KEY, null);
@@ -1064,7 +1116,6 @@ async function downloadVersionByUrlWithProgress(url) {
   }
   setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion: versionButtonLatestDisplayVersion });
   suppressVersionNoticeForDownload();
-  if (reloadRequired) showUpdateDownloadCompleteNotification();
 }
 
 async function startVersionDownloadWithFallback(downloadUrl, source = '', fullExtraction = false) {
@@ -1432,6 +1483,16 @@ async function loadVersionInfoInternal(releaseOverride = null) {
           return;
         }
         setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
+        const lastAutoReloadAt = Number(pendingReload?.autoReloadRequestedAt) || 0;
+        if (Date.now() - lastAutoReloadAt >= 60 * 1000) {
+          pendingReload = { ...pendingReload, autoReloadRequestedAt: Date.now() };
+          await setLocal(VERSION_PENDING_RELOAD_KEY, pendingReload);
+          await scheduleAutomaticExtensionReload({
+            fileCount: Number(pendingReload?.fileCount) > 0 ? Number(pendingReload.fileCount) : 0,
+            displayVersion: latestDisplayVersion
+          });
+          return;
+        }
         setVersionDownloadCompletionUi({
           reloadRequired: true,
           fileCount: Number(pendingReload?.fileCount) > 0 ? Number(pendingReload.fileCount) : null,
