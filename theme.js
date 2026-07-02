@@ -3,7 +3,6 @@
   const DEFAULT_MODE = 'system';
   const media = window.matchMedia?.('(prefers-color-scheme: dark)');
   let mode = DEFAULT_MODE;
-  let settingsLoaded = false;
 
   function normalizeMode(value) {
     return value === 'light' || value === 'dark' ? value : DEFAULT_MODE;
@@ -18,26 +17,16 @@
     try {
       window.dispatchEvent(new CustomEvent('bjtu-theme-change', { detail: { mode, resolved } }));
     } catch {}
-    if (settingsLoaded && resolved === 'light') {
-      try {
-        chrome.storage.local.set({
-          jlgjDarkModeEnabled: false,
-          jlgjAlwaysDarkModeEnabled: false
-        }).catch(() => {});
-      } catch {}
-    }
   }
 
   applyTheme();
 
   try {
     chrome.storage.local.get([STORAGE_KEY]).then((data) => {
-      settingsLoaded = true;
       applyTheme(data?.[STORAGE_KEY]);
     }).catch(() => {});
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes[STORAGE_KEY]) {
-        settingsLoaded = true;
         applyTheme(changes[STORAGE_KEY].newValue);
       }
     });

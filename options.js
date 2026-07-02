@@ -256,29 +256,7 @@ function goBackToApp() {
     alwaysDark.closest('label')?.classList.toggle('is-disabled', alwaysDark.disabled);
   };
 
-  let clearingJlgjDarkOptions = false;
-  const enforceJlgjDarkThemeAvailability = async () => {
-    if (document.documentElement.dataset.colorScheme === 'dark' || clearingJlgjDarkOptions) {
-      updatePlatformDetailDisabled();
-      return;
-    }
-    const loginDark = document.getElementById('jlgjDarkModeEnabled');
-    const alwaysDark = document.getElementById('jlgjAlwaysDarkModeEnabled');
-    const changed = loginDark.checked || alwaysDark.checked;
-    loginDark.checked = false;
-    alwaysDark.checked = false;
-    updatePlatformDetailDisabled();
-    if (!changed) return;
-    clearingJlgjDarkOptions = true;
-    try {
-      await chrome.storage.local.set({
-        jlgjDarkModeEnabled: false,
-        jlgjAlwaysDarkModeEnabled: false
-      });
-    } finally {
-      clearingJlgjDarkOptions = false;
-    }
-  };
+  const enforceJlgjDarkThemeAvailability = async () => { updatePlatformDetailDisabled(); };
 
   const applyPlatformVisible = async () => {
     const value = {};
@@ -407,10 +385,6 @@ function goBackToApp() {
   ['jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails'].forEach((id) => {
     document.getElementById(id).addEventListener('change', async () => {
       await chrome.storage.local.set({ [id]: !!document.getElementById(id).checked });
-      if (id === 'jlgjDarkModeEnabled' && !document.getElementById(id).checked) {
-        document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
-        await chrome.storage.local.set({ jlgjAlwaysDarkModeEnabled: false });
-      }
       setMsg('已应用更改');
       if (id === 'jlgjDarkModeEnabled') updatePlatformDetailDisabled();
     });

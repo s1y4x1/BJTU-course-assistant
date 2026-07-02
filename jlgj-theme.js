@@ -8,6 +8,30 @@
   let themeMode = 'system';
   let loginDarkEnabled = false;
   let alwaysDarkEnabled = false;
+  let observer = null;
+
+  const colorParts = (value) => {
+    const match = String(value || '').match(/rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:\s*[,/]\s*([\d.]+))?/i);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? 1 : Number(match[4])] : null;
+  };
+  const isNeutral = (parts) => parts && Math.max(parts[0], parts[1], parts[2]) - Math.min(parts[0], parts[1], parts[2]) <= 18;
+  const isWhite = (parts) => isNeutral(parts) && parts[3] > 0.15 && (parts[0] + parts[1] + parts[2]) / 3 >= 235;
+  const isBlack = (parts) => isNeutral(parts) && parts[3] > 0.15 && (parts[0] + parts[1] + parts[2]) / 3 <= 48;
+
+  function classify(element) {
+    if (!(element instanceof HTMLElement) || element instanceof HTMLIFrameElement || element.matches('.toggle, .toggle *')) return;
+    const computed = getComputedStyle(element);
+    if (computed.backgroundImage === 'none' && isWhite(colorParts(computed.backgroundColor))) element.classList.add('__bjtu-jlgj-dark-bg');
+    if (isBlack(colorParts(computed.color))) element.classList.add('__bjtu-jlgj-dark-text');
+    const borders = [computed.borderTopColor, computed.borderRightColor, computed.borderBottomColor, computed.borderLeftColor].map(colorParts);
+    if (borders.some((parts) => isWhite(parts) || isBlack(parts))) element.classList.add('__bjtu-jlgj-dark-border');
+  }
+
+  function classifyTree(node) {
+    if (!(node instanceof Element)) return;
+    classify(node);
+    node.querySelectorAll('*').forEach(classify);
+  }
 
   function apply(enabled) {
     const root = document.documentElement;
@@ -18,28 +42,55 @@
         style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = `
-          html.${ROOT_CLASS},
-          html.${ROOT_CLASS} body {
-            background:#0f172a none !important;
-            color:#e5e7eb !important;
-            color-scheme:dark !important;
-          }
-          html.${ROOT_CLASS} body *:not(iframe):not(.toggle):not(.toggle *) {
-            background:#0f172a none !important;
-            color:#e5e7eb !important;
-            border-color:#334155 !important;
-          }
+          html.${ROOT_CLASS} { color-scheme:dark !important; }
+          html.${ROOT_CLASS}.__bjtu-jlgj-dark-bg,
+          html.${ROOT_CLASS} .__bjtu-jlgj-dark-bg { background:#0f172a none !important; }
+          html.${ROOT_CLASS}.__bjtu-jlgj-dark-text,
+          html.${ROOT_CLASS} .__bjtu-jlgj-dark-text { color:#e5e7eb !important; }
+          html.${ROOT_CLASS}.__bjtu-jlgj-dark-border,
+          html.${ROOT_CLASS} .__bjtu-jlgj-dark-border { border-color:#334155 !important; }
           html.${ROOT_CLASS} iframe[src*="open.weixin.qq.com/connect/"][src*="qrconnect"] {
             color-scheme:light !important;
           }
         `;
         (document.head || root).appendChild(style);
       }
+      classifyTree(root);
       root.classList.add(ROOT_CLASS);
+      if (!observer) {
+        observer = new MutationObserver((records) => records.forEach((record) =>
+          record.addedNodes.forEach(classifyTree)
+        ));
+        observer.observe(root, { childList: true, subtree: true });
+      }
       return;
     }
     root.classList.remove(ROOT_CLASS);
     style?.remove();
+    observer?.disconnect();
+    observer = null;
+    document.querySelectorAll('[data-bjtu-jlgj-login-bg]').forEach((element) => {
+      if (!(element instanceof HTMLElement)) return;
+      const value = element.dataset.bjtuJlgjLoginBg || '';
+      const priority = element.dataset.bjtuJlgjLoginBgPriority || '';
+      if (value) element.style.setProperty('background', value, priority);
+      else element.style.removeProperty('background');
+      delete element.dataset.bjtuJlgjLoginBg;
+      delete element.dataset.bjtuJlgjLoginBgPriority;
+    });
+    document.querySelectorAll('[data-bjtu-jlgj-login-color]').forEach((element) => {
+      if (!(element instanceof HTMLElement)) return;
+      const value = element.dataset.bjtuJlgjLoginColor || '';
+      const priority = element.dataset.bjtuJlgjLoginColorPriority || '';
+      if (value) element.style.setProperty('color', value, priority);
+      else element.style.removeProperty('color');
+      delete element.dataset.bjtuJlgjLoginColor;
+      delete element.dataset.bjtuJlgjLoginColorPriority;
+    });
+    document.getElementById('__bjtu_jlgj_dark_style__')?.remove();
+    try { globalThis.__bjtuJlgjDarkObserver?.disconnect(); } catch { /* ignore */ }
+    globalThis.__bjtuJlgjDarkObserver = null;
+    globalThis.__bjtuJlgjDarkObserverVersion = 0;
   }
 
   function resolvedDark() {
@@ -51,17 +102,10 @@
   function sync() {
     if (!resolvedDark()) {
       apply(false);
-      if (loginDarkEnabled || alwaysDarkEnabled) {
-        loginDarkEnabled = false;
-        alwaysDarkEnabled = false;
-        chrome.storage.local.set({
-          jlgjDarkModeEnabled: false,
-          jlgjAlwaysDarkModeEnabled: false
-        }).catch(() => {});
-      }
+      chrome.runtime.sendMessage({ type: 'JLGJ_CLEAR_LOGIN_DARK' }).catch(() => {});
       return;
     }
-    apply(alwaysDarkEnabled);
+    apply(loginDarkEnabled && alwaysDarkEnabled);
   }
 
   chrome.storage.local.get(['themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled']).then((data) => {

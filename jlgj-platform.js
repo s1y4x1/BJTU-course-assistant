@@ -261,8 +261,6 @@ async function showJlgjQrFrameInBackgroundTab(tabId) {
                 (document.head || document.documentElement).appendChild(style);
               }
               style.textContent = `
-                html, body { background:#0f172a !important; color:#e5e7eb !important; }
-                html body *:not(iframe):not(.toggle):not(.toggle *) { background:#0f172a none !important; color:#e5e7eb !important; border-color:#334155 !important; }
                 iframe[src*="open.weixin.qq.com/connect/"][src*="qrconnect"] { color-scheme:light !important; }
               `;
               document.querySelectorAll('.toggle, .toggle *').forEach((node) => {
@@ -275,19 +273,38 @@ async function showJlgjQrFrameInBackgroundTab(tabId) {
                 nodes.forEach((node) => {
                   if (!(node instanceof HTMLElement) || node instanceof HTMLIFrameElement) return;
                   if (node.matches('.toggle, .toggle *')) return;
-                  node.style.setProperty('background', '#0f172a none', 'important');
-                  node.style.setProperty('color', '#e5e7eb', 'important');
-                  node.style.setProperty('border-color', '#334155', 'important');
+                  const parse = (value) => {
+                    const match = String(value || '').match(/rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:\s*[,/]\s*([\d.]+))?/i);
+                    return match ? [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? 1 : Number(match[4])] : null;
+                  };
+                  const neutral = (parts) => parts && Math.max(parts[0], parts[1], parts[2]) - Math.min(parts[0], parts[1], parts[2]) <= 18;
+                  const computed = getComputedStyle(node);
+                  const background = parse(computed.backgroundColor);
+                  const foreground = parse(computed.color);
+                  if (computed.backgroundImage === 'none' && neutral(background) && background[3] > 0.15 && (background[0] + background[1] + background[2]) / 3 >= 235) {
+                    if (!node.hasAttribute('data-bjtu-jlgj-login-bg')) {
+                      node.dataset.bjtuJlgjLoginBg = node.style.getPropertyValue('background');
+                      node.dataset.bjtuJlgjLoginBgPriority = node.style.getPropertyPriority('background');
+                    }
+                    node.style.setProperty('background', '#0f172a none', 'important');
+                  }
+                  if (neutral(foreground) && foreground[3] > 0.15 && (foreground[0] + foreground[1] + foreground[2]) / 3 <= 48) {
+                    if (!node.hasAttribute('data-bjtu-jlgj-login-color')) {
+                      node.dataset.bjtuJlgjLoginColor = node.style.getPropertyValue('color');
+                      node.dataset.bjtuJlgjLoginColorPriority = node.style.getPropertyPriority('color');
+                    }
+                    node.style.setProperty('color', '#e5e7eb', 'important');
+                  }
                 });
               };
               applyDark(document.documentElement);
-              if (globalThis.__bjtuJlgjDarkObserverVersion !== 2) {
+              if (globalThis.__bjtuJlgjDarkObserverVersion !== 3) {
                 try { globalThis.__bjtuJlgjDarkObserver?.disconnect(); } catch { /* ignore */ }
                 globalThis.__bjtuJlgjDarkObserver = new MutationObserver((records) => records.forEach((record) =>
                   record.addedNodes.forEach((node) => { if (node instanceof Element) applyDark(node); })
                 ));
                 globalThis.__bjtuJlgjDarkObserver.observe(document.documentElement, { childList:true, subtree:true });
-                globalThis.__bjtuJlgjDarkObserverVersion = 2;
+                globalThis.__bjtuJlgjDarkObserverVersion = 3;
               }
             }
             return true;
@@ -296,7 +313,7 @@ async function showJlgjQrFrameInBackgroundTab(tabId) {
         }
         return false;
       },
-      args: [window.jlgjDarkModeEnabled !== false && (document.documentElement.dataset.colorScheme === 'dark' || window.jlgjAlwaysDarkModeEnabled === true)]
+      args: [window.jlgjDarkModeEnabled !== false && document.documentElement.dataset.colorScheme === 'dark']
     });
     if (result?.[0]?.result !== true) return null;
   } catch {
@@ -329,8 +346,6 @@ async function showJlgjLoginSuccessNotice(tabId) {
             (document.head || document.documentElement).appendChild(style);
           }
           style.textContent = `
-            html, body { background:#0f172a !important; color:#e5e7eb !important; }
-            html body *:not(iframe):not(.toggle):not(.toggle *) { background:#0f172a none !important; color:#e5e7eb !important; border-color:#334155 !important; }
             iframe[src*="open.weixin.qq.com/connect/"][src*="qrconnect"] { color-scheme:light !important; }
           `;
           document.querySelectorAll('.toggle, .toggle *').forEach((node) => {
@@ -343,19 +358,38 @@ async function showJlgjLoginSuccessNotice(tabId) {
             nodes.forEach((node) => {
               if (!(node instanceof HTMLElement) || node instanceof HTMLIFrameElement) return;
               if (node.matches('.toggle, .toggle *')) return;
-              node.style.setProperty('background', '#0f172a none', 'important');
-              node.style.setProperty('color', '#e5e7eb', 'important');
-              node.style.setProperty('border-color', '#334155', 'important');
+              const parse = (value) => {
+                const match = String(value || '').match(/rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:\s*[,/]\s*([\d.]+))?/i);
+                return match ? [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? 1 : Number(match[4])] : null;
+              };
+              const neutral = (parts) => parts && Math.max(parts[0], parts[1], parts[2]) - Math.min(parts[0], parts[1], parts[2]) <= 18;
+              const computed = getComputedStyle(node);
+              const background = parse(computed.backgroundColor);
+              const foreground = parse(computed.color);
+              if (computed.backgroundImage === 'none' && neutral(background) && background[3] > 0.15 && (background[0] + background[1] + background[2]) / 3 >= 235) {
+                if (!node.hasAttribute('data-bjtu-jlgj-login-bg')) {
+                  node.dataset.bjtuJlgjLoginBg = node.style.getPropertyValue('background');
+                  node.dataset.bjtuJlgjLoginBgPriority = node.style.getPropertyPriority('background');
+                }
+                node.style.setProperty('background', '#0f172a none', 'important');
+              }
+              if (neutral(foreground) && foreground[3] > 0.15 && (foreground[0] + foreground[1] + foreground[2]) / 3 <= 48) {
+                if (!node.hasAttribute('data-bjtu-jlgj-login-color')) {
+                  node.dataset.bjtuJlgjLoginColor = node.style.getPropertyValue('color');
+                  node.dataset.bjtuJlgjLoginColorPriority = node.style.getPropertyPriority('color');
+                }
+                node.style.setProperty('color', '#e5e7eb', 'important');
+              }
             });
           };
           applyDark(document.documentElement);
-          if (globalThis.__bjtuJlgjDarkObserverVersion !== 2) {
+          if (globalThis.__bjtuJlgjDarkObserverVersion !== 3) {
             try { globalThis.__bjtuJlgjDarkObserver?.disconnect(); } catch { /* ignore */ }
             globalThis.__bjtuJlgjDarkObserver = new MutationObserver((records) => records.forEach((record) =>
               record.addedNodes.forEach((node) => { if (node instanceof Element) applyDark(node); })
             ));
             globalThis.__bjtuJlgjDarkObserver.observe(document.documentElement, { childList:true, subtree:true });
-            globalThis.__bjtuJlgjDarkObserverVersion = 2;
+            globalThis.__bjtuJlgjDarkObserverVersion = 3;
           }
         }
         let toast = document.getElementById('__bjtu_jlgj_loading_toast__');
@@ -375,7 +409,7 @@ async function showJlgjLoginSuccessNotice(tabId) {
         toast.style.setProperty('color', darkMode ? '#93c5fd' : '#1e3a8a', 'important');
         toast.style.setProperty('border', `1px solid ${darkMode ? '#1d4ed8' : '#93c5fd'}`, 'important');
       },
-      args: [window.jlgjDarkModeEnabled !== false && (document.documentElement.dataset.colorScheme === 'dark' || window.jlgjAlwaysDarkModeEnabled === true)]
+      args: [window.jlgjDarkModeEnabled !== false && document.documentElement.dataset.colorScheme === 'dark']
     });
   } catch { /* page may still be navigating */ }
 }
