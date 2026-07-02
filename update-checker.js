@@ -510,9 +510,9 @@ function ensureVersionDownloadModal() {
         versionDownloadSelectedUrl,
         versionDownloadSelectedSource,
         versionDownloadFullExtraction
-      ).catch(() => {
+      ).catch((error) => {
         versionDownloadInProgress = false;
-        showToast('请检查更新目录权限或网络连接后重试', 'error', 3200);
+        showToast(`重试更新失败：${String(error?.message || error || '未知错误')}`, 'error', 3200);
       });
     });
   }
@@ -845,6 +845,49 @@ function formatDownloadBytes(value) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function markVersionUpdateError(error, stage) {
+  const normalized = error instanceof Error ? error : new Error(String(error || '未知错误'));
+  if (!normalized.updateStage) normalized.updateStage = String(stage || 'unknown');
+  return normalized;
+}
+
+function getVersionUpdateFailurePresentation(error) {
+  const stage = String(error?.updateStage || '').trim();
+  if (stage === 'network') {
+    return {
+      title: '下载更新包失败',
+      body: '无法连接下载源或下载过程中网络中断，请检查网络连接后重试。',
+      toast: '下载更新包失败，请检查网络连接后重试'
+    };
+  }
+  if (stage === 'source') {
+    return {
+      title: '下载更新包失败',
+      body: '下载源返回异常响应，请稍后重试或联系开发者检查下载源。',
+      toast: '下载源返回异常响应，请稍后重试'
+    };
+  }
+  if (stage === 'archive') {
+    return {
+      title: '解析更新包失败',
+      body: '下载的更新包不完整、已损坏或格式不受支持，请重新下载。',
+      toast: '更新包解析失败，请重新下载'
+    };
+  }
+  if (stage === 'directory') {
+    return {
+      title: '覆盖更新文件失败',
+      body: '无法写入所选扩展安装目录，请检查目录权限后重试。',
+      toast: '无法写入更新目录，请检查目录权限后重试'
+    };
+  }
+  return {
+    title: '更新失败',
+    body: '更新过程中发生未知错误，请根据错误详情检查后重试。',
+    toast: '更新失败，请查看错误详情后重试'
+  };
+}
+
 function findZipEndOfCentralDirectory(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const start = Math.max(0, bytes.byteLength - 65557);
@@ -970,7 +1013,7 @@ async function fetchUpdateArchiveWithProgress(url) {
   try {
     const response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: controller.signal });
     clearInterval(connectingTimer);
-    if (!response.ok) throw new Error(`下载更新压缩包失败（HTTP ${response.status}）`);
+    if (!response.ok) throw markVersionUpdateError(new Error(`下载更新压缩包失败（HTTP ${response.status}）`), 'source');
     const total = Math.max(0, Number(response.headers.get('content-length') || 0));
     setVersionDownloadBar({ visible: true, percent: 0, indeterminate: total <= 0 });
     if (!response.body?.getReader) {
@@ -1010,8 +1053,11 @@ async function fetchUpdateArchiveWithProgress(url) {
     });
     return bytes;
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('连接更新源超时（连续 30 秒无响应）');
-    throw error;
+    if (controller.signal.aborted) {
+      throw markVersionUpdateError(new Error('连接更新源超时（连续 30 秒无响应）'), 'network');
+    }
+    if (error?.updateStage) throw error;
+    throw markVersionUpdateError(error, 'network');
   } finally {
     clearInterval(connectingTimer);
     if (idleTimer) clearTimeout(idleTimer);
@@ -1021,7 +1067,11 @@ async function fetchUpdateArchiveWithProgress(url) {
 async function clearVersionUpdateDirectory() {
   const root = versionUpdateDirectoryHandle;
   if (!root) throw new Error('尚未授权更新目录');
-  await validateVersionUpdateDirectory(root);
+  try {
+    await validateVersionUpdateDirectory(root);
+  } catch (error) {
+    throw markVersionUpdateError(error, 'directory');
+  }
   setVersionDownloadProgressUi({
     visible: true,
     status: '正在删除旧文件…',
@@ -1030,8 +1080,12 @@ async function clearVersionUpdateDirectory() {
     phase: 'extracting'
   });
   const names = [];
-  for await (const [name] of root.entries()) names.push(name);
-  await Promise.all(names.map((name) => root.removeEntry(name, { recursive: true })));
+  try {
+    for await (const [name] of root.entries()) names.push(name);
+    await Promise.all(names.map((name) => root.removeEntry(name, { recursive: true })));
+  } catch (error) {
+    throw markVersionUpdateError(error, 'directory');
+  }
   return names.length;
 }
 
@@ -1061,7 +1115,12 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
   });
   const bytes = archiveBytes instanceof Uint8Array ? archiveBytes : new Uint8Array(archiveBytes || 0);
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const entries = parseZipEntries(arrayBuffer);
+  let entries;
+  try {
+    entries = parseZipEntries(arrayBuffer);
+  } catch (error) {
+    throw markVersionUpdateError(error, 'archive');
+  }
   const commonRoot = getZipCommonRoot(entries);
   const archiveFiles = entries
     .filter((entry) => !entry.directory)
@@ -1070,7 +1129,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
   const resetDirectory = Array.isArray(updateRule) && updateRule.length === 1 && updateRule[0] === true;
   if (resetDirectory) await clearVersionUpdateDirectory();
   const files = selectUpdateArchiveFiles(archiveFiles, updateRule);
-  if (!files.length) throw new Error('更新压缩包中没有可写入文件');
+  if (!files.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
 
   let completedCount = 0;
   setVersionDownloadProgressUi({
@@ -1081,7 +1140,17 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
     phase: 'extracting'
   });
   const results = await Promise.allSettled(files.map(async (item) => {
-    await writeBytesToVersionUpdateDirectory(await inflateZipEntry(item.entry), item.path);
+    let inflated;
+    try {
+      inflated = await inflateZipEntry(item.entry);
+    } catch (error) {
+      throw markVersionUpdateError(error, 'archive');
+    }
+    try {
+      await writeBytesToVersionUpdateDirectory(inflated, item.path);
+    } catch (error) {
+      throw markVersionUpdateError(error, 'directory');
+    }
     completedCount += 1;
     setVersionDownloadBar({ visible: true, percent: (completedCount / files.length) * 100 });
     setVersionDownloadProgressUi({
@@ -1182,15 +1251,16 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
     // 成功 UI 已在 downloadVersionByUrlWithProgress 内部处理
   } catch (err) {
     const errorMessage = String(err?.message || '未知错误');
+    const failure = getVersionUpdateFailurePresentation(err);
     setVersionDownloadProgressUi({
       visible: true,
       status: `更新失败：${errorMessage}`,
-      title: '更新失败',
-      body: '更新失败，请检查目录权限或网络连接后重试。',
+      title: failure.title,
+      body: failure.body,
       phase: 'failed'
     });
     setVersionDownloadRetryVisible(true);
-    showToast('请检查更新目录权限或网络连接后重试', 'error', 3200);
+    showToast(failure.toast, 'error', 3200);
   }
   versionDownloadInProgress = false;
   syncVersionNoticeDownloadButton();
