@@ -193,7 +193,6 @@ window.saveUploadedFilesEnabled = true;
 window.autoLoadCourseResourcesEnabled = false;
 window.autoLoadAllHomeworkDetails = false;
 window.jlgjDarkModeEnabled = true;
-window.jlgjAlwaysDarkModeEnabled = false;
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
 window.courseShowOverdueById = {};
 window.courseShowDoneById = {};
@@ -323,7 +322,6 @@ function disablePlatformAfterLoginFailure(platform) {
 const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
 const AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY = 'autoLoadAllHomeworkDetails';
 const JLGJ_DARK_MODE_KEY = 'jlgjDarkModeEnabled';
-const JLGJ_ALWAYS_DARK_MODE_KEY = 'jlgjAlwaysDarkModeEnabled';
 const AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY = 'autoLoadCourseResourcesDefaultOffState';
 
 async function migrateAutoLoadCourseResourcesDefaultOff() {
@@ -509,7 +507,6 @@ async function triggerInitialPlatformLoads() {
   if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
   if (isPlatformEnabled('mrjzy')) triggerExternalPlatformLoad('mrjzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
-  if (isPlatformEnabled('mooc')) triggerExternalPlatformLoad('mooc', false);
   let veStartupResult = null;
   if (isPlatformEnabled('ve')) {
     veStartupResult = await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
@@ -517,19 +514,18 @@ async function triggerInitialPlatformLoads() {
     window.currentVeCourseList = [];
     renderCourseList([]);
   }
+  if (isPlatformEnabled('mooc')) triggerExternalPlatformLoad('mooc', false);
   return veStartupResult;
 }
 
 async function loadPlatformDetailSettings() {
   try {
-    const data = await chrome.storage.local.get([AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY, JLGJ_DARK_MODE_KEY, JLGJ_ALWAYS_DARK_MODE_KEY]);
+    const data = await chrome.storage.local.get([AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY, JLGJ_DARK_MODE_KEY]);
     window.autoLoadAllHomeworkDetails = data[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY] === true;
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
-    window.jlgjAlwaysDarkModeEnabled = data[JLGJ_ALWAYS_DARK_MODE_KEY] === true;
   } catch {
     window.autoLoadAllHomeworkDetails = false;
     window.jlgjDarkModeEnabled = true;
-    window.jlgjAlwaysDarkModeEnabled = false;
   }
 }
 
@@ -1448,9 +1444,6 @@ window.addEventListener('bjtu-theme-change', () => {
     if (changes[JLGJ_DARK_MODE_KEY]) {
       window.jlgjDarkModeEnabled = changes[JLGJ_DARK_MODE_KEY].newValue !== false;
     }
-    if (changes[JLGJ_ALWAYS_DARK_MODE_KEY]) {
-      window.jlgjAlwaysDarkModeEnabled = changes[JLGJ_ALWAYS_DARK_MODE_KEY].newValue === true;
-    }
   });
   document.querySelectorAll('[data-file-size-bytes], [data-file-size-mb]').forEach((element) => {
     if (!(element instanceof HTMLElement)) return;
@@ -1914,7 +1907,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
     opt.hidden = true;
     const selectedName = String(selectedRecord.userName || selectedRecord.userId || '未知用户').trim();
     const selectedRole = String(selectedRecord.roleName || '').trim();
-    const selectedQuick = selectedRecord.quickUsername ? ' [快速]' : '';
+    const selectedQuick = selectedRecord.quickUsername ? ' [极速]' : '';
     // 选中项只显示 userName
     opt.textContent = `${selectedRole}${selectedName}${selectedQuick}`;
     accountHistorySelect.appendChild(opt);
@@ -1929,7 +1922,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
       const roleName = String(it.roleName || '').trim();
       const loginName = String(it.loginName || '').trim();
       const loginSuffix = loginName ? ` (${loginName})` : '';
-      const quickSuffix = it.quickUsername ? ' [快速]' : '';
+      const quickSuffix = it.quickUsername ? ' [极速]' : '';
       // 展开列表显示 userName(loginName)
       opt.textContent = `${roleName}${userName}${loginSuffix}${quickSuffix}`;
       accountHistorySelect.appendChild(opt);

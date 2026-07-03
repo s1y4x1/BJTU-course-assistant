@@ -103,7 +103,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "ve-login-overlay.html"
+        "ve-login-overlay.html",
+        "ve-login-overlay.css"
       ],
       "matches": [
         "http://123.121.147.7:88/*"

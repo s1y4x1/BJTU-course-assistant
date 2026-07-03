@@ -25,8 +25,12 @@
   });
 
   let template = '';
+  let stylesheet = '';
   try {
-    template = await (await fetch(chrome.runtime.getURL('ve-login-overlay.html'))).text();
+    [template, stylesheet] = await Promise.all([
+      fetch(chrome.runtime.getURL('ve-login-overlay.html')).then((response) => response.text()),
+      fetch(chrome.runtime.getURL('ve-login-overlay.css')).then((response) => response.text())
+    ]);
   } catch {
     return;
   }
@@ -34,7 +38,7 @@
   host.id = '__bjtu_portal_login_host__';
   host.style.setProperty('all', 'initial', 'important');
   const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = template;
+  shadow.innerHTML = `<style>${stylesheet}</style>${template}`;
   const mask = shadow.querySelector('#__bjtu_portal_login_mask__');
   if (!(mask instanceof HTMLElement)) return;
   document.documentElement.appendChild(host);
