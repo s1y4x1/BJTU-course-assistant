@@ -2525,8 +2525,9 @@ async function doLoginFlow() {
     }
 
     showToast('正在读取账号列表…', 'info', 0);
-    await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
+    const initialInitializationResult = await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
     if (signal.aborted || loginCancelRequested) return;
+    let skipNextAutomaticLoginAttempt = initialInitializationResult?.skipped === true;
 
     let account = await getLocalAccountInfo(username);
     let manualPassword = '';
@@ -2536,7 +2537,7 @@ async function doLoginFlow() {
 
     const indexedAccount = await readAccountInfoFromIndexedDb(username);
     const needsQuickUsername = !indexedAccount || !String(indexedAccount.password || '').trim();
-    if (needsQuickUsername) {
+    if (needsQuickUsername && !skipNextAutomaticLoginAttempt) {
       try {
         account = await globalThis.BjtuAccountLogin.ensureQuickUsernameForLogin(username, {
           currentUser,
@@ -2554,7 +2555,10 @@ async function doLoginFlow() {
     for (let attempt = 0; attempt < 6; attempt += 1) {
       if (signal.aborted || loginCancelRequested) return;
 
-      if (!manualPassword && account?.quickUsername) {
+      const skipAutomaticLoginAttempt = skipNextAutomaticLoginAttempt;
+      skipNextAutomaticLoginAttempt = false;
+
+      if (!skipAutomaticLoginAttempt && !manualPassword && account?.quickUsername) {
         showToast('正在极速登录…', 'info', 0);
         const quickResult = await loginGet(username, { signal });
         if (signal.aborted || loginCancelRequested) return;
@@ -2569,7 +2573,9 @@ async function doLoginFlow() {
         }
       }
 
-      const passwordMd5 = String(manualPassword || account?.passwordMd5 || '').trim();
+      const passwordMd5 = skipAutomaticLoginAttempt
+        ? ''
+        : String(manualPassword || account?.passwordMd5 || '').trim();
       manualPassword = '';
       if (passwordMd5) {
         showToast('正在登录…', 'info', 0);
@@ -2602,7 +2608,12 @@ async function doLoginFlow() {
       }
       if (recovery?.action === 'reinitialize') {
         try {
-          await globalThis.BjtuAccountLogin.initialize({ force: true, showProgress: true });
+          const initializationResult = await globalThis.BjtuAccountLogin.initialize({ force: true, showProgress: true });
+          if (initializationResult?.skipped === true) {
+            skipNextAutomaticLoginAttempt = true;
+            attempt -= 1;
+            continue;
+          }
           account = await getLocalAccountInfo(username);
           recoveryMessage = account
             ? '账号列表已更新，正在使用最新密码重试。'

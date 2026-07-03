@@ -874,7 +874,7 @@
               'info',
               5000
             );
-            return existingCount;
+            return { skipped: true, count: existingCount };
           }
           if (source.source === 'import') {
             await chrome.storage.local.remove([ACCOUNT_LIST_SKIPPED_KEY]);
