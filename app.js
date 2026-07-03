@@ -778,7 +778,7 @@ function setupPortalUsernameBindMessageListener() {
       if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
       const st = message.payload || {};
       if (st.status !== 'done') return;
-      showToast(`已绑定快速登录 username：${st.userId || st.quickUsername || ''}`, 'success', 1800);
+      showToast(`已绑定极速登录 username：${st.userId || st.quickUsername || ''}`, 'success', 1800);
       if (isPlatformEnabled('ve')) {
         await loadAutoLoadCourseResourcesSetting().catch(() => {});
         window.platformLoadedOnce.ve = false;
@@ -2383,11 +2383,11 @@ async function loginGet(username, { signal } = {}) {
   const account = await getLocalAccountInfo(username);
   const quickUsername = String(account?.quickUsername || '').trim();
   if (!quickUsername) {
-    return { ok: false, reason: 'needs-password', message: '未绑定快速登录 username' };
+    return { ok: false, reason: 'needs-password', message: '未绑定极速登录 username' };
   }
   const result = await globalThis.BjtuAccountLogin.loginWithQuickUsername(quickUsername, { signal });
   if (!result.ok && result.reason === 'credential') {
-    return { ...result, reason: 'invalid-account', message: '绑定的快速登录 username 已失效' };
+    return { ...result, reason: 'invalid-account', message: '绑定的极速登录 username 已失效' };
   }
   return result;
 }
@@ -2555,7 +2555,7 @@ async function doLoginFlow() {
       if (signal.aborted || loginCancelRequested) return;
 
       if (!manualPassword && account?.quickUsername) {
-        showToast('正在快速登录…', 'info', 0);
+        showToast('正在极速登录…', 'info', 0);
         const quickResult = await loginGet(username, { signal });
         if (signal.aborted || loginCancelRequested) return;
         if (quickResult.ok) {
