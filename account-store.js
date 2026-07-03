@@ -172,12 +172,34 @@
     return put({ ...current, ...patch, loginName: id });
   }
 
-  async function getQuickAccounts() {
+  async function getQuickAccounts({ limit = Number.POSITIVE_INFINITY, onProgress = null } = {}) {
     const db = await open();
     const transaction = db.transaction(STORE_NAME);
     const index = transaction.objectStore(STORE_NAME).index('quickUsername');
-    const values = await requestResult(index.getAll(IDBKeyRange.lowerBound('', true)));
-    return values.map((value) => normalize(value?.loginName, value)).filter(Boolean);
+    const maxItems = Number.isFinite(Number(limit))
+      ? Math.max(1, Math.floor(Number(limit)))
+      : Number.POSITIVE_INFINITY;
+    return new Promise((resolve, reject) => {
+      const rows = [];
+      const request = index.openCursor(IDBKeyRange.lowerBound('', true));
+      request.onerror = () => reject(request.error || new Error('MIS 绑定账号读取失败'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          onProgress?.({ read: rows.length, limit: maxItems, done: true });
+          resolve(rows);
+          return;
+        }
+        const record = normalize(cursor.value?.loginName, cursor.value);
+        if (record?.quickUsername) rows.push(record);
+        onProgress?.({ read: rows.length, limit: maxItems, done: false });
+        if (rows.length >= maxItems) {
+          resolve(rows);
+          return;
+        }
+        cursor.continue();
+      };
+    });
   }
 
   async function getCredentialAccounts() {

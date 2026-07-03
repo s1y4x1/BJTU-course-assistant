@@ -513,56 +513,65 @@ function goBackToApp() {
   }
 
   document.getElementById('exportBindDataBtn').addEventListener('click', async () => {
-    const withQuick = await globalThis.BjtuAccountStore.getQuickAccounts();
-    if (!withQuick.length) {
-      setMsg('没有找到已绑定 MIS 的账号', false);
-      return;
-    }
-    const lines = [];
-    for (const acc of withQuick) {
-      const loginName = String(acc.loginName || acc.userId || '').trim();
-      const quickUsername = String(acc.quickUsername || '').trim();
-      if (!loginName || !quickUsername) continue;
-      try {
-        lines.push(`${loginName}:${atob(quickUsername)}`);
-      } catch { /* skip invalid base64 */ }
-    }
-    if (!lines.length) {
-      setMsg('没有找到有效的绑定数据', false);
-      return;
-    }
-    const encoded = btoa(lines.join('\n'));
+    const button = document.getElementById('exportBindDataBtn');
+    const progressModal = document.getElementById('account-init-modal');
+    const progressTitle = progressModal?.querySelector('.account-progress-title');
+    const progressStatus = document.getElementById('account-init-status');
+    const teacherRow = document.getElementById('account-init-teacher-label')?.closest('.account-init-progress-row');
+    const studentRow = document.getElementById('account-init-student-label')?.closest('.account-init-progress-row');
+    const teacherLabel = document.getElementById('account-init-teacher-label');
+    const teacherBar = document.getElementById('account-init-teacher-progress-bar');
+    if (button instanceof HTMLButtonElement) button.disabled = true;
+    if (progressTitle instanceof HTMLElement) progressTitle.textContent = '导出 MIS 绑定数据';
+    if (progressStatus instanceof HTMLElement) progressStatus.textContent = '正在读取绑定账号…';
+    if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = '已读取 0 / 17';
+    if (teacherBar instanceof HTMLElement) teacherBar.style.width = '0%';
+    if (teacherRow instanceof HTMLElement) teacherRow.style.display = '';
+    if (studentRow instanceof HTMLElement) studentRow.style.display = 'none';
+    if (progressModal instanceof HTMLElement) progressModal.style.display = 'flex';
     try {
-      await navigator.clipboard.writeText(encoded);
-    } catch {
-      setMsg('复制到剪贴板失败', false);
-      return;
+      const withQuick = await globalThis.BjtuAccountStore.getQuickAccounts({
+        limit: 17,
+        onProgress: ({ read, done }) => {
+          if (teacherLabel instanceof HTMLElement) {
+            teacherLabel.textContent = done && read < 17 ? `已读取 ${read} 个` : `已读取 ${read} / 17`;
+          }
+          if (teacherBar instanceof HTMLElement) {
+            teacherBar.style.width = `${done ? 100 : Math.min(100, (Number(read || 0) / 17) * 100)}%`;
+          }
+        }
+      });
+      if (!withQuick.length) {
+        setMsg('没有找到已绑定 MIS 的账号', false);
+        return;
+      }
+      if (withQuick.length > 16) {
+        setMsg('绑定的账号很多！请点击「导出账号列表」按钮', false);
+        return;
+      }
+      const lines = [];
+      for (const acc of withQuick) {
+        const loginName = String(acc.loginName || acc.userId || '').trim();
+        const quickUsername = String(acc.quickUsername || '').trim();
+        if (!loginName || !quickUsername) continue;
+        try {
+          lines.push(`${loginName}:${atob(quickUsername)}`);
+        } catch { /* skip invalid base64 */ }
+      }
+      if (!lines.length) {
+        setMsg('没有找到有效的绑定数据', false);
+        return;
+      }
+      await navigator.clipboard.writeText(lines.join('\n'));
+      setMsg('已复制到剪贴板');
+    } catch (error) {
+      setMsg('复制到剪贴板失败：' + String(error?.message || error), false);
+    } finally {
+      if (progressModal instanceof HTMLElement) progressModal.style.display = 'none';
+      if (studentRow instanceof HTMLElement) studentRow.style.display = '';
+      if (teacherBar instanceof HTMLElement) teacherBar.style.width = '0%';
+      if (button instanceof HTMLButtonElement) button.disabled = false;
     }
-    document.getElementById('exportBindModal').style.display = 'flex';
-  });
-
-  document.getElementById('exportBindGithubBtn').addEventListener('click', () => {
-    document.getElementById('exportBindModal').style.display = 'none';
-    chrome.tabs.create({ url: 'https://github.com/s1y4x1/BJTU-course-assistant/discussions/2', active: true });
-  });
-
-  document.getElementById('exportBindWjxBtn').addEventListener('click', () => {
-    document.getElementById('exportBindModal').style.display = 'none';
-    chrome.tabs.create({ url: 'https://v.wjx.cn/vm/eW3zqxc.aspx', active: true });
-  });
-
-  document.getElementById('exportBindCloseBtn').addEventListener('click', () => {
-    document.getElementById('exportBindModal').style.display = 'none';
-  });
-
-  document.getElementById('exportBindModal').addEventListener('mousedown', (e) => {
-    if (e.target === e.currentTarget) e.currentTarget.dataset.mdownMask = '1';
-  });
-  document.getElementById('exportBindModal').addEventListener('mouseup', (e) => {
-    if (e.target === e.currentTarget && e.currentTarget.dataset.mdownMask === '1') {
-      e.currentTarget.style.display = 'none';
-    }
-    e.currentTarget.dataset.mdownMask = '';
   });
 
   chrome.runtime.onMessage.addListener((message) => {

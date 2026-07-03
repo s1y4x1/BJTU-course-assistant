@@ -94,6 +94,7 @@
         "http://123.121.147.7:88/ve/*"
       ],
       "js": [
+        "vendor/ve/main.min.js",
         "md5.js",
         "ve-login-overlay.js"
       ],

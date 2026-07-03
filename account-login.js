@@ -1191,25 +1191,29 @@
       const onDefault = () => {
         if (plainInput instanceof HTMLInputElement) {
           plainInput.value = 'Bjtu@' + String(loginName || '').trim();
-          if (md5Input instanceof HTMLInputElement) md5Input.value = global.md5(plainInput.value);
+          if (md5Input instanceof HTMLInputElement && typeof global.strEnc === 'function') {
+            md5Input.value = global.strEnc(plainInput.value);
+          }
           plainInput.focus();
         }
       };
       const onPlainInput = () => {
         if (!(plainInput instanceof HTMLInputElement) || !(md5Input instanceof HTMLInputElement)) return;
-        md5Input.value = plainInput.value ? global.md5(plainInput.value) : '';
+        md5Input.value = plainInput.value && typeof global.strEnc === 'function'
+          ? global.strEnc(plainInput.value)
+          : '';
       };
       const onMd5Input = () => {
         if (!(md5Input instanceof HTMLInputElement)) return;
-        const value = String(md5Input.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 32).toLowerCase();
+        const value = String(md5Input.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 256).toUpperCase();
         if (md5Input.value !== value) md5Input.value = value;
       };
       const onSubmit = () => {
         const plain = String(plainInput?.value || '');
         const password = plain
-          ? global.md5(plain)
-          : String(md5Input?.value || '').trim().toLowerCase();
-        if (!/^[0-9a-f]{32}$/.test(password)) {
+          ? (typeof global.strEnc === 'function' ? global.strEnc(plain) : '')
+          : String(md5Input?.value || '').trim();
+        if (!/^(?:[0-9a-f]{16})+$/i.test(password)) {
           md5Input?.focus();
           return;
         }

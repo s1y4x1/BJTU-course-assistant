@@ -1,5 +1,6 @@
 ﻿importScripts('md5.js');
 
+importScripts('vendor/ve/main.min.js');
 importScripts('account-store.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
@@ -454,10 +455,10 @@ async function performPortalPageLogin(payload = {}) {
   const historyRecord = history.find((item) => item.loginName === loginName || item.userId === loginName) || null;
   const source = account || historyRecord;
   const plain = String(payload?.passwordPlain || '');
-  const directMd5 = String(payload?.passwordMd5 || '').trim().toLowerCase();
+  const directPassword = String(payload?.passwordEncoded || payload?.passwordMd5 || '').trim();
   const manualPassword = plain
-    ? globalThis.md5(plain)
-    : (/^[0-9a-f]{32}$/.test(directMd5) ? directMd5 : '');
+    ? (typeof globalThis.strEnc === 'function' ? globalThis.strEnc(plain) : '')
+    : (/^(?:[0-9a-f]{16})+$/i.test(directPassword) ? directPassword : '');
 
   if (!manualPassword) {
     const quickUsername = String(source?.quickUsername || '').trim();

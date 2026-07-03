@@ -302,7 +302,7 @@
                     <input id="account-recovery-password-plain" type="text" autocomplete="current-password" placeholder="密码明文">
                     <button id="account-recovery-default" class="btn" type="button">填入默认密码</button>
                 </div>
-                <input id="account-recovery-password-md5" type="text" maxlength="32" spellcheck="false" placeholder="密码 MD5（根据明文自动计算，也可单独输入）">
+                <input id="account-recovery-password-md5" type="text" maxlength="256" spellcheck="false" placeholder="加密密码（根据明文自动计算，也可单独输入）">
                 <div class="account-recovery-actions">
                     <button id="account-recovery-submit" class="btn" type="button">登录</button>
                     <button id="account-recovery-manual-cancel" class="btn" type="button">取消</button>
@@ -313,6 +313,7 @@
 
     <script src="vendor/qrcode/qrcode.min.js"></script>
     <script src="md5.js"></script>
+    <script src="vendor/ve/main.min.js"></script>
     <script src="account-store.js"></script>
     <script src="account-login.js"></script>
     <script src="qr-utils.js"></script>

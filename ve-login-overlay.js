@@ -222,18 +222,18 @@
     plain?.focus();
   };
   plain?.addEventListener('input', () => {
-    if (md5Input instanceof HTMLInputElement && typeof md5 === 'function') {
-      md5Input.value = plain.value ? md5(plain.value) : '';
+    if (md5Input instanceof HTMLInputElement && typeof strEnc === 'function') {
+      md5Input.value = plain.value ? strEnc(plain.value) : '';
     }
   });
   md5Input?.addEventListener('input', () => {
-    md5Input.value = String(md5Input.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 32).toLowerCase();
+    md5Input.value = String(md5Input.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 256).toUpperCase();
   });
   mask.querySelector('#__bjtu_portal_default__')?.addEventListener('click', () => {
     const loginName = selectedLoginName || String(username?.value || '').trim();
     if (!(plain instanceof HTMLInputElement) || !loginName) return;
     plain.value = 'Bjtu@' + loginName;
-    if (md5Input instanceof HTMLInputElement && typeof md5 === 'function') md5Input.value = md5(plain.value);
+    if (md5Input instanceof HTMLInputElement && typeof strEnc === 'function') md5Input.value = strEnc(plain.value);
   });
 
   function requestRecovery(loginName, message) {
@@ -263,22 +263,22 @@
       const onDefault = () => {
         if (!(recoveryPlain instanceof HTMLInputElement)) return;
         recoveryPlain.value = 'Bjtu@' + String(loginName || '').trim();
-        if (recoveryMd5 instanceof HTMLInputElement && typeof md5 === 'function') recoveryMd5.value = md5(recoveryPlain.value);
+        if (recoveryMd5 instanceof HTMLInputElement && typeof strEnc === 'function') recoveryMd5.value = strEnc(recoveryPlain.value);
         recoveryPlain.focus();
       };
       const onPlainInput = () => {
-        if (!(recoveryPlain instanceof HTMLInputElement) || !(recoveryMd5 instanceof HTMLInputElement) || typeof md5 !== 'function') return;
-        recoveryMd5.value = recoveryPlain.value ? md5(recoveryPlain.value) : '';
+        if (!(recoveryPlain instanceof HTMLInputElement) || !(recoveryMd5 instanceof HTMLInputElement) || typeof strEnc !== 'function') return;
+        recoveryMd5.value = recoveryPlain.value ? strEnc(recoveryPlain.value) : '';
       };
       const onMd5Input = () => {
         if (!(recoveryMd5 instanceof HTMLInputElement)) return;
-        recoveryMd5.value = String(recoveryMd5.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 32).toLowerCase();
+        recoveryMd5.value = String(recoveryMd5.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 256).toUpperCase();
       };
       const onSubmit = () => {
         const password = String(recoveryPlain?.value || '')
-          ? (typeof md5 === 'function' ? md5(String(recoveryPlain.value || '')) : '')
-          : String(recoveryMd5?.value || '').trim().toLowerCase();
-        if (!/^[0-9a-f]{32}$/.test(password)) {
+          ? (typeof strEnc === 'function' ? strEnc(String(recoveryPlain.value || '')) : '')
+          : String(recoveryMd5?.value || '').trim();
+        if (!/^(?:[0-9a-f]{16})+$/i.test(password)) {
           recoveryMd5?.focus();
           return;
         }
@@ -364,7 +364,7 @@
       payload: {
         loginName,
         passwordPlain: String(plain?.value || ''),
-        passwordMd5: String(md5Input?.value || '').trim(),
+        passwordEncoded: String(md5Input?.value || '').trim(),
         skipCurrentCheck: true
       }
     });

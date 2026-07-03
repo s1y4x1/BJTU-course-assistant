@@ -42,8 +42,8 @@
         </label>
         <button id="__bjtu_portal_default__" class="__bjtu_portal_default" type="button">填入默认密码</button>
         <label class="__bjtu_portal_field">
-          <span class="__bjtu_portal_label">密码 MD5</span>
-          <input id="__bjtu_portal_password_md5__" class="__bjtu_portal_input" type="text" maxlength="32" placeholder="可单独输入">
+          <span class="__bjtu_portal_label">加密密码</span>
+          <input id="__bjtu_portal_password_md5__" class="__bjtu_portal_input" type="text" maxlength="256" placeholder="根据明文自动计算，也可单独输入">
         </label>
       </div>
     </div>
@@ -64,7 +64,7 @@
           <input id="__bjtu_portal_recovery_plain__" type="text" autocomplete="current-password" placeholder="密码明文">
           <button id="__bjtu_portal_recovery_default__" type="button">填入默认密码</button>
         </div>
-        <input id="__bjtu_portal_recovery_md5__" type="text" maxlength="32" spellcheck="false" placeholder="密码 MD5（根据明文自动计算，也可单独输入）">
+        <input id="__bjtu_portal_recovery_md5__" type="text" maxlength="256" spellcheck="false" placeholder="加密密码（根据明文自动计算，也可单独输入）">
         <div class="__bjtu_portal_recovery_actions">
           <button id="__bjtu_portal_recovery_submit__" type="button">登录</button>
           <button id="__bjtu_portal_recovery_manual_cancel__" type="button">取消</button>
