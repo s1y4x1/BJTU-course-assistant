@@ -798,7 +798,6 @@ function setupAcademicSystemMessageListener() {
     if (message?.type !== 'ACADEMIC_SYSTEM_STATUS') return;
     const status = message.payload || {};
     if (status.status === 'mis-login-done') showToast(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`, 'success', 2400);
-    else if (status.status === 'credentials-saved') showToast(`已保存教务系统账号 ${status.studentId || ''} 的登录密码`, 'success', 2400);
   });
 }
 

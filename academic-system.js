@@ -163,6 +163,29 @@
     }
   }
 
+  async function showAcademicPageToast(tabId, message) {
+    if (!tabId) return;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (content) => {
+        const id = '__bjtu_academic_login_toast__';
+        document.getElementById(id)?.remove();
+        const toast = document.createElement('div');
+        toast.id = id;
+        toast.textContent = content;
+        toast.style.cssText = [
+          'position:fixed', 'left:50%', 'top:18px', 'transform:translateX(-50%)',
+          'z-index:2147483647', 'background:#16a34a', 'color:#fff',
+          'font:600 14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif',
+          'padding:10px 14px', 'border-radius:8px', 'box-shadow:0 10px 30px rgba(0,0,0,.22)'
+        ].join(';');
+        document.documentElement.appendChild(toast);
+        setTimeout(() => toast.remove(), 3600);
+      },
+      args: [String(message || '')]
+    }).catch(() => {});
+  }
+
   async function getAcademicAccounts() {
     const stored = await chrome.storage.local.get([ACCOUNTS_KEY]);
     const rawAccounts = stored?.[ACCOUNTS_KEY] && typeof stored[ACCOUNTS_KEY] === 'object'
@@ -579,7 +602,11 @@
             saveAcademicAccount(pending.studentId, {
               password: pending.password,
               lastLoginAt: Date.now()
-            }).then(() => broadcastStatus({ status: 'credentials-saved', studentId: pending.studentId })).catch(() => {});
+            }).then(async () => {
+              await fetchCurrentAcademicAccount().catch(() => null);
+              await broadcastStatus({ status: 'credentials-saved', studentId: pending.studentId, silent: true });
+              await showAcademicPageToast(tabId, `已保存教务系统账号 ${pending.studentId} 的登录密码`);
+            }).catch(() => {});
           } else if (pending && onLoginPage) {
             pendingCredentialsByTab.delete(tabId);
           }

@@ -209,9 +209,8 @@ function goBackToApp() {
     } else {
       for (const account of accounts) {
         const isCurrent = account.studentId === selected;
-        const methods = account.hasPassword ? '密码' : (isCurrent ? '当前会话' : '未保存密码');
         const userName = String(account.userName || '').trim();
-        const option = new Option(`${account.studentId}${userName ? ` ${userName}` : ''} [${methods}]`, account.studentId);
+        const option = new Option(`${account.studentId}${userName ? ` ${userName}` : ''}`, account.studentId);
         option.disabled = !account.hasPassword && !isCurrent;
         academicAccountSelect.append(option);
       }
@@ -790,7 +789,6 @@ function goBackToApp() {
         setMsg('已取消通过 MIS 登录教务系统', false);
       } else if (status.status === 'credentials-saved') {
         void refreshAcademicContext();
-        setMsg(`已保存教务系统账号 ${status.studentId || ''} 的登录密码`);
       }
       return;
     }
