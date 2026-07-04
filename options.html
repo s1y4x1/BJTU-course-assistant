@@ -64,6 +64,25 @@
     .reminder-node-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
     .reminder-node { display:inline-flex; align-items:center; gap:6px; padding:4px 5px 4px 9px; border:1px solid #bfdbfe; border-radius:6px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
     .reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; line-height:22px; }
+    .reset-confirm-card { position:relative; }
+    .reset-confirm-message { margin:12px 0 16px; color:#475569; font-size:14px; line-height:1.6; }
+    .reset-confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .reset-confirm-actions button { width:100%; margin:0; }
+    .reset-confirm-close { position:absolute; top:10px; right:10px; width:28px; height:28px; margin:0; padding:0; border-radius:50%; background:#64748b; font-size:18px; line-height:28px; }
+    .academic-account-row { display:block; }
+    .academic-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+    .academic-login-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .academic-score-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; }
+    .academic-score-count { color:#64748b; font-size:12px; }
+    .academic-score-loading { display:flex; align-items:center; gap:8px; min-height:34px; color:#64748b; font-size:13px; }
+    .academic-score-loading .options-page-spinner { width:16px; height:16px; border-width:2px; }
+    .academic-score-table-wrap { overflow:auto; border:1px solid #d1d5db; }
+    .academic-score-table { width:100%; min-width:760px; border-collapse:collapse; font-size:12px; }
+    .academic-score-table th, .academic-score-table td { padding:7px 8px; border:1px solid #e5e7eb; text-align:left; vertical-align:top; }
+    .academic-score-table th { background:#f1f5f9; white-space:nowrap; }
+    .academic-score-table td:nth-child(1), .academic-score-table td:nth-child(2), .academic-score-table td:nth-child(4), .academic-score-table td:nth-child(5), .academic-score-table td:nth-child(6), .academic-score-table td:nth-child(7) { white-space:nowrap; }
+    .academic-score-details summary { cursor:pointer; color:#2563eb; white-space:nowrap; }
+    .academic-score-details div { min-width:180px; margin-top:5px; white-space:pre-line; line-height:1.5; }
   </style>
   <link rel="stylesheet" href="theme.css" />
 </head>
@@ -153,6 +172,7 @@
     </div>
     <div class="tip">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
   </div>
+
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">弹出窗口</div>
     <div class="open-mode-row" style="margin-top:0; padding:0; border:0; background:transparent;">
@@ -190,6 +210,39 @@
     <div id="homeworkReminderNodeList" class="reminder-node-list"></div>
     <div class="tip" style="margin-top:8px;">提醒基于各平台最近一次成功加载的未交作业数据；可添加多个提醒节点。</div>
   </div>
+  <div id="academic-system-section" style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div class="section-title">教务系统</div>
+    <label for="academicAccountSelect">已保存账号</label>
+    <div class="academic-account-row">
+      <select id="academicAccountSelect" aria-label="已保存的教务系统账号"><option value="">暂无已保存账号</option></select>
+    </div>
+    <label for="academicStudentId">学号</label>
+    <input id="academicStudentId" type="text" autocomplete="username" placeholder="自动使用智慧课程平台账号" />
+    <label for="academicPassword">身份证后六位</label>
+    <input id="academicPassword" type="password" maxlength="6" autocomplete="off" placeholder="登录成功后保存在扩展本地存储" />
+    <div class="academic-login-actions">
+      <button id="academicLoginBtn" type="button">登录教务系统</button>
+      <button id="bindAcademicSystemBtn" type="button" style="background:#16a34a;">通过 MIS 登录教务系统</button>
+    </div>
+    <div class="tip">账号密码会在登录成功后按学号保存在扩展本地存储中，用于切换账号和恢复登录。</div>
+    <label style="display:flex; align-items:center; gap:8px; margin:12px 0 6px;">
+      <input type="checkbox" id="academicScoreMonitorEnabled" style="width:auto;" />
+      监控本学期成绩
+    </label>
+    <div id="academicSystemStatus" class="tip">正在检查教务系统登录状态并读取成绩…</div>
+    <div class="academic-score-header">
+      <strong>本学期成绩</strong>
+      <span id="academicScoreCount" class="academic-score-count"></span>
+    </div>
+    <div id="academicScoreLoading" class="academic-score-loading"><span class="options-page-spinner"></span><span>正在读取成绩…</span></div>
+    <div id="academicScoreEmpty" class="tip" style="display:none; margin:0;">暂无成绩数据</div>
+    <div id="academicScoreTableWrap" class="academic-score-table-wrap" style="display:none;">
+      <table class="academic-score-table">
+        <thead><tr><th>序号</th><th>学年</th><th>课程</th><th>学分</th><th>成绩</th><th>加分成绩</th><th>上课教师</th><th>详细信息</th></tr></thead>
+        <tbody id="academicScoreTableBody"></tbody>
+      </table>
+    </div>
+  </div>
   </main>
   <div id="msg"></div>
   <div id="account-init-modal" class="account-progress-mask" style="display:none;">
@@ -203,6 +256,17 @@
       <div class="account-init-progress-row">
         <div id="account-init-student-label" class="account-init-progress-label">学生：正在等待</div>
         <div class="progress-bar-container"><div id="account-init-student-progress-bar" class="progress-bar"></div></div>
+      </div>
+    </div>
+  </div>
+  <div id="reset-confirm-modal" class="account-progress-mask" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title">
+    <div class="account-progress-card reset-confirm-card">
+      <button id="reset-confirm-close" class="reset-confirm-close" type="button" title="关闭" aria-label="关闭">×</button>
+      <div id="reset-confirm-title" class="account-progress-title">恢复默认设置</div>
+      <div class="reset-confirm-message">确定要将所有扩展选项恢复为默认值吗？此操作不会删除账号列表或已保存的数据。</div>
+      <div class="reset-confirm-actions">
+        <button id="reset-confirm-cancel" type="button" style="background:#64748b;">取消</button>
+        <button id="reset-confirm-submit" type="button" style="background:#dc2626;">恢复默认</button>
       </div>
     </div>
   </div>

@@ -2,6 +2,7 @@
 
 importScripts('vendor/ve/main.min.js');
 importScripts('account-store.js');
+importScripts('academic-system.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
@@ -224,7 +225,7 @@ async function checkHomeworkDeadlineReminders() {
     const notificationId = `${HOMEWORK_REMINDER_NOTIFICATION_PREFIX}${homeworkReminderHash(`${taskKey}|${selectedNode}`)}`;
     await chrome.notifications.create(notificationId, {
       type: 'basic',
-      iconUrl: 'icons/512.png',
+      iconUrl: 'icons/128.png',
       title: `${String(item?.courseName || '未知课程')}作业将在 ${formatReminderDuration(selectedNode)}${crossedNormally ? '后' : '内'}截止`,
       message: `${String(item?.platform || '课程平台')} · ${String(item?.courseName || '未知课程')}\n${String(item?.title || '未交作业')} · ${formatReminderDeadline(deadline)}`,
       priority: 2

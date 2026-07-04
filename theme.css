@@ -277,6 +277,15 @@ html[data-color-scheme="dark"] #vePlatformDetail { background:#10243d !important
 html[data-color-scheme="dark"] #moocPlatformDetail { background:#0c2f27 !important; border-left-color:#00cc7e !important; }
 
 html[data-color-scheme="dark"] .tip { color:#b6c2d1; }
+html[data-color-scheme="dark"] .reset-confirm-message { color:#cbd5e1; }
+html[data-color-scheme="dark"] .academic-score-count,
+html[data-color-scheme="dark"] .academic-score-loading { color:#cbd5e1; }
+html[data-color-scheme="dark"] .academic-score-table-wrap { border-color:#475569; }
+html[data-color-scheme="dark"] .academic-score-table { color:#e5e7eb; }
+html[data-color-scheme="dark"] .academic-score-table th { background:#1e293b; color:#f8fafc; }
+html[data-color-scheme="dark"] .academic-score-table th,
+html[data-color-scheme="dark"] .academic-score-table td { border-color:#334155; }
+html[data-color-scheme="dark"] .academic-score-details summary { color:#60a5fa; }
 html[data-color-scheme="dark"] .reminder-editor input,
 html[data-color-scheme="dark"] .reminder-editor select { background:#111827; }
 html[data-color-scheme="dark"] .reminder-node { background:#172554; border-color:#1d4ed8; color:#bfdbfe; }

@@ -790,6 +790,18 @@ function setupPortalUsernameBindMessageListener() {
   });
 }
 
+let academicSystemMessageListenerReady = false;
+function setupAcademicSystemMessageListener() {
+  if (academicSystemMessageListenerReady || !chrome?.runtime?.onMessage) return;
+  academicSystemMessageListenerReady = true;
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== 'ACADEMIC_SYSTEM_STATUS') return;
+    const status = message.payload || {};
+    if (status.status === 'mis-login-done') showToast(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`, 'success', 2400);
+    else if (status.status === 'credentials-saved') showToast(`已保存教务系统账号 ${status.studentId || ''} 的登录密码`, 'success', 2400);
+  });
+}
+
 function refreshUploadSelectVisibility() {
   const wraps = document.querySelectorAll('.upload-select-wrap');
   wraps.forEach((wrap) => {
@@ -7211,6 +7223,7 @@ function setupSavedUploadsUi() {
   document.documentElement.classList.remove('app-options-loading');
   if (showAutoLoadResourcesDisabledNotice) showAutoLoadCourseResourcesDisabledNotice();
   setupPortalUsernameBindMessageListener();
+  setupAcademicSystemMessageListener();
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {
     window.platformEnabled = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };

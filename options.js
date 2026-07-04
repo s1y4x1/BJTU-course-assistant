@@ -187,6 +187,136 @@ function goBackToApp() {
     : !!homeworkReminderEnabled;
   document.getElementById('themeMode').value = globalThis.BjtuTheme?.normalizeMode(themeMode) || DEFAULT_THEME_MODE;
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
+  let academicContext = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
+  const academicStudentIdInput = document.getElementById('academicStudentId');
+  const academicPasswordInput = document.getElementById('academicPassword');
+  const academicMonitorInput = document.getElementById('academicScoreMonitorEnabled');
+  const academicStatus = document.getElementById('academicSystemStatus');
+  const academicAccountSelect = document.getElementById('academicAccountSelect');
+  const academicScoreLoading = document.getElementById('academicScoreLoading');
+  const academicScoreEmpty = document.getElementById('academicScoreEmpty');
+  const academicScoreTableWrap = document.getElementById('academicScoreTableWrap');
+  const academicScoreTableBody = document.getElementById('academicScoreTableBody');
+  const academicScoreCount = document.getElementById('academicScoreCount');
+
+  const renderAcademicAccounts = (context) => {
+    if (!(academicAccountSelect instanceof HTMLSelectElement)) return;
+    const accounts = Array.isArray(context?.accounts) ? context.accounts : [];
+    const selected = String(context?.studentId || '').trim();
+    academicAccountSelect.replaceChildren();
+    if (!accounts.length) {
+      academicAccountSelect.append(new Option('暂无已保存账号', ''));
+    } else {
+      for (const account of accounts) {
+        const isCurrent = account.studentId === selected;
+        const methods = account.hasPassword ? '密码' : (isCurrent ? '当前会话' : '未保存密码');
+        const userName = String(account.userName || '').trim();
+        const option = new Option(`${account.studentId}${userName ? ` ${userName}` : ''} [${methods}]`, account.studentId);
+        option.disabled = !account.hasPassword && !isCurrent;
+        academicAccountSelect.append(option);
+      }
+      academicAccountSelect.value = accounts.some((account) => account.studentId === selected)
+        ? selected
+        : String(accounts[0]?.studentId || '');
+    }
+  };
+
+  const renderAcademicMonitorStatus = (status) => {
+    if (!(academicStatus instanceof HTMLElement) || !status) return;
+    if (status.status === 'error') {
+      academicStatus.textContent = `最近检查失败：${status.error || '未知错误'}`;
+      return;
+    }
+    if (status.status === 'ok') {
+      const checkedAt = Number(status.checkedAt || 0);
+      const time = checkedAt ? new Date(checkedAt).toLocaleString() : '';
+      academicStatus.textContent = `最近检查${time ? `（${time}）` : ''}：读取 ${Number(status.count || 0)} 项成绩。`;
+      return;
+    }
+
+  };
+
+  const renderAcademicScores = (rows) => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (academicScoreLoading instanceof HTMLElement) academicScoreLoading.style.display = 'none';
+    if (academicScoreCount instanceof HTMLElement) academicScoreCount.textContent = `共 ${list.length} 项`;
+    if (academicScoreTableBody instanceof HTMLElement) academicScoreTableBody.replaceChildren();
+    if (!list.length) {
+      if (academicScoreEmpty instanceof HTMLElement) academicScoreEmpty.style.display = '';
+      if (academicScoreTableWrap instanceof HTMLElement) academicScoreTableWrap.style.display = 'none';
+      return;
+    }
+    if (academicScoreEmpty instanceof HTMLElement) academicScoreEmpty.style.display = 'none';
+    if (academicScoreTableWrap instanceof HTMLElement) academicScoreTableWrap.style.display = '';
+    for (const row of list) {
+      const tr = document.createElement('tr');
+      [row.sequence, row.academicYear, row.course, row.credit, row.score, row.bonusScore, row.teacher].forEach((value) => {
+        const td = document.createElement('td');
+        td.textContent = String(value || '-');
+        tr.appendChild(td);
+      });
+      const detailCell = document.createElement('td');
+      if (String(row.details || '').trim()) {
+        const details = document.createElement('details');
+        details.className = 'academic-score-details';
+        const summary = document.createElement('summary');
+        summary.textContent = '查看';
+        const content = document.createElement('div');
+        content.textContent = String(row.details || '');
+        details.append(summary, content);
+        detailCell.appendChild(details);
+      } else {
+        detailCell.textContent = '-';
+      }
+      tr.appendChild(detailCell);
+      academicScoreTableBody?.appendChild(tr);
+    }
+  };
+
+  const refreshAcademicContext = async () => {
+    const context = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
+    if (context?.ok) academicContext = context;
+    if (academicStudentIdInput instanceof HTMLInputElement && document.activeElement !== academicStudentIdInput) {
+      academicStudentIdInput.value = String(academicContext?.studentId || '').trim();
+    }
+    if (academicMonitorInput instanceof HTMLInputElement) academicMonitorInput.checked = academicContext?.monitorEnabled === true;
+    renderAcademicAccounts(academicContext);
+    renderAcademicMonitorStatus(academicContext?.monitorStatus);
+    return academicContext;
+  };
+
+  const loadAcademicScores = async () => {
+    if (academicScoreLoading instanceof HTMLElement) academicScoreLoading.style.display = 'flex';
+    if (academicScoreEmpty instanceof HTMLElement) academicScoreEmpty.style.display = 'none';
+    if (academicScoreTableWrap instanceof HTMLElement) academicScoreTableWrap.style.display = 'none';
+    if (academicScoreCount instanceof HTMLElement) academicScoreCount.textContent = '';
+    if (academicStatus instanceof HTMLElement) academicStatus.textContent = '正在检查教务系统登录状态并读取成绩…';
+    const result = await chrome.runtime.sendMessage({ type: 'ACADEMIC_LOAD_SCORES' }).catch((error) => ({
+      ok: false, message: String(error?.message || error)
+    }));
+    if (!result?.ok) {
+      if (academicScoreLoading instanceof HTMLElement) academicScoreLoading.style.display = 'none';
+      if (academicScoreEmpty instanceof HTMLElement) {
+        academicScoreEmpty.style.display = '';
+        academicScoreEmpty.textContent = result?.code === 'not-logged-in' ? '教务系统未登录' : '成绩读取失败';
+      }
+      if (academicStatus instanceof HTMLElement) {
+        academicStatus.textContent = result?.code === 'not-logged-in'
+          ? '教务系统未登录，请输入账号密码或通过 MIS 登录后重试。'
+          : `成绩读取失败：${result?.message || '未知错误'}`;
+      }
+      return result;
+    }
+    renderAcademicScores(result.rows);
+    if (academicStatus instanceof HTMLElement) academicStatus.textContent = `已读取 ${Number(result.count || 0)} 项成绩。`;
+    await refreshAcademicContext();
+    return result;
+  };
+
+  if (academicStudentIdInput instanceof HTMLInputElement) academicStudentIdInput.value = String(academicContext?.studentId || '').trim();
+  if (academicMonitorInput instanceof HTMLInputElement) academicMonitorInput.checked = academicContext?.monitorEnabled === true;
+  renderAcademicAccounts(academicContext);
+  renderAcademicMonitorStatus(academicContext?.monitorStatus);
 
   const updateHomeworkReminderDisabled = () => {
     const disabled = !document.getElementById('homeworkReminderEnabled').checked;
@@ -364,6 +494,16 @@ function goBackToApp() {
       if (changes.injectPortalLoginOnTimeoutPage) {
         applyBooleanUi('injectPortalLoginOnTimeoutPage', changes.injectPortalLoginOnTimeoutPage.newValue, true);
       }
+      if (changes.academicScoreMonitorEnabled) {
+        applyBooleanUi('academicScoreMonitorEnabled', changes.academicScoreMonitorEnabled.newValue, false);
+      }
+      if (changes.academicSystemStudentId && academicStudentIdInput instanceof HTMLInputElement) {
+        academicStudentIdInput.value = String(changes.academicSystemStudentId.newValue || '').trim();
+      }
+      if (changes.username && academicStudentIdInput instanceof HTMLInputElement && document.activeElement !== academicStudentIdInput) {
+        academicStudentIdInput.value = String(changes.username.newValue || '').trim();
+      }
+      if (changes.academicScoreMonitorStatus) renderAcademicMonitorStatus(changes.academicScoreMonitorStatus.newValue);
     });
   } catch {
     // ignore non-extension contexts
@@ -445,6 +585,70 @@ function goBackToApp() {
   document.getElementById('homeworkReminderEnabled').addEventListener('change', async () => {
     updateHomeworkReminderDisabled();
     await persistHomeworkReminderSettings();
+  });
+
+  const academicLoginBtn = document.getElementById('academicLoginBtn');
+  const bindAcademicSystemBtn = document.getElementById('bindAcademicSystemBtn');
+  const submitAcademicLogin = async () => {
+    const studentId = String(academicStudentIdInput?.value || '').trim();
+    const password = String(academicPasswordInput?.value || '').trim();
+    if (!studentId) { setMsg('请输入学号', false); return; }
+    if (!password) { setMsg('请输入身份证号后六位', false); return; }
+    if (password.length !== 6) { setMsg('身份证号后六位必须为 6 个字符', false); return; }
+    academicLoginBtn.disabled = true;
+    setMsg('正在登录教务系统…');
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'ACADEMIC_LOGIN_WITH_PASSWORD', payload: { studentId, password } });
+      if (!result?.ok) throw new Error(result?.message || '教务系统登录失败');
+      academicPasswordInput.value = '';
+      await refreshAcademicContext();
+      await loadAcademicScores();
+      setMsg('教务系统登录成功');
+    } catch (error) {
+      setMsg('教务系统登录失败：' + String(error?.message || error), false);
+    } finally {
+      academicLoginBtn.disabled = false;
+    }
+  };
+  academicLoginBtn?.addEventListener('click', submitAcademicLogin);
+  academicAccountSelect?.addEventListener('change', async () => {
+    const studentId = String(academicAccountSelect.value || '').trim();
+    if (!studentId) return;
+    academicAccountSelect.disabled = true;
+    if (academicStudentIdInput instanceof HTMLInputElement) academicStudentIdInput.value = studentId;
+    setMsg(`正在切换至教务系统账号 ${studentId}…`);
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'ACADEMIC_SWITCH_ACCOUNT', payload: { studentId } });
+      if (!result?.ok) throw new Error(result?.message || '账号切换失败');
+      await loadAcademicScores();
+      setMsg(`已切换至教务系统账号 ${studentId}`);
+    } catch (error) {
+      setMsg(`切换教务系统账号失败：${String(error?.message || error)}`, false);
+      await refreshAcademicContext();
+    } finally {
+      academicAccountSelect.disabled = false;
+    }
+  });
+  academicPasswordInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); void submitAcademicLogin(); }
+  });
+  academicStudentIdInput?.addEventListener('change', async () => {
+    await chrome.storage.local.set({ academicSystemStudentId: String(academicStudentIdInput.value || '').trim() });
+  });
+  bindAcademicSystemBtn?.addEventListener('click', async () => {
+    bindAcademicSystemBtn.disabled = true;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'START_ACADEMIC_MIS_LOGIN' });
+      if (!response?.ok) throw new Error(response?.message || '无法打开 MIS');
+      setMsg('已打开 MIS，请完成教务系统登录');
+    } catch (error) {
+      bindAcademicSystemBtn.disabled = false;
+      setMsg('打开 MIS 失败：' + String(error?.message || error), false);
+    }
+  });
+  academicMonitorInput?.addEventListener('change', async () => {
+    await chrome.storage.local.set({ academicScoreMonitorEnabled: !!academicMonitorInput.checked });
+    setMsg(academicMonitorInput.checked ? '已启用本学期成绩监控' : '已关闭本学期成绩监控');
   });
   document.getElementById('addHomeworkReminderNode').addEventListener('click', async () => {
     const value = Number(document.getElementById('homeworkReminderValue').value || 0);
@@ -575,6 +779,21 @@ function goBackToApp() {
   });
 
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'ACADEMIC_SYSTEM_STATUS') {
+      const status = message.payload || {};
+      if (status.status === 'mis-login-done') {
+        if (bindAcademicSystemBtn) bindAcademicSystemBtn.disabled = false;
+        void refreshAcademicContext().then(() => loadAcademicScores());
+        setMsg(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`);
+      } else if (status.status === 'mis-login-cancelled') {
+        if (bindAcademicSystemBtn) bindAcademicSystemBtn.disabled = false;
+        setMsg('已取消通过 MIS 登录教务系统', false);
+      } else if (status.status === 'credentials-saved') {
+        void refreshAcademicContext();
+        setMsg(`已保存教务系统账号 ${status.studentId || ''} 的登录密码`);
+      }
+      return;
+    }
     if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
     const st = message.payload || {};
     if (st.status === 'done') {
@@ -639,7 +858,7 @@ function goBackToApp() {
   });
 
   // Reset: restore defaults. Platform display/load should only check VE.
-  document.getElementById('resetBtn').addEventListener('click', async () => {
+  const restoreDefaultSettings = async () => {
     const defaultPlatform = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };
     await chrome.storage.local.set({
       platformEnabled: defaultPlatform,
@@ -650,6 +869,7 @@ function goBackToApp() {
       autoLoadAllHomeworkDetails: false,
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
+      academicScoreMonitorEnabled: false,
       themeMode: DEFAULT_THEME_MODE
     });
     await chrome.storage.sync.remove(['platformEnabled']);
@@ -666,6 +886,7 @@ function goBackToApp() {
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
+    document.getElementById('academicScoreMonitorEnabled').checked = false;
     document.getElementById('themeMode').value = DEFAULT_THEME_MODE;
     currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];
     renderHomeworkReminderNodes();
@@ -692,6 +913,29 @@ function goBackToApp() {
       injectPortalLoginOnTimeoutPage: true
     });
     setMsg('已恢复默认配置');
+  };
+
+  const resetConfirmModal = document.getElementById('reset-confirm-modal');
+  const closeResetConfirmModal = () => {
+    if (resetConfirmModal instanceof HTMLElement) resetConfirmModal.style.display = 'none';
+  };
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (!(resetConfirmModal instanceof HTMLElement)) return;
+    resetConfirmModal.style.display = 'flex';
+    document.getElementById('reset-confirm-submit')?.focus();
+  });
+  document.getElementById('reset-confirm-close')?.addEventListener('click', closeResetConfirmModal);
+  document.getElementById('reset-confirm-cancel')?.addEventListener('click', closeResetConfirmModal);
+  document.getElementById('reset-confirm-submit')?.addEventListener('click', async () => {
+    closeResetConfirmModal();
+    await restoreDefaultSettings();
+  });
+  resetConfirmModal?.addEventListener('click', (event) => {
+    if (event.target === resetConfirmModal) closeResetConfirmModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && resetConfirmModal?.style.display === 'flex') closeResetConfirmModal();
   });
   document.documentElement.classList.remove('options-loading');
+  void loadAcademicScores();
 })();
