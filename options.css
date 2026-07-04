@@ -5,7 +5,9 @@ input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cc
 button { margin-top: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
 .tip { margin-bottom: 12px; color: #666; font-size: 13px; }
 .theme-mode-btns { display:inline-flex; gap:6px; }
-.theme-mode-btn { width:40px; height:40px; padding:0; border:2px solid #d1d5db; border-radius:10px; background:#fff; font-size:22px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .15s, box-shadow .15s; box-sizing:border-box; }
+.theme-mode-btn { height:40px; margin-top:0; padding:0; border:2px solid #d1d5db; border-radius:10px; background:#fff; font-size:22px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .15s, box-shadow .15s; box-sizing:border-box; }
+.theme-mode-btn:not(.theme-mode-btn--text) { width:40px; }
+.theme-mode-btn--text { width:auto; padding:0 10px; font-size:13px; color:#000; }
 .theme-mode-btn:hover { border-color:#94a3b8; }
 .theme-mode-btn--active { border-color:#2563eb; background:#eff6ff; box-shadow:0 0 0 1px #2563eb; }
 .theme-mode-btn--system-active { box-shadow:inset 0 0 0 2px #93c5fd; }
