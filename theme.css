@@ -115,7 +115,8 @@ html[data-color-scheme="dark"] .ve-course-teacher-loading.warning {
   color: #fbbf24 !important;
 }
 
-html[data-color-scheme="dark"] .paste-file-label {
+html[data-color-scheme="dark"] .paste-file-label,
+html[data-color-scheme="dark"] .upload-select-wrap {
   color: #cbd5e1 !important;
 }
 
