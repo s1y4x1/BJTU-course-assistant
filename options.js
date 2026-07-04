@@ -37,7 +37,8 @@ const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 const DEFAULT_THEME_MODE = 'system';
-const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = false;
+const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = true;
+const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
 
 function normalizeHomeworkReminderMinutes(value) {
   const source = Array.isArray(value) ? value : DEFAULT_HOMEWORK_REMINDER_MINUTES;
@@ -123,8 +124,8 @@ function goBackToApp() {
 }
 
 (async function init() {
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoUpdateStatus } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoUpdateStatus'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -186,7 +187,10 @@ function goBackToApp() {
   document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
     ? DEFAULT_HOMEWORK_REMINDER_ENABLED
     : !!homeworkReminderEnabled;
-  document.getElementById('backgroundAutoUpdateEnabled').checked = backgroundAutoUpdateEnabled === true;
+  document.getElementById('backgroundAutoUpdateEnabled').checked = backgroundAutoUpdateEnabled === undefined
+    ? DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED
+    : backgroundAutoUpdateEnabled === true;
+  document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
   updateThemeModeUi(themeMode);
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let academicContext = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
@@ -215,6 +219,7 @@ function goBackToApp() {
       checking: '正在后台检查更新…',
       latest: `已是最新版本${versionName ? `：${versionName}` : ''}。`,
       'directory-required': `检测到${versionName ? ` ${versionName}` : '新版本'}，请先在全屏页面手动更新一次并授权扩展安装目录。`,
+      'optional-update-available': `检测到非强制更新${versionName ? `：${versionName}` : ''}，已按设置保留为手动更新。`,
       downloading: `正在后台下载${versionName ? ` ${versionName}` : '更新'}…`,
       installing: `正在后台覆盖更新文件${status?.total ? `：${Number(status.completed || 0)} / ${Number(status.total)}` : ''}。`,
       reloading: '更新已写入，正在自动重新加载扩展…',
@@ -225,6 +230,15 @@ function goBackToApp() {
     backgroundAutoUpdateStatusEl.textContent = messages[state] || '等待下一次后台更新检查。';
   };
   renderBackgroundAutoUpdateStatus(backgroundAutoUpdateStatus);
+
+  const updateBackgroundAutoInstallOptionalDisabled = () => {
+    const parentEnabled = !!document.getElementById('backgroundAutoUpdateEnabled')?.checked;
+    const child = document.getElementById('backgroundAutoInstallOptionalEnabled');
+    if (!(child instanceof HTMLInputElement)) return;
+    child.disabled = !parentEnabled;
+    child.closest('label')?.classList.toggle('is-disabled', !parentEnabled);
+  };
+  updateBackgroundAutoInstallOptionalDisabled();
 
   const renderAcademicAccounts = (context) => {
     if (!(academicAccountSelect instanceof HTMLSelectElement)) return;
@@ -549,7 +563,11 @@ function goBackToApp() {
       if (changes.academicScoreMonitorStatus) renderAcademicMonitorStatus(changes.academicScoreMonitorStatus.newValue);
       if (changes.backgroundAutoUpdateEnabled) {
         applyBooleanUi('backgroundAutoUpdateEnabled', changes.backgroundAutoUpdateEnabled.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED);
+        updateBackgroundAutoInstallOptionalDisabled();
         renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus?.newValue || null);
+      }
+      if (changes.backgroundAutoInstallOptionalEnabled) {
+        applyBooleanUi('backgroundAutoInstallOptionalEnabled', changes.backgroundAutoInstallOptionalEnabled.newValue, DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED);
       }
       if (changes.backgroundAutoUpdateStatus) renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus.newValue);
     });
@@ -718,8 +736,14 @@ function goBackToApp() {
   document.getElementById('backgroundAutoUpdateEnabled')?.addEventListener('change', async (event) => {
     const enabled = !!event.currentTarget.checked;
     await chrome.storage.local.set({ backgroundAutoUpdateEnabled: enabled });
+    updateBackgroundAutoInstallOptionalDisabled();
     renderBackgroundAutoUpdateStatus(enabled ? { status: 'checking' } : null);
     setMsg(enabled ? '已启用后台自动更新' : '已关闭后台自动更新');
+  });
+  document.getElementById('backgroundAutoInstallOptionalEnabled')?.addEventListener('change', async (event) => {
+    const enabled = !!event.currentTarget.checked;
+    await chrome.storage.local.set({ backgroundAutoInstallOptionalEnabled: enabled });
+    setMsg(enabled ? '已启用非强制更新自动安装' : '已关闭非强制更新自动安装');
   });
   document.getElementById('addHomeworkReminderNode').addEventListener('click', async () => {
     const value = Number(document.getElementById('homeworkReminderValue').value || 0);
@@ -941,6 +965,7 @@ function goBackToApp() {
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
       academicScoreMonitorEnabled: false,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
+      backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
       themeMode: DEFAULT_THEME_MODE
     });
     await chrome.storage.sync.remove(['platformEnabled']);
@@ -959,6 +984,8 @@ function goBackToApp() {
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
     document.getElementById('academicScoreMonitorEnabled').checked = false;
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
+    document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;
+    updateBackgroundAutoInstallOptionalDisabled();
     renderBackgroundAutoUpdateStatus(null);
     updateThemeModeUi(DEFAULT_THEME_MODE);
     currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];

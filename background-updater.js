@@ -2,6 +2,7 @@
   'use strict';
 
   const ENABLED_KEY = 'backgroundAutoUpdateEnabled';
+  const INSTALL_OPTIONAL_KEY = 'backgroundAutoInstallOptionalEnabled';
   const STATUS_KEY = 'backgroundAutoUpdateStatus';
   const ALARM_NAME = 'bjtu-background-update-check';
   const NOTIFICATION_ID = 'bjtu-background-update-complete';
@@ -269,9 +270,10 @@
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
-        ENABLED_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY
+        ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY
       ]);
-      if (!forceCheck && stored?.[ENABLED_KEY] !== true) return { skipped: true };
+      const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
+      if (!forceCheck && !updaterEnabled) return { skipped: true };
       const manifestVersion = String(chrome.runtime.getManifest().version || '0');
       const appliedVersion = String(stored?.[APPLIED_WITHOUT_RELOAD_KEY]?.ver || '');
       const localVersion = compareVersions(appliedVersion, manifestVersion) > 0 ? appliedVersion : manifestVersion;
@@ -284,6 +286,15 @@
       if (normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver) === normalizeVersion(release.version)) {
         await setStatus('reload-pending', { localVersion, version: release.version, name: release.name });
         return { updated: false, reloadPending: true, release };
+      }
+      if (!release.force && stored?.[INSTALL_OPTIONAL_KEY] !== true) {
+        await setStatus('optional-update-available', {
+          localVersion,
+          version: release.version,
+          name: release.name,
+          force: false
+        });
+        return { updated: false, optionalUpdateAvailable: true, release };
       }
       const root = await validateDirectory(await readDirectoryHandle());
       if (!root) {
@@ -357,9 +368,11 @@
     runBackgroundUpdate().catch(() => {});
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes[ENABLED_KEY]) return;
+    if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INSTALL_OPTIONAL_KEY])) return;
     ensureAlarm();
-    if (changes[ENABLED_KEY].newValue === true) runBackgroundUpdate().catch(() => {});
+    if (changes[ENABLED_KEY]?.newValue === true || changes[INSTALL_OPTIONAL_KEY]?.newValue === true) {
+      runBackgroundUpdate().catch(() => {});
+    }
   });
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== 'BACKGROUND_UPDATE_CHECK_NOW') return false;
