@@ -43,7 +43,8 @@
     "https://ginnnnnn.top/*",
     "https://codeload.github.com/*",
     "https://raw.githubusercontent.com/*",
-    "https://s1y4x1.github.io/*"
+    "https://s1y4x1.github.io/*",
+    "https://zip1.webgetstore.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';"

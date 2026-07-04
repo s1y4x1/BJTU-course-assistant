@@ -1,0 +1,373 @@
+(function () {
+  'use strict';
+
+  const ENABLED_KEY = 'backgroundAutoUpdateEnabled';
+  const STATUS_KEY = 'backgroundAutoUpdateStatus';
+  const ALARM_NAME = 'bjtu-background-update-check';
+  const NOTIFICATION_ID = 'bjtu-background-update-complete';
+  const SOURCE_URLS = [
+    'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json',
+    'https://s1y4x1.github.io/release.json'
+  ];
+  const FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
+  const FS_STORE_NAME = 'handles';
+  const FS_DIRECTORY_KEY = 'update-directory';
+  const APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
+  const PENDING_RELOAD_KEY = 'pendingUpdateReload';
+  const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
+  let runningPromise = null;
+
+  function normalizeVersion(value) {
+    return String(value || '').trim().replace(/^v/i, '').split(/[+-]/, 1)[0];
+  }
+
+  function compareVersions(left, right) {
+    const a = normalizeVersion(left).split('.').map((part) => Number(part) || 0);
+    const b = normalizeVersion(right).split('.').map((part) => Number(part) || 0);
+    const count = Math.max(a.length, b.length);
+    for (let index = 0; index < count; index += 1) {
+      const diff = (a[index] || 0) - (b[index] || 0);
+      if (diff) return diff > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+
+  async function setStatus(status, extra = {}) {
+    await chrome.storage.local.set({
+      [STATUS_KEY]: { status, ...extra, checkedAt: Date.now() }
+    });
+  }
+
+  async function fetchRelease(sourceUrl) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(sourceUrl, {
+        cache: 'no-store',
+        credentials: 'omit',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = JSON.parse(String(await response.text()).replace(/^\uFEFF/, ''));
+      const version = String(data?.ver || '').trim();
+      const url = String(data?.url || '').trim();
+      if (!version || !/^https?:\/\//i.test(url)) throw new Error('更新源数据不完整');
+      return {
+        version,
+        name: String(data?.name || version).trim() || version,
+        description: String(data?.desc || '').trim(),
+        url: new URL(url).href,
+        reload: data?.reload !== false,
+        force: data?.force === true,
+        update: Array.isArray(data?.update) ? data.update : null,
+        sourceUrl
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function fetchLatestRelease() {
+    const settled = await Promise.allSettled(SOURCE_URLS.map(fetchRelease));
+    const releases = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
+    if (!releases.length) {
+      const reason = settled.find((item) => item.status === 'rejected')?.reason;
+      throw new Error(`无法连接更新源${reason ? `：${String(reason.message || reason)}` : ''}`);
+    }
+    return releases.reduce((latest, release) => (
+      compareVersions(release.version, latest.version) > 0 ? release : latest
+    ));
+  }
+
+  function openFileSystemDatabase() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(FS_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(FS_STORE_NAME)) {
+          request.result.createObjectStore(FS_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('无法打开更新目录数据库'));
+    });
+  }
+
+  async function readDirectoryHandle() {
+    const db = await openFileSystemDatabase();
+    try {
+      return await new Promise((resolve, reject) => {
+        const transaction = db.transaction(FS_STORE_NAME, 'readonly');
+        const request = transaction.objectStore(FS_STORE_NAME).get(FS_DIRECTORY_KEY);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error('无法读取更新目录'));
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function validateDirectory(handle) {
+    if (!handle || handle.kind !== 'directory' || typeof handle.queryPermission !== 'function') return null;
+    if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted') return null;
+    const manifestHandle = await handle.getFileHandle('manifest.json');
+    const manifest = JSON.parse(await (await manifestHandle.getFile()).text());
+    const current = chrome.runtime.getManifest();
+    if (Number(manifest?.manifest_version) !== Number(current.manifest_version)
+      || String(manifest?.name || '').trim() !== String(current.name || '').trim()) {
+      throw new Error('已授权目录不是当前扩展安装目录');
+    }
+    await handle.getFileHandle('app.html');
+    await handle.getFileHandle('update-checker.js');
+    return handle;
+  }
+
+  function findZipEnd(bytes) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let offset = bytes.byteLength - 22; offset >= Math.max(0, bytes.byteLength - 65557); offset -= 1) {
+      if (view.getUint32(offset, true) === 0x06054b50) return offset;
+    }
+    throw new Error('更新压缩包结构无效');
+  }
+
+  function parseZipEntries(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const view = new DataView(arrayBuffer);
+    const end = findZipEnd(bytes);
+    const count = view.getUint16(end + 10, true);
+    const centralOffset = view.getUint32(end + 16, true);
+    if (count === 0xffff || centralOffset === 0xffffffff) throw new Error('暂不支持 ZIP64 更新包');
+    const decoder = new TextDecoder('utf-8');
+    const entries = [];
+    let offset = centralOffset;
+    for (let index = 0; index < count; index += 1) {
+      if (offset + 46 > bytes.byteLength || view.getUint32(offset, true) !== 0x02014b50) {
+        throw new Error('更新压缩包目录损坏');
+      }
+      const flags = view.getUint16(offset + 8, true);
+      const method = view.getUint16(offset + 10, true);
+      const compressedSize = view.getUint32(offset + 20, true);
+      const uncompressedSize = view.getUint32(offset + 24, true);
+      const nameLength = view.getUint16(offset + 28, true);
+      const extraLength = view.getUint16(offset + 30, true);
+      const commentLength = view.getUint16(offset + 32, true);
+      const localOffset = view.getUint32(offset + 42, true);
+      if (flags & 1) throw new Error('更新压缩包已加密');
+      const nameStart = offset + 46;
+      const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength)).replace(/\\/g, '/');
+      if (localOffset + 30 > bytes.byteLength || view.getUint32(localOffset, true) !== 0x04034b50) {
+        throw new Error('更新压缩包文件记录损坏');
+      }
+      const dataOffset = localOffset + 30
+        + view.getUint16(localOffset + 26, true)
+        + view.getUint16(localOffset + 28, true);
+      if (dataOffset + compressedSize > bytes.byteLength) throw new Error('更新压缩包文件数据不完整');
+      entries.push({
+        name,
+        method,
+        uncompressedSize,
+        compressed: bytes.slice(dataOffset, dataOffset + compressedSize),
+        directory: name.endsWith('/')
+      });
+      offset = nameStart + nameLength + extraLength + commentLength;
+    }
+    return entries;
+  }
+
+  async function inflateEntry(entry) {
+    if (entry.method === 0) return entry.compressed;
+    if (entry.method !== 8) throw new Error(`不支持的 ZIP 压缩方式：${entry.method}`);
+    const stream = new Blob([entry.compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    if (bytes.byteLength !== entry.uncompressedSize) throw new Error(`文件解压长度不符：${entry.name}`);
+    return bytes;
+  }
+
+  function selectFiles(entries, updateRule) {
+    const names = entries.map((entry) => entry.name).filter(Boolean);
+    const rootName = names[0]?.split('/')[0] || '';
+    const commonRoot = rootName && names.every((name) => name === rootName || name.startsWith(`${rootName}/`))
+      ? `${rootName}/`
+      : '';
+    let files = entries.filter((entry) => !entry.directory).map((entry) => {
+      const raw = commonRoot && entry.name.startsWith(commonRoot) ? entry.name.slice(commonRoot.length) : entry.name;
+      const parts = raw.split('/').filter(Boolean);
+      if (!parts.length || parts.some((part) => part === '.' || part === '..')) return null;
+      return { entry, path: parts.join('/') };
+    }).filter(Boolean);
+    if (!Array.isArray(updateRule) || updateRule.length === 0 || (updateRule.length === 1 && updateRule[0] === true)) {
+      return files;
+    }
+    const requested = new Set(updateRule.filter((item) => typeof item === 'string')
+      .map((item) => item.replace(/\\/g, '/').replace(/^\/+/, '').trim().toLowerCase())
+      .filter(Boolean));
+    if (!requested.size) return files;
+    files = files.filter(({ path }) => requested.has(path.toLowerCase())
+      || requested.has(path.toLowerCase().split('/').at(-1)));
+    return files;
+  }
+
+  async function clearDirectory(root) {
+    const names = [];
+    for await (const [name] of root.entries()) names.push(name);
+    await Promise.all(names.map((name) => root.removeEntry(name, { recursive: true })));
+  }
+
+  async function writeFile(root, path, bytes) {
+    const parts = path.split('/');
+    let directory = root;
+    for (const part of parts.slice(0, -1)) {
+      directory = await directory.getDirectoryHandle(part, { create: true });
+    }
+    const file = await directory.getFileHandle(parts.at(-1), { create: true });
+    const writable = await file.createWritable();
+    try {
+      await writable.write(bytes);
+    } finally {
+      await writable.close();
+    }
+  }
+
+  async function downloadArchive(url) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+      const response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: controller.signal });
+      if (!response.ok) throw new Error(`下载更新包失败（HTTP ${response.status}）`);
+      return await response.arrayBuffer();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function installRelease(root, release) {
+    const archive = await downloadArchive(release.url);
+    const entries = parseZipEntries(archive);
+    const files = selectFiles(entries, release.update);
+    if (!files.length) throw new Error('更新压缩包中没有需要写入的文件');
+    if (Array.isArray(release.update) && release.update.length === 1 && release.update[0] === true) {
+      await clearDirectory(root);
+    }
+    let completed = 0;
+    for (const batch of Array.from({ length: Math.ceil(files.length / 8) }, (_, index) => files.slice(index * 8, index * 8 + 8))) {
+      await Promise.all(batch.map(async ({ entry, path }) => {
+        await writeFile(root, path, await inflateEntry(entry));
+        completed += 1;
+        await setStatus('installing', {
+          version: release.version,
+          name: release.name,
+          completed,
+          total: files.length,
+          directoryName: root.name
+        });
+      }));
+    }
+    return files.length;
+  }
+
+  async function runBackgroundUpdate({ forceCheck = false } = {}) {
+    if (runningPromise) return runningPromise;
+    runningPromise = (async () => {
+      const stored = await chrome.storage.local.get([
+        ENABLED_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY
+      ]);
+      if (!forceCheck && stored?.[ENABLED_KEY] !== true) return { skipped: true };
+      const manifestVersion = String(chrome.runtime.getManifest().version || '0');
+      const appliedVersion = String(stored?.[APPLIED_WITHOUT_RELOAD_KEY]?.ver || '');
+      const localVersion = compareVersions(appliedVersion, manifestVersion) > 0 ? appliedVersion : manifestVersion;
+      await setStatus('checking', { localVersion });
+      const release = await fetchLatestRelease();
+      if (compareVersions(release.version, localVersion) <= 0) {
+        await setStatus('latest', { localVersion, version: release.version, name: release.name });
+        return { updated: false, release };
+      }
+      if (normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver) === normalizeVersion(release.version)) {
+        await setStatus('reload-pending', { localVersion, version: release.version, name: release.name });
+        return { updated: false, reloadPending: true, release };
+      }
+      const root = await validateDirectory(await readDirectoryHandle());
+      if (!root) {
+        await setStatus('directory-required', {
+          localVersion,
+          version: release.version,
+          name: release.name,
+          force: release.force
+        });
+        return { updated: false, directoryRequired: true, release };
+      }
+      await setStatus('downloading', {
+        localVersion,
+        version: release.version,
+        name: release.name,
+        directoryName: root.name
+      });
+      const fileCount = await installRelease(root, release);
+      const record = {
+        ver: release.version,
+        name: release.name,
+        fileCount,
+        force: release.force,
+        reload: release.reload,
+        appliedAt: Date.now(),
+        background: true
+      };
+      if (!release.reload) {
+        await chrome.storage.local.set({
+          [APPLIED_WITHOUT_RELOAD_KEY]: record,
+          [PENDING_RELOAD_KEY]: null,
+          [STATUS_KEY]: { status: 'complete', ...record, checkedAt: Date.now(), directoryName: root.name }
+        });
+        await chrome.notifications.create(NOTIFICATION_ID, {
+          type: 'basic', iconUrl: 'icons/128.png', title: 'BJTU 课程助手已后台更新',
+          message: `已更新到 ${release.name}，刷新已打开的扩展页面后生效。`, priority: 1
+        }).catch(() => {});
+        return { updated: true, reloaded: false, release, fileCount };
+      }
+      const appUrl = chrome.runtime.getURL('app.html');
+      const appWasOpen = (await chrome.tabs.query({})).some((tab) => String(tab?.url || '').startsWith(appUrl));
+      await chrome.storage.local.set({
+        [PENDING_RELOAD_KEY]: { ...record, autoReloadRequestedAt: Date.now() },
+        [RELOAD_HANDOFF_KEY]: { ...record, requestedAt: Date.now(), reopenApp: appWasOpen },
+        [STATUS_KEY]: { status: 'reloading', ...record, checkedAt: Date.now(), directoryName: root.name }
+      });
+      chrome.runtime.reload();
+      return { updated: true, reloaded: true, release, fileCount };
+    })().catch(async (error) => {
+      await setStatus('error', { error: String(error?.message || error) }).catch(() => {});
+      throw error;
+    }).finally(() => {
+      runningPromise = null;
+    });
+    return runningPromise;
+  }
+
+  function ensureAlarm() {
+    chrome.alarms.create(ALARM_NAME, { delayInMinutes: 2, periodInMinutes: 30 });
+  }
+
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm?.name === ALARM_NAME) runBackgroundUpdate().catch(() => {});
+  });
+  chrome.runtime.onInstalled.addListener(() => {
+    ensureAlarm();
+    runBackgroundUpdate().catch(() => {});
+  });
+  chrome.runtime.onStartup.addListener(() => {
+    ensureAlarm();
+    runBackgroundUpdate().catch(() => {});
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[ENABLED_KEY]) return;
+    ensureAlarm();
+    if (changes[ENABLED_KEY].newValue === true) runBackgroundUpdate().catch(() => {});
+  });
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'BACKGROUND_UPDATE_CHECK_NOW') return false;
+    runBackgroundUpdate({ forceCheck: true })
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  });
+
+  ensureAlarm();
+})();

@@ -11,6 +11,7 @@
   const STUDENT_ID_KEY = 'academicSystemStudentId';
   const MONITOR_KEY = 'academicScoreMonitorEnabled';
   const SNAPSHOTS_KEY = 'academicScoreSnapshots';
+  const PENDING_NOTIFICATIONS_KEY = 'academicScorePendingNotifications';
   const STATUS_KEY = 'academicScoreMonitorStatus';
   const ALARM_NAME = 'bjtu-academic-score-check';
   const NOTIFICATION_PREFIX = 'bjtu-academic-score:';
@@ -18,6 +19,7 @@
   const misLoginVerifyingTabs = new Set();
   const pendingCredentialsByTab = new Map();
   let scoreCheckPromise = null;
+  let scoreProcessPromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
 
   function decodeHtmlEntities(value) {
@@ -371,22 +373,66 @@
     return { html, account };
   }
 
-  async function notifyScoreChange(row, kind) {
+  async function notifyScoreChange(row, kind, studentId = '') {
     const titlePrefix = kind === 'new' ? '新增成绩' : '成绩更新';
-    const notificationId = `${NOTIFICATION_PREFIX}${shortHash(`${row.key}|${scoreFingerprint(row)}|${Date.now()}`)}`;
-    await chrome.notifications.create(notificationId, {
-      type: 'basic',
-      iconUrl: 'icons/128.png',
-      title: `${titlePrefix}：${row.courseName || row.course}`,
-      message: formatScoreNotification(row),
-      priority: 2
+    const notificationId = `${NOTIFICATION_PREFIX}${shortHash(`${studentId}|${kind}|${row.key}|${scoreFingerprint(row)}`)}`;
+    await new Promise((resolve, reject) => {
+      chrome.notifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: `${titlePrefix}：${row.courseName || row.course}`,
+        message: formatScoreNotification(row),
+        priority: 2
+      }, () => {
+        const error = chrome.runtime.lastError;
+        if (error) reject(new Error(error.message || '创建成绩通知失败'));
+        else resolve(notificationId);
+      });
     });
   }
 
-  async function processScoreRows(rows, studentId = '', source = 'poll') {
+  function normalizePendingScoreNotifications(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const result = {};
+    for (const [key, item] of Object.entries(source)) {
+      const studentId = String(item?.studentId || '').trim();
+      const kind = item?.kind === 'updated' ? 'updated' : 'new';
+      const row = normalizeScoreRow(item?.row);
+      if (!studentId || !row.academicYear || !row.course) continue;
+      result[key] = { studentId, kind, row, createdAt: Number(item?.createdAt || Date.now()) };
+    }
+    return result;
+  }
+
+  async function flushPendingScoreNotifications(pendingOverride = null) {
+    const stored = pendingOverride
+      ? null
+      : await chrome.storage.local.get([PENDING_NOTIFICATIONS_KEY]);
+    const pending = normalizePendingScoreNotifications(
+      pendingOverride || stored?.[PENDING_NOTIFICATIONS_KEY]
+    );
+    let changed = false;
+    for (const [key, item] of Object.entries(pending)) {
+      try {
+        await notifyScoreChange(item.row, item.kind, item.studentId);
+        delete pending[key];
+        changed = true;
+      } catch {
+        // Keep failed notifications for the next alarm instead of losing them.
+      }
+    }
+    if (changed || pendingOverride) {
+      await chrome.storage.local.set({ [PENDING_NOTIFICATIONS_KEY]: pending });
+    }
+    return pending;
+  }
+
+  async function processScoreRowsInternal(rows, studentId = '', source = 'poll') {
     const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeScoreRow)
       .filter((row) => row.academicYear && row.course);
-    const stored = await chrome.storage.local.get([SNAPSHOTS_KEY, STUDENT_ID_KEY, 'username']);
+    const stored = await chrome.storage.local.get([
+      SNAPSHOTS_KEY, PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, 'username'
+    ]);
     const id = String(studentId || stored?.[STUDENT_ID_KEY] || stored?.username || 'default').trim() || 'default';
     const snapshots = stored?.[SNAPSHOTS_KEY] && typeof stored[SNAPSHOTS_KEY] === 'object'
       ? { ...stored[SNAPSHOTS_KEY] }
@@ -402,14 +448,38 @@
         else if (scoreFingerprint(previous[row.key]) !== scoreFingerprint(row)) changes.push({ kind: 'updated', row });
       }
     }
+    const pending = normalizePendingScoreNotifications(stored?.[PENDING_NOTIFICATIONS_KEY]);
+    for (const change of changes) {
+      const pendingKey = shortHash(`${id}|${change.kind}|${change.row.key}|${scoreFingerprint(change.row)}`);
+      pending[pendingKey] = {
+        studentId: id,
+        kind: change.kind,
+        row: change.row,
+        createdAt: Date.now()
+      };
+    }
     snapshots[id] = { rows: nextRows, updatedAt: Date.now(), source };
     await chrome.storage.local.set({
       [SNAPSHOTS_KEY]: snapshots,
+      [PENDING_NOTIFICATIONS_KEY]: pending,
       [STUDENT_ID_KEY]: id,
       [STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt: Date.now() }
     });
-    for (const change of changes) await notifyScoreChange(change.row, change.kind);
-    return { count: normalizedRows.length, changes: changes.length, baseline: !previous, rows: normalizedRows, studentId: id };
+    const remainingPending = await flushPendingScoreNotifications(pending);
+    return {
+      count: normalizedRows.length,
+      changes: changes.length,
+      pendingNotifications: Object.keys(remainingPending).length,
+      baseline: !previous,
+      rows: normalizedRows,
+      studentId: id
+    };
+  }
+
+  function processScoreRows(rows, studentId = '', source = 'poll') {
+    const run = scoreProcessPromise.then(() => processScoreRowsInternal(rows, studentId, source));
+    scoreProcessPromise = run.catch(() => {});
+    return run;
   }
 
   async function checkScores(source = 'poll', { force = false } = {}) {
@@ -418,6 +488,7 @@
       const settings = await chrome.storage.local.get([MONITOR_KEY]);
       if (!force && settings?.[MONITOR_KEY] !== true) return { skipped: true };
       try {
+        await flushPendingScoreNotifications();
         const page = await fetchScorePage();
         const parsed = parseScorePage(page.html);
         if (!parsed.hasScoreTable) throw new Error('成绩页面中未找到成绩表格');
@@ -666,6 +737,7 @@
       if (area === 'local' && changes[MONITOR_KEY]) {
         ensureAlarm();
         if (changes[MONITOR_KEY].newValue === true) scheduleScoreCheck();
+        else chrome.storage.local.remove([PENDING_NOTIFICATIONS_KEY]).catch(() => {});
       }
     });
     chrome.notifications.onClicked.addListener((notificationId) => {
@@ -682,6 +754,8 @@
     parseCurrentAccountPage,
     normalizeScoreRow,
     parseScorePage,
-    scoreFingerprint
+    scoreFingerprint,
+    processScoreRows,
+    flushPendingScoreNotifications
   };
 })(globalThis);

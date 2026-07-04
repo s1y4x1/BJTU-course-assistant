@@ -3,6 +3,7 @@
 importScripts('vendor/ve/main.min.js');
 importScripts('account-store.js');
 importScripts('academic-system.js');
+importScripts('background-updater.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
@@ -19,6 +20,31 @@ async function restoreAppAfterAutomaticExtensionReload() {
     }
   }).catch(() => {});
   await chrome.storage.local.remove([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => {});
+  if (handoff.background) {
+    const localVersion = String(chrome.runtime.getManifest().version || '').replace(/^v/i, '');
+    const targetVersion = String(handoff.ver || '').replace(/^v/i, '');
+    if (localVersion && targetVersion && localVersion === targetVersion) {
+      await chrome.storage.local.remove(['pendingUpdateReload']).catch(() => {});
+    }
+    await chrome.storage.local.set({
+      backgroundAutoUpdateStatus: {
+        status: 'complete',
+        ver: String(handoff.ver || ''),
+        name: String(handoff.name || handoff.ver || ''),
+        fileCount: Number(handoff.fileCount || 0),
+        checkedAt: Date.now(),
+        reloaded: true
+      }
+    }).catch(() => {});
+    await chrome.notifications.create('bjtu-background-update-complete', {
+      type: 'basic',
+      iconUrl: 'icons/128.png',
+      title: 'BJTU 课程助手已后台更新',
+      message: `已更新到 ${String(handoff.name || handoff.ver || '新版本')} 并自动重新加载扩展。`,
+      priority: 1
+    }).catch(() => {});
+  }
+  if (handoff.reopenApp === false) return;
   const tabs = (await chrome.tabs.query({}).catch(() => []))
     .filter((tab) => String(tab?.url || '').startsWith(APP_URL));
   if (tabs.length) {
