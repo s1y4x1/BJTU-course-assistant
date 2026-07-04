@@ -4,7 +4,9 @@
   const ENABLED_KEY = 'backgroundAutoUpdateEnabled';
   const INSTALL_OPTIONAL_KEY = 'backgroundAutoInstallOptionalEnabled';
   const STATUS_KEY = 'backgroundAutoUpdateStatus';
+  const DETECTED_NOTIFICATION_VERSION_KEY = 'backgroundUpdateDetectedNotifiedVersion';
   const ALARM_NAME = 'bjtu-background-update-check';
+  const DETECTED_NOTIFICATION_ID = 'bjtu-background-update-detected';
   const NOTIFICATION_ID = 'bjtu-background-update-complete';
   const SOURCE_URLS = [
     'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json',
@@ -37,6 +39,28 @@
     await chrome.storage.local.set({
       [STATUS_KEY]: { status, ...extra, checkedAt: Date.now() }
     });
+  }
+
+  async function notifyUpdateDetected(release, lastNotifiedVersion = '') {
+    if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
+    try {
+      await chrome.notifications.create(DETECTED_NOTIFICATION_ID, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: `发现新版本：${String(release?.name || release?.version || '新版本')}`,
+        message: release?.force
+          ? '这是强制更新，即将开始后台下载。'
+          : '检测到非强制更新，将根据您的后台自动安装设置处理。',
+        priority: 1
+      });
+      await chrome.storage.local.set({
+        [DETECTED_NOTIFICATION_VERSION_KEY]: String(release?.version || '')
+      });
+      return true;
+    } catch {
+      // A notification failure must not prevent the update itself.
+      return false;
+    }
   }
 
   async function fetchRelease(sourceUrl) {
@@ -270,7 +294,8 @@
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
-        ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY
+        ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
+        DETECTED_NOTIFICATION_VERSION_KEY
       ]);
       const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
       if (!forceCheck && !updaterEnabled) return { skipped: true };
@@ -283,6 +308,7 @@
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
       }
+      await notifyUpdateDetected(release, stored?.[DETECTED_NOTIFICATION_VERSION_KEY]);
       if (normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver) === normalizeVersion(release.version)) {
         await setStatus('reload-pending', { localVersion, version: release.version, name: release.name });
         return { updated: false, reloadPending: true, release };
