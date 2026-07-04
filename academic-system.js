@@ -599,14 +599,19 @@
           const pending = pendingCredentialsByTab.get(tabId);
           if (pending && !onLoginPage) {
             pendingCredentialsByTab.delete(tabId);
-            saveAcademicAccount(pending.studentId, {
-              password: pending.password,
-              lastLoginAt: Date.now()
-            }).then(async () => {
+            void (async () => {
+              const accounts = await getAcademicAccounts();
+              const wasSaved = !!accounts[pending.studentId];
+              await saveAcademicAccount(pending.studentId, {
+                password: pending.password,
+                lastLoginAt: Date.now()
+              });
               await fetchCurrentAcademicAccount().catch(() => null);
               await broadcastStatus({ status: 'credentials-saved', studentId: pending.studentId, silent: true });
-              await showAcademicPageToast(tabId, `已保存教务系统账号 ${pending.studentId} 的登录密码`);
-            }).catch(() => {});
+              if (!wasSaved) {
+                await showAcademicPageToast(tabId, `已保存教务系统账号 ${pending.studentId} 的登录密码`);
+              }
+            })().catch(() => {});
           } else if (pending && onLoginPage) {
             pendingCredentialsByTab.delete(tabId);
           }
