@@ -5,85 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BJTU 课程助手—扩展选项</title>
   <script src="theme.js"></script>
-  <style>
-    body { font-family: Segoe UI, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
-    h2 { margin: 0; }
-    label { display: block; margin: 12px 0 6px; }
-    input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
-    button { margin-top: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
-    .tip { margin-bottom: 12px; color: #666; font-size: 13px; }
-    #msg {
-      position: fixed;
-      top: 14px;
-      left: 50%;
-      z-index: 2147483647;
-      max-width: min(520px, calc(100vw - 32px));
-      padding: 9px 14px;
-      border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
-      font-size: 13px;
-      line-height: 1.4;
-      opacity: 0;
-      pointer-events: none;
-      user-select: text;
-      cursor: copy;
-      transform: translate(-50%, -8px);
-      transition: opacity .16s ease, transform .16s ease;
-    }
-    #msg.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-    #msg.ok { border: 1px solid #86efac; background: #f0fdf4; color: #166534; }
-    #msg.err { border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; }
-    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .section-title { font-weight: 600; margin-bottom: 8px; font-size: 16px; }
-    .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
-    .back-home-link:hover { text-decoration: underline; }
-    .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
-    .is-disabled { opacity: 0.5; pointer-events: none; }
-    .platform-option { margin:8px 0; }
-    .platform-option > label { display:flex; align-items:center; gap:8px; margin:0; font-weight:600; }
-    .platform-option-detail { margin:5px 0 10px 24px; padding:7px 10px; border-left:3px solid #d1d5db; background:#fff; border-radius:6px; }
-    .platform-option-detail label { display:flex; align-items:center; gap:8px; margin:4px 0; font-weight:400; }
-    .account-progress-mask { position:fixed; inset:0; z-index:10001; background:rgba(15,23,42,.45); align-items:center; justify-content:center; }
-    .account-progress-card { width:min(420px,calc(100vw - 32px)); box-sizing:border-box; padding:18px; border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(0,0,0,.25); }
-    .account-progress-title { font-size:16px; font-weight:600; color:#111827; }
-    .account-init-status { margin:10px 0; color:#334155; font-size:13px; line-height:1.6; }
-    .account-init-progress-row { margin-top:12px; }
-    .account-init-progress-label { color:#475569; font-size:12px; line-height:1.4; font-variant-numeric:tabular-nums; }
-    .progress-bar-container { width:100%; height:3px; margin-top:5px; overflow:hidden; background:#e5e7eb; }
-    .progress-bar { height:100%; width:0; transition:width .2s; }
-    #account-init-teacher-progress-bar { background:#2563eb; }
-    #account-init-student-progress-bar { background:#16a34a; }
-    #options-loading-placeholder { display:none; min-height:160px; align-items:center; justify-content:center; }
-    .options-page-spinner { width:22px; height:22px; box-sizing:border-box; border:3px solid #cbd5e1; border-top-color:#1976d2; border-radius:50%; animation:optionsSpin .75s linear infinite; }
-    @keyframes optionsSpin { to { transform:rotate(360deg); } }
-    html.options-loading #options-controlled-content { display:none; }
-    html.options-loading #options-loading-placeholder { display:flex; }
-    .reminder-editor { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; margin-top:8px; }
-    .reminder-editor input, .reminder-editor select { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
-    .reminder-editor button { margin:0; height:34px; }
-    .reminder-node-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
-    .reminder-node { display:inline-flex; align-items:center; gap:6px; padding:4px 5px 4px 9px; border:1px solid #bfdbfe; border-radius:6px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
-    .reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; line-height:22px; }
-    .reset-confirm-card { position:relative; }
-    .reset-confirm-message { margin:12px 0 16px; color:#475569; font-size:14px; line-height:1.6; }
-    .reset-confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .reset-confirm-actions button { width:100%; margin:0; }
-    .reset-confirm-close { position:absolute; top:10px; right:10px; width:28px; height:28px; margin:0; padding:0; border-radius:50%; background:#64748b; font-size:18px; line-height:28px; }
-    .academic-account-row { display:block; }
-    .academic-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
-    .academic-login-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-    .academic-score-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; }
-    .academic-score-count { color:#64748b; font-size:12px; }
-    .academic-score-loading { display:flex; align-items:center; gap:8px; min-height:34px; color:#64748b; font-size:13px; }
-    .academic-score-loading .options-page-spinner { width:16px; height:16px; border-width:2px; }
-    .academic-score-table-wrap { overflow:auto; border:1px solid #d1d5db; }
-    .academic-score-table { width:100%; min-width:760px; border-collapse:collapse; font-size:12px; }
-    .academic-score-table th, .academic-score-table td { padding:7px 8px; border:1px solid #e5e7eb; text-align:left; vertical-align:top; }
-    .academic-score-table th { background:#f1f5f9; white-space:nowrap; }
-    .academic-score-table td:nth-child(1), .academic-score-table td:nth-child(2), .academic-score-table td:nth-child(4), .academic-score-table td:nth-child(5), .academic-score-table td:nth-child(6), .academic-score-table td:nth-child(7) { white-space:nowrap; }
-    .academic-score-details summary { cursor:pointer; color:#2563eb; white-space:nowrap; }
-    .academic-score-details div { min-width:180px; margin-top:5px; white-space:pre-line; line-height:1.5; }
-  </style>
+  <link rel="stylesheet" href="options.css" />
   <link rel="stylesheet" href="theme.css" />
 </head>
 <body>
@@ -95,13 +17,13 @@
   <main id="options-controlled-content">
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">外观</div>
-    <label for="themeMode" style="display:flex; align-items:center; gap:10px; margin:0;">
+    <label style="display:flex; align-items:center; gap:10px; margin:0;">
       <span>颜色模式</span>
-      <select id="themeMode" style="height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff;">
-        <option value="system">跟随系统</option>
-        <option value="light">浅色</option>
-        <option value="dark">深色</option>
-      </select>
+      <span class="theme-mode-btns" id="themeMode">
+        <button class="theme-mode-btn" data-value="system" title="跟随系统">跟随系统</button>
+        <button class="theme-mode-btn" data-value="light" title="浅色">浅色</button>
+        <button class="theme-mode-btn" data-value="dark" title="深色">深色</button>
+      </span>
     </label>
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">

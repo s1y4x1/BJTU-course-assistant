@@ -185,7 +185,7 @@ function goBackToApp() {
   document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
     ? DEFAULT_HOMEWORK_REMINDER_ENABLED
     : !!homeworkReminderEnabled;
-  document.getElementById('themeMode').value = globalThis.BjtuTheme?.normalizeMode(themeMode) || DEFAULT_THEME_MODE;
+  updateThemeModeUi(themeMode);
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let academicContext = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
   const academicStudentIdInput = document.getElementById('academicStudentId');
@@ -354,6 +354,23 @@ function goBackToApp() {
     setMsg('已应用更改');
   };
 
+  function updateThemeModeUi(value) {
+    const mode = globalThis.BjtuTheme?.normalizeMode(value) || DEFAULT_THEME_MODE;
+    const container = document.getElementById('themeMode');
+    const btns = container.querySelectorAll('.theme-mode-btn');
+    btns.forEach((btn) => {
+      const isActive = btn.dataset.value === mode;
+      btn.classList.toggle('theme-mode-btn--active', isActive);
+      btn.classList.remove('theme-mode-btn--system-active');
+    });
+    if (mode === 'system') {
+      const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)')?.matches;
+      const systemValue = prefersDark ? 'dark' : 'light';
+      const systemBtn = container.querySelector(`.theme-mode-btn[data-value="${systemValue}"]`);
+      if (systemBtn) systemBtn.classList.add('theme-mode-btn--system-active');
+    }
+  }
+
   const updatePlatformDetailDisabled = () => {
     const visibleState = {};
     ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((key) => {
@@ -470,7 +487,7 @@ function goBackToApp() {
       if (changes.autoLoadAllHomeworkDetails) applyBooleanUi('autoLoadAllHomeworkDetails', changes.autoLoadAllHomeworkDetails.newValue, false);
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
       if (changes.themeMode) {
-        document.getElementById('themeMode').value = globalThis.BjtuTheme?.normalizeMode(changes.themeMode.newValue) || DEFAULT_THEME_MODE;
+        updateThemeModeUi(changes.themeMode.newValue);
         setTimeout(() => { void enforceJlgjDarkThemeAvailability(); }, 0);
       }
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
@@ -529,10 +546,27 @@ function goBackToApp() {
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
-  document.getElementById('themeMode').addEventListener('change', async () => {
-    await chrome.storage.local.set({ themeMode: globalThis.BjtuTheme?.normalizeMode(document.getElementById('themeMode').value) || DEFAULT_THEME_MODE });
+  document.getElementById('themeMode').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.theme-mode-btn');
+    if (!btn) return;
+    const value = btn.dataset.value;
+    await chrome.storage.local.set({ themeMode: globalThis.BjtuTheme?.normalizeMode(value) || DEFAULT_THEME_MODE });
+    updateThemeModeUi(value);
     setMsg('已应用更改');
   });
+
+  const themeModeContainer = document.getElementById('themeMode');
+  const systemMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
+  const onSystemThemeChange = () => {
+    const activeBtn = themeModeContainer?.querySelector('.theme-mode-btn--active');
+    if (activeBtn?.dataset.value === 'system') {
+      themeModeContainer.querySelectorAll('.theme-mode-btn--system-active').forEach((btn) => btn.classList.remove('theme-mode-btn--system-active'));
+      const systemValue = systemMedia?.matches ? 'dark' : 'light';
+      const systemBtn = themeModeContainer?.querySelector(`.theme-mode-btn[data-value="${systemValue}"]`);
+      if (systemBtn) systemBtn.classList.add('theme-mode-btn--system-active');
+    }
+  };
+  if (typeof systemMedia?.addEventListener === 'function') systemMedia.addEventListener('change', onSystemThemeChange);
 
   document.getElementById('autoLoadCourseResourcesEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
@@ -885,7 +919,7 @@ function goBackToApp() {
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
     document.getElementById('academicScoreMonitorEnabled').checked = false;
-    document.getElementById('themeMode').value = DEFAULT_THEME_MODE;
+    updateThemeModeUi(DEFAULT_THEME_MODE);
     currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];
     renderHomeworkReminderNodes();
     updateHomeworkReminderDisabled();
