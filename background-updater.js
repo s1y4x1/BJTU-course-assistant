@@ -20,6 +20,7 @@
   const APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
   const PENDING_RELOAD_KEY = 'pendingUpdateReload';
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
+  const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   let runningPromise = null;
 
   function normalizeVersion(value) {
@@ -369,7 +370,7 @@
     return files.length;
   }
 
-  async function runBackgroundUpdate({ forceCheck = false } = {}) {
+  async function runBackgroundUpdate({ forceCheck = false, suppressRecentReloadRetry = false } = {}) {
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
@@ -381,6 +382,20 @@
       const manifestVersion = String(chrome.runtime.getManifest().version || '0');
       const appliedVersion = String(stored?.[APPLIED_WITHOUT_RELOAD_KEY]?.ver || '');
       const localVersion = compareVersions(appliedVersion, manifestVersion) > 0 ? appliedVersion : manifestVersion;
+      const pendingReloadVersion = String(stored?.[PENDING_RELOAD_KEY]?.ver || '');
+      const lastReloadRequestAt = Number(stored?.[PENDING_RELOAD_KEY]?.autoReloadRequestedAt || 0);
+      const staleReloadRecentlyRequested = pendingReloadVersion
+        && compareVersions(pendingReloadVersion, localVersion) > 0
+        && lastReloadRequestAt > 0
+        && Date.now() - lastReloadRequestAt < STALE_RELOAD_RETRY_COOLDOWN_MS;
+      if (!forceCheck && suppressRecentReloadRetry && staleReloadRecentlyRequested) {
+        await setStatus('reload-cooldown', {
+          localVersion,
+          version: pendingReloadVersion,
+          retryAfter: lastReloadRequestAt + STALE_RELOAD_RETRY_COOLDOWN_MS
+        });
+        return { updated: false, reloadCooldown: true };
+      }
       await setStatus('checking', { localVersion });
       const release = await fetchLatestRelease();
       if (compareVersions(release.version, localVersion) <= 0) {
@@ -477,24 +492,25 @@
     return runningPromise;
   }
 
-  function ensureAlarm() {
+  async function ensureAlarm() {
+    const existing = await chrome.alarms.get(ALARM_NAME).catch(() => null);
+    if (existing && Number(existing.periodInMinutes || 0) === 30) return existing;
     chrome.alarms.create(ALARM_NAME, { delayInMinutes: 2, periodInMinutes: 30 });
+    return chrome.alarms.get(ALARM_NAME).catch(() => null);
   }
 
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm?.name === ALARM_NAME) runBackgroundUpdate().catch(() => {});
   });
   chrome.runtime.onInstalled.addListener(() => {
-    ensureAlarm();
-    runBackgroundUpdate().catch(() => {});
+    ensureAlarm().then(() => runBackgroundUpdate({ suppressRecentReloadRetry: true })).catch(() => {});
   });
   chrome.runtime.onStartup.addListener(() => {
-    ensureAlarm();
-    runBackgroundUpdate().catch(() => {});
+    ensureAlarm().then(() => runBackgroundUpdate({ suppressRecentReloadRetry: true })).catch(() => {});
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INSTALL_OPTIONAL_KEY])) return;
-    ensureAlarm();
+    void ensureAlarm();
     if (changes[ENABLED_KEY]?.newValue === true || changes[INSTALL_OPTIONAL_KEY]?.newValue === true) {
       runBackgroundUpdate().catch(() => {});
     }
@@ -506,5 +522,5 @@
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   });
-  ensureAlarm();
+  void ensureAlarm();
 })();

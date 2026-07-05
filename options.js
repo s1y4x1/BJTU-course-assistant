@@ -224,6 +224,7 @@ function goBackToApp() {
       installing: `正在后台覆盖更新文件${status?.total ? `：${Number(status.completed || 0)} / ${Number(status.total)}` : ''}。`,
       reloading: '更新已写入，正在自动重新加载扩展…',
       'reload-pending': `更新文件已写入${versionName ? `（${versionName}）` : ''}，正在等待扩展重新加载。`,
+      'reload-cooldown': `本地版本仍未更新${versionName ? `（目标 ${versionName}）` : ''}，将在下一轮后台检查时重新覆盖。`,
       complete: `后台更新已完成${versionName ? `：${versionName}` : ''}${status?.reloaded ? '，扩展已自动重新加载' : ''}。`,
       error: `后台自动更新失败：${String(status?.error || '未知错误')}`
     };
