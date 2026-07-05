@@ -15,6 +15,9 @@
   const STATUS_KEY = 'academicScoreMonitorStatus';
   const ALARM_NAME = 'bjtu-academic-score-check';
   const NOTIFICATION_PREFIX = 'bjtu-academic-score:';
+  // Can be changed from the extension service worker console through
+  // BjtuAcademicSystemInternals.notifyInitialScoreRows.
+  let notifyInitialScoreRows = true;
   const misLoginTabs = new Set();
   const misLoginVerifyingTabs = new Set();
   const pendingCredentialsByTab = new Map();
@@ -145,11 +148,9 @@
   function formatScoreNotification(row) {
     return [
       `成绩：${row.score || '-'}`,
-      `加分成绩：${row.bonusScore || '-'}`,
-      `课程：${row.course || '-'}`,
+      `上课教师：${row.teacher || '-'}`,
       `学年：${row.academicYear || '-'}`,
       `学分：${row.credit || '-'}`,
-      `上课教师：${row.teacher || '-'}`,
       `序号：${row.sequence || '-'}`,
       `详细信息：${row.details || '-'}`
     ].join('\n');
@@ -432,7 +433,7 @@
     const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeScoreRow)
       .filter((row) => row.academicYear && row.course);
     const stored = await chrome.storage.local.get([
-      SNAPSHOTS_KEY, PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, 'username'
+      SNAPSHOTS_KEY, PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, MONITOR_KEY, 'username'
     ]);
     const id = String(studentId || stored?.[STUDENT_ID_KEY] || stored?.username || 'default').trim() || 'default';
     const snapshots = stored?.[SNAPSHOTS_KEY] && typeof stored[SNAPSHOTS_KEY] === 'object'
@@ -443,11 +444,14 @@
       : null;
     const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, row]));
     const changes = [];
-    if (previous) {
+    const notificationsEnabled = stored?.[MONITOR_KEY] === true;
+    if (previous && notificationsEnabled) {
       for (const row of normalizedRows) {
         if (!previous[row.key]) changes.push({ kind: 'new', row });
         else if (scoreFingerprint(previous[row.key]) !== scoreFingerprint(row)) changes.push({ kind: 'updated', row });
       }
+    } else if (!previous && notificationsEnabled && notifyInitialScoreRows) {
+      for (const row of normalizedRows) changes.push({ kind: 'new', row });
     }
     const pending = normalizePendingScoreNotifications(stored?.[PENDING_NOTIFICATIONS_KEY]);
     for (const change of changes) {
@@ -757,6 +761,8 @@
     parseScorePage,
     scoreFingerprint,
     processScoreRows,
-    flushPendingScoreNotifications
+    flushPendingScoreNotifications,
+    get notifyInitialScoreRows() { return notifyInitialScoreRows; },
+    set notifyInitialScoreRows(value) { notifyInitialScoreRows = value !== false; }
   };
 })(globalThis);
