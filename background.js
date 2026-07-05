@@ -1,6 +1,4 @@
-﻿importScripts('md5.js');
-
-importScripts('vendor/ve/main.min.js');
+﻿importScripts('vendor/ve/main.min.js');
 importScripts('account-store.js');
 importScripts('academic-system.js');
 importScripts('background-updater.js');

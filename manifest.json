@@ -98,7 +98,6 @@
       ],
       "js": [
         "vendor/ve/main.min.js",
-        "md5.js",
         "ve-login-overlay.js"
       ],
       "run_at": "document_idle"
