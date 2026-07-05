@@ -125,10 +125,13 @@ try {
 // 下载完成系统通知点击处理（持久上下文，弹窗关闭后仍有效）
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const HOMEWORK_REMINDER_NOTIFICATION_PREFIX = 'bjtu-homework-reminder:';
+const BACKGROUND_UPDATE_NOTIFICATION_PREFIX = 'bjtu-background-update-';
 chrome.notifications.onClicked.addListener((notifId) => {
-  if (String(notifId || '').startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX)) {
+  const notificationId = String(notifId || '');
+  if (notificationId.startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX)
+    || notificationId.startsWith(BACKGROUND_UPDATE_NOTIFICATION_PREFIX)) {
     focusExistingAppTabOrOpen().catch(() => {});
-    chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
+    chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
     return;
   }
   if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
@@ -142,10 +145,19 @@ const HOMEWORK_REMINDER_NOTIFIED_KEY = 'homeworkReminderNotified';
 const HOMEWORK_REMINDER_OBSERVED_KEY = 'homeworkReminderObserved';
 
 async function focusExistingAppTabOrOpen() {
-  const tabs = (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL));
+  const tabs = (await chrome.tabs.query({}).catch(() => []))
+    .filter((tab) => String(tab?.url || '').startsWith(APP_URL));
   if (tabs.length) {
     const tab = tabs[0];
-    await chrome.tabs.update(tab.id, { active: true }).catch(() => null);
+    let popupPage = false;
+    try {
+      popupPage = new URL(String(tab.url || '')).searchParams.get('popup') === '1';
+    } catch {
+      popupPage = false;
+    }
+    await chrome.tabs.update(tab.id, popupPage
+      ? { active: true, url: APP_URL }
+      : { active: true }).catch(() => null);
     if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
     return tab.id;
   }

@@ -140,19 +140,6 @@
     await chrome.storage.local.set({ [ISSUE_NOTIFICATIONS_KEY]: notified }).catch(() => {});
   }
 
-  async function focusAppPage() {
-    const appUrl = chrome.runtime.getURL('app.html');
-    const tabs = (await chrome.tabs.query({}).catch(() => []))
-      .filter((tab) => String(tab?.url || '').startsWith(appUrl));
-    if (tabs.length) {
-      const tab = tabs[0];
-      await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
-      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
-      return;
-    }
-    await chrome.tabs.create({ url: appUrl, active: true }).catch(() => {});
-  }
-
   async function fetchRelease(sourceUrl) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
@@ -519,14 +506,5 @@
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   });
-  chrome.notifications.onClicked.addListener((notificationId) => {
-    const id = String(notificationId || '');
-    if (!id.startsWith(DETECTED_NOTIFICATION_PREFIX)
-      && !id.startsWith(COMPLETE_NOTIFICATION_PREFIX)
-      && !id.startsWith(ISSUE_NOTIFICATION_PREFIX)) return;
-    focusAppPage().catch(() => {});
-    chrome.notifications.clear(id, () => void chrome.runtime.lastError);
-  });
-
   ensureAlarm();
 })();
