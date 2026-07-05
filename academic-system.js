@@ -144,12 +144,13 @@
 
   function formatScoreNotification(row) {
     return [
-      `学年：${row.academicYear || '-'}`,
-      `课程：${row.course || '-'}`,
-      `学分：${row.credit || '-'}`,
       `成绩：${row.score || '-'}`,
       `加分成绩：${row.bonusScore || '-'}`,
+      `课程：${row.course || '-'}`,
+      `学年：${row.academicYear || '-'}`,
+      `学分：${row.credit || '-'}`,
       `上课教师：${row.teacher || '-'}`,
+      `序号：${row.sequence || '-'}`,
       `详细信息：${row.details || '-'}`
     ].join('\n');
   }

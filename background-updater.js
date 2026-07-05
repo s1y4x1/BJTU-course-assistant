@@ -78,9 +78,22 @@
     return '';
   }
 
+  async function retryNetworkOperation(operation, retryCount = 2) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+      try {
+        return await operation(attempt);
+      } catch (error) {
+        lastError = error;
+        if (classifyUpdateIssue(error) !== 'network' || attempt >= retryCount) throw error;
+      }
+    }
+    throw lastError || new Error('网络请求失败');
+  }
+
   async function notifyUpdateIssue(category, message, version = '') {
-    if (category !== 'network' && category !== 'permission') return false;
-    const detail = String(message || (category === 'network' ? '无法连接更新源' : '无法写入扩展安装目录'));
+    if (category !== 'permission') return false;
+    const detail = String(message || '无法写入扩展安装目录');
     const signature = `${normalizeVersion(version)}|${detail}`;
     const stored = await chrome.storage.local.get([ISSUE_NOTIFICATIONS_KEY]).catch(() => ({}));
     const notified = stored?.[ISSUE_NOTIFICATIONS_KEY] && typeof stored[ISSUE_NOTIFICATIONS_KEY] === 'object'
@@ -91,7 +104,7 @@
       await chrome.notifications.create(`${ISSUE_NOTIFICATION_PREFIX}${category}`, {
         type: 'basic',
         iconUrl: 'icons/128.png',
-        title: category === 'network' ? '后台更新网络连接失败' : '后台更新无法写入目录',
+        title: '后台更新无法写入目录',
         message: detail,
         priority: 2
       });
@@ -157,7 +170,9 @@
   }
 
   async function fetchLatestRelease() {
-    const settled = await Promise.allSettled(SOURCE_URLS.map(fetchRelease));
+    const settled = await Promise.allSettled(SOURCE_URLS.map((sourceUrl) => (
+      retryNetworkOperation(() => fetchRelease(sourceUrl), 2)
+    )));
     const releases = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
     if (!releases.length) {
       const reason = settled.find((item) => item.status === 'rejected')?.reason;
@@ -329,7 +344,7 @@
   }
 
   async function installRelease(root, release) {
-    const archive = await downloadArchive(release.url);
+    const archive = await retryNetworkOperation(() => downloadArchive(release.url), 2);
     const entries = parseZipEntries(archive);
     const files = selectFiles(entries, release.update);
     if (!files.length) throw new Error('更新压缩包中没有需要写入的文件');
@@ -367,7 +382,6 @@
       const localVersion = compareVersions(appliedVersion, manifestVersion) > 0 ? appliedVersion : manifestVersion;
       await setStatus('checking', { localVersion });
       const release = await fetchLatestRelease();
-      await clearUpdateIssueNotificationState('network');
       if (compareVersions(release.version, localVersion) <= 0) {
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
@@ -444,8 +458,8 @@
       return { updated: true, reloaded: true, release, fileCount };
     })().catch(async (error) => {
       const category = classifyUpdateIssue(error);
-      if (category) {
-        await notifyUpdateIssue(category, String(error?.message || error), '').catch(() => {});
+      if (category === 'permission') {
+        await notifyUpdateIssue('permission', String(error?.message || error), '').catch(() => {});
       }
       await setStatus('error', { error: String(error?.message || error) }).catch(() => {});
       throw error;
