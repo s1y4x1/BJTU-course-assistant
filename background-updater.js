@@ -5,9 +5,11 @@
   const INSTALL_OPTIONAL_KEY = 'backgroundAutoInstallOptionalEnabled';
   const STATUS_KEY = 'backgroundAutoUpdateStatus';
   const DETECTED_NOTIFICATION_VERSION_KEY = 'backgroundUpdateDetectedNotifiedVersion';
+  const ISSUE_NOTIFICATIONS_KEY = 'backgroundUpdateIssueNotifications';
   const ALARM_NAME = 'bjtu-background-update-check';
   const DETECTED_NOTIFICATION_ID = 'bjtu-background-update-detected';
   const NOTIFICATION_ID = 'bjtu-background-update-complete';
+  const ISSUE_NOTIFICATION_PREFIX = 'bjtu-background-update-issue:';
   const SOURCE_URLS = [
     'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json',
     'https://s1y4x1.github.io/release.json'
@@ -61,6 +63,67 @@
       // A notification failure must not prevent the update itself.
       return false;
     }
+  }
+
+  function classifyUpdateIssue(error) {
+    const name = String(error?.name || '');
+    const message = String(error?.message || error || '');
+    const text = `${name} ${message}`.toLowerCase();
+    if (/notallowed|securityerror|nomodificationallowed|permission|权限|授权|写入|更新目录/.test(text)) {
+      return 'permission';
+    }
+    if (/aborterror|timeout|failed to fetch|network|网络|连接|更新源|下载更新包|http\s*\d+/.test(text)) {
+      return 'network';
+    }
+    return '';
+  }
+
+  async function notifyUpdateIssue(category, message, version = '') {
+    if (category !== 'network' && category !== 'permission') return false;
+    const detail = String(message || (category === 'network' ? '无法连接更新源' : '无法写入扩展安装目录'));
+    const signature = `${normalizeVersion(version)}|${detail}`;
+    const stored = await chrome.storage.local.get([ISSUE_NOTIFICATIONS_KEY]).catch(() => ({}));
+    const notified = stored?.[ISSUE_NOTIFICATIONS_KEY] && typeof stored[ISSUE_NOTIFICATIONS_KEY] === 'object'
+      ? { ...stored[ISSUE_NOTIFICATIONS_KEY] }
+      : {};
+    if (notified[category] === signature) return false;
+    try {
+      await chrome.notifications.create(`${ISSUE_NOTIFICATION_PREFIX}${category}`, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: category === 'network' ? '后台更新网络连接失败' : '后台更新无法写入目录',
+        message: detail,
+        priority: 2
+      });
+      notified[category] = signature;
+      await chrome.storage.local.set({ [ISSUE_NOTIFICATIONS_KEY]: notified });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function clearUpdateIssueNotificationState(category) {
+    const stored = await chrome.storage.local.get([ISSUE_NOTIFICATIONS_KEY]).catch(() => ({}));
+    const notified = stored?.[ISSUE_NOTIFICATIONS_KEY] && typeof stored[ISSUE_NOTIFICATIONS_KEY] === 'object'
+      ? { ...stored[ISSUE_NOTIFICATIONS_KEY] }
+      : {};
+    if (!Object.prototype.hasOwnProperty.call(notified, category)) return;
+    delete notified[category];
+    await chrome.storage.local.set({ [ISSUE_NOTIFICATIONS_KEY]: notified }).catch(() => {});
+  }
+
+  async function focusAppPage() {
+    const appUrl = chrome.runtime.getURL('app.html');
+    const tabs = (await chrome.tabs.query({}).catch(() => []))
+      .filter((tab) => String(tab?.url || '').startsWith(appUrl));
+    if (tabs.length) {
+      const tab = tabs[0];
+      await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+      return;
+    }
+    await chrome.tabs.create({ url: appUrl, active: true }).catch(() => {});
   }
 
   async function fetchRelease(sourceUrl) {
@@ -304,6 +367,7 @@
       const localVersion = compareVersions(appliedVersion, manifestVersion) > 0 ? appliedVersion : manifestVersion;
       await setStatus('checking', { localVersion });
       const release = await fetchLatestRelease();
+      await clearUpdateIssueNotificationState('network');
       if (compareVersions(release.version, localVersion) <= 0) {
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
@@ -322,8 +386,16 @@
         });
         return { updated: false, optionalUpdateAvailable: true, release };
       }
-      const root = await validateDirectory(await readDirectoryHandle());
+      const directoryHandle = await readDirectoryHandle();
+      const root = await validateDirectory(directoryHandle);
       if (!root) {
+        await notifyUpdateIssue(
+          'permission',
+          directoryHandle
+            ? '扩展安装目录没有写入权限，请在全屏页面重新选择并授权目录。'
+            : '尚未授权扩展安装目录，请先在全屏页面手动更新一次并选择目录。',
+          release.version
+        );
         await setStatus('directory-required', {
           localVersion,
           version: release.version,
@@ -332,6 +404,7 @@
         });
         return { updated: false, directoryRequired: true, release };
       }
+      await clearUpdateIssueNotificationState('permission');
       await setStatus('downloading', {
         localVersion,
         version: release.version,
@@ -370,6 +443,10 @@
       chrome.runtime.reload();
       return { updated: true, reloaded: true, release, fileCount };
     })().catch(async (error) => {
+      const category = classifyUpdateIssue(error);
+      if (category) {
+        await notifyUpdateIssue(category, String(error?.message || error), '').catch(() => {});
+      }
       await setStatus('error', { error: String(error?.message || error) }).catch(() => {});
       throw error;
     }).finally(() => {
@@ -406,6 +483,14 @@
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
+  });
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    const id = String(notificationId || '');
+    if (id !== DETECTED_NOTIFICATION_ID
+      && id !== NOTIFICATION_ID
+      && !id.startsWith(ISSUE_NOTIFICATION_PREFIX)) return;
+    focusAppPage().catch(() => {});
+    chrome.notifications.clear(id, () => void chrome.runtime.lastError);
   });
 
   ensureAlarm();
