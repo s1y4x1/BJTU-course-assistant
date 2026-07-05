@@ -223,6 +223,27 @@
     });
   }
 
+  async function getLoginNames() {
+    const db = await open();
+    const transaction = db.transaction(STORE_NAME);
+    const store = transaction.objectStore(STORE_NAME);
+    return new Promise((resolve, reject) => {
+      const loginNames = new Set();
+      const request = store.openKeyCursor();
+      request.onerror = () => reject(request.error || new Error('账号主键读取失败'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(loginNames);
+          return;
+        }
+        const loginName = String(cursor.primaryKey || '').trim();
+        if (loginName) loginNames.add(loginName);
+        cursor.continue();
+      };
+    });
+  }
+
   async function search({ loginName = '', userName = '', limit = 100 } = {}) {
     const loginQuery = String(loginName || '').trim();
     const nameQuery = String(userName || '').trim();
@@ -430,6 +451,7 @@
     search,
     getQuickAccounts,
     getCredentialAccounts,
+    getLoginNames,
     clear,
     putAll,
     replaceAll,

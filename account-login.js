@@ -372,8 +372,11 @@
     return record ? { loginName: id, ...record } : null;
   }
 
-  async function enrichQuickUsernames(accounts, roleState, updateProgress) {
-    const rows = Object.values(accounts || {}).filter((account) => account?.loginName);
+  async function enrichQuickUsernames(accounts, roleState, updateProgress, existingLoginNames = new Set()) {
+    const rows = Object.values(accounts || {}).filter((account) => {
+      const loginName = String(account?.loginName || '').trim();
+      return loginName && !existingLoginNames.has(loginName);
+    });
     roleState.phase = 'quick';
     roleState.quickProcessed = 0;
     roleState.quickTotal = rows.length;
@@ -558,11 +561,16 @@
     return global.BjtuAccountStore.count();
   }
 
-  async function readLocalBindings() {
+  async function readLocalAccountState() {
     const bindings = new Map();
-    const previous = typeof global.BjtuAccountStore.getCredentialAccounts === 'function'
-      ? await global.BjtuAccountStore.getCredentialAccounts()
-      : await global.BjtuAccountStore.getQuickAccounts();
+    const [previous, existingLoginNames] = await Promise.all([
+      typeof global.BjtuAccountStore.getCredentialAccounts === 'function'
+        ? global.BjtuAccountStore.getCredentialAccounts()
+        : global.BjtuAccountStore.getQuickAccounts(),
+      typeof global.BjtuAccountStore.getLoginNames === 'function'
+        ? global.BjtuAccountStore.getLoginNames()
+        : global.BjtuAccountStore.getAll().then((rows) => new Set(rows.map((row) => String(row?.loginName || '').trim()).filter(Boolean)))
+    ]);
     previous.forEach((record) => {
       const loginName = String(record?.loginName || '').trim();
       if (!loginName) return;
@@ -571,7 +579,7 @@
         quickUsername: String(record?.quickUsername || '').trim()
       });
     });
-    return bindings;
+    return { bindings, existingLoginNames };
   }
 
   function preserveLocalBindings(next, bindings) {
@@ -912,7 +920,7 @@
           teacher: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, total: 0, phase: shouldFetchTeachers ? 'load' : 'skipped', currentPrefixes: [] },
           student: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, total: 0, phase: shouldFetchStudents ? 'load' : 'skipped', currentPrefixes: [] }
         };
-        const localBindings = await readLocalBindings();
+        const { bindings: localBindings, existingLoginNames } = await readLocalAccountState();
         let writeQueue = Promise.resolve();
         const updateProgress = () => {
           if (!showProgress) return;
@@ -965,7 +973,7 @@
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('教职工列表解析为空');
           if (shouldFetchQuickUsernames) {
-            await enrichQuickUsernames(parser.result, state.teacher, updateProgress);
+            await enrichQuickUsernames(parser.result, state.teacher, updateProgress, existingLoginNames);
           }
           return parser.result;
         };
@@ -1000,7 +1008,7 @@
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('学生列表解析为空');
           if (shouldFetchQuickUsernames) {
-            await enrichQuickUsernames(parser.result, state.student, updateProgress);
+            await enrichQuickUsernames(parser.result, state.student, updateProgress, existingLoginNames);
           }
           return parser.result;
         };
