@@ -7,8 +7,8 @@
   const DETECTED_NOTIFICATION_VERSION_KEY = 'backgroundUpdateDetectedNotifiedVersion';
   const ISSUE_NOTIFICATIONS_KEY = 'backgroundUpdateIssueNotifications';
   const ALARM_NAME = 'bjtu-background-update-check';
-  const DETECTED_NOTIFICATION_ID = 'bjtu-background-update-detected';
-  const NOTIFICATION_ID = 'bjtu-background-update-complete';
+  const DETECTED_NOTIFICATION_PREFIX = 'bjtu-background-update-detected:';
+  const COMPLETE_NOTIFICATION_PREFIX = 'bjtu-background-update-complete:';
   const ISSUE_NOTIFICATION_PREFIX = 'bjtu-background-update-issue:';
   const SOURCE_URLS = [
     'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json',
@@ -46,7 +46,8 @@
   async function notifyUpdateDetected(release, lastNotifiedVersion = '') {
     if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
     try {
-      await chrome.notifications.create(DETECTED_NOTIFICATION_ID, {
+      const notificationId = `${DETECTED_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
+      await chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: 'icons/128.png',
         title: `发现新版本：${String(release?.name || release?.version || '新版本')}`,
@@ -63,6 +64,19 @@
       // A notification failure must not prevent the update itself.
       return false;
     }
+  }
+
+  async function notifyUpdateComplete(release, message) {
+    const notificationId = `${COMPLETE_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
+    await chrome.notifications.clear(notificationId).catch(() => false);
+    await chrome.notifications.create(notificationId, {
+      type: 'basic',
+      iconUrl: 'icons/128.png',
+      title: 'BJTU 课程助手已后台更新',
+      message: String(message || `已更新到 ${release?.name || release?.version || '新版本'}。`),
+      priority: 1
+    });
+    return notificationId;
   }
 
   function classifyUpdateIssue(error) {
@@ -387,11 +401,9 @@
         return { updated: false, release };
       }
       await notifyUpdateDetected(release, stored?.[DETECTED_NOTIFICATION_VERSION_KEY]);
-      if (normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver) === normalizeVersion(release.version)) {
-        await setStatus('reload-pending', { localVersion, version: release.version, name: release.name });
-        return { updated: false, reloadPending: true, release };
-      }
-      if (!release.force && stored?.[INSTALL_OPTIONAL_KEY] !== true) {
+      const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
+        === normalizeVersion(release.version);
+      if (!release.force && stored?.[INSTALL_OPTIONAL_KEY] !== true && !retryingStaleInstallation) {
         await setStatus('optional-update-available', {
           localVersion,
           version: release.version,
@@ -441,17 +453,26 @@
           [PENDING_RELOAD_KEY]: null,
           [STATUS_KEY]: { status: 'complete', ...record, checkedAt: Date.now(), directoryName: root.name }
         });
-        await chrome.notifications.create(NOTIFICATION_ID, {
-          type: 'basic', iconUrl: 'icons/128.png', title: 'BJTU 课程助手已后台更新',
-          message: `已更新到 ${release.name}，刷新已打开的扩展页面后生效。`, priority: 1
-        }).catch(() => {});
+        await notifyUpdateComplete(
+          release,
+          `已更新到 ${release.name}，刷新已打开的扩展页面后生效。`
+        ).catch(() => {});
         return { updated: true, reloaded: false, release, fileCount };
       }
       const appUrl = chrome.runtime.getURL('app.html');
       const appWasOpen = (await chrome.tabs.query({})).some((tab) => String(tab?.url || '').startsWith(appUrl));
+      const completionNotificationId = await notifyUpdateComplete(
+        release,
+        `已更新到 ${release.name}，正在自动重新加载扩展。`
+      ).catch(() => `${COMPLETE_NOTIFICATION_PREFIX}${normalizeVersion(release.version) || 'unknown'}`);
       await chrome.storage.local.set({
         [PENDING_RELOAD_KEY]: { ...record, autoReloadRequestedAt: Date.now() },
-        [RELOAD_HANDOFF_KEY]: { ...record, requestedAt: Date.now(), reopenApp: appWasOpen },
+        [RELOAD_HANDOFF_KEY]: {
+          ...record,
+          requestedAt: Date.now(),
+          reopenApp: appWasOpen,
+          completionNotificationId
+        },
         [STATUS_KEY]: { status: 'reloading', ...record, checkedAt: Date.now(), directoryName: root.name }
       });
       chrome.runtime.reload();
@@ -500,8 +521,8 @@
   });
   chrome.notifications.onClicked.addListener((notificationId) => {
     const id = String(notificationId || '');
-    if (id !== DETECTED_NOTIFICATION_ID
-      && id !== NOTIFICATION_ID
+    if (!id.startsWith(DETECTED_NOTIFICATION_PREFIX)
+      && !id.startsWith(COMPLETE_NOTIFICATION_PREFIX)
       && !id.startsWith(ISSUE_NOTIFICATION_PREFIX)) return;
     focusAppPage().catch(() => {});
     chrome.notifications.clear(id, () => void chrome.runtime.lastError);

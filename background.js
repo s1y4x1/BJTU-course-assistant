@@ -34,7 +34,9 @@ async function restoreAppAfterAutomaticExtensionReload() {
         reloaded: true
       }
     }).catch(() => {});
-    await chrome.notifications.create('bjtu-background-update-complete', {
+    const completionNotificationId = String(handoff.completionNotificationId || '').trim()
+      || `bjtu-background-update-complete:${String(handoff.ver || 'unknown').replace(/^v/i, '')}`;
+    await chrome.notifications.create(completionNotificationId, {
       type: 'basic',
       iconUrl: 'icons/128.png',
       title: 'BJTU 课程助手已后台更新',
