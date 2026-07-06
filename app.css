@@ -629,6 +629,26 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             gap: 6px;
             flex-wrap: wrap;
         }
+        .course-resource-file-item .resource-download-meta {
+            align-items: center;
+            line-height: 1;
+        }
+        .course-resource-file-item .resource-dl-size,
+        .course-resource-file-item .resource-dl-speed {
+            display: inline-flex;
+            align-items: center;
+            line-height: 1;
+            color: #000 !important;
+            text-shadow: none !important;
+        }
+        .course-resource-file-item .file-size-emphasis,
+        .course-resource-file-item .file-size-separator,
+        .course-resource-file-item .file-size-placeholder {
+            vertical-align: middle;
+            line-height: 1;
+            color: #000 !important;
+            text-shadow: none !important;
+        }
 
         .resource-space-status {
             font-size: 12px;

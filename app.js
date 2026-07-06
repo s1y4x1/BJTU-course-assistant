@@ -4488,7 +4488,7 @@ function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
     const needsRpFetch = !hasUrl && !!rpId;
     const rpLinkContainerId = `courseware-rp-link-${id}`;
     return `
-      <div class="file-item" data-resource-id="${escapeHtml(id)}" data-rp-id="${escapeHtml(rpId)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #1e3a8a; background:#e8efff; border-radius:4px;">
+      <div class="file-item course-resource-file-item" data-resource-id="${escapeHtml(id)}" data-rp-id="${escapeHtml(rpId)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #1e3a8a; background:#e8efff; border-radius:4px;">
         <div class="resource-row-title" style="margin-bottom:4px;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin:0 4px 0 0;">
           <span class="resource-name">${escapeHtml(fileName || name)}</span>
