@@ -594,7 +594,7 @@ function setVersionDownloadRetryVisible(visible) {
 function renderVersionDownloadBodyHtml(bodyText) {
   const safe = escapeHtml(String(bodyText || ''));
   const linkLabel = 'about:extensions';
-  const linkHtml = '<a href="about:extensions" target="_blank" rel="noopener noreferrer" style="color:#0f766e; font-weight:700; text-decoration:underline;">about:extensions</a>';
+  const linkHtml = '<span style="color:#0f766e; font-weight:700;">about:extensions</span>';
   let html = safe.replaceAll(escapeHtml(linkLabel), linkHtml);
   const boldLabel = '**重新加载**';
   html = html.replaceAll(escapeHtml(boldLabel), '<b>重新加载</b>');
