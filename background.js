@@ -2,6 +2,7 @@
 importScripts('account-store.js');
 importScripts('academic-system.js');
 importScripts('background-updater.js');
+importScripts('homework-background.js');
 
 const APP_URL = chrome.runtime.getURL('app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
@@ -200,6 +201,7 @@ async function checkHomeworkDeadlineReminders() {
   const data = await chrome.storage.local.get([
     'homeworkReminderEnabled',
     'homeworkReminderMinutes',
+    'homeworkBackgroundRefreshEnabled',
     HOMEWORK_REMINDER_SNAPSHOT_KEY,
     HOMEWORK_REMINDER_NOTIFIED_KEY,
     HOMEWORK_REMINDER_OBSERVED_KEY
@@ -209,20 +211,16 @@ async function checkHomeworkDeadlineReminders() {
     await Promise.all(Object.keys(active || {})
       .filter((id) => id.startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX))
       .map((id) => chrome.notifications.clear(id).catch(() => false)));
-    await chrome.storage.local.remove([
-      HOMEWORK_REMINDER_SNAPSHOT_KEY,
-      HOMEWORK_REMINDER_NOTIFIED_KEY,
-      HOMEWORK_REMINDER_OBSERVED_KEY
-    ]).catch(() => {});
+    const keys = [HOMEWORK_REMINDER_NOTIFIED_KEY, HOMEWORK_REMINDER_OBSERVED_KEY];
+    if (data.homeworkBackgroundRefreshEnabled !== true) keys.push(HOMEWORK_REMINDER_SNAPSHOT_KEY);
+    await chrome.storage.local.remove(keys).catch(() => {});
     return;
   }
   const nodes = normalizeHomeworkReminderMinutes(data.homeworkReminderMinutes);
   if (!nodes.length) {
-    await chrome.storage.local.remove([
-      HOMEWORK_REMINDER_SNAPSHOT_KEY,
-      HOMEWORK_REMINDER_NOTIFIED_KEY,
-      HOMEWORK_REMINDER_OBSERVED_KEY
-    ]).catch(() => {});
+    const keys = [HOMEWORK_REMINDER_NOTIFIED_KEY, HOMEWORK_REMINDER_OBSERVED_KEY];
+    if (data.homeworkBackgroundRefreshEnabled !== true) keys.push(HOMEWORK_REMINDER_SNAPSHOT_KEY);
+    await chrome.storage.local.remove(keys).catch(() => {});
     return;
   }
   const snapshot = data[HOMEWORK_REMINDER_SNAPSHOT_KEY];

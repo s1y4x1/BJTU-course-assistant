@@ -168,8 +168,43 @@ function showPopupCacheNotice(cache) {
   el.textContent = `于 ${savedAt} 缓存。如需更新，请重启平台或全屏打开。`;
 }
 
-async function saveFullscreenCourseCache() {
-  if (popupMode || !window.popupUseFullscreenCacheEnabled || !courseListDiv) return;
+function restoreFullscreenCacheStateForBackground(cache) {
+  if (!cache || typeof cache !== 'object') return;
+  window.platformLoginState = { ...window.platformLoginState, ...(cache.platformLoginState || {}) };
+  window.platformLoginChecked = { ...window.platformLoginChecked, ...(cache.platformLoginChecked || {}) };
+  window.platformLoadedOnce = { ...window.platformLoadedOnce, ...(cache.platformLoadedOnce || {}) };
+  window.platformNeedLogin = { ...window.platformNeedLogin, ...(cache.platformNeedLogin || {}) };
+  window.courseHomeworkData = cache.courseHomeworkData || {};
+  window.yktMatchedHomeworkByCourseId = cache.yktMatchedHomeworkByCourseId || {};
+  window.yktMatchedCourseLinkByCourseId = cache.yktMatchedCourseLinkByCourseId || {};
+  window.yktStandaloneCourses = Array.isArray(cache.yktStandaloneCourses) ? cache.yktStandaloneCourses : [];
+  window.yktCourseGroupsSnapshot = Array.isArray(cache.yktCourseGroupsSnapshot) ? cache.yktCourseGroupsSnapshot : [];
+  window.mrjzyMatchedHomeworkByCourseId = cache.mrjzyMatchedHomeworkByCourseId || {};
+  window.mrjzyStandaloneCourses = Array.isArray(cache.mrjzyStandaloneCourses) ? cache.mrjzyStandaloneCourses : [];
+  window.mrjzyCourseGroupsSnapshot = Array.isArray(cache.mrjzyCourseGroupsSnapshot) ? cache.mrjzyCourseGroupsSnapshot : [];
+  window.jlgjMatchedHomeworkByCourseId = cache.jlgjMatchedHomeworkByCourseId || {};
+  window.jlgjStandaloneCourses = Array.isArray(cache.jlgjStandaloneCourses) ? cache.jlgjStandaloneCourses : [];
+  window.jlgjCourseGroupsSnapshot = Array.isArray(cache.jlgjCourseGroupsSnapshot) ? cache.jlgjCourseGroupsSnapshot : [];
+  window.BjtuMoocPlatform?.restore(cache.moocCourses || []);
+  window.courseCardStateById = cache.courseCardStateById || {};
+  window.videoReplayCacheByCourseId = cache.videoReplayCacheByCourseId || {};
+  window.coursewareCacheByCourseId = cache.coursewareCacheByCourseId || {};
+  window.homeworkScoreCacheByKey = cache.homeworkScoreCacheByKey || {};
+  window.homeworkNoteAttachmentCacheByKey = cache.homeworkNoteAttachmentCacheByKey || {};
+  window.veTeacherMetaByCourseId = cache.veTeacherMetaByCourseId || {};
+  window.veCourseTeachersMetaByCourseId = cache.veCourseTeachersMetaByCourseId || {};
+  window.resourceSpaceItems = Array.isArray(cache.resourceSpaceItems) ? cache.resourceSpaceItems : [];
+  if (resourceSpaceList) resourceSpaceList.innerHTML = String(cache.resourceSpaceHtml || '');
+  if (resourceSpaceStatus) resourceSpaceStatus.textContent = String(cache.resourceSpaceStatusText || '');
+  if (resourceSpaceCount) resourceSpaceCount.textContent = String(cache.resourceSpaceCountText || '');
+  if (xqSelect && cache.xqSelectHtml) {
+    xqSelect.innerHTML = String(cache.xqSelectHtml || '');
+    xqSelect.value = String(cache.xqSelectValue || '');
+  }
+}
+
+async function saveFullscreenCourseCache({ force = false } = {}) {
+  if (popupMode || (!force && !window.popupUseFullscreenCacheEnabled) || !courseListDiv) return;
   const cache = {
     version: 1,
     savedAt: Date.now(),
@@ -224,18 +259,20 @@ function detectReminderPlatform(item, courseCard) {
   return '智慧课程平台';
 }
 
-function collectHomeworkReminderSnapshot() {
+function collectPendingHomeworkItems({ futureDeadlineOnly = false } = {}) {
   if (!courseListDiv) return [];
   const now = Date.now();
   const seen = new Set();
   const items = [];
-  courseListDiv.querySelectorAll('.deadline-countdown[data-deadline]').forEach((countdown) => {
-    const deadline = typeof parseDeadlineToTs === 'function'
-      ? parseDeadlineToTs(countdown.dataset.deadline)
-      : Number(countdown.dataset.deadline || 0);
-    if (!deadline || deadline <= now) return;
-    const homework = countdown.closest('.hw-card-item');
-    const courseCard = countdown.closest('.file-item');
+  courseListDiv.querySelectorAll('.hw-card-item').forEach((homework) => {
+    const countdown = homework.querySelector('.deadline-countdown[data-deadline]');
+    const deadline = countdown
+      ? (typeof parseDeadlineToTs === 'function'
+        ? parseDeadlineToTs(countdown.dataset.deadline)
+        : Number(countdown.dataset.deadline || 0))
+      : 0;
+    if (futureDeadlineOnly && (!deadline || deadline <= now)) return;
+    const courseCard = homework.closest('.file-item');
     if (!(homework instanceof HTMLElement) || !(courseCard instanceof HTMLElement)) return;
     if (homework.dataset.homeworkDone === '1') return;
     const courseName = String(courseCard.querySelector('.course-card-title')?.textContent || '未知课程').replace(/\s+/g, ' ').trim();
@@ -252,21 +289,29 @@ function collectHomeworkReminderSnapshot() {
   return items;
 }
 
+function collectHomeworkReminderSnapshot() {
+  return collectPendingHomeworkItems({ futureDeadlineOnly: true });
+}
+
 let homeworkReminderSnapshotTimer = null;
+async function saveHomeworkReminderSnapshotNow() {
+  const snapshot = {
+    version: 1,
+    updatedAt: Date.now(),
+    account: String(window.currentAccountLoginName || ''),
+    items: collectHomeworkReminderSnapshot()
+  };
+  await chrome.storage.local.set({ [HOMEWORK_REMINDER_SNAPSHOT_KEY]: snapshot });
+  return snapshot;
+}
+
 function scheduleHomeworkReminderSnapshotSave(delayMs = 500) {
   if (popupMode) return;
   if (homeworkReminderSnapshotTimer) clearTimeout(homeworkReminderSnapshotTimer);
   homeworkReminderSnapshotTimer = setTimeout(async () => {
     homeworkReminderSnapshotTimer = null;
     try {
-      await chrome.storage.local.set({
-        [HOMEWORK_REMINDER_SNAPSHOT_KEY]: {
-          version: 1,
-          updatedAt: Date.now(),
-          account: String(window.currentAccountLoginName || ''),
-          items: collectHomeworkReminderSnapshot()
-        }
-      });
+      await saveHomeworkReminderSnapshotNow();
     } catch (error) {
       try { console.warn('[bjtu] save homework reminder snapshot failed:', error); } catch {}
     }

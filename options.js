@@ -41,6 +41,7 @@ const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = true;
 const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
 const DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES = 1;
 const DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES = 30;
+const DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES = 30;
 const MAX_SCHEDULE_INTERVAL_MINUTES = 525600;
 
 function normalizeScheduleIntervalMinutes(value, fallback) {
@@ -154,8 +155,8 @@ function goBackToApp() {
 }
 
 (async function init() {
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -217,15 +218,20 @@ function goBackToApp() {
   document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
     ? DEFAULT_HOMEWORK_REMINDER_ENABLED
     : !!homeworkReminderEnabled;
+  document.getElementById('homeworkBackgroundRefreshEnabled').checked = homeworkBackgroundRefreshEnabled === true;
+  document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = homeworkNewAssignmentNotificationEnabled === true;
   document.getElementById('backgroundAutoUpdateEnabled').checked = backgroundAutoUpdateEnabled === undefined
     ? DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED
     : backgroundAutoUpdateEnabled === true;
   document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
   setScheduleIntervalEditor('academicScoreMonitorInterval', academicScoreMonitorIntervalMinutes, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
+  setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
   updateThemeModeUi(themeMode);
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
+  let currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccount || '').trim();
   let academicContext = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
+  let portalLoginContext = await chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).catch(() => null);
   const academicStudentIdInput = document.getElementById('academicStudentId');
   const academicPasswordInput = document.getElementById('academicPassword');
   const academicMonitorInput = document.getElementById('academicScoreMonitorEnabled');
@@ -237,6 +243,10 @@ function goBackToApp() {
   const academicScoreTableBody = document.getElementById('academicScoreTableBody');
   const academicScoreCount = document.getElementById('academicScoreCount');
   const backgroundAutoUpdateStatusEl = document.getElementById('backgroundAutoUpdateStatus');
+  const homeworkBackgroundRefreshInput = document.getElementById('homeworkBackgroundRefreshEnabled');
+  const homeworkBackgroundRefreshAccountSelect = document.getElementById('homeworkBackgroundRefreshAccount');
+  const homeworkNewAssignmentNotificationInput = document.getElementById('homeworkNewAssignmentNotificationEnabled');
+  const homeworkBackgroundRefreshStatusEl = document.getElementById('homeworkBackgroundRefreshStatus');
 
   const renderBackgroundAutoUpdateStatus = (status) => {
     if (!(backgroundAutoUpdateStatusEl instanceof HTMLElement)) return;
@@ -281,7 +291,57 @@ function goBackToApp() {
     editor?.classList.toggle('is-disabled', !enabled);
     editor?.querySelectorAll('input,select').forEach((control) => { control.disabled = !enabled; });
   };
+  const updateHomeworkBackgroundRefreshDisabled = () => {
+    const enabled = homeworkBackgroundRefreshInput instanceof HTMLInputElement && homeworkBackgroundRefreshInput.checked;
+    const detail = document.getElementById('homeworkBackgroundRefreshDetail');
+    detail?.classList.toggle('is-disabled', !enabled);
+    detail?.querySelectorAll('input,select').forEach((control) => { control.disabled = !enabled; });
+  };
+  const renderHomeworkBackgroundRefreshStatus = (status) => {
+    if (!(homeworkBackgroundRefreshStatusEl instanceof HTMLElement)) return;
+    if (!(homeworkBackgroundRefreshInput instanceof HTMLInputElement) || !homeworkBackgroundRefreshInput.checked) {
+      homeworkBackgroundRefreshStatusEl.textContent = '后台作业获取未启用。';
+      return;
+    }
+    const state = String(status?.status || 'waiting');
+    const messages = {
+      loading: `正在后台登录 ${String(status?.account || '')} 并获取作业…`,
+      complete: `最近刷新完成：${Number(status?.courseCount || 0)} 门课程，${Number(status?.homeworkCount || 0)} 项未交作业。`,
+      'foreground-open': '已打开全屏页面，本轮不执行后台获取。',
+      error: `最近刷新失败：${String(status?.error || '未知错误')}`
+    };
+    homeworkBackgroundRefreshStatusEl.textContent = messages[state] || '等待下一次后台作业获取。';
+  };
   updateBackgroundAutoInstallOptionalDisabled();
+
+  const renderHomeworkBackgroundAccounts = (context) => {
+    if (!(homeworkBackgroundRefreshAccountSelect instanceof HTMLSelectElement)) return;
+    const history = Array.isArray(context?.history) ? context.history : [];
+    const selected = String(currentHomeworkBackgroundRefreshAccount || homeworkBackgroundRefreshAccountSelect.value || '').trim();
+    homeworkBackgroundRefreshAccountSelect.replaceChildren();
+    if (!history.length) {
+      homeworkBackgroundRefreshAccountSelect.append(new Option('暂无已登录账号', ''));
+      return;
+    }
+    history.forEach((account) => {
+      const loginName = String(account?.loginName || account?.userId || '').trim();
+      if (!loginName) return;
+      const userName = String(account?.userName || '').trim();
+      const roleName = String(account?.roleName || '').trim();
+      homeworkBackgroundRefreshAccountSelect.append(new Option(
+        [loginName, roleName, userName].filter(Boolean).join(' '),
+        loginName
+      ));
+    });
+    if (history.some((account) => String(account?.loginName || account?.userId || '').trim() === selected)) {
+      homeworkBackgroundRefreshAccountSelect.value = selected;
+    } else {
+      homeworkBackgroundRefreshAccountSelect.value = String(homeworkBackgroundRefreshAccountSelect.options[0]?.value || '');
+    }
+  };
+  renderHomeworkBackgroundAccounts(portalLoginContext);
+  updateHomeworkBackgroundRefreshDisabled();
+  renderHomeworkBackgroundRefreshStatus(homeworkBackgroundRefreshStatus);
 
   const renderAcademicAccounts = (context) => {
     if (!(academicAccountSelect instanceof HTMLSelectElement)) return;
@@ -590,6 +650,30 @@ function goBackToApp() {
         currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(changes.homeworkReminderMinutes.newValue);
         renderHomeworkReminderNodes();
       }
+      if (changes.homeworkBackgroundRefreshEnabled) {
+        applyBooleanUi('homeworkBackgroundRefreshEnabled', changes.homeworkBackgroundRefreshEnabled.newValue, false);
+        updateHomeworkBackgroundRefreshDisabled();
+        renderHomeworkBackgroundRefreshStatus(changes.homeworkBackgroundRefreshStatus?.newValue || null);
+      }
+      if (changes.homeworkBackgroundRefreshIntervalMinutes) {
+        setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', changes.homeworkBackgroundRefreshIntervalMinutes.newValue, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
+      }
+      if (changes.homeworkNewAssignmentNotificationEnabled) {
+        applyBooleanUi('homeworkNewAssignmentNotificationEnabled', changes.homeworkNewAssignmentNotificationEnabled.newValue, false);
+      }
+      if (changes.homeworkBackgroundRefreshAccount && homeworkBackgroundRefreshAccountSelect instanceof HTMLSelectElement) {
+        currentHomeworkBackgroundRefreshAccount = String(changes.homeworkBackgroundRefreshAccount.newValue || '').trim();
+        homeworkBackgroundRefreshAccountSelect.value = currentHomeworkBackgroundRefreshAccount;
+      }
+      if (changes.homeworkBackgroundRefreshStatus) {
+        renderHomeworkBackgroundRefreshStatus(changes.homeworkBackgroundRefreshStatus.newValue);
+      }
+      if (changes.loginAccountHistory) {
+        chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).then((context) => {
+          if (context?.ok) portalLoginContext = context;
+          renderHomeworkBackgroundAccounts(portalLoginContext);
+        }).catch(() => {});
+      }
       if (changes.injectPortalLoginOnLoginPage) {
         applyBooleanUi('injectPortalLoginOnLoginPage', changes.injectPortalLoginOnLoginPage.newValue, true);
       }
@@ -816,6 +900,32 @@ function goBackToApp() {
   };
   bindScheduleIntervalSetting('academicScoreMonitorInterval', 'academicScoreMonitorIntervalMinutes', DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES, '成绩检查间隔');
   bindScheduleIntervalSetting('backgroundAutoUpdateInterval', 'backgroundAutoUpdateIntervalMinutes', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, '更新检查间隔');
+  bindScheduleIntervalSetting('homeworkBackgroundRefreshInterval', 'homeworkBackgroundRefreshIntervalMinutes', DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES, '后台作业刷新间隔');
+  homeworkBackgroundRefreshInput?.addEventListener('change', async () => {
+    const enabled = homeworkBackgroundRefreshInput.checked;
+    const account = String(homeworkBackgroundRefreshAccountSelect?.value || '').trim();
+    if (enabled && !account) {
+      homeworkBackgroundRefreshInput.checked = false;
+      updateHomeworkBackgroundRefreshDisabled();
+      setMsg('请先登录至少一个智慧课程平台账号', false);
+      return;
+    }
+    await chrome.storage.local.set({
+      homeworkBackgroundRefreshEnabled: enabled,
+      ...(enabled ? { homeworkBackgroundRefreshAccount: account } : {})
+    });
+    updateHomeworkBackgroundRefreshDisabled();
+    setMsg(enabled ? '已启用后台作业获取' : '已关闭后台作业获取');
+  });
+  homeworkBackgroundRefreshAccountSelect?.addEventListener('change', async () => {
+    currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccountSelect.value || '').trim();
+    await chrome.storage.local.set({ homeworkBackgroundRefreshAccount: currentHomeworkBackgroundRefreshAccount });
+    setMsg('已更改后台维护账号');
+  });
+  homeworkNewAssignmentNotificationInput?.addEventListener('change', async () => {
+    await chrome.storage.local.set({ homeworkNewAssignmentNotificationEnabled: homeworkNewAssignmentNotificationInput.checked });
+    setMsg(homeworkNewAssignmentNotificationInput.checked ? '已启用新增作业通知' : '已关闭新增作业通知');
+  });
   document.getElementById('addHomeworkReminderNode').addEventListener('click', async () => {
     const value = Number(document.getElementById('homeworkReminderValue').value || 0);
     const unit = Number(document.getElementById('homeworkReminderUnit').value || 1);
@@ -1034,6 +1144,10 @@ function goBackToApp() {
       autoLoadAllHomeworkDetails: false,
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
+      homeworkBackgroundRefreshEnabled: false,
+      homeworkBackgroundRefreshAccount: '',
+      homeworkBackgroundRefreshIntervalMinutes: DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES,
+      homeworkNewAssignmentNotificationEnabled: false,
       academicScoreMonitorEnabled: false,
       academicScoreMonitorIntervalMinutes: DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
@@ -1055,6 +1169,12 @@ function goBackToApp() {
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
+    document.getElementById('homeworkBackgroundRefreshEnabled').checked = false;
+    document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = false;
+    setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
+    currentHomeworkBackgroundRefreshAccount = '';
+    renderHomeworkBackgroundAccounts(portalLoginContext);
+    updateHomeworkBackgroundRefreshDisabled();
     document.getElementById('academicScoreMonitorEnabled').checked = false;
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;

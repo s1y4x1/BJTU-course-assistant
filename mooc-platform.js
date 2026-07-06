@@ -248,7 +248,7 @@ let moocLoginAssistPopupTabId = null;
     const countdown = !task.done && !task.overdue && task.deadline
       ? `<span class="deadline-countdown" data-deadline="${env.escape(String(task.deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>`
       : '';
-    return `<div class="hw-card-item mooc-task" style="background:${colors[0]};border-color:${colors[1]};">
+    return `<div class="hw-card-item mooc-task" data-homework-done="${task.done ? '1' : '0'}" style="background:${colors[0]};border-color:${colors[1]};">
       <div class="mooc-task-head"><div class="mooc-task-main">
         <div class="mooc-task-title" style="color:${colors[2]};"><span class="mooc-task-kind">${typeText(task.type)}</span>${env.escape(task.title)}</div>
         <div class="mooc-task-meta">截止: <span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${task.done ? ' <span class="homework-status-done">(已提交)</span>' : (task.overdue ? ' <span class="homework-status-overdue">(已逾期)</span>' : '')}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>

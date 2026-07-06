@@ -1765,7 +1765,9 @@ function autoLoadCourseResourcesForRenderedCourses() {
 
 function renderCourseList(courses) {
   courseListDiv.innerHTML = '';
+  const homeworkLoadPromises = [];
   if (!courses || !courses.length) {
+    window.veHomeworkLoadPromise = Promise.resolve([]);
     if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
     updateCourseListEmptyPlaceholder();
     return;
@@ -1884,6 +1886,7 @@ function renderCourseList(courses) {
     // Prioritize homework fetching before replay link prefetch.
   updateCourseListEmptyPlaceholder();
     const hwPromise = checkHomework(courseId);
+    homeworkLoadPromises.push(hwPromise);
     if (btnCourseware) {
       hwPromise.finally(() => {
         // Balance the initial preloading spinner before entering actual auto-load phase.
@@ -1908,6 +1911,7 @@ function renderCourseList(courses) {
       });
     }
   });
+  window.veHomeworkLoadPromise = Promise.allSettled(homeworkLoadPromises);
   if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
 
 }
@@ -2364,6 +2368,9 @@ async function checkHomework(courseId) {
     attachmentPrefetchPromise.finally(() => {
       recomputeCourseHomeworkState(courseId);
     }).catch(() => {});
+    if (typeof backgroundHomeworkRefreshMode !== 'undefined' && backgroundHomeworkRefreshMode) {
+      await attachmentPrefetchPromise;
+    }
     return true;
   } catch (e) {
     if (e?.loginRequired || String(e?.message || '') === 'LOGIN_REQUIRED') {

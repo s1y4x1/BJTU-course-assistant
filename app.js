@@ -121,6 +121,10 @@ if (location.protocol !== 'chrome-extension:' || !extensionRuntimeId) {
 const appSearchParams = new URLSearchParams(String(location.search || ''));
 const popupMode = appSearchParams.get('popup') === '1';
 const forceAccountListInitialization = appSearchParams.get('accountInit') === '1';
+const backgroundHomeworkRefreshMode = appSearchParams.get('backgroundHomeworkRefresh') === '1';
+const backgroundHomeworkRefreshAccount = String(appSearchParams.get('account') || '').trim();
+const backgroundHomeworkRefreshToken = String(appSearchParams.get('token') || '').trim();
+if (backgroundHomeworkRefreshMode) document.documentElement.style.display = 'none';
 if (popupMode) {
   document.body.classList.add('popup-mode');
 }
@@ -7203,6 +7207,67 @@ function setupSavedUploadsUi() {
   renderSavedUploadsSection();
 }
 
+async function runBackgroundHomeworkRefreshPage() {
+  const previousData = await chrome.storage.local.get([
+    POPUP_FULLSCREEN_CACHE_KEY
+  ]);
+  const previousCache = previousData?.[POPUP_FULLSCREEN_CACHE_KEY] || null;
+  restoreFullscreenCacheStateForBackground(previousCache);
+  window.platformEnabled.ve = true;
+  window.platformLoadedOnce.ve = false;
+  window.platformNeedLogin.ve = false;
+  window.autoLoadCourseResourcesEnabled = false;
+
+  if (!backgroundHomeworkRefreshAccount) throw new Error('后台维护账号为空');
+  await loadLoginAccountHistory();
+  usernameInput.value = backgroundHomeworkRefreshAccount;
+  lastValidUsername = backgroundHomeworkRefreshAccount;
+
+  const loginResult = await chrome.runtime.sendMessage({
+    type: 'PORTAL_LOGIN_SUBMIT',
+    payload: { loginName: backgroundHomeworkRefreshAccount }
+  });
+  if (!loginResult?.ok) {
+    throw new Error(String(loginResult?.message || '后台登录失败'));
+  }
+
+  await loadCurrentXqOptions(true).catch(() => {});
+  await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: false });
+  await Promise.resolve(window.veHomeworkLoadPromise).catch(() => {});
+
+  const currentAccount = String(window.currentAccountLoginName || '').trim();
+  if (currentAccount !== backgroundHomeworkRefreshAccount) {
+    throw new Error(`后台登录账号不匹配：${currentAccount || '未登录'}`);
+  }
+  if (!window.platformLoadedOnce?.ve) throw new Error('智慧课程平台课程加载失败');
+
+  await saveFullscreenCourseCache({ force: true });
+  const snapshot = await saveHomeworkReminderSnapshotNow();
+  await chrome.runtime.sendMessage({
+    type: 'BACKGROUND_HOMEWORK_REFRESH_COMPLETE',
+    token: backgroundHomeworkRefreshToken,
+    ok: true,
+    account: backgroundHomeworkRefreshAccount,
+    courseCount: Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList.length : 0,
+    items: snapshot.items,
+    assignments: collectPendingHomeworkItems()
+  });
+}
+
+async function finishBackgroundHomeworkRefreshPage() {
+  try {
+    await runBackgroundHomeworkRefreshPage();
+  } catch (error) {
+    await chrome.runtime.sendMessage({
+      type: 'BACKGROUND_HOMEWORK_REFRESH_COMPLETE',
+      token: backgroundHomeworkRefreshToken,
+      ok: false,
+      account: backgroundHomeworkRefreshAccount,
+      error: String(error?.message || error)
+    }).catch(() => {});
+  }
+}
+
 // -------------------- Init --------------------
 (async function init() {
   setupRightColumnResizer();
@@ -7228,6 +7293,11 @@ function setupSavedUploadsUi() {
     loginRequired: () => openMoocLoginAssistPopup(true)
   });
   await loadPopupCacheEnabledSetting();
+  if (backgroundHomeworkRefreshMode) {
+    await loadPlatformDetailSettings();
+    await finishBackgroundHomeworkRefreshPage();
+    return;
+  }
   const showAutoLoadResourcesDisabledNotice = await migrateAutoLoadCourseResourcesDefaultOff();
   await loadAutoLoadCourseResourcesSetting();
   await loadPlatformDetailSettings();
