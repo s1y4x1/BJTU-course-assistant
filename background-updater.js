@@ -53,7 +53,7 @@
     });
   }
 
-  async function notifyUpdateDetected(release, lastNotifiedVersion = '') {
+  async function notifyUpdateDetected(release, lastNotifiedVersion = '', installOptionalUpdate = false) {
     if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
     try {
       const notificationId = `${DETECTED_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
@@ -63,7 +63,9 @@
         title: `发现新版本：${String(release?.name || release?.version || '新版本')}`,
         message: release?.force
           ? '这是强制更新，即将开始后台下载。'
-          : '检测到非强制更新，将根据您的后台自动安装设置处理。',
+          : (installOptionalUpdate
+            ? '检测到非强制更新，根据您的后台更新设置，将自动开始更新。'
+            : '检测到非强制更新，根据您的后台更新设置，本次不自动更新，您可以手动选择更新。'),
         priority: 1
       });
       await chrome.storage.local.set({
@@ -411,9 +413,10 @@
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
       }
-      await notifyUpdateDetected(release, stored?.[DETECTED_NOTIFICATION_VERSION_KEY]);
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
         === normalizeVersion(release.version);
+      const installOptionalUpdate = stored?.[INSTALL_OPTIONAL_KEY] === true || retryingStaleInstallation;
+      await notifyUpdateDetected(release, stored?.[DETECTED_NOTIFICATION_VERSION_KEY], installOptionalUpdate);
       if (!release.force && stored?.[INSTALL_OPTIONAL_KEY] !== true && !retryingStaleInstallation) {
         await setStatus('optional-update-available', {
           localVersion,

@@ -11,6 +11,7 @@
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
   const ACCOUNT_FILE_VERSION = 1;
   const HISTORY_KEY = 'loginAccountHistory';
+  const ADMIN_LOGIN_NAME = 'JyDadmin';
   const ADMIN_QUICK_USERNAME = 'RjREQkM5NTRDMTJBMzU1QkZCNzFDMEM5RjYwNzg4RDg=';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
@@ -23,6 +24,10 @@
   const gbkEncodeCache = new Map();
   const currentAccountImportPromises = new Map();
   let initializationPromise = null;
+
+  function isAdminLoginName(value) {
+    return String(value || '').trim().toLowerCase() === ADMIN_LOGIN_NAME.toLowerCase();
+  }
 
   function decodeJsStringLiteral(value) {
     return String(value || '')
@@ -196,15 +201,15 @@
   }
 
   async function ensureAdminQuickAccountStored() {
-    const current = await global.BjtuAccountStore.get('admin');
+    const current = await global.BjtuAccountStore.get(ADMIN_LOGIN_NAME);
     const record = await global.BjtuAccountStore.put({
-      loginName: 'admin',
+      loginName: ADMIN_LOGIN_NAME,
       roleName: String(current?.roleName || '超级管理员'),
-      userName: String(current?.userName || 'admin'),
+      userName: String(current?.userName || ADMIN_LOGIN_NAME),
       password: String(current?.password || ''),
       quickUsername: ADMIN_QUICK_USERNAME
     });
-    if (record) accountCache.set('admin', record);
+    if (record) accountCache.set(ADMIN_LOGIN_NAME, record);
     return record;
   }
 
@@ -325,7 +330,7 @@
     const loginName = String(userInfo?.loginName || '').trim().toLowerCase();
     const roleCode = String(userInfo?.roleCode || '').trim().toLowerCase();
     const roleName = String(userInfo?.roleName || '').trim();
-    if (loginName === 'admin') return true;
+    if (isAdminLoginName(loginName)) return true;
     if (roleCode) return roleCode !== 'xs';
     return !/学生/.test(roleName) && /教师|老师|助教|管理员|督导|领导/.test(roleName);
   }
@@ -337,7 +342,7 @@
 
     let record = await global.BjtuAccountStore.get(id);
     if (record?.quickUsername) return { loginName: id, ...record };
-    if (id.toLowerCase() === 'admin') {
+    if (isAdminLoginName(id)) {
       record = await ensureAdminQuickAccountStored();
       return record ? { loginName: id, ...record } : null;
     }
@@ -351,7 +356,7 @@
         throw new Error(adminResult?.message || '管理员极速登录失败');
       }
       activeUser = await getCurrentUserInfo({ signal });
-      if (String(activeUser?.loginName || '').trim().toLowerCase() !== 'admin') {
+      if (!isAdminLoginName(activeUser?.loginName)) {
         throw new Error('管理员登录状态校验失败');
       }
     }
@@ -372,10 +377,10 @@
     return record ? { loginName: id, ...record } : null;
   }
 
-  async function enrichQuickUsernames(accounts, roleState, updateProgress, existingLoginNames = new Set()) {
+  async function enrichQuickUsernames(accounts, roleState, updateProgress, existingQuickLoginNames = new Set()) {
     const rows = Object.values(accounts || {}).filter((account) => {
       const loginName = String(account?.loginName || '').trim();
-      return loginName && !existingLoginNames.has(loginName);
+      return loginName && !String(account?.quickUsername || '').trim() && !existingQuickLoginNames.has(loginName);
     });
     roleState.phase = 'quick';
     roleState.quickProcessed = 0;
@@ -587,7 +592,12 @@
       const quickUsername = String(record?.quickUsername || '').trim();
       if (password || quickUsername) bindings.set(loginName, { password, quickUsername });
     });
-    return { bindings, existingAccounts, existingLoginNames: new Set(existingAccounts.keys()) };
+    const existingQuickLoginNames = new Set(
+      [...existingAccounts.entries()]
+        .filter(([, record]) => !!String(record?.quickUsername || '').trim())
+        .map(([loginName]) => loginName)
+    );
+    return { bindings, existingAccounts, existingQuickLoginNames };
   }
 
   function preserveLocalBindings(next, bindings, { preferExisting = false } = {}) {
@@ -707,11 +717,15 @@
       setListProgress('student', 0, 0, '正在等待');
     }
     const accounts = parseAccountFile(source);
+    await ensureAdminQuickAccountStored();
     const { bindings: localBindings, existingAccounts } = await readLocalAccountState();
     preserveLocalBindings(accounts, localBindings);
+    if (accounts[ADMIN_LOGIN_NAME]) {
+      accounts[ADMIN_LOGIN_NAME].quickUsername = ADMIN_QUICK_USERNAME;
+    }
     const changedAccounts = selectChangedAccounts(accounts, existingAccounts);
     const importedLoginNames = new Set(Object.keys(accounts));
-    importedLoginNames.add('admin');
+    importedLoginNames.add(ADMIN_LOGIN_NAME);
     const removedLoginNames = [...existingAccounts.keys()]
       .filter((loginName) => !importedLoginNames.has(loginName));
     const total = Object.keys(accounts).length;
@@ -955,12 +969,12 @@
         await ensureAdminQuickAccountStored();
         if (showProgress) setProgress(1, '正在检查管理员登录状态…');
         const currentUser = await getCurrentUserInfo();
-        if (String(currentUser?.loginName || '').trim() !== 'admin') {
+        if (!isAdminLoginName(currentUser?.loginName)) {
           if (showProgress) setProgress(1, '正在快速登录管理员账号…');
           const adminResult = await loginAdminWithQuickUsername();
           if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号快速登录失败');
           const adminUser = await getCurrentUserInfo();
-          if (String(adminUser?.loginName || '').trim() !== 'admin') {
+          if (!isAdminLoginName(adminUser?.loginName)) {
             throw new Error('管理员账号快速登录后身份验证失败');
           }
         }
@@ -969,7 +983,7 @@
           teacher: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, writeTotal: 0, total: 0, phase: shouldFetchTeachers ? 'load' : 'skipped', currentPrefixes: [] },
           student: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, writeTotal: 0, total: 0, phase: shouldFetchStudents ? 'load' : 'skipped', currentPrefixes: [] }
         };
-        const { bindings: localBindings, existingAccounts, existingLoginNames } = await readLocalAccountState();
+        const { bindings: localBindings, existingAccounts, existingQuickLoginNames } = await readLocalAccountState();
         let writeQueue = Promise.resolve();
         const updateProgress = () => {
           if (!showProgress) return;
@@ -1026,7 +1040,7 @@
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('教职工列表解析为空');
           if (shouldFetchQuickUsernames) {
-            await enrichQuickUsernames(parser.result, state.teacher, updateProgress, existingLoginNames);
+            await enrichQuickUsernames(parser.result, state.teacher, updateProgress, existingQuickLoginNames);
           }
           return parser.result;
         };
@@ -1061,7 +1075,7 @@
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('学生列表解析为空');
           if (shouldFetchQuickUsernames) {
-            await enrichQuickUsernames(parser.result, state.student, updateProgress, existingLoginNames);
+            await enrichQuickUsernames(parser.result, state.student, updateProgress, existingQuickLoginNames);
           }
           return parser.result;
         };
@@ -1120,7 +1134,7 @@
           && Object.keys(students).length === state.student.total;
         if (completeTeacherList && completeStudentList) {
           const currentLoginNames = new Set(Object.keys(next));
-          currentLoginNames.add('admin');
+          currentLoginNames.add(ADMIN_LOGIN_NAME);
           const removedLoginNames = [...existingAccounts.keys()]
             .filter((loginName) => !currentLoginNames.has(loginName));
           if (removedLoginNames.length && typeof global.BjtuAccountStore.deleteMany === 'function') {
