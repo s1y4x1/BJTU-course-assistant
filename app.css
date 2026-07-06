@@ -639,7 +639,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             align-items: center;
             line-height: 1;
             color: #000 !important;
-            text-shadow: none !important;
+            text-shadow: 0 1px 2px rgba(15, 23, 42, 0.3) !important;
         }
         .course-resource-file-item .file-size-emphasis,
         .course-resource-file-item .file-size-separator,
@@ -647,7 +647,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             vertical-align: middle;
             line-height: 1;
             color: #000 !important;
-            text-shadow: none !important;
+            text-shadow: 0 1px 2px rgba(15, 23, 42, 0.3) !important;
         }
 
         .resource-space-status {

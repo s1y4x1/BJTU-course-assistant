@@ -1036,8 +1036,9 @@ async function fetchUpdateArchiveWithProgress(url) {
       resetIdleTimeout();
       chunks.push(value);
       received += value.byteLength;
-      const percent = total > 0 ? Math.min(100, Math.floor((received / total) * 100)) : 0;
-      setVersionDownloadBar({ visible: true, percent, indeterminate: total <= 0 });
+      const exactPercent = total > 0 ? Math.min(100, (received / total) * 100) : 0;
+      const percent = Math.floor(exactPercent);
+      setVersionDownloadBar({ visible: true, percent: exactPercent, indeterminate: total <= 0 });
       setVersionDownloadProgressUi({
         visible: true,
         status: total > 0

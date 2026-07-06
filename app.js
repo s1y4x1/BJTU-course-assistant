@@ -1424,23 +1424,12 @@ function setSpeedDisplay(element, bytesPerSecond, text = null) {
   const emphasis = buildFileSizeEmphasisStyle(speed);
   const fontSize = emphasis.match(/font-size:([^;]+)/)?.[1]?.trim();
   const fontWeight = emphasis.match(/font-weight:([^;]+)/)?.[1]?.trim();
-  const lightColor = emphasis.match(/color:([^;]+)/)?.[1]?.trim();
-  const lightShadow = emphasis.match(/text-shadow:([^;]+)/)?.[1]?.trim();
+  const emphasisColor = emphasis.match(/color:([^;]+)/)?.[1]?.trim();
+  const emphasisShadow = emphasis.match(/text-shadow:([^;]+)/)?.[1]?.trim();
   if (fontSize) element.style.fontSize = fontSize;
   if (fontWeight) element.style.fontWeight = fontWeight;
-  if (document.documentElement.dataset.colorScheme === 'dark') {
-    const mb = speed / (1024 * 1024);
-    const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
-    const r = Math.round(182 + ratio * 73);
-    const g = Math.round(194 + ratio * 61);
-    const b = Math.round(209 + ratio * 46);
-    element.style.color = `rgb(${r},${g},${b})`;
-    const glowAlpha = Math.max(0, (ratio - 0.2) * 0.3).toFixed(2);
-    element.style.textShadow = Number(glowAlpha) > 0 ? `0 0 3px rgba(255,255,255,${glowAlpha})` : 'none';
-  } else {
-    if (lightColor) element.style.color = lightColor;
-    if (lightShadow) element.style.textShadow = lightShadow;
-  }
+  if (emphasisColor) element.style.color = emphasisColor;
+  element.style.textShadow = emphasisShadow || 'none';
 }
 
 window.addEventListener('bjtu-theme-change', () => {
@@ -1774,8 +1763,9 @@ function updateTotalProgress() {
 
   if (totalProgressWrap instanceof HTMLElement) totalProgressWrap.style.display = '';
   if (totalPercentDiv) totalPercentDiv.style.display = '';
-  const percent = Math.min(100, Math.round((totalUploaded / totalSize) * 100));
-  totalServerBar.style.width = percent + '%';
+  const exactPercent = Math.min(100, Math.max(0, (totalUploaded / totalSize) * 100));
+  const percent = Math.round(exactPercent);
+  totalServerBar.style.width = exactPercent + '%';
   totalServerBar.textContent = '';
   if (totalPercentDiv) totalPercentDiv.textContent = `${percent}%`;
 
@@ -2902,28 +2892,27 @@ function formatResourceSizeMb(rpSize) {
 function buildResourceSizeEmphasisStyle(rpSize) {
   const mb = Number(rpSize);
   if (!Number.isFinite(mb) || mb <= 0) {
-    const color = document.documentElement.dataset.colorScheme === 'dark' ? '#b6c2d1' : '#94a3b8';
-    return `font-size:10px; font-weight:500; color:${color}; text-shadow:none;`;
+    return 'font-size:10px; font-weight:500; color:#94a3b8; text-shadow:none;';
   }
 
   // Log scale keeps very large files from exploding while preserving contrast.
   const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
   const fontPx = (10 + ratio * 6).toFixed(2); // 10px -> 16px
   const weight = Math.round(500 + ratio * 320); // 500 -> 820
+  const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
+  const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35);
   if (document.documentElement.dataset.colorScheme === 'dark') {
     const r = Math.round(182 + ratio * 73);
     const g = Math.round(194 + ratio * 61);
     const b = Math.round(209 + ratio * 46);
-    const glowAlpha = Math.max(0, (ratio - 0.2) * 0.3).toFixed(2);
-    const shadow = Number(glowAlpha) > 0 ? `0 0 3px rgba(255,255,255,${glowAlpha})` : 'none';
+    const brightAlpha = Math.min(1, shadowAlpha * 1.2).toFixed(2);
+    const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(255,255,255,${brightAlpha})`;
     return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${r},${g},${b}); text-shadow:${shadow};`;
   }
   const colorLight = Math.round(148 - ratio * 118); // lighter start -> deep end
   const g = Math.max(18, colorLight + 8);
   const b = Math.max(28, colorLight + 20);
-  const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
-  const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35).toFixed(2);
-  const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha})`;
+  const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha.toFixed(2)})`;
   return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${colorLight},${g},${b}); text-shadow:${shadow};`;
 }
 
@@ -3008,6 +2997,17 @@ function getResourceItemSizeBytes(item) {
   const mb = Number(item?.sizeMbRaw ?? item?.rpSize ?? NaN);
   if (!Number.isFinite(mb) || mb < 0) return 0;
   return Math.round(mb * 1024 * 1024);
+}
+
+function getKnownResourceSizeBytes(resourceId) {
+  const rid = String(resourceId || '').trim();
+  if (!rid) return 0;
+  const itemBytes = getResourceItemSizeBytes(findSelectableDownloadItemById(rid));
+  if (itemBytes > 0) return itemBytes;
+  if (!rid.startsWith('saved_')) return 0;
+  const savedId = rid.slice('saved_'.length);
+  const saved = (window.savedUploadedFiles || []).find((it) => it && String(it.id || '').trim() === savedId);
+  return Math.max(0, Number(saved?.fileSize) || 0);
 }
 
 function resetResourceDownloadBatch() {
@@ -3236,10 +3236,13 @@ function updateResourceDownloadTotals() {
     });
   }
 
-  const percent = hasKnownTotal && totalSize > 0 ? Math.round((totalLoaded / totalSize) * 100) : 0;
+  const exactPercent = hasKnownTotal && totalSize > 0
+    ? Math.max(0, Math.min(100, (totalLoaded / totalSize) * 100))
+    : 0;
+  const percent = Math.round(exactPercent);
   if (resourceProgressWrap instanceof HTMLElement) resourceProgressWrap.style.display = totalSize > 0 ? '' : 'none';
   resourceTotalPercent.style.display = totalSize > 0 ? '' : 'none';
-  resourceTotalBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  resourceTotalBar.style.width = `${exactPercent}%`;
   resourceTotalBar.textContent = '';
   resourceTotalSizeInfo.innerHTML = hasKnownTotal && totalSize > 0
     ? renderFileSizePair(totalLoaded, totalSize)
@@ -3286,6 +3289,7 @@ function cancelResourceDownload(resourceId) {
 
   const queued = window.resourceDownloadQueueById?.[rid];
   if (queued && !queued.started) {
+    const expectedBytes = Math.max(0, Number(queued.expectedBytes) || getResourceItemSizeBytes(queued.item));
     queued.cancelled = true;
     window.resourceDownloadQueue = (window.resourceDownloadQueue || []).filter((it) => it !== queued);
     delete window.resourceDownloadQueueById[rid];
@@ -3294,7 +3298,7 @@ function cancelResourceDownload(resourceId) {
       active: true,
       percent: 0,
       loaded: 0,
-      total: 0,
+      total: expectedBytes,
       speed: 0,
       etaSec: null,
       status: '已取消'
@@ -3311,6 +3315,13 @@ function cancelResourceDownload(resourceId) {
 function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '' } = {}) {
   const row = findResourceItemElementById(resourceId);
   if (!row) return;
+  const task = getResourceDownloadTask(resourceId);
+  const requestedTotal = Math.max(0, Number(total) || 0);
+  const knownTaskTotal = Math.max(0, Number(task?.total) || 0);
+  const knownItemTotal = getKnownResourceSizeBytes(resourceId);
+  const effectiveTotal = requestedTotal > 0
+    ? requestedTotal
+    : (active ? Math.max(knownTaskTotal, knownItemTotal) : 0);
   const wrap = row.querySelector('.resource-download-progress');
   const bar = row.querySelector('.resource-download-progress .progress-bar');
   const statusEl = row.querySelector('.resource-dl-status');
@@ -3329,7 +3340,7 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
 
   if (sizeEl instanceof HTMLElement) {
     const loadedSafe = Math.max(0, Number(loaded) || 0);
-    const totalSafe = Math.max(0, Number(total) || 0);
+    const totalSafe = effectiveTotal;
     sizeEl.style.cssText = 'margin-left:6px;';
     if (totalSafe > 0) {
       sizeEl.innerHTML = `(${renderFileSizePair(loadedSafe, totalSafe)})`;
@@ -3348,7 +3359,7 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
   if (etaEl instanceof HTMLElement) {
     if (active && Number.isFinite(Number(etaSec)) && Number(etaSec) > 0) {
       etaEl.textContent = `剩余: ${formatEta(Number(etaSec))}`;
-    } else if (active && total > 0 && loaded >= total) {
+    } else if (active && effectiveTotal > 0 && loaded >= effectiveTotal) {
       etaEl.textContent = '剩余: 0秒';
     } else if (active) {
       etaEl.textContent = '剩余: --';
@@ -3357,10 +3368,9 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
     }
   }
 
-  const task = getResourceDownloadTask(resourceId);
   if (task) {
     task.loaded = Math.max(0, Number(loaded) || 0);
-    task.total = Math.max(0, Number(total) || 0);
+    task.total = effectiveTotal;
     task.speed = Math.max(0, Number(speed) || 0);
   }
   updateResourceDownloadTotals();
@@ -3434,7 +3444,9 @@ async function downloadResourceItemWithProgress(item) {
     if (!force && now - task.lastUiTs < PROGRESS_INTERVAL_MS) return;
     task.lastUiTs = now;
 
-    const percent = effectiveTotal > 0 ? Math.round((loadedSafe / effectiveTotal) * 100) : 0;
+    const percent = effectiveTotal > 0
+      ? Math.max(0, Math.min(100, (loadedSafe / effectiveTotal) * 100))
+      : 0;
     const etaSec = (effectiveTotal > 0 && speed > 0) ? ((effectiveTotal - loadedSafe) / speed) : null;
     setResourceDownloadUi(id, {
       active: true,
@@ -5763,8 +5775,8 @@ function uploadFile(file, fileId) {
           ? Math.min(fileSize, Math.max(0, Number(e.loaded || 0)))
           : Math.max(0, Number(e.loaded || 0));
         const percent = fileSize > 0
-          ? Math.min(100, Math.round((visibleLoaded / fileSize) * 100))
-          : Math.min(100, Math.round((e.loaded / e.total) * 100));
+          ? Math.min(100, Math.max(0, (visibleLoaded / fileSize) * 100))
+          : (e.total > 0 ? Math.min(100, Math.max(0, (e.loaded / e.total) * 100)) : 0);
         progressBar.style.width = percent + '%';
         progressBar.textContent = '';
         sizeProgressDisplay.innerHTML = `(${renderFileSizePair(visibleLoaded, fileSize)})`;
@@ -7156,6 +7168,8 @@ function setupSavedUploadsUi() {
           const url = String(actionEl.dataset.url || '').trim();
           const filename = String(actionEl.dataset.filename || '').trim() || '下载';
           const entryId = String(actionEl.dataset.savedUploadId || '').trim();
+          const savedEntry = (window.savedUploadedFiles || []).find((it) => it && String(it.id || '').trim() === entryId);
+          const sizeBytes = Math.max(0, Number(savedEntry?.fileSize) || 0);
           if (url) {
             try {
               await enqueueResourceDownload({
@@ -7163,8 +7177,8 @@ function setupSavedUploadsUi() {
                 name: filename,
                 url: url,
                 extName: filename.includes('.') ? filename.split('.').pop() : '',
-                sizeMb: '-',
-                sizeMbRaw: 0,
+                sizeMb: sizeBytes > 0 ? formatSize(sizeBytes) : '-',
+                sizeMbRaw: sizeBytes / (1024 * 1024),
                 inputTime: ''
               });
             } catch (e) {

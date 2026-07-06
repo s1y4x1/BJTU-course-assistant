@@ -1239,7 +1239,8 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
   const resultArea = card?.querySelector('.result-area');
   if (!btn || !card || !resultArea) return;
   const currentView = String(card.dataset.resultView || '').trim();
-  const shouldTouchVisibleArea = !currentView || currentView === 'replay';
+  const shouldTouchVisibleArea = currentView === 'replay'
+    || (!currentView && !isResultAreaOpen(resultArea));
   const courseListVersion = getCourseListLoadVersionSnapshot();
   const isStale = () => isCourseListLoadStale(courseListVersion);
 
@@ -1280,7 +1281,6 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
     if (!list.length) {
       btn.classList.remove('replay-list-loading');
       btn.style.display = 'none';
-      if (shouldTouchVisibleArea) toggleResultAreaAnimated(resultArea, false, { immediate: true });
       setCourseReplayState(courseIdInt, false);
       return;
     }
