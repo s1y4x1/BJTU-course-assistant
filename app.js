@@ -1,34 +1,4 @@
-
 const FILE_BASE = 'http://123.121.147.7:8081';
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 const PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS = 1000;
 const DEFAULT_PLATFORM_SESSION_ID = 'D571D57D255EA0BECF299C45D4C0468A';
