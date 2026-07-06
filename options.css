@@ -2,7 +2,7 @@ body { font-family: Segoe UI, sans-serif; max-width: 720px; margin: 24px auto; p
 h2 { margin: 0; }
 label { display: block; margin: 12px 0 6px; }
 input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
-button { margin-top: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
+button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
 .tip { margin-bottom: 12px; color: #666; font-size: 13px; }
 .theme-mode-btns { display:inline-flex; gap:6px; }
 .theme-mode-btn { height:40px; margin-top:0; padding:0; border:2px solid #d1d5db; border-radius:10px; background:#fff; font-size:22px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .15s, box-shadow .15s; box-sizing:border-box; }
@@ -72,7 +72,7 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .reset-confirm-close { position:absolute; top:10px; right:10px; width:28px; height:28px; margin:0; padding:0; border-radius:50%; background:#64748b; font-size:18px; line-height:28px; }
 .academic-account-row { display:block; }
 .academic-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
-.academic-login-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.academic-login-actions { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .academic-score-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; }
 .academic-score-count { color:#64748b; font-size:12px; }
 .academic-score-loading { display:flex; align-items:center; gap:8px; min-height:34px; color:#64748b; font-size:13px; }
