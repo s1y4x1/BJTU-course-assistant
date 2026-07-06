@@ -223,25 +223,47 @@
     });
   }
 
-  async function getLoginNames() {
+  async function getAccountStates() {
     const db = await open();
     const transaction = db.transaction(STORE_NAME);
     const store = transaction.objectStore(STORE_NAME);
     return new Promise((resolve, reject) => {
-      const loginNames = new Set();
-      const request = store.openKeyCursor();
-      request.onerror = () => reject(request.error || new Error('账号主键读取失败'));
+      const states = new Map();
+      const request = store.openCursor();
+      request.onerror = () => reject(request.error || new Error('账号状态读取失败'));
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) {
-          resolve(loginNames);
+          resolve(states);
           return;
         }
-        const loginName = String(cursor.primaryKey || '').trim();
-        if (loginName) loginNames.add(loginName);
+        const record = normalize(cursor.value?.loginName, cursor.value);
+        if (record) states.set(record.loginName, record);
         cursor.continue();
       };
     });
+  }
+
+  async function deleteMany(loginNames, onProgress = null) {
+    const rows = [...new Set((Array.isArray(loginNames) ? loginNames : [])
+      .map((value) => String(value || '').trim()).filter(Boolean))];
+    if (!rows.length) {
+      onProgress?.({ deleted: 0, total: 0 });
+      return 0;
+    }
+    const db = await open();
+    let deleted = 0;
+    onProgress?.({ deleted, total: rows.length });
+    for (let offset = 0; offset < rows.length; offset += WRITE_BATCH_SIZE) {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const batch = rows.slice(offset, offset + WRITE_BATCH_SIZE);
+      batch.forEach((loginName) => store.delete(loginName));
+      await transactionDone(transaction);
+      deleted += batch.length;
+      onProgress?.({ deleted, total: rows.length });
+    }
+    return deleted;
   }
 
   async function search({ loginName = '', userName = '', limit = 100 } = {}) {
@@ -346,7 +368,7 @@
     return [...new Set(prefixes)].filter(Boolean).sort((a, b) => a.localeCompare(b));
   }
 
-  async function putAll(source, onProgress = null) {
+  async function putAll(source, onProgress = null, { preserveExistingCredentials = true } = {}) {
     const isArray = Array.isArray(source);
     const safeSource = source && typeof source === 'object' ? source : {};
     const keys = isArray ? safeSource.map((_value, index) => index) : Object.keys(safeSource);
@@ -359,18 +381,20 @@
     });
     const db = await open();
     const existingCredentials = new Map();
-    try {
-      const credentialRows = await getCredentialAccounts();
-      credentialRows.forEach((row) => {
-        const loginName = String(row?.loginName || '').trim();
-        if (!loginName) return;
-        existingCredentials.set(loginName, {
-          password: String(row?.password || '').trim(),
-          quickUsername: String(row?.quickUsername || '').trim()
+    if (preserveExistingCredentials) {
+      try {
+        const credentialRows = await getCredentialAccounts();
+        credentialRows.forEach((row) => {
+          const loginName = String(row?.loginName || '').trim();
+          if (!loginName) return;
+          existingCredentials.set(loginName, {
+            password: String(row?.password || '').trim(),
+            quickUsername: String(row?.quickUsername || '').trim()
+          });
         });
-      });
-    } catch {
-      // If reading existing credentials fails, continue with incoming data.
+      } catch {
+        // If reading existing credentials fails, continue with incoming data.
+      }
     }
     let transaction;
     let storedCount = 0;
@@ -451,7 +475,8 @@
     search,
     getQuickAccounts,
     getCredentialAccounts,
-    getLoginNames,
+    getAccountStates,
+    deleteMany,
     clear,
     putAll,
     replaceAll,

@@ -561,16 +561,11 @@
     return global.BjtuAccountStore.count();
   }
 
-  async function readLocalAccountState() {
+  async function readLocalBindings() {
     const bindings = new Map();
-    const [previous, existingLoginNames] = await Promise.all([
-      typeof global.BjtuAccountStore.getCredentialAccounts === 'function'
-        ? global.BjtuAccountStore.getCredentialAccounts()
-        : global.BjtuAccountStore.getQuickAccounts(),
-      typeof global.BjtuAccountStore.getLoginNames === 'function'
-        ? global.BjtuAccountStore.getLoginNames()
-        : global.BjtuAccountStore.getAll().then((rows) => new Set(rows.map((row) => String(row?.loginName || '').trim()).filter(Boolean)))
-    ]);
+    const previous = typeof global.BjtuAccountStore.getCredentialAccounts === 'function'
+      ? await global.BjtuAccountStore.getCredentialAccounts()
+      : await global.BjtuAccountStore.getQuickAccounts();
     previous.forEach((record) => {
       const loginName = String(record?.loginName || '').trim();
       if (!loginName) return;
@@ -579,20 +574,48 @@
         quickUsername: String(record?.quickUsername || '').trim()
       });
     });
-    return { bindings, existingLoginNames };
+    return bindings;
   }
 
-  function preserveLocalBindings(next, bindings) {
+  async function readLocalAccountState() {
+    const existingAccounts = typeof global.BjtuAccountStore.getAccountStates === 'function'
+      ? await global.BjtuAccountStore.getAccountStates()
+      : new Map((await global.BjtuAccountStore.getAll()).map((record) => [String(record?.loginName || '').trim(), record]));
+    const bindings = new Map();
+    existingAccounts.forEach((record, loginName) => {
+      const password = String(record?.password || '').trim();
+      const quickUsername = String(record?.quickUsername || '').trim();
+      if (password || quickUsername) bindings.set(loginName, { password, quickUsername });
+    });
+    return { bindings, existingAccounts, existingLoginNames: new Set(existingAccounts.keys()) };
+  }
+
+  function preserveLocalBindings(next, bindings, { preferExisting = false } = {}) {
     Object.keys(next || {}).forEach((loginName) => {
       const current = bindings?.get(loginName);
       if (!current) return;
-      if (current.quickUsername && !next[loginName].quickUsername) {
+      if (current.quickUsername && (preferExisting || !next[loginName].quickUsername)) {
         next[loginName].quickUsername = current.quickUsername;
       }
-      if (current.password && !next[loginName].password) {
+      if (current.password && (preferExisting || !next[loginName].password)) {
         next[loginName].password = current.password;
       }
     });
+  }
+
+  function accountRecordsEqual(left, right) {
+    if (!left || !right) return false;
+    return ['loginName', 'roleName', 'userName', 'password', 'quickUsername'].every((key) => (
+      String(left?.[key] || '').trim() === String(right?.[key] || '').trim()
+    ));
+  }
+
+  function selectChangedAccounts(accounts, existingAccounts) {
+    const changed = Object.create(null);
+    Object.entries(accounts || {}).forEach(([loginName, record]) => {
+      if (!accountRecordsEqual(record, existingAccounts?.get(loginName))) changed[loginName] = record;
+    });
+    return changed;
   }
 
   function createWritingMarker() {
@@ -678,22 +701,48 @@
   }
 
   async function importAccountFile(source, { showProgress = false } = {}) {
+    if (showProgress) {
+      setProgress(0, '正在准备导入账号列表…');
+      setListProgress('teacher', 0, 0, '正在等待');
+      setListProgress('student', 0, 0, '正在等待');
+    }
     const accounts = parseAccountFile(source);
-    const localBindings = await readLocalBindings();
+    const { bindings: localBindings, existingAccounts } = await readLocalAccountState();
     preserveLocalBindings(accounts, localBindings);
+    const changedAccounts = selectChangedAccounts(accounts, existingAccounts);
+    const importedLoginNames = new Set(Object.keys(accounts));
+    importedLoginNames.add('admin');
+    const removedLoginNames = [...existingAccounts.keys()]
+      .filter((loginName) => !importedLoginNames.has(loginName));
     const total = Object.keys(accounts).length;
+    const changedTotal = Object.keys(changedAccounts).length;
+    const changedTeacherTotal = Object.values(changedAccounts)
+      .filter((record) => String(record?.roleName || '').trim() !== '学生').length;
+    const changedStudentTotal = changedTotal - changedTeacherTotal;
     const releaseWritingLock = await acquireWritingLock();
     const marker = createWritingMarker();
     await chrome.storage.local.set({ [ACCOUNT_LIST_WRITING_KEY]: marker });
     const heartbeatTimer = startWritingHeartbeat(marker);
     try {
       if (showProgress) setProgress(0, '正在导入账号列表…');
-      await global.BjtuAccountStore.replaceAll(accounts, (progress) => {
-        if (!showProgress) return;
-        setProgress(100, '正在导入账号列表…（' + Number(progress?.written || 0) + ' / ' + total + '）');
-        setListProgress('teacher', progress?.teacherWritten, progress?.teacherTotal, '正在写入', '写入', progress?.teacherCurrentPrefixes);
-        setListProgress('student', progress?.studentWritten, progress?.studentTotal, '正在写入', '写入', progress?.studentCurrentPrefixes);
-      });
+      if (showProgress) {
+        setListProgress('teacher', 0, changedTeacherTotal, changedTeacherTotal ? '正在写入' : '无需写入', '写入');
+        setListProgress('student', 0, changedStudentTotal, changedStudentTotal ? '正在写入' : '无需写入', '写入');
+      }
+      if (changedTotal > 0) {
+        await global.BjtuAccountStore.putAll(changedAccounts, (progress) => {
+          if (!showProgress) return;
+          setProgress(100, '正在导入账号列表变动…（' + Number(progress?.written || 0) + ' / ' + changedTotal + '）');
+          setListProgress('teacher', progress?.teacherWritten, changedTeacherTotal, '正在写入', '写入', progress?.teacherCurrentPrefixes);
+          setListProgress('student', progress?.studentWritten, changedStudentTotal, '正在写入', '写入', progress?.studentCurrentPrefixes);
+        }, { preserveExistingCredentials: false });
+      }
+      if (removedLoginNames.length && typeof global.BjtuAccountStore.deleteMany === 'function') {
+        await global.BjtuAccountStore.deleteMany(removedLoginNames, (progress) => {
+          if (!showProgress) return;
+          setProgress(100, `正在清理导入文件中不存在的账号…（${Number(progress?.deleted || 0)} / ${Number(progress?.total || 0)}）`);
+        });
+      }
       await chrome.storage.local.set({
         [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
         [ACCOUNT_LIST_REVISION_KEY]: Date.now()
@@ -917,10 +966,10 @@
         }
 
         const state = {
-          teacher: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, total: 0, phase: shouldFetchTeachers ? 'load' : 'skipped', currentPrefixes: [] },
-          student: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, total: 0, phase: shouldFetchStudents ? 'load' : 'skipped', currentPrefixes: [] }
+          teacher: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, writeTotal: 0, total: 0, phase: shouldFetchTeachers ? 'load' : 'skipped', currentPrefixes: [] },
+          student: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, writeTotal: 0, total: 0, phase: shouldFetchStudents ? 'load' : 'skipped', currentPrefixes: [] }
         };
-        const { bindings: localBindings, existingLoginNames } = await readLocalAccountState();
+        const { bindings: localBindings, existingAccounts, existingLoginNames } = await readLocalAccountState();
         let writeQueue = Promise.resolve();
         const updateProgress = () => {
           if (!showProgress) return;
@@ -933,10 +982,14 @@
             }
             const isWriting = roleState.phase === 'write' || roleState.phase === 'done';
             const isFetchingQuick = roleState.phase === 'quick';
+            if (roleState.phase === 'done' && roleState.writeTotal === 0) {
+              setListProgress(type, 0, 0, '无需写入', '写入');
+              return;
+            }
             setListProgress(
               type,
               isWriting ? roleState.written : (isFetchingQuick ? roleState.quickProcessed : roleState.parsed),
-              isFetchingQuick ? roleState.quickTotal : roleState.total,
+              isWriting ? roleState.writeTotal : (isFetchingQuick ? roleState.quickTotal : roleState.total),
               isWriting ? '正在写入' : (isFetchingQuick ? '正在获取极速登录名' : '正在读取总数'),
               isWriting ? '写入' : (isFetchingQuick ? '获取极速登录名' : '读取'),
               roleState.currentPrefixes
@@ -1014,14 +1067,21 @@
         };
 
         const writeRole = (type, accounts) => {
-          preserveLocalBindings(accounts, localBindings);
-          const total = Object.keys(accounts).length;
+          preserveLocalBindings(accounts, localBindings, { preferExisting: true });
+          const changedAccounts = selectChangedAccounts(accounts, existingAccounts);
+          const total = Object.keys(changedAccounts).length;
           state[type].phase = 'write';
           state[type].written = 0;
+          state[type].writeTotal = total;
           state[type].currentPrefixes = [];
           updateProgress();
+          if (total === 0) {
+            state[type].phase = 'done';
+            updateProgress();
+            return Promise.resolve();
+          }
           writeQueue = writeQueue.then(async () => {
-            await global.BjtuAccountStore.putAll(accounts, (progress) => {
+            await global.BjtuAccountStore.putAll(changedAccounts, (progress) => {
               if (!showProgress) return;
               setProgress(100, '正在获取并写入账号列表…');
               const written = type === 'teacher' ? progress?.teacherWritten : progress?.studentWritten;
@@ -1029,7 +1089,7 @@
               const prefixes = type === 'teacher' ? progress?.teacherCurrentPrefixes : progress?.studentCurrentPrefixes;
               state[type].currentPrefixes = Array.isArray(prefixes) ? prefixes : [];
               setListProgress(type, state[type].written, total, '正在写入', '写入', state[type].currentPrefixes);
-            });
+            }, { preserveExistingCredentials: false });
             state[type].phase = 'done';
             state[type].written = total;
             state[type].currentPrefixes = [];
@@ -1053,6 +1113,23 @@
         const [teachers, students] = await Promise.all([teacherTask, studentTask]);
         const next = { ...teachers, ...students };
         if (!Object.keys(next).length) throw new Error('账号列表为空');
+
+        const completeTeacherList = shouldFetchTeachers
+          && Object.keys(teachers).length === state.teacher.total;
+        const completeStudentList = shouldFetchStudents
+          && Object.keys(students).length === state.student.total;
+        if (completeTeacherList && completeStudentList) {
+          const currentLoginNames = new Set(Object.keys(next));
+          currentLoginNames.add('admin');
+          const removedLoginNames = [...existingAccounts.keys()]
+            .filter((loginName) => !currentLoginNames.has(loginName));
+          if (removedLoginNames.length && typeof global.BjtuAccountStore.deleteMany === 'function') {
+            await global.BjtuAccountStore.deleteMany(removedLoginNames, (progress) => {
+              if (!showProgress) return;
+              setProgress(100, `正在清理已不存在账号…（${Number(progress?.deleted || 0)} / ${Number(progress?.total || 0)}）`);
+            });
+          }
+        }
 
         await chrome.storage.local.set({
           [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
