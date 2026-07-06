@@ -541,7 +541,7 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
         markStop(classNo);
         return;
       }
-      const key = [teacherId, teacherName, roomName].join('__');
+      const key = [teacherId, teacherName, roomName, xkhId].join('__');
       if (!seen.has(key)) {
         seen.add(key);
         rows.push({ teacherName, teacherId, roomName, xkhId, classNo });
@@ -577,7 +577,7 @@ function renderVeCourseTeachersPopHtml(meta) {
       const body = renderVeCourseTeacherRowsHtml(rows);
       return `
         <table class="ve-course-teacher-table">
-          <thead><tr><th>xkhId</th><th>教师姓名</th><th>工号</th><th>教室</th><th>操作</th></tr></thead>
+          <thead><tr><th>教师姓名</th><th>工号</th><th>操作</th><th>教室</th><th>课程号</th></tr></thead>
           <tbody>${body}</tbody>
         </table>
       `;
@@ -614,17 +614,76 @@ function renderVeCourseTeachersPopHtml(meta) {
 
 function renderVeCourseTeacherRowsHtml(rows) {
   const list = Array.isArray(rows) ? rows : [];
-  return list.map((it) => {
-    const xkhId = String(it?.xkhId || '');
-    const xkhSuffix = xkhId.length >= 10 ? xkhId.slice(-10) : (xkhId || '-');
-    const teacherName = escapeHtml(String(it?.teacherName || '')) || '-';
-    const teacherId = escapeHtml(String(it?.teacherId || '')) || '-';
-    const roomName = escapeHtml(String(it?.roomName || '')) || '-';
-    const teacherIdRaw = String(it?.teacherId || '').trim();
-    const action = teacherIdRaw
-      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdRaw)}">切换至此账号</button>`
+  const compareText = (a, b) => String(a || '').localeCompare(String(b || ''), 'zh-CN', {
+    numeric: true,
+    sensitivity: 'base'
+  });
+  const teacherGroups = new Map();
+
+  list.forEach((item) => {
+    const teacherName = String(item?.teacherName || '').trim();
+    const teacherId = String(item?.teacherId || '').trim();
+    const roomName = String(item?.roomName || '').trim();
+    const xkhId = String(item?.xkhId || '').trim();
+    const teacherKey = `${teacherId}\u0000${teacherName}`;
+    let teacherGroup = teacherGroups.get(teacherKey);
+    if (!teacherGroup) {
+      teacherGroup = { teacherName, teacherId, rooms: new Map() };
+      teacherGroups.set(teacherKey, teacherGroup);
+    }
+    const roomKey = roomName;
+    let roomGroup = teacherGroup.rooms.get(roomKey);
+    if (!roomGroup) {
+      roomGroup = { roomName, courses: [] };
+      teacherGroup.rooms.set(roomKey, roomGroup);
+    }
+    if (!roomGroup.courses.includes(xkhId)) roomGroup.courses.push(xkhId);
+  });
+
+  const getRoomMinCourse = (room) => (
+    Array.isArray(room?.courses) && room.courses.length
+      ? [...room.courses].sort(compareText)[0]
+      : ''
+  );
+  const getTeacherMinCourse = (teacher) => {
+    const courses = Array.from(teacher?.rooms?.values?.() || [])
+      .flatMap((room) => Array.isArray(room?.courses) ? room.courses : []);
+    return courses.length ? courses.sort(compareText)[0] : '';
+  };
+  const groups = Array.from(teacherGroups.values()).sort((a, b) => (
+    compareText(getTeacherMinCourse(a), getTeacherMinCourse(b))
+      || compareText(a.teacherName, b.teacherName)
+      || compareText(a.teacherId, b.teacherId)
+  ));
+
+  return groups.map((teacherGroup) => {
+    const rooms = Array.from(teacherGroup.rooms.values()).sort((a, b) => (
+      compareText(getRoomMinCourse(a), getRoomMinCourse(b)) || compareText(a.roomName, b.roomName)
+    ));
+    rooms.forEach((room) => room.courses.sort(compareText));
+    const teacherRowspan = rooms.reduce((sum, room) => sum + Math.max(1, room.courses.length), 0);
+    const teacherName = escapeHtml(teacherGroup.teacherName) || '-';
+    const teacherId = escapeHtml(teacherGroup.teacherId) || '-';
+    const action = teacherGroup.teacherId
+      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherGroup.teacherId)}">切换至此账号</button>`
       : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至此账号</button>';
-    return `<tr><td>${escapeHtml(xkhSuffix)}</td><td>${teacherName}</td><td>${teacherId}</td><td>${roomName}</td><td>${action}</td></tr>`;
+    let teacherCellsRendered = false;
+
+    return rooms.map((room) => {
+      const courses = room.courses.length ? room.courses : [''];
+      const roomName = escapeHtml(room.roomName) || '-';
+      return courses.map((xkhId, courseIndex) => {
+        const xkhSuffix = xkhId.length >= 10 ? xkhId.slice(-10) : (xkhId || '-');
+        const teacherCells = !teacherCellsRendered
+          ? `<td rowspan="${teacherRowspan}">${teacherName}</td><td rowspan="${teacherRowspan}">${teacherId}</td><td rowspan="${teacherRowspan}">${action}</td>`
+          : '';
+        teacherCellsRendered = true;
+        const roomCell = courseIndex === 0
+          ? `<td rowspan="${courses.length}">${roomName}</td>`
+          : '';
+        return `<tr>${teacherCells}${roomCell}<td>${escapeHtml(xkhSuffix)}</td></tr>`;
+      }).join('');
+    }).join('');
   }).join('');
 }
 
@@ -667,7 +726,7 @@ function updateVeCourseTeachersPopUi(courseId) {
         const tbody = renderVeCourseTeacherRowsHtml(rows);
         tableWrap.innerHTML = `
           <table class="ve-course-teacher-table">
-            <thead><tr><th>课程号</th><th>教师姓名</th><th>工号</th><th>教室</th><th>操作</th></tr></thead>
+            <thead><tr><th>教师姓名</th><th>工号</th><th>操作</th><th>教室</th><th>课程号</th></tr></thead>
             <tbody>${tbody}</tbody>
           </table>
         `;
