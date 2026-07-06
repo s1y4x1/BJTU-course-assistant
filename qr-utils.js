@@ -1,4 +1,4 @@
-// Shared QR utilities used by both app.js (MRJZY login, resource upload) and course-qr.js (header QR tooltip)
+// Shared QR utilities for login, resource, and download links.
 
 const QR_MIN_DISPLAY_SIZE = 90;
 const QR_MIN_MODULE_SIZE = 2;

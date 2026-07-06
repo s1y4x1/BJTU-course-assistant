@@ -120,7 +120,6 @@ async function syncAccountInfoAndReloadVeCourses({
 
   const reloadPromises = [syncJsessionidToUi().catch(() => {})];
   if (reloadCourses && isPlatformEnabled('ve')) {
-    window.__headerQrUrl = '';
     reloadPromises.push(loadCourses().catch(() => {}));
   }
   if (reloadResourceSpace) {

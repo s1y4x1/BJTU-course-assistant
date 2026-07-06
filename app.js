@@ -688,7 +688,6 @@ function togglePlatformSelection(platform, options = {}) {
   clearPlatformData(platform);
   rerenderAllHomeworkAreas();
   triggerExternalPlatformLoad(platform, true);
-  window.__headerQrUrl = '';
 }
 
 function applyPlatformEnabledSettingFromStorage(raw) {
@@ -709,8 +708,6 @@ function setupOptionsStorageLiveSync() {
 
     if (changes.platformEnabled) {
       applyPlatformEnabledSettingFromStorage(changes.platformEnabled.newValue);
-      window.__headerQrUrl = '';
-      window.__sectionQrCache = {};
     }
     if (changes.platformVisible) {
       window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
@@ -1828,7 +1825,6 @@ if (xqSelect instanceof HTMLSelectElement) {
     }
     adjustXqSelectWidth();
     if (isPlatformEnabled('ve')) {
-      window.__headerQrUrl = '';
       try {
         await loadCourses();
       } catch {
