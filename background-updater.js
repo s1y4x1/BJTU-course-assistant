@@ -3,6 +3,8 @@
 
   const ENABLED_KEY = 'backgroundAutoUpdateEnabled';
   const INSTALL_OPTIONAL_KEY = 'backgroundAutoInstallOptionalEnabled';
+  const INTERVAL_KEY = 'backgroundAutoUpdateIntervalMinutes';
+  const DEFAULT_INTERVAL_MINUTES = 30;
   const STATUS_KEY = 'backgroundAutoUpdateStatus';
   const DETECTED_NOTIFICATION_VERSION_KEY = 'backgroundUpdateDetectedNotifiedVersion';
   const ISSUE_NOTIFICATIONS_KEY = 'backgroundUpdateIssueNotifications';
@@ -22,6 +24,13 @@
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   let runningPromise = null;
+
+  function normalizeIntervalMinutes(value) {
+    const minutes = Math.round(Number(value));
+    return Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600
+      ? minutes
+      : DEFAULT_INTERVAL_MINUTES;
+  }
 
   function normalizeVersion(value) {
     return String(value || '').trim().replace(/^v/i, '').split(/[+-]/, 1)[0];
@@ -493,9 +502,12 @@
   }
 
   async function ensureAlarm() {
+    const stored = await chrome.storage.local.get([INTERVAL_KEY]).catch(() => ({}));
+    const interval = normalizeIntervalMinutes(stored?.[INTERVAL_KEY]);
     const existing = await chrome.alarms.get(ALARM_NAME).catch(() => null);
-    if (existing && Number(existing.periodInMinutes || 0) === 30) return existing;
-    chrome.alarms.create(ALARM_NAME, { delayInMinutes: 2, periodInMinutes: 30 });
+    if (existing && Number(existing.periodInMinutes || 0) === interval) return existing;
+    if (existing) await chrome.alarms.clear(ALARM_NAME).catch(() => false);
+    chrome.alarms.create(ALARM_NAME, { delayInMinutes: interval, periodInMinutes: interval });
     return chrome.alarms.get(ALARM_NAME).catch(() => null);
   }
 
@@ -509,7 +521,7 @@
     ensureAlarm().then(() => runBackgroundUpdate({ suppressRecentReloadRetry: true })).catch(() => {});
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INSTALL_OPTIONAL_KEY])) return;
+    if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INSTALL_OPTIONAL_KEY] && !changes[INTERVAL_KEY])) return;
     void ensureAlarm();
     if (changes[ENABLED_KEY]?.newValue === true || changes[INSTALL_OPTIONAL_KEY]?.newValue === true) {
       runBackgroundUpdate().catch(() => {});

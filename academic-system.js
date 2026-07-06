@@ -10,6 +10,8 @@
   const OBSOLETE_BINDING_KEYS = ['academicSystemBindings', 'academicSystemBindToastShown'];
   const STUDENT_ID_KEY = 'academicSystemStudentId';
   const MONITOR_KEY = 'academicScoreMonitorEnabled';
+  const MONITOR_INTERVAL_KEY = 'academicScoreMonitorIntervalMinutes';
+  const DEFAULT_MONITOR_INTERVAL_MINUTES = 1;
   const SNAPSHOTS_KEY = 'academicScoreSnapshots';
   const PENDING_NOTIFICATIONS_KEY = 'academicScorePendingNotifications';
   const STATUS_KEY = 'academicScoreMonitorStatus';
@@ -553,8 +555,21 @@
     }
   }
 
-  function ensureAlarm() {
-    chrome.alarms.create(ALARM_NAME, { delayInMinutes: 1, periodInMinutes: 1 });
+  function normalizeMonitorIntervalMinutes(value) {
+    const minutes = Math.round(Number(value));
+    return Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600
+      ? minutes
+      : DEFAULT_MONITOR_INTERVAL_MINUTES;
+  }
+
+  async function ensureAlarm() {
+    const stored = await chrome.storage.local.get([MONITOR_INTERVAL_KEY]).catch(() => ({}));
+    const interval = normalizeMonitorIntervalMinutes(stored?.[MONITOR_INTERVAL_KEY]);
+    const existing = await chrome.alarms.get(ALARM_NAME).catch(() => null);
+    if (existing && Number(existing.periodInMinutes || 0) === interval) return existing;
+    if (existing) await chrome.alarms.clear(ALARM_NAME).catch(() => false);
+    chrome.alarms.create(ALARM_NAME, { delayInMinutes: interval, periodInMinutes: interval });
+    return chrome.alarms.get(ALARM_NAME).catch(() => null);
   }
 
   async function focusScorePage() {
@@ -641,7 +656,7 @@
       }
       if (message?.type === 'ACADEMIC_GET_CONTEXT') {
         (async () => {
-          const stored = await chrome.storage.local.get([STUDENT_ID_KEY, MONITOR_KEY, STATUS_KEY, 'username']);
+          const stored = await chrome.storage.local.get([STUDENT_ID_KEY, MONITOR_KEY, MONITOR_INTERVAL_KEY, STATUS_KEY, 'username']);
           const accounts = await getAcademicAccounts();
           const studentId = String(stored?.[STUDENT_ID_KEY] || stored?.username || '').trim();
           const summaries = Object.values(accounts)
@@ -657,6 +672,7 @@
             ok: true, studentId,
             accounts: summaries,
             monitorEnabled: stored?.[MONITOR_KEY] === true,
+            monitorIntervalMinutes: normalizeMonitorIntervalMinutes(stored?.[MONITOR_INTERVAL_KEY]),
             monitorStatus: stored?.[STATUS_KEY] || null
           });
         })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
@@ -736,21 +752,21 @@
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm?.name === ALARM_NAME) scheduleScoreCheck();
     });
-    chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); scheduleScoreCheck(); });
-    chrome.runtime.onStartup.addListener(() => { ensureAlarm(); scheduleScoreCheck(); });
+    chrome.runtime.onInstalled.addListener(() => { void ensureAlarm(); scheduleScoreCheck(); });
+    chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); scheduleScoreCheck(); });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes[MONITOR_KEY]) {
-        ensureAlarm();
-        if (changes[MONITOR_KEY].newValue === true) scheduleScoreCheck();
-        else chrome.storage.local.remove([PENDING_NOTIFICATIONS_KEY]).catch(() => {});
-      }
+      if (area !== 'local' || (!changes[MONITOR_KEY] && !changes[MONITOR_INTERVAL_KEY])) return;
+      void ensureAlarm();
+      if (!changes[MONITOR_KEY]) return;
+      if (changes[MONITOR_KEY].newValue === true) scheduleScoreCheck();
+      else chrome.storage.local.remove([PENDING_NOTIFICATIONS_KEY]).catch(() => {});
     });
     chrome.notifications.onClicked.addListener((notificationId) => {
       if (!String(notificationId || '').startsWith(NOTIFICATION_PREFIX)) return;
       focusScorePage().catch(() => {});
       chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
     });
-    ensureAlarm();
+    void ensureAlarm();
     cleanupObsoleteBindingData().catch(() => {});
   }
 

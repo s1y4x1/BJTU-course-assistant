@@ -39,6 +39,36 @@ const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 const DEFAULT_THEME_MODE = 'system';
 const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = true;
 const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
+const DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES = 1;
+const DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES = 30;
+const MAX_SCHEDULE_INTERVAL_MINUTES = 525600;
+
+function normalizeScheduleIntervalMinutes(value, fallback) {
+  const minutes = Math.round(Number(value));
+  return Number.isFinite(minutes) && minutes >= 1 && minutes <= MAX_SCHEDULE_INTERVAL_MINUTES
+    ? minutes
+    : fallback;
+}
+
+function setScheduleIntervalEditor(prefix, minutes, fallback) {
+  const normalized = normalizeScheduleIntervalMinutes(minutes, fallback);
+  const valueInput = document.getElementById(`${prefix}Value`);
+  const unitSelect = document.getElementById(`${prefix}Unit`);
+  if (!(valueInput instanceof HTMLInputElement) || !(unitSelect instanceof HTMLSelectElement)) return;
+  const unit = normalized % 1440 === 0 ? 1440 : (normalized % 60 === 0 ? 60 : 1);
+  valueInput.value = String(normalized / unit);
+  unitSelect.value = String(unit);
+}
+
+function readScheduleIntervalEditor(prefix) {
+  const value = Number(document.getElementById(`${prefix}Value`)?.value || 0);
+  const unit = Number(document.getElementById(`${prefix}Unit`)?.value || 1);
+  const minutes = Math.round(value * unit);
+  return Number.isFinite(value) && Number.isFinite(unit) && value >= 1
+    && minutes >= 1 && minutes <= MAX_SCHEDULE_INTERVAL_MINUTES
+    ? minutes
+    : NaN;
+}
 
 function normalizeHomeworkReminderMinutes(value) {
   const source = Array.isArray(value) ? value : DEFAULT_HOMEWORK_REMINDER_MINUTES;
@@ -124,8 +154,8 @@ function goBackToApp() {
 }
 
 (async function init() {
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -191,6 +221,8 @@ function goBackToApp() {
     ? DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED
     : backgroundAutoUpdateEnabled === true;
   document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
+  setScheduleIntervalEditor('academicScoreMonitorInterval', academicScoreMonitorIntervalMinutes, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
+  setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
   updateThemeModeUi(themeMode);
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let academicContext = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
@@ -235,9 +267,19 @@ function goBackToApp() {
   const updateBackgroundAutoInstallOptionalDisabled = () => {
     const parentEnabled = !!document.getElementById('backgroundAutoUpdateEnabled')?.checked;
     const child = document.getElementById('backgroundAutoInstallOptionalEnabled');
-    if (!(child instanceof HTMLInputElement)) return;
-    child.disabled = !parentEnabled;
-    child.closest('label')?.classList.toggle('is-disabled', !parentEnabled);
+    if (child instanceof HTMLInputElement) {
+      child.disabled = !parentEnabled;
+      child.closest('label')?.classList.toggle('is-disabled', !parentEnabled);
+    }
+    const editor = document.getElementById('backgroundAutoUpdateIntervalEditor');
+    editor?.classList.toggle('is-disabled', !parentEnabled);
+    editor?.querySelectorAll('input,select').forEach((control) => { control.disabled = !parentEnabled; });
+  };
+  const updateAcademicMonitorIntervalDisabled = () => {
+    const enabled = academicMonitorInput instanceof HTMLInputElement && academicMonitorInput.checked;
+    const editor = document.getElementById('academicScoreMonitorIntervalEditor');
+    editor?.classList.toggle('is-disabled', !enabled);
+    editor?.querySelectorAll('input,select').forEach((control) => { control.disabled = !enabled; });
   };
   updateBackgroundAutoInstallOptionalDisabled();
 
@@ -321,6 +363,7 @@ function goBackToApp() {
       academicStudentIdInput.value = String(academicContext?.studentId || '').trim();
     }
     if (academicMonitorInput instanceof HTMLInputElement) academicMonitorInput.checked = academicContext?.monitorEnabled === true;
+    updateAcademicMonitorIntervalDisabled();
     renderAcademicAccounts(academicContext);
     renderAcademicMonitorStatus(academicContext?.monitorStatus);
     return academicContext;
@@ -356,6 +399,7 @@ function goBackToApp() {
 
   if (academicStudentIdInput instanceof HTMLInputElement) academicStudentIdInput.value = String(academicContext?.studentId || '').trim();
   if (academicMonitorInput instanceof HTMLInputElement) academicMonitorInput.checked = academicContext?.monitorEnabled === true;
+  updateAcademicMonitorIntervalDisabled();
   renderAcademicAccounts(academicContext);
   renderAcademicMonitorStatus(academicContext?.monitorStatus);
 
@@ -554,6 +598,10 @@ function goBackToApp() {
       }
       if (changes.academicScoreMonitorEnabled) {
         applyBooleanUi('academicScoreMonitorEnabled', changes.academicScoreMonitorEnabled.newValue, false);
+        updateAcademicMonitorIntervalDisabled();
+      }
+      if (changes.academicScoreMonitorIntervalMinutes) {
+        setScheduleIntervalEditor('academicScoreMonitorInterval', changes.academicScoreMonitorIntervalMinutes.newValue, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
       }
       if (changes.academicSystemStudentId && academicStudentIdInput instanceof HTMLInputElement) {
         academicStudentIdInput.value = String(changes.academicSystemStudentId.newValue || '').trim();
@@ -569,6 +617,9 @@ function goBackToApp() {
       }
       if (changes.backgroundAutoInstallOptionalEnabled) {
         applyBooleanUi('backgroundAutoInstallOptionalEnabled', changes.backgroundAutoInstallOptionalEnabled.newValue, DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED);
+      }
+      if (changes.backgroundAutoUpdateIntervalMinutes) {
+        setScheduleIntervalEditor('backgroundAutoUpdateInterval', changes.backgroundAutoUpdateIntervalMinutes.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
       }
       if (changes.backgroundAutoUpdateStatus) renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus.newValue);
     });
@@ -732,6 +783,7 @@ function goBackToApp() {
   });
   academicMonitorInput?.addEventListener('change', async () => {
     await chrome.storage.local.set({ academicScoreMonitorEnabled: !!academicMonitorInput.checked });
+    updateAcademicMonitorIntervalDisabled();
     setMsg(academicMonitorInput.checked ? '已启用本学期成绩监控' : '已关闭本学期成绩监控');
   });
   document.getElementById('backgroundAutoUpdateEnabled')?.addEventListener('change', async (event) => {
@@ -746,6 +798,24 @@ function goBackToApp() {
     await chrome.storage.local.set({ backgroundAutoInstallOptionalEnabled: enabled });
     setMsg(enabled ? '已启用非强制更新自动安装' : '已关闭非强制更新自动安装');
   });
+  const bindScheduleIntervalSetting = (prefix, key, fallback, label) => {
+    const save = async () => {
+      const minutes = readScheduleIntervalEditor(prefix);
+      if (!Number.isFinite(minutes)) {
+        setMsg(`${label}必须在 1 分钟到 365 天之间`, false);
+        const stored = await chrome.storage.local.get([key]);
+        setScheduleIntervalEditor(prefix, stored?.[key], fallback);
+        return;
+      }
+      await chrome.storage.local.set({ [key]: minutes });
+      setScheduleIntervalEditor(prefix, minutes, fallback);
+      setMsg(`已将${label}设为 ${minutes} 分钟`);
+    };
+    document.getElementById(`${prefix}Value`)?.addEventListener('change', save);
+    document.getElementById(`${prefix}Unit`)?.addEventListener('change', save);
+  };
+  bindScheduleIntervalSetting('academicScoreMonitorInterval', 'academicScoreMonitorIntervalMinutes', DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES, '成绩检查间隔');
+  bindScheduleIntervalSetting('backgroundAutoUpdateInterval', 'backgroundAutoUpdateIntervalMinutes', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, '更新检查间隔');
   document.getElementById('addHomeworkReminderNode').addEventListener('click', async () => {
     const value = Number(document.getElementById('homeworkReminderValue').value || 0);
     const unit = Number(document.getElementById('homeworkReminderUnit').value || 1);
@@ -965,8 +1035,10 @@ function goBackToApp() {
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
       academicScoreMonitorEnabled: false,
+      academicScoreMonitorIntervalMinutes: DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
+      backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
       themeMode: DEFAULT_THEME_MODE
     });
     await chrome.storage.sync.remove(['platformEnabled']);
@@ -986,6 +1058,9 @@ function goBackToApp() {
     document.getElementById('academicScoreMonitorEnabled').checked = false;
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;
+    setScheduleIntervalEditor('academicScoreMonitorInterval', DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
+    setScheduleIntervalEditor('backgroundAutoUpdateInterval', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
+    updateAcademicMonitorIntervalDisabled();
     updateBackgroundAutoInstallOptionalDisabled();
     renderBackgroundAutoUpdateStatus(null);
     updateThemeModeUi(DEFAULT_THEME_MODE);

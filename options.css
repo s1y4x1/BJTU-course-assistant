@@ -60,6 +60,8 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .reminder-editor { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; margin-top:8px; }
 .reminder-editor input, .reminder-editor select { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .reminder-editor button { margin:0; height:34px; }
+.schedule-interval-editor { display:grid; grid-template-columns:auto minmax(72px,1fr) auto; gap:8px; align-items:center; margin:8px 0; padding-left:22px; }
+.schedule-interval-editor input, .schedule-interval-editor select { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .reminder-node-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
 .reminder-node { display:inline-flex; align-items:center; gap:6px; padding:4px 5px 4px 9px; border:1px solid #bfdbfe; border-radius:6px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
 .reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; line-height:22px; }

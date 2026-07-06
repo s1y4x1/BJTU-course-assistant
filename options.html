@@ -138,12 +138,21 @@
       <input type="checkbox" id="backgroundAutoUpdateEnabled" style="width:auto;" />
       后台自动检查并安装更新
     </label>
+    <div id="backgroundAutoUpdateIntervalEditor" class="schedule-interval-editor">
+      <span>检查间隔</span>
+      <input type="number" id="backgroundAutoUpdateIntervalValue" min="1" step="1" value="30" aria-label="后台更新检查间隔" />
+      <select id="backgroundAutoUpdateIntervalUnit" aria-label="后台更新检查间隔单位">
+        <option value="1" selected>分钟</option>
+        <option value="60">小时</option>
+        <option value="1440">天</option>
+      </select>
+    </div>
     <label style="display:flex; align-items:center; gap:8px; margin:6px 0 0; padding-left:22px;">
       <input type="checkbox" id="backgroundAutoInstallOptionalEnabled" style="width:auto;" />
       自动安装非强制更新
     </label>
     <div id="backgroundAutoUpdateStatus" class="tip" style="margin-top:8px;">后台自动更新未启用。</div>
-    <div class="tip" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。启用后每 30 分钟检查，更新完成后会按更新源要求自动重新加载扩展。</div>
+    <div class="tip" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
   </div>
   <div id="academic-system-section" style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
     <div class="section-title">教务系统</div>
@@ -164,6 +173,15 @@
       <input type="checkbox" id="academicScoreMonitorEnabled" style="width:auto;" />
       监控本学期成绩并通知
     </label>
+    <div id="academicScoreMonitorIntervalEditor" class="schedule-interval-editor">
+      <span>检查间隔</span>
+      <input type="number" id="academicScoreMonitorIntervalValue" min="1" step="1" value="1" aria-label="成绩检查间隔" />
+      <select id="academicScoreMonitorIntervalUnit" aria-label="成绩检查间隔单位">
+        <option value="1" selected>分钟</option>
+        <option value="60">小时</option>
+        <option value="1440">天</option>
+      </select>
+    </div>
     <div id="academicSystemStatus" class="tip">正在检查教务系统登录状态并读取成绩…</div>
     <div class="academic-score-header">
       <strong>本学期成绩</strong>
