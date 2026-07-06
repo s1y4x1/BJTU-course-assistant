@@ -598,7 +598,7 @@ function renderVersionDownloadBodyHtml(bodyText) {
   let html = safe.replaceAll(escapeHtml(linkLabel), linkHtml);
   const boldLabel = '**重新加载**';
   html = html.replaceAll(escapeHtml(boldLabel), '<b>重新加载</b>');
-  return html;
+  return html.replace(/\r?\n/g, '<br>');
 }
 
 function setVersionDownloadProgressUi({
@@ -849,6 +849,50 @@ function formatDownloadBytes(value) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+async function readShortPlainTextResponse(response, maxBytes = 2048) {
+  const contentType = String(response?.headers?.get?.('content-type') || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
+  if (contentType && contentType !== 'text/plain') return '';
+
+  const declaredSize = Number(response?.headers?.get?.('content-length') || 0);
+  if (declaredSize > maxBytes) return '';
+
+  try {
+    if (!response?.body?.getReader) {
+      const text = String(await response.text()).trim();
+      if (new TextEncoder().encode(text).byteLength > maxBytes) return '';
+      return text.includes('\0') ? '' : text;
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      received += value.byteLength;
+      if (received > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return '';
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    });
+    const text = new TextDecoder('utf-8').decode(bytes).trim();
+    return text.includes('\0') ? '' : text;
+  } catch {
+    return '';
+  }
+}
+
 function markVersionUpdateError(error, stage) {
   const normalized = error instanceof Error ? error : new Error(String(error || '未知错误'));
   if (!normalized.updateStage) normalized.updateStage = String(stage || 'unknown');
@@ -865,9 +909,12 @@ function getVersionUpdateFailurePresentation(error) {
     };
   }
   if (stage === 'source') {
+    const responseText = String(error?.sourceResponseText || '').trim();
     return {
       title: '下载更新包失败',
-      body: '下载源返回异常响应，请稍后重试或联系开发者检查下载源。',
+      body: responseText
+        ? `下载源返回异常响应：\n${responseText}`
+        : '下载源返回异常响应，请稍后重试或联系开发者检查下载源。',
       toast: '下载源返回异常响应，请稍后重试'
     };
   }
@@ -1017,7 +1064,11 @@ async function fetchUpdateArchiveWithProgress(url) {
   try {
     const response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: controller.signal });
     clearInterval(connectingTimer);
-    if (!response.ok) throw markVersionUpdateError(new Error(`下载更新压缩包失败（HTTP ${response.status}）`), 'source');
+    if (!response.ok) {
+      const error = new Error(`下载更新压缩包失败（HTTP ${response.status}）`);
+      error.sourceResponseText = await readShortPlainTextResponse(response);
+      throw markVersionUpdateError(error, 'source');
+    }
     const total = Math.max(0, Number(response.headers.get('content-length') || 0));
     setVersionDownloadBar({ visible: true, percent: 0, indeterminate: total <= 0 });
     if (!response.body?.getReader) {
@@ -1087,7 +1138,18 @@ async function clearVersionUpdateDirectory() {
   const names = [];
   try {
     for await (const [name] of root.entries()) names.push(name);
-    await Promise.all(names.map((name) => root.removeEntry(name, { recursive: true })));
+    for (const name of names) {
+      try {
+        await root.removeEntry(name, { recursive: true });
+      } catch (error) {
+        throw new Error(`无法删除更新目录中的“${name}”：${String(error?.message || error)}`);
+      }
+    }
+    const remaining = [];
+    for await (const [name] of root.entries()) remaining.push(name);
+    if (remaining.length) {
+      throw new Error(`更新目录未完全清空，仍有：${remaining.join('、')}`);
+    }
   } catch (error) {
     throw markVersionUpdateError(error, 'directory');
   }
@@ -1177,7 +1239,12 @@ async function downloadVersionByUrlWithProgress(url) {
   if (!versionUpdateDirectoryHandle) throw new Error('尚未授权更新目录');
 
   const archiveBytes = await fetchUpdateArchiveWithProgress(finalUrl);
-  const updateRule = versionDownloadFullExtraction ? null : versionButtonLatestUpdate;
+  const resetDirectory = Array.isArray(versionButtonLatestUpdate)
+    && versionButtonLatestUpdate.length === 1
+    && versionButtonLatestUpdate[0] === true;
+  const updateRule = versionDownloadFullExtraction
+    ? (resetDirectory ? [true] : null)
+    : versionButtonLatestUpdate;
   const fileCount = await extractUpdateArchiveToDirectory(archiveBytes, updateRule);
   const reloadRequired = versionButtonLatestReload;
   const forcedUpdate = versionButtonLatestForce;

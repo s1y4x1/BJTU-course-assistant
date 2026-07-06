@@ -326,7 +326,18 @@
   async function clearDirectory(root) {
     const names = [];
     for await (const [name] of root.entries()) names.push(name);
-    await Promise.all(names.map((name) => root.removeEntry(name, { recursive: true })));
+    for (const name of names) {
+      try {
+        await root.removeEntry(name, { recursive: true });
+      } catch (error) {
+        throw new Error(`无法删除更新目录中的“${name}”：${String(error?.message || error)}`);
+      }
+    }
+    const remaining = [];
+    for await (const [name] of root.entries()) remaining.push(name);
+    if (remaining.length) {
+      throw new Error(`更新目录未完全清空，仍有：${remaining.join('、')}`);
+    }
   }
 
   async function writeFile(root, path, bytes) {
