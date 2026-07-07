@@ -175,6 +175,12 @@ html[data-color-scheme="dark"] .version-download-release-notes-body a {
   color: #93c5fd !important;
 }
 
+html[data-color-scheme="dark"] .version-markdown-blockquote {
+  border-left-color: #60a5fa;
+  background: #1e293b;
+  color: #dbeafe !important;
+}
+
 html[data-color-scheme="dark"] .version-notice-footer {
   background: #111827;
   border-color: #334155;

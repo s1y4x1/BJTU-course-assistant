@@ -269,7 +269,14 @@ function renderMarkdownBasic(markdownText) {
   const lines = src.split('\n');
   const out = [];
   const listStack = [];
+  let blockquoteOpen = false;
   const listUlStyle = 'margin:0 0 6px 18px; padding:0; color:#334155; line-height:1.6;';
+
+  const closeBlockquote = () => {
+    if (!blockquoteOpen) return;
+    out.push('</blockquote>');
+    blockquoteOpen = false;
+  };
 
   const closeAllLists = () => {
     while (listStack.length > 0) {
@@ -298,9 +305,25 @@ function renderMarkdownBasic(markdownText) {
     const trimmed = raw.trim();
     if (!trimmed) {
       closeAllLists();
+      closeBlockquote();
       out.push('<div style="height:6px;"></div>');
       return;
     }
+
+    const quote = raw.match(/^\s*>\s?(.*)$/);
+    if (quote) {
+      closeAllLists();
+      if (!blockquoteOpen) {
+        out.push('<blockquote class="version-markdown-blockquote">');
+        blockquoteOpen = true;
+      }
+      const content = String(quote[1] || '').trim();
+      out.push(content
+        ? `<div class="version-markdown-blockquote-line">${parseInlineMarkdown(content)}</div>`
+        : '<div class="version-markdown-blockquote-gap"></div>');
+      return;
+    }
+    closeBlockquote();
 
     const releaseHeader = trimmed.match(/^@@release\|([^|]+)\|(.*)$/);
     if (releaseHeader) {
@@ -359,6 +382,7 @@ function renderMarkdownBasic(markdownText) {
   });
 
   closeAllLists();
+  closeBlockquote();
   return out.join('');
 }
 

@@ -1074,6 +1074,20 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             border-top: 1px solid #e2e8f0;
             min-height: 0;
         }
+        .version-markdown-blockquote {
+            margin: 6px 0 10px;
+            padding: 7px 10px;
+            border-left: 3px solid #60a5fa;
+            background: #f1f5f9;
+            color: #475569;
+            line-height: 1.6;
+        }
+        .version-markdown-blockquote-line + .version-markdown-blockquote-line {
+            margin-top: 3px;
+        }
+        .version-markdown-blockquote-gap {
+            height: 5px;
+        }
         .version-download-release-notes-title {
             margin-bottom: 5px;
             color: #0f172a;
