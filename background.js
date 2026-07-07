@@ -331,7 +331,8 @@ function normalizePortalLoginAccountHistory(rawList) {
   const list = Array.isArray(rawList) ? rawList : [];
   return list
     .map((it) => {
-      const loginName = String(it?.loginName || it?.userId || '').trim();
+      const storedLoginName = String(it?.loginName || it?.userId || '').trim();
+      const loginName = storedLoginName.toLowerCase() === 'admin' ? 'JyDadmin' : storedLoginName;
       if (!loginName) return null;
       const lastLoginAt = Number(it?.lastLoginAt || 0);
       return {
@@ -341,7 +342,10 @@ function normalizePortalLoginAccountHistory(rawList) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => Number(b.lastLoginAt || 0) - Number(a.lastLoginAt || 0));
+    .sort((a, b) => Number(b.lastLoginAt || 0) - Number(a.lastLoginAt || 0))
+    .filter((item, index, rows) => rows.findIndex((candidate) => (
+      candidate.loginName.toLowerCase() === item.loginName.toLowerCase()
+    )) === index);
 }
 
 function serializePortalLoginAccountHistory(rawList) {

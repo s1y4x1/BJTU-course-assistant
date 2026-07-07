@@ -12,21 +12,44 @@
   const ACCOUNT_FILE_VERSION = 1;
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_NAME = 'JyDadmin';
+  const ADMIN_USER_NAME = 'admin';
   const ADMIN_QUICK_USERNAME = 'RjREQkM5NTRDMTJBMzU1QkZCNzFDMEM5RjYwNzg4RDg=';
   const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
-  const QUICK_USERNAME_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=570820F5E1FC92605C7CB3FB9872D88E&jrName=';
+  const QUICK_USERNAME_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=570820F5E1FC9260A1B9D87499FD2190A6A1E9E008548F93&jrName=';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
   const QUICK_USERNAME_CONCURRENCY = 5;
   const accountCache = new Map();
   const gbkEncodeCache = new Map();
   const currentAccountImportPromises = new Map();
   let initializationPromise = null;
+  let adminAccountNormalizationPromise = null;
 
   function isAdminLoginName(value) {
     return String(value || '').trim().toLowerCase() === ADMIN_LOGIN_NAME.toLowerCase();
+  }
+
+  function normalizeAdminAccountEntries(accounts) {
+    if (!accounts || typeof accounts !== 'object') return accounts;
+    Object.keys(accounts).forEach((key) => {
+      const normalized = String(key || '').trim().toLowerCase();
+      if (normalized === 'admin') {
+        delete accounts[key];
+        return;
+      }
+      if (normalized !== ADMIN_LOGIN_NAME.toLowerCase()) return;
+      const record = accounts[key] || {};
+      if (key !== ADMIN_LOGIN_NAME) delete accounts[key];
+      accounts[ADMIN_LOGIN_NAME] = {
+        ...record,
+        loginName: ADMIN_LOGIN_NAME,
+        userName: ADMIN_USER_NAME,
+        quickUsername: ADMIN_QUICK_USERNAME
+      };
+    });
+    return accounts;
   }
 
   function decodeJsStringLiteral(value) {
@@ -201,16 +224,27 @@
   }
 
   async function ensureAdminQuickAccountStored() {
-    const current = await global.BjtuAccountStore.get(ADMIN_LOGIN_NAME);
-    const record = await global.BjtuAccountStore.put({
-      loginName: ADMIN_LOGIN_NAME,
-      roleName: String(current?.roleName || '超级管理员'),
-      userName: String(current?.userName || ADMIN_LOGIN_NAME),
-      password: String(current?.password || ''),
-      quickUsername: ADMIN_QUICK_USERNAME
+    if (adminAccountNormalizationPromise) return adminAccountNormalizationPromise;
+    adminAccountNormalizationPromise = (async () => {
+      if (typeof global.BjtuAccountStore.deleteMany === 'function') {
+        await global.BjtuAccountStore.deleteMany(['admin']);
+      }
+      accountCache.delete('admin');
+      const current = await global.BjtuAccountStore.get(ADMIN_LOGIN_NAME);
+      const record = await global.BjtuAccountStore.put({
+        loginName: ADMIN_LOGIN_NAME,
+        roleName: String(current?.roleName || '超级管理员'),
+        userName: ADMIN_USER_NAME,
+        password: String(current?.password || ''),
+        quickUsername: ADMIN_QUICK_USERNAME
+      });
+      if (record) accountCache.set(ADMIN_LOGIN_NAME, record);
+      return record;
+    })().catch((error) => {
+      adminAccountNormalizationPromise = null;
+      throw error;
     });
-    if (record) accountCache.set(ADMIN_LOGIN_NAME, record);
-    return record;
+    return adminAccountNormalizationPromise;
   }
 
   async function waitForPostRetry(attempt, signal) {
@@ -326,57 +360,6 @@
     return String(data?.jrName || '').trim();
   }
 
-  function isStaffAccount(userInfo) {
-    const loginName = String(userInfo?.loginName || '').trim().toLowerCase();
-    const roleCode = String(userInfo?.roleCode || '').trim().toLowerCase();
-    const roleName = String(userInfo?.roleName || '').trim();
-    if (isAdminLoginName(loginName)) return true;
-    if (roleCode) return roleCode !== 'xs';
-    return !/学生/.test(roleName) && /教师|老师|助教|管理员|督导|领导/.test(roleName);
-  }
-
-  async function ensureQuickUsernameForLogin(loginName, { currentUser = null, signal, onStatus = null } = {}) {
-    const id = String(loginName || '').trim();
-    if (!id) throw new Error('账号为空');
-    await load();
-
-    let record = await global.BjtuAccountStore.get(id);
-    if (record?.quickUsername) return { loginName: id, ...record };
-    if (isAdminLoginName(id)) {
-      record = await ensureAdminQuickAccountStored();
-      return record ? { loginName: id, ...record } : null;
-    }
-
-    let activeUser = currentUser || await getCurrentUserInfo({ signal });
-    if (!isStaffAccount(activeUser)) {
-      if (typeof onStatus === 'function') onStatus('正在登录管理员账号…');
-      await ensureAdminQuickAccountStored();
-      const adminResult = await loginAdminWithQuickUsername({ signal });
-      if (!adminResult?.ok) {
-        throw new Error(adminResult?.message || '管理员极速登录失败');
-      }
-      activeUser = await getCurrentUserInfo({ signal });
-      if (!isAdminLoginName(activeUser?.loginName)) {
-        throw new Error('管理员登录状态校验失败');
-      }
-    }
-
-    if (typeof onStatus === 'function') onStatus('正在获取极速登录名…');
-    const quickUsername = await fetchQuickUsername(id, { signal });
-    if (!quickUsername) throw new Error('未获取到极速登录名');
-
-    record = await global.BjtuAccountStore.put({
-      loginName: id,
-      userName: String(record?.userName || '').trim(),
-      roleName: String(record?.roleName || '').trim(),
-      password: String(record?.password || '').trim(),
-      quickUsername
-    });
-    if (record) accountCache.set(id, record);
-    await chrome.storage.local.set({ [ACCOUNT_LIST_REVISION_KEY]: Date.now() });
-    return record ? { loginName: id, ...record } : null;
-  }
-
   async function enrichQuickUsernames(accounts, roleState, updateProgress, existingQuickLoginNames = new Set()) {
     const rows = Object.values(accounts || {}).filter((account) => {
       const loginName = String(account?.loginName || '').trim();
@@ -388,25 +371,23 @@
     roleState.currentPrefixes = [];
     updateProgress();
     let cursor = 0;
-    const activeLogins = new Set();
+    const completedSinceProgress = [];
     const worker = async () => {
       while (true) {
         const index = cursor;
         cursor += 1;
         if (index >= rows.length) return;
         const account = rows[index];
-        activeLogins.add(account.loginName);
-        roleState.currentPrefixes = [...activeLogins];
         try {
           const quickUsername = await fetchQuickUsername(account.loginName);
           if (quickUsername) account.quickUsername = quickUsername;
         } catch {
           // A missing quick username must not discard the account or abort initialization.
         } finally {
-          activeLogins.delete(account.loginName);
           roleState.quickProcessed += 1;
-          roleState.currentPrefixes = [...activeLogins];
+          completedSinceProgress.push(account.loginName);
           if (roleState.quickProcessed % 10 === 0 || roleState.quickProcessed === rows.length) {
+            roleState.currentPrefixes = completedSinceProgress.splice(0);
             updateProgress();
           }
         }
@@ -563,6 +544,7 @@
 
   async function load() {
     await global.BjtuAccountStore.migrateLegacy();
+    await ensureAdminQuickAccountStored();
     return global.BjtuAccountStore.count();
   }
 
@@ -707,7 +689,7 @@
         quickUsername: String(value.quickUsername || '').trim()
       };
     });
-    return accounts;
+    return normalizeAdminAccountEntries(accounts);
   }
 
   async function importAccountFile(source, { showProgress = false } = {}) {
@@ -721,6 +703,7 @@
     const { bindings: localBindings, existingAccounts } = await readLocalAccountState();
     preserveLocalBindings(accounts, localBindings);
     if (accounts[ADMIN_LOGIN_NAME]) {
+      accounts[ADMIN_LOGIN_NAME].userName = ADMIN_USER_NAME;
       accounts[ADMIN_LOGIN_NAME].quickUsername = ADMIN_QUICK_USERNAME;
     }
     const changedAccounts = selectChangedAccounts(accounts, existingAccounts);
@@ -897,16 +880,22 @@
     });
   }
 
-  async function syncHistoryWithAccountList(next) {
+  async function syncHistoryWithAccountList() {
     const stored = await chrome.storage.local.get([HISTORY_KEY]);
     const history = Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [];
     const updated = history.map((record) => {
-      const loginName = String(record?.loginName || record?.userId || '').trim();
+      const rawLoginName = String(record?.loginName || record?.userId || '').trim();
+      const loginName = rawLoginName.toLowerCase() === 'admin' ? ADMIN_LOGIN_NAME : rawLoginName;
       return {
         loginName,
         lastLoginAt: Number(record?.lastLoginAt || 0) || 0
       };
-    }).filter((record) => record.loginName);
+    })
+      .filter((record) => record.loginName)
+      .sort((a, b) => b.lastLoginAt - a.lastLoginAt)
+      .filter((record, index, records) => records.findIndex((candidate) => (
+        candidate.loginName.toLowerCase() === record.loginName.toLowerCase()
+      )) === index);
     await chrome.storage.local.set({ [HISTORY_KEY]: updated });
   }
 
@@ -1081,6 +1070,7 @@
         };
 
         const writeRole = (type, accounts) => {
+          normalizeAdminAccountEntries(accounts);
           preserveLocalBindings(accounts, localBindings, { preferExisting: true });
           const changedAccounts = selectChangedAccounts(accounts, existingAccounts);
           const total = Object.keys(changedAccounts).length;
@@ -1357,7 +1347,6 @@
     getAccount,
     updateQuickUsername,
     updatePassword,
-    ensureQuickUsernameForLogin,
     importAccountFile,
     exportAccountFile,
     loginWithPassword,
