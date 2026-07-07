@@ -6,13 +6,34 @@
   const INTERVAL_KEY = 'homeworkBackgroundRefreshIntervalMinutes';
   const NEW_HOMEWORK_NOTIFY_KEY = 'homeworkNewAssignmentNotificationEnabled';
   const STATUS_KEY = 'homeworkBackgroundRefreshStatus';
-  const RUN_STATE_KEY = 'homeworkBackgroundRefreshRunState';
   const KNOWN_ASSIGNMENTS_KEY = 'homeworkBackgroundKnownAssignments';
+  const CACHE_KEY = 'popupFullscreenCourseCache';
+  const SNAPSHOT_KEY = 'homeworkReminderSnapshot';
+  const XQ_CODE_KEY = 'selectedXqCode';
   const ALARM_NAME = 'bjtu-homework-background-refresh';
-  const TIMEOUT_ALARM_NAME = 'bjtu-homework-background-refresh-timeout';
   const DEFAULT_INTERVAL_MINUTES = 30;
   const APP_URL = chrome.runtime.getURL('app.html');
   const NOTIFICATION_PREFIX = 'bjtu-homework-reminder:new:';
+  let runningPromise = null;
+  let activeRefreshController = null;
+  let foregroundCloseResumeTimer = null;
+
+  async function cleanupLegacyRefreshPage() {
+    const tabs = await chrome.tabs.query({}).catch(() => []);
+    const legacyIds = tabs.filter((tab) => {
+      try {
+        const url = new URL(String(tab?.url || ''));
+        return url.origin === new URL(APP_URL).origin
+          && url.pathname === new URL(APP_URL).pathname
+          && url.searchParams.get('backgroundHomeworkRefresh') === '1';
+      } catch {
+        return false;
+      }
+    }).map((tab) => tab.id).filter(Boolean);
+    if (legacyIds.length) await chrome.tabs.remove(legacyIds).catch(() => {});
+    await chrome.storage.local.remove(['homeworkBackgroundRefreshRunState']).catch(() => {});
+    await chrome.alarms.clear('bjtu-homework-background-refresh-timeout').catch(() => false);
+  }
 
   function normalizeIntervalMinutes(value) {
     const minutes = Math.round(Number(value));
@@ -26,8 +47,7 @@
       const url = new URL(String(value || ''));
       return url.origin === new URL(APP_URL).origin
         && url.pathname === new URL(APP_URL).pathname
-        && url.searchParams.get('popup') !== '1'
-        && url.searchParams.get('backgroundHomeworkRefresh') !== '1';
+        && url.searchParams.get('popup') !== '1';
     } catch {
       return false;
     }
@@ -36,13 +56,6 @@
   async function hasFullscreenAppPage() {
     const tabs = await chrome.tabs.query({}).catch(() => []);
     return tabs.some((tab) => isFullscreenAppUrl(tab?.url));
-  }
-
-  async function closeRunStateTab(state) {
-    const tabId = Number(state?.tabId || 0);
-    if (tabId > 0) await chrome.tabs.remove(tabId).catch(() => {});
-    await chrome.storage.local.remove([RUN_STATE_KEY]).catch(() => {});
-    await chrome.alarms.clear(TIMEOUT_ALARM_NAME).catch(() => false);
   }
 
   async function setStatus(status, extra = {}) {
@@ -56,8 +69,6 @@
     const enabled = stored?.[ENABLED_KEY] === true;
     if (!enabled) {
       await chrome.alarms.clear(ALARM_NAME).catch(() => false);
-      const state = (await chrome.storage.local.get([RUN_STATE_KEY]).catch(() => ({})))?.[RUN_STATE_KEY];
-      if (state) await closeRunStateTab(state);
       return null;
     }
     const interval = normalizeIntervalMinutes(stored?.[INTERVAL_KEY]);
@@ -69,8 +80,10 @@
   }
 
   async function runBackgroundHomeworkRefresh() {
+    if (runningPromise) return runningPromise;
+    runningPromise = (async () => {
     const stored = await chrome.storage.local.get([
-      ENABLED_KEY, ACCOUNT_KEY, RUN_STATE_KEY
+      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, XQ_CODE_KEY
     ]).catch(() => ({}));
     if (stored?.[ENABLED_KEY] !== true) return { skipped: 'disabled' };
     const account = String(stored?.[ACCOUNT_KEY] || '').trim();
@@ -82,31 +95,94 @@
       await setStatus('foreground-open', { account });
       return { skipped: 'foreground-open' };
     }
+    const controller = new AbortController();
+    activeRefreshController = controller;
+    await setStatus('loading', { account });
 
-    const previousState = stored?.[RUN_STATE_KEY];
-    if (previousState) {
-      const previousTab = Number(previousState.tabId || 0) > 0
-        ? await chrome.tabs.get(Number(previousState.tabId)).catch(() => null)
-        : null;
-      if (previousTab && Date.now() - Number(previousState.startedAt || 0) < 10 * 60 * 1000) {
-        return { skipped: 'already-running' };
+    const loginResult = await globalThis.performPortalPageLogin({ loginName: account });
+    controller.signal.throwIfAborted();
+    if (!loginResult?.ok) throw new Error(String(loginResult?.message || '后台登录失败'));
+    const userInfo = loginResult?.userInfo || await globalThis.getPortalCurrentUserInfo();
+    const currentAccount = String(userInfo?.loginName || '').trim();
+    if (currentAccount !== account) throw new Error(`后台登录账号不匹配：${currentAccount || '未登录'}`);
+
+    const core = globalThis.BjtuVeHomeworkCore;
+    if (!core) throw new Error('智慧课程平台后台核心未加载');
+    const terms = await core.fetchTerms({ signal: controller.signal });
+    const xqCode = core.chooseTermCode(terms, stored?.[XQ_CODE_KEY]);
+    if (!xqCode) throw new Error('未获取到当前学期');
+    const courses = await core.fetchCourses(xqCode, { signal: controller.signal });
+    const previousCache = stored?.[CACHE_KEY] && typeof stored[CACHE_KEY] === 'object' ? stored[CACHE_KEY] : {};
+    const previousHomework = previousCache.courseHomeworkData || {};
+    const courseHomeworkData = {};
+    const attachmentCache = {};
+    let cursor = 0;
+    const workerCount = Math.min(6, Math.max(1, courses.length));
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (cursor < courses.length) {
+        const course = courses[cursor++];
+        const courseId = core.getCourseId(course);
+        if (!courseId) continue;
+        const list = await core.fetchCourseHomework(courseId, {
+          previousList: previousHomework?.[courseId]?.list || [],
+          signal: controller.signal
+        });
+        courseHomeworkData[courseId] = { list, showOverdue: false, showDone: false };
+        Object.assign(attachmentCache, await core.fetchHomeworkAttachments(course, list, { signal: controller.signal }));
       }
-      await closeRunStateTab(previousState);
-    }
+    }));
 
-    const token = crypto.randomUUID();
-    const url = new URL(APP_URL);
-    url.searchParams.set('backgroundHomeworkRefresh', '1');
-    url.searchParams.set('account', account);
-    url.searchParams.set('token', token);
-    const tab = await chrome.tabs.create({ url: url.href, active: false });
-    if (!tab?.id) throw new Error('无法创建后台作业刷新页面');
+    const assignments = core.collectPendingAssignments(courses, courseHomeworkData);
+    const reminderItems = core.collectPendingAssignments(courses, courseHomeworkData, { futureOnly: true });
+    const savedAt = Date.now();
+    const isTeacher = /教师|老师|助教/.test(String(userInfo?.roleName || ''));
+    const xqSelectHtml = terms.map((term) => (
+      `<option value="${String(term.xqCode).replace(/[&"<>]/g, '')}"${term.xqCode === xqCode ? ' selected' : ''}>${String(term.xqName || term.xqCode).replace(/[&<>]/g, '')}</option>`
+    )).join('');
+    const cache = {
+      ...previousCache,
+      version: 1,
+      savedAt,
+      backgroundStructuredVe: true,
+      platformEnabled: { ...(previousCache.platformEnabled || {}), ve: true },
+      platformLoginState: { ...(previousCache.platformLoginState || {}), ve: 'online' },
+      platformLoginChecked: { ...(previousCache.platformLoginChecked || {}), ve: true },
+      platformLoadedOnce: { ...(previousCache.platformLoadedOnce || {}), ve: true },
+      platformNeedLogin: { ...(previousCache.platformNeedLogin || {}), ve: false },
+      currentVeCourseList: courses,
+      courseHomeworkData,
+      homeworkNoteAttachmentCacheByKey: attachmentCache,
+      currentAccountLoginName: account,
+      isTeacherAccount: isTeacher,
+      xqSelectHtml,
+      xqSelectValue: xqCode
+    };
+    const snapshot = { version: 1, updatedAt: savedAt, account, items: reminderItems };
     await chrome.storage.local.set({
-      [RUN_STATE_KEY]: { token, tabId: tab.id, account, startedAt: Date.now() }
+      [CACHE_KEY]: cache,
+      [SNAPSHOT_KEY]: snapshot,
+      [XQ_CODE_KEY]: xqCode
     });
-    chrome.alarms.create(TIMEOUT_ALARM_NAME, { delayInMinutes: 5 });
-    await setStatus('loading', { account, tabId: tab.id });
-    return { started: true, tabId: tab.id };
+    await notifyNewHomework({ account, assignments });
+    await setStatus('complete', {
+      account,
+      courseCount: courses.length,
+      homeworkCount: assignments.length
+    });
+    return { updated: true, account, courseCount: courses.length, homeworkCount: assignments.length };
+    })().catch(async (error) => {
+      if (activeRefreshController?.signal?.aborted
+          && activeRefreshController.signal.reason === 'foreground-open') {
+        await setStatus('foreground-open');
+        return { skipped: 'foreground-open' };
+      }
+      await setStatus('error', { error: String(error?.message || error) });
+      throw error;
+    }).finally(() => {
+      activeRefreshController = null;
+      runningPromise = null;
+    });
+    return runningPromise;
   }
 
   function homeworkIdentity(item) {
@@ -157,65 +233,36 @@
     }));
   }
 
-  async function finishRefresh(message, sender) {
-    const stored = await chrome.storage.local.get([RUN_STATE_KEY]).catch(() => ({}));
-    const state = stored?.[RUN_STATE_KEY];
-    const token = String(message?.token || '').trim();
-    if (!state || token !== String(state.token || '') || Number(sender?.tab?.id || 0) !== Number(state.tabId || 0)) return;
-    try {
-      if (message?.ok) {
-        await notifyNewHomework(message);
-        await setStatus('complete', {
-          account: String(message?.account || state.account || ''),
-          courseCount: Number(message?.courseCount || 0),
-          homeworkCount: Array.isArray(message?.assignments) ? message.assignments.length : 0
-        });
-      } else {
-        await setStatus('error', {
-          account: String(state.account || ''),
-          error: String(message?.error || '后台作业刷新失败')
-        });
-      }
-    } finally {
-      await closeRunStateTab(state);
-    }
+  function stopRefreshWhenFullscreenOpens(tab) {
+    if (!activeRefreshController || !isFullscreenAppUrl(tab?.url)) return;
+    activeRefreshController.abort('foreground-open');
   }
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type !== 'BACKGROUND_HOMEWORK_REFRESH_COMPLETE') return false;
-    sendResponse({ ok: true });
-    finishRefresh(message, sender).catch((error) => {
-      setStatus('error', { error: String(error?.message || error) });
-    });
-    return false;
-  });
-
-  async function stopRefreshWhenFullscreenOpens(tab) {
-    if (!isFullscreenAppUrl(tab?.url)) return;
-    const stored = await chrome.storage.local.get([RUN_STATE_KEY]).catch(() => ({}));
-    const state = stored?.[RUN_STATE_KEY];
-    if (!state || Number(state.tabId || 0) === Number(tab?.id || 0)) return;
-    await setStatus('foreground-open', { account: String(state.account || '') });
-    await closeRunStateTab(state);
+  function scheduleResumeAfterFullscreenClose() {
+    if (foregroundCloseResumeTimer) clearTimeout(foregroundCloseResumeTimer);
+    foregroundCloseResumeTimer = setTimeout(async () => {
+      foregroundCloseResumeTimer = null;
+      if (await hasFullscreenAppPage()) return;
+      const stored = await chrome.storage.local.get([ENABLED_KEY, STATUS_KEY]).catch(() => ({}));
+      if (stored?.[ENABLED_KEY] !== true) return;
+      if (String(stored?.[STATUS_KEY]?.status || '') !== 'foreground-open') return;
+      runBackgroundHomeworkRefresh().catch(() => {});
+    }, 250);
   }
 
-  chrome.tabs.onCreated.addListener((tab) => { void stopRefreshWhenFullscreenOpens(tab); });
+  chrome.tabs.onCreated.addListener(stopRefreshWhenFullscreenOpens);
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-    if (changeInfo?.url || changeInfo?.status === 'complete') void stopRefreshWhenFullscreenOpens(tab);
+    if (changeInfo?.url || changeInfo?.status === 'complete') {
+      stopRefreshWhenFullscreenOpens(tab);
+      scheduleResumeAfterFullscreenClose();
+    }
   });
+  chrome.tabs.onRemoved.addListener(() => scheduleResumeAfterFullscreenClose());
 
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm?.name === ALARM_NAME) runBackgroundHomeworkRefresh().catch((error) => {
       setStatus('error', { error: String(error?.message || error) });
     });
-    if (alarm?.name === TIMEOUT_ALARM_NAME) {
-      chrome.storage.local.get([RUN_STATE_KEY]).then((stored) => {
-        const state = stored?.[RUN_STATE_KEY];
-        if (!state) return;
-        return setStatus('error', { account: String(state.account || ''), error: '后台作业刷新超时' })
-          .then(() => closeRunStateTab(state));
-      }).catch(() => {});
-    }
   });
 
   chrome.runtime.onInstalled.addListener(() => { void ensureAlarm(); });
@@ -230,5 +277,7 @@
     }
   });
 
+  void cleanupLegacyRefreshPage();
   void ensureAlarm();
+  scheduleResumeAfterFullscreenClose();
 })();

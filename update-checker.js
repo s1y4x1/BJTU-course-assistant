@@ -1757,7 +1757,6 @@ async function loadVersionInfo(releaseOverride = null) {
 // -- 注册版本按钮点击事件 --
 
 function setupVersionButton() {
-  if (typeof backgroundHomeworkRefreshMode !== 'undefined' && backgroundHomeworkRefreshMode) return;
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
 

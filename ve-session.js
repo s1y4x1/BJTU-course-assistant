@@ -7,9 +7,7 @@ async function setLocal(key, value) {
 }
 
 function normalizePlatformSessionId(v) {
-  const s = String(v || '').trim();
-  // allow hex-like tokens; fallback handled by caller
-  return s;
+  return globalThis.BjtuVeHomeworkCore?.normalizeSessionId?.(v) || String(v || '').trim();
 }
 
 function maybeUpdatePlatformSessionIdFromResponse(res) {
@@ -18,6 +16,7 @@ function maybeUpdatePlatformSessionIdFromResponse(res) {
     const sid = normalizePlatformSessionId(res.headers.get('sessionId') || res.headers.get('sessionid') || '');
     if (sid && sid !== runtimePlatformSessionId) {
       runtimePlatformSessionId = sid;
+      globalThis.BjtuVeHomeworkCore?.setSessionId?.(sid);
     }
   } catch {
     // ignore
@@ -25,7 +24,9 @@ function maybeUpdatePlatformSessionIdFromResponse(res) {
 }
 
 async function getPlatformSessionId() {
-  return runtimePlatformSessionId || DEFAULT_PLATFORM_SESSION_ID;
+  const sid = globalThis.BjtuVeHomeworkCore?.getSessionId?.() || runtimePlatformSessionId || DEFAULT_PLATFORM_SESSION_ID;
+  runtimePlatformSessionId = sid;
+  return sid;
 }
 
 async function getCookieJsessionid() {

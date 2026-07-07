@@ -1,5 +1,6 @@
 ﻿importScripts('vendor/ve/main.min.js');
 importScripts('account-store.js');
+importScripts('ve-homework-core.js');
 importScripts('academic-system.js');
 importScripts('background-updater.js');
 importScripts('homework-background.js');
@@ -458,14 +459,7 @@ async function decodePortalResponse(res) {
 
 async function getPortalCurrentUserInfo() {
   try {
-    const res = await fetch('http://123.121.147.7:88/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo', {
-      credentials: 'include',
-      cache: 'no-store',
-      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-    });
-    const source = String(await res.text() || '').trim();
-    const data = JSON.parse(source.startsWith('{}') && source.length > 2 ? source.slice(2) : source);
-    return String(data?.STATUS) === '0' && data?.result ? data.result : null;
+    return await globalThis.BjtuVeHomeworkCore.fetchCurrentUserInfo();
   } catch {
     return null;
   }
@@ -543,6 +537,9 @@ async function performPortalPageLogin(payload = {}) {
   });
   return { ...result, userInfo };
 }
+
+globalThis.performPortalPageLogin = performPortalPageLogin;
+globalThis.getPortalCurrentUserInfo = getPortalCurrentUserInfo;
 
 const MOOC_API = {
   courseList: 'https://www.icourse163.org/web/j/learnerCourseRpcBean.getMyLearnedCoursePanelList.rpc',

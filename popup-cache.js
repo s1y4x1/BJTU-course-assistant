@@ -356,7 +356,9 @@ async function restorePopupFullscreenCacheIfNeeded() {
     cache = null;
   }
   window.__popupUsingFullscreenCache = true;
-  if (!cache || !String(cache.courseListHtml || '').trim()) {
+  const hasStructuredVeCache = cache?.backgroundStructuredVe === true
+    && Array.isArray(cache?.currentVeCourseList);
+  if (!cache || (!hasStructuredVeCache && !String(cache.courseListHtml || '').trim())) {
     window.platformEnabled = sanitizePlatformEnabled(cache?.platformEnabled || window.platformEnabled, window.platformEnabled);
     refreshPlatformLoginTip();
     showPopupCacheNotice(cache);
@@ -408,7 +410,12 @@ async function restorePopupFullscreenCacheIfNeeded() {
   normalizeRestoredCachesForPopup();
 
   if (courseListDiv) {
-    courseListDiv.innerHTML = String(cache.courseListHtml || '');
+    if (hasStructuredVeCache) {
+      renderCourseList(window.currentVeCourseList, { cachedOnly: true });
+      await Promise.resolve(window.veHomeworkLoadPromise).catch(() => {});
+    } else {
+      courseListDiv.innerHTML = String(cache.courseListHtml || '');
+    }
     collapseRestoredCoursePanelsForPopup(courseListDiv);
   }
   if (resourceSpaceList) resourceSpaceList.innerHTML = String(cache.resourceSpaceHtml || '');

@@ -25,14 +25,7 @@ async function resumeVeAfterAccountSwitchFailure() {
 
 async function fetchCurrentVeUserInfo() {
   try {
-    const url = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo`;
-    const { text, res } = await fetchText(url, {
-      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-    });
-    if (isLikelyLoginPageHtml(text, res?.url)) return null;
-    const data = parseVeJson(text);
-    if (String(data?.STATUS) !== '0' || !data?.result) return null;
-    return data.result;
+    return await globalThis.BjtuVeHomeworkCore.fetchCurrentUserInfo();
   } catch {
     return null;
   }
@@ -1615,60 +1608,7 @@ async function loadCourses() {
       return;
     }
 
-    const url = `${BASE_VE}back/coursePlatform/course.shtml?method=getCourseList&pagesize=100&page=1&xqCode=${encodeURIComponent(await ensureCurrentXqCode())}`;
-    const { text } = await fetchText(url, {
-      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-    });
-
-    let data;
-    try { data = JSON.parse(text); } catch {
-      // probably redirected / html
-      isLoginSessionValid = false;
-      setPlatformLoginState('ve', 'offline');
-      if (usernameInput.value.trim()) {
-        handleLoginRequired(() => {
-          loadCourses();
-        }, null, '请输入账号登录');
-      }
-      renderCourseList([]);
-      rematchExternalByVeCourses();
-      rerenderAllHomeworkAreas();
-      if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-      if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
-      return;
-    }
-
-    if (String(data.STATUS) !== '0') {
-      const msg = data.ERRMSG || data.message || '课程接口返回异常';
-      if (String(msg).includes('不合法') || String(msg).includes('登录')) {
-        isLoginSessionValid = false;
-        setPlatformLoginState('ve', 'offline');
-        if (usernameInput.value.trim()) {
-          handleLoginRequired(() => {
-            loadCourses();
-          }, null, '请输入账号登录');
-        }
-        renderCourseList([]);
-        rematchExternalByVeCourses();
-        rerenderAllHomeworkAreas();
-        if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-        if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-        if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
-        return;
-      }
-      setPlatformLoginState('ve', 'offline');
-      showToast('课程加载失败: ' + msg, 'error');
-      renderCourseList([]);
-      rematchExternalByVeCourses();
-      rerenderAllHomeworkAreas();
-      if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-      if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
-      return;
-    }
-
-    const list = data.courseList || [];
+    const list = await globalThis.BjtuVeHomeworkCore.fetchCourses(await ensureCurrentXqCode());
     window.currentVeCourseList = Array.isArray(list) ? list : [];
     window.platformLoadedOnce.ve = true;
     setPlatformLoginState('ve', 'online');
@@ -1682,7 +1622,7 @@ async function loadCourses() {
   } catch (e) {
     setPlatformLoginState('ve', 'offline');
     const errMsg = String(e?.message || '');
-    const likelyLoginInvalid = /Failed to fetch/i.test(errMsg);
+    const likelyLoginInvalid = e?.loginRequired || errMsg === 'LOGIN_REQUIRED' || /Failed to fetch/i.test(errMsg);
     if (likelyLoginInvalid) {
       isLoginSessionValid = false;
       if (usernameInput.value.trim()) {
@@ -1821,9 +1761,10 @@ function autoLoadCourseResourcesForRenderedCourses() {
   });
 }
 
-function renderCourseList(courses) {
+function renderCourseList(courses, { cachedOnly = false } = {}) {
   courseListDiv.innerHTML = '';
   const homeworkLoadPromises = [];
+  const allowNetworkLoad = !cachedOnly;
   if (!courses || !courses.length) {
     window.veHomeworkLoadPromise = Promise.resolve([]);
     if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
@@ -1893,7 +1834,7 @@ function renderCourseList(courses) {
         ev.stopPropagation();
         toggleCoursewareFromCache(btnCourseware, courseId, courseNumRaw, fzId);
       });
-      if (isAutoLoadCourseResourcesEnabled()) {
+      if (allowNetworkLoad && isAutoLoadCourseResourcesEnabled()) {
         setCoursewareButtonLoading(btnCourseware, true);
       }
     }
@@ -1907,7 +1848,7 @@ function renderCourseList(courses) {
         ev.stopPropagation();
         toggleReplayFromCache(btnVideos, courseId);
       });
-      if (isAutoLoadCourseResourcesEnabled()) {
+      if (allowNetworkLoad && isAutoLoadCourseResourcesEnabled()) {
         // Show replay-loading animation immediately after card renders.
         btnVideos.disabled = true;
         btnVideos.style.opacity = '1';
@@ -1939,31 +1880,37 @@ function renderCourseList(courses) {
       updateArchiveButtonVisibility(courseId);
     }
 
-    hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
+    if (allowNetworkLoad) hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
 
     // Prioritize homework fetching before replay link prefetch.
-  updateCourseListEmptyPlaceholder();
-    const hwPromise = checkHomework(courseId);
+    updateCourseListEmptyPlaceholder();
+    const hwPromise = allowNetworkLoad
+      ? checkHomework(courseId)
+      : Promise.resolve().then(() => {
+        renderHomeworkList(courseId);
+        recomputeCourseHomeworkState(courseId);
+        return true;
+      });
     homeworkLoadPromises.push(hwPromise);
     if (btnCourseware) {
       hwPromise.finally(() => {
         // Balance the initial preloading spinner before entering actual auto-load phase.
         setCoursewareButtonLoading(btnCourseware, false);
-        if (isAutoLoadCourseResourcesEnabled()) {
+        if (allowNetworkLoad && isAutoLoadCourseResourcesEnabled()) {
           autoLoadCourseware(btnCourseware, courseId, courseNumRaw, fzId).catch(() => {});
         }
       });
     }
     if (btnArchive) {
       hwPromise.finally(() => {
-        if (isAutoLoadCourseResourcesEnabled()) {
+        if (allowNetworkLoad && isAutoLoadCourseResourcesEnabled()) {
           toggleCourseArchive(btnArchive, courseId, { render: false }).catch(() => {});
         }
       });
     }
     if (btnVideos) {
       hwPromise.finally(() => {
-        if (isAutoLoadCourseResourcesEnabled()) {
+        if (allowNetworkLoad && isAutoLoadCourseResourcesEnabled()) {
           autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode);
         }
       });
@@ -2361,64 +2308,11 @@ async function checkHomework(courseId) {
     area.innerHTML = '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业…';
   }
   try {
-    const subTypes = [0, 1, 2];
-    const mergedList = [];
-    const seenKeys = new Set();
-    const getHwKey = (hw) => {
-      const key = String(
-        hw?.id ?? hw?.noteId ?? hw?.courseNoteId ??
-        hw?.upId ?? hw?.UPID ?? hw?.snId ?? hw?.noteSnId ??
-        hw?.workId ?? hw?.homeworkId ?? ''
-      ).trim();
-      return key;
-    };
-    const previousHomeworkByKey = new Map(
-      (window.courseHomeworkData?.[courseId]?.list || [])
-        .map((hw) => [getHwKey(hw), hw])
-        .filter(([key]) => !!key)
-    );
-    for (const subType of subTypes) {
-      const payload = { page: 1, pagesize: 10 };
-      try {
-        const fetchPage = async () => {
-          const url = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=getHomeWorkList&cId=${encodeURIComponent(courseId)}&subType=${subType}&page=${payload.page}&pagesize=${payload.pagesize}`;
-          const { text, res } = await fetchText(url, { headers: { Accept: 'application/json, text/javascript, */*; q=0.01' } });
-          if (isLikelyLoginPageHtml(text, res?.url) || (res && res.redirected && /\/ve\/(?:Timeout|Login_2)\.jsp/i.test(String(res.url || '')))) {
-            const err = new Error('LOGIN_REQUIRED');
-            err.loginRequired = true;
-            throw err;
-          }
-          return JSON.parse(text);
-        };
-        let data = await fetchPage();
-        const total = Number(data?.total || 0);
-        if (Number.isFinite(total) && total > payload.pagesize) {
-          payload.pagesize = total;
-          data = await fetchPage();
-        }
-        if (String(data.STATUS) !== '0') continue;
-        const list = data.courseNoteList || data.list || [];
-        list.forEach((hw) => {
-          const key = getHwKey(hw);
-          if (key) {
-            if (seenKeys.has(key)) return;
-            seenKeys.add(key);
-          }
-          const previousHomework = key ? previousHomeworkByKey.get(key) : null;
-          mergedList.push({
-            ...hw,
-            subType: hw?.subType ?? subType,
-            ...(previousHomework?.__attachmentKey
-              ? { __attachmentKey: previousHomework.__attachmentKey }
-              : {})
-          });
-        });
-      } catch (error) {
-        if (error?.loginRequired || String(error?.message || '') === 'LOGIN_REQUIRED') throw error;
-        // continue with other subTypes
-      }
-    }
-    const list = mergedList;
+    const previousList = window.courseHomeworkData?.[courseId]?.list || [];
+    const list = await globalThis.BjtuVeHomeworkCore.fetchCourseHomework(courseId, {
+      previousList,
+      signal: window.globalVeAbortController?.signal
+    });
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
     // Concurrently fetch attachments; homework score lookup uses returned list fields only.
@@ -2426,9 +2320,6 @@ async function checkHomework(courseId) {
     attachmentPrefetchPromise.finally(() => {
       recomputeCourseHomeworkState(courseId);
     }).catch(() => {});
-    if (typeof backgroundHomeworkRefreshMode !== 'undefined' && backgroundHomeworkRefreshMode) {
-      await attachmentPrefetchPromise;
-    }
     return true;
   } catch (e) {
     if (e?.loginRequired || String(e?.message || '') === 'LOGIN_REQUIRED') {
