@@ -223,6 +223,21 @@
     }
   }
 
+  async function clearStoredDirectoryHandle() {
+    const db = await openFileSystemDatabase();
+    try {
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction(FS_STORE_NAME, 'readwrite');
+        transaction.objectStore(FS_STORE_NAME).delete(FS_DIRECTORY_KEY);
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error || new Error('无法清除已失效的更新目录'));
+        transaction.onabort = () => reject(transaction.error || new Error('清除已失效的更新目录已中止'));
+      });
+    } finally {
+      db.close();
+    }
+  }
+
   async function validateDirectory(handle) {
     if (!handle || handle.kind !== 'directory' || typeof handle.queryPermission !== 'function') return null;
     if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted') return null;
@@ -328,7 +343,7 @@
     for await (const [name] of root.entries()) names.push(name);
     for (const name of names) {
       try {
-        await root.removeEntry(name, { recursive: true });
+        await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true });
       } catch (error) {
         throw new Error(`无法删除更新目录中的“${name}”：${String(error?.message || error)}`);
       }
@@ -341,18 +356,7 @@
   }
 
   async function writeFile(root, path, bytes) {
-    const parts = path.split('/');
-    let directory = root;
-    for (const part of parts.slice(0, -1)) {
-      directory = await directory.getDirectoryHandle(part, { create: true });
-    }
-    const file = await directory.getFileHandle(parts.at(-1), { create: true });
-    const writable = await file.createWritable();
-    try {
-      await writable.write(bytes);
-    } finally {
-      await writable.close();
-    }
+    return globalThis.BjtuUpdateFileSystem.writeFile(root, path, bytes);
   }
 
   async function downloadArchive(url) {
@@ -369,27 +373,29 @@
 
   async function installRelease(root, release) {
     const archive = await retryNetworkOperation(() => downloadArchive(release.url), 2);
-    const entries = parseZipEntries(archive);
-    const files = selectFiles(entries, release.update);
-    if (!files.length) throw new Error('更新压缩包中没有需要写入的文件');
-    if (Array.isArray(release.update) && release.update.length === 1 && release.update[0] === true) {
-      await clearDirectory(root);
-    }
-    let completed = 0;
-    for (const batch of Array.from({ length: Math.ceil(files.length / 8) }, (_, index) => files.slice(index * 8, index * 8 + 8))) {
-      await Promise.all(batch.map(async ({ entry, path }) => {
-        await writeFile(root, path, await inflateEntry(entry));
-        completed += 1;
-        await setStatus('installing', {
-          version: release.version,
-          name: release.name,
-          completed,
-          total: files.length,
-          directoryName: root.name
-        });
-      }));
-    }
-    return files.length;
+    return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
+      const entries = parseZipEntries(archive);
+      const files = selectFiles(entries, release.update);
+      if (!files.length) throw new Error('更新压缩包中没有需要写入的文件');
+      if (Array.isArray(release.update) && release.update.length === 1 && release.update[0] === true) {
+        await clearDirectory(root);
+      }
+      let completed = 0;
+      for (const batch of Array.from({ length: Math.ceil(files.length / 8) }, (_, index) => files.slice(index * 8, index * 8 + 8))) {
+        await Promise.all(batch.map(async ({ entry, path }) => {
+          await writeFile(root, path, await inflateEntry(entry));
+          completed += 1;
+          await setStatus('installing', {
+            version: release.version,
+            name: release.name,
+            completed,
+            total: files.length,
+            directoryName: root.name
+          });
+        }));
+      }
+      return files.length;
+    });
   }
 
   async function runBackgroundUpdate({ forceCheck = false, suppressRecentReloadRetry = false } = {}) {
@@ -503,12 +509,17 @@
       chrome.runtime.reload();
       return { updated: true, reloaded: true, release, fileCount };
     })().catch(async (error) => {
-      const category = classifyUpdateIssue(error);
+      const staleDirectoryState = globalThis.BjtuUpdateFileSystem.isInvalidStateError(error);
+      if (staleDirectoryState) await clearStoredDirectoryHandle().catch(() => {});
+      const normalizedError = staleDirectoryState
+        ? new Error('更新期间目录或文件被其他程序修改，请在全屏页面重新选择扩展安装目录。')
+        : error;
+      const category = staleDirectoryState ? 'permission' : classifyUpdateIssue(normalizedError);
       if (category === 'permission') {
-        await notifyUpdateIssue('permission', String(error?.message || error), '').catch(() => {});
+        await notifyUpdateIssue('permission', String(normalizedError?.message || normalizedError), '').catch(() => {});
       }
-      await setStatus('error', { error: String(error?.message || error) }).catch(() => {});
-      throw error;
+      await setStatus('error', { error: String(normalizedError?.message || normalizedError) }).catch(() => {});
+      throw normalizedError;
     }).finally(() => {
       runningPromise = null;
     });

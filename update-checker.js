@@ -969,6 +969,13 @@ function getVersionUpdateFailurePresentation(error) {
       toast: '无法写入更新目录，请检查目录权限后重试'
     };
   }
+  if (stage === 'directory-state') {
+    return {
+      title: '更新目录已变更',
+      body: '更新期间目录或文件被其他程序修改。已停止写入并废弃旧目录授权，请重新选择扩展安装目录后重试。',
+      toast: '更新目录已变更，请重新选择安装目录'
+    };
+  }
   return {
     title: '更新失败',
     body: '更新过程中发生未知错误，请根据错误详情检查后重试。',
@@ -1060,22 +1067,7 @@ function normalizeUpdateEntryPath(name, commonRoot) {
 
 async function writeBytesToVersionUpdateDirectory(bytes, relativePath) {
   const root = versionUpdateDirectoryHandle;
-  if (!root) throw new Error('尚未授权更新目录');
-  const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
-  if (!parts.length || parts.some((part) => part === '.' || part === '..')) {
-    throw new Error(`更新文件路径无效：${relativePath}`);
-  }
-  let directory = root;
-  for (const part of parts.slice(0, -1)) {
-    directory = await directory.getDirectoryHandle(part, { create: true });
-  }
-  const fileHandle = await directory.getFileHandle(parts.at(-1), { create: true });
-  const writable = await fileHandle.createWritable();
-  try {
-    await writable.write(bytes);
-  } finally {
-    await writable.close();
-  }
+  return globalThis.BjtuUpdateFileSystem.writeFile(root, relativePath, bytes);
 }
 
 async function fetchUpdateArchiveWithProgress(url) {
@@ -1177,7 +1169,7 @@ async function clearVersionUpdateDirectory() {
     for await (const [name] of root.entries()) names.push(name);
     for (const name of names) {
       try {
-        await root.removeEntry(name, { recursive: true });
+        await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true });
       } catch (error) {
         throw new Error(`无法删除更新目录中的“${name}”：${String(error?.message || error)}`);
       }
@@ -1282,7 +1274,9 @@ async function downloadVersionByUrlWithProgress(url) {
   const updateRule = versionDownloadFullExtraction
     ? (resetDirectory ? [true] : null)
     : versionButtonLatestUpdate;
-  const fileCount = await extractUpdateArchiveToDirectory(archiveBytes, updateRule);
+  const fileCount = await globalThis.BjtuUpdateFileSystem.withInstallLock(() => (
+    extractUpdateArchiveToDirectory(archiveBytes, updateRule)
+  ));
   const reloadRequired = versionButtonLatestReload;
   const forcedUpdate = versionButtonLatestForce;
   const appliedRecord = {
@@ -1359,8 +1353,16 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
     await downloadVersionByUrlWithProgress(primaryUrl);
     // 成功 UI 已在 downloadVersionByUrlWithProgress 内部处理
   } catch (err) {
-    const errorMessage = String(err?.message || '未知错误');
-    const failure = getVersionUpdateFailurePresentation(err);
+    let displayError = err;
+    if (globalThis.BjtuUpdateFileSystem.isInvalidStateError(err)) {
+      await storeVersionUpdateDirectoryHandle(null).catch(() => {});
+      displayError = markVersionUpdateError(
+        new Error('更新目录的磁盘状态已变更，需要重新选择扩展安装目录'),
+        'directory-state'
+      );
+    }
+    const errorMessage = String(displayError?.message || '未知错误');
+    const failure = getVersionUpdateFailurePresentation(displayError);
     setVersionDownloadProgressUi({
       visible: true,
       status: `更新失败：${errorMessage}`,

@@ -2,6 +2,7 @@
 importScripts('account-store.js');
 importScripts('ve-homework-core.js');
 importScripts('academic-system.js');
+importScripts('update-filesystem.js');
 importScripts('background-updater.js');
 importScripts('homework-background.js');
 
