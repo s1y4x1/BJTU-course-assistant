@@ -71,6 +71,7 @@ const VERSION_FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
 const VERSION_FS_DB_STORE = 'handles';
 const VERSION_FS_DIRECTORY_KEY = 'update-directory';
 let versionRefreshCountdownTimer = null;
+let versionRefreshCountdownAction = null;
 
 function openVersionFileSystemDatabase() {
   return new Promise((resolve, reject) => {
@@ -175,22 +176,34 @@ function removeAutoUpdateQueryParameter() {
   } catch {}
 }
 
-function startVersionRefreshCountdown() {
+function startVersionRefreshCountdown({ reloadExtension = false, onReloadError = null } = {}) {
   const button = document.getElementById('version-download-refresh');
   if (!(button instanceof HTMLButtonElement)) return;
   cancelVersionRefreshCountdown();
   const refreshAt = Date.now() + 2000;
+  const actionLabel = reloadExtension ? '重新加载' : '刷新';
+  versionRefreshCountdownAction = () => {
+    cancelVersionRefreshCountdown();
+    button.textContent = actionLabel;
+    removeAutoUpdateQueryParameter();
+    if (!reloadExtension) {
+      location.reload();
+      return;
+    }
+    try {
+      chrome.runtime.reload();
+    } catch (error) {
+      if (typeof onReloadError === 'function') onReloadError(error);
+    }
+  };
   button.style.display = '';
   const update = () => {
     const seconds = Math.max(0, Math.ceil((refreshAt - Date.now()) / 1000));
     if (seconds > 0) {
-      button.textContent = `刷新（${seconds} 秒）`;
+      button.textContent = `${actionLabel}（${seconds} 秒）`;
       return;
     }
-    cancelVersionRefreshCountdown();
-    button.textContent = '刷新';
-    removeAutoUpdateQueryParameter();
-    location.reload();
+    versionRefreshCountdownAction?.();
   };
   update();
   versionRefreshCountdownTimer = setInterval(update, 100);
@@ -560,7 +573,10 @@ function ensureVersionDownloadModal() {
   const refreshBtn = document.getElementById('version-download-refresh');
   if (refreshBtn instanceof HTMLButtonElement) {
     refreshBtn.addEventListener('click', () => {
-      cancelVersionRefreshCountdown();
+      if (typeof versionRefreshCountdownAction === 'function') {
+        versionRefreshCountdownAction();
+        return;
+      }
       removeAutoUpdateQueryParameter();
       location.reload();
     });
@@ -826,11 +842,11 @@ async function scheduleAutomaticExtensionReload({ fileCount, displayVersion } = 
   if (modal) modal.dataset.locked = '1';
   setVersionDownloadProgressUi({
     visible: true,
-    status: '正在重新加载扩展…',
+    status: '将在 2 秒后重新加载扩展…',
     title: '更新文件已覆盖解压',
     body: writtenFileCount > 0
-      ? `已覆盖写入 ${writtenFileCount} 个文件，正在自动重新加载扩展。`
-      : '更新文件已写入，正在自动重新加载扩展。',
+      ? `已覆盖写入 ${writtenFileCount} 个文件。`
+      : '更新文件已写入。',
     phase: 'finished'
   });
   const actions = document.getElementById('version-download-actions');
@@ -838,23 +854,20 @@ async function scheduleAutomaticExtensionReload({ fileCount, displayVersion } = 
   const openExtensionsBtn = document.getElementById('version-download-open-extensions');
   const refreshBtn = document.getElementById('version-download-refresh');
   const closeBtn = document.getElementById('version-download-close');
-  if (actions instanceof HTMLElement) actions.style.display = 'none';
+  if (actions instanceof HTMLElement) actions.style.display = 'flex';
   if (retryBtn instanceof HTMLElement) retryBtn.style.display = 'none';
   if (openExtensionsBtn instanceof HTMLElement) openExtensionsBtn.style.display = 'none';
-  if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
+  if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = '';
   if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
-  cancelVersionRefreshCountdown();
-
-  setTimeout(() => {
-    try {
-      chrome.runtime.reload();
-    } catch (error) {
+  startVersionRefreshCountdown({
+    reloadExtension: true,
+    onReloadError: (error) => {
       setLocal(VERSION_AUTO_RELOAD_HANDOFF_KEY, null).catch(() => {});
       setVersionDownloadCompletionUi({ reloadRequired: true, fileCount: writtenFileCount, displayVersion });
       showUpdateDownloadCompleteNotification();
       showToast(`自动重新加载扩展失败：${String(error?.message || error || '未知错误')}`, 'error', 4000);
     }
-  }, 300);
+  });
 }
 
 function parseUpdateSourceTime(value) {
