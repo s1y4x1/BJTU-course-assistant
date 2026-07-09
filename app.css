@@ -91,8 +91,29 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .account-init-actions .btn {
             flex: 1;
         }
+        .account-init-actions .btn:disabled,
+        #account-init-import-local:disabled,
+        #account-init-import-remote:disabled,
+        #account-init-import-back:disabled {
+            background: #cbd5e1;
+            color: #64748b;
+            cursor: not-allowed;
+        }
+        .account-init-actions .btn:disabled:hover,
+        #account-init-import-local:disabled:hover,
+        #account-init-import-remote:disabled:hover,
+        #account-init-import-back:disabled:hover {
+            background: #cbd5e1;
+        }
         #account-init-import {
             background: #2563eb;
+        }
+        #account-init-import-local,
+        #account-init-import-remote {
+            background: #2563eb;
+        }
+        #account-init-import-back {
+            background: #64748b;
         }
         #account-init-skip {
             background: #64748b;

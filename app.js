@@ -1904,17 +1904,6 @@ async function rememberLoggedInAccount(userId, info = null) {
   };
   if (idx >= 0) loginAccountHistory.splice(idx, 1);
   loginAccountHistory.unshift(record);
-  if (record.loginName && (record.userName || record.roleName || record.passwordMd5)) {
-    await globalThis.BjtuAccountStore?.put?.({
-      loginName: record.loginName,
-      userName: record.userName,
-      roleName: record.roleName,
-      password: record.passwordMd5,
-      quickUsername: record.quickUsername
-    });
-  } else {
-    await globalThis.BjtuAccountLogin?.updatePassword?.(uid, record.passwordMd5);
-  }
   await saveLoginAccountHistory();
   renderLoginAccountHistorySelect(uid);
 }
@@ -2092,7 +2081,7 @@ async function validateUsernameBeforeLoginStart(userId, { signal } = {}) {
   return { ok: true, status: 'needs-post-login', info, accountMissing: !info };
 }
 
-async function saveLoginAccountCredential(userId, passwordMd5 = '') {
+async function saveLoginAccountCredential(userId) {
   const uid = String(userId || '').trim();
   if (!uid) return;
   const idx = loginAccountHistory.findIndex((it) => String(it?.loginName || it?.userId || '').trim() === uid);
@@ -2101,21 +2090,12 @@ async function saveLoginAccountCredential(userId, passwordMd5 = '') {
     ...prev,
     userId: uid,
     loginName: uid,
-    passwordMd5: String(passwordMd5 || '').trim(),
     lastLoginAt: Date.now()
   };
+  delete record.passwordMd5;
+  delete record.quickUsername;
   if (idx >= 0) loginAccountHistory.splice(idx, 1);
   loginAccountHistory.unshift(record);
-  if (passwordMd5) {
-    const account = await readAccountInfoFromIndexedDb(uid);
-    await globalThis.BjtuAccountStore?.put?.({
-      loginName: uid,
-      userName: String(account?.userName || '').trim(),
-      roleName: String(account?.roleName || '').trim(),
-      password: String(passwordMd5 || '').trim(),
-      quickUsername: String(account?.quickUsername || '').trim()
-    });
-  }
   await saveLoginAccountHistory();
   renderLoginAccountHistorySelect(uid);
 }
@@ -2350,8 +2330,8 @@ async function doLoginFlow() {
           }
           account = await getLocalAccountInfo(username);
           recoveryMessage = account
-            ? '账号列表已更新，正在使用最新密码重试。'
-            : '重新初始化后仍未找到该账号，可手动输入密码或取消。';
+            ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
+            : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
           if (account) {
             const currentAfterInitialize = await globalThis.BjtuAccountLogin.getCurrentUserInfo({ signal });
             if (String(currentAfterInitialize?.loginName || '').trim() === username) {

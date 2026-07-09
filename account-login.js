@@ -10,6 +10,7 @@
   const ACCOUNT_LIST_VERSION = 4;
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
   const ACCOUNT_FILE_VERSION = 1;
+  const REMOTE_ACCOUNT_LIST_URL = 'https://s1y4x1.github.io/account-list.json';
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_NAME = 'JyDadmin';
   const ADMIN_USER_NAME = 'admin';
@@ -512,6 +513,41 @@
     }
   }
 
+  function formatBytesForAccountImport(bytes) {
+    const value = Math.max(0, Number(bytes) || 0);
+    if (value < 1024) return value + ' B';
+    if (value < 1024 * 1024) return (value / 1024).toFixed(value < 100 * 1024 ? 1 : 0) + ' KB';
+    return (value / 1024 / 1024).toFixed(value < 100 * 1024 * 1024 ? 1 : 0) + ' MB';
+  }
+
+  async function readAccountImportResponseText(response, statusPrefix = '正在从远程仓库下载账号列表…') {
+    if (!response?.body?.getReader) return response.text();
+    const total = Number(response.headers.get('content-length') || 0);
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      chunks.push(value);
+      loaded += value.byteLength || value.length || 0;
+      if (total > 0) {
+        const percent = Math.min(100, (loaded / total) * 100);
+        setProgress(percent, `${statusPrefix}（${formatBytesForAccountImport(loaded)} / ${formatBytesForAccountImport(total)}）`);
+      } else {
+        setProgress(0, `${statusPrefix}（已下载 ${formatBytesForAccountImport(loaded)}）`);
+      }
+    }
+    const merged = new Uint8Array(loaded);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength || chunk.length || 0;
+    });
+    if (total > 0) setProgress(100, `${statusPrefix}（${formatBytesForAccountImport(loaded)} / ${formatBytesForAccountImport(total)}）`);
+    return new TextDecoder('utf-8').decode(merged);
+  }
   function clearAccountInitQueryParameter() {
     try {
       const url = new URL(location.href);
@@ -805,9 +841,13 @@
   function requestInitializationSource() {
     return new Promise((resolve) => {
       const actions = document.getElementById('account-init-actions');
+      const importActions = document.getElementById('account-init-import-actions');
       const remote = document.getElementById('account-init-remote');
       const importButton = document.getElementById('account-init-import');
       const skipButton = document.getElementById('account-init-skip');
+      const importLocalButton = document.getElementById('account-init-import-local');
+      const importRemoteButton = document.getElementById('account-init-import-remote');
+      const importBackButton = document.getElementById('account-init-import-back');
       const fileInput = document.getElementById('account-init-file');
       const fetchOptions = document.getElementById('account-init-fetch-options');
       const teacherCheckbox = document.getElementById('account-init-fetch-teachers');
@@ -815,32 +855,70 @@
       const quickOption = document.getElementById('account-init-quick-option');
       const quickCheckbox = document.getElementById('account-init-fetch-quick-usernames');
       if (!(actions instanceof HTMLElement) || !(fileInput instanceof HTMLInputElement)) {
-        resolve({ source: 'remote', fetchTeachers: true, fetchStudents: true, fetchQuickUsernames: false });
+        resolve({ source: 'skip' });
         return;
       }
       const cleanup = () => {
-        remote?.removeEventListener('click', onRemote);
         importButton?.removeEventListener('click', onImport);
         skipButton?.removeEventListener('click', onSkip);
+        importLocalButton?.removeEventListener('click', onImportLocal);
+        importRemoteButton?.removeEventListener('click', onImportRemote);
+        importBackButton?.removeEventListener('click', onImportBack);
         fileInput.removeEventListener('change', onFile);
         actions.style.display = 'none';
+        if (importActions instanceof HTMLElement) importActions.style.display = 'none';
         if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
         if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
       };
-      const onRemote = () => {
-        const fetchTeachers = !(teacherCheckbox instanceof HTMLInputElement) || teacherCheckbox.checked;
-        const fetchStudents = !(studentCheckbox instanceof HTMLInputElement) || studentCheckbox.checked;
-        if (!fetchTeachers && !fetchStudents) {
-          setProgress(0, '请至少选择获取教职工或学生中的一类');
-          return;
-        }
-        const fetchQuickUsernames = quickCheckbox instanceof HTMLInputElement && quickCheckbox.checked;
-        cleanup();
-        resolve({ source: 'remote', fetchTeachers, fetchStudents, fetchQuickUsernames });
+      const setImportButtonsDisabled = (disabled) => {
+        [importLocalButton, importRemoteButton, importBackButton].forEach((button) => {
+          if (button instanceof HTMLButtonElement) button.disabled = disabled;
+        });
+      };
+      const showMainActions = () => {
+        actions.style.display = 'flex';
+        if (importActions instanceof HTMLElement) importActions.style.display = 'none';
+        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
+        if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
+        setProgress(0, '请选择账号列表初始化方式');
+      };
+      const showImportActions = (status = '请选择账号列表导入方式') => {
+        actions.style.display = 'none';
+        if (importActions instanceof HTMLElement) importActions.style.display = 'flex';
+        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
+        if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
+        setImportButtonsDisabled(false);
+        setProgress(0, status);
       };
       const onImport = () => {
+        showImportActions();
+      };
+      const onImportLocal = () => {
         fileInput.value = '';
         fileInput.click();
+      };
+      const finishImport = async (sourceText) => {
+        actions.style.display = 'none';
+        if (importActions instanceof HTMLElement) importActions.style.display = 'none';
+        const count = await importAccountFile(sourceText, { showProgress: true });
+        cleanup();
+        setProgress(100, '', false);
+        resolve({ source: 'import', count });
+      };
+      const onImportRemote = async () => {
+        try {
+          setImportButtonsDisabled(true);
+          setProgress(0, '正在从远程仓库下载账号列表…');
+          const response = await fetch(REMOTE_ACCOUNT_LIST_URL, { cache: 'no-store', credentials: 'omit' });
+          if (!response.ok) throw new Error('远程仓库返回 HTTP ' + response.status);
+          await finishImport(await readAccountImportResponseText(response));
+        } catch (error) {
+          setImportButtonsDisabled(false);
+          showImportActions('远程导入失败：' + String(error?.message || error));
+        }
+      };
+      const onImportBack = () => {
+        showMainActions();
       };
       const onSkip = () => {
         cleanup();
@@ -850,33 +928,28 @@
       const onFile = async () => {
         const file = fileInput.files?.[0];
         if (!file) return;
-        cleanup();
         try {
-          const count = await importAccountFile(await file.text(), { showProgress: true });
-          setProgress(100, '', false);
-          resolve({ source: 'import', count });
+          setImportButtonsDisabled(true);
+          await finishImport(await file.text());
         } catch (error) {
-          setProgress(0, '导入失败：' + String(error?.message || error));
-          remote?.addEventListener('click', onRemote);
-          importButton?.addEventListener('click', onImport);
-          skipButton?.addEventListener('click', onSkip);
-          fileInput.addEventListener('change', onFile);
-          actions.style.display = 'flex';
-          if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'flex';
-          if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
+          setImportButtonsDisabled(false);
+          showImportActions('导入失败：' + String(error?.message || error));
         }
       };
-      remote?.addEventListener('click', onRemote);
+      if (remote instanceof HTMLButtonElement) {
+        remote.disabled = true;
+        remote.title = '从平台获取账号列表暂不可用，请使用导入 JSON';
+      }
       importButton?.addEventListener('click', onImport);
       skipButton?.addEventListener('click', onSkip);
+      importLocalButton?.addEventListener('click', onImportLocal);
+      importRemoteButton?.addEventListener('click', onImportRemote);
+      importBackButton?.addEventListener('click', onImportBack);
       fileInput.addEventListener('change', onFile);
       if (teacherCheckbox instanceof HTMLInputElement) teacherCheckbox.checked = true;
       if (studentCheckbox instanceof HTMLInputElement) studentCheckbox.checked = true;
       if (quickCheckbox instanceof HTMLInputElement) quickCheckbox.checked = false;
-      if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'flex';
-      if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
-      actions.style.display = 'flex';
-      setProgress(0, '请选择账号列表初始化方式');
+      showMainActions();
     });
   }
 
