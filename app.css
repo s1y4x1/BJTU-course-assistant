@@ -1127,7 +1127,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .version-download-release-notes-title {
             margin-bottom: 5px;
             color: #0f172a;
-            font-size: 13px;
+            font-size: 16px;
             font-weight: 700;
         }
         .version-download-release-notes-body {
