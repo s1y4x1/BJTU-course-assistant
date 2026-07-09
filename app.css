@@ -55,6 +55,21 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .account-init-progress-row {
             margin-top: 12px;
         }
+        .account-init-download-progress {
+            margin-top: 12px;
+        }
+        .account-init-download-progress .progress-bar {
+            background-color: #0ea5e9;
+        }
+        .account-init-download-progress.indeterminate .progress-bar {
+            width: 35% !important;
+            transition: none;
+            animation: account-init-download-progress-indeterminate 1s linear infinite;
+        }
+        @keyframes account-init-download-progress-indeterminate {
+            from { transform: translateX(-110%); }
+            to { transform: translateX(290%); }
+        }
         .account-init-actions {
             display: flex;
             gap: 8px;

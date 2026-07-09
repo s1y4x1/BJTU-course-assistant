@@ -508,6 +508,7 @@
     if (modal instanceof HTMLElement) modal.style.display = visible ? 'flex' : 'none';
     if (text instanceof HTMLElement) text.textContent = String(status || '');
     if (!visible) {
+      setAccountImportDownloadProgress({ visible: false });
       setListProgress('teacher', 0, 0, '正在等待');
       setListProgress('student', 0, 0, '正在等待');
     }
@@ -520,9 +521,38 @@
     return (value / 1024 / 1024).toFixed(value < 100 * 1024 * 1024 ? 1 : 0) + ' MB';
   }
 
+  function setAccountImportDownloadProgress({ loaded = 0, total = 0, visible = true } = {}) {
+    const row = document.getElementById('account-init-download-progress');
+    const label = document.getElementById('account-init-download-label');
+    const bar = document.getElementById('account-init-download-progress-bar');
+    const safeLoaded = Math.max(0, Number(loaded) || 0);
+    const safeTotal = Math.max(0, Number(total) || 0);
+    const hasReliableTotal = safeTotal > 0 && safeLoaded <= safeTotal;
+    if (row instanceof HTMLElement) {
+      row.style.display = visible ? 'block' : 'none';
+      row.classList.toggle('indeterminate', visible && !hasReliableTotal);
+      row.setAttribute('aria-valuenow', hasReliableTotal ? String(Math.min(100, (safeLoaded / safeTotal) * 100)) : '0');
+    }
+    if (label instanceof HTMLElement) {
+      label.textContent = hasReliableTotal
+        ? `下载：${formatBytesForAccountImport(safeLoaded)} / ${formatBytesForAccountImport(safeTotal)}`
+        : `下载：已下载 ${formatBytesForAccountImport(safeLoaded)}`;
+    }
+    if (bar instanceof HTMLElement) {
+      bar.style.width = hasReliableTotal ? Math.min(100, (safeLoaded / safeTotal) * 100) + '%' : '35%';
+    }
+  }
+
   async function readAccountImportResponseText(response, statusPrefix = '正在从远程仓库下载账号列表…') {
-    if (!response?.body?.getReader) return response.text();
-    const total = Number(response.headers.get('content-length') || 0);
+    if (!response?.body?.getReader) {
+      const text = await response.text();
+      setAccountImportDownloadProgress({ loaded: new TextEncoder().encode(text).byteLength, visible: true });
+      return text;
+    }
+    const contentEncoding = String(response.headers.get('content-encoding') || '').trim().toLowerCase();
+    const headerTotal = Number(response.headers.get('content-length') || 0);
+    // Fetch exposes decoded response bytes. A compressed Content-Length therefore cannot be used as their total.
+    let total = contentEncoding && contentEncoding !== 'identity' ? 0 : headerTotal;
     const reader = response.body.getReader();
     const chunks = [];
     let loaded = 0;
@@ -532,12 +562,9 @@
       if (!value) continue;
       chunks.push(value);
       loaded += value.byteLength || value.length || 0;
-      if (total > 0) {
-        const percent = Math.min(100, (loaded / total) * 100);
-        setProgress(percent, `${statusPrefix}（${formatBytesForAccountImport(loaded)} / ${formatBytesForAccountImport(total)}）`);
-      } else {
-        setProgress(0, `${statusPrefix}（已下载 ${formatBytesForAccountImport(loaded)}）`);
-      }
+      if (total > 0 && loaded > total) total = 0;
+      setAccountImportDownloadProgress({ loaded, total, visible: true });
+      setProgress(total > 0 ? Math.min(100, (loaded / total) * 100) : 0, statusPrefix);
     }
     const merged = new Uint8Array(loaded);
     let offset = 0;
@@ -545,7 +572,9 @@
       merged.set(chunk, offset);
       offset += chunk.byteLength || chunk.length || 0;
     });
-    if (total > 0) setProgress(100, `${statusPrefix}（${formatBytesForAccountImport(loaded)} / ${formatBytesForAccountImport(total)}）`);
+    if (total > 0 && loaded !== total) total = 0;
+    setAccountImportDownloadProgress({ loaded, total, visible: true });
+    setProgress(100, statusPrefix);
     return new TextDecoder('utf-8').decode(merged);
   }
   function clearAccountInitQueryParameter() {
@@ -880,6 +909,7 @@
         if (importActions instanceof HTMLElement) importActions.style.display = 'none';
         if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
         if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
+        setAccountImportDownloadProgress({ visible: false });
         setProgress(0, '请选择账号列表初始化方式');
       };
       const showImportActions = (status = '请选择账号列表导入方式') => {
@@ -888,6 +918,7 @@
         if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
         if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
         setImportButtonsDisabled(false);
+        setAccountImportDownloadProgress({ visible: false });
         setProgress(0, status);
       };
       const onImport = () => {
@@ -900,6 +931,7 @@
       const finishImport = async (sourceText) => {
         actions.style.display = 'none';
         if (importActions instanceof HTMLElement) importActions.style.display = 'none';
+        setAccountImportDownloadProgress({ visible: false });
         const count = await importAccountFile(sourceText, { showProgress: true });
         cleanup();
         setProgress(100, '', false);
@@ -908,6 +940,7 @@
       const onImportRemote = async () => {
         try {
           setImportButtonsDisabled(true);
+          setAccountImportDownloadProgress({ loaded: 0, visible: true });
           setProgress(0, '正在从远程仓库下载账号列表…');
           const response = await fetch(REMOTE_ACCOUNT_LIST_URL, { cache: 'no-store', credentials: 'omit' });
           if (!response.ok) throw new Error('远程仓库返回 HTTP ' + response.status);
