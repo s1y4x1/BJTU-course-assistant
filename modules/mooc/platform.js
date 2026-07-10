@@ -416,9 +416,14 @@ let moocLoginAssistPopupTabId = null;
         env.loginRequired?.();
         env.setState('offline');
       } else {
-        env.setLoaded(true);
-        env.setState('online');
+        env.setLoaded(false);
+        env.setState('checking');
         env.toast(`中国大学MOOC加载失败：${error?.message || error}`, 'error');
+        if (isPlatformEnabled('mooc')) {
+          setTimeout(() => {
+            if (isPlatformEnabled('mooc') && serial === loadSerial) void load();
+          }, 1200);
+        }
       }
     } finally {
       await releaseHelperTab(helperLeaseId);
@@ -575,7 +580,12 @@ let moocLoginAssistPopupTabId = null;
       env.courseList?.addEventListener('click', handleClick);
     },
     load,
-    clear() { loadSerial++; courses = []; clearCards(); },
+    clear() {
+      loadSerial++;
+      courses = [];
+      clearCards();
+      chrome.runtime.sendMessage({ type: 'MOOC_CANCEL_PENDING' }).catch(() => {});
+    },
     render,
     getCourses: () => courses,
     restore(value) {

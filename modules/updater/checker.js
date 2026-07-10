@@ -1,5 +1,5 @@
 // ============================================================
-//  update-checker.js — 独立更新源检查与安装模块
+//  更新源检查与安装模块
 //  此文件仅供独立发布版本使用。
 //  Edge 扩展商店提交时不包含本文件。
 // ============================================================
@@ -70,6 +70,16 @@ const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
 const VERSION_FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
 const VERSION_FS_DB_STORE = 'handles';
 const VERSION_FS_DIRECTORY_KEY = 'update-directory';
+const VERSION_MODULE_SELECTION_KEY = 'updateModuleSelection';
+const VERSION_OPTIONAL_MODULES = Object.freeze({
+  ykt: '雨课堂',
+  mrjzy: '每日交作业',
+  jlgj: '接龙管家',
+  mooc: '中国大学MOOC',
+  academic: '教务系统',
+  captcha: '本地验证码识别',
+  updater: '更新组件'
+});
 let versionRefreshCountdownTimer = null;
 let versionRefreshCountdownAction = null;
 
@@ -144,16 +154,10 @@ async function validateVersionUpdateDirectory(handle) {
   try {
     const manifestHandle = await handle.getFileHandle('manifest.json');
     const manifest = JSON.parse(await (await manifestHandle.getFile()).text());
-    const currentManifest = chrome.runtime.getManifest();
-    if (Number(manifest?.manifest_version) !== Number(currentManifest.manifest_version)
-      || String(manifest?.name || '').trim() !== String(currentManifest.name || '').trim()) {
-      throw new Error('manifest.json 不属于当前扩展');
-    }
-    await handle.getFileHandle('app.html');
-    await handle.getFileHandle('update-checker.js');
+    if (!manifest || typeof manifest !== 'object') throw new Error('manifest.json 格式无效');
   } catch (error) {
-    if (String(error?.message || '').includes('不属于当前扩展')) throw error;
-    throw new Error('所选目录不是 BJTU 课程助手的扩展安装目录');
+    if (String(error?.message || '').includes('manifest.json')) throw error;
+    throw new Error('所选目录中未找到有效的 manifest.json');
   }
   return handle;
 }
@@ -1200,6 +1204,85 @@ function selectUpdateArchiveFiles(files, updateRule) {
   });
 }
 
+function getArchiveModuleIds(files) {
+  return [...new Set((files || []).map((item) => {
+    const match = String(item?.path || '').match(/^modules\/([^/]+)\//i);
+    return match ? String(match[1] || '').toLowerCase() : '';
+  }).filter((id) => Object.hasOwn(VERSION_OPTIONAL_MODULES, id)))];
+}
+
+async function chooseUpdateModules(archiveFiles) {
+  const packaged = getArchiveModuleIds(archiveFiles);
+  const available = globalThis.__bjtuAvailableModules || {};
+  const candidates = Object.keys(VERSION_OPTIONAL_MODULES)
+    .filter((id) => packaged.includes(id) || available[id] === true);
+  if (!candidates.length) return new Set();
+  const stored = await chrome.storage.local.get(VERSION_MODULE_SELECTION_KEY).catch(() => ({}));
+  const previous = stored?.[VERSION_MODULE_SELECTION_KEY];
+  const initial = new Set(Array.isArray(previous)
+    ? previous.filter((id) => candidates.includes(id))
+    : candidates.filter((id) => available[id] === true || packaged.includes(id)));
+
+  return new Promise((resolve) => {
+    const mask = document.createElement('div');
+    mask.className = 'version-modal-mask show';
+    mask.style.zIndex = '10030';
+    mask.innerHTML = `<div class="version-modal-card" style="width:min(520px,calc(100vw - 32px));">
+      <div class="version-modal-header"><strong>选择要保留的模块</strong></div>
+      <div style="margin:8px 0;color:#64748b;font-size:13px;">智慧课程平台和课程合并核心始终保留。未勾选的可选模块不会解压，已安装时将被删除。</div>
+      <div data-module-list style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0;"></div>
+      <div style="display:flex;gap:8px;align-items:center;"><button type="button" data-invert style="background:#64748b;">反选</button><button type="button" data-confirm style="flex:1;">确定</button></div>
+    </div>`;
+    const list = mask.querySelector('[data-module-list]');
+    candidates.forEach((id) => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:7px;margin:0;padding:7px 8px;border:1px solid #dbe2ea;border-radius:6px;';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = id;
+      checkbox.checked = initial.has(id);
+      checkbox.style.width = 'auto';
+      label.append(checkbox, document.createTextNode(VERSION_OPTIONAL_MODULES[id]));
+      list.appendChild(label);
+    });
+    mask.querySelector('[data-invert]').addEventListener('click', () => {
+      list.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
+    });
+    mask.querySelector('[data-confirm]').addEventListener('click', async () => {
+      const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
+      await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selected] }).catch(() => {});
+      mask.remove();
+      resolve(selected);
+    });
+    document.body.appendChild(mask);
+  });
+}
+
+function filterFilesByModules(files, selectedModules) {
+  return files.filter((item) => {
+    const match = String(item?.path || '').match(/^modules\/([^/]+)\//i);
+    if (!match || match[1].toLowerCase() === 've') return true;
+    const id = match[1].toLowerCase();
+    return !Object.hasOwn(VERSION_OPTIONAL_MODULES, id) || selectedModules.has(id);
+  });
+}
+
+async function removeUnselectedModuleDirectories(selectedModules) {
+  const root = versionUpdateDirectoryHandle;
+  let modulesDirectory;
+  try {
+    modulesDirectory = await root.getDirectoryHandle('modules');
+  } catch {
+    return;
+  }
+  for (const id of Object.keys(VERSION_OPTIONAL_MODULES)) {
+    if (selectedModules.has(id)) continue;
+    await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
+      if (error?.name !== 'NotFoundError') throw error;
+    });
+  }
+}
+
 async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) {
   setVersionDownloadBar({ visible: true, percent: 0 });
   setVersionDownloadProgressUi({
@@ -1222,10 +1305,14 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
     .filter((entry) => !entry.directory)
     .map((entry) => ({ entry, path: normalizeUpdateEntryPath(entry.name, commonRoot) }))
     .filter((item) => item.path);
+  const selectedModules = await chooseUpdateModules(archiveFiles);
   const resetDirectory = Array.isArray(updateRule) && updateRule.length === 1 && updateRule[0] === true;
   if (resetDirectory) await clearVersionUpdateDirectory();
-  const files = selectUpdateArchiveFiles(archiveFiles, updateRule);
-  if (!files.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
+  else await removeUnselectedModuleDirectories(selectedModules);
+  const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
+  if (!selectedArchiveFiles.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
+  const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
+  if (!files.length) return 0;
 
   let completedCount = 0;
   setVersionDownloadProgressUi({

@@ -350,7 +350,6 @@ function renderMrjzyStandaloneCourses() {
     courseListDiv.appendChild(card);
 
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
-    window.yktMatchedHomeworkByCourseId[courseId] = [];
     window.mrjzyMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
 
     renderHomeworkList(courseId);
@@ -633,7 +632,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   const pickMrjzyDeadline = (w) => String(w?.workRemark || w?.endTime || w?.end || w?.deadline || '').trim();
   const pickMrjzyTitle = (w) => String(w?.workDetail || w?.title || '').trim() || `作业 ${w?.workId || ''}`;
 
-  const matchMap = collectCourseNameMatchMap(courses);
+  const matchMap = new Map();
   const endTime = todayEndDateTimeString();
   const listResp = await postMrjzyForm(MRJZY_WORK_LIST_API, {
     start: 0,

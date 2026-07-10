@@ -258,13 +258,17 @@ function isPlatformEnabled(platform) {
 
 function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
   const src = (raw && typeof raw === 'object') ? raw : null;
-  return {
+  const result = {
     jlgj: typeof src?.jlgj === 'boolean' ? src.jlgj : !!fallback.jlgj,
     mooc: typeof src?.mooc === 'boolean' ? src.mooc : !!fallback.mooc,
     mrjzy: typeof src?.mrjzy === 'boolean' ? src.mrjzy : !!fallback.mrjzy,
     ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
     ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt
   };
+  ['ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((id) => {
+    if (globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(id)) result[id] = false;
+  });
+  return result;
 }
 
 function sanitizePlatformVisible(raw, fallback = DEFAULT_PLATFORM_VISIBLE) {
@@ -278,7 +282,10 @@ function sanitizePlatformVisible(raw, fallback = DEFAULT_PLATFORM_VISIBLE) {
 function applyPlatformVisibility() {
   const buttons = { ve: veStatusBtn, ykt: yktStatusBtn, mrjzy: mrjzyStatusBtn, jlgj: jlgjStatusBtn, mooc: moocStatusBtn };
   Object.entries(buttons).forEach(([key, button]) => {
-    if (button) button.style.display = window.platformVisible?.[key] === false ? 'none' : '';
+    if (!button) return;
+    const moduleMissing = key !== 've' && globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(key);
+    button.hidden = moduleMissing;
+    button.style.display = moduleMissing || window.platformVisible?.[key] === false ? 'none' : '';
   });
 }
 
@@ -410,8 +417,7 @@ function bumpPlatformLoadVersion(platform) {
   return next;
 }
 
-// -- 更新检查功能已移至 update-checker.js --
-// 当 update-checker.js 未加载时（Edge 商店版本），版本按钮自动隐藏。
+// 更新检查由可选 updater 模块提供；模块未安装时版本按钮自动隐藏。
 
 function clearPlatformData(platform) {
   if (platform === 'ykt') {
@@ -479,17 +485,26 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   }
 
   const version = bumpPlatformLoadVersion(platform);
-  const veCourses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+  // Optional platforms always acquire and normalize their own data first. Matching
+  // against VE courses is a core concern handled after the module finishes.
+  const independentCourseInput = [];
+  const finishIndependentLoad = () => {
+    rematchExternalByVeCourses();
+    rerenderAllHomeworkAreas();
+    if (platform === 'ykt') renderYktStandaloneCourses();
+    if (platform === 'mrjzy') renderMrjzyStandaloneCourses();
+    if (platform === 'jlgj') renderJlgjStandaloneCourses();
+  };
 
   if (platform === 'ykt') {
     setPlatformLoginState('ykt', 'checking');
-    scheduleYktLoad(veCourses, version).catch(() => renderYktNeedLoginMessage());
+    scheduleYktLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderYktNeedLoginMessage());
   } else if (platform === 'mrjzy') {
     setPlatformLoginState('mrjzy', 'checking');
-    scheduleMrjzyLoad(veCourses, version).catch(() => renderMrjzyNeedLoginMessage());
+    scheduleMrjzyLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderMrjzyNeedLoginMessage());
   } else if (platform === 'jlgj') {
     setPlatformLoginState('jlgj', 'checking');
-    scheduleJlgjLoad(veCourses, version).catch(() => renderJlgjNeedLoginMessage());
+    scheduleJlgjLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderJlgjNeedLoginMessage());
   } else {
     setPlatformLoginState('mooc', 'checking');
     window.BjtuMoocPlatform?.load().catch(() => {});
@@ -599,6 +614,19 @@ function rerenderAllHomeworkAreas() {
     renderHomeworkList(cid);
   });
   syncCourseActionLoadingSpinnerPhase();
+}
+
+function renderEnabledExternalStandaloneCourses() {
+  if (isPlatformEnabled('ykt') && typeof renderYktStandaloneCourses === 'function') renderYktStandaloneCourses();
+  if (isPlatformEnabled('mrjzy') && typeof renderMrjzyStandaloneCourses === 'function') renderMrjzyStandaloneCourses();
+  if (isPlatformEnabled('jlgj') && typeof renderJlgjStandaloneCourses === 'function') renderJlgjStandaloneCourses();
+}
+
+function hasMatchedExternalHomework(courseId) {
+  const id = String(courseId || '');
+  return ((window.yktMatchedHomeworkByCourseId?.[id] || []).length > 0)
+    || ((window.mrjzyMatchedHomeworkByCourseId?.[id] || []).length > 0)
+    || ((window.jlgjMatchedHomeworkByCourseId?.[id] || []).length > 0);
 }
 
 function isPlatformChecking(platform) {
@@ -1191,7 +1219,13 @@ window.addEventListener('bjtu-theme-change', () => {
     }
     if (changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY]) {
       window.autoLoadAllHomeworkDetails = changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY].newValue === true;
-      if (window.autoLoadAllHomeworkDetails && isPlatformEnabled('ykt')) scheduleYktLoad(window.currentVeCourseList || []);
+      if (window.autoLoadAllHomeworkDetails && isPlatformEnabled('ykt')) {
+        scheduleYktLoad([]).then(() => {
+          rematchExternalByVeCourses();
+          rerenderAllHomeworkAreas();
+          renderYktStandaloneCourses();
+        }).catch(() => {});
+      }
     }
     if (changes[JLGJ_DARK_MODE_KEY]) {
       window.jlgjDarkModeEnabled = changes[JLGJ_DARK_MODE_KEY].newValue !== false;
@@ -2363,6 +2397,26 @@ function normalizeCourseNumToken(v) {
 function normalizeTail10Token(v) {
   const t = normalizeCourseNumToken(v).replace(/[^A-Z0-9]/g, '');
   return t.length > 10 ? t.slice(-10) : t;
+}
+
+function getVeCourseSeq10(course) {
+  const fzId = course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '';
+  const fromFzId = normalizeTail10Token(fzId);
+  if (fromFzId) return fromFzId;
+  const fallback = course?.course_num || course?.courseNum || course?.courseNo
+    || course?.course_id || course?.courseId || course?.id || course?.cId || '';
+  return normalizeTail10Token(fallback);
+}
+
+function collectVeFzIdTail10Map(courses) {
+  const result = new Map();
+  (courses || []).forEach((course) => {
+    const courseId = course.id || course.cId || course.courseId || course.course_id;
+    const fzId = course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '';
+    const seq10 = normalizeTail10Token(fzId);
+    if (courseId && seq10) result.set(seq10, { courseId, fzId });
+  });
+  return result;
 }
 
 
@@ -4681,6 +4735,9 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
 // -------------------- Init --------------------
 (async function init() {
+  await globalThis.BjtuModuleRegistry?.ready;
+  await globalThis.__bjtuPlatformModulesReady;
+  await globalThis.__bjtuOptionalPlatformAdaptersReady;
   setupRightColumnResizer();
   updateTotalProgress();
   updateResourceDownloadTotals();

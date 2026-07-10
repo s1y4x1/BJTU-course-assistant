@@ -695,7 +695,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   }
   setPlatformLoginState('ykt', 'checking');
   ensureYktSection();
-  const strictMatchMap = collectVeFzIdTail10Map(courses);
+  const strictMatchMap = new Map();
 
   let listResp;
   try {
@@ -798,13 +798,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     return yktExamSharedTabId;
   };
 
-  const getCurrentBoundCourseId = (entry) => {
-    const veCourses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
-    const strictMap = collectVeFzIdTail10Map(veCourses);
-    const tk = String(entry?.strictToken || '').trim();
-    const m = tk ? strictMap.get(tk) : null;
-    return m?.courseId ? String(m.courseId) : '';
-  };
+  const getCurrentBoundCourseId = (entry) => String(entry?.boundCourseId || '');
 
   const rerenderEntryCard = (entry) => {
     if (isStale()) return;
@@ -884,11 +878,8 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const currentBound = getCurrentBoundCourseId(entry);
     if (currentBound) window.yktHomeworkLoadingByCourse[currentBound] = false;
 
-    rematchExternalByVeCourses();
     rerenderAllHomeworkAreas();
     renderYktStandaloneCourses();
-    if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-    if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
 
     let queuedChanged = false;
     homeworks.forEach((hw) => {

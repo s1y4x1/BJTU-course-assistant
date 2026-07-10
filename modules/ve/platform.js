@@ -144,9 +144,7 @@ async function restartVePlatformForLoginExpired(reason = '登录已失效，正�
       renderCourseList([]);
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
-      if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-      if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
+      renderEnabledExternalStandaloneCourses();
 
       await new Promise((resolve) => setTimeout(resolve, 80));
       window.platformEnabled.ve = true;
@@ -160,27 +158,6 @@ async function restartVePlatformForLoginExpired(reason = '登录已失效，正�
     }
   })();
   return window.veLoginExpiredRestartPromise;
-}
-
-function getVeCourseSeq10(course) {
-  const fzId = course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '';
-  const fromFzId = normalizeTail10Token(fzId);
-  if (fromFzId) return fromFzId;
-  const fallback = course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || course?.courseId || course?.id || course?.cId || '';
-  return normalizeTail10Token(fallback);
-}
-
-function collectVeFzIdTail10Map(courses) {
-  const m = new Map();
-  (courses || []).forEach((course) => {
-    const courseId = course.id || course.cId || course.courseId || course.course_id;
-    const fzId = course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '';
-    const seq10 = normalizeTail10Token(fzId);
-    if (courseId && seq10) {
-      m.set(seq10, { courseId, fzId });
-    }
-  });
-  return m;
 }
 
 async function fetchResourceSpaceListRaw(rows = 10, searchName = '') {
@@ -1608,9 +1585,7 @@ async function loadCourses() {
       renderCourseList([]);
       rematchExternalByVeCourses();
       rerenderAllHomeworkAreas();
-      if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-      if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-      if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
+      renderEnabledExternalStandaloneCourses();
       return;
     }
 
@@ -1622,9 +1597,7 @@ async function loadCourses() {
     rematchExternalByVeCourses();
     renderCourseList(list);
     rerenderAllHomeworkAreas();
-    if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-    if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-    if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
+    renderEnabledExternalStandaloneCourses();
   } catch (e) {
     setPlatformLoginState('ve', 'offline');
     const errMsg = String(e?.message || '');
@@ -1642,9 +1615,7 @@ async function loadCourses() {
     renderCourseList([]);
     rematchExternalByVeCourses();
     rerenderAllHomeworkAreas();
-    if (isPlatformEnabled('ykt')) renderYktStandaloneCourses();
-    if (isPlatformEnabled('mrjzy')) renderMrjzyStandaloneCourses();
-    if (isPlatformEnabled('jlgj')) renderJlgjStandaloneCourses();
+    renderEnabledExternalStandaloneCourses();
   } finally {
     if (courseLoadVersion === window.courseListLoadVersion && courseLoadingStatus) courseLoadingStatus.style.display = 'none';
   }
@@ -2307,9 +2278,7 @@ async function prefetchHomeworkAttachments(courseId, list) {
 async function checkHomework(courseId) {
   const area = document.getElementById(`homework-area-${courseId}`);
   if (!area) return false;
-  const hasMatchedExternal = ((window.yktMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
-    || ((window.mrjzyMatchedHomeworkByCourseId?.[courseId] || []).length > 0)
-    || ((window.jlgjMatchedHomeworkByCourseId?.[courseId] || []).length > 0);
+  const hasMatchedExternal = hasMatchedExternalHomework(courseId);
   if (!hasMatchedExternal && !String(area.innerHTML || '').trim()) {
     area.innerHTML = '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业…';
   }

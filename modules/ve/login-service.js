@@ -85,9 +85,9 @@
         return {
           ok: false,
           reason: 'captcha-required',
-          message: captcha?.reason === 'quota-exhausted'
-            ? '免费验证码识别次数已用尽，请输入验证码后继续登录。'
-            : '验证码识别失败，请输入验证码后继续登录。'
+          message: captcha?.reason === 'module-missing'
+            ? '本地验证码识别模块未安装，请输入验证码后继续登录。'
+            : '验证码本地识别失败，请输入验证码后继续登录。'
         };
       }
       code = captcha.passcode;

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "BJTU 课程助手",
   "description": "聚合智慧课程平台、雨课堂、每日交作业、接龙管家和中国大学MOOC的课程与作业，并支持教务系统登录和成绩提醒。",
-  "version": "11.11.18",
+  "version": "12.0.0",
   "default_locale": "zh_CN",
   "icons": {
     "16": "icons/16.png",
@@ -19,7 +19,8 @@
     "downloads",
     "alarms",
     "unlimitedStorage",
-    "notifications"
+    "notifications",
+    "offscreen"
   ],
   "host_permissions": [
     "http://123.121.147.7:88/*",
@@ -43,11 +44,10 @@
     "https://ginnnnnn.top/*",
     "https://codeload.github.com/*",
     "https://raw.githubusercontent.com/*",
-    "https://s1y4x1.github.io/*",
-    "https://bhshare.cn/*"
+    "https://s1y4x1.github.io/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self';"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   },
   "action": {
     "default_title": "BJTU 课程助手",
@@ -66,40 +66,12 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.icourse163.org/*"
-      ],
-      "js": [
-        "mooc-inject.js"
-      ],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://i.jielong.com/*"
-      ],
-      "js": [
-        "jlgj-theme.js"
-      ],
-      "run_at": "document_start"
-    },
-    {
-      "matches": [
-        "https://i.jielong.com/*"
-      ],
-      "js": [
-        "jlgj-capture.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": [
         "http://123.121.147.7:88/ve/*"
       ],
       "js": [
-        "vendor/ve/main.min.js",
-        "ve-login-credentials-dialog.js",
-        "ve-login-overlay.js"
+        "modules/ve/vendor/main.min.js",
+        "modules/ve/login-credentials-dialog.js",
+        "modules/ve/login-overlay.js"
       ],
       "run_at": "document_idle"
     }
@@ -107,8 +79,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "ve-login-overlay.html",
-        "ve-login-overlay.css"
+        "modules/ve/login-overlay.html",
+        "modules/ve/login-overlay.css"
       ],
       "matches": [
         "http://123.121.147.7:88/*"

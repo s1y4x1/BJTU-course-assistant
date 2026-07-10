@@ -770,8 +770,6 @@ function renderJlgjStandaloneCourses() {
     courseListDiv.appendChild(card);
 
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
-    window.yktMatchedHomeworkByCourseId[courseId] = [];
-    window.mrjzyMatchedHomeworkByCourseId[courseId] = [];
     window.jlgjMatchedHomeworkByCourseId[courseId] = c.homeworks || [];
 
     renderHomeworkList(courseId);
@@ -805,7 +803,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
   }
 
   try {
-    const matchMap = collectCourseNameMatchMap(courses);
+    const matchMap = new Map();
 
     const pickArr = (payload) => {
       const data = extractJlgjData(payload);

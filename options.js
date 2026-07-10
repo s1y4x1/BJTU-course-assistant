@@ -100,13 +100,17 @@ function formatShanghaiDateForFile(date = new Date()) {
 
 function normalizePlatformEnabled(raw) {
   const src = (raw && typeof raw === 'object') ? raw : {};
-  return {
+  const result = {
     jlgj: typeof src.jlgj === 'boolean' ? src.jlgj : DEFAULT_PLATFORM_ENABLED.jlgj,
     mooc: typeof src.mooc === 'boolean' ? src.mooc : DEFAULT_PLATFORM_ENABLED.mooc,
     mrjzy: typeof src.mrjzy === 'boolean' ? src.mrjzy : DEFAULT_PLATFORM_ENABLED.mrjzy,
     ve: typeof src.ve === 'boolean' ? src.ve : DEFAULT_PLATFORM_ENABLED.ve,
     ykt: typeof src.ykt === 'boolean' ? src.ykt : DEFAULT_PLATFORM_ENABLED.ykt
   };
+  ['ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((id) => {
+    if (globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(id)) result[id] = false;
+  });
+  return result;
 }
 
 function normalizePlatformVisible(raw) {
@@ -155,6 +159,7 @@ function goBackToApp() {
 }
 
 (async function init() {
+  await globalThis.BjtuModuleRegistry?.ready;
   const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes } = await chrome.storage.local.get([
     'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes'
   ]);

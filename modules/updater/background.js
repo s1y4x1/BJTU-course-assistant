@@ -22,6 +22,8 @@
   const APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
   const PENDING_RELOAD_KEY = 'pendingUpdateReload';
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
+  const MODULE_SELECTION_KEY = 'updateModuleSelection';
+  const OPTIONAL_MODULE_IDS = ['ykt', 'mrjzy', 'jlgj', 'mooc', 'academic', 'captcha', 'updater'];
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   let runningPromise = null;
 
@@ -243,13 +245,7 @@
     if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted') return null;
     const manifestHandle = await handle.getFileHandle('manifest.json');
     const manifest = JSON.parse(await (await manifestHandle.getFile()).text());
-    const current = chrome.runtime.getManifest();
-    if (Number(manifest?.manifest_version) !== Number(current.manifest_version)
-      || String(manifest?.name || '').trim() !== String(current.name || '').trim()) {
-      throw new Error('已授权目录不是当前扩展安装目录');
-    }
-    await handle.getFileHandle('app.html');
-    await handle.getFileHandle('update-checker.js');
+    if (!manifest || typeof manifest !== 'object') throw new Error('manifest.json 格式无效');
     return handle;
   }
 
@@ -338,6 +334,30 @@
     return files;
   }
 
+  function filterFilesByModules(files, selectedModules) {
+    return files.filter(({ path }) => {
+      const match = String(path || '').match(/^modules\/([^/]+)\//i);
+      if (!match || match[1].toLowerCase() === 've') return true;
+      const id = match[1].toLowerCase();
+      return !OPTIONAL_MODULE_IDS.includes(id) || selectedModules.has(id);
+    });
+  }
+
+  async function removeUnselectedModules(root, selectedModules) {
+    let modulesDirectory;
+    try {
+      modulesDirectory = await root.getDirectoryHandle('modules');
+    } catch {
+      return;
+    }
+    for (const id of OPTIONAL_MODULE_IDS) {
+      if (selectedModules.has(id)) continue;
+      await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
+        if (error?.name !== 'NotFoundError') throw error;
+      });
+    }
+  }
+
   async function clearDirectory(root) {
     const names = [];
     for await (const [name] of root.entries()) names.push(name);
@@ -375,11 +395,19 @@
     const archive = await retryNetworkOperation(() => downloadArchive(release.url), 2);
     return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
       const entries = parseZipEntries(archive);
-      const files = selectFiles(entries, release.update);
-      if (!files.length) throw new Error('更新压缩包中没有需要写入的文件');
+      const storedSelection = await chrome.storage.local.get(MODULE_SELECTION_KEY).catch(() => ({}));
+      const selectedModules = new Set(Array.isArray(storedSelection?.[MODULE_SELECTION_KEY])
+        ? storedSelection[MODULE_SELECTION_KEY]
+        : OPTIONAL_MODULE_IDS);
+      const selectedArchiveFiles = selectFiles(entries, release.update);
+      if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
+      const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
       if (Array.isArray(release.update) && release.update.length === 1 && release.update[0] === true) {
         await clearDirectory(root);
+      } else {
+        await removeUnselectedModules(root, selectedModules);
       }
+      if (!files.length) return 0;
       let completed = 0;
       for (const batch of Array.from({ length: Math.ceil(files.length / 8) }, (_, index) => files.slice(index * 8, index * 8 + 8))) {
         await Promise.all(batch.map(async ({ entry, path }) => {

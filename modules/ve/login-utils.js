@@ -3,26 +3,7 @@
 
   const BASE_VE = 'http://123.121.147.7:88/ve/';
   const CAPTCHA_URL = BASE_VE + 'GetImg';
-  const CAPTCHA_OCR_URL = 'https://bhshare.cn/imgcode/';
   const gbkEncodeCache = new Map();
-  let captchaRecognitionExhausted = false;
-  const CAPTCHA_EXHAUSTED_SESSION_KEY = 'veCaptchaRecognitionExhausted';
-
-  async function isCaptchaRecognitionExhausted() {
-    if (captchaRecognitionExhausted) return true;
-    try {
-      const state = await chrome.storage.session.get(CAPTCHA_EXHAUSTED_SESSION_KEY);
-      captchaRecognitionExhausted = state?.[CAPTCHA_EXHAUSTED_SESSION_KEY] === true;
-    } catch {
-      // Session storage is not required for the current context.
-    }
-    return captchaRecognitionExhausted;
-  }
-
-  function markCaptchaRecognitionExhausted() {
-    captchaRecognitionExhausted = true;
-    chrome.storage.session.set({ [CAPTCHA_EXHAUSTED_SESSION_KEY]: true }).catch(() => {});
-  }
 
   function gbkBytesForChar(ch) {
     if (gbkEncodeCache.has(ch)) return gbkEncodeCache.get(ch);
@@ -87,32 +68,19 @@
 
   async function recognizeCaptcha({ signal } = {}) {
     const image = await getCaptchaImage({ signal });
-    if (await isCaptchaRecognitionExhausted()) {
-      return { ok: false, reason: 'quota-exhausted', image, times: 0 };
+    const recognizer = global.BjtuCaptchaRecognizer;
+    if (!recognizer || typeof recognizer.recognize !== 'function') {
+      return { ok: false, reason: 'module-missing', image };
     }
     try {
-      const form = new FormData();
-      form.append('token', 'free');
-      form.append('type', 'local');
-      form.append('file', image, 'GetImg.jpg');
-      const response = await fetch(CAPTCHA_OCR_URL, {
-        method: 'POST',
-        body: form,
-        cache: 'no-store',
-        signal
-      });
-      if (!response.ok) throw new Error('验证码识别服务返回 HTTP ' + response.status);
-      const payload = await response.json();
-      const passcode = normalizePasscode(payload?.data);
-      const times = Math.max(0, Number(payload?.times) || 0);
-      if (times === 0) markCaptchaRecognitionExhausted();
-      if (Number(payload?.code) !== 200 || passcode.length !== 4) {
-        return { ok: false, reason: 'recognition-failed', image, times };
-      }
-      return { ok: true, passcode, image, times };
+      const result = await recognizer.recognize(image, { signal });
+      const passcode = normalizePasscode(result?.passcode);
+      return result?.ok && passcode.length === 4
+        ? { ok: true, passcode, image }
+        : { ok: false, reason: 'recognition-failed', image };
     } catch (error) {
       if (signal?.aborted || error?.name === 'AbortError') throw error;
-      return { ok: false, reason: 'recognition-failed', image, times: null, error };
+      return { ok: false, reason: 'recognition-failed', image, error };
     }
   }
 

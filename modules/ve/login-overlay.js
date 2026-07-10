@@ -28,8 +28,8 @@
   let stylesheet = '';
   try {
     [template, stylesheet] = await Promise.all([
-      fetch(chrome.runtime.getURL('ve-login-overlay.html')).then((response) => response.text()),
-      fetch(chrome.runtime.getURL('ve-login-overlay.css')).then((response) => response.text())
+      fetch(chrome.runtime.getURL('modules/ve/login-overlay.html')).then((response) => response.text()),
+      fetch(chrome.runtime.getURL('modules/ve/login-overlay.css')).then((response) => response.text())
     ]);
   } catch {
     return;

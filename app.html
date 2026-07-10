@@ -15,7 +15,7 @@
 
     <div class="page-top-config">
         <div class="top-inline-controls">
-            <div id="version-info" class="version-info">
+            <div id="version-info" class="version-info" data-module="updater" hidden>
                 <button id="version-btn" type="button" class="version-btn loading" disabled>
                     <span class="version-btn-spinner"></span>
                     <span>获取最新版本中…</span>
@@ -135,25 +135,25 @@
                         <a class="platform-link" href="http://123.121.147.7:88/ve/" target="_blank"
                             rel="noopener noreferrer">智慧课程平台</a>
                     </span>
-                    <span id="ykt-status-btn" class="platform-status-btn checking" title="雨课堂登录状态检测中">
+                    <span id="ykt-status-btn" class="platform-status-btn checking" title="雨课堂登录状态检测中" data-module="ykt" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="ykt"
                             aria-label="切换雨课堂"></button>
                         <a class="platform-link" href="https://www.yuketang.cn/web" target="_blank"
                             rel="noopener noreferrer">雨课堂</a>
                     </span>
-                    <span id="mrjzy-status-btn" class="platform-status-btn checking" title="每日交作业登录状态检测中">
+                    <span id="mrjzy-status-btn" class="platform-status-btn checking" title="每日交作业登录状态检测中" data-module="mrjzy" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="mrjzy"
                             aria-label="切换每日交作业"></button>
                         <a class="platform-link" href="https://zuoye.lulufind.com/" target="_blank"
                             rel="noopener noreferrer">每日交作业</a>
                     </span>
-                    <span id="jlgj-status-btn" class="platform-status-btn checking" title="接龙管家登录状态检测中">
+                    <span id="jlgj-status-btn" class="platform-status-btn checking" title="接龙管家登录状态检测中" data-module="jlgj" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="jlgj"
                             aria-label="切换接龙管家"></button>
                         <a class="platform-link" href="https://i.jielong.com/my-class" target="_blank"
                             rel="noopener noreferrer">接龙管家</a>
                     </span>
-                    <span id="mooc-status-btn" class="platform-status-btn checking" title="中国大学MOOC登录状态检测中">
+                    <span id="mooc-status-btn" class="platform-status-btn checking" title="中国大学MOOC登录状态检测中" data-module="mooc" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="mooc"
                             aria-label="切换中国大学MOOC"></button>
                         <a class="platform-link" href="https://www.icourse163.org/" target="_blank"
@@ -327,27 +327,24 @@
     </div>
 
     <script src="vendor/qrcode/qrcode.min.js"></script>
-    <script src="vendor/mrjzy/md5.js"></script>
-    <script src="vendor/ve/main.min.js"></script>
-    <script src="ve-login-utils.js"></script>
-    <script src="ve-login-credentials-dialog.js"></script>
-    <script src="account-store.js"></script>
-    <script src="account-login.js"></script>
+    <script src="modules/ve/vendor/main.min.js"></script>
+    <script src="module-registry.js"></script>
+    <script src="modules/ve/login-utils.js"></script>
+    <script src="modules/ve/login-credentials-dialog.js"></script>
+    <script src="modules/ve/account-store.js"></script>
+    <script src="modules/ve/account-login.js"></script>
     <script src="qr-utils.js"></script>
     <script src="popup-cache.js"></script>
-    <script src="ve-homework-core.js"></script>
-    <script src="ve-platform.js"></script>
-    <script src="ve-session.js"></script>
-    <script src="ykt-platform.js"></script>
-    <script src="mrjzy-platform.js"></script>
-    <script src="jlgj-platform.js"></script>
-    <script src="mooc-platform.js"></script>
-    <script src="resource-download.js"></script>
+    <script src="modules/ve/homework-core.js"></script>
+    <script src="modules/ve/platform.js"></script>
+    <script src="modules/ve/session.js"></script>
+    <script src="platform-loader.js"></script>
+    <script src="optional-platform-adapters.js"></script>
+    <script src="modules/ve/resource-download.js"></script>
     <script src="saved-uploads.js"></script>
     <script src="deadline-countdown.js"></script>
     <script src="app.js"></script>
     <script src="upload-manager.js"></script>
-    <script src="update-filesystem.js"></script>
-    <script src="update-checker.js"></script>
+    <script src="updater-loader.js"></script>
 </body>
 </html>
