@@ -937,6 +937,7 @@ let pendingUsernameChange = null; // { from: string, to: string } | null
 let isLoginInProgress = false;
 let loginCancelRequested = false;
 let loginAbortController = null;
+let suppressedUsernameChangeValue = '';
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
 const CURRENT_XQ_CODE_KEY = 'selectedXqCode';
 let currentXqOptions = []; // [{xqId,xqCode,xqName,currentFlag,beginDate,endDate}]
@@ -2179,6 +2180,7 @@ async function handleLoginSuccess(username) {
 
   let finalUser = String(username || '').trim();
   usernameInput.value = finalUser;
+  suppressedUsernameChangeValue = finalUser;
   updateJsessionidState();
 
   runPendingLoginCallbacks();
@@ -2201,6 +2203,7 @@ async function handleAlreadyLoggedIn(username, userInfo) {
   isLoginSessionValid = true;
   loginCancelRequested = false;
   hideLoginModal();
+  suppressedUsernameChangeValue = String(username || '').trim();
   runPendingLoginCallbacks();
   showToast('已登录该账号', 'success', 1800);
   await loadAutoLoadCourseResourcesSetting().catch(() => {});
@@ -4640,10 +4643,15 @@ document.addEventListener('click', (e) => {
 let initialUsernameSet = true;
 let loginFlowUsernameSet = false;
 usernameInput.addEventListener('change', async () => {
+  const username = String(usernameInput.value || '').trim();
+  if (suppressedUsernameChangeValue) {
+    const suppress = suppressedUsernameChangeValue === username;
+    suppressedUsernameChangeValue = '';
+    if (suppress) return;
+  }
   if (initialUsernameSet) { initialUsernameSet = false; return; }
   if (loginFlowUsernameSet || isLoginInProgress) return;
 
-  const username = String(usernameInput.value || '').trim();
   usernameChangeVersion += 1;
   try { usernameChangeAbortController?.abort(); } catch {}
   usernameChangeAbortController = new AbortController();

@@ -463,6 +463,7 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
   let nextClassNo = 1;
   let firstError = null;
   let permissionDenied = false;
+  let noReplay = false;
   const maxClassNo = 99;
   const workerCount = 6;
 
@@ -472,7 +473,7 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
     .map(({ teacherName, teacherId, roomName, xkhId }) => ({ teacherName, teacherId, roomName, xkhId }));
   const emit = (done = false) => {
     if (typeof onUpdate === 'function') {
-      onUpdate(visibleRows(), { done, error: !!firstError, permissionDenied });
+      onUpdate(visibleRows(), { done, error: !!firstError, permissionDenied, noReplay });
     }
   };
   const markStop = (classNo) => {
@@ -522,6 +523,11 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
         markStop(classNo);
         return;
       }
+      if (String(data?.STATUS) === '2') {
+        noReplay = true;
+        markStop(classNo);
+        return;
+      }
       if (String(data?.STATUS) !== '0') {
         markStop(classNo);
         return;
@@ -560,7 +566,7 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
   };
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
   emit(true);
-  return { rows: visibleRows(), error: !!firstError, permissionDenied };
+  return { rows: visibleRows(), error: !!firstError, permissionDenied, noReplay };
 }
 
 function renderVeCourseTeachersPopHtml(meta) {
@@ -596,7 +602,7 @@ function renderVeCourseTeachersPopHtml(meta) {
   }
 
   if (meta.noReplay) {
-    return '<div style="font-size:12px; color:#64748b;">无法获取无回放课程的同课教师</div>';
+    return '<div style="font-size:12px; color:#64748b;">无法查询无回放课程其他教师</div>';
   }
 
   if (!tableHtml) {
@@ -753,7 +759,7 @@ function updateVeCourseTeachersPopUi(courseId) {
     if (meta.noReplay) {
       statusLine.style.display = 'flex';
       if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
-      statusText.textContent = '无法获取无回放课程的同课教师';
+      statusText.textContent = '无法查询无回放课程其他教师';
       return;
     }
     if (!rows.length) {
