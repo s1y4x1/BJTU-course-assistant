@@ -15,7 +15,6 @@
   const ADMIN_LOGIN_NAME = 'JyDadmin';
   const ADMIN_USER_NAME = 'admin';
   const ADMIN_QUICK_USERNAME = 'RjREQkM5NTRDMTJBMzU1QkZCNzFDMEM5RjYwNzg4RDg=';
-  const CURRENT_USER_URL = BASE_VE + 'back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
@@ -27,6 +26,18 @@
   const currentAccountImportPromises = new Map();
   let initializationPromise = null;
   let adminAccountNormalizationPromise = null;
+
+  function sendRuntimeMessage(message) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, reason: 'runtime', message: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve(response || { ok: false, reason: 'runtime', message: '扩展后台未返回结果' });
+      });
+    });
+  }
 
   function isAdminLoginName(value) {
     return String(value || '').trim().toLowerCase() === ADMIN_LOGIN_NAME.toLowerCase();
@@ -153,21 +164,10 @@
   }
 
   async function getCurrentUserInfo({ signal } = {}) {
-    try {
-      const res = await fetch(CURRENT_USER_URL, {
-        credentials: 'include',
-        cache: 'no-store',
-        signal,
-        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-      });
-      if (!res.ok) return null;
-      const source = String(await decodeResponse(res) || '').trim();
-      const data = JSON.parse(source.startsWith('{}') && source.length > 2 ? source.slice(2) : source);
-      return String(data?.STATUS) === '0' && data?.result ? data.result : null;
-    } catch (error) {
-      if (signal?.aborted || error?.name === 'AbortError') throw error;
-      return null;
-    }
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    const response = await sendRuntimeMessage({ type: 'VE_LOGIN_CHECK_STATUS', payload: {} });
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    return response?.userInfo || null;
   }
 
   async function ensureCurrentAccountStored(userInfo, { signal } = {}) {
@@ -215,13 +215,13 @@
   }
 
   async function loginAdminWithQuickUsername({ signal } = {}) {
-    const url = BASE_VE + 's.shtml?loginType=2&login=main_2&goLogin=1&username=' + ADMIN_QUICK_USERNAME;
-    const response = await fetch(url, {
-      credentials: 'include',
-      cache: 'no-store',
-      signal
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    const response = await sendRuntimeMessage({
+      type: 'VE_LOGIN_WITH_QUICK_USERNAME',
+      payload: { quickUsername: ADMIN_QUICK_USERNAME, loginName: ADMIN_LOGIN_NAME, recordHistory: false }
     });
-    return parseLoginResponse(await decodeResponse(response));
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    return response;
   }
 
   async function ensureAdminQuickAccountStored() {
@@ -1307,140 +1307,75 @@
     return record ? { loginName: id, ...record } : null;
   }
 
-  function parseLoginResponse(text) {
-    const source = String(text || '');
-    const alerts = [...source.matchAll(/alert\s*\(\s*(['"])(.*?)\1\s*\)/gis)];
-    const message = String(alerts.at(-1)?.[2] || '').trim();
-    if (/错误次数过多|锁定10分钟/i.test(message)) return { ok: false, reason: 'locked', message };
-    if (/账号或密码错误/i.test(message)) return { ok: false, reason: 'credential', message };
-    if (/默认密码[\s\S]*弱密码[\s\S]*重置密码/i.test(source)) {
-      return { ok: false, reason: 'password-reset', message: '需要重置密码后重新登录' };
-    }
-    if (/index\.shtml\?method=index&type=qxkt/i.test(source)) return { ok: true };
-    return { ok: false, reason: 'other', message: message || '登录失败' };
+  async function loginWithPassword(loginName, password, { signal, passcode = '' } = {}) {
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    const response = await sendRuntimeMessage({
+      type: 'VE_LOGIN_WITH_PASSWORD',
+      payload: { loginName, password, passcode }
+    });
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    return response;
   }
 
-  async function loginWithPassword(loginName, password, { signal } = {}) {
-    const url = BASE_VE + 's.shtml?login=main_2&goLogin=1&username='
-      + gbkUrlEncode(String(loginName || '').trim())
-      + '&password=' + encodeURIComponent(String(password || '').trim());
-    const res = await fetch(url, { credentials: 'include', cache: 'no-store', signal });
-    return parseLoginResponse(await decodeResponse(res));
+  async function loginWithQuickUsername(quickUsername, { signal, loginName = '' } = {}) {
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    const response = await sendRuntimeMessage({
+      type: 'VE_LOGIN_WITH_QUICK_USERNAME',
+      payload: { quickUsername, loginName }
+    });
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    return response;
   }
 
-  async function loginWithQuickUsername(quickUsername, { signal } = {}) {
-    const url = BASE_VE + 's.shtml?loginType=2&login=main_2&goLogin=1&username=' + encodeURIComponent(String(quickUsername || '').trim());
-    const res = await fetch(url, { credentials: 'include', cache: 'no-store', signal });
-    return parseLoginResponse(await decodeResponse(res));
+  async function login(loginName, options = {}) {
+    const signal = options?.signal;
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    const response = await sendRuntimeMessage({
+      type: 'VE_LOGIN_REQUEST',
+      payload: {
+        loginName,
+        passwordEncoded: options?.password,
+        passcode: options?.passcode,
+        skipCurrentCheck: options?.skipCurrentCheck,
+        allowStoredCredentials: options?.allowStoredCredentials
+      }
+    });
+    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+    return response;
   }
 
-  function requestRecovery(loginName, message) {
-    return new Promise((resolve) => {
-      const modal = document.getElementById('account-recovery-modal');
-      const text = document.getElementById('account-recovery-message');
-      const choice = document.getElementById('account-recovery-choice');
-      const manual = document.getElementById('account-recovery-manual');
-      const plainInput = document.getElementById('account-recovery-password-plain');
-      const md5Input = document.getElementById('account-recovery-password-md5');
-      const reinit = document.getElementById('account-recovery-reinitialize');
-      const manualBtn = document.getElementById('account-recovery-manual-btn');
-      const cancel = document.getElementById('account-recovery-cancel');
-      const fillDefault = document.getElementById('account-recovery-default');
-      const submit = document.getElementById('account-recovery-submit');
-      const manualCancel = document.getElementById('account-recovery-manual-cancel');
-      if (!(modal instanceof HTMLElement)) return resolve({ action: 'cancel' });
+  async function getCaptchaImageDataUrl() {
+    const response = await sendRuntimeMessage({ type: 'VE_LOGIN_GET_CAPTCHA' });
+    if (!response?.ok || !response.imageUrl) throw new Error(response?.message || '验证码图片获取失败');
+    return response.imageUrl;
+  }
 
-      let settled = false;
-      const cleanup = () => {
-        reinit?.removeEventListener('click', onReinit);
-        manualBtn?.removeEventListener('click', onManual);
-        cancel?.removeEventListener('click', onCancel);
-        fillDefault?.removeEventListener('click', onDefault);
-        submit?.removeEventListener('click', onSubmit);
-        manualCancel?.removeEventListener('click', onCancel);
-        plainInput?.removeEventListener('input', onPlainInput);
-        md5Input?.removeEventListener('input', onMd5Input);
-        plainInput?.removeEventListener('keydown', onPasswordKeyDown);
-        md5Input?.removeEventListener('keydown', onPasswordKeyDown);
-        modal.removeEventListener('mousedown', onMaskDown);
-        modal.removeEventListener('mouseup', onMaskUp);
-      };
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        modal.style.display = 'none';
-        resolve(value);
-      };
-      const onReinit = () => finish({ action: 'reinitialize' });
-      const onManual = () => {
-        if (choice instanceof HTMLElement) choice.style.display = 'none';
-        if (manual instanceof HTMLElement) manual.style.display = 'block';
-        if (plainInput instanceof HTMLInputElement) {
-          plainInput.value = '';
-          plainInput.focus();
-        }
-        if (md5Input instanceof HTMLInputElement) md5Input.value = '';
-      };
-      const onCancel = () => finish({ action: 'cancel' });
-      const onDefault = () => {
-        if (plainInput instanceof HTMLInputElement) {
-          plainInput.value = 'Bjtu@' + String(loginName || '').trim();
-          if (md5Input instanceof HTMLInputElement && typeof global.strEnc === 'function') {
-            md5Input.value = global.strEnc(plainInput.value);
-          }
-          plainInput.focus();
-        }
-      };
-      const onPlainInput = () => {
-        if (!(plainInput instanceof HTMLInputElement) || !(md5Input instanceof HTMLInputElement)) return;
-        md5Input.value = plainInput.value && typeof global.strEnc === 'function'
-          ? global.strEnc(plainInput.value)
-          : '';
-      };
-      const onMd5Input = () => {
-        if (!(md5Input instanceof HTMLInputElement)) return;
-        const value = String(md5Input.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 256).toUpperCase();
-        if (md5Input.value !== value) md5Input.value = value;
-      };
-      const onSubmit = () => {
-        const plain = String(plainInput?.value || '');
-        const password = plain
-          ? (typeof global.strEnc === 'function' ? global.strEnc(plain) : '')
-          : String(md5Input?.value || '').trim();
-        if (!/^(?:[0-9a-f]{16})+$/i.test(password)) {
-          md5Input?.focus();
-          return;
-        }
-        finish({ action: 'password', password });
-      };
-      const onPasswordKeyDown = (event) => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        onSubmit();
-      };
-      const onMaskDown = (event) => { modal.dataset.maskDown = event.target === modal ? '1' : '0'; };
-      const onMaskUp = (event) => {
-        if (event.target === modal && modal.dataset.maskDown === '1') onCancel();
-        delete modal.dataset.maskDown;
-      };
-
-      if (text instanceof HTMLElement) text.textContent = String(message || '账号或密码错误');
-      if (choice instanceof HTMLElement) choice.style.display = 'flex';
-      if (manual instanceof HTMLElement) manual.style.display = 'none';
-      reinit?.addEventListener('click', onReinit);
-      manualBtn?.addEventListener('click', onManual);
-      cancel?.addEventListener('click', onCancel);
-      fillDefault?.addEventListener('click', onDefault);
-      submit?.addEventListener('click', onSubmit);
-      manualCancel?.addEventListener('click', onCancel);
-      plainInput?.addEventListener('input', onPlainInput);
-      md5Input?.addEventListener('input', onMd5Input);
-      plainInput?.addEventListener('keydown', onPasswordKeyDown);
-      md5Input?.addEventListener('keydown', onPasswordKeyDown);
-      modal.addEventListener('mousedown', onMaskDown);
-      modal.addEventListener('mouseup', onMaskUp);
-      modal.style.display = 'flex';
+  function requestRecovery(loginName, message, options = {}) {
+    return global.BjtuVeLoginCredentialsDialog.open({
+      modal: document.getElementById('account-recovery-modal'),
+      message: document.getElementById('account-recovery-message'),
+      choice: document.getElementById('account-recovery-choice'),
+      manual: document.getElementById('account-recovery-manual'),
+      plainInput: document.getElementById('account-recovery-password-plain'),
+      encryptedInput: document.getElementById('account-recovery-password-md5'),
+      captchaWrap: document.getElementById('account-recovery-captcha'),
+      captchaImage: document.getElementById('account-recovery-captcha-image'),
+      passcodeInput: document.getElementById('account-recovery-passcode'),
+      buttons: {
+        reinitialize: document.getElementById('account-recovery-reinitialize'),
+        manual: document.getElementById('account-recovery-manual-btn'),
+        cancel: document.getElementById('account-recovery-cancel'),
+        fillDefault: document.getElementById('account-recovery-default'),
+        submit: document.getElementById('account-recovery-submit'),
+        manualCancel: document.getElementById('account-recovery-manual-cancel')
+      },
+      loginName,
+      messageText: message,
+      requireCaptcha: options?.requireCaptcha === true,
+      fallbackPassword: options?.fallbackPassword,
+      initialCaptchaUrl: options?.captchaImageUrl,
+      loadCaptcha: getCaptchaImageDataUrl,
+      encryptPassword: (plain) => typeof global.strEnc === 'function' ? global.strEnc(plain) : ''
     });
   }
 
@@ -1457,6 +1392,8 @@
     exportAccountFile,
     loginWithPassword,
     loginWithQuickUsername,
+    login,
+    getCaptchaImageDataUrl,
     requestRecovery
   };
 

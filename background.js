@@ -1,6 +1,8 @@
 ﻿importScripts('vendor/ve/main.min.js');
+importScripts('ve-login-utils.js');
 importScripts('account-store.js');
 importScripts('ve-homework-core.js');
+importScripts('ve-login-service.js');
 importScripts('academic-system.js');
 importScripts('update-filesystem.js');
 importScripts('background-updater.js');
@@ -434,118 +436,6 @@ chrome.runtime.onStartup.addListener(() => {
 
 refreshActionPopupFromStorage().catch(() => {});
 
-function parsePortalLoginResponse(text) {
-  const source = String(text || '');
-  const alerts = [...source.matchAll(/alert\s*\(\s*(['"])(.*?)\1\s*\)/gis)];
-  const message = String(alerts.at(-1)?.[2] || '').trim();
-  if (/错误次数过多|锁定10分钟/i.test(message)) return { ok: false, reason: 'locked', message };
-  if (/账号或密码错误/i.test(message)) return { ok: false, reason: 'credential', message };
-  if (/默认密码[\s\S]*弱密码[\s\S]*重置密码/i.test(source)) {
-    return { ok: false, reason: 'password-reset', message: '需要重置密码后重新登录' };
-  }
-  if (/index\.shtml\?method=index&type=qxkt/i.test(source)) return { ok: true };
-  return { ok: false, reason: 'other', message: message || '登录失败' };
-}
-
-function decodePortalResponseBuffer(buf, contentType = '') {
-  const type = String(contentType || '').toLowerCase();
-  if (type.includes('gbk') || type.includes('gb2312')) {
-    return new TextDecoder('gbk').decode(buf);
-  }
-  const utf8 = new TextDecoder('utf-8').decode(buf);
-  if (!utf8.includes('�')) return utf8;
-  const gbk = new TextDecoder('gbk').decode(buf);
-  return gbk && !gbk.includes('�') ? gbk : utf8;
-}
-
-async function decodePortalResponse(res) {
-  return decodePortalResponseBuffer(await res.arrayBuffer(), res.headers.get('content-type'));
-}
-
-async function getPortalCurrentUserInfo() {
-  try {
-    return await globalThis.BjtuVeHomeworkCore.fetchCurrentUserInfo();
-  } catch {
-    return null;
-  }
-}
-
-async function requestPortalLogin(url) {
-  const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
-  return parsePortalLoginResponse(await decodePortalResponse(res));
-}
-
-async function performPortalPageLogin(payload = {}) {
-  const loginName = String(payload?.loginName || '').trim();
-  if (!loginName) return { ok: false, reason: 'empty', message: '请输入账号' };
-  if (!payload?.skipCurrentCheck) {
-    const currentUser = await getPortalCurrentUserInfo();
-    if (String(currentUser?.loginName || '').trim() === loginName) {
-      return { ok: true, alreadyLoggedIn: true, userInfo: currentUser };
-    }
-  }
-
-  await globalThis.BjtuAccountStore.migrateLegacy();
-  const account = await globalThis.BjtuAccountStore.get(loginName);
-  const history = await getEnrichedPortalLoginAccountHistory();
-  const historyRecord = history.find((item) => item.loginName === loginName || item.userId === loginName) || null;
-  const source = account || historyRecord;
-  const plain = String(payload?.passwordPlain || '');
-  const directPassword = String(payload?.passwordEncoded || payload?.passwordMd5 || '').trim();
-  const manualPassword = plain
-    ? (typeof globalThis.strEnc === 'function' ? globalThis.strEnc(plain) : '')
-    : (/^(?:[0-9a-f]{16})+$/i.test(directPassword) ? directPassword : '');
-
-  if (!manualPassword) {
-    const quickUsername = String(source?.quickUsername || '').trim();
-    if (quickUsername) {
-      const quickUrl = 'http://123.121.147.7:88/ve/s.shtml?loginType=2&login=main_2&goLogin=1&username=' + encodeURIComponent(quickUsername);
-      const quickResult = await requestPortalLogin(quickUrl);
-      if (quickResult.ok) return quickResult;
-      if (quickResult.reason === 'locked' || quickResult.reason === 'password-reset') return quickResult;
-    }
-  }
-
-  const password = manualPassword || String(source?.password || source?.passwordMd5 || '').trim();
-  if (!password) {
-    return {
-      ok: false,
-      reason: source ? 'needs-password' : 'account-not-found',
-      message: source ? '未找到可用密码，请手动输入' : '账号不在本地账号列表中，请手动输入密码'
-    };
-  }
-  const passwordUrl = 'http://123.121.147.7:88/ve/s.shtml?login=main_2&goLogin=1&username='
-    + encodeURIComponent(loginName) + '&password=' + encodeURIComponent(password);
-  const result = await requestPortalLogin(passwordUrl);
-  if (!result.ok) return result;
-
-  const userInfo = await getPortalCurrentUserInfo();
-  const finalLoginName = String(userInfo?.loginName || loginName).trim();
-  const finalAccount = finalLoginName === loginName ? account : await globalThis.BjtuAccountStore.get(finalLoginName);
-  const finalHistory = finalLoginName === loginName
-    ? historyRecord
-    : history.find((item) => item.loginName === finalLoginName || item.userId === finalLoginName) || null;
-  const finalSource = finalAccount || finalHistory || source || {};
-  await globalThis.BjtuAccountStore.put({
-    loginName: finalLoginName,
-    userName: String(userInfo?.userName || finalSource?.userName || '').trim(),
-    roleName: String(userInfo?.roleName || finalSource?.roleName || '').trim(),
-    password,
-    quickUsername: String(finalSource?.quickUsername || '').trim()
-  });
-  await savePortalLoginAccountRecord(finalLoginName, {
-    loginName: finalLoginName,
-    userName: String(userInfo?.userName || finalSource?.userName || '').trim(),
-    roleName: String(userInfo?.roleName || finalSource?.roleName || '').trim(),
-    passwordMd5: password,
-    quickUsername: String(finalSource?.quickUsername || '').trim()
-  });
-  return { ...result, userInfo };
-}
-
-globalThis.performPortalPageLogin = performPortalPageLogin;
-globalThis.getPortalCurrentUserInfo = getPortalCurrentUserInfo;
-
 const MOOC_API = {
   courseList: 'https://www.icourse163.org/web/j/learnerCourseRpcBean.getMyLearnedCoursePanelList.rpc',
   courseDetail: 'https://www.icourse163.org/web/j/courseBean.getLastLearnedMocTermDto.rpc',
@@ -924,17 +814,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === 'PORTAL_LOGIN_SUBMIT') {
-    performPortalPageLogin(message?.payload)
+  if (message?.type === 'VE_LOGIN_GET_CAPTCHA') {
+    globalThis.BjtuVeLoginService.getCaptchaDataUrl()
+      .then((imageUrl) => sendResponse({ ok: true, imageUrl }))
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+  if (message?.type === 'VE_LOGIN_REQUEST') {
+    globalThis.BjtuVeLoginService.login(message?.payload)
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
     return true;
   }
 
-  if (message?.type === 'PORTAL_CHECK_LOGIN_STATUS') {
+  if (message?.type === 'VE_LOGIN_CHECK_STATUS') {
     (async () => {
       const loginName = String(message?.payload?.loginName || '').trim();
-      const currentUser = await getPortalCurrentUserInfo();
+      const currentUser = await globalThis.BjtuVeLoginService.fetchCurrentUserInfo();
       sendResponse({
         ok: true,
         loggedIn: !!currentUser,
@@ -942,6 +838,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         userInfo: currentUser || null
       });
     })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
+  if (message?.type === 'VE_LOGIN_WITH_PASSWORD') {
+    globalThis.BjtuVeLoginService.loginWithPassword(
+      message?.payload?.loginName,
+      message?.payload?.password,
+      { passcode: message?.payload?.passcode, recordHistory: message?.payload?.recordHistory !== false }
+    )
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
+    return true;
+  }
+
+  if (message?.type === 'VE_LOGIN_WITH_QUICK_USERNAME') {
+    globalThis.BjtuVeLoginService.loginWithQuickUsername(message?.payload?.quickUsername, {
+      loginName: message?.payload?.loginName,
+      recordHistory: message?.payload?.recordHistory !== false
+    })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
     return true;
   }
 

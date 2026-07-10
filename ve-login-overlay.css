@@ -29,9 +29,6 @@
   .__bjtu_portal_account.__bjtu_portal_quick_account{padding-right:28px;border-color:#86efac;background:#dcfce7}
   .__bjtu_portal_account.__bjtu_portal_quick_account:hover,.__bjtu_portal_account.__bjtu_portal_quick_account:focus{border-color:#22c55e;background:#bbf7d0}
   .__bjtu_portal_quick_icon{position:absolute;top:4px;right:6px;color:#15803d;font-size:14px;line-height:1;font-weight:700}
-  #__bjtu_portal_manual_password__{flex:0 0 auto;display:none;margin-top:10px;padding:10px;border:1px solid #fde68a;border-radius:8px;background:#fffbeb}
-  .__bjtu_portal_password_grid{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:end}
-  .__bjtu_portal_default{height:40px;border:1px solid #7dd3fc;border-radius:6px;background:#e0f2fe;color:#075985;padding:0 10px;font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}
   #__bjtu_portal_recovery_mask__{position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
   .__bjtu_portal_recovery_card{width:min(420px,calc(100vw - 32px));background:#fff;border:1px solid #e8edf5;border-radius:12px;box-shadow:0 20px 44px rgba(0,0,0,.25);padding:16px;color:#0f172a}
   .__bjtu_portal_recovery_header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
@@ -48,6 +45,9 @@
   .__bjtu_portal_recovery_password_row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:8px}
   #__bjtu_portal_recovery_plain__,#__bjtu_portal_recovery_md5__{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font:14px/1.4 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;outline:none}
   #__bjtu_portal_recovery_md5__{margin-top:8px;font-family:Consolas,monospace}
+  .__bjtu_portal_recovery_captcha{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .__bjtu_portal_recovery_captcha img{width:92px;height:34px;object-fit:contain;background:#fff;border:1px solid #cbd5e1;cursor:pointer}
+  .__bjtu_portal_recovery_captcha input{min-width:0;flex:1;width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font:14px/1.4 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;outline:none}
   #__bjtu_portal_recovery_default__{background:#e0f2fe;color:#075985;border:1px solid #7dd3fc;white-space:nowrap}
   #__bjtu_portal_recovery_default__:hover{background:#bae6fd}
   #__bjtu_portal_recovery_submit__{background:#16a34a}
@@ -63,10 +63,12 @@
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_empty{color:#b6c2d1}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_input,
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_plain__,
-  #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_md5__{background:#0f172a;border-color:#475569;color:#f8fafc;color-scheme:dark}
+  #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_md5__,
+  #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_passcode__{background:#0f172a;border-color:#475569;color:#f8fafc;color-scheme:dark}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_input::placeholder,
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_plain__::placeholder,
-  #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_md5__::placeholder{color:#94a3b8}
+  #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_md5__::placeholder,
+  #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_passcode__::placeholder{color:#94a3b8}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_section{background:#0f172a;border-color:#334155}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_section_header{background:#1e293b;border-color:#334155}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_section_title,
@@ -81,8 +83,6 @@
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_account.__bjtu_portal_quick_account:hover,
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_account.__bjtu_portal_quick_account:focus{background:#14532d;border-color:#22c55e}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_quick_icon{color:#86efac}
-  #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_manual_password__{background:#3a2b0c;border-color:#a16207}
-  #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_default,
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_default__{background:#102a43;border-color:#0369a1;color:#7dd3fc}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_status__[data-status-type="info"]{background:#102a43!important;border-color:#1d4ed8!important;color:#93c5fd!important}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_status__[data-status-type="success"]{background:#123524!important;border-color:#166534!important;color:#86efac!important}
@@ -90,8 +90,6 @@
   @media(max-width:560px){
     #__bjtu_portal_login_card__{width:100%;height:92vh;padding:12px}
     .__bjtu_portal_search{grid-template-columns:1fr}
-    .__bjtu_portal_password_grid{grid-template-columns:1fr}
-    .__bjtu_portal_default{width:100%}
     .__bjtu_portal_recovery_actions{flex-direction:column}
     .__bjtu_portal_recovery_password_row{grid-template-columns:1fr}
   }

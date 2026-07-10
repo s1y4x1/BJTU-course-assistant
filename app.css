@@ -141,6 +141,24 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         #account-init-teacher-progress-bar { background-color: #2563eb; }
         #account-init-student-progress-bar { background-color: #16a34a; }
+        .account-recovery-captcha {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .account-recovery-captcha img {
+            width: 92px;
+            height: 34px;
+            object-fit: contain;
+            background: #fff;
+            border: 1px solid #cbd5e1;
+            cursor: pointer;
+        }
+        .account-recovery-captcha input {
+            min-width: 0;
+            flex: 1;
+        }
         .account-recovery-actions {
             display: flex;
             gap: 8px;

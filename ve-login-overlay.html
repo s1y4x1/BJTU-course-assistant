@@ -34,19 +34,6 @@
         <div id="__bjtu_portal_history__" class="__bjtu_portal_list"></div>
       </section>
     </div>
-    <div id="__bjtu_portal_manual_password__">
-      <div class="__bjtu_portal_password_grid">
-        <label class="__bjtu_portal_field">
-          <span class="__bjtu_portal_label">密码明文</span>
-          <input id="__bjtu_portal_password_plain__" class="__bjtu_portal_input" type="text" placeholder="请输入密码">
-        </label>
-        <button id="__bjtu_portal_default__" class="__bjtu_portal_default" type="button">填入默认密码</button>
-        <label class="__bjtu_portal_field">
-          <span class="__bjtu_portal_label">加密密码</span>
-          <input id="__bjtu_portal_password_md5__" class="__bjtu_portal_input" type="text" maxlength="256" placeholder="根据明文自动计算，也可单独输入">
-        </label>
-      </div>
-    </div>
   </div>
   <div id="__bjtu_portal_recovery_mask__">
     <div class="__bjtu_portal_recovery_card">
@@ -65,6 +52,10 @@
           <button id="__bjtu_portal_recovery_default__" type="button">填入默认密码</button>
         </div>
         <input id="__bjtu_portal_recovery_md5__" type="text" maxlength="256" spellcheck="false" placeholder="加密密码（根据明文自动计算，也可单独输入）">
+        <div id="__bjtu_portal_recovery_captcha__" class="__bjtu_portal_recovery_captcha" style="display:none;">
+          <img id="__bjtu_portal_recovery_captcha_image__" alt="验证码" title="点击刷新验证码">
+          <input id="__bjtu_portal_recovery_passcode__" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="4" placeholder="输入 4 位验证码">
+        </div>
         <div class="__bjtu_portal_recovery_actions">
           <button id="__bjtu_portal_recovery_submit__" type="button">登录</button>
           <button id="__bjtu_portal_recovery_manual_cancel__" type="button">取消</button>

@@ -49,15 +49,15 @@
   const results = mask.querySelector('#__bjtu_portal_results__');
   const resultCount = mask.querySelector('#__bjtu_portal_result_count__');
   const historyList = mask.querySelector('#__bjtu_portal_history__');
-  const manual = mask.querySelector('#__bjtu_portal_manual_password__');
-  const plain = mask.querySelector('#__bjtu_portal_password_plain__');
-  const md5Input = mask.querySelector('#__bjtu_portal_password_md5__');
   const recoveryMask = mask.querySelector('#__bjtu_portal_recovery_mask__');
   const recoveryMessage = mask.querySelector('#__bjtu_portal_recovery_message__');
   const recoveryChoice = mask.querySelector('#__bjtu_portal_recovery_choice__');
   const recoveryManual = mask.querySelector('#__bjtu_portal_recovery_manual__');
   const recoveryPlain = mask.querySelector('#__bjtu_portal_recovery_plain__');
   const recoveryMd5 = mask.querySelector('#__bjtu_portal_recovery_md5__');
+  const recoveryCaptcha = mask.querySelector('#__bjtu_portal_recovery_captcha__');
+  const recoveryCaptchaImage = mask.querySelector('#__bjtu_portal_recovery_captcha_image__');
+  const recoveryPasscode = mask.querySelector('#__bjtu_portal_recovery_passcode__');
   let searchTimer = null;
   let searchSerial = 0;
   let selectedLoginName = '';
@@ -215,121 +215,43 @@
   nameInput?.addEventListener('input', scheduleSearch);
   if (String(username?.value || '').trim()) void searchAccounts();
 
-  const showManualPassword = (loginName) => {
-    selectedLoginName = String(loginName || '').trim();
-    if (username instanceof HTMLInputElement) username.value = selectedLoginName;
-    if (manual instanceof HTMLElement) manual.style.display = 'block';
-    plain?.focus();
-  };
-  plain?.addEventListener('input', () => {
-    if (md5Input instanceof HTMLInputElement && typeof strEnc === 'function') {
-      md5Input.value = plain.value ? strEnc(plain.value) : '';
-    }
-  });
-  md5Input?.addEventListener('input', () => {
-    md5Input.value = String(md5Input.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 256).toUpperCase();
-  });
-  mask.querySelector('#__bjtu_portal_default__')?.addEventListener('click', () => {
-    const loginName = selectedLoginName || String(username?.value || '').trim();
-    if (!(plain instanceof HTMLInputElement) || !loginName) return;
-    plain.value = 'Bjtu@' + loginName;
-    if (md5Input instanceof HTMLInputElement && typeof strEnc === 'function') md5Input.value = strEnc(plain.value);
-  });
-
-  function requestRecovery(loginName, message) {
-    return new Promise((resolve) => {
-      if (!(recoveryMask instanceof HTMLElement)) return resolve({ action: 'manual' });
-      let settled = false;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        recoveryMask.style.display = 'none';
-        resolve(value);
-      };
-      const onReinit = async () => {
-        await sendMessage({ type: 'OPEN_APP', payload: { accountInit: true } });
-        finish({ action: 'cancel' });
-      };
-      const onManual = () => {
-        if (recoveryChoice instanceof HTMLElement) recoveryChoice.style.display = 'none';
-        if (recoveryManual instanceof HTMLElement) recoveryManual.style.display = 'block';
-        if (recoveryPlain instanceof HTMLInputElement) {
-          recoveryPlain.value = '';
-          recoveryPlain.focus();
-        }
-        if (recoveryMd5 instanceof HTMLInputElement) recoveryMd5.value = '';
-      };
-      const onDefault = () => {
-        if (!(recoveryPlain instanceof HTMLInputElement)) return;
-        recoveryPlain.value = 'Bjtu@' + String(loginName || '').trim();
-        if (recoveryMd5 instanceof HTMLInputElement && typeof strEnc === 'function') recoveryMd5.value = strEnc(recoveryPlain.value);
-        recoveryPlain.focus();
-      };
-      const onPlainInput = () => {
-        if (!(recoveryPlain instanceof HTMLInputElement) || !(recoveryMd5 instanceof HTMLInputElement) || typeof strEnc !== 'function') return;
-        recoveryMd5.value = recoveryPlain.value ? strEnc(recoveryPlain.value) : '';
-      };
-      const onMd5Input = () => {
-        if (!(recoveryMd5 instanceof HTMLInputElement)) return;
-        recoveryMd5.value = String(recoveryMd5.value || '').replace(/[^0-9a-f]/gi, '').slice(0, 256).toUpperCase();
-      };
-      const onSubmit = () => {
-        const password = String(recoveryPlain?.value || '')
-          ? (typeof strEnc === 'function' ? strEnc(String(recoveryPlain.value || '')) : '')
-          : String(recoveryMd5?.value || '').trim();
-        if (!/^(?:[0-9a-f]{16})+$/i.test(password)) {
-          recoveryMd5?.focus();
-          return;
-        }
-        finish({ action: 'password', password });
-      };
-      const onCancel = () => finish({ action: 'cancel' });
-      const onKeyDown = (event) => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        onSubmit();
-      };
-      const onMaskDown = (event) => { recoveryMask.dataset.maskDown = event.target === recoveryMask ? '1' : '0'; };
-      const onMaskUp = (event) => {
-        if (event.target === recoveryMask && recoveryMask.dataset.maskDown === '1') onCancel();
-        delete recoveryMask.dataset.maskDown;
-      };
-      const cleanup = () => {
-        mask.querySelector('#__bjtu_portal_recovery_reinitialize__')?.removeEventListener('click', onReinit);
-        mask.querySelector('#__bjtu_portal_recovery_manual_btn__')?.removeEventListener('click', onManual);
-        mask.querySelector('#__bjtu_portal_recovery_cancel__')?.removeEventListener('click', onCancel);
-        mask.querySelector('#__bjtu_portal_recovery_default__')?.removeEventListener('click', onDefault);
-        mask.querySelector('#__bjtu_portal_recovery_submit__')?.removeEventListener('click', onSubmit);
-        mask.querySelector('#__bjtu_portal_recovery_manual_cancel__')?.removeEventListener('click', onCancel);
-        recoveryPlain?.removeEventListener('input', onPlainInput);
-        recoveryMd5?.removeEventListener('input', onMd5Input);
-        recoveryPlain?.removeEventListener('keydown', onKeyDown);
-        recoveryMd5?.removeEventListener('keydown', onKeyDown);
-        recoveryMask.removeEventListener('mousedown', onMaskDown);
-        recoveryMask.removeEventListener('mouseup', onMaskUp);
-      };
-
-      if (recoveryMessage instanceof HTMLElement) recoveryMessage.textContent = String(message || '账号或密码错误');
-      if (recoveryChoice instanceof HTMLElement) recoveryChoice.style.display = 'flex';
-      if (recoveryManual instanceof HTMLElement) recoveryManual.style.display = 'none';
-      mask.querySelector('#__bjtu_portal_recovery_reinitialize__')?.addEventListener('click', onReinit);
-      mask.querySelector('#__bjtu_portal_recovery_manual_btn__')?.addEventListener('click', onManual);
-      mask.querySelector('#__bjtu_portal_recovery_cancel__')?.addEventListener('click', onCancel);
-      mask.querySelector('#__bjtu_portal_recovery_default__')?.addEventListener('click', onDefault);
-      mask.querySelector('#__bjtu_portal_recovery_submit__')?.addEventListener('click', onSubmit);
-      mask.querySelector('#__bjtu_portal_recovery_manual_cancel__')?.addEventListener('click', onCancel);
-      recoveryPlain?.addEventListener('input', onPlainInput);
-      recoveryMd5?.addEventListener('input', onMd5Input);
-      recoveryPlain?.addEventListener('keydown', onKeyDown);
-      recoveryMd5?.addEventListener('keydown', onKeyDown);
-      recoveryMask.addEventListener('mousedown', onMaskDown);
-      recoveryMask.addEventListener('mouseup', onMaskUp);
-      recoveryMask.style.display = 'flex';
+  async function requestRecovery(loginName, message, { requireCaptcha = false } = {}) {
+    const result = await globalThis.BjtuVeLoginCredentialsDialog.open({
+      modal: recoveryMask,
+      message: recoveryMessage,
+      choice: recoveryChoice,
+      manual: recoveryManual,
+      plainInput: recoveryPlain,
+      encryptedInput: recoveryMd5,
+      captchaWrap: recoveryCaptcha,
+      captchaImage: recoveryCaptchaImage,
+      passcodeInput: recoveryPasscode,
+      buttons: {
+        reinitialize: mask.querySelector('#__bjtu_portal_recovery_reinitialize__'),
+        manual: mask.querySelector('#__bjtu_portal_recovery_manual_btn__'),
+        cancel: mask.querySelector('#__bjtu_portal_recovery_cancel__'),
+        fillDefault: mask.querySelector('#__bjtu_portal_recovery_default__'),
+        submit: mask.querySelector('#__bjtu_portal_recovery_submit__'),
+        manualCancel: mask.querySelector('#__bjtu_portal_recovery_manual_cancel__')
+      },
+      loginName,
+      messageText: message,
+      requireCaptcha,
+      loadCaptcha: async () => {
+        const response = await sendMessage({ type: 'VE_LOGIN_GET_CAPTCHA' });
+        if (!response?.ok || !response.imageUrl) throw new Error(response?.message || '验证码图片获取失败');
+        return response.imageUrl;
+      },
+      encryptPassword: (plain) => typeof strEnc === 'function' ? strEnc(plain) : ''
     });
+    if (result?.action === 'reinitialize') {
+      await sendMessage({ type: 'OPEN_APP', payload: { accountInit: true } });
+      return { action: 'cancel', openedInitialization: true };
+    }
+    return result;
   }
 
-  async function submit(requestedLoginName = '') {
+  async function submit(requestedLoginName = '', credentials = {}) {
     if (loginRunning) return;
     const loginName = String(requestedLoginName || username?.value || '').trim();
     if (!loginName) {
@@ -337,63 +259,47 @@
       username?.focus();
       return;
     }
-    if (requestedLoginName && selectedLoginName && loginName !== selectedLoginName) {
-      if (plain instanceof HTMLInputElement) plain.value = '';
-      if (md5Input instanceof HTMLInputElement) md5Input.value = '';
-      if (manual instanceof HTMLElement) manual.style.display = 'none';
-    }
     selectedLoginName = loginName;
     if (username instanceof HTMLInputElement) username.value = loginName;
     loginRunning = true;
     setStatus('正在检查登录状态…');
-    const statusResponse = await sendMessage({
-      type: 'PORTAL_CHECK_LOGIN_STATUS',
-      payload: { loginName }
-    });
+    const statusResponse = await sendMessage({ type: 'VE_LOGIN_CHECK_STATUS', payload: { loginName } });
     if (statusResponse?.alreadyLoggedIn) {
       loginRunning = false;
       setStatus('已登录该账号', 'success');
-      setTimeout(() => {
-        location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
-      }, 350);
+      setTimeout(() => { location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt'; }, 350);
       return;
     }
     setStatus('正在登录…');
     const response = await sendMessage({
-      type: 'PORTAL_LOGIN_SUBMIT',
+      type: 'VE_LOGIN_REQUEST',
       payload: {
         loginName,
-        passwordPlain: String(plain?.value || ''),
-        passwordEncoded: String(md5Input?.value || '').trim(),
+        passwordEncoded: String(credentials.password || '').trim(),
+        passcode: String(credentials.passcode || '').trim(),
         skipCurrentCheck: true
       }
     });
     loginRunning = false;
     if (response?.ok) {
       setStatus(response.alreadyLoggedIn ? '已登录该账号' : '登录成功', 'success');
-      setTimeout(() => {
-        location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
-      }, 350);
+      setTimeout(() => { location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt'; }, 350);
       return;
     }
-    if (response?.reason === 'credential' || response?.reason === 'account-not-found') {
-      const recovery = await requestRecovery(loginName, response?.message || '账号或密码错误');
+    const requireCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';
+    if (requireCaptcha || response?.reason === 'credential' || response?.reason === 'account-not-found' || response?.reason === 'needs-password') {
+      const recovery = await requestRecovery(loginName, response?.message || '账号或密码错误', { requireCaptcha });
       if (recovery?.action === 'password' && recovery.password) {
-        if (plain instanceof HTMLInputElement) plain.value = '';
-        if (md5Input instanceof HTMLInputElement) md5Input.value = recovery.password;
-        void submit(loginName);
+        void submit(loginName, { password: recovery.password, passcode: recovery.passcode });
         return;
       }
       setStatus('登录失败', 'error');
       return;
     }
-    if (response?.reason === 'needs-password') {
-      showManualPassword(loginName);
-    }
     setStatus(response?.message || '登录失败', 'error');
   }
 
-  [username, nameInput, plain, md5Input].forEach((element) => {
+  [username, nameInput].forEach((element) => {
     element?.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;
       event.preventDefault();

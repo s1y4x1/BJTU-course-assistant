@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "BJTU 课程助手",
   "description": "聚合智慧课程平台、雨课堂、每日交作业、接龙管家和中国大学MOOC的课程与作业，并支持教务系统登录和成绩提醒。",
-  "version": "11.11.17",
+  "version": "11.11.18",
   "default_locale": "zh_CN",
   "icons": {
     "16": "icons/16.png",
@@ -44,7 +44,7 @@
     "https://codeload.github.com/*",
     "https://raw.githubusercontent.com/*",
     "https://s1y4x1.github.io/*",
-    "https://zip1.webgetstore.com/*"
+    "https://bhshare.cn/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';"
@@ -98,6 +98,7 @@
       ],
       "js": [
         "vendor/ve/main.min.js",
+        "ve-login-credentials-dialog.js",
         "ve-login-overlay.js"
       ],
       "run_at": "document_idle"

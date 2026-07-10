@@ -2082,50 +2082,6 @@ async function validateUsernameBeforeLoginStart(userId, { signal } = {}) {
   return { ok: true, status: 'needs-post-login', info, accountMissing: !info };
 }
 
-async function saveLoginAccountCredential(userId) {
-  const uid = String(userId || '').trim();
-  if (!uid) return;
-  const idx = loginAccountHistory.findIndex((it) => String(it?.loginName || it?.userId || '').trim() === uid);
-  const prev = idx >= 0 ? loginAccountHistory[idx] : { userId: uid, loginName: uid };
-  const record = {
-    ...prev,
-    userId: uid,
-    loginName: uid,
-    lastLoginAt: Date.now()
-  };
-  delete record.passwordMd5;
-  delete record.quickUsername;
-  if (idx >= 0) loginAccountHistory.splice(idx, 1);
-  loginAccountHistory.unshift(record);
-  await saveLoginAccountHistory();
-  renderLoginAccountHistorySelect(uid);
-}
-
-async function loginPasswordGet(username, passwordMd5, { signal } = {}) {
-  await enforceJsessionidBeforeLoginRequest();
-  const result = await globalThis.BjtuAccountLogin.loginWithPassword(username, passwordMd5, { signal });
-  if (result?.reason === 'password-reset') {
-    const resetUrl = BASE_VE + 'CheckEmail.shtml?method=resetPassword&username=' + encodeURIComponent(String(username || '').trim());
-    chrome.tabs.create({ url: resetUrl, active: true }).catch(() => {});
-  }
-  return result;
-}
-
-async function loginGet(username, { signal } = {}) {
-  const account = await getLocalAccountInfo(username);
-  const quickUsername = String(account?.quickUsername || '').trim();
-  if (!quickUsername) {
-    return { ok: false, reason: 'needs-password', message: '未绑定极速登录 username' };
-  }
-  const result = await globalThis.BjtuAccountLogin.loginWithQuickUsername(quickUsername, { signal });
-  if (!result.ok && result.reason === 'credential') {
-    return { ...result, reason: 'invalid-account', message: '绑定的极速登录 username 已失效' };
-  }
-  return result;
-}
-
-
-
 function hideLoginModal() {
   loginModal.style.display = 'none';
 }
@@ -2265,6 +2221,8 @@ async function doLoginFlow() {
 
     let account = await getLocalAccountInfo(username);
     let manualPassword = '';
+    let manualPasscode = '';
+    let allowStoredCredentials = initialInitializationResult?.skipped !== true;
     let recoveryMessage = account
       ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
       : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
@@ -2272,51 +2230,63 @@ async function doLoginFlow() {
     for (let attempt = 0; attempt < 6; attempt += 1) {
       if (signal.aborted || loginCancelRequested) return;
 
-      const skipAutomaticLoginAttempt = skipNextAutomaticLoginAttempt;
-      skipNextAutomaticLoginAttempt = false;
-
-      if (!skipAutomaticLoginAttempt && !manualPassword && account?.quickUsername) {
-        showToast('正在极速登录…', 'info', 0);
-        const quickResult = await loginGet(username, { signal });
-        if (signal.aborted || loginCancelRequested) return;
-        if (quickResult.ok) {
-          await handleLoginSuccess(username);
-          return;
-        }
-        if (quickResult.reason === 'locked') {
-          await restoreAfterFailure();
-          showToast(quickResult.message || '账号已锁定，请稍后再试', 'error', 4000);
-          return;
-        }
-      }
-
-      const passwordMd5 = skipAutomaticLoginAttempt
-        ? ''
-        : String(manualPassword || account?.passwordMd5 || '').trim();
+      const submittedPassword = manualPassword;
+      const submittedPasscode = manualPasscode;
       manualPassword = '';
-      if (passwordMd5) {
-        showToast('正在登录…', 'info', 0);
-        const result = await loginPasswordGet(username, passwordMd5, { signal });
-        if (signal.aborted || loginCancelRequested) return;
-        if (result.ok) {
-          await saveLoginAccountCredential(username, passwordMd5);
-          await handleLoginSuccess(username);
-          return;
+      manualPasscode = '';
+      showToast(submittedPassword ? '正在登录…' : '正在检查账号并登录…', 'info', 0);
+      await enforceJsessionidBeforeLoginRequest();
+      const result = await globalThis.BjtuAccountLogin.login(username, {
+        signal,
+        password: submittedPassword,
+        passcode: submittedPasscode,
+        skipCurrentCheck: true,
+        allowStoredCredentials
+      });
+      if (signal.aborted || loginCancelRequested) return;
+
+      if (result?.ok) {
+        await handleLoginSuccess(username);
+        return;
+      }
+      if (result?.reason === 'captcha') {
+        showToast('验证码错误，正在重新识别…', 'warning', 1800);
+        manualPassword = submittedPassword;
+        continue;
+      }
+      if (result?.reason === 'locked' || result?.reason === 'password-reset') {
+        if (result.reason === 'password-reset') {
+          const resetUrl = BASE_VE + 'CheckEmail.shtml?method=resetPassword&username=' + encodeURIComponent(username);
+          chrome.tabs.create({ url: resetUrl, active: true }).catch(() => {});
         }
-        if (result.reason === 'locked' || result.reason === 'password-reset') {
-          await restoreAfterFailure();
-          showToast(result.message || '登录失败', 'error', 4000);
-          return;
-        }
-        if (result.reason !== 'credential') {
-          await restoreAfterFailure();
-          showToast(result.message || '登录失败', 'error', 3000);
-          return;
-        }
-        recoveryMessage = result.message || '账号或密码错误';
+        await restoreAfterFailure();
+        showToast(result.message || '登录失败', 'error', 4000);
+        return;
+      }
+      if (!['credential', 'account-not-found', 'needs-password', 'captcha-required'].includes(result?.reason)) {
+        await restoreAfterFailure();
+        showToast(result?.message || '登录失败', 'error', 3000);
+        return;
       }
 
-      const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage);
+      recoveryMessage = result?.message || recoveryMessage;
+      const requireCaptcha = result?.reason === 'captcha-required';
+      let captchaImageUrl = '';
+      if (requireCaptcha) {
+        try {
+          captchaImageUrl = await globalThis.BjtuAccountLogin.getCaptchaImageDataUrl();
+        } catch (error) {
+          await restoreAfterFailure();
+          showToast('验证码图片获取失败：' + String(error?.message || error), 'error', 3000);
+          return;
+        }
+      }
+      const fallbackPassword = submittedPassword || String(account?.passwordMd5 || account?.password || '').trim();
+      const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage, requireCaptcha ? {
+        requireCaptcha: true,
+        captchaImageUrl,
+        fallbackPassword
+      } : {});
       if (signal.aborted || loginCancelRequested) return;
       if (recovery?.action === 'cancel') {
         await restoreAfterFailure();
@@ -2327,7 +2297,7 @@ async function doLoginFlow() {
         try {
           const initializationResult = await globalThis.BjtuAccountLogin.initialize({ force: true, showProgress: true });
           if (initializationResult?.skipped === true) {
-            skipNextAutomaticLoginAttempt = true;
+            allowStoredCredentials = false;
             attempt -= 1;
             continue;
           }
@@ -2335,6 +2305,7 @@ async function doLoginFlow() {
           recoveryMessage = account
             ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
             : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
+          allowStoredCredentials = true;
           if (account) {
             const currentAfterInitialize = await globalThis.BjtuAccountLogin.getCurrentUserInfo({ signal });
             if (String(currentAfterInitialize?.loginName || '').trim() === username) {
@@ -2343,7 +2314,6 @@ async function doLoginFlow() {
             }
             attempt = -1;
             showToast('账号列表已更新，正在重新登录…', 'info', 0);
-            continue;
           }
         } catch (error) {
           recoveryMessage = '账号列表初始化失败：' + String(error?.message || error);
@@ -2352,7 +2322,8 @@ async function doLoginFlow() {
       }
       if (recovery?.action === 'password' && recovery.password) {
         manualPassword = String(recovery.password).trim();
-        continue;
+        manualPasscode = String(recovery.passcode || '').trim();
+        allowStoredCredentials = true;
       }
     }
 
