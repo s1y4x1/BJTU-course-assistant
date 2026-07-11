@@ -34,6 +34,12 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
 #msg.err { border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .section-title { font-weight: 600; margin-bottom: 8px; font-size: 16px; }
+.installed-modules-block { margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #e2e8f0; }
+.installed-modules-label { margin-bottom:7px; font-size:13px; font-weight:600; color:#334155; }
+.installed-module-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:9px; }
+.installed-module-item { display:inline-flex; align-items:center; gap:6px; margin:0; padding:6px 8px; border:1px solid #dbe2ea; border-radius:6px; background:#fff; font-size:13px; }
+.installed-module-item input { width:auto; margin:0; padding:0; }
+#applyInstalledModules { margin:0; }
 .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
 .back-home-link:hover { text-decoration: underline; }
 .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }

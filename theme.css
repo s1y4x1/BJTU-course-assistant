@@ -233,10 +233,12 @@ html[data-color-scheme="dark"] #invert-save-uploads-btn,
 html[data-color-scheme="dark"] #resource-select-all-btn,
 html[data-color-scheme="dark"] .courseware-select-all-btn,
 html[data-color-scheme="dark"] #upload-duplicate-invert,
+html[data-color-scheme="dark"] .upload-duplicate-secondary,
 html[data-color-scheme="dark"] #invert-save-uploads-btn:hover,
 html[data-color-scheme="dark"] #resource-select-all-btn:hover,
 html[data-color-scheme="dark"] .courseware-select-all-btn:hover,
-html[data-color-scheme="dark"] #upload-duplicate-invert:hover {
+html[data-color-scheme="dark"] #upload-duplicate-invert:hover,
+html[data-color-scheme="dark"] .upload-duplicate-secondary:hover {
   background: #fff !important;
   border-color: #fff !important;
   color: #000 !important;
@@ -292,6 +294,10 @@ html[data-color-scheme="dark"] #options-controlled-content > div {
   background: #111827 !important;
   border-color: #334155 !important;
 }
+
+html[data-color-scheme="dark"] .installed-modules-block { border-bottom-color:#334155; }
+html[data-color-scheme="dark"] .installed-modules-label { color:#e2e8f0; }
+html[data-color-scheme="dark"] .installed-module-item { background:#1e293b; border-color:#475569; color:#e5e7eb; }
 
 html[data-color-scheme="dark"] .platform-option-detail {
   background: #1e293b !important;

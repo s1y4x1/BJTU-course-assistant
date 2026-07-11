@@ -121,6 +121,88 @@ function normalizePlatformVisible(raw) {
   ]));
 }
 
+function formatModuleBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (!value) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
+  return `${parseFloat((value / (1024 ** index)).toFixed(2))} ${units[index]}`;
+}
+
+async function setupInstalledModuleOptions() {
+  const list = document.getElementById('installedModuleList');
+  const applyButton = document.getElementById('applyInstalledModules');
+  const status = document.getElementById('installedModuleStatus');
+  if (!(list instanceof HTMLElement) || !(applyButton instanceof HTMLButtonElement)) return;
+
+  const definitions = globalThis.BjtuModuleRegistry?.definitions || {};
+  const available = await globalThis.BjtuModuleRegistry.ready;
+  const updaterReady = await globalThis.__bjtuUpdaterReady;
+  if (updaterReady && globalThis.BjtuUpdaterModuleManager?.prepare) {
+    await globalThis.BjtuUpdaterModuleManager.prepare().catch(() => null);
+  }
+  const installed = new Set(Object.keys(definitions).filter((id) => id === 've' || available[id] === true));
+  list.innerHTML = '';
+  Object.entries(definitions).forEach(([id, definition]) => {
+    const label = document.createElement('label');
+    label.className = 'installed-module-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = id;
+    checkbox.checked = installed.has(id);
+    checkbox.disabled = id === 've';
+    label.append(checkbox, document.createTextNode(definition.label || id));
+    list.appendChild(label);
+  });
+
+  const selectedIds = () => [...list.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+  const hasChanges = () => {
+    const selected = new Set(selectedIds());
+    return Object.keys(definitions).some((id) => selected.has(id) !== installed.has(id));
+  };
+  const refreshButton = () => { applyButton.disabled = !hasChanges(); };
+  list.addEventListener('change', refreshButton);
+  refreshButton();
+  if (status instanceof HTMLElement) status.textContent = `已安装 ${installed.size} 个模块。取消勾选可卸载，勾选未安装模块可安装。`;
+
+  applyButton.addEventListener('click', async () => {
+    if (!hasChanges()) return;
+    applyButton.disabled = true;
+    list.querySelectorAll('input').forEach((input) => { input.disabled = true; });
+    if (status instanceof HTMLElement) status.textContent = '正在准备模块更改…';
+    try {
+      const manager = updaterReady && globalThis.BjtuUpdaterModuleManager;
+      if (!manager?.applyModuleSelection) throw new Error('updater 模块未能加载');
+      const result = await manager.applyModuleSelection({
+        selected: selectedIds(),
+        installed: [...installed],
+        onProgress(progress) {
+          if (!(status instanceof HTMLElement)) return;
+          if (progress.phase === 'download') {
+            status.textContent = progress.total > 0
+              ? `正在下载模块：${formatModuleBytes(progress.loaded)} / ${formatModuleBytes(progress.total)}`
+              : `正在下载模块：${formatModuleBytes(progress.loaded)}`;
+          } else if (progress.phase === 'write') {
+            status.textContent = `正在安装模块：${progress.completed} / ${progress.total} · ${progress.path || ''}`;
+          }
+        }
+      });
+      const changes = [
+        result.added.length ? `安装 ${result.added.length} 个` : '',
+        result.removed.length ? `卸载 ${result.removed.length} 个` : ''
+      ].filter(Boolean).join('，');
+      if (status instanceof HTMLElement) status.textContent = `模块更改完成（${changes}），正在重新加载扩展…`;
+      setMsg(`模块更改完成：${changes}`);
+      setTimeout(() => chrome.runtime.reload(), 1000);
+    } catch (error) {
+      if (status instanceof HTMLElement) status.textContent = `模块更改失败：${String(error?.message || error)}`;
+      setMsg(`模块更改失败：${String(error?.message || error)}`, false);
+      list.querySelectorAll('input').forEach((input) => { input.disabled = input.value === 've'; });
+      refreshButton();
+    }
+  });
+}
+
 function goBackToApp() {
   // options.html is opened either as a top-level options page, or embedded inside the
   // popup iframe by app.html's ⚙️ button. Detect which one and route accordingly.
@@ -160,6 +242,7 @@ function goBackToApp() {
 
 (async function init() {
   await globalThis.BjtuModuleRegistry?.ready;
+  await setupInstalledModuleOptions();
   const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes } = await chrome.storage.local.get([
     'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes'
   ]);

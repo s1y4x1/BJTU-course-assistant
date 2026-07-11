@@ -1210,6 +1210,31 @@ function getArchiveModuleIds(files) {
   }).filter((id) => Object.hasOwn(VERSION_OPTIONAL_MODULES, id)))];
 }
 
+function getArchiveModuleSize(files, moduleId) {
+  const prefix = `modules/${String(moduleId || '').toLowerCase()}/`;
+  return (files || []).reduce((total, item) => {
+    if (!String(item?.path || '').toLowerCase().startsWith(prefix)) return total;
+    return total + Math.max(0, Number(item?.entry?.uncompressedSize || 0));
+  }, 0);
+}
+
+function buildModuleSizeStyle(bytes) {
+  if (typeof globalThis.buildFileSizeEmphasisStyle === 'function') {
+    return globalThis.buildFileSizeEmphasisStyle(bytes);
+  }
+  const mb = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
+  if (mb <= 0) return 'font-size:10px;font-weight:500;color:#94a3b8;text-shadow:none;';
+  const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
+  const fontSize = (10 + ratio * 6).toFixed(2);
+  const fontWeight = Math.round(500 + ratio * 320);
+  const dark = document.documentElement.dataset.colorScheme === 'dark';
+  const channel = dark ? Math.round(182 + ratio * 73) : Math.round(148 - ratio * 118);
+  const color = dark
+    ? `rgb(${channel},${Math.round(194 + ratio * 61)},${Math.round(209 + ratio * 46)})`
+    : `rgb(${channel},${Math.max(18, channel + 8)},${Math.max(28, channel + 20)})`;
+  return `font-size:${fontSize}px;font-weight:${fontWeight};color:${color};`;
+}
+
 async function chooseUpdateModules(archiveFiles) {
   const packaged = getArchiveModuleIds(archiveFiles);
   const available = globalThis.__bjtuAvailableModules || {};
@@ -1244,6 +1269,7 @@ async function chooseUpdateModules(archiveFiles) {
     </div>`;
     const list = mask.querySelector('[data-module-list]');
     candidates.forEach((id) => {
+      const moduleSize = getArchiveModuleSize(archiveFiles, id);
       const label = document.createElement('label');
       label.style.cssText = 'display:flex;align-items:center;gap:7px;margin:0;padding:7px 8px;border:1px solid #dbe2ea;border-radius:6px;';
       const checkbox = document.createElement('input');
@@ -1251,7 +1277,14 @@ async function chooseUpdateModules(archiveFiles) {
       checkbox.value = id;
       checkbox.checked = initial.has(id);
       checkbox.style.width = 'auto';
-      label.append(checkbox, document.createTextNode(VERSION_OPTIONAL_MODULES[id]));
+      const name = document.createElement('span');
+      name.textContent = VERSION_OPTIONAL_MODULES[id];
+      const size = document.createElement('span');
+      size.className = 'file-size-emphasis update-module-size';
+      size.dataset.fileSizeBytes = String(moduleSize);
+      size.style.cssText = buildModuleSizeStyle(moduleSize);
+      size.textContent = formatDownloadBytes(moduleSize);
+      label.append(checkbox, name, size);
       list.appendChild(label);
     });
     mask.querySelector('[data-invert]').addEventListener('click', () => {
@@ -1266,6 +1299,110 @@ async function chooseUpdateModules(archiveFiles) {
     document.body.appendChild(mask);
   });
 }
+
+async function requestModuleManagementDirectory() {
+  let handle = versionUpdateDirectoryHandleLoaded ? versionUpdateDirectoryHandle : await readVersionUpdateDirectoryHandle();
+  if (handle && typeof handle.requestPermission === 'function') {
+    const permission = await handle.requestPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') throw new Error('未获得扩展安装目录写入权限，请重新点击后再试');
+    await validateVersionUpdateDirectory(handle);
+    versionUpdateDirectoryHandle = handle;
+    return handle;
+  }
+  if (typeof window.showDirectoryPicker !== 'function') throw new Error('当前浏览器不支持目录写入 API');
+  handle = await window.showDirectoryPicker({ id: 'bjtu-update-dir', mode: 'readwrite' });
+  await validateVersionUpdateDirectory(handle);
+  await storeVersionUpdateDirectoryHandle(handle);
+  versionUpdateDirectoryHandle = handle;
+  return handle;
+}
+
+async function fetchModuleArchive(onProgress) {
+  const release = await fetchLatestReleaseFromUrl(VERSION_LATEST_URL);
+  const response = await fetch(pickReleaseDownloadUrl(release), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`模块下载失败 (${response.status})`);
+  const total = Math.max(0, Number(response.headers.get('content-length') || 0));
+  if (!response.body?.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    onProgress?.({ phase: 'download', loaded: bytes.byteLength, total: total || bytes.byteLength });
+    return bytes;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value?.byteLength) continue;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress?.({ phase: 'download', loaded, total });
+  }
+  const bytes = new Uint8Array(loaded);
+  let offset = 0;
+  chunks.forEach((chunk) => { bytes.set(chunk, offset); offset += chunk.byteLength; });
+  return bytes;
+}
+
+async function applyModuleSelection({ selected = [], installed = [], onProgress = null } = {}) {
+  const selectedSet = new Set(selected.map((id) => String(id || '').toLowerCase()));
+  const installedSet = new Set(installed.map((id) => String(id || '').toLowerCase()));
+  selectedSet.add('ve');
+  const additions = [...selectedSet].filter((id) => id !== 've' && !installedSet.has(id));
+  const removals = [...installedSet].filter((id) => id !== 've' && !selectedSet.has(id));
+  if (!additions.length && !removals.length) return { added: [], removed: [], written: 0 };
+
+  await requestModuleManagementDirectory();
+  let archiveFiles = [];
+  if (additions.length) {
+    const bytes = await fetchModuleArchive(onProgress);
+    const entries = parseZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const root = getZipCommonRoot(entries);
+    archiveFiles = entries.filter((entry) => !entry.directory)
+      .map((entry) => ({ entry, path: normalizeUpdateEntryPath(entry.name, root) }))
+      .filter((item) => item.path && additions.some((id) => item.path.toLowerCase().startsWith(`modules/${id}/`)));
+    for (const id of additions) {
+      if (!archiveFiles.some((item) => item.path.toLowerCase().startsWith(`modules/${id}/`))) {
+        throw new Error(`更新包中未找到 ${VERSION_OPTIONAL_MODULES[id] || id} 模块`);
+      }
+    }
+  }
+
+  let written = 0;
+  await globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
+    let modulesDirectory;
+    try {
+      modulesDirectory = await versionUpdateDirectoryHandle.getDirectoryHandle('modules', { create: true });
+    } catch (error) {
+      throw markVersionUpdateError(error, 'directory');
+    }
+    for (const id of additions) {
+      await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
+        if (error?.name !== 'NotFoundError') throw error;
+      });
+    }
+    const totalWrites = archiveFiles.length;
+    for (const item of archiveFiles) {
+      const inflated = await inflateZipEntry(item.entry);
+      await writeBytesToVersionUpdateDirectory(inflated, item.path);
+      written += 1;
+      onProgress?.({ phase: 'write', completed: written, total: totalWrites, path: item.path });
+    }
+    const orderedRemovals = removals.sort((a, b) => (a === 'updater' ? 1 : 0) - (b === 'updater' ? 1 : 0));
+    for (const id of orderedRemovals) {
+      await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
+        if (error?.name !== 'NotFoundError') throw error;
+      });
+    }
+  });
+  await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selectedSet].filter((id) => id !== 've') });
+  return { added: additions, removed: removals, written };
+}
+
+globalThis.BjtuUpdaterModuleManager = Object.freeze({
+  prepare: () => readVersionUpdateDirectoryHandle(),
+  applyModuleSelection
+});
 
 function filterFilesByModules(files, selectedModules) {
   return files.filter((item) => {

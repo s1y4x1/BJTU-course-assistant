@@ -157,6 +157,12 @@
   </div>
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="updater" hidden>
     <div class="section-title">更新</div>
+    <div class="installed-modules-block">
+      <div class="installed-modules-label">已安装的模块</div>
+      <div id="installedModuleList" class="installed-module-list"></div>
+      <button id="applyInstalledModules" type="button" disabled>应用模块更改</button>
+      <div id="installedModuleStatus" class="tip" style="margin:6px 0 10px;">正在读取模块状态…</div>
+    </div>
     <label style="display:flex; align-items:center; gap:8px; margin:0;">
       <input type="checkbox" id="backgroundAutoUpdateEnabled" style="width:auto;" />
       后台自动检查并安装更新
@@ -248,6 +254,7 @@
   </div>
   <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>
   <script src="module-registry.js"></script>
+  <script src="updater-loader.js"></script>
   <script src="modules/ve/account-store.js"></script>
   <script src="modules/ve/account-login.js"></script>
   <script src="options.js"></script>
