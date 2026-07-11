@@ -79,22 +79,38 @@
     if (!id || !encryptedPassword) return { ok: false, reason: 'needs-password', message: '请手动输入密码' };
 
     let code = global.BjtuVeLoginUtils.normalizePasscode(passcode);
-    if (!code) {
-      const captcha = await global.BjtuVeLoginUtils.recognizeCaptcha();
-      if (!captcha?.ok) {
+    let captchaErrorCount = 0;
+
+    while (true) {
+      if (!code) {
+        const captcha = await global.BjtuVeLoginUtils.recognizeCaptcha();
+        if (!captcha?.ok) {
+          return {
+            ok: false,
+            reason: 'captcha-required',
+            message: captcha?.reason === 'module-missing'
+              ? '本地验证码识别模块未安装，请输入验证码后继续登录。'
+              : '验证码本地识别失败，请输入验证码后继续登录。'
+          };
+        }
+        code = captcha.passcode;
+      }
+
+      const result = await requestLogin(global.BjtuVeLoginUtils.buildPasswordLoginUrl(id, encryptedPassword, code));
+      if (result?.reason !== 'captcha') {
+        return completeSuccessfulLogin(result, id, { recordHistory });
+      }
+
+      captchaErrorCount += 1;
+      if (captchaErrorCount >= 3) {
         return {
           ok: false,
           reason: 'captcha-required',
-          message: captcha?.reason === 'module-missing'
-            ? '本地验证码识别模块未安装，请输入验证码后继续登录。'
-            : '验证码本地识别失败，请输入验证码后继续登录。'
+          message: '连续 3 次验证码错误，请手动输入验证码后继续登录。'
         };
       }
-      code = captcha.passcode;
+      code = '';
     }
-
-    const result = await requestLogin(global.BjtuVeLoginUtils.buildPasswordLoginUrl(id, encryptedPassword, code));
-    return completeSuccessfulLogin(result, id, { recordHistory });
   }
 
   async function login(payload = {}) {

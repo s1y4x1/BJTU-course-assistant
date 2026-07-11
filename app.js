@@ -2270,7 +2270,7 @@ async function doLoginFlow() {
       ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
       : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
 
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    while (true) {
       if (signal.aborted || loginCancelRequested) return;
 
       const submittedPassword = manualPassword;
@@ -2342,7 +2342,6 @@ async function doLoginFlow() {
           const initializationResult = await globalThis.BjtuAccountLogin.initialize({ force: true, showProgress: true });
           if (initializationResult?.skipped === true) {
             allowStoredCredentials = false;
-            attempt -= 1;
             continue;
           }
           account = await getLocalAccountInfo(username);
@@ -2356,7 +2355,6 @@ async function doLoginFlow() {
               await handleAlreadyLoggedIn(username, currentAfterInitialize);
               return;
             }
-            attempt = -1;
             showToast('账号列表已更新，正在重新登录…', 'info', 0);
           }
         } catch (error) {
@@ -2370,9 +2368,6 @@ async function doLoginFlow() {
         allowStoredCredentials = true;
       }
     }
-
-    await restoreAfterFailure();
-    showToast('登录尝试次数过多，已恢复原账号', 'error', 3000);
   } catch (error) {
     if (signal.aborted || loginCancelRequested) return;
     console.error('Login error:', error);
