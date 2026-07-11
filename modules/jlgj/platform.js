@@ -688,6 +688,15 @@ function isJlgjHomeworkOverdue(hw) {
   return !isJlgjHomeworkDone(hw) && isDeadlinePassed(hw?.end);
 }
 
+function formatJlgjDateTime(value) {
+  const timestamp = parseDeadlineToTs(value);
+  if (!timestamp) return '无';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '无';
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function renderJlgjHomeworkItems(items) {
   const list = items || [];
   if (!list.length) return '';
@@ -707,7 +716,7 @@ function renderJlgjHomeworkItems(items) {
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
     const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
     const deadline = it?.end || it?.deadline || '';
-    const endText = isLoadingMeta ? '正在加载……' : formatYktDateTime(it.end);
+    const endText = isLoadingMeta ? '正在加载……' : formatJlgjDateTime(it.end);
     const endSuffix = isLoadingMeta
       ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : '';

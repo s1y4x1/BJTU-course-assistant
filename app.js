@@ -504,7 +504,16 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
     scheduleMrjzyLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderMrjzyNeedLoginMessage());
   } else if (platform === 'jlgj') {
     setPlatformLoginState('jlgj', 'checking');
-    scheduleJlgjLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderJlgjNeedLoginMessage());
+    scheduleJlgjLoad(independentCourseInput, version).then(finishIndependentLoad).catch((error) => {
+      if (!isPlatformEnabled('jlgj') || version !== Number(window.platformLoadVersion?.jlgj || 0)) return;
+      console.error('[bjtu] 接龙管家加载失败', error);
+      window.platformLoadedOnce.jlgj = true;
+      if ((window.jlgjCourseGroupsSnapshot || []).length) setPlatformLoginState('jlgj', 'online');
+      showToast(`接龙管家加载失败：${String(error?.message || error || '未知错误')}`, 'error', 3200);
+      rematchExternalByVeCourses();
+      rerenderAllHomeworkAreas();
+      renderJlgjStandaloneCourses();
+    });
   } else {
     setPlatformLoginState('mooc', 'checking');
     window.BjtuMoocPlatform?.load().catch(() => {});
@@ -2304,9 +2313,9 @@ async function doLoginFlow() {
       }
 
       recoveryMessage = result?.message || recoveryMessage;
-      const requireCaptcha = result?.reason === 'captcha-required';
+      const startManualWithCaptcha = result?.reason === 'captcha-required';
       let captchaImageUrl = '';
-      if (requireCaptcha) {
+      if (startManualWithCaptcha) {
         try {
           captchaImageUrl = await globalThis.BjtuAccountLogin.getCaptchaImageDataUrl();
         } catch (error) {
@@ -2316,11 +2325,12 @@ async function doLoginFlow() {
         }
       }
       const fallbackPassword = submittedPassword || String(account?.passwordMd5 || account?.password || '').trim();
-      const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage, requireCaptcha ? {
+      const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage, {
         requireCaptcha: true,
+        startManual: startManualWithCaptcha,
         captchaImageUrl,
         fallbackPassword
-      } : {});
+      });
       if (signal.aborted || loginCancelRequested) return;
       if (recovery?.action === 'cancel') {
         await restoreAfterFailure();

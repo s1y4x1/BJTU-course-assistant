@@ -17,28 +17,55 @@
       const buttons = options.buttons || {};
       const loginName = String(options.loginName || '').trim();
       const requireCaptcha = options.requireCaptcha === true;
+      const startManual = options.startManual === true;
       const fallbackPassword = String(options.fallbackPassword || '').trim();
       const encryptPassword = typeof options.encryptPassword === 'function' ? options.encryptPassword : () => '';
       const loadCaptcha = typeof options.loadCaptcha === 'function' ? options.loadCaptcha : null;
+      const recognizeCaptcha = typeof options.recognizeCaptcha === 'function' ? options.recognizeCaptcha : null;
       let captchaUrl = String(options.initialCaptchaUrl || '');
       let captchaLoading = false;
+      let captchaVersion = 0;
       let settled = false;
 
       const finish = (value) => {
         if (settled) return;
         settled = true;
+        captchaVersion += 1;
         cleanup();
         modal.style.display = 'none';
         resolve(value);
       };
+      const recognizeCurrentCaptcha = async (imageUrl, version) => {
+        if (!(passcodeInput instanceof HTMLInputElement) || !recognizeCaptcha || !imageUrl) return;
+        passcodeInput.value = '';
+        passcodeInput.placeholder = '正在识别';
+        passcodeInput.dataset.recognizing = '1';
+        try {
+          const passcode = String(await recognizeCaptcha(imageUrl) || '').replace(/\D/g, '').slice(0, 4);
+          if (settled || version !== captchaVersion) return;
+          if (!passcodeInput.value && passcode.length === 4) passcodeInput.value = passcode;
+        } catch {
+          // Keep the input available for manual entry when local recognition fails.
+        } finally {
+          if (!settled && version === captchaVersion) {
+            delete passcodeInput.dataset.recognizing;
+            passcodeInput.placeholder = '输入 4 位验证码';
+          }
+        }
+      };
       const refreshCaptcha = async () => {
         if (!requireCaptcha || !loadCaptcha || captchaLoading) return;
         captchaLoading = true;
+        const version = ++captchaVersion;
+        if (passcodeInput instanceof HTMLInputElement) {
+          passcodeInput.value = '';
+          passcodeInput.placeholder = '正在识别';
+        }
         try {
           captchaUrl = String(await loadCaptcha() || '');
           if (!captchaUrl) throw new Error('验证码图片为空');
           if (captchaImage instanceof HTMLImageElement) captchaImage.src = captchaUrl;
-          if (passcodeInput instanceof HTMLInputElement) passcodeInput.value = '';
+          await recognizeCurrentCaptcha(captchaUrl, version);
           passcodeInput?.focus();
         } catch (error) {
           if (message instanceof HTMLElement) message.textContent = '验证码图片获取失败：' + String(error?.message || error);
@@ -59,7 +86,11 @@
         if (captchaImage instanceof HTMLImageElement && captchaUrl) captchaImage.src = captchaUrl;
         if (passcodeInput instanceof HTMLInputElement) passcodeInput.value = '';
         if (requireCaptcha) {
-          if (captchaUrl) passcodeInput?.focus();
+          if (captchaUrl) {
+            const version = ++captchaVersion;
+            void recognizeCurrentCaptcha(captchaUrl, version);
+            passcodeInput?.focus();
+          }
           else void refreshCaptcha();
         } else {
           plainInput?.focus();
@@ -127,7 +158,7 @@
       };
 
       if (message instanceof HTMLElement) message.textContent = String(options.messageText || '账号或密码错误');
-      if (choice instanceof HTMLElement) choice.style.display = requireCaptcha ? 'none' : 'flex';
+      if (choice instanceof HTMLElement) choice.style.display = startManual ? 'none' : 'flex';
       if (manual instanceof HTMLElement) manual.style.display = 'none';
       buttons.reinitialize?.addEventListener('click', onReinitialize);
       buttons.manual?.addEventListener('click', onManual);
@@ -145,7 +176,7 @@
       modal.addEventListener('mousedown', onMaskDown);
       modal.addEventListener('mouseup', onMaskUp);
       modal.style.display = 'flex';
-      if (requireCaptcha) onManual();
+      if (startManual) onManual();
     });
   }
 

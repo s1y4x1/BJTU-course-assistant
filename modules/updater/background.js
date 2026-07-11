@@ -13,7 +13,6 @@
   const COMPLETE_NOTIFICATION_PREFIX = 'bjtu-background-update-complete:';
   const ISSUE_NOTIFICATION_PREFIX = 'bjtu-background-update-issue:';
   const SOURCE_URLS = [
-    'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json',
     'https://s1y4x1.github.io/release.json'
   ];
   const FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';

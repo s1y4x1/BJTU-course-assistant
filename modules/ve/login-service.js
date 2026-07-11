@@ -151,12 +151,26 @@
     return blobToDataUrl(await global.BjtuVeLoginUtils.getCaptchaImage());
   }
 
+  async function recognizeCaptchaDataUrl(imageUrl) {
+    const source = String(imageUrl || '');
+    if (!source.startsWith('data:')) throw new Error('验证码图片格式无效');
+    const response = await fetch(source);
+    const image = await response.blob();
+    const recognizer = global.BjtuCaptchaRecognizer;
+    if (!recognizer?.recognize) throw new Error('本地验证码识别模块未安装');
+    const result = await recognizer.recognize(image);
+    const passcode = global.BjtuVeLoginUtils.normalizePasscode(result?.passcode);
+    if (!result?.ok || passcode.length !== 4) throw new Error('未能识别出 4 位数字');
+    return passcode;
+  }
+
   global.BjtuVeLoginService = {
     fetchCurrentUserInfo,
     login,
     loginWithPassword,
     loginWithQuickUsername,
     getCaptchaDataUrl,
+    recognizeCaptchaDataUrl,
     parseLoginResponse
   };
 })(globalThis);

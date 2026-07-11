@@ -215,7 +215,7 @@
   nameInput?.addEventListener('input', scheduleSearch);
   if (String(username?.value || '').trim()) void searchAccounts();
 
-  async function requestRecovery(loginName, message, { requireCaptcha = false } = {}) {
+  async function requestRecovery(loginName, message, { startManual = false } = {}) {
     const result = await globalThis.BjtuVeLoginCredentialsDialog.open({
       modal: recoveryMask,
       message: recoveryMessage,
@@ -236,11 +236,22 @@
       },
       loginName,
       messageText: message,
-      requireCaptcha,
+      requireCaptcha: true,
+      startManual,
       loadCaptcha: async () => {
         const response = await sendMessage({ type: 'VE_LOGIN_GET_CAPTCHA' });
         if (!response?.ok || !response.imageUrl) throw new Error(response?.message || '验证码图片获取失败');
         return response.imageUrl;
+      },
+      recognizeCaptcha: async (imageUrl) => {
+        const response = await sendMessage({
+          type: 'VE_LOGIN_RECOGNIZE_CAPTCHA',
+          payload: { imageUrl }
+        });
+        if (!response?.ok || !/^\d{4}$/.test(String(response.passcode || ''))) {
+          throw new Error(response?.message || '验证码本地识别失败');
+        }
+        return String(response.passcode);
       },
       encryptPassword: (plain) => typeof strEnc === 'function' ? strEnc(plain) : ''
     });
@@ -286,9 +297,9 @@
       setTimeout(() => { location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt'; }, 350);
       return;
     }
-    const requireCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';
-    if (requireCaptcha || response?.reason === 'credential' || response?.reason === 'account-not-found' || response?.reason === 'needs-password') {
-      const recovery = await requestRecovery(loginName, response?.message || '账号或密码错误', { requireCaptcha });
+    const startManualWithCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';
+    if (startManualWithCaptcha || response?.reason === 'credential' || response?.reason === 'account-not-found' || response?.reason === 'needs-password') {
+      const recovery = await requestRecovery(loginName, response?.message || '账号或密码错误', { startManual: startManualWithCaptcha });
       if (recovery?.action === 'password' && recovery.password) {
         void submit(loginName, { password: recovery.password, passcode: recovery.passcode });
         return;

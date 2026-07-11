@@ -1350,6 +1350,17 @@
     return response.imageUrl;
   }
 
+  async function recognizeCaptchaImageDataUrl(imageUrl) {
+    const response = await sendRuntimeMessage({
+      type: 'VE_LOGIN_RECOGNIZE_CAPTCHA',
+      payload: { imageUrl }
+    });
+    if (!response?.ok || !/^\d{4}$/.test(String(response.passcode || ''))) {
+      throw new Error(response?.message || '验证码本地识别失败');
+    }
+    return String(response.passcode);
+  }
+
   function requestRecovery(loginName, message, options = {}) {
     return global.BjtuVeLoginCredentialsDialog.open({
       modal: document.getElementById('account-recovery-modal'),
@@ -1372,9 +1383,11 @@
       loginName,
       messageText: message,
       requireCaptcha: options?.requireCaptcha === true,
+      startManual: options?.startManual === true,
       fallbackPassword: options?.fallbackPassword,
       initialCaptchaUrl: options?.captchaImageUrl,
       loadCaptcha: getCaptchaImageDataUrl,
+      recognizeCaptcha: recognizeCaptchaImageDataUrl,
       encryptPassword: (plain) => typeof global.strEnc === 'function' ? global.strEnc(plain) : ''
     });
   }
@@ -1394,6 +1407,7 @@
     loginWithQuickUsername,
     login,
     getCaptchaImageDataUrl,
+    recognizeCaptchaImageDataUrl,
     requestRecovery
   };
 

@@ -58,8 +58,7 @@ let versionLatestReleaseRequestPromise = null;
 let versionInfoLoadPromise = null;
 let versionQueuedRelease = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
-const VERSION_PRIMARY_LATEST_URL = 'https://raw.githubusercontent.com/s1y4x1/s1y4x1.github.io/refs/heads/main/release.json';
-const VERSION_FALLBACK_LATEST_URL = 'https://s1y4x1.github.io/release.json';
+const VERSION_LATEST_URL = 'https://s1y4x1.github.io/release.json';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
@@ -1224,14 +1223,24 @@ async function chooseUpdateModules(archiveFiles) {
     : candidates.filter((id) => available[id] === true || packaged.includes(id)));
 
   return new Promise((resolve) => {
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: '请选择要保留的模块',
+      title: '选择更新模块',
+      body: '确认后将开始覆盖解压。',
+      phase: 'extracting'
+    });
     const mask = document.createElement('div');
     mask.className = 'version-modal-mask show';
     mask.style.zIndex = '10030';
+    mask.style.display = 'flex';
+    mask.setAttribute('role', 'dialog');
+    mask.setAttribute('aria-modal', 'true');
     mask.innerHTML = `<div class="version-modal-card" style="width:min(520px,calc(100vw - 32px));">
-      <div class="version-modal-header"><strong>选择要保留的模块</strong></div>
+      <div class="version-modal-header"><div class="upload-duplicate-title">选择要保留的模块</div></div>
       <div style="margin:8px 0;color:#64748b;font-size:13px;">智慧课程平台和课程合并核心始终保留。未勾选的可选模块不会解压，已安装时将被删除。</div>
       <div data-module-list style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0;"></div>
-      <div style="display:flex;gap:8px;align-items:center;"><button type="button" data-invert style="background:#64748b;">反选</button><button type="button" data-confirm style="flex:1;">确定</button></div>
+      <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定</button></div>
     </div>`;
     const list = mask.querySelector('[data-module-list]');
     candidates.forEach((id) => {
@@ -1649,32 +1658,8 @@ async function fetchLatestReleaseFromUrl(sourceUrl) {
 
 async function fetchFallbackLatestRelease() {
   if (versionLatestReleaseRequestPromise) return versionLatestReleaseRequestPromise;
-  const attempts = [VERSION_PRIMARY_LATEST_URL, VERSION_FALLBACK_LATEST_URL]
-    .map((sourceUrl) => fetchLatestReleaseFromUrl(sourceUrl));
-  const allSettledPromise = Promise.allSettled(attempts);
-  versionLatestReleaseRequestPromise = Promise.any(attempts).catch(async () => {
-    const settled = await allSettledPromise;
-    const errors = settled
-      .filter((item) => item.status === 'rejected')
-      .map((item) => item.reason);
-    throw errors.find((error) => String(error?.message || '').includes('JSON'))
-      || errors.at(-1)
-      || new Error('所有更新源均不可用');
-  });
-
-  versionLatestReleaseRequestPromise.then((firstRelease) => {
-    attempts.forEach((attempt) => {
-      attempt.then((laterRelease) => {
-        if (compareVersionText(getReleaseTagVersion(laterRelease), getReleaseTagVersion(firstRelease)) > 0) {
-          queueHigherVersionRelease(laterRelease);
-        }
-      }).catch(() => {});
-    });
-  }).catch(() => {});
-
-  allSettledPromise.finally(() => {
-    versionLatestReleaseRequestPromise = null;
-  });
+  versionLatestReleaseRequestPromise = fetchLatestReleaseFromUrl(VERSION_LATEST_URL)
+    .finally(() => { versionLatestReleaseRequestPromise = null; });
   return versionLatestReleaseRequestPromise;
 }
 
