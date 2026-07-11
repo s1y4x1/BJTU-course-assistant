@@ -500,16 +500,16 @@ async function fetchVeCourseTeachersByCourseNum(courseNum, fzId, onUpdate = null
         markStop(classNo);
         return;
       }
-      if (String(data?.STATUS) === '2') {
+      const item = Array.isArray(data?.result) && data.result.length ? data.result[0] : null;
+      if (String(data?.STATUS) === '2' && !item) {
         noReplay = true;
         markStop(classNo);
         return;
       }
-      if (String(data?.STATUS) !== '0') {
+      if (String(data?.STATUS) !== '0' && !item) {
         markStop(classNo);
         return;
       }
-      const item = Array.isArray(data?.result) && data.result.length ? data.result[0] : null;
       const teacherName = String(item?.teacherName || '').trim();
       const teacherId = String(item?.teacherId || '').trim();
       const roomName = String(item?.roomName || '').trim();
@@ -578,7 +578,7 @@ function renderVeCourseTeachersPopHtml(meta) {
     return '<div class="ve-course-teacher-loading warning">获取同课教师失败，请稍后重试</div>';
   }
 
-  if (meta.noReplay) {
+  if (meta.noReplay && !tableHtml) {
     return '<div style="font-size:12px; color:#64748b;">无法查询无回放课程其他教师</div>';
   }
 
@@ -733,7 +733,7 @@ function updateVeCourseTeachersPopUi(courseId) {
       statusText.textContent = rows.length ? '获取同课教师失败，已显示部分结果' : '获取同课教师失败，请稍后重试';
       return;
     }
-    if (meta.noReplay) {
+    if (meta.noReplay && !rows.length) {
       statusLine.style.display = 'flex';
       if (statusSpinner instanceof HTMLElement) statusSpinner.style.display = 'none';
       statusText.textContent = '无法查询无回放课程其他教师';
@@ -745,6 +745,173 @@ function updateVeCourseTeachersPopUi(courseId) {
       statusText.textContent = '未查询到同课其他教师';
     }
   });
+}
+
+function normalizeVeStudentItem(item) {
+  const raw = item && typeof item === 'object' ? item : {};
+  return {
+    groupName: String(raw.groupName || '').trim(),
+    stuNo: String(raw.STU_NO || raw.stuNo || raw.stu_no || '').trim(),
+    stuName: String(raw.STU_NAME || raw.stuName || raw.stu_name || '').trim(),
+    className: String(raw.CLASS_NAME || raw.className || raw.class_name || '').trim()
+  };
+}
+
+async function fetchVeCourseStudents(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return { students: [], total: 0 };
+  const request = async (pageSize) => {
+    const url = `${BASE_VE}back/coursePlatform/studentCourse.shtml?method=getStudentCourse&cId=${encodeURIComponent(cid)}&pageSize=${encodeURIComponent(String(pageSize))}`;
+    const { text, res } = await fetchText(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      signal: window.globalVeAbortController?.signal
+    });
+    if (isLikelyLoginPageHtml(text, res?.url)) throw new Error('LOGIN_REQUIRED');
+    return parseVeJson(text);
+  };
+
+  let data = await request(100);
+  if (String(data?.STATUS || '0') !== '0') throw new Error(String(data?.ERRMSG || data?.message || '获取学生列表失败'));
+  const total = Math.max(0, Number(data?.total || 0) || 0);
+  if (total > 100) {
+    data = await request(total);
+    if (String(data?.STATUS || '0') !== '0') throw new Error(String(data?.ERRMSG || data?.message || '获取学生列表失败'));
+  }
+  const students = (Array.isArray(data?.result) ? data.result : []).map(normalizeVeStudentItem)
+    .filter((item) => item.stuNo || item.stuName || item.className || item.groupName);
+  return { students, total: Math.max(total, students.length) };
+}
+
+function renderVeStudentRowsHtml(students) {
+  const list = Array.isArray(students) ? students : [];
+  const compareText = (a, b) => String(a || '').localeCompare(String(b || ''), 'zh-CN', {
+    numeric: true,
+    sensitivity: 'base'
+  });
+  const groups = new Map();
+  list.forEach((item) => {
+    const groupName = String(item?.groupName || '').trim();
+    if (!groups.has(groupName)) groups.set(groupName, []);
+    groups.get(groupName).push(item);
+  });
+  return Array.from(groups.entries()).sort((a, b) => compareText(a[0], b[0])).map(([groupName, items]) => {
+    const classGroups = new Map();
+    [...items].sort((a, b) => (
+      compareText(a.className, b.className)
+        || compareText(a.stuNo, b.stuNo)
+        || compareText(a.stuName, b.stuName)
+    )).forEach((item) => {
+      const className = String(item?.className || '').trim();
+      if (!classGroups.has(className)) classGroups.set(className, []);
+      classGroups.get(className).push(item);
+    });
+    const classEntries = Array.from(classGroups.entries()).sort((a, b) => compareText(a[0], b[0]));
+    const groupRowspan = classEntries.reduce((sum, [, rows]) => sum + rows.length, 0);
+    let groupRendered = false;
+
+    return classEntries.map(([className, rows]) => {
+      const sortedRows = [...rows].sort((a, b) => compareText(a.stuNo, b.stuNo) || compareText(a.stuName, b.stuName));
+      return sortedRows.map((item, index) => {
+        const groupCell = !groupRendered ? `<td rowspan="${groupRowspan}">${escapeHtml(groupName)}</td>` : '';
+        groupRendered = true;
+        const classCell = index === 0 ? `<td rowspan="${sortedRows.length}">${escapeHtml(className)}</td>` : '';
+        const stuNo = String(item.stuNo || '').trim();
+        const action = stuNo
+          ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(stuNo)}">切换至此账号</button>`
+          : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至此账号</button>';
+        return `<tr>${groupCell}${classCell}<td>${escapeHtml(stuNo || '-')}</td><td>${escapeHtml(item.stuName || '-')}</td><td>${action}</td></tr>`;
+      }).join('');
+    }).join('');
+  }).join('');
+}
+
+function renderVeStudentsPopHtml(meta) {
+  const students = Array.isArray(meta.students) ? meta.students : [];
+  if (meta.loading) {
+    return '<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:#2563eb; border-top-color:transparent;"></span><span>正在获取学生列表…</span></div>';
+  }
+  if (meta.error) {
+    return '<div class="ve-course-teacher-loading warning">获取学生列表失败，请稍后重试</div>';
+  }
+  if (!students.length) {
+    return '<div style="font-size:12px; color:#64748b;">未查询到学生</div>';
+  }
+  return `
+    <table class="ve-course-teacher-table">
+      <thead><tr><th>分组</th><th>班级</th><th>学号</th><th>姓名</th><th>操作</th></tr></thead>
+      <tbody>${renderVeStudentRowsHtml(students)}</tbody>
+    </table>
+  `;
+}
+
+function updateVeStudentsMetaUi(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const meta = window.veStudentsMetaByCourseId?.[cid] || {};
+  document.querySelectorAll('.ve-student-wrap').forEach((wrap) => {
+    if (!(wrap instanceof HTMLElement)) return;
+    if (String(wrap.dataset.courseId || '').trim() !== cid) return;
+    const text = wrap.querySelector('.ve-student-count-text');
+    if (text instanceof HTMLElement) {
+      const total = Number(meta.total || 0) || 0;
+      text.textContent = total > 0 ? `${total}学生` : '学生';
+    }
+    const pop = wrap.querySelector('.ve-student-pop');
+    if (pop instanceof HTMLElement) pop.innerHTML = renderVeStudentsPopHtml(meta);
+  });
+}
+
+async function hydrateVeStudentsMeta(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return;
+  const existing = window.veStudentsMetaByCourseId?.[cid] || {};
+  if (existing.loading) {
+    updateVeStudentsMetaUi(cid);
+    return existing.promise || Promise.resolve();
+  }
+  if (existing.loaded) {
+    updateVeStudentsMetaUi(cid);
+    return Promise.resolve();
+  }
+  const loadingMeta = {
+    students: Array.isArray(existing.students) ? existing.students : [],
+    total: Number(existing.total || 0) || 0,
+    loading: true,
+    loaded: false,
+    error: false,
+    promise: null
+  };
+  window.veStudentsMetaByCourseId[cid] = loadingMeta;
+  updateVeStudentsMetaUi(cid);
+  const p = fetchVeCourseStudents(cid)
+    .then(({ students, total }) => {
+      window.veStudentsMetaByCourseId[cid] = {
+        students,
+        total,
+        loading: false,
+        loaded: true,
+        error: false,
+        promise: null
+      };
+      updateVeStudentsMetaUi(cid);
+    })
+    .catch(() => {
+      window.veStudentsMetaByCourseId[cid] = {
+        students: [],
+        total: 0,
+        loading: false,
+        loaded: true,
+        error: true,
+        promise: null
+      };
+      updateVeStudentsMetaUi(cid);
+    });
+  window.veStudentsMetaByCourseId[cid] = { ...loadingMeta, promise: p };
+  return p;
 }
 
 async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
@@ -800,7 +967,7 @@ async function hydrateVeCourseTeachersMeta(courseId, courseNum, fzId) {
   })
     .then((result) => {
       const rows = Array.isArray(result?.rows) ? result.rows : [];
-      if (cacheKey && !result?.error && !result?.permissionDenied && !result?.noReplay) {
+      if (cacheKey && rows.length && !result?.error && !result?.permissionDenied) {
         window.veCourseTeachersCacheByPrefix[cacheKey] = { rows };
       }
       window.veCourseTeachersMetaByCourseId[cid] = {
@@ -1782,6 +1949,11 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
             <span class="ve-course-num-wrap" data-course-id="${escapeHtml(String(courseId || ''))}" data-course-num="${escapeHtml(String(courseNumRaw || ''))}" data-fz-id="${escapeHtml(String(fzId || ''))}">
               <span class="ve-course-num-text">${escapeHtml(String(courseNum || ''))}</span>
               <span class="ve-course-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载同课教师…</div></span>
+            </span>
+            <span>·</span>
+            <span class="ve-student-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
+              <span class="ve-student-count-text">学生</span>
+              <span class="ve-student-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载学生列表…</div></span>
             </span>
           </div>
         </div>

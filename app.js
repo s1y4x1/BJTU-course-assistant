@@ -196,6 +196,7 @@ window.courseListLoadVersion = 0;
 window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded,teachers:[]}}
 window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
 window.veCourseTeachersCacheByPrefix = {}; // {courseNumberWithoutSequence:{rows}}
+window.veStudentsMetaByCourseId = {}; // {courseId:{students,total,loading,loaded,error,promise}}
 window.resourceSpaceItems = []; // [{id,name,url,inputTime}]
 window.resourceSpaceSelected = new Set();
 window.coursewareItemsById = {}; // {resourceId: {id,name,url,extName,courseId}}
@@ -4242,6 +4243,15 @@ courseListDiv.addEventListener('mouseover', (e) => {
     const fzId = String(wrap.dataset.fzId || '').trim();
     if (!courseId || !courseNum) return;
     hydrateVeCourseTeachersMeta(courseId, courseNum, fzId).catch(() => {});
+    return;
+  }
+  const studentWrap = t.closest('.ve-student-wrap');
+  if ((studentWrap instanceof HTMLElement)) {
+    const from = e.relatedTarget;
+    if (from instanceof Node && studentWrap.contains(from)) return;
+    const courseId = String(studentWrap.dataset.courseId || '').trim();
+    if (!courseId) return;
+    hydrateVeStudentsMeta(courseId).catch(() => {});
     return;
   }
   // 教师姓名悬停

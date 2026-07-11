@@ -132,6 +132,7 @@ html[data-color-scheme="dark"] .account-init-card,
 html[data-color-scheme="dark"] .account-recovery-card,
 html[data-color-scheme="dark"] .mooc-progress-card,
 html[data-color-scheme="dark"] .ve-teacher-pop,
+html[data-color-scheme="dark"] .ve-student-pop,
 html[data-color-scheme="dark"] .ve-course-teacher-pop {
   background: #111827 !important;
   border-color: #334155 !important;
