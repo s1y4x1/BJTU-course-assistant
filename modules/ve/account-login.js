@@ -173,8 +173,22 @@
   async function ensureCurrentAccountStored(userInfo, { signal } = {}) {
     const loginName = String(userInfo?.loginName || '').trim();
     if (!loginName) return null;
+    const userName = String(userInfo?.userName || '').trim();
+    const roleName = String(userInfo?.roleName || '').trim();
     const existing = await global.BjtuAccountStore.get(loginName);
-    if (existing) return existing;
+    if (existing) {
+      const patch = {};
+      if (userName && userName !== String(existing.userName || '').trim()) patch.userName = userName;
+      if (roleName && roleName !== String(existing.roleName || '').trim()) patch.roleName = roleName;
+      if (Object.keys(patch).length) {
+        const updated = await global.BjtuAccountStore.update(loginName, patch);
+        if (updated) {
+          accountCache.set(loginName, updated);
+          return updated;
+        }
+      }
+      return existing;
+    }
     if (currentAccountImportPromises.has(loginName)) {
       return currentAccountImportPromises.get(loginName);
     }
@@ -198,11 +212,23 @@
       if (!password) return null;
 
       const current = await global.BjtuAccountStore.get(loginName);
-      if (current) return current;
+      if (current) {
+        const patch = {};
+        if (userName && userName !== String(current.userName || '').trim()) patch.userName = userName;
+        if (roleName && roleName !== String(current.roleName || '').trim()) patch.roleName = roleName;
+        if (Object.keys(patch).length) {
+          const updated = await global.BjtuAccountStore.update(loginName, patch);
+          if (updated) {
+            accountCache.set(loginName, updated);
+            return updated;
+          }
+        }
+        return current;
+      }
       const record = await global.BjtuAccountStore.put({
         loginName,
-        userName: String(userInfo?.userName || '').trim(),
-        roleName: String(userInfo?.roleName || '').trim(),
+        userName,
+        roleName,
         password,
         quickUsername: ''
       });
