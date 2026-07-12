@@ -107,6 +107,17 @@
       </label>
     </div>
     <div id="popupCacheContainer">
+      <div class="popup-size-editor">
+        <label>
+          <span>宽度</span>
+          <input type="number" id="popupWidthPx" min="360" max="800" step="10" value="500" />
+        </label>
+        <label>
+          <span>高度</span>
+          <input type="number" id="popupHeightPx" min="420" max="600" step="10" value="600" />
+        </label>
+      </div>
+      <div class="tip">弹出窗口尺寸将在下次打开时生效；若当前正在弹出窗口内设置，会立即尝试调整。</div>
       <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
         <input type="checkbox" id="popupUseFullscreenCacheEnabled" style="width:auto;" checked />
         <span>弹出窗口使用上次全屏页面缓存</span>
@@ -183,7 +194,7 @@
     <div id="backgroundAutoUpdateStatus" class="tip" style="margin-top:8px;">后台自动更新未启用。</div>
     <div class="tip" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
   </div>
-  <div id="academic-system-section" style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="academic" hidden>
+  <div id="academic-system-section" class="options-wide-card" style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="academic" hidden>
     <div class="section-title">教务系统</div>
     <label for="academicAccountSelect">已保存账号</label>
     <div class="academic-account-row">

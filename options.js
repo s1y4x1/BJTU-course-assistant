@@ -30,6 +30,12 @@ const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: t
 const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true };
 
 const DEFAULT_OPEN_MODE = 'popup';
+const DEFAULT_POPUP_WIDTH_PX = 500;
+const DEFAULT_POPUP_HEIGHT_PX = 600;
+const MIN_POPUP_WIDTH_PX = 360;
+const MAX_POPUP_WIDTH_PX = 800;
+const MIN_POPUP_HEIGHT_PX = 420;
+const MAX_POPUP_HEIGHT_PX = 600;
 
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
@@ -119,6 +125,11 @@ function normalizePlatformVisible(raw) {
     key,
     typeof src[key] === 'boolean' ? src[key] : DEFAULT_PLATFORM_VISIBLE[key]
   ]));
+}
+
+function normalizePopupDimension(value, fallback, min, max) {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
 }
 
 function formatModuleBytes(bytes) {
@@ -243,8 +254,8 @@ function goBackToApp() {
 (async function init() {
   await globalThis.BjtuModuleRegistry?.ready;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -289,6 +300,18 @@ function goBackToApp() {
   const mode = String(openMode || DEFAULT_OPEN_MODE);
   document.getElementById('openModePopup').checked = mode === 'popup';
   document.getElementById('openModePage').checked = mode === 'page';
+  document.getElementById('popupWidthPx').value = String(normalizePopupDimension(
+    popupWidthPx,
+    DEFAULT_POPUP_WIDTH_PX,
+    MIN_POPUP_WIDTH_PX,
+    MAX_POPUP_WIDTH_PX
+  ));
+  document.getElementById('popupHeightPx').value = String(normalizePopupDimension(
+    popupHeightPx,
+    DEFAULT_POPUP_HEIGHT_PX,
+    MIN_POPUP_HEIGHT_PX,
+    MAX_POPUP_HEIGHT_PX
+  ));
   const saveUploadsVal = saveUploadedFilesEnabled === undefined
     ? DEFAULT_SAVE_UPLOADS_ENABLED
     : !!saveUploadedFilesEnabled;
@@ -663,6 +686,17 @@ function goBackToApp() {
     setMsg('已应用更改');
   };
 
+  const applyPopupSize = async () => {
+    const widthInput = document.getElementById('popupWidthPx');
+    const heightInput = document.getElementById('popupHeightPx');
+    const width = normalizePopupDimension(widthInput?.value, DEFAULT_POPUP_WIDTH_PX, MIN_POPUP_WIDTH_PX, MAX_POPUP_WIDTH_PX);
+    const height = normalizePopupDimension(heightInput?.value, DEFAULT_POPUP_HEIGHT_PX, MIN_POPUP_HEIGHT_PX, MAX_POPUP_HEIGHT_PX);
+    if (widthInput instanceof HTMLInputElement) widthInput.value = String(width);
+    if (heightInput instanceof HTMLInputElement) heightInput.value = String(height);
+    await chrome.storage.local.set({ popupWidthPx: width, popupHeightPx: height });
+    setMsg('已应用更改');
+  };
+
   function updatePopupCacheDisabled() {
     const disabled = document.getElementById('openModePage').checked;
     const container = document.getElementById('popupCacheContainer');
@@ -700,6 +734,17 @@ function goBackToApp() {
     updatePopupCacheDisabled();
   }
 
+  function applyPopupSizeUi(widthRaw, heightRaw) {
+    const widthInput = document.getElementById('popupWidthPx');
+    const heightInput = document.getElementById('popupHeightPx');
+    if (widthInput instanceof HTMLInputElement && widthRaw !== undefined) {
+      widthInput.value = String(normalizePopupDimension(widthRaw, DEFAULT_POPUP_WIDTH_PX, MIN_POPUP_WIDTH_PX, MAX_POPUP_WIDTH_PX));
+    }
+    if (heightInput instanceof HTMLInputElement && heightRaw !== undefined) {
+      heightInput.value = String(normalizePopupDimension(heightRaw, DEFAULT_POPUP_HEIGHT_PX, MIN_POPUP_HEIGHT_PX, MAX_POPUP_HEIGHT_PX));
+    }
+  }
+
   function applyBooleanUi(id, raw, fallback = true) {
     setChecked(id, raw === undefined ? fallback : !!raw);
   }
@@ -720,6 +765,9 @@ function goBackToApp() {
       }
       if (changes.autoLoadAllHomeworkDetails) applyBooleanUi('autoLoadAllHomeworkDetails', changes.autoLoadAllHomeworkDetails.newValue, false);
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
+      if (changes.popupWidthPx || changes.popupHeightPx) {
+        applyPopupSizeUi(changes.popupWidthPx?.newValue, changes.popupHeightPx?.newValue);
+      }
       if (changes.themeMode) {
         updateThemeModeUi(changes.themeMode.newValue);
         setTimeout(() => { void enforceJlgjDarkThemeAvailability(); }, 0);
@@ -820,6 +868,8 @@ function goBackToApp() {
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
+  document.getElementById('popupWidthPx').addEventListener('change', applyPopupSize);
+  document.getElementById('popupHeightPx').addEventListener('change', applyPopupSize);
   document.getElementById('themeMode').addEventListener('click', async (e) => {
     const btn = e.target.closest('.theme-mode-btn');
     if (!btn) return;
@@ -1241,6 +1291,8 @@ function goBackToApp() {
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
+      popupWidthPx: DEFAULT_POPUP_WIDTH_PX,
+      popupHeightPx: DEFAULT_POPUP_HEIGHT_PX,
       themeMode: DEFAULT_THEME_MODE
     });
     await chrome.storage.sync.remove(['platformEnabled']);
@@ -1279,6 +1331,8 @@ function goBackToApp() {
     document.getElementById('autoLoadCourseResourcesEnabled').checked = DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
+    document.getElementById('popupWidthPx').value = String(DEFAULT_POPUP_WIDTH_PX);
+    document.getElementById('popupHeightPx').value = String(DEFAULT_POPUP_HEIGHT_PX);
     document.getElementById('saveUploadsEnabled').checked = true;
     document.getElementById('headerQrEnabled').checked = false;
     document.getElementById('headerQrEnabled').disabled = true;

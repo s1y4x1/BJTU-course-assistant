@@ -1,4 +1,4 @@
-body { font-family: Segoe UI, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
+body { font-family: Segoe UI, sans-serif; max-width: min(1180px, calc(100vw - 32px)); margin: 24px auto; padding: 0 16px; }
 h2 { margin: 0; }
 label { display: block; margin: 12px 0 6px; }
 input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
@@ -34,6 +34,37 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
 #msg.err { border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .section-title { font-weight: 600; margin-bottom: 8px; font-size: 16px; }
+#options-controlled-content {
+  margin-top: 14px;
+  display: block;
+}
+#options-controlled-content > div {
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0 0 14px !important;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.options-wide-card { column-span: all; }
+#options-controlled-content > .options-wide-card {
+  margin-top: 14px !important;
+}
+@media (min-width: 980px) {
+  #options-controlled-content {
+    column-count: 2;
+    column-gap: 14px;
+  }
+}
+@media (max-width: 760px) {
+  body {
+    max-width: 720px;
+    margin-top: 16px;
+  }
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
 .installed-modules-block { margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #e2e8f0; }
 .installed-modules-label { margin-bottom:7px; font-size:13px; font-weight:600; color:#334155; }
 .installed-module-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:9px; }
@@ -43,6 +74,10 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
 .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
 .back-home-link:hover { text-decoration: underline; }
 .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.popup-size-editor { display:grid; grid-template-columns:repeat(2, minmax(120px, 1fr)); gap:8px; margin:8px 0 4px; }
+.popup-size-editor label { display:flex; align-items:center; gap:8px; margin:0; font-size:13px; }
+.popup-size-editor label span { flex:0 0 auto; white-space:nowrap; }
+.popup-size-editor input { width:100%; min-width:0; height:34px; padding:6px 8px; }
 .is-disabled { opacity: 0.5; pointer-events: none; }
 .platform-option { margin:8px 0; }
 .platform-option > label { display:flex; align-items:center; gap:8px; margin:0; font-weight:600; }
