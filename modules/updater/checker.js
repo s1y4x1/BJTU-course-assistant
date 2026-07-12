@@ -1235,6 +1235,27 @@ function buildModuleSizeStyle(bytes) {
   return `font-size:${fontSize}px;font-weight:${fontWeight};color:${color};`;
 }
 
+function appendUpdateModuleChoice(list, { id, name, moduleSize, checked, disabled }) {
+  const label = document.createElement('label');
+  label.style.cssText = 'display:flex;align-items:center;gap:7px;margin:0;padding:7px 8px;border:1px solid #dbe2ea;border-radius:6px;';
+  if (disabled) label.style.opacity = '0.78';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.value = id;
+  checkbox.checked = !!checked;
+  checkbox.disabled = !!disabled;
+  checkbox.style.width = 'auto';
+  const nameEl = document.createElement('span');
+  nameEl.textContent = name;
+  const size = document.createElement('span');
+  size.className = 'file-size-emphasis update-module-size';
+  size.dataset.fileSizeBytes = String(moduleSize);
+  size.style.cssText = buildModuleSizeStyle(moduleSize);
+  size.textContent = formatDownloadBytes(moduleSize);
+  label.append(checkbox, nameEl, size);
+  list.appendChild(label);
+}
+
 async function chooseUpdateModules(archiveFiles) {
   const packaged = getArchiveModuleIds(archiveFiles);
   const available = globalThis.__bjtuAvailableModules || {};
@@ -1268,31 +1289,28 @@ async function chooseUpdateModules(archiveFiles) {
       <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定</button></div>
     </div>`;
     const list = mask.querySelector('[data-module-list]');
+    appendUpdateModuleChoice(list, {
+      id: 've',
+      name: '智慧课程平台',
+      moduleSize: getArchiveModuleSize(archiveFiles, 've'),
+      checked: true,
+      disabled: true
+    });
     candidates.forEach((id) => {
-      const moduleSize = getArchiveModuleSize(archiveFiles, id);
-      const label = document.createElement('label');
-      label.style.cssText = 'display:flex;align-items:center;gap:7px;margin:0;padding:7px 8px;border:1px solid #dbe2ea;border-radius:6px;';
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = id;
-      checkbox.checked = initial.has(id);
-      checkbox.style.width = 'auto';
-      const name = document.createElement('span');
-      name.textContent = VERSION_OPTIONAL_MODULES[id];
-      const size = document.createElement('span');
-      size.className = 'file-size-emphasis update-module-size';
-      size.dataset.fileSizeBytes = String(moduleSize);
-      size.style.cssText = buildModuleSizeStyle(moduleSize);
-      size.textContent = formatDownloadBytes(moduleSize);
-      label.append(checkbox, name, size);
-      list.appendChild(label);
+      appendUpdateModuleChoice(list, {
+        id,
+        name: VERSION_OPTIONAL_MODULES[id],
+        moduleSize: getArchiveModuleSize(archiveFiles, id),
+        checked: initial.has(id),
+        disabled: false
+      });
     });
     mask.querySelector('[data-invert]').addEventListener('click', () => {
-      list.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
+      list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
     });
     mask.querySelector('[data-confirm]').addEventListener('click', async () => {
       const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
-      await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selected] }).catch(() => {});
+      await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => id !== 've') }).catch(() => {});
       mask.remove();
       resolve(selected);
     });
