@@ -10,141 +10,27 @@ const MOOC_API = {
   answer: 'https://ginnnnnn.top/api/mooc/test/'
 };
 
-let moocOriginTabPromise = null;
-let moocActiveRequestTabId = null;
-const moocHelperTabIds = new Set();
-const moocHelperCloseTimers = new Map();
-const moocHelperLeases = new Set();
-let moocOperationGeneration = 0;
-
-function scheduleMoocHelperTabClose(tabId, delayMs = 120000) {
-  if (!moocHelperTabIds.has(tabId)) return;
-  if (moocHelperLeases.size > 0) return;
-  const oldTimer = moocHelperCloseTimers.get(tabId);
-  if (oldTimer) clearTimeout(oldTimer);
-  const timer = setTimeout(() => {
-    moocHelperCloseTimers.delete(tabId);
-    moocHelperTabIds.delete(tabId);
-    if (Number(moocActiveRequestTabId) === Number(tabId)) moocActiveRequestTabId = null;
-    chrome.tabs.remove(tabId).catch(() => {});
-  }, delayMs);
-  moocHelperCloseTimers.set(tabId, timer);
-}
-
-function closeMoocHelperTab(tabId) {
-  if (!moocHelperTabIds.has(tabId)) return;
-  const timer = moocHelperCloseTimers.get(tabId);
-  if (timer) clearTimeout(timer);
-  moocHelperCloseTimers.delete(tabId);
-  moocHelperTabIds.delete(tabId);
-  if (Number(moocActiveRequestTabId) === Number(tabId)) moocActiveRequestTabId = null;
-  chrome.tabs.remove(tabId).catch(() => {});
-}
-
-async function waitForTabComplete(tabId, timeoutMs = 15000) {
-  const current = await chrome.tabs.get(tabId).catch(() => null);
-  if (current?.status === 'complete') return current;
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      chrome.tabs.onRemoved.removeListener(onRemoved);
-      reject(Object.assign(new Error('中国大学MOOC页面加载超时'), { code: 'tab-timeout' }));
-    }, timeoutMs);
-    const onUpdated = (updatedId, changeInfo, tab) => {
-      if (updatedId !== tabId || changeInfo.status !== 'complete') return;
-      clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      chrome.tabs.onRemoved.removeListener(onRemoved);
-      resolve(tab);
-    };
-    const onRemoved = (removedId) => {
-      if (removedId !== tabId) return;
-      clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      chrome.tabs.onRemoved.removeListener(onRemoved);
-      reject(Object.assign(new Error('中国大学MOOC后台页面已关闭'), { code: 'tab-closed' }));
-    };
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.tabs.onRemoved.addListener(onRemoved);
-  });
-}
-
-async function ensureMoocOriginTabOnce() {
-  if (moocActiveRequestTabId) {
-    const activeTab = await chrome.tabs.get(Number(moocActiveRequestTabId)).catch(() => null);
-    if (activeTab?.id && String(activeTab.url || '').startsWith('https://www.icourse163.org/')) {
-      return activeTab.status === 'complete' ? activeTab : waitForTabComplete(activeTab.id);
-    }
-    moocActiveRequestTabId = null;
+async function resolveMoocRequestTab(tabId, pageUrl = '') {
+  const id = Number(tabId || 0);
+  if (id) {
+    const tab = await chrome.tabs.get(id).catch(() => null);
+    if (tab?.id && String(tab.url || '').startsWith('https://www.icourse163.org/')) return tab;
   }
-  const existingTabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] }).catch(() => []);
-  const reusableTab = (existingTabs || []).find((tab) => tab?.id && tab.status === 'complete');
-  if (reusableTab?.id) {
-    moocActiveRequestTabId = reusableTab.id;
-    return reusableTab;
+  const normalizedPageUrl = String(pageUrl || '').trim();
+  if (normalizedPageUrl.startsWith('https://www.icourse163.org/')) {
+    const exactTabs = await chrome.tabs.query({ url: [normalizedPageUrl] }).catch(() => []);
+    const exactTab = (exactTabs || []).find((item) => item?.id && String(item.url || '') === normalizedPageUrl);
+    if (exactTab?.id) return exactTab;
   }
-  if (!moocOriginTabPromise) {
-    moocOriginTabPromise = chrome.tabs.create({
-      url: 'https://www.icourse163.org/',
-      active: false
-    }).then((tab) => {
-      if (!tab?.id) throw new Error('无法创建中国大学MOOC请求页面');
-      moocHelperTabIds.add(tab.id);
-      moocActiveRequestTabId = tab.id;
-      return waitForTabComplete(tab.id);
-    }).finally(() => {
-      moocOriginTabPromise = null;
-    });
-  }
-  return moocOriginTabPromise;
+  const tabs = await chrome.tabs.query({ url: ['https://www.icourse163.org/*'] }).catch(() => []);
+  return (tabs || []).find((item) => item?.id && String(item.url || '').startsWith('https://www.icourse163.org/')) || null;
 }
 
-async function ensureMoocOriginTab() {
-  const generation = moocOperationGeneration;
-  let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (generation !== moocOperationGeneration) {
-      throw Object.assign(new Error('中国大学MOOC加载已取消'), { code: 'cancelled' });
-    }
-    try {
-      const tab = await ensureMoocOriginTabOnce();
-      if (generation !== moocOperationGeneration) {
-        closeMoocHelperTab(tab.id);
-        throw Object.assign(new Error('中国大学MOOC加载已取消'), { code: 'cancelled' });
-      }
-      return tab;
-    } catch (error) {
-      lastError = error;
-      moocActiveRequestTabId = null;
-      moocOriginTabPromise = null;
-      if (!['tab-closed', 'tab-timeout'].includes(String(error?.code || ''))) throw error;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
-    }
+async function handleMoocRequest(action, payload, tabId, pageUrl = '') {
+  const tab = await resolveMoocRequestTab(tabId, pageUrl);
+  if (!tab?.id || !String(tab.url || '').startsWith('https://www.icourse163.org/')) {
+    throw Object.assign(new Error('中国大学MOOC请求页面不可用'), { code: 'missing-tab' });
   }
-  throw lastError || new Error('无法打开中国大学MOOC后台页面');
-}
-
-async function acquireMoocHelperLease() {
-  const tab = await ensureMoocOriginTab();
-  const leaseId = crypto.randomUUID();
-  moocHelperLeases.add(leaseId);
-  const timer = moocHelperCloseTimers.get(tab.id);
-  if (timer) clearTimeout(timer);
-  moocHelperCloseTimers.delete(tab.id);
-  return { leaseId, tabId: tab.id };
-}
-
-function releaseMoocHelperLease(leaseId) {
-  const id = String(leaseId || '').trim();
-  if (id) moocHelperLeases.delete(id);
-  if (moocHelperLeases.size > 0) return;
-  if (moocActiveRequestTabId && moocHelperTabIds.has(Number(moocActiveRequestTabId))) {
-    closeMoocHelperTab(Number(moocActiveRequestTabId));
-  }
-}
-
-async function handleMoocRequest(action, payload) {
-  const tab = await ensureMoocOriginTab();
   const csrfCookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'NTESSTUDYSI' }).catch(() => null);
   const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
@@ -201,9 +87,15 @@ async function handleMoocRequest(action, payload) {
         return { ok: true, data };
       };
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      const isRetryable = (result) => result?.code === 'rate-limit'
-        || Number(result?.status) >= 500
+      const isConcurrencyLimited = (result) => result?.code === 'rate-limit'
+        || Number(result?.status) === 429
         || /并发|频繁|稍后|繁忙|busy|limit|too many/i.test(String(result?.message || ''));
+      const normalizeGinsAnswer = (data) => {
+        if (Number(data?.status) === 500 && /系统异常/.test(String(data?.msg || ''))) {
+          return { ok: false, code: 'gins-system-error', message: 'GinsMooc系统异常' };
+        }
+        return { ok: true, data };
+      };
       const postJson = async (url, body) => {
         let result = null;
         for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -216,7 +108,7 @@ async function handleMoocRequest(action, payload) {
           } catch (error) {
             result = { ok: false, code: 'network', message: String(error?.message || error) };
           }
-          if (result?.ok || (!isRetryable(result) && result?.code !== 'network')) return result;
+          if (result?.ok || !isConcurrencyLimited(result)) return result;
           if (attempt < 7) await sleep(Math.min(750 * (2 ** attempt), 8000));
         }
         return result || { ok: false, message: '请求失败' };
@@ -235,7 +127,8 @@ async function handleMoocRequest(action, payload) {
               paper = paperResponse.data.result;
               break;
             }
-            if (attempt < 9) await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (!isConcurrencyLimited(paperResponse)) break;
+            if (attempt < 9) await sleep(Math.min(750 * (attempt + 1), 3000));
           }
           if (!paper) return { ok: false, message: '获取作业失败（并发限制）' };
           paper.answers = (paper.subjectiveQList || []).map((question) => ({
@@ -250,7 +143,11 @@ async function handleMoocRequest(action, payload) {
           let answerData = { data: { questionList: [] } };
           try {
             const answerResponse = await fetch(api.answer + tid, { cache: 'no-store' });
-            if (answerResponse.ok) answerData = await answerResponse.json();
+            if (answerResponse.ok) {
+              const normalized = normalizeGinsAnswer(await answerResponse.json());
+              if (!normalized.ok) return normalized;
+              answerData = normalized.data;
+            }
           } catch { /* submit with unmatched answers */ }
           const paperResponse = await postJson(api.quizPaper, { tid });
           if (!paperResponse.ok || !paperResponse.data?.result) return paperResponse.ok ? { ok: false, message: '试卷数据为空' } : paperResponse;
@@ -307,10 +204,13 @@ async function handleMoocRequest(action, payload) {
           try {
             const response = await fetch(api.answer + tid, { cache: 'no-store' });
             lastStatus = response.status;
-            if (response.ok) return { ok: true, data: await response.json() };
-            if (response.status !== 429 && response.status < 500) return { ok: false, message: `GinsMooc HTTP ${response.status}` };
+            if (response.ok) {
+              return normalizeGinsAnswer(await response.json());
+            }
+            if (response.status !== 429) return { ok: false, message: `GinsMooc HTTP ${response.status}` };
           } catch {
             lastStatus = 0;
+            return { ok: false, message: 'GinsMooc 网络请求失败' };
           }
           if (attempt < 7) await sleep(Math.min(750 * (2 ** attempt), 8000));
         }
@@ -322,68 +222,24 @@ async function handleMoocRequest(action, payload) {
   });
   const result = results?.[0]?.result;
   if (!result?.ok) {
-    if (result?.code === 'not-logged-in') closeMoocHelperTab(tab.id);
     throw Object.assign(new Error(result?.message || '中国大学MOOC请求失败'), { code: result?.code || '' });
   }
-  scheduleMoocHelperTabClose(tab.id);
   return result.data;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === 'MOOC_ACQUIRE_HELPER_TAB') {
-    acquireMoocHelperLease()
-      .then((lease) => sendResponse({ ok: true, ...lease }))
-      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
-    return true;
-  }
-
-  if (message?.type === 'MOOC_RELEASE_HELPER_TAB') {
-    releaseMoocHelperLease(message?.leaseId);
-    sendResponse({ ok: true });
-    return false;
-  }
-
-  if (message?.type === 'MOOC_RELEASE_HELPER_TABS') {
-    moocOperationGeneration += 1;
-    moocHelperLeases.clear();
-    [...moocHelperTabIds].forEach((tabId) => closeMoocHelperTab(tabId));
-    moocActiveRequestTabId = null;
-    sendResponse({ ok: true });
-    return false;
-  }
-
-  if (message?.type === 'MOOC_CANCEL_PENDING') {
-    moocOperationGeneration += 1;
-    moocHelperLeases.clear();
-    [...moocHelperTabIds].forEach((tabId) => closeMoocHelperTab(tabId));
-    moocActiveRequestTabId = null;
-    moocOriginTabPromise = null;
-    sendResponse({ ok: true });
-    return false;
-  }
-
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'MOOC_LOGIN_STATUS') {
     (async () => {
-      const preferredTabId = Number(message?.tabId || 0);
-      let tab = null;
-      if (preferredTabId) {
-        const preferred = await chrome.tabs.get(preferredTabId).catch(() => null);
-        if (preferred?.id && String(preferred.url || '').startsWith('https://www.icourse163.org/')) {
-          tab = preferred.status === 'complete' ? preferred : await waitForTabComplete(preferred.id);
-          moocActiveRequestTabId = preferred.id;
+      const tabId = Number(message?.tabId || sender?.tab?.id || 0);
+      if (tabId) {
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        if (!tab?.id || !String(tab.url || '').startsWith('https://www.icourse163.org/')) {
+          sendResponse({ ok: false, loggedIn: false, message: '中国大学MOOC页面不可用' });
+          return;
         }
       }
-      if (!tab) tab = await ensureMoocOriginTab();
       const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' });
-      const loggedIn = !!String(cookie?.value || '').trim();
-      if (!loggedIn) closeMoocHelperTab(tab.id);
-      else scheduleMoocHelperTabClose(tab.id);
-      sendResponse({
-        ok: true,
-        loggedIn,
-        tabId: Number(tab?.id || 0) || null,
-        temporaryTab: moocHelperTabIds.has(tab.id)
-      });
+      sendResponse({ ok: true, loggedIn: !!String(cookie?.value || '').trim(), tabId: tabId || null, temporaryTab: false });
     })().catch((error) => {
       sendResponse({ ok: false, loggedIn: false, message: String(error?.message || error) });
     });
@@ -391,7 +247,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === 'MOOC_REQUEST') {
-    handleMoocRequest(String(message.action || ''), message.payload || {})
+    handleMoocRequest(String(message.action || ''), message.payload || {}, message.tabId || sender?.tab?.id, message.pageUrl || sender?.tab?.url || '')
       .then((data) => sendResponse({ ok: true, data }))
       .catch((error) => sendResponse({
         ok: false,
@@ -403,11 +259,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  const timer = moocHelperCloseTimers.get(tabId);
-  if (timer) clearTimeout(timer);
-  moocHelperCloseTimers.delete(tabId);
-  moocHelperTabIds.delete(tabId);
-  if (Number(moocActiveRequestTabId) === Number(tabId)) moocActiveRequestTabId = null;
-});
 })();

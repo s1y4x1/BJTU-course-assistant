@@ -9,7 +9,7 @@
 
 
     async function request(action, payload = {}) {
-        const response = await chrome.runtime.sendMessage({ type: 'MOOC_REQUEST', action, payload });
+        const response = await chrome.runtime.sendMessage({ type: 'MOOC_REQUEST', action, payload, pageUrl: location.href });
         if (!response?.ok) throw new Error(response?.message || '中国大学MOOC请求失败');
         return response.data;
     }
