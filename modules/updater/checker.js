@@ -79,6 +79,8 @@ const VERSION_OPTIONAL_MODULES = Object.freeze({
   captcha: '本地验证码识别',
   updater: '更新组件'
 });
+const VERSION_MODULE_SCOPE_IDS = ['ve', ...Object.keys(VERSION_OPTIONAL_MODULES)];
+let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
 let versionRefreshCountdownAction = null;
 
@@ -1188,18 +1190,33 @@ async function clearVersionUpdateDirectory() {
   return names.length;
 }
 
-function selectUpdateArchiveFiles(files, updateRule) {
-  if (!Array.isArray(updateRule) || updateRule.length === 0) return files;
-  if (updateRule.length === 1 && updateRule[0] === true) return files;
-  const requested = new Set(updateRule
+function normalizeVersionUpdateScopes(updateRule) {
+  if (!Array.isArray(updateRule) || updateRule.length === 0) return null;
+  if (updateRule.length === 1 && updateRule[0] === true) return null;
+  const scopes = new Set(updateRule
     .filter((value) => typeof value === 'string')
     .map((value) => String(value || '').replace(/\\/g, '/').replace(/^\/+/, '').trim().toLowerCase())
     .filter(Boolean));
-  if (!requested.size) return files;
+  return scopes.size ? scopes : null;
+}
+
+function versionUpdateAppliesToSelection(updateRule, selectedModules) {
+  const scopes = normalizeVersionUpdateScopes(updateRule);
+  if (!scopes || scopes.has('main') || scopes.has('ve')) return true;
+  for (const id of selectedModules || []) {
+    if (scopes.has(String(id || '').toLowerCase())) return true;
+  }
+  return false;
+}
+
+function selectUpdateArchiveFiles(files, updateRule) {
+  const scopes = normalizeVersionUpdateScopes(updateRule);
+  if (!scopes) return files;
   return files.filter((item) => {
     const path = String(item.path || '').toLowerCase();
-    const basename = path.split('/').at(-1) || '';
-    return requested.has(path) || requested.has(basename);
+    const match = path.match(/^modules\/([^/]+)\//i);
+    if (match) return scopes.has(match[1].toLowerCase());
+    return scopes.has('main');
   });
 }
 
@@ -1427,7 +1444,7 @@ function filterFilesByModules(files, selectedModules) {
     const match = String(item?.path || '').match(/^modules\/([^/]+)\//i);
     if (!match || match[1].toLowerCase() === 've') return true;
     const id = match[1].toLowerCase();
-    return !Object.hasOwn(VERSION_OPTIONAL_MODULES, id) || selectedModules.has(id);
+    return selectedModules.has(id);
   });
 }
 
@@ -1447,7 +1464,40 @@ async function removeUnselectedModuleDirectories(selectedModules) {
   }
 }
 
-async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) {
+async function cleanVersionUpdateScopes(updateRule, selectedModules) {
+  const root = versionUpdateDirectoryHandle;
+  const scopes = normalizeVersionUpdateScopes(updateRule);
+  if (!scopes) {
+    await clearVersionUpdateDirectory();
+    return;
+  }
+  if (scopes.has('main')) {
+    const names = [];
+    for await (const [name] of root.entries()) {
+      if (name !== 'modules') names.push(name);
+    }
+    for (const name of names) {
+      await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true }).catch((error) => {
+        if (error?.name !== 'NotFoundError') throw error;
+      });
+    }
+  }
+  let modulesDirectory;
+  try {
+    modulesDirectory = await root.getDirectoryHandle('modules');
+  } catch {
+    return;
+  }
+  for (const id of VERSION_MODULE_SCOPE_IDS) {
+    if (!scopes.has(id)) continue;
+    if (id !== 've' && !selectedModules.has(id)) continue;
+    await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
+      if (error?.name !== 'NotFoundError') throw error;
+    });
+  }
+}
+
+async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, cleanUpdate = false) {
   setVersionDownloadBar({ visible: true, percent: 0 });
   setVersionDownloadProgressUi({
     visible: true,
@@ -1470,9 +1520,9 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null) 
     .map((entry) => ({ entry, path: normalizeUpdateEntryPath(entry.name, commonRoot) }))
     .filter((item) => item.path);
   const selectedModules = await chooseUpdateModules(archiveFiles);
-  const resetDirectory = Array.isArray(updateRule) && updateRule.length === 1 && updateRule[0] === true;
-  if (resetDirectory) await clearVersionUpdateDirectory();
-  else await removeUnselectedModuleDirectories(selectedModules);
+  selectedModules.add('ve');
+  if (cleanUpdate) await cleanVersionUpdateScopes(updateRule, selectedModules);
+  else if (!normalizeVersionUpdateScopes(updateRule)) await removeUnselectedModuleDirectories(selectedModules);
   const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
   if (!selectedArchiveFiles.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
   const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
@@ -1519,14 +1569,11 @@ async function downloadVersionByUrlWithProgress(url) {
   if (!versionUpdateDirectoryHandle) throw new Error('尚未授权更新目录');
 
   const archiveBytes = await fetchUpdateArchiveWithProgress(finalUrl);
-  const resetDirectory = Array.isArray(versionButtonLatestUpdate)
-    && versionButtonLatestUpdate.length === 1
-    && versionButtonLatestUpdate[0] === true;
   const updateRule = versionDownloadFullExtraction
-    ? (resetDirectory ? [true] : null)
+    ? null
     : versionButtonLatestUpdate;
   const fileCount = await globalThis.BjtuUpdateFileSystem.withInstallLock(() => (
-    extractUpdateArchiveToDirectory(archiveBytes, updateRule)
+    extractUpdateArchiveToDirectory(archiveBytes, updateRule, !versionDownloadFullExtraction && versionButtonLatestClean)
   ));
   const reloadRequired = versionButtonLatestReload;
   const forcedUpdate = versionButtonLatestForce;
@@ -1560,7 +1607,8 @@ async function downloadVersionByUrlWithProgress(url) {
       zipballUrl: versionButtonLatestZipballUrl,
       reload: false,
       force: forcedUpdate,
-      update: versionButtonLatestUpdate
+      update: versionButtonLatestUpdate,
+      clean: versionButtonLatestClean
     });
   }
   setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion: versionButtonLatestDisplayVersion });
@@ -1628,7 +1676,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
   syncVersionNoticeDownloadButton();
 }
 
-function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestDisplayVersion = '', latestPublishedAt = '', downloadUrl = '', body = '', zipballUrl = '', reload = true, force = false, update = null } = {}) {
+function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestDisplayVersion = '', latestPublishedAt = '', downloadUrl = '', body = '', zipballUrl = '', reload = true, force = false, update = null, clean = false } = {}) {
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
   versionButtonMode = String(mode || 'loading').trim();
@@ -1642,6 +1690,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
   versionButtonLatestReload = reload !== false;
   versionButtonLatestForce = force === true;
   versionButtonLatestUpdate = Array.isArray(update) ? [...update] : null;
+  versionButtonLatestClean = clean === true;
 
   versionBtn.className = `version-btn ${versionButtonMode}`;
   versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated' || versionButtonMode === 'latest' || versionButtonMode === 'ahead');
@@ -1807,7 +1856,8 @@ async function fetchLatestReleaseFromUrl(sourceUrl) {
     published_at: parseUpdateSourceTime(releaseInfo?.time),
     reload: releaseInfo?.reload !== false,
     force: releaseInfo?.force === true,
-    update: Array.isArray(releaseInfo?.update) ? releaseInfo.update : null
+    update: Array.isArray(releaseInfo?.update) ? releaseInfo.update : null,
+    clean: releaseInfo?.clean === true
   };
 }
 
@@ -1870,6 +1920,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
     const latestReload = latestRelease?.reload !== false;
     const latestForce = latestRelease?.force === true;
     const latestUpdate = Array.isArray(latestRelease?.update) ? latestRelease.update : null;
+    const latestClean = latestRelease?.clean === true;
     if (!latestTag) throw new Error('Missing latest tag');
 
     const cmp = compareVersionText(latestTag, localVersion);
@@ -1884,7 +1935,8 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         body: historyBody,
         reload: latestReload,
         force: latestForce,
-        update: latestUpdate
+        update: latestUpdate,
+        clean: latestClean
       });
       const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
       const requestIsFresh = autoUpdateRequested && requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
@@ -1898,6 +1950,38 @@ async function loadVersionInfoInternal(releaseOverride = null) {
       return;
     }
     if (cmp > 0) {
+      const moduleSelection = await chrome.storage.local.get(VERSION_MODULE_SELECTION_KEY).catch(() => ({}));
+      const selectedModules = new Set(Array.isArray(moduleSelection?.[VERSION_MODULE_SELECTION_KEY])
+        ? moduleSelection[VERSION_MODULE_SELECTION_KEY]
+        : Object.keys(VERSION_OPTIONAL_MODULES));
+      selectedModules.add('ve');
+      if (!versionUpdateAppliesToSelection(latestUpdate, selectedModules)) {
+        const skippedRecord = {
+          ver: latestTag,
+          name: latestDisplayVersion,
+          reload: false,
+          force: latestForce,
+          fileCount: 0,
+          skippedByModuleSelection: true,
+          appliedAt: Date.now()
+        };
+        await setLocal(VERSION_APPLIED_WITHOUT_RELOAD_KEY, skippedRecord);
+        await setLocal(VERSION_PENDING_RELOAD_KEY, null);
+        versionButtonLocalVersion = latestTag;
+        setVersionButtonState('latest', {
+          localVersion: latestTag,
+          latestVersion: latestTag,
+          latestDisplayVersion,
+          latestPublishedAt: latestRelease?.published_at || '',
+          zipballUrl: latestRelease?.zipball_url || '',
+          body: buildAllReleaseNotes(releases, latestTag, true),
+          reload: false,
+          force: latestForce,
+          update: latestUpdate,
+          clean: latestClean
+        });
+        return;
+      }
       const mergedBody = buildAggregatedReleaseNotes(releases, localVersion, latestTag)
         || String(latestRelease?.body || '').trim();
       setVersionButtonState('outdated', {
@@ -1910,7 +1994,8 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         body: mergedBody,
         reload: latestReload,
         force: latestForce,
-        update: latestUpdate
+        update: latestUpdate,
+        clean: latestClean
       });
       const pendingSameReload = latestReload
         && normalizeVersionText(pendingReload?.ver) === normalizeVersionText(latestTag);

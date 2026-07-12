@@ -23,6 +23,7 @@
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
   const MODULE_SELECTION_KEY = 'updateModuleSelection';
   const OPTIONAL_MODULE_IDS = ['ykt', 'mrjzy', 'jlgj', 'mooc', 'academic', 'captcha', 'updater'];
+  const MODULE_SCOPE_IDS = ['ve', ...OPTIONAL_MODULE_IDS];
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   let runningPromise = null;
 
@@ -176,6 +177,7 @@
         reload: data?.reload !== false,
         force: data?.force === true,
         update: Array.isArray(data?.update) ? data.update : null,
+        clean: data?.clean === true,
         sourceUrl
       };
     } finally {
@@ -309,28 +311,49 @@
     return bytes;
   }
 
-  function selectFiles(entries, updateRule) {
+  function normalizeUpdateScopes(updateRule) {
+    if (!Array.isArray(updateRule) || updateRule.length === 0 || (updateRule.length === 1 && updateRule[0] === true)) {
+      return null;
+    }
+    const scopes = new Set(updateRule
+      .filter((item) => typeof item === 'string')
+      .map((item) => String(item || '').replace(/\\/g, '/').replace(/^\/+/, '').trim().toLowerCase())
+      .filter(Boolean));
+    return scopes.size ? scopes : null;
+  }
+
+  function releaseAppliesToSelection(updateRule, selectedModules) {
+    const scopes = normalizeUpdateScopes(updateRule);
+    if (!scopes || scopes.has('main') || scopes.has('ve')) return true;
+    for (const id of selectedModules || []) {
+      if (scopes.has(String(id || '').toLowerCase())) return true;
+    }
+    return false;
+  }
+
+  function normalizeZipFiles(entries) {
     const names = entries.map((entry) => entry.name).filter(Boolean);
     const rootName = names[0]?.split('/')[0] || '';
     const commonRoot = rootName && names.every((name) => name === rootName || name.startsWith(`${rootName}/`))
       ? `${rootName}/`
       : '';
-    let files = entries.filter((entry) => !entry.directory).map((entry) => {
+    return entries.filter((entry) => !entry.directory).map((entry) => {
       const raw = commonRoot && entry.name.startsWith(commonRoot) ? entry.name.slice(commonRoot.length) : entry.name;
       const parts = raw.split('/').filter(Boolean);
       if (!parts.length || parts.some((part) => part === '.' || part === '..')) return null;
       return { entry, path: parts.join('/') };
     }).filter(Boolean);
-    if (!Array.isArray(updateRule) || updateRule.length === 0 || (updateRule.length === 1 && updateRule[0] === true)) {
-      return files;
-    }
-    const requested = new Set(updateRule.filter((item) => typeof item === 'string')
-      .map((item) => item.replace(/\\/g, '/').replace(/^\/+/, '').trim().toLowerCase())
-      .filter(Boolean));
-    if (!requested.size) return files;
-    files = files.filter(({ path }) => requested.has(path.toLowerCase())
-      || requested.has(path.toLowerCase().split('/').at(-1)));
-    return files;
+  }
+
+  function selectFiles(entries, updateRule) {
+    const files = normalizeZipFiles(entries);
+    const scopes = normalizeUpdateScopes(updateRule);
+    if (!scopes) return files;
+    return files.filter(({ path }) => {
+      const match = String(path || '').match(/^modules\/([^/]+)\//i);
+      if (match) return scopes.has(match[1].toLowerCase());
+      return scopes.has('main');
+    });
   }
 
   function filterFilesByModules(files, selectedModules) {
@@ -338,7 +361,7 @@
       const match = String(path || '').match(/^modules\/([^/]+)\//i);
       if (!match || match[1].toLowerCase() === 've') return true;
       const id = match[1].toLowerCase();
-      return !OPTIONAL_MODULE_IDS.includes(id) || selectedModules.has(id);
+      return selectedModules.has(id);
     });
   }
 
@@ -351,6 +374,39 @@
     }
     for (const id of OPTIONAL_MODULE_IDS) {
       if (selectedModules.has(id)) continue;
+      await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
+        if (error?.name !== 'NotFoundError') throw error;
+      });
+    }
+  }
+
+  async function cleanUpdateScopes(root, updateRule, selectedModules) {
+    const scopes = normalizeUpdateScopes(updateRule);
+    if (!scopes) {
+      await clearDirectory(root);
+      return;
+    }
+    if (scopes.has('main')) {
+      const names = [];
+      for await (const [name] of root.entries()) {
+        if (name !== 'modules') names.push(name);
+      }
+      for (const name of names) {
+        await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true }).catch((error) => {
+          if (error?.name !== 'NotFoundError') throw error;
+        });
+      }
+    }
+    let modulesDirectory = null;
+    try {
+      modulesDirectory = await root.getDirectoryHandle('modules');
+    } catch {
+      modulesDirectory = null;
+    }
+    if (!modulesDirectory) return;
+    for (const id of MODULE_SCOPE_IDS) {
+      if (!scopes.has(id)) continue;
+      if (id !== 've' && !selectedModules.has(id)) continue;
       await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
         if (error?.name !== 'NotFoundError') throw error;
       });
@@ -398,12 +454,13 @@
       const selectedModules = new Set(Array.isArray(storedSelection?.[MODULE_SELECTION_KEY])
         ? storedSelection[MODULE_SELECTION_KEY]
         : OPTIONAL_MODULE_IDS);
+      selectedModules.add('ve');
       const selectedArchiveFiles = selectFiles(entries, release.update);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
-      if (Array.isArray(release.update) && release.update.length === 1 && release.update[0] === true) {
-        await clearDirectory(root);
-      } else {
+      if (release.clean) {
+        await cleanUpdateScopes(root, release.update, selectedModules);
+      } else if (!normalizeUpdateScopes(release.update)) {
         await removeUnselectedModules(root, selectedModules);
       }
       if (!files.length) return 0;
@@ -460,6 +517,29 @@
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
         === normalizeVersion(release.version);
       const installOptionalUpdate = stored?.[INSTALL_OPTIONAL_KEY] === true || retryingStaleInstallation;
+      const storedSelection = await chrome.storage.local.get(MODULE_SELECTION_KEY).catch(() => ({}));
+      const selectedModules = new Set(Array.isArray(storedSelection?.[MODULE_SELECTION_KEY])
+        ? storedSelection[MODULE_SELECTION_KEY]
+        : OPTIONAL_MODULE_IDS);
+      selectedModules.add('ve');
+      if (!releaseAppliesToSelection(release.update, selectedModules)) {
+        const record = {
+          ver: release.version,
+          name: release.name,
+          fileCount: 0,
+          force: release.force,
+          reload: false,
+          skippedByModuleSelection: true,
+          appliedAt: Date.now(),
+          background: true
+        };
+        await chrome.storage.local.set({
+          [APPLIED_WITHOUT_RELOAD_KEY]: record,
+          [PENDING_RELOAD_KEY]: null,
+          [STATUS_KEY]: { status: 'latest', localVersion: release.version, version: release.version, name: release.name, skippedByModuleSelection: true, checkedAt: Date.now() }
+        });
+        return { updated: false, skippedByModuleSelection: true, release };
+      }
       await notifyUpdateDetected(release, stored?.[DETECTED_NOTIFICATION_VERSION_KEY], installOptionalUpdate);
       if (!release.force && stored?.[INSTALL_OPTIONAL_KEY] !== true && !retryingStaleInstallation) {
         await setStatus('optional-update-available', {
