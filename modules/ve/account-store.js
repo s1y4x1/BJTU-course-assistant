@@ -330,7 +330,7 @@
     if (!prefix) return '';
     const length = String(values[0] || '').trim().length;
     const hiddenLength = Math.max(0, length - prefix.length);
-    return hiddenLength > 0 ? prefix + 'x'.repeat(hiddenLength) : prefix;
+    return hiddenLength > 0 ? prefix + '*'.repeat(hiddenLength) : prefix;
   }
 
   function prefixesForSameLength(values) {
