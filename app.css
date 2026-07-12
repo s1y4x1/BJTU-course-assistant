@@ -1,4 +1,17 @@
-body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px 20px 0; font-size: 14px; }
+html,
+body {
+    height: 100%;
+    overflow: hidden;
+}
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 20px 20px 0;
+    font-size: 14px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
 
         /* Toast Notifications */
         #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 2147483647; }
@@ -237,21 +250,59 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .layout-container { display: flex; gap: 20px; align-items: flex-start; margin: 0; }
-        .left-column { flex: 1; min-width: 480px; font-size: 14px; }
+        .layout-container {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+            margin: 0;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+        }
+        .left-column {
+            flex: 1;
+            min-width: 480px;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            font-size: 14px;
+            padding-right: 8px;
+            box-sizing: border-box;
+            scrollbar-gutter: stable;
+        }
+        .left-column,
+        .right-column {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148,163,184,0.9) transparent;
+        }
+        .left-column::-webkit-scrollbar,
+        .right-column::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .left-column::-webkit-scrollbar-track,
+        .right-column::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .left-column::-webkit-scrollbar-thumb,
+        .right-column::-webkit-scrollbar-thumb {
+            background: rgba(148,163,184,0.85);
+            border-radius: 0;
+        }
         .right-column {
             flex: 0 1 auto;
             min-width: 480px;
-            position: sticky;
-            top: 70px;
+            position: relative;
+            top: auto;
             background: #f9f9f9;
             padding: 15px 10px 0;
-            height: calc(100vh - 70px);
+            height: auto;
+            min-height: 0;
             overflow-y: auto;
             overflow-x: hidden;
             box-sizing: border-box;
         }
-        .right-column-resizer {
+        .column-resizer {
             position: fixed;
             left: 0;
             top: 0;
@@ -264,7 +315,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             z-index: 10000;
             touch-action: none;
         }
-        .right-column-resizer::after {
+        .column-resizer::after {
             content: '';
             position: absolute;
             top: 0;
@@ -273,12 +324,18 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             width: 2px;
             background: rgba(148,163,184,0.9);
         }
-        .right-column-resizer:hover::after,
-        .right-column.dragging .right-column-resizer::after { background: rgba(59,130,246,0.9); }
+        .column-resizer:hover::after,
+        .right-column.dragging .column-resizer::after { background: rgba(59,130,246,0.9); }
         .right-column.dragging { user-select: none; }
         @media (max-width: 900px), (orientation: portrait) {
-            body { padding: 12px; }
-            .layout-container { flex-direction: column; }
+            html,
+            body {
+                height: auto;
+                min-height: 100%;
+                overflow: auto;
+            }
+            body { padding: 12px; display: block; }
+            .layout-container { flex-direction: column; overflow: visible; min-height: 0; }
             .left-column,
             .right-column,
             #drop-zone,
@@ -289,8 +346,9 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
                 max-width: 100%;
                 box-sizing: border-box;
             }
+            .left-column { overflow: visible; padding-right: 0; }
             .right-column { position: static; padding-left: 15px; height: auto; max-height: none; min-height: 0; overflow: visible; }
-            .right-column-resizer { display: none; }
+            .column-resizer { display: none; }
         }
 
         /* Course action buttons: keep same height */
@@ -715,9 +773,18 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             margin-bottom: 6px;
         }
 
+        html:has(body.popup-mode) {
+            height: auto;
+            min-height: 100%;
+            overflow: auto;
+        }
         body.popup-mode {
             padding: 10px;
+            display: block;
+            height: auto;
+            min-height: 100%;
             overflow-x: hidden;
+            overflow-y: auto;
         }
         body.popup-mode .layout-container {
             display: block;
@@ -740,10 +807,14 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
             border-radius: 0;
             box-shadow: none;
         }
-        body.popup-mode .right-column-resizer {
+        body.popup-mode .column-resizer {
             display: none !important;
         }
         body.popup-mode .page-top-config {
+            position: static;
+            z-index: auto;
+            padding: 0;
+            background: transparent;
             margin-bottom: 8px;
         }
         body.popup-mode .top-inline-controls {
@@ -819,9 +890,12 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; 
         .file-item strong { font-size: 15px; }
 
         .page-top-config {
+            position: relative;
+            flex: 0 0 auto;
+            z-index: 9000;
             margin-bottom: 10px;
-            padding: 0;
-            background: transparent;
+            padding: 0 0 8px;
+            background: #fff;
             border-radius: 0;
         }
         .top-inline-controls {

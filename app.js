@@ -54,7 +54,7 @@ const resourceTotalEta = document.getElementById('resource-download-total-eta');
 const courseListDiv = document.getElementById('course-list');
 const courseLoadingStatus = document.getElementById('course-loading-status');
 const rightColumn = document.getElementById('right-column');
-const rightColumnResizer = document.getElementById('right-column-resizer');
+const columnResizer = document.getElementById('column-resizer');
 const veStatusBtn = document.getElementById('ve-status-btn');
 const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrjzyStatusBtn = document.getElementById('mrjzy-status-btn');
@@ -838,7 +838,7 @@ function refreshUploadSelectVisibility() {
 }
 
 function setupRightColumnResizer() {
-  if (!rightColumn || !rightColumnResizer) return;
+  if (!rightColumn || !columnResizer) return;
   const STORAGE_KEY = 'courseHelperWidthPx';
   const BASE_MIN_W = 480;
   const DEFAULT_W = 576;
@@ -876,14 +876,14 @@ function setupRightColumnResizer() {
 
   const syncResizerGeometry = () => {
     if (isAdaptiveLayout()) {
-      rightColumnResizer.style.display = 'none';
+      columnResizer.style.display = 'none';
       return;
     }
-    rightColumnResizer.style.display = 'block';
+    columnResizer.style.display = 'block';
     const rect = rightColumn.getBoundingClientRect();
-    rightColumnResizer.style.left = `${Math.round(rect.left)}px`;
-    rightColumnResizer.style.top = `${Math.round(rect.top)}px`;
-    rightColumnResizer.style.height = `${Math.max(0, Math.round(rect.height))}px`;
+    columnResizer.style.left = `${Math.round(rect.left)}px`;
+    columnResizer.style.top = `${Math.round(rect.top)}px`;
+    columnResizer.style.height = `${Math.max(0, Math.round(rect.height))}px`;
   };
 
   const scheduleResizerSync = () => {
@@ -927,7 +927,7 @@ function setupRightColumnResizer() {
     }
   };
 
-  rightColumnResizer.addEventListener('mousedown', (e) => {
+  columnResizer.addEventListener('mousedown', (e) => {
     if (isAdaptiveLayout()) return;
     e.preventDefault();
     dragging = true;
@@ -4878,6 +4878,4 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   // 确保 init 完成后的首次账号切换不会被 initialUsernameSet 拦截
   initialUsernameSet = false;
-
-  // startupPlatformLoadPromise already includes VE resource-space loading.
 })();

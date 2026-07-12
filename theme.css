@@ -13,6 +13,20 @@ html[data-color-scheme="dark"] body {
   color: #e5e7eb;
 }
 
+html[data-color-scheme="dark"] .page-top-config {
+  background: #0f172a;
+}
+
+html[data-color-scheme="dark"] .left-column,
+html[data-color-scheme="dark"] .right-column {
+  scrollbar-color: rgba(203,213,225,0.8) transparent;
+}
+
+html[data-color-scheme="dark"] .left-column::-webkit-scrollbar-thumb,
+html[data-color-scheme="dark"] .right-column::-webkit-scrollbar-thumb {
+  background: rgba(203,213,225,0.72);
+}
+
 html[data-color-scheme="dark"] input:not(.hw-card-item *):not(.result-area *),
 html[data-color-scheme="dark"] select:not(.hw-card-item *):not(.result-area *),
 html[data-color-scheme="dark"] textarea:not(.hw-card-item *):not(.result-area *) {
