@@ -46,7 +46,21 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
 .is-disabled { opacity: 0.5; pointer-events: none; }
 .platform-option { margin:8px 0; }
 .platform-option > label { display:flex; align-items:center; gap:8px; margin:0; font-weight:600; }
-.platform-option-detail { margin:5px 0 10px 24px; padding:7px 10px; border-left:3px solid #d1d5db; background:#fff; border-radius:6px; }
+.platform-option-detail {
+  --platform-theme: #64748b;
+  --platform-bg: #f8fafc;
+  margin:5px 0 10px 24px;
+  padding:7px 10px;
+  border-left:3px solid var(--platform-theme);
+  background:var(--platform-bg);
+  border-radius:6px;
+}
+.platform-option-detail input[type="checkbox"] { accent-color: var(--platform-theme); }
+#vePlatformDetail { --platform-theme:#2563eb; --platform-bg:#eff6ff; }
+#yktPlatformDetail { --platform-theme:#5096f5; --platform-bg:#eff6ff; }
+#mrjzyPlatformDetail { --platform-theme:#29a9fc; --platform-bg:#ecfeff; }
+#jlgjPlatformDetail { --platform-theme:#ffd243; --platform-bg:#fffbeb; }
+#moocPlatformDetail { --platform-theme:#00cc7e; --platform-bg:#ecfdf5; }
 .platform-option-detail label { display:flex; align-items:center; gap:8px; margin:4px 0; font-weight:400; }
 .account-progress-mask { position:fixed; inset:0; z-index:10001; background:rgba(15,23,42,.45); align-items:center; justify-content:center; }
 .account-progress-card { width:min(420px,calc(100vw - 32px)); box-sizing:border-box; padding:18px; border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(0,0,0,.25); }

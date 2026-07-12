@@ -1623,8 +1623,7 @@ function normalizeLoginAccountHistoryList(rawList) {
   const list = Array.isArray(rawList) ? rawList : [];
   return list
     .map((it) => {
-      const storedLoginName = String(it?.loginName || it?.userId || '').trim();
-      const loginName = storedLoginName.toLowerCase() === 'admin' ? 'JyDadmin' : storedLoginName;
+      const loginName = String(it?.loginName || it?.userId || '').trim();
       if (!loginName) return null;
       const userName = String(it?.userName || '').trim();
       const roleName = String(it?.roleName || '').trim();
@@ -1708,9 +1707,8 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
     opt.hidden = true;
     const selectedName = String(selectedRecord.userName || selectedRecord.userId || '未知用户').trim();
     const selectedRole = String(selectedRecord.roleName || '').trim();
-    const selectedQuick = selectedRecord.quickUsername ? ' [极速]' : '';
     // 选中项只显示 userName
-    opt.textContent = `${selectedRole}${selectedName}${selectedQuick}`;
+    opt.textContent = `${selectedRole}${selectedName}`;
     accountHistorySelect.appendChild(opt);
   }
 
@@ -1722,10 +1720,10 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
       const userName = String(it.userName || it.userId || '未知用户').trim();
       const roleName = String(it.roleName || '').trim();
       const loginName = String(it.loginName || '').trim();
-      const loginSuffix = loginName ? ` (${loginName})` : '';
-      const quickSuffix = it.quickUsername ? ' [极速]' : '';
+      const loginSuffix = loginName ? `${loginName}` : '';
+      const quickSuffix = it.quickUsername ? '极速' : '账密';
       // 展开列表显示 userName(loginName)
-      opt.textContent = `${roleName}${userName}${loginSuffix}${quickSuffix}`;
+      opt.textContent = `${roleName} ${userName} (${loginSuffix}) [${quickSuffix}]`;
       accountHistorySelect.appendChild(opt);
     });
 

@@ -301,12 +301,9 @@ html[data-color-scheme="dark"] .installed-modules-label { color:#e2e8f0; }
 html[data-color-scheme="dark"] .installed-module-item { background:#1e293b; border-color:#475569; color:#e5e7eb; }
 
 html[data-color-scheme="dark"] .platform-option-detail {
-  background: #1e293b !important;
-  border-left-color: #64748b !important;
+  background: color-mix(in srgb, var(--platform-theme, #64748b) 18%, #111827) !important;
+  border-left-color: var(--platform-theme, #64748b) !important;
 }
-
-html[data-color-scheme="dark"] #vePlatformDetail { background:#10243d !important; border-left-color:#3b82f6 !important; }
-html[data-color-scheme="dark"] #moocPlatformDetail { background:#0c2f27 !important; border-left-color:#00cc7e !important; }
 
 html[data-color-scheme="dark"] .tip { color:#b6c2d1; }
 html[data-color-scheme="dark"] .reset-confirm-message { color:#cbd5e1; }

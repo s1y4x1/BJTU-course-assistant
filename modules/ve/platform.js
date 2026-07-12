@@ -842,7 +842,7 @@ function renderVeStudentsPopHtml(meta) {
   }
   return `
     <table class="ve-course-teacher-table">
-      <thead><tr><th>分组</th><th>班级</th><th>学号</th><th>姓名</th><th>操作</th></tr></thead>
+      <thead><tr><th>所属分组</th><th>班级</th><th>学号</th><th>姓名</th><th>操作</th></tr></thead>
       <tbody>${renderVeStudentRowsHtml(students)}</tbody>
     </table>
   `;
