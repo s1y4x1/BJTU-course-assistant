@@ -992,14 +992,15 @@ body {
         .version-modal-mask {
             position: fixed;
             inset: 0;
+            z-index: 10020;
             background: rgba(15,23,42,0.45);
             display: none;
             align-items: center;
             justify-content: center;
         }
-        .version-notice-modal { z-index: 10002; }
-        .version-download-modal { z-index: 10001; }
-        .upload-duplicate-modal { z-index: 10003; }
+        .version-download-modal { z-index: 10021; }
+        .version-notice-modal { z-index: 10022; }
+        .upload-duplicate-modal { z-index: 10023; }
         .version-modal-card {
             width: min(560px, 92vw);
             background: #fff;
