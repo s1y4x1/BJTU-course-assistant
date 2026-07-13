@@ -16,6 +16,7 @@ function tryImportModuleScripts(...paths) {
 tryImportModuleScripts('modules/captcha/recognizer.js');
 importScripts('modules/ve/login-service.js');
 tryImportModuleScripts('modules/academic/system.js');
+tryImportModuleScripts('modules/campusnet/background.js');
 tryImportModuleScripts('modules/updater/filesystem.js', 'modules/updater/background.js');
 tryImportModuleScripts('modules/jlgj/background.js');
 tryImportModuleScripts('modules/mooc/background.js');
@@ -35,21 +36,27 @@ async function extensionFileExists(path) {
   }
 }
 
-async function syncOptionalContentScripts() {
-  const current = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
-  const registeredIds = new Set(current.map((script) => script.id));
+let optionalContentScriptSyncPromise = null;
+async function doSyncOptionalContentScripts() {
   const wanted = [];
   for (const script of OPTIONAL_CONTENT_SCRIPTS) {
     if (await extensionFileExists(`modules/${script.module}/module.json`)
         && await extensionFileExists(script.js[0])) wanted.push(script);
   }
   const managed = OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id);
-  const remove = managed.filter((id) => registeredIds.has(id));
-  if (remove.length) await chrome.scripting.unregisterContentScripts({ ids: remove }).catch(() => {});
+  await chrome.scripting.unregisterContentScripts({ ids: managed }).catch(() => {});
   const registrations = wanted.map(({ module: _module, ...script }) => script);
   if (registrations.length) await chrome.scripting.registerContentScripts(registrations).catch((error) => {
     console.warn('[bjtu] optional content script registration failed:', error);
   });
+}
+
+function syncOptionalContentScripts() {
+  if (!optionalContentScriptSyncPromise) {
+    optionalContentScriptSyncPromise = doSyncOptionalContentScripts()
+      .finally(() => { optionalContentScriptSyncPromise = null; });
+  }
+  return optionalContentScriptSyncPromise;
 }
 
 chrome.runtime.onInstalled.addListener(() => { void syncOptionalContentScripts(); });

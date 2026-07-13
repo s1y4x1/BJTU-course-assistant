@@ -48,7 +48,10 @@ const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
 const DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES = 1;
 const DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES = 30;
 const DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES = 30;
+const DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS = 1;
 const MAX_SCHEDULE_INTERVAL_MINUTES = 525600;
+const MIN_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS = 0.1;
+const MAX_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS = 3600;
 
 function normalizeScheduleIntervalMinutes(value, fallback) {
   const minutes = Math.round(Number(value));
@@ -125,6 +128,33 @@ function normalizePlatformVisible(raw) {
     key,
     typeof src[key] === 'boolean' ? src[key] : DEFAULT_PLATFORM_VISIBLE[key]
   ]));
+}
+
+function normalizeScheduleIntervalSeconds(value, fallback) {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= MIN_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS && seconds <= MAX_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS
+    ? seconds
+    : fallback;
+}
+
+function setScheduleIntervalSecondsEditor(prefix, seconds, fallback) {
+  const normalized = normalizeScheduleIntervalSeconds(seconds, fallback);
+  const valueInput = document.getElementById(`${prefix}Value`);
+  const unitSelect = document.getElementById(`${prefix}Unit`);
+  if (!(valueInput instanceof HTMLInputElement) || !(unitSelect instanceof HTMLSelectElement)) return;
+  const unit = normalized % 3600 === 0 ? 3600 : (normalized % 60 === 0 ? 60 : 1);
+  valueInput.value = String(normalized / unit);
+  unitSelect.value = String(unit);
+}
+
+function readScheduleIntervalSecondsEditor(prefix) {
+  const value = Number(document.getElementById(`${prefix}Value`)?.value || 0);
+  const unit = Number(document.getElementById(`${prefix}Unit`)?.value || 1);
+  const seconds = Number((value * unit).toFixed(3));
+  return Number.isFinite(value) && Number.isFinite(unit) && value > 0
+    && seconds >= MIN_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS && seconds <= MAX_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS
+    ? seconds
+    : NaN;
 }
 
 function normalizePopupDimension(value, fallback, min, max) {
@@ -254,8 +284,8 @@ function goBackToApp() {
 (async function init() {
   await globalThis.BjtuModuleRegistry?.ready;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -338,6 +368,11 @@ function goBackToApp() {
   setScheduleIntervalEditor('academicScoreMonitorInterval', academicScoreMonitorIntervalMinutes, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
   setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
+  document.getElementById('campusNetworkReconnectEnabled').checked = campusNetworkReconnectEnabled === true;
+  document.getElementById('campusNetworkReconnectAccount').value = String(campusNetworkReconnectAccount || username || '');
+  document.getElementById('campusNetworkReconnectPassword').value = String(campusNetworkReconnectPassword || '');
+  document.getElementById('campusNetworkReconnectNotifyOnSuccess').checked = campusNetworkReconnectNotifyOnSuccess !== false;
+  setScheduleIntervalSecondsEditor('campusNetworkReconnectInterval', campusNetworkReconnectIntervalSeconds, DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS);
   updateThemeModeUi(themeMode);
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccount || '').trim();
@@ -354,6 +389,8 @@ function goBackToApp() {
   const academicScoreTableBody = document.getElementById('academicScoreTableBody');
   const academicScoreCount = document.getElementById('academicScoreCount');
   const backgroundAutoUpdateStatusEl = document.getElementById('backgroundAutoUpdateStatus');
+  const campusNetworkReconnectInput = document.getElementById('campusNetworkReconnectEnabled');
+  const campusNetworkReconnectStatusEl = document.getElementById('campusNetworkReconnectStatus');
   const homeworkBackgroundRefreshInput = document.getElementById('homeworkBackgroundRefreshEnabled');
   const homeworkBackgroundRefreshAccountSelect = document.getElementById('homeworkBackgroundRefreshAccount');
   const homeworkNewAssignmentNotificationInput = document.getElementById('homeworkNewAssignmentNotificationEnabled');
@@ -385,6 +422,30 @@ function goBackToApp() {
   };
   renderBackgroundAutoUpdateStatus(backgroundAutoUpdateStatus);
 
+  const renderCampusNetworkReconnectStatus = (status) => {
+    if (!(campusNetworkReconnectStatusEl instanceof HTMLElement)) return;
+    if (!(campusNetworkReconnectInput instanceof HTMLInputElement) || !campusNetworkReconnectInput.checked) {
+      campusNetworkReconnectStatusEl.textContent = '校园网自动重连未启用。';
+      return;
+    }
+    const message = String(status?.message || '').trim();
+    const state = String(status?.status || 'waiting');
+    const labels = {
+      waiting: '等待下一次校园网认证请求。',
+      success: '最近一次请求：已重新连接校园网。',
+      online: '最近一次请求：当前 IP 已经在线。',
+      retrying: '校园网认证服务暂不可用，正在重试。',
+      'missing-credentials': '请先填写校园网账号和密码。',
+      'network-error': '校园网认证请求失败。',
+      'parse-error': '校园网认证响应解析失败。',
+      failed: '校园网认证失败。'
+    };
+    campusNetworkReconnectStatusEl.textContent = message
+      ? `${labels[state] || '最近一次校园网认证请求已完成。'} ${message}`
+      : (labels[state] || '等待下一次校园网认证请求。');
+  };
+  renderCampusNetworkReconnectStatus(campusNetworkReconnectStatus);
+
   const updateBackgroundAutoInstallOptionalDisabled = () => {
     const parentEnabled = !!document.getElementById('backgroundAutoUpdateEnabled')?.checked;
     const child = document.getElementById('backgroundAutoInstallOptionalEnabled');
@@ -408,6 +469,12 @@ function goBackToApp() {
     detail?.classList.toggle('is-disabled', !enabled);
     detail?.querySelectorAll('input,select').forEach((control) => { control.disabled = !enabled; });
   };
+  const updateCampusNetworkReconnectDisabled = () => {
+    const enabled = campusNetworkReconnectInput instanceof HTMLInputElement && campusNetworkReconnectInput.checked;
+    const detail = document.getElementById('campusNetworkReconnectDetail');
+    detail?.classList.toggle('is-disabled', !enabled);
+    detail?.querySelectorAll('input,select').forEach((control) => { control.disabled = !enabled; });
+  };
   const renderHomeworkBackgroundRefreshStatus = (status) => {
     if (!(homeworkBackgroundRefreshStatusEl instanceof HTMLElement)) return;
     if (!(homeworkBackgroundRefreshInput instanceof HTMLInputElement) || !homeworkBackgroundRefreshInput.checked) {
@@ -424,6 +491,7 @@ function goBackToApp() {
     homeworkBackgroundRefreshStatusEl.textContent = messages[state] || '等待下一次后台作业获取。';
   };
   updateBackgroundAutoInstallOptionalDisabled();
+  updateCampusNetworkReconnectDisabled();
 
   const renderHomeworkBackgroundAccounts = (context) => {
     if (!(homeworkBackgroundRefreshAccountSelect instanceof HTMLSelectElement)) return;
@@ -685,7 +753,6 @@ function goBackToApp() {
     updatePopupCacheDisabled();
     setMsg('已应用更改');
   };
-
   const applyPopupSize = async () => {
     const widthInput = document.getElementById('popupWidthPx');
     const heightInput = document.getElementById('popupHeightPx');
@@ -842,6 +909,32 @@ function goBackToApp() {
         setScheduleIntervalEditor('backgroundAutoUpdateInterval', changes.backgroundAutoUpdateIntervalMinutes.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
       }
       if (changes.backgroundAutoUpdateStatus) renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus.newValue);
+      if (changes.campusNetworkReconnectEnabled) {
+        applyBooleanUi('campusNetworkReconnectEnabled', changes.campusNetworkReconnectEnabled.newValue, false);
+        updateCampusNetworkReconnectDisabled();
+        renderCampusNetworkReconnectStatus(changes.campusNetworkReconnectStatus?.newValue || null);
+      }
+      if (changes.campusNetworkReconnectAccount) {
+        const input = document.getElementById('campusNetworkReconnectAccount');
+        if (input instanceof HTMLInputElement && document.activeElement !== input) input.value = String(changes.campusNetworkReconnectAccount.newValue || '');
+      }
+      if (changes.username) {
+        const accountInput = document.getElementById('campusNetworkReconnectAccount');
+        if (accountInput instanceof HTMLInputElement && document.activeElement !== accountInput && !String(accountInput.value || '').trim()) {
+          accountInput.value = String(changes.username.newValue || '').trim();
+        }
+      }
+      if (changes.campusNetworkReconnectPassword) {
+        const input = document.getElementById('campusNetworkReconnectPassword');
+        if (input instanceof HTMLInputElement && document.activeElement !== input) input.value = String(changes.campusNetworkReconnectPassword.newValue || '');
+      }
+      if (changes.campusNetworkReconnectIntervalSeconds) {
+        setScheduleIntervalSecondsEditor('campusNetworkReconnectInterval', changes.campusNetworkReconnectIntervalSeconds.newValue, DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS);
+      }
+      if (changes.campusNetworkReconnectNotifyOnSuccess) {
+        applyBooleanUi('campusNetworkReconnectNotifyOnSuccess', changes.campusNetworkReconnectNotifyOnSuccess.newValue, true);
+      }
+      if (changes.campusNetworkReconnectStatus) renderCampusNetworkReconnectStatus(changes.campusNetworkReconnectStatus.newValue);
     });
   } catch {
     // ignore non-extension contexts
@@ -1020,6 +1113,26 @@ function goBackToApp() {
     await chrome.storage.local.set({ backgroundAutoInstallOptionalEnabled: enabled });
     setMsg(enabled ? '已启用非强制更新自动安装' : '已关闭非强制更新自动安装');
   });
+  campusNetworkReconnectInput?.addEventListener('change', async () => {
+    const enabled = campusNetworkReconnectInput.checked;
+    await chrome.storage.local.set({ campusNetworkReconnectEnabled: enabled });
+    updateCampusNetworkReconnectDisabled();
+    renderCampusNetworkReconnectStatus(enabled ? { status: 'waiting' } : null);
+    setMsg(enabled ? '已启用校园网自动重连' : '已关闭校园网自动重连');
+  });
+  document.getElementById('campusNetworkReconnectAccount')?.addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ campusNetworkReconnectAccount: String(event.currentTarget.value || '').trim() });
+    setMsg('已保存校园网上网账号');
+  });
+  document.getElementById('campusNetworkReconnectPassword')?.addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ campusNetworkReconnectPassword: String(event.currentTarget.value || '') });
+    setMsg('已保存校园网密码');
+  });
+  document.getElementById('campusNetworkReconnectNotifyOnSuccess')?.addEventListener('change', async (event) => {
+    const enabled = !!event.currentTarget.checked;
+    await chrome.storage.local.set({ campusNetworkReconnectNotifyOnSuccess: enabled });
+    setMsg(enabled ? '已启用校园网重连成功通知' : '已关闭校园网重连成功通知');
+  });
   const bindScheduleIntervalSetting = (prefix, key, fallback, label) => {
     const save = async () => {
       const minutes = readScheduleIntervalEditor(prefix);
@@ -1039,6 +1152,23 @@ function goBackToApp() {
   bindScheduleIntervalSetting('academicScoreMonitorInterval', 'academicScoreMonitorIntervalMinutes', DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES, '成绩检查间隔');
   bindScheduleIntervalSetting('backgroundAutoUpdateInterval', 'backgroundAutoUpdateIntervalMinutes', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, '更新检查间隔');
   bindScheduleIntervalSetting('homeworkBackgroundRefreshInterval', 'homeworkBackgroundRefreshIntervalMinutes', DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES, '后台作业刷新间隔');
+  const bindScheduleIntervalSecondsSetting = (prefix, key, fallback, label) => {
+    const save = async () => {
+      const seconds = readScheduleIntervalSecondsEditor(prefix);
+      if (!Number.isFinite(seconds)) {
+        setMsg(`${label}必须在 0.1 秒到 1 小时之间`, false);
+        const stored = await chrome.storage.local.get([key]);
+        setScheduleIntervalSecondsEditor(prefix, stored?.[key], fallback);
+        return;
+      }
+      await chrome.storage.local.set({ [key]: seconds });
+      setScheduleIntervalSecondsEditor(prefix, seconds, fallback);
+      setMsg(`已将${label}设为 ${seconds} 秒`);
+    };
+    document.getElementById(`${prefix}Value`)?.addEventListener('change', save);
+    document.getElementById(`${prefix}Unit`)?.addEventListener('change', save);
+  };
+  bindScheduleIntervalSecondsSetting('campusNetworkReconnectInterval', 'campusNetworkReconnectIntervalSeconds', DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS, '校园网请求间隔');
   homeworkBackgroundRefreshInput?.addEventListener('change', async () => {
     const enabled = homeworkBackgroundRefreshInput.checked;
     const account = String(homeworkBackgroundRefreshAccountSelect?.value || '').trim();
@@ -1288,6 +1418,9 @@ function goBackToApp() {
       homeworkNewAssignmentNotificationEnabled: false,
       academicScoreMonitorEnabled: false,
       academicScoreMonitorIntervalMinutes: DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES,
+      campusNetworkReconnectEnabled: false,
+      campusNetworkReconnectIntervalSeconds: DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS,
+      campusNetworkReconnectNotifyOnSuccess: true,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
@@ -1316,6 +1449,11 @@ function goBackToApp() {
     renderHomeworkBackgroundAccounts(portalLoginContext);
     updateHomeworkBackgroundRefreshDisabled();
     document.getElementById('academicScoreMonitorEnabled').checked = false;
+    document.getElementById('campusNetworkReconnectEnabled').checked = false;
+    document.getElementById('campusNetworkReconnectNotifyOnSuccess').checked = true;
+    setScheduleIntervalSecondsEditor('campusNetworkReconnectInterval', DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS, DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS);
+    updateCampusNetworkReconnectDisabled();
+    renderCampusNetworkReconnectStatus(null);
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;
     setScheduleIntervalEditor('academicScoreMonitorInterval', DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);

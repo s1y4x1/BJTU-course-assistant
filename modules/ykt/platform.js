@@ -50,6 +50,10 @@ function formatYktDateTime(ts) {
 }
 
 function getYktActivityDeadline(a) {
+  if (Number(a?.__actype) === 15) {
+    const scoreDeadline = a?.content?.score_d;
+    if (scoreDeadline !== null && scoreDeadline !== undefined && String(scoreDeadline).trim() !== '') return scoreDeadline;
+  }
   return a?.end
     ?? a?.deadline
     ?? a?.end_time

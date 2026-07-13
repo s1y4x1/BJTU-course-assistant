@@ -194,6 +194,34 @@
     <div id="backgroundAutoUpdateStatus" class="tip" style="margin-top:8px;">后台自动更新未启用。</div>
     <div class="tip" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
   </div>
+  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="campusnet" hidden>
+    <div class="section-title">校园网自动重连</div>
+    <label style="display:flex; align-items:center; gap:8px; margin:0;">
+      <input type="checkbox" id="campusNetworkReconnectEnabled" style="width:auto;" />
+      每隔一段时间请求校园网认证接口
+    </label>
+    <div id="campusNetworkReconnectDetail" class="homework-background-refresh-detail">
+      <label for="campusNetworkReconnectAccount">上网账号</label>
+      <input id="campusNetworkReconnectAccount" type="text" autocomplete="username" placeholder="默认使用学号" />
+      <label for="campusNetworkReconnectPassword">上网密码</label>
+      <input id="campusNetworkReconnectPassword" type="password" autocomplete="current-password" placeholder="校园网密码，通常是大小写字母、特殊字符、数字" />
+      <div id="campusNetworkReconnectIntervalEditor" class="schedule-interval-editor" style="padding-left:0;">
+        <span>请求间隔</span>
+        <input type="number" id="campusNetworkReconnectIntervalValue" min="0.1" step="0.1" value="1" aria-label="校园网重连请求间隔" />
+        <select id="campusNetworkReconnectIntervalUnit" aria-label="校园网重连请求间隔单位">
+          <option value="1" selected>秒</option>
+          <option value="60">分钟</option>
+          <option value="3600">小时</option>
+        </select>
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="checkbox" id="campusNetworkReconnectNotifyOnSuccess" style="width:auto;" checked />
+        重连成功时发送系统通知
+      </label>
+      <div class="tip">遇到 503 会忽略并按间隔重试；即使已经在线也会继续请求。</div>
+      <div id="campusNetworkReconnectStatus" class="tip" style="margin-top:4px;">校园网自动重连未启用。</div>
+    </div>
+  </div>
   <div id="academic-system-section" class="options-wide-card" style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="academic" hidden>
     <div class="section-title">教务系统</div>
     <label for="academicAccountSelect">已保存账号</label>
