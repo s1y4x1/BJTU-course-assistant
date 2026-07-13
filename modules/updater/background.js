@@ -22,8 +22,9 @@
   const PENDING_RELOAD_KEY = 'pendingUpdateReload';
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
   const MODULE_SELECTION_KEY = 'updateModuleSelection';
-  const OPTIONAL_MODULE_IDS = ['ykt', 'mrjzy', 'jlgj', 'mooc', 'academic', 'captcha', 'updater'];
+  const OPTIONAL_MODULE_IDS = ['ykt', 'mrjzy', 'jlgj', 'mooc', 'academic', 'campusnet', 'captcha', 'updater'];
   const MODULE_SCOPE_IDS = ['ve', ...OPTIONAL_MODULE_IDS];
+  const REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   let runningPromise = null;
 
@@ -324,7 +325,7 @@
 
   function releaseAppliesToSelection(updateRule, selectedModules) {
     const scopes = normalizeUpdateScopes(updateRule);
-    if (!scopes || scopes.has('main') || scopes.has('ve')) return true;
+    if (!scopes || scopes.has('main') || [...REQUIRED_MODULE_IDS].some((id) => scopes.has(id))) return true;
     for (const id of selectedModules || []) {
       if (scopes.has(String(id || '').toLowerCase())) return true;
     }
@@ -359,7 +360,7 @@
   function filterFilesByModules(files, selectedModules) {
     return files.filter(({ path }) => {
       const match = String(path || '').match(/^modules\/([^/]+)\//i);
-      if (!match || match[1].toLowerCase() === 've') return true;
+      if (!match || REQUIRED_MODULE_IDS.has(match[1].toLowerCase())) return true;
       const id = match[1].toLowerCase();
       return selectedModules.has(id);
     });
@@ -406,7 +407,7 @@
     if (!modulesDirectory) return;
     for (const id of MODULE_SCOPE_IDS) {
       if (!scopes.has(id)) continue;
-      if (id !== 've' && !selectedModules.has(id)) continue;
+      if (!REQUIRED_MODULE_IDS.has(id) && !selectedModules.has(id)) continue;
       await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
         if (error?.name !== 'NotFoundError') throw error;
       });
@@ -454,7 +455,7 @@
       const selectedModules = new Set(Array.isArray(storedSelection?.[MODULE_SELECTION_KEY])
         ? storedSelection[MODULE_SELECTION_KEY]
         : OPTIONAL_MODULE_IDS);
-      selectedModules.add('ve');
+      REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       const selectedArchiveFiles = selectFiles(entries, release.update);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
@@ -521,7 +522,7 @@
       const selectedModules = new Set(Array.isArray(storedSelection?.[MODULE_SELECTION_KEY])
         ? storedSelection[MODULE_SELECTION_KEY]
         : OPTIONAL_MODULE_IDS);
-      selectedModules.add('ve');
+      REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       if (!releaseAppliesToSelection(release.update, selectedModules)) {
         const record = {
           ver: release.version,

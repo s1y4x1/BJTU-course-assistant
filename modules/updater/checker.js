@@ -76,10 +76,12 @@ const VERSION_OPTIONAL_MODULES = Object.freeze({
   jlgj: '接龙管家',
   mooc: '中国大学MOOC',
   academic: '教务系统',
+  campusnet: '校园网自动重连',
   captcha: '本地验证码识别',
   updater: '更新组件'
 });
 const VERSION_MODULE_SCOPE_IDS = ['ve', ...Object.keys(VERSION_OPTIONAL_MODULES)];
+const VERSION_REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
 let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
 let versionRefreshCountdownAction = null;
@@ -272,7 +274,7 @@ async function handoffUpdateToFullscreen(url, source, fullExtraction = false) {
 function parseInlineMarkdown(text) {
   let html = escapeHtml(String(text || ''));
   html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none;">$1</a>');
-  html = html.replace(/`([^`]+)`/g, '<code style="background:#f1f5f9; border:1px solid #e2e8f0; border-radius:4px; padding:0 4px;">$1</code>');
+  html = html.replace(/`([^`]+)`/g, '<code class="version-markdown-inline-code">$1</code>');
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   return html;
@@ -288,7 +290,16 @@ function renderMarkdownBasic(markdownText) {
   const out = [];
   const listStack = [];
   let blockquoteOpen = false;
+  let codeBlockOpen = false;
+  const codeBlockLines = [];
   const listUlStyle = 'margin:0 0 6px 18px; padding:0; color:#334155; line-height:1.6;';
+
+  const closeCodeBlock = () => {
+    if (!codeBlockOpen) return;
+    out.push(`<pre class="version-markdown-codeblock"><code>${escapeHtml(codeBlockLines.join('\n'))}</code></pre>`);
+    codeBlockLines.length = 0;
+    codeBlockOpen = false;
+  };
 
   const closeBlockquote = () => {
     if (!blockquoteOpen) return;
@@ -321,6 +332,21 @@ function renderMarkdownBasic(markdownText) {
   lines.forEach((line) => {
     const raw = String(line || '');
     const trimmed = raw.trim();
+    if (/^```/.test(trimmed)) {
+      if (codeBlockOpen) {
+        closeCodeBlock();
+      } else {
+        closeAllLists();
+        closeBlockquote();
+        codeBlockOpen = true;
+        codeBlockLines.length = 0;
+      }
+      return;
+    }
+    if (codeBlockOpen) {
+      codeBlockLines.push(raw);
+      return;
+    }
     if (!trimmed) {
       closeAllLists();
       closeBlockquote();
@@ -401,6 +427,7 @@ function renderMarkdownBasic(markdownText) {
 
   closeAllLists();
   closeBlockquote();
+  closeCodeBlock();
   return out.join('');
 }
 
@@ -1202,7 +1229,7 @@ function normalizeVersionUpdateScopes(updateRule) {
 
 function versionUpdateAppliesToSelection(updateRule, selectedModules) {
   const scopes = normalizeVersionUpdateScopes(updateRule);
-  if (!scopes || scopes.has('main') || scopes.has('ve')) return true;
+  if (!scopes || scopes.has('main') || [...VERSION_REQUIRED_MODULE_IDS].some((id) => scopes.has(id))) return true;
   for (const id of selectedModules || []) {
     if (scopes.has(String(id || '').toLowerCase())) return true;
   }
@@ -1224,7 +1251,45 @@ function getArchiveModuleIds(files) {
   return [...new Set((files || []).map((item) => {
     const match = String(item?.path || '').match(/^modules\/([^/]+)\//i);
     return match ? String(match[1] || '').toLowerCase() : '';
-  }).filter((id) => Object.hasOwn(VERSION_OPTIONAL_MODULES, id)))];
+  }).filter((id) => id && id !== 've'))];
+}
+
+function getKnownOptionalModuleIds() {
+  const definitions = globalThis.BjtuModuleRegistry?.definitions || {};
+  return [...new Set([
+    ...Object.keys(VERSION_OPTIONAL_MODULES),
+    ...Object.keys(definitions).filter((id) => id !== 've')
+  ].map((id) => String(id || '').toLowerCase()).filter((id) => id && !VERSION_REQUIRED_MODULE_IDS.has(id)))];
+}
+
+function getModuleDisplayName(id, archiveLabels = {}) {
+  const key = String(id || '').toLowerCase();
+  return String(
+    archiveLabels[key]
+    || globalThis.BjtuModuleRegistry?.definitions?.[key]?.label
+    || globalThis.BjtuModuleRegistry?.definitions?.[key]?.name
+    || VERSION_OPTIONAL_MODULES[key]
+    || key
+  );
+}
+
+async function getArchiveModuleLabels(files) {
+  const labels = {};
+  const moduleJsonFiles = (files || []).filter((item) => /(^|\/)modules\/[^/]+\/module\.json$/i.test(String(item?.path || '')));
+  for (const item of moduleJsonFiles) {
+    const match = String(item.path || '').match(/^modules\/([^/]+)\/module\.json$/i);
+    const id = String(match?.[1] || '').toLowerCase();
+    if (!id || id === 've') continue;
+    try {
+      const bytes = await inflateZipEntry(item.entry);
+      const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
+      const name = String(data?.name || data?.label || '').trim();
+      if (name) labels[id] = name;
+    } catch {
+      // Broken module metadata should not hide the module itself.
+    }
+  }
+  return labels;
 }
 
 function getArchiveModuleSize(files, moduleId) {
@@ -1276,8 +1341,12 @@ function appendUpdateModuleChoice(list, { id, name, moduleSize, checked, disable
 async function chooseUpdateModules(archiveFiles) {
   const packaged = getArchiveModuleIds(archiveFiles);
   const available = globalThis.__bjtuAvailableModules || {};
-  const candidates = Object.keys(VERSION_OPTIONAL_MODULES)
-    .filter((id) => packaged.includes(id) || available[id] === true);
+  const archiveLabels = await getArchiveModuleLabels(archiveFiles);
+  const knownIds = getKnownOptionalModuleIds();
+  const candidates = [...new Set([
+    ...knownIds.filter((id) => packaged.includes(id) || available[id] === true),
+    ...packaged
+  ].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)))];
   if (!candidates.length) return new Set();
   const stored = await chrome.storage.local.get(VERSION_MODULE_SELECTION_KEY).catch(() => ({}));
   const previous = stored?.[VERSION_MODULE_SELECTION_KEY];
@@ -1301,7 +1370,7 @@ async function chooseUpdateModules(archiveFiles) {
     mask.setAttribute('aria-modal', 'true');
     mask.innerHTML = `<div class="version-modal-card" style="width:min(520px,calc(100vw - 32px));">
       <div class="version-modal-header"><div class="upload-duplicate-title">选择要保留的模块</div></div>
-      <div style="margin:8px 0;color:#64748b;font-size:13px;">智慧课程平台和课程合并核心始终保留。未勾选的可选模块不会解压，已安装时将被删除。</div>
+      <div style="margin:8px 0;color:#64748b;font-size:13px;">智慧课程平台、课程合并核心和更新组件始终保留。未勾选的可选模块不会解压，已安装时将被删除。</div>
       <div data-module-list style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0;"></div>
       <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定</button></div>
     </div>`;
@@ -1313,10 +1382,17 @@ async function chooseUpdateModules(archiveFiles) {
       checked: true,
       disabled: true
     });
+    appendUpdateModuleChoice(list, {
+      id: 'updater',
+      name: getModuleDisplayName('updater', archiveLabels),
+      moduleSize: getArchiveModuleSize(archiveFiles, 'updater'),
+      checked: true,
+      disabled: true
+    });
     candidates.forEach((id) => {
       appendUpdateModuleChoice(list, {
         id,
-        name: VERSION_OPTIONAL_MODULES[id],
+        name: getModuleDisplayName(id, archiveLabels),
         moduleSize: getArchiveModuleSize(archiveFiles, id),
         checked: initial.has(id),
         disabled: false
@@ -1327,7 +1403,7 @@ async function chooseUpdateModules(archiveFiles) {
     });
     mask.querySelector('[data-confirm]').addEventListener('click', async () => {
       const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
-      await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => id !== 've') }).catch(() => {});
+      await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)) }).catch(() => {});
       mask.remove();
       resolve(selected);
     });
@@ -1382,9 +1458,9 @@ async function fetchModuleArchive(onProgress) {
 async function applyModuleSelection({ selected = [], installed = [], onProgress = null } = {}) {
   const selectedSet = new Set(selected.map((id) => String(id || '').toLowerCase()));
   const installedSet = new Set(installed.map((id) => String(id || '').toLowerCase()));
-  selectedSet.add('ve');
-  const additions = [...selectedSet].filter((id) => id !== 've' && !installedSet.has(id));
-  const removals = [...installedSet].filter((id) => id !== 've' && !selectedSet.has(id));
+  VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedSet.add(id));
+  const additions = [...selectedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id) && !installedSet.has(id));
+  const removals = [...installedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id) && !selectedSet.has(id));
   if (!additions.length && !removals.length) return { added: [], removed: [], written: 0 };
 
   await requestModuleManagementDirectory();
@@ -1398,7 +1474,7 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
       .filter((item) => item.path && additions.some((id) => item.path.toLowerCase().startsWith(`modules/${id}/`)));
     for (const id of additions) {
       if (!archiveFiles.some((item) => item.path.toLowerCase().startsWith(`modules/${id}/`))) {
-        throw new Error(`更新包中未找到 ${VERSION_OPTIONAL_MODULES[id] || id} 模块`);
+        throw new Error(`更新包中未找到 ${getModuleDisplayName(id)} 模块`);
       }
     }
   }
@@ -1430,7 +1506,7 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
       });
     }
   });
-  await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selectedSet].filter((id) => id !== 've') });
+  await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selectedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)) });
   return { added: additions, removed: removals, written };
 }
 
@@ -1442,7 +1518,7 @@ globalThis.BjtuUpdaterModuleManager = Object.freeze({
 function filterFilesByModules(files, selectedModules) {
   return files.filter((item) => {
     const match = String(item?.path || '').match(/^modules\/([^/]+)\//i);
-    if (!match || match[1].toLowerCase() === 've') return true;
+    if (!match || VERSION_REQUIRED_MODULE_IDS.has(match[1].toLowerCase())) return true;
     const id = match[1].toLowerCase();
     return selectedModules.has(id);
   });
@@ -1456,7 +1532,7 @@ async function removeUnselectedModuleDirectories(selectedModules) {
   } catch {
     return;
   }
-  for (const id of Object.keys(VERSION_OPTIONAL_MODULES)) {
+  for (const id of getKnownOptionalModuleIds()) {
     if (selectedModules.has(id)) continue;
     await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
       if (error?.name !== 'NotFoundError') throw error;
@@ -1488,9 +1564,10 @@ async function cleanVersionUpdateScopes(updateRule, selectedModules) {
   } catch {
     return;
   }
-  for (const id of VERSION_MODULE_SCOPE_IDS) {
+  const scopeIds = [...new Set([...VERSION_MODULE_SCOPE_IDS, ...getKnownOptionalModuleIds(), ...scopes])];
+  for (const id of scopeIds) {
     if (!scopes.has(id)) continue;
-    if (id !== 've' && !selectedModules.has(id)) continue;
+    if (!VERSION_REQUIRED_MODULE_IDS.has(id) && !selectedModules.has(id)) continue;
     await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
       if (error?.name !== 'NotFoundError') throw error;
     });
@@ -1520,7 +1597,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
     .map((entry) => ({ entry, path: normalizeUpdateEntryPath(entry.name, commonRoot) }))
     .filter((item) => item.path);
   const selectedModules = await chooseUpdateModules(archiveFiles);
-  selectedModules.add('ve');
+  VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
   if (cleanUpdate) await cleanVersionUpdateScopes(updateRule, selectedModules);
   else if (!normalizeVersionUpdateScopes(updateRule)) await removeUnselectedModuleDirectories(selectedModules);
   const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
@@ -1953,8 +2030,8 @@ async function loadVersionInfoInternal(releaseOverride = null) {
       const moduleSelection = await chrome.storage.local.get(VERSION_MODULE_SELECTION_KEY).catch(() => ({}));
       const selectedModules = new Set(Array.isArray(moduleSelection?.[VERSION_MODULE_SELECTION_KEY])
         ? moduleSelection[VERSION_MODULE_SELECTION_KEY]
-        : Object.keys(VERSION_OPTIONAL_MODULES));
-      selectedModules.add('ve');
+        : getKnownOptionalModuleIds());
+      VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       if (!versionUpdateAppliesToSelection(latestUpdate, selectedModules)) {
         const skippedRecord = {
           ver: latestTag,

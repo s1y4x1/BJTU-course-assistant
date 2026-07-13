@@ -191,7 +191,7 @@ async function setupInstalledModuleOptions() {
     checkbox.type = 'checkbox';
     checkbox.value = id;
     checkbox.checked = installed.has(id);
-    checkbox.disabled = id === 've';
+    checkbox.disabled = id === 've' || id === 'updater';
     label.append(checkbox, document.createTextNode(definition.label || id));
     list.appendChild(label);
   });

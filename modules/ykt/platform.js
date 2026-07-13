@@ -22,6 +22,9 @@ let yktLoginIframeOpenedAt = 0;
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
 function isYktHomeworkDone(hw) {
+  if (Number(hw?.__actype) === 15 && hw?.video_total_done !== null && hw?.video_total_done !== undefined) {
+    return Number(hw.video_total_done) === 1;
+  }
   const progress = Number(hw?.progress ?? 0);
   const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
   if (problemCount > 0) return progress >= problemCount;
@@ -319,6 +322,78 @@ async function fetchYktJson(url) {
   }
 }
 
+async function getYktCsrfToken() {
+  if (!chrome?.cookies?.get) return '';
+  const names = ['csrftoken', 'csrf_token', 'csrfToken'];
+  for (const name of names) {
+    const cookie = await chrome.cookies.get({ url: YKT_BASE, name }).catch(() => null);
+    const value = String(cookie?.value || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+async function postYktJson(url, payload) {
+  const csrfToken = await getYktCsrfToken();
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      ...YKT_HEADERS,
+      'Content-Type': 'application/json;charset=UTF-8',
+      ...(csrfToken ? {
+        'X-CSRFToken': csrfToken,
+        'x-csrftoken': csrfToken
+      } : {})
+    },
+    body: JSON.stringify(payload || {}),
+    cache: 'no-store'
+  });
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { errcode: -1, errmsg: text || `HTTP ${res.status}` };
+  }
+}
+
+async function fetchYktCoursewareProgress(cid, coursewareIds) {
+  const courseId = String(cid || '').trim();
+  const ids = [...new Set((Array.isArray(coursewareIds) ? coursewareIds : [])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean))];
+  if (!courseId || !ids.length) return {};
+  const data = await postYktJson(`${YKT_BASE}/mooc-api/v1/lms/learn/course/pub_new_pro`, {
+    cid: courseId,
+    classroom_id: courseId,
+    new_id: ids
+  });
+  if (data?.success !== true || !data?.data || typeof data.data !== 'object') return {};
+  return data.data;
+}
+
+function normalizeYktVideoProgress(progressRecord, leafId) {
+  const record = progressRecord && typeof progressRecord === 'object' ? progressRecord : null;
+  if (!record) return null;
+  const totalDone = Number(record.total_done);
+  const leafKey = String(leafId || '').trim();
+  let ratio = NaN;
+  if (leafKey && record[leafKey] !== null && record[leafKey] !== undefined) ratio = Number(record[leafKey]);
+  if (!Number.isFinite(ratio)) {
+    if (totalDone === 1) ratio = 1;
+    else if (totalDone === -1 || totalDone === 0) ratio = 0;
+  }
+  ratio = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+  return { totalDone, ratio };
+}
+
+function formatYktVideoProgressText(hw) {
+  if (Number(hw?.__actype) !== 15 || hw?.video_progress_ratio === null || hw?.video_progress_ratio === undefined) return '';
+  const ratio = Math.max(0, Math.min(1, Number(hw.video_progress_ratio) || 0));
+  const percent = ratio >= 1 ? '100' : (ratio <= 0 ? '0' : (ratio * 100).toFixed(ratio * 100 < 10 ? 1 : 0).replace(/\.0$/, ''));
+  return `${percent}%`;
+}
+
 async function fetchYktExamPaper(courseId, examId, sharedTabId = null) {
   const cid = String(courseId || '').trim();
   const eid = String(examId || '').trim();
@@ -558,7 +633,8 @@ function renderYktHomeworkItems(courseId, items) {
     const overdue = !done && isYktHomeworkOverdue(it);
     const progress = Number(it?.progress ?? 0);
     const problemCount = Number(it?.problem_count ?? 0);
-    const progressText = problemCount > 0 ? `${progress}/${problemCount}` : '';
+    const videoProgressText = formatYktVideoProgressText(it);
+    const progressText = videoProgressText || (problemCount > 0 ? `${progress}/${problemCount}` : '');
     const hasScore = it?.score !== null && it?.score !== undefined && String(it.score) !== '';
     const totalScoreFromItem = Number(it?.total_score);
     const problemResults = Array.isArray(it?.problem_results) ? it.problem_results : [];
@@ -580,7 +656,9 @@ function renderYktHomeworkItems(courseId, items) {
     const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
     const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
-    const actionText = done ? '去雨课堂查看' : '去雨课堂提交';
+    const actionText = Number(it?.__actype) === 15
+      ? (done ? '去雨课堂查看' : '去雨课堂学习')
+      : (done ? '去雨课堂查看' : '去雨课堂提交');
     const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
     const titleScoreBadge = scoreText ? `<span style="font-weight:bold; color:#E91E63; white-space:nowrap;">[${escapeHtml(scoreText)}]</span>` : '';
     const deadline = it?.end || it?.deadline || '';
@@ -830,13 +908,27 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       }
     });
 
+    const actype15CoursewareIds = acts
+      .filter((a) => Number(a?.__actype) === 15)
+      .map((a) => a?.courseware_id)
+      .filter((id) => String(id || '').trim());
+    const progressCid = String(entry.classroomId || '').trim();
+    const coursewareProgress = actype15CoursewareIds.length
+      ? await fetchYktCoursewareProgress(progressCid, actype15CoursewareIds).catch(() => ({}))
+      : {};
+
     const homeworksRaw = acts.map((a) => {
       const isExam = Number(a?.__actype) === 5;
       const isCard = Number(a?.__actype) === 15;
       const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
+      const coursewareId = a?.courseware_id;
+      const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
+      const videoProgress = isCard
+        ? normalizeYktVideoProgress(coursewareProgress?.[String(coursewareId || '')], leafId)
+        : null;
       const detailKey = isExam
         ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}`
-        : (isCard ? `15:${String(entry.classroomId)}:${String(a?.courseware_id || '')}` : '');
+        : (isCard ? `15:${String(entry.classroomId)}:${String(coursewareId || '')}` : '');
       const cache = detailKey ? window.yktDetailCacheByKey[detailKey] : null;
       const hw = {
         title: a?.title || '雨课堂作业',
@@ -849,9 +941,12 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         score: a?.score,
         total_score: a?.total_score,
         link: isExam
-          ? yktExamLink(a?.course_id || entry.classroomId, a?.courseware_id)
-          : yktHomeworkLink(entry.classroomId, a?.courseware_id, a?.id),
-        courseware_id: a?.courseware_id,
+          ? yktExamLink(a?.course_id || entry.classroomId, coursewareId)
+          : yktHomeworkLink(entry.classroomId, coursewareId, a?.id),
+        courseware_id: coursewareId,
+        leaf_id: leafId,
+        video_total_done: videoProgress ? videoProgress.totalDone : undefined,
+        video_progress_ratio: videoProgress ? videoProgress.ratio : undefined,
         id: a?.id,
         exam_id: examId,
         __actype: a?.__actype,

@@ -196,6 +196,22 @@ html[data-color-scheme="dark"] .version-markdown-blockquote {
   color: #dbeafe !important;
 }
 
+html[data-color-scheme="dark"] .version-markdown-inline-code {
+  background: #020617 !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+html[data-color-scheme="dark"] .version-markdown-codeblock {
+  background: #020617 !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+html[data-color-scheme="dark"] .version-markdown-codeblock code {
+  color: #e2e8f0 !important;
+}
+
 html[data-color-scheme="dark"] .version-notice-footer {
   background: #111827;
   border-color: #334155;
