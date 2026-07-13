@@ -572,31 +572,6 @@ function renderYktExamProblemsHtml(problemList, done) {
   }).join('');
 }
 
-async function fetchYktCardDetList(cardId, classroomId) {
-  const cid = String(cardId || '').trim();
-  const classId = String(classroomId || '').trim();
-  if (!cid || !classId) return null;
-  const url = `${YKT_BASE}/v2/api/web/cards/detlist/${encodeURIComponent(cid)}?classroom_id=${encodeURIComponent(classId)}`;
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json, text/plain, */*',
-        ...YKT_HEADERS
-      },
-      cache: 'no-store'
-    });
-    if (Number(res.status) === 401 || Number(res.status) === 403) return null;
-    const text = await res.text();
-    const data = JSON.parse(String(text || '{}'));
-    if (Number(data?.errcode) !== 0) return null;
-    return Array.isArray(data?.data?.problem_results) ? data.data.problem_results : [];
-  } catch {
-    return null;
-  }
-}
-
 async function loadDeferredYktHomeworkDetails(courseId, kind) {
   const cid = String(courseId || '').trim();
   const groupKind = String(kind || '').trim();
@@ -615,6 +590,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
       items = Array.isArray(standalone?.homeworks) ? standalone.homeworks : [];
     }
     const targets = items.filter((hw) => {
+      if (Number(hw?.__actype) !== 5) return false;
       if (!['deferred', 'failed', ''].includes(String(hw?.exam_detail_state || '').trim())) return false;
       return groupKind === 'done' ? isYktHomeworkDone(hw) : isYktHomeworkOverdue(hw);
     });
@@ -660,16 +636,12 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
             }
             if (paper?.title) hw.title = paper.title;
             hw.exam_problems = Array.isArray(paper?.problems) ? paper.problems : [];
-          } else if (Number(hw?.__actype) === 15) {
-            const results = await fetchYktCardDetList(hw?.courseware_id || '', hw?.classroom_id || '');
-            hw.problem_results = Array.isArray(results) ? results : [];
           }
           hw.exam_detail_state = 'done';
           if (detailKey) {
             window.yktDetailCacheByKey[detailKey] = {
               state: 'done', title: hw.title,
               exam_problems: Array.isArray(hw.exam_problems) ? hw.exam_problems : [],
-              problem_results: Array.isArray(hw.problem_results) ? hw.problem_results : [],
               promise: null
             };
           }
@@ -690,42 +662,6 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
   return run;
 }
 
-function extractYktProblemDetailHtml(problemItem) {
-  const lines = [];
-  const shapes = Array.isArray(problemItem?.slide?.Shapes) ? problemItem.slide.Shapes : [];
-  shapes.forEach((shape) => {
-    const paragraphs = Array.isArray(shape?.Paragraphs) ? shape.Paragraphs : [];
-    paragraphs.forEach((p) => {
-      const ls = Array.isArray(p?.Lines) ? p.Lines : [];
-      ls.forEach((l) => {
-        const html = String(l?.Html || '').trim();
-        if (html) lines.push(html);
-      });
-    });
-  });
-  return lines.join('');
-}
-
-function renderYktCardProblemResultsHtml(problemResults, done) {
-  const list = Array.isArray(problemResults) ? problemResults : [];
-  if (!list.length) return '';
-  const baseBg = done ? 'rgba(220,252,231,0.52)' : 'rgba(255,237,213,0.52)';
-  const borderColor = done ? 'rgba(22,163,74,0.32)' : 'rgba(234,88,12,0.32)';
-  const titleColor = done ? '#166534' : '#9a3412';
-  const textColor = done ? '#14532d' : '#7c2d12';
-
-  return list.map((it, idx) => {
-    const detailRawHtml = extractYktProblemDetailHtml(it);
-    const detailHtml = normalizeHomeworkContent(detailRawHtml) || '<span style="color:#999;">无作业详情</span>';
-    return `
-      <div style="padding:4px 6px; border:1px solid ${borderColor}; border-radius:5px; margin-top:4px; background:${baseBg};">
-        <div style="font-size:12px; color:${titleColor}; font-weight:bold; line-height:1.35;">第${idx + 1}题</div>
-        <div style="font-size:12px; color:${textColor}; margin-top:2px; line-height:1.4;">${detailHtml}</div>
-      </div>
-    `;
-  }).join('');
-}
-
 function renderYktHomeworkItems(courseId, items) {
   const list = items || [];
   if (!list.length) return '';
@@ -740,22 +676,9 @@ function renderYktHomeworkItems(courseId, items) {
       ? '<span class="spinner" aria-label="正在加载进度" style="display:inline-block; width:10px; height:10px; margin-left:2px; border-width:1px; border-color:#64748b; border-top-color:transparent; vertical-align:-1px;"></span>'
       : escapeHtml(progressText);
     const hasScore = it?.score !== null && it?.score !== undefined && String(it.score) !== '';
-    const totalScoreFromItem = Number(it?.total_score);
-    const problemResults = Array.isArray(it?.problem_results) ? it.problem_results : [];
-    const sumGot = problemResults.reduce((acc, pr) => {
-      const v = Number(pr?.problem_result?.score);
-      return acc + (Number.isFinite(v) ? v : 0);
-    }, 0);
-    const sumFull = problemResults.reduce((acc, pr) => {
-      const v = Number(pr?.score);
-      return acc + (Number.isFinite(v) ? v : 0);
-    }, 0);
-    const derivedHasScore = Number(it?.__actype) === 15 && problemResults.length > 0 && (sumFull > 0 || sumGot > 0);
     const scoreText = hasScore
       ? `${it.score}/${it?.total_score ?? ''}`
-      : (derivedHasScore
-          ? `${sumGot}/${sumFull > 0 ? sumFull : (Number.isFinite(totalScoreFromItem) ? totalScoreFromItem : '')}`
-          : '');
+      : '';
     const bgColor = done ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
     const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
     const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
@@ -772,12 +695,9 @@ function renderYktHomeworkItems(courseId, items) {
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
     const actype = Number(it?.__actype);
     const isExam = actype === 5;
-    const isCard = actype === 15;
-    const examDetail = isExam
-      ? renderYktExamProblemsHtml(it?.exam_problems || [], done)
-      : (isCard ? renderYktCardProblemResultsHtml(it?.problem_results || [], done) : '');
+    const examDetail = isExam ? renderYktExamProblemsHtml(it?.exam_problems || [], done) : '';
     let detailStatusHtml = '';
-    if ((isExam || isCard) && !examDetail) {
+    if (isExam && !examDetail) {
       const state = String(it?.exam_detail_state || '').trim();
       if (state === 'loading') {
         detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>正在获取作业详情…</div>`;
@@ -1065,9 +985,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
       const coursewareId = a?.courseware_id;
       const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
-      const detailKey = isExam
-        ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}`
-        : (isCard ? `15:${String(entry.classroomId)}:${String(coursewareId || '')}` : '');
+      const detailKey = isExam ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}` : '';
       const cache = detailKey ? window.yktDetailCacheByKey[detailKey] : null;
       const hw = {
         title: a?.title || '雨课堂作业',
@@ -1091,7 +1009,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         exam_id: examId,
         __actype: a?.__actype,
         exam_problems: Array.isArray(cache?.exam_problems) ? cache.exam_problems : [],
-        problem_results: Array.isArray(cache?.problem_results) ? cache.problem_results : [],
         exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
         detail_cache_key: detailKey,
         course_id: a?.course_id || entry.classroomId,
@@ -1141,9 +1058,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     let queuedChanged = false;
     homeworks.forEach((hw) => {
       const actype = Number(hw?.__actype);
-      if (actype !== 5 && actype !== 15) return;
-      if (actype === 5 && !String(hw?.exam_id || '').trim()) return;
-      if (actype === 15 && !String(hw?.courseware_id || '').trim()) return;
+      if (actype !== 5 || !String(hw?.exam_id || '').trim()) return;
       const displayCourseId = getCurrentBoundCourseId(entry) || entry.boundCourseId || `ykt-${entry.classroomId}`;
       const detailGroupAlreadyOpen = isYktHomeworkDone(hw)
         ? !!window.courseShowDoneById?.[displayCourseId]
@@ -1180,7 +1095,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     if (cache?.state === 'done') {
       if (cache.title) hw.title = cache.title;
       hw.exam_problems = Array.isArray(cache.exam_problems) ? cache.exam_problems : [];
-      hw.problem_results = Array.isArray(cache.problem_results) ? cache.problem_results : [];
       hw.exam_detail_state = 'done';
       rerenderEntryCard(entry);
       continue;
@@ -1192,7 +1106,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       const latest = window.yktDetailCacheByKey[detailKey] || {};
       if (latest.title) hw.title = latest.title;
       hw.exam_problems = Array.isArray(latest.exam_problems) ? latest.exam_problems : [];
-      hw.problem_results = Array.isArray(latest.problem_results) ? latest.problem_results : [];
       hw.exam_detail_state = latest.state === 'done' ? 'done' : 'failed';
       rerenderEntryCard(entry);
       continue;
@@ -1207,31 +1120,23 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           ...(window.yktDetailCacheByKey[detailKey] || {}),
           state: 'loading',
           title: hw.title,
-          exam_problems: Array.isArray(hw.exam_problems) ? hw.exam_problems : [],
-          problem_results: Array.isArray(hw.problem_results) ? hw.problem_results : []
+          exam_problems: Array.isArray(hw.exam_problems) ? hw.exam_problems : []
         };
       }
 
-      if (actype === 5) {
-        const tabId = await ensureYktExamSharedTab();
-        let p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', tabId);
+      const tabId = await ensureYktExamSharedTab();
+      let p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', tabId);
+      if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
+      let examPaper = await p;
+      if (!examPaper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
+        yktExamSharedTabId = null;
+        const retryTabId = await ensureYktExamSharedTab();
+        p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', retryTabId);
         if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
-        let examPaper = await p;
-        if (!examPaper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
-          yktExamSharedTabId = null;
-          const retryTabId = await ensureYktExamSharedTab();
-          p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', retryTabId);
-          if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
-          examPaper = await p;
-        }
-        if (examPaper?.title) hw.title = examPaper.title;
-        hw.exam_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
-      } else {
-        const p = fetchYktCardDetList(hw?.courseware_id || '', entry.classroomId);
-        if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
-        const problemResults = await p;
-        hw.problem_results = Array.isArray(problemResults) ? problemResults : [];
+        examPaper = await p;
       }
+      if (examPaper?.title) hw.title = examPaper.title;
+      hw.exam_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
 
       hw.exam_detail_state = 'done';
       if (detailKey) {
@@ -1240,7 +1145,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           state: 'done',
           title: hw.title,
           exam_problems: Array.isArray(hw.exam_problems) ? hw.exam_problems : [],
-          problem_results: Array.isArray(hw.problem_results) ? hw.problem_results : [],
           promise: null
         };
       }
