@@ -490,7 +490,7 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   // against VE courses is a core concern handled after the module finishes.
   const independentCourseInput = [];
   const finishIndependentLoad = () => {
-    rematchExternalByVeCourses();
+    rematchExternalByVeCourses(platform);
     rerenderAllHomeworkAreas();
     if (platform === 'ykt') renderYktStandaloneCourses();
     if (platform === 'mrjzy') renderMrjzyStandaloneCourses();
@@ -511,7 +511,7 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
       window.platformLoadedOnce.jlgj = true;
       if ((window.jlgjCourseGroupsSnapshot || []).length) setPlatformLoginState('jlgj', 'online');
       showToast(`接龙管家加载失败：${String(error?.message || error || '未知错误')}`, 'error', 3200);
-      rematchExternalByVeCourses();
+      rematchExternalByVeCourses('jlgj');
       rerenderAllHomeworkAreas();
       renderJlgjStandaloneCourses();
     });
@@ -548,10 +548,11 @@ async function loadPlatformDetailSettings() {
   }
 }
 
-function rematchExternalByVeCourses() {
+function rematchExternalByVeCourses(platform = '') {
   const veCourses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+  const shouldRematch = (id) => !platform || platform === id;
 
-  if (isPlatformEnabled('ykt') && Array.isArray(window.yktCourseGroupsSnapshot) && window.yktCourseGroupsSnapshot.length) {
+  if (shouldRematch('ykt') && isPlatformEnabled('ykt') && Array.isArray(window.yktCourseGroupsSnapshot) && window.yktCourseGroupsSnapshot.length) {
     const yktStrictMap = collectVeFzIdTail10Map(veCourses);
     window.yktMatchedHomeworkByCourseId = {};
     window.yktMatchedCourseLinkByCourseId = {};
@@ -576,7 +577,7 @@ function rematchExternalByVeCourses() {
     });
   }
 
-  if (isPlatformEnabled('mrjzy') && Array.isArray(window.mrjzyCourseGroupsSnapshot) && window.mrjzyCourseGroupsSnapshot.length) {
+  if (shouldRematch('mrjzy') && isPlatformEnabled('mrjzy') && Array.isArray(window.mrjzyCourseGroupsSnapshot) && window.mrjzyCourseGroupsSnapshot.length) {
     const mrjzyMatchMap = collectCourseNameMatchMap(veCourses);
     window.mrjzyMatchedHomeworkByCourseId = {};
     window.mrjzyStandaloneCourses = [];
@@ -597,7 +598,7 @@ function rematchExternalByVeCourses() {
     });
   }
 
-  if (isPlatformEnabled('jlgj') && Array.isArray(window.jlgjCourseGroupsSnapshot) && window.jlgjCourseGroupsSnapshot.length) {
+  if (shouldRematch('jlgj') && isPlatformEnabled('jlgj') && Array.isArray(window.jlgjCourseGroupsSnapshot) && window.jlgjCourseGroupsSnapshot.length) {
     const jlgjMatchMap = collectCourseNameMatchMap(veCourses);
     window.jlgjMatchedHomeworkByCourseId = {};
     window.jlgjStandaloneCourses = [];
@@ -1231,7 +1232,7 @@ window.addEventListener('bjtu-theme-change', () => {
       window.autoLoadAllHomeworkDetails = changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY].newValue === true;
       if (window.autoLoadAllHomeworkDetails && isPlatformEnabled('ykt')) {
         scheduleYktLoad([]).then(() => {
-          rematchExternalByVeCourses();
+          rematchExternalByVeCourses('ykt');
           rerenderAllHomeworkAreas();
           renderYktStandaloneCourses();
         }).catch(() => {});

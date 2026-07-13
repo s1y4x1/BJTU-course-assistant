@@ -323,52 +323,152 @@ async function fetchYktJson(url) {
 }
 
 async function getYktCsrfToken() {
-  if (!chrome?.cookies?.get) return '';
-  const names = ['csrftoken', 'csrf_token', 'csrfToken'];
-  for (const name of names) {
-    const cookie = await chrome.cookies.get({ url: YKT_BASE, name }).catch(() => null);
-    const value = String(cookie?.value || '').trim();
-    if (value) return value;
+  if (!chrome?.cookies?.getAll) return '';
+  const cookies = await chrome.cookies.getAll({ url: `${YKT_BASE}/` }).catch(() => []);
+  const csrfCookie = (cookies || []).find((cookie) => {
+    const name = String(cookie?.name || '').toLowerCase();
+    return name === 'csrftoken' || name === 'csrf_token';
+  });
+  return String(csrfCookie?.value || '').trim();
+}
+
+function pickYktUniversityId(...sources) {
+  for (const source of sources) {
+    const value = source?.university_id
+      ?? source?.universityId
+      ?? source?.university?.id
+      ?? source?.course?.university_id
+      ?? source?.course?.universityId
+      ?? source?.course?.university?.id;
+    if (value !== null && value !== undefined && String(value).trim()) return String(value).trim();
   }
   return '';
 }
 
-async function postYktJson(url, payload) {
-  const csrfToken = await getYktCsrfToken();
-  const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      ...YKT_HEADERS,
-      'Content-Type': 'application/json;charset=UTF-8',
-      ...(csrfToken ? {
-        'X-CSRFToken': csrfToken,
-        'x-csrftoken': csrfToken
-      } : {})
-    },
-    body: JSON.stringify(payload || {}),
-    cache: 'no-store'
-  });
-  const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { errcode: -1, errmsg: text || `HTTP ${res.status}` };
+async function getYktUniversityIdFromOpenTabs() {
+  const tabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
+  for (const tab of tabs || []) {
+    try {
+      const value = new URL(String(tab?.url || '')).searchParams.get('university_id');
+      if (value && String(value).trim()) return String(value).trim();
+    } catch { /* ignore malformed tab URL */ }
   }
+  return '';
 }
 
-async function fetchYktCoursewareProgress(cid, coursewareIds) {
+async function waitYktTabReady(tabId, timeoutMs = 12000) {
+  const id = Number(tabId || 0);
+  if (!Number.isFinite(id) || id <= 0) return false;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const tab = await chrome.tabs.get(id).catch(() => null);
+    if (!tab?.id) return false;
+    if (tab.status === 'complete' && String(tab.url || '').startsWith(YKT_BASE)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 160));
+  }
+  return false;
+}
+
+async function fetchYktCoursewareProgress(cid, coursewareIds, requestTabId, universityId, platformId = '3') {
   const courseId = String(cid || '').trim();
+  const schoolId = String(universityId || '').trim();
+  const actualPlatformId = String(platformId || '3').trim() || '3';
   const ids = [...new Set((Array.isArray(coursewareIds) ? coursewareIds : [])
     .map((id) => String(id || '').trim())
     .filter(Boolean))];
   if (!courseId || !ids.length) return {};
-  const data = await postYktJson(`${YKT_BASE}/mooc-api/v1/lms/learn/course/pub_new_pro`, {
-    cid: courseId,
-    classroom_id: courseId,
-    new_id: ids
+  const tabId = Number(requestTabId || 0);
+  if (!Number.isFinite(tabId) || tabId <= 0 || !(await waitYktTabReady(tabId))) {
+    throw new Error('雨课堂请求页面未就绪');
+  }
+  const csrfToken = await getYktCsrfToken();
+  const [execution] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: async (actualCid, newIds, suppliedUniversityId, suppliedPlatformId, suppliedCsrfToken) => {
+      const pickUniversityId = (source, depth = 0) => {
+        if (!source || typeof source !== 'object' || depth > 5) return '';
+        const direct = source.university_id ?? source.universityId;
+        if (direct !== null && direct !== undefined && String(direct).trim()) return String(direct).trim();
+        for (const value of Object.values(source)) {
+          const found = pickUniversityId(value, depth + 1);
+          if (found) return found;
+        }
+        return '';
+      };
+      const urlParams = new URL(location.href).searchParams;
+      let actualUniversityId = String(suppliedUniversityId || urlParams.get('university_id') || '').trim();
+      let actualPlatformIdArg = String(suppliedPlatformId || urlParams.get('platform_id') || '3').trim() || '3';
+      let actualCsrfToken = String(suppliedCsrfToken || '').trim();
+      if (!actualCsrfToken) {
+        const csrfMatch = document.cookie.match(/(?:^|;\s*)(?:csrftoken|csrf_token)=([^;]*)/i);
+        actualCsrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : '';
+      }
+      if (!actualUniversityId) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
+          const courseResponse = await fetch(`${location.origin}/v2/api/web/courses/list?identity=2`, {
+            credentials: 'include',
+            cache: 'no-store',
+            signal: controller.signal,
+            headers: {
+              accept: 'application/json, text/plain, */*',
+              'xt-agent': 'web',
+              xtbz: 'ykt'
+            }
+          });
+          clearTimeout(timeoutId);
+          const courseJson = await courseResponse.json();
+          const courseList = Array.isArray(courseJson?.data?.list) ? courseJson.data.list : [];
+          const matchedCourse = courseList.find((item) => String(item?.classroom_id || '') === String(actualCid));
+          actualUniversityId = pickUniversityId(matchedCourse) || pickUniversityId(courseJson?.data);
+          if (!actualPlatformIdArg || actualPlatformIdArg === '3') {
+            actualPlatformIdArg = String((matchedCourse?.platform_id ?? matchedCourse?.platformId ?? actualPlatformIdArg) || '3');
+          }
+        } catch { /* send the progress request below so its response exposes the missing requirement */ }
+      }
+      const numericCid = /^\d+$/.test(actualCid) ? Number(actualCid) : actualCid;
+      const referrer = `${location.origin}/v2/web/studentLog/${encodeURIComponent(actualCid)}?university_id=${encodeURIComponent(actualUniversityId)}&platform_id=${encodeURIComponent(actualPlatformIdArg)}&classroom_id=${encodeURIComponent(actualCid)}&content_url=`;
+      const requestHeaders = {
+        accept: 'application/json, text/plain, */*',
+        'cache-control': 'no-cache',
+        'classroom-id': actualCid,
+        'content-type': 'application/json;charset=UTF-8',
+        pragma: 'no-cache',
+        'x-client': 'web',
+        'xt-agent': 'web',
+        xtbz: 'ykt'
+      };
+      if (actualUniversityId) {
+        requestHeaders['university-id'] = actualUniversityId;
+        requestHeaders['uv-id'] = actualUniversityId;
+      }
+      if (actualCsrfToken) requestHeaders['x-csrftoken'] = actualCsrfToken;
+      const response = await fetch(`${location.origin}/mooc-api/v1/lms/learn/course/pub_new_pro`, {
+        headers: requestHeaders,
+        referrer,
+        body: JSON.stringify({ cid: numericCid, new_id: newIds }),
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'include',
+        cache: 'no-store',
+        priority: 'high'
+      });
+      const text = await response.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { success: false, error_code: response.status, msg: text || `HTTP ${response.status}`, data: {} };
+      }
+    },
+    args: [courseId, ids, schoolId, actualPlatformId, csrfToken]
   });
-  if (data?.success !== true || !data?.data || typeof data.data !== 'object') return {};
+  const data = execution?.result || {};
+  if (data?.success !== true) {
+    throw new Error(String(data?.detail || data?.msg || data?.errmsg || `HTTP ${data?.error_code || '请求失败'}`));
+  }
+  if (!data?.data || typeof data.data !== 'object') return {};
   return data.data;
 }
 
@@ -388,7 +488,8 @@ function normalizeYktVideoProgress(progressRecord, leafId) {
 }
 
 function formatYktVideoProgressText(hw) {
-  if (Number(hw?.__actype) !== 15 || hw?.video_progress_ratio === null || hw?.video_progress_ratio === undefined) return '';
+  if (Number(hw?.__actype) !== 15) return '';
+  if (hw?.video_progress_ratio === null || hw?.video_progress_ratio === undefined) return '';
   const ratio = Math.max(0, Math.min(1, Number(hw.video_progress_ratio) || 0));
   const percent = ratio >= 1 ? '100' : (ratio <= 0 ? '0' : (ratio * 100).toFixed(ratio * 100 < 10 ? 1 : 0).replace(/\.0$/, ''));
   return `${percent}%`;
@@ -635,6 +736,9 @@ function renderYktHomeworkItems(courseId, items) {
     const problemCount = Number(it?.problem_count ?? 0);
     const videoProgressText = formatYktVideoProgressText(it);
     const progressText = videoProgressText || (problemCount > 0 ? `${progress}/${problemCount}` : '');
+    const progressHtml = it?.video_progress_loading
+      ? '<span class="spinner" aria-label="正在加载进度" style="display:inline-block; width:10px; height:10px; margin-left:2px; border-width:1px; border-color:#64748b; border-top-color:transparent; vertical-align:-1px;"></span>'
+      : escapeHtml(progressText);
     const hasScore = it?.score !== null && it?.score !== undefined && String(it.score) !== '';
     const totalScoreFromItem = Number(it?.total_score);
     const problemResults = Array.isArray(it?.problem_results) ? it.problem_results : [];
@@ -701,7 +805,7 @@ function renderYktHomeworkItems(courseId, items) {
         <div>
           <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '雨课堂作业')}</div>
           <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div>
-          <div style="font-size:12px; color:#666;">${progressText ? `进度: ${escapeHtml(progressText)}` : ''}</div>
+          <div style="font-size:12px; color:#666;">${progressHtml ? `进度: ${progressHtml}` : ''}</div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
           ${titleScoreBadge ? `<div style="font-size:12px; line-height:1;">${titleScoreBadge}</div>` : ''}
@@ -806,6 +910,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   removeYktLoginSection();
 
   const yktCourses = listResp?.data?.list || [];
+  const openTabUniversityId = await getYktUniversityIdFromOpenTabs();
   const entries = [];
   const boundCourseIds = new Set();
 
@@ -821,6 +926,8 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const entry = {
       item,
       classroomId: String(classroomId),
+      universityId: pickYktUniversityId(item, listResp?.data) || openTabUniversityId,
+      platformId: String(item?.platform_id ?? item?.platformId ?? '3'),
       boundCourseId,
       name,
       courseName,
@@ -862,22 +969,27 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   const detailQueue = [];
   let yktExamSharedTabId = null;
   let yktExamSharedTabCreated = false;
+  let yktExamSharedTabPromise = null;
   const ensureYktExamSharedTab = async () => {
-    if (yktExamSharedTabId) {
-      const current = await chrome.tabs.get(yktExamSharedTabId).catch(() => null);
-      if (current?.id) return yktExamSharedTabId;
-      yktExamSharedTabId = null;
+    if (yktExamSharedTabPromise) return yktExamSharedTabPromise;
+    yktExamSharedTabPromise = (async () => {
+      if (yktExamSharedTabId) {
+        const current = await chrome.tabs.get(yktExamSharedTabId).catch(() => null);
+        if (current?.id) return yktExamSharedTabId;
+        yktExamSharedTabId = null;
+        yktExamSharedTabCreated = false;
+      }
+      const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
+      let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
       yktExamSharedTabCreated = false;
-    }
-    const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
-    let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
-    yktExamSharedTabCreated = false;
-    if (!tab) {
-      tab = await chrome.tabs.create({ url: `${YKT_BASE}/web`, active: false });
-      yktExamSharedTabCreated = true;
-    }
-    yktExamSharedTabId = Number(tab?.id || 0) || null;
-    return yktExamSharedTabId;
+      if (!tab) {
+        tab = await chrome.tabs.create({ url: `${YKT_BASE}/web`, active: false });
+        yktExamSharedTabCreated = true;
+      }
+      yktExamSharedTabId = Number(tab?.id || 0) || null;
+      return yktExamSharedTabId;
+    })().finally(() => { yktExamSharedTabPromise = null; });
+    return yktExamSharedTabPromise;
   };
 
   const getCurrentBoundCourseId = (entry) => String(entry?.boundCourseId || '');
@@ -891,7 +1003,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       renderHomeworkList(`ykt-${entry.classroomId}`);
     }
   };
-
   const courseTasks = entries.map(async (entry, idx) => {
     if (isStale()) return;
     const actypes = [15, 5];
@@ -903,7 +1014,9 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     logSettled.forEach((r, i) => {
       if (r.status !== 'fulfilled') return;
       const lr = r.value;
-      if (Number(lr?.errcode) === 0 && Array.isArray(lr?.data?.activities)) {
+      const hasExplicitError = (lr?.errcode !== undefined && Number(lr.errcode) !== 0)
+        || lr?.success === false;
+      if (!hasExplicitError && Array.isArray(lr?.data?.activities)) {
         acts.push(...lr.data.activities.map((a) => ({ ...a, __actype: actypes[i] })));
       }
     });
@@ -913,9 +1026,38 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       .map((a) => a?.courseware_id)
       .filter((id) => String(id || '').trim());
     const progressCid = String(entry.classroomId || '').trim();
-    const coursewareProgress = actype15CoursewareIds.length
-      ? await fetchYktCoursewareProgress(progressCid, actype15CoursewareIds).catch(() => ({}))
-      : {};
+    const coursewareProgressPromise = actype15CoursewareIds.length ? (async () => {
+      try {
+        let requestTabId = await ensureYktExamSharedTab();
+        try {
+          return await fetchYktCoursewareProgress(
+            progressCid,
+            actype15CoursewareIds,
+            requestTabId,
+            entry.universityId,
+            entry.platformId
+          );
+        } catch (error) {
+          const requestTab = requestTabId ? await chrome.tabs.get(requestTabId).catch(() => null) : null;
+          if (!requestTab?.id) {
+            yktExamSharedTabId = null;
+            requestTabId = await ensureYktExamSharedTab();
+            return await fetchYktCoursewareProgress(
+              progressCid,
+              actype15CoursewareIds,
+              requestTabId,
+              entry.universityId,
+              entry.platformId
+            );
+          } else {
+            throw error;
+          }
+        }
+      } catch (error) {
+        console.warn('[bjtu] ykt pub_new_pro failed:', String(error?.message || error));
+        return {};
+      }
+    })() : Promise.resolve({});
 
     const homeworksRaw = acts.map((a) => {
       const isExam = Number(a?.__actype) === 5;
@@ -923,9 +1065,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
       const coursewareId = a?.courseware_id;
       const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
-      const videoProgress = isCard
-        ? normalizeYktVideoProgress(coursewareProgress?.[String(coursewareId || '')], leafId)
-        : null;
       const detailKey = isExam
         ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}`
         : (isCard ? `15:${String(entry.classroomId)}:${String(coursewareId || '')}` : '');
@@ -945,8 +1084,9 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           : yktHomeworkLink(entry.classroomId, coursewareId, a?.id),
         courseware_id: coursewareId,
         leaf_id: leafId,
-        video_total_done: videoProgress ? videoProgress.totalDone : undefined,
-        video_progress_ratio: videoProgress ? videoProgress.ratio : undefined,
+        video_total_done: undefined,
+        video_progress_ratio: undefined,
+        video_progress_loading: isCard && !!String(coursewareId || '').trim(),
         id: a?.id,
         exam_id: examId,
         __actype: a?.__actype,
@@ -977,8 +1117,26 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const currentBound = getCurrentBoundCourseId(entry);
     if (currentBound) window.yktHomeworkLoadingByCourse[currentBound] = false;
 
+    rematchExternalByVeCourses('ykt');
     rerenderAllHomeworkAreas();
     renderYktStandaloneCourses();
+
+    const coursewareProgress = await coursewareProgressPromise;
+    homeworks.forEach((hw) => {
+      if (Number(hw?.__actype) !== 15) return;
+      const videoProgress = normalizeYktVideoProgress(
+        coursewareProgress?.[String(hw?.courseware_id || '')],
+        hw?.leaf_id
+      );
+      hw.video_progress_loading = false;
+      hw.video_total_done = videoProgress ? videoProgress.totalDone : undefined;
+      hw.video_progress_ratio = videoProgress ? videoProgress.ratio : undefined;
+    });
+    if (actype15CoursewareIds.length && !isStale()) {
+      rematchExternalByVeCourses('ykt');
+      rerenderAllHomeworkAreas();
+      renderYktStandaloneCourses();
+    }
 
     let queuedChanged = false;
     homeworks.forEach((hw) => {
