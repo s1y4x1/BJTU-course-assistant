@@ -281,7 +281,37 @@ function goBackToApp() {
   }
 }
 
+const EXTENSION_RUNTIME_STORAGE_KEYS = ['extensionInstalledAt', 'extensionLastReloadedAt'];
+
+function formatExtensionRuntimeTime(value) {
+  const timestamp = Number(value);
+  if (!(timestamp > 0)) return '尚未记录';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '尚未记录';
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+async function renderExtensionRuntimeInfo() {
+  const versionEl = document.getElementById('extension-version');
+  const installedEl = document.getElementById('extension-installed-at');
+  const reloadedEl = document.getElementById('extension-reloaded-at');
+  if (!versionEl || !installedEl || !reloadedEl) return;
+  const manifest = chrome.runtime.getManifest();
+  versionEl.textContent = manifest.version_name || manifest.version || '未知';
+  const stored = await chrome.storage.local.get(EXTENSION_RUNTIME_STORAGE_KEYS).catch(() => ({}));
+  installedEl.textContent = formatExtensionRuntimeTime(stored.extensionInstalledAt);
+  reloadedEl.textContent = formatExtensionRuntimeTime(stored.extensionLastReloadedAt);
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && EXTENSION_RUNTIME_STORAGE_KEYS.some((key) => changes[key])) {
+    void renderExtensionRuntimeInfo();
+  }
+});
+
 (async function init() {
+  void renderExtensionRuntimeInfo();
   await globalThis.BjtuModuleRegistry?.ready;
   await setupInstalledModuleOptions();
   const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([

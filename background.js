@@ -63,6 +63,29 @@ chrome.runtime.onInstalled.addListener(() => { void syncOptionalContentScripts()
 chrome.runtime.onStartup.addListener(() => { void syncOptionalContentScripts(); });
 void syncOptionalContentScripts();
 
+const EXTENSION_INSTALLED_AT_KEY = 'extensionInstalledAt';
+const EXTENSION_LAST_RELOADED_AT_KEY = 'extensionLastReloadedAt';
+const EXTENSION_RUNTIME_SESSION_KEY = 'extensionRuntimeSessionMarker';
+
+async function initializeExtensionRuntimeMetadata() {
+  const now = Date.now();
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get([EXTENSION_INSTALLED_AT_KEY]).catch(() => ({})),
+    chrome.storage.session.get([EXTENSION_RUNTIME_SESSION_KEY]).catch(() => ({}))
+  ]);
+  const patch = {};
+  if (!(Number(local?.[EXTENSION_INSTALLED_AT_KEY]) > 0)) patch[EXTENSION_INSTALLED_AT_KEY] = now;
+  if (!session?.[EXTENSION_RUNTIME_SESSION_KEY]) {
+    patch[EXTENSION_LAST_RELOADED_AT_KEY] = now;
+    await chrome.storage.session.set({
+      [EXTENSION_RUNTIME_SESSION_KEY]: `${now}:${crypto.randomUUID()}`
+    }).catch(() => {});
+  }
+  if (Object.keys(patch).length) await chrome.storage.local.set(patch).catch(() => {});
+}
+
+void initializeExtensionRuntimeMetadata();
+
 const APP_URL = chrome.runtime.getURL('app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';

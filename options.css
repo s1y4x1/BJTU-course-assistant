@@ -1,4 +1,4 @@
-body { font-family: Segoe UI, sans-serif; max-width: min(1180px, calc(100vw - 32px)); margin: 24px auto; padding: 0 16px; }
+body { font-family: Segoe UI, sans-serif; max-width: min(1180px, calc(100vw - 32px)); margin: 24px auto 4px; padding: 0 16px; }
 h2 { margin: 0; }
 label { display: block; margin: 12px 0 6px; }
 input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
@@ -141,3 +141,18 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .academic-score-table td:nth-child(1), .academic-score-table td:nth-child(2), .academic-score-table td:nth-child(4), .academic-score-table td:nth-child(5), .academic-score-table td:nth-child(6), .academic-score-table td:nth-child(7) { white-space:nowrap; }
 .academic-score-details summary { cursor:pointer; color:#2563eb; white-space:nowrap; }
 .academic-score-details div { min-width:180px; margin-top:5px; white-space:pre-line; line-height:1.5; }
+.extension-runtime-info {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:6px 18px;
+  margin:10px 0 4px;
+  padding-top:12px;
+  border-top:1px solid #e2e8f0;
+  color:#64748b;
+  font-size:12px;
+  line-height:1.5;
+  font-variant-numeric:tabular-nums;
+}
+.extension-runtime-info strong { color:inherit; font-weight:600; }
+.extension-runtime-info time { white-space:nowrap; }

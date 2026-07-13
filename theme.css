@@ -336,6 +336,7 @@ html[data-color-scheme="dark"] .platform-option-detail {
 }
 
 html[data-color-scheme="dark"] .tip { color:#b6c2d1; }
+html[data-color-scheme="dark"] .extension-runtime-info { border-top-color:#334155; color:#cbd5e1; }
 html[data-color-scheme="dark"] .reset-confirm-message { color:#cbd5e1; }
 html[data-color-scheme="dark"] .academic-score-count,
 html[data-color-scheme="dark"] .academic-score-loading { color:#cbd5e1; }
