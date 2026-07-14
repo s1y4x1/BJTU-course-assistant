@@ -115,6 +115,7 @@ if (location.protocol !== 'chrome-extension:' || !extensionRuntimeId) {
 const appSearchParams = new URLSearchParams(String(location.search || ''));
 const popupMode = appSearchParams.get('popup') === '1';
 const forceAccountListInitialization = appSearchParams.get('accountInit') === '1';
+const forceAccountPasswordMigration = appSearchParams.get('accountInit') === '2';
 if (popupMode) {
   document.body.classList.add('popup-mode');
 }
@@ -1603,7 +1604,8 @@ async function getLocalAccountInfo(userId = '') {
     userId: uid,
     userName: String(source.userName || '').trim(),
     roleName: String(source.roleName || '').trim(),
-    passwordMd5: String(source.password || source.passwordMd5 || '').trim(),
+    password: String(source.password || ''),
+    passwordMd5: String(source.passwordMd5 || '').trim(),
     quickUsername: String(source.quickUsername || history?.quickUsername || '').trim()
   };
 }
@@ -1673,7 +1675,8 @@ async function enrichLoginAccountHistoryList(list) {
       ...record,
       userName: String(account?.userName || record.userName || '').trim(),
       roleName: String(account?.roleName || record.roleName || '').trim(),
-      passwordMd5: String(account?.password || record.passwordMd5 || '').trim(),
+      password: String(account?.password || ''),
+      passwordMd5: String(account?.passwordMd5 || record.passwordMd5 || '').trim(),
       quickUsername: String(account?.quickUsername || record.quickUsername || '').trim()
     };
   }));
@@ -2264,6 +2267,7 @@ async function doLoginFlow() {
 
     let account = await getLocalAccountInfo(username);
     let manualPassword = '';
+    let manualPasswordPlain = '';
     let manualPasscode = '';
     let allowStoredCredentials = initialInitializationResult?.skipped !== true;
     let recoveryMessage = account
@@ -2274,14 +2278,17 @@ async function doLoginFlow() {
       if (signal.aborted || loginCancelRequested) return;
 
       const submittedPassword = manualPassword;
+      const submittedPasswordPlain = manualPasswordPlain;
       const submittedPasscode = manualPasscode;
       manualPassword = '';
+      manualPasswordPlain = '';
       manualPasscode = '';
       showToast(submittedPassword ? '正在登录…' : '正在检查账号并登录…', 'info', 0);
       await enforceJsessionidBeforeLoginRequest();
       const result = await globalThis.BjtuAccountLogin.login(username, {
         signal,
         password: submittedPassword,
+        passwordPlain: submittedPasswordPlain,
         passcode: submittedPasscode,
         skipCurrentCheck: true,
         allowStoredCredentials
@@ -2295,6 +2302,7 @@ async function doLoginFlow() {
       if (result?.reason === 'captcha') {
         showToast('验证码错误，正在重新识别…', 'warning', 1800);
         manualPassword = submittedPassword;
+        manualPasswordPlain = submittedPasswordPlain;
         continue;
       }
       if (result?.reason === 'locked' || result?.reason === 'password-reset') {
@@ -2324,7 +2332,9 @@ async function doLoginFlow() {
           return;
         }
       }
-      const fallbackPassword = submittedPassword || String(account?.passwordMd5 || account?.password || '').trim();
+      const fallbackPassword = submittedPassword
+        || String(account?.passwordMd5 || '').trim()
+        || (account?.password && typeof strEnc === 'function' ? strEnc(account.password) : '');
       const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage, {
         requireCaptcha: true,
         startManual: startManualWithCaptcha,
@@ -2364,6 +2374,7 @@ async function doLoginFlow() {
       }
       if (recovery?.action === 'password' && recovery.password) {
         manualPassword = String(recovery.password).trim();
+        manualPasswordPlain = String(recovery.passwordPlain || '');
         manualPasscode = String(recovery.passcode || '').trim();
         allowStoredCredentials = true;
       }
@@ -4784,6 +4795,21 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   if (showAutoLoadResourcesDisabledNotice) showAutoLoadCourseResourcesDisabledNotice();
   setupPortalUsernameBindMessageListener();
   setupAcademicSystemMessageListener();
+  if (!popupMode && !forceAccountPasswordMigration
+      && await globalThis.BjtuAccountStore?.needsPasswordFieldMigration?.()) {
+    const migrationUrl = new URL(location.href);
+    migrationUrl.searchParams.set('accountInit', '2');
+    location.replace(migrationUrl.href);
+    return;
+  }
+  if (forceAccountPasswordMigration) {
+    try {
+      await globalThis.BjtuAccountLogin?.migratePasswords?.({ showProgress: true });
+    } catch (error) {
+      showToast('账号密码迁移失败：' + String(error?.message || error), 'error', 5000);
+      return;
+    }
+  }
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {
     window.platformEnabled = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };

@@ -127,7 +127,7 @@
           passcodeInput?.focus();
           return;
         }
-        finish({ action: 'password', password, passcode });
+        finish({ action: 'password', password, passwordPlain: plain, passcode });
       };
       const onKeyDown = (event) => {
         if (event.key !== 'Enter') return;

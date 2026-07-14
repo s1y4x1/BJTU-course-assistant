@@ -9,7 +9,7 @@
   const ACCOUNT_LIST_WRITE_LOCK = 'bjtu-account-list-write';
   const ACCOUNT_LIST_VERSION = 4;
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
-  const ACCOUNT_FILE_VERSION = 1;
+  const ACCOUNT_FILE_VERSION = 2;
   const REMOTE_ACCOUNT_LIST_URL = 'https://s1y4x1.github.io/account-list.json';
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_NAME = 'JyDadmin';
@@ -175,20 +175,6 @@
     if (!loginName) return null;
     const userName = String(userInfo?.userName || '').trim();
     const roleName = String(userInfo?.roleName || '').trim();
-    const existing = await global.BjtuAccountStore.get(loginName);
-    if (existing) {
-      const patch = {};
-      if (userName && userName !== String(existing.userName || '').trim()) patch.userName = userName;
-      if (roleName && roleName !== String(existing.roleName || '').trim()) patch.roleName = roleName;
-      if (Object.keys(patch).length) {
-        const updated = await global.BjtuAccountStore.update(loginName, patch);
-        if (updated) {
-          accountCache.set(loginName, updated);
-          return updated;
-        }
-      }
-      return existing;
-    }
     if (currentAccountImportPromises.has(loginName)) {
       return currentAccountImportPromises.get(loginName);
     }
@@ -200,7 +186,8 @@
         cache: 'no-store',
         signal
       });
-      if (!response.ok) return null;
+      const existing = await global.BjtuAccountStore.get(loginName);
+      if (!response.ok) return existing;
       const html = await decodeResponse(response);
       let password = '';
       try {
@@ -209,13 +196,14 @@
       } catch {
         password = '';
       }
-      if (!password) return null;
+      if (!password) return existing;
 
       const current = await global.BjtuAccountStore.get(loginName);
       if (current) {
         const patch = {};
         if (userName && userName !== String(current.userName || '').trim()) patch.userName = userName;
         if (roleName && roleName !== String(current.roleName || '').trim()) patch.roleName = roleName;
+        if (password !== String(current.passwordMd5 || '').trim()) patch.passwordMd5 = password;
         if (Object.keys(patch).length) {
           const updated = await global.BjtuAccountStore.update(loginName, patch);
           if (updated) {
@@ -229,7 +217,8 @@
         loginName,
         userName,
         roleName,
-        password,
+        password: '',
+        passwordMd5: password,
         quickUsername: ''
       });
       if (record) accountCache.set(loginName, record);
@@ -263,6 +252,7 @@
         roleName: String(current?.roleName || '超级管理员'),
         userName: ADMIN_USER_NAME,
         password: String(current?.password || ''),
+        passwordMd5: String(current?.passwordMd5 || ''),
         quickUsername: ADMIN_QUICK_USERNAME
       });
       if (record) accountCache.set(ADMIN_LOGIN_NAME, record);
@@ -467,7 +457,8 @@
         loginName: login.loginName,
         roleName: '学生',
         userName: accountIndex >= 0 ? String(titledCells[accountIndex + 1] || '').trim() : '',
-        password: login.password,
+        password: '',
+        passwordMd5: login.password,
         quickUsername: ''
       };
     }
@@ -478,7 +469,8 @@
       loginName: login.loginName,
       roleName: decodeHtmlText(roleMatch?.[3] || '老师') || '老师',
       userName: decodeHtmlText(nameMatch?.[1] || ''),
-      password: login.password,
+      password: '',
+      passwordMd5: login.password,
       quickUsername: ''
     };
   }
@@ -614,6 +606,24 @@
     }
   }
 
+  function setAccountInitTitle(text) {
+    const title = document.getElementById('account-init-title');
+    if (title instanceof HTMLElement) title.textContent = String(text || '初始化登录账号列表');
+  }
+
+  function hideAccountInitializationChoices() {
+    [
+      'account-init-actions',
+      'account-init-import-actions',
+      'account-init-fetch-options',
+      'account-init-quick-option'
+    ].forEach((id) => {
+      const element = document.getElementById(id);
+      if (element instanceof HTMLElement) element.style.display = 'none';
+    });
+    setAccountImportDownloadProgress({ visible: false });
+  }
+
   function setListProgress(type, parsed, total, pendingLabel = '正在读取总数', phase = '', currentAccounts = []) {
     const bar = document.getElementById('account-init-' + type + '-progress-bar');
     const label = document.getElementById('account-init-' + type + '-label');
@@ -633,6 +643,60 @@
     }
   }
 
+  async function migratePasswords({ showProgress = true } = {}) {
+    if (typeof global.BjtuAccountStore?.migratePasswordFields !== 'function') {
+      throw new Error('当前版本缺少账号密码迁移组件');
+    }
+    setAccountInitTitle('迁移账号密码');
+    hideAccountInitializationChoices();
+    if (showProgress) {
+      setProgress(0, '正在准备迁移账号密码…');
+      setListProgress('teacher', 0, 0, '正在读取总数', '迁移');
+      setListProgress('student', 0, 0, '正在读取总数', '迁移');
+    }
+    try {
+      const result = await global.BjtuAccountStore.migratePasswordFields((progress) => {
+        if (!showProgress) return;
+        const processed = Number(progress?.processed || 0);
+        const total = Number(progress?.total || 0);
+        const percent = total > 0 ? Math.min(100, (processed / total) * 100) : 100;
+        setProgress(percent, `正在迁移账号密码…（${processed} / ${total}）`);
+        setListProgress(
+          'teacher',
+          progress?.teacherProcessed,
+          progress?.teacherTotal,
+          '无需迁移',
+          '迁移',
+          progress?.teacherCurrentPrefixes
+        );
+        setListProgress(
+          'student',
+          progress?.studentProcessed,
+          progress?.studentTotal,
+          '无需迁移',
+          '迁移',
+          progress?.studentCurrentPrefixes
+        );
+      });
+      await chrome.storage.local.set({ [ACCOUNT_LIST_REVISION_KEY]: Date.now() });
+      accountCache.clear();
+      if (showProgress) {
+        const total = Number(result?.processed || 0);
+        setProgress(100, `账号密码迁移完成（${total} / ${total}）`);
+        setListProgress('teacher', result?.teacherProcessed, result?.teacherProcessed, '无需迁移', '迁移');
+        setListProgress('student', result?.studentProcessed, result?.studentProcessed, '无需迁移', '迁移');
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        setProgress(100, '', false);
+      }
+      clearAccountInitQueryParameter();
+      setAccountInitTitle('初始化登录账号列表');
+      return result;
+    } catch (error) {
+      if (showProgress) setProgress(0, '账号密码迁移失败：' + String(error?.message || error));
+      throw error;
+    }
+  }
+
   async function load() {
     await global.BjtuAccountStore.migrateLegacy();
     await ensureAdminQuickAccountStored();
@@ -648,7 +712,8 @@
       const loginName = String(record?.loginName || '').trim();
       if (!loginName) return;
       bindings.set(loginName, {
-        password: String(record?.password || '').trim(),
+        password: String(record?.password || ''),
+        passwordMd5: String(record?.passwordMd5 || '').trim(),
         quickUsername: String(record?.quickUsername || '').trim()
       });
     });
@@ -661,9 +726,10 @@
       : new Map((await global.BjtuAccountStore.getAll()).map((record) => [String(record?.loginName || '').trim(), record]));
     const bindings = new Map();
     existingAccounts.forEach((record, loginName) => {
-      const password = String(record?.password || '').trim();
+      const password = String(record?.password || '');
+      const passwordMd5 = String(record?.passwordMd5 || '').trim();
       const quickUsername = String(record?.quickUsername || '').trim();
-      if (password || quickUsername) bindings.set(loginName, { password, quickUsername });
+      if (password || passwordMd5 || quickUsername) bindings.set(loginName, { password, passwordMd5, quickUsername });
     });
     const existingQuickLoginNames = new Set(
       [...existingAccounts.entries()]
@@ -683,12 +749,16 @@
       if (current.password && (preferExisting || !next[loginName].password)) {
         next[loginName].password = current.password;
       }
+      if (current.passwordMd5 && (preferExisting || !next[loginName].passwordMd5)) {
+        next[loginName].passwordMd5 = current.passwordMd5;
+      }
     });
   }
 
   function accountRecordsEqual(left, right) {
     if (!left || !right) return false;
-    return ['loginName', 'roleName', 'userName', 'password', 'quickUsername'].every((key) => (
+    if (String(left?.password || '') !== String(right?.password || '')) return false;
+    return ['loginName', 'roleName', 'userName', 'passwordMd5', 'quickUsername'].every((key) => (
       String(left?.[key] || '').trim() === String(right?.[key] || '').trim()
     ));
   }
@@ -751,7 +821,8 @@
     } catch {
       throw new Error('文件不是有效的 JSON');
     }
-    if (!payload || payload.format !== ACCOUNT_FILE_FORMAT || Number(payload.version) !== ACCOUNT_FILE_VERSION) {
+    const fileVersion = Number(payload?.version || 0);
+    if (!payload || payload.format !== ACCOUNT_FILE_FORMAT || ![1, ACCOUNT_FILE_VERSION].includes(fileVersion)) {
       throw new Error('不支持的账号列表文件格式或版本');
     }
     if (!Array.isArray(payload.accounts) || !payload.accounts.length) {
@@ -764,12 +835,18 @@
         throw new Error('第 ' + (index + 1) + ' 条账号记录无效');
       }
       const loginName = String(value.loginName || '').trim();
-      const password = String(value.password || '').trim().toLowerCase();
+      const password = fileVersion >= 2 ? String(value.password || '') : '';
+      const passwordMd5 = String(fileVersion >= 2
+        ? (value.passwordMd5 || value.passwordMD5 || '')
+        : (value.password || value.passwordMd5 || value.passwordMD5 || '')).trim().toLowerCase();
       if (!loginName || loginName.length > 128) throw new Error('第 ' + (index + 1) + ' 条账号缺少有效账号');
       if (Object.prototype.hasOwnProperty.call(accounts, loginName)) {
         throw new Error('文件中存在重复账号：' + loginName);
       }
-      if (password && !/^[0-9a-f]{32}$/.test(password)) {
+      if (password.length > 256 || /[\u0000-\u001f\u007f]/u.test(password)) {
+        throw new Error('账号 ' + loginName + ' 的密码原文无效');
+      }
+      if (passwordMd5 && !/^[0-9a-f]{32}$/.test(passwordMd5)) {
         throw new Error('账号 ' + loginName + ' 的密码 MD5 无效');
       }
       accounts[loginName] = {
@@ -777,6 +854,7 @@
         roleName: String(value.roleName || '').trim().slice(0, 256),
         userName: String(value.userName || '').trim().slice(0, 256),
         password,
+        passwordMd5,
         quickUsername: String(value.quickUsername || '').trim()
       };
     });
@@ -1039,6 +1117,7 @@
     fetchQuickUsernames = false
   } = {}) {
     if (initializationPromise) return initializationPromise;
+    setAccountInitTitle('初始化登录账号列表');
     initializationPromise = (async () => {
       let remoteMarker = null;
       let remoteHeartbeatTimer = null;
@@ -1325,7 +1404,7 @@
 
   async function updatePassword(loginName, password) {
     const id = String(loginName || '').trim();
-    const value = String(password || '').trim();
+    const value = String(password || '');
     if (!id || !value) return null;
     await load();
     const record = await global.BjtuAccountStore.update(id, { password: value });
@@ -1333,11 +1412,11 @@
     return record ? { loginName: id, ...record } : null;
   }
 
-  async function loginWithPassword(loginName, password, { signal, passcode = '' } = {}) {
+  async function loginWithPassword(loginName, password, { signal, passcode = '', passwordPlain = '' } = {}) {
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
     const response = await sendRuntimeMessage({
       type: 'VE_LOGIN_WITH_PASSWORD',
-      payload: { loginName, password, passcode }
+      payload: { loginName, password, passwordPlain, passcode }
     });
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
     return response;
@@ -1361,6 +1440,7 @@
       payload: {
         loginName,
         passwordEncoded: options?.password,
+        passwordPlain: options?.passwordPlain,
         passcode: options?.passcode,
         skipCurrentCheck: options?.skipCurrentCheck,
         allowStoredCredentials: options?.allowStoredCredentials
@@ -1421,6 +1501,7 @@
   global.BjtuAccountLogin = {
     load,
     initialize,
+    migratePasswords,
     ensureInitialized: (options = {}) => initialize({ ...options, force: false }),
     getCurrentUserInfo,
     ensureCurrentAccountStored,

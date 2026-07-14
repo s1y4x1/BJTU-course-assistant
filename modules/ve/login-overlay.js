@@ -287,6 +287,7 @@
       payload: {
         loginName,
         passwordEncoded: String(credentials.password || '').trim(),
+        passwordPlain: String(credentials.passwordPlain || ''),
         passcode: String(credentials.passcode || '').trim(),
         skipCurrentCheck: true
       }
@@ -301,7 +302,11 @@
     if (startManualWithCaptcha || response?.reason === 'credential' || response?.reason === 'account-not-found' || response?.reason === 'needs-password') {
       const recovery = await requestRecovery(loginName, response?.message || '账号或密码错误', { startManual: startManualWithCaptcha });
       if (recovery?.action === 'password' && recovery.password) {
-        void submit(loginName, { password: recovery.password, passcode: recovery.passcode });
+        void submit(loginName, {
+          password: recovery.password,
+          passwordPlain: recovery.passwordPlain,
+          passcode: recovery.passcode
+        });
         return;
       }
       setStatus('登录失败', 'error');

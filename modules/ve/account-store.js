@@ -2,23 +2,34 @@
   'use strict';
 
   const DB_NAME = 'bjtu-course-assistant';
-  const DB_VERSION = 4;
+  const DB_VERSION = 5;
   const STORE_NAME = 'accounts';
   const LEGACY_KEY = 'accountList';
+  const LEGACY_MIGRATION_LOCK = 'bjtu-account-store-legacy-migration';
+  const PASSWORD_MIGRATION_LOCK = 'bjtu-account-password-field-migration';
+  const PASSWORD_MIGRATION_STATE_KEY = 'accountPasswordFieldMigration';
+  const PASSWORD_MIGRATION_BATCH_SIZE = 1000;
   const WRITE_BATCH_SIZE = 1000;
   const READ_PROGRESS_STEP = 1000;
   const WRITE_PROGRESS_STEP = 1000;
   let dbPromise = null;
+  let legacyMigrationPromise = null;
+  let legacyMigrationCompleted = false;
+  let passwordMigrationPromise = null;
 
   function normalize(loginName, value) {
     const id = String(loginName || value?.loginName || '').trim();
     if (!id || !value || typeof value !== 'object') return null;
+    const migrated = Object.prototype.hasOwnProperty.call(value, 'passwordMd5')
+      || Object.prototype.hasOwnProperty.call(value, 'passwordMD5');
     return {
       loginName: id,
       roleName: String(value.roleName || '').trim(),
       userName: String(value.userName || '').trim(),
-      password: String(value.password || '').trim(),
-      passwordMd5: String(value.passwordMd5 || value.passwordMD5 || '').trim(),
+      password: migrated ? String(value.password || '') : '',
+      passwordMd5: String(migrated
+        ? (value.passwordMd5 || value.passwordMD5 || '')
+        : (value.password || '')).trim(),
       quickUsername: String(value.quickUsername || value.username || '').trim()
     };
   }
@@ -56,21 +67,6 @@
         if (!store.indexNames.contains('roleName')) {
           store.createIndex('roleName', 'roleName', { unique: false });
         }
-        if (Number(event.oldVersion || 0) < 4) {
-          const cursorRequest = store.openCursor();
-          cursorRequest.onsuccess = () => {
-            const cursor = cursorRequest.result;
-            if (!cursor) return;
-            const value = cursor.value && typeof cursor.value === 'object' ? cursor.value : {};
-            const legacyPassword = String(value.password || value.passwordMd5 || value.passwordMD5 || '').trim();
-            cursor.update({
-              ...value,
-              password: '',
-              passwordMd5: legacyPassword
-            });
-            cursor.continue();
-          };
-        }
       };
       request.onsuccess = () => {
         const db = request.result;
@@ -86,6 +82,174 @@
       };
     });
     return dbPromise;
+  }
+
+  function migratePasswordFieldBatch(db, afterKey = null) {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const range = afterKey == null ? null : IDBKeyRange.lowerBound(afterKey, true);
+      const request = store.openCursor(range);
+      let scanned = 0;
+      let teacherScanned = 0;
+      let studentScanned = 0;
+      const teacherLogins = [];
+      const studentLogins = [];
+      let lastKey = afterKey;
+      let hasMore = false;
+      request.onerror = () => reject(request.error || new Error('密码字段迁移读取失败'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        if (scanned >= PASSWORD_MIGRATION_BATCH_SIZE) {
+          hasMore = true;
+          return;
+        }
+        const value = cursor.value && typeof cursor.value === 'object' ? cursor.value : {};
+        if (!Object.prototype.hasOwnProperty.call(value, 'passwordMd5')
+            && !Object.prototype.hasOwnProperty.call(value, 'passwordMD5')) {
+          cursor.update({
+            ...value,
+            password: '',
+            passwordMd5: String(value.password || '').trim()
+          });
+        }
+        scanned += 1;
+        const loginName = String(value.loginName || cursor.primaryKey || '').trim();
+        if (String(value.roleName || '').trim() === '学生') {
+          studentScanned += 1;
+          if (loginName) studentLogins.push(loginName);
+        } else {
+          teacherScanned += 1;
+          if (loginName) teacherLogins.push(loginName);
+        }
+        lastKey = cursor.primaryKey;
+        cursor.continue();
+      };
+      transaction.oncomplete = () => resolve({
+        scanned,
+        teacherScanned,
+        studentScanned,
+        teacherCurrentPrefixes: currentLoginPrefixes(teacherLogins),
+        studentCurrentPrefixes: currentLoginPrefixes(studentLogins),
+        lastKey,
+        hasMore
+      });
+      transaction.onerror = () => reject(transaction.error || new Error('密码字段迁移失败'));
+      transaction.onabort = () => reject(transaction.error || new Error('密码字段迁移已中止'));
+    });
+  }
+
+  async function findUnmigratedPasswordRecord() {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(STORE_NAME).objectStore(STORE_NAME).openCursor();
+      request.onerror = () => reject(request.error || new Error('密码字段迁移检测失败'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(false);
+          return;
+        }
+        const value = cursor.value && typeof cursor.value === 'object' ? cursor.value : {};
+        if (!Object.prototype.hasOwnProperty.call(value, 'passwordMd5')
+            && !Object.prototype.hasOwnProperty.call(value, 'passwordMD5')) {
+          resolve(true);
+          return;
+        }
+        cursor.continue();
+      };
+    });
+  }
+
+  async function needsPasswordFieldMigration() {
+    const stored = await chrome.storage.local.get([PASSWORD_MIGRATION_STATE_KEY]).catch(() => ({}));
+    const state = stored?.[PASSWORD_MIGRATION_STATE_KEY];
+    if (state?.complete === true) return false;
+    if (state?.schemaVersion === 2) return true;
+    const required = await findUnmigratedPasswordRecord();
+    if (!required) {
+      await chrome.storage.local.set({
+        [PASSWORD_MIGRATION_STATE_KEY]: { schemaVersion: 2, complete: true, processed: 0, completedAt: Date.now() }
+      });
+    }
+    return required;
+  }
+
+  async function runPasswordFieldMigration(onProgress = null) {
+    const stored = await chrome.storage.local.get([PASSWORD_MIGRATION_STATE_KEY]).catch(() => ({}));
+    let state = stored?.[PASSWORD_MIGRATION_STATE_KEY];
+    if (state?.complete === true) return state;
+    if (state?.schemaVersion !== 2) state = null;
+    const totals = await countByRole();
+    let lastKey = state?.lastKey ?? null;
+    let processed = Number(state?.processed || 0);
+    let teacherProcessed = Number(state?.teacherProcessed || 0);
+    let studentProcessed = Number(state?.studentProcessed || 0);
+    const db = await open();
+    const report = (extra = {}) => {
+      if (typeof onProgress !== 'function') return;
+      onProgress({
+        processed,
+        total: totals.total,
+        teacherProcessed,
+        teacherTotal: totals.teacher,
+        studentProcessed,
+        studentTotal: totals.student,
+        ...extra
+      });
+    };
+    report();
+    while (true) {
+      const batch = await migratePasswordFieldBatch(db, lastKey);
+      processed += Number(batch.scanned || 0);
+      teacherProcessed += Number(batch.teacherScanned || 0);
+      studentProcessed += Number(batch.studentScanned || 0);
+      report({
+        teacherCurrentPrefixes: batch.teacherCurrentPrefixes,
+        studentCurrentPrefixes: batch.studentCurrentPrefixes
+      });
+      if (!batch.hasMore) {
+        const completed = {
+          schemaVersion: 2,
+          complete: true,
+          processed,
+          teacherProcessed,
+          studentProcessed,
+          completedAt: Date.now()
+        };
+        await chrome.storage.local.set({
+          [PASSWORD_MIGRATION_STATE_KEY]: completed
+        });
+        return completed;
+      }
+      lastKey = batch.lastKey;
+      await chrome.storage.local.set({
+        [PASSWORD_MIGRATION_STATE_KEY]: {
+          schemaVersion: 2,
+          complete: false,
+          processed,
+          teacherProcessed,
+          studentProcessed,
+          lastKey,
+          updatedAt: Date.now()
+        }
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  async function migratePasswordFields(onProgress = null) {
+    if (passwordMigrationPromise) return passwordMigrationPromise;
+    const run = () => runPasswordFieldMigration(onProgress);
+    passwordMigrationPromise = global.navigator?.locks?.request
+      ? global.navigator.locks.request(PASSWORD_MIGRATION_LOCK, run)
+      : run();
+    try {
+      return await passwordMigrationPromise;
+    } finally {
+      passwordMigrationPromise = null;
+    }
   }
 
   async function get(loginName) {
@@ -411,7 +575,7 @@
           const loginName = String(row?.loginName || '').trim();
           if (!loginName) return;
           existingCredentials.set(loginName, {
-            password: String(row?.password || '').trim(),
+            password: String(row?.password || ''),
             passwordMd5: String(row?.passwordMd5 || '').trim(),
             quickUsername: String(row?.quickUsername || '').trim()
           });
@@ -481,18 +645,35 @@
   }
 
   async function migrateLegacy() {
-    const stored = await chrome.storage.local.get([LEGACY_KEY]);
-    const legacy = stored?.[LEGACY_KEY];
-    if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) return 0;
-    const existingCount = await count();
-    const migratedSource = Object.fromEntries(Object.entries(legacy).map(([loginName, value]) => [loginName, {
-      ...(value && typeof value === 'object' ? value : {}),
-      password: '',
-      passwordMd5: String(value?.passwordMd5 || value?.passwordMD5 || value?.password || '').trim()
-    }]));
-    const migrated = existingCount > 0 ? 0 : await replaceAll(migratedSource);
-    await chrome.storage.local.remove([LEGACY_KEY]);
-    return migrated;
+    if (legacyMigrationCompleted) return 0;
+    if (legacyMigrationPromise) return legacyMigrationPromise;
+    const runMigration = async () => {
+      const stored = await chrome.storage.local.get([LEGACY_KEY]);
+      const legacy = stored?.[LEGACY_KEY];
+      if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) {
+        legacyMigrationCompleted = true;
+        return 0;
+      }
+      const existingCount = await count();
+      const migratedSource = Object.fromEntries(Object.entries(legacy).map(([loginName, value]) => [loginName, {
+        ...(value && typeof value === 'object' ? value : {}),
+        password: '',
+        passwordMd5: String(value?.passwordMd5 || value?.passwordMD5 || value?.password || '').trim()
+      }]));
+      const migrated = existingCount > 0 ? 0 : await replaceAll(migratedSource);
+      await chrome.storage.local.remove([LEGACY_KEY]);
+      legacyMigrationCompleted = true;
+      return migrated;
+    };
+    legacyMigrationPromise = global.navigator?.locks?.request
+      ? global.navigator.locks.request(LEGACY_MIGRATION_LOCK, runMigration)
+      : runMigration();
+    try {
+      return await legacyMigrationPromise;
+    } catch (error) {
+      legacyMigrationPromise = null;
+      throw error;
+    }
   }
 
   global.BjtuAccountStore = {
@@ -510,6 +691,8 @@
     clear,
     putAll,
     replaceAll,
-    migrateLegacy
+    migrateLegacy,
+    needsPasswordFieldMigration,
+    migratePasswordFields
   };
 })(globalThis);

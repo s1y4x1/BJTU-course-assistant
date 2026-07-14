@@ -145,6 +145,8 @@ void restoreAppAfterAutomaticExtensionReload();
 const portalUsernameBindByTab = new Map(); // tabId -> { ts, loginName }
 const portalDetectedQuickUsernameByTab = new Map(); // tabId -> quickUsername seen during ordinary MIS redirects
 const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
+const portalDetectedPasswordLoginByTab = new Map(); // tabId -> encrypted password login request
+const portalPasswordRecordingTabs = new Set();
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
 let latestResponseJsessionid = null;
 
@@ -417,7 +419,6 @@ async function getEnrichedPortalLoginAccountHistory() {
       ...record,
       userName: String(account?.userName || '').trim(),
       roleName: String(account?.roleName || '').trim(),
-      passwordMd5: String(account?.password || '').trim(),
       quickUsername: String(account?.quickUsername || '').trim()
     };
   }));
@@ -510,7 +511,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           ok: true,
           hasMore: !!searchResult?.hasMore,
           accounts: accounts.map((account) => ({
-            ...account,
+            loginName: String(account?.loginName || '').trim(),
+            userName: String(account?.userName || '').trim(),
+            roleName: String(account?.roleName || '').trim(),
             quickUsername: String(
               account?.quickUsername
               || historyById.get(String(account?.loginName || '').trim())?.quickUsername
@@ -560,7 +563,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     globalThis.BjtuVeLoginService.loginWithPassword(
       message?.payload?.loginName,
       message?.payload?.password,
-      { passcode: message?.payload?.passcode, recordHistory: message?.payload?.recordHistory !== false }
+      {
+        passcode: message?.payload?.passcode,
+        passwordPlain: message?.payload?.passwordPlain,
+        recordHistory: message?.payload?.recordHistory !== false
+      }
     )
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
@@ -639,6 +646,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   portalUsernameBindByTab.delete(tabId);
   portalDetectedQuickUsernameByTab.delete(tabId);
   portalQuickUsernameToastByTab.delete(tabId);
+  portalDetectedPasswordLoginByTab.delete(tabId);
+  portalPasswordRecordingTabs.delete(tabId);
 });
 
 function extractPortalQuickUsername(url) {
@@ -654,11 +663,29 @@ function extractPortalQuickUsername(url) {
   }
 }
 
+function extractPortalPasswordLogin(url) {
+  try {
+    const u = new URL(String(url || ''));
+    if (!/123\.121\.147\.7:88$/i.test(u.host)) return null;
+    if (!/\/ve\/s\.shtml$/i.test(u.pathname)) return null;
+    if (u.searchParams.get('login') !== 'main_2' || u.searchParams.get('loginType') === '2') return null;
+    const loginName = String(u.searchParams.get('username') || '').trim();
+    const encryptedPassword = String(u.searchParams.get('password') || '').trim();
+    if (!loginName || !encryptedPassword) return null;
+    return { loginName, encryptedPassword, ts: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
 chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
     const tabId = Number(details?.tabId);
+    if (!(tabId >= 0)) return;
+    const passwordLogin = extractPortalPasswordLogin(details?.url);
+    if (passwordLogin) portalDetectedPasswordLoginByTab.set(tabId, passwordLogin);
     const quickUsername = extractPortalQuickUsername(details?.url);
-    if (!(tabId >= 0) || !quickUsername) return;
+    if (!quickUsername) return;
     portalDetectedQuickUsernameByTab.set(tabId, quickUsername);
     const bindState = portalUsernameBindByTab.get(tabId);
     if (!bindState) return;
@@ -711,14 +738,16 @@ async function fetchBoundPortalAccountInfo(tabId, quickUsername, _preferredLogin
     loginName,
     userName: String(currentUser?.userName || '').trim(),
     roleName: String(currentUser?.roleName || '').trim(),
-    password: ''
+    password: '',
+    passwordMd5: ''
   };
   const previousQuickUsername = String(account.quickUsername || prev?.quickUsername || '').trim();
   await globalThis.BjtuAccountStore.put({
     loginName,
     roleName: String(currentUser?.roleName || account.roleName || '').trim(),
     userName: String(currentUser?.userName || account.userName || '').trim(),
-    password: String(account.password || account.passwordMd5 || '').trim(),
+    password: String(account.password || ''),
+    passwordMd5: String(account.passwordMd5 || '').trim(),
     quickUsername: quick
   });
 
@@ -726,7 +755,7 @@ async function fetchBoundPortalAccountInfo(tabId, quickUsername, _preferredLogin
     loginName,
     userName: String(currentUser?.userName || account.userName || '').trim(),
     roleName: String(currentUser?.roleName || account.roleName || '').trim(),
-    passwordMd5: String(account.password || account.passwordMd5 || '').trim(),
+    passwordMd5: String(account.passwordMd5 || '').trim(),
     quickUsername: quick
   });
   return record ? {
@@ -735,7 +764,7 @@ async function fetchBoundPortalAccountInfo(tabId, quickUsername, _preferredLogin
   } : null;
 }
 
-async function showPortalQuickUsernameBoundToast(tabId) {
+async function showPortalPageToast(tabId, message) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -771,15 +800,82 @@ async function showPortalQuickUsernameBoundToast(tabId) {
           setTimeout(() => toast.remove(), 280);
         }, 3600);
       },
-      args: ['已为您成功绑定智慧课程平台快速登录']
+      args: [String(message || '')]
     });
   } catch {
     // ignore
   }
 }
 
+async function showPortalQuickUsernameBoundToast(tabId) {
+  return showPortalPageToast(tabId, '已为您成功绑定智慧课程平台快速登录');
+}
+
+function isPortalAuthenticatedPageUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return /123\.121\.147\.7:88$/i.test(url.host) && /^\/ve\/back\//i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isPortalLoginFailurePageUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (!/123\.121\.147\.7:88$/i.test(url.host)) return false;
+    return /^\/ve\/?$/i.test(url.pathname)
+      || /^\/ve\/(?:Login_2|Timeout)\.jsp$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function recordPortalPasswordLogin(tabId, state) {
+  const currentUser = await getPortalCurrentUserInfoFromTab(tabId);
+  const loginName = String(currentUser?.loginName || '').trim();
+  if (!loginName || loginName !== String(state?.loginName || '').trim()) return false;
+  await globalThis.BjtuAccountStore.migrateLegacy();
+  const current = await globalThis.BjtuAccountStore.get(loginName);
+  const encryptedPassword = String(state?.encryptedPassword || '').trim();
+  if (current?.passwordMd5
+      && String(current.passwordMd5).trim().toLowerCase() === encryptedPassword.toLowerCase()) return false;
+  const cipher = globalThis.BjtuVePasswordCipher;
+  const password = cipher?.decrypt?.(encryptedPassword);
+  if (!cipher?.isReasonablePassword?.(password)) return false;
+  await globalThis.BjtuAccountStore.put({
+    loginName,
+    userName: String(currentUser?.userName || current?.userName || '').trim(),
+    roleName: String(currentUser?.roleName || current?.roleName || '').trim(),
+    password,
+    passwordMd5: String(current?.passwordMd5 || '').trim(),
+    quickUsername: String(current?.quickUsername || '').trim()
+  });
+  await savePortalLoginAccountRecord(loginName);
+  await chrome.storage.local.set({ accountListRevision: Date.now() });
+  await showPortalPageToast(tabId, '已记录该智慧课程平台账号密码');
+  return true;
+}
+
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const url = String(changeInfo?.url || tab?.url || '');
+
+  const passwordLogin = portalDetectedPasswordLoginByTab.get(tabId) || null;
+  if (changeInfo.status === 'complete' && passwordLogin && isPortalLoginFailurePageUrl(url)) {
+    portalDetectedPasswordLoginByTab.delete(tabId);
+  } else if (changeInfo.status === 'complete' && passwordLogin
+      && isPortalAuthenticatedPageUrl(url) && !portalPasswordRecordingTabs.has(tabId)) {
+    portalPasswordRecordingTabs.add(tabId);
+    try {
+      if (await recordPortalPasswordLogin(tabId, passwordLogin)) {
+        portalDetectedPasswordLoginByTab.delete(tabId);
+      }
+    } catch {
+      // A manually performed portal login must continue even if local recording fails.
+    } finally {
+      portalPasswordRecordingTabs.delete(tabId);
+    }
+  }
 
   let quickUsername = extractPortalQuickUsername(url);
   if (quickUsername) {

@@ -58,10 +58,29 @@
     await chrome.storage.local.set({ [HISTORY_KEY]: records });
   }
 
-  async function completeSuccessfulLogin(result, fallbackLoginName, { recordHistory = true } = {}) {
+  async function rememberPlainPassword(loginName, password, userInfo = null) {
+    const id = String(loginName || '').trim();
+    const plain = String(password || '');
+    if (!id || !plain) return null;
+    await global.BjtuAccountStore.migrateLegacy();
+    const current = await global.BjtuAccountStore.get(id);
+    const record = await global.BjtuAccountStore.put({
+      loginName: id,
+      userName: String(userInfo?.userName || current?.userName || '').trim(),
+      roleName: String(userInfo?.roleName || current?.roleName || '').trim(),
+      password: plain,
+      passwordMd5: String(current?.passwordMd5 || '').trim(),
+      quickUsername: String(current?.quickUsername || '').trim()
+    });
+    await chrome.storage.local.set({ accountListRevision: Date.now() });
+    return record;
+  }
+
+  async function completeSuccessfulLogin(result, fallbackLoginName, { recordHistory = true, passwordPlain = '' } = {}) {
     if (!result?.ok) return result;
     const userInfo = await fetchCurrentUserInfo();
     const loginName = String(userInfo?.loginName || fallbackLoginName || '').trim();
+    if (passwordPlain && loginName) await rememberPlainPassword(loginName, passwordPlain, userInfo);
     if (recordHistory && loginName) await rememberLogin(loginName);
     return { ...result, userInfo: userInfo || null };
   }
@@ -73,7 +92,7 @@
     return completeSuccessfulLogin(result, options.loginName, options);
   }
 
-  async function loginWithPassword(loginName, password, { passcode = '', recordHistory = true } = {}) {
+  async function loginWithPassword(loginName, password, { passcode = '', recordHistory = true, passwordPlain = '' } = {}) {
     const id = String(loginName || '').trim();
     const encryptedPassword = String(password || '').trim();
     if (!id || !encryptedPassword) return { ok: false, reason: 'needs-password', message: '请手动输入密码' };
@@ -98,7 +117,7 @@
 
       const result = await requestLogin(global.BjtuVeLoginUtils.buildPasswordLoginUrl(id, encryptedPassword, code));
       if (result?.reason !== 'captcha') {
-        return completeSuccessfulLogin(result, id, { recordHistory });
+        return completeSuccessfulLogin(result, id, { recordHistory, passwordPlain });
       }
 
       captchaErrorCount += 1;
@@ -138,7 +157,12 @@
       if (quickResult.ok || quickResult.reason === 'locked' || quickResult.reason === 'password-reset') return quickResult;
     }
 
-    const password = manualPassword || (allowStoredCredentials ? String(account?.password || account?.passwordMd5 || '').trim() : '');
+    const storedPlainPassword = allowStoredCredentials ? String(account?.password || '') : '';
+    const storedEncodedPassword = storedPlainPassword && typeof global.strEnc === 'function'
+      ? global.strEnc(storedPlainPassword)
+      : '';
+    const password = manualPassword || storedEncodedPassword
+      || (allowStoredCredentials ? String(account?.passwordMd5 || '').trim() : '');
     if (!password) {
       return {
         ok: false,
@@ -150,7 +174,8 @@
     }
     return loginWithPassword(loginName, password, {
       passcode: payload?.passcode,
-      recordHistory: true
+      recordHistory: true,
+      passwordPlain: passwordPlain || storedPlainPassword
     });
   }
 

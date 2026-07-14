@@ -88,6 +88,7 @@ async function syncAccountInfoAndReloadVeCourses({
         ...(localInfo || {}),
         ...knownUserInfo,
         loginName: String(knownUserInfo.loginName || localInfo?.loginName || finalUser).trim(),
+        password: String(localInfo?.password || ''),
         passwordMd5: String(localInfo?.passwordMd5 || '').trim(),
         quickUsername: String(localInfo?.quickUsername || '').trim()
       }
