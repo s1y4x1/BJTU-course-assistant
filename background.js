@@ -1,4 +1,5 @@
 importScripts('modules/ve/vendor/main.min.js');
+importScripts('modules/ve/password-cipher.js');
 importScripts('modules/ve/login-utils.js');
 importScripts('modules/ve/account-store.js');
 importScripts('modules/ve/homework-core.js');
@@ -645,6 +646,7 @@ function extractPortalQuickUsername(url) {
     const u = new URL(String(url || ''));
     if (!/123\.121\.147\.7:88$/i.test(u.host)) return '';
     if (!/\/ve\/s\.shtml$/i.test(u.pathname)) return '';
+    if (u.searchParams.get('loginType') !== '2') return '';
     if (u.searchParams.get('login') !== 'main_2') return '';
     return String(u.searchParams.get('username') || '').trim();
   } catch {
@@ -652,16 +654,22 @@ function extractPortalQuickUsername(url) {
   }
 }
 
-function isEncodedPortalQuickUsername(value) {
-  const raw = String(value || '').trim();
-  if (!raw || /^\d+$/.test(raw)) return false;
-  try {
-    const decoded = atob(raw);
-    return /^[0-9a-f]{32}$/i.test(decoded);
-  } catch {
-    return /^[A-Za-z0-9+/]{20,}={0,2}$/.test(raw);
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    const tabId = Number(details?.tabId);
+    const quickUsername = extractPortalQuickUsername(details?.url);
+    if (!(tabId >= 0) || !quickUsername) return;
+    portalDetectedQuickUsernameByTab.set(tabId, quickUsername);
+    const bindState = portalUsernameBindByTab.get(tabId);
+    if (!bindState) return;
+    portalUsernameBindByTab.set(tabId, { ...bindState, quickUsername, ts: Date.now() });
+    notifyPortalUsernameBindStatus({ status: 'detected', tabId, quickUsername, ts: Date.now() });
+  },
+  {
+    urls: ['http://123.121.147.7:88/ve/s.shtml*'],
+    types: ['main_frame']
   }
-}
+);
 
 async function getPortalCurrentUserInfoFromTab(tabId) {
   if (!tabId) return null;
@@ -799,6 +807,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         });
         if (record) {
           portalUsernameBindByTab.delete(tabId);
+          portalDetectedQuickUsernameByTab.delete(tabId);
           try { await chrome.tabs.remove(tabId); } catch {}
           return;
         }
@@ -813,14 +822,17 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       }
   }
 
-  if (changeInfo.status === 'complete' && quickUsername && isEncodedPortalQuickUsername(quickUsername) && !portalUsernameBindByTab.has(tabId)) {
+  if (changeInfo.status === 'complete' && quickUsername && !portalUsernameBindByTab.has(tabId)) {
     const toastedQuick = String(portalQuickUsernameToastByTab.get(tabId) || '').trim();
     if (toastedQuick !== quickUsername) {
       try {
         const record = await fetchBoundPortalAccountInfo(tabId, quickUsername);
-        if (record?.quickUsernameChanged) {
-          portalQuickUsernameToastByTab.set(tabId, quickUsername);
-          await showPortalQuickUsernameBoundToast(tabId);
+        if (record) {
+          portalDetectedQuickUsernameByTab.delete(tabId);
+          if (record.quickUsernameChanged) {
+            portalQuickUsernameToastByTab.set(tabId, quickUsername);
+            await showPortalQuickUsernameBoundToast(tabId);
+          }
         }
       } catch {
         // Ordinary portal navigation should not be interrupted by best-effort binding.

@@ -99,10 +99,14 @@
     activeRefreshController = controller;
     await setStatus('loading', { account });
 
-    const loginResult = await globalThis.performPortalPageLogin({ loginName: account });
+    const loginService = globalThis.BjtuVeLoginService;
+    if (!loginService?.login || !loginService?.fetchCurrentUserInfo) {
+      throw new Error('智慧课程平台登录服务未加载');
+    }
+    const loginResult = await loginService.login({ loginName: account });
     controller.signal.throwIfAborted();
     if (!loginResult?.ok) throw new Error(String(loginResult?.message || '后台登录失败'));
-    const userInfo = loginResult?.userInfo || await globalThis.getPortalCurrentUserInfo();
+    const userInfo = loginResult?.userInfo || await loginService.fetchCurrentUserInfo();
     const currentAccount = String(userInfo?.loginName || '').trim();
     if (currentAccount !== account) throw new Error(`后台登录账号不匹配：${currentAccount || '未登录'}`);
 

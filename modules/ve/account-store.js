@@ -2,7 +2,7 @@
   'use strict';
 
   const DB_NAME = 'bjtu-course-assistant';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   const STORE_NAME = 'accounts';
   const LEGACY_KEY = 'accountList';
   const WRITE_BATCH_SIZE = 1000;
@@ -17,7 +17,8 @@
       loginName: id,
       roleName: String(value.roleName || '').trim(),
       userName: String(value.userName || '').trim(),
-      password: String(value.password || value.passwordMd5 || '').trim(),
+      password: String(value.password || '').trim(),
+      passwordMd5: String(value.passwordMd5 || value.passwordMD5 || '').trim(),
       quickUsername: String(value.quickUsername || value.username || '').trim()
     };
   }
@@ -41,7 +42,7 @@
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event) => {
         const db = request.result;
         const store = db.objectStoreNames.contains(STORE_NAME)
           ? request.transaction.objectStore(STORE_NAME)
@@ -54,6 +55,21 @@
         }
         if (!store.indexNames.contains('roleName')) {
           store.createIndex('roleName', 'roleName', { unique: false });
+        }
+        if (Number(event.oldVersion || 0) < 4) {
+          const cursorRequest = store.openCursor();
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (!cursor) return;
+            const value = cursor.value && typeof cursor.value === 'object' ? cursor.value : {};
+            const legacyPassword = String(value.password || value.passwordMd5 || value.passwordMD5 || '').trim();
+            cursor.update({
+              ...value,
+              password: '',
+              passwordMd5: legacyPassword
+            });
+            cursor.continue();
+          };
         }
       };
       request.onsuccess = () => {
@@ -154,9 +170,16 @@
   async function put(value) {
     let record = normalize(value?.loginName, value);
     if (!record) return null;
-    if (!record.quickUsername) {
+    if (!record.password || !record.passwordMd5 || !record.quickUsername) {
       const current = await get(record.loginName);
-      if (current?.quickUsername) record = { ...record, quickUsername: current.quickUsername };
+      if (current) {
+        record = {
+          ...record,
+          password: record.password || current.password,
+          passwordMd5: record.passwordMd5 || current.passwordMd5,
+          quickUsername: record.quickUsername || current.quickUsername
+        };
+      }
     }
     const db = await open();
     const transaction = db.transaction(STORE_NAME, 'readwrite');
@@ -217,7 +240,7 @@
           return;
         }
         const record = normalize(cursor.value?.loginName, cursor.value);
-        if (record && (record.password || record.quickUsername)) rows.push(record);
+        if (record && (record.password || record.passwordMd5 || record.quickUsername)) rows.push(record);
         cursor.continue();
       };
     });
@@ -389,6 +412,7 @@
           if (!loginName) return;
           existingCredentials.set(loginName, {
             password: String(row?.password || '').trim(),
+            passwordMd5: String(row?.passwordMd5 || '').trim(),
             quickUsername: String(row?.quickUsername || '').trim()
           });
         });
@@ -431,10 +455,11 @@
         let record = normalize(isArray ? value?.loginName : key, value);
         if (!record) return;
         const existing = existingCredentials.get(record.loginName);
-        if (existing && (!record.password || !record.quickUsername)) {
+        if (existing && (!record.password || !record.passwordMd5 || !record.quickUsername)) {
           record = {
             ...record,
             password: record.password || existing.password,
+            passwordMd5: record.passwordMd5 || existing.passwordMd5,
             quickUsername: record.quickUsername || existing.quickUsername
           };
         }
@@ -460,7 +485,12 @@
     const legacy = stored?.[LEGACY_KEY];
     if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) return 0;
     const existingCount = await count();
-    const migrated = existingCount > 0 ? 0 : await replaceAll(legacy);
+    const migratedSource = Object.fromEntries(Object.entries(legacy).map(([loginName, value]) => [loginName, {
+      ...(value && typeof value === 'object' ? value : {}),
+      password: '',
+      passwordMd5: String(value?.passwordMd5 || value?.passwordMD5 || value?.password || '').trim()
+    }]));
+    const migrated = existingCount > 0 ? 0 : await replaceAll(migratedSource);
     await chrome.storage.local.remove([LEGACY_KEY]);
     return migrated;
   }
