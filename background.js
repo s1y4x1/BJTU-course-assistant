@@ -1,9 +1,3 @@
-importScripts('modules/ve/vendor/main.min.js');
-importScripts('modules/ve/password-cipher.js');
-importScripts('modules/ve/login-utils.js');
-importScripts('modules/ve/account-store.js');
-importScripts('modules/ve/homework-core.js');
-
 function tryImportModuleScripts(...paths) {
   try {
     importScripts(...paths);
@@ -14,16 +8,34 @@ function tryImportModuleScripts(...paths) {
   }
 }
 
+const veBackgroundReady = tryImportModuleScripts(
+  'modules/ve/vendor/main.min.js',
+  'modules/ve/password-cipher.js',
+  'modules/ve/login-utils.js',
+  'modules/ve/account-store.js',
+  'modules/ve/homework-core.js'
+);
 tryImportModuleScripts('modules/captcha/recognizer.js');
-importScripts('modules/ve/login-service.js');
+if (veBackgroundReady) tryImportModuleScripts('modules/ve/login-service.js');
 tryImportModuleScripts('modules/academic/system.js');
 tryImportModuleScripts('modules/campusnet/background.js');
 tryImportModuleScripts('modules/updater/filesystem.js', 'modules/updater/background.js');
 tryImportModuleScripts('modules/jlgj/background.js');
 tryImportModuleScripts('modules/mooc/background.js');
-importScripts('modules/ve/background-homework.js');
+if (veBackgroundReady) tryImportModuleScripts('modules/ve/background-homework.js');
 
 const OPTIONAL_CONTENT_SCRIPTS = [
+  {
+    id: 'bjtu-ve-login-overlay',
+    module: 've',
+    matches: ['http://123.121.147.7:88/ve/*'],
+    js: [
+      'modules/ve/vendor/main.min.js',
+      'modules/ve/login-credentials-dialog.js',
+      'modules/ve/login-overlay.js'
+    ],
+    runAt: 'document_idle'
+  },
   { id: 'bjtu-mooc-inject', module: 'mooc', matches: ['https://www.icourse163.org/*'], js: ['modules/mooc/inject.js'], runAt: 'document_idle' },
   { id: 'bjtu-jlgj-theme', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/theme.js'], runAt: 'document_start' },
   { id: 'bjtu-jlgj-capture', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/capture.js'], runAt: 'document_start', world: 'MAIN' }
@@ -41,8 +53,9 @@ let optionalContentScriptSyncPromise = null;
 async function doSyncOptionalContentScripts() {
   const wanted = [];
   for (const script of OPTIONAL_CONTENT_SCRIPTS) {
+    const scriptFilesExist = (await Promise.all(script.js.map(extensionFileExists))).every(Boolean);
     if (await extensionFileExists(`modules/${script.module}/module.json`)
-        && await extensionFileExists(script.js[0])) wanted.push(script);
+        && scriptFilesExist) wanted.push(script);
   }
   const managed = OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id);
   await chrome.scripting.unregisterContentScripts({ ids: managed }).catch(() => {});

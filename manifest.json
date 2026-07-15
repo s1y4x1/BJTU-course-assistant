@@ -63,19 +63,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://123.121.147.7:88/ve/*"
-      ],
-      "js": [
-        "modules/ve/vendor/main.min.js",
-        "modules/ve/login-credentials-dialog.js",
-        "modules/ve/login-overlay.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [

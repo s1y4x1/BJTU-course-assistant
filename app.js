@@ -269,7 +269,7 @@ function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
     ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
     ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt
   };
-  ['ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((id) => {
+  ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((id) => {
     if (globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(id)) result[id] = false;
   });
   return result;
@@ -287,7 +287,7 @@ function applyPlatformVisibility() {
   const buttons = { ve: veStatusBtn, ykt: yktStatusBtn, mrjzy: mrjzyStatusBtn, jlgj: jlgjStatusBtn, mooc: moocStatusBtn };
   Object.entries(buttons).forEach(([key, button]) => {
     if (!button) return;
-    const moduleMissing = key !== 've' && globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(key);
+    const moduleMissing = globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(key);
     button.hidden = moduleMissing;
     button.style.display = moduleMissing || window.platformVisible?.[key] === false ? 'none' : '';
   });
@@ -545,22 +545,30 @@ async function triggerInitialPlatformLoads() {
 async function loadPlatformDetailSettings() {
   try {
     const data = await chrome.storage.local.get([
+      PARALLEL_LIMIT_KEY,
       AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY,
       HOMEWORK_DETAIL_COLLAPSED_LINES_KEY,
       REPLAY_DETAIL_COLLAPSED_LINES_KEY,
       JLGJ_DARK_MODE_KEY
     ]);
+    maxParallelUploads = normalizeParallelLimit(data[PARALLEL_LIMIT_KEY], 3);
     window.autoLoadAllHomeworkDetails = data[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY] === true;
     window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(data[REPLAY_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
   } catch {
+    maxParallelUploads = 3;
     window.autoLoadAllHomeworkDetails = false;
     window.homeworkDetailCollapsedLines = 3;
     window.replayDetailCollapsedLines = 3;
     window.jlgjDarkModeEnabled = true;
   }
   applyDetailCollapsedLineSettings();
+}
+
+function normalizeParallelLimit(value, fallback = 3) {
+  const limit = Math.trunc(Number(value));
+  return Number.isFinite(limit) && limit > 0 ? limit : fallback;
 }
 
 function normalizeDetailCollapsedLines(value, fallback = 3) {
@@ -581,6 +589,10 @@ function applyDetailCollapsedLineSettings() {
 }
 
 function detailCollapsedMaxHeight(lines) {
+  return `calc(${(normalizeDetailCollapsedLines(lines, 3) + 1) * 1.5}em + 2px)`;
+}
+
+function detailVisibleMaxHeight(lines) {
   return `calc(${normalizeDetailCollapsedLines(lines, 3) * 1.5}em + 2px)`;
 }
 
@@ -847,6 +859,11 @@ function setupOptionsStorageLiveSync() {
       }
       applyDetailCollapsedLineSettings();
       requestAnimationFrame(() => applyExpandableAutoToggle(document));
+    }
+    if (changes[PARALLEL_LIMIT_KEY]) {
+      maxParallelUploads = normalizeParallelLimit(changes[PARALLEL_LIMIT_KEY].newValue, 3);
+      if (typeof processQueue === 'function') processQueue();
+      if (typeof processResourceDownloadQueue === 'function') processResourceDownloadQueue();
     }
   });
 }
@@ -1451,8 +1468,8 @@ function normalizeHomeworkContent(raw) {
 
 function renderExpandableHtml(contentHtml, {
   emptyHtml = '<span style="color:#999;">无内容</span>',
-  expandText = '点击查看作业详情',
-  collapseText = '点击收起',
+  expandText = globalThis.BjtuHomeworkUi?.text?.detailExpand || '点击查看作业详情',
+  collapseText = globalThis.BjtuHomeworkUi?.text?.detailCollapse || '点击收起作业详情',
   hideWhenEmpty = false,
   baseBg = 'rgba(255,255,255,0.3)',
   flatDisplay = false,
@@ -2112,13 +2129,11 @@ function applyExpandableAutoToggle(root = document) {
     const collapsedLines = box.classList.contains('expandable-box--replay')
       ? window.replayDetailCollapsedLines
       : window.homeworkDetailCollapsedLines;
-    const collapsedLimit = detailCollapsedMaxHeight(collapsedLines);
+    const visibleLimit = detailVisibleMaxHeight(collapsedLines);
     const prev = body.style.maxHeight;
     const prevOverflow = body.style.overflow;
-    if (box.classList.contains('expanded')) {
-      body.style.maxHeight = collapsedLimit;
-      body.style.overflow = 'auto';
-    }
+    body.style.maxHeight = visibleLimit;
+    body.style.overflow = 'auto';
     const canFitInCollapsed = body.scrollHeight <= body.clientHeight + 2;
     box.classList.toggle('no-toggle', canFitInCollapsed);
     if (canFitInCollapsed) {
@@ -3792,13 +3807,11 @@ function renderHomeworkList(courseId) {
       const collapsedLines = box.classList.contains('expandable-box--replay')
         ? window.replayDetailCollapsedLines
         : window.homeworkDetailCollapsedLines;
-      const collapsedLimit = detailCollapsedMaxHeight(collapsedLines);
+      const visibleLimit = detailVisibleMaxHeight(collapsedLines);
       const prev = body.style.maxHeight;
       const prevOverflow = body.style.overflow;
-      if (box.classList.contains('expanded')) {
-        body.style.maxHeight = collapsedLimit;
-        body.style.overflow = 'auto';
-      }
+      body.style.maxHeight = visibleLimit;
+      body.style.overflow = 'auto';
       const canFitInCollapsed = body.scrollHeight <= body.clientHeight + 2;
       if (canFitInCollapsed) {
         box.classList.add('no-toggle');
@@ -3874,7 +3887,7 @@ function renderHomeworkList(courseId) {
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
     const deadline = hw.end_time || hw.endTime || '';
-    const statusHtml = isTeacherMode ? '' : (isDone ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : ''));
+    const statusHtml = isTeacherMode ? '' : globalThis.BjtuHomeworkUi.statusHtml({ done: isDone, overdue });
 
     const obtainedScore = hw.lastScore ?? hw.oldScore ?? hw.old_score ?? hw.finalScore ?? hw.final_score ?? '';
     const fullScore = hw.score ?? hw.fullScore ?? hw.maxScore ?? hw.totalScore ?? '';
@@ -3912,8 +3925,6 @@ function renderHomeworkList(courseId) {
     const expandableBaseBg = isTeacherMode ? (overdue ? 'rgba(237,233,254,0.78)' : 'rgba(219,234,254,0.78)') : (isDone ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)');
     const expandable = renderExpandableHtml(contentHtml, {
       emptyHtml: '<span style="color:#999;">无内容</span>',
-      expandText: '点击查看作业详情',
-      collapseText: '点击收起作业详情',
       hideWhenEmpty: true,
       baseBg: expandableBaseBg,
       flatDisplay: true,
@@ -3932,16 +3943,18 @@ function renderHomeworkList(courseId) {
     // 教师账号：作业ID（用于批量下载）
     const homeworkId = String(hw.snId || hw.noteId || hw.courseNoteId || hw.id || hw.upId || '').trim();
     const batchDownloadUrl = homeworkId ? `http://123.121.147.7:88/ve/back/coursePlatform/homeWork.shtml?method=batchDownloadWorks&id=${encodeURIComponent(homeworkId)}` : '';
+    const viewActionText = globalThis.BjtuHomeworkUi.actionLabel('ve', 'view', { lead: '' });
+    const submitActionText = globalThis.BjtuHomeworkUi.actionLabel('ve', 'submit', { lead: '' });
 
     // 按钮区域：教师账号显示"下载已交作业包"，否则显示"提交"
     const actionButtonsHtml = isTeacherMode
       ? `<div style="display:flex; align-items:center; gap:6px;">
-          ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">查看</a>` : ''}
+          ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
           ${batchDownloadUrl ? `<a class="btn" href="${batchDownloadUrl}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">下载已交作业包</a>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
         </div>`
       : `<div style="display:flex; align-items:center; gap:6px;">
-          ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">查看</a>` : ''}
-          <button class="btn" data-action="open-submit" data-course-id="${escapeHtml(String(courseId))}" data-hw-index="${idx}" style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px;">提交</button>
+          ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
+          <button class="btn" data-action="open-submit" data-course-id="${escapeHtml(String(courseId))}" data-hw-index="${idx}" style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px;">${submitActionText}</button>
         </div>`;
 
     // 提交面板（仅非教师账号显示）
@@ -4833,6 +4846,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 // -------------------- Init --------------------
 (async function init() {
   await globalThis.BjtuModuleRegistry?.ready;
+  await globalThis.__bjtuVeAppReady;
   await globalThis.__bjtuPlatformModulesReady;
   await globalThis.__bjtuOptionalPlatformAdaptersReady;
   setupRightColumnResizer();
@@ -4884,7 +4898,13 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   }
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
   if (popupMode && !restoredPopupCache) {
-    window.platformEnabled = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };
+    window.platformEnabled = {
+      jlgj: false,
+      mooc: false,
+      mrjzy: false,
+      ve: globalThis.BjtuModuleRegistry?.has('ve') === true,
+      ykt: false
+    };
   }
   if (popupMode || !window.__updateCheckerLoaded) {
     const versionInfoEl = document.getElementById('version-info');
@@ -4904,14 +4924,6 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     setupSavedUploadsUi();
     lastValidUsername = (await getLocal('username', '')).trim();
     usernameInput.value = lastValidUsername;
-    const savedParallelLimit = parseInt(await getLocal(PARALLEL_LIMIT_KEY, String(maxParallelUploads)), 10);
-    if (savedParallelLimit > 0) {
-      maxParallelUploads = savedParallelLimit;
-      if (parallelLimitInput instanceof HTMLInputElement) {
-        parallelLimitInput.value = String(savedParallelLimit);
-      }
-    }
-    globalThis.adjustParallelLimitWidth?.();
     renderLoginAccountHistorySelect(lastValidUsername);
     updateJsessionidState();
     setWelcomeMessage(null);
@@ -4951,14 +4963,6 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   let welcomeInfoUserId = '';
   let welcomeInfo = null;
   usernameInput.value = lastValidUsername;
-  const savedParallelLimit = parseInt(await getLocal(PARALLEL_LIMIT_KEY, String(maxParallelUploads)), 10);
-  if (savedParallelLimit > 0) {
-    maxParallelUploads = savedParallelLimit;
-    if (parallelLimitInput instanceof HTMLInputElement) {
-      parallelLimitInput.value = String(savedParallelLimit);
-    }
-  }
-  globalThis.adjustParallelLimitWidth?.();
   const settled = await Promise.allSettled([startupPlatformLoadPromise]);
   const startupAccountInfo = (settled[0] && settled[0].status === 'fulfilled') ? settled[0].value : null;
   if (startupAccountInfo?.info) {
@@ -4977,4 +4981,9 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
 
   // 确保 init 完成后的首次账号切换不会被 initialUsernameSet 拦截
   initialUsernameSet = false;
-})();
+})().catch((error) => {
+  console.error('[bjtu] app initialization failed:', error);
+  document.documentElement.classList.remove('app-options-loading');
+  applyPlatformVisibility();
+  updateCourseListEmptyPlaceholder();
+});

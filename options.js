@@ -40,6 +40,7 @@ const MAX_POPUP_HEIGHT_PX = 600;
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
 const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
+const DEFAULT_PARALLEL_LIMIT = 3;
 const DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES = 3;
 const DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES = 3;
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
@@ -118,7 +119,7 @@ function normalizePlatformEnabled(raw) {
     ve: typeof src.ve === 'boolean' ? src.ve : DEFAULT_PLATFORM_ENABLED.ve,
     ykt: typeof src.ykt === 'boolean' ? src.ykt : DEFAULT_PLATFORM_ENABLED.ykt
   };
-  ['ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((id) => {
+  ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((id) => {
     if (globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(id)) result[id] = false;
   });
   return result;
@@ -170,6 +171,11 @@ function normalizeDetailCollapsedLines(value, fallback = 3) {
   return Number.isFinite(lines) && lines >= 0 ? Math.trunc(lines) : fallback;
 }
 
+function normalizeParallelLimit(value, fallback = DEFAULT_PARALLEL_LIMIT) {
+  const limit = Math.trunc(Number(value));
+  return Number.isFinite(limit) && limit > 0 ? limit : fallback;
+}
+
 function formatModuleBytes(bytes) {
   const value = Math.max(0, Number(bytes) || 0);
   if (!value) return '0 B';
@@ -190,16 +196,17 @@ async function setupInstalledModuleOptions() {
   if (updaterReady && globalThis.BjtuUpdaterModuleManager?.prepare) {
     await globalThis.BjtuUpdaterModuleManager.prepare().catch(() => null);
   }
-  const installed = new Set(Object.keys(definitions).filter((id) => id === 've' || available[id] === true));
+  const installed = new Set(Object.keys(definitions).filter((id) => available[id] === true));
   list.innerHTML = '';
   Object.entries(definitions).forEach(([id, definition]) => {
     const label = document.createElement('label');
     label.className = 'installed-module-item';
+    label.dataset.moduleId = id;
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.value = id;
     checkbox.checked = installed.has(id);
-    checkbox.disabled = id === 've' || id === 'updater';
+    checkbox.disabled = installed.has(id) && (id === 've' || id === 'updater');
     label.append(checkbox, document.createTextNode(definition.label || id));
     list.appendChild(label);
   });
@@ -210,6 +217,16 @@ async function setupInstalledModuleOptions() {
     return Object.keys(definitions).some((id) => selected.has(id) !== installed.has(id));
   };
   const refreshButton = () => { applyButton.disabled = !hasChanges(); };
+  list.addEventListener('click', (event) => {
+    const item = event.target instanceof Element
+      ? event.target.closest('.installed-module-item')
+      : null;
+    if (!(item instanceof HTMLElement)
+        || !installed.has(item.dataset.moduleId || '')
+        || !['ve', 'updater'].includes(item.dataset.moduleId || '')) return;
+    event.preventDefault();
+    setMsg('不可卸载此模块，但您可前往扩展安装目录手动删除，可能引发异常问题', false);
+  });
   list.addEventListener('change', refreshButton);
   refreshButton();
   if (status instanceof HTMLElement) status.textContent = `已安装 ${installed.size} 个模块。取消勾选可卸载，勾选未安装模块可安装。`;
@@ -246,7 +263,9 @@ async function setupInstalledModuleOptions() {
     } catch (error) {
       if (status instanceof HTMLElement) status.textContent = `模块更改失败：${String(error?.message || error)}`;
       setMsg(`模块更改失败：${String(error?.message || error)}`, false);
-      list.querySelectorAll('input').forEach((input) => { input.disabled = input.value === 've'; });
+      list.querySelectorAll('input').forEach((input) => {
+        input.disabled = installed.has(input.value) && (input.value === 've' || input.value === 'updater');
+      });
       refreshButton();
     }
   });
@@ -321,9 +340,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 (async function init() {
   void renderExtensionRuntimeInfo();
   await globalThis.BjtuModuleRegistry?.ready;
+  await globalThis.__bjtuVeOptionsReady;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, homeworkDetailCollapsedLines, replayDetailCollapsedLines, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -369,6 +389,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     replayDetailCollapsedLines,
     DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES
   ));
+  document.getElementById('parallelLimit').value = String(normalizeParallelLimit(parallelLimit));
   const autoLoadResourcesVal = autoLoadCourseResourcesEnabled === undefined
     ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
     : !!autoLoadCourseResourcesEnabled;
@@ -889,6 +910,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES
         ));
       }
+      if (changes.parallelLimit) {
+        document.getElementById('parallelLimit').value = String(normalizeParallelLimit(changes.parallelLimit.newValue));
+      }
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
       if (changes.popupWidthPx || changes.popupHeightPx) {
         applyPopupSizeUi(changes.popupWidthPx?.newValue, changes.popupHeightPx?.newValue);
@@ -1182,6 +1206,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       await chrome.storage.local.set({ [id]: value });
       setMsg('已应用更改');
     });
+  });
+  document.getElementById('parallelLimit').addEventListener('change', async (event) => {
+    const value = normalizeParallelLimit(event.currentTarget.value);
+    event.currentTarget.value = String(value);
+    await chrome.storage.local.set({ parallelLimit: value });
+    setMsg('已应用更改');
   });
   campusNetworkReconnectInput?.addEventListener('change', async () => {
     const enabled = campusNetworkReconnectInput.checked;
@@ -1482,6 +1512,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       autoLoadAllHomeworkDetails: false,
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
       replayDetailCollapsedLines: DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES,
+      parallelLimit: DEFAULT_PARALLEL_LIMIT,
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
       homeworkBackgroundRefreshEnabled: false,
@@ -1515,6 +1546,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;
     document.getElementById('homeworkDetailCollapsedLines').value = String(DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES);
     document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);
+    document.getElementById('parallelLimit').value = String(DEFAULT_PARALLEL_LIMIT);
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
     document.getElementById('homeworkBackgroundRefreshEnabled').checked = false;
     document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = false;

@@ -710,17 +710,15 @@ function renderJlgjHomeworkItems(items) {
     const detail = isLoadingMeta ? '' : normalizeHomeworkContent(String(it?.content || '').trim());
     const contentHtml = isLoadingMeta
       ? '正在加载详情…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
-      : (detail || '<span style="color:#999;">无作业详情</span>');
-    const expandableContentHtml = renderExpandableHtml(contentHtml, {
-      expandText: '点击查看作业详情',
-      collapseText: '点击收起作业详情',
+      : (detail || `<span style="color:#999;">${globalThis.BjtuHomeworkUi.text.detailEmpty}</span>`);
+    const expandableContentHtml = renderExpandableHtml(contentHtml, globalThis.BjtuHomeworkUi.detailOptions({
       baseBg: 'rgba(255,255,255,0.3)',
       flatDisplay: true
-    });
+    }));
     const link = String(it?.link || JLGJ_WEB_BASE);
-    const actionText = done ? '去接龙管家查看' : '去接龙管家提交';
+    const actionText = globalThis.BjtuHomeworkUi.actionLabel('jlgj', done ? 'view' : 'submit');
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
-    const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
+    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done, overdue });
     const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : formatJlgjDateTime(it.end);
     const endSuffix = isLoadingMeta
@@ -735,7 +733,7 @@ function renderJlgjHomeworkItems(items) {
             <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-            <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
+            ${globalThis.BjtuHomeworkUi.renderActionLink({ href: link, label: actionText, color: detailBtnColor, escape: escapeHtml })}
           </div>
         </div>
         <div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0; font-size:12px; color:#374151; line-height:1.45;">${expandableContentHtml}</div>

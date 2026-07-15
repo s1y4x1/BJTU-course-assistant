@@ -2,7 +2,15 @@
   'use strict';
 
   const MODULES = Object.freeze({
-    ve: { required: true, label: '智慧课程平台', files: ['platform.js', 'login-service.js'] },
+    ve: {
+      label: '智慧课程平台',
+      files: [
+        'vendor/main.min.js', 'password-cipher.js', 'login-utils.js',
+        'login-credentials-dialog.js', 'login-overlay.js', 'account-store.js',
+        'account-login.js', 'homework-core.js', 'platform.js', 'session.js',
+        'resource-download.js', 'login-service.js', 'background-homework.js'
+      ]
+    },
     ykt: { label: '雨课堂', files: ['platform.js'] },
     mrjzy: { label: '每日交作业', files: ['platform.js', 'md5.js'] },
     jlgj: { label: '接龙管家', files: ['platform.js', 'background.js', 'capture.js', 'theme.js'] },
@@ -30,7 +38,6 @@
   const ready = (async () => {
     const entries = await Promise.all(Object.keys(MODULES).map(async (id) => [id, await exists(id)]));
     const available = Object.fromEntries(entries);
-    available.ve = true;
     global.__bjtuAvailableModules = available;
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.modulesReady = '1';
@@ -46,7 +53,7 @@
   })();
 
   function has(id) {
-    return id === 've' || global.__bjtuAvailableModules?.[id] === true;
+    return global.__bjtuAvailableModules?.[id] === true;
   }
 
   function loadScript(path) {

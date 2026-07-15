@@ -1429,6 +1429,7 @@ async function requestModuleManagementDirectory() {
 }
 
 async function fetchModuleArchive(onProgress) {
+  onProgress?.({ phase: 'download', loaded: 0, total: 0 });
   const release = await fetchLatestReleaseFromUrl(VERSION_LATEST_URL);
   const response = await fetch(pickReleaseDownloadUrl(release), { cache: 'no-store' });
   if (!response.ok) throw new Error(`模块下载失败 (${response.status})`);
@@ -1458,8 +1459,8 @@ async function fetchModuleArchive(onProgress) {
 async function applyModuleSelection({ selected = [], installed = [], onProgress = null } = {}) {
   const selectedSet = new Set(selected.map((id) => String(id || '').toLowerCase()));
   const installedSet = new Set(installed.map((id) => String(id || '').toLowerCase()));
-  VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedSet.add(id));
-  const additions = [...selectedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id) && !installedSet.has(id));
+  selectedSet.add('updater');
+  const additions = [...selectedSet].filter((id) => id !== 'updater' && !installedSet.has(id));
   const removals = [...installedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id) && !selectedSet.has(id));
   if (!additions.length && !removals.length) return { added: [], removed: [], written: 0 };
 

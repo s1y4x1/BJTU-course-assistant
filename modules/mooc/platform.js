@@ -178,7 +178,7 @@ let moocLoginAssistPopupTabId = null;
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
   const typeText = (type) => type === 'hw' ? '单元作业' : (type === 'exam' ? '考试' : '单元测试');
-  const actionText = (type) => type === 'hw' ? '提交' : (type === 'exam' ? '考试' : '测验');
+  const actionKind = (type) => type === 'hw' ? 'submit' : (type === 'exam' ? 'exam' : 'quiz');
   const GINS_TASK_GAP_MS = 450;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -319,7 +319,7 @@ let moocLoginAssistPopupTabId = null;
 
   function renderTaskDetail(course, task, colors) {
     if (task.detailLoading) {
-      return `<div class="mooc-task-detail" style="border-top-color:${colors[1]};"><span class="spinner mooc-inline-spinner"></span> 正在获取作业详情…</div>`;
+      return `<div class="mooc-task-detail" style="border-top-color:${colors[1]};"><span class="spinner mooc-inline-spinner"></span> ${globalThis.BjtuHomeworkUi.text.detailLoading}</div>`;
     }
     const questions = Array.isArray(task.detail?.questions) ? task.detail.questions : [];
     if (!questions.length) return '';
@@ -331,16 +331,14 @@ let moocLoginAssistPopupTabId = null;
     const courseId = `mooc-${course.id}`;
     const expandKey = `mooc-detail:${task.type}:${task.id}`;
     const expandable = env.renderExpandable
-      ? env.renderExpandable(contentHtml, {
+      ? env.renderExpandable(contentHtml, globalThis.BjtuHomeworkUi.detailOptions({
           hideWhenEmpty: true,
-          expandText: '点击查看作业详情',
-          collapseText: '点击收起作业详情',
           baseBg: 'rgba(255,255,255,.28)',
           flatDisplay: true,
           courseId,
           expandKey,
           expanded: !!env.isDetailExpanded?.(courseId, expandKey)
-        })
+        }))
       : contentHtml;
     return `<div class="mooc-task-detail" style="border-top-color:${colors[1]};">${expandable}</div>`;
   }
@@ -372,13 +370,15 @@ let moocLoginAssistPopupTabId = null;
     const countdown = !task.done && !task.overdue && task.deadline
       ? `<span class="deadline-countdown" data-deadline="${env.escape(String(task.deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>`
       : '';
+    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done: task.done, overdue: task.overdue });
+    const goActionText = globalThis.BjtuHomeworkUi.actionLabel('mooc', actionKind(task.type), { lead: '前往' });
     return `<div class="hw-card-item mooc-task" data-homework-done="${task.done ? '1' : '0'}" style="background:${colors[0]};border-color:${colors[1]};">
       <div class="mooc-task-head"><div class="mooc-task-main">
         <div class="mooc-task-title" style="color:${colors[2]};"><span class="mooc-task-kind">${typeText(task.type)}</span>${env.escape(task.title)}</div>
-        <div class="mooc-task-meta">截止: <span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${task.done ? ' <span class="homework-status-done">(已提交)</span>' : (task.overdue ? ' <span class="homework-status-overdue">(已逾期)</span>' : '')}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>
+        <div class="mooc-task-meta">截止: <span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${statusHtml ? ` ${statusHtml}` : ''}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>
       </div><div class="mooc-task-actions">${score}
         <div class="mooc-task-button-row">
-          <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">前往中国大学MOOC${actionText(task.type)}</a>
+          <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
           <button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>
         </div>
       </div></div>

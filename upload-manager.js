@@ -614,34 +614,6 @@ function uploadFile(file, fileId) {
 }
 
 // -------------------- Events --------------------
-const parallelLimitInput = document.getElementById('parallel-limit');
-
-function adjustParallelLimitWidth() {
-  if (!(parallelLimitInput instanceof HTMLInputElement)) return;
-  const text = String(parallelLimitInput.value || parallelLimitInput.placeholder || '');
-  const digits = Math.max(1, text.length);
-  parallelLimitInput.style.width = `${digits + 3}ch`;
-}
-
-if (parallelLimitInput instanceof HTMLInputElement) {
-  adjustParallelLimitWidth();
-  parallelLimitInput.addEventListener('input', () => {
-    adjustParallelLimitWidth();
-  });
-  parallelLimitInput.addEventListener('change', (e) => {
-    const v = parseInt(e.target.value, 10);
-    if (v > 0) {
-      maxParallelUploads = v;
-      setLocal(PARALLEL_LIMIT_KEY, String(v)).catch(() => {});
-      processQueue();
-      processResourceDownloadQueue();
-    } else {
-      parallelLimitInput.value = String(Math.max(1, Number(maxParallelUploads) || 1));
-    }
-    adjustParallelLimitWidth();
-  });
-}
-
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();

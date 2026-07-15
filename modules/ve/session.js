@@ -1,11 +1,3 @@
-async function getLocal(key, fallback = '') {
-  const data = await chrome.storage.local.get([key]);
-  return data[key] ?? fallback;
-}
-async function setLocal(key, value) {
-  await chrome.storage.local.set({ [key]: value });
-}
-
 function normalizePlatformSessionId(v) {
   return globalThis.BjtuVeHomeworkCore?.normalizeSessionId?.(v) || String(v || '').trim();
 }

@@ -70,6 +70,13 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
 .installed-module-item { display:inline-flex; align-items:center; gap:6px; margin:0; padding:6px 8px; border:1px solid #dbe2ea; border-radius:6px; background:#fff; font-size:13px; }
 .installed-module-item input { width:auto; margin:0; padding:0; }
 #applyInstalledModules { margin:0; }
+#applyInstalledModules:disabled {
+  background:#9ca3af !important;
+  color:#f3f4f6 !important;
+  cursor:not-allowed;
+  pointer-events:none;
+  opacity:1;
+}
 .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
 .back-home-link:hover { text-decoration: underline; }
 .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }

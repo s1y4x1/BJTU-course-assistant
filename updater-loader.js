@@ -6,5 +6,14 @@
     await global.BjtuModuleRegistry.loadScript('modules/updater/filesystem.js');
     await global.BjtuModuleRegistry.loadScript('modules/updater/checker.js');
     return true;
-  })().catch(() => false);
+  })().catch((error) => {
+    console.error('[bjtu] updater module failed to load:', error);
+    const versionBtn = typeof document !== 'undefined' ? document.getElementById('version-btn') : null;
+    if (versionBtn instanceof HTMLButtonElement) {
+      versionBtn.className = 'version-btn failure';
+      versionBtn.disabled = false;
+      versionBtn.textContent = '更新组件加载失败';
+    }
+    return false;
+  });
 })(globalThis);

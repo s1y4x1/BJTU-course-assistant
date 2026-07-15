@@ -1,6 +1,7 @@
 const YKT_LOGIN_LINK_HTML = '<a href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer" style="color:#5096f5; text-decoration:none; font-weight:600;">雨课堂</a>';
 const YKT_LOGIN_REQUIRED_HTML = `如需查看${YKT_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_BASE = 'https://www.yuketang.cn';
+const YKT_REQUEST_PAGE_URL = `${YKT_BASE}/v2/web/index`;
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
 const YKT_COURSE_LIST_API = `${YKT_BASE}/v2/api/web/courses/list?identity=2`;
 const YKT_HEADERS = {
@@ -612,7 +613,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
       const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
       let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
       if (!tab) {
-        tab = await chrome.tabs.create({ url: `${YKT_BASE}/web`, active: false });
+        tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
         requestTabCreated = true;
       }
       requestTabId = Number(tab?.id || 0) || null;
@@ -683,10 +684,11 @@ function renderYktHomeworkItems(courseId, items) {
     const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
     const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
-    const actionText = Number(it?.__actype) === 15
-      ? (done ? '去雨课堂查看' : '去雨课堂学习')
-      : (done ? '去雨课堂查看' : '去雨课堂提交');
-    const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
+    const actionText = globalThis.BjtuHomeworkUi.actionLabel(
+      'ykt',
+      done ? 'view' : (Number(it?.__actype) === 15 ? 'learn' : 'submit')
+    );
+    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done, overdue });
     const titleScoreBadge = scoreText ? `<span style="font-weight:bold; color:#E91E63; white-space:nowrap;">[${escapeHtml(scoreText)}]</span>` : '';
     const deadline = it?.end || it?.deadline || '';
     const countdownSpan = (!done && !overdue && !Number(it?.__loading) && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
@@ -700,24 +702,22 @@ function renderYktHomeworkItems(courseId, items) {
     if (isExam && !examDetail) {
       const state = String(it?.exam_detail_state || '').trim();
       if (state === 'loading') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>正在获取作业详情…</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>${globalThis.BjtuHomeworkUi.text.detailLoading}</div>`;
       } else if (state === 'queued') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>正在排队等待…</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>${globalThis.BjtuHomeworkUi.text.detailQueued}</div>`;
       } else if (state === 'failed') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:#b45309;">作业详情获取失败，可稍后重试</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:#b45309;">${globalThis.BjtuHomeworkUi.text.detailFailed}</div>`;
       }
     }
     const detailExpandable = examDetail
-      ? renderExpandableHtml(examDetail, {
+      ? renderExpandableHtml(examDetail, globalThis.BjtuHomeworkUi.detailOptions({
           emptyHtml: '<span style="color:#999;">无题目内容</span>',
-          expandText: '点击查看作业详情',
-          collapseText: '点击收起作业详情',
           baseBg: done ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)',
           flatDisplay: true,
           courseId,
           expandKey,
           expanded
-        })
+        }))
       : '';
     return `
     <div class="hw-card-item" data-homework-done="${done ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
@@ -729,7 +729,7 @@ function renderYktHomeworkItems(courseId, items) {
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
           ${titleScoreBadge ? `<div style="font-size:12px; line-height:1;">${titleScoreBadge}</div>` : ''}
-          <a class="btn" href="${it.link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
+          ${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: detailBtnColor, escape: escapeHtml })}
         </div>
       </div>
       ${detailExpandable ? `<div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0;">${detailExpandable}</div>` : ''}
@@ -903,7 +903,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
       yktExamSharedTabCreated = false;
       if (!tab) {
-        tab = await chrome.tabs.create({ url: `${YKT_BASE}/web`, active: false });
+        tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
         yktExamSharedTabCreated = true;
       }
       yktExamSharedTabId = Number(tab?.id || 0) || null;

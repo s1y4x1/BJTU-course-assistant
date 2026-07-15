@@ -284,8 +284,8 @@ function renderMrjzyHomeworkItems(items) {
     const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
     const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
-    const actionText = done ? '去每日交作业查看' : '去每日交作业提交';
-    const statusHtml = done ? '<span class="homework-status-done">(已提交)</span>' : (overdue ? '<span class="homework-status-overdue">(已逾期)</span>' : '');
+    const actionText = globalThis.BjtuHomeworkUi.actionLabel('mrjzy', done ? 'view' : 'submit');
+    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done, overdue });
     const isLoadingMeta = !!it?.loadingMeta;
     const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : String(it.end || '无');
@@ -301,7 +301,7 @@ function renderMrjzyHomeworkItems(items) {
             <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-            <a class="btn" href="${it.link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
+            ${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: detailBtnColor, escape: escapeHtml })}
           </div>
         </div>
       </div>

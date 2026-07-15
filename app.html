@@ -22,9 +22,6 @@
                 </button>
             </div>
 
-            <input type="number" id="parallel-limit" value="3" min="1" placeholder="并行限制" title="并行限制"
-                style="min-width: 54px; width: 5ch; padding: 5px;">
-
             <input type="text" id="username-input" value="" placeholder="账号" title="账号"
                 style="width: 72px; min-width: 72px; padding: 5px;">
             <select id="account-history-select" title="已登录账号" style="padding: 5px;"></select>
@@ -129,7 +126,7 @@
                 <span>课程助手</span>
                 <span class="options-controlled-slot platform-options-slot">
                 <span class="platform-status-actions" data-options-controlled>
-                    <span id="ve-status-btn" class="platform-status-btn checking" title="智慧课程平台加载中">
+                    <span id="ve-status-btn" class="platform-status-btn checking" title="智慧课程平台加载中" data-module="ve">
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="ve"
                             aria-label="切换智慧课程平台"></button>
                         <a class="platform-link" href="http://123.121.147.7:88/ve/" target="_blank"
@@ -327,20 +324,14 @@
     </div>
 
     <script src="vendor/qrcode/qrcode.min.js"></script>
-    <script src="modules/ve/vendor/main.min.js"></script>
     <script src="module-registry.js"></script>
-    <script src="modules/ve/login-utils.js"></script>
-    <script src="modules/ve/login-credentials-dialog.js"></script>
-    <script src="modules/ve/account-store.js"></script>
-    <script src="modules/ve/account-login.js"></script>
+    <script src="storage-utils.js"></script>
+    <script src="ve-app-loader.js"></script>
     <script src="qr-utils.js"></script>
     <script src="popup-cache.js"></script>
-    <script src="modules/ve/homework-core.js"></script>
-    <script src="modules/ve/platform.js"></script>
-    <script src="modules/ve/session.js"></script>
+    <script src="homework-ui.js"></script>
     <script src="platform-loader.js"></script>
     <script src="optional-platform-adapters.js"></script>
-    <script src="modules/ve/resource-download.js"></script>
     <script src="saved-uploads.js"></script>
     <script src="deadline-countdown.js"></script>
     <script src="app.js"></script>

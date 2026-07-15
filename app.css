@@ -874,7 +874,6 @@ body {
             display: inline-flex;
             margin-left: 0;
         }
-        body.popup-mode #parallel-limit,
         body.popup-mode #username-input,
         body.popup-mode #jsessionid-input,
         body.popup-mode #xq-select {
@@ -1479,7 +1478,7 @@ body {
         }
 
         .expandable-box {
-            --expand-collapsed-max-height: var(--homework-detail-max-height, calc(4.5em + 2px));
+            --expand-collapsed-max-height: var(--homework-detail-max-height, calc(6em + 2px));
             position: relative;
             margin-top: 8px;
             border: 1px solid #e5e7eb;
@@ -1489,7 +1488,10 @@ body {
             overflow-y: hidden;
         }
         .expandable-box.expandable-box--replay {
-            --expand-collapsed-max-height: var(--replay-detail-max-height, calc(4.5em + 2px));
+            --expand-collapsed-max-height: var(--replay-detail-max-height, calc(6em + 2px));
+        }
+        .expandable-box:not(.expanded):not(.no-toggle) {
+            min-height: 24px;
         }
         .expandable-body {
             padding: 8px;
