@@ -1479,6 +1479,7 @@ body {
         }
 
         .expandable-box {
+            --expand-collapsed-max-height: var(--homework-detail-max-height, calc(4.5em + 2px));
             position: relative;
             margin-top: 8px;
             border: 1px solid #e5e7eb;
@@ -1487,12 +1488,15 @@ body {
             overflow-x: auto;
             overflow-y: hidden;
         }
+        .expandable-box.expandable-box--replay {
+            --expand-collapsed-max-height: var(--replay-detail-max-height, calc(4.5em + 2px));
+        }
         .expandable-body {
             padding: 8px;
             font-size: 13px;
             color: #374151;
             line-height: 1.5;
-            max-height: calc(1.5em * 3 + 2px);
+            max-height: var(--expand-collapsed-max-height);
             overflow-x: auto;
             overflow-y: auto;
             scroll-behavior: auto;

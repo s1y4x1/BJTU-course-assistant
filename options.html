@@ -93,6 +93,16 @@
       <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />在中国大学MOOC页面注入 GinsMooc 操作按钮</label>
     </div>
     <div class="tip">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
+    <div style="display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin-top:10px;">
+      <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
+        <span>作业详情默认显示行数</span>
+        <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
+        <span>回放详情默认显示行数</span>
+        <input id="replayDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
+      </label>
+    </div>
   </div>
 
   <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">

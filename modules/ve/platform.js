@@ -1494,7 +1494,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
       const detailHtml = item.content
         ? renderExpandableHtml(
             escapeHtml(item.content),
-            { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
+            { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)', detailKind: 'replay' }
           )
         : '';
       return `
@@ -1520,7 +1520,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
         item.content
           ? renderExpandableHtml(
               escapeHtml(item.content),
-              { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)' }
+              { hideWhenEmpty: true, expandText: '点击查看回放详情', collapseText: '点击收起回放详情', baseBg: 'rgba(243,229,245,0.42)', detailKind: 'replay' }
             )
           : ''
       ])),

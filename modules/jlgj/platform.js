@@ -711,6 +711,12 @@ function renderJlgjHomeworkItems(items) {
     const contentHtml = isLoadingMeta
       ? '正在加载详情…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : (detail || '<span style="color:#999;">无作业详情</span>');
+    const expandableContentHtml = renderExpandableHtml(contentHtml, {
+      expandText: '点击查看作业详情',
+      collapseText: '点击收起作业详情',
+      baseBg: 'rgba(255,255,255,0.3)',
+      flatDisplay: true
+    });
     const link = String(it?.link || JLGJ_WEB_BASE);
     const actionText = done ? '去接龙管家查看' : '去接龙管家提交';
     const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
@@ -732,7 +738,7 @@ function renderJlgjHomeworkItems(items) {
             <a class="btn" href="${link}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 6px; font-size: 12px; text-decoration:none; color:#fff;">${actionText}</a>
           </div>
         </div>
-        <div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0; font-size:12px; color:#374151; line-height:1.45;">${contentHtml}</div>
+        <div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0; font-size:12px; color:#374151; line-height:1.45;">${expandableContentHtml}</div>
       </div>
     `;
   }).join('');

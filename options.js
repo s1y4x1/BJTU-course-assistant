@@ -40,6 +40,8 @@ const MAX_POPUP_HEIGHT_PX = 600;
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
 const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
+const DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES = 3;
+const DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES = 3;
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 const DEFAULT_THEME_MODE = 'system';
@@ -160,6 +162,12 @@ function readScheduleIntervalSecondsEditor(prefix) {
 function normalizePopupDimension(value, fallback, min, max) {
   const n = Math.round(Number(value));
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+}
+
+function normalizeDetailCollapsedLines(value, fallback = 3) {
+  if (value === '' || value === null || value === undefined) return fallback;
+  const lines = Number(value);
+  return Number.isFinite(lines) && lines >= 0 ? Math.trunc(lines) : fallback;
 }
 
 function formatModuleBytes(bytes) {
@@ -314,8 +322,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   void renderExtensionRuntimeInfo();
   await globalThis.BjtuModuleRegistry?.ready;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, homeworkDetailCollapsedLines, replayDetailCollapsedLines, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -353,6 +361,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
   document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
   document.getElementById('autoLoadAllHomeworkDetails').checked = autoLoadAllHomeworkDetails === true;
+  document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
+    homeworkDetailCollapsedLines,
+    DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
+  ));
+  document.getElementById('replayDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
+    replayDetailCollapsedLines,
+    DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES
+  ));
   const autoLoadResourcesVal = autoLoadCourseResourcesEnabled === undefined
     ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
     : !!autoLoadCourseResourcesEnabled;
@@ -861,6 +877,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         void enforceJlgjDarkThemeAvailability();
       }
       if (changes.autoLoadAllHomeworkDetails) applyBooleanUi('autoLoadAllHomeworkDetails', changes.autoLoadAllHomeworkDetails.newValue, false);
+      if (changes.homeworkDetailCollapsedLines) {
+        document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
+          changes.homeworkDetailCollapsedLines.newValue,
+          DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
+        ));
+      }
+      if (changes.replayDetailCollapsedLines) {
+        document.getElementById('replayDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
+          changes.replayDetailCollapsedLines.newValue,
+          DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES
+        ));
+      }
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
       if (changes.popupWidthPx || changes.popupHeightPx) {
         applyPopupSizeUi(changes.popupWidthPx?.newValue, changes.popupHeightPx?.newValue);
@@ -1142,6 +1170,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const enabled = !!event.currentTarget.checked;
     await chrome.storage.local.set({ backgroundAutoInstallOptionalEnabled: enabled });
     setMsg(enabled ? '已启用非强制更新自动安装' : '已关闭非强制更新自动安装');
+  });
+  ['homeworkDetailCollapsedLines', 'replayDetailCollapsedLines'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', async () => {
+      const input = document.getElementById(id);
+      const fallback = id === 'homeworkDetailCollapsedLines'
+        ? DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
+        : DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES;
+      const value = normalizeDetailCollapsedLines(input.value, fallback);
+      input.value = String(value);
+      await chrome.storage.local.set({ [id]: value });
+      setMsg('已应用更改');
+    });
   });
   campusNetworkReconnectInput?.addEventListener('change', async () => {
     const enabled = campusNetworkReconnectInput.checked;
@@ -1440,6 +1480,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       jlgjDarkModeEnabled: true,
       jlgjAlwaysDarkModeEnabled: false,
       autoLoadAllHomeworkDetails: false,
+      homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
+      replayDetailCollapsedLines: DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES,
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
       homeworkBackgroundRefreshEnabled: false,
@@ -1471,6 +1513,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;
+    document.getElementById('homeworkDetailCollapsedLines').value = String(DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES);
+    document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
     document.getElementById('homeworkBackgroundRefreshEnabled').checked = false;
     document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = false;

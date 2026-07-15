@@ -187,6 +187,8 @@ window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}
 window.saveUploadedFilesEnabled = true;
 window.autoLoadCourseResourcesEnabled = false;
 window.autoLoadAllHomeworkDetails = false;
+window.homeworkDetailCollapsedLines = 3;
+window.replayDetailCollapsedLines = 3;
 window.jlgjDarkModeEnabled = true;
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
 window.courseShowOverdueById = {};
@@ -324,6 +326,8 @@ function disablePlatformAfterLoginFailure(platform) {
 
 const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
 const AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY = 'autoLoadAllHomeworkDetails';
+const HOMEWORK_DETAIL_COLLAPSED_LINES_KEY = 'homeworkDetailCollapsedLines';
+const REPLAY_DETAIL_COLLAPSED_LINES_KEY = 'replayDetailCollapsedLines';
 const JLGJ_DARK_MODE_KEY = 'jlgjDarkModeEnabled';
 const AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY = 'autoLoadCourseResourcesDefaultOffState';
 
@@ -540,13 +544,44 @@ async function triggerInitialPlatformLoads() {
 
 async function loadPlatformDetailSettings() {
   try {
-    const data = await chrome.storage.local.get([AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY, JLGJ_DARK_MODE_KEY]);
+    const data = await chrome.storage.local.get([
+      AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY,
+      HOMEWORK_DETAIL_COLLAPSED_LINES_KEY,
+      REPLAY_DETAIL_COLLAPSED_LINES_KEY,
+      JLGJ_DARK_MODE_KEY
+    ]);
     window.autoLoadAllHomeworkDetails = data[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY] === true;
+    window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
+    window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(data[REPLAY_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
   } catch {
     window.autoLoadAllHomeworkDetails = false;
+    window.homeworkDetailCollapsedLines = 3;
+    window.replayDetailCollapsedLines = 3;
     window.jlgjDarkModeEnabled = true;
   }
+  applyDetailCollapsedLineSettings();
+}
+
+function normalizeDetailCollapsedLines(value, fallback = 3) {
+  if (value === '' || value === null || value === undefined) return fallback;
+  const lines = Number(value);
+  return Number.isFinite(lines) && lines >= 0 ? Math.trunc(lines) : fallback;
+}
+
+function applyDetailCollapsedLineSettings() {
+  document.documentElement.style.setProperty(
+    '--homework-detail-max-height',
+    detailCollapsedMaxHeight(window.homeworkDetailCollapsedLines)
+  );
+  document.documentElement.style.setProperty(
+    '--replay-detail-max-height',
+    detailCollapsedMaxHeight(window.replayDetailCollapsedLines)
+  );
+}
+
+function detailCollapsedMaxHeight(lines) {
+  return `calc(${normalizeDetailCollapsedLines(lines, 3) * 1.5}em + 2px)`;
 }
 
 function rematchExternalByVeCourses(platform = '') {
@@ -796,6 +831,22 @@ function setupOptionsStorageLiveSync() {
       if (window.autoLoadCourseResourcesEnabled) {
         autoLoadCourseResourcesForRenderedCourses();
       }
+    }
+    if (changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY] || changes[REPLAY_DETAIL_COLLAPSED_LINES_KEY]) {
+      if (changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY]) {
+        window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(
+          changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY].newValue,
+          3
+        );
+      }
+      if (changes[REPLAY_DETAIL_COLLAPSED_LINES_KEY]) {
+        window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(
+          changes[REPLAY_DETAIL_COLLAPSED_LINES_KEY].newValue,
+          3
+        );
+      }
+      applyDetailCollapsedLineSettings();
+      requestAnimationFrame(() => applyExpandableAutoToggle(document));
     }
   });
 }
@@ -1407,7 +1458,8 @@ function renderExpandableHtml(contentHtml, {
   flatDisplay = false,
   courseId = '',
   expandKey = '',
-  expanded = false
+  expanded = false,
+  detailKind = 'homework'
 } = {}) {
   const raw = String(contentHtml || '').trim();
   if (!raw) {
@@ -1418,8 +1470,9 @@ function renderExpandableHtml(contentHtml, {
   const key = escapeHtml(String(expandKey || ''));
   const expandedNow = !!expanded;
   const modeClass = flatDisplay ? ' borderless' : '';
+  const detailClass = detailKind === 'replay' ? ' expandable-box--replay' : ' expandable-box--homework';
   return `
-    <div class="expandable-box${modeClass}${expandedNow ? ' expanded' : ''}" data-expanded="${expandedNow ? '1' : '0'}" data-course-id="${cid}" data-expand-key="${key}" style="--expand-base:${baseBg};">
+    <div class="expandable-box${detailClass}${modeClass}${expandedNow ? ' expanded' : ''}" data-expanded="${expandedNow ? '1' : '0'}" data-course-id="${cid}" data-expand-key="${key}" style="--expand-base:${baseBg};">
       <div class="expandable-body">${raw}</div>
       <div class="expandable-fade"></div>
       <div class="expandable-toggle" data-action="toggle-expand" data-open-text="${escapeHtml(expandText)}" data-close-text="${escapeHtml(collapseText)}">${escapeHtml(expandedNow ? collapseText : expandText)}</div>
@@ -2056,7 +2109,10 @@ function applyExpandableAutoToggle(root = document) {
     if (!box.getClientRects().length) return;
     const body = box.querySelector('.expandable-body');
     if (!(body instanceof HTMLElement)) return;
-    const collapsedLimit = body.style.maxHeight || 'calc(1.5em * 3 + 2px)';
+    const collapsedLines = box.classList.contains('expandable-box--replay')
+      ? window.replayDetailCollapsedLines
+      : window.homeworkDetailCollapsedLines;
+    const collapsedLimit = detailCollapsedMaxHeight(collapsedLines);
     const prev = body.style.maxHeight;
     const prevOverflow = body.style.overflow;
     if (box.classList.contains('expanded')) {
@@ -3733,7 +3789,10 @@ function renderHomeworkList(courseId) {
       if (!(box instanceof HTMLElement)) return;
       const body = box.querySelector('.expandable-body');
       if (!(body instanceof HTMLElement)) return;
-      const collapsedLimit = body.style.maxHeight || 'calc(1.5em * 3 + 2px)';
+      const collapsedLines = box.classList.contains('expandable-box--replay')
+        ? window.replayDetailCollapsedLines
+        : window.homeworkDetailCollapsedLines;
+      const collapsedLimit = detailCollapsedMaxHeight(collapsedLines);
       const prev = body.style.maxHeight;
       const prevOverflow = body.style.overflow;
       if (box.classList.contains('expanded')) {
@@ -3777,6 +3836,13 @@ function renderHomeworkList(courseId) {
   const doneToggleRowHtml = totalDoneCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--done">${renderHomeworkToggle('done', 'toggle-done', data.showDone, totalDoneCount, '查看已交作业', '收起已交作业', 'down', 'up')}</div>` : '';
   const forcePublishScoreButtonHtml = (!isTeacherMode2 && data.showDone) ? renderForcePublishScoreButton(courseId) : '';
 
+  const nativeCourse = (window.currentVeCourseList || []).find((course) => String(
+    course?.id || course?.cId || course?.courseId || course?.course_id || ''
+  ) === String(courseId));
+  const homeworkCourseNum = nativeCourse?.course_num || nativeCourse?.courseNum || nativeCourse?.courseNo || nativeCourse?.course_id || courseId;
+  const homeworkFzId = nativeCourse?.fz_id || nativeCourse?.fzId || nativeCourse?.xkhId || nativeCourse?.xkh_id || '';
+  const homeworkXqCode = nativeCourse?.xq_code || nativeCourse?.xqCode || getCurrentXqCode();
+
   const renderNativeHomeworkItems = (items) => (items || []).map((hw) => {
     const originalIdx = list.indexOf(hw);
     const idx = originalIdx >= 0 ? originalIdx : 0;
@@ -3800,8 +3866,11 @@ function renderHomeworkList(courseId) {
       ? (overdue ? '#6d28d9' : '#1d4ed8')
       : (isDone ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100'));
     const title = hw.title || hw.workTitle || hw.courseNoteTitle || '作业';
-    const homeworkTypeLabel = ({ 0: '作业', 1: '课程报告', 2: '实验' })[Number(hw.subType ?? hw.sub_type)] || '作业';
+    const homeworkSubType = Number(hw.subType ?? hw.sub_type);
+    const homeworkTypeLabel = ({ 0: '作业', 1: '课程报告', 2: '实验' })[homeworkSubType] || '作业';
     const homeworkTypeBadge = `<span style="display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; font-size:10px; line-height:1.3; vertical-align:1px;">${homeworkTypeLabel}</span>`;
+    const homeworkCourseToPage = ({ 0: 10460, 1: 10461, 2: 10462 })[homeworkSubType] || 10460;
+    const homeworkPageUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=${homeworkCourseToPage}&courseId=${encodeURIComponent(homeworkCourseNum)}&cId=${encodeURIComponent(courseId)}&xknId=${encodeURIComponent(homeworkFzId)}&xkhId=${encodeURIComponent(homeworkFzId)}&xqCode=${encodeURIComponent(homeworkXqCode)}`;
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
     const deadline = hw.end_time || hw.endTime || '';
@@ -3890,7 +3959,7 @@ function renderHomeworkList(courseId) {
       <div class="hw-card-item" data-homework-done="${isTeacherMode ? '0' : (isDone ? '1' : '0')}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
         <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
           <div>
-            <div style="font-weight:bold; color:${titleColor};">${homeworkTypeBadge}${escapeHtml(title)}</div>
+            <div style="font-weight:bold; color:${titleColor};">${homeworkTypeBadge}<a href="${homeworkPageUrl}" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:none;">${escapeHtml(title)}</a></div>
             <div style="font-size:12px; color:#666; display:flex; align-items:center; gap:0; flex-wrap:wrap;">截止: <span style="font-weight:700; color:#000; margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>
           </div>
           <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
@@ -4338,7 +4407,10 @@ courseListDiv.addEventListener('click', async (e) => {
         body.style.maxHeight = `${Math.max(0, collapsed)}px`;
         box.classList.remove('expanded');
         requestAnimationFrame(() => {
-          body.style.maxHeight = 'calc(1.5em * 3 + 2px)';
+          const collapsedLines = box.classList.contains('expandable-box--replay')
+            ? window.replayDetailCollapsedLines
+            : window.homeworkDetailCollapsedLines;
+          body.style.maxHeight = detailCollapsedMaxHeight(collapsedLines);
         });
         setTimeout(() => {
           body.style.maxHeight = '';
