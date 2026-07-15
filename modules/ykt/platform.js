@@ -496,6 +496,11 @@ function formatYktVideoProgressText(hw) {
   return `${percent}%`;
 }
 
+function yktProgressSpinnerPhaseStyle(periodMs = 1000) {
+  const period = Math.max(1, Number(periodMs) || 1000);
+  return `animation-delay:-${Date.now() % period}ms;`;
+}
+
 async function fetchYktExamPaper(courseId, examId, sharedTabId = null) {
   const cid = String(courseId || '').trim();
   const eid = String(examId || '').trim();
@@ -674,7 +679,7 @@ function renderYktHomeworkItems(courseId, items) {
     const videoProgressText = formatYktVideoProgressText(it);
     const progressText = videoProgressText || (problemCount > 0 ? `${progress}/${problemCount}` : '');
     const progressHtml = it?.video_progress_loading
-      ? '<span class="spinner" aria-label="正在加载进度" style="display:inline-block; width:10px; height:10px; margin-left:2px; border-width:1px; border-color:#64748b; border-top-color:transparent; vertical-align:-1px;"></span>'
+      ? `<span class="spinner" aria-label="正在加载进度" style="display:inline-block; width:10px; height:10px; margin-left:2px; border-width:1px; border-color:#64748b; border-top-color:transparent; vertical-align:-1px; ${yktProgressSpinnerPhaseStyle()}"></span>`
       : escapeHtml(progressText);
     const hasScore = it?.score !== null && it?.score !== undefined && String(it.score) !== '';
     const scoreText = hasScore
