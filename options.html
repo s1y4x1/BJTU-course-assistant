@@ -48,6 +48,7 @@
           <input id="replayDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
         </label>
       </div>
+      <div class="platform-option-divider" role="separator"></div>
       <div style="margin-top:10px;">
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
           <input type="checkbox" id="injectPortalLoginOnLoginPage" style="width:auto;" checked />
@@ -59,6 +60,7 @@
         </label>
         <div class="tip">控制在这些页面上是否注入登录弹窗。</div>
       </div>
+      <div class="platform-option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
         <input type="checkbox" id="headerQrEnabled" style="width:auto;" />
         <span>鼠标悬停标题时生成列表二维码</span>
@@ -68,11 +70,13 @@
         <span>鼠标悬停链接时显示二维码</span>
       </label>
       <div class="tip">「标题」包含课程助手、文件上传、资源空间。「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
+      <div class="platform-option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
         <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
         <span>在本地存储以后上传的文件链接</span>
       </label>
       <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
+      <div class="platform-option-divider" role="separator"></div>
       <button id="bindPortalUsernameBtn" type="button" style="background:#16a34a;">🔗 通过 MIS 绑定 username</button>
       <button id="exportBindDataBtn" type="button" style="background:#0f766e;">📤 导出 MIS 绑定数据</button>
       <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配，以实现智慧课程平台快速登录。</div>

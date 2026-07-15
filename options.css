@@ -97,6 +97,14 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   border-radius:6px;
 }
 .platform-option-detail input[type="checkbox"] { accent-color: var(--platform-theme); }
+.platform-option-divider {
+  height:0;
+  margin:10px 0;
+  border:0;
+  border-top:1px solid var(--platform-theme);
+  background:none;
+  opacity:.24;
+}
 #vePlatformDetail { --platform-theme:#2563eb; --platform-bg:#eff6ff; }
 #yktPlatformDetail { --platform-theme:#5096f5; --platform-bg:#eff6ff; }
 #mrjzyPlatformDetail { --platform-theme:#29a9fc; --platform-bg:#ecfeff; }
