@@ -280,10 +280,7 @@ function renderMrjzyHomeworkItems(items) {
   return list.map((it) => {
     const done = isMrjzyHomeworkDone(it);
     const overdue = !done && isMrjzyHomeworkOverdue(it);
-    const bgColor = done ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
-    const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
-    const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
-    const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
+    const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done, overdue });
     const actionText = globalThis.BjtuHomeworkUi.actionLabel('mrjzy', done ? 'view' : 'submit');
     const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done, overdue });
     const isLoadingMeta = !!it?.loadingMeta;
@@ -293,19 +290,14 @@ function renderMrjzyHomeworkItems(items) {
       ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : '';
     const countdownSpan = (!done && !overdue && !isLoadingMeta && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
-    return `
-      <div class="hw-card-item" data-homework-done="${done ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
-          <div>
-            <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '每日交作业')}</div>
-            <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>
-          </div>
-          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-            ${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: detailBtnColor, escape: escapeHtml })}
-          </div>
-        </div>
-      </div>
-    `;
+    return globalThis.BjtuHomeworkUi.renderHomeworkCard({
+      done,
+      background: palette.background,
+      border: palette.border,
+      titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${escapeHtml(it.title || '每日交作业')}</div>`,
+      metaHtml: `<div style="font-size:12px;color:#666;">截止: <span style="font-weight:700;color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>`,
+      actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })
+    });
   }).join('');
 }
 
@@ -327,26 +319,14 @@ function renderMrjzyStandaloneCourses() {
     const teacherHtml = loadingMeta
       ? '正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
       : escapeHtml(c.teacherName || '');
-    const card = document.createElement('div');
-    card.className = 'file-item mrjzy-standalone-card';
-    card.style.backgroundColor = '#fff';
-    card.id = `course-${courseId}`;
-    card.dataset.courseRankable = '1';
-    card.dataset.order = String(baseOrder + idx);
-    card.dataset.rank = '7';
-    card.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div>
-          <div class="course-card-title"><strong>${titleHtml}</strong></div>
-          <div style="font-size:13px; color:#666; line-height:1.35;">${teacherHtml}</div>
-        </div>
-        <div class="course-actions" style="display:flex; gap:8px;">
-          <button class="btn" style="background:#9C27B0; display:none;" data-action="videos">回放下载</button>
-        </div>
-      </div>
-      <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
-        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
-    `;
+    const card = globalThis.BjtuCourseCardUi.createCourseCard({
+      courseId,
+      className: 'mrjzy-standalone-card',
+      order: baseOrder + idx,
+      titleHtml,
+      metaHtml: `<div style="font-size:13px;color:#666;line-height:1.35;">${teacherHtml}</div>`,
+      actionsHtml: '<button class="btn" style="background:#9C27B0;display:none;" data-action="videos">回放下载</button>'
+    });
     courseListDiv.appendChild(card);
 
     window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };

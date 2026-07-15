@@ -1918,9 +1918,6 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
   }
 
   courses.forEach(course => {
-    const card = document.createElement('div');
-    card.className = 'file-item';
-    card.style.backgroundColor = '#fff';
     const courseId = course.id || course.cId || course.courseId || course.course_id;
     const courseNumRaw = course.course_num || course.courseNum || course.courseNo || course.course_id || courseId;
     const courseNum = getVeCourseSeq10(course) || String(courseNumRaw || '');
@@ -1931,15 +1928,11 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
     const teacherLabel = String(teacherName || '').trim() || '教师';
     const coursePlatformUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10460&courseId=${encodeURIComponent(courseNumRaw || '')}&cId=${encodeURIComponent(courseId || '')}&xknId=${encodeURIComponent(fzId || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || getCurrentXqCode())}`;
 
-    card.id = `course-${courseId}`;
-    card.dataset.courseRankable = '1';
-    card.dataset.order = String(courses.indexOf(course));
-    card.dataset.rank = '7';
-    card.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div>
-          <div class="course-card-title"><strong><a href="${coursePlatformUrl}" target="_blank" rel="noopener noreferrer" style="color:#1565c0; text-decoration:none;">${escapeHtml(courseName)}</a></strong></div>
-          <div style="font-size:12px; color:#666; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+    const card = globalThis.BjtuCourseCardUi.createCourseCard({
+      courseId,
+      order: courses.indexOf(course),
+      titleHtml: `<a href="${coursePlatformUrl}" target="_blank" rel="noopener noreferrer" style="color:#1565c0;text-decoration:none;">${escapeHtml(courseName)}</a>`,
+      metaHtml: `<div style="font-size:12px;color:#666;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="ve-teacher-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
               <span class="ve-teacher-name">${escapeHtml(teacherLabel)}</span>
               <span class="ve-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}">
@@ -1956,18 +1949,14 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
               <span class="ve-student-count-text">学生</span>
               <span class="ve-student-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载学生列表…</div></span>
             </span>
-          </div>
-        </div>
-        <div class="course-actions" style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+          </div>`,
+      actionsHtml: `
           <button class="btn" style="background:#1e3a8a;" data-action="courseware">课件下载</button>
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
           <button class="btn" style="background:#0f766e; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="assessment" data-course-id="${escapeHtml(String(courseId || ''))}">课程考核记录表下载</button>
           <button class="btn" style="background:#0369a1; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="archive" data-course-id="${escapeHtml(String(courseId || ''))}">归档下载</button>
-        </div>
-      </div>
-      <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
-        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
-    `;
+        `
+    });
     courseListDiv.appendChild(card);
 
     // bind actions

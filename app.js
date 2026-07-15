@@ -3968,25 +3968,15 @@ function renderHomeworkList(courseId) {
           </div>
         </div>`;
 
-    return `
-      <div class="hw-card-item" data-homework-done="${isTeacherMode ? '0' : (isDone ? '1' : '0')}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
-          <div>
-            <div style="font-weight:bold; color:${titleColor};">${homeworkTypeBadge}<a href="${homeworkPageUrl}" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:none;">${escapeHtml(title)}</a></div>
-            <div style="font-size:12px; color:#666; display:flex; align-items:center; gap:0; flex-wrap:wrap;">截止: <span style="font-weight:700; color:#000; margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>
-          </div>
-          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-            ${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}
-            ${actionButtonsHtml}
-          </div>
-        </div>
-
-  ${attachmentHtml}
-        ${expandable ? `<div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0;">${expandable}</div>` : ''}
-
-        ${submitPanelHtml}
-      </div>
-    `;
+    return globalThis.BjtuHomeworkUi.renderHomeworkCard({
+      done: !isTeacherMode && isDone,
+      background: bgColor,
+      border: borderColor,
+      titleHtml: `<div style="font-weight:bold;color:${titleColor};">${homeworkTypeBadge}<a href="${homeworkPageUrl}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;">${escapeHtml(title)}</a></div>`,
+      metaHtml: `<div style="font-size:12px;color:#666;display:flex;align-items:center;gap:0;flex-wrap:wrap;">截止: <span style="font-weight:700;color:#000;margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>`,
+      actionsHtml: `${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}${actionButtonsHtml}`,
+      detailHtml: `${attachmentHtml}${expandable ? `<div style="margin-top:3px;border-top:1px dashed ${borderColor}40;padding-top:0;">${expandable}</div>` : ''}${submitPanelHtml}`
+    });
   }).join('');
 
   const renderHomeworkGroup = (kind) => {

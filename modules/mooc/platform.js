@@ -362,8 +362,8 @@ let moocLoginAssistPopupTabId = null;
   }
 
   function renderTask(course, task) {
-    const colors = task.done ? ['#e8f5e9', '#4caf50', '#2e7d32']
-      : (task.overdue ? ['#ffebee', '#ef4444', '#b91c1c'] : ['#fff3e0', '#ff9800', '#e65100']);
+    const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done: task.done, overdue: task.overdue });
+    const colors = [palette.background, palette.border, palette.foreground];
     const score = task.userScore !== null
       ? `<span class="mooc-score">[${env.escape(String(task.userScore))}${task.totalScore !== null ? `/${env.escape(String(task.totalScore))}` : ''}]</span>`
       : '';
@@ -372,18 +372,23 @@ let moocLoginAssistPopupTabId = null;
       : '';
     const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done: task.done, overdue: task.overdue });
     const goActionText = globalThis.BjtuHomeworkUi.actionLabel('mooc', actionKind(task.type), { lead: '前往' });
-    return `<div class="hw-card-item mooc-task" data-homework-done="${task.done ? '1' : '0'}" style="background:${colors[0]};border-color:${colors[1]};">
-      <div class="mooc-task-head"><div class="mooc-task-main">
-        <div class="mooc-task-title" style="color:${colors[2]};"><span class="mooc-task-kind">${typeText(task.type)}</span>${env.escape(task.title)}</div>
-        <div class="mooc-task-meta">截止: <span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${statusHtml ? ` ${statusHtml}` : ''}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>
-      </div><div class="mooc-task-actions">${score}
-        <div class="mooc-task-button-row">
+    return globalThis.BjtuHomeworkUi.renderHomeworkCard({
+      done: task.done,
+      className: 'mooc-task',
+      background: palette.background,
+      border: palette.border,
+      headClass: 'mooc-task-head',
+      headStyle: '',
+      mainClass: 'mooc-task-main',
+      actionsClass: 'mooc-task-actions',
+      titleHtml: `<div class="mooc-task-title" style="color:${palette.foreground};"><span class="mooc-task-kind">${typeText(task.type)}</span>${env.escape(task.title)}</div>`,
+      metaHtml: `<div class="mooc-task-meta">截止: <span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${statusHtml ? ` ${statusHtml}` : ''}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>`,
+      actionsHtml: `${score}<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
           <button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>
-        </div>
-      </div></div>
-      ${renderTaskDetail(course, task, colors)}
-    </div>`;
+        </div>`,
+      detailHtml: renderTaskDetail(course, task, colors)
+    });
   }
 
   function renderToggle(courseId, kind, expanded, count, collapsedText, expandedText) {
@@ -406,13 +411,6 @@ let moocLoginAssistPopupTabId = null;
       const pending = course.tasks.filter((task) => !task.done && !task.overdue);
       const overdue = course.tasks.filter((task) => task.overdue);
       const done = course.tasks.filter((task) => task.done);
-      const card = document.createElement('div');
-      card.className = 'file-item mooc-standalone-card';
-      card.id = `course-mooc-${course.id}`;
-      card.dataset.courseId = `mooc-${course.id}`;
-      card.dataset.courseRankable = '1';
-      card.dataset.order = String(baseOrder + index);
-      card.dataset.rank = pending.length ? '0' : (overdue.length ? '2' : (done.length ? '4' : '7'));
       const expanded = expandedGroups.get(course.id) || { overdue: false, done: false };
       const pendingHtml = pending.map((task) => renderTask(course, task)).join('');
       const overdueHtml = overdue.map((task) => renderTask(course, task)).join('');
@@ -422,11 +420,23 @@ let moocLoginAssistPopupTabId = null;
         ${overdue.length ? `<div class="homework-group homework-group--overdue ${expanded.overdue ? '' : 'is-hidden'}" data-homework-group="overdue" aria-hidden="${expanded.overdue ? 'false' : 'true'}">${overdueHtml}</div>` : ''}
         ${done.length ? renderToggle(course.id, 'done', expanded.done, done.length, '查看已交作业', '收起已交作业') : ''}
         ${done.length ? `<div class="homework-group homework-group--done ${expanded.done ? '' : 'is-hidden'}" data-homework-group="done" aria-hidden="${expanded.done ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
-      card.innerHTML = `<div class="mooc-course-head"><div class="mooc-course-identity">
-          <div class="course-card-title"><strong><a href="${env.escape(course.url)}" target="_blank" rel="noopener noreferrer">${env.escape(course.name)}</a></strong></div>
-          <div class="mooc-course-meta">${renderTeachers(course)}</div>
-        </div><button class="btn mooc-complete-all-btn" data-mooc-action="course" data-course-id="${env.escape(course.id)}">通过GinsMooc一键扫描并完成全部</button></div>
-        <div class="homework-area mooc-homework-area">${course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : '<span class="spinner mooc-inline-spinner"></span> 正在读取课程作业…'}</div>`;
+    const card = globalThis.BjtuCourseCardUi.createCourseCard({
+        courseId: `mooc-${course.id}`,
+        className: 'mooc-standalone-card',
+        order: baseOrder + index,
+        rank: pending.length ? 0 : (overdue.length ? 2 : (done.length ? 4 : 7)),
+        titleHtml: `<a href="${env.escape(course.url)}" target="_blank" rel="noopener noreferrer">${env.escape(course.name)}</a>`,
+        metaHtml: `<div class="mooc-course-meta">${renderTeachers(course)}</div>`,
+        actionsHtml: `<button class="btn mooc-complete-all-btn" data-mooc-action="course" data-course-id="${env.escape(course.id)}">通过GinsMooc一键扫描并完成全部</button>`,
+        contentHtml: course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : '<span class="spinner mooc-inline-spinner"></span> 正在读取课程作业…',
+        headerClass: 'mooc-course-head',
+        identityClass: 'mooc-course-identity',
+        homeworkClass: 'homework-area mooc-homework-area',
+        includeResultArea: false,
+        wrapActions: false,
+        headerStyle: '',
+        homeworkStyle: ''
+      });
       env.courseList.appendChild(card);
     });
     env.updateEmpty?.();

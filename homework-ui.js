@@ -56,11 +56,47 @@
     return `<a class="${escape(className)}" href="${escape(href)}" target="_blank" rel="noopener noreferrer" style="background:${escape(color)}; padding:${escape(padding)}; font-size:12px; text-decoration:none; color:#fff;">${escape(label)}</a>`;
   }
 
+  function homeworkPalette({ done = false, overdue = false } = {}) {
+    if (done) return { background: '#e8f5e9', border: '#4caf50', foreground: '#2e7d32', action: '#2E7D32' };
+    if (overdue) return { background: '#ffebee', border: '#ef4444', foreground: '#b91c1c', action: '#b91c1c' };
+    return { background: '#fff3e0', border: '#ff9800', foreground: '#e65100', action: '#E65100' };
+  }
+
+  function renderHomeworkCard({
+    done = false,
+    className = '',
+    background = '#fff',
+    border = '#d1d5db',
+    titleHtml = '',
+    metaHtml = '',
+    actionsHtml = '',
+    detailHtml = '',
+    headClass = '',
+    mainClass = '',
+    actionsClass = '',
+    headStyle = 'display:flex;justify-content:space-between;align-items:start;gap:8px;',
+    attributes = ''
+  } = {}) {
+    const classes = ['hw-card-item', className].filter(Boolean).join(' ');
+    const headClasses = headClass || 'homework-card-head';
+    const mainClasses = mainClass || 'homework-card-main';
+    const actionClasses = actionsClass || 'homework-card-actions';
+    return `<div class="${classes}" data-homework-done="${done ? '1' : '0'}" ${attributes} style="background:${background};border:1px solid ${border};border-radius:6px;padding:8px;margin-top:8px;">
+      <div class="${headClasses}" style="${headStyle}">
+        <div class="${mainClasses}">${titleHtml}${metaHtml}</div>
+        ${actionsHtml ? `<div class="${actionClasses}" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">${actionsHtml}</div>` : ''}
+      </div>
+      ${detailHtml}
+    </div>`;
+  }
+
   global.BjtuHomeworkUi = Object.freeze({
     text,
     detailOptions,
     statusHtml,
     actionLabel,
-    renderActionLink
+    renderActionLink,
+    homeworkPalette,
+    renderHomeworkCard
   });
 })(globalThis);

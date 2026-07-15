@@ -680,10 +680,7 @@ function renderYktHomeworkItems(courseId, items) {
     const scoreText = hasScore
       ? `${it.score}/${it?.total_score ?? ''}`
       : '';
-    const bgColor = done ? '#e8f5e9' : (overdue ? '#ffebee' : '#fff3e0');
-    const borderColor = done ? '#4caf50' : (overdue ? '#ef4444' : '#ff9800');
-    const titleColor = done ? '#2e7d32' : (overdue ? '#b91c1c' : '#e65100');
-    const detailBtnColor = done ? '#2E7D32' : (overdue ? '#b91c1c' : '#E65100');
+    const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done, overdue });
     const actionText = globalThis.BjtuHomeworkUi.actionLabel(
       'ykt',
       done ? 'view' : (Number(it?.__actype) === 15 ? 'learn' : 'submit')
@@ -719,23 +716,15 @@ function renderYktHomeworkItems(courseId, items) {
           expanded
         }))
       : '';
-    return `
-    <div class="hw-card-item" data-homework-done="${done ? '1' : '0'}" style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:6px; padding:8px; margin-top:8px;">
-      <div style="display:flex; justify-content:space-between; align-items:start; gap:8px;">
-        <div>
-          <div style="font-weight:bold; color:${titleColor};">${escapeHtml(it.title || '雨课堂作业')}</div>
-          <div style="font-size:12px; color:#666;">截止: <span style="font-weight:700; color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div>
-          <div style="font-size:12px; color:#666;">${progressHtml ? `进度: ${progressHtml}` : ''}</div>
-        </div>
-        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-          ${titleScoreBadge ? `<div style="font-size:12px; line-height:1;">${titleScoreBadge}</div>` : ''}
-          ${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: detailBtnColor, escape: escapeHtml })}
-        </div>
-      </div>
-      ${detailExpandable ? `<div style="margin-top:3px; border-top:1px dashed ${borderColor}40; padding-top:0;">${detailExpandable}</div>` : ''}
-      ${detailStatusHtml}
-    </div>
-  `;
+    return globalThis.BjtuHomeworkUi.renderHomeworkCard({
+      done,
+      background: palette.background,
+      border: palette.border,
+      titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${escapeHtml(it.title || '雨课堂作业')}</div>`,
+      metaHtml: `<div style="font-size:12px;color:#666;">截止: <span style="font-weight:700;color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div><div style="font-size:12px;color:#666;">${progressHtml ? `进度: ${progressHtml}` : ''}</div>`,
+      actionsHtml: `${titleScoreBadge ? `<div style="font-size:12px;line-height:1;">${titleScoreBadge}</div>` : ''}${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })}`,
+      detailHtml: `${detailExpandable ? `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;">${detailExpandable}</div>` : ''}${detailStatusHtml}`
+    });
   }).join('');
 }
 
@@ -754,27 +743,14 @@ function renderYktStandaloneCourses() {
     const courseLink = yktCourseLink(c.classroom_id);
     const teacherName = String(c.teacher_name || '').trim();
     const subText = `${teacherName ? `${teacherName} · ` : ''}${String(c.name || '').trim()}`;
-    const card = document.createElement('div');
-    card.className = 'file-item ykt-standalone-card';
-    card.style.backgroundColor = '#fff';
-    card.id = `course-${courseId}`;
-    card.dataset.courseId = String(courseId || '');
-    card.dataset.courseRankable = '1';
-    card.dataset.order = String(baseOrder + idx);
-    card.dataset.rank = '7';
-    card.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div>
-          <div class="course-card-title"><strong><a href="${courseLink}" target="_blank" rel="noopener noreferrer" style="color:#5096f5; text-decoration:none; line-height:1.3;">${escapeHtml(c.course_name || c.name || '雨课堂课程')}</a></strong></div>
-          <div style="font-size:12px; color:#666; line-height:1.35;">${escapeHtml(subText)}</div>
-        </div>
-        <div class="course-actions" style="display:flex; gap:8px;">
-          <button class="btn" style="background:#9C27B0; display:none;" data-action="videos">回放下载</button>
-        </div>
-      </div>
-      <div class="result-area" style="margin-top:6px; display:none; padding-top:6px; border-top:1px dashed #eee;"></div>
-        <div id="homework-area-${courseId}" class="homework-area" style="margin-top:6px; padding-top:6px; border-top:1px dashed #eee; font-size:13px; color:#666;"></div>
-    `;
+    const card = globalThis.BjtuCourseCardUi.createCourseCard({
+      courseId,
+      className: 'ykt-standalone-card',
+      order: baseOrder + idx,
+      titleHtml: `<a href="${courseLink}" target="_blank" rel="noopener noreferrer" style="color:#5096f5;text-decoration:none;line-height:1.3;">${escapeHtml(c.course_name || c.name || '雨课堂课程')}</a>`,
+      metaHtml: `<div style="font-size:12px;color:#666;line-height:1.35;">${escapeHtml(subText)}</div>`,
+      actionsHtml: '<button class="btn" style="background:#9C27B0;display:none;" data-action="videos">回放下载</button>'
+    });
     courseListDiv.appendChild(card);
 
     if (!window.courseHomeworkData[courseId]) {
