@@ -4896,7 +4896,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
       ykt: false
     };
   }
-  if (popupMode || !window.__updateCheckerLoaded) {
+  if (!window.__updateCheckerLoaded) {
     const versionInfoEl = document.getElementById('version-info');
     if (versionInfoEl) versionInfoEl.style.display = 'none';
   }

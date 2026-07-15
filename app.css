@@ -909,6 +909,9 @@ body {
             margin-right: 6px;
             white-space: nowrap;
         }
+        body.popup-mode .version-info {
+            display: none !important;
+        }
         .version-btn {
             display: inline-flex;
             align-items: center;
