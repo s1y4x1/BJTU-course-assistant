@@ -1372,7 +1372,7 @@ async function chooseUpdateModules(archiveFiles) {
       <div class="version-modal-header"><div class="upload-duplicate-title">选择要保留的模块</div></div>
       <div style="margin:8px 0;color:#64748b;font-size:13px;">智慧课程平台、课程合并核心和更新组件始终保留。未勾选的可选模块不会解压，已安装时将被删除。</div>
       <div data-module-list style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0;"></div>
-      <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定</button></div>
+      <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定（2 秒）</button></div>
     </div>`;
     const list = mask.querySelector('[data-module-list]');
     appendUpdateModuleChoice(list, {
@@ -1398,16 +1398,53 @@ async function chooseUpdateModules(archiveFiles) {
         disabled: false
       });
     });
-    mask.querySelector('[data-invert]').addEventListener('click', () => {
-      list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
-    });
-    mask.querySelector('[data-confirm]').addEventListener('click', async () => {
+    const confirmButton = mask.querySelector('[data-confirm]');
+    let autoConfirmTimer = null;
+    let confirmInProgress = false;
+    const cancelAutoConfirm = () => {
+      if (autoConfirmTimer) {
+        clearInterval(autoConfirmTimer);
+        autoConfirmTimer = null;
+      }
+      if (confirmButton instanceof HTMLButtonElement && confirmButton.isConnected) {
+        confirmButton.textContent = '确定';
+      }
+    };
+    const confirmSelection = async () => {
+      if (confirmInProgress) return;
+      confirmInProgress = true;
+      cancelAutoConfirm();
       const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
       await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)) }).catch(() => {});
       mask.remove();
       resolve(selected);
+    };
+    mask.querySelector('[data-invert]').addEventListener('click', () => {
+      list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
+      cancelAutoConfirm();
     });
+    list.addEventListener('change', (event) => {
+      if (event.target instanceof HTMLInputElement && event.target.matches('input[type="checkbox"]:not(:disabled)')) {
+        cancelAutoConfirm();
+      }
+    });
+    confirmButton.addEventListener('click', confirmSelection);
     document.body.appendChild(mask);
+    const autoConfirmAt = Date.now() + 2000;
+    autoConfirmTimer = setInterval(() => {
+      if (!mask.isConnected) {
+        cancelAutoConfirm();
+        return;
+      }
+      const remainingMs = autoConfirmAt - Date.now();
+      if (remainingMs <= 0) {
+        clearInterval(autoConfirmTimer);
+        autoConfirmTimer = null;
+        void confirmSelection();
+        return;
+      }
+      confirmButton.textContent = `确定（${Math.ceil(remainingMs / 1000)} 秒）`;
+    }, 100);
   });
 }
 
