@@ -1264,6 +1264,33 @@ body {
             color: #334155;
             font-size: 12px;
         }
+        .version-download-status {
+            min-height: 20px;
+            color: #475569;
+            display: flex;
+            align-items: baseline;
+            justify-content: flex-end;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .version-download-status-message {
+            flex: 1 1 auto;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .version-download-status-separator {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .version-download-eta {
+            color: #475569;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
         .version-download-actions {
             display: none;
             margin-top: 10px;
@@ -1271,6 +1298,17 @@ body {
         }
         .version-download-progress {
             margin-top: 10px;
+        }
+        .homework-attachment-loading {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: #475569;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .homework-attachment-loading .spinner {
+            margin-left: 0;
         }
         .version-download-progress.indeterminate .progress-bar {
             width: 35% !important;

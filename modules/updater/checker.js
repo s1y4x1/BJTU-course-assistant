@@ -716,7 +716,21 @@ function setVersionDownloadProgressUi({
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
   if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件...');
-  if (statusEl) statusEl.textContent = phase === 'finished' ? '' : String(status || '下载中...');
+  if (statusEl) {
+    statusEl.replaceChildren();
+    delete statusEl.dataset.transfer;
+    delete statusEl.dataset.loaded;
+    delete statusEl.dataset.total;
+    delete statusEl.dataset.speed;
+    delete statusEl.dataset.eta;
+    const message = phase === 'finished' ? '' : String(status || '下载中...');
+    if (message) {
+      const messageEl = document.createElement('span');
+      messageEl.className = 'version-download-status-message';
+      messageEl.textContent = message;
+      statusEl.appendChild(messageEl);
+    }
+  }
 }
 
 function setVersionDownloadBar({ visible = true, percent = 0, indeterminate = false } = {}) {
@@ -917,6 +931,72 @@ function formatDownloadBytes(value) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+function buildVersionDownloadEmphasisStyle(bytes) {
+  const mb = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
+  if (mb <= 0) return 'font-size:10px;font-weight:500;color:#94a3b8;text-shadow:none;';
+  const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
+  const fontSize = (10 + ratio * 6).toFixed(2);
+  const fontWeight = Math.round(500 + ratio * 320);
+  const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
+  const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35);
+  if (document.documentElement.dataset.colorScheme === 'dark') {
+    const red = Math.round(182 + ratio * 73);
+    const green = Math.round(194 + ratio * 61);
+    const blue = Math.round(209 + ratio * 46);
+    const glowAlpha = Math.min(1, shadowAlpha * 1.2).toFixed(2);
+    const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(255,255,255,${glowAlpha})`;
+    return `font-size:${fontSize}px;font-weight:${fontWeight};color:rgb(${red},${green},${blue});text-shadow:${shadow};`;
+  }
+  const red = Math.round(148 - ratio * 118);
+  const green = Math.max(18, red + 8);
+  const blue = Math.max(28, red + 20);
+  const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha.toFixed(2)})`;
+  return `font-size:${fontSize}px;font-weight:${fontWeight};color:rgb(${red},${green},${blue});text-shadow:${shadow};`;
+}
+
+function formatVersionDownloadEta(seconds) {
+  const totalSeconds = Math.max(0, Math.ceil(Number(seconds) || 0));
+  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainder = totalSeconds % 60;
+  if (minutes < 60) return `${minutes} 分 ${remainder} 秒`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} 小时 ${minutes % 60} 分`;
+}
+
+function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, eta = null } = {}) {
+  const statusEl = document.getElementById('version-download-status');
+  if (!(statusEl instanceof HTMLElement)) return;
+  const loadedBytes = Math.max(0, Number(loaded) || 0);
+  const totalBytes = Math.max(0, Number(total) || 0);
+  const speedBytes = Math.max(0, Number(speed) || 0);
+  const etaSeconds = Number.isFinite(Number(eta)) && Number(eta) >= 0 ? Number(eta) : null;
+  const sizePart = totalBytes > 0
+    ? `<span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeHtml(formatDownloadBytes(loadedBytes))}</span><span class="version-download-status-separator">/</span><span style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeHtml(formatDownloadBytes(totalBytes))}</span>`
+    : `<span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeHtml(formatDownloadBytes(loadedBytes))}</span>`;
+  const speedPart = `<span style="${buildVersionDownloadEmphasisStyle(speedBytes)}">${escapeHtml(formatDownloadBytes(speedBytes))}/s</span>`;
+  const etaText = etaSeconds !== null
+    ? `剩余: ${formatVersionDownloadEta(etaSeconds)}`
+    : '剩余: 计算中…';
+  statusEl.innerHTML = `${sizePart}${speedPart}<span class="version-download-eta">${escapeHtml(etaText)}</span>`;
+  statusEl.dataset.transfer = '1';
+  statusEl.dataset.loaded = String(loadedBytes);
+  statusEl.dataset.total = String(totalBytes);
+  statusEl.dataset.speed = String(speedBytes);
+  statusEl.dataset.eta = etaSeconds === null ? '' : String(etaSeconds);
+}
+
+window.addEventListener('bjtu-theme-change', () => {
+  const statusEl = document.getElementById('version-download-status');
+  if (!(statusEl instanceof HTMLElement) || statusEl.dataset.transfer !== '1') return;
+  setVersionDownloadTransferStatus({
+    loaded: Number(statusEl.dataset.loaded || 0),
+    total: Number(statusEl.dataset.total || 0),
+    speed: Number(statusEl.dataset.speed || 0),
+    eta: statusEl.dataset.eta === '' ? null : Number(statusEl.dataset.eta)
+  });
+});
 
 async function readShortPlainTextResponse(response, maxBytes = 2048) {
   const contentType = String(response?.headers?.get?.('content-type') || '')
@@ -1132,15 +1212,22 @@ async function fetchUpdateArchiveWithProgress(url) {
     }
     const total = Math.max(0, Number(response.headers.get('content-length') || 0));
     setVersionDownloadBar({ visible: true, percent: 0, indeterminate: total <= 0 });
+    setVersionDownloadTransferStatus({ loaded: 0, total, speed: 0, eta: null });
     if (!response.body?.getReader) {
       const bytes = new Uint8Array(await response.arrayBuffer());
+      const elapsedSeconds = Math.max(0.001, (Date.now() - startedAt) / 1000);
+      const speed = bytes.byteLength / elapsedSeconds;
       setVersionDownloadBar({ visible: true, percent: 100 });
       setVersionDownloadProgressUi({ visible: true, status: `100% · ${formatDownloadBytes(bytes.byteLength)}`, title: '正在下载更新压缩包', body: '更新压缩包下载完成，正在准备覆盖解压。', phase: 'downloading' });
+      setVersionDownloadTransferStatus({ loaded: bytes.byteLength, total: total || bytes.byteLength, speed, eta: 0 });
       return bytes;
     }
     const reader = response.body.getReader();
     const chunks = [];
     let received = 0;
+    let sampledAt = performance.now();
+    let sampledBytes = 0;
+    let smoothedSpeed = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1148,6 +1235,18 @@ async function fetchUpdateArchiveWithProgress(url) {
       resetIdleTimeout();
       chunks.push(value);
       received += value.byteLength;
+      const now = performance.now();
+      const sampleDurationMs = now - sampledAt;
+      if (sampleDurationMs >= 200) {
+        const instantaneousSpeed = Math.max(0, (received - sampledBytes) * 1000 / sampleDurationMs);
+        smoothedSpeed = smoothedSpeed > 0
+          ? (smoothedSpeed * 0.72 + instantaneousSpeed * 0.28)
+          : instantaneousSpeed;
+        sampledAt = now;
+        sampledBytes = received;
+      } else if (smoothedSpeed <= 0) {
+        smoothedSpeed = received / Math.max(0.001, (Date.now() - startedAt) / 1000);
+      }
       const exactPercent = total > 0 ? Math.min(100, (received / total) * 100) : 0;
       const percent = Math.floor(exactPercent);
       setVersionDownloadBar({ visible: true, percent: exactPercent, indeterminate: total <= 0 });
@@ -1160,6 +1259,14 @@ async function fetchUpdateArchiveWithProgress(url) {
         body: '正在下载更新文件，下载完成后将自动覆盖解压。',
         phase: 'downloading'
       });
+      setVersionDownloadTransferStatus({
+        loaded: received,
+        total,
+        speed: smoothedSpeed,
+        eta: total > received
+          ? (smoothedSpeed > 0 ? (total - received) / smoothedSpeed : null)
+          : (total > 0 ? 0 : null)
+      });
     }
     setVersionDownloadBar({ visible: true, percent: 100 });
     const bytes = new Uint8Array(received);
@@ -1167,6 +1274,12 @@ async function fetchUpdateArchiveWithProgress(url) {
     chunks.forEach((chunk) => {
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
+    });
+    setVersionDownloadTransferStatus({
+      loaded: received,
+      total: total || received,
+      speed: smoothedSpeed,
+      eta: 0
     });
     return bytes;
   } catch (error) {
@@ -1736,9 +1849,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
     openVersionDownloadProgressModal();
     return;
   }
-  setVersionDownloadReleaseNotes(
-    versionButtonLatestForce ? (versionButtonLatestBodyMarkdown || '暂无更新说明。') : ''
-  );
+  setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
   const writableDirectory = await getWritableVersionUpdateDirectory();
   if (!writableDirectory) {
     showVersionUpdateDirectoryRequired(downloadUrl, source, fullExtraction);

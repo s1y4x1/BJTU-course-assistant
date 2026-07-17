@@ -2087,13 +2087,11 @@ async function ensureHomeworkTeacherId(courseId) {
 }
 
 function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor = '') {
-  const key = String(hw?.__attachmentKey || '').trim();
-  if (!key) return '';
-  const cache = window.homeworkNoteAttachmentCacheByKey?.[key] || null;
-  const list = Array.isArray(cache?.picList) ? cache.picList : [];
-  if (!list.length) return '';
-
   const courseId = String(hw?.__courseId || '').trim();
+  const key = String(hw?.__attachmentKey || '').trim();
+  const courseLoading = !!window.homeworkAttachmentPendingByCourse?.[courseId];
+  if (!key && !courseLoading) return '';
+  const cache = window.homeworkNoteAttachmentCacheByKey?.[key] || null;
   const normalizedBorderColor = String(borderColor || '').toLowerCase();
   const isTeacherMode = !!window.isTeacherAccount;
   const softBg = backgroundColor || (isTeacherMode
@@ -2103,6 +2101,16 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
       : (normalizedBorderColor.includes('ef4444') || normalizedBorderColor.includes('b91c1c') || normalizedBorderColor.includes('f44336')
         ? 'rgba(254,242,242,0.78)'
         : 'rgba(255,243,224,0.72)')));
+  if (courseLoading && (!key || !cache?.loaded || cache?.loading)) {
+    const animationDelay = `-${Date.now() % 1000}ms`;
+    return `<div class="file-item homework-attachment-loading" style="padding:6px 8px;border:1px solid ${borderColor};border-radius:6px;background:${softBg};margin-top:6px;">
+      <span class="spinner" aria-hidden="true" style="width:10px;height:10px;border-width:1px;border-color:#64748b;border-top-color:transparent;animation-delay:${animationDelay};"></span>
+      <span>正在加载作业附件…</span>
+    </div>`;
+  }
+
+  const list = Array.isArray(cache?.picList) ? cache.picList : [];
+  if (!list.length) return '';
 
   const rows = list.map((it, idx) => {
     const fileNameNoExt = String(it?.fileNameNoExt || '').trim() || `附件${idx + 1}`;
@@ -2391,10 +2399,10 @@ async function prefetchHomeworkAttachments(courseId, list) {
   }
 
   window.homeworkAttachmentPendingByCourse[courseId] = true;
+  renderHomeworkList(courseId);
   try {
     const teacherId = await ensureHomeworkTeacherId(courseId);
     if (!teacherId) return;
-    let changed = false;
 
     await Promise.all(items.map(async (hw) => {
       const noteId = String(hw?.id ?? hw?.noteId ?? hw?.courseNoteId ?? '').trim();
@@ -2425,15 +2433,13 @@ async function prefetchHomeworkAttachments(courseId, list) {
           return { fileName: fileNameRaw || fileNameNoExt, fileNameNoExt, sizeBytes, url };
         }).filter((it) => !!it.url);
         window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList };
-        if (picList.length > 0) changed = true;
       } catch {
         window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList: [] };
       }
     }));
-
-    if (changed) renderHomeworkList(courseId);
   } finally {
     window.homeworkAttachmentPendingByCourse[courseId] = false;
+    renderHomeworkList(courseId);
   }
 }
 

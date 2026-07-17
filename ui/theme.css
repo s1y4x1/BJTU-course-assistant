@@ -232,6 +232,16 @@ html[data-color-scheme="dark"] .version-download-release-notes-title {
   color: #f8fafc;
 }
 
+html[data-color-scheme="dark"] .version-download-status,
+html[data-color-scheme="dark"] .version-download-status-message,
+html[data-color-scheme="dark"] .version-download-eta {
+  color: #cbd5e1;
+}
+
+html[data-color-scheme="dark"] .version-download-status-separator {
+  color: #94a3b8;
+}
+
 html[data-color-scheme="dark"] .ve-course-teacher-table th {
   background: #1e293b;
   color: #e2e8f0;
