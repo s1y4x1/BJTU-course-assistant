@@ -55,6 +55,7 @@ const courseListDiv = document.getElementById('course-list');
 const courseLoadingStatus = document.getElementById('course-loading-status');
 const rightColumn = document.getElementById('right-column');
 const columnResizer = document.getElementById('column-resizer');
+const columnCollapseToggle = document.getElementById('column-collapse-toggle');
 const veStatusBtn = document.getElementById('ve-status-btn');
 const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrjzyStatusBtn = document.getElementById('mrjzy-status-btn');
@@ -195,6 +196,8 @@ window.courseShowOverdueById = {};
 window.courseShowDoneById = {};
 window.yktDetailCacheByKey = {}; // {detailKey: {state,title,exam_problems,problem_results,promise}}
 window.externalPlatformLoadVersion = 0;
+window.courseHelperPlatformSplitMode = false;
+window.courseHelperPlatformColumnWeights = {};
 window.courseListLoadVersion = 0;
 window.veTeacherMetaByCourseId = {}; // {courseId:{teacherId,loading,loaded,teachers:[]}}
 window.veCourseTeachersMetaByCourseId = {}; // {courseId:{rows,loading,loaded,error,promise}}
@@ -599,6 +602,7 @@ function detailVisibleMaxHeight(lines) {
 function rematchExternalByVeCourses(platform = '') {
   const veCourses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
   const shouldRematch = (id) => !platform || platform === id;
+  const keepPlatformsSeparate = window.courseHelperPlatformSplitMode === true;
 
   if (shouldRematch('ykt') && isPlatformEnabled('ykt') && Array.isArray(window.yktCourseGroupsSnapshot) && window.yktCourseGroupsSnapshot.length) {
     const yktStrictMap = collectVeFzIdTail10Map(veCourses);
@@ -607,7 +611,7 @@ function rematchExternalByVeCourses(platform = '') {
     window.yktStandaloneCourses = [];
     window.yktCourseGroupsSnapshot.forEach((group) => {
       const strictToken = String(group?.strictToken || group?.token || '').trim();
-      const matched = strictToken ? yktStrictMap.get(strictToken) : null;
+      const matched = !keepPlatformsSeparate && strictToken ? yktStrictMap.get(strictToken) : null;
       if (matched?.courseId) {
         const cid = String(matched.courseId);
         if (!window.yktMatchedHomeworkByCourseId[cid]) window.yktMatchedHomeworkByCourseId[cid] = [];
@@ -630,7 +634,7 @@ function rematchExternalByVeCourses(platform = '') {
     window.mrjzyMatchedHomeworkByCourseId = {};
     window.mrjzyStandaloneCourses = [];
     window.mrjzyCourseGroupsSnapshot.forEach((group) => {
-      const matched = mrjzyMatchMap.get(String(group?.token || ''));
+      const matched = keepPlatformsSeparate ? null : mrjzyMatchMap.get(String(group?.token || ''));
       if (matched?.courseId) {
         const cid = String(matched.courseId);
         if (!window.mrjzyMatchedHomeworkByCourseId[cid]) window.mrjzyMatchedHomeworkByCourseId[cid] = [];
@@ -651,7 +655,7 @@ function rematchExternalByVeCourses(platform = '') {
     window.jlgjMatchedHomeworkByCourseId = {};
     window.jlgjStandaloneCourses = [];
     window.jlgjCourseGroupsSnapshot.forEach((group) => {
-      const matched = jlgjMatchMap.get(String(group?.token || ''));
+      const matched = keepPlatformsSeparate ? null : jlgjMatchMap.get(String(group?.token || ''));
       if (matched?.courseId) {
         const cid = String(matched.courseId);
         if (!window.jlgjMatchedHomeworkByCourseId[cid]) window.jlgjMatchedHomeworkByCourseId[cid] = [];
@@ -820,6 +824,15 @@ function setupOptionsStorageLiveSync() {
       window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
       applyPlatformVisibility();
     }
+    if (!popupMode && changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY]) {
+      setCourseHelperFocusMode(changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY].newValue === true);
+    }
+    if (!popupMode && changes[COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]) {
+      window.courseHelperPlatformColumnWeights = normalizeCourseHelperPlatformColumnWeights(
+        changes[COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY].newValue
+      );
+      if (window.courseHelperPlatformSplitMode) applyCourseHelperPlatformColumnWeights();
+    }
 
     if (changes.saveUploadedFilesEnabled) {
       window.saveUploadedFilesEnabled = changes.saveUploadedFilesEnabled.newValue === undefined
@@ -907,6 +920,277 @@ function refreshUploadSelectVisibility() {
   });
 }
 
+const COURSE_PLATFORM_COLUMNS = Object.freeze([
+  { id: 've', label: '智慧课程平台' },
+  { id: 'ykt', label: '雨课堂' },
+  { id: 'mrjzy', label: '每日交作业' },
+  { id: 'jlgj', label: '接龙管家' },
+  { id: 'mooc', label: '中国大学MOOC' }
+]);
+const COURSE_HELPER_EXPANDED_DEFAULT_KEY = 'courseHelperExpandedByDefault';
+const COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY = 'courseHelperPlatformColumnWeights';
+const COURSE_HELPER_PLATFORM_COLUMN_MIN_WIDTH = 240;
+const COURSE_HELPER_LAYOUT_TRANSITION_MS = 240;
+let coursePlatformOrganizeFrame = 0;
+let coursePlatformOrganizing = false;
+let coursePlatformColumnDragCleanup = null;
+let courseHelperLayoutTransitionTimer = 0;
+let courseHelperLayoutTransitioning = false;
+
+function getCourseCardPlatform(card) {
+  if (!(card instanceof HTMLElement)) return '';
+  const explicit = String(card.dataset.platform || '').trim().toLowerCase();
+  if (COURSE_PLATFORM_COLUMNS.some((item) => item.id === explicit)) return explicit;
+  const courseId = String(card.dataset.courseId || card.id || '').replace(/^course-/, '').toLowerCase();
+  if (courseId.startsWith('ykt-') || card.classList.contains('ykt-standalone-card')) return 'ykt';
+  if (courseId.startsWith('mrjzy-') || card.classList.contains('mrjzy-standalone-card')) return 'mrjzy';
+  if (courseId.startsWith('jlgj-') || card.classList.contains('jlgj-standalone-card')) return 'jlgj';
+  if (courseId.startsWith('mooc-') || card.classList.contains('mooc-standalone-card')) return 'mooc';
+  return 've';
+}
+
+function unwrapCoursePlatformColumns() {
+  if (!courseListDiv) return;
+  coursePlatformColumnDragCleanup?.();
+  const columns = [...courseListDiv.querySelectorAll(':scope > .platform-course-column')];
+  columns.forEach((column) => {
+    column.querySelectorAll(':scope > .platform-course-column-body > .file-item[data-course-rankable="1"]').forEach((card) => {
+      courseListDiv.appendChild(card);
+    });
+    column.remove();
+  });
+  courseListDiv.querySelectorAll(':scope > .platform-column-resizer').forEach((resizer) => resizer.remove());
+  courseListDiv.classList.remove('platform-split-grid');
+  courseListDiv.style.removeProperty('grid-template-columns');
+}
+
+function normalizeCourseHelperPlatformColumnWeights(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return Object.fromEntries(COURSE_PLATFORM_COLUMNS.map(({ id }) => {
+    const value = Number(source[id]);
+    return [id, Number.isFinite(value) && value > 0 ? value : 1];
+  }));
+}
+
+function applyCourseHelperPlatformColumnWeights() {
+  if (!courseListDiv) return;
+  const weights = normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights);
+  courseListDiv.querySelectorAll(':scope > .platform-course-column').forEach((column) => {
+    const platform = String(column.dataset.platform || '');
+    column.style.flex = `${weights[platform] || 1} 1 0px`;
+  });
+}
+
+async function persistCourseHelperPlatformColumnWeights() {
+  if (!courseListDiv || popupMode) return;
+  const columns = [...courseListDiv.querySelectorAll(':scope > .platform-course-column')];
+  const next = { ...normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights) };
+  const activeWidths = columns.map((column) => column.getBoundingClientRect().width).filter((value) => Number.isFinite(value) && value > 0);
+  const averageWidth = activeWidths.length
+    ? activeWidths.reduce((sum, value) => sum + value, 0) / activeWidths.length
+    : 1;
+  columns.forEach((column) => {
+    const platform = String(column.dataset.platform || '');
+    const weight = column.getBoundingClientRect().width;
+    if (platform && Number.isFinite(weight) && weight > 0) next[platform] = weight / averageWidth;
+  });
+  window.courseHelperPlatformColumnWeights = next;
+  applyCourseHelperPlatformColumnWeights();
+  await chrome.storage.local.set({ [COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]: next }).catch(() => {});
+}
+
+function bindPlatformColumnResizer(resizer) {
+  if (!(resizer instanceof HTMLElement) || resizer.dataset.bound === '1') return;
+  resizer.dataset.bound = '1';
+  resizer.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || popupMode || !window.courseHelperPlatformSplitMode) return;
+    const leftPlatform = String(resizer.dataset.leftPlatform || '');
+    const rightPlatform = String(resizer.dataset.rightPlatform || '');
+    const leftColumn = courseListDiv.querySelector(`:scope > .platform-course-column[data-platform="${leftPlatform}"]`);
+    const rightColumn = courseListDiv.querySelector(`:scope > .platform-course-column[data-platform="${rightPlatform}"]`);
+    if (!(leftColumn instanceof HTMLElement) || !(rightColumn instanceof HTMLElement)) return;
+
+    event.preventDefault();
+    coursePlatformColumnDragCleanup?.();
+    const allColumns = [...courseListDiv.querySelectorAll(':scope > .platform-course-column')];
+    const columnWidths = new Map(allColumns.map((column) => [column, column.getBoundingClientRect().width]));
+    allColumns.forEach((column) => {
+      const width = Math.max(1, Number(columnWidths.get(column) || 0));
+      column.style.flex = `0 0 ${width}px`;
+    });
+    const leftRect = leftColumn.getBoundingClientRect();
+    const leftStart = Number(columnWidths.get(leftColumn) || leftRect.width);
+    const rightStart = Number(columnWidths.get(rightColumn) || rightColumn.getBoundingClientRect().width);
+    const pairWidth = leftStart + rightStart;
+    const pairLeft = leftRect.left;
+    const resizerCenterOffset = resizer.getBoundingClientRect().width / 2;
+    const minWidth = Math.min(COURSE_HELPER_PLATFORM_COLUMN_MIN_WIDTH, Math.max(80, pairWidth / 2));
+    resizer.classList.add('dragging');
+    document.body.classList.add('platform-column-resizing');
+
+    const onMove = (moveEvent) => {
+      const pointerWidth = moveEvent.clientX - pairLeft - resizerCenterOffset;
+      const nextLeft = Math.max(minWidth, Math.min(pairWidth - minWidth, pointerWidth));
+      leftColumn.style.flex = `0 0 ${nextLeft}px`;
+      rightColumn.style.flex = `0 0 ${pairWidth - nextLeft}px`;
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      resizer.classList.remove('dragging');
+      document.body.classList.remove('platform-column-resizing');
+      coursePlatformColumnDragCleanup = null;
+      void persistCourseHelperPlatformColumnWeights();
+    };
+    coursePlatformColumnDragCleanup = onUp;
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+}
+
+function organizeCourseCardsByPlatform() {
+  if (!courseListDiv || coursePlatformOrganizing || coursePlatformColumnDragCleanup || courseHelperLayoutTransitioning) return;
+  coursePlatformOrganizing = true;
+  try {
+    if (!window.courseHelperPlatformSplitMode) {
+      unwrapCoursePlatformColumns();
+      return;
+    }
+
+    const cards = [...courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]')];
+    const cardPlatforms = new Set(cards.map(getCourseCardPlatform).filter(Boolean));
+    const desired = COURSE_PLATFORM_COLUMNS.filter(({ id }) => isPlatformEnabled(id) || cardPlatforms.has(id));
+    const desiredIds = new Set(desired.map(({ id }) => id));
+
+    courseListDiv.querySelectorAll(':scope > .platform-course-column').forEach((column) => {
+      if (!desiredIds.has(String(column.dataset.platform || ''))) column.remove();
+    });
+    courseListDiv.querySelectorAll(':scope > .platform-column-resizer').forEach((resizer) => {
+      if (!desiredIds.has(String(resizer.dataset.leftPlatform || ''))
+          || !desiredIds.has(String(resizer.dataset.rightPlatform || ''))) resizer.remove();
+    });
+
+    const columns = new Map();
+    desired.forEach(({ id }) => {
+      let column = courseListDiv.querySelector(`:scope > .platform-course-column[data-platform="${id}"]`);
+      if (!(column instanceof HTMLElement)) {
+        column = document.createElement('section');
+        column.className = 'platform-course-column';
+        column.dataset.platform = id;
+        column.innerHTML = '<div class="platform-course-column-body"></div><div class="platform-course-column-empty"></div>';
+        courseListDiv.appendChild(column);
+      }
+      columns.set(id, column);
+    });
+
+    const orderedLayoutNodes = [];
+    desired.forEach(({ id }, index) => {
+      if (index > 0) {
+        const leftPlatform = desired[index - 1].id;
+        let resizer = courseListDiv.querySelector(`:scope > .platform-column-resizer[data-left-platform="${leftPlatform}"][data-right-platform="${id}"]`);
+        if (!(resizer instanceof HTMLElement)) {
+          resizer = document.createElement('div');
+          resizer.className = 'platform-column-resizer';
+          resizer.dataset.leftPlatform = leftPlatform;
+          resizer.dataset.rightPlatform = id;
+          resizer.title = '拖动调整平台列宽';
+          bindPlatformColumnResizer(resizer);
+        }
+        orderedLayoutNodes.push(resizer);
+      }
+      orderedLayoutNodes.push(columns.get(id));
+    });
+    const currentLayoutNodes = [...courseListDiv.children].filter((node) => (
+      node.classList.contains('platform-course-column') || node.classList.contains('platform-column-resizer')
+    ));
+    const layoutOrderMatches = currentLayoutNodes.length === orderedLayoutNodes.length
+      && currentLayoutNodes.every((node, index) => node === orderedLayoutNodes[index]);
+    if (!layoutOrderMatches) orderedLayoutNodes.forEach((node) => courseListDiv.appendChild(node));
+
+    cards.forEach((card) => {
+      const platform = getCourseCardPlatform(card);
+      card.dataset.platform = platform;
+      const body = columns.get(platform)?.querySelector('.platform-course-column-body');
+      if (body instanceof HTMLElement && card.parentElement !== body) body.appendChild(card);
+    });
+
+    desired.forEach(({ id }) => {
+      const column = columns.get(id);
+      const body = column?.querySelector('.platform-course-column-body');
+      const empty = column?.querySelector('.platform-course-column-empty');
+      if (!(body instanceof HTMLElement) || !(empty instanceof HTMLElement)) return;
+      const hasCards = !!body.querySelector('.file-item[data-course-rankable="1"]');
+      const state = String(window.platformLoginState?.[id] || 'checking');
+      const label = COURSE_PLATFORM_COLUMNS.find((item) => item.id === id)?.label || '';
+      empty.textContent = state === 'checking' ? `${label}正在加载课程…` : (state === 'offline' ? `${label}未登录` : `${label}暂无课程`);
+      empty.style.display = hasCards ? 'none' : '';
+    });
+
+    courseListDiv.classList.add('platform-split-grid');
+    applyCourseHelperPlatformColumnWeights();
+    sortCourseCards();
+  } finally {
+    coursePlatformOrganizing = false;
+  }
+}
+
+function scheduleCourseCardsByPlatform() {
+  if (coursePlatformOrganizeFrame) return;
+  coursePlatformOrganizeFrame = requestAnimationFrame(() => {
+    coursePlatformOrganizeFrame = 0;
+    organizeCourseCardsByPlatform();
+  });
+}
+
+function refreshCourseHelperLayoutMode() {
+  rematchExternalByVeCourses();
+  rerenderAllHomeworkAreas();
+  renderEnabledExternalStandaloneCourses();
+  if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
+  scheduleCourseCardsByPlatform();
+  setTimeout(() => {
+    sortCourseCardsWithGuard();
+    scheduleCourseCardsByPlatform();
+  }, 0);
+}
+
+function setCourseHelperFocusMode(enabled) {
+  const next = !popupMode && enabled === true;
+  if (window.courseHelperPlatformSplitMode === next) return;
+  if (courseHelperLayoutTransitionTimer) clearTimeout(courseHelperLayoutTransitionTimer);
+  courseHelperLayoutTransitioning = true;
+  window.courseHelperPlatformSplitMode = next;
+  if (!next) window.applyRightColumnResponsiveWidth?.();
+  document.body.classList.toggle('course-helper-focus', next);
+  if (columnCollapseToggle instanceof HTMLButtonElement) {
+    columnCollapseToggle.textContent = next ? '▶' : '◀';
+    columnCollapseToggle.title = next ? '展开左栏' : '折叠左栏';
+    columnCollapseToggle.setAttribute('aria-label', next ? '展开左栏' : '折叠左栏');
+    columnCollapseToggle.setAttribute('aria-expanded', next ? 'false' : 'true');
+  }
+  window.syncRightColumnResizer?.();
+  courseHelperLayoutTransitionTimer = setTimeout(() => {
+    courseHelperLayoutTransitionTimer = 0;
+    if (window.courseHelperPlatformSplitMode !== next) return;
+    courseHelperLayoutTransitioning = false;
+    if (!next) unwrapCoursePlatformColumns();
+    refreshCourseHelperLayoutMode();
+    window.syncRightColumnResizer?.();
+  }, COURSE_HELPER_LAYOUT_TRANSITION_MS);
+}
+
+async function loadCourseHelperLayoutSettings() {
+  if (popupMode) return;
+  const stored = await chrome.storage.local.get([
+    COURSE_HELPER_EXPANDED_DEFAULT_KEY,
+    COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY
+  ]).catch(() => ({}));
+  window.courseHelperPlatformColumnWeights = normalizeCourseHelperPlatformColumnWeights(
+    stored[COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]
+  );
+  setCourseHelperFocusMode(stored[COURSE_HELPER_EXPANDED_DEFAULT_KEY] === true);
+}
+
 function setupRightColumnResizer() {
   if (!rightColumn || !columnResizer) return;
   const STORAGE_KEY = 'courseHelperWidthPx';
@@ -926,6 +1210,9 @@ function setupRightColumnResizer() {
     if (isAdaptiveLayout()) {
       rightColumn.style.width = '';
       rightColumn.style.minWidth = '0';
+      return;
+    }
+    if (window.courseHelperPlatformSplitMode) {
       return;
     }
     rightColumn.style.minWidth = '';
@@ -956,12 +1243,23 @@ function setupRightColumnResizer() {
     columnResizer.style.height = `${Math.max(0, Math.round(rect.height))}px`;
   };
 
+  let resizerSyncFrame = 0;
+  let resizerSyncEndTimer = 0;
   const scheduleResizerSync = () => {
-    syncResizerGeometry();
-    requestAnimationFrame(() => syncResizerGeometry());
-    setTimeout(() => syncResizerGeometry(), 120);
+    if (!resizerSyncFrame) {
+      resizerSyncFrame = requestAnimationFrame(() => {
+        resizerSyncFrame = 0;
+        syncResizerGeometry();
+      });
+    }
+    if (resizerSyncEndTimer) clearTimeout(resizerSyncEndTimer);
+    resizerSyncEndTimer = setTimeout(() => {
+      resizerSyncEndTimer = 0;
+      syncResizerGeometry();
+    }, COURSE_HELPER_LAYOUT_TRANSITION_MS + 30);
   };
   window.syncRightColumnResizer = scheduleResizerSync;
+  window.applyRightColumnResponsiveWidth = applyResponsiveWidth;
 
   applyResponsiveWidth();
   scheduleResizerSync();
@@ -998,7 +1296,7 @@ function setupRightColumnResizer() {
   };
 
   columnResizer.addEventListener('mousedown', (e) => {
-    if (isAdaptiveLayout()) return;
+    if (isAdaptiveLayout() || window.courseHelperPlatformSplitMode || e.target === columnCollapseToggle) return;
     e.preventDefault();
     dragging = true;
     rightColumn.classList.add('dragging');
@@ -1008,9 +1306,25 @@ function setupRightColumnResizer() {
     window.addEventListener('mouseup', onUp);
   });
 
+  if (columnCollapseToggle instanceof HTMLButtonElement) {
+    columnCollapseToggle.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    columnCollapseToggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isAdaptiveLayout()) return;
+      setCourseHelperFocusMode(!window.courseHelperPlatformSplitMode);
+    });
+  }
+
   window.addEventListener('resize', () => {
     if (dragging && isAdaptiveLayout()) {
       onUp();
+    }
+    if (isAdaptiveLayout() && window.courseHelperPlatformSplitMode) {
+      setCourseHelperFocusMode(false);
     }
     applyResponsiveWidth();
     scheduleResizerSync();
@@ -1023,7 +1337,13 @@ function setupRightColumnResizer() {
     if (courseListDiv) ro.observe(courseListDiv);
   }
   if (typeof MutationObserver !== 'undefined') {
-    const mo = new MutationObserver(() => scheduleResizerSync());
+    const mo = new MutationObserver((mutations) => {
+      scheduleResizerSync();
+      const courseListChanged = mutations.some((mutation) => (
+        mutation.target === courseListDiv || courseListDiv?.contains(mutation.target)
+      ));
+      if (courseListChanged && window.courseHelperPlatformSplitMode) scheduleCourseCardsByPlatform();
+    });
     if (courseListDiv) {
       mo.observe(courseListDiv, { childList: true, subtree: true });
     }
@@ -2670,9 +2990,7 @@ function calcCourseRank(state) {
   return 9;
 }
 
-function sortCourseCards() {
-  const cards = Array.from(courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]'));
-  const sortedCards = cards.slice().sort((a, b) => {
+function compareCourseCards(a, b) {
     const ra = Number(a.dataset.rank || 7);
     const rb = Number(b.dataset.rank || 7);
     if (ra !== rb) return ra - rb;
@@ -2700,12 +3018,29 @@ function sortCourseCards() {
     const oa = Number(a.dataset.order || 0);
     const ob = Number(b.dataset.order || 0);
     return oa - ob;
-  });
+}
 
+function sortCourseCardsInContainer(container, cards) {
+  const sortedCards = cards.slice().sort(compareCourseCards);
   const unchanged = cards.length === sortedCards.length && cards.every((c, idx) => c === sortedCards[idx]);
-  if (unchanged) return;
-  sortedCards.forEach((c) => courseListDiv.appendChild(c));
-  syncCourseActionLoadingSpinnerPhase();
+  if (unchanged) return false;
+  sortedCards.forEach((card) => container.appendChild(card));
+  return true;
+}
+
+function sortCourseCards() {
+  if (!courseListDiv) return;
+  let changed = false;
+  if (window.courseHelperPlatformSplitMode) {
+    courseListDiv.querySelectorAll('.platform-course-column-body').forEach((body) => {
+      const cards = Array.from(body.querySelectorAll(':scope > .file-item[data-course-rankable="1"]'));
+      changed = sortCourseCardsInContainer(body, cards) || changed;
+    });
+  } else {
+    const cards = Array.from(courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]'));
+    changed = sortCourseCardsInContainer(courseListDiv, cards);
+  }
+  if (changed) syncCourseActionLoadingSpinnerPhase();
 }
 
 function hasCourseActionButtonAnimationActive() {
@@ -2938,6 +3273,7 @@ function refreshPlatformLoginTip() {
   apply(jlgjStatusBtn, window.platformLoginState?.jlgj || 'checking', '接龙管家');
   apply(moocStatusBtn, window.platformLoginState?.mooc || 'checking', '中国大学MOOC');
   applyPlatformVisibility();
+  if (window.courseHelperPlatformSplitMode) scheduleCourseCardsByPlatform();
 
   // Login warnings are shown on offline-transition only (one platform at a time).
 }
@@ -4861,6 +5197,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     sortCourseCards: () => sortCourseCardsWithGuard(),
     loginRequired: () => openMoocLoginAssistPopup(true)
   });
+  await loadCourseHelperLayoutSettings();
   await loadPopupCacheEnabledSetting();
   const showAutoLoadResourcesDisabledNotice = await migrateAutoLoadCourseResourcesDefaultOff();
   await loadAutoLoadCourseResourcesSetting();

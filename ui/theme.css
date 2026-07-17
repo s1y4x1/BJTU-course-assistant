@@ -56,6 +56,7 @@ html[data-color-scheme="dark"] #drop-zone.dragover-invalid { background: #321919
 html[data-color-scheme="dark"] #drop-zone.dragover-text { background: #10243d; }
 
 html[data-color-scheme="dark"] #course-list > .file-item,
+html[data-color-scheme="dark"] #course-list > .platform-course-column > .platform-course-column-body > .file-item,
 html[data-color-scheme="dark"] #file-list > .file-item,
 html[data-color-scheme="dark"] .resource-space-list > .file-item,
 html[data-color-scheme="dark"] .saved-uploads-list > .file-item {
@@ -80,7 +81,9 @@ html[data-color-scheme="dark"] .result-area > [data-rp-id]:not(.file-item) {
 }
 
 html[data-color-scheme="dark"] #course-list > .file-item > div:first-child [style*="color:#666"],
-html[data-color-scheme="dark"] #course-list > .file-item > div:first-child [style*="color: #666"] {
+html[data-color-scheme="dark"] #course-list > .file-item > div:first-child [style*="color: #666"],
+html[data-color-scheme="dark"] .platform-course-column-body > .file-item > div:first-child [style*="color:#666"],
+html[data-color-scheme="dark"] .platform-course-column-body > .file-item > div:first-child [style*="color: #666"] {
   color: #cbd5e1 !important;
 }
 
@@ -268,6 +271,31 @@ html[data-color-scheme="dark"] .version-btn.loading {
   background: #1e293b;
   border-color: #475569;
   color: #cbd5e1;
+}
+
+html[data-color-scheme="dark"] .column-collapse-toggle {
+  background: #111827;
+  border-color: #475569;
+  color: #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+
+html[data-color-scheme="dark"] .column-collapse-toggle:hover {
+  background: #1e293b;
+  color: #93c5fd;
+}
+
+html[data-color-scheme="dark"] .platform-course-column-empty {
+  color: #94a3b8;
+}
+
+html[data-color-scheme="dark"] .platform-column-resizer::after {
+  background: rgba(100,116,139,.95);
+}
+
+html[data-color-scheme="dark"] .platform-column-resizer:hover::after,
+html[data-color-scheme="dark"] .platform-column-resizer.dragging::after {
+  background: #60a5fa;
 }
 
 html[data-color-scheme="dark"] #invert-save-uploads-btn,

@@ -32,6 +32,7 @@ const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true
 const DEFAULT_OPEN_MODE = 'popup';
 const DEFAULT_POPUP_WIDTH_PX = 500;
 const DEFAULT_POPUP_HEIGHT_PX = 600;
+const DEFAULT_COURSE_HELPER_EXPANDED = false;
 const MIN_POPUP_WIDTH_PX = 360;
 const MAX_POPUP_WIDTH_PX = 800;
 const MIN_POPUP_HEIGHT_PX = 420;
@@ -342,8 +343,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuVeOptionsReady;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode } = await chrome.storage.local.get(['openMode']);
@@ -409,6 +410,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     MIN_POPUP_HEIGHT_PX,
     MAX_POPUP_HEIGHT_PX
   ));
+  document.getElementById('courseHelperExpandedByDefault').checked = courseHelperExpandedByDefault === true;
   const saveUploadsVal = saveUploadedFilesEnabled === undefined
     ? DEFAULT_SAVE_UPLOADS_ENABLED
     : !!saveUploadedFilesEnabled;
@@ -917,6 +919,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.popupWidthPx || changes.popupHeightPx) {
         applyPopupSizeUi(changes.popupWidthPx?.newValue, changes.popupHeightPx?.newValue);
       }
+      if (changes.courseHelperExpandedByDefault) {
+        applyBooleanUi('courseHelperExpandedByDefault', changes.courseHelperExpandedByDefault.newValue, DEFAULT_COURSE_HELPER_EXPANDED);
+      }
       if (changes.themeMode) {
         updateThemeModeUi(changes.themeMode.newValue);
         setTimeout(() => { void enforceJlgjDarkThemeAvailability(); }, 0);
@@ -1045,6 +1050,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
   document.getElementById('popupWidthPx').addEventListener('change', applyPopupSize);
   document.getElementById('popupHeightPx').addEventListener('change', applyPopupSize);
+  document.getElementById('courseHelperExpandedByDefault').addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ courseHelperExpandedByDefault: event.currentTarget.checked });
+    setMsg('已应用更改');
+  });
   document.getElementById('themeMode').addEventListener('click', async (e) => {
     const btn = e.target.closest('.theme-mode-btn');
     if (!btn) return;
@@ -1529,6 +1538,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
       popupWidthPx: DEFAULT_POPUP_WIDTH_PX,
       popupHeightPx: DEFAULT_POPUP_HEIGHT_PX,
+      courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
       themeMode: DEFAULT_THEME_MODE
     });
     await chrome.storage.sync.remove(['platformEnabled']);
@@ -1577,6 +1587,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('openModePage').checked = false;
     document.getElementById('popupWidthPx').value = String(DEFAULT_POPUP_WIDTH_PX);
     document.getElementById('popupHeightPx').value = String(DEFAULT_POPUP_HEIGHT_PX);
+    document.getElementById('courseHelperExpandedByDefault').checked = DEFAULT_COURSE_HELPER_EXPANDED;
     document.getElementById('saveUploadsEnabled').checked = true;
     document.getElementById('headerQrEnabled').checked = false;
     document.getElementById('headerQrEnabled').disabled = true;

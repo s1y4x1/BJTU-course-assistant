@@ -11,6 +11,7 @@ body {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    transition: padding 0.22s ease;
 }
 
         /* Toast Notifications */
@@ -258,9 +259,10 @@ body {
             flex: 1 1 auto;
             min-height: 0;
             overflow: hidden;
+            transition: gap 0.24s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .left-column {
-            flex: 1;
+            flex: 1 1 0;
             min-width: 480px;
             min-height: 0;
             overflow-y: auto;
@@ -269,6 +271,11 @@ body {
             padding-right: 8px;
             box-sizing: border-box;
             scrollbar-gutter: stable;
+            transition: flex-grow 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                min-width 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.16s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                padding 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+            will-change: min-width, transform, opacity;
         }
         .left-column,
         .right-column {
@@ -301,6 +308,11 @@ body {
             overflow-y: auto;
             overflow-x: hidden;
             box-sizing: border-box;
+            transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                min-width 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                flex-grow 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                padding 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+            will-change: width, min-width, padding;
         }
         .column-resizer {
             position: fixed;
@@ -327,6 +339,133 @@ body {
         .column-resizer:hover::after,
         .right-column.dragging .column-resizer::after { background: rgba(59,130,246,0.9); }
         .right-column.dragging { user-select: none; }
+        .column-collapse-toggle {
+            position: absolute;
+            top: 50%;
+            right: 8px;
+            width: 22px;
+            height: 38px;
+            margin: 0;
+            padding: 0;
+            border: 1px solid #94a3b8;
+            border-radius: 19px 0 0 19px;
+            background: #fff;
+            color: #334155;
+            box-shadow: 0 2px 7px rgba(15,23,42,0.16);
+            transform: translateY(-50%);
+            font-size: 13px;
+            line-height: 36px;
+            cursor: pointer;
+            z-index: 2;
+        }
+        .column-collapse-toggle:hover {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+        .page-top-config {
+            max-height: 180px;
+            opacity: 1;
+            transform: translateY(0);
+            overflow: hidden;
+            transition: max-height 0.22s ease, opacity 0.16s ease, transform 0.22s ease,
+                margin 0.22s ease, padding 0.22s ease;
+        }
+        body.course-helper-focus {
+            padding: 0;
+        }
+        body.course-helper-focus .page-top-config {
+            max-height: 0;
+            margin: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            opacity: 0;
+            transform: translateY(-100%);
+            pointer-events: none;
+        }
+        body.course-helper-focus .layout-container {
+            gap: 0;
+        }
+        body.course-helper-focus .left-column {
+            flex-grow: 0;
+            min-width: 0;
+            padding: 0;
+            opacity: 0;
+            transform: translateX(-100%);
+            overflow: hidden;
+            pointer-events: none;
+        }
+        body.course-helper-focus .right-column {
+            flex: 1 1 auto;
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: none;
+            padding: 15px 12px 0 34px;
+            overflow-x: auto;
+        }
+        body.course-helper-focus .column-resizer {
+            left: 0 !important;
+            top: 0 !important;
+            height: 100vh !important;
+            transform: none;
+        }
+        body.course-helper-focus .column-collapse-toggle {
+            left: 0;
+            right: auto;
+            border-radius: 0 19px 19px 0;
+        }
+        #course-list.platform-split-grid {
+            display: flex;
+            gap: 0;
+            align-items: stretch;
+            min-width: 100%;
+        }
+        .platform-course-column {
+            flex: 1 1 0;
+            min-width: 240px;
+            min-height: 72px;
+            padding: 0 8px;
+            box-sizing: border-box;
+        }
+        .platform-course-column:first-of-type {
+            padding-left: 0;
+        }
+        .platform-course-column:last-of-type {
+            padding-right: 0;
+        }
+        .platform-column-resizer {
+            position: relative;
+            flex: 0 0 12px;
+            align-self: stretch;
+            min-height: 72px;
+            background: transparent;
+            cursor: col-resize;
+            touch-action: none;
+        }
+        .platform-column-resizer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 5px;
+            width: 2px;
+            background: rgba(148,163,184,0.9);
+        }
+        .platform-column-resizer:hover::after,
+        .platform-column-resizer.dragging::after {
+            background: rgba(59,130,246,0.9);
+        }
+        .platform-course-column-empty {
+            padding: 7px 4px;
+            color: #64748b;
+            font-size: 12px;
+        }
+        .platform-course-column-body > .file-item:last-child {
+            margin-bottom: 0;
+        }
+        body.platform-column-resizing {
+            cursor: col-resize;
+            user-select: none;
+        }
         @media (max-width: 900px), (orientation: portrait) {
             html,
             body {
@@ -349,6 +488,30 @@ body {
             .left-column { overflow: visible; padding-right: 0; }
             .right-column { position: static; padding-left: 15px; height: auto; max-height: none; min-height: 0; overflow: visible; }
             .column-resizer { display: none; }
+            body.course-helper-focus { padding: 12px; }
+            body.course-helper-focus .page-top-config {
+                max-height: 180px;
+                margin-bottom: 10px;
+                padding-bottom: 8px;
+                opacity: 1;
+                transform: none;
+                pointer-events: auto;
+            }
+            body.course-helper-focus .left-column {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+                padding: 0;
+                opacity: 1;
+                transform: none;
+                overflow: visible;
+                pointer-events: auto;
+            }
+            body.course-helper-focus .right-column {
+                width: 100% !important;
+                padding-left: 15px;
+                overflow: visible;
+            }
         }
 
         /* Course action buttons: keep same height */

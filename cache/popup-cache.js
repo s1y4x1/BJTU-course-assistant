@@ -110,9 +110,23 @@ function collapseRestoredCoursePanelsForPopup(root) {
   });
 }
 
+function unwrapPlatformCourseColumnsForPopup(root) {
+  if (!(root instanceof HTMLElement)) return;
+  root.querySelectorAll(':scope > .platform-course-column').forEach((column) => {
+    column.querySelectorAll(':scope > .platform-course-column-body > .file-item[data-course-rankable="1"]').forEach((card) => {
+      root.appendChild(card);
+    });
+    column.remove();
+  });
+  root.querySelectorAll(':scope > .platform-column-resizer').forEach((resizer) => resizer.remove());
+  root.classList.remove('platform-split-grid');
+  root.style.removeProperty('grid-template-columns');
+}
+
 function getCollapsedCourseListHtmlForPopup() {
   if (!courseListDiv) return '';
   const clone = courseListDiv.cloneNode(true);
+  unwrapPlatformCourseColumnsForPopup(clone);
   collapseRestoredCoursePanelsForPopup(clone);
   return String(clone.innerHTML || '');
 }
@@ -207,6 +221,7 @@ async function saveFullscreenCourseCache({ force = false } = {}) {
   if (popupMode || (!force && !window.popupUseFullscreenCacheEnabled) || !courseListDiv) return;
   const cache = {
     version: 1,
+    structuredCourseCache: true,
     savedAt: Date.now(),
     platformEnabled: safeStorageClone(window.platformEnabled, {}),
     platformLoginState: safeStorageClone(window.platformLoginState, {}),
@@ -356,8 +371,9 @@ async function restorePopupFullscreenCacheIfNeeded() {
     cache = null;
   }
   window.__popupUsingFullscreenCache = true;
-  const hasStructuredVeCache = cache?.backgroundStructuredVe === true
-    && Array.isArray(cache?.currentVeCourseList);
+  const hasStructuredVeCache = (cache?.backgroundStructuredVe === true || cache?.structuredCourseCache === true)
+    && Array.isArray(cache?.currentVeCourseList)
+    && typeof renderCourseList === 'function';
   if (!cache || (!hasStructuredVeCache && !String(cache.courseListHtml || '').trim())) {
     window.platformEnabled = sanitizePlatformEnabled(cache?.platformEnabled || window.platformEnabled, window.platformEnabled);
     refreshPlatformLoginTip();
@@ -408,6 +424,9 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.currentAccountLoginName = String(cache.currentAccountLoginName || '');
   window.isTeacherAccount = !!cache.isTeacherAccount;
   normalizeRestoredCachesForPopup();
+  if (hasStructuredVeCache && typeof rematchExternalByVeCourses === 'function') {
+    rematchExternalByVeCourses();
+  }
 
   if (courseListDiv) {
     if (hasStructuredVeCache) {
@@ -416,6 +435,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
     } else {
       courseListDiv.innerHTML = String(cache.courseListHtml || '');
     }
+    unwrapPlatformCourseColumnsForPopup(courseListDiv);
     collapseRestoredCoursePanelsForPopup(courseListDiv);
   }
   if (resourceSpaceList) resourceSpaceList.innerHTML = String(cache.resourceSpaceHtml || '');
