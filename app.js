@@ -4246,9 +4246,9 @@ function renderHomeworkList(courseId) {
     const title = hw.title || hw.workTitle || hw.courseNoteTitle || '作业';
     const homeworkSubType = Number(hw.subType ?? hw.sub_type);
     const homeworkTypeLabel = ({ 0: '作业', 1: '课程报告', 2: '实验' })[homeworkSubType] || '作业';
-    const homeworkTypeBadge = `<span style="display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; font-size:10px; line-height:1.3; vertical-align:1px;">${homeworkTypeLabel}</span>`;
     const homeworkCourseToPage = ({ 0: 10460, 1: 10461, 2: 10462 })[homeworkSubType] || 10460;
     const homeworkPageUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=${homeworkCourseToPage}&courseId=${encodeURIComponent(homeworkCourseNum)}&cId=${encodeURIComponent(courseId)}&xknId=${encodeURIComponent(homeworkFzId)}&xkhId=${encodeURIComponent(homeworkFzId)}&xqCode=${encodeURIComponent(homeworkXqCode)}`;
+    const homeworkTypeBadge = `<a href="${homeworkPageUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; color:inherit; text-decoration:none; font-size:10px; line-height:1.3; vertical-align:1px;">${escapeHtml(homeworkTypeLabel)}</a>`;
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
     const deadline = hw.end_time || hw.endTime || '';
