@@ -1160,20 +1160,39 @@ function setCourseHelperFocusMode(enabled) {
   if (courseHelperLayoutTransitionTimer) clearTimeout(courseHelperLayoutTransitionTimer);
   courseHelperLayoutTransitioning = true;
   window.courseHelperPlatformSplitMode = next;
-  if (!next) window.applyRightColumnResponsiveWidth?.();
-  document.body.classList.toggle('course-helper-focus', next);
   if (columnCollapseToggle instanceof HTMLButtonElement) {
     columnCollapseToggle.textContent = next ? '▶' : '◀';
     columnCollapseToggle.title = next ? '展开左栏' : '折叠左栏';
     columnCollapseToggle.setAttribute('aria-label', next ? '展开左栏' : '折叠左栏');
     columnCollapseToggle.setAttribute('aria-expanded', next ? 'false' : 'true');
   }
+
+  if (!next) {
+    // Mirror the collapse sequence: merge while the right column is still full-screen,
+    // then reveal the left column after the merged layout has painted.
+    unwrapCoursePlatformColumns();
+    refreshCourseHelperLayoutMode();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (window.courseHelperPlatformSplitMode) return;
+      window.applyRightColumnResponsiveWidth?.();
+      document.body.classList.remove('course-helper-focus');
+      window.syncRightColumnResizer?.();
+      courseHelperLayoutTransitionTimer = setTimeout(() => {
+        courseHelperLayoutTransitionTimer = 0;
+        if (window.courseHelperPlatformSplitMode) return;
+        courseHelperLayoutTransitioning = false;
+        window.syncRightColumnResizer?.();
+      }, COURSE_HELPER_LAYOUT_TRANSITION_MS);
+    }));
+    return;
+  }
+
+  document.body.classList.add('course-helper-focus');
   window.syncRightColumnResizer?.();
   courseHelperLayoutTransitionTimer = setTimeout(() => {
     courseHelperLayoutTransitionTimer = 0;
     if (window.courseHelperPlatformSplitMode !== next) return;
     courseHelperLayoutTransitioning = false;
-    if (!next) unwrapCoursePlatformColumns();
     refreshCourseHelperLayoutMode();
     window.syncRightColumnResizer?.();
   }, COURSE_HELPER_LAYOUT_TRANSITION_MS);
@@ -2439,13 +2458,25 @@ async function loadSaveUploadsEnabledSetting() {
   if (input instanceof HTMLInputElement) input.checked = !!window.saveUploadedFilesEnabled;
 }
 
+const trackedExpandableMedia = new WeakSet();
+const pendingExpandableMediaMeasurements = new WeakSet();
 function applyExpandableAutoToggle(root = document) {
-  root.querySelectorAll('.expandable-box').forEach((box) => {
+  const boxes = root instanceof Element && root.matches('.expandable-box')
+    ? [root]
+    : root.querySelectorAll('.expandable-box');
+  boxes.forEach((box) => {
     if (!(box instanceof HTMLElement)) return;
     // Hidden overdue/done groups cannot be measured reliably; they are measured after the group is expanded and rerendered.
     if (!box.getClientRects().length) return;
     const body = box.querySelector('.expandable-body');
     if (!(body instanceof HTMLElement)) return;
+    body.querySelectorAll('img').forEach((image) => {
+      if (!(image instanceof HTMLImageElement) || trackedExpandableMedia.has(image)) return;
+      trackedExpandableMedia.add(image);
+      image.addEventListener('load', () => scheduleExpandableMediaMeasurement(image), { once: true });
+      image.addEventListener('error', () => scheduleExpandableMediaMeasurement(image), { once: true });
+      if (image.complete) scheduleExpandableMediaMeasurement(image);
+    });
     const collapsedLines = box.classList.contains('expandable-box--replay')
       ? window.replayDetailCollapsedLines
       : window.homeworkDetailCollapsedLines;
@@ -2463,6 +2494,29 @@ function applyExpandableAutoToggle(root = document) {
     body.style.maxHeight = prev;
     body.style.overflow = prevOverflow;
   });
+}
+
+function scheduleExpandableMediaMeasurement(media) {
+  if (!(media instanceof HTMLElement)) return;
+  const box = media.closest('.expandable-box');
+  if (!(box instanceof HTMLElement) || pendingExpandableMediaMeasurements.has(box)) return;
+  pendingExpandableMediaMeasurements.add(box);
+  requestAnimationFrame(() => {
+    pendingExpandableMediaMeasurements.delete(box);
+    if (!box.isConnected) return;
+    applyExpandableAutoToggle(box);
+  });
+}
+
+if (courseListDiv) {
+  const onExpandableMediaSettled = (event) => {
+    const target = event.target;
+    if (target instanceof HTMLImageElement && target.closest('.expandable-body')) {
+      scheduleExpandableMediaMeasurement(target);
+    }
+  };
+  courseListDiv.addEventListener('load', onExpandableMediaSettled, true);
+  courseListDiv.addEventListener('error', onExpandableMediaSettled, true);
 }
 
 async function loadPlatformVisibleFromStorage() {
@@ -3237,6 +3291,7 @@ function setPlatformLoginState(platform, state) {
     disablePlatformAfterLoginFailure(p);
   }
   refreshPlatformLoginTip();
+  updateCourseListEmptyPlaceholder();
   if (!isAnyExternalPlatformChecking()) {
     flushPendingCourseCardSortIfIdle();
   }
@@ -3294,6 +3349,7 @@ function shouldShowNoCoursePlaceholder() {
 
   const allSettled = selected.every((p) => {
     const state = window.platformLoginState?.[p] || 'checking';
+    if (state === 'checking') return false;
     if (state === 'offline') return true;
     return !!window.platformLoadedOnce?.[p];
   });
@@ -4134,33 +4190,6 @@ function renderHomeworkList(courseId) {
     data.justExpanded = false;
     data.justCollapsed = false;
   };
-  const applyExpandableAutoToggle = () => {
-    const boxes = area.querySelectorAll('.expandable-box');
-    boxes.forEach((box) => {
-      if (!(box instanceof HTMLElement)) return;
-      const body = box.querySelector('.expandable-body');
-      if (!(body instanceof HTMLElement)) return;
-      const collapsedLines = box.classList.contains('expandable-box--replay')
-        ? window.replayDetailCollapsedLines
-        : window.homeworkDetailCollapsedLines;
-      const visibleLimit = detailVisibleMaxHeight(collapsedLines);
-      const prev = body.style.maxHeight;
-      const prevOverflow = body.style.overflow;
-      body.style.maxHeight = visibleLimit;
-      body.style.overflow = 'auto';
-      const canFitInCollapsed = body.scrollHeight <= body.clientHeight + 2;
-      if (canFitInCollapsed) {
-        box.classList.add('no-toggle');
-        box.classList.remove('expanded');
-        box.dataset.expanded = '0';
-      } else {
-        box.classList.remove('no-toggle');
-      }
-      body.style.maxHeight = prev;
-      body.style.overflow = prevOverflow;
-    });
-  };
-
   recomputeCourseHomeworkState(courseId);
 
   // 教师账号：VE 作业不计入 overdue/done 分类
@@ -4376,7 +4405,7 @@ function renderHomeworkList(courseId) {
     : '';
 
   area.innerHTML = `${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${forcePublishScoreButtonHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
-  applyExpandableAutoToggle();
+  applyExpandableAutoToggle(area);
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
   setTimeout(() => typeof updateAllCountdowns === 'function' && updateAllCountdowns(), 0);

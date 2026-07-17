@@ -1183,7 +1183,7 @@ body {
         .version-download-modal .version-modal-card {
             padding: 16px 16px 14px;
             box-shadow: 0 18px 42px rgba(0,0,0,0.25);
-            max-height: min(78vh, 740px);
+            max-height: min(92vh, 900px);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -1363,9 +1363,16 @@ body {
             cursor: pointer;
         }
         .version-download-body {
+            flex: 0 0 auto;
             font-size: 13px;
             color: #334155;
             margin-bottom: 8px;
+        }
+        .version-download-details {
+            flex: 0 1 auto;
+            min-height: 0;
+            overflow: visible;
+            display: block;
         }
         .version-download-release-notes {
             margin: 2px 0 10px;
@@ -1421,14 +1428,103 @@ body {
             font-weight: 700;
         }
         .version-download-release-notes-body {
-            max-height: min(28vh, 220px);
+            max-height: min(28vh, 260px);
             overflow: auto;
             padding-right: 2px;
             color: #334155;
             font-size: 12px;
         }
+        .version-update-files {
+            margin-top: 10px;
+            padding-top: 9px;
+            border-top: 1px solid #e2e8f0;
+            min-height: 0;
+        }
+        .version-update-file-summary {
+            color: #334155;
+            font-size: 12px;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+        .version-update-file-tree {
+            max-height: min(28vh, 300px);
+            margin-top: 5px;
+            overflow: auto;
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+            padding: 6px 8px;
+            color: #334155;
+            font-size: 11px;
+            line-height: 1.55;
+        }
+        .version-update-file-tree ul {
+            margin: 0;
+            padding-left: 14px;
+            list-style: none;
+        }
+        .version-update-file-tree > ul {
+            padding-left: 0;
+        }
+        .version-update-tree-directory > .version-update-tree-row {
+            color: #475569;
+            font-weight: 700;
+        }
+        .version-update-tree-row {
+            display: flex;
+            align-items: baseline;
+            min-width: 0;
+            gap: 5px;
+        }
+        .version-update-tree-state {
+            flex: 0 0 12px;
+            width: 12px;
+            text-align: center;
+            color: #94a3b8;
+            font-weight: 800;
+        }
+        .version-update-tree-name {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+        .version-update-tree-size {
+            flex: 0 0 auto;
+            margin-left: auto;
+            color: #64748b;
+            font-size: 10px;
+            white-space: nowrap;
+        }
+        .version-update-tree-state-label {
+            flex: 0 0 auto;
+            color: #64748b;
+            font-size: 10px;
+            white-space: nowrap;
+        }
+        .version-update-tree-file[data-state="extracting"] .version-update-tree-state,
+        .version-update-tree-file[data-state="writing"] .version-update-tree-state {
+            color: #2563eb;
+        }
+        .version-update-tree-file[data-state="extracting"] .version-update-tree-state-label,
+        .version-update-tree-file[data-state="writing"] .version-update-tree-state-label {
+            color: #1d4ed8;
+        }
+        .version-update-tree-file[data-state="done"] .version-update-tree-state {
+            color: #16a34a;
+        }
+        .version-update-tree-file[data-state="done"] .version-update-tree-state-label {
+            color: #15803d;
+        }
+        .version-update-tree-file[data-state="failed"] .version-update-tree-state {
+            color: #dc2626;
+        }
+        .version-update-tree-file[data-state="failed"] .version-update-tree-state-label {
+            color: #b91c1c;
+        }
+        .version-update-tree-file[data-state="done"] .version-update-tree-name {
+            color: #64748b;
+        }
         .version-download-status {
             min-height: 20px;
+            margin-top: 8px;
             color: #475569;
             display: flex;
             align-items: baseline;
@@ -1448,6 +1544,18 @@ body {
             font-size: 12px;
             font-weight: 500;
         }
+        .version-download-size-pair {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 3px;
+            white-space: nowrap;
+        }
+        .version-download-percent {
+            color: #475569;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
         .version-download-eta {
             color: #475569;
             font-size: 13px;
@@ -1460,7 +1568,7 @@ body {
             gap: 8px;
         }
         .version-download-progress {
-            margin-top: 10px;
+            margin-top: 4px;
         }
         .homework-attachment-loading {
             display: flex;

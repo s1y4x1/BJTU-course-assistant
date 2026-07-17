@@ -235,6 +235,51 @@ html[data-color-scheme="dark"] .version-download-release-notes-title {
   color: #f8fafc;
 }
 
+html[data-color-scheme="dark"] #total-speed:not([data-speed-bytes]),
+html[data-color-scheme="dark"] #total-speed[data-speed-bytes="0"],
+html[data-color-scheme="dark"] #resource-download-total-speed:not([data-speed-bytes]),
+html[data-color-scheme="dark"] #resource-download-total-speed[data-speed-bytes="0"] {
+  color: #cbd5e1 !important;
+  text-shadow: none !important;
+}
+
+html[data-color-scheme="dark"] .version-update-files {
+  border-top-color: #334155;
+}
+
+html[data-color-scheme="dark"] .version-update-file-summary {
+  color: #e2e8f0;
+}
+
+html[data-color-scheme="dark"] .version-update-file-tree {
+  border-color: #475569;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+html[data-color-scheme="dark"] .version-update-tree-directory > .version-update-tree-row {
+  color: #cbd5e1;
+}
+
+html[data-color-scheme="dark"] .version-update-tree-size,
+html[data-color-scheme="dark"] .version-update-tree-state-label,
+html[data-color-scheme="dark"] .version-update-tree-file[data-state="done"] .version-update-tree-name {
+  color: #94a3b8;
+}
+
+html[data-color-scheme="dark"] .version-update-tree-file[data-state="done"] .version-update-tree-state-label {
+  color: #86efac;
+}
+
+html[data-color-scheme="dark"] .version-update-tree-file[data-state="extracting"] .version-update-tree-state-label,
+html[data-color-scheme="dark"] .version-update-tree-file[data-state="writing"] .version-update-tree-state-label {
+  color: #93c5fd;
+}
+
+html[data-color-scheme="dark"] .version-update-tree-file[data-state="failed"] .version-update-tree-state-label {
+  color: #fca5a5;
+}
+
 html[data-color-scheme="dark"] .version-download-status,
 html[data-color-scheme="dark"] .version-download-status-message,
 html[data-color-scheme="dark"] .version-download-eta {
@@ -243,6 +288,10 @@ html[data-color-scheme="dark"] .version-download-eta {
 
 html[data-color-scheme="dark"] .version-download-status-separator {
   color: #94a3b8;
+}
+
+html[data-color-scheme="dark"] .version-download-percent {
+    color: #e2e8f0;
 }
 
 html[data-color-scheme="dark"] .ve-course-teacher-table th {

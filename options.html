@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="zh-CN" class="options-loading">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,287 +9,319 @@
   <link rel="stylesheet" href="options.css" />
   <link rel="stylesheet" href="ui/theme.css" />
 </head>
+
 <body>
   <div class="page-header">
-    <h1 style="font-size:1.5rem; margin:0;"><span id="back-home" class="back-home-link" role="link" tabindex="0">BJTU 课程助手</span> - 设置</h1>
+    <h1 style="font-size:1.5rem; margin:0;"><span id="back-home" class="back-home-link" role="link" tabindex="0">BJTU
+        课程助手</span> - 设置</h1>
     <button id="resetBtn" type="button" style="background:#6b7280; margin-top: 0;">恢复默认</button>
   </div>
   <div id="options-loading-placeholder" aria-label="正在加载扩展选项"><span class="options-page-spinner"></span></div>
   <main id="options-controlled-content">
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div class="section-title">外观</div>
-    <label style="display:flex; align-items:center; gap:10px; margin:0;">
-      <span>颜色模式</span>
-      <span class="theme-mode-btns" id="themeMode">
-        <button class="theme-mode-btn theme-mode-btn--text" data-value="system" title="跟随系统">跟随系统</button>
-        <button class="theme-mode-btn" data-value="light" title="浅色">☀️</button>
-        <button class="theme-mode-btn" data-value="dark" title="深色">🌙</button>
-      </span>
-    </label>
-    <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
-      <input type="checkbox" id="courseHelperExpandedByDefault" style="width:auto;" />
-      <span>默认展开右栏课程助手</span>
-    </label>
-    <div class="tip">仅影响全屏页面；展开后会收起左栏和顶部控件，并按平台分栏显示课程。</div>
-  </div>
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div class="section-title">平台显示与加载</div>
-    <div class="platform-option" data-module="ve" hidden>
-      <label><input type="checkbox" id="showVe" style="width:auto;" checked />智慧课程平台</label>
-    </div>
-    <div id="vePlatformDetail" class="platform-option-detail" data-module="ve" hidden>
-      <label><input type="checkbox" id="enableVe" style="width:auto;" checked />启用</label>
-      <label style="display:flex; align-items:center; gap:8px; margin:0;">
-        <input type="checkbox" id="autoLoadCourseResourcesEnabled" style="width:auto;" />
-        自动获取课件/回放/归档列表
+    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+      <div class="section-title">外观</div>
+      <label style="display:flex; align-items:center; gap:10px; margin:0;">
+        <span>颜色模式</span>
+        <span class="theme-mode-btns" id="themeMode">
+          <button class="theme-mode-btn theme-mode-btn--text" data-value="system" title="跟随系统">跟随系统</button>
+          <button class="theme-mode-btn" data-value="light" title="浅色">☀️</button>
+          <button class="theme-mode-btn" data-value="dark" title="深色">🌙</button>
+        </span>
       </label>
-      <div class="tip">开启后，在启用智慧课程平台时自动获取；关闭后，仅在点击课件/回放/归档下载按钮时获取其列表。</div>
-      <div style="display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin:10px 0;">
-        <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
-          <span>文件上传/下载并行数</span>
-          <input id="parallelLimit" type="number" min="1" step="1" style="width:88px;" value="3">
-        </label>
-        <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
-          <span>回放详情默认显示行数</span>
-          <input id="replayDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
-        </label>
+      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
+        <input type="checkbox" id="courseHelperExpandedByDefault" style="width:auto;" />
+        <span>默认展开右栏课程助手</span>
+      </label>
+      <div class="tip">仅影响全屏页面；展开后会收起左栏和顶部控件，并按平台分栏显示课程。</div>
+    </div>
+    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+      <div class="section-title">平台显示与加载</div>
+      <div class="platform-option" data-module="ve" hidden>
+        <label><input type="checkbox" id="showVe" style="width:auto;" checked />智慧课程平台</label>
       </div>
-      <div class="platform-option-divider" role="separator"></div>
-      <div style="margin-top:10px;">
+      <div id="vePlatformDetail" class="platform-option-detail" data-module="ve" hidden>
+        <label><input type="checkbox" id="enableVe" style="width:auto;" checked />启用</label>
+        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+          <input type="checkbox" id="autoLoadCourseResourcesEnabled" style="width:auto;" />
+          自动获取课件/回放/归档列表
+        </label>
+        <div class="tip">开启后，在启用智慧课程平台时自动获取；关闭后，仅在点击课件/回放/归档下载按钮时获取其列表。</div>
+        <div style="display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin:10px 0;">
+          <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
+            <span>文件上传/下载并行数</span>
+            <input id="parallelLimit" type="number" min="1" step="1" style="width:88px;" value="3">
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
+            <span>回放详情默认显示行数</span>
+            <input id="replayDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
+          </label>
+        </div>
+        <div class="platform-option-divider" role="separator"></div>
+        <div style="margin-top:10px;">
+          <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+            <input type="checkbox" id="injectPortalLoginOnLoginPage" style="width:auto;" checked />
+            智慧课程平台登录页
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+            <input type="checkbox" id="injectPortalLoginOnTimeoutPage" style="width:auto;" checked />
+            “会话结束”超时页
+          </label>
+          <div class="tip">控制在这些页面上是否注入登录弹窗。</div>
+        </div>
+        <div class="platform-option-divider" role="separator"></div>
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-          <input type="checkbox" id="injectPortalLoginOnLoginPage" style="width:auto;" checked />
-          智慧课程平台登录页
+          <input type="checkbox" id="headerQrEnabled" style="width:auto;" />
+          <span>鼠标悬停标题时生成列表二维码</span>
         </label>
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-          <input type="checkbox" id="injectPortalLoginOnTimeoutPage" style="width:auto;" checked />
-          “会话结束”超时页
+          <input type="checkbox" id="linkQrEnabled" style="width:auto;" checked />
+          <span>鼠标悬停链接时显示二维码</span>
         </label>
-        <div class="tip">控制在这些页面上是否注入登录弹窗。</div>
+        <div class="tip">「标题」包含课程助手、文件上传、资源空间。「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
+        <div class="platform-option-divider" role="separator"></div>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
+          <span>在本地存储以后上传的文件链接</span>
+        </label>
+        <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
+        <div class="platform-option-divider" role="separator"></div>
+        <button id="bindPortalUsernameBtn" type="button" style="background:#16a34a;">🔗 通过 MIS 绑定 username</button>
+        <button id="exportBindDataBtn" type="button" style="background:#0f766e;">📤 导出 MIS 绑定数据</button>
+        <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配，以实现智慧课程平台快速登录。</div>
+        <div style="margin-top:4px;">
+          <button id="importAccountListBtn" type="button">📥 导入账号列表</button>
+          <button id="exportAccountListBtn" type="button" style="background:#0f766e;">📤 导出账号列表</button>
+          <input id="importAccountListFile" type="file" accept=".json,application/json" hidden>
+          <div class="tip">JSON 文件包含解析后的账号、姓名、角色、密码原文、密码 MD5 和快速登录数据，请妥善保管。导入会替换当前账号列表。</div>
+        </div>
       </div>
-      <div class="platform-option-divider" role="separator"></div>
-      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="checkbox" id="headerQrEnabled" style="width:auto;" />
-        <span>鼠标悬停标题时生成列表二维码</span>
-      </label>
-      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="checkbox" id="linkQrEnabled" style="width:auto;" checked />
-        <span>鼠标悬停链接时显示二维码</span>
-      </label>
-      <div class="tip">「标题」包含课程助手、文件上传、资源空间。「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
-      <div class="platform-option-divider" role="separator"></div>
-      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
-        <span>在本地存储以后上传的文件链接</span>
-      </label>
-      <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
-      <div class="platform-option-divider" role="separator"></div>
-      <button id="bindPortalUsernameBtn" type="button" style="background:#16a34a;">🔗 通过 MIS 绑定 username</button>
-      <button id="exportBindDataBtn" type="button" style="background:#0f766e;">📤 导出 MIS 绑定数据</button>
-      <div class="tip">完成 MIS 登录跳转后会自动记录新 username，并与登录账号匹配，以实现智慧课程平台快速登录。</div>
-      <div style="margin-top:4px;">
-        <button id="importAccountListBtn" type="button">📥 导入账号列表</button>
-        <button id="exportAccountListBtn" type="button" style="background:#0f766e;">📤 导出账号列表</button>
-        <input id="importAccountListFile" type="file" accept=".json,application/json" hidden>
-        <div class="tip">JSON 文件包含解析后的账号、姓名、角色、密码原文、密码 MD5 和快速登录数据，请妥善保管。导入会替换当前账号列表。</div>
+      <div class="platform-option" data-module="ykt" hidden><label><input type="checkbox" id="showYkt"
+            style="width:auto;" checked />雨课堂</label></div>
+      <div id="yktPlatformDetail" class="platform-option-detail" data-module="ykt" hidden>
+        <label><input type="checkbox" id="enableYkt" style="width:auto;" />启用</label>
+        <label><input type="checkbox" id="autoLoadAllHomeworkDetails" style="width:auto;" />自动加载所有作业详情</label>
+        <div class="tip">关闭时仅自动加载未交作业详情，已交和逾期作业在展开时加载。</div>
+      </div>
+      <div class="platform-option" data-module="mrjzy" hidden><label><input type="checkbox" id="showMrjzy"
+            style="width:auto;" checked />每日交作业</label></div>
+      <div id="mrjzyPlatformDetail" class="platform-option-detail" data-module="mrjzy" hidden><label><input
+            type="checkbox" id="enableMrjzy" style="width:auto;" />启用</label></div>
+      <div class="platform-option" data-module="jlgj" hidden><label><input type="checkbox" id="showJlgj"
+            style="width:auto;" checked />接龙管家</label></div>
+      <div id="jlgjPlatformDetail" class="platform-option-detail" data-module="jlgj" hidden>
+        <label><input type="checkbox" id="enableJlgj" style="width:auto;" />启用</label>
+        <label><input type="checkbox" id="jlgjDarkModeEnabled" style="width:auto;" checked />登录时使用深色模式</label>
+        <label style="padding-left:22px;"><input type="checkbox" id="jlgjAlwaysDarkModeEnabled"
+            style="width:auto;" />总使用深色模式（测试）</label>
+      </div>
+      <div class="platform-option" data-module="mooc" hidden><label><input type="checkbox" id="showMooc"
+            style="width:auto;" checked />中国大学MOOC</label></div>
+      <div id="moocPlatformDetail" class="platform-option-detail" data-module="mooc" hidden>
+        <label><input type="checkbox" id="enableMooc" style="width:auto;" />启用</label>
+        <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />在中国大学MOOC页面注入 GinsMooc
+          操作按钮</label>
+      </div>
+      <div class="tip">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
+      <div style="display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin-top:10px;">
+        <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
+          <span>作业详情默认显示行数</span>
+          <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
+        </label>
       </div>
     </div>
-    <div class="platform-option" data-module="ykt" hidden><label><input type="checkbox" id="showYkt" style="width:auto;" checked />雨课堂</label></div>
-    <div id="yktPlatformDetail" class="platform-option-detail" data-module="ykt" hidden>
-      <label><input type="checkbox" id="enableYkt" style="width:auto;" />启用</label>
-      <label><input type="checkbox" id="autoLoadAllHomeworkDetails" style="width:auto;" />自动加载所有作业详情</label>
-      <div class="tip">关闭时仅自动加载未交作业详情，已交和逾期作业在展开时加载。</div>
-    </div>
-    <div class="platform-option" data-module="mrjzy" hidden><label><input type="checkbox" id="showMrjzy" style="width:auto;" checked />每日交作业</label></div>
-    <div id="mrjzyPlatformDetail" class="platform-option-detail" data-module="mrjzy" hidden><label><input type="checkbox" id="enableMrjzy" style="width:auto;" />启用</label></div>
-    <div class="platform-option" data-module="jlgj" hidden><label><input type="checkbox" id="showJlgj" style="width:auto;" checked />接龙管家</label></div>
-    <div id="jlgjPlatformDetail" class="platform-option-detail" data-module="jlgj" hidden>
-      <label><input type="checkbox" id="enableJlgj" style="width:auto;" />启用</label>
-      <label><input type="checkbox" id="jlgjDarkModeEnabled" style="width:auto;" checked />登录时使用深色模式</label>
-      <label style="padding-left:22px;"><input type="checkbox" id="jlgjAlwaysDarkModeEnabled" style="width:auto;" />总使用深色模式（测试）</label>
-    </div>
-    <div class="platform-option" data-module="mooc" hidden><label><input type="checkbox" id="showMooc" style="width:auto;" checked />中国大学MOOC</label></div>
-    <div id="moocPlatformDetail" class="platform-option-detail" data-module="mooc" hidden>
-      <label><input type="checkbox" id="enableMooc" style="width:auto;" />启用</label>
-      <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />在中国大学MOOC页面注入 GinsMooc 操作按钮</label>
-    </div>
-    <div class="tip">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
-    <div style="display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin-top:10px;">
-      <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
-        <span>作业详情默认显示行数</span>
-        <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
-      </label>
-    </div>
-  </div>
 
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div class="section-title">弹出窗口</div>
-    <div class="open-mode-row" style="margin-top:0; padding:0; border:0; background:transparent;">
-      <div>点击扩展按钮时：</div>
-      <label style="display:flex; align-items:center; gap:8px; margin:0;">
-        <input type="radio" name="openMode" id="openModePopup" value="popup" checked style="width:auto;"> 弹出窗口
-      </label>
-      <label style="display:flex; align-items:center; gap:8px; margin:0;">
-        <input type="radio" name="openMode" id="openModePage" value="page" style="width:auto;"> 打开新页面
-      </label>
-    </div>
-    <div id="popupCacheContainer">
-      <div class="popup-size-editor">
-        <label>
-          <span>宽度</span>
-          <input type="number" id="popupWidthPx" min="360" max="800" step="10" value="500" />
+    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+      <div class="section-title">弹出窗口</div>
+      <div class="open-mode-row" style="margin-top:0; padding:0; border:0; background:transparent;">
+        <div>点击扩展按钮时：</div>
+        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+          <input type="radio" name="openMode" id="openModePopup" value="popup" checked style="width:auto;"> 弹出窗口
         </label>
-        <label>
-          <span>高度</span>
-          <input type="number" id="popupHeightPx" min="420" max="600" step="10" value="600" />
+        <label style="display:flex; align-items:center; gap:8px; margin:0;">
+          <input type="radio" name="openMode" id="openModePage" value="page" style="width:auto;"> 打开新页面
         </label>
       </div>
-      <div class="tip">弹出窗口尺寸将在下次打开时生效；若当前正在弹出窗口内设置，会立即尝试调整。</div>
-      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="checkbox" id="popupUseFullscreenCacheEnabled" style="width:auto;" checked />
-        <span>弹出窗口使用上次全屏页面缓存</span>
+      <div id="popupCacheContainer">
+        <div class="popup-size-editor">
+          <label>
+            <span>宽度</span>
+            <input type="number" id="popupWidthPx" min="360" max="800" step="10" value="500" />
+          </label>
+          <label>
+            <span>高度</span>
+            <input type="number" id="popupHeightPx" min="420" max="600" step="10" value="600" />
+          </label>
+        </div>
+        <div class="tip">弹出窗口尺寸将在下次打开时生效；若当前正在弹出窗口内设置，会立即尝试调整。</div>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="popupUseFullscreenCacheEnabled" style="width:auto;" checked />
+          <span>弹出窗口使用上次全屏页面缓存</span>
+        </label>
+        <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。<br>关闭时，只启用智慧课程平台，其他平台需每次手动启用（设计如此）。</div>
+      </div>
+    </div>
+    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+      <div class="section-title">作业截止提醒</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:0;">
+        <input type="checkbox" id="homeworkReminderEnabled" style="width:auto;" checked />
+        后台监控未交作业并发送系统通知
       </label>
-      <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。<br>关闭时，只启用智慧课程平台，其他平台需每次手动启用（设计如此）。</div>
+      <div id="homeworkReminderEditor" class="reminder-editor">
+        <input type="number" id="homeworkReminderValue" min="1" step="1" value="2" aria-label="提醒时间" />
+        <select id="homeworkReminderUnit" aria-label="提醒时间单位">
+          <option value="1">分钟</option>
+          <option value="60" selected>小时</option>
+          <option value="1440">天</option>
+        </select>
+        <button id="addHomeworkReminderNode" type="button">添加</button>
+      </div>
+      <div id="homeworkReminderNodeList" class="reminder-node-list"></div>
+      <div class="tip" style="margin-top:8px;">提醒基于各平台最近一次成功加载的未交作业数据；可添加多个提醒节点。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:12px 0 6px;">
+        <input type="checkbox" id="homeworkBackgroundRefreshEnabled" style="width:auto;" />
+        后台维护此账号登录状态并自动获取作业
+      </label>
+      <div id="homeworkBackgroundRefreshDetail" class="homework-background-refresh-detail">
+        <label for="homeworkBackgroundRefreshAccount">固定账号</label>
+        <select id="homeworkBackgroundRefreshAccount" aria-label="后台作业刷新账号">
+          <option value="">暂无已登录账号</option>
+        </select>
+        <div id="homeworkBackgroundRefreshIntervalEditor" class="schedule-interval-editor" style="padding-left:0;">
+          <span>刷新间隔</span>
+          <input type="number" id="homeworkBackgroundRefreshIntervalValue" min="1" step="1" value="30"
+            aria-label="后台作业刷新间隔" />
+          <select id="homeworkBackgroundRefreshIntervalUnit" aria-label="后台作业刷新间隔单位">
+            <option value="1" selected>分钟</option>
+            <option value="60">小时</option>
+            <option value="1440">天</option>
+          </select>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="homeworkNewAssignmentNotificationEnabled" style="width:auto;" />
+          后台发现新增作业时通知
+        </label>
+        <div class="tip" style="margin:4px 0 0;">仅在未打开全屏页面时运行；必要时会登录固定账号，刷新作业提醒数据和弹出窗口缓存。</div>
+        <div id="homeworkBackgroundRefreshStatus" class="tip" style="margin:4px 0 0;">后台作业获取未启用。</div>
+      </div>
     </div>
-  </div>
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-    <div class="section-title">作业截止提醒</div>
-    <label style="display:flex; align-items:center; gap:8px; margin:0;">
-      <input type="checkbox" id="homeworkReminderEnabled" style="width:auto;" checked />
-      后台监控未交作业并发送系统通知
-    </label>
-    <div id="homeworkReminderEditor" class="reminder-editor">
-      <input type="number" id="homeworkReminderValue" min="1" step="1" value="2" aria-label="提醒时间" />
-      <select id="homeworkReminderUnit" aria-label="提醒时间单位">
-        <option value="1">分钟</option>
-        <option value="60" selected>小时</option>
-        <option value="1440">天</option>
-      </select>
-      <button id="addHomeworkReminderNode" type="button">添加</button>
-    </div>
-    <div id="homeworkReminderNodeList" class="reminder-node-list"></div>
-    <div class="tip" style="margin-top:8px;">提醒基于各平台最近一次成功加载的未交作业数据；可添加多个提醒节点。</div>
-    <label style="display:flex; align-items:center; gap:8px; margin:12px 0 6px;">
-      <input type="checkbox" id="homeworkBackgroundRefreshEnabled" style="width:auto;" />
-      后台维护此账号登录状态并自动获取作业
-    </label>
-    <div id="homeworkBackgroundRefreshDetail" class="homework-background-refresh-detail">
-      <label for="homeworkBackgroundRefreshAccount">固定账号</label>
-      <select id="homeworkBackgroundRefreshAccount" aria-label="后台作业刷新账号"><option value="">暂无已登录账号</option></select>
-      <div id="homeworkBackgroundRefreshIntervalEditor" class="schedule-interval-editor" style="padding-left:0;">
-        <span>刷新间隔</span>
-        <input type="number" id="homeworkBackgroundRefreshIntervalValue" min="1" step="1" value="30" aria-label="后台作业刷新间隔" />
-        <select id="homeworkBackgroundRefreshIntervalUnit" aria-label="后台作业刷新间隔单位">
+    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"
+      data-module="updater" hidden>
+      <div class="section-title">更新</div>
+      <div class="installed-modules-block">
+        <div class="installed-modules-label">已安装的模块</div>
+        <div id="installedModuleList" class="installed-module-list"></div>
+        <button id="applyInstalledModules" type="button" disabled>应用模块更改</button>
+        <div id="installedModuleStatus" class="tip" style="margin:6px 0 10px;">正在读取模块状态…</div>
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; margin:0;">
+        <input type="checkbox" id="backgroundAutoUpdateEnabled" style="width:auto;" />
+        后台自动检查并安装更新
+      </label>
+      <div id="backgroundAutoUpdateIntervalEditor" class="schedule-interval-editor">
+        <span>检查间隔</span>
+        <input type="number" id="backgroundAutoUpdateIntervalValue" min="1" step="1" value="30" aria-label="后台更新检查间隔" />
+        <select id="backgroundAutoUpdateIntervalUnit" aria-label="后台更新检查间隔单位">
           <option value="1" selected>分钟</option>
           <option value="60">小时</option>
           <option value="1440">天</option>
         </select>
       </div>
-      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="checkbox" id="homeworkNewAssignmentNotificationEnabled" style="width:auto;" />
-        后台发现新增作业时通知
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0 0; padding-left:22px;">
+        <input type="checkbox" id="backgroundAutoInstallOptionalEnabled" style="width:auto;" />
+        自动安装非强制更新
       </label>
-      <div class="tip" style="margin:4px 0 0;">仅在未打开全屏页面时运行；必要时会登录固定账号，刷新作业提醒数据和弹出窗口缓存。</div>
-      <div id="homeworkBackgroundRefreshStatus" class="tip" style="margin:4px 0 0;">后台作业获取未启用。</div>
+      <div id="backgroundAutoUpdateStatus" class="tip" style="margin-top:8px;">后台自动更新未启用。</div>
+      <div class="tip" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
     </div>
-  </div>
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="updater" hidden>
-    <div class="section-title">更新</div>
-    <div class="installed-modules-block">
-      <div class="installed-modules-label">已安装的模块</div>
-      <div id="installedModuleList" class="installed-module-list"></div>
-      <button id="applyInstalledModules" type="button" disabled>应用模块更改</button>
-      <div id="installedModuleStatus" class="tip" style="margin:6px 0 10px;">正在读取模块状态…</div>
+    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"
+      data-module="campusnet" hidden>
+      <div class="section-title">校园网自动重连</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:0;">
+        <input type="checkbox" id="campusNetworkReconnectEnabled" style="width:auto;" />
+        每隔一段时间请求校园网认证接口
+      </label>
+      <div id="campusNetworkReconnectDetail" class="homework-background-refresh-detail">
+        <label for="campusNetworkReconnectAccount">上网账号</label>
+        <input id="campusNetworkReconnectAccount" type="text" autocomplete="username" placeholder="默认使用学号" />
+        <label for="campusNetworkReconnectPassword">上网密码</label>
+        <input id="campusNetworkReconnectPassword" type="password" autocomplete="current-password"
+          placeholder="校园网密码，通常是大小写字母、特殊字符、数字" />
+        <div id="campusNetworkReconnectIntervalEditor" class="schedule-interval-editor" style="padding-left:0;">
+          <span>请求间隔</span>
+          <input type="number" id="campusNetworkReconnectIntervalValue" min="0.1" step="0.1" value="1"
+            aria-label="校园网重连请求间隔" />
+          <select id="campusNetworkReconnectIntervalUnit" aria-label="校园网重连请求间隔单位">
+            <option value="1" selected>秒</option>
+            <option value="60">分钟</option>
+            <option value="3600">小时</option>
+          </select>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="campusNetworkReconnectNotifyOnSuccess" style="width:auto;" checked />
+          重连成功时发送系统通知
+        </label>
+        <div class="tip">遇到 503 会忽略并按间隔重试；即使已经在线也会继续请求。</div>
+        <div id="campusNetworkReconnectStatus" class="tip" style="margin-top:4px;">校园网自动重连未启用。</div>
+      </div>
     </div>
-    <label style="display:flex; align-items:center; gap:8px; margin:0;">
-      <input type="checkbox" id="backgroundAutoUpdateEnabled" style="width:auto;" />
-      后台自动检查并安装更新
-    </label>
-    <div id="backgroundAutoUpdateIntervalEditor" class="schedule-interval-editor">
-      <span>检查间隔</span>
-      <input type="number" id="backgroundAutoUpdateIntervalValue" min="1" step="1" value="30" aria-label="后台更新检查间隔" />
-      <select id="backgroundAutoUpdateIntervalUnit" aria-label="后台更新检查间隔单位">
-        <option value="1" selected>分钟</option>
-        <option value="60">小时</option>
-        <option value="1440">天</option>
-      </select>
-    </div>
-    <label style="display:flex; align-items:center; gap:8px; margin:6px 0 0; padding-left:22px;">
-      <input type="checkbox" id="backgroundAutoInstallOptionalEnabled" style="width:auto;" />
-      自动安装非强制更新
-    </label>
-    <div id="backgroundAutoUpdateStatus" class="tip" style="margin-top:8px;">后台自动更新未启用。</div>
-    <div class="tip" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
-  </div>
-  <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="campusnet" hidden>
-    <div class="section-title">校园网自动重连</div>
-    <label style="display:flex; align-items:center; gap:8px; margin:0;">
-      <input type="checkbox" id="campusNetworkReconnectEnabled" style="width:auto;" />
-      每隔一段时间请求校园网认证接口
-    </label>
-    <div id="campusNetworkReconnectDetail" class="homework-background-refresh-detail">
-      <label for="campusNetworkReconnectAccount">上网账号</label>
-      <input id="campusNetworkReconnectAccount" type="text" autocomplete="username" placeholder="默认使用学号" />
-      <label for="campusNetworkReconnectPassword">上网密码</label>
-      <input id="campusNetworkReconnectPassword" type="password" autocomplete="current-password" placeholder="校园网密码，通常是大小写字母、特殊字符、数字" />
-      <div id="campusNetworkReconnectIntervalEditor" class="schedule-interval-editor" style="padding-left:0;">
-        <span>请求间隔</span>
-        <input type="number" id="campusNetworkReconnectIntervalValue" min="0.1" step="0.1" value="1" aria-label="校园网重连请求间隔" />
-        <select id="campusNetworkReconnectIntervalUnit" aria-label="校园网重连请求间隔单位">
-          <option value="1" selected>秒</option>
-          <option value="60">分钟</option>
-          <option value="3600">小时</option>
+    <div id="academic-system-section" class="options-wide-card"
+      style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"
+      data-module="academic" hidden>
+      <div class="section-title">教务系统</div>
+      <label for="academicAccountSelect">已保存账号</label>
+      <div class="academic-account-row">
+        <select id="academicAccountSelect" aria-label="已保存的教务系统账号">
+          <option value="">暂无已保存账号</option>
         </select>
       </div>
-      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="checkbox" id="campusNetworkReconnectNotifyOnSuccess" style="width:auto;" checked />
-        重连成功时发送系统通知
+      <label for="academicStudentId">学号</label>
+      <input id="academicStudentId" type="text" autocomplete="username" placeholder="自动使用智慧课程平台账号" />
+      <label for="academicPassword">身份证号后六位</label>
+      <input id="academicPassword" type="password" maxlength="6" autocomplete="off" placeholder="登录成功后保存在扩展本地存储" />
+      <div class="academic-login-actions">
+        <button id="academicLoginBtn" type="button">登录教务系统</button>
+        <button id="bindAcademicSystemBtn" type="button" style="background:#16a34a;">🔗 通过 MIS 登录教务系统</button>
+      </div>
+      <div class="tip">账号密码会在登录成功后按学号保存在扩展本地存储中，用于切换账号和恢复登录。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:12px 0 6px;">
+        <input type="checkbox" id="academicScoreMonitorEnabled" style="width:auto;" />
+        监控本学期成绩并通知
       </label>
-      <div class="tip">遇到 503 会忽略并按间隔重试；即使已经在线也会继续请求。</div>
-      <div id="campusNetworkReconnectStatus" class="tip" style="margin-top:4px;">校园网自动重连未启用。</div>
+      <div id="academicScoreMonitorIntervalEditor" class="schedule-interval-editor">
+        <span>检查间隔</span>
+        <input type="number" id="academicScoreMonitorIntervalValue" min="1" step="1" value="1" aria-label="成绩检查间隔" />
+        <select id="academicScoreMonitorIntervalUnit" aria-label="成绩检查间隔单位">
+          <option value="1" selected>分钟</option>
+          <option value="60">小时</option>
+          <option value="1440">天</option>
+        </select>
+      </div>
+      <div id="academicSystemStatus" class="tip">正在检查教务系统登录状态并读取成绩…</div>
+      <div class="academic-score-header">
+        <strong>本学期成绩</strong>
+        <span id="academicScoreCount" class="academic-score-count"></span>
+      </div>
+      <div id="academicScoreLoading" class="academic-score-loading"><span
+          class="options-page-spinner"></span><span>正在读取成绩…</span></div>
+      <div id="academicScoreEmpty" class="tip" style="display:none; margin:0;">暂无成绩数据</div>
+      <div id="academicScoreTableWrap" class="academic-score-table-wrap" style="display:none;">
+        <table class="academic-score-table">
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th>学年</th>
+              <th>课程</th>
+              <th>学分</th>
+              <th>成绩</th>
+              <th>加分成绩</th>
+              <th>上课教师</th>
+              <th>详细信息</th>
+            </tr>
+          </thead>
+          <tbody id="academicScoreTableBody"></tbody>
+        </table>
+      </div>
     </div>
-  </div>
-  <div id="academic-system-section" class="options-wide-card" style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;" data-module="academic" hidden>
-    <div class="section-title">教务系统</div>
-    <label for="academicAccountSelect">已保存账号</label>
-    <div class="academic-account-row">
-      <select id="academicAccountSelect" aria-label="已保存的教务系统账号"><option value="">暂无已保存账号</option></select>
-    </div>
-    <label for="academicStudentId">学号</label>
-    <input id="academicStudentId" type="text" autocomplete="username" placeholder="自动使用智慧课程平台账号" />
-    <label for="academicPassword">身份证号后六位</label>
-    <input id="academicPassword" type="password" maxlength="6" autocomplete="off" placeholder="登录成功后保存在扩展本地存储" />
-    <div class="academic-login-actions">
-      <button id="academicLoginBtn" type="button">登录教务系统</button>
-      <button id="bindAcademicSystemBtn" type="button" style="background:#16a34a;">🔗 通过 MIS 登录教务系统</button>
-    </div>
-    <div class="tip">账号密码会在登录成功后按学号保存在扩展本地存储中，用于切换账号和恢复登录。</div>
-    <label style="display:flex; align-items:center; gap:8px; margin:12px 0 6px;">
-      <input type="checkbox" id="academicScoreMonitorEnabled" style="width:auto;" />
-      监控本学期成绩并通知
-    </label>
-    <div id="academicScoreMonitorIntervalEditor" class="schedule-interval-editor">
-      <span>检查间隔</span>
-      <input type="number" id="academicScoreMonitorIntervalValue" min="1" step="1" value="1" aria-label="成绩检查间隔" />
-      <select id="academicScoreMonitorIntervalUnit" aria-label="成绩检查间隔单位">
-        <option value="1" selected>分钟</option>
-        <option value="60">小时</option>
-        <option value="1440">天</option>
-      </select>
-    </div>
-    <div id="academicSystemStatus" class="tip">正在检查教务系统登录状态并读取成绩…</div>
-    <div class="academic-score-header">
-      <strong>本学期成绩</strong>
-      <span id="academicScoreCount" class="academic-score-count"></span>
-    </div>
-    <div id="academicScoreLoading" class="academic-score-loading"><span class="options-page-spinner"></span><span>正在读取成绩…</span></div>
-    <div id="academicScoreEmpty" class="tip" style="display:none; margin:0;">暂无成绩数据</div>
-    <div id="academicScoreTableWrap" class="academic-score-table-wrap" style="display:none;">
-      <table class="academic-score-table">
-        <thead><tr><th>序号</th><th>学年</th><th>课程</th><th>学分</th><th>成绩</th><th>加分成绩</th><th>上课教师</th><th>详细信息</th></tr></thead>
-        <tbody id="academicScoreTableBody"></tbody>
-      </table>
-    </div>
-  </div>
   </main>
   <div id="msg"></div>
   <div id="account-init-modal" class="account-progress-mask" style="display:none;">
@@ -297,15 +330,20 @@
       <div id="account-init-status" class="account-init-status">正在准备…</div>
       <div class="account-init-progress-row">
         <div id="account-init-teacher-label" class="account-init-progress-label">教职工：正在等待</div>
-        <div class="progress-bar-container"><div id="account-init-teacher-progress-bar" class="progress-bar"></div></div>
+        <div class="progress-bar-container">
+          <div id="account-init-teacher-progress-bar" class="progress-bar"></div>
+        </div>
       </div>
       <div class="account-init-progress-row">
         <div id="account-init-student-label" class="account-init-progress-label">学生：正在等待</div>
-        <div class="progress-bar-container"><div id="account-init-student-progress-bar" class="progress-bar"></div></div>
+        <div class="progress-bar-container">
+          <div id="account-init-student-progress-bar" class="progress-bar"></div>
+        </div>
       </div>
     </div>
   </div>
-  <div id="reset-confirm-modal" class="account-progress-mask" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title">
+  <div id="reset-confirm-modal" class="account-progress-mask" style="display:none;" role="dialog" aria-modal="true"
+    aria-labelledby="reset-confirm-title">
     <div class="account-progress-card reset-confirm-card">
       <button id="reset-confirm-close" class="reset-confirm-close" type="button" title="关闭" aria-label="关闭">×</button>
       <div id="reset-confirm-title" class="account-progress-title">恢复默认设置</div>
@@ -328,4 +366,5 @@
   <script src="core/loaders/ve-options-loader.js"></script>
   <script src="options.js"></script>
 </body>
+
 </html>

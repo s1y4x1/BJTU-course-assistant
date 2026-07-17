@@ -57,7 +57,7 @@
                 <div class="upload-total-progress-wrap">
                     <div class="upload-total-meta">
                         <div id="total-size-info">0 B / 0 B</div>
-                        <div id="total-percent">0%</div>
+                        <div id="total-percent" style="display:none;">0%</div>
                         <div id="total-speed">0 KB/s</div>
                         <div id="total-eta"></div>
                     </div>
@@ -102,7 +102,7 @@
                     <div class="resource-total-progress-wrap">
                         <div class="resource-total-meta">
                             <span id="resource-download-total-size">0 B / 0 B</span>
-                            <span id="resource-download-total-percent">0%</span>
+                            <span id="resource-download-total-percent" style="display:none;">0%</span>
                             <span id="resource-download-total-speed">0 KB/s</span>
                             <span id="resource-download-total-eta"></span>
                         </div>
@@ -201,9 +201,16 @@
                     title="关闭" aria-label="关闭">×</button>
             </div>
             <div id="version-download-body" class="version-download-body">请稍候，正在准备下载…</div>
-            <div id="version-download-release-notes" class="version-download-release-notes" style="display:none;">
-                <div class="version-download-release-notes-title">更新说明</div>
-                <div id="version-download-release-notes-body" class="version-download-release-notes-body"></div>
+            <div class="version-download-details">
+                <div id="version-download-release-notes" class="version-download-release-notes" style="display:none;">
+                    <div class="version-download-release-notes-title">更新说明</div>
+                    <div id="version-download-release-notes-body" class="version-download-release-notes-body"></div>
+                </div>
+                <div id="version-update-files" class="version-update-files" style="display:none;">
+                    <div id="version-update-file-summary" class="version-update-file-summary"></div>
+                    <div id="version-update-file-tree" class="version-update-file-tree"
+                        aria-label="本次更新文件及覆盖状态"></div>
+                </div>
             </div>
             <div id="version-download-status" class="version-download-status"></div>
             <div id="version-download-progress" class="progress-bar-container version-download-progress" style="display:none;"

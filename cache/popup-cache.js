@@ -371,10 +371,24 @@ async function restorePopupFullscreenCacheIfNeeded() {
     cache = null;
   }
   window.__popupUsingFullscreenCache = true;
-  const hasStructuredVeCache = (cache?.backgroundStructuredVe === true || cache?.structuredCourseCache === true)
-    && Array.isArray(cache?.currentVeCourseList)
+  const veModuleAvailable = globalThis.BjtuModuleRegistry?.has('ve') === true;
+  const hasStructuredVeData = (cache?.backgroundStructuredVe === true || cache?.structuredCourseCache === true)
+    && Array.isArray(cache?.currentVeCourseList);
+  const hasStructuredExternalData = [
+    cache?.yktCourseGroupsSnapshot,
+    cache?.yktStandaloneCourses,
+    cache?.mrjzyCourseGroupsSnapshot,
+    cache?.mrjzyStandaloneCourses,
+    cache?.jlgjCourseGroupsSnapshot,
+    cache?.jlgjStandaloneCourses,
+    cache?.moocCourses
+  ].some((list) => Array.isArray(list) && list.length > 0);
+  const canRenderStructuredVeCache = veModuleAvailable
+    && hasStructuredVeData
     && typeof renderCourseList === 'function';
-  if (!cache || (!hasStructuredVeCache && !String(cache.courseListHtml || '').trim())) {
+  if (!cache || (!canRenderStructuredVeCache
+      && !hasStructuredExternalData
+      && !String(cache.courseListHtml || '').trim())) {
     window.platformEnabled = sanitizePlatformEnabled(cache?.platformEnabled || window.platformEnabled, window.platformEnabled);
     refreshPlatformLoginTip();
     showPopupCacheNotice(cache);
@@ -390,7 +404,9 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.platformLoginChecked = { ...window.platformLoginChecked, ...(cache.platformLoginChecked || {}) };
   window.platformLoadedOnce = { ...window.platformLoadedOnce, ...(cache.platformLoadedOnce || {}) };
   window.platformNeedLogin = { ...window.platformNeedLogin, ...(cache.platformNeedLogin || {}) };
-  window.currentVeCourseList = Array.isArray(cache.currentVeCourseList) ? cache.currentVeCourseList : [];
+  window.currentVeCourseList = veModuleAvailable && Array.isArray(cache.currentVeCourseList)
+    ? cache.currentVeCourseList
+    : [];
   window.courseHomeworkData = cache.courseHomeworkData || {};
   Object.values(window.courseHomeworkData).forEach((data) => {
     if (!data) return;
@@ -424,14 +440,21 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.currentAccountLoginName = String(cache.currentAccountLoginName || '');
   window.isTeacherAccount = !!cache.isTeacherAccount;
   normalizeRestoredCachesForPopup();
-  if (hasStructuredVeCache && typeof rematchExternalByVeCourses === 'function') {
+  if ((canRenderStructuredVeCache || hasStructuredExternalData)
+      && typeof rematchExternalByVeCourses === 'function') {
     rematchExternalByVeCourses();
   }
 
   if (courseListDiv) {
-    if (hasStructuredVeCache) {
+    if (canRenderStructuredVeCache) {
       renderCourseList(window.currentVeCourseList, { cachedOnly: true });
       await Promise.resolve(window.veHomeworkLoadPromise).catch(() => {});
+      renderEnabledExternalStandaloneCourses();
+      window.BjtuMoocPlatform?.render();
+    } else if (hasStructuredExternalData) {
+      courseListDiv.innerHTML = '';
+      renderEnabledExternalStandaloneCourses();
+      window.BjtuMoocPlatform?.render();
     } else {
       courseListDiv.innerHTML = String(cache.courseListHtml || '');
     }

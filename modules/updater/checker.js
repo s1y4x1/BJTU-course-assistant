@@ -85,6 +85,15 @@ const VERSION_REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
 let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
 let versionRefreshCountdownAction = null;
+let versionUpdateFileTreeRows = new Map();
+
+const VERSION_UPDATE_FILE_STATE = Object.freeze({
+  pending: { symbol: '○', label: '等待覆盖' },
+  extracting: { symbol: '◌', label: '正在解压' },
+  writing: { symbol: '›', label: '正在写入' },
+  done: { symbol: '✓', label: '已写入' },
+  failed: { symbol: '×', label: '覆盖失败' }
+});
 
 function openVersionFileSystemDatabase() {
   return new Promise((resolve, reject) => {
@@ -723,6 +732,7 @@ function setVersionDownloadProgressUi({
     delete statusEl.dataset.total;
     delete statusEl.dataset.speed;
     delete statusEl.dataset.eta;
+    delete statusEl.dataset.percent;
     const message = phase === 'finished' ? '' : String(status || '下载中...');
     if (message) {
       const messageEl = document.createElement('span');
@@ -965,26 +975,144 @@ function formatVersionDownloadEta(seconds) {
   return `${hours} 小时 ${minutes % 60} 分`;
 }
 
-function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, eta = null } = {}) {
+function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, eta = null, percent = null } = {}) {
   const statusEl = document.getElementById('version-download-status');
   if (!(statusEl instanceof HTMLElement)) return;
   const loadedBytes = Math.max(0, Number(loaded) || 0);
   const totalBytes = Math.max(0, Number(total) || 0);
   const speedBytes = Math.max(0, Number(speed) || 0);
   const etaSeconds = Number.isFinite(Number(eta)) && Number(eta) >= 0 ? Number(eta) : null;
+  const explicitPercent = percent !== null && percent !== undefined && Number.isFinite(Number(percent))
+    ? Number(percent)
+    : null;
+  const progressPercent = explicitPercent !== null
+    ? Math.max(0, Math.min(100, explicitPercent))
+    : (totalBytes > 0 ? Math.min(100, loadedBytes / totalBytes * 100) : null);
   const sizePart = totalBytes > 0
-    ? `<span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeHtml(formatDownloadBytes(loadedBytes))}</span><span class="version-download-status-separator">/</span><span style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeHtml(formatDownloadBytes(totalBytes))}</span>`
+    ? `<span class="version-download-size-pair"><span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeHtml(formatDownloadBytes(loadedBytes))}</span><span class="version-download-status-separator">/</span><span style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeHtml(formatDownloadBytes(totalBytes))}</span></span>`
     : `<span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeHtml(formatDownloadBytes(loadedBytes))}</span>`;
+  const percentPart = progressPercent !== null
+    ? `<span class="version-download-percent">${Math.round(progressPercent)}%</span>`
+    : '';
   const speedPart = `<span style="${buildVersionDownloadEmphasisStyle(speedBytes)}">${escapeHtml(formatDownloadBytes(speedBytes))}/s</span>`;
   const etaText = etaSeconds !== null
     ? `剩余: ${formatVersionDownloadEta(etaSeconds)}`
     : '剩余: 计算中…';
-  statusEl.innerHTML = `${sizePart}${speedPart}<span class="version-download-eta">${escapeHtml(etaText)}</span>`;
+  statusEl.innerHTML = `${sizePart}${percentPart}${speedPart}<span class="version-download-eta">${escapeHtml(etaText)}</span>`;
   statusEl.dataset.transfer = '1';
   statusEl.dataset.loaded = String(loadedBytes);
   statusEl.dataset.total = String(totalBytes);
   statusEl.dataset.speed = String(speedBytes);
   statusEl.dataset.eta = etaSeconds === null ? '' : String(etaSeconds);
+  statusEl.dataset.percent = explicitPercent === null ? '' : String(explicitPercent);
+}
+
+function resetVersionUpdateFileTree() {
+  versionUpdateFileTreeRows = new Map();
+  const wrapper = document.getElementById('version-update-files');
+  const summary = document.getElementById('version-update-file-summary');
+  const tree = document.getElementById('version-update-file-tree');
+  if (wrapper instanceof HTMLElement) wrapper.style.display = 'none';
+  if (summary instanceof HTMLElement) {
+    summary.textContent = '';
+  }
+  if (tree instanceof HTMLElement) {
+    tree.replaceChildren();
+  }
+}
+
+function createVersionUpdateTreeRow(name, { directory = false, size = 0 } = {}) {
+  const row = document.createElement('div');
+  row.className = 'version-update-tree-row';
+  const state = document.createElement('span');
+  state.className = 'version-update-tree-state';
+  state.textContent = directory ? '▾' : VERSION_UPDATE_FILE_STATE.pending.symbol;
+  const label = document.createElement('span');
+  label.className = 'version-update-tree-name';
+  label.textContent = name;
+  row.append(state, label);
+  if (!directory) {
+    const stateLabel = document.createElement('span');
+    stateLabel.className = 'version-update-tree-state-label';
+    stateLabel.textContent = VERSION_UPDATE_FILE_STATE.pending.label;
+    const sizeEl = document.createElement('span');
+    sizeEl.className = 'version-update-tree-size';
+    sizeEl.textContent = formatDownloadBytes(size);
+    row.append(stateLabel, sizeEl);
+  }
+  return row;
+}
+
+function renderVersionUpdateFileTree(files) {
+  const wrapper = document.getElementById('version-update-files');
+  const tree = document.getElementById('version-update-file-tree');
+  const summary = document.getElementById('version-update-file-summary');
+  if (!(wrapper instanceof HTMLElement) || !(tree instanceof HTMLElement) || !(summary instanceof HTMLElement)) return;
+  versionUpdateFileTreeRows = new Map();
+  tree.replaceChildren();
+  const rootList = document.createElement('ul');
+  tree.appendChild(rootList);
+  const directories = new Map([['', rootList]]);
+
+  files.forEach((item) => {
+    const path = String(item?.path || '').replace(/\\/g, '/');
+    const parts = path.split('/').filter(Boolean);
+    if (!parts.length) return;
+    let parentPath = '';
+    let parentList = rootList;
+    parts.slice(0, -1).forEach((part) => {
+      const directoryPath = parentPath ? `${parentPath}/${part}` : part;
+      let childList = directories.get(directoryPath);
+      if (!childList) {
+        const directoryItem = document.createElement('li');
+        directoryItem.className = 'version-update-tree-directory';
+        directoryItem.appendChild(createVersionUpdateTreeRow(part, { directory: true }));
+        childList = document.createElement('ul');
+        directoryItem.appendChild(childList);
+        parentList.appendChild(directoryItem);
+        directories.set(directoryPath, childList);
+      }
+      parentPath = directoryPath;
+      parentList = childList;
+    });
+
+    const fileItem = document.createElement('li');
+    fileItem.className = 'version-update-tree-file';
+    fileItem.dataset.state = 'pending';
+    fileItem.title = VERSION_UPDATE_FILE_STATE.pending.label;
+    fileItem.appendChild(createVersionUpdateTreeRow(parts.at(-1), {
+      size: Math.max(0, Number(item?.entry?.uncompressedSize) || 0)
+    }));
+    parentList.appendChild(fileItem);
+    versionUpdateFileTreeRows.set(path, fileItem);
+  });
+
+  summary.textContent = `已完成 0 / ${files.length}`;
+  wrapper.style.display = '';
+}
+
+function setVersionUpdateFileState(path, state) {
+  const normalizedPath = String(path || '').replace(/\\/g, '/');
+  const row = versionUpdateFileTreeRows.get(normalizedPath);
+  const config = VERSION_UPDATE_FILE_STATE[state] || VERSION_UPDATE_FILE_STATE.pending;
+  if (!(row instanceof HTMLElement)) return;
+  row.dataset.state = state;
+  row.title = config.label;
+  const stateEl = row.querySelector(':scope > .version-update-tree-row > .version-update-tree-state');
+  if (stateEl instanceof HTMLElement) {
+    stateEl.textContent = config.symbol;
+    stateEl.title = config.label;
+  }
+  const stateLabel = row.querySelector(':scope > .version-update-tree-row > .version-update-tree-state-label');
+  if (stateLabel instanceof HTMLElement) stateLabel.textContent = config.label;
+}
+
+function setVersionUpdateFileSummary({ completed = 0, total = 0, path = '', state = '' } = {}) {
+  const summary = document.getElementById('version-update-file-summary');
+  if (!(summary instanceof HTMLElement)) return;
+  const config = VERSION_UPDATE_FILE_STATE[state];
+  const current = path && config ? ` · ${config.label}：${path}` : '';
+  summary.textContent = `已完成 ${completed} / ${total}${current}`;
 }
 
 window.addEventListener('bjtu-theme-change', () => {
@@ -994,7 +1122,8 @@ window.addEventListener('bjtu-theme-change', () => {
     loaded: Number(statusEl.dataset.loaded || 0),
     total: Number(statusEl.dataset.total || 0),
     speed: Number(statusEl.dataset.speed || 0),
-    eta: statusEl.dataset.eta === '' ? null : Number(statusEl.dataset.eta)
+    eta: statusEl.dataset.eta === '' ? null : Number(statusEl.dataset.eta),
+    percent: statusEl.dataset.percent === '' ? null : Number(statusEl.dataset.percent)
   });
 });
 
@@ -1186,6 +1315,7 @@ async function fetchUpdateArchiveWithProgress(url) {
   const controller = new AbortController();
   let idleTimer = null;
   const startedAt = Date.now();
+  resetVersionUpdateFileTree();
   setVersionDownloadBar({ visible: true, indeterminate: true });
   const resetIdleTimeout = () => {
     if (idleTimer) clearTimeout(idleTimer);
@@ -1756,34 +1886,89 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
   if (!files.length) return 0;
 
+  renderVersionUpdateFileTree(files);
   let completedCount = 0;
+  let completedBytes = 0;
+  const totalBytes = files.reduce((total, item) => (
+    total + Math.max(0, Number(item?.entry?.uncompressedSize) || 0)
+  ), 0);
+  const writeStartedAt = performance.now();
   setVersionDownloadProgressUi({
     visible: true,
-    status: `正在并行覆盖：0 / ${files.length}`,
+    status: '正在准备覆盖文件…',
     title: '正在覆盖解压',
     body: `正在将更新文件直接覆盖到 ${getVersionUpdateDirectoryDisplayName()} 目录。`,
     phase: 'extracting'
   });
+  setVersionDownloadTransferStatus({ loaded: 0, total: totalBytes, speed: 0, eta: null, percent: 0 });
   const results = await Promise.allSettled(files.map(async (item) => {
+    setVersionUpdateFileState(item.path, 'extracting');
+    setVersionUpdateFileSummary({
+      completed: completedCount,
+      total: files.length,
+      path: item.path,
+      state: 'extracting'
+    });
     let inflated;
     try {
       inflated = await inflateZipEntry(item.entry);
     } catch (error) {
+      setVersionUpdateFileState(item.path, 'failed');
+      setVersionUpdateFileSummary({
+        completed: completedCount,
+        total: files.length,
+        path: item.path,
+        state: 'failed'
+      });
       throw markVersionUpdateError(error, 'archive');
     }
+    setVersionUpdateFileState(item.path, 'writing');
+    setVersionUpdateFileSummary({
+      completed: completedCount,
+      total: files.length,
+      path: item.path,
+      state: 'writing'
+    });
     try {
       await writeBytesToVersionUpdateDirectory(inflated, item.path);
     } catch (error) {
+      setVersionUpdateFileState(item.path, 'failed');
+      setVersionUpdateFileSummary({
+        completed: completedCount,
+        total: files.length,
+        path: item.path,
+        state: 'failed'
+      });
       throw markVersionUpdateError(error, 'directory');
     }
     completedCount += 1;
-    setVersionDownloadBar({ visible: true, percent: (completedCount / files.length) * 100 });
+    completedBytes += inflated.byteLength;
+    setVersionUpdateFileState(item.path, 'done');
+    const elapsedSeconds = Math.max(0.001, (performance.now() - writeStartedAt) / 1000);
+    const speed = completedBytes / elapsedSeconds;
+    const exactPercent = (completedCount / files.length) * 100;
+    setVersionDownloadBar({ visible: true, percent: exactPercent });
     setVersionDownloadProgressUi({
       visible: true,
-      status: `正在并行覆盖：${completedCount} / ${files.length} · ${item.path}`,
+      status: '正在覆盖更新文件…',
       title: '正在覆盖解压',
       body: `正在将更新文件直接覆盖到 ${getVersionUpdateDirectoryDisplayName()} 目录。`,
       phase: 'extracting'
+    });
+    setVersionDownloadTransferStatus({
+      loaded: completedBytes,
+      total: totalBytes,
+      speed,
+      eta: completedCount < files.length
+        ? elapsedSeconds * (files.length - completedCount) / completedCount
+        : 0,
+      percent: exactPercent
+    });
+    setVersionUpdateFileSummary({
+      completed: completedCount,
+      total: files.length,
+      path: item.path,
+      state: 'done'
     });
   }));
   const failedResult = results.find((result) => result.status === 'rejected');
