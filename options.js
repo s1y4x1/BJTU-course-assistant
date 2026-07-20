@@ -413,8 +413,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuVeOptionsReady;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode, preferExistingFullscreenPage } = await chrome.storage.local.get(['openMode', 'preferExistingFullscreenPage']);
@@ -452,6 +452,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
   document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
   document.getElementById('autoLoadAllHomeworkDetails').checked = autoLoadAllHomeworkDetails === true;
+  document.getElementById('showYktClassroomActivities').checked = showYktClassroomActivities === true;
+  document.getElementById('showYktAnnouncements').checked = showYktAnnouncements === true;
   document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
     homeworkDetailCollapsedLines,
     DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
@@ -854,7 +856,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.disabled = !visibleState.ve;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.ve);
     });
-    [['autoLoadAllHomeworkDetails', 'ykt']].forEach(([id, platform]) => {
+    [
+      ['autoLoadAllHomeworkDetails', 'ykt'],
+      ['showYktClassroomActivities', 'ykt'],
+      ['showYktAnnouncements', 'ykt']
+    ].forEach(([id, platform]) => {
       const input = document.getElementById(id);
       input.disabled = !visibleState[platform];
       input.closest('label')?.classList.toggle('is-disabled', !visibleState[platform]);
@@ -973,6 +979,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         void enforceJlgjDarkThemeAvailability();
       }
       if (changes.autoLoadAllHomeworkDetails) applyBooleanUi('autoLoadAllHomeworkDetails', changes.autoLoadAllHomeworkDetails.newValue, false);
+      if (changes.showYktClassroomActivities) applyBooleanUi('showYktClassroomActivities', changes.showYktClassroomActivities.newValue, false);
+      if (changes.showYktAnnouncements) applyBooleanUi('showYktAnnouncements', changes.showYktAnnouncements.newValue, false);
       if (changes.homeworkDetailCollapsedLines) {
         document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
           changes.homeworkDetailCollapsedLines.newValue,
@@ -1115,7 +1123,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ injectMoocHelperEnabled: !!document.getElementById('injectMoocHelperEnabled').checked });
     setMsg('已应用更改');
   });
-  ['jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails'].forEach((id) => {
+  ['jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements'].forEach((id) => {
     document.getElementById(id).addEventListener('change', async () => {
       await chrome.storage.local.set({ [id]: !!document.getElementById(id).checked });
       setMsg('已应用更改');
@@ -1599,6 +1607,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       jlgjDarkModeEnabled: true,
       jlgjAlwaysDarkModeEnabled: false,
       autoLoadAllHomeworkDetails: false,
+      showYktClassroomActivities: false,
+      showYktAnnouncements: false,
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
       replayDetailCollapsedLines: DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES,
       parallelLimit: DEFAULT_PARALLEL_LIMIT,
@@ -1635,6 +1645,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;
+    document.getElementById('showYktClassroomActivities').checked = false;
+    document.getElementById('showYktAnnouncements').checked = false;
     document.getElementById('homeworkDetailCollapsedLines').value = String(DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES);
     document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);
     document.getElementById('parallelLimit').value = String(DEFAULT_PARALLEL_LIMIT);

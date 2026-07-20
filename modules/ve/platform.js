@@ -1733,8 +1733,6 @@ function toggleReplayFromCache(btn, courseIdInt) {
 }
 
 async function loadCourses() {
-  try { console.debug && console.debug('loadCourses entry', Date.now()); } catch (e) {}
-  try { console.debug && console.debug(new Error('loadCourses stack').stack); } catch (e) {}
   // 立即中止所有进行中的课件/回放请求
   abortAllCoursewareReplayFetches();
   const courseLoadVersion = bumpPlatformLoadVersion('ve');

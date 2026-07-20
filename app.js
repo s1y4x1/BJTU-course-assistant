@@ -189,6 +189,8 @@ window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}
 window.saveUploadedFilesEnabled = true;
 window.autoLoadCourseResourcesEnabled = false;
 window.autoLoadAllHomeworkDetails = false;
+window.showYktClassroomActivities = false;
+window.showYktAnnouncements = false;
 window.homeworkDetailCollapsedLines = 3;
 window.replayDetailCollapsedLines = 3;
 window.jlgjDarkModeEnabled = true;
@@ -330,6 +332,8 @@ function disablePlatformAfterLoginFailure(platform) {
 
 const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
 const AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY = 'autoLoadAllHomeworkDetails';
+const SHOW_YKT_CLASSROOM_ACTIVITIES_KEY = 'showYktClassroomActivities';
+const SHOW_YKT_ANNOUNCEMENTS_KEY = 'showYktAnnouncements';
 const HOMEWORK_DETAIL_COLLAPSED_LINES_KEY = 'homeworkDetailCollapsedLines';
 const REPLAY_DETAIL_COLLAPSED_LINES_KEY = 'replayDetailCollapsedLines';
 const JLGJ_DARK_MODE_KEY = 'jlgjDarkModeEnabled';
@@ -555,18 +559,24 @@ async function loadPlatformDetailSettings() {
     const data = await chrome.storage.local.get([
       PARALLEL_LIMIT_KEY,
       AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY,
+      SHOW_YKT_CLASSROOM_ACTIVITIES_KEY,
+      SHOW_YKT_ANNOUNCEMENTS_KEY,
       HOMEWORK_DETAIL_COLLAPSED_LINES_KEY,
       REPLAY_DETAIL_COLLAPSED_LINES_KEY,
       JLGJ_DARK_MODE_KEY
     ]);
     maxParallelUploads = normalizeParallelLimit(data[PARALLEL_LIMIT_KEY], 3);
     window.autoLoadAllHomeworkDetails = data[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY] === true;
+    window.showYktClassroomActivities = data[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY] === true;
+    window.showYktAnnouncements = data[SHOW_YKT_ANNOUNCEMENTS_KEY] === true;
     window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(data[REPLAY_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
   } catch {
     maxParallelUploads = 3;
     window.autoLoadAllHomeworkDetails = false;
+    window.showYktClassroomActivities = false;
+    window.showYktAnnouncements = false;
     window.homeworkDetailCollapsedLines = 3;
     window.replayDetailCollapsedLines = 3;
     window.jlgjDarkModeEnabled = true;
@@ -884,6 +894,36 @@ function setupOptionsStorageLiveSync() {
       if (typeof processQueue === 'function') processQueue();
       if (typeof processResourceDownloadQueue === 'function') processResourceDownloadQueue();
     }
+    if (changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY]) {
+      window.autoLoadAllHomeworkDetails = changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY].newValue === true;
+      if (window.autoLoadAllHomeworkDetails && isPlatformEnabled('ykt')) {
+        scheduleYktLoad([]).then(() => {
+          rematchExternalByVeCourses('ykt');
+          rerenderAllHomeworkAreas();
+          renderYktStandaloneCourses();
+        }).catch(() => {});
+      }
+    }
+    const yktActivityVisibilityChanged = !!(
+      changes[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY]
+      || changes[SHOW_YKT_ANNOUNCEMENTS_KEY]
+    );
+    if (changes[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY]) {
+      window.showYktClassroomActivities = changes[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY].newValue === true;
+    }
+    if (changes[SHOW_YKT_ANNOUNCEMENTS_KEY]) {
+      window.showYktAnnouncements = changes[SHOW_YKT_ANNOUNCEMENTS_KEY].newValue === true;
+    }
+    if (yktActivityVisibilityChanged && isPlatformEnabled('ykt')) {
+      scheduleYktLoad([]).then(() => {
+        rematchExternalByVeCourses('ykt');
+        rerenderAllHomeworkAreas();
+        renderYktStandaloneCourses();
+      }).catch(() => {});
+    }
+    if (changes[JLGJ_DARK_MODE_KEY]) {
+      window.jlgjDarkModeEnabled = changes[JLGJ_DARK_MODE_KEY].newValue !== false;
+    }
   });
 }
 
@@ -1088,13 +1128,20 @@ function organizeCourseCardsByPlatform() {
     }
 
     const desiredIds = new Set(desired.map(({ id }) => id));
+    let structureChanged = false;
 
     courseListDiv.querySelectorAll(':scope > .platform-course-column').forEach((column) => {
-      if (!desiredIds.has(String(column.dataset.platform || ''))) column.remove();
+      if (!desiredIds.has(String(column.dataset.platform || ''))) {
+        column.remove();
+        structureChanged = true;
+      }
     });
     courseListDiv.querySelectorAll(':scope > .platform-column-resizer').forEach((resizer) => {
       if (!desiredIds.has(String(resizer.dataset.leftPlatform || ''))
-          || !desiredIds.has(String(resizer.dataset.rightPlatform || ''))) resizer.remove();
+          || !desiredIds.has(String(resizer.dataset.rightPlatform || ''))) {
+        resizer.remove();
+        structureChanged = true;
+      }
     });
 
     const columns = new Map();
@@ -1106,6 +1153,7 @@ function organizeCourseCardsByPlatform() {
         column.dataset.platform = id;
         column.innerHTML = '<div class="platform-course-column-body"></div><div class="platform-course-column-empty"></div>';
         courseListDiv.appendChild(column);
+        structureChanged = true;
       }
       columns.set(id, column);
     });
@@ -1122,6 +1170,7 @@ function organizeCourseCardsByPlatform() {
           resizer.dataset.rightPlatform = id;
           resizer.title = '拖动调整平台列宽';
           bindPlatformColumnResizer(resizer);
+          structureChanged = true;
         }
         orderedLayoutNodes.push(resizer);
       }
@@ -1132,13 +1181,19 @@ function organizeCourseCardsByPlatform() {
     ));
     const layoutOrderMatches = currentLayoutNodes.length === orderedLayoutNodes.length
       && currentLayoutNodes.every((node, index) => node === orderedLayoutNodes[index]);
-    if (!layoutOrderMatches) orderedLayoutNodes.forEach((node) => courseListDiv.appendChild(node));
+    if (!layoutOrderMatches) {
+      orderedLayoutNodes.forEach((node) => courseListDiv.appendChild(node));
+      structureChanged = true;
+    }
 
     cards.forEach((card) => {
       const platform = getCourseCardPlatform(card);
       card.dataset.platform = platform;
       const body = columns.get(platform)?.querySelector('.platform-course-column-body');
-      if (body instanceof HTMLElement && card.parentElement !== body) body.appendChild(card);
+      if (body instanceof HTMLElement && card.parentElement !== body) {
+        body.appendChild(card);
+        structureChanged = true;
+      }
     });
 
     desired.forEach(({ id }) => {
@@ -1149,22 +1204,28 @@ function organizeCourseCardsByPlatform() {
       const hasCards = !!body.querySelector('.file-item[data-course-rankable="1"]');
       const state = String(window.platformLoginState?.[id] || 'checking');
       const label = COURSE_PLATFORM_COLUMNS.find((item) => item.id === id)?.label || '';
-      empty.replaceChildren(document.createTextNode(
-        state === 'checking' ? `${label}正在加载课程…` : (state === 'offline' ? `${label}未登录` : `${label}暂无课程`)
-      ));
-      if (state === 'checking') {
-        const spinner = document.createElement('span');
-        spinner.className = 'spinner';
-        spinner.setAttribute('aria-hidden', 'true');
-        spinner.style.animationDelay = `-${Date.now() % 1000}ms`;
-        empty.appendChild(spinner);
+      const emptyText = state === 'checking'
+        ? `${label}正在加载课程…`
+        : (state === 'offline' ? `${label}未登录` : `${label}暂无课程`);
+      const emptyViewKey = `${state}:${emptyText}`;
+      if (empty.dataset.viewKey !== emptyViewKey) {
+        empty.dataset.viewKey = emptyViewKey;
+        empty.replaceChildren(document.createTextNode(emptyText));
+        if (state === 'checking') {
+          const spinner = document.createElement('span');
+          spinner.className = 'spinner';
+          spinner.setAttribute('aria-hidden', 'true');
+          spinner.style.animationDelay = `-${Date.now() % 1000}ms`;
+          empty.appendChild(spinner);
+        }
       }
-      empty.style.display = hasCards ? 'none' : '';
+      const emptyDisplay = hasCards ? 'none' : '';
+      if (empty.style.display !== emptyDisplay) empty.style.display = emptyDisplay;
     });
 
     courseListDiv.classList.add('platform-split-grid');
     applyCourseHelperPlatformColumnWeights();
-    sortCourseCards();
+    if (structureChanged) sortCourseCards();
   } finally {
     coursePlatformOrganizing = false;
   }
@@ -1669,19 +1730,6 @@ window.addEventListener('bjtu-theme-change', () => {
   document.querySelectorAll('[data-speed-bytes]').forEach((element) => {
     if (element instanceof HTMLElement) {
       setSpeedDisplay(element, Number(element.dataset.speedBytes || 0), element.textContent || '');
-    }
-    if (changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY]) {
-      window.autoLoadAllHomeworkDetails = changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY].newValue === true;
-      if (window.autoLoadAllHomeworkDetails && isPlatformEnabled('ykt')) {
-        scheduleYktLoad([]).then(() => {
-          rematchExternalByVeCourses('ykt');
-          rerenderAllHomeworkAreas();
-          renderYktStandaloneCourses();
-        }).catch(() => {});
-      }
-    }
-    if (changes[JLGJ_DARK_MODE_KEY]) {
-      window.jlgjDarkModeEnabled = changes[JLGJ_DARK_MODE_KEY].newValue !== false;
     }
   });
   document.querySelectorAll('[data-file-size-bytes], [data-file-size-mb]').forEach((element) => {
@@ -3341,11 +3389,11 @@ function setPlatformContentLoadProgress(platform, completed, total) {
   } else {
     window.platformContentLoadProgress[p] = { completed: Math.min(count, size), total: size };
   }
-  refreshPlatformLoginTip();
+  refreshPlatformLoginTip({ scheduleLayout: false });
 }
 window.setPlatformContentLoadProgress = setPlatformContentLoadProgress;
 
-function refreshPlatformLoginTip() {
+function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
   removeMrjzyLoginTip();
 
   const apply = (btn, state, label) => {
@@ -3388,7 +3436,7 @@ function refreshPlatformLoginTip() {
   apply(jlgjStatusBtn, window.platformLoginState?.jlgj || 'checking', '接龙管家');
   apply(moocStatusBtn, window.platformLoginState?.mooc || 'checking', '中国大学MOOC');
   applyPlatformVisibility();
-  if (window.courseHelperPlatformSplitMode) scheduleCourseCardsByPlatform();
+  if (scheduleLayout && window.courseHelperPlatformSplitMode) scheduleCourseCardsByPlatform();
 
   // Login warnings are shown on offline-transition only (one platform at a time).
 }

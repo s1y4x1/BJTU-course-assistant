@@ -10,15 +10,18 @@ const YKT_HEADERS = {
   xtbz: 'ykt',
   Accept: 'application/json, text/plain, */*'
 };
+const YKT_ACTIVITY_TYPE_LABELS = Object.freeze({
+  14: '课堂',
+  15: '线上学习',
+  5: '试卷',
+  9: '公告'
+});
 const YKT_WECHAT_QR_LOGIN_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=wxda8c70bb118d342b&scope=snsapi_login&redirect_uri=https://www.yuketang.cn/api/v3/user/login/wechat-web-callback';
 const YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX = 'https://www.yuketang.cn/authorize/wx-qrlogin?success=1';
 let yktLoginAssistRetryTimer = null;
 let yktLoginAssistPollTimer = null;
-let yktLoginAssistChecking = false;
 let yktLoginAssistPopupWindowId = null;
 let yktLoginAssistPopupTabId = null;
-let yktLoginIframeLoadCount = 0;
-let yktLoginIframeOpenedAt = 0;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
@@ -113,7 +116,6 @@ function stopYktLoginAssistWatcher() {
     clearInterval(yktLoginAssistPollTimer);
     yktLoginAssistPollTimer = null;
   }
-  yktLoginAssistChecking = false;
 }
 
 function isYktLoginSuccessUrl(url) {
@@ -143,42 +145,15 @@ async function checkYktLoginAssistPopupUrl() {
   return false;
 }
 
-async function checkYktLoginAssistStatus() {
-  if (yktLoginAssistChecking) return false;
-  if (!isPlatformEnabled('ykt') && !window.platformInteractiveLoginPending?.ykt) return false;
-  if (!window.platformInteractiveLoginPending?.ykt) return false;
-  yktLoginAssistChecking = true;
-  try {
-    const resp = await fetchYktJson(YKT_COURSE_LIST_API);
-    const ok = Number(resp?.errcode) === 0;
-    if (ok) {
-      closeYktLoginAssistPopup(false);
-      scheduleYktLoginAssistRecheck(300);
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  } finally {
-    yktLoginAssistChecking = false;
-  }
-}
-
 function startYktLoginAssistWatcher() {
   stopYktLoginAssistWatcher();
   yktLoginAssistPollTimer = setInterval(() => {
-    void checkYktLoginAssistStatus();
     void checkYktLoginAssistPopupUrl();
   }, PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS);
-  void checkYktLoginAssistStatus();
   void checkYktLoginAssistPopupUrl();
 }
 
 function closeYktLoginAssistPopup(cancelPending = false) {
-  const mask = document.getElementById('ykt-login-assist-mask');
-  if (mask instanceof HTMLElement) {
-    mask.style.display = 'none';
-  }
   if (yktLoginAssistPopupWindowId) {
     chrome.windows.remove(Number(yktLoginAssistPopupWindowId)).catch(() => {});
   }
@@ -188,61 +163,6 @@ function closeYktLoginAssistPopup(cancelPending = false) {
   if (cancelPending) {
     window.platformInteractiveLoginPending.ykt = false;
   }
-}
-
-function ensureYktLoginAssistPopup() {
-  let mask = document.getElementById('ykt-login-assist-mask');
-  if (mask instanceof HTMLElement) return mask;
-
-  mask = document.createElement('div');
-  mask.id = 'ykt-login-assist-mask';
-  mask.style.cssText = [
-    'display:none',
-    'position:fixed',
-    'inset:0',
-    'z-index:1200',
-    'background:rgba(15,23,42,0.45)',
-    'align-items:center',
-    'justify-content:center',
-    'padding:12px'
-  ].join(';');
-  mask.innerHTML = `
-    <div style="width:min(360px, 92vw); max-height:min(88vh, 560px); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
-      <div style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
-        <div style="font-size:14px; font-weight:700; color:#0f172a;">登录雨课堂</div>
-        <button type="button" data-action="close-ykt-login-assist" class="modal-close-btn" style="position:static; flex-shrink:0;" aria-label="关闭" title="关闭">×</button>
-      </div>
-      <div style="flex:1; padding:8px; background:#f8fafc;">
-        <iframe id="ykt-login-assist-frame" title="登录雨课堂" referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-same-origin allow-popups" style="width:100%; height:100%; border:0; border-radius:8px; background:#fff;"></iframe>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(mask);
-
-  const closeBtn = mask.querySelector('button[data-action="close-ykt-login-assist"]');
-  if (closeBtn instanceof HTMLButtonElement) {
-    closeBtn.addEventListener('click', () => closeYktLoginAssistPopup(true));
-  }
-  mask.addEventListener('mousedown', (e) => {
-    mask.dataset.mdownMask = e.target === mask ? '1' : '0';
-  });
-  mask.addEventListener('mouseup', (e) => {
-    if (e.target === mask && mask.dataset.mdownMask === '1') {
-      closeYktLoginAssistPopup(true);
-    }
-    delete mask.dataset.mdownMask;
-  });
-
-  const frame = mask.querySelector('#ykt-login-assist-frame');
-  if (frame instanceof HTMLIFrameElement) {
-    frame.addEventListener('load', () => {
-      if (mask.style.display === 'none') return;
-      yktLoginIframeLoadCount += 1;
-      void checkYktLoginAssistStatus();
-    });
-  }
-
-  return mask;
 }
 
 function openYktLoginAssistPopup(force = false) {
@@ -281,8 +201,6 @@ function openYktLoginAssistPopup(force = false) {
     yktLoginAssistPopupWindowId = Number(created?.id || 0) || null;
     const tab = Array.isArray(created?.tabs) && created.tabs.length ? created.tabs[0] : null;
     yktLoginAssistPopupTabId = Number(tab?.id || 0) || null;
-    yktLoginIframeLoadCount = 0;
-    yktLoginIframeOpenedAt = Date.now();
     startYktLoginAssistWatcher();
   };
   openPopup().catch(() => {
@@ -688,7 +606,12 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
 }
 
 function renderYktHomeworkItems(courseId, items) {
-  const list = items || [];
+  const list = (items || []).filter((item) => {
+    const actype = Number(item?.__actype);
+    if (actype === 14) return window.showYktClassroomActivities === true;
+    if (actype === 9) return window.showYktAnnouncements === true;
+    return true;
+  });
   if (!list.length) return '';
   return list.map((it, idx) => {
     const done = isYktHomeworkDone(it);
@@ -717,6 +640,10 @@ function renderYktHomeworkItems(courseId, items) {
     const expandKey = `ykt:${yktIdSeed}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
     const actype = Number(it?.__actype);
+    const activityTypeLabel = YKT_ACTIVITY_TYPE_LABELS[actype] || '';
+    const activityTypeBadge = activityTypeLabel
+      ? `<span style="display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; color:inherit; font-size:10px; line-height:1.3; vertical-align:1px;">${escapeHtml(activityTypeLabel)}</span>`
+      : '';
     const isExam = actype === 5;
     const examDetail = isExam ? renderYktExamProblemsHtml(it?.exam_problems || [], done) : '';
     let detailStatusHtml = '';
@@ -744,7 +671,7 @@ function renderYktHomeworkItems(courseId, items) {
       done,
       background: palette.background,
       border: palette.border,
-      titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${escapeHtml(it.title || '雨课堂作业')}</div>`,
+      titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${activityTypeBadge}${escapeHtml(it.title || '雨课堂作业')}</div>`,
       metaHtml: `<div style="font-size:12px;color:#666;">截止: <span style="font-weight:700;color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div><div style="font-size:12px;color:#666;">${progressHtml ? `进度: ${progressHtml}` : ''}</div>`,
       actionsHtml: `${titleScoreBadge ? `<div style="font-size:12px;line-height:1;">${titleScoreBadge}</div>` : ''}${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })}`,
       detailHtml: `${detailExpandable ? `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;">${detailExpandable}</div>` : ''}${detailStatusHtml}`
@@ -937,7 +864,12 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   };
   const courseTasks = entries.map(async (entry, idx) => {
     if (isStale()) return;
-    const actypes = [15, 5];
+    const actypes = [
+      ...(window.showYktClassroomActivities ? [14] : []),
+      15,
+      5,
+      ...(window.showYktAnnouncements ? [9] : [])
+    ];
     const urls = actypes.map((actype) => `${YKT_BASE}/v2/api/web/logs/learn/${encodeURIComponent(String(entry.classroomId))}?actype=${actype}&page=0&offset=100`);
     const logSettled = await Promise.allSettled(urls.map((u) => fetchYktJson(u)));
     if (isStale()) return;
