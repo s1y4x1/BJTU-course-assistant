@@ -34,6 +34,7 @@ const DEFAULT_POPUP_WIDTH_PX = 500;
 const DEFAULT_POPUP_HEIGHT_PX = 600;
 const DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE = true;
 const DEFAULT_COURSE_HELPER_EXPANDED = false;
+const DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION = false;
 const DEFAULT_DEADLINE_COUNTDOWN_STYLE = 'seven-seg';
 const MIN_POPUP_WIDTH_PX = 360;
 const MAX_POPUP_WIDTH_PX = 800;
@@ -418,8 +419,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuVeOptionsReady;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, deadlineCountdownStyle } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'deadlineCountdownStyle'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode, preferExistingFullscreenPage } = await chrome.storage.local.get(['openMode', 'preferExistingFullscreenPage']);
@@ -491,6 +492,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     MAX_POPUP_HEIGHT_PX
   ));
   document.getElementById('courseHelperExpandedByDefault').checked = courseHelperExpandedByDefault === true;
+  document.getElementById('showCourseListDuringLayoutTransition').checked = showCourseListDuringLayoutTransition === true;
   document.getElementById('deadlineCountdownStyle').value = normalizeDeadlineCountdownStyle(deadlineCountdownStyle);
   const saveUploadsVal = saveUploadedFilesEnabled === undefined
     ? DEFAULT_SAVE_UPLOADS_ENABLED
@@ -1026,6 +1028,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.courseHelperExpandedByDefault) {
         applyBooleanUi('courseHelperExpandedByDefault', changes.courseHelperExpandedByDefault.newValue, DEFAULT_COURSE_HELPER_EXPANDED);
       }
+      if (changes.showCourseListDuringLayoutTransition) {
+        applyBooleanUi(
+          'showCourseListDuringLayoutTransition',
+          changes.showCourseListDuringLayoutTransition.newValue,
+          DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION
+        );
+      }
       if (changes.deadlineCountdownStyle) {
         document.getElementById('deadlineCountdownStyle').value = normalizeDeadlineCountdownStyle(
           changes.deadlineCountdownStyle.newValue
@@ -1247,6 +1256,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('deadlineCountdownStyle')?.addEventListener('change', async (event) => {
     await chrome.storage.local.set({
       deadlineCountdownStyle: normalizeDeadlineCountdownStyle(event.currentTarget.value)
+    });
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('showCourseListDuringLayoutTransition')?.addEventListener('change', async (event) => {
+    await chrome.storage.local.set({
+      showCourseListDuringLayoutTransition: event.currentTarget.checked === true
     });
     setMsg('已应用更改');
   });
@@ -1681,6 +1697,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       popupHeightPx: DEFAULT_POPUP_HEIGHT_PX,
       preferExistingFullscreenPage: DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE,
       courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
+      showCourseListDuringLayoutTransition: DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION,
       deadlineCountdownStyle: DEFAULT_DEADLINE_COUNTDOWN_STYLE,
       themeMode: DEFAULT_THEME_MODE
     });
@@ -1703,6 +1720,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);
     document.getElementById('parallelLimit').value = String(DEFAULT_PARALLEL_LIMIT);
     document.getElementById('deadlineCountdownStyle').value = DEFAULT_DEADLINE_COUNTDOWN_STYLE;
+    document.getElementById('showCourseListDuringLayoutTransition').checked = DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
     document.getElementById('homeworkBackgroundRefreshEnabled').checked = false;
     document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = false;

@@ -338,6 +338,10 @@ html[data-color-scheme="dark"] .platform-course-column-empty {
   color: #94a3b8;
 }
 
+html[data-color-scheme="dark"] .course-list-transition-placeholder {
+  color: #cbd5e1;
+}
+
 html[data-color-scheme="dark"] .platform-column-resizer::after {
   background: rgba(100,116,139,.95);
 }

@@ -33,6 +33,11 @@
         <span>默认展开右栏课程助手</span>
       </label>
       <div class="tip">仅影响全屏页面；展开后会收起左栏和顶部控件，并按平台分栏显示课程。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
+        <input type="checkbox" id="showCourseListDuringLayoutTransition" style="width:auto;" />
+        <span>折叠/展开左栏时显示课程列表</span>
+      </label>
+      <div class="tip">关闭时，在布局动画期间隐藏课程列表并显示“正在处理…”；动画完成后立即恢复。</div>
       <label class="countdown-style-option">
         <span>作业剩余时间倒计时</span>
         <select id="deadlineCountdownStyle" aria-label="作业剩余时间倒计时字体">

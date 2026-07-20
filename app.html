@@ -163,7 +163,13 @@
                 <span class="options-loading-placeholder" aria-label="正在加载平台选项"><span class="options-loading-spinner"></span></span>
                 </span>
             </h2>
-            <div id="course-list"></div>
+            <div class="course-list-stage">
+                <div id="course-list"></div>
+                <div id="course-list-transition-placeholder" class="course-list-transition-placeholder" aria-live="polite">
+                    <span class="spinner" aria-hidden="true"></span>
+                    <span>正在处理…</span>
+                </div>
+            </div>
         </div>
     </div>
 
