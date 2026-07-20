@@ -4482,7 +4482,7 @@ function renderHomeworkList(courseId) {
       background: bgColor,
       border: borderColor,
       titleHtml: `<div style="font-weight:bold;color:${titleColor};">${homeworkTypeBadge}<a href="${homeworkPageUrl}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;">${escapeHtml(title)}</a></div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;display:flex;align-items:center;gap:0;flex-wrap:wrap;">截止: <span style="font-weight:700;color:#000;margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>`,
+      metaHtml: `<div style="font-size:12px;color:#666;display:flex;align-items:center;gap:0;flex-wrap:wrap;">截止：<span style="font-weight:700;color:#000;margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>`,
       actionsHtml: `${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}${actionButtonsHtml}`,
       detailHtml: `${attachmentHtml}${expandable ? `<div style="margin-top:3px;border-top:1px dashed ${borderColor}40;padding-top:0;">${expandable}</div>` : ''}${submitPanelHtml}`
     });
@@ -4802,7 +4802,7 @@ if (resourceDownloadSelectedBtn) {
           refreshResourceQueueStatusText();
           return;
         }
-        showToast(`下载失败: ${String(item?.name || '未命名文件')} (${msg})`, 'error', 2200);
+        showToast(`下载失败：${String(item?.name || '未命名文件')} (${msg})`, 'error', 2200);
         refreshResourceQueueStatusText();
       });
       window.resourceSpaceSelected.delete(rid);
@@ -5048,7 +5048,7 @@ courseListDiv.addEventListener('click', async (e) => {
       await checkHomework(courseId);
       refreshUploadSelectVisibility();
     } catch (err) {
-      showToast(`提交失败: ${String(err?.message || err)}`, 'error', 2500);
+      showToast(`提交失败：${String(err?.message || err)}`, 'error', 2500);
     } finally {
       btn.removeAttribute('disabled');
       btn.textContent = oldText || '确定';
@@ -5124,7 +5124,7 @@ if (resourceSpaceList) {
         if (msg.includes('下载已取消')) {
           showToast('下载已取消', 'info', 1000);
         } else {
-          showToast(`下载失败: ${msg}`, 'error', 1800);
+          showToast(`下载失败：${msg}`, 'error', 1800);
         }
       }
       return;
@@ -5209,7 +5209,7 @@ courseListDiv.addEventListener('click', async (e) => {
     } catch (err) {
       const msg = String(err?.message || err || '');
       if (msg.includes('下载已取消')) showToast('下载已取消', 'info', 1000);
-      else showToast(`下载失败: ${msg}`, 'error', 1800);
+      else showToast(`下载失败：${msg}`, 'error', 1800);
     }
   }
 });

@@ -33,6 +33,17 @@
         <span>默认展开右栏课程助手</span>
       </label>
       <div class="tip">仅影响全屏页面；展开后会收起左栏和顶部控件，并按平台分栏显示课程。</div>
+      <label class="countdown-style-option">
+        <span>作业剩余时间倒计时</span>
+        <select id="deadlineCountdownStyle" aria-label="作业剩余时间倒计时字体">
+          <option value="normal">正常字体</option>
+          <option value="seven-seg">七段数码管</option>
+        </select>
+      </label>
+      <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin:10px 0 0;">
+        <span>作业详情默认显示行数</span>
+        <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
+      </label>
     </div>
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
       <div class="section-title" id="platform-options-title">平台显示与加载</div>
@@ -73,11 +84,12 @@
           <input type="checkbox" id="headerQrEnabled" style="width:auto;" />
           <span>鼠标悬停标题时生成列表二维码</span>
         </label>
+        <div class="tip">「标题」包含课程助手、文件上传、资源空间。</div>
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
           <input type="checkbox" id="linkQrEnabled" style="width:auto;" checked />
           <span>鼠标悬停链接时显示二维码</span>
         </label>
-        <div class="tip">「标题」包含课程助手、文件上传、资源空间。「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
+        <div class="tip">「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
         <div class="platform-option-divider" role="separator"></div>
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
           <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
@@ -124,12 +136,6 @@
           操作按钮</label>
       </div>
       <div class="tip" data-tip-target="#platform-options-title">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
-      <div style="display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin-top:10px;">
-        <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
-          <span>作业详情默认显示行数</span>
-          <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
-        </label>
-      </div>
     </div>
 
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
@@ -209,6 +215,10 @@
         </label>
         <div class="tip" style="margin:4px 0 0;">仅在未打开全屏页面时运行；必要时会登录固定账号，刷新作业提醒数据和弹出窗口缓存。</div>
         <div id="homeworkBackgroundRefreshStatus" class="option-status" style="margin:4px 0 0;">后台作业获取未启用。</div>
+      </div>
+      <div class="system-notification-test-row">
+        <button id="testSystemNotificationBtn" type="button">发送测试通知</button>
+        <span id="systemNotificationStatus" class="option-status">尚未测试系统通知。</span>
       </div>
     </div>
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"

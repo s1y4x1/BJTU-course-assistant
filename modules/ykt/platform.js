@@ -672,7 +672,7 @@ function renderYktHomeworkItems(courseId, items) {
       background: palette.background,
       border: palette.border,
       titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${activityTypeBadge}${escapeHtml(it.title || '雨课堂作业')}</div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;">截止: <span style="font-weight:700;color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div><div style="font-size:12px;color:#666;">${progressHtml ? `进度: ${progressHtml}` : ''}</div>`,
+      metaHtml: `<div style="font-size:12px;color:#666;">截止：<span style="font-weight:700;color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div><div style="font-size:12px;color:#666;">${progressHtml ? `进度：${progressHtml}` : ''}</div>`,
       actionsHtml: `${titleScoreBadge ? `<div style="font-size:12px;line-height:1;">${titleScoreBadge}</div>` : ''}${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })}`,
       detailHtml: `${detailExpandable ? `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;">${detailExpandable}</div>` : ''}${detailStatusHtml}`
     });

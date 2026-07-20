@@ -34,6 +34,7 @@ const DEFAULT_POPUP_WIDTH_PX = 500;
 const DEFAULT_POPUP_HEIGHT_PX = 600;
 const DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE = true;
 const DEFAULT_COURSE_HELPER_EXPANDED = false;
+const DEFAULT_DEADLINE_COUNTDOWN_STYLE = 'seven-seg';
 const MIN_POPUP_WIDTH_PX = 360;
 const MAX_POPUP_WIDTH_PX = 800;
 const MIN_POPUP_HEIGHT_PX = 420;
@@ -216,6 +217,10 @@ function normalizePlatformVisible(raw) {
     key,
     typeof src[key] === 'boolean' ? src[key] : DEFAULT_PLATFORM_VISIBLE[key]
   ]));
+}
+
+function normalizeDeadlineCountdownStyle(value) {
+  return value === 'normal' ? 'normal' : DEFAULT_DEADLINE_COUNTDOWN_STYLE;
 }
 
 function normalizeScheduleIntervalSeconds(value, fallback) {
@@ -413,8 +418,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuVeOptionsReady;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, deadlineCountdownStyle } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'deadlineCountdownStyle'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode, preferExistingFullscreenPage } = await chrome.storage.local.get(['openMode', 'preferExistingFullscreenPage']);
@@ -486,6 +491,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     MAX_POPUP_HEIGHT_PX
   ));
   document.getElementById('courseHelperExpandedByDefault').checked = courseHelperExpandedByDefault === true;
+  document.getElementById('deadlineCountdownStyle').value = normalizeDeadlineCountdownStyle(deadlineCountdownStyle);
   const saveUploadsVal = saveUploadedFilesEnabled === undefined
     ? DEFAULT_SAVE_UPLOADS_ENABLED
     : !!saveUploadedFilesEnabled;
@@ -539,6 +545,20 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const homeworkBackgroundRefreshAccountSelect = document.getElementById('homeworkBackgroundRefreshAccount');
   const homeworkNewAssignmentNotificationInput = document.getElementById('homeworkNewAssignmentNotificationEnabled');
   const homeworkBackgroundRefreshStatusEl = document.getElementById('homeworkBackgroundRefreshStatus');
+  const systemNotificationStatusEl = document.getElementById('systemNotificationStatus');
+
+  const renderSystemNotificationStatus = (status) => {
+    if (!(systemNotificationStatusEl instanceof HTMLElement)) return;
+    if (!status || typeof status !== 'object') {
+      systemNotificationStatusEl.textContent = '尚未测试系统通知。';
+      return;
+    }
+    const time = formatExtensionRuntimeTime(status.attemptedAt);
+    systemNotificationStatusEl.textContent = status.status === 'success'
+      ? `浏览器已于 ${time} 创建系统通知。`
+      : `最近创建失败：${String(status.error || '未知错误')}`;
+  };
+  renderSystemNotificationStatus(systemNotificationStatus);
 
   const renderBackgroundAutoUpdateStatus = (status) => {
     if (!(backgroundAutoUpdateStatusEl instanceof HTMLElement)) return;
@@ -1006,6 +1026,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.courseHelperExpandedByDefault) {
         applyBooleanUi('courseHelperExpandedByDefault', changes.courseHelperExpandedByDefault.newValue, DEFAULT_COURSE_HELPER_EXPANDED);
       }
+      if (changes.deadlineCountdownStyle) {
+        document.getElementById('deadlineCountdownStyle').value = normalizeDeadlineCountdownStyle(
+          changes.deadlineCountdownStyle.newValue
+        );
+      }
       if (changes.themeMode) {
         updateThemeModeUi(changes.themeMode.newValue);
         setTimeout(() => { void enforceJlgjDarkThemeAvailability(); }, 0);
@@ -1041,6 +1066,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       }
       if (changes.homeworkBackgroundRefreshStatus) {
         renderHomeworkBackgroundRefreshStatus(changes.homeworkBackgroundRefreshStatus.newValue);
+      }
+      if (changes.systemNotificationStatus) {
+        renderSystemNotificationStatus(changes.systemNotificationStatus.newValue);
       }
       if (changes.loginAccountHistory) {
         chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).then((context) => {
@@ -1214,6 +1242,29 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('homeworkReminderEnabled').addEventListener('change', async () => {
     updateHomeworkReminderDisabled();
     await persistHomeworkReminderSettings();
+  });
+
+  document.getElementById('deadlineCountdownStyle')?.addEventListener('change', async (event) => {
+    await chrome.storage.local.set({
+      deadlineCountdownStyle: normalizeDeadlineCountdownStyle(event.currentTarget.value)
+    });
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('testSystemNotificationBtn')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = '正在发送…';
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'SYSTEM_NOTIFICATION_TEST' });
+      if (!result?.ok) throw new Error(result?.message || '浏览器未能创建系统通知');
+      setMsg('测试通知已交给浏览器；若未看到横幅，请检查 Windows 或浏览器通知设置');
+    } catch (error) {
+      setMsg(`系统通知发送失败：${String(error?.message || error)}`, false);
+    } finally {
+      button.disabled = false;
+      button.textContent = '发送测试通知';
+    }
   });
 
   const academicLoginBtn = document.getElementById('academicLoginBtn');
@@ -1630,6 +1681,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       popupHeightPx: DEFAULT_POPUP_HEIGHT_PX,
       preferExistingFullscreenPage: DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE,
       courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
+      deadlineCountdownStyle: DEFAULT_DEADLINE_COUNTDOWN_STYLE,
       themeMode: DEFAULT_THEME_MODE
     });
     await chrome.storage.sync.remove(['platformEnabled']);
@@ -1650,6 +1702,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('homeworkDetailCollapsedLines').value = String(DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES);
     document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);
     document.getElementById('parallelLimit').value = String(DEFAULT_PARALLEL_LIMIT);
+    document.getElementById('deadlineCountdownStyle').value = DEFAULT_DEADLINE_COUNTDOWN_STYLE;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
     document.getElementById('homeworkBackgroundRefreshEnabled').checked = false;
     document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = false;

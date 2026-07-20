@@ -227,13 +227,15 @@
         hash ^= ch.charCodeAt(0);
         return Math.imul(hash, 16777619);
       }, 2166136261) >>> 0}`;
-      return chrome.notifications.create(id, {
+      const createNotification = global.BjtuSystemNotifications?.create
+        || ((notificationId, options) => chrome.notifications.create(notificationId, options));
+      return createNotification(id, {
         type: 'basic',
         iconUrl: 'icons/128.png',
         title: `发现新作业：${String(item?.courseName || '未知课程')}`,
         message: `${String(item?.platform || '课程平台')} · ${String(item?.title || '未命名作业')}\n截止时间：${formatDeadline(item?.deadline)}`,
         priority: 2
-      });
+      }, 'new-homework');
     }));
   }
 

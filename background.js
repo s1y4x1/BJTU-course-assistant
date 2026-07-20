@@ -1,3 +1,76 @@
+const SYSTEM_NOTIFICATION_STATUS_KEY = 'systemNotificationStatus';
+const SYSTEM_NOTIFICATION_TEST_ID = 'bjtu-system-notification-test';
+
+async function createBjtuSystemNotification(notificationId, options, source = 'background', replaceExisting = false) {
+  const id = String(notificationId || '').trim();
+  const payload = {
+    ...(options && typeof options === 'object' ? options : {}),
+    iconUrl: String(options?.iconUrl || '').includes('://')
+      ? String(options.iconUrl)
+      : chrome.runtime.getURL(String(options?.iconUrl || 'icons/128.png').replace(/^\/+/, ''))
+  };
+  const attemptedAt = Date.now();
+  try {
+    if (replaceExisting && id) await chrome.notifications.clear(id).catch(() => false);
+    const createdId = await new Promise((resolve, reject) => {
+      chrome.notifications.create(id || undefined, payload, (resultId) => {
+        const error = chrome.runtime.lastError;
+        if (error) reject(new Error(error.message || '创建系统通知失败'));
+        else resolve(String(resultId || id));
+      });
+    });
+    await chrome.storage.local.set({
+      [SYSTEM_NOTIFICATION_STATUS_KEY]: {
+        status: 'success',
+        source: String(source || 'background'),
+        notificationId: createdId,
+        attemptedAt
+      }
+    }).catch(() => {});
+    return createdId;
+  } catch (error) {
+    await chrome.storage.local.set({
+      [SYSTEM_NOTIFICATION_STATUS_KEY]: {
+        status: 'error',
+        source: String(source || 'background'),
+        notificationId: id,
+        attemptedAt,
+        error: String(error?.message || error || '创建系统通知失败')
+      }
+    }).catch(() => {});
+    throw error;
+  }
+}
+
+globalThis.BjtuSystemNotifications = Object.freeze({ create: createBjtuSystemNotification });
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!['SYSTEM_NOTIFICATION_TEST', 'SYSTEM_NOTIFICATION_CREATE'].includes(message?.type)) return undefined;
+  const isTest = message.type === 'SYSTEM_NOTIFICATION_TEST';
+  const notificationId = isTest
+    ? SYSTEM_NOTIFICATION_TEST_ID
+    : String(message?.notificationId || '').trim();
+  const options = isTest ? {
+    type: 'basic',
+    title: 'BJTU 课程助手通知测试',
+    message: '系统通知创建成功。后续作业、成绩、更新等通知也会通过此通道发送。',
+    priority: 2
+  } : message?.options;
+  if (!notificationId || !options || typeof options !== 'object') {
+    sendResponse({ ok: false, message: '系统通知参数不完整' });
+    return false;
+  }
+  createBjtuSystemNotification(
+    notificationId,
+    options,
+    isTest ? 'test' : String(message?.source || 'extension-page'),
+    isTest || message?.replaceExisting === true
+  )
+    .then((notificationId) => sendResponse({ ok: true, notificationId }))
+    .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+  return true;
+});
+
 function tryImportModuleScripts(...paths) {
   try {
     importScripts(...paths);
@@ -133,13 +206,13 @@ async function restoreAppAfterAutomaticExtensionReload() {
     }).catch(() => {});
     const completionNotificationId = String(handoff.completionNotificationId || '').trim()
       || `bjtu-background-update-complete:${String(handoff.ver || 'unknown').replace(/^v/i, '')}`;
-    await chrome.notifications.create(completionNotificationId, {
+    await createBjtuSystemNotification(completionNotificationId, {
       type: 'basic',
       iconUrl: 'icons/128.png',
       title: 'BJTU 课程助手已后台更新',
       message: `已更新到 ${String(handoff.name || handoff.ver || '新版本')} 并自动重新加载扩展。`,
       priority: 1
-    }).catch(() => {});
+    }, 'background-update-complete', true).catch(() => {});
   }
   if (handoff.reopenApp === false) return;
   const tabs = (await chrome.tabs.query({}).catch(() => []))
@@ -318,13 +391,13 @@ async function checkHomeworkDeadlineReminders() {
       notified[`${taskKey}|${minutes}`] = { notifiedAt: now, deadline };
     });
     const notificationId = `${HOMEWORK_REMINDER_NOTIFICATION_PREFIX}${homeworkReminderHash(`${taskKey}|${selectedNode}`)}`;
-    await chrome.notifications.create(notificationId, {
+    await createBjtuSystemNotification(notificationId, {
       type: 'basic',
       iconUrl: 'icons/128.png',
       title: `${String(item?.courseName || '未知课程')}作业将在 ${formatReminderDuration(selectedNode)}${crossedNormally ? '后' : '内'}截止`,
       message: `${String(item?.platform || '课程平台')} · ${String(item?.courseName || '未知课程')}\n${String(item?.title || '未交作业')} · ${formatReminderDeadline(deadline)}`,
       priority: 2
-    });
+    }, 'homework-deadline');
   }
 
   const oldest = now - 60 * 24 * 60 * 60 * 1000;
@@ -357,7 +430,7 @@ let homeworkReminderCheckPromise = null;
 function scheduleHomeworkReminderCheck() {
   if (homeworkReminderCheckPromise) return homeworkReminderCheckPromise;
   homeworkReminderCheckPromise = checkHomeworkDeadlineReminders()
-    .catch(() => {})
+    .catch((error) => console.warn('[bjtu] homework reminder check failed:', error))
     .finally(() => { homeworkReminderCheckPromise = null; });
   return homeworkReminderCheckPromise;
 }

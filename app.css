@@ -2129,6 +2129,45 @@ body {
         .deadline-countdown-label {
             font-weight: normal;
         }
+        .deadline-countdown--normal {
+            display: inline-block;
+            align-items: initial;
+            gap: 0;
+            margin-left: 4px !important;
+            vertical-align: baseline;
+            font-family: inherit;
+            font-size: inherit;
+            font-style: normal;
+            line-height: normal;
+            letter-spacing: 0;
+        }
+        .deadline-countdown-normal {
+            display: inline-block;
+            position: static;
+            font-family: inherit;
+            font-size: inherit;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            line-height: inherit;
+            white-space: nowrap;
+            color: #000;
+        }
+        .deadline-countdown-prefix {
+            display: inline-block;
+            position: static;
+            margin-left: 0;
+            font-family: inherit;
+            font-size: inherit;
+            font-style: normal;
+            font-weight: 400;
+            line-height: normal;
+            letter-spacing: 0;
+            color: #e65100;
+            vertical-align: baseline;
+            white-space: nowrap;
+            text-decoration: none;
+            text-shadow: none;
+        }
         .seven-seg-display {
             display: inline-flex;
             align-items: center;

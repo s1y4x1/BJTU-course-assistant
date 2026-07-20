@@ -727,7 +727,7 @@ function renderJlgjHomeworkItems(items) {
       background: palette.background,
       border: palette.border,
       titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${escapeHtml(it.title || '接龙作业')}</div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;">截止: <span style="font-weight:700;color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>`,
+      metaHtml: `<div style="font-size:12px;color:#666;">截止：<span style="font-weight:700;color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>`,
       actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: link, label: actionText, color: palette.action, escape: escapeHtml }),
       detailHtml: `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;font-size:12px;color:#374151;line-height:1.45;">${expandableContentHtml}</div>`
     });

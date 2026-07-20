@@ -43,13 +43,17 @@
   async function notifyReconnected() {
     const settings = await chrome.storage.local.get(['campusNetworkReconnectNotifyOnSuccess']).catch(() => ({}));
     if (settings.campusNetworkReconnectNotifyOnSuccess === false) return;
-    await chrome.notifications.create(NOTIFICATION_ID, {
+    const createNotification = global.BjtuSystemNotifications?.create
+      || ((id, options) => chrome.notifications.create(id, options));
+    await createNotification(NOTIFICATION_ID, {
       type: 'basic',
       iconUrl: 'icons/128.png',
       title: 'BJTU 课程助手',
       message: 'BJTU 课程助手已为您自动重新连接校园网',
       priority: 1
-    }).catch(() => {});
+    }, 'campus-network-reconnected', true).catch((error) => {
+      console.warn('[bjtu] campus network notification failed:', error);
+    });
   }
 
   async function setStatus(patch) {

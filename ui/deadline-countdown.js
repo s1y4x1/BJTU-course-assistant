@@ -1,6 +1,10 @@
 (function initDeadlineCountdown(global) {
   'use strict';
 
+  const STYLE_STORAGE_KEY = 'deadlineCountdownStyle';
+  const DEFAULT_STYLE = 'seven-seg';
+  let countdownStyle = DEFAULT_STYLE;
+
   const segmentMap = {
     0: 'abcdef',
     1: 'bc',
@@ -33,19 +37,55 @@
 
   function renderSevenSegmentTime(text) {
     const value = String(text || '');
-    return `<span class="deadline-countdown-label">剩</span><span class="seven-seg-display" role="img" aria-label="${escapeAttribute(value)}">${value.split('').map(renderSevenSegmentChar).join('')}</span>`;
+    return `<span class="seven-seg-display" role="img" aria-label="${escapeAttribute(value)}">${value.split('').map(renderSevenSegmentChar).join('')}</span>`;
+  }
+
+  function normalizeStyle(value) {
+    return value === 'normal' ? 'normal' : DEFAULT_STYLE;
+  }
+
+  function renderNormalTime(text) {
+    const value = String(text || '');
+    return `<span class="deadline-countdown-normal" role="timer" aria-label="${escapeAttribute(value)}">${escapeAttribute(value)}</span>`;
+  }
+
+  function renderCountdownTime(text) {
+    return countdownStyle === 'normal' ? renderNormalTime(text) : renderSevenSegmentTime(text);
+  }
+
+  function syncCountdownPrefix(span, visible) {
+    const previous = span.previousElementSibling;
+    const existing = previous?.classList?.contains('deadline-countdown-prefix') ? previous : null;
+    if (!visible) {
+      existing?.remove();
+      return;
+    }
+    if (existing) return;
+    const prefix = document.createElement('span');
+    prefix.className = 'deadline-countdown-prefix';
+    prefix.textContent = '剩';
+    span.before(prefix);
   }
 
   function updateAllCountdowns() {
     document.querySelectorAll('.deadline-countdown').forEach((span) => {
+      const normalStyle = countdownStyle === 'normal';
+      span.classList.toggle('deadline-countdown--normal', normalStyle);
       const deadline = span.dataset.deadline;
-      if (!deadline) return;
+      if (!deadline) {
+        syncCountdownPrefix(span, false);
+        return;
+      }
       const timestamp = typeof global.parseDeadlineToTs === 'function'
         ? global.parseDeadlineToTs(deadline)
         : Number(deadline || 0);
-      if (!timestamp) return;
+      if (!timestamp) {
+        syncCountdownPrefix(span, false);
+        return;
+      }
       const difference = timestamp - Date.now();
       if (difference <= 0) {
+        syncCountdownPrefix(span, false);
         if (span.innerHTML !== '') {
           span.innerHTML = '';
           span.style.fontFamily = 'inherit';
@@ -56,18 +96,37 @@
       }
 
       span.style.display = '';
+      syncCountdownPrefix(span, true);
       const days = Math.floor(difference / 86400000);
       const hours = Math.floor(difference / 3600000) % 24;
       const minutes = Math.floor(difference / 60000) % 60;
       const seconds = Math.floor(difference / 1000) % 60;
       const pad = (value) => String(value).padStart(2, '0');
-      const nextHtml = renderSevenSegmentTime(`${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
+      const nextHtml = renderCountdownTime(`${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
       if (span.innerHTML !== nextHtml) span.innerHTML = nextHtml;
     });
   }
 
+  async function loadStyle() {
+    try {
+      const stored = await chrome.storage.local.get([STYLE_STORAGE_KEY]);
+      countdownStyle = normalizeStyle(stored?.[STYLE_STORAGE_KEY]);
+    } catch {
+      countdownStyle = DEFAULT_STYLE;
+    }
+    updateAllCountdowns();
+  }
+
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== 'local' || !changes[STYLE_STORAGE_KEY]) return;
+    countdownStyle = normalizeStyle(changes[STYLE_STORAGE_KEY].newValue);
+    updateAllCountdowns();
+  });
+
   global.renderSevenSegmentTime = renderSevenSegmentTime;
+  global.renderDeadlineCountdownTime = renderCountdownTime;
   global.updateAllCountdowns = updateAllCountdowns;
   if (global.__deadlineCountdownTimer) clearInterval(global.__deadlineCountdownTimer);
   global.__deadlineCountdownTimer = setInterval(updateAllCountdowns, 1000);
+  void loadStyle();
 })(globalThis);

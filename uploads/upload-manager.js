@@ -559,7 +559,7 @@ function uploadFile(file, fileId) {
             cancelBtn.style.display = 'none';
           } else {
             const msg = data.ERRMSG || '未知错误';
-            setInlineStatus(`上传失败: ${msg}`, 'error');
+            setInlineStatus(`上传失败：${msg}`, 'error');
             progressBar.style.backgroundColor = '#f44336';
             if (String(msg).includes('不合法') || String(msg).includes('登录')) {
               isLoginSessionValid = false;
@@ -571,7 +571,7 @@ function uploadFile(file, fileId) {
           const raw = String(xhr.responseText || '').trim();
           // Server sometimes returns plain text, e.g. “上传文件类型不支持,请更换文件！”
           const msg = raw ? escapeHtml(raw).slice(0, 300) : '返回非 JSON';
-          setInlineStatus(`上传失败: ${msg}`, 'error');
+          setInlineStatus(`上传失败：${msg}`, 'error');
           progressBar.style.backgroundColor = '#f44336';
           showRetry();
         }

@@ -295,7 +295,7 @@ function renderMrjzyHomeworkItems(items) {
       background: palette.background,
       border: palette.border,
       titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${escapeHtml(it.title || '每日交作业')}</div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;">截止: <span style="font-weight:700;color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>`,
+      metaHtml: `<div style="font-size:12px;color:#666;">截止：<span style="font-weight:700;color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>`,
       actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })
     });
   }).join('');

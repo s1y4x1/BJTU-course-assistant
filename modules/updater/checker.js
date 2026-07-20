@@ -231,14 +231,20 @@ function isVersionDownloadingNow() {
 
 function showUpdateDownloadCompleteNotification() {
   if (typeof chrome === 'undefined' || !chrome.notifications) return;
-  chrome.notifications.create(VERSION_UPDATE_NOTIFICATION_ID, {
-    type: 'basic',
-    iconUrl: 'icons/128.png',
-    title: 'BJTU 课程助手更新',
-    message: `更新文件已直接覆盖写入 ${getVersionUpdateDirectoryDisplayName()} 目录，请到「扩展管理」页面重新加载扩展。`,
-    buttons: [{ title: '打开扩展管理' }],
-    requireInteraction: true
-  }, () => void chrome.runtime.lastError);
+  chrome.runtime.sendMessage({
+    type: 'SYSTEM_NOTIFICATION_CREATE',
+    notificationId: VERSION_UPDATE_NOTIFICATION_ID,
+    source: 'foreground-update-complete',
+    replaceExisting: true,
+    options: {
+      type: 'basic',
+      iconUrl: 'icons/128.png',
+      title: 'BJTU 课程助手更新',
+      message: `更新文件已直接覆盖写入 ${getVersionUpdateDirectoryDisplayName()} 目录，请到「扩展管理」页面重新加载扩展。`,
+      buttons: [{ title: '打开扩展管理' }],
+      requireInteraction: true
+    }
+  }).catch(() => {});
 }
 
 function getVersionDownloadButtonLabel(mode, source) {

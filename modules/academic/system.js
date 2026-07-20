@@ -380,6 +380,16 @@
   async function notifyScoreChange(row, kind, studentId = '') {
     const titlePrefix = kind === 'new' ? '新增成绩' : '成绩更新';
     const notificationId = `${NOTIFICATION_PREFIX}${shortHash(`${studentId}|${kind}|${row.key}|${scoreFingerprint(row)}`)}`;
+    if (global.BjtuSystemNotifications?.create) {
+      await global.BjtuSystemNotifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: `${titlePrefix}：${row.courseName || row.course}`,
+        message: formatScoreNotification(row),
+        priority: 2
+      }, 'academic-score');
+      return;
+    }
     await new Promise((resolve, reject) => {
       chrome.notifications.create(notificationId, {
         type: 'basic',

@@ -263,7 +263,7 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
     window.resourceDownloadTasks = {};
     resetResourceDownloadBatch();
     setResourceSpaceCount(0);
-    setResourceSpaceStatus(`资源空间加载失败: ${String(err?.message || err)}`, 'error');
+    setResourceSpaceStatus(`资源空间加载失败：${String(err?.message || err)}`, 'error');
     renderResourceSpaceList();
   }
 }
@@ -1158,7 +1158,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
   } catch (e) {
     setCourseCoursewareLoading(courseIdInt, false);
     if (e?.name !== 'AbortError' && shouldRender()) {
-      resultArea.innerHTML = `<span class="error">课件加载失败: ${escapeHtml(String(e?.message || e))}</span>`;
+      resultArea.innerHTML = `<span class="error">课件加载失败：${escapeHtml(String(e?.message || e))}</span>`;
     }
   } finally {
     if (window.activeCoursewareAbortControllers[courseNum] === cwAbortController) {
@@ -1776,7 +1776,7 @@ async function loadCourses() {
         }, null, '请输入账号登录');
       }
     } else {
-      showToast('课程加载失败: ' + errMsg, 'error');
+      showToast('课程加载失败：' + errMsg, 'error');
     }
     renderCourseList([]);
     rematchExternalByVeCourses();

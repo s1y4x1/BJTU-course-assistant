@@ -382,7 +382,7 @@ let moocLoginAssistPopupTabId = null;
       mainClass: 'mooc-task-main',
       actionsClass: 'mooc-task-actions',
       titleHtml: `<div class="mooc-task-title" style="color:${palette.foreground};"><span class="mooc-task-kind">${typeText(task.type)}</span>${env.escape(task.title)}</div>`,
-      metaHtml: `<div class="mooc-task-meta">截止: <span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${statusHtml ? ` ${statusHtml}` : ''}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>`,
+      metaHtml: `<div class="mooc-task-meta">截止：<span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${statusHtml ? ` ${statusHtml}` : ''}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>`,
       actionsHtml: `${score}<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
           <button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>

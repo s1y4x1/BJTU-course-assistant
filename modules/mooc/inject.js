@@ -249,7 +249,7 @@
                         done++;
                         log(`✅ ${item.name || item.id} 完成`, 'ok');
                     } catch (e) {
-                        log(`❌ ${item.name || item.id} 失败: ${e.message || e}`, 'err');
+                        log(`❌ ${item.name || item.id} 失败：${e.message || e}`, 'err');
                         console.error('[mooc-helper] 失败:', item, e);
                     }
                 }
@@ -257,13 +257,13 @@
                     done === items.length ? 'ok' : 'err');
             });
         } else if (type === 'quiz' && id) {
-            log(`📋 单元测试页面: id=${id}`);
+            log(`📋 单元测试页面：id=${id}`);
             btn('完成单元测试', () => completeQuiz(id));
         } else if (type === 'hw' && id) {
-            log(`📝 单元作业页面: id=${id}`);
+            log(`📝 单元作业页面：id=${id}`);
             btn('完成单元作业', () => completeHomework(id));
         } else if (type === 'exam' && id) {
-            log(`📝 考试页面: id=${id}`);
+            log(`📝 考试页面：id=${id}`);
             btn('完成考试', () => completeExam(id));
         }
     }

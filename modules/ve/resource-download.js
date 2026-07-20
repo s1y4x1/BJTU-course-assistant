@@ -900,7 +900,7 @@ async function downloadResourceItemWithProgress(item) {
         } catch {
           setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '下载失败' });
           cleanup();
-          throw new Error(`下载失败: ${String(fetchErr?.message || fetchErr)}; ${String(xhrErr?.message || xhrErr)}`);
+          throw new Error(`下载失败：${String(fetchErr?.message || fetchErr)}; ${String(xhrErr?.message || xhrErr)}`);
         }
       }
     }

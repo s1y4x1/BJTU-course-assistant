@@ -56,11 +56,18 @@
     });
   }
 
+  function createSystemNotification(notificationId, options, source, replaceExisting = false) {
+    if (globalThis.BjtuSystemNotifications?.create) {
+      return globalThis.BjtuSystemNotifications.create(notificationId, options, source, replaceExisting);
+    }
+    return chrome.notifications.create(notificationId, options);
+  }
+
   async function notifyUpdateDetected(release, lastNotifiedVersion = '', installOptionalUpdate = false) {
     if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
     try {
       const notificationId = `${DETECTED_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
-      await chrome.notifications.create(notificationId, {
+      await createSystemNotification(notificationId, {
         type: 'basic',
         iconUrl: 'icons/128.png',
         title: `发现新版本：${String(release?.name || release?.version || '新版本')}`,
@@ -70,7 +77,7 @@
             ? '检测到非强制更新，根据您的后台更新设置，将自动开始更新。'
             : '检测到非强制更新，根据您的后台更新设置，本次不自动更新，您可以手动选择更新。'),
         priority: 1
-      });
+      }, 'background-update-detected');
       await chrome.storage.local.set({
         [DETECTED_NOTIFICATION_VERSION_KEY]: String(release?.version || '')
       });
@@ -83,14 +90,13 @@
 
   async function notifyUpdateComplete(release, message) {
     const notificationId = `${COMPLETE_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
-    await chrome.notifications.clear(notificationId).catch(() => false);
-    await chrome.notifications.create(notificationId, {
+    await createSystemNotification(notificationId, {
       type: 'basic',
       iconUrl: 'icons/128.png',
       title: 'BJTU 课程助手已后台更新',
       message: String(message || `已更新到 ${release?.name || release?.version || '新版本'}。`),
       priority: 1
-    });
+    }, 'background-update-complete', true);
     return notificationId;
   }
 
@@ -130,13 +136,13 @@
       : {};
     if (notified[category] === signature) return false;
     try {
-      await chrome.notifications.create(`${ISSUE_NOTIFICATION_PREFIX}${category}`, {
+      await createSystemNotification(`${ISSUE_NOTIFICATION_PREFIX}${category}`, {
         type: 'basic',
         iconUrl: 'icons/128.png',
         title: '后台更新无法写入目录',
         message: detail,
         priority: 2
-      });
+      }, 'background-update-issue', true);
       notified[category] = signature;
       await chrome.storage.local.set({ [ISSUE_NOTIFICATIONS_KEY]: notified });
       return true;
