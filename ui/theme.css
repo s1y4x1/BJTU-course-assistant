@@ -422,7 +422,13 @@ html[data-color-scheme="dark"] .platform-option-detail {
   border-left-color: var(--platform-theme, #64748b) !important;
 }
 
-html[data-color-scheme="dark"] .tip { color:#b6c2d1; }
+html[data-color-scheme="dark"] .option-status { color:#b6c2d1; }
+html[data-color-scheme="dark"] .option-tip-popover {
+  border-color:#475569;
+  background:#172033;
+  color:#dbe5f1;
+  box-shadow:0 10px 28px rgba(0,0,0,.38);
+}
 html[data-color-scheme="dark"] .extension-runtime-info { border-top-color:#334155; color:#cbd5e1; }
 html[data-color-scheme="dark"] .reset-confirm-message { color:#cbd5e1; }
 html[data-color-scheme="dark"] .academic-score-count,

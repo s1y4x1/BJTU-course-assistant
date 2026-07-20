@@ -459,6 +459,17 @@ body {
             color: #64748b;
             font-size: 12px;
         }
+        .platform-course-column-empty .spinner {
+            width: 10px;
+            height: 10px;
+            min-width: 10px;
+            min-height: 10px;
+            margin-left: 6px;
+            border-width: 1px;
+            border-color: #64748b;
+            border-top-color: transparent;
+            vertical-align: -1px;
+        }
         .platform-course-column-body > .file-item:last-child {
             margin-bottom: 0;
         }
@@ -469,12 +480,17 @@ body {
         @media (max-width: 900px), (orientation: portrait) {
             html,
             body {
-                height: auto;
-                min-height: 100%;
-                overflow: auto;
+                height: 100%;
+                min-height: 0;
+                overflow: hidden;
             }
-            body { padding: 12px; display: block; }
-            .layout-container { flex-direction: column; overflow: visible; min-height: 0; }
+            body { padding: 12px 12px 0; display: flex; }
+            .layout-container {
+                flex-direction: column;
+                gap: 12px;
+                overflow: hidden;
+                min-height: 0;
+            }
             .left-column,
             .right-column,
             #drop-zone,
@@ -485,32 +501,94 @@ body {
                 max-width: 100%;
                 box-sizing: border-box;
             }
-            .left-column { overflow: visible; padding-right: 0; }
-            .right-column { position: static; padding-left: 15px; height: auto; max-height: none; min-height: 0; overflow: visible; }
-            .column-resizer { display: none; }
+            .left-column {
+                flex: 1 1 45%;
+                min-height: 0;
+                max-height: 100%;
+                overflow-y: auto;
+                overflow-x: hidden;
+                padding-right: 6px;
+                transition: flex-basis 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                    max-height 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                    opacity 0.16s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                    padding 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+            }
+            .right-column {
+                flex: 1 1 55%;
+                position: relative;
+                padding: 26px 10px 0;
+                height: auto;
+                max-height: none;
+                min-height: 0;
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+            .column-resizer {
+                display: block;
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 12px;
+                transform: none;
+                cursor: default;
+            }
+            .column-resizer::after {
+                top: 5px;
+                bottom: auto;
+                left: 0;
+                width: 100%;
+                height: 2px;
+            }
+            .column-collapse-toggle,
+            body.course-helper-focus .column-collapse-toggle {
+                left: 50%;
+                right: auto;
+                top: 6px;
+                width: 38px;
+                height: 22px;
+                border-radius: 0 0 19px 19px;
+                transform: translateX(-50%);
+                line-height: 20px;
+            }
             body.course-helper-focus { padding: 12px; }
             body.course-helper-focus .page-top-config {
-                max-height: 180px;
-                margin-bottom: 10px;
-                padding-bottom: 8px;
-                opacity: 1;
-                transform: none;
-                pointer-events: auto;
+                max-height: 0;
+                margin: 0;
+                padding: 0;
+                opacity: 0;
+                transform: translateY(-100%);
+                pointer-events: none;
             }
             body.course-helper-focus .left-column {
                 width: 100%;
                 max-width: 100%;
                 min-width: 0;
+                min-height: 0;
+                max-height: 0;
+                flex: 0 0 0;
                 padding: 0;
-                opacity: 1;
-                transform: none;
-                overflow: visible;
-                pointer-events: auto;
+                opacity: 0;
+                transform: translateY(-100%);
+                overflow: hidden;
+                pointer-events: none;
             }
             body.course-helper-focus .right-column {
+                flex: 1 1 100%;
                 width: 100% !important;
-                padding-left: 15px;
-                overflow: visible;
+                min-height: 0;
+                padding: 26px 10px 0;
+                overflow-y: auto;
+                overflow-x: auto;
+            }
+            body.course-helper-focus .column-resizer {
+                display: block;
+                position: absolute;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                height: 12px !important;
+                transform: none;
             }
         }
 
@@ -2280,6 +2358,11 @@ body {
         .platform-status-btn.checking { background: #9ca3af; }
         .platform-status-btn.offline { background: #dc2626; }
         .platform-status-btn.online { background: #16a34a; }
+        .platform-status-btn.online.content-loading {
+            background: linear-gradient(90deg,
+                #16a34a 0 var(--platform-load-progress, 0%),
+                #4ade80 var(--platform-load-progress, 0%) 100%);
+        }
         .platform-status-btn .dot {
             width: 14px;
             height: 14px;
@@ -2383,6 +2466,12 @@ body {
             flex: 0 0 14px;
             border: 2px solid rgba(255,255,255,0.45);
             border-top-color: rgba(255,255,255,1);
+            background: transparent;
+            animation: spin 0.9s linear infinite;
+        }
+        .platform-status-btn.online.content-loading .dot {
+            border: 2px solid rgba(255,255,255,0.45);
+            border-top-color: #fff;
             background: transparent;
             animation: spin 0.9s linear infinite;
         }

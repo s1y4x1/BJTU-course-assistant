@@ -35,7 +35,7 @@
       <div class="tip">仅影响全屏页面；展开后会收起左栏和顶部控件，并按平台分栏显示课程。</div>
     </div>
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-      <div class="section-title">平台显示与加载</div>
+      <div class="section-title" id="platform-options-title">平台显示与加载</div>
       <div class="platform-option" data-module="ve" hidden>
         <label><input type="checkbox" id="showVe" style="width:auto;" checked />智慧课程平台</label>
       </div>
@@ -121,7 +121,7 @@
         <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />在中国大学MOOC页面注入 GinsMooc
           操作按钮</label>
       </div>
-      <div class="tip">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
+      <div class="tip" data-tip-target="#platform-options-title">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
       <div style="display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin-top:10px;">
         <label style="display:flex; align-items:center; gap:8px; margin:0; white-space:nowrap;">
           <span>作业详情默认显示行数</span>
@@ -141,6 +141,11 @@
           <input type="radio" name="openMode" id="openModePage" value="page" style="width:auto;"> 打开新页面
         </label>
       </div>
+      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 6px;">
+        <input type="checkbox" id="preferExistingFullscreenPage" style="width:auto;" checked />
+        <span>打开全屏页面时优先定位到已打开的页面</span>
+      </label>
+      <div class="tip">开启后会激活已有的全屏页面；关闭后，每次都会打开一个新的全屏页面。</div>
       <div id="popupCacheContainer">
         <div class="popup-size-editor">
           <label>
@@ -161,7 +166,7 @@
       </div>
     </div>
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-      <div class="section-title">作业截止提醒</div>
+      <div class="section-title" id="homework-reminder-title">作业截止提醒</div>
       <label style="display:flex; align-items:center; gap:8px; margin:0;">
         <input type="checkbox" id="homeworkReminderEnabled" style="width:auto;" checked />
         后台监控未交作业并发送系统通知
@@ -176,7 +181,7 @@
         <button id="addHomeworkReminderNode" type="button">添加</button>
       </div>
       <div id="homeworkReminderNodeList" class="reminder-node-list"></div>
-      <div class="tip" style="margin-top:8px;">提醒基于各平台最近一次成功加载的未交作业数据；可添加多个提醒节点。</div>
+      <div class="tip" data-tip-target="#homework-reminder-title" style="margin-top:8px;">提醒基于各平台最近一次成功加载的未交作业数据；可添加多个提醒节点。</div>
       <label style="display:flex; align-items:center; gap:8px; margin:12px 0 6px;">
         <input type="checkbox" id="homeworkBackgroundRefreshEnabled" style="width:auto;" />
         后台维护此账号登录状态并自动获取作业
@@ -201,17 +206,17 @@
           后台发现新增作业时通知
         </label>
         <div class="tip" style="margin:4px 0 0;">仅在未打开全屏页面时运行；必要时会登录固定账号，刷新作业提醒数据和弹出窗口缓存。</div>
-        <div id="homeworkBackgroundRefreshStatus" class="tip" style="margin:4px 0 0;">后台作业获取未启用。</div>
+        <div id="homeworkBackgroundRefreshStatus" class="option-status" style="margin:4px 0 0;">后台作业获取未启用。</div>
       </div>
     </div>
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"
       data-module="updater" hidden>
-      <div class="section-title">更新</div>
+      <div class="section-title" id="updater-options-title">更新</div>
       <div class="installed-modules-block">
         <div class="installed-modules-label">已安装的模块</div>
         <div id="installedModuleList" class="installed-module-list"></div>
         <button id="applyInstalledModules" type="button" disabled>应用模块更改</button>
-        <div id="installedModuleStatus" class="tip" style="margin:6px 0 10px;">正在读取模块状态…</div>
+        <div id="installedModuleStatus" class="option-status" style="margin:6px 0 10px;">正在读取模块状态…</div>
       </div>
       <label style="display:flex; align-items:center; gap:8px; margin:0;">
         <input type="checkbox" id="backgroundAutoUpdateEnabled" style="width:auto;" />
@@ -230,8 +235,8 @@
         <input type="checkbox" id="backgroundAutoInstallOptionalEnabled" style="width:auto;" />
         自动安装非强制更新
       </label>
-      <div id="backgroundAutoUpdateStatus" class="tip" style="margin-top:8px;">后台自动更新未启用。</div>
-      <div class="tip" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
+      <div id="backgroundAutoUpdateStatus" class="option-status" style="margin-top:8px;">后台自动更新未启用。</div>
+      <div class="tip" data-tip-target="#updater-options-title" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
     </div>
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"
       data-module="campusnet" hidden>
@@ -261,7 +266,7 @@
           重连成功时发送系统通知
         </label>
         <div class="tip">遇到 503 会忽略并按间隔重试；即使已经在线也会继续请求。</div>
-        <div id="campusNetworkReconnectStatus" class="tip" style="margin-top:4px;">校园网自动重连未启用。</div>
+        <div id="campusNetworkReconnectStatus" class="option-status" style="margin-top:4px;">校园网自动重连未启用。</div>
       </div>
     </div>
     <div id="academic-system-section" class="options-wide-card"
@@ -296,14 +301,14 @@
           <option value="1440">天</option>
         </select>
       </div>
-      <div id="academicSystemStatus" class="tip">正在检查教务系统登录状态并读取成绩…</div>
+      <div id="academicSystemStatus" class="option-status">正在检查教务系统登录状态并读取成绩…</div>
       <div class="academic-score-header">
         <strong>本学期成绩</strong>
         <span id="academicScoreCount" class="academic-score-count"></span>
       </div>
       <div id="academicScoreLoading" class="academic-score-loading"><span
           class="options-page-spinner"></span><span>正在读取成绩…</span></div>
-      <div id="academicScoreEmpty" class="tip" style="display:none; margin:0;">暂无成绩数据</div>
+      <div id="academicScoreEmpty" class="option-status" style="display:none; margin:0;">暂无成绩数据</div>
       <div id="academicScoreTableWrap" class="academic-score-table-wrap" style="display:none;">
         <table class="academic-score-table">
           <thead>
@@ -354,7 +359,6 @@
       </div>
     </div>
   </div>
-  <div class="tip">提示：本插件会在运行时自动维护所需的请求头。</div>
   <footer class="extension-runtime-info" aria-label="扩展版本与运行时间">
     <span>版本 <strong id="extension-version">正在读取…</strong></span>
     <span>安装于 <time id="extension-installed-at">正在读取…</time></span>

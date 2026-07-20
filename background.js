@@ -606,8 +606,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const targetUrl = targetParams.size
           ? chrome.runtime.getURL(`app.html?${targetParams.toString()}`)
           : APP_URL;
-        const tabs = (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL));
-        if (Array.isArray(tabs) && tabs.length) {
+        const stored = await chrome.storage.local.get(['preferExistingFullscreenPage']).catch(() => ({}));
+        const preferExisting = stored.preferExistingFullscreenPage !== false;
+        const tabs = preferExisting
+          ? (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL))
+          : [];
+        if (tabs.length) {
           const t = tabs[0];
           const shouldNavigate = targetParams.size > 0 && String(t.url || '') !== targetUrl;
           try {
@@ -955,8 +959,10 @@ chrome.action.onClicked.addListener(async () => {
   try {
     const mode = currentOpenMode || (await chrome.storage.local.get('openMode')).openMode || 'popup';
     if (mode === 'page') {
-      try {
-        const tabs = await chrome.tabs.query({ url: APP_URL });
+      const stored = await chrome.storage.local.get(['preferExistingFullscreenPage']).catch(() => ({}));
+      const preferExisting = stored.preferExistingFullscreenPage !== false;
+      if (preferExisting) try {
+        const tabs = (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL));
         if (Array.isArray(tabs) && tabs.length) {
           const t = tabs[0];
           try { await chrome.tabs.update(t.id, { active: true }); } catch (e) {}

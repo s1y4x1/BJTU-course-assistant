@@ -889,6 +889,8 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
 
   boundCourseIds.forEach((cid) => renderHomeworkList(cid));
   renderYktStandaloneCourses();
+  let completedCourseLoads = 0;
+  setPlatformContentLoadProgress('ykt', 0, entries.length);
   const detailQueue = [];
   let yktExamSharedTabId = null;
   let yktExamSharedTabCreated = false;
@@ -1091,7 +1093,12 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     if (queuedChanged) rerenderEntryCard(entry);
   });
 
-  await Promise.allSettled(courseTasks);
+  const trackedCourseTasks = courseTasks.map((task) => task.finally(() => {
+    if (isStale()) return;
+    completedCourseLoads += 1;
+    setPlatformContentLoadProgress('ykt', completedCourseLoads, entries.length);
+  }));
+  await Promise.allSettled(trackedCourseTasks);
   if (detailQueue.length) await new Promise((resolve) => setTimeout(resolve, 80));
 
   for (const task of detailQueue) {

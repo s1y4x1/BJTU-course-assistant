@@ -919,6 +919,11 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
         renderHomeworkList(courseId);
       });
       renderJlgjStandaloneCourses();
+      const currentGroups = Array.isArray(window.jlgjCourseGroupsSnapshot)
+        ? window.jlgjCourseGroupsSnapshot
+        : [];
+      const completedGroups = currentGroups.filter((group) => !group?.loadingMeta).length;
+      setPlatformContentLoadProgress('jlgj', completedGroups, currentGroups.length);
     };
 
     if (placeholderGroups.length) {

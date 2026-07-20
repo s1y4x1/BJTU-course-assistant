@@ -501,6 +501,7 @@ let moocLoginAssistPopupTabId = null;
     const serial = ++loadSerial;
     let helperLeaseId = '';
     env.setState('checking');
+    env.setProgress?.(0, 0);
     clearCards();
     try {
       helperLeaseId = await acquireHelperTab();
@@ -509,6 +510,10 @@ let moocLoginAssistPopupTabId = null;
       if (serial !== loadSerial) return;
       courses = (Array.isArray(panels) ? panels : []).map((panel) => normalizeCourse(panel, null));
       render();
+      env.setLoaded(true);
+      env.setState('online');
+      let completedCourseLoads = 0;
+      env.setProgress?.(0, courses.length);
       let next = 0;
       const workers = Array.from({ length: Math.min(4, courses.length) }, async () => {
         while (next < courses.length && serial === loadSerial) {
@@ -532,6 +537,11 @@ let moocLoginAssistPopupTabId = null;
           } catch (error) {
             if (error?.code === 'not-logged-in') throw error;
             courses[index].detailLoaded = true;
+          } finally {
+            if (serial === loadSerial) {
+              completedCourseLoads += 1;
+              env.setProgress?.(completedCourseLoads, courses.length);
+            }
           }
           if (serial === loadSerial) render();
         }
@@ -540,6 +550,7 @@ let moocLoginAssistPopupTabId = null;
       if (serial !== loadSerial) return;
       env.setLoaded(true);
       env.setState('online');
+      env.setProgress?.(courses.length, courses.length);
       render();
     } catch (error) {
       if (serial !== loadSerial) return;
@@ -764,6 +775,7 @@ let moocLoginAssistPopupTabId = null;
       operationGeneration++;
       courses = [];
       clearCards();
+      env.setProgress?.(0, 0);
       helperLeases.clear();
       [...helperTabIds].forEach((tabId) => closeHelperTab(tabId));
       activeRequestTabId = null;

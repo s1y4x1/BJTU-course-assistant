@@ -1910,12 +1910,16 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
   courseListDiv.innerHTML = '';
   const homeworkLoadPromises = [];
   const allowNetworkLoad = !cachedOnly;
+  const progressVersion = window.courseListLoadVersion;
+  let completedHomeworkLoads = 0;
   if (!courses || !courses.length) {
+    setPlatformContentLoadProgress('ve', 0, 0);
     window.veHomeworkLoadPromise = Promise.resolve([]);
     if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
     updateCourseListEmptyPlaceholder();
     return;
   }
+  setPlatformContentLoadProgress('ve', 0, allowNetworkLoad ? courses.length : 0);
 
   courses.forEach(course => {
     const courseId = course.id || course.cId || course.courseId || course.course_id;
@@ -2031,6 +2035,14 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
         return true;
       });
     homeworkLoadPromises.push(hwPromise);
+    if (allowNetworkLoad) {
+      const markHomeworkLoaded = () => {
+        if (progressVersion !== window.courseListLoadVersion) return;
+        completedHomeworkLoads += 1;
+        setPlatformContentLoadProgress('ve', completedHomeworkLoads, courses.length);
+      };
+      hwPromise.then(markHomeworkLoaded, markHomeworkLoaded);
+    }
     if (btnCourseware) {
       hwPromise.finally(() => {
         // Balance the initial preloading spinner before entering actual auto-load phase.

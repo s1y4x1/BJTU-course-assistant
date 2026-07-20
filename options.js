@@ -32,6 +32,7 @@ const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true
 const DEFAULT_OPEN_MODE = 'popup';
 const DEFAULT_POPUP_WIDTH_PX = 500;
 const DEFAULT_POPUP_HEIGHT_PX = 600;
+const DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE = true;
 const DEFAULT_COURSE_HELPER_EXPANDED = false;
 const MIN_POPUP_WIDTH_PX = 360;
 const MAX_POPUP_WIDTH_PX = 800;
@@ -56,6 +57,89 @@ const DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS = 1;
 const MAX_SCHEDULE_INTERVAL_MINUTES = 525600;
 const MIN_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS = 0.1;
 const MAX_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS = 3600;
+
+function setupOptionTipTooltips() {
+  const popover = document.createElement('div');
+  popover.id = 'option-tip-popover';
+  popover.className = 'option-tip-popover';
+  popover.setAttribute('role', 'tooltip');
+  popover.hidden = true;
+  document.body.appendChild(popover);
+  let activeTrigger = null;
+
+  const positionPopover = () => {
+    if (!(activeTrigger instanceof HTMLElement) || popover.hidden) return;
+    const margin = 8;
+    const gap = 7;
+    const triggerRect = activeTrigger.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+    const maxLeft = Math.max(margin, window.innerWidth - popoverRect.width - margin);
+    const left = Math.min(Math.max(margin, triggerRect.left), maxLeft);
+    const below = triggerRect.bottom + gap;
+    const above = triggerRect.top - popoverRect.height - gap;
+    const top = below + popoverRect.height <= window.innerHeight - margin
+      ? below
+      : Math.max(margin, above);
+    popover.style.left = `${Math.round(left)}px`;
+    popover.style.top = `${Math.round(top)}px`;
+  };
+
+  const showPopover = (trigger) => {
+    activeTrigger = trigger;
+    popover.textContent = String(trigger?.dataset?.tip || '');
+    popover.hidden = false;
+    positionPopover();
+  };
+  const hidePopover = (trigger) => {
+    if (activeTrigger !== trigger) return;
+    activeTrigger = null;
+    popover.hidden = true;
+  };
+
+  window.addEventListener('resize', positionPopover);
+  window.addEventListener('scroll', positionPopover, true);
+
+  document.querySelectorAll('.tip').forEach((tip) => {
+    const text = String(tip.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) {
+      tip.remove();
+      return;
+    }
+    const trigger = document.createElement('span');
+    trigger.className = 'option-tip-trigger';
+    trigger.textContent = 'ℹ️';
+    trigger.dataset.tip = text;
+    trigger.tabIndex = 0;
+    trigger.setAttribute('role', 'img');
+    trigger.setAttribute('aria-label', `提示：${text}`);
+    trigger.setAttribute('aria-describedby', popover.id);
+    trigger.addEventListener('mouseenter', () => showPopover(trigger));
+    trigger.addEventListener('mouseleave', () => hidePopover(trigger));
+    trigger.addEventListener('focus', () => showPopover(trigger));
+    trigger.addEventListener('blur', () => hidePopover(trigger));
+    trigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    const explicitTarget = String(tip.dataset.tipTarget || '').trim();
+    let target = explicitTarget
+      ? document.querySelector(explicitTarget)
+      : tip.previousElementSibling;
+    if (!explicitTarget && target instanceof HTMLElement && !target.matches('label')) {
+      target = target.querySelector(':scope > label:last-of-type') || target;
+    }
+    if (target instanceof HTMLElement && (
+      explicitTarget
+      || target.matches('label, .popup-size-editor, .academic-login-actions')
+      || target.querySelector(':scope > label, :scope > button')
+    )) {
+      target.appendChild(trigger);
+      tip.remove();
+    } else {
+      tip.replaceWith(trigger);
+    }
+  });
+}
 
 function normalizeScheduleIntervalMinutes(value, fallback) {
   const minutes = Math.round(Number(value));
@@ -280,29 +364,14 @@ function goBackToApp() {
     try { window.location.href = 'app.html?popup=1'; return; } catch {}
   }
   const appUrl = chrome.runtime.getURL('app.html');
-  // Prefer reusing an existing app.html tab; otherwise navigate this page to app.html.
   try {
-    chrome.tabs.query({ url: appUrl }, (tabs) => {
+    chrome.runtime.sendMessage({ type: 'OPEN_APP' }, (result) => {
       if (chrome.runtime.lastError) {
         try { window.location.href = appUrl; } catch {}
         return;
       }
-      if (Array.isArray(tabs) && tabs.length) {
-        const t = tabs[0];
-        try {
-          chrome.tabs.update(t.id, { active: true }, () => {
-            if (chrome.runtime.lastError) {
-              try { window.location.href = appUrl; } catch {}
-            } else {
-              try { window.close(); } catch {}
-            }
-          });
-        } catch {
-          try { window.location.href = appUrl; } catch {}
-        }
-      } else {
-        try { window.location.href = appUrl; } catch {}
-      }
+      if (result?.ok) try { window.close(); } catch {}
+      else try { window.location.href = appUrl; } catch {}
     });
   } catch {
     try { window.location.href = appUrl; } catch {}
@@ -339,6 +408,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 (async function init() {
+  setupOptionTipTooltips();
   void renderExtensionRuntimeInfo();
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuVeOptionsReady;
@@ -347,7 +417,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault'
   ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
-  const { openMode } = await chrome.storage.local.get(['openMode']);
+  const { openMode, preferExistingFullscreenPage } = await chrome.storage.local.get(['openMode', 'preferExistingFullscreenPage']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
@@ -398,6 +468,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const mode = String(openMode || DEFAULT_OPEN_MODE);
   document.getElementById('openModePopup').checked = mode === 'popup';
   document.getElementById('openModePage').checked = mode === 'page';
+  document.getElementById('preferExistingFullscreenPage').checked = preferExistingFullscreenPage === undefined
+    ? DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE
+    : preferExistingFullscreenPage === true;
   document.getElementById('popupWidthPx').value = String(normalizePopupDimension(
     popupWidthPx,
     DEFAULT_POPUP_WIDTH_PX,
@@ -916,6 +989,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         document.getElementById('parallelLimit').value = String(normalizeParallelLimit(changes.parallelLimit.newValue));
       }
       if (changes.openMode) applyOpenModeUi(changes.openMode.newValue);
+      if (changes.preferExistingFullscreenPage) {
+        applyBooleanUi('preferExistingFullscreenPage', changes.preferExistingFullscreenPage.newValue, DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE);
+      }
       if (changes.popupWidthPx || changes.popupHeightPx) {
         applyPopupSizeUi(changes.popupWidthPx?.newValue, changes.popupHeightPx?.newValue);
       }
@@ -1048,6 +1124,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
+  document.getElementById('preferExistingFullscreenPage').addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ preferExistingFullscreenPage: event.currentTarget.checked });
+    setMsg('已应用更改');
+  });
   document.getElementById('popupWidthPx').addEventListener('change', applyPopupSize);
   document.getElementById('popupHeightPx').addEventListener('change', applyPopupSize);
   document.getElementById('courseHelperExpandedByDefault').addEventListener('change', async (event) => {
@@ -1538,6 +1618,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
       popupWidthPx: DEFAULT_POPUP_WIDTH_PX,
       popupHeightPx: DEFAULT_POPUP_HEIGHT_PX,
+      preferExistingFullscreenPage: DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE,
       courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
       themeMode: DEFAULT_THEME_MODE
     });
@@ -1585,6 +1666,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('autoLoadCourseResourcesEnabled').checked = DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
+    document.getElementById('preferExistingFullscreenPage').checked = DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE;
     document.getElementById('popupWidthPx').value = String(DEFAULT_POPUP_WIDTH_PX);
     document.getElementById('popupHeightPx').value = String(DEFAULT_POPUP_HEIGHT_PX);
     document.getElementById('courseHelperExpandedByDefault').checked = DEFAULT_COURSE_HELPER_EXPANDED;

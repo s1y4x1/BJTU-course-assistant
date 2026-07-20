@@ -700,11 +700,18 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   });
   renderMrjzyStandaloneCourses();
 
-  const detailSettled = await Promise.allSettled(works.map(async (w) => {
+  let completedDetailLoads = 0;
+  setPlatformContentLoadProgress('mrjzy', 0, works.length);
+  const detailTasks = works.map(async (w) => {
     const dr = await postMrjzyForm(MRJZY_WORK_DETAIL_API, { workId: w.workId }, mrjzyRuntimeCtx);
     const teacherName = dr?.data?.data?.teacher?.userRealName || '';
     return { workId: w.workId, teacherName };
-  }));
+  });
+  const detailSettled = await Promise.allSettled(detailTasks.map((task) => task.finally(() => {
+    if (shouldAbort()) return;
+    completedDetailLoads += 1;
+    setPlatformContentLoadProgress('mrjzy', completedDetailLoads, works.length);
+  })));
   if (shouldAbort()) return;
   const teacherByWorkId = new Map();
   detailSettled.forEach((r) => {

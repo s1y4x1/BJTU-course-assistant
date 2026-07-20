@@ -177,6 +177,7 @@ window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
 window.platformVisible = { ...DEFAULT_PLATFORM_VISIBLE };
 window.platformLoadedOnce = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false };
 window.platformLoadVersion = { ve: 0, ykt: 0, mrjzy: 0, jlgj: 0, mooc: 0 };
+window.platformContentLoadProgress = {};
 window.currentVeCourseList = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
@@ -429,6 +430,7 @@ function bumpPlatformLoadVersion(platform) {
 // 更新检查由可选 updater 模块提供；模块未安装时版本按钮自动隐藏。
 
 function clearPlatformData(platform) {
+  delete window.platformContentLoadProgress?.[normalizePlatformId(platform)];
   if (platform === 'ykt') {
     window.yktMatchedHomeworkByCourseId = {};
     window.yktStandaloneCourses = [];
@@ -941,6 +943,21 @@ let coursePlatformColumnDragCleanup = null;
 let courseHelperLayoutTransitionTimer = 0;
 let courseHelperLayoutTransitioning = false;
 
+function isCourseHelperAdaptiveLayout() {
+  return window.matchMedia('(max-width: 900px), (orientation: portrait)').matches;
+}
+
+function syncCourseHelperCollapseTogglePresentation() {
+  if (!(columnCollapseToggle instanceof HTMLButtonElement)) return;
+  const focused = window.courseHelperPlatformSplitMode === true;
+  const adaptive = isCourseHelperAdaptiveLayout();
+  const action = focused ? (adaptive ? '展开上方' : '展开左栏') : (adaptive ? '折叠上方' : '折叠左栏');
+  columnCollapseToggle.textContent = focused ? (adaptive ? '▼' : '▶') : (adaptive ? '▲' : '◀');
+  columnCollapseToggle.title = action;
+  columnCollapseToggle.setAttribute('aria-label', action);
+  columnCollapseToggle.setAttribute('aria-expanded', focused ? 'false' : 'true');
+}
+
 function getCourseCardPlatform(card) {
   if (!(card instanceof HTMLElement)) return '';
   const explicit = String(card.dataset.platform || '').trim().toLowerCase();
@@ -1056,14 +1073,20 @@ function organizeCourseCardsByPlatform() {
   if (!courseListDiv || coursePlatformOrganizing || coursePlatformColumnDragCleanup || courseHelperLayoutTransitioning) return;
   coursePlatformOrganizing = true;
   try {
-    if (!window.courseHelperPlatformSplitMode) {
+    const cards = [...courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]')];
+    const cardPlatforms = new Set(cards.map(getCourseCardPlatform).filter(Boolean));
+    const desired = COURSE_PLATFORM_COLUMNS.filter(({ id }) => isPlatformEnabled(id) || cardPlatforms.has(id));
+    const weights = normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights);
+    const availableWidth = Math.max(0, Number(courseListDiv.clientWidth || 0) - Math.max(0, desired.length - 1) * 12);
+    const totalWeight = desired.reduce((sum, { id }) => sum + Number(weights[id] || 1), 0) || 1;
+    const adaptiveColumnsFit = !isCourseHelperAdaptiveLayout() || desired.every(({ id }) => (
+      availableWidth * Number(weights[id] || 1) / totalWeight >= COURSE_HELPER_PLATFORM_COLUMN_MIN_WIDTH
+    ));
+    if (!window.courseHelperPlatformSplitMode || !adaptiveColumnsFit) {
       unwrapCoursePlatformColumns();
       return;
     }
 
-    const cards = [...courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]')];
-    const cardPlatforms = new Set(cards.map(getCourseCardPlatform).filter(Boolean));
-    const desired = COURSE_PLATFORM_COLUMNS.filter(({ id }) => isPlatformEnabled(id) || cardPlatforms.has(id));
     const desiredIds = new Set(desired.map(({ id }) => id));
 
     courseListDiv.querySelectorAll(':scope > .platform-course-column').forEach((column) => {
@@ -1126,7 +1149,16 @@ function organizeCourseCardsByPlatform() {
       const hasCards = !!body.querySelector('.file-item[data-course-rankable="1"]');
       const state = String(window.platformLoginState?.[id] || 'checking');
       const label = COURSE_PLATFORM_COLUMNS.find((item) => item.id === id)?.label || '';
-      empty.textContent = state === 'checking' ? `${label}正在加载课程…` : (state === 'offline' ? `${label}未登录` : `${label}暂无课程`);
+      empty.replaceChildren(document.createTextNode(
+        state === 'checking' ? `${label}正在加载课程…` : (state === 'offline' ? `${label}未登录` : `${label}暂无课程`)
+      ));
+      if (state === 'checking') {
+        const spinner = document.createElement('span');
+        spinner.className = 'spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        spinner.style.animationDelay = `-${Date.now() % 1000}ms`;
+        empty.appendChild(spinner);
+      }
       empty.style.display = hasCards ? 'none' : '';
     });
 
@@ -1164,12 +1196,7 @@ function setCourseHelperFocusMode(enabled) {
   if (courseHelperLayoutTransitionTimer) clearTimeout(courseHelperLayoutTransitionTimer);
   courseHelperLayoutTransitioning = true;
   window.courseHelperPlatformSplitMode = next;
-  if (columnCollapseToggle instanceof HTMLButtonElement) {
-    columnCollapseToggle.textContent = next ? '▶' : '◀';
-    columnCollapseToggle.title = next ? '展开左栏' : '折叠左栏';
-    columnCollapseToggle.setAttribute('aria-label', next ? '展开左栏' : '折叠左栏');
-    columnCollapseToggle.setAttribute('aria-expanded', next ? 'false' : 'true');
-  }
+  syncCourseHelperCollapseTogglePresentation();
 
   if (!next) {
     // Mirror the collapse sequence: merge while the right column is still full-screen,
@@ -1220,7 +1247,7 @@ function setupRightColumnResizer() {
   const BASE_MIN_W = 480;
   const DEFAULT_W = 576;
 
-  const isAdaptiveLayout = () => window.matchMedia('(max-width: 900px), (orientation: portrait)').matches;
+  const isAdaptiveLayout = isCourseHelperAdaptiveLayout;
 
   const getBounds = () => {
     const vw = Math.max(0, Number(window.innerWidth || 0));
@@ -1256,7 +1283,11 @@ function setupRightColumnResizer() {
 
   const syncResizerGeometry = () => {
     if (isAdaptiveLayout()) {
-      columnResizer.style.display = 'none';
+      columnResizer.style.display = 'block';
+      columnResizer.style.removeProperty('left');
+      columnResizer.style.removeProperty('top');
+      columnResizer.style.removeProperty('width');
+      columnResizer.style.removeProperty('height');
       return;
     }
     columnResizer.style.display = 'block';
@@ -1285,6 +1316,7 @@ function setupRightColumnResizer() {
   window.applyRightColumnResponsiveWidth = applyResponsiveWidth;
 
   applyResponsiveWidth();
+  syncCourseHelperCollapseTogglePresentation();
   scheduleResizerSync();
 
   let dragging = false;
@@ -1337,7 +1369,6 @@ function setupRightColumnResizer() {
     columnCollapseToggle.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (isAdaptiveLayout()) return;
       setCourseHelperFocusMode(!window.courseHelperPlatformSplitMode);
     });
   }
@@ -1346,11 +1377,10 @@ function setupRightColumnResizer() {
     if (dragging && isAdaptiveLayout()) {
       onUp();
     }
-    if (isAdaptiveLayout() && window.courseHelperPlatformSplitMode) {
-      setCourseHelperFocusMode(false);
-    }
+    syncCourseHelperCollapseTogglePresentation();
     applyResponsiveWidth();
     scheduleResizerSync();
+    scheduleCourseCardsByPlatform();
   });
 
   window.addEventListener('scroll', scheduleResizerSync, true);
@@ -3268,6 +3298,7 @@ function setPlatformLoginState(platform, state) {
   const prev = String(window.platformLoginState?.[p] || '').trim();
   const s = (state === 'online' || state === 'offline') ? state : 'checking';
   window.platformLoginState[p] = s;
+  if (s !== 'online') delete window.platformContentLoadProgress[p];
   if (p === 'ykt' && s === 'online') {
     window.platformInteractiveLoginPending.ykt = false;
     closeYktLoginAssistPopup(false);
@@ -3301,12 +3332,25 @@ function setPlatformLoginState(platform, state) {
   }
 }
 
+function setPlatformContentLoadProgress(platform, completed, total) {
+  const p = normalizePlatformId(platform);
+  const count = Math.max(0, Number(completed) || 0);
+  const size = Math.max(0, Number(total) || 0);
+  if (!size || count >= size || !isPlatformEnabled(p)) {
+    delete window.platformContentLoadProgress[p];
+  } else {
+    window.platformContentLoadProgress[p] = { completed: Math.min(count, size), total: size };
+  }
+  refreshPlatformLoginTip();
+}
+window.setPlatformContentLoadProgress = setPlatformContentLoadProgress;
+
 function refreshPlatformLoginTip() {
   removeMrjzyLoginTip();
 
   const apply = (btn, state, label) => {
     if (!btn) return;
-    btn.classList.remove('checking', 'offline', 'online', 'unselected-checked-online', 'unselected-checked-offline', 'unselected-checked-checking');
+    btn.classList.remove('checking', 'offline', 'online', 'content-loading', 'unselected-checked-online', 'unselected-checked-offline', 'unselected-checked-checking');
     const id = String(btn.id || '');
     const platform = id.includes('ve-status-btn')
       ? 've'
@@ -3320,9 +3364,21 @@ function refreshPlatformLoginTip() {
       btn.classList.add(`unselected-checked-${key}`);
     }
     btn.classList.toggle('unselected', treatAsUnselected);
+    const progress = !treatAsUnselected && state === 'online'
+      ? window.platformContentLoadProgress?.[platform]
+      : null;
+    if (progress?.total > 0 && progress.completed < progress.total) {
+      const percent = Math.max(0, Math.min(100, progress.completed / progress.total * 100));
+      btn.classList.add('content-loading');
+      btn.style.setProperty('--platform-load-progress', `${percent}%`);
+    } else {
+      btn.style.removeProperty('--platform-load-progress');
+    }
     const stateText = treatAsUnselected
       ? '未启用'
-      : (state === 'online' ? '已登录' : (state === 'offline' ? '未登录' : '登录检查中'));
+      : (progress?.total > 0 && progress.completed < progress.total
+        ? `已登录，正在加载作业 ${progress.completed}/${progress.total}`
+        : (state === 'online' ? '已登录' : (state === 'offline' ? '未登录' : '登录检查中')));
     btn.title = `${label}${stateText}`;
   };
 
@@ -5255,6 +5311,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     toast: showToast,
     setState: (state) => setPlatformLoginState('mooc', state),
     setLoaded: (loaded) => { window.platformLoadedOnce.mooc = !!loaded; },
+    setProgress: (completed, total) => setPlatformContentLoadProgress('mooc', completed, total),
     updateEmpty: updateCourseListEmptyPlaceholder,
     scheduleCache: () => scheduleFullscreenCourseCacheSave(200),
     normalizeHtml: normalizeHomeworkContent,
