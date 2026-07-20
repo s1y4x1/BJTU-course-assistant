@@ -869,7 +869,7 @@ function showVersionReloadMismatchUi(localVersion, sourceVersion) {
     visible: true,
     status: '',
     title: '已重新加载扩展',
-    body: `当前本地扩展版本号为：${normalizeVersionText(localVersion)}，更新源中为：${normalizeVersionText(sourceVersion)}。请联系开发者询问详情。`,
+    body: `当前本地扩展版本号为：${normalizeVersionText(localVersion)}，更新源中为：${normalizeVersionText(sourceVersion)}。请稍后重新更新，或联系开发者询问详情。`,
     phase: 'finished'
   });
   const retryBtn = document.getElementById('version-download-retry');
