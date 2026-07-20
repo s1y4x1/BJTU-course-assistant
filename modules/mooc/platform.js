@@ -319,7 +319,7 @@ let moocLoginAssistPopupTabId = null;
 
   function renderTaskDetail(course, task, colors) {
     if (task.detailLoading) {
-      return `<div class="mooc-task-detail" style="border-top-color:${colors[1]};"><span class="spinner mooc-inline-spinner"></span> ${globalThis.BjtuHomeworkUi.text.detailLoading}</div>`;
+      return `<div class="mooc-task-detail" style="border-top-color:${colors[1]};"><span class="spinner mooc-inline-spinner" style="${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span> ${globalThis.BjtuHomeworkUi.text.detailLoading}</div>`;
     }
     const questions = Array.isArray(task.detail?.questions) ? task.detail.questions : [];
     if (!questions.length) return '';
@@ -428,7 +428,7 @@ let moocLoginAssistPopupTabId = null;
         titleHtml: `<a href="${env.escape(course.url)}" target="_blank" rel="noopener noreferrer">${env.escape(course.name)}</a>`,
         metaHtml: `<div class="mooc-course-meta">${renderTeachers(course)}</div>`,
         actionsHtml: `<button class="btn mooc-complete-all-btn" data-mooc-action="course" data-course-id="${env.escape(course.id)}">通过GinsMooc一键扫描并完成全部</button>`,
-        contentHtml: course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : '<span class="spinner mooc-inline-spinner"></span> 正在读取课程作业…',
+        contentHtml: course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : `<span class="spinner mooc-inline-spinner" style="${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span> 正在读取课程作业…`,
         headerClass: 'mooc-course-head',
         identityClass: 'mooc-course-identity',
         homeworkClass: 'homework-area mooc-homework-area',

@@ -32,6 +32,11 @@
     };
   }
 
+  function spinnerPhaseStyle(periodMs = 1000) {
+    const period = Math.max(1, Number(periodMs) || 1000);
+    return `animation-delay:-${Date.now() % period}ms;`;
+  }
+
   function statusHtml({ done = false, overdue = false } = {}) {
     if (done) return '<span class="homework-status-done">(已提交)</span>';
     if (overdue) return '<span class="homework-status-overdue">(已逾期)</span>';
@@ -93,6 +98,7 @@
   global.BjtuHomeworkUi = Object.freeze({
     text,
     detailOptions,
+    spinnerPhaseStyle,
     statusHtml,
     actionLabel,
     renderActionLink,

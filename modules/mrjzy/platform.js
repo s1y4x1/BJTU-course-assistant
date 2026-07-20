@@ -287,7 +287,7 @@ function renderMrjzyHomeworkItems(items) {
     const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : String(it.end || '无');
     const endSuffix = isLoadingMeta
-      ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      ? ` <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : '';
     const countdownSpan = (!done && !overdue && !isLoadingMeta && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
@@ -314,10 +314,10 @@ function renderMrjzyStandaloneCourses() {
     const courseId = `mrjzy-${String(c.classNum || idx)}`;
     const loadingMeta = !!c.loadingMeta;
     const titleHtml = loadingMeta
-      ? '正在加载…… <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:1px; border-color:#6366f1; border-top-color:transparent;"></span>'
+      ? `正在加载…… <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:1px; border-color:#6366f1; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : `<a href="${MRJZY_WEB_BASE}/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none;">${escapeHtml(c.divClass || '每日交作业课程')}</a>`;
     const teacherHtml = loadingMeta
-      ? '正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      ? `正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : escapeHtml(c.teacherName || '');
     const card = globalThis.BjtuCourseCardUi.createCourseCard({
       courseId,

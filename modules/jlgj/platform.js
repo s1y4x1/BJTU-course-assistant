@@ -707,7 +707,7 @@ function renderJlgjHomeworkItems(items) {
     const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done, overdue });
     const detail = isLoadingMeta ? '' : normalizeHomeworkContent(String(it?.content || '').trim());
     const contentHtml = isLoadingMeta
-      ? '正在加载详情…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      ? `正在加载详情…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : (detail || `<span style="color:#999;">${globalThis.BjtuHomeworkUi.text.detailEmpty}</span>`);
     const expandableContentHtml = renderExpandableHtml(contentHtml, globalThis.BjtuHomeworkUi.detailOptions({
       baseBg: 'rgba(255,255,255,0.3)',
@@ -719,7 +719,7 @@ function renderJlgjHomeworkItems(items) {
     const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : formatJlgjDateTime(it.end);
     const endSuffix = isLoadingMeta
-      ? ' <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      ? ` <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : '';
     const countdownSpan = (!done && !overdue && !isLoadingMeta && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
@@ -748,7 +748,7 @@ function renderJlgjStandaloneCourses() {
     const loadingMeta = !!c.loadingMeta;
     const titleHtml = escapeHtml(c.name || '接龙管家课程');
     const teacherHtml = loadingMeta
-      ? '正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;"></span>'
+      ? `正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : escapeHtml(String(c.teacherName || ''));
     const card = globalThis.BjtuCourseCardUi.createCourseCard({
       courseId,
@@ -758,7 +758,7 @@ function renderJlgjStandaloneCourses() {
       metaHtml: `<div style="font-size:12px;color:#666;line-height:1.35;">${teacherHtml}</div>`,
       actionsHtml: '<button class="btn" style="background:#9C27B0;display:none;" data-action="videos">回放下载</button>',
       contentHtml: loadingMeta && !(c.homeworks || []).length
-        ? '<div class="spinner" style="border-color:#2196F3;border-top-color:transparent;display:inline-block;"></div> 正在获取作业…'
+        ? `<div class="spinner" style="border-color:#2196F3;border-top-color:transparent;display:inline-block;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></div> 正在获取作业…`
         : ''
     });
     courseListDiv.appendChild(card);

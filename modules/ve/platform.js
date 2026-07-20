@@ -2260,7 +2260,8 @@ async function startCourseArchiveLinkFetch(btn, courseId) {
   if (!(btn instanceof HTMLButtonElement) || !card || !resultArea || !cache || !linkItems.length || cache.linksFetching) return;
 
   cache.linksFetching = true;
-  btn.disabled = true;
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
   btn.classList.remove('archive-list-loading');
   btn.classList.add('archive-link-progress');
   btn.style.setProperty('--archive-progress', '0%');

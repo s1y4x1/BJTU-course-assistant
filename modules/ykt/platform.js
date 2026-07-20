@@ -77,6 +77,10 @@ function yktHomeworkLink(classroomId, coursewareId, id) {
   return `${YKT_BASE}/v2/web/studentCards/${encodeURIComponent(String(classroomId || ''))}/${encodeURIComponent(String(coursewareId || ''))}/${encodeURIComponent(String(id || ''))}`;
 }
 
+function yktVideoStudentLink(classroomId, leafId) {
+  return `${YKT_BASE}/v2/web/xcloud/video-student/${encodeURIComponent(String(classroomId || ''))}/${encodeURIComponent(String(leafId || ''))}`;
+}
+
 function yktExamLink(courseId, coursewareId) {
   return `${YKT_BASE}/v2/web/exam/${encodeURIComponent(String(courseId || ''))}/${encodeURIComponent(String(coursewareId || ''))}`;
 }
@@ -582,6 +586,12 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
   const cid = String(courseId || '').trim();
   const groupKind = String(kind || '').trim();
   if (!cid || !['done', 'overdue'].includes(groupKind)) return;
+  const loadVersion = Number(window.platformLoadVersion?.ykt || 0);
+  const isCancelled = () => (
+    !isPlatformEnabled('ykt')
+    || loadVersion !== Number(window.platformLoadVersion?.ykt || 0)
+  );
+  if (isCancelled()) return;
   window.yktDeferredDetailLoadPromises ||= {};
   const promiseKey = `${cid}:${groupKind}`;
   if (window.yktDeferredDetailLoadPromises[promiseKey]) return window.yktDeferredDetailLoadPromises[promiseKey];
@@ -609,6 +619,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
     let requestTabId = null;
     let requestTabCreated = false;
     const ensureRequestTab = async () => {
+      if (isCancelled()) return null;
       if (requestTabId) {
         const current = await chrome.tabs.get(requestTabId).catch(() => null);
         if (current?.id) return requestTabId;
@@ -616,10 +627,15 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
         requestTabCreated = false;
       }
       const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
+      if (isCancelled()) return null;
       let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
       if (!tab) {
         tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
         requestTabCreated = true;
+      }
+      if (isCancelled()) {
+        if (requestTabCreated && tab?.id) await chrome.tabs.remove(tab.id).catch(() => {});
+        return null;
       }
       requestTabId = Number(tab?.id || 0) || null;
       return requestTabId;
@@ -627,6 +643,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
 
     try {
       for (const hw of targets) {
+        if (isCancelled()) return;
         hw.exam_detail_state = 'loading';
         rerenderAllHomeworkAreas();
         renderYktStandaloneCourses();
@@ -634,10 +651,12 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
         try {
           if (Number(hw?.__actype) === 5) {
             const tabId = await ensureRequestTab();
+            if (isCancelled()) return;
             let paper = tabId ? await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '', tabId) : null;
-            if (!paper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
+            if (!isCancelled() && !paper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
               requestTabId = null;
               const retryTabId = await ensureRequestTab();
+              if (isCancelled()) return;
               paper = retryTabId ? await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '', retryTabId) : null;
             }
             if (paper?.title) hw.title = paper.title;
@@ -704,9 +723,9 @@ function renderYktHomeworkItems(courseId, items) {
     if (isExam && !examDetail) {
       const state = String(it?.exam_detail_state || '').trim();
       if (state === 'loading') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>${globalThis.BjtuHomeworkUi.text.detailLoading}</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>${globalThis.BjtuHomeworkUi.text.detailLoading}</div>`;
       } else if (state === 'queued') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;"></span>${globalThis.BjtuHomeworkUi.text.detailQueued}</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>${globalThis.BjtuHomeworkUi.text.detailQueued}</div>`;
       } else if (state === 'failed') {
         detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:#b45309;">${globalThis.BjtuHomeworkUi.text.detailFailed}</div>`;
       }
@@ -772,7 +791,10 @@ function renderYktStandaloneCourses() {
 }
 
 async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
-  const isStale = () => !!(loadVersion && loadVersion !== (window.platformLoadVersion?.ykt || 0));
+  const isStale = () => (
+    !isPlatformEnabled('ykt')
+    || !!(loadVersion && loadVersion !== (window.platformLoadVersion?.ykt || 0))
+  );
   if (isStale()) return;
   if (!isPlatformEnabled('ykt')) {
     clearPlatformData('ykt');
@@ -872,8 +894,10 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   let yktExamSharedTabCreated = false;
   let yktExamSharedTabPromise = null;
   const ensureYktExamSharedTab = async () => {
+    if (isStale() || !isPlatformEnabled('ykt')) return null;
     if (yktExamSharedTabPromise) return yktExamSharedTabPromise;
     yktExamSharedTabPromise = (async () => {
+      if (isStale() || !isPlatformEnabled('ykt')) return null;
       if (yktExamSharedTabId) {
         const current = await chrome.tabs.get(yktExamSharedTabId).catch(() => null);
         if (current?.id) return yktExamSharedTabId;
@@ -881,11 +905,16 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         yktExamSharedTabCreated = false;
       }
       const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
+      if (isStale() || !isPlatformEnabled('ykt')) return null;
       let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
       yktExamSharedTabCreated = false;
       if (!tab) {
         tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
         yktExamSharedTabCreated = true;
+      }
+      if (isStale() || !isPlatformEnabled('ykt')) {
+        if (yktExamSharedTabCreated && tab?.id) await chrome.tabs.remove(tab.id).catch(() => {});
+        return null;
       }
       yktExamSharedTabId = Number(tab?.id || 0) || null;
       return yktExamSharedTabId;
@@ -930,6 +959,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const coursewareProgressPromise = actype15CoursewareIds.length ? (async () => {
       try {
         let requestTabId = await ensureYktExamSharedTab();
+        if (isStale() || !isPlatformEnabled('ykt')) return {};
         try {
           return await fetchYktCoursewareProgress(
             progressCid,
@@ -941,8 +971,10 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         } catch (error) {
           const requestTab = requestTabId ? await chrome.tabs.get(requestTabId).catch(() => null) : null;
           if (!requestTab?.id) {
+            if (isStale() || !isPlatformEnabled('ykt')) return {};
             yktExamSharedTabId = null;
             requestTabId = await ensureYktExamSharedTab();
+            if (isStale() || !isPlatformEnabled('ykt')) return {};
             return await fetchYktCoursewareProgress(
               progressCid,
               actype15CoursewareIds,
@@ -980,7 +1012,9 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         total_score: a?.total_score,
         link: isExam
           ? yktExamLink(a?.course_id || entry.classroomId, coursewareId)
-          : yktHomeworkLink(entry.classroomId, coursewareId, a?.id),
+          : (isCard && String(leafId || '').trim()
+              ? yktVideoStudentLink(entry.classroomId, leafId)
+              : yktHomeworkLink(entry.classroomId, coursewareId, a?.id)),
         courseware_id: coursewareId,
         leaf_id: leafId,
         video_total_done: undefined,
@@ -1106,12 +1140,14 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       }
 
       const tabId = await ensureYktExamSharedTab();
+      if (isStale() || !isPlatformEnabled('ykt')) return;
       let p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', tabId);
       if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
       let examPaper = await p;
-      if (!examPaper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
+      if (!isStale() && isPlatformEnabled('ykt') && !examPaper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
         yktExamSharedTabId = null;
         const retryTabId = await ensureYktExamSharedTab();
+        if (isStale() || !isPlatformEnabled('ykt')) return;
         p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', retryTabId);
         if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
         examPaper = await p;

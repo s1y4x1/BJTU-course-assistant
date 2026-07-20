@@ -498,6 +498,7 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   // against VE courses is a core concern handled after the module finishes.
   const independentCourseInput = [];
   const finishIndependentLoad = () => {
+    if (!isPlatformEnabled(platform) || version !== Number(window.platformLoadVersion?.[platform] || 0)) return;
     rematchExternalByVeCourses(platform);
     rerenderAllHomeworkAreas();
     if (platform === 'ykt') renderYktStandaloneCourses();
@@ -507,7 +508,9 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
 
   if (platform === 'ykt') {
     setPlatformLoginState('ykt', 'checking');
-    scheduleYktLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderYktNeedLoginMessage());
+    scheduleYktLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => {
+      if (isPlatformEnabled('ykt') && version === Number(window.platformLoadVersion?.ykt || 0)) renderYktNeedLoginMessage();
+    });
   } else if (platform === 'mrjzy') {
     setPlatformLoginState('mrjzy', 'checking');
     scheduleMrjzyLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderMrjzyNeedLoginMessage());
@@ -748,6 +751,7 @@ function togglePlatformSelection(platform, options = {}) {
   refreshPlatformLoginTip();
 
   if (!enabled) {
+    bumpPlatformLoadVersion(platform);
     if (platform === 'ykt') {
       window.platformInteractiveLoginPending.ykt = false;
       closeYktLoginAssistPopup(true);
@@ -3645,14 +3649,25 @@ function syncCourseActionButtonText(card, activeView = '') {
   const coursewareBtn = card.querySelector('button[data-action="courseware"]');
   const archiveBtn = card.querySelector('button[data-action="archive"]');
 
-  if (replayBtn && !replayBtn.classList.contains('replay-list-loading') && !replayBtn.classList.contains('replay-link-progress')) {
-    replayBtn.textContent = activeView === 'replay' ? '收起' : '回放下载';
+  const setLabel = (button, label, progressClass) => {
+    if (!(button instanceof HTMLButtonElement)) return;
+    if (!button.classList.contains(progressClass)) {
+      button.textContent = label;
+      return;
+    }
+    const textNode = Array.from(button.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+    if (textNode) textNode.nodeValue = `${label} `;
+    else button.insertBefore(document.createTextNode(`${label} `), button.firstChild);
+  };
+
+  if (replayBtn && !replayBtn.classList.contains('replay-list-loading')) {
+    setLabel(replayBtn, activeView === 'replay' ? '收起' : '回放下载', 'replay-link-progress');
   }
-  if (coursewareBtn && !coursewareBtn.classList.contains('courseware-list-loading') && !coursewareBtn.classList.contains('courseware-link-progress')) {
-    coursewareBtn.textContent = activeView === 'courseware' ? '收起' : '课件下载';
+  if (coursewareBtn && !coursewareBtn.classList.contains('courseware-list-loading')) {
+    setLabel(coursewareBtn, activeView === 'courseware' ? '收起' : '课件下载', 'courseware-link-progress');
   }
-  if (archiveBtn && !archiveBtn.classList.contains('archive-list-loading') && !archiveBtn.classList.contains('archive-link-progress')) {
-    archiveBtn.textContent = activeView === 'archive' ? '收起' : '归档下载';
+  if (archiveBtn && !archiveBtn.classList.contains('archive-list-loading')) {
+    setLabel(archiveBtn, activeView === 'archive' ? '收起' : '归档下载', 'archive-link-progress');
   }
 }
 
@@ -3926,22 +3941,43 @@ function syncForcePublishScoreButtonRow(courseId, expanded) {
 
 function animateHomeworkGroupVisibility(group, expanded) {
   if (!(group instanceof HTMLElement)) return;
+
+  const generation = Number(group.dataset.visibilityAnimationGeneration || 0) + 1;
+  group.dataset.visibilityAnimationGeneration = String(generation);
+  if (group.__homeworkVisibilityAnimationFrame) {
+    cancelAnimationFrame(group.__homeworkVisibilityAnimationFrame);
+    group.__homeworkVisibilityAnimationFrame = 0;
+  }
+  if (group.__homeworkVisibilityAnimationTimer) {
+    clearTimeout(group.__homeworkVisibilityAnimationTimer);
+    group.__homeworkVisibilityAnimationTimer = 0;
+  }
+
+  const isCurrentAnimation = () => (
+    Number(group.dataset.visibilityAnimationGeneration || 0) === generation
+    && group.dataset.expanded === (expanded ? '1' : '0')
+  );
+  const currentHeight = Math.max(0, group.getBoundingClientRect().height);
   group.classList.remove('homework-group-animating');
   group.style.overflow = 'hidden';
 
   if (expanded) {
     group.classList.remove('is-hidden');
-    group.style.maxHeight = '0px';
-    group.style.opacity = '0';
-    group.style.transform = 'translateY(-3px)';
+    group.style.maxHeight = `${currentHeight}px`;
+    group.style.opacity = currentHeight > 0 ? getComputedStyle(group).opacity : '0';
+    group.style.transform = currentHeight > 0 ? getComputedStyle(group).transform : 'translateY(-3px)';
     void group.offsetHeight;
     group.classList.add('homework-group-animating');
-    requestAnimationFrame(() => {
+    group.__homeworkVisibilityAnimationFrame = requestAnimationFrame(() => {
+      group.__homeworkVisibilityAnimationFrame = 0;
+      if (!isCurrentAnimation()) return;
       group.style.maxHeight = `${Math.max(1, group.scrollHeight)}px`;
       group.style.opacity = '1';
       group.style.transform = 'translateY(0)';
     });
-    setTimeout(() => {
+    group.__homeworkVisibilityAnimationTimer = setTimeout(() => {
+      group.__homeworkVisibilityAnimationTimer = 0;
+      if (!isCurrentAnimation()) return;
       group.classList.remove('homework-group-animating');
       group.style.maxHeight = '';
       group.style.opacity = '';
@@ -3951,17 +3987,21 @@ function animateHomeworkGroupVisibility(group, expanded) {
     return;
   }
 
-  group.style.maxHeight = `${Math.max(1, group.scrollHeight)}px`;
-  group.style.opacity = '1';
-  group.style.transform = 'translateY(0)';
+  group.style.maxHeight = `${Math.max(1, currentHeight || group.scrollHeight)}px`;
+  group.style.opacity = getComputedStyle(group).opacity || '1';
+  group.style.transform = getComputedStyle(group).transform || 'translateY(0)';
   void group.offsetHeight;
   group.classList.add('homework-group-animating');
-  requestAnimationFrame(() => {
+  group.__homeworkVisibilityAnimationFrame = requestAnimationFrame(() => {
+    group.__homeworkVisibilityAnimationFrame = 0;
+    if (!isCurrentAnimation()) return;
     group.style.maxHeight = '0px';
     group.style.opacity = '0';
     group.style.transform = 'translateY(-3px)';
   });
-  setTimeout(() => {
+  group.__homeworkVisibilityAnimationTimer = setTimeout(() => {
+    group.__homeworkVisibilityAnimationTimer = 0;
+    if (!isCurrentAnimation()) return;
     group.classList.add('is-hidden');
     group.classList.remove('homework-group-animating');
     group.style.maxHeight = '';
@@ -4389,9 +4429,9 @@ function renderHomeworkList(courseId) {
     ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, mergedOverdueCount, overdueCollapsedText, overdueExpandedText, 'down', 'up')}</div>`
     : '';
 
-  const loadingText = isYktStandalone ? '正在同步雨课堂作业…' : (isMrjzyStandalone ? '正在同步每日交作业…' : '正在获取作业…');
+  const loadingText = isMrjzyStandalone ? '正在同步每日交作业…' : '正在获取作业…';
   const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrjzyStandalone ? mrjzySyncing : jlgjSyncing);
-  const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> ${loadingText}` : '';
+  const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;${spinnerPhaseDelayStyle()}"></div> ${loadingText}` : '';
   const emptyExternalTip = isExternalStandalone && totalHomeworkCount === 0 && !standaloneSyncing ? '<span style="color:#999;">没有作业数据</span>' : '';
   const noPendingTip = !isTeacherMode2 && totalHomeworkCount > 0 && totalPendingCount === 0
     ? `<div class="homework-empty-tip" style="color:#4CAF50; margin-top:2px;">${totalOverdueCount > 0 ? '✓ 没有作业待交' : '✓ 所有作业已交'}</div>`
