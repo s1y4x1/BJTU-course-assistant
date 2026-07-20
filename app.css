@@ -339,6 +339,10 @@ body {
         .column-resizer:hover::after,
         .right-column.dragging .column-resizer::after { background: rgba(59,130,246,0.9); }
         .right-column.dragging { user-select: none; }
+        body.column-resizing .left-column,
+        body.column-resizing .right-column {
+            transition: none !important;
+        }
         .column-collapse-toggle {
             position: absolute;
             top: 50%;
@@ -538,7 +542,7 @@ body {
                 box-sizing: border-box;
             }
             .left-column {
-                flex: 1 1 45%;
+                flex: 0 0 var(--course-helper-portrait-split-basis, 45%);
                 min-height: 0;
                 max-height: 100%;
                 overflow-y: auto;
@@ -550,7 +554,7 @@ body {
                     padding 0.24s cubic-bezier(0.22, 1, 0.36, 1);
             }
             .right-column {
-                flex: 1 1 55%;
+                flex: 1 1 0;
                 position: relative;
                 padding: 26px 10px 0;
                 height: auto;
@@ -567,7 +571,7 @@ body {
                 width: 100%;
                 height: 12px;
                 transform: none;
-                cursor: default;
+                cursor: row-resize;
             }
             .column-resizer::after {
                 top: 5px;

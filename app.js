@@ -53,6 +53,8 @@ const resourceTotalSpeed = document.getElementById('resource-download-total-spee
 const resourceTotalEta = document.getElementById('resource-download-total-eta');
 const courseListDiv = document.getElementById('course-list');
 const courseLoadingStatus = document.getElementById('course-loading-status');
+const layoutContainer = document.querySelector('.layout-container');
+const leftColumn = document.querySelector('.left-column');
 const rightColumn = document.getElementById('right-column');
 const columnResizer = document.getElementById('column-resizer');
 const columnCollapseToggle = document.getElementById('column-collapse-toggle');
@@ -1030,6 +1032,9 @@ function syncCourseHelperCollapseTogglePresentation() {
   columnCollapseToggle.title = action;
   columnCollapseToggle.setAttribute('aria-label', action);
   columnCollapseToggle.setAttribute('aria-expanded', focused ? 'false' : 'true');
+  if (columnResizer instanceof HTMLElement) {
+    columnResizer.title = adaptive ? '拖动调整上下栏高度' : '拖动调整课程助手宽度';
+  }
 }
 
 function getCourseCardPlatform(card) {
@@ -1371,10 +1376,14 @@ async function loadCourseHelperLayoutSettings() {
 }
 
 function setupRightColumnResizer() {
-  if (!rightColumn || !columnResizer) return;
-  const STORAGE_KEY = 'courseHelperWidthPx';
+  if (!layoutContainer || !leftColumn || !rightColumn || !columnResizer) return;
+  const WIDTH_STORAGE_KEY = 'courseHelperWidthPx';
+  const PORTRAIT_RATIO_STORAGE_KEY = 'courseHelperPortraitSplitRatio';
   const BASE_MIN_W = 480;
   const DEFAULT_W = 576;
+  const DEFAULT_PORTRAIT_RATIO = 0.45;
+  const MIN_PORTRAIT_RATIO = 0.1;
+  const MAX_PORTRAIT_RATIO = 0.9;
 
   const isAdaptiveLayout = isCourseHelperAdaptiveLayout;
 
@@ -1385,12 +1394,46 @@ function setupRightColumnResizer() {
     return { minW, maxW };
   };
 
+  const getSavedPortraitRatio = () => {
+    try {
+      const value = Number(localStorage.getItem(PORTRAIT_RATIO_STORAGE_KEY));
+      if (Number.isFinite(value) && value > 0 && value < 1) {
+        return Math.max(MIN_PORTRAIT_RATIO, Math.min(MAX_PORTRAIT_RATIO, value));
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_PORTRAIT_RATIO;
+  };
+
+  const applyPortraitRatio = (ratio) => {
+    const normalized = Math.max(
+      MIN_PORTRAIT_RATIO,
+      Math.min(MAX_PORTRAIT_RATIO, Number(ratio) || DEFAULT_PORTRAIT_RATIO)
+    );
+    const gap = Number.parseFloat(getComputedStyle(layoutContainer).rowGap || getComputedStyle(layoutContainer).gap) || 0;
+    layoutContainer.style.setProperty(
+      '--course-helper-portrait-split-basis',
+      `calc(${normalized * 100}% - ${gap * normalized}px)`
+    );
+  };
+
+  const getPortraitDragMetrics = () => {
+    const rect = layoutContainer.getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(layoutContainer).rowGap || getComputedStyle(layoutContainer).gap) || 0;
+    const available = Math.max(0, rect.height - gap);
+    const resizerLineCenter = 6;
+    return { rect, available, gap, resizerLineCenter };
+  };
+
   const applyResponsiveWidth = () => {
     if (isAdaptiveLayout()) {
       rightColumn.style.width = '';
       rightColumn.style.minWidth = '0';
+      applyPortraitRatio(getSavedPortraitRatio());
       return;
     }
+    layoutContainer.style.removeProperty('--course-helper-portrait-split-basis');
     if (window.courseHelperPlatformSplitMode) {
       return;
     }
@@ -1398,7 +1441,7 @@ function setupRightColumnResizer() {
     const { minW, maxW } = getBounds();
     let target = DEFAULT_W;
     try {
-      const savedValue = localStorage.getItem(STORAGE_KEY);
+      const savedValue = localStorage.getItem(WIDTH_STORAGE_KEY);
       const saved = Number(savedValue);
       if (savedValue !== null && Number.isFinite(saved) && saved > 0) {
         target = saved;
@@ -1449,9 +1492,23 @@ function setupRightColumnResizer() {
   scheduleResizerSync();
 
   let dragging = false;
+  let dragAxis = '';
+  let activePortraitRatio = getSavedPortraitRatio();
 
   const onMove = (e) => {
     if (!dragging || !rightColumn) return;
+    if (dragAxis === 'row') {
+      const { rect, available, gap, resizerLineCenter } = getPortraitDragMetrics();
+      if (available <= 0) return;
+      const pointerTop = Number(e.clientY || 0) - rect.top - gap - resizerLineCenter;
+      const topPane = Math.max(
+        available * MIN_PORTRAIT_RATIO,
+        Math.min(available * MAX_PORTRAIT_RATIO, pointerTop)
+      );
+      activePortraitRatio = topPane / available;
+      applyPortraitRatio(activePortraitRatio);
+      return;
+    }
     const { minW, maxW } = getBounds();
     const vw = Math.max(0, window.innerWidth || 0);
     const w = vw - Number(e.clientX || 0) - 24;
@@ -1463,16 +1520,25 @@ function setupRightColumnResizer() {
   const onUp = () => {
     if (!dragging) return;
     dragging = false;
+    const completedAxis = dragAxis;
+    dragAxis = '';
     rightColumn.classList.remove('dragging');
+    document.body.classList.remove('column-resizing');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     try {
-      const { minW, maxW } = getBounds();
-      const current = parseInt(String(rightColumn.style.width || '0').replace('px', ''), 10);
-      if (Number.isFinite(current) && current >= minW && current <= maxW) {
-        localStorage.setItem(STORAGE_KEY, String(current));
+      if (completedAxis === 'row') {
+        if (Number.isFinite(activePortraitRatio) && activePortraitRatio > 0 && activePortraitRatio < 1) {
+          localStorage.setItem(PORTRAIT_RATIO_STORAGE_KEY, String(activePortraitRatio));
+        }
+      } else {
+        const { minW, maxW } = getBounds();
+        const current = parseInt(String(rightColumn.style.width || '0').replace('px', ''), 10);
+        if (Number.isFinite(current) && current >= minW && current <= maxW) {
+          localStorage.setItem(WIDTH_STORAGE_KEY, String(current));
+        }
       }
     } catch {
       // ignore
@@ -1480,11 +1546,14 @@ function setupRightColumnResizer() {
   };
 
   columnResizer.addEventListener('mousedown', (e) => {
-    if (isAdaptiveLayout() || window.courseHelperPlatformSplitMode || e.target === columnCollapseToggle) return;
+    if (popupMode || window.courseHelperPlatformSplitMode || e.target === columnCollapseToggle) return;
     e.preventDefault();
     dragging = true;
+    dragAxis = isAdaptiveLayout() ? 'row' : 'column';
+    activePortraitRatio = getSavedPortraitRatio();
     rightColumn.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
+    document.body.classList.add('column-resizing');
+    document.body.style.cursor = dragAxis === 'row' ? 'row-resize' : 'col-resize';
     document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
