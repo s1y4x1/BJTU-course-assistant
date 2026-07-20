@@ -215,6 +215,34 @@ html[data-color-scheme="dark"] .version-markdown-codeblock code {
   color: #e2e8f0 !important;
 }
 
+html[data-color-scheme="dark"] .version-notice-body hr,
+html[data-color-scheme="dark"] .version-download-release-notes-body hr {
+  border-top-color: #334155;
+}
+
+html[data-color-scheme="dark"] .version-markdown-table-wrap th,
+html[data-color-scheme="dark"] .version-markdown-table-wrap td {
+  border-color: #475569;
+}
+
+html[data-color-scheme="dark"] .version-markdown-table-wrap th {
+  background: #1e293b;
+  color: #f8fafc !important;
+}
+
+html[data-color-scheme="dark"] .version-markdown-table-wrap tbody tr:nth-child(even) {
+  background: #111827;
+}
+
+html[data-color-scheme="dark"] .version-markdown-release-name {
+  color: #f8fafc !important;
+}
+
+html[data-color-scheme="dark"] .version-markdown-release-time,
+html[data-color-scheme="dark"] .version-markdown-empty {
+  color: #cbd5e1 !important;
+}
+
 html[data-color-scheme="dark"] .version-notice-footer {
   background: #111827;
   border-color: #334155;

@@ -18,7 +18,7 @@
     academic: { label: '教务系统', files: ['system.js'] },
     campusnet: { label: '校园网自动重连', files: ['background.js'] },
     captcha: { label: '本地验证码识别', files: ['recognizer.js', 'offscreen.js', 'vendor/eng.traineddata.gz'] },
-    updater: { label: '更新组件', files: ['checker.js', 'background.js', 'filesystem.js'] }
+    updater: { label: '更新组件', files: ['checker.js', 'background.js', 'filesystem.js', 'vendor/marked.umd.js'] }
   });
 
   async function exists(id) {

@@ -286,164 +286,99 @@ async function handoffUpdateToFullscreen(url, source, fullExtraction = false) {
   await chrome.runtime.sendMessage({ type: 'OPEN_APP', payload: { autoUpdate: true } });
 }
 
-function parseInlineMarkdown(text) {
-  let html = escapeHtml(String(text || ''));
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#0f766e; text-decoration:none;">$1</a>');
-  html = html.replace(/`([^`]+)`/g, '<code class="version-markdown-inline-code">$1</code>');
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  return html;
+let versionMarkdownParser = null;
+
+function normalizeVersionMarkdownUrl(rawUrl, allowedProtocols) {
+  const value = String(rawUrl || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    return allowedProtocols.has(parsed.protocol) ? parsed.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function getVersionMarkdownParser() {
+  if (versionMarkdownParser) return versionMarkdownParser;
+  const markedApi = globalThis.marked;
+  if (!markedApi?.Marked || !markedApi?.Renderer) return null;
+
+  const renderer = new markedApi.Renderer();
+  const defaultTableRenderer = renderer.table;
+  renderer.html = ({ text }) => escapeHtml(String(text || ''));
+  renderer.link = function renderSafeLink({ href, title, tokens }) {
+    const text = this.parser.parseInline(tokens || []);
+    const safeHref = normalizeVersionMarkdownUrl(href, new Set(['http:', 'https:', 'mailto:']));
+    if (!safeHref) return text;
+    const titleAttribute = title ? ` title="${escapeHtml(String(title))}"` : '';
+    return `<a href="${escapeHtml(safeHref)}"${titleAttribute} target="_blank" rel="noopener noreferrer">${text}</a>`;
+  };
+  renderer.image = ({ href, title, text }) => {
+    const safeSrc = normalizeVersionMarkdownUrl(href, new Set(['http:', 'https:']));
+    if (!safeSrc) return escapeHtml(String(text || ''));
+    const titleAttribute = title ? ` title="${escapeHtml(String(title))}"` : '';
+    return `<img class="version-markdown-image" src="${escapeHtml(safeSrc)}" alt="${escapeHtml(String(text || ''))}"${titleAttribute} loading="lazy">`;
+  };
+  renderer.codespan = ({ text }) => `<code class="version-markdown-inline-code">${escapeHtml(String(text || ''))}</code>`;
+  renderer.code = ({ text, lang }) => {
+    const language = String(lang || '').trim().split(/\s+/)[0];
+    const languageAttribute = language ? ` data-language="${escapeHtml(language)}"` : '';
+    return `<pre class="version-markdown-codeblock"${languageAttribute}><code>${escapeHtml(String(text || ''))}</code></pre>`;
+  };
+  renderer.blockquote = function renderBlockquote({ tokens }) {
+    return `<blockquote class="version-markdown-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
+  };
+  renderer.table = function renderTable(token) {
+    return `<div class="version-markdown-table-wrap">${defaultTableRenderer.call(this, token)}</div>`;
+  };
+
+  versionMarkdownParser = new markedApi.Marked({
+    gfm: true,
+    breaks: false,
+    pedantic: false,
+    renderer
+  });
+  versionMarkdownParser.use({
+    extensions: [{
+      name: 'bjtuReleaseHeader',
+      level: 'block',
+      start(source) {
+        const index = String(source || '').search(/^@@release\|/m);
+        return index >= 0 ? index : undefined;
+      },
+      tokenizer(source) {
+        const match = /^@@release\|([^|\n]+)\|([^\n]*)(?:\n|$)/.exec(source);
+        if (!match) return undefined;
+        return {
+          type: 'bjtuReleaseHeader',
+          raw: match[0],
+          version: String(match[1] || '').trim(),
+          time: String(match[2] || '').trim()
+        };
+      },
+      renderer(token) {
+        const timeHtml = token.time
+          ? `<span class="version-markdown-release-time">${escapeHtml(token.time)}</span>`
+          : '';
+        return `<div class="version-markdown-release"><span class="version-markdown-release-name">${escapeHtml(token.version)}</span>${timeHtml}</div>`;
+      }
+    }]
+  });
+  return versionMarkdownParser;
 }
 
 function renderMarkdownBasic(markdownText) {
-  const src = String(markdownText || '').replace(/\r\n/g, '\n');
-  if (!src.trim()) {
-    return '<p style="margin:0; color:#475569; line-height:1.6;">此版本暂无更新说明。</p>';
+  const source = String(markdownText || '').replace(/\r\n?/g, '\n').trim();
+  if (!source) return '<p class="version-markdown-empty">此版本暂无更新说明。</p>';
+  const parser = getVersionMarkdownParser();
+  if (!parser) return `<p class="version-markdown-empty">${escapeHtml(source)}</p>`;
+  try {
+    return parser.parse(source, { async: false });
+  } catch (error) {
+    console.warn('[bjtu] release markdown render failed:', error);
+    return `<p class="version-markdown-empty">${escapeHtml(source)}</p>`;
   }
-
-  const lines = src.split('\n');
-  const out = [];
-  const listStack = [];
-  let blockquoteOpen = false;
-  let codeBlockOpen = false;
-  const codeBlockLines = [];
-  const listUlStyle = 'margin:0 0 6px 18px; padding:0; color:#334155; line-height:1.6;';
-
-  const closeCodeBlock = () => {
-    if (!codeBlockOpen) return;
-    out.push(`<pre class="version-markdown-codeblock"><code>${escapeHtml(codeBlockLines.join('\n'))}</code></pre>`);
-    codeBlockLines.length = 0;
-    codeBlockOpen = false;
-  };
-
-  const closeBlockquote = () => {
-    if (!blockquoteOpen) return;
-    out.push('</blockquote>');
-    blockquoteOpen = false;
-  };
-
-  const closeAllLists = () => {
-    while (listStack.length > 0) {
-      const top = listStack[listStack.length - 1];
-      if (top.liOpen) {
-        out.push('</li>');
-      }
-      out.push('</ul>');
-      listStack.pop();
-    }
-  };
-
-  const closeListsToDepth = (depth) => {
-    while (listStack.length > depth) {
-      const top = listStack[listStack.length - 1];
-      if (top.liOpen) {
-        out.push('</li>');
-      }
-      out.push('</ul>');
-      listStack.pop();
-    }
-  };
-
-  lines.forEach((line) => {
-    const raw = String(line || '');
-    const trimmed = raw.trim();
-    if (/^```/.test(trimmed)) {
-      if (codeBlockOpen) {
-        closeCodeBlock();
-      } else {
-        closeAllLists();
-        closeBlockquote();
-        codeBlockOpen = true;
-        codeBlockLines.length = 0;
-      }
-      return;
-    }
-    if (codeBlockOpen) {
-      codeBlockLines.push(raw);
-      return;
-    }
-    if (!trimmed) {
-      closeAllLists();
-      closeBlockquote();
-      out.push('<div style="height:6px;"></div>');
-      return;
-    }
-
-    const quote = raw.match(/^\s*>\s?(.*)$/);
-    if (quote) {
-      closeAllLists();
-      if (!blockquoteOpen) {
-        out.push('<blockquote class="version-markdown-blockquote">');
-        blockquoteOpen = true;
-      }
-      const content = String(quote[1] || '').trim();
-      out.push(content
-        ? `<div class="version-markdown-blockquote-line">${parseInlineMarkdown(content)}</div>`
-        : '<div class="version-markdown-blockquote-gap"></div>');
-      return;
-    }
-    closeBlockquote();
-
-    const releaseHeader = trimmed.match(/^@@release\|([^|]+)\|(.*)$/);
-    if (releaseHeader) {
-      closeAllLists();
-      const versionText = parseInlineMarkdown(releaseHeader[1]);
-      const timeText = parseInlineMarkdown(releaseHeader[2]);
-      const timeHtml = timeText ? `<span style="font-size:12px; font-weight:500; color:#64748b;">${timeText}</span>` : '';
-      out.push(`<div style="display:flex; align-items:baseline; gap:8px; margin:0 0 6px; color:#0f172a; line-height:1.25;"><span style="font-size:16px; font-weight:700;">${versionText}</span>${timeHtml}</div>`);
-      return;
-    }
-
-    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
-    if (heading) {
-      closeAllLists();
-      const level = Math.min(6, heading[1].length);
-      out.push(`<h${level} style="margin:0 0 8px; color:#0f172a; font-size:${Math.max(14, 22 - level * 2)}px;">${parseInlineMarkdown(heading[2])}</h${level}>`);
-      return;
-    }
-
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-      closeAllLists();
-      out.push('<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">');
-      return;
-    }
-
-    const bullet = raw.match(/^(\s*)[-*]\s+(.+)$/);
-    if (bullet) {
-      const indent = String(bullet[1] || '').replace(/\t/g, '  ');
-      const level = Math.max(1, Math.floor(indent.length / 2) + 1);
-
-      closeListsToDepth(level);
-
-      while (listStack.length < level) {
-        out.push(`<ul style="${listUlStyle}">`);
-        listStack.push({ liOpen: false });
-      }
-
-      const current = listStack[level - 1];
-      if (current.liOpen) {
-        out.push('</li>');
-      }
-      out.push(`<li style="margin:2px 0;">${parseInlineMarkdown(bullet[2])}`);
-      current.liOpen = true;
-      return;
-    }
-
-    if (listStack.length > 0) {
-      const top = listStack[listStack.length - 1];
-      if (top.liOpen) {
-        out.push(`<p style="margin:4px 0 0; color:#334155; line-height:1.6; white-space:pre-wrap;">${parseInlineMarkdown(raw)}</p>`);
-        return;
-      }
-    }
-    closeAllLists();
-    out.push(`<p style="margin:0 0 6px; color:#334155; line-height:1.6;">${parseInlineMarkdown(trimmed)}</p>`);
-  });
-
-  closeAllLists();
-  closeBlockquote();
-  closeCodeBlock();
-  return out.join('');
 }
 
 function ensureVersionNoticeModal() {

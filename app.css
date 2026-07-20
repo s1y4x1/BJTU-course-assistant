@@ -1506,12 +1506,6 @@ body {
             color: #475569;
             line-height: 1.6;
         }
-        .version-markdown-blockquote-line + .version-markdown-blockquote-line {
-            margin-top: 3px;
-        }
-        .version-markdown-blockquote-gap {
-            height: 5px;
-        }
         .version-markdown-inline-code {
             background: #f1f5f9;
             border: 1px solid #e2e8f0;
@@ -1538,6 +1532,123 @@ body {
             color: inherit;
             font: inherit;
             white-space: inherit;
+        }
+        .version-notice-body p,
+        .version-download-release-notes-body p {
+            margin: 0 0 7px;
+            line-height: 1.65;
+        }
+        .version-notice-body a,
+        .version-download-release-notes-body a {
+            color: #0f766e;
+            text-decoration: none;
+        }
+        .version-notice-body a:hover,
+        .version-download-release-notes-body a:hover { text-decoration: underline; }
+        .version-notice-body h1,
+        .version-notice-body h2,
+        .version-notice-body h3,
+        .version-notice-body h4,
+        .version-notice-body h5,
+        .version-notice-body h6,
+        .version-download-release-notes-body h1,
+        .version-download-release-notes-body h2,
+        .version-download-release-notes-body h3,
+        .version-download-release-notes-body h4,
+        .version-download-release-notes-body h5,
+        .version-download-release-notes-body h6 {
+            margin: 10px 0 7px;
+            color: #0f172a;
+            line-height: 1.3;
+        }
+        .version-notice-body h1,
+        .version-download-release-notes-body h1 { font-size: 20px; }
+        .version-notice-body h2,
+        .version-download-release-notes-body h2 { font-size: 18px; }
+        .version-notice-body h3,
+        .version-download-release-notes-body h3 { font-size: 16px; }
+        .version-notice-body h4,
+        .version-notice-body h5,
+        .version-notice-body h6,
+        .version-download-release-notes-body h4,
+        .version-download-release-notes-body h5,
+        .version-download-release-notes-body h6 { font-size: 14px; }
+        .version-notice-body ul,
+        .version-notice-body ol,
+        .version-download-release-notes-body ul,
+        .version-download-release-notes-body ol {
+            margin: 0 0 8px 20px;
+            padding: 0;
+            line-height: 1.65;
+        }
+        .version-notice-body li + li,
+        .version-download-release-notes-body li + li { margin-top: 2px; }
+        .version-notice-body li > p,
+        .version-download-release-notes-body li > p { margin-bottom: 2px; }
+        .version-notice-body hr,
+        .version-download-release-notes-body hr {
+            margin: 10px 0;
+            border: 0;
+            border-top: 1px solid #e2e8f0;
+        }
+        .version-markdown-table-wrap {
+            max-width: 100%;
+            margin: 7px 0 10px;
+            overflow-x: auto;
+        }
+        .version-markdown-table-wrap table {
+            width: max-content;
+            min-width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .version-markdown-table-wrap th,
+        .version-markdown-table-wrap td {
+            padding: 5px 8px;
+            border: 1px solid #cbd5e1;
+            text-align: left;
+            vertical-align: top;
+        }
+        .version-markdown-table-wrap th {
+            background: #f1f5f9;
+            color: #0f172a;
+            font-weight: 700;
+        }
+        .version-markdown-table-wrap tbody tr:nth-child(even) { background: #f8fafc; }
+        .version-markdown-image {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            margin: 7px 0 10px;
+        }
+        .version-notice-body input[type="checkbox"],
+        .version-download-release-notes-body input[type="checkbox"] {
+            width: auto;
+            margin: 0 5px 0 0;
+            vertical-align: -1px;
+        }
+        .version-markdown-release {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin: 0 0 7px;
+            color: #0f172a;
+            line-height: 1.3;
+        }
+        .version-markdown-release-name {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .version-markdown-release-time {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .version-markdown-empty {
+            margin: 0;
+            color: #475569;
+            white-space: pre-wrap;
         }
         .version-download-release-notes-title {
             margin-bottom: 5px;
