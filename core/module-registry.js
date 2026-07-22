@@ -15,6 +15,7 @@
     mrjzy: { label: '每日交作业', files: ['platform.js', 'md5.js'] },
     jlgj: { label: '接龙管家', files: ['platform.js', 'background.js', 'capture.js', 'theme.js'] },
     mooc: { label: '中国大学MOOC', files: ['platform.js', 'background.js', 'inject.js'] },
+    xuetangx: { label: '学堂在线', files: ['platform.js'] },
     academic: { label: '教务系统', files: ['system.js'] },
     campusnet: { label: '校园网自动重连', files: ['background.js'] },
     captcha: { label: '本地验证码识别', files: ['recognizer.js', 'offscreen.js', 'vendor/eng.traineddata.gz'] },

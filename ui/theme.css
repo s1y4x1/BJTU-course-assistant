@@ -109,6 +109,8 @@ html[data-color-scheme="dark"] .submit-panel {
 }
 
 html[data-color-scheme="dark"] .mooc-course-meta,
+html[data-color-scheme="dark"] .xuetangx-course-meta,
+html[data-color-scheme="dark"] .xuetangx-empty,
 html[data-color-scheme="dark"] .resource-time-inline:not(.result-area *):not(.file-size-emphasis),
 html[data-color-scheme="dark"] .resource-download-meta:not(.result-area *),
 html[data-color-scheme="dark"] .resource-space-status,

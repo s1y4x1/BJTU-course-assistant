@@ -22,7 +22,7 @@
   const PENDING_RELOAD_KEY = 'pendingUpdateReload';
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
   const MODULE_SELECTION_KEY = 'updateModuleSelection';
-  const OPTIONAL_MODULE_IDS = ['ykt', 'mrjzy', 'jlgj', 'mooc', 'academic', 'campusnet', 'captcha', 'updater'];
+  const OPTIONAL_MODULE_IDS = ['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'academic', 'campusnet', 'captcha', 'updater'];
   const MODULE_SCOPE_IDS = ['ve', ...OPTIONAL_MODULE_IDS];
   const REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;

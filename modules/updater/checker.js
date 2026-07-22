@@ -75,6 +75,7 @@ const VERSION_OPTIONAL_MODULES = Object.freeze({
   mrjzy: '每日交作业',
   jlgj: '接龙管家',
   mooc: '中国大学MOOC',
+  xuetangx: '学堂在线',
   academic: '教务系统',
   campusnet: '校园网自动重连',
   captcha: '本地验证码识别',

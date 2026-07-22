@@ -140,6 +140,16 @@
         <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />在中国大学MOOC页面注入 GinsMooc
           操作按钮</label>
       </div>
+      <div class="platform-option" data-module="xuetangx" hidden><label><input type="checkbox" id="showXuetangx"
+            style="width:auto;" checked />学堂在线</label></div>
+      <div id="xuetangxPlatformDetail" class="platform-option-detail" data-module="xuetangx" hidden>
+        <label><input type="checkbox" id="enableXuetangx" style="width:auto;" />启用</label>
+        <div class="platform-option-subtitle">显示课程状态</div>
+        <label><input type="checkbox" class="xuetangx-course-status" value="1" style="width:auto;" checked />正在上课</label>
+        <label><input type="checkbox" class="xuetangx-course-status" value="2" style="width:auto;" />即将开课</label>
+        <label><input type="checkbox" class="xuetangx-course-status" value="3" style="width:auto;" />已结课</label>
+        <label><input type="checkbox" class="xuetangx-course-status" value="4" style="width:auto;" />已退课</label>
+      </div>
       <div class="tip" data-tip-target="#platform-options-title">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
     </div>
 

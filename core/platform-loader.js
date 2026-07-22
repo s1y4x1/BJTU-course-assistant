@@ -4,7 +4,8 @@
     ykt: ['modules/ykt/platform.js'],
     mrjzy: ['modules/mrjzy/md5.js', 'modules/mrjzy/platform.js'],
     jlgj: ['modules/jlgj/platform.js'],
-    mooc: ['modules/mooc/platform.js']
+    mooc: ['modules/mooc/platform.js'],
+    xuetangx: ['modules/xuetangx/platform.js']
   };
   global.__bjtuPlatformModulesReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;

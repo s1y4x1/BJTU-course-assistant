@@ -63,6 +63,7 @@ const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrjzyStatusBtn = document.getElementById('mrjzy-status-btn');
 const jlgjStatusBtn = document.getElementById('jlgj-status-btn');
 const moocStatusBtn = document.getElementById('mooc-status-btn');
+const xuetangxStatusBtn = document.getElementById('xuetangx-status-btn');
 const popupOpenFullscreenBtn = document.getElementById('popup-open-fullscreen');
 
 // Login modal
@@ -169,16 +170,17 @@ window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomework
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.veReplayScheduleByCourseId = {}; // {courseId: {list,promise,loaded,error}}
 window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
-window.platformNeedLogin = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false };
-window.platformLoginState = { ve: 'checking', ykt: 'checking', mrjzy: 'checking', jlgj: 'checking', mooc: 'checking' }; // checking|offline|online
-window.platformLoginChecked = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false };
-window.platformInteractiveLoginPending = { ykt: false, mrjzy: false, jlgj: false, mooc: false };
-const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false };
-const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true };
+const PLATFORM_IDS = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
+window.platformNeedLogin = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
+window.platformLoginState = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 'checking'])); // checking|offline|online
+window.platformLoginChecked = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
+window.platformInteractiveLoginPending = { ykt: false, mrjzy: false, jlgj: false, mooc: false, xuetangx: false };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
+const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true };
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
 window.platformVisible = { ...DEFAULT_PLATFORM_VISIBLE };
-window.platformLoadedOnce = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false };
-window.platformLoadVersion = { ve: 0, ykt: 0, mrjzy: 0, jlgj: 0, mooc: 0 };
+window.platformLoadedOnce = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
+window.platformLoadVersion = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 0]));
 window.platformContentLoadProgress = {};
 window.currentVeCourseList = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
@@ -260,8 +262,7 @@ let resourceSpaceSearchKeyword = '';
 
 function normalizePlatformId(platform) {
   const p = String(platform || '').trim();
-  if (p === 'mrjzy') return 'mrjzy';
-  return ['ve', 'ykt', 'jlgj', 'mooc'].includes(p) ? p : 've';
+  return PLATFORM_IDS.includes(p) ? p : 've';
 }
 
 function isPlatformEnabled(platform) {
@@ -276,9 +277,10 @@ function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
     mooc: typeof src?.mooc === 'boolean' ? src.mooc : !!fallback.mooc,
     mrjzy: typeof src?.mrjzy === 'boolean' ? src.mrjzy : !!fallback.mrjzy,
     ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
-    ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt
+    ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt,
+    xuetangx: typeof src?.xuetangx === 'boolean' ? src.xuetangx : !!fallback.xuetangx
   };
-  ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((id) => {
+  PLATFORM_IDS.forEach((id) => {
     if (globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(id)) result[id] = false;
   });
   return result;
@@ -293,7 +295,7 @@ function sanitizePlatformVisible(raw, fallback = DEFAULT_PLATFORM_VISIBLE) {
 }
 
 function applyPlatformVisibility() {
-  const buttons = { ve: veStatusBtn, ykt: yktStatusBtn, mrjzy: mrjzyStatusBtn, jlgj: jlgjStatusBtn, mooc: moocStatusBtn };
+  const buttons = { ve: veStatusBtn, ykt: yktStatusBtn, mrjzy: mrjzyStatusBtn, jlgj: jlgjStatusBtn, mooc: moocStatusBtn, xuetangx: xuetangxStatusBtn };
   Object.entries(buttons).forEach(([key, button]) => {
     if (!button) return;
     const moduleMissing = globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(key);
@@ -322,7 +324,7 @@ async function savePlatformEnabledToStorage() {
 
 function disablePlatformAfterLoginFailure(platform) {
   const p = normalizePlatformId(platform);
-  if (!['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].includes(p)) return;
+  if (!PLATFORM_IDS.includes(p)) return;
   if (!window.platformEnabled?.[p]) return;
 
   window.platformEnabled[p] = false;
@@ -458,6 +460,8 @@ function clearPlatformData(platform) {
     clearJlgjStandaloneCards();
   } else if (platform === 'mooc') {
     window.BjtuMoocPlatform?.clear();
+  } else if (platform === 'xuetangx') {
+    window.BjtuXuetangxPlatform?.clear();
   }
 }
 
@@ -493,7 +497,7 @@ if (popupOpenFullscreenBtn) {
 
 function triggerExternalPlatformLoad(platform, forceReload = false) {
   platform = normalizePlatformId(platform);
-  if (!['ykt', 'mrjzy', 'jlgj', 'mooc'].includes(platform)) return;
+  if (!['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'].includes(platform)) return;
   if (!isPlatformEnabled(platform)) return;
   if (!forceReload && window.platformLoadedOnce?.[platform]) return;
 
@@ -535,9 +539,12 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
       rerenderAllHomeworkAreas();
       renderJlgjStandaloneCourses();
     });
-  } else {
+  } else if (platform === 'mooc') {
     setPlatformLoginState('mooc', 'checking');
     window.BjtuMoocPlatform?.load().catch(() => {});
+  } else {
+    setPlatformLoginState('xuetangx', 'checking');
+    window.BjtuXuetangxPlatform?.load().catch(() => {});
   }
 }
 
@@ -546,6 +553,7 @@ async function triggerInitialPlatformLoads() {
   if (isPlatformEnabled('ykt')) triggerExternalPlatformLoad('ykt', false);
   if (isPlatformEnabled('mrjzy')) triggerExternalPlatformLoad('mrjzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
+  if (isPlatformEnabled('xuetangx')) triggerExternalPlatformLoad('xuetangx', false);
   let veStartupResult = null;
   if (isPlatformEnabled('ve')) {
     veStartupResult = await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
@@ -701,7 +709,9 @@ function renderEnabledExternalStandaloneCourses() {
   if (isPlatformEnabled('ykt') && typeof renderYktStandaloneCourses === 'function') renderYktStandaloneCourses();
   if (isPlatformEnabled('mrjzy') && typeof renderMrjzyStandaloneCourses === 'function') renderMrjzyStandaloneCourses();
   if (isPlatformEnabled('jlgj') && typeof renderJlgjStandaloneCourses === 'function') renderJlgjStandaloneCourses();
+  if (isPlatformEnabled('xuetangx') && window.platformLoadedOnce?.xuetangx) window.BjtuXuetangxPlatform?.render();
 }
+globalThis.renderEnabledExternalStandaloneCourses = renderEnabledExternalStandaloneCourses;
 
 function hasMatchedExternalHomework(courseId) {
   const id = String(courseId || '');
@@ -717,7 +727,7 @@ function isPlatformChecking(platform) {
 
 function togglePlatformSelection(platform, options = {}) {
   platform = normalizePlatformId(platform);
-  if (!platform || !['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].includes(platform)) return;
+  if (!platform || !PLATFORM_IDS.includes(platform)) return;
   const interactive = options?.interactive !== false;
   const persist = options?.persist !== false;
   if (isPlatformChecking(platform)) {
@@ -822,7 +832,7 @@ function togglePlatformSelection(platform, options = {}) {
 
 function applyPlatformEnabledSettingFromStorage(raw) {
   const next = sanitizePlatformEnabled(raw, window.platformEnabled || DEFAULT_PLATFORM_ENABLED);
-  ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].forEach((platform) => {
+  PLATFORM_IDS.forEach((platform) => {
     if (isPlatformEnabled(platform) !== !!next[platform]) {
       togglePlatformSelection(platform, { interactive: false, persist: false });
     }
@@ -842,6 +852,11 @@ function setupOptionsStorageLiveSync() {
     if (changes.platformVisible) {
       window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
       applyPlatformVisibility();
+    }
+    if (changes.xuetangxCourseStatuses && isPlatformEnabled('xuetangx')) {
+      clearPlatformData('xuetangx');
+      window.platformLoadedOnce.xuetangx = false;
+      triggerExternalPlatformLoad('xuetangx', true);
     }
     if (!popupMode && changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY]) {
       setCourseHelperFocusMode(changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY].newValue === true);
@@ -978,7 +993,8 @@ const COURSE_PLATFORM_COLUMNS = Object.freeze([
   { id: 'ykt', label: '雨课堂' },
   { id: 'mrjzy', label: '每日交作业' },
   { id: 'jlgj', label: '接龙管家' },
-  { id: 'mooc', label: '中国大学MOOC' }
+  { id: 'mooc', label: '中国大学MOOC' },
+  { id: 'xuetangx', label: '学堂在线' }
 ]);
 const COURSE_HELPER_EXPANDED_DEFAULT_KEY = 'courseHelperExpandedByDefault';
 const SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY = 'showCourseListDuringLayoutTransition';
@@ -1046,6 +1062,7 @@ function getCourseCardPlatform(card) {
   if (courseId.startsWith('mrjzy-') || card.classList.contains('mrjzy-standalone-card')) return 'mrjzy';
   if (courseId.startsWith('jlgj-') || card.classList.contains('jlgj-standalone-card')) return 'jlgj';
   if (courseId.startsWith('mooc-') || card.classList.contains('mooc-standalone-card')) return 'mooc';
+  if (courseId.startsWith('xuetangx-') || card.classList.contains('xuetangx-standalone-card')) return 'xuetangx';
   return 've';
 }
 
@@ -3358,6 +3375,7 @@ function isAnyExternalPlatformChecking() {
     || isPlatformEnabled('mrjzy') && window.platformLoginState?.mrjzy === 'checking'
     || isPlatformEnabled('jlgj') && window.platformLoginState?.jlgj === 'checking'
     || isPlatformEnabled('mooc') && window.platformLoginState?.mooc === 'checking'
+    || isPlatformEnabled('xuetangx') && window.platformLoginState?.xuetangx === 'checking'
   );
 }
 
@@ -3463,7 +3481,7 @@ function completeExternalLoginAssist(platform, forceReload = true) {
 
 function showPlatformNeedLoginToast(platform) {
   const p = String(platform || '').trim();
-  if (!['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].includes(p)) return;
+  if (!PLATFORM_IDS.includes(p)) return;
   if (!window.__platformOfflineToastById) window.__platformOfflineToastById = {};
   const now = Date.now();
   const lastAt = Number(window.__platformOfflineToastById[p] || 0);
@@ -3481,6 +3499,10 @@ function showPlatformNeedLoginToast(platform) {
   }
   if (p === 'mrjzy') {
     showToast(MRJZY_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
+    return;
+  }
+  if (p === 'xuetangx') {
+    showToast('如需查看学堂在线课程，请先在已打开的学堂在线页面登录。', 'warning', 3200);
     return;
   }
   showToast(p === 'mooc' ? MOOC_LOGIN_REQUIRED_HTML : JLGJ_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
@@ -3545,9 +3567,9 @@ function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
     if (!btn) return;
     btn.classList.remove('checking', 'offline', 'online', 'content-loading', 'unselected-checked-online', 'unselected-checked-offline', 'unselected-checked-checking');
     const id = String(btn.id || '');
-    const platform = id.includes('ve-status-btn')
+    const platform = String(btn.dataset.platform || btn.dataset.module || '') || (id.includes('ve-status-btn')
       ? 've'
-      : (id.includes('mrjzy-status-btn') ? 'mrjzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : (id.includes('mooc-status-btn') ? 'mooc' : 'ykt')));
+      : (id.includes('mrjzy-status-btn') ? 'mrjzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : (id.includes('mooc-status-btn') ? 'mooc' : 'ykt'))));
     const enabled = isPlatformEnabled(platform);
     const treatAsUnselected = !enabled || state === 'offline';
     if (!treatAsUnselected) {
@@ -3580,6 +3602,7 @@ function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
   apply(mrjzyStatusBtn, window.platformLoginState?.mrjzy || 'checking', '每日交作业');
   apply(jlgjStatusBtn, window.platformLoginState?.jlgj || 'checking', '接龙管家');
   apply(moocStatusBtn, window.platformLoginState?.mooc || 'checking', '中国大学MOOC');
+  apply(xuetangxStatusBtn, window.platformLoginState?.xuetangx || 'checking', '学堂在线');
   applyPlatformVisibility();
   if (scheduleLayout && window.courseHelperPlatformSplitMode) scheduleCourseCardsByPlatform();
 
@@ -3594,7 +3617,7 @@ function shouldShowNoCoursePlaceholder() {
   if (!courseListDiv) return false;
   if (courseListDiv.querySelector('.file-item')) return false;
 
-  const selected = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc'].filter((p) => isPlatformEnabled(p));
+  const selected = PLATFORM_IDS.filter((p) => isPlatformEnabled(p));
   if (!selected.length) return true;
 
   const allOffline = selected.every((p) => (window.platformLoginState?.[p] || 'checking') === 'offline');
@@ -5516,6 +5539,19 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     sortCourseCards: () => sortCourseCardsWithGuard(),
     loginRequired: () => openMoocLoginAssistPopup(true)
   });
+  window.BjtuXuetangxPlatform?.init({
+    courseList: courseListDiv,
+    escape: escapeHtml,
+    toast: showToast,
+    setState: (state) => setPlatformLoginState('xuetangx', state),
+    setLoaded: (loaded) => { window.platformLoadedOnce.xuetangx = !!loaded; },
+    setProgress: (completed, total) => setPlatformContentLoadProgress('xuetangx', completed, total),
+    updateEmpty: updateCourseListEmptyPlaceholder,
+    scheduleCache: () => scheduleFullscreenCourseCacheSave(200),
+    updateCountdowns: updateAllCountdowns,
+    animateHomeworkGroupVisibility,
+    sortCourseCards: () => sortCourseCardsWithGuard()
+  });
   await loadCourseHelperLayoutSettings();
   await loadPopupCacheEnabledSetting();
   const showAutoLoadResourcesDisabledNotice = await migrateAutoLoadCourseResourcesDefaultOff();
@@ -5549,7 +5585,8 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
       mooc: false,
       mrjzy: false,
       ve: globalThis.BjtuModuleRegistry?.has('ve') === true,
-      ykt: false
+      ykt: false,
+      xuetangx: false
     };
   }
   if (!window.__updateCheckerLoaded) {

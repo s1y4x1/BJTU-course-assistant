@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BJTU 课程助手",
-  "description": "聚合智慧课程平台、雨课堂、每日交作业、接龙管家和中国大学MOOC的课程与作业，并支持教务系统登录和成绩提醒。",
+  "description": "聚合智慧课程平台、雨课堂、每日交作业、接龙管家、中国大学MOOC和学堂在线的课程与作业，并支持教务系统登录和成绩提醒。",
   "version": "12.7.3",
   "default_locale": "zh_CN",
   "icons": {
@@ -39,6 +39,7 @@
     "https://www.jielong.com/*",
     "https://i.jielong.com/*",
     "https://www.icourse163.org/*",
+    "https://www.xuetangx.com/*",
     "https://aa.bjtu.edu.cn/*",
     "https://login.bjtu.edu.cn:802/*",
     "https://mis.bjtu.edu.cn/*",

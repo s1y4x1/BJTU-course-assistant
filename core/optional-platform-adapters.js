@@ -65,5 +65,9 @@
       defineFunction('openMoocLoginAssistPopup', noop);
       global.BjtuMoocPlatform = null;
     }
+
+    if (!available.xuetangx) {
+      global.BjtuXuetangxPlatform = null;
+    }
   })();
 })(globalThis);

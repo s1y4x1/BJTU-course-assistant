@@ -6,7 +6,8 @@
     ykt: '雨课堂',
     mrjzy: '每日交作业',
     jlgj: '接龙管家',
-    mooc: '中国大学MOOC'
+    mooc: '中国大学MOOC',
+    xuetangx: '学堂在线'
   });
   const ACTION_NAMES = Object.freeze({
     view: '查看',

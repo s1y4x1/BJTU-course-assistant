@@ -1913,7 +1913,7 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
   if (!courses || !courses.length) {
     setPlatformContentLoadProgress('ve', 0, 0);
     window.veHomeworkLoadPromise = Promise.resolve([]);
-    if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
+    globalThis.renderEnabledExternalStandaloneCourses?.();
     updateCourseListEmptyPlaceholder();
     return;
   }
@@ -2066,7 +2066,7 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
     }
   });
   window.veHomeworkLoadPromise = Promise.allSettled(homeworkLoadPromises);
-  if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
+  globalThis.renderEnabledExternalStandaloneCourses?.();
 
 }
 
