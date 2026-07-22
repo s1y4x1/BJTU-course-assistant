@@ -25,6 +25,8 @@
   let activeRequestTabId = null;
   let originTabPromise = null;
   let loadSerial = 0;
+  let qrLoginCancelled = false;
+  let qrLoginTabId = null;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const escape = (value) => env?.escape?.(String(value ?? '')) ?? String(value ?? '');
@@ -196,7 +198,8 @@
       throw error;
     }
     const result = execution?.[0]?.result;
-    if (!result?.ok || !result?.data) {
+    const hasStructuredApiError = !!result?.data && result.data.success === false;
+    if ((!result?.ok && !hasStructuredApiError) || !result?.data) {
       const loginLike = [401, 403].includes(Number(result?.status))
         || /login|登录|<!doctype|<html/i.test(String(result?.text || result?.responseUrl || ''));
       const error = new Error(loginLike
@@ -216,12 +219,258 @@
     }
   }
 
-  async function exposeLoginTab() {
-    if (!activeRequestTabId || !helperTabIds.has(Number(activeRequestTabId))) return;
-    await chrome.tabs.update(Number(activeRequestTabId), { active: true }).catch(() => {});
-    const tab = await chrome.tabs.get(Number(activeRequestTabId)).catch(() => null);
-    if (tab?.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
-    helperTabIds.delete(Number(activeRequestTabId));
+  function getQrLoginModal() {
+    let modal = document.getElementById('xuetangx-login-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'xuetangx-login-modal';
+    modal.className = 'version-modal-mask xuetangx-login-mask';
+    modal.innerHTML = `<div class="version-modal-card xuetangx-login-card">
+      <div class="version-modal-header">
+        <div class="xuetangx-login-title">登录学堂在线</div>
+        <button type="button" class="btn version-close-btn" data-xuetangx-login-close title="关闭" aria-label="关闭">×</button>
+      </div>
+      <div class="xuetangx-login-body">
+        <div class="xuetangx-login-status"><span class="spinner xuetangx-inline-spinner"></span> 正在获取登录二维码…</div>
+        <img class="xuetangx-login-qr" alt="学堂在线微信登录二维码" hidden>
+        <div class="xuetangx-login-tip">请使用微信扫码登录</div>
+      </div>
+    </div>`;
+    modal.addEventListener('click', (event) => {
+      if (!event.target.closest('[data-xuetangx-login-close]')) return;
+      qrLoginCancelled = true;
+      loadSerial += 1;
+      modal.classList.remove('show');
+      void stopQrLoginSocket();
+      closeCreatedHelperTabs();
+      env?.setState?.('offline');
+    });
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function showQrLoginModal(ticket = '') {
+    const modal = getQrLoginModal();
+    const image = modal.querySelector('.xuetangx-login-qr');
+    const status = modal.querySelector('.xuetangx-login-status');
+    if (ticket && image instanceof HTMLImageElement) {
+      if (image.src !== ticket) image.src = ticket;
+      image.hidden = false;
+      if (status) status.textContent = '等待扫码确认…';
+    } else {
+      if (image instanceof HTMLImageElement) image.hidden = true;
+      if (status) status.innerHTML = '<span class="spinner xuetangx-inline-spinner"></span> 正在获取登录二维码…';
+    }
+    modal.classList.add('show');
+  }
+
+  function hideQrLoginModal() {
+    document.getElementById('xuetangx-login-modal')?.classList.remove('show');
+  }
+
+  async function startQrLoginSocket(tabId) {
+    qrLoginTabId = Number(tabId) || null;
+    const result = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: () => {
+        const stateKey = '__bjtuXuetangxQrLoginState__';
+        const socketKey = '__bjtuXuetangxQrLoginSocket__';
+        try { globalThis[socketKey]?.close(); } catch {}
+        const state = { status: 'connecting', ticket: '', loginid: null, expiresAt: 0, error: '' };
+        globalThis[stateKey] = state;
+        try {
+          const socket = new WebSocket('wss://www.xuetangx.com/wsapp/');
+          globalThis[socketKey] = socket;
+          socket.addEventListener('open', () => {
+            state.status = 'requesting';
+            socket.send(JSON.stringify({ op: 'requestlogin', role: 'web', version: '1.4', purpose: 'login', xtbz: 'xt', 'x-client': 'web' }));
+          });
+          socket.addEventListener('message', (event) => {
+            let message = null;
+            try { message = JSON.parse(String(event.data || '')); } catch { return; }
+            if (message?.op === 'requestlogin' && message.ticket) {
+              state.status = 'waiting';
+              state.ticket = String(message.ticket);
+              state.loginid = message.loginid ?? null;
+              state.expiresAt = Date.now() + Math.max(1, Number(message.expire_seconds) || 60) * 1000;
+            } else if (message?.op === 'loginsuccess') {
+              state.status = 'success';
+              state.token = String(message.token || '');
+              state.userId = message.u_id ?? message.UserID ?? null;
+            }
+          });
+          socket.addEventListener('error', () => {
+            if (state.status !== 'success') {
+              state.status = 'error';
+              state.error = '登录连接失败';
+            }
+          });
+          socket.addEventListener('close', () => {
+            if (state.status !== 'success') state.status = 'closed';
+          });
+          return true;
+        } catch (error) {
+          state.status = 'error';
+          state.error = String(error?.message || error);
+          return false;
+        }
+      }
+    });
+    return result?.[0]?.result === true;
+  }
+
+  async function readQrLoginState(tabId) {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: () => {
+        const state = globalThis.__bjtuXuetangxQrLoginState__;
+        return state ? { ...state } : null;
+      }
+    });
+    return result?.[0]?.result || null;
+  }
+
+  async function stopQrLoginSocket() {
+    const tabId = Number(qrLoginTabId || activeRequestTabId || 0);
+    qrLoginTabId = null;
+    if (!tabId) return;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: () => {
+        try { globalThis.__bjtuXuetangxQrLoginSocket__?.close(); } catch {}
+        delete globalThis.__bjtuXuetangxQrLoginSocket__;
+        delete globalThis.__bjtuXuetangxQrLoginState__;
+      }
+    }).catch(() => {});
+  }
+
+  async function completeWechatLogin(tabId, token) {
+    const sessionToken = String(token || '').trim();
+    if (!sessionToken) throw new Error('学堂在线扫码登录未返回 token');
+    const execution = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      args: [sessionToken],
+      func: async (s_s) => {
+        const cookieMap = Object.fromEntries(document.cookie.split(';').map((part) => {
+          const index = part.indexOf('=');
+          if (index < 0) return [part.trim(), ''];
+          const key = part.slice(0, index).trim();
+          const raw = part.slice(index + 1);
+          try { return [key, decodeURIComponent(raw)]; } catch { return [key, raw]; }
+        }));
+        const csrf = cookieMap.csrftoken || cookieMap.CSRF_TOKEN || cookieMap.x_csrftoken || '';
+        const readDistinctId = () => {
+          const candidates = [cookieMap.sensorsdata2015jssdkcross];
+          try {
+            for (let index = 0; index < localStorage.length; index += 1) {
+              const key = localStorage.key(index);
+              if (/sensor|distinct/i.test(String(key || ''))) candidates.push(localStorage.getItem(key));
+            }
+          } catch {}
+          for (const candidate of candidates) {
+            if (!candidate) continue;
+            let value = candidate;
+            try { value = decodeURIComponent(value); } catch {}
+            try {
+              const parsed = JSON.parse(value);
+              const found = parsed?.distinct_id ?? parsed?.distinctId ?? parsed?.props?.distinct_id;
+              if (found) return String(found);
+            } catch {}
+            const matched = String(value).match(/(?:distinct_id|distinctId)["'=:\s]+([^"'&,}\s]+)/i);
+            if (matched?.[1]) return matched[1];
+          }
+          return '';
+        };
+        const payload = {
+          s_s,
+          preset_properties: {
+            '$timezone_offset': new Date().getTimezoneOffset(),
+            '$screen_height': Number(globalThis.screen?.height || 0),
+            '$screen_width': Number(globalThis.screen?.width || 0),
+            '$lib': 'js',
+            '$lib_version': '1.19.14',
+            '$latest_traffic_source_type': '直接流量',
+            '$latest_search_keyword': '未取到值_直接打开',
+            '$latest_referrer': '',
+            '$is_first_day': false,
+            '$referrer': `${location.origin}/`,
+            '$referrer_host': location.host,
+            '$url': `${location.origin}/`,
+            '$url_path': '/',
+            '$title': document.title || '学堂在线 - 精品在线课程学习平台',
+            '_distinct_id': readDistinctId()
+          },
+          page_name: '首页'
+        };
+        const headers = {
+          accept: 'application/json, text/plain, */*',
+          'content-type': 'application/json;charset=UTF-8',
+          'x-client': 'web',
+          xtbz: 'xt'
+        };
+        if (csrf) headers['x-csrftoken'] = csrf;
+        try {
+          const response = await fetch('https://www.xuetangx.com/api/v1/u/login/wx/', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            credentials: 'include',
+            cache: 'no-store'
+          });
+          const text = await response.text();
+          let data = null;
+          try { data = JSON.parse(text); } catch {}
+          return {
+            ok: response.ok && data?.success !== false,
+            status: response.status,
+            data,
+            message: data?.msg || data?.message || (data ? '' : text.slice(0, 300))
+          };
+        } catch (error) {
+          return { ok: false, status: 0, message: String(error?.message || error) };
+        }
+      }
+    });
+    const result = execution?.[0]?.result;
+    if (!result?.ok) {
+      throw new Error(`学堂在线微信登录失败${result?.status ? `（HTTP ${result.status}）` : ''}${result?.message ? `：${result.message}` : ''}`);
+    }
+    return result.data;
+  }
+
+  async function waitForQrLogin(serial) {
+    qrLoginCancelled = false;
+    showQrLoginModal();
+    while (serial === loadSerial && !qrLoginCancelled) {
+      const tab = await ensureOriginTab(serial);
+      showQrLoginModal();
+      await startQrLoginSocket(tab.id);
+      while (serial === loadSerial && !qrLoginCancelled) {
+        const state = await readQrLoginState(tab.id).catch(() => null);
+        if (!state) break;
+        if (state.ticket) showQrLoginModal(state.ticket);
+        if (state.status === 'success') {
+          const status = document.querySelector('#xuetangx-login-modal .xuetangx-login-status');
+          if (status) status.innerHTML = '<span class="spinner xuetangx-inline-spinner"></span> 正在完成登录…';
+          await completeWechatLogin(tab.id, state.token);
+          hideQrLoginModal();
+          await stopQrLoginSocket();
+          await chrome.tabs.reload(tab.id).catch(() => {});
+          await waitForTabComplete(tab.id).catch(() => {});
+          env?.toast?.('学堂在线登录成功', 'success');
+          return true;
+        }
+        if (state.status === 'error' || state.status === 'closed' || (state.expiresAt && Date.now() >= state.expiresAt)) break;
+        await sleep(500);
+      }
+      await stopQrLoginSocket();
+      if (!qrLoginCancelled && serial === loadSerial) await sleep(500);
+    }
+    throw Object.assign(new Error('已取消学堂在线扫码登录'), { code: 'cancelled' });
   }
 
   function collectEvaluationLeaves(scoreData) {
@@ -239,6 +488,37 @@
     };
     visit(scoreData?.score_detail || []);
     return map;
+  }
+
+  function flattenEvaluationLeaves(scoreData) {
+    const rows = [];
+    const visit = (value, path = []) => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach((item) => visit(item, path));
+        return;
+      }
+      const leafId = value?.score_info?.leaf_id ?? value?.id;
+      const tagId = Number(value?.evaluation_tag?.id ?? value?.etag_info?.etag_id ?? 0);
+      if (leafId && tagId) {
+        const timeInfo = value.time_info || {};
+        rows.push({
+          id: leafId,
+          name: value.name || value?.evaluation_tag?.name || value?.etag_info?.etag_name,
+          leaf_type: value.type,
+          start_time: timeInfo.start_time,
+          score_deadline: timeInfo.score_deadline,
+          end_time: timeInfo.end_time,
+          is_locked: timeInfo.is_locked,
+          chapterPath: path
+        });
+        return;
+      }
+      const nextPath = value.name ? [...path, String(value.name)] : path;
+      Object.values(value).forEach((item) => visit(item, nextPath));
+    };
+    visit(scoreData?.score_detail || [], []);
+    return rows;
   }
 
   function flattenChapterLeaves(root) {
@@ -304,7 +584,8 @@
     const totalSchedule = scheduleResponse?.data?.total_schedule ?? scheduleResponse?.total_schedule ?? 0;
     const scoreData = evaluationResponse?.data ?? evaluationResponse ?? {};
     const evaluationLeaves = collectEvaluationLeaves(scoreData);
-    const leaves = flattenChapterLeaves(chapterRoot);
+    const chapterLeaves = flattenChapterLeaves(chapterRoot);
+    const leaves = chapterLeaves.length ? chapterLeaves : flattenEvaluationLeaves(scoreData);
     course.teachers = (Array.isArray(teachers) ? teachers : [])
       .map((teacher) => String(teacher?.name || '').trim()).filter(Boolean);
     course.totalSchedule = normalizeSchedule(totalSchedule);
@@ -314,11 +595,12 @@
       const type = activityType(leaf, evaluationLeaf);
       const schedule = normalizeSchedule(schedules[String(leaf.id)] ?? evaluationLeaf?.schedule ?? 0);
       const timeInfo = evaluationLeaf?.time_info || {};
-      const deadline = Number(timeInfo.score_deadline ?? leaf.score_deadline ?? timeInfo.end_time ?? leaf.end_time ?? 0) || 0;
+      const deadline = [timeInfo.score_deadline, leaf.score_deadline, timeInfo.end_time, leaf.end_time, course.classEnd]
+        .map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
       const scoreInfo = evaluationLeaf?.score_info || {};
-      const done = evaluationLeaf?.quiz_commit === true
-        || evaluationLeaf?.is_done === true
-        || schedule >= 0.9995;
+      const done = type.id === 6
+        ? schedule >= 0.9995
+        : (evaluationLeaf?.quiz_commit === true || evaluationLeaf?.is_done === true || schedule >= 0.9995);
       return {
         id: String(leaf.id),
         title: String(leaf.name || type.label),
@@ -337,6 +619,9 @@
         locked: timeInfo.is_locked === true || leaf.is_locked === true
       };
     });
+    if (!Object.keys(schedules || {}).length && course.tasks.length) {
+      course.totalSchedule = course.tasks.reduce((sum, task) => sum + task.schedule, 0) / course.tasks.length;
+    }
     course.detailLoaded = true;
     return course;
   }
@@ -348,14 +633,13 @@
 
   function renderTask(course, task) {
     const palette = global.BjtuHomeworkUi.homeworkPalette({ done: task.done, overdue: task.overdue });
-    const statusHtml = global.BjtuHomeworkUi.statusHtml({ done: task.done, overdue: task.overdue });
-    const countdown = !task.done && !task.overdue && task.deadline
-      ? `<span class="deadline-countdown" data-deadline="${escape(task.deadline)}"></span>`
-      : '';
     const scoreVisible = task.done || Number(task.userScore) > 0;
-    const score = scoreVisible && task.userScore !== null
-      ? `<span class="xuetangx-task-score">${escape(task.userScore)}${task.totalScore !== null ? `/${escape(task.totalScore)}` : ''} 分</span>`
-      : (task.totalScore !== null ? `<span class="xuetangx-task-score">总分 ${escape(task.totalScore)}</span>` : '');
+    const score = global.BjtuHomeworkUi.scoreBadgeHtml({
+      userScore: task.userScore,
+      totalScore: task.totalScore,
+      visible: scoreVisible,
+      escape
+    });
     const actionLabel = global.BjtuHomeworkUi.actionLabel('xuetangx', task.action, { lead: '去' });
     const chapter = task.chapterPath.filter(Boolean).slice(1).join(' / ');
     return global.BjtuHomeworkUi.renderHomeworkCard({
@@ -366,9 +650,9 @@
       headClass: 'xuetangx-task-head',
       mainClass: 'xuetangx-task-main',
       actionsClass: 'xuetangx-task-actions',
-      titleHtml: `<div class="xuetangx-task-title" style="color:${palette.foreground};"><span class="xuetangx-task-kind">${escape(task.typeLabel)}</span>${escape(task.title)}</div>`,
-      metaHtml: `<div class="xuetangx-task-meta"><span>截止：<strong>${escape(formatTime(task.deadline))}</strong></span>${statusHtml ? ` ${statusHtml}` : ''}${countdown}${chapter ? ` · ${escape(chapter)}` : ''}</div>
-        <div class="xuetangx-task-progress"><span>进度 ${escape(formatProgress(task.schedule))}</span><span class="xuetangx-task-progress-track"><span style="width:${Math.round(task.schedule * 10000) / 100}%"></span></span></div>`,
+      titleHtml: global.BjtuHomeworkUi.titleHtml({ typeLabel: task.typeLabel, title: task.title, color: palette.foreground, href: taskUrl(course, task), escape, className: 'xuetangx-task-title' }),
+      metaHtml: `${global.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), done: task.done, overdue: task.overdue, escape })}${chapter ? `<div class="xuetangx-task-meta">${escape(chapter)}</div>` : ''}
+        ${global.BjtuHomeworkUi.progressHtml({ ratio: task.schedule, escape, color: THEME_COLOR })}`,
       actionsHtml: `${score}${global.BjtuHomeworkUi.renderActionLink({
         href: taskUrl(course, task),
         label: actionLabel,
@@ -380,10 +664,10 @@
   }
 
   function renderToggle(courseId, kind, expanded, count) {
-    const noun = kind === 'done' ? '已完成项目' : '逾期项目';
-    const label = expanded ? `收起${noun}` : `查看${noun}`;
+    const labels = global.BjtuHomeworkUi.toggleLabels(kind);
+    const label = expanded ? labels.expanded : labels.collapsed;
     return `<div class="homework-toggle-row homework-toggle-row--${kind}">
-      <button class="btn homework-toggle-btn ${expanded ? 'is-expanded homework-toggle-btn--up' : 'homework-toggle-btn--down'}" data-xuetangx-action="toggle-${kind}" data-course-id="${escape(courseId)}" data-count="${escape(count)}" data-collapsed-text="查看${noun}" data-expanded-text="收起${noun}" aria-expanded="${expanded ? 'true' : 'false'}">
+      <button class="btn homework-toggle-btn ${expanded ? 'is-expanded homework-toggle-btn--up' : 'homework-toggle-btn--down'}" data-xuetangx-action="toggle-${kind}" data-course-id="${escape(courseId)}" data-count="${escape(count)}" data-collapsed-text="${escape(labels.collapsed)}" data-expanded-text="${escape(labels.expanded)}" aria-expanded="${expanded ? 'true' : 'false'}">
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
         <span class="homework-toggle-label">${escape(label)} (${escape(count)})</span>
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
@@ -445,9 +729,19 @@
       requestJson(`${BASE}/api/v1/lms/learn/get_evaluation_detail/?${query}`, serial)
     ]);
     if (serial !== loadSerial) return;
-    const failed = [basic, chapter, schedule, evaluation].find((response) => response?.success === false);
+    const endedError = (response) => course.status === 3
+      && response?.success === false
+      && Number(response?.error_code) === 80013;
+    const failed = [basic, evaluation].find((response) => response?.success === false)
+      || [chapter, schedule].find((response) => response?.success === false && !endedError(response));
     if (failed) throw new Error(failed.msg || '学堂在线课程详情接口返回失败');
-    hydrateCourse(course, basic, chapter, schedule, evaluation);
+    hydrateCourse(
+      course,
+      basic,
+      endedError(chapter) ? { data: { course_chapter: null }, success: true } : chapter,
+      endedError(schedule) ? { data: { leaf_schedules: {}, total_schedule: 0 }, success: true } : schedule,
+      evaluation
+    );
   }
 
   async function load() {
@@ -505,8 +799,19 @@
       clearCards();
       env?.setLoaded?.(false);
       if (error?.code === 'not-logged-in') {
-        await exposeLoginTab();
-        env?.setState?.('offline');
+        env?.setState?.('checking');
+        try {
+          await waitForQrLogin(serial);
+          if (serial === loadSerial && !qrLoginCancelled) return load();
+        } catch (loginError) {
+          if (loginError?.code !== 'cancelled' && serial === loadSerial) {
+            hideQrLoginModal();
+            await stopQrLoginSocket();
+            closeCreatedHelperTabs();
+            env?.toast?.(`学堂在线扫码登录失败：${loginError?.message || loginError}`, 'error');
+            env?.setState?.('offline');
+          }
+        }
       } else {
         env?.setState?.('checking');
         env?.toast?.(`学堂在线加载失败：${error?.message || error}`, 'error');
@@ -561,10 +866,13 @@
     render,
     clear() {
       loadSerial += 1;
+      qrLoginCancelled = true;
       courses = [];
       expandedGroups.clear();
       clearCards();
       env?.setProgress?.(0, 0);
+      hideQrLoginModal();
+      void stopQrLoginSocket();
       closeCreatedHelperTabs();
       activeRequestTabId = null;
       originTabPromise = null;

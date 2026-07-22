@@ -364,13 +364,7 @@ let moocLoginAssistPopupTabId = null;
   function renderTask(course, task) {
     const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done: task.done, overdue: task.overdue });
     const colors = [palette.background, palette.border, palette.foreground];
-    const score = task.userScore !== null
-      ? `<span class="mooc-score">[${env.escape(String(task.userScore))}${task.totalScore !== null ? `/${env.escape(String(task.totalScore))}` : ''}]</span>`
-      : '';
-    const countdown = !task.done && !task.overdue && task.deadline
-      ? `<span class="deadline-countdown" data-deadline="${env.escape(String(task.deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>`
-      : '';
-    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done: task.done, overdue: task.overdue });
+    const score = globalThis.BjtuHomeworkUi.scoreBadgeHtml({ userScore: task.userScore, totalScore: task.totalScore, escape: env.escape });
     const goActionText = globalThis.BjtuHomeworkUi.actionLabel('mooc', actionKind(task.type), { lead: '前往' });
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done: task.done,
@@ -381,8 +375,8 @@ let moocLoginAssistPopupTabId = null;
       headStyle: '',
       mainClass: 'mooc-task-main',
       actionsClass: 'mooc-task-actions',
-      titleHtml: `<div class="mooc-task-title" style="color:${palette.foreground};"><span class="mooc-task-kind">${typeText(task.type)}</span>${env.escape(task.title)}</div>`,
-      metaHtml: `<div class="mooc-task-meta">截止：<span class="mooc-deadline">${env.escape(formatTime(task.deadline))}</span>${statusHtml ? ` ${statusHtml}` : ''}${countdown}${task.chapterName ? ` · ${env.escape(task.chapterName)}` : ''}</div>`,
+      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: typeText(task.type), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape: env.escape, className: 'mooc-task-title' }),
+      metaHtml: `${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div class="mooc-task-meta">${env.escape(task.chapterName)}</div>` : ''}`,
       actionsHtml: `${score}<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
           <button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>

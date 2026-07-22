@@ -4560,11 +4560,9 @@ function renderHomeworkList(courseId) {
     const homeworkTypeLabel = ({ 0: '作业', 1: '课程报告', 2: '实验' })[homeworkSubType] || '作业';
     const homeworkCourseToPage = ({ 0: 10460, 1: 10461, 2: 10462 })[homeworkSubType] || 10460;
     const homeworkPageUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=${homeworkCourseToPage}&courseId=${encodeURIComponent(homeworkCourseNum)}&cId=${encodeURIComponent(courseId)}&xknId=${encodeURIComponent(homeworkFzId)}&xkhId=${encodeURIComponent(homeworkFzId)}&xqCode=${encodeURIComponent(homeworkXqCode)}`;
-    const homeworkTypeBadge = `<a href="${homeworkPageUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; color:inherit; text-decoration:none; font-size:10px; line-height:1.3; vertical-align:1px;">${escapeHtml(homeworkTypeLabel)}</a>`;
     const sub = hw.subStatus || (isDone ? '已提交' : '未提交');
     const time = hw.subTime || '';
     const deadline = hw.end_time || hw.endTime || '';
-    const statusHtml = isTeacherMode ? '' : globalThis.BjtuHomeworkUi.statusHtml({ done: isDone, overdue });
 
     const obtainedScore = hw.lastScore ?? hw.oldScore ?? hw.old_score ?? hw.finalScore ?? hw.final_score ?? '';
     const fullScore = hw.score ?? hw.fullScore ?? hw.maxScore ?? hw.totalScore ?? '';
@@ -4582,13 +4580,11 @@ function renderHomeworkList(courseId) {
         scoreHtml = `<span style="font-weight:bold; color:#1d4ed8; margin-left:5px;">[总分 ${escapeHtml(shownTotal)}]</span>`;
       }
     } else if (cachedScore !== undefined && cachedScore !== null) {
-      const totalStr = fullScore ? `/${fullScore}` : '';
-      scoreHtml = `<span style="font-weight:bold; color:#E91E63; margin-left:5px;">[${escapeHtml(String(cachedScore))}${escapeHtml(totalStr)}]</span>`;
+      scoreHtml = globalThis.BjtuHomeworkUi.scoreBadgeHtml({ userScore: cachedScore, totalScore: fullScore || null, escape: escapeHtml });
     } else if (isDone) {
       const shown = String(obtainedScore || '').trim();
       if (shown) {
-        const totalStr = fullScore ? `/${fullScore}` : '';
-        scoreHtml = `<span style="font-weight:bold; color:#E91E63; margin-left:5px;">[${escapeHtml(shown)}${escapeHtml(totalStr)}]</span>`;
+        scoreHtml = globalThis.BjtuHomeworkUi.scoreBadgeHtml({ userScore: shown, totalScore: fullScore || null, escape: escapeHtml });
       }
     }
 
@@ -4610,7 +4606,6 @@ function renderHomeworkList(courseId) {
       expanded
     });
     const viewBtnColor = isTeacherMode ? '#1d4ed8' : (isDone ? '#2E7D32' : '#0ea5e9');
-    const countdownSpan = (!isTeacherMode && !isDone && !overdue && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     const submitCount = hw.submitCount ?? hw.submit_count ?? hw.subCount ?? '';
     const allCount = hw.allCount ?? hw.all_count ?? hw.totalCount ?? '';
     const submitCountHtml = submitCount !== '' || allCount !== ''
@@ -4649,8 +4644,8 @@ function renderHomeworkList(courseId) {
       done: !isTeacherMode && isDone,
       background: bgColor,
       border: borderColor,
-      titleHtml: `<div style="font-weight:bold;color:${titleColor};">${homeworkTypeBadge}<a href="${homeworkPageUrl}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;">${escapeHtml(title)}</a></div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;display:flex;align-items:center;gap:0;flex-wrap:wrap;">截止：<span style="font-weight:700;color:#000;margin-left:3px;">${escapeHtml(deadline || '无')}</span> ${statusHtml}${countdownSpan}${submitCountHtml}</div>`,
+      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: homeworkTypeLabel, typeHref: homeworkPageUrl, title, color: titleColor, href: homeworkPageUrl, escape: escapeHtml }),
+      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: deadline || '无', done: isDone, overdue, showStatus: !isTeacherMode, showCountdown: !isTeacherMode, tailHtml: submitCountHtml, escape: escapeHtml }),
       actionsHtml: `${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}${actionButtonsHtml}`,
       detailHtml: `${attachmentHtml}${expandable ? `<div style="margin-top:3px;border-top:1px dashed ${borderColor}40;padding-top:0;">${expandable}</div>` : ''}${submitPanelHtml}`
     });

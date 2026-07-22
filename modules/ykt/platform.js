@@ -26,8 +26,11 @@ let yktLoginAssistPopupTabId = null;
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
 function isYktHomeworkDone(hw) {
-  if (Number(hw?.__actype) === 15 && hw?.video_total_done !== null && hw?.video_total_done !== undefined) {
-    return Number(hw.video_total_done) === 1;
+  if (Number(hw?.__actype) === 15) {
+    if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
+      return Number(hw.video_progress_ratio) >= 0.9995;
+    }
+    return Number(hw?.video_total_done) === 1;
   }
   const progress = Number(hw?.progress ?? 0);
   const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
@@ -410,19 +413,6 @@ function normalizeYktVideoProgress(progressRecord, leafId) {
   return { totalDone, ratio };
 }
 
-function formatYktVideoProgressText(hw) {
-  if (Number(hw?.__actype) !== 15) return '';
-  if (hw?.video_progress_ratio === null || hw?.video_progress_ratio === undefined) return '';
-  const ratio = Math.max(0, Math.min(1, Number(hw.video_progress_ratio) || 0));
-  const percent = ratio >= 1 ? '100' : (ratio <= 0 ? '0' : (ratio * 100).toFixed(ratio * 100 < 10 ? 1 : 0).replace(/\.0$/, ''));
-  return `${percent}%`;
-}
-
-function yktProgressSpinnerPhaseStyle(periodMs = 1000) {
-  const period = Math.max(1, Number(periodMs) || 1000);
-  return `animation-delay:-${Date.now() % period}ms;`;
-}
-
 async function fetchYktExamPaper(courseId, examId, sharedTabId = null) {
   const cid = String(courseId || '').trim();
   const eid = String(examId || '').trim();
@@ -618,32 +608,33 @@ function renderYktHomeworkItems(courseId, items) {
     const overdue = !done && isYktHomeworkOverdue(it);
     const progress = Number(it?.progress ?? 0);
     const problemCount = Number(it?.problem_count ?? 0);
-    const videoProgressText = formatYktVideoProgressText(it);
-    const progressText = videoProgressText || (problemCount > 0 ? `${progress}/${problemCount}` : '');
-    const progressHtml = it?.video_progress_loading
-      ? `<span class="spinner" aria-label="正在加载进度" style="display:inline-block; width:10px; height:10px; margin-left:2px; border-width:1px; border-color:#64748b; border-top-color:transparent; vertical-align:-1px; ${yktProgressSpinnerPhaseStyle()}"></span>`
-      : escapeHtml(progressText);
+    const progressText = problemCount > 0 ? `${progress}/${problemCount}` : '';
+    const isVideoActivity = Number(it?.__actype) === 15;
+    const progressHtml = isVideoActivity
+      ? globalThis.BjtuHomeworkUi.progressHtml({
+          ratio: it?.video_progress_ratio,
+          loading: !!it?.video_progress_loading,
+          escape: escapeHtml,
+          color: '#5096f5'
+        })
+      : (progressText ? `<div style="font-size:12px;color:#666;">进度：${escapeHtml(progressText)}</div>` : '');
     const hasScore = it?.score !== null && it?.score !== undefined && String(it.score) !== '';
-    const scoreText = hasScore
-      ? `${it.score}/${it?.total_score ?? ''}`
-      : '';
     const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done, overdue });
     const actionText = globalThis.BjtuHomeworkUi.actionLabel(
       'ykt',
       done ? 'view' : (Number(it?.__actype) === 15 ? 'learn' : 'submit')
     );
-    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done, overdue });
-    const titleScoreBadge = scoreText ? `<span style="font-weight:bold; color:#E91E63; white-space:nowrap;">[${escapeHtml(scoreText)}]</span>` : '';
+    const titleScoreBadge = globalThis.BjtuHomeworkUi.scoreBadgeHtml({
+      userScore: hasScore ? it.score : null,
+      totalScore: hasScore ? it.total_score : null,
+      escape: escapeHtml
+    });
     const deadline = it?.end || it?.deadline || '';
-    const countdownSpan = (!done && !overdue && !Number(it?.__loading) && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     const yktIdSeed = String(it?.id || it?.courseware_id || it?.classroom_id || idx).trim();
     const expandKey = `ykt:${yktIdSeed}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
     const actype = Number(it?.__actype);
     const activityTypeLabel = YKT_ACTIVITY_TYPE_LABELS[actype] || '';
-    const activityTypeBadge = activityTypeLabel
-      ? `<span style="display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; color:inherit; font-size:10px; line-height:1.3; vertical-align:1px;">${escapeHtml(activityTypeLabel)}</span>`
-      : '';
     const isExam = actype === 5;
     const examDetail = isExam ? renderYktExamProblemsHtml(it?.exam_problems || [], done) : '';
     let detailStatusHtml = '';
@@ -671,8 +662,8 @@ function renderYktHomeworkItems(courseId, items) {
       done,
       background: palette.background,
       border: palette.border,
-      titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${activityTypeBadge}${escapeHtml(it.title || '雨课堂作业')}</div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;">截止：<span style="font-weight:700;color:#000;">${escapeHtml(formatYktDateTime(it.end))}</span> ${statusHtml}${countdownSpan}</div><div style="font-size:12px;color:#666;">${progressHtml ? `进度：${progressHtml}` : ''}</div>`,
+      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: activityTypeLabel, title: it.title || '雨课堂作业', color: palette.foreground, href: it.link, escape: escapeHtml }),
+      metaHtml: `${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: formatYktDateTime(it.end), done, overdue, loading: !!Number(it?.__loading), escape: escapeHtml })}${progressHtml}`,
       actionsHtml: `${titleScoreBadge ? `<div style="font-size:12px;line-height:1;">${titleScoreBadge}</div>` : ''}${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })}`,
       detailHtml: `${detailExpandable ? `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;">${detailExpandable}</div>` : ''}${detailStatusHtml}`
     });

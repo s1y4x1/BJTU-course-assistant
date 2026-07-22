@@ -715,19 +715,17 @@ function renderJlgjHomeworkItems(items) {
     }));
     const link = String(it?.link || JLGJ_WEB_BASE);
     const actionText = globalThis.BjtuHomeworkUi.actionLabel('jlgj', done ? 'view' : 'submit');
-    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done, overdue });
     const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : formatJlgjDateTime(it.end);
     const endSuffix = isLoadingMeta
       ? ` <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : '';
-    const countdownSpan = (!done && !overdue && !isLoadingMeta && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done,
       background: palette.background,
       border: palette.border,
-      titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${escapeHtml(it.title || '接龙作业')}</div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;">截止：<span style="font-weight:700;color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>`,
+      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ title: it.title || '接龙作业', color: palette.foreground, href: link, escape: escapeHtml }),
+      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: endText, done, overdue, loading: isLoadingMeta, suffixHtml: endSuffix, escape: escapeHtml }),
       actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: link, label: actionText, color: palette.action, escape: escapeHtml }),
       detailHtml: `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;font-size:12px;color:#374151;line-height:1.45;">${expandableContentHtml}</div>`
     });

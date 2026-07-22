@@ -282,20 +282,18 @@ function renderMrjzyHomeworkItems(items) {
     const overdue = !done && isMrjzyHomeworkOverdue(it);
     const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done, overdue });
     const actionText = globalThis.BjtuHomeworkUi.actionLabel('mrjzy', done ? 'view' : 'submit');
-    const statusHtml = globalThis.BjtuHomeworkUi.statusHtml({ done, overdue });
     const isLoadingMeta = !!it?.loadingMeta;
     const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : String(it.end || '无');
     const endSuffix = isLoadingMeta
       ? ` <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : '';
-    const countdownSpan = (!done && !overdue && !isLoadingMeta && deadline) ? `<span class="deadline-countdown" data-deadline="${escapeHtml(String(deadline))}" style="margin-left:4px; font-weight:normal; color:#e65100"></span>` : '';
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done,
       background: palette.background,
       border: palette.border,
-      titleHtml: `<div style="font-weight:bold;color:${palette.foreground};">${escapeHtml(it.title || '每日交作业')}</div>`,
-      metaHtml: `<div style="font-size:12px;color:#666;">截止：<span style="font-weight:700;color:#000;">${escapeHtml(endText)}</span>${endSuffix} ${statusHtml}${countdownSpan}</div>`,
+      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ title: it.title || '每日交作业', color: palette.foreground, href: it.link, escape: escapeHtml }),
+      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: endText, done, overdue, loading: isLoadingMeta, suffixHtml: endSuffix, escape: escapeHtml }),
       actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })
     });
   }).join('');
