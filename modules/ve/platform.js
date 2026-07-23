@@ -1902,22 +1902,27 @@ function autoLoadCourseResourcesForRenderedCourses() {
   });
 }
 
-function renderCourseList(courses, { cachedOnly = false } = {}) {
-  courseListDiv.innerHTML = '';
+function renderCourseList(courses, {
+  cachedOnly = false,
+  append = false,
+  deferExternal = false,
+  orderOffset = 0
+} = {}) {
+  if (!append) courseListDiv.innerHTML = '';
   const homeworkLoadPromises = [];
   const allowNetworkLoad = !cachedOnly;
   const progressVersion = window.courseListLoadVersion;
   let completedHomeworkLoads = 0;
   if (!courses || !courses.length) {
-    setPlatformContentLoadProgress('ve', 0, 0);
+    if (!append) setPlatformContentLoadProgress('ve', 0, 0);
     window.veHomeworkLoadPromise = Promise.resolve([]);
-    globalThis.renderEnabledExternalStandaloneCourses?.();
+    if (!deferExternal) globalThis.renderEnabledExternalStandaloneCourses?.();
     updateCourseListEmptyPlaceholder();
     return;
   }
-  setPlatformContentLoadProgress('ve', 0, allowNetworkLoad ? courses.length : 0);
+  if (!append) setPlatformContentLoadProgress('ve', 0, allowNetworkLoad ? courses.length : 0);
 
-  courses.forEach(course => {
+  courses.forEach((course, courseIndex) => {
     const courseId = course.id || course.cId || course.courseId || course.course_id;
     const courseNumRaw = course.course_num || course.courseNum || course.courseNo || course.course_id || courseId;
     const courseNum = getVeCourseSeq10(course) || String(courseNumRaw || '');
@@ -1930,7 +1935,7 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
 
     const card = globalThis.BjtuCourseCardUi.createCourseCard({
       courseId,
-      order: courses.indexOf(course),
+      order: Number(orderOffset || 0) + courseIndex,
       titleHtml: `<a href="${coursePlatformUrl}" target="_blank" rel="noopener noreferrer" style="color:#1565c0;text-decoration:none;">${escapeHtml(courseName)}</a>`,
       metaHtml: `<div style="font-size:12px;color:#666;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="ve-teacher-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
@@ -2022,7 +2027,7 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
     if (allowNetworkLoad) hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
 
     // Prioritize homework fetching before replay link prefetch.
-    updateCourseListEmptyPlaceholder();
+    if (!deferExternal) updateCourseListEmptyPlaceholder();
     const hwPromise = allowNetworkLoad
       ? checkHomework(courseId)
       : Promise.resolve().then(() => {
@@ -2064,7 +2069,7 @@ function renderCourseList(courses, { cachedOnly = false } = {}) {
     }
   });
   window.veHomeworkLoadPromise = Promise.allSettled(homeworkLoadPromises);
-  globalThis.renderEnabledExternalStandaloneCourses?.();
+  if (!deferExternal) globalThis.renderEnabledExternalStandaloneCourses?.();
 
 }
 

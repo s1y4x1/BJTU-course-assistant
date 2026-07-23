@@ -121,6 +121,7 @@ const forceAccountListInitialization = appSearchParams.get('accountInit') === '1
 const forceAccountPasswordMigration = appSearchParams.get('accountInit') === '2';
 if (popupMode) {
   document.body.classList.add('popup-mode');
+  globalThis.showPopupCacheLoadingFrame?.();
 }
 
 if (usernameInput) {

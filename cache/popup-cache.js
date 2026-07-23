@@ -123,14 +123,6 @@ function unwrapPlatformCourseColumnsForPopup(root) {
   root.style.removeProperty('grid-template-columns');
 }
 
-function getCollapsedCourseListHtmlForPopup() {
-  if (!courseListDiv) return '';
-  const clone = courseListDiv.cloneNode(true);
-  unwrapPlatformCourseColumnsForPopup(clone);
-  collapseRestoredCoursePanelsForPopup(clone);
-  return String(clone.innerHTML || '');
-}
-
 function getCollapsedCourseHomeworkDataForPopup() {
   const data = safeStorageClone(window.courseHomeworkData, {});
   Object.values(data).forEach((course) => {
@@ -180,6 +172,75 @@ function showPopupCacheNotice(cache) {
   }
   const savedAt = getPopupCacheTimestampText(cache?.savedAt);
   el.textContent = `于 ${savedAt} 缓存。如需更新，请重启平台或全屏打开。`;
+}
+
+function waitForPopupCachePaint() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== 'function') {
+      setTimeout(resolve, 0);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+function showPopupCacheLoadingFrame() {
+  if (!popupMode || !courseListDiv) return;
+  courseListDiv.innerHTML = `<div class="popup-cache-loading" role="status">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>正在读取缓存…</span>
+  </div>`;
+}
+
+async function renderPopupCachedCoursesProgressively({
+  canRenderStructuredVeCache,
+  hasStructuredExternalData,
+  cache
+}) {
+  if (!courseListDiv) return;
+  if (canRenderStructuredVeCache) {
+    const courses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+    const batchSize = 4;
+    courseListDiv.innerHTML = '';
+    for (let offset = 0; offset < courses.length; offset += batchSize) {
+      renderCourseList(courses.slice(offset, offset + batchSize), {
+        cachedOnly: true,
+        append: offset > 0,
+        deferExternal: true,
+        orderOffset: offset
+      });
+      await Promise.resolve(window.veHomeworkLoadPromise).catch(() => {});
+      updateCourseListEmptyPlaceholder();
+      await waitForPopupCachePaint();
+    }
+  } else if (hasStructuredExternalData) {
+    courseListDiv.innerHTML = '';
+  } else {
+    courseListDiv.innerHTML = String(cache.courseListHtml || '');
+    return;
+  }
+
+  const renderers = [
+    isPlatformEnabled('ykt') && typeof renderYktStandaloneCourses === 'function'
+      ? () => renderYktStandaloneCourses()
+      : null,
+    isPlatformEnabled('mrjzy') && typeof renderMrjzyStandaloneCourses === 'function'
+      ? () => renderMrjzyStandaloneCourses()
+      : null,
+    isPlatformEnabled('jlgj') && typeof renderJlgjStandaloneCourses === 'function'
+      ? () => renderJlgjStandaloneCourses()
+      : null,
+    isPlatformEnabled('xuetangx') && window.platformLoadedOnce?.xuetangx
+      ? () => window.BjtuXuetangxPlatform?.render()
+      : null,
+    isPlatformEnabled('mooc')
+      ? () => window.BjtuMoocPlatform?.render()
+      : null
+  ].filter(Boolean);
+  for (const render of renderers) {
+    render();
+    await waitForPopupCachePaint();
+  }
 }
 
 function restoreFullscreenCacheStateForBackground(cache) {
@@ -250,11 +311,11 @@ async function saveFullscreenCourseCache({ force = false } = {}) {
     homeworkNoteAttachmentCacheByKey: safeStorageClone(window.homeworkNoteAttachmentCacheByKey, {}),
     veTeacherMetaByCourseId: safeStorageClone(window.veTeacherMetaByCourseId, {}),
     veCourseTeachersMetaByCourseId: safeStorageClone(window.veCourseTeachersMetaByCourseId, {}),
-    resourceSpaceItems: safeStorageClone(window.resourceSpaceItems, []),
+    resourceSpaceItems: [],
     currentAccountLoginName: String(window.currentAccountLoginName || ''),
     isTeacherAccount: !!window.isTeacherAccount,
-    courseListHtml: getCollapsedCourseListHtmlForPopup(),
-    resourceSpaceHtml: String(resourceSpaceList?.innerHTML || ''),
+    courseListHtml: '',
+    resourceSpaceHtml: '',
     resourceSpaceStatusText: String(resourceSpaceStatus?.textContent || ''),
     resourceSpaceCountText: String(resourceSpaceCount?.textContent || ''),
     xqSelectHtml: String(xqSelect?.innerHTML || ''),
@@ -367,6 +428,9 @@ function setupFullscreenCourseCacheObserver() {
 
 async function restorePopupFullscreenCacheIfNeeded() {
   if (!popupMode || !window.popupUseFullscreenCacheEnabled) return false;
+  window.__popupUsingFullscreenCache = true;
+  showPopupCacheLoadingFrame();
+  await waitForPopupCachePaint();
   let cache = null;
   try {
     const data = await chrome.storage.local.get([POPUP_FULLSCREEN_CACHE_KEY]);
@@ -374,7 +438,6 @@ async function restorePopupFullscreenCacheIfNeeded() {
   } catch {
     cache = null;
   }
-  window.__popupUsingFullscreenCache = true;
   const veModuleAvailable = globalThis.BjtuModuleRegistry?.has('ve') === true;
   const hasStructuredVeData = (cache?.backgroundStructuredVe === true || cache?.structuredCourseCache === true)
     && Array.isArray(cache?.currentVeCourseList);
@@ -452,18 +515,11 @@ async function restorePopupFullscreenCacheIfNeeded() {
   }
 
   if (courseListDiv) {
-    if (canRenderStructuredVeCache) {
-      renderCourseList(window.currentVeCourseList, { cachedOnly: true });
-      await Promise.resolve(window.veHomeworkLoadPromise).catch(() => {});
-      renderEnabledExternalStandaloneCourses();
-      window.BjtuMoocPlatform?.render();
-    } else if (hasStructuredExternalData) {
-      courseListDiv.innerHTML = '';
-      renderEnabledExternalStandaloneCourses();
-      window.BjtuMoocPlatform?.render();
-    } else {
-      courseListDiv.innerHTML = String(cache.courseListHtml || '');
-    }
+    await renderPopupCachedCoursesProgressively({
+      canRenderStructuredVeCache,
+      hasStructuredExternalData,
+      cache
+    });
     unwrapPlatformCourseColumnsForPopup(courseListDiv);
     collapseRestoredCoursePanelsForPopup(courseListDiv);
   }

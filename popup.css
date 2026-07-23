@@ -87,6 +87,26 @@ body.popup-mode #course-list {
     margin-top: 8px;
 }
 
+.popup-cache-loading {
+    min-height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.popup-cache-loading .spinner {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+}
+
+html[data-color-scheme="dark"] .popup-cache-loading {
+    color: #cbd5e1;
+}
+
 body.popup-mode .version-info {
     display: none !important;
 }
