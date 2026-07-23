@@ -1054,124 +1054,6 @@ body.platform-column-resizing {
     margin-bottom: 6px;
 }
 
-html:has(body.popup-mode) {
-    height: auto;
-    min-height: 100%;
-    overflow: auto;
-}
-body.popup-mode {
-    padding: 10px;
-    display: block;
-    height: auto;
-    min-height: 100%;
-    overflow-x: hidden;
-    overflow-y: auto;
-}
-body.popup-mode .layout-container {
-    display: block;
-}
-body.popup-mode .left-column {
-    display: none;
-}
-body.popup-mode .right-column {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    height: auto;
-    min-height: 0;
-    position: static;
-    top: auto;
-    max-height: none;
-    overflow: visible;
-    padding: 0;
-    background: transparent;
-    border-radius: 0;
-    box-shadow: none;
-}
-body.popup-mode .column-resizer {
-    display: none !important;
-}
-body.popup-mode .page-top-config {
-    position: static;
-    z-index: auto;
-    padding: 0;
-    background: transparent;
-    margin-bottom: 8px;
-}
-body.popup-mode .top-inline-controls {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-body.popup-mode .top-inline-controls #account-history-select {
-    flex: 0 0 auto;
-    width: auto;
-    min-width: 0;
-    max-width: 100%;
-    margin: 0;
-    box-sizing: border-box;
-}
-.popup-window-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: auto;
-    white-space: nowrap;
-}
-.popup-fullscreen-btn {
-    display: none;
-    background: #0f172a;
-    padding: 6px 10px;
-    height: 32px;
-    font-size: 12px;
-    line-height: 1.2;
-}
-.popup-fullscreen-btn:hover {
-    background: #1e293b;
-}
-html[data-color-scheme="dark"] .popup-fullscreen-btn {
-    background: #fff;
-    color: #000;
-    border: 1px solid #d1d5db;
-}
-html[data-color-scheme="dark"] .popup-fullscreen-btn:hover {
-    background: #f3f4f6;
-}
-body.popup-mode .popup-fullscreen-btn {
-    display: inline-flex;
-    margin-left: 0;
-    align-items: center;
-    justify-content: center;
-}
-/* Settings/options button: square, same height as fullscreen, gray background */
-#open-options-btn {
-    display: inline-flex;
-    width: 32px;
-    height: 32px;
-    margin-left: 6px;
-    align-items: center;
-    justify-content: center;
-    background: #6b7280;
-    color: #fff;
-    padding: 0;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1;
-}
-body.popup-mode #open-options-btn {
-    display: inline-flex;
-    margin-left: 0;
-}
-body.popup-mode #username-input,
-body.popup-mode #jsessionid-input,
-body.popup-mode #xq-select {
-    display: none !important;
-}
-body.popup-mode #course-list {
-    margin-top: 8px;
-}
-
 .upload-link-row { margin-top: 5px; word-break: break-all; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .upload-link-row .url-link { color: #4CAF50; text-decoration: none; font-weight: bold; font-size: 14px; flex: 1; }
 .upload-link-row .url-link:hover { text-decoration: underline; }
@@ -1197,9 +1079,6 @@ body.popup-mode #course-list {
     align-items: center;
     margin-right: 6px;
     white-space: nowrap;
-}
-body.popup-mode .version-info {
-    display: none !important;
 }
 .version-btn {
     display: inline-flex;
