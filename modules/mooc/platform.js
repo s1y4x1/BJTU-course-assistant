@@ -1,5 +1,3 @@
-const MOOC_LOGIN_LINK_HTML = '<a href="https://www.icourse163.org/" target="_blank" rel="noopener noreferrer" style="color:#00cc7e; text-decoration:none; font-weight:600;">中国大学MOOC</a>';
-const MOOC_LOGIN_REQUIRED_HTML = `如需查看${MOOC_LOGIN_LINK_HTML}课程，请前往登录`;
 const MOOC_LOGIN_ASSIST_URL = 'https://www.icourse163.org/passport/sns/doOAuth.htm?snsType=6&oauthType=login';
 let moocLoginAssistPollTimer = null;
 let moocLoginAssistChecking = false;

@@ -20,7 +20,6 @@ const totalPercentDiv = document.getElementById('total-percent');
 const totalEtaDiv = document.getElementById('total-eta');
 const copyAllBtn = document.getElementById('copy-all-btn');
 
-
 function cleanRpUrl(url, { keepG = false } = {}) {
   try {
     const u = new URL(url);
@@ -240,26 +239,6 @@ window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 }
 window.resourceDownloadQueueClearTimer = null;
 let resourceSpaceSearchKeyword = '';
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function normalizePlatformId(platform) {
   const p = String(platform || '').trim();
   return PLATFORM_IDS.includes(p) ? p : 've';
@@ -309,7 +288,7 @@ async function loadPlatformEnabledFromStorage() {
     const localData = await chrome.storage.local.get(['platformEnabled']);
     const saved = localData?.platformEnabled ?? null;
     window.platformEnabled = sanitizePlatformEnabled(saved, DEFAULT_PLATFORM_ENABLED);
-    chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
+    chrome.storage.sync.remove(['platformEnabled']).catch(() => { });
   } catch {
     window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
   }
@@ -318,7 +297,7 @@ async function loadPlatformEnabledFromStorage() {
 async function savePlatformEnabledToStorage() {
   const normalized = sanitizePlatformEnabled(window.platformEnabled);
   await chrome.storage.local.set({ platformEnabled: normalized });
-  await chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
+  await chrome.storage.sync.remove(['platformEnabled']).catch(() => { });
   scheduleFullscreenCourseCacheSave(200);
 }
 
@@ -332,7 +311,7 @@ function disablePlatformAfterLoginFailure(platform) {
   window.platformNeedLogin[p] = false;
   bumpPlatformLoadVersion(p);
 
-  savePlatformEnabledToStorage().catch(() => {});
+  savePlatformEnabledToStorage().catch(() => { });
 }
 
 const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
@@ -394,7 +373,7 @@ function showAutoLoadCourseResourcesDisabledNotice() {
   });
   const acknowledge = modal.querySelector('[data-action="acknowledge"]');
   acknowledge?.addEventListener('click', async () => {
-    await chrome.storage.local.set({ [AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY]: 'done' }).catch(() => {});
+    await chrome.storage.local.set({ [AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY]: 'done' }).catch(() => { });
     modal.remove();
   });
   const unlockAt = Date.now() + 2000;
@@ -471,13 +450,13 @@ if (openOptionsBtn) {
   openOptionsBtn.addEventListener('click', () => {
     if (typeof popupMode !== 'undefined' && popupMode) {
       // Navigate inside popup iframe instead of opening a new tab.
-      try { window.location.href = 'options.html?popup=1'; return; } catch {}
+      try { window.location.href = 'options.html?popup=1'; return; } catch { }
     }
     if (chrome.runtime && chrome.runtime.openOptionsPage) {
-      try { chrome.runtime.openOptionsPage(); return; } catch {}
+      try { chrome.runtime.openOptionsPage(); return; } catch { }
     }
     // fallback
-    try { chrome.tabs.create({ url: chrome.runtime.getURL('options.html') }); } catch {}
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('options.html') }); } catch { }
   });
 }
 
@@ -486,11 +465,11 @@ if (popupOpenFullscreenBtn) {
     try {
       chrome.runtime.sendMessage({ type: 'OPEN_APP' }, () => {
         if (chrome.runtime.lastError) {
-          try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch {}
+          try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch { }
         }
       });
     } catch {
-      try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch {}
+      try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch { }
     }
   });
 }
@@ -541,10 +520,10 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
     });
   } else if (platform === 'mooc') {
     setPlatformLoginState('mooc', 'checking');
-    window.BjtuMoocPlatform?.load().catch(() => {});
+    window.BjtuMoocPlatform?.load().catch(() => { });
   } else {
     setPlatformLoginState('xuetangx', 'checking');
-    window.BjtuXuetangxPlatform?.load().catch(() => {});
+    window.BjtuXuetangxPlatform?.load().catch(() => { });
   }
 }
 
@@ -751,7 +730,7 @@ function togglePlatformSelection(platform, options = {}) {
     window.platformLoadedOnce[platform] = false;
     bumpPlatformLoadVersion(platform);
     setPlatformLoginState(platform, 'offline');
-    if (persist) savePlatformEnabledToStorage().catch(() => {});
+    if (persist) savePlatformEnabledToStorage().catch(() => { });
     refreshPlatformLoginTip();
 
     if (platform === 've') {
@@ -772,7 +751,7 @@ function togglePlatformSelection(platform, options = {}) {
 
   const enabled = !isPlatformEnabled(platform);
   window.platformEnabled[platform] = enabled;
-  if (persist) savePlatformEnabledToStorage().catch(() => {});
+  if (persist) savePlatformEnabledToStorage().catch(() => { });
   refreshPlatformLoginTip();
 
   if (!enabled) {
@@ -853,7 +832,7 @@ function setupOptionsStorageLiveSync() {
       window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
       applyPlatformVisibility();
     }
-    if (changes.xuetangxCourseStatuses && isPlatformEnabled('xuetangx')) {
+    if ((changes.xuetangxCourseStatuses || changes.xuetangxActivityTypes) && isPlatformEnabled('xuetangx')) {
       clearPlatformData('xuetangx');
       window.platformLoadedOnce.xuetangx = false;
       triggerExternalPlatformLoad('xuetangx', true);
@@ -923,7 +902,7 @@ function setupOptionsStorageLiveSync() {
           rematchExternalByVeCourses('ykt');
           rerenderAllHomeworkAreas();
           renderYktStandaloneCourses();
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
     const yktActivityVisibilityChanged = !!(
@@ -941,7 +920,7 @@ function setupOptionsStorageLiveSync() {
         rematchExternalByVeCourses('ykt');
         rerenderAllHomeworkAreas();
         renderYktStandaloneCourses();
-      }).catch(() => {});
+      }).catch(() => { });
     }
     if (changes[JLGJ_DARK_MODE_KEY]) {
       window.jlgjDarkModeEnabled = changes[JLGJ_DARK_MODE_KEY].newValue !== false;
@@ -960,10 +939,10 @@ function setupPortalUsernameBindMessageListener() {
       if (st.status !== 'done') return;
       showToast(`已绑定极速登录 username：${st.userId || st.quickUsername || ''}`, 'success', 1800);
       if (isPlatformEnabled('ve')) {
-        await loadAutoLoadCourseResourcesSetting().catch(() => {});
+        await loadAutoLoadCourseResourcesSetting().catch(() => { });
         window.platformLoadedOnce.ve = false;
         setPlatformLoginState('ve', 'checking');
-        await loadLoginAccountHistory().catch(() => {});
+        await loadLoginAccountHistory().catch(() => { });
         await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
       }
     })();
@@ -1113,7 +1092,7 @@ async function persistCourseHelperPlatformColumnWeights() {
   });
   window.courseHelperPlatformColumnWeights = next;
   applyCourseHelperPlatformColumnWeights();
-  await chrome.storage.local.set({ [COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]: next }).catch(() => {});
+  await chrome.storage.local.set({ [COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]: next }).catch(() => { });
 }
 
 function bindPlatformColumnResizer(resizer) {
@@ -1198,7 +1177,7 @@ function organizeCourseCardsByPlatform() {
     });
     courseListDiv.querySelectorAll(':scope > .platform-column-resizer').forEach((resizer) => {
       if (!desiredIds.has(String(resizer.dataset.leftPlatform || ''))
-          || !desiredIds.has(String(resizer.dataset.rightPlatform || ''))) {
+        || !desiredIds.has(String(resizer.dataset.rightPlatform || ''))) {
         resizer.remove();
         structureChanged = true;
       }
@@ -1714,8 +1693,6 @@ function resetAccountSwitchInterruption() {
   accountSwitchInterruptionArmed = false;
 }
 
-
-
 function updateTotalSpeed() {
   let total = 0;
   Object.values(window.activeSpeeds).forEach(v => { total += v || 0; });
@@ -1755,7 +1732,7 @@ function pushAndCalcRecentSpeed(samples, loaded, now = Date.now(), windowMs = RE
 // -------------------- Storage helpers --------------------
 
 function promptLoginIfPossible(message) {
-  const defaultNeedLoginMsg = VE_LOGIN_REQUIRED_HTML;
+  const defaultNeedLoginMsg = globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve');
   // If username is empty, do not pop modal; direct user to platform login entry.
   if (!usernameInput.value.trim()) {
     showToast(message || defaultNeedLoginMsg, 'warning', 3500, true);
@@ -1769,7 +1746,7 @@ function dismissToastAfterCopy(toast) {
   if (!(toast instanceof HTMLElement) || !toast.isConnected || toast.dataset.dismissing === '1') return;
   toast.dataset.dismissing = '1';
   const content = String(toast.textContent || '').trim();
-  if (content) navigator.clipboard.writeText(content).catch(() => {});
+  if (content) navigator.clipboard.writeText(content).catch(() => { });
   toast.style.animation = 'fadeOutUp 0.25s ease-in forwards';
   toast.addEventListener('animationend', () => toast.remove(), { once: true });
   setTimeout(() => toast.remove(), 300);
@@ -2233,14 +2210,6 @@ function updateTotalProgress() {
 
 let currentVeUserInfoPromise = null;
 
-
-
-
-
-
-
-
-
 async function getLocalAccountInfo(userId = '') {
   const uid = String(userId || '').trim();
   if (!uid) return null;
@@ -2266,10 +2235,6 @@ function setWelcomeMessage(info) {
   const msg = info ? displayName : '';
   if (loginMsgEl) loginMsgEl.textContent = msg;
 }
-
-
-
-
 
 function normalizeLoginAccountHistoryList(rawList) {
   const list = Array.isArray(rawList) ? rawList : [];
@@ -2769,8 +2734,6 @@ async function loadPlatformVisibleFromStorage() {
   applyPlatformVisibility();
 }
 
-
-
 // -------------------- Login --------------------
 function getLoginFallbackUsername(targetUsername = '') {
   const target = String(targetUsername || '').trim();
@@ -2831,7 +2794,7 @@ function dismissLoginModal({ abort = true } = {}) {
         userId: backTo,
         reloadCourses: false,
         reloadResourceSpace: true
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }
 }
@@ -2856,14 +2819,14 @@ if (loginModalClose instanceof HTMLButtonElement) {
 async function handleLoginSuccess(username) {
   if (!isPlatformEnabled('ve')) {
     window.platformEnabled.ve = true;
-    savePlatformEnabledToStorage().catch(() => {});
+    savePlatformEnabledToStorage().catch(() => { });
   }
   window.platformLoadedOnce.ve = false;
   setPlatformLoginState('ve', 'checking');
   isLoginSessionValid = true;
   loginCancelRequested = false;
   hideLoginModal();
-  void forceSyncJsessionidAfterLogin().catch(() => {});
+  void forceSyncJsessionidAfterLogin().catch(() => { });
 
   let finalUser = String(username || '').trim();
   usernameInput.value = finalUser;
@@ -2873,17 +2836,17 @@ async function handleLoginSuccess(username) {
   runPendingLoginCallbacks();
   showToast('登录成功', 'success');
 
-  await loadAutoLoadCourseResourcesSetting().catch(() => {});
+  await loadAutoLoadCourseResourcesSetting().catch(() => { });
   await reloadVePlatformFromSession({
     reloadCourses: true,
     reloadResourceSpace: true
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 async function handleAlreadyLoggedIn(username, userInfo) {
   if (!isPlatformEnabled('ve')) {
     window.platformEnabled.ve = true;
-    savePlatformEnabledToStorage().catch(() => {});
+    savePlatformEnabledToStorage().catch(() => { });
   }
   window.platformLoadedOnce.ve = false;
   setPlatformLoginState('ve', 'checking');
@@ -2893,13 +2856,13 @@ async function handleAlreadyLoggedIn(username, userInfo) {
   suppressedUsernameChangeValue = String(username || '').trim();
   runPendingLoginCallbacks();
   showToast('已登录该账号', 'success', 1800);
-  await loadAutoLoadCourseResourcesSetting().catch(() => {});
+  await loadAutoLoadCourseResourcesSetting().catch(() => { });
   await syncAccountInfoAndReloadVeCourses({
     userId: String(username || '').trim(),
     reloadCourses: true,
     reloadResourceSpace: true,
     knownUserInfo: userInfo || null
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 async function doLoginFlow() {
@@ -2912,7 +2875,7 @@ async function doLoginFlow() {
 
   loginFlowUsernameSet = true;
   usernameChangeVersion += 1;
-  try { usernameChangeAbortController?.abort(); } catch {}
+  try { usernameChangeAbortController?.abort(); } catch { }
   prioritizeAccountSwitch();
   const wasSwitchingAccount = !!pendingUsernameChange;
   let restoredAfterFailure = false;
@@ -2922,7 +2885,7 @@ async function doLoginFlow() {
     const fallback = await restoreLoginFallbackUsername(username);
     if (fallback) {
       await resumeVeAfterAccountSwitchFailure();
-      await loadResourceSpaceForCurrentAccount().catch(() => {});
+      await loadResourceSpaceForCurrentAccount().catch(() => { });
     }
   };
 
@@ -2993,7 +2956,7 @@ async function doLoginFlow() {
       if (result?.reason === 'locked' || result?.reason === 'password-reset') {
         if (result.reason === 'password-reset') {
           const resetUrl = BASE_VE + 'CheckEmail.shtml?method=resetPassword&username=' + encodeURIComponent(username);
-          chrome.tabs.create({ url: resetUrl, active: true }).catch(() => {});
+          chrome.tabs.create({ url: resetUrl, active: true }).catch(() => { });
         }
         await restoreAfterFailure();
         showToast(result.message || '登录失败', 'error', 4000);
@@ -3073,9 +3036,9 @@ async function doLoginFlow() {
     const switchModalClosed = !loginModal || loginModal.style.display === 'none';
     if (wasSwitchingAccount && pendingUsernameChange && switchModalClosed) {
       if (isPlatformEnabled('ve')) {
-        try { await loadCourses(); } catch {}
+        try { await loadCourses(); } catch { }
       }
-      try { await loadResourceSpaceForCurrentAccount(); } catch {}
+      try { await loadResourceSpaceForCurrentAccount(); } catch { }
       window.syncRightColumnResizer?.();
     }
     isLoginInProgress = false;
@@ -3088,7 +3051,6 @@ async function doLoginFlow() {
     }
   }
 }
-
 
 // -------------------- Courses / Homework / Videos --------------------
 function normalizeCourseNumToken(v) {
@@ -3120,10 +3082,6 @@ function collectVeFzIdTail10Map(courses) {
   return result;
 }
 
-
-
-
-
 function normalizeCourseNameToken(v) {
   return String(v || '')
     .replace(/\s+/g, '')
@@ -3149,8 +3107,6 @@ function findCourseMatch(tokenMap, nameMap, token, nameToken) {
   }
   return null;
 }
-
-
 
 function todayEndDateTimeString() {
   const now = new Date();
@@ -3200,39 +3156,6 @@ function sortHomeworkItemsByDeadline(items, pickDeadline) {
     .map((x) => x.it);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function isNativeHomeworkDone(hw) {
   const subStatus = String(hw?.subStatus ?? hw?.sub_status ?? '').trim();
   const subTime = String(hw?.subTime ?? hw?.sub_time ?? '').trim();
@@ -3248,12 +3171,6 @@ function isNativeHomeworkOverdue(hw) {
   const deadline = hw?.end_time ?? hw?.endTime ?? '';
   return !isNativeHomeworkDone(hw) && isDeadlinePassed(deadline);
 }
-
-
-
-
-
-
 
 function ensureCourseCardState(courseId) {
   if (!window.courseCardStateById[courseId]) {
@@ -3285,33 +3202,33 @@ function calcCourseRank(state) {
 }
 
 function compareCourseCards(a, b) {
-    const ra = Number(a.dataset.rank || 7);
-    const rb = Number(b.dataset.rank || 7);
-    if (ra !== rb) return ra - rb;
+  const ra = Number(a.dataset.rank || 7);
+  const rb = Number(b.dataset.rank || 7);
+  if (ra !== rb) return ra - rb;
 
-    if (ra === 0 && rb === 0) {
-      const ida = String(a.id || '').startsWith('course-') ? String(a.id).slice(7) : '';
-      const idb = String(b.id || '').startsWith('course-') ? String(b.id).slice(7) : '';
-      const tsa = Number(window.courseCardStateById?.[ida]?.pendingEarliestTs || 0);
-      const tsb = Number(window.courseCardStateById?.[idb]?.pendingEarliestTs || 0);
-      const va = tsa > 0 ? tsa : Number.MAX_SAFE_INTEGER;
-      const vb = tsb > 0 ? tsb : Number.MAX_SAFE_INTEGER;
-      if (va !== vb) return va - vb;
-    }
+  if (ra === 0 && rb === 0) {
+    const ida = String(a.id || '').startsWith('course-') ? String(a.id).slice(7) : '';
+    const idb = String(b.id || '').startsWith('course-') ? String(b.id).slice(7) : '';
+    const tsa = Number(window.courseCardStateById?.[ida]?.pendingEarliestTs || 0);
+    const tsb = Number(window.courseCardStateById?.[idb]?.pendingEarliestTs || 0);
+    const va = tsa > 0 ? tsa : Number.MAX_SAFE_INTEGER;
+    const vb = tsb > 0 ? tsb : Number.MAX_SAFE_INTEGER;
+    if (va !== vb) return va - vb;
+  }
 
-    if (ra === 1 && rb === 1) {
-      const ida = String(a.id || '').startsWith('course-') ? String(a.id).slice(7) : '';
-      const idb = String(b.id || '').startsWith('course-') ? String(b.id).slice(7) : '';
-      const tsa = Number(window.courseCardStateById?.[ida]?.overdueEarliestTs || 0);
-      const tsb = Number(window.courseCardStateById?.[idb]?.overdueEarliestTs || 0);
-      const va = tsa > 0 ? tsa : Number.MAX_SAFE_INTEGER;
-      const vb = tsb > 0 ? tsb : Number.MAX_SAFE_INTEGER;
-      if (va !== vb) return va - vb;
-    }
+  if (ra === 1 && rb === 1) {
+    const ida = String(a.id || '').startsWith('course-') ? String(a.id).slice(7) : '';
+    const idb = String(b.id || '').startsWith('course-') ? String(b.id).slice(7) : '';
+    const tsa = Number(window.courseCardStateById?.[ida]?.overdueEarliestTs || 0);
+    const tsb = Number(window.courseCardStateById?.[idb]?.overdueEarliestTs || 0);
+    const va = tsa > 0 ? tsa : Number.MAX_SAFE_INTEGER;
+    const vb = tsb > 0 ? tsb : Number.MAX_SAFE_INTEGER;
+    if (va !== vb) return va - vb;
+  }
 
-    const oa = Number(a.dataset.order || 0);
-    const ob = Number(b.dataset.order || 0);
-    return oa - ob;
+  const oa = Number(a.dataset.order || 0);
+  const ob = Number(b.dataset.order || 0);
+  return oa - ob;
 }
 
 function sortCourseCardsInContainer(container, cards) {
@@ -3385,99 +3302,17 @@ function suffixAfterDash(v) {
   return (idx >= 0 ? s.slice(idx + 1) : s).trim();
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function completeExternalLoginAssist(platform, forceReload = true) {
   const p = normalizePlatformId(platform);
   if (!['ykt', 'mrjzy', 'jlgj', 'mooc'].includes(p)) return;
   if (!window.platformEnabled?.[p]) {
     window.platformEnabled[p] = true;
-    savePlatformEnabledToStorage().catch(() => {});
+    savePlatformEnabledToStorage().catch(() => { });
   }
   window.platformInteractiveLoginPending[p] = false;
   setPlatformLoginState(p, 'checking');
   triggerExternalPlatformLoad(p, forceReload);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function showPlatformNeedLoginToast(platform) {
   const p = String(platform || '').trim();
@@ -3488,24 +3323,7 @@ function showPlatformNeedLoginToast(platform) {
   if (now - lastAt < 6000) return;
   window.__platformOfflineToastById[p] = now;
 
-  if (p === 've') {
-    showToast(VE_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
-    return;
-  }
-
-  if (p === 'ykt') {
-    showToast(YKT_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
-    return;
-  }
-  if (p === 'mrjzy') {
-    showToast(MRJZY_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
-    return;
-  }
-  if (p === 'xuetangx') {
-    showToast('如需查看学堂在线课程，请先在已打开的学堂在线页面登录。', 'warning', 3200);
-    return;
-  }
-  showToast(p === 'mooc' ? MOOC_LOGIN_REQUIRED_HTML : JLGJ_LOGIN_REQUIRED_HTML, 'warning', 3200, true);
+  showToast(globalThis.BjtuPlatformLoginUi.loginRequiredHtml(p), 'warning', 3200, true);
 }
 
 function setPlatformLoginState(platform, state) {
@@ -3609,10 +3427,6 @@ function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
   // Login warnings are shown on offline-transition only (one platform at a time).
 }
 
-
-
-
-
 function shouldShowNoCoursePlaceholder() {
   if (!courseListDiv) return false;
   if (courseListDiv.querySelector('.file-item')) return false;
@@ -3648,77 +3462,6 @@ function updateCourseListEmptyPlaceholder() {
   }
   if (existing) existing.remove();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function setCourseReplayState(courseId, hasReplay) {
   const state = ensureCourseCardState(courseId);
@@ -4055,11 +3798,11 @@ function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
         </div>
         <div class="resource-link-row">
           ${hasUrl
-            ? `<a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(displayUrl)}</a>`
-            : needsRpFetch
-              ? `<span id="${escapeHtml(rpLinkContainerId)}" class="courseware-rp-link" style="color:#999;font-size:12px;"><span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #1e3a8a; border-top-color: transparent;"></span> 获取链接中…</span>`
-              : `<span class="resource-url" style="color:#999;">无下载链接</span>`
-          }
+        ? `<a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(displayUrl)}</a>`
+        : needsRpFetch
+          ? `<span id="${escapeHtml(rpLinkContainerId)}" class="courseware-rp-link" style="color:#999;font-size:12px;"><span class="spinner" style="width: 10px; height: 10px; border-width: 1px; border-color: #1e3a8a; border-top-color: transparent;"></span> 获取链接中…</span>`
+          : `<span class="resource-url" style="color:#999;">无下载链接</span>`
+      }
           ${hasUrl ? `<button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>` : ''}
           <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(id)}">下载</button>
         </div>
@@ -4079,8 +3822,6 @@ function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
   return `${selectAllToolbar}${rowsHtml}`;
 }
 
-
-
 function getCourseListLoadVersionSnapshot() {
   return Number(window.courseListLoadVersion || 0);
 }
@@ -4088,16 +3829,6 @@ function getCourseListLoadVersionSnapshot() {
 function isCourseListLoadStale(snapshotVersion) {
   return Number(snapshotVersion || 0) !== Number(window.courseListLoadVersion || 0);
 }
-
-
-
-
-
-
-
-
-
-
 
 function recomputeCourseHomeworkState(courseId) {
   const nativeList = (window.courseHomeworkData[courseId]?.list || []);
@@ -4283,23 +4014,17 @@ function animateHomeworkGroupVisibility(group, expanded) {
   }, 230);
 }
 
-window.toggleOverdueView = function(courseId) {
+window.toggleOverdueView = function (courseId) {
   setHomeworkVisibility(courseId, 'showOverdue');
 };
 
-window.toggleDoneView = function(courseId) {
+window.toggleDoneView = function (courseId) {
   setHomeworkVisibility(courseId, 'showDone');
 };
 
-window.toggleHomeworkView = function(courseId) {
+window.toggleHomeworkView = function (courseId) {
   window.toggleDoneView(courseId);
 };
-
-
-
-
-
-
 
 function collectCourseMatchMap(courses) {
   const m = new Map();
@@ -4339,10 +4064,6 @@ function collectCourseNameMap(courses) {
   return m;
 }
 
-
-
-
-
 function collectCourseNameMatchMap(courses) {
   const m = new Map();
   (courses || []).forEach((course) => {
@@ -4353,75 +4074,6 @@ function collectCourseNameMatchMap(courses) {
   });
   return m;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function renderHomeworkList(courseId) {
   const area = document.getElementById(`homework-area-${courseId}`);
@@ -4718,11 +4370,6 @@ function renderHomeworkList(courseId) {
   setTimeout(() => typeof updateAllCountdowns === 'function' && updateAllCountdowns(), 0);
 }
 
-
-
-
-
-
 // Videos (best-effort implementation)
 async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId, { signal = null, onLinkExpired = null } = {}) {
   const getLinksDiv = () => document.getElementById(containerId);
@@ -4815,7 +4462,7 @@ async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, tea
   }
 }
 
-window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btnEl) {
+window.__fetchVideoDetail = async function (rpId, courseId, xkhId, teacherId, btnEl) {
   const container = btnEl.closest('div');
   const span = container.querySelector('.video-link');
   const courseListVersion = getCourseListLoadVersionSnapshot();
@@ -4872,7 +4519,6 @@ window.__fetchVideoDetail = async function(rpId, courseId, xkhId, teacherId, btn
   }
 };
 
-
 if (resourceCopySelectedBtn) {
   resourceCopySelectedBtn.addEventListener('click', () => {
     const selected = getSelectableDownloadItems().filter((it) => window.resourceSpaceSelected.has(String(it.id || '')));
@@ -4919,7 +4565,7 @@ if (resourceSearchInput instanceof HTMLInputElement) {
   const submitSearch = () => {
     const keyword = normalizeResourceSearchKeyword(resourceSearchInput.value);
     if (keyword === resourceSpaceSearchKeyword) return;
-    loadResourceSpaceForCurrentAccount(keyword).catch(() => {});
+    loadResourceSpaceForCurrentAccount(keyword).catch(() => { });
   };
   resourceSearchInput.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -4996,7 +4642,7 @@ courseListDiv.addEventListener('mouseover', (e) => {
     const courseNum = String(wrap.dataset.courseNum || '').trim();
     const fzId = String(wrap.dataset.fzId || '').trim();
     if (!courseId || !courseNum) return;
-    hydrateVeCourseTeachersMeta(courseId, courseNum, fzId).catch(() => {});
+    hydrateVeCourseTeachersMeta(courseId, courseNum, fzId).catch(() => { });
     return;
   }
   const studentWrap = t.closest('.ve-student-wrap');
@@ -5005,7 +4651,7 @@ courseListDiv.addEventListener('mouseover', (e) => {
     if (from instanceof Node && studentWrap.contains(from)) return;
     const courseId = String(studentWrap.dataset.courseId || '').trim();
     if (!courseId) return;
-    hydrateVeStudentsMeta(courseId).catch(() => {});
+    hydrateVeStudentsMeta(courseId).catch(() => { });
     return;
   }
   // 教师姓名悬停
@@ -5019,7 +4665,7 @@ courseListDiv.addEventListener('mouseover', (e) => {
     const courseNumWrap = card?.querySelector('.ve-course-num-wrap');
     const courseNum = String(courseNumWrap?.dataset?.courseNum || '').trim();
     if (!courseNum) return;
-    hydrateVeTeacherMeta(courseId, courseNum, '').catch(() => {});
+    hydrateVeTeacherMeta(courseId, courseNum, '').catch(() => { });
     return;
   }
 });
@@ -5194,7 +4840,7 @@ courseListDiv.addEventListener('click', async (e) => {
         handleLoginRequired(() => {
           btn.removeAttribute('disabled');
           btn.textContent = oldText || '确定';
-        }, null, VE_LOGIN_REQUIRED_HTML);
+        }, null, globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve'));
         return;
       }
       if (!res.ok) {
@@ -5450,7 +5096,7 @@ usernameInput.addEventListener('change', async () => {
   if (loginFlowUsernameSet || isLoginInProgress) return;
 
   usernameChangeVersion += 1;
-  try { usernameChangeAbortController?.abort(); } catch {}
+  try { usernameChangeAbortController?.abort(); } catch { }
   usernameChangeAbortController = new AbortController();
 
   if (!username) {
@@ -5489,21 +5135,20 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   });
 }
 
-  jsessionidInput.addEventListener('change', async () => {
-    if (jsessionidInput.readOnly) return;
-    const v = jsessionidInput.value.trim();
-    if (!v) return;
-    await setLocal('jsessionid', v);
-    await reconcileJsessionidCookies(v);
-    isLoginSessionValid = true;
-    showToast('已保存 JSESSIONID，正在验证…', 'info', 1500);
-    if (isPlatformEnabled('ve')) {
-      await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
-    } else {
-      await loadResourceSpaceForCurrentAccount();
-    }
-  });
-
+jsessionidInput.addEventListener('change', async () => {
+  if (jsessionidInput.readOnly) return;
+  const v = jsessionidInput.value.trim();
+  if (!v) return;
+  await setLocal('jsessionid', v);
+  await reconcileJsessionidCookies(v);
+  isLoginSessionValid = true;
+  showToast('已保存 JSESSIONID，正在验证…', 'info', 1500);
+  if (isPlatformEnabled('ve')) {
+    await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
+  } else {
+    await loadResourceSpaceForCurrentAccount();
+  }
+});
 
 // -------------------- Init --------------------
 (async function init() {
@@ -5559,7 +5204,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   setupPortalUsernameBindMessageListener();
   setupAcademicSystemMessageListener();
   if (!popupMode && !forceAccountPasswordMigration
-      && await globalThis.BjtuAccountStore?.needsPasswordFieldMigration?.()) {
+    && await globalThis.BjtuAccountStore?.needsPasswordFieldMigration?.()) {
     const migrationUrl = new URL(location.href);
     migrationUrl.searchParams.set('accountInit', '2');
     location.replace(migrationUrl.href);
@@ -5630,7 +5275,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
   // cannot invalidate an independent resource request and leave its loading UI stale.
   const startupPlatformLoadPromise = triggerInitialPlatformLoads();
 
-  await loadCurrentXqOptions().catch(() => {});
+  await loadCurrentXqOptions().catch(() => { });
 
   // 本地保存已上传文件：加载并绑定 UI
   await loadSavedUploadsFromStorage();

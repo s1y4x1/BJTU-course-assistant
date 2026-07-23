@@ -1,5 +1,3 @@
-const JLGJ_LOGIN_LINK_HTML = '<a href="https://i.jielong.com/my-class" target="_blank" rel="noopener noreferrer" style="color:#ffd243; text-decoration:none; font-weight:600;">接龙管家</a>';
-const JLGJ_LOGIN_REQUIRED_HTML = `如需查看${JLGJ_LOGIN_LINK_HTML}作业，请前往登录`;
 const JLGJ_API_BASE = 'https://i-api.jielong.com';
 const JLGJ_WEB_BASE = 'https://i.jielong.com/my-class';
 const JLGJ_GROUP_LIST_API = `${JLGJ_API_BASE}/api/UserGroup/UserGroupPages?pageIndex=1&pageSize=20`;

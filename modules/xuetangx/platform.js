@@ -12,11 +12,21 @@
   });
   const ACTIVITY_TYPES = Object.freeze({
     6: { label: '视频', path: 'video', action: 'learn' },
+    7: { label: '图文', path: 'article', action: 'view' },
+    8: { label: '直播', path: 'liveunit', action: 'view' },
     10: { label: '讨论', path: 'discussion', action: 'view' },
     11: { label: '作业', path: 'exercise', action: 'submit' },
     12: { label: '考试', path: 'exam', action: 'exam' }
   });
   const DEFAULT_VISIBLE_STATUSES = Object.freeze([1]);
+  const DEFAULT_VISIBLE_ACTIVITY_TYPES = Object.freeze(Object.keys(ACTIVITY_TYPES).map(Number));
+  const CHAPTER_LEAF_TYPE_TO_ACTIVITY_TYPE = Object.freeze({
+    0: 6,
+    2: 8,
+    3: 7,
+    4: 10,
+    6: 11
+  });
   const THEME_COLOR = '#1769fe';
   const helperTabIds = new Set();
   const expandedGroups = new Map();
@@ -62,6 +72,14 @@
   async function getVisibleStatuses() {
     const stored = await chrome.storage.local.get(['xuetangxCourseStatuses']).catch(() => ({}));
     return normalizeVisibleStatuses(stored.xuetangxCourseStatuses);
+  }
+
+  async function getVisibleActivityTypes() {
+    const stored = await chrome.storage.local.get(['xuetangxActivityTypes']).catch(() => ({}));
+    const source = Array.isArray(stored.xuetangxActivityTypes)
+      ? stored.xuetangxActivityTypes
+      : DEFAULT_VISIBLE_ACTIVITY_TYPES;
+    return new Set(source.map(Number).filter((item) => ACTIVITY_TYPES[item]));
   }
 
   async function waitForTabComplete(tabId, timeoutMs = 20000) {
@@ -540,12 +558,12 @@
   function activityType(leaf, evaluationLeaf) {
     const tagId = Number(evaluationLeaf?.evaluation_tag?.id ?? evaluationLeaf?.etag_info?.etag_id ?? 0);
     if (ACTIVITY_TYPES[tagId]) return { id: tagId, ...ACTIVITY_TYPES[tagId] };
+    const chapterType = CHAPTER_LEAF_TYPE_TO_ACTIVITY_TYPE[Number(leaf?.leaf_type)];
+    if (ACTIVITY_TYPES[chapterType]) return { id: chapterType, ...ACTIVITY_TYPES[chapterType] };
     const title = String(leaf?.name || '');
     if (/考试|考核/.test(title)) return { id: 12, ...ACTIVITY_TYPES[12] };
     if (/讨论/.test(title)) return { id: 10, ...ACTIVITY_TYPES[10] };
     if (/作业|测试|习题|练习/.test(title)) return { id: 11, ...ACTIVITY_TYPES[11] };
-    if (Number(leaf?.leaf_type) === 0) return { id: 6, ...ACTIVITY_TYPES[6] };
-    if (Number(leaf?.leaf_type) === 6) return { id: 11, ...ACTIVITY_TYPES[11] };
     const fallbackId = tagId || Number(leaf?.leaf_type) || -1;
     return { id: fallbackId, label: `活动${fallbackId > 0 ? ` ${fallbackId}` : ''}`, path: 'activity', action: 'view' };
   }
@@ -577,7 +595,7 @@
     };
   }
 
-  function hydrateCourse(course, basicInfo, chapterResponse, scheduleResponse, evaluationResponse) {
+  function hydrateCourse(course, basicInfo, chapterResponse, scheduleResponse, evaluationResponse, visibleActivityTypes) {
     const teachers = basicInfo?.data?.teacher_list ?? basicInfo?.teacher_list ?? [];
     const chapterRoot = chapterResponse?.data?.course_chapter ?? chapterResponse?.course_chapter;
     const schedules = scheduleResponse?.data?.leaf_schedules ?? scheduleResponse?.leaf_schedules ?? {};
@@ -618,7 +636,7 @@
         totalScore: Number.isFinite(Number(scoreInfo.leaf_score)) ? Number(scoreInfo.leaf_score) : null,
         locked: timeInfo.is_locked === true || leaf.is_locked === true
       };
-    });
+    }).filter((task) => visibleActivityTypes.has(task.typeId));
     if (!Object.keys(schedules || {}).length && course.tasks.length) {
       course.totalSchedule = course.tasks.reduce((sum, task) => sum + task.schedule, 0) / course.tasks.length;
     }
@@ -720,7 +738,7 @@
     setTimeout(() => env.updateCountdowns?.(), 0);
   }
 
-  async function loadCourseDetails(course, serial) {
+  async function loadCourseDetails(course, serial, visibleActivityTypes) {
     const query = `cid=${encodeURIComponent(course.classroomId)}&sign=${encodeURIComponent(course.sign)}`;
     const [basic, chapter, schedule, evaluation] = await Promise.all([
       requestJson(`${BASE}/api/v1/lms/product/get_product_basic_info/?sign=${encodeURIComponent(course.sign)}`, serial),
@@ -740,7 +758,8 @@
       basic,
       endedError(chapter) ? { data: { course_chapter: null }, success: true } : chapter,
       endedError(schedule) ? { data: { leaf_schedules: {}, total_schedule: 0 }, success: true } : schedule,
-      evaluation
+      evaluation,
+      visibleActivityTypes
     );
   }
 
@@ -750,7 +769,10 @@
     env?.setProgress?.(0, 0);
     clearCards();
     try {
-      const visibleStatuses = await getVisibleStatuses();
+      const [visibleStatuses, visibleActivityTypes] = await Promise.all([
+        getVisibleStatuses(),
+        getVisibleActivityTypes()
+      ]);
       const response = await requestJson(COURSE_LIST_URL, serial);
       if (serial !== loadSerial) return;
       if (response?.success !== true || !response?.data || !Array.isArray(response.data.product_list)) {
@@ -772,7 +794,7 @@
         while (cursor < courses.length && serial === loadSerial) {
           const index = cursor++;
           try {
-            await loadCourseDetails(courses[index], serial);
+            await loadCourseDetails(courses[index], serial, visibleActivityTypes);
           } catch (error) {
             if (error?.code === 'not-logged-in' || error?.code === 'cancelled') throw error;
             courses[index].detailLoaded = true;

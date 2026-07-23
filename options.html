@@ -73,6 +73,8 @@
           </label>
         </div>
         <div class="platform-option-divider" role="separator"></div>
+        <div class="platform-option-subtitle" id="portal-login-panel-subtitle">注入登录面板</div>
+        <div class="tip" data-tip-target="#portal-login-panel-subtitle">控制在这些页面上是否注入登录面板弹窗，相比原登录页，只需确认账号，可更快完成登录。</div>
         <div style="margin-top:10px;">
           <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
             <input type="checkbox" id="injectPortalLoginOnLoginPage" style="width:auto;" checked />
@@ -82,19 +84,19 @@
             <input type="checkbox" id="injectPortalLoginOnTimeoutPage" style="width:auto;" checked />
             “会话结束”超时页
           </label>
-          <div class="tip">控制在这些页面上是否注入登录弹窗。</div>
         </div>
         <div class="platform-option-divider" role="separator"></div>
+        <div class="platform-option-subtitle">鼠标悬停时生成二维码</div>
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
           <input type="checkbox" id="headerQrEnabled" style="width:auto;" />
-          <span>鼠标悬停标题时生成列表二维码</span>
+          <span>标题</span>
         </label>
-        <div class="tip">「标题」包含课程助手、文件上传、资源空间。</div>
+        <div class="tip">包含课程助手、文件上传、资源空间。</div>
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
           <input type="checkbox" id="linkQrEnabled" style="width:auto;" checked />
-          <span>鼠标悬停链接时显示二维码</span>
+          <span>链接</span>
         </label>
-        <div class="tip">「链接」包含已上传文件、资源文件、作业附件、课件、回放等。</div>
+        <div class="tip">包含已上传文件、资源文件、作业附件、课件、回放等。</div>
         <div class="platform-option-divider" role="separator"></div>
         <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
           <input type="checkbox" id="saveUploadsEnabled" style="width:auto;" checked />
@@ -144,11 +146,20 @@
             style="width:auto;" checked />学堂在线</label></div>
       <div id="xuetangxPlatformDetail" class="platform-option-detail" data-module="xuetangx" hidden>
         <label><input type="checkbox" id="enableXuetangx" style="width:auto;" />启用</label>
-        <div class="platform-option-subtitle">显示课程状态</div>
+        <div class="platform-option-subtitle">要显示的课程状态</div>
         <label><input type="checkbox" class="xuetangx-course-status" value="1" style="width:auto;" checked />正在上课</label>
         <label><input type="checkbox" class="xuetangx-course-status" value="2" style="width:auto;" />即将开课</label>
         <label><input type="checkbox" class="xuetangx-course-status" value="3" style="width:auto;" />已结课</label>
         <label><input type="checkbox" class="xuetangx-course-status" value="4" style="width:auto;" />已退课</label>
+        <div class="platform-option-subtitle">要显示的作业类型</div>
+        <div class="xuetangx-activity-type-options">
+          <label><input type="checkbox" class="xuetangx-activity-type" value="6" style="width:auto;" checked />视频</label>
+          <label><input type="checkbox" class="xuetangx-activity-type" value="7" style="width:auto;" checked />图文</label>
+          <label><input type="checkbox" class="xuetangx-activity-type" value="8" style="width:auto;" checked />直播</label>
+          <label><input type="checkbox" class="xuetangx-activity-type" value="10" style="width:auto;" checked />讨论</label>
+          <label><input type="checkbox" class="xuetangx-activity-type" value="11" style="width:auto;" checked />作业</label>
+          <label><input type="checkbox" class="xuetangx-activity-type" value="12" style="width:auto;" checked />考试</label>
+        </div>
       </div>
       <div class="tip" data-tip-target="#platform-options-title">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
     </div>

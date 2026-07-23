@@ -47,6 +47,7 @@ const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
 const DEFAULT_PARALLEL_LIMIT = 3;
 const DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES = 3;
 const DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES = 3;
+const DEFAULT_XUETANGX_ACTIVITY_TYPES = Object.freeze([6, 7, 8, 10, 11, 12]);
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 const DEFAULT_THEME_MODE = 'system';
@@ -423,7 +424,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle } = await chrome.storage.local.get([
     'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle'
   ]);
-  const { xuetangxCourseStatuses } = await chrome.storage.local.get(['xuetangxCourseStatuses']);
+  const { xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
+    'xuetangxCourseStatuses',
+    'xuetangxActivityTypes'
+  ]);
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode, preferExistingFullscreenPage } = await chrome.storage.local.get(['openMode', 'preferExistingFullscreenPage']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
@@ -455,6 +459,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     : new Set([1]);
   document.querySelectorAll('.xuetangx-course-status').forEach((input) => {
     input.checked = visibleXuetangxStatuses.has(Number(input.value));
+  });
+  const visibleXuetangxActivityTypes = new Set(
+    Array.isArray(xuetangxActivityTypes) ? xuetangxActivityTypes.map(Number) : DEFAULT_XUETANGX_ACTIVITY_TYPES
+  );
+  document.querySelectorAll('.xuetangx-activity-type').forEach((input) => {
+    input.checked = visibleXuetangxActivityTypes.has(Number(input.value));
   });
   Object.entries(visible).forEach(([key, value]) => {
     const id = 'show' + key.charAt(0).toUpperCase() + key.slice(1);
@@ -897,7 +907,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.disabled = !visibleState[platform];
       input.closest('label')?.classList.toggle('is-disabled', !visibleState[platform]);
     });
-    document.querySelectorAll('.xuetangx-course-status').forEach((input) => {
+    document.querySelectorAll('.xuetangx-course-status, .xuetangx-activity-type').forEach((input) => {
       input.disabled = !visibleState.xuetangx;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.xuetangx);
     });
@@ -1011,6 +1021,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           ? new Set(changes.xuetangxCourseStatuses.newValue.map(Number))
           : new Set([1]);
         document.querySelectorAll('.xuetangx-course-status').forEach((input) => {
+          input.checked = values.has(Number(input.value));
+        });
+      }
+      if (changes.xuetangxActivityTypes) {
+        const values = new Set(
+          Array.isArray(changes.xuetangxActivityTypes.newValue)
+            ? changes.xuetangxActivityTypes.newValue.map(Number)
+            : DEFAULT_XUETANGX_ACTIVITY_TYPES
+        );
+        document.querySelectorAll('.xuetangx-activity-type').forEach((input) => {
           input.checked = values.has(Number(input.value));
         });
       }
@@ -1206,6 +1226,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         selected = [1];
       }
       await chrome.storage.local.set({ xuetangxCourseStatuses: selected });
+      setMsg('已应用更改');
+    });
+  });
+  document.querySelectorAll('.xuetangx-activity-type').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const selected = [...document.querySelectorAll('.xuetangx-activity-type:checked')]
+        .map((item) => Number(item.value));
+      await chrome.storage.local.set({ xuetangxActivityTypes: selected });
       setMsg('已应用更改');
     });
   });
@@ -1713,6 +1741,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       showYktClassroomActivities: false,
       showYktAnnouncements: false,
       xuetangxCourseStatuses: [1],
+      xuetangxActivityTypes: [...DEFAULT_XUETANGX_ACTIVITY_TYPES],
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
       replayDetailCollapsedLines: DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES,
       parallelLimit: DEFAULT_PARALLEL_LIMIT,
@@ -1750,6 +1779,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     });
     document.querySelectorAll('.xuetangx-course-status').forEach((input) => {
       input.checked = Number(input.value) === 1;
+    });
+    document.querySelectorAll('.xuetangx-activity-type').forEach((input) => {
+      input.checked = DEFAULT_XUETANGX_ACTIVITY_TYPES.includes(Number(input.value));
     });
     document.getElementById('injectMoocHelperEnabled').checked = true;
     document.getElementById('jlgjDarkModeEnabled').checked = true;

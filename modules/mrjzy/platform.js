@@ -1,5 +1,3 @@
-const MRJZY_LOGIN_LINK_HTML = '<a href="https://zuoye.lulufind.com/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none; font-weight:600;">每日交作业</a>';
-const MRJZY_LOGIN_REQUIRED_HTML = `如需查看${MRJZY_LOGIN_LINK_HTML}作业，请前往登录`;
 const MRJZY_API_BASE = 'https://lulu.lulufind.com';
 const MRJZY_WEB_BASE = 'https://zuoye.lulufind.com';
 const MRJZY_WORK_LIST_API = `${MRJZY_API_BASE}/mrzy/mrzypc/findWorkNewVersion`;

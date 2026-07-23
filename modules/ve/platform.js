@@ -1,7 +1,5 @@
 const BASE = 'http://123.121.147.7:88';
 const BASE_VE = `${BASE}/ve/`;
-const VE_LOGIN_LINK_HTML = `<a href="${BASE_VE}" target="_blank" rel="noopener noreferrer" style="color:#1565c0; text-decoration:none; font-weight:600;">智慧课程平台</a>`;
-const VE_LOGIN_REQUIRED_HTML = `如需查看${VE_LOGIN_LINK_HTML}作业，请前往登录`;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
@@ -2676,7 +2674,11 @@ async function prefetchCourseScores(courseId) {
   });
 
   if (hasLoginRequired) {
-    handleLoginRequired(() => prefetchCourseScores(courseId), null, VE_LOGIN_REQUIRED_HTML);
+    handleLoginRequired(
+      () => prefetchCourseScores(courseId),
+      null,
+      globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve')
+    );
     return;
   }
   renderHomeworkList(courseId);

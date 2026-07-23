@@ -1,5 +1,3 @@
-const YKT_LOGIN_LINK_HTML = '<a href="https://www.yuketang.cn/web" target="_blank" rel="noopener noreferrer" style="color:#5096f5; text-decoration:none; font-weight:600;">雨课堂</a>';
-const YKT_LOGIN_REQUIRED_HTML = `如需查看${YKT_LOGIN_LINK_HTML}作业，请前往登录`;
 const YKT_BASE = 'https://www.yuketang.cn';
 const YKT_REQUEST_PAGE_URL = `${YKT_BASE}/v2/web/index`;
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
