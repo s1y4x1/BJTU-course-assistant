@@ -508,22 +508,26 @@ async function fetchYktExamPaper(courseId, examId, sharedTabId = null) {
   return null;
 }
 
-function renderYktExamProblemsHtml(problemList, done) {
+function renderYktExamProblemsHtml(problemList) {
   const list = Array.isArray(problemList) ? problemList : [];
   if (!list.length) return '';
-  const baseBg = done ? 'rgba(220,252,231,0.52)' : 'rgba(255,237,213,0.52)';
-  const borderColor = done ? 'rgba(22,163,74,0.32)' : 'rgba(234,88,12,0.32)';
-  const typeColor = done ? '#166534' : '#9a3412';
-  const textColor = done ? '#14532d' : '#7c2d12';
   return list.map((p, i) => {
     const typeText = String(p?.TypeText || p?.Type || '题目类型').trim();
-    const bodyHtml = normalizeHomeworkContent(String(p?.Body || '').trim()) || '<span style="color:#999;">无题目内容</span>';
-    return `
-      <div style="padding:4px 6px; border:1px solid ${borderColor}; border-radius:5px; margin-top:4px; background:${baseBg};">
-        <div style="font-size:12px; color:${typeColor}; font-weight:bold; line-height:1.35;">${i + 1}. ${escapeHtml(typeText)}</div>
-        <div style="font-size:12px; color:${textColor}; margin-top:2px; line-height:1.4;">${bodyHtml}</div>
-      </div>
-    `;
+    const rawOptions = Array.isArray(p?.Options) ? p.Options : [];
+    return globalThis.BjtuHomeworkUi.questionDetailHtml({
+      index: Number(p?.index) || i + 1,
+      typeText,
+      score: p?.Score,
+      bodyHtml: globalThis.BjtuHomeworkUi.sanitizeRichHtml(p?.Body || ''),
+      options: rawOptions.map((option) => ({
+        key: option?.key ?? option?.Key ?? '',
+        valueHtml: globalThis.BjtuHomeworkUi.sanitizeRichHtml(
+          option?.value ?? option?.Value ?? (typeof option === 'string' ? option : '')
+        )
+      })),
+      emptyBodyHtml: '<span style="color:#999;">无题目内容</span>',
+      escape: escapeHtml
+    });
   }).join('');
 }
 
@@ -673,7 +677,7 @@ function renderYktHomeworkItems(courseId, items) {
     const actype = Number(it?.__actype);
     const activityTypeLabel = YKT_ACTIVITY_TYPE_LABELS[actype] || '';
     const isExam = actype === 5;
-    const examDetail = isExam ? renderYktExamProblemsHtml(it?.exam_problems || [], done) : '';
+    const examDetail = isExam ? renderYktExamProblemsHtml(it?.exam_problems || []) : '';
     let detailStatusHtml = '';
     if (isExam && !examDetail) {
       const state = String(it?.exam_detail_state || '').trim();

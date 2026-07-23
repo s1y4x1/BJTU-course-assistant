@@ -108,6 +108,41 @@
     return `<span class="homework-score-badge ${escape(className)}">[${escape(userScore)}${total}]</span>`;
   }
 
+  function questionDetailHtml({
+    index,
+    typeText = '题目',
+    score = null,
+    metaItems = [],
+    bodyHtml = '',
+    options = [],
+    extraLinesHtml = '',
+    emptyBodyHtml = '',
+    escape = (value) => String(value ?? '')
+  } = {}) {
+    const scoreText = score === null || score === undefined || String(score) === ''
+      ? ''
+      : `${String(score).replace(/分$/, '')}分`;
+    const title = [`第${Number(index) || 1}题`, String(typeText || '题目').trim(), scoreText]
+      .filter(Boolean)
+      .map(escape)
+      .join(' · ');
+    const meta = (Array.isArray(metaItems) ? metaItems : [])
+      .filter((item) => item !== null && item !== undefined && String(item) !== '')
+      .map(escape)
+      .join(' · ');
+    const optionHtml = (Array.isArray(options) ? options : []).map((option) => {
+      const key = option?.key === null || option?.key === undefined ? '' : String(option.key);
+      return `<div class="homework-question-option">${key ? `<span class="homework-question-option-key">${escape(key)}.</span>` : ''}<span class="homework-question-option-value">${String(option?.valueHtml || '')}</span></div>`;
+    }).join('');
+    const renderedBody = String(bodyHtml || '') || String(emptyBodyHtml || '');
+    return `<div class="homework-question-detail">
+      <div class="homework-question-title">${title}</div>
+      ${meta ? `<div class="homework-question-meta">${meta}</div>` : ''}
+      ${renderedBody ? `<div class="homework-question-body">${renderedBody}</div>` : ''}
+      ${(optionHtml || extraLinesHtml) ? `<div class="homework-question-lines">${optionHtml}${String(extraLinesHtml || '')}</div>` : ''}
+    </div>`;
+  }
+
   function progressHtml({ ratio = 0, label = '进度', loading = false, escape = (value) => String(value ?? ''), color = '#1769fe', className = '' } = {}) {
     const normalized = Math.max(0, Math.min(1, Number(ratio) || 0));
     const percentNumber = normalized * 100;
@@ -178,6 +213,7 @@
     homeworkPalette,
     deadlineMetaHtml,
     scoreBadgeHtml,
+    questionDetailHtml,
     progressHtml,
     toggleLabels,
     titleHtml,

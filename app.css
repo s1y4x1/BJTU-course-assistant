@@ -2321,7 +2321,7 @@ body {
         .deadline-countdown-prefix {
             display: inline-block;
             position: static;
-            margin-left: 0;
+            margin-left: 4px;
             font-family: inherit;
             font-size: inherit;
             font-style: normal;

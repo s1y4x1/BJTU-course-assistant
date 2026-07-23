@@ -660,30 +660,20 @@
     return course;
   }
 
-  function formatProblemScore(value) {
-    const score = Number(value);
-    return Number.isFinite(score) ? `${score}分` : '';
-  }
-
   function formatExerciseProblem(problem, fallbackIndex) {
     const content = problem?.content || {};
     const index = Number(problem?.index) || fallbackIndex + 1;
     const typeText = String(content.TypeText || content.type_text || '题目').trim();
-    const scoreText = formatProblemScore(problem?.score ?? content.score ?? content.Score);
-    const titleParts = [`第${index}题`, typeText, scoreText].filter(Boolean);
+    const score = problem?.score ?? content.score ?? content.Score;
     const bodyHtml = global.BjtuHomeworkUi.sanitizeRichHtml(content.Body || content.body || '');
     const options = Array.isArray(content.Options) ? content.Options : [];
     const blanks = Array.isArray(content.Blanks) ? content.Blanks : [];
-    const optionHtml = options.map((option) => {
-      const key = escape(option?.key ?? '');
-      const value = global.BjtuHomeworkUi.sanitizeRichHtml(option?.value ?? '');
-      return `<div class="homework-question-option">${key ? `<span class="homework-question-option-key">${key}.</span>` : ''}<span class="homework-question-option-value">${value}</span></div>`;
-    }).join('');
     const blankHtml = blanks.map((blank, blankIndex) => {
       const blankNumber = Number(blank?.Num) || blankIndex + 1;
+      const blankScore = Number(blank?.Score);
       const parts = [
         `第${blankNumber}空`,
-        formatProblemScore(blank?.Score),
+        Number.isFinite(blankScore) ? `${blankScore}分` : '',
         blank?.CaseSensitive === true ? '区分大小写' : '不区分大小写',
         blank?.FuzzyMatch === true ? '模糊匹配' : '精确匹配'
       ].filter(Boolean);
@@ -697,12 +687,19 @@
     if (problem?.max_retry !== undefined && problem?.max_retry !== null) {
       submissionParts.push(`最大重试 ${escape(problem.max_retry)} 次`);
     }
-    return `<div class="homework-question-detail">
-      <div class="homework-question-title">${escape(titleParts.join(' · '))}</div>
-      ${submissionParts.length ? `<div class="homework-question-meta">${submissionParts.join(' · ')}</div>` : ''}
-      ${bodyHtml ? `<div class="homework-question-body">${bodyHtml}</div>` : ''}
-      ${(optionHtml || blankHtml) ? `<div class="homework-question-lines">${optionHtml}${blankHtml}</div>` : ''}
-    </div>`;
+    return global.BjtuHomeworkUi.questionDetailHtml({
+      index,
+      typeText,
+      score,
+      metaItems: submissionParts,
+      bodyHtml,
+      options: options.map((option) => ({
+        key: option?.key ?? '',
+        valueHtml: global.BjtuHomeworkUi.sanitizeRichHtml(option?.value ?? '')
+      })),
+      extraLinesHtml: blankHtml,
+      escape
+    });
   }
 
   function renderExerciseDetail(course, task, palette) {
