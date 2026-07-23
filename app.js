@@ -5188,6 +5188,8 @@ jsessionidInput.addEventListener('change', async () => {
     setProgress: (completed, total) => setPlatformContentLoadProgress('xuetangx', completed, total),
     updateEmpty: updateCourseListEmptyPlaceholder,
     scheduleCache: () => scheduleFullscreenCourseCacheSave(200),
+    renderExpandable: renderExpandableHtml,
+    isDetailExpanded: isHomeworkDetailExpanded,
     updateCountdowns: updateAllCountdowns,
     animateHomeworkGroupVisibility,
     sortCourseCards: () => sortCourseCardsWithGuard()

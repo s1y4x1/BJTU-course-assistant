@@ -628,11 +628,15 @@
       const deadline = [timeInfo.score_deadline, leaf.score_deadline, timeInfo.end_time, leaf.end_time, course.classEnd]
         .map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
       const scoreInfo = evaluationLeaf?.score_info || {};
-      const done = type.id === 6
-        ? schedule >= 0.9995
-        : (evaluationLeaf?.quiz_commit === true || evaluationLeaf?.is_done === true || schedule >= 0.9995);
+      const done = type.id === 11
+        ? false
+        : (type.id === 6
+          ? schedule >= 0.9995
+          : (evaluationLeaf?.quiz_commit === true || evaluationLeaf?.is_done === true || schedule >= 0.9995));
       return {
         id: String(leaf.id),
+        chapterLeafId: String(leaf.id),
+        leafInfoId: String(leaf.leafinfo_id ?? evaluationLeaf?.leafinfo_id ?? ''),
         title: String(leaf.name || type.label),
         typeId: type.id,
         typeLabel: type.label,
@@ -654,6 +658,118 @@
     }
     course.detailLoaded = true;
     return course;
+  }
+
+  function formatProblemScore(value) {
+    const score = Number(value);
+    return Number.isFinite(score) ? `${score}分` : '';
+  }
+
+  function formatExerciseProblem(problem, fallbackIndex) {
+    const content = problem?.content || {};
+    const index = Number(problem?.index) || fallbackIndex + 1;
+    const typeText = String(content.TypeText || content.type_text || '题目').trim();
+    const scoreText = formatProblemScore(problem?.score ?? content.score ?? content.Score);
+    const titleParts = [`第${index}题`, typeText, scoreText].filter(Boolean);
+    const bodyHtml = global.BjtuHomeworkUi.sanitizeRichHtml(content.Body || content.body || '');
+    const options = Array.isArray(content.Options) ? content.Options : [];
+    const blanks = Array.isArray(content.Blanks) ? content.Blanks : [];
+    const optionHtml = options.map((option) => {
+      const key = escape(option?.key ?? '');
+      const value = global.BjtuHomeworkUi.sanitizeRichHtml(option?.value ?? '');
+      return `<div class="homework-question-option">${key ? `<span class="homework-question-option-key">${key}.</span>` : ''}<span class="homework-question-option-value">${value}</span></div>`;
+    }).join('');
+    const blankHtml = blanks.map((blank, blankIndex) => {
+      const blankNumber = Number(blank?.Num) || blankIndex + 1;
+      const parts = [
+        `第${blankNumber}空`,
+        formatProblemScore(blank?.Score),
+        blank?.CaseSensitive === true ? '区分大小写' : '不区分大小写',
+        blank?.FuzzyMatch === true ? '模糊匹配' : '精确匹配'
+      ].filter(Boolean);
+      return `<div class="homework-question-option">${escape(parts.join(' · '))}</div>`;
+    }).join('');
+    const user = problem?.user || {};
+    const submissionParts = [];
+    if (user.my_count !== undefined || user.count !== undefined) {
+      submissionParts.push(`提交次数 ${escape(user.my_count ?? 0)}/${escape(user.count ?? 0)}`);
+    }
+    if (problem?.max_retry !== undefined && problem?.max_retry !== null) {
+      submissionParts.push(`最大重试 ${escape(problem.max_retry)} 次`);
+    }
+    return `<div class="homework-question-detail">
+      <div class="homework-question-title">${escape(titleParts.join(' · '))}</div>
+      ${submissionParts.length ? `<div class="homework-question-meta">${submissionParts.join(' · ')}</div>` : ''}
+      ${bodyHtml ? `<div class="homework-question-body">${bodyHtml}</div>` : ''}
+      ${(optionHtml || blankHtml) ? `<div class="homework-question-lines">${optionHtml}${blankHtml}</div>` : ''}
+    </div>`;
+  }
+
+  function renderExerciseDetail(course, task, palette) {
+    if (task.exerciseDetailLoading) {
+      return `<div class="xuetangx-task-detail" style="border-top-color:${palette.border};"><span class="spinner xuetangx-inline-spinner" style="${global.BjtuHomeworkUi.spinnerPhaseStyle()}"></span> ${global.BjtuHomeworkUi.text.detailLoading}</div>`;
+    }
+    if (task.exerciseDetailError) {
+      return `<div class="xuetangx-task-detail xuetangx-task-detail--error" style="border-top-color:${palette.border};">${escape(task.exerciseDetailError)}</div>`;
+    }
+    const problems = Array.isArray(task.exerciseProblems) ? task.exerciseProblems : [];
+    if (!problems.length) return '';
+    const contentHtml = problems.map(formatExerciseProblem).join('');
+    const courseId = `xuetangx-${course.id}`;
+    const expandKey = `xuetangx-exercise:${task.id}`;
+    const expandable = env?.renderExpandable
+      ? env.renderExpandable(contentHtml, global.BjtuHomeworkUi.detailOptions({
+          hideWhenEmpty: true,
+          baseBg: 'rgba(255,255,255,.28)',
+          flatDisplay: true,
+          courseId,
+          expandKey,
+          expanded: !!env.isDetailExpanded?.(courseId, expandKey)
+        }))
+      : contentHtml;
+    return `<div class="xuetangx-task-detail" style="border-top-color:${palette.border};">${expandable}</div>`;
+  }
+
+  async function loadExerciseDetails(course, serial) {
+    const tasks = course.tasks.filter((task) => task.typeId === 11 && task.chapterLeafId);
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(3, tasks.length) }, async () => {
+      while (cursor < tasks.length && serial === loadSerial) {
+        const task = tasks[cursor++];
+        task.exerciseDetailLoading = true;
+        try {
+          const leafInfo = await requestJson(
+            `${BASE}/api/v1/lms/learn/leaf_info/${encodeURIComponent(course.classroomId)}/${encodeURIComponent(task.chapterLeafId)}/?sign=${encodeURIComponent(course.sign)}`,
+            serial
+          );
+          if (leafInfo?.success === false) throw new Error(leafInfo?.msg || '作业叶节点接口返回失败');
+          const exerciseTypeId = String(leafInfo?.data?.content_info?.leaf_type_id ?? '').trim();
+          const exerciseSkuId = String(leafInfo?.data?.sku_id ?? '').trim();
+          if (!exerciseTypeId || !exerciseSkuId) {
+            throw new Error('作业叶节点响应缺少 leaf_type_id 或 sku_id');
+          }
+          task.exerciseTypeId = exerciseTypeId;
+          task.exerciseSkuId = exerciseSkuId;
+          const response = await requestJson(
+            `${BASE}/api/v1/lms/exercise/get_exercise_list/${encodeURIComponent(exerciseTypeId)}/${encodeURIComponent(exerciseSkuId)}/`,
+            serial
+          );
+          if (response?.success === false) throw new Error(response?.msg || '题目接口返回失败');
+          task.exerciseProblems = Array.isArray(response?.data?.problems) ? response.data.problems : [];
+          task.done = task.exerciseProblems.length > 0
+            && task.exerciseProblems.every((problem) => Number(problem?.user?.my_count) > 0);
+          task.overdue = !task.done && task.deadline > 0 && task.deadline < Date.now();
+          task.exerciseDetailError = '';
+        } catch (error) {
+          if (error?.code === 'not-logged-in' || error?.code === 'cancelled') throw error;
+          task.exerciseProblems = [];
+          task.exerciseDetailError = `作业详情获取失败：${error?.message || error}`;
+        } finally {
+          task.exerciseDetailLoading = false;
+        }
+      }
+    });
+    await Promise.all(workers);
   }
 
   function clearCards() {
@@ -689,7 +805,8 @@
         color: palette.action,
         className: 'btn xuetangx-go-btn',
         escape
-      })}`
+      })}`,
+      detailHtml: task.typeId === 11 ? renderExerciseDetail(course, task, palette) : ''
     });
   }
 
@@ -773,6 +890,7 @@
       evaluation,
       visibleActivityTypes
     );
+    await loadExerciseDetails(course, serial);
   }
 
   async function load() {

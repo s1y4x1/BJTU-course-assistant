@@ -2644,8 +2644,24 @@ body {
         .xuetangx-course-meta, .xuetangx-task-meta { margin-top:2px; font-size:12px; color:#666; line-height:1.4; }
         .xuetangx-task { border:1px solid; border-radius:6px; padding:8px; margin-top:8px; }
         .xuetangx-task-title { font-weight:700; overflow-wrap:anywhere; }
-        .xuetangx-task-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:0 1 230px; min-width:0; }
+        .xuetangx-task-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:0 0 auto; min-width:0; max-width:100%; }
         .xuetangx-task-actions .btn { box-sizing:border-box; max-width:100%; min-height:0; padding:2px 8px; font-size:12px; line-height:1.5; white-space:nowrap; flex-shrink:0; }
+        .xuetangx-task-detail { margin-top:6px; padding-top:6px; border-top:1px dashed; font-size:12px; color:#374151; line-height:1.45; }
+        .xuetangx-task-detail--error { color:#b45309; }
+        .homework-question-detail { padding:5px 6px; border-radius:5px; background:rgba(255,255,255,.46); margin-top:4px; }
+        .homework-question-detail:first-child { margin-top:0; }
+        .homework-question-title { font-weight:700; color:#1f2937; overflow-wrap:anywhere; }
+        .homework-question-meta { margin-top:1px; color:#64748b; font-size:11px; }
+        .homework-question-body { margin-top:3px; color:#374151; overflow-wrap:anywhere; }
+        .homework-question-lines { margin-top:2px; color:#4b5563; overflow-wrap:anywhere; }
+        .homework-question-option { display:flex; align-items:flex-start; gap:.3em; margin-top:1px; }
+        .homework-question-option-key { flex:0 0 auto; font-weight:700; }
+        .homework-question-option-value { flex:1 1 auto; min-width:0; }
+        .homework-question-option-value > :first-child { margin-top:0; }
+        .homework-question-option-value > :last-child { margin-bottom:0; }
+        .homework-question-detail p { margin:.2em 0; }
+        .homework-question-detail ul, .homework-question-detail ol { margin:.2em 0; padding-left:1.15em; }
+        .homework-question-detail li { margin:.08em 0; }
         .xuetangx-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#1769fe; border-top-color:transparent; }
         .xuetangx-empty { color:#666; font-size:13px; }
         .platform-qr-login-mask { z-index:10006; padding:16px; box-sizing:border-box; }

@@ -273,27 +273,7 @@ let moocLoginAssistPopupTabId = null;
   }
 
   function sanitizeDetailHtml(value) {
-    const template = document.createElement('template');
-    template.innerHTML = String(value || '');
-    template.content.querySelectorAll('script,style,iframe,object,embed,form,input,button,textarea,select,meta,link').forEach((node) => node.remove());
-    template.content.querySelectorAll('*').forEach((node) => {
-      for (const attr of [...node.attributes]) {
-        const name = attr.name.toLowerCase();
-        const raw = String(attr.value || '').trim();
-        if (name.startsWith('on') || ['style', 'id', 'class', 'srcdoc'].includes(name)) {
-          node.removeAttribute(attr.name);
-          continue;
-        }
-        if (['href', 'src'].includes(name) && !/^(?:https?:|data:image\/|\/)/i.test(raw)) {
-          node.removeAttribute(attr.name);
-        }
-      }
-      if (node.tagName === 'A') {
-        node.setAttribute('target', '_blank');
-        node.setAttribute('rel', 'noopener noreferrer');
-      }
-    });
-    return template.innerHTML.trim();
+    return globalThis.BjtuHomeworkUi.sanitizeRichHtml(value);
   }
 
   function buildPaperDetail(paper, correctIds = new Set()) {

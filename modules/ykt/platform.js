@@ -16,10 +16,11 @@ const YKT_ACTIVITY_TYPE_LABELS = Object.freeze({
 });
 const YKT_WECHAT_QR_LOGIN_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=wxda8c70bb118d342b&scope=snsapi_login&redirect_uri=https://www.yuketang.cn/api/v3/user/login/wechat-web-callback';
 const YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX = 'https://www.yuketang.cn/authorize/wx-qrlogin?success=1';
-let yktLoginAssistRetryTimer = null;
 let yktLoginAssistPollTimer = null;
 let yktLoginAssistPopupWindowId = null;
 let yktLoginAssistPopupTabId = null;
+let yktLoginAssistCompleting = false;
+let yktLoginAssistChecking = false;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
@@ -100,18 +101,6 @@ function clearYktStandaloneCards() {
   updateCourseListEmptyPlaceholder();
 }
 
-function scheduleYktLoginAssistRecheck(delayMs = 500) {
-  if (yktLoginAssistRetryTimer) {
-    clearTimeout(yktLoginAssistRetryTimer);
-    yktLoginAssistRetryTimer = null;
-  }
-  yktLoginAssistRetryTimer = setTimeout(() => {
-    yktLoginAssistRetryTimer = null;
-    if (!window.platformInteractiveLoginPending?.ykt && !isPlatformEnabled('ykt')) return;
-    completeExternalLoginAssist('ykt', true);
-  }, Math.max(120, Number(delayMs) || 500));
-}
-
 function stopYktLoginAssistWatcher() {
   if (yktLoginAssistPollTimer) {
     clearInterval(yktLoginAssistPollTimer);
@@ -120,28 +109,77 @@ function stopYktLoginAssistWatcher() {
 }
 
 function isYktLoginSuccessUrl(url) {
-  const u = String(url || '').trim();
-  if (!u) return false;
-  return u.startsWith(YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX);
+  try {
+    const parsed = new URL(String(url || '').trim());
+    const expected = new URL(YKT_WECHAT_LOGIN_SUCCESS_URL_PREFIX);
+    return parsed.origin === expected.origin
+      && parsed.pathname === expected.pathname
+      && parsed.searchParams.get('success') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function isYktSiteUrl(url) {
+  try {
+    return new URL(String(url || '').trim()).origin === YKT_BASE;
+  } catch {
+    return false;
+  }
+}
+
+function completeYktLoginAssist() {
+  if (yktLoginAssistCompleting) return;
+  yktLoginAssistCompleting = true;
+  closeYktLoginAssistPopup(false);
+  completeExternalLoginAssist('ykt', true);
+}
+
+async function verifyYktLoginAfterPopupClosed() {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (!window.platformInteractiveLoginPending?.ykt) return false;
+    try {
+      const response = await fetchYktJson(YKT_COURSE_LIST_API);
+      if (Number(response?.errcode) === 0) {
+        completeYktLoginAssist();
+        return true;
+      }
+    } catch {
+      // The login callback may still be committing the session cookie.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  window.platformInteractiveLoginPending.ykt = false;
+  return false;
 }
 
 async function checkYktLoginAssistPopupUrl() {
+  if (yktLoginAssistChecking || yktLoginAssistCompleting) return false;
   if (!window.platformInteractiveLoginPending?.ykt) return false;
   if (!yktLoginAssistPopupTabId) return false;
+  yktLoginAssistChecking = true;
   try {
     const tab = await chrome.tabs.get(Number(yktLoginAssistPopupTabId));
     const currentUrl = String(tab?.url || '').trim();
     if (isYktLoginSuccessUrl(currentUrl)) {
-      closeYktLoginAssistPopup(false);
-      scheduleYktLoginAssistRecheck(250);
+      completeYktLoginAssist();
       return true;
     }
+    if (isYktSiteUrl(currentUrl)) {
+      const response = await fetchYktJson(YKT_COURSE_LIST_API).catch(() => null);
+      if (Number(response?.errcode) === 0) {
+        completeYktLoginAssist();
+        return true;
+      }
+    }
   } catch {
-    // popup may be closed by user
+    // The WeChat page can close itself immediately after committing the session.
     yktLoginAssistPopupWindowId = null;
     yktLoginAssistPopupTabId = null;
-    window.platformInteractiveLoginPending.ykt = false;
     stopYktLoginAssistWatcher();
+    void verifyYktLoginAfterPopupClosed();
+  } finally {
+    yktLoginAssistChecking = false;
   }
   return false;
 }
@@ -168,6 +206,7 @@ function closeYktLoginAssistPopup(cancelPending = false) {
 
 function openYktLoginAssistPopup(force = false) {
   if (!force && !isPlatformEnabled('ykt')) return;
+  yktLoginAssistCompleting = false;
   window.platformInteractiveLoginPending.ykt = true;
   if (yktLoginAssistPopupWindowId && yktLoginAssistPopupTabId) {
     chrome.windows.update(Number(yktLoginAssistPopupWindowId), { focused: true }).catch(() => {});
