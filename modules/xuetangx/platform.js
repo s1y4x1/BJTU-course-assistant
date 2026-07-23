@@ -237,31 +237,43 @@
     }
   }
 
+  function cancelQrLogin() {
+    qrLoginCancelled = true;
+    loadSerial += 1;
+    hideQrLoginModal();
+    void stopQrLoginSocket();
+    closeCreatedHelperTabs();
+    env?.setState?.('offline');
+  }
+
   function getQrLoginModal() {
     let modal = document.getElementById('xuetangx-login-modal');
     if (modal) return modal;
     modal = document.createElement('div');
     modal.id = 'xuetangx-login-modal';
-    modal.className = 'version-modal-mask xuetangx-login-mask';
-    modal.innerHTML = `<div class="version-modal-card xuetangx-login-card">
+    modal.className = 'version-modal-mask platform-qr-login-mask xuetangx-login-mask';
+    modal.innerHTML = `<div class="version-modal-card platform-qr-login-card xuetangx-login-card">
       <div class="version-modal-header">
-        <div class="xuetangx-login-title">登录学堂在线</div>
+        <div class="platform-qr-login-title xuetangx-login-title">登录学堂在线</div>
         <button type="button" class="btn version-close-btn" data-xuetangx-login-close title="关闭" aria-label="关闭">×</button>
       </div>
-      <div class="xuetangx-login-body">
-        <div class="xuetangx-login-status"><span class="spinner xuetangx-inline-spinner"></span> 正在获取登录二维码…</div>
-        <img class="xuetangx-login-qr" alt="学堂在线微信登录二维码" hidden>
-        <div class="xuetangx-login-tip">请使用微信扫码登录</div>
+      <div class="platform-qr-login-body xuetangx-login-body">
+        <div class="platform-qr-login-status xuetangx-login-status"><span class="spinner xuetangx-inline-spinner"></span> 正在获取登录二维码…</div>
+        <img class="platform-qr-login-image xuetangx-login-qr" alt="学堂在线微信登录二维码" hidden>
+        <div class="platform-qr-login-tip xuetangx-login-tip">请使用微信扫码登录</div>
       </div>
     </div>`;
     modal.addEventListener('click', (event) => {
       if (!event.target.closest('[data-xuetangx-login-close]')) return;
-      qrLoginCancelled = true;
-      loadSerial += 1;
-      modal.classList.remove('show');
-      void stopQrLoginSocket();
-      closeCreatedHelperTabs();
-      env?.setState?.('offline');
+      cancelQrLogin();
+    });
+    modal.addEventListener('pointerdown', (event) => {
+      modal.dataset.pointerStartedOnMask = event.target === modal ? '1' : '0';
+    });
+    modal.addEventListener('pointerup', (event) => {
+      const shouldClose = event.target === modal && modal.dataset.pointerStartedOnMask === '1';
+      delete modal.dataset.pointerStartedOnMask;
+      if (shouldClose) cancelQrLogin();
     });
     document.body.appendChild(modal);
     return modal;

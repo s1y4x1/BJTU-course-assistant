@@ -2648,14 +2648,19 @@ body {
         .xuetangx-task-actions .btn { box-sizing:border-box; max-width:100%; min-height:0; padding:2px 8px; font-size:12px; line-height:1.5; white-space:nowrap; flex-shrink:0; }
         .xuetangx-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#1769fe; border-top-color:transparent; }
         .xuetangx-empty { color:#666; font-size:13px; }
-        .xuetangx-login-mask { z-index:10006; }
-        .xuetangx-login-mask.show { display:flex; }
-        .xuetangx-login-card { width:min(360px,calc(100vw - 32px)); box-sizing:border-box; }
-        .xuetangx-login-title { color:#1769fe; font-size:18px; font-weight:700; }
-        .xuetangx-login-body { display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:8px; }
-        .xuetangx-login-status { display:flex; align-items:center; gap:6px; min-height:20px; color:#475569; font-size:13px; }
-        .xuetangx-login-qr { display:block; width:min(260px,70vw); height:auto; aspect-ratio:1; object-fit:contain; background:#fff; }
-        .xuetangx-login-tip { color:#64748b; font-size:12px; }
+        .platform-qr-login-mask { z-index:10006; padding:16px; box-sizing:border-box; }
+        .platform-qr-login-mask.show { display:flex; }
+        .platform-qr-login-card { width:min(360px,calc(100vw - 32px)); box-sizing:border-box; }
+        .platform-qr-login-title { color:var(--platform-qr-login-theme); font-size:18px; font-weight:700; }
+        .platform-qr-login-body { display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:8px; }
+        .platform-qr-login-status { display:flex; align-items:center; justify-content:center; gap:6px; min-height:20px; color:#475569; font-size:13px; text-align:center; }
+        .platform-qr-login-image { display:block; width:min(260px,70vw); height:auto; aspect-ratio:1; object-fit:contain; background:#fff; }
+        .platform-qr-login-image[hidden] { display:none; }
+        .platform-qr-login-tip { color:#64748b; font-size:12px; text-align:center; }
+        .xuetangx-login-mask { --platform-qr-login-theme:#1769fe; }
+        .mrjzy-login-assist-mask { --platform-qr-login-theme:#29a9fc; }
+        .mrjzy-login-assist-mask .platform-qr-login-image { cursor:pointer; }
+        .mrjzy-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#29a9fc; border-top-color:transparent; }
         .mooc-progress-mask { z-index:10005; }
         .mooc-progress-mask.show { display:flex; }
         .mooc-progress-card { width:min(560px,calc(100vw - 32px)); box-sizing:border-box; max-height:min(76vh,680px); display:flex; flex-direction:column; overflow:hidden; }

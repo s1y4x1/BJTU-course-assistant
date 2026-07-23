@@ -51,7 +51,7 @@ function scheduleMrjzyLoginAssistRecheck(delayMs = 500) {
 function closeMrjzyLoginAssistPopup(cancelPending = false) {
   const mask = document.getElementById('mrjzy-login-assist-mask');
   if (mask instanceof HTMLElement) {
-    mask.style.display = 'none';
+    mask.classList.remove('show');
   }
   stopMrjzyLoginAssistPolling();
   if (cancelPending) {
@@ -65,26 +65,19 @@ function ensureMrjzyLoginAssistPopup() {
 
   mask = document.createElement('div');
   mask.id = 'mrjzy-login-assist-mask';
-  mask.style.cssText = [
-    'display:none',
-    'position:fixed',
-    'inset:0',
-    'z-index:1200',
-    'background:rgba(15,23,42,0.45)',
-    'align-items:center',
-    'justify-content:center',
-    'padding:12px'
-  ].join(';');
+  mask.className = 'version-modal-mask platform-qr-login-mask mrjzy-login-assist-mask';
   mask.innerHTML = `
-    <div class="mrjzy-login-assist-card" style="width:min(360px, 92vw); max-height:min(88vh, 560px); background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 14px 36px rgba(15,23,42,0.3); display:flex; flex-direction:column;">
-      <div class="mrjzy-login-assist-header" style="height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; border-bottom:1px solid #e5e7eb;">
-        <div class="mrjzy-login-assist-title" style="font-size:14px; font-weight:700; color:#0f172a;">登录每日交作业</div>
-        <button type="button" data-action="close-mrjzy-login-assist" class="btn modal-close-btn" aria-label="关闭" title="关闭">×</button>
+    <div class="version-modal-card platform-qr-login-card mrjzy-login-assist-card">
+      <div class="version-modal-header">
+        <div class="platform-qr-login-title mrjzy-login-assist-title">登录每日交作业</div>
+        <button type="button" data-action="close-mrjzy-login-assist" class="btn version-close-btn" aria-label="关闭" title="关闭">×</button>
       </div>
-      <div style="flex:1; padding:14px 14px 16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">
-        <img id="mrjzy-login-assist-qr" alt="登录二维码" title="点击刷新二维码" style="width:220px; height:220px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; cursor:pointer;" />
-        <div class="mrjzy-login-assist-hint" style="font-size:13px; color:#334155; text-align:center;">使用微信扫一扫登录</div>
-        <div id="mrjzy-login-assist-status" style="min-height:18px; font-size:12px; color:#64748b; text-align:center;"></div>
+      <div class="platform-qr-login-body mrjzy-login-assist-body">
+        <div id="mrjzy-login-assist-status" class="platform-qr-login-status">
+          <span class="spinner mrjzy-inline-spinner"></span> 正在获取登录二维码…
+        </div>
+        <img id="mrjzy-login-assist-qr" class="platform-qr-login-image" alt="每日交作业微信登录二维码" title="点击刷新二维码" hidden />
+        <div class="platform-qr-login-tip mrjzy-login-assist-hint">请使用微信扫码登录</div>
       </div>
     </div>
   `;
@@ -94,14 +87,14 @@ function ensureMrjzyLoginAssistPopup() {
   if (closeBtn instanceof HTMLButtonElement) {
     closeBtn.addEventListener('click', () => closeMrjzyLoginAssistPopup(true));
   }
-  mask.addEventListener('mousedown', (e) => {
-    mask.dataset.mdownMask = e.target === mask ? '1' : '0';
+  mask.addEventListener('pointerdown', (e) => {
+    mask.dataset.pointerStartedOnMask = e.target === mask ? '1' : '0';
   });
-  mask.addEventListener('mouseup', (e) => {
-    if (e.target === mask && mask.dataset.mdownMask === '1') {
+  mask.addEventListener('pointerup', (e) => {
+    if (e.target === mask && mask.dataset.pointerStartedOnMask === '1') {
       closeMrjzyLoginAssistPopup(true);
     }
-    delete mask.dataset.mdownMask;
+    delete mask.dataset.pointerStartedOnMask;
   });
 
   const qr = mask.querySelector('#mrjzy-login-assist-qr');
@@ -207,17 +200,19 @@ async function refreshMrjzyLoginAssistQrCode(fromUserClick = false) {
   if (!(qrImg instanceof HTMLImageElement)) return;
 
   const serial = ++mrjzyLoginAssistCodeSerial;
+  qrImg.hidden = true;
   if (statusEl instanceof HTMLElement) {
-    statusEl.textContent = '正在刷新二维码…';
+    statusEl.innerHTML = '<span class="spinner mrjzy-inline-spinner"></span> 正在获取登录二维码…';
   }
   try {
     const code = await requestMrjzyLoginAssistQrCode();
     if (serial !== mrjzyLoginAssistCodeSerial) return;
     mrjzyLoginAssistCurrentCode = code;
     const qrUrl = `${MRJZY_QR_SCAN_LINK_BASE}${code}`;
-    applyQrImageToElement(qrImg, qrUrl, 220);
+    applyQrImageToElement(qrImg, qrUrl, 260);
+    qrImg.hidden = false;
     if (statusEl instanceof HTMLElement) {
-      statusEl.textContent = '';
+      statusEl.textContent = '等待扫码确认…';
     }
     startMrjzyLoginAssistPolling();
   } catch (e) {
@@ -232,7 +227,7 @@ function openMrjzyLoginAssistPopup(force = false) {
   if (!force && !isPlatformEnabled('mrjzy')) return;
   window.platformInteractiveLoginPending.mrjzy = true;
   const mask = ensureMrjzyLoginAssistPopup();
-  mask.style.display = 'flex';
+  mask.classList.add('show');
   mrjzyLoginAssistCurrentCode = '';
   void refreshMrjzyLoginAssistQrCode(false);
 }
