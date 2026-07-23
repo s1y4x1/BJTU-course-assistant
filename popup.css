@@ -65,57 +65,11 @@ body.popup-mode .top-inline-controls #account-history-select {
     box-sizing: border-box;
 }
 
-.popup-window-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: auto;
-    white-space: nowrap;
-}
-
-.popup-fullscreen-btn {
-    display: none;
-    background: #0f172a;
-    padding: 6px 10px;
-    height: 32px;
-    font-size: 12px;
-    line-height: 1.2;
-}
-
-.popup-fullscreen-btn:hover {
-    background: #1e293b;
-}
-
-html[data-color-scheme="dark"] .popup-fullscreen-btn {
-    background: #fff;
-    color: #000;
-    border: 1px solid #d1d5db;
-}
-
-html[data-color-scheme="dark"] .popup-fullscreen-btn:hover {
-    background: #f3f4f6;
-}
-
 body.popup-mode .popup-fullscreen-btn {
     display: inline-flex;
     margin-left: 0;
     align-items: center;
     justify-content: center;
-}
-
-#open-options-btn {
-    display: inline-flex;
-    width: 32px;
-    height: 32px;
-    margin-left: 6px;
-    align-items: center;
-    justify-content: center;
-    background: #6b7280;
-    color: #fff;
-    padding: 0;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1;
 }
 
 body.popup-mode #open-options-btn {

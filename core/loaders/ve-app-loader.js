@@ -16,6 +16,9 @@
   global.__bjtuVeAppReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
     if (!available.ve) return false;
+    for (const path of global.BjtuModuleRegistry.definitions.ve?.styles || []) {
+      await global.BjtuModuleRegistry.loadStyle(`modules/ve/${path}`);
+    }
     for (const path of scripts) await global.BjtuModuleRegistry.loadScript(path);
     return true;
   })().catch((error) => {

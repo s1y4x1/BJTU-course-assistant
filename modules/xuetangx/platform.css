@@ -1,0 +1,27 @@
+.xuetangx-course-head, .xuetangx-task-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.xuetangx-course-identity, .xuetangx-task-main { min-width:0; flex:1; }
+.xuetangx-course-identity a { color:#1769fe; text-decoration:none; line-height:1.3; }
+.xuetangx-course-meta, .xuetangx-task-meta { margin-top:2px; font-size:12px; color:#666; line-height:1.4; }
+.xuetangx-task { border:1px solid; border-radius:6px; padding:8px; margin-top:8px; }
+.xuetangx-task-title { font-weight:700; overflow-wrap:anywhere; }
+.xuetangx-task-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:0 0 auto; min-width:0; max-width:100%; }
+.xuetangx-task-actions .btn { box-sizing:border-box; max-width:100%; min-height:0; padding:2px 8px; font-size:12px; line-height:1.5; white-space:nowrap; flex-shrink:0; }
+.xuetangx-task-detail { margin-top:6px; padding-top:6px; border-top:1px dashed; font-size:12px; color:#374151; line-height:1.45; }
+.xuetangx-task-detail--error { color:#b45309; }
+.xuetangx-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#1769fe; border-top-color:transparent; }
+.xuetangx-empty { color:#666; font-size:13px; }
+
+.xuetangx-login-mask.platform-qr-login-mask { --platform-qr-login-theme:#1769fe; z-index:10006; padding:16px; box-sizing:border-box; }
+.xuetangx-login-mask.platform-qr-login-mask.show { display:flex; }
+.xuetangx-login-mask .platform-qr-login-card { width:min(360px,calc(100vw - 32px)); box-sizing:border-box; }
+.xuetangx-login-mask .platform-qr-login-title { color:var(--platform-qr-login-theme); font-size:18px; font-weight:700; }
+.xuetangx-login-mask .platform-qr-login-body { display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:8px; }
+.xuetangx-login-mask .platform-qr-login-status { display:flex; align-items:center; justify-content:center; gap:6px; min-height:20px; color:#475569; font-size:13px; text-align:center; }
+.xuetangx-login-mask .platform-qr-login-image { display:block; width:min(260px,70vw); height:auto; aspect-ratio:1; object-fit:contain; background:#fff; }
+.xuetangx-login-mask .platform-qr-login-image[hidden] { display:none; }
+.xuetangx-login-mask .platform-qr-login-tip { color:#64748b; font-size:12px; text-align:center; }
+
+@media (max-width:600px) {
+  .xuetangx-course-head, .xuetangx-task-head { flex-direction:column; }
+  .xuetangx-task-actions { width:100%; flex-basis:auto; align-items:flex-end; }
+}

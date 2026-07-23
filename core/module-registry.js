@@ -4,6 +4,7 @@
   const MODULES = Object.freeze({
     ve: {
       label: '智慧课程平台',
+      styles: ['platform.css'],
       files: [
         'vendor/main.min.js', 'password-cipher.js', 'login-utils.js',
         'login-credentials-dialog.js', 'login-overlay.js', 'account-store.js',
@@ -12,10 +13,10 @@
       ]
     },
     ykt: { label: '雨课堂', files: ['platform.js'] },
-    mrjzy: { label: '每日交作业', files: ['platform.js', 'md5.js'] },
+    mrjzy: { label: '每日交作业', styles: ['platform.css'], files: ['platform.js', 'md5.js'] },
     jlgj: { label: '接龙管家', files: ['platform.js', 'background.js', 'capture.js', 'theme.js'] },
-    mooc: { label: '中国大学MOOC', files: ['platform.js', 'background.js', 'inject.js'] },
-    xuetangx: { label: '学堂在线', files: ['platform.js'] },
+    mooc: { label: '中国大学MOOC', styles: ['platform.css'], files: ['platform.js', 'background.js', 'inject.js'] },
+    xuetangx: { label: '学堂在线', styles: ['platform.css'], files: ['platform.js'] },
     academic: { label: '教务系统', files: ['system.js'] },
     campusnet: { label: '校园网自动重连', files: ['background.js'] },
     captcha: { label: '本地验证码识别', files: ['recognizer.js', 'offscreen.js', 'vendor/eng.traineddata.gz'] },
@@ -25,7 +26,7 @@
   async function exists(id) {
     if (!MODULES[id]) return false;
     try {
-      const files = ['module.json', ...(MODULES[id].files || [])];
+      const files = ['module.json', ...(MODULES[id].styles || []), ...(MODULES[id].files || [])];
       const responses = await Promise.all(files.map((path) => fetch(
         chrome.runtime.getURL(`modules/${id}/${path}`),
         { cache: 'no-store' }
@@ -67,5 +68,20 @@
     });
   }
 
-  global.BjtuModuleRegistry = { definitions: MODULES, ready, has, exists, loadScript };
+  function loadStyle(path) {
+    const url = chrome.runtime.getURL(path);
+    const existing = [...document.querySelectorAll('link[rel="stylesheet"]')]
+      .find((link) => link.href === url);
+    if (existing) return Promise.resolve(path);
+    return new Promise((resolve, reject) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = url;
+      link.onload = () => resolve(path);
+      link.onerror = () => reject(new Error(`无法加载模块样式：${path}`));
+      document.head.appendChild(link);
+    });
+  }
+
+  global.BjtuModuleRegistry = { definitions: MODULES, ready, has, exists, loadScript, loadStyle };
 })(globalThis);

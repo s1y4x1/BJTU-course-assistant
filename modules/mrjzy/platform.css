@@ -1,0 +1,10 @@
+.mrjzy-login-assist-mask.platform-qr-login-mask { --platform-qr-login-theme:#29a9fc; z-index:10006; padding:16px; box-sizing:border-box; }
+.mrjzy-login-assist-mask.platform-qr-login-mask.show { display:flex; }
+.mrjzy-login-assist-mask .platform-qr-login-card { width:min(360px,calc(100vw - 32px)); box-sizing:border-box; }
+.mrjzy-login-assist-mask .platform-qr-login-title { color:var(--platform-qr-login-theme); font-size:18px; font-weight:700; }
+.mrjzy-login-assist-mask .platform-qr-login-body { display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:8px; }
+.mrjzy-login-assist-mask .platform-qr-login-status { display:flex; align-items:center; justify-content:center; gap:6px; min-height:20px; color:#475569; font-size:13px; text-align:center; }
+.mrjzy-login-assist-mask .platform-qr-login-image { display:block; width:min(260px,70vw); height:auto; aspect-ratio:1; object-fit:contain; background:#fff; cursor:pointer; }
+.mrjzy-login-assist-mask .platform-qr-login-image[hidden] { display:none; }
+.mrjzy-login-assist-mask .platform-qr-login-tip { color:#64748b; font-size:12px; text-align:center; }
+.mrjzy-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#29a9fc; border-top-color:transparent; }
