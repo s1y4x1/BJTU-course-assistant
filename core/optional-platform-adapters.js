@@ -38,6 +38,7 @@
       defineFunction('renderMrjzyHomeworkItems', emptyHtml);
       defineFunction('renderMrjzyStandaloneCourses', noop);
       defineFunction('scheduleMrjzyLoad', resolved);
+      defineFunction('cancelMrjzyActiveLoad', resolved);
     }
 
     if (!available.jlgj) {

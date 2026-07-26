@@ -1295,6 +1295,10 @@ body.platform-column-resizing {
     font: inherit;
     white-space: inherit;
 }
+.version-markdown-extra-blank-lines {
+    height: calc(var(--version-markdown-extra-blank-lines, 1) * 1.65em);
+    pointer-events: none;
+}
 .version-notice-body p,
 .version-download-release-notes-body p {
     margin: 0 0 7px;

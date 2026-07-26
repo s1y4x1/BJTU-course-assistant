@@ -330,13 +330,20 @@ function getVersionMarkdownParser() {
   renderer.blockquote = function renderBlockquote({ tokens }) {
     return `<blockquote class="version-markdown-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
   };
+  renderer.space = ({ raw }) => {
+    const newlineCount = (String(raw || '').match(/\n/g) || []).length;
+    const extraBlankLines = Math.max(0, newlineCount - 2);
+    return extraBlankLines
+      ? `<div class="version-markdown-extra-blank-lines" style="--version-markdown-extra-blank-lines:${extraBlankLines}" aria-hidden="true"></div>`
+      : '';
+  };
   renderer.table = function renderTable(token) {
     return `<div class="version-markdown-table-wrap">${defaultTableRenderer.call(this, token)}</div>`;
   };
 
   versionMarkdownParser = new markedApi.Marked({
     gfm: true,
-    breaks: false,
+    breaks: true,
     pedantic: false,
     renderer
   });

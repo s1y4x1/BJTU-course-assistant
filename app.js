@@ -506,7 +506,11 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
     });
   } else if (platform === 'mrjzy') {
     setPlatformLoginState('mrjzy', 'checking');
-    scheduleMrjzyLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => renderMrjzyNeedLoginMessage());
+    scheduleMrjzyLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => {
+      if (isPlatformEnabled('mrjzy') && version === Number(window.platformLoadVersion?.mrjzy || 0)) {
+        renderMrjzyNeedLoginMessage();
+      }
+    });
   } else if (platform === 'jlgj') {
     setPlatformLoginState('jlgj', 'checking');
     scheduleJlgjLoad(independentCourseInput, version).then(finishIndependentLoad).catch((error) => {
@@ -718,6 +722,7 @@ function togglePlatformSelection(platform, options = {}) {
     if (platform === 'mrjzy') {
       window.platformInteractiveLoginPending.mrjzy = false;
       closeMrjzyLoginAssistPopup(true);
+      cancelMrjzyActiveLoad().catch(() => {});
     }
     if (platform === 'jlgj') {
       window.platformInteractiveLoginPending.jlgj = false;
@@ -764,6 +769,7 @@ function togglePlatformSelection(platform, options = {}) {
     if (platform === 'mrjzy') {
       window.platformInteractiveLoginPending.mrjzy = false;
       closeMrjzyLoginAssistPopup(true);
+      cancelMrjzyActiveLoad().catch(() => {});
     }
     if (platform === 'jlgj') {
       window.platformInteractiveLoginPending.jlgj = false;

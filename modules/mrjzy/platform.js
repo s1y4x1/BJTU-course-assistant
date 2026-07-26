@@ -10,8 +10,34 @@ let mrjzyLoginAssistRetryTimer = null;
 let mrjzyLoginAssistPolling = false;
 let mrjzyLoginAssistCurrentCode = '';
 let mrjzyLoginAssistCodeSerial = 0;
+let mrjzyActiveRuntimeCtx = null;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
+
+async function closeMrjzyOwnedRuntimeTab(runtimeCtx) {
+  if (!runtimeCtx) return;
+  if (runtimeCtx.closePromise) return runtimeCtx.closePromise;
+  runtimeCtx.closePromise = (async () => {
+    if (runtimeCtx.creatingTabPromise) {
+      try { await runtimeCtx.creatingTabPromise; } catch { /* ignore */ }
+    }
+    if (runtimeCtx.createdTab && runtimeCtx.tabId) {
+      try { await chrome.tabs.remove(Number(runtimeCtx.tabId)); } catch { /* ignore */ }
+    }
+    runtimeCtx.tabId = null;
+    runtimeCtx.createdTab = false;
+  })().finally(() => {
+    runtimeCtx.closePromise = null;
+  });
+  return runtimeCtx.closePromise;
+}
+
+function cancelMrjzyActiveLoad() {
+  const runtimeCtx = mrjzyActiveRuntimeCtx;
+  if (!runtimeCtx) return Promise.resolve();
+  runtimeCtx.cancelled = true;
+  return closeMrjzyOwnedRuntimeTab(runtimeCtx);
+}
 
 function formatMrjzyDateTime(dt) {
   const d = dt instanceof Date ? dt : new Date(dt);
@@ -330,6 +356,12 @@ function renderMrjzyStandaloneCourses() {
 
 async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
   const MRJZY_SIGN_SALT = 'IF75D4U19LKLDAZSMPN5ATQLGBFEJL4VIL2STVDBNJJTO6LNOGB265CR40I4AL13';
+  const throwIfCancelled = () => {
+    if (runtimeCtx?.cancelled) {
+      throw Object.assign(new Error('每日交作业加载已取消'), { code: 'cancelled' });
+    }
+  };
+  throwIfCancelled();
 
   const waitTabReady = async (tabId, timeoutMs = 12000) => {
     const start = Date.now();
@@ -413,6 +445,14 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
               const t = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
               ctx.tabId = Number(t?.id || 0) || null;
               ctx.createdTab = true;
+              if (ctx.cancelled) {
+                if (ctx.tabId) {
+                  try { await chrome.tabs.remove(Number(ctx.tabId)); } catch { /* ignore */ }
+                }
+                ctx.tabId = null;
+                ctx.createdTab = false;
+                throw Object.assign(new Error('每日交作业加载已取消'), { code: 'cancelled' });
+              }
               return ctx.tabId;
             })();
             try {
@@ -436,7 +476,9 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
         }
       }
       if (!tab?.id) throw new Error('NO_TAB');
+      throwIfCancelled();
       await waitTabReady(tab.id, 15000);
+      throwIfCancelled();
 
       const injected = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -550,11 +592,13 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
   if (runtimeCtx?.preferPageContext) {
     try {
       return await postFromZuoyePageContext(bodyRaw, sign, token, runtimeCtx);
-    } catch {
+    } catch (error) {
+      if (runtimeCtx?.cancelled || error?.code === 'cancelled') throw error;
       // fallback to direct fetch below
     }
   }
 
+  throwIfCancelled();
   const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
@@ -571,7 +615,8 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
   if (Number(res.status) === 401 || Number(res.status) === 403) {
     try {
       return await postFromZuoyePageContext(bodyRaw, sign, token, runtimeCtx);
-    } catch {
+    } catch (error) {
+      if (runtimeCtx?.cancelled || error?.code === 'cancelled') throw error;
       // fallback to direct response below
     }
   }
@@ -579,20 +624,31 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
 }
 
 async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
-  const shouldAbort = () => !!(loadVersion && loadVersion !== (window.platformLoadVersion?.mrjzy || 0)) || !isPlatformEnabled('mrjzy');
-  if (shouldAbort()) return;
+  const mrjzyRuntimeCtx = {
+    tabId: null,
+    createdTab: false,
+    creatingTabPromise: null,
+    closePromise: null,
+    cancelled: false,
+    preferPageContext: true
+  };
+  mrjzyActiveRuntimeCtx = mrjzyRuntimeCtx;
+  const shouldAbort = () => mrjzyRuntimeCtx.cancelled
+    || !!(loadVersion && loadVersion !== (window.platformLoadVersion?.mrjzy || 0))
+    || !isPlatformEnabled('mrjzy');
+  if (shouldAbort()) {
+    if (mrjzyActiveRuntimeCtx === mrjzyRuntimeCtx) mrjzyActiveRuntimeCtx = null;
+    return;
+  }
   if (!isPlatformEnabled('mrjzy')) {
     clearPlatformData('mrjzy');
     rerenderAllHomeworkAreas();
     return;
   }
   setPlatformLoginState('mrjzy', 'checking');
-  const mrjzyRuntimeCtx = { tabId: null, createdTab: false, preferPageContext: true };
   const closeMrjzyRuntimeTab = async () => {
-    if (mrjzyRuntimeCtx?.createdTab && mrjzyRuntimeCtx?.tabId) {
-      try { await chrome.tabs.remove(Number(mrjzyRuntimeCtx.tabId)); } catch { /* ignore */ }
-      mrjzyRuntimeCtx.tabId = null;
-    }
+    await closeMrjzyOwnedRuntimeTab(mrjzyRuntimeCtx);
+    if (mrjzyActiveRuntimeCtx === mrjzyRuntimeCtx) mrjzyActiveRuntimeCtx = null;
   };
 
   const pickMrjzyCourseName = (w) => {
@@ -612,7 +668,10 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     endTime,
     limit: 1
   }, mrjzyRuntimeCtx);
-  if (shouldAbort()) return;
+  if (shouldAbort()) {
+    await closeMrjzyRuntimeTab();
+    return;
+  }
 
   if (listResp.res.status === 401 || listResp.res.status === 403) {
     window.platformLoadedOnce.mrjzy = true;
@@ -703,7 +762,10 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     completedDetailLoads += 1;
     setPlatformContentLoadProgress('mrjzy', completedDetailLoads, works.length);
   })));
-  if (shouldAbort()) return;
+  if (shouldAbort()) {
+    await closeMrjzyRuntimeTab();
+    return;
+  }
   const teacherByWorkId = new Map();
   detailSettled.forEach((r) => {
     if (r.status === 'fulfilled') teacherByWorkId.set(r.value.workId, r.value.teacherName || '');
