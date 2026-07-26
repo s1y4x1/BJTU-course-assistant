@@ -82,20 +82,20 @@ function tryImportModuleScripts(...paths) {
 }
 
 const veBackgroundReady = tryImportModuleScripts(
-  'modules/ve/vendor/main.min.js',
-  'modules/ve/password-cipher.js',
-  'modules/ve/login-utils.js',
-  'modules/ve/account-store.js',
-  'modules/ve/homework-core.js'
+  '../modules/ve/vendor/main.min.js',
+  '../modules/ve/password-cipher.js',
+  '../modules/ve/login-utils.js',
+  '../modules/ve/account-store.js',
+  '../modules/ve/homework-core.js'
 );
-tryImportModuleScripts('modules/captcha/recognizer.js');
-if (veBackgroundReady) tryImportModuleScripts('modules/ve/login-service.js');
-tryImportModuleScripts('modules/academic/system.js');
-tryImportModuleScripts('modules/campusnet/background.js');
-tryImportModuleScripts('modules/updater/filesystem.js', 'modules/updater/background.js');
-tryImportModuleScripts('modules/jlgj/background.js');
-tryImportModuleScripts('modules/mooc/background.js');
-if (veBackgroundReady) tryImportModuleScripts('modules/ve/background-homework.js');
+tryImportModuleScripts('../modules/captcha/recognizer.js');
+if (veBackgroundReady) tryImportModuleScripts('../modules/ve/login-service.js');
+tryImportModuleScripts('../modules/academic/system.js');
+tryImportModuleScripts('../modules/campusnet/background.js');
+tryImportModuleScripts('../modules/updater/filesystem.js', '../modules/updater/background.js');
+tryImportModuleScripts('../modules/jlgj/background.js');
+tryImportModuleScripts('../modules/mooc/background.js');
+if (veBackgroundReady) tryImportModuleScripts('../modules/ve/background-homework.js');
 
 const OPTIONAL_CONTENT_SCRIPTS = [
   {
@@ -173,7 +173,7 @@ async function initializeExtensionRuntimeMetadata() {
 
 void initializeExtensionRuntimeMetadata();
 
-const APP_URL = chrome.runtime.getURL('app.html');
+const APP_URL = chrome.runtime.getURL('app/app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 
@@ -536,7 +536,7 @@ async function refreshActionPopupFromStorage() {
     if (mode === 'page') {
       try { await chrome.action.setPopup({ popup: '' }); } catch (e) {}
     } else {
-      try { await chrome.action.setPopup({ popup: 'popup.html' }); } catch (e) {}
+      try { await chrome.action.setPopup({ popup: 'popup/popup.html' }); } catch (e) {}
     }
   } catch (e) {
     // ignore
@@ -677,7 +677,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message?.payload?.accountInit) targetParams.set('accountInit', '1');
         if (message?.payload?.autoUpdate) targetParams.set('autoUpdate', '1');
         const targetUrl = targetParams.size
-          ? chrome.runtime.getURL(`app.html?${targetParams.toString()}`)
+          ? chrome.runtime.getURL(`app/app.html?${targetParams.toString()}`)
           : APP_URL;
         const stored = await chrome.storage.local.get(['preferExistingFullscreenPage']).catch(() => ({}));
         const preferExisting = message?.payload?.preferExistingForReturn === true

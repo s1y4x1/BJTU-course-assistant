@@ -223,7 +223,7 @@ async function openJlgjBackgroundTab() {
 }
 
 async function captureJlgjAppReturnTarget() {
-  const appUrl = chrome.runtime.getURL('app.html');
+  const appUrl = chrome.runtime.getURL('app/app.html');
   const current = await chrome.tabs.getCurrent().catch(() => null);
   if (current?.id && String(current.url || '').startsWith(appUrl)) {
     return { tabId: Number(current.id), windowId: Number(current.windowId) };
@@ -232,7 +232,7 @@ async function captureJlgjAppReturnTarget() {
 }
 
 async function returnToJlgjApp(target) {
-  const appUrl = chrome.runtime.getURL('app.html');
+  const appUrl = chrome.runtime.getURL('app/app.html');
   const tabId = Number(target?.tabId || 0);
   if (tabId) {
     const tab = await chrome.tabs.get(tabId).catch(() => null);

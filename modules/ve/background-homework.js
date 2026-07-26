@@ -12,7 +12,7 @@
   const XQ_CODE_KEY = 'selectedXqCode';
   const ALARM_NAME = 'bjtu-homework-background-refresh';
   const DEFAULT_INTERVAL_MINUTES = 30;
-  const APP_URL = chrome.runtime.getURL('app.html');
+  const APP_URL = chrome.runtime.getURL('app/app.html');
   const NOTIFICATION_PREFIX = 'bjtu-homework-reminder:new:';
   let runningPromise = null;
   let activeRefreshController = null;

@@ -369,9 +369,9 @@ function goBackToApp() {
   // popup iframe by app.html's ⚙️ button. Detect which one and route accordingly.
   const inPopup = new URLSearchParams(String(location.search || '')).get('popup') === '1';
   if (inPopup) {
-    try { window.location.href = 'app.html?popup=1'; return; } catch {}
+    try { window.location.href = '../app/app.html?popup=1'; return; } catch {}
   }
-  const appUrl = chrome.runtime.getURL('app.html');
+  const appUrl = chrome.runtime.getURL('app/app.html');
   try {
     chrome.runtime.sendMessage({ type: 'OPEN_APP' }, (result) => {
       if (chrome.runtime.lastError) {

@@ -160,7 +160,7 @@
   chrome.notifications.onClicked.addListener((notificationId) => {
     if (notificationId !== NOTIFICATION_ID) return;
     chrome.runtime.openOptionsPage().catch(() => {
-      chrome.tabs.create({ url: chrome.runtime.getURL('options.html') }).catch(() => {});
+      chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') }).catch(() => {});
     });
     chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
   });

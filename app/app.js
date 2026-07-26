@@ -367,7 +367,7 @@ function showAutoLoadCourseResourcesDisabledNotice() {
   optionsLink?.addEventListener('click', (event) => {
     event.preventDefault();
     if (typeof popupMode !== 'undefined' && popupMode) {
-      window.location.href = 'options.html?popup=1';
+      window.location.href = '../options/options.html?popup=1';
       return;
     }
     chrome.runtime.openOptionsPage?.();
@@ -451,13 +451,13 @@ if (openOptionsBtn) {
   openOptionsBtn.addEventListener('click', () => {
     if (typeof popupMode !== 'undefined' && popupMode) {
       // Navigate inside popup iframe instead of opening a new tab.
-      try { window.location.href = 'options.html?popup=1'; return; } catch { }
+      try { window.location.href = '../options/options.html?popup=1'; return; } catch { }
     }
     if (chrome.runtime && chrome.runtime.openOptionsPage) {
       try { chrome.runtime.openOptionsPage(); return; } catch { }
     }
     // fallback
-    try { chrome.tabs.create({ url: chrome.runtime.getURL('options.html') }); } catch { }
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') }); } catch { }
   });
 }
 
@@ -466,11 +466,11 @@ if (popupOpenFullscreenBtn) {
     try {
       chrome.runtime.sendMessage({ type: 'OPEN_APP' }, () => {
         if (chrome.runtime.lastError) {
-          try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch { }
+          try { chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }); } catch { }
         }
       });
     } catch {
-      try { chrome.tabs.create({ url: chrome.runtime.getURL('app.html') }); } catch { }
+      try { chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }); } catch { }
     }
   });
 }

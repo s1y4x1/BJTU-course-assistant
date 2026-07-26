@@ -83,6 +83,20 @@ const VERSION_OPTIONAL_MODULES = Object.freeze({
 });
 const VERSION_MODULE_SCOPE_IDS = ['ve', ...Object.keys(VERSION_OPTIONAL_MODULES)];
 const VERSION_REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
+const VERSION_ROOT_COMPONENT_DIRECTORY_NAMES = Object.freeze({
+  _locales: '_locales',
+  app: 'app',
+  cache: 'cache',
+  core: 'core',
+  icons: 'icons',
+  options: 'options',
+  popup: 'popup',
+  qr: 'QR',
+  ui: 'UI',
+  uploads: 'uploads'
+});
+const VERSION_ROOT_COMPONENT_IDS = new Set(Object.keys(VERSION_ROOT_COMPONENT_DIRECTORY_NAMES));
+const VERSION_IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
 let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
 let versionRefreshCountdownAction = null;
@@ -1422,20 +1436,40 @@ function normalizeVersionUpdateScopes(updateRule) {
 function versionUpdateAppliesToSelection(updateRule, selectedModules) {
   const scopes = normalizeVersionUpdateScopes(updateRule);
   if (!scopes || scopes.has('main') || [...VERSION_REQUIRED_MODULE_IDS].some((id) => scopes.has(id))) return true;
+  if ([...scopes].some((id) => VERSION_ROOT_COMPONENT_IDS.has(id))) return true;
   for (const id of selectedModules || []) {
     if (scopes.has(String(id || '').toLowerCase())) return true;
   }
   return false;
 }
 
+function getVersionArchiveComponent(path) {
+  const normalized = String(path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  if (!parts.length) return null;
+  if (parts.length === 1) {
+    return parts[0].toLowerCase() === 'manifest.json'
+      ? { id: 'manifest', module: false, manifest: true }
+      : null;
+  }
+  const first = parts[0].toLowerCase();
+  if (VERSION_IGNORED_ARCHIVE_DIRECTORIES.has(first)) return null;
+  if (first === 'modules') {
+    const id = String(parts[1] || '').toLowerCase();
+    return id ? { id, module: true, manifest: false } : null;
+  }
+  return { id: first, module: false, manifest: false };
+}
+
 function selectUpdateArchiveFiles(files, updateRule) {
   const scopes = normalizeVersionUpdateScopes(updateRule);
-  if (!scopes) return files;
   return files.filter((item) => {
-    const path = String(item.path || '').toLowerCase();
-    const match = path.match(/^modules\/([^/]+)\//i);
-    if (match) return scopes.has(match[1].toLowerCase());
-    return scopes.has('main');
+    const component = getVersionArchiveComponent(item.path);
+    if (!component) return false;
+    if (!component.module && !component.manifest && !VERSION_ROOT_COMPONENT_IDS.has(component.id)) return false;
+    if (!scopes || component.manifest) return true;
+    if (component.module) return scopes.has(component.id);
+    return scopes.has('main') || scopes.has(component.id);
   });
 }
 
@@ -1780,10 +1814,19 @@ async function cleanVersionUpdateScopes(updateRule, selectedModules) {
   if (scopes.has('main')) {
     const names = [];
     for await (const [name] of root.entries()) {
-      if (name !== 'modules') names.push(name);
+      if (name !== 'modules' && name !== 'manifest.json') names.push(name);
     }
     for (const name of names) {
       await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true }).catch((error) => {
+        if (error?.name !== 'NotFoundError') throw error;
+      });
+    }
+  }
+  for (const id of scopes) {
+    if (!VERSION_ROOT_COMPONENT_IDS.has(id)) continue;
+    const directoryName = VERSION_ROOT_COMPONENT_DIRECTORY_NAMES[id] || id;
+    for (const candidate of new Set([directoryName, id])) {
+      await globalThis.BjtuUpdateFileSystem.removeEntry(root, candidate, { recursive: true }).catch((error) => {
         if (error?.name !== 'NotFoundError') throw error;
       });
     }

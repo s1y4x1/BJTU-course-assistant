@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // keep iframe pinned to popup-mode app page
   try {
-    frame.src = chrome.runtime.getURL('app.html?popup=1');
+    frame.src = chrome.runtime.getURL('app/app.html?popup=1');
   } catch (e) {
     // ignore
   }
