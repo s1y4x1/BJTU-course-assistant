@@ -680,7 +680,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           ? chrome.runtime.getURL(`app.html?${targetParams.toString()}`)
           : APP_URL;
         const stored = await chrome.storage.local.get(['preferExistingFullscreenPage']).catch(() => ({}));
-        const preferExisting = stored.preferExistingFullscreenPage !== false;
+        const preferExisting = message?.payload?.preferExistingForReturn === true
+          || stored.preferExistingFullscreenPage !== false;
         const tabs = preferExisting
           ? (await chrome.tabs.query({})).filter((tab) => String(tab?.url || '').startsWith(APP_URL))
           : [];

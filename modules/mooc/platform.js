@@ -151,22 +151,28 @@ let moocLoginAssistPopupTabId = null;
   }
 
   async function acquireHelperTab() {
-    const tab = await ensureOriginTab();
     const leaseId = crypto.randomUUID();
     helperLeases.add(leaseId);
-    const timer = helperCloseTimers.get(tab.id);
-    if (timer) clearTimeout(timer);
-    helperCloseTimers.delete(tab.id);
-    return leaseId;
+    try {
+      const tab = await ensureOriginTab();
+      const timer = helperCloseTimers.get(tab.id);
+      if (timer) clearTimeout(timer);
+      helperCloseTimers.delete(tab.id);
+      return leaseId;
+    } catch (error) {
+      helperLeases.delete(leaseId);
+      if (helperLeases.size === 0) {
+        [...helperTabIds].forEach((tabId) => closeHelperTab(tabId));
+      }
+      throw error;
+    }
   }
 
   async function releaseHelperTab(leaseId) {
     if (!leaseId) return;
     helperLeases.delete(String(leaseId));
     if (helperLeases.size > 0) return;
-    if (activeRequestTabId && helperTabIds.has(Number(activeRequestTabId))) {
-      closeHelperTab(Number(activeRequestTabId));
-    }
+    [...helperTabIds].forEach((tabId) => closeHelperTab(tabId));
   }
 
   const formatTime = (value) => {

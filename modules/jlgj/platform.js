@@ -222,13 +222,40 @@ async function openJlgjBackgroundTab() {
   return tab;
 }
 
-async function closeJlgjBackgroundTabAndReturnToApp(tabId) {
+async function captureJlgjAppReturnTarget() {
+  const appUrl = chrome.runtime.getURL('app.html');
+  const current = await chrome.tabs.getCurrent().catch(() => null);
+  if (current?.id && String(current.url || '').startsWith(appUrl)) {
+    return { tabId: Number(current.id), windowId: Number(current.windowId) };
+  }
+  return null;
+}
+
+async function returnToJlgjApp(target) {
+  const appUrl = chrome.runtime.getURL('app.html');
+  const tabId = Number(target?.tabId || 0);
+  if (tabId) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab?.id && String(tab.url || '').startsWith(appUrl)) {
+      await chrome.tabs.update(tab.id, { active: true }).catch(() => null);
+      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
+      return true;
+    }
+  }
+  const result = await chrome.runtime.sendMessage({
+    type: 'OPEN_APP',
+    payload: { preferExistingForReturn: true }
+  }).catch(() => null);
+  return !!result?.ok;
+}
+
+async function closeJlgjBackgroundTabAndReturnToApp(tabId, returnTarget = null) {
   const id = Number(tabId || 0);
   if (!id || !jlgjOwnedBackgroundTabIds.has(id)) return;
   try {
     const tab = await chrome.tabs.get(id);
     if (tab?.active) {
-      await chrome.runtime.sendMessage({ type: 'OPEN_APP' }).catch(() => null);
+      await returnToJlgjApp(returnTarget);
     }
   } catch {
     // The login tab may already have been closed by the user.
@@ -778,6 +805,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
   }
   setPlatformLoginState('jlgj', 'checking');
 
+  const appReturnTarget = await captureJlgjAppReturnTarget();
   let bgTab = null;
   let keepBgTabOpen = false;
   // Cleanup orphaned background tabs from previous popup sessions
@@ -840,6 +868,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       bgTab = { id: Number(listResp.tabId) };
     }
     if (listResp?.loginPageClosedUnauthenticated) {
+      await returnToJlgjApp(appReturnTarget);
       if (isPlatformEnabled('jlgj')) {
         togglePlatformSelection('jlgj', { interactive: false, persist: true });
       }
@@ -1141,7 +1170,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     }
   } finally {
     if (bgTab?.id && !keepBgTabOpen) {
-      await closeJlgjBackgroundTabAndReturnToApp(bgTab.id);
+      await closeJlgjBackgroundTabAndReturnToApp(bgTab.id, appReturnTarget);
     }
   }
 }
