@@ -39,8 +39,8 @@
       </label>
       <div class="tip">关闭时，在布局动画期间隐藏课程列表并显示“正在处理…”；动画完成后立即恢复。</div>
       <label class="countdown-style-option">
-        <span>作业剩余时间倒计时</span>
-        <select id="deadlineCountdownStyle" aria-label="作业剩余时间倒计时字体">
+        <span>剩余时间倒计时</span>
+        <select id="deadlineCountdownStyle" aria-label="剩余时间倒计时字体">
           <option value="normal">正常字体</option>
           <option value="seven-seg">七段数码管</option>
         </select>
@@ -330,10 +330,28 @@
         <input type="checkbox" id="academicScoreMonitorEnabled" style="width:auto;" />
         监控本学期成绩并通知
       </label>
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="checkbox" id="academicExamMonitorEnabled" style="width:auto;" />
+        监控考试信息并通知
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="checkbox" id="academicClassReminderEnabled" style="width:auto;" />
+        上课前通知
+      </label>
+      <div id="academicClassReminderLeadEditor" class="schedule-interval-editor">
+        <span>提前时间</span>
+        <input type="number" id="academicClassReminderLeadValue" min="1" step="1" value="10"
+          aria-label="上课前通知提前时间" />
+        <select id="academicClassReminderLeadUnit" aria-label="上课前通知提前时间单位">
+          <option value="1" selected>分钟</option>
+          <option value="60">小时</option>
+          <option value="1440">天</option>
+        </select>
+      </div>
       <div id="academicScoreMonitorIntervalEditor" class="schedule-interval-editor">
         <span>检查间隔</span>
-        <input type="number" id="academicScoreMonitorIntervalValue" min="1" step="1" value="1" aria-label="成绩检查间隔" />
-        <select id="academicScoreMonitorIntervalUnit" aria-label="成绩检查间隔单位">
+        <input type="number" id="academicScoreMonitorIntervalValue" min="1" step="1" value="1" aria-label="教务信息检查间隔" />
+        <select id="academicScoreMonitorIntervalUnit" aria-label="教务信息检查间隔单位">
           <option value="1" selected>分钟</option>
           <option value="60">小时</option>
           <option value="1440">天</option>
@@ -342,7 +360,10 @@
       <div id="academicSystemStatus" class="option-status">正在检查教务系统登录状态并读取成绩…</div>
       <div class="academic-score-header">
         <strong>本学期成绩</strong>
-        <span id="academicScoreCount" class="academic-score-count"></span>
+        <span class="academic-score-header-meta">
+          <time id="academicScoreCheckedAt"></time>
+          <span id="academicScoreCount" class="academic-score-count"></span>
+        </span>
       </div>
       <div id="academicScoreLoading" class="academic-score-loading"><span
           class="options-page-spinner"></span><span>正在读取成绩…</span></div>
@@ -362,6 +383,69 @@
             </tr>
           </thead>
           <tbody id="academicScoreTableBody"></tbody>
+        </table>
+      </div>
+      <div class="academic-score-header">
+        <strong>考务考试信息</strong>
+        <span class="academic-score-header-meta">
+          <time id="academicExamCheckedAt"></time>
+          <span id="academicExamCount" class="academic-score-count"></span>
+        </span>
+      </div>
+      <div id="academicExamLoading" class="academic-score-loading"><span
+          class="options-page-spinner"></span><span>正在读取考试信息…</span></div>
+      <div id="academicExamEmpty" class="option-status" style="display:none; margin:0;">暂无考试信息</div>
+      <div id="academicExamStatus" class="option-status" style="display:none; margin:0 0 7px;"></div>
+      <div id="academicExamTableWrap" class="academic-score-table-wrap" style="display:none;">
+        <table class="academic-score-table academic-exam-table">
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th>考试</th>
+              <th>课程</th>
+              <th>时间地点</th>
+              <th>考试方式</th>
+              <th>备注</th>
+              <th>报名信息</th>
+              <th>考试状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="academicExamTableBody"></tbody>
+        </table>
+      </div>
+      <div class="academic-score-header academic-schedule-header">
+        <strong>课表</strong>
+        <span class="academic-schedule-controls">
+          <select id="academicScheduleType" aria-label="课表类型">
+            <option value="semester" selected>本学期课表</option>
+            <option value="selection">选课课表</option>
+          </select>
+          <label for="academicScheduleWeek">周数</label>
+          <select id="academicScheduleWeek" aria-label="课表周数">
+            <option value="all" selected>全部</option>
+          </select>
+          <button id="academicScheduleCurrentWeekBtn" type="button">本周</button>
+        </span>
+      </div>
+      <div id="academicScheduleLoading" class="academic-score-loading"><span
+          class="options-page-spinner"></span><span>正在读取课表…</span></div>
+      <div id="academicScheduleEmpty" class="option-status" style="display:none; margin:0;">暂无课表数据</div>
+      <div id="academicScheduleTableWrap" class="academic-score-table-wrap" style="display:none;">
+        <table class="academic-score-table academic-schedule-table">
+          <thead>
+            <tr>
+              <th>节次</th>
+              <th>星期一</th>
+              <th>星期二</th>
+              <th>星期三</th>
+              <th>星期四</th>
+              <th>星期五</th>
+              <th>星期六</th>
+              <th>星期日</th>
+            </tr>
+          </thead>
+          <tbody id="academicScheduleTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -404,6 +488,7 @@
   </footer>
   <script src="../core/module-registry.js"></script>
   <script src="../core/storage-utils.js"></script>
+  <script src="../UI/deadline-countdown.js"></script>
   <script src="../core/loaders/updater-loader.js"></script>
   <script src="../core/loaders/ve-options-loader.js"></script>
   <script src="options.js"></script>

@@ -4,27 +4,60 @@
   const LOGIN_URL = 'https://aa.bjtu.edu.cn/client/login/';
   const INDEX_URL = 'https://aa.bjtu.edu.cn/client/index/';
   const SCORE_URL = 'https://aa.bjtu.edu.cn/score/scores/stu/view';
+  const EXAM_URL = 'https://aa.bjtu.edu.cn/examine/examplanstudent/stulist';
+  const SCHEDULE_URLS = Object.freeze({
+    semester: 'https://aa.bjtu.edu.cn/course_selection/courseselect/stuschedule/',
+    selection: 'https://aa.bjtu.edu.cn/course_selection/courseselecttask/schedule/'
+  });
+  const BKSY_SEMESTER_URL = 'https://bksy.bjtu.edu.cn/Admin/SemesterHandler.ashx';
+  const VE_WEEK_URL = 'http://123.121.147.7:88/ve/back/rp/common/myTimeTableDetail.shtml?method=getJxz';
   const TRAINING_PROGRAM_URL = 'https://aa.bjtu.edu.cn/training/training/program/';
   const MIS_MODULE_URL = 'https://mis.bjtu.edu.cn/module/module/10/';
   const ACCOUNTS_KEY = 'academicSystemAccounts';
   const OBSOLETE_BINDING_KEYS = ['academicSystemBindings', 'academicSystemBindToastShown'];
   const STUDENT_ID_KEY = 'academicSystemStudentId';
   const MONITOR_KEY = 'academicScoreMonitorEnabled';
+  const EXAM_MONITOR_KEY = 'academicExamMonitorEnabled';
+  const CLASS_REMINDER_KEY = 'academicClassReminderEnabled';
+  const CLASS_REMINDER_LEAD_KEY = 'academicClassReminderLeadMinutes';
+  const CLASS_REMINDER_NOTIFIED_KEY = 'academicClassReminderNotified';
   const MONITOR_INTERVAL_KEY = 'academicScoreMonitorIntervalMinutes';
   const DEFAULT_MONITOR_INTERVAL_MINUTES = 1;
   const SNAPSHOTS_KEY = 'academicScoreSnapshots';
   const PENDING_NOTIFICATIONS_KEY = 'academicScorePendingNotifications';
   const STATUS_KEY = 'academicScoreMonitorStatus';
+  const EXAM_SNAPSHOTS_KEY = 'academicExamSnapshots';
+  const EXAM_PENDING_NOTIFICATIONS_KEY = 'academicExamPendingNotifications';
+  const EXAM_STATUS_KEY = 'academicExamMonitorStatus';
   const ALARM_NAME = 'bjtu-academic-score-check';
   const NOTIFICATION_PREFIX = 'bjtu-academic-score:';
+  const EXAM_NOTIFICATION_PREFIX = 'bjtu-academic-exam:';
+  const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
   // Can be changed from the extension service worker console through
   // BjtuAcademicSystemInternals.notifyInitialScoreRows.
   let notifyInitialScoreRows = true;
+  let notifyInitialExamRows = true;
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  }
+
+  async function fetchAcademicWith503Retry(url, options = {}) {
+    while (true) {
+      const response = await fetch(url, options);
+      if (response.status !== 503) return response;
+      response.body?.cancel?.().catch?.(() => {});
+      await wait(1000);
+    }
+  }
   const misLoginTabs = new Set();
   const misLoginVerifyingTabs = new Set();
   const pendingCredentialsByTab = new Map();
   let scoreCheckPromise = null;
+  let examCheckPromise = null;
+  let classReminderCheckPromise = null;
+  let academicSessionPromise = null;
   let scoreProcessPromise = Promise.resolve();
+  let examProcessPromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
 
   function decodeHtmlEntities(value) {
@@ -109,6 +142,169 @@
     return { hasScoreTable, rows };
   }
 
+  function attributeFromHtml(value, name) {
+    const escaped = String(name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = String(value || '').match(new RegExp(`\\b${escaped}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, 'i'));
+    return match ? decodeHtmlEntities(match[2]).trim() : '';
+  }
+
+  function normalizeExamRow(row) {
+    const source = row && typeof row === 'object' ? row : {};
+    const normalized = {
+      id: String(source.id || '').trim(),
+      sequence: String(source.sequence || '').trim(),
+      exam: String(source.exam || '').replace(/\s+/g, ' ').trim(),
+      course: String(source.course || '').replace(/\s+/g, ' ').trim(),
+      courseCode: String(source.courseCode || '').replace(/\s+/g, ' ').trim(),
+      startAt: Number(source.startAt || 0),
+      timeLocation: String(source.timeLocation || '').replace(/\r/g, '')
+        .split('\n').map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n'),
+      method: String(source.method || '').replace(/\s+/g, ' ').trim(),
+      remarks: String(source.remarks || '').replace(/\s+/g, ' ').trim(),
+      registration: String(source.registration || '').replace(/\s+/g, ' ').trim(),
+      status: String(source.status || '').replace(/\s+/g, ' ').trim(),
+      operation: String(source.operation || '').replace(/\s+/g, ' ').trim()
+    };
+    if (!normalized.startAt) normalized.startAt = parseExamStartAt(normalized.timeLocation);
+    normalized.key = normalized.id || `${normalized.exam}|${normalized.courseCode || normalized.course}`;
+    return normalized;
+  }
+
+  function parseExamStartAt(value) {
+    const match = String(value || '').match(
+      /(\d{4})[/-](\d{1,2})[/-](\d{1,2})\s+(\d{1,2}):(\d{2})/
+    );
+    if (!match) return 0;
+    const timestamp = new Date(
+      Number(match[1]), Number(match[2]) - 1, Number(match[3]),
+      Number(match[4]), Number(match[5]), 0, 0
+    ).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function parseExamPage(html) {
+    const source = String(html || '');
+    const table = [...source.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)]
+      .find((match) => /\bclass\s*=\s*["'][^"']*\btable-bordered\b/i.test(match[1])
+        && /<th\b[^>]*>\s*考试\s*<\/th>/i.test(match[2])
+        && /<th\b[^>]*>\s*时间地点\s*<\/th>/i.test(match[2])
+        && /<th\b[^>]*>\s*考试方式\s*<\/th>/i.test(match[2]));
+    const hasExamTable = !!table;
+    const rows = [];
+    for (const rowMatch of String(table?.[2] || '').matchAll(/<tr\b([^>]*)>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...rowMatch[2].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((match) => match[1]);
+      if (cells.length < 8) continue;
+      const courseCode = attributeFromHtml(cells[2], 'title');
+      const courseText = textFromHtml(cells[2]);
+      const timeLocation = textFromHtml(cells[3], true);
+      const row = normalizeExamRow({
+        id: attributeFromHtml(rowMatch[1], 'data-pk'),
+        sequence: textFromHtml(cells[0]),
+        exam: textFromHtml(cells[1]),
+        courseCode,
+        course: [courseCode, courseText].filter(Boolean).join(' '),
+        startAt: parseExamStartAt(timeLocation),
+        timeLocation,
+        method: textFromHtml(cells[4]),
+        remarks: textFromHtml(cells[5]),
+        registration: textFromHtml(cells[6]),
+        status: textFromHtml(cells[7]),
+        operation: textFromHtml(cells[8] || '')
+      });
+      if (row.exam && row.course) rows.push(row);
+    }
+    return { hasExamTable, rows };
+  }
+
+  function parseScheduleWeeks(value) {
+    const source = String(value || '').replace(/[，、]/g, ',');
+    const body = source.match(/第\s*([\d\s,\-—~～至]+?)\s*周/u)?.[1] || '';
+    const weeks = new Set();
+    for (const part of body.split(',').map((item) => item.trim()).filter(Boolean)) {
+      const range = part.match(/^(\d+)\s*(?:-|—|~|～|至)\s*(\d+)$/);
+      if (range) {
+        const begin = Number(range[1]);
+        const end = Number(range[2]);
+        for (let week = Math.min(begin, end); week <= Math.max(begin, end); week += 1) weeks.add(week);
+      } else if (/^\d+$/.test(part)) {
+        weeks.add(Number(part));
+      }
+    }
+    if (/单周/u.test(source)) {
+      for (const week of [...weeks]) if (week % 2 === 0) weeks.delete(week);
+    } else if (/双周/u.test(source)) {
+      for (const week of [...weeks]) if (week % 2 !== 0) weeks.delete(week);
+    }
+    return [...weeks].filter((week) => week > 0).sort((a, b) => a - b);
+  }
+
+  function parseScheduleCourseBlock(html) {
+    const source = String(html || '');
+    const headingHtml = source.match(/<span\b[^>]*>([\s\S]*?)<\/span>/i)?.[1] || '';
+    const headingLines = headingHtml
+      .split(/<br\s*\/?\s*>/i)
+      .map((item) => textFromHtml(item))
+      .filter(Boolean);
+    const courseCode = headingLines[0] || '';
+    const nameMatch = source.match(/<span\b[^>]*style\s*=\s*["'][^"']*color\s*:\s*#?000[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
+    const weekMatch = source.match(/<div\b[^>]*style\s*=\s*["'][^"']*max-width\s*:\s*120px[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+    const weekHtml = weekMatch?.[1] || '';
+    const teacher = textFromHtml(weekHtml.match(/<i\b[^>]*>([\s\S]*?)<\/i>/i)?.[1] || '');
+    const weekText = textFromHtml(weekHtml.replace(/<i\b[^>]*>[\s\S]*?<\/i>/gi, ''));
+    const mutedMatches = [...source.matchAll(/<span\b[^>]*class\s*=\s*["'][^"']*\btext-muted\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi)];
+    const location = textFromHtml(mutedMatches.at(-1)?.[1] || '');
+    const selectionStatus = textFromHtml(
+      source.match(/<span\b[^>]*class\s*=\s*["'][^"']*\bgreen\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || ''
+    );
+    const name = textFromHtml(nameMatch?.[1] || '') || headingLines[1] || '';
+    if (!courseCode && !name) return null;
+    return {
+      courseCode,
+      name,
+      weekText,
+      weeks: parseScheduleWeeks(weekText),
+      teacher,
+      location,
+      selectionStatus
+    };
+  }
+
+  function parseSchedulePage(html) {
+    const source = String(html || '');
+    const table = [...source.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)]
+      .find((match) => /\bclass\s*=\s*["'][^"']*\btable-bordered\b/i.test(match[1])
+        && /星期一/u.test(match[2]) && /星期日/u.test(match[2]));
+    const rows = [];
+    const allWeeks = new Set();
+    for (const rowMatch of String(table?.[2] || '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...rowMatch[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((match) => match[1]);
+      if (cells.length < 8) continue;
+      const periodText = textFromHtml(cells[0]);
+      const period = periodText.match(/第\s*\d+\s*节/u)?.[0]?.replace(/\s+/g, '') || periodText;
+      const time = periodText.match(/\[\s*([^\]]+)\s*\]/)?.[1]?.trim() || '';
+      const days = cells.slice(1, 8).map((cell) => {
+        const cellSource = String(cell || '');
+        const commentedParts = cellSource
+          .split(/<!--\s*处理主修和辅修记录，生成课表\s*-->/u)
+          .slice(1);
+        const parts = commentedParts.length > 0
+          ? commentedParts
+          : cellSource.split(/(?=<div\b[^>]*>\s*<span\b)/i).filter((part) => (
+            /^\s*<div\b[^>]*>\s*<span\b/i.test(part)
+          ));
+        const courses = parts.map(parseScheduleCourseBlock).filter(Boolean);
+        for (const course of courses) for (const week of course.weeks) allWeeks.add(week);
+        return courses;
+      });
+      rows.push({ period, time, days });
+    }
+    return {
+      hasScheduleTable: !!table,
+      rows,
+      weeks: [...allWeeks].sort((a, b) => a - b)
+    };
+  }
+
   function parseCurrentAccountPage(html) {
     const source = String(html || '');
     const table = [...source.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)]
@@ -138,6 +334,13 @@
     ]);
   }
 
+  function examFingerprint(row) {
+    return JSON.stringify([
+      row.exam, row.course, row.courseCode, row.timeLocation, row.method,
+      row.remarks, row.registration, row.status, row.operation
+    ]);
+  }
+
   function shortHash(value) {
     let hash = 2166136261;
     for (const ch of String(value || '')) {
@@ -155,6 +358,19 @@
       `学分：${row.credit || '-'}`,
       `序号：${row.sequence || '-'}`,
       `详细信息：${row.details || '-'}`
+    ].join('\n');
+  }
+
+  function formatExamNotification(row) {
+    return [
+      `考试：${row.exam || '-'}`,
+      `课程：${row.course || '-'}`,
+      `时间地点：${row.timeLocation || '-'}`,
+      `考试方式：${row.method || '-'}`,
+      `备注：${row.remarks || '-'}`,
+      `报名信息：${row.registration || '-'}`,
+      `考试状态：${row.status || '-'}`,
+      `操作：${row.operation || '-'}`
     ].join('\n');
   }
 
@@ -278,12 +494,20 @@
         target: { tabId: tab.id },
         world: 'MAIN',
         func: async (loginUrl, indexUrl, loginName, loginPassword) => {
+          const fetchWith503Retry = async (url, options) => {
+            while (true) {
+              const response = await fetch(url, options);
+              if (response.status !== 503) return response;
+              response.body?.cancel?.().catch?.(() => {});
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+          };
           const readCookie = (name) => document.cookie.split(';')
             .map((item) => item.trim())
             .find((item) => item.startsWith(`${name}=`))
             ?.slice(name.length + 1) || '';
           for (let attempt = 0; attempt < 2; attempt += 1) {
-            const page = await fetch(loginUrl, { credentials: 'include', cache: 'no-store' });
+            const page = await fetchWith503Retry(loginUrl, { credentials: 'include', cache: 'no-store' });
             if (!page.ok) return { ok: false, message: `登录页 HTTP ${page.status}` };
             const pageHtml = await page.text();
             const doc = new DOMParser().parseFromString(pageHtml, 'text/html');
@@ -297,7 +521,7 @@
             const headers = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
             const csrfCookie = decodeURIComponent(readCookie('csrftoken'));
             if (csrfCookie) headers['X-CSRFToken'] = csrfCookie;
-            const response = await fetch(loginUrl, {
+            const response = await fetchWith503Retry(loginUrl, {
               method: 'POST', body, headers, credentials: 'include', cache: 'no-store', redirect: 'follow'
             });
             const html = await response.text();
@@ -318,7 +542,7 @@
       if (result.ok) {
         await saveAcademicAccount(id, { password: secret, lastLoginAt: Date.now() });
         await broadcastStatus({ status: 'login-done', studentId: id });
-        scheduleScoreCheck();
+        scheduleAcademicChecks();
       } else {
         await broadcastStatus({ status: 'login-error', studentId: id, error: result.message });
       }
@@ -343,7 +567,7 @@
   }
 
   async function fetchCurrentAcademicAccount() {
-    const response = await fetch(TRAINING_PROGRAM_URL, {
+    const response = await fetchAcademicWith503Retry(TRAINING_PROGRAM_URL, {
       credentials: 'include', cache: 'no-store', redirect: 'follow'
     });
     const html = await response.text();
@@ -355,9 +579,11 @@
     return account;
   }
 
-  async function fetchScorePage() {
-    let account = await fetchCurrentAcademicAccount();
-    if (!account) {
+  async function ensureAcademicSession() {
+    if (academicSessionPromise) return academicSessionPromise;
+    academicSessionPromise = (async () => {
+      let account = await fetchCurrentAcademicAccount();
+      if (account) return account;
       const stored = await chrome.storage.local.get([STUDENT_ID_KEY, 'username']);
       const studentId = String(stored?.[STUDENT_ID_KEY] || stored?.username || '').trim();
       try {
@@ -367,14 +593,150 @@
       }
       account = await fetchCurrentAcademicAccount();
       if (!account) throw Object.assign(new Error('教务系统登录已失效'), { code: 'not-logged-in' });
+      return account;
+    })().finally(() => { academicSessionPromise = null; });
+    return academicSessionPromise;
+  }
+
+  function broadcastAcademicData(kind, rows, studentId, checkedAt) {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'ACADEMIC_DATA_UPDATED',
+        payload: {
+          kind,
+          rows,
+          studentId: String(studentId || ''),
+          checkedAt: Number(checkedAt || Date.now())
+        }
+      }, () => { void chrome.runtime.lastError; });
+    } catch {
+      // No extension page may be open.
     }
-    const response = await fetch(SCORE_URL, { credentials: 'include', cache: 'no-store', redirect: 'follow' });
+  }
+
+  async function fetchAcademicPage(url, label) {
+    const account = await ensureAcademicSession();
+    const response = await fetchAcademicWith503Retry(url, {
+      credentials: 'include', cache: 'no-store', redirect: 'follow'
+    });
     const html = await response.text();
-    if (!response.ok) throw new Error(`成绩页面 HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`${label}页面 HTTP ${response.status}`);
     if (isLoginPageResponse(response.url, html)) {
       throw Object.assign(new Error('教务系统登录已失效'), { code: 'not-logged-in' });
     }
     return { html, account };
+  }
+
+  function fetchScorePage() {
+    return fetchAcademicPage(SCORE_URL, '成绩');
+  }
+
+  function fetchExamPage() {
+    return fetchAcademicPage(EXAM_URL, '考试信息');
+  }
+
+  async function fetchSchedulePage(type = 'semester') {
+    const normalizedType = type === 'selection' ? 'selection' : 'semester';
+    const page = await fetchAcademicPage(SCHEDULE_URLS[normalizedType], '课表');
+    const parsed = parseSchedulePage(page.html);
+    if (!parsed.hasScheduleTable) throw new Error('课表页面中未找到课表');
+    return { ...parsed, account: page.account, type: normalizedType };
+  }
+
+  function localDateText(date = new Date()) {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  async function fetchVeWeekContext() {
+    let text = '';
+    let response = null;
+    if (global.BjtuVeHomeworkCore?.requestText) {
+      const result = await global.BjtuVeHomeworkCore.requestText(VE_WEEK_URL, {
+        method: 'POST',
+        timeoutMs: 8000,
+        redirect: 'manual',
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+      });
+      text = result?.text || '';
+      response = result?.response || null;
+    } else {
+      response = await fetch(VE_WEEK_URL, {
+        method: 'POST', credentials: 'include', cache: 'no-store',
+        redirect: 'manual',
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01' },
+        signal: AbortSignal.timeout(8000)
+      });
+      text = await response.text();
+    }
+    if (Number(response?.status || 0) === 302 || response?.type === 'opaqueredirect') {
+      throw Object.assign(new Error('智慧课程平台周次接口要求重新登录'), { code: 've-week-redirect' });
+    }
+    if (!response?.ok) throw new Error(`智慧课程平台周次接口 HTTP ${response?.status || 0}`);
+    const data = global.BjtuVeHomeworkCore?.parseJson
+      ? global.BjtuVeHomeworkCore.parseJson(text)
+      : JSON.parse(String(text || '').trim());
+    const list = Array.isArray(data?.jxzList) ? data.jxzList : [];
+    const today = localDateText();
+    const current = list.find((item) => {
+      const begin = String(item?.BEGIN_DATE || '').slice(0, 10);
+      const end = String(item?.END_DATE || '').slice(0, 10);
+      return begin && end && begin <= today && today <= end;
+    });
+    let termName = '';
+    if (global.BjtuVeHomeworkCore?.fetchTerms) {
+      const terms = await global.BjtuVeHomeworkCore.fetchTerms().catch(() => []);
+      termName = String(terms.find((item) => Number(item?.currentFlag || 0) === 2)?.xqName || '').trim();
+    }
+    return {
+      week: Number(current?.WEEK_CODE || 0),
+      weeks: list.map((item) => Number(item?.WEEK_CODE || 0)).filter((week) => week > 0),
+      weekLabels: Object.fromEntries(list
+        .map((item) => [Number(item?.WEEK_CODE || 0), String(item?.sfyk || '').trim()])
+        .filter(([week]) => week > 0)),
+      termName,
+      source: 've'
+    };
+  }
+
+  async function fetchBksyWeekContext() {
+    const response = await fetch(BKSY_SEMESTER_URL, {
+      credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(8000)
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(`本科生院周次接口 HTTP ${response.status}`);
+    const year = text.match(/（\s*(\d{4}-\d{4})学年\s*）/u)?.[1] || '';
+    const semester = text.match(/第([一二三])学期/u)?.[1] || '';
+    const week = Number(text.match(/第\s*(\d+)\s*周/u)?.[1] || 0);
+    if (!week) throw new Error('本科生院周次接口未返回周数');
+    return {
+      week,
+      weeks: [],
+      termName: [year, semester && `第${semester}学期`].filter(Boolean).join(''),
+      source: 'bksy'
+    };
+  }
+
+  async function fetchCurrentWeekContext(scheduleWeeks = []) {
+    let preferred = null;
+    try {
+      preferred = await fetchVeWeekContext();
+    } catch (error) {
+      if (String(error?.code || '') !== 've-week-redirect') throw error;
+      preferred = await fetchBksyWeekContext();
+    }
+    const weeks = new Set([
+      ...(Array.isArray(scheduleWeeks) ? scheduleWeeks : []),
+      ...(Array.isArray(preferred?.weeks) ? preferred.weeks : []),
+      Number(preferred?.week || 0)
+    ]);
+    return {
+      week: Number(preferred?.week || 0),
+      weeks: [...weeks].filter((week) => week > 0).sort((a, b) => a - b),
+      weekLabels: preferred?.weekLabels || {},
+      termName: String(preferred?.termName || ''),
+      source: String(preferred?.source || '')
+    };
   }
 
   async function notifyScoreChange(row, kind, studentId = '') {
@@ -403,6 +765,105 @@
         else resolve(notificationId);
       });
     });
+  }
+
+  async function notifyExamChange(row, kind, studentId = '') {
+    const titlePrefix = kind === 'new' ? '新增考试' : '考试信息更新';
+    const notificationId = `${EXAM_NOTIFICATION_PREFIX}${shortHash(`${studentId}|${kind}|${row.key}|${examFingerprint(row)}`)}`;
+    const options = {
+      type: 'basic',
+      iconUrl: 'icons/128.png',
+      title: `${titlePrefix}：${row.course || '-'}`,
+      message: formatExamNotification(row),
+      priority: 2
+    };
+    if (global.BjtuSystemNotifications?.create) {
+      await global.BjtuSystemNotifications.create(notificationId, options, 'academic-exam');
+      return;
+    }
+    await new Promise((resolve, reject) => {
+      chrome.notifications.create(notificationId, options, () => {
+        const error = chrome.runtime.lastError;
+        if (error) reject(new Error(error.message || '创建考试通知失败'));
+        else resolve(notificationId);
+      });
+    });
+  }
+
+  function normalizeClassReminderLeadMinutes(value) {
+    const minutes = Math.round(Number(value));
+    return Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600 ? minutes : 10;
+  }
+
+  async function notifyUpcomingClass(course, row, startAt, studentId = '') {
+    const notificationId = `${CLASS_NOTIFICATION_PREFIX}${shortHash([
+      studentId, localDateText(startAt), row?.period, course?.courseCode, course?.name
+    ].join('|'))}`;
+    const options = {
+      type: 'basic',
+      iconUrl: 'icons/128.png',
+      title: `即将上课：${course?.name || course?.courseCode || '课程'}`,
+      message: [
+        `${row?.period || ''}${row?.time ? ` [${row.time}]` : ''}`,
+        course?.teacher ? `教师：${course.teacher}` : '',
+        course?.location ? `地点：${course.location}` : ''
+      ].filter(Boolean).join('\n'),
+      priority: 2
+    };
+    if (global.BjtuSystemNotifications?.create) {
+      await global.BjtuSystemNotifications.create(notificationId, options, 'academic-class');
+      return notificationId;
+    }
+    await new Promise((resolve, reject) => {
+      chrome.notifications.create(notificationId, options, () => {
+        const error = chrome.runtime.lastError;
+        if (error) reject(new Error(error.message || '创建上课通知失败'));
+        else resolve(notificationId);
+      });
+    });
+    return notificationId;
+  }
+
+  async function checkUpcomingClasses() {
+    if (classReminderCheckPromise) return classReminderCheckPromise;
+    classReminderCheckPromise = (async () => {
+      const stored = await chrome.storage.local.get([
+        CLASS_REMINDER_KEY, CLASS_REMINDER_LEAD_KEY, CLASS_REMINDER_NOTIFIED_KEY
+      ]);
+      if (stored?.[CLASS_REMINDER_KEY] !== true) return { skipped: true };
+      const schedule = await fetchSchedulePage('semester');
+      const weekContext = await fetchCurrentWeekContext(schedule.weeks);
+      const currentWeek = Number(weekContext.week || 0);
+      const now = new Date();
+      const dayIndex = now.getDay() - 1;
+      if (currentWeek <= 0 || dayIndex < 0 || dayIndex > 6) return { skipped: true };
+      const leadMs = normalizeClassReminderLeadMinutes(stored?.[CLASS_REMINDER_LEAD_KEY]) * 60000;
+      const today = localDateText(now);
+      const notified = stored?.[CLASS_REMINDER_NOTIFIED_KEY]
+        && typeof stored[CLASS_REMINDER_NOTIFIED_KEY] === 'object'
+        ? stored[CLASS_REMINDER_NOTIFIED_KEY]
+        : {};
+      const nextNotified = Object.fromEntries(Object.entries(notified).filter(([key]) => key.startsWith(`${today}|`)));
+      for (const row of schedule.rows) {
+        const startText = String(row?.time || '').split('-')[0]?.trim();
+        const match = startText.match(/^(\d{1,2}):(\d{2})$/);
+        if (!match) continue;
+        const startAt = new Date(now);
+        startAt.setHours(Number(match[1]), Number(match[2]), 0, 0);
+        if (now.getTime() < startAt.getTime() - leadMs || now.getTime() >= startAt.getTime()) continue;
+        const courses = Array.isArray(row?.days?.[dayIndex]) ? row.days[dayIndex] : [];
+        for (const course of courses) {
+          if (!Array.isArray(course?.weeks) || !course.weeks.includes(currentWeek)) continue;
+          const key = `${today}|${row?.period || ''}|${course?.courseCode || ''}|${course?.name || ''}`;
+          if (nextNotified[key]) continue;
+          await notifyUpcomingClass(course, row, startAt, schedule.account?.studentId || '');
+          nextNotified[key] = Date.now();
+        }
+      }
+      await chrome.storage.local.set({ [CLASS_REMINDER_NOTIFIED_KEY]: nextNotified });
+      return { checked: true };
+    })().finally(() => { classReminderCheckPromise = null; });
+    return classReminderCheckPromise;
   }
 
   function normalizePendingScoreNotifications(value) {
@@ -475,13 +936,15 @@
         createdAt: Date.now()
       };
     }
-    snapshots[id] = { rows: nextRows, updatedAt: Date.now(), source };
+    const checkedAt = Date.now();
+    snapshots[id] = { rows: nextRows, updatedAt: checkedAt, source };
     await chrome.storage.local.set({
       [SNAPSHOTS_KEY]: snapshots,
       [PENDING_NOTIFICATIONS_KEY]: pending,
       [STUDENT_ID_KEY]: id,
-      [STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt: Date.now() }
+      [STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt }
     });
+    broadcastAcademicData('scores', normalizedRows, id, checkedAt);
     const remainingPending = await flushPendingScoreNotifications(pending);
     return {
       count: normalizedRows.length,
@@ -489,13 +952,113 @@
       pendingNotifications: Object.keys(remainingPending).length,
       baseline: !previous,
       rows: normalizedRows,
-      studentId: id
+      studentId: id,
+      checkedAt
     };
   }
 
   function processScoreRows(rows, studentId = '', source = 'poll') {
     const run = scoreProcessPromise.then(() => processScoreRowsInternal(rows, studentId, source));
     scoreProcessPromise = run.catch(() => {});
+    return run;
+  }
+
+  function normalizePendingExamNotifications(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const result = {};
+    for (const [key, item] of Object.entries(source)) {
+      const studentId = String(item?.studentId || '').trim();
+      const kind = item?.kind === 'updated' ? 'updated' : 'new';
+      const row = normalizeExamRow(item?.row);
+      if (!studentId || !row.exam || !row.course) continue;
+      result[key] = { studentId, kind, row, createdAt: Number(item?.createdAt || Date.now()) };
+    }
+    return result;
+  }
+
+  async function flushPendingExamNotifications(pendingOverride = null) {
+    const stored = pendingOverride
+      ? null
+      : await chrome.storage.local.get([EXAM_PENDING_NOTIFICATIONS_KEY]);
+    const pending = normalizePendingExamNotifications(
+      pendingOverride || stored?.[EXAM_PENDING_NOTIFICATIONS_KEY]
+    );
+    let changed = false;
+    for (const [key, item] of Object.entries(pending)) {
+      try {
+        await notifyExamChange(item.row, item.kind, item.studentId);
+        delete pending[key];
+        changed = true;
+      } catch {
+        // Keep failed notifications for the next alarm instead of losing them.
+      }
+    }
+    if (changed || pendingOverride) {
+      await chrome.storage.local.set({ [EXAM_PENDING_NOTIFICATIONS_KEY]: pending });
+    }
+    return pending;
+  }
+
+  async function processExamRowsInternal(rows, studentId = '', source = 'poll') {
+    const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeExamRow)
+      .filter((row) => row.exam && row.course);
+    const stored = await chrome.storage.local.get([
+      EXAM_SNAPSHOTS_KEY, EXAM_PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, EXAM_MONITOR_KEY, 'username'
+    ]);
+    const id = String(studentId || stored?.[STUDENT_ID_KEY] || stored?.username || 'default').trim() || 'default';
+    const snapshots = stored?.[EXAM_SNAPSHOTS_KEY] && typeof stored[EXAM_SNAPSHOTS_KEY] === 'object'
+      ? { ...stored[EXAM_SNAPSHOTS_KEY] }
+      : {};
+    const previous = snapshots[id]?.rows && typeof snapshots[id].rows === 'object'
+      ? snapshots[id].rows
+      : null;
+    const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, row]));
+    const changes = [];
+    const notificationsEnabled = stored?.[EXAM_MONITOR_KEY] === true;
+    if (previous && notificationsEnabled) {
+      for (const row of normalizedRows) {
+        if (!previous[row.key]) changes.push({ kind: 'new', row });
+        else if (examFingerprint(previous[row.key]) !== examFingerprint(row)) {
+          changes.push({ kind: 'updated', row });
+        }
+      }
+    } else if (!previous && notificationsEnabled && notifyInitialExamRows) {
+      for (const row of normalizedRows) changes.push({ kind: 'new', row });
+    }
+    const pending = normalizePendingExamNotifications(stored?.[EXAM_PENDING_NOTIFICATIONS_KEY]);
+    for (const change of changes) {
+      const pendingKey = shortHash(`${id}|${change.kind}|${change.row.key}|${examFingerprint(change.row)}`);
+      pending[pendingKey] = {
+        studentId: id,
+        kind: change.kind,
+        row: change.row,
+        createdAt: Date.now()
+      };
+    }
+    const checkedAt = Date.now();
+    snapshots[id] = { rows: nextRows, updatedAt: checkedAt, source };
+    await chrome.storage.local.set({
+      [EXAM_SNAPSHOTS_KEY]: snapshots,
+      [EXAM_PENDING_NOTIFICATIONS_KEY]: pending,
+      [STUDENT_ID_KEY]: id,
+      [EXAM_STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt }
+    });
+    broadcastAcademicData('exams', normalizedRows, id, checkedAt);
+    const remainingPending = await flushPendingExamNotifications(pending);
+    return {
+      count: normalizedRows.length,
+      changes: changes.length,
+      pendingNotifications: Object.keys(remainingPending).length,
+      baseline: !previous,
+      rows: normalizedRows,
+      studentId: id,
+      checkedAt
+    };
+  }
+
+  function processExamRows(rows, studentId = '', source = 'poll') {
+    const run = examProcessPromise.then(() => processExamRowsInternal(rows, studentId, source));
+    examProcessPromise = run.catch(() => {});
     return run;
   }
 
@@ -523,8 +1086,34 @@
     return scoreCheckPromise;
   }
 
-  function scheduleScoreCheck() {
+  async function checkExams(source = 'poll', { force = false } = {}) {
+    if (examCheckPromise) return examCheckPromise;
+    examCheckPromise = (async () => {
+      const settings = await chrome.storage.local.get([EXAM_MONITOR_KEY]);
+      if (!force && settings?.[EXAM_MONITOR_KEY] !== true) return { skipped: true };
+      try {
+        await flushPendingExamNotifications();
+        const page = await fetchExamPage();
+        const parsed = parseExamPage(page.html);
+        if (!parsed.hasExamTable) throw new Error('考试信息页面中未找到考试表格');
+        return await processExamRows(parsed.rows, page.account.studentId, source);
+      } catch (error) {
+        await chrome.storage.local.set({
+          [EXAM_STATUS_KEY]: {
+            status: 'error', error: String(error?.message || error),
+            code: String(error?.code || ''), checkedAt: Date.now()
+          }
+        }).catch(() => {});
+        throw error;
+      }
+    })().finally(() => { examCheckPromise = null; });
+    return examCheckPromise;
+  }
+
+  function scheduleAcademicChecks() {
     checkScores('scheduled').catch(() => {});
+    checkExams('scheduled').catch(() => {});
+    checkUpcomingClasses().catch(() => {});
   }
 
   async function captureScoreTab(tabId) {
@@ -593,6 +1182,17 @@
     await chrome.tabs.create({ url: SCORE_URL, active: true });
   }
 
+  async function focusExamPage() {
+    const tabs = await chrome.tabs.query({ url: [`${EXAM_URL}*`] }).catch(() => []);
+    if (tabs.length) {
+      const tab = tabs[0];
+      await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+      return;
+    }
+    await chrome.tabs.create({ url: EXAM_URL, active: true });
+  }
+
   function extractLoginCredentials(details) {
     if (String(details?.method || '').toUpperCase() !== 'POST' || details?.type !== 'main_frame') return null;
     try {
@@ -658,6 +1258,37 @@
           }));
         return true;
       }
+      if (message?.type === 'ACADEMIC_LOAD_EXAMS') {
+        checkExams('options', { force: true })
+          .then((result) => sendResponse({ ok: true, ...result }))
+          .catch((error) => sendResponse({
+            ok: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
+        return true;
+      }
+      if (message?.type === 'ACADEMIC_LOAD_SCHEDULE') {
+        (async () => {
+          const schedule = await fetchSchedulePage(message?.payload?.scheduleType);
+          const weekContext = await fetchCurrentWeekContext(schedule.weeks);
+          sendResponse({
+            ok: true,
+            type: schedule.type,
+            rows: schedule.rows,
+            weeks: weekContext.weeks,
+            currentWeek: weekContext.week,
+            weekLabels: weekContext.weekLabels,
+            termName: weekContext.termName,
+            weekSource: weekContext.source
+          });
+        })().catch((error) => sendResponse({
+          ok: false,
+          code: String(error?.code || ''),
+          message: String(error?.message || error)
+        }));
+        return true;
+      }
       if (message?.type === 'ACADEMIC_SWITCH_ACCOUNT') {
         loginSavedAcademicAccount(message?.payload?.studentId)
           .then((result) => sendResponse({ ok: true, ...result }))
@@ -666,7 +1297,11 @@
       }
       if (message?.type === 'ACADEMIC_GET_CONTEXT') {
         (async () => {
-          const stored = await chrome.storage.local.get([STUDENT_ID_KEY, MONITOR_KEY, MONITOR_INTERVAL_KEY, STATUS_KEY, 'username']);
+          const stored = await chrome.storage.local.get([
+            STUDENT_ID_KEY, MONITOR_KEY, EXAM_MONITOR_KEY, CLASS_REMINDER_KEY,
+            CLASS_REMINDER_LEAD_KEY, MONITOR_INTERVAL_KEY,
+            STATUS_KEY, EXAM_STATUS_KEY, 'username'
+          ]);
           const accounts = await getAcademicAccounts();
           const studentId = String(stored?.[STUDENT_ID_KEY] || stored?.username || '').trim();
           const summaries = Object.values(accounts)
@@ -682,8 +1317,12 @@
             ok: true, studentId,
             accounts: summaries,
             monitorEnabled: stored?.[MONITOR_KEY] === true,
+            examMonitorEnabled: stored?.[EXAM_MONITOR_KEY] === true,
+            classReminderEnabled: stored?.[CLASS_REMINDER_KEY] === true,
+            classReminderLeadMinutes: normalizeClassReminderLeadMinutes(stored?.[CLASS_REMINDER_LEAD_KEY]),
             monitorIntervalMinutes: normalizeMonitorIntervalMinutes(stored?.[MONITOR_INTERVAL_KEY]),
-            monitorStatus: stored?.[STATUS_KEY] || null
+            monitorStatus: stored?.[STATUS_KEY] || null,
+            examMonitorStatus: stored?.[EXAM_STATUS_KEY] || null
           });
         })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
@@ -729,6 +1368,7 @@
                 });
                 await chrome.tabs.remove(tabId).catch(() => {});
                 checkScores('mis-login', { force: true }).catch(() => {});
+                checkExams('mis-login', { force: true }).catch(() => {});
               } finally {
                 misLoginVerifyingTabs.delete(tabId);
               }
@@ -739,6 +1379,12 @@
       }
       if (changeInfo.status === 'complete' && /^https:\/\/aa\.bjtu\.edu\.cn\/score\/scores\/stu\/view(?:[?#]|$)/i.test(url)) {
         captureScoreTab(tabId).catch(() => {});
+      }
+      if (changeInfo.status === 'complete'
+        && /^https:\/\/aa\.bjtu\.edu\.cn\/examine\/examplanstudent\/stulist(?:[?#]|$)/i.test(url)) {
+        chrome.storage.local.get([EXAM_MONITOR_KEY]).then((stored) => {
+          if (stored?.[EXAM_MONITOR_KEY] === true) checkExams('page').catch(() => {});
+        }).catch(() => {});
       }
     });
 
@@ -760,20 +1406,38 @@
       ['requestBody']
     );
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm?.name === ALARM_NAME) scheduleScoreCheck();
+      if (alarm?.name === ALARM_NAME) scheduleAcademicChecks();
     });
-    chrome.runtime.onInstalled.addListener(() => { void ensureAlarm(); scheduleScoreCheck(); });
-    chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); scheduleScoreCheck(); });
+    chrome.runtime.onInstalled.addListener(() => { void ensureAlarm(); scheduleAcademicChecks(); });
+    chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); scheduleAcademicChecks(); });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || (!changes[MONITOR_KEY] && !changes[MONITOR_INTERVAL_KEY])) return;
+      if (area !== 'local'
+        || (!changes[MONITOR_KEY] && !changes[EXAM_MONITOR_KEY] && !changes[CLASS_REMINDER_KEY]
+          && !changes[CLASS_REMINDER_LEAD_KEY] && !changes[MONITOR_INTERVAL_KEY])) return;
       void ensureAlarm();
-      if (!changes[MONITOR_KEY]) return;
-      if (changes[MONITOR_KEY].newValue === true) scheduleScoreCheck();
-      else chrome.storage.local.remove([PENDING_NOTIFICATIONS_KEY]).catch(() => {});
+      if (changes[MONITOR_KEY]) {
+        if (changes[MONITOR_KEY].newValue === true) checkScores('enabled').catch(() => {});
+        else chrome.storage.local.remove([PENDING_NOTIFICATIONS_KEY]).catch(() => {});
+      }
+      if (changes[EXAM_MONITOR_KEY]) {
+        if (changes[EXAM_MONITOR_KEY].newValue === true) checkExams('enabled').catch(() => {});
+        else chrome.storage.local.remove([EXAM_PENDING_NOTIFICATIONS_KEY]).catch(() => {});
+      }
+      if (changes[CLASS_REMINDER_KEY]) {
+        if (changes[CLASS_REMINDER_KEY].newValue === true) checkUpcomingClasses().catch(() => {});
+        else chrome.storage.local.remove([CLASS_REMINDER_NOTIFIED_KEY]).catch(() => {});
+      } else if (changes[CLASS_REMINDER_LEAD_KEY]) {
+        checkUpcomingClasses().catch(() => {});
+      }
     });
     chrome.notifications.onClicked.addListener((notificationId) => {
-      if (!String(notificationId || '').startsWith(NOTIFICATION_PREFIX)) return;
-      focusScorePage().catch(() => {});
+      const id = String(notificationId || '');
+      if (id.startsWith(NOTIFICATION_PREFIX)) focusScorePage().catch(() => {});
+      else if (id.startsWith(EXAM_NOTIFICATION_PREFIX)) focusExamPage().catch(() => {});
+      else if (id.startsWith(CLASS_NOTIFICATION_PREFIX)) {
+        chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html'), active: true }).catch(() => {});
+      }
+      else return;
       chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
     });
     void ensureAlarm();
@@ -788,7 +1452,16 @@
     scoreFingerprint,
     processScoreRows,
     flushPendingScoreNotifications,
+    normalizeExamRow,
+    parseExamPage,
+    examFingerprint,
+    processExamRows,
+    flushPendingExamNotifications,
+    parseScheduleWeeks,
+    parseSchedulePage,
     get notifyInitialScoreRows() { return notifyInitialScoreRows; },
-    set notifyInitialScoreRows(value) { notifyInitialScoreRows = value !== false; }
+    set notifyInitialScoreRows(value) { notifyInitialScoreRows = value !== false; },
+    get notifyInitialExamRows() { return notifyInitialExamRows; },
+    set notifyInitialExamRows(value) { notifyInitialExamRows = value !== false; }
   };
 })(globalThis);

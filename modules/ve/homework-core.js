@@ -329,6 +329,7 @@
     updateSessionIdFromResponse,
     parseJson,
     isLoginResponse,
+    requestText,
     fetchCurrentUserInfo,
     normalizeTerms,
     chooseTermCode,
