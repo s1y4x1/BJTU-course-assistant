@@ -93,6 +93,8 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   page-break-inside: avoid;
 }
 .options-wide-card { column-span: all; }
+#options-module-slots { column-span:all; }
+#options-module-slots > [data-options-module] { min-width:0; }
 #options-controlled-content > .options-wide-card {
   margin-top: 14px !important;
 }
@@ -198,29 +200,6 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .reset-confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .reset-confirm-actions button { width:100%; margin:0; }
 .reset-confirm-close { position:absolute; top:10px; right:10px; width:28px; height:28px; margin:0; padding:0; border-radius:50%; background:#64748b; font-size:18px; line-height:28px; }
-.academic-account-row { display:block; }
-.academic-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
-.academic-login-actions { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-.academic-score-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; }
-.academic-score-header-meta { display:inline-flex; align-items:center; justify-content:flex-end; gap:8px; color:#64748b; font-size:12px; }
-.academic-score-header-meta time { white-space:nowrap; font-variant-numeric:tabular-nums; }
-.academic-score-count { color:#64748b; font-size:12px; }
-.academic-score-loading { display:flex; align-items:center; gap:8px; min-height:34px; color:#64748b; font-size:13px; }
-.academic-score-loading .options-page-spinner { width:16px; height:16px; border-width:2px; }
-.academic-score-table-wrap { overflow:auto; border:1px solid #d1d5db; }
-.academic-score-table { width:100%; min-width:760px; border-collapse:collapse; font-size:12px; }
-.academic-score-table th, .academic-score-table td { padding:7px 8px; border:1px solid #e5e7eb; text-align:left; vertical-align:top; }
-.academic-score-table th { background:#f1f5f9; white-space:nowrap; }
-.academic-score-table td:nth-child(1), .academic-score-table td:nth-child(2), .academic-score-table td:nth-child(4), .academic-score-table td:nth-child(5), .academic-score-table td:nth-child(6), .academic-score-table td:nth-child(7) { white-space:nowrap; }
-.academic-score-details summary { cursor:pointer; color:#2563eb; white-space:nowrap; }
-.academic-score-details div { min-width:180px; margin-top:5px; white-space:pre-line; line-height:1.5; }
-.academic-exam-table { min-width:1080px; }
-.academic-exam-table td:nth-child(1),
-.academic-exam-table td:nth-child(6) { white-space:normal; }
-.academic-exam-table td:nth-child(4) { white-space:pre-line; }
-.academic-exam-group-cell { vertical-align:middle !important; font-weight:600; }
-.academic-exam-time-line { display:flex; flex-wrap:wrap; align-items:center; gap:0; }
-.academic-exam-countdown { font-size:12px; }
 .deadline-countdown { display:inline-flex; align-items:center; gap:4px; margin-left:4px; vertical-align:middle; }
 .deadline-countdown--normal { display:inline-block; margin-left:4px !important; vertical-align:baseline; font-family:inherit; font-size:inherit; font-style:normal; line-height:normal; letter-spacing:0; }
 .deadline-countdown-normal { display:inline-block; position:static; font-family:inherit; font-size:inherit; font-weight:700; font-variant-numeric:tabular-nums; line-height:inherit; white-space:nowrap; color:#000; }
@@ -242,32 +221,7 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .seven-seg-colon::before, .seven-seg-colon::after { content:''; position:absolute; left:1px; width:2px; height:2px; border-radius:50%; background:#8cff7a; box-shadow:0 0 2px rgba(140,255,122,.55); }
 .seven-seg-colon::before { top:5px; }
 .seven-seg-colon::after { bottom:5px; }
-html[data-color-scheme="dark"] .academic-score-header-meta,
 html[data-color-scheme="dark"] .deadline-countdown-normal { color:#f8fafc; }
-.academic-schedule-header { align-items:flex-end; }
-.academic-schedule-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; }
-.academic-schedule-controls label { margin:0; font-size:12px; color:#64748b; }
-.academic-schedule-controls select { width:auto; min-width:96px; height:32px; margin:0; padding:4px 7px; }
-.academic-schedule-controls button { width:auto; height:32px; margin:0; padding:4px 10px; }
-.academic-schedule-table { min-width:0; table-layout:auto; }
-.academic-schedule-table th,
-.academic-schedule-table td { width:auto; height:auto; padding:6px; white-space:normal !important; }
-.academic-schedule-period strong,
-.academic-schedule-period span { display:block; white-space:nowrap; }
-.academic-schedule-period span { margin-top:3px; color:#64748b; font-size:11px; }
-.academic-schedule-course { position:relative; min-width:0; padding:3px 0 7px; line-height:1.45; overflow-wrap:anywhere; }
-.academic-schedule-course + .academic-schedule-course { margin-top:5px; padding-top:7px; border-top:1px dashed #cbd5e1; }
-.academic-schedule-course-code { color:#2563eb; font-weight:700; }
-.academic-schedule-course-name { margin-top:2px; font-weight:600; }
-.academic-schedule-course-detail,
-.academic-schedule-course-location { margin-top:2px; color:#64748b; font-size:11px; }
-.academic-schedule-selection-status { display:inline-block; margin-top:3px; color:#16a34a; font-weight:700; }
-html[data-color-scheme="dark"] .academic-schedule-controls label,
-html[data-color-scheme="dark"] .academic-schedule-period span,
-html[data-color-scheme="dark"] .academic-schedule-course-detail,
-html[data-color-scheme="dark"] .academic-schedule-course-location { color:#cbd5e1; }
-html[data-color-scheme="dark"] .academic-schedule-course + .academic-schedule-course { border-top-color:#475569; }
-html[data-color-scheme="dark"] .academic-schedule-course-code { color:#60a5fa; }
 .extension-runtime-info {
   display:flex;
   flex-wrap:wrap;

@@ -17,7 +17,12 @@
     jlgj: { label: '接龙管家', files: ['platform.js', 'background.js', 'capture.js', 'theme.js'] },
     mooc: { label: '中国大学MOOC', styles: ['platform.css'], files: ['platform.js', 'background.js', 'inject.js'] },
     xuetangx: { label: '学堂在线', styles: ['platform.css'], files: ['platform.js'] },
-    academic: { label: '教务系统', files: ['system.js'] },
+    academic: {
+      label: '教务系统',
+      styles: ['options.css'],
+      files: ['system.js', 'options.html', 'options.js'],
+      options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
+    },
     campusnet: { label: '校园网自动重连', files: ['background.js'] },
     captcha: { label: '本地验证码识别', files: ['recognizer.js', 'offscreen.js', 'vendor/eng.traineddata.gz'] },
     updater: { label: '更新组件', files: ['checker.js', 'background.js', 'filesystem.js', 'vendor/marked.umd.js'] }

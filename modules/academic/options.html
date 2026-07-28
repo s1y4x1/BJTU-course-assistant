@@ -1,0 +1,119 @@
+<section id="academic-system-section" class="options-wide-card academic-options-card">
+  <div class="section-title">教务系统</div>
+  <label for="academicAccountSelect">已保存账号</label>
+  <div class="academic-account-row">
+    <select id="academicAccountSelect" aria-label="已保存的教务系统账号">
+      <option value="">暂无已保存账号</option>
+    </select>
+  </div>
+  <label for="academicStudentId">学号</label>
+  <input id="academicStudentId" type="text" autocomplete="username" placeholder="自动使用智慧课程平台账号">
+  <label for="academicPassword">身份证号后六位</label>
+  <input id="academicPassword" type="password" maxlength="6" autocomplete="off"
+    placeholder="登录成功后保存在扩展本地存储">
+  <div class="academic-login-actions">
+    <button id="academicLoginBtn" type="button">登录教务系统</button>
+    <button id="bindAcademicSystemBtn" type="button">🔗 通过 MIS 登录教务系统</button>
+  </div>
+  <div class="tip">账号密码会在登录成功后按学号保存在扩展本地存储中，用于切换账号和恢复登录。</div>
+  <label class="academic-option-check">
+    <input type="checkbox" id="academicScoreMonitorEnabled">监控本学期成绩并通知
+  </label>
+  <label class="academic-option-check">
+    <input type="checkbox" id="academicExamMonitorEnabled">监控考试信息并通知
+  </label>
+  <label class="academic-option-check">
+    <input type="checkbox" id="academicClassReminderEnabled">上课前通知
+  </label>
+  <div id="academicClassReminderLeadEditor" class="schedule-interval-editor">
+    <span>提前时间</span>
+    <input type="number" id="academicClassReminderLeadValue" min="1" step="1" value="10"
+      aria-label="上课前通知提前时间">
+    <select id="academicClassReminderLeadUnit" aria-label="上课前通知提前时间单位">
+      <option value="1" selected>分钟</option>
+      <option value="60">小时</option>
+      <option value="1440">天</option>
+    </select>
+  </div>
+  <div id="academicScoreMonitorIntervalEditor" class="schedule-interval-editor">
+    <span>检查间隔</span>
+    <input type="number" id="academicScoreMonitorIntervalValue" min="1" step="1" value="1"
+      aria-label="教务信息检查间隔">
+    <select id="academicScoreMonitorIntervalUnit" aria-label="教务信息检查间隔单位">
+      <option value="1" selected>分钟</option>
+      <option value="60">小时</option>
+      <option value="1440">天</option>
+    </select>
+  </div>
+  <div class="academic-score-header academic-schedule-header">
+    <strong>课表</strong>
+    <span class="academic-schedule-controls">
+      <select id="academicScheduleType" aria-label="课表类型">
+        <option value="semester" selected>本学期课表</option>
+        <option value="selection">选课课表</option>
+      </select>
+      <label for="academicScheduleWeek">周数</label>
+      <select id="academicScheduleWeek" aria-label="课表周数">
+        <option value="all" selected>全部</option>
+      </select>
+      <button id="academicScheduleCurrentWeekBtn" type="button">本周</button>
+    </span>
+  </div>
+  <div id="academicScheduleLoading" class="academic-score-loading">
+    <span class="options-page-spinner"></span><span>正在读取课表…</span>
+  </div>
+  <div id="academicScheduleEmpty" class="option-status academic-data-empty">暂无课表数据</div>
+  <div id="academicScheduleTableWrap" class="academic-score-table-wrap academic-data-table">
+    <table class="academic-score-table academic-schedule-table">
+      <thead><tr>
+        <th>节次</th><th>星期一</th><th>星期二</th><th>星期三</th>
+        <th>星期四</th><th>星期五</th><th>星期六</th><th>星期日</th>
+      </tr></thead>
+      <tbody id="academicScheduleTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="academic-score-header">
+    <strong>考务考试信息</strong>
+    <span class="academic-score-header-meta">
+      <time id="academicExamCheckedAt"></time>
+      <span id="academicExamCount" class="academic-score-count"></span>
+    </span>
+  </div>
+  <div id="academicExamLoading" class="academic-score-loading">
+    <span class="options-page-spinner"></span><span>正在读取考试信息…</span>
+  </div>
+  <div id="academicExamEmpty" class="option-status academic-data-empty">暂无考试信息</div>
+  <div id="academicExamStatus" class="option-status academic-exam-status"></div>
+  <div id="academicExamTableWrap" class="academic-score-table-wrap academic-data-table">
+    <table class="academic-score-table academic-exam-table">
+      <thead><tr>
+        <th>序号</th><th>考试</th><th>课程</th><th>时间地点</th><th>考试方式</th>
+        <th>备注</th><th>报名信息</th><th>考试状态</th><th>操作</th>
+      </tr></thead>
+      <tbody id="academicExamTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="academic-score-header">
+    <strong>本学期成绩</strong>
+    <span class="academic-score-header-meta">
+      <time id="academicScoreCheckedAt"></time>
+      <span id="academicScoreCount" class="academic-score-count"></span>
+    </span>
+  </div>
+  <div id="academicSystemStatus" class="option-status academic-score-status"></div>
+  <div id="academicScoreLoading" class="academic-score-loading">
+    <span class="options-page-spinner"></span><span>正在读取成绩…</span>
+  </div>
+  <div id="academicScoreEmpty" class="option-status academic-data-empty">暂无成绩数据</div>
+  <div id="academicScoreTableWrap" class="academic-score-table-wrap academic-data-table">
+    <table class="academic-score-table">
+      <thead><tr>
+        <th>序号</th><th>学年</th><th>课程</th><th>学分</th>
+        <th>成绩</th><th>加分成绩</th><th>上课教师</th><th>详细信息</th>
+      </tr></thead>
+      <tbody id="academicScoreTableBody"></tbody>
+    </table>
+  </div>
+</section>

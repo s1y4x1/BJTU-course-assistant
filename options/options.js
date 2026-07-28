@@ -53,8 +53,6 @@ const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 const DEFAULT_THEME_MODE = 'system';
 const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = true;
 const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
-const DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES = 1;
-const DEFAULT_ACADEMIC_CLASS_REMINDER_LEAD_MINUTES = 10;
 const DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES = 30;
 const DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES = 30;
 const DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS = 1;
@@ -134,7 +132,7 @@ function setupOptionTipTooltips() {
     }
     if (target instanceof HTMLElement && (
       explicitTarget
-      || target.matches('label, .popup-size-editor, .academic-login-actions')
+      || target.matches('label, .popup-size-editor')
       || target.querySelector(':scope > label, :scope > button')
     )) {
       target.appendChild(trigger);
@@ -417,13 +415,15 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 (async function init() {
-  setupOptionTipTooltips();
   void renderExtensionRuntimeInfo();
   await globalThis.BjtuModuleRegistry?.ready;
+  await globalThis.__bjtuOptionsModulesReady;
+  setupOptionTipTooltips();
   await globalThis.__bjtuVeOptionsReady;
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, academicScoreMonitorIntervalMinutes, academicClassReminderEnabled, academicClassReminderLeadMinutes, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'academicScoreMonitorIntervalMinutes', 'academicClassReminderEnabled', 'academicClassReminderLeadMinutes', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle'
+  await globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg });
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, campusNetworkReconnectEnabled, campusNetworkReconnectAccount, campusNetworkReconnectPassword, campusNetworkReconnectIntervalSeconds, campusNetworkReconnectNotifyOnSuccess, campusNetworkReconnectStatus, username, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'campusNetworkReconnectEnabled', 'campusNetworkReconnectAccount', 'campusNetworkReconnectPassword', 'campusNetworkReconnectIntervalSeconds', 'campusNetworkReconnectNotifyOnSuccess', 'campusNetworkReconnectStatus', 'username', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle'
   ]);
   const { xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'xuetangxCourseStatuses',
@@ -537,9 +537,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     ? DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED
     : backgroundAutoUpdateEnabled === true;
   document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
-  setScheduleIntervalEditor('academicScoreMonitorInterval', academicScoreMonitorIntervalMinutes, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
-  document.getElementById('academicClassReminderEnabled').checked = academicClassReminderEnabled === true;
-  setScheduleIntervalEditor('academicClassReminderLead', academicClassReminderLeadMinutes, DEFAULT_ACADEMIC_CLASS_REMINDER_LEAD_MINUTES);
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
   setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
   document.getElementById('campusNetworkReconnectEnabled').checked = campusNetworkReconnectEnabled === true;
@@ -550,44 +547,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   updateThemeModeUi(themeMode);
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccount || '').trim();
-  let academicContext = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
   let portalLoginContext = await chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).catch(() => null);
-  const academicStudentIdInput = document.getElementById('academicStudentId');
-  const academicPasswordInput = document.getElementById('academicPassword');
-  const academicMonitorInput = document.getElementById('academicScoreMonitorEnabled');
-  const academicExamMonitorInput = document.getElementById('academicExamMonitorEnabled');
-  const academicClassReminderInput = document.getElementById('academicClassReminderEnabled');
-  const academicStatus = document.getElementById('academicSystemStatus');
-  const academicAccountSelect = document.getElementById('academicAccountSelect');
-  const academicScoreLoading = document.getElementById('academicScoreLoading');
-  const academicScoreEmpty = document.getElementById('academicScoreEmpty');
-  const academicScoreTableWrap = document.getElementById('academicScoreTableWrap');
-  const academicScoreTableBody = document.getElementById('academicScoreTableBody');
-  const academicScoreCount = document.getElementById('academicScoreCount');
-  const academicScoreCheckedAt = document.getElementById('academicScoreCheckedAt');
-  const academicExamLoading = document.getElementById('academicExamLoading');
-  const academicExamEmpty = document.getElementById('academicExamEmpty');
-  const academicExamStatus = document.getElementById('academicExamStatus');
-  const academicExamTableWrap = document.getElementById('academicExamTableWrap');
-  const academicExamTableBody = document.getElementById('academicExamTableBody');
-  const academicExamCount = document.getElementById('academicExamCount');
-  const academicExamCheckedAt = document.getElementById('academicExamCheckedAt');
-  const academicScheduleType = document.getElementById('academicScheduleType');
-  const academicScheduleWeek = document.getElementById('academicScheduleWeek');
-  const academicScheduleCurrentWeekBtn = document.getElementById('academicScheduleCurrentWeekBtn');
-  const academicScheduleLoading = document.getElementById('academicScheduleLoading');
-  const academicScheduleEmpty = document.getElementById('academicScheduleEmpty');
-  const academicScheduleTableWrap = document.getElementById('academicScheduleTableWrap');
-  const academicScheduleTableBody = document.getElementById('academicScheduleTableBody');
-  const academicScheduleSettings = await chrome.storage.local.get([
-    'academicScheduleType', 'academicScheduleWeek'
-  ]).catch(() => ({}));
-  let academicScheduleData = null;
-  if (academicScheduleType instanceof HTMLSelectElement) {
-    academicScheduleType.value = academicScheduleSettings?.academicScheduleType === 'selection'
-      ? 'selection'
-      : 'semester';
-  }
   const backgroundAutoUpdateStatusEl = document.getElementById('backgroundAutoUpdateStatus');
   const campusNetworkReconnectInput = document.getElementById('campusNetworkReconnectEnabled');
   const campusNetworkReconnectStatusEl = document.getElementById('campusNetworkReconnectStatus');
@@ -671,21 +631,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     editor?.classList.toggle('is-disabled', !parentEnabled);
     editor?.querySelectorAll('input,select').forEach((control) => { control.disabled = !parentEnabled; });
   };
-  const updateAcademicMonitorIntervalDisabled = () => {
-    const enabled = (academicMonitorInput instanceof HTMLInputElement && academicMonitorInput.checked)
-      || (academicExamMonitorInput instanceof HTMLInputElement && academicExamMonitorInput.checked)
-      || (academicClassReminderInput instanceof HTMLInputElement && academicClassReminderInput.checked);
-    const editor = document.getElementById('academicScoreMonitorIntervalEditor');
-    editor?.classList.toggle('is-disabled', !enabled);
-    editor?.querySelectorAll('input,select').forEach((control) => { control.disabled = !enabled; });
-    const reminderEnabled = academicClassReminderInput instanceof HTMLInputElement
-      && academicClassReminderInput.checked;
-    const reminderEditor = document.getElementById('academicClassReminderLeadEditor');
-    reminderEditor?.classList.toggle('is-disabled', !reminderEnabled);
-    reminderEditor?.querySelectorAll('input,select').forEach((control) => {
-      control.disabled = !reminderEnabled;
-    });
-  };
   const updateHomeworkBackgroundRefreshDisabled = () => {
     const enabled = homeworkBackgroundRefreshInput instanceof HTMLInputElement && homeworkBackgroundRefreshInput.checked;
     const detail = document.getElementById('homeworkBackgroundRefreshDetail');
@@ -744,413 +689,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   renderHomeworkBackgroundAccounts(portalLoginContext);
   updateHomeworkBackgroundRefreshDisabled();
   renderHomeworkBackgroundRefreshStatus(homeworkBackgroundRefreshStatus);
-
-  const renderAcademicAccounts = (context) => {
-    if (!(academicAccountSelect instanceof HTMLSelectElement)) return;
-    const accounts = Array.isArray(context?.accounts) ? context.accounts : [];
-    const selected = String(context?.studentId || '').trim();
-    academicAccountSelect.replaceChildren();
-    if (!accounts.length) {
-      academicAccountSelect.append(new Option('暂无已保存账号', ''));
-    } else {
-      for (const account of accounts) {
-        const isCurrent = account.studentId === selected;
-        const userName = String(account.userName || '').trim();
-        const option = new Option(`${account.studentId}${userName ? ` ${userName}` : ''}`, account.studentId);
-        option.disabled = !account.hasPassword && !isCurrent;
-        academicAccountSelect.append(option);
-      }
-      academicAccountSelect.value = accounts.some((account) => account.studentId === selected)
-        ? selected
-        : String(accounts[0]?.studentId || '');
-    }
-  };
-
-  const renderAcademicCheckedAt = (element, value) => {
-    if (!(element instanceof HTMLTimeElement)) return;
-    const timestamp = Number(value || 0);
-    element.textContent = timestamp ? new Date(timestamp).toLocaleString() : '';
-    element.dateTime = timestamp ? new Date(timestamp).toISOString() : '';
-  };
-
-  const renderAcademicMonitorStatus = (status) => {
-    if (!(academicStatus instanceof HTMLElement) || !status) return;
-    if (status.status === 'error') {
-      academicStatus.style.display = '';
-      academicStatus.textContent = `成绩检查失败：${status.error || '未知错误'}`;
-      return;
-    }
-    if (status.status === 'ok') {
-      academicStatus.style.display = 'none';
-      academicStatus.textContent = '';
-      renderAcademicCheckedAt(academicScoreCheckedAt, status.checkedAt);
-      return;
-    }
-
-  };
-
-  const renderAcademicExamMonitorStatus = (status) => {
-    if (!(academicExamStatus instanceof HTMLElement)) return;
-    if (!status) {
-      academicExamStatus.style.display = 'none';
-      return;
-    }
-    academicExamStatus.style.display = '';
-    if (status.status === 'error') {
-      academicExamStatus.textContent = `考试信息检查失败：${status.error || '未知错误'}`;
-      return;
-    }
-    if (status.status === 'ok') {
-      academicExamStatus.style.display = 'none';
-      academicExamStatus.textContent = '';
-      renderAcademicCheckedAt(academicExamCheckedAt, status.checkedAt);
-    }
-  };
-
-  const renderAcademicScores = (rows) => {
-    const list = Array.isArray(rows) ? rows : [];
-    if (academicScoreLoading instanceof HTMLElement) academicScoreLoading.style.display = 'none';
-    if (academicScoreCount instanceof HTMLElement) academicScoreCount.textContent = `共 ${list.length} 项`;
-    if (academicScoreTableBody instanceof HTMLElement) academicScoreTableBody.replaceChildren();
-    if (!list.length) {
-      if (academicScoreEmpty instanceof HTMLElement) academicScoreEmpty.style.display = '';
-      if (academicScoreTableWrap instanceof HTMLElement) academicScoreTableWrap.style.display = 'none';
-      return;
-    }
-    if (academicScoreEmpty instanceof HTMLElement) academicScoreEmpty.style.display = 'none';
-    if (academicScoreTableWrap instanceof HTMLElement) academicScoreTableWrap.style.display = '';
-    for (const row of list) {
-      const tr = document.createElement('tr');
-      [row.sequence, row.academicYear, row.course, row.credit, row.score, row.bonusScore, row.teacher].forEach((value) => {
-        const td = document.createElement('td');
-        td.textContent = String(value || '-');
-        tr.appendChild(td);
-      });
-      const detailCell = document.createElement('td');
-      if (String(row.details || '').trim()) {
-        const details = document.createElement('details');
-        details.className = 'academic-score-details';
-        const summary = document.createElement('summary');
-        summary.textContent = '查看';
-        const content = document.createElement('div');
-        content.textContent = String(row.details || '');
-        details.append(summary, content);
-        detailCell.appendChild(details);
-      } else {
-        detailCell.textContent = '-';
-      }
-      tr.appendChild(detailCell);
-      academicScoreTableBody?.appendChild(tr);
-    }
-  };
-
-  const renderAcademicExams = (rows) => {
-    const list = Array.isArray(rows) ? rows : [];
-    if (academicExamLoading instanceof HTMLElement) academicExamLoading.style.display = 'none';
-    if (academicExamCount instanceof HTMLElement) academicExamCount.textContent = `共 ${list.length} 项`;
-    if (academicExamTableBody instanceof HTMLElement) academicExamTableBody.replaceChildren();
-    if (!list.length) {
-      if (academicExamEmpty instanceof HTMLElement) academicExamEmpty.style.display = '';
-      if (academicExamTableWrap instanceof HTMLElement) academicExamTableWrap.style.display = 'none';
-      return;
-    }
-    if (academicExamEmpty instanceof HTMLElement) academicExamEmpty.style.display = 'none';
-    if (academicExamTableWrap instanceof HTMLElement) academicExamTableWrap.style.display = '';
-    const groups = new Map();
-    for (const row of list) {
-      const key = String(row?.exam || '');
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(row);
-    }
-    for (const group of groups.values()) {
-      group.forEach((row, index) => {
-        const tr = document.createElement('tr');
-        const sequenceCell = document.createElement('td');
-        sequenceCell.textContent = String(row.sequence || '-');
-        tr.appendChild(sequenceCell);
-        if (index === 0) {
-          const examCell = document.createElement('td');
-          examCell.textContent = String(row.exam || '-');
-          examCell.rowSpan = group.length;
-          examCell.className = 'academic-exam-group-cell';
-          tr.appendChild(examCell);
-        }
-        const courseCell = document.createElement('td');
-        courseCell.textContent = String(row.course || '-');
-        tr.appendChild(courseCell);
-        const timeLocationCell = document.createElement('td');
-        timeLocationCell.className = 'academic-exam-time-location';
-        const lines = String(row.timeLocation || '-').split('\n').filter(Boolean);
-        const timeLine = document.createElement('div');
-        timeLine.className = 'academic-exam-time-line';
-        const timeText = document.createElement('span');
-        timeText.textContent = lines[0] || '-';
-        timeLine.appendChild(timeText);
-        if (Number(row.startAt || 0) > 0) {
-          const countdown = document.createElement('span');
-          countdown.className = 'deadline-countdown academic-exam-countdown';
-          countdown.dataset.deadline = String(row.startAt);
-          timeLine.appendChild(countdown);
-        }
-        timeLocationCell.appendChild(timeLine);
-        if (lines.length > 1) {
-          const location = document.createElement('div');
-          location.textContent = lines.slice(1).join(' ');
-          timeLocationCell.appendChild(location);
-        }
-        tr.appendChild(timeLocationCell);
-        [
-          row.method, row.remarks, row.registration, row.status, row.operation
-        ].forEach((value) => {
-          const td = document.createElement('td');
-          td.textContent = String(value || '-');
-          tr.appendChild(td);
-        });
-        academicExamTableBody?.appendChild(tr);
-      });
-    }
-    globalThis.updateAllCountdowns?.();
-  };
-
-  const renderAcademicScheduleWeekOptions = (data, preferredValue = '') => {
-    if (!(academicScheduleWeek instanceof HTMLSelectElement)) return;
-    const preferred = String(preferredValue || academicScheduleWeek.value || 'all');
-    const weeks = Array.isArray(data?.weeks) ? data.weeks.map(Number).filter((week) => week > 0) : [];
-    const currentWeek = Number(data?.currentWeek || 0);
-    const weekLabels = data?.weekLabels && typeof data.weekLabels === 'object' ? data.weekLabels : {};
-    const selectionSchedule = String(data?.type || '') === 'selection';
-    const rows = Array.isArray(data?.rows) ? data.rows : [];
-    const occupiedWeeks = new Set(rows.flatMap((row) => (
-      (Array.isArray(row?.days) ? row.days : []).flatMap((courses) => (
-        (Array.isArray(courses) ? courses : []).flatMap((course) => (
-          Array.isArray(course?.weeks) ? course.weeks : []
-        ))
-      ))
-    )).map(Number));
-    academicScheduleWeek.replaceChildren(new Option('全部', 'all'));
-    for (const week of weeks) {
-      const status = selectionSchedule
-        ? (occupiedWeeks.has(week) ? '(有课)' : '')
-        : String(weekLabels[week] || '').trim().replace(/[（）]/g, (character) => (
-          character === '（' ? '(' : ')'
-        ));
-      academicScheduleWeek.append(new Option(
-        `第${week}周${status}${week === currentWeek ? '(本周)' : ''}`,
-        String(week)
-      ));
-    }
-    academicScheduleWeek.value = [...academicScheduleWeek.options].some((option) => option.value === preferred)
-      ? preferred
-      : 'all';
-    if (academicScheduleCurrentWeekBtn instanceof HTMLButtonElement) {
-      academicScheduleCurrentWeekBtn.disabled = currentWeek <= 0;
-      academicScheduleCurrentWeekBtn.textContent = academicScheduleWeek.value === String(currentWeek)
-        ? '全部'
-        : '本周';
-    }
-  };
-
-  const appendAcademicScheduleCourse = (cell, course) => {
-    const item = document.createElement('div');
-    item.className = 'academic-schedule-course';
-    const code = document.createElement('div');
-    code.className = 'academic-schedule-course-code';
-    code.textContent = String(course?.courseCode || '-');
-    const name = document.createElement('div');
-    name.className = 'academic-schedule-course-name';
-    name.textContent = String(course?.name || '-');
-    const detail = document.createElement('div');
-    detail.className = 'academic-schedule-course-detail';
-    detail.textContent = [course?.weekText, course?.teacher].filter(Boolean).join(' · ');
-    const location = document.createElement('div');
-    location.className = 'academic-schedule-course-location';
-    location.textContent = String(course?.location || '-');
-    item.append(code, name, detail, location);
-    if (String(course?.selectionStatus || '').trim()) {
-      const status = document.createElement('span');
-      status.className = 'academic-schedule-selection-status';
-      status.textContent = String(course.selectionStatus);
-      item.appendChild(status);
-    }
-    cell.appendChild(item);
-  };
-
-  const renderAcademicSchedule = () => {
-    const rows = Array.isArray(academicScheduleData?.rows) ? academicScheduleData.rows : [];
-    const selectedWeek = academicScheduleWeek?.value === 'all'
-      ? 0
-      : Number(academicScheduleWeek?.value || 0);
-    if (academicScheduleTableBody instanceof HTMLElement) academicScheduleTableBody.replaceChildren();
-    let visibleCourseCount = 0;
-    for (const row of rows) {
-      const tr = document.createElement('tr');
-      const periodCell = document.createElement('td');
-      periodCell.className = 'academic-schedule-period';
-      const period = document.createElement('strong');
-      period.textContent = String(row?.period || '-');
-      const time = document.createElement('span');
-      time.textContent = String(row?.time || '');
-      periodCell.append(period, time);
-      tr.appendChild(periodCell);
-      const days = Array.isArray(row?.days) ? row.days : [];
-      for (let day = 0; day < 7; day += 1) {
-        const cell = document.createElement('td');
-        const courses = (Array.isArray(days[day]) ? days[day] : []).filter((course) => {
-          if (!selectedWeek) return true;
-          return Array.isArray(course?.weeks) && course.weeks.includes(selectedWeek);
-        });
-        visibleCourseCount += courses.length;
-        courses.forEach((course) => appendAcademicScheduleCourse(cell, course));
-        tr.appendChild(cell);
-      }
-      academicScheduleTableBody?.appendChild(tr);
-    }
-    const hasVisibleData = rows.length > 0 && (!selectedWeek || visibleCourseCount > 0);
-    if (academicScheduleLoading instanceof HTMLElement) academicScheduleLoading.style.display = 'none';
-    if (academicScheduleTableWrap instanceof HTMLElement) {
-      academicScheduleTableWrap.style.display = hasVisibleData ? '' : 'none';
-    }
-    if (academicScheduleEmpty instanceof HTMLElement) {
-      academicScheduleEmpty.style.display = hasVisibleData ? 'none' : '';
-      academicScheduleEmpty.textContent = selectedWeek
-        ? `第${selectedWeek}周暂无课程`
-        : '暂无课表数据';
-    }
-  };
-
-  const loadAcademicSchedule = async () => {
-    const scheduleType = academicScheduleType?.value === 'selection' ? 'selection' : 'semester';
-    if (academicScheduleLoading instanceof HTMLElement) academicScheduleLoading.style.display = 'flex';
-    if (academicScheduleEmpty instanceof HTMLElement) academicScheduleEmpty.style.display = 'none';
-    if (academicScheduleTableWrap instanceof HTMLElement) academicScheduleTableWrap.style.display = 'none';
-    const result = await chrome.runtime.sendMessage({
-      type: 'ACADEMIC_LOAD_SCHEDULE',
-      payload: { scheduleType }
-    }).catch((error) => ({ ok: false, message: String(error?.message || error) }));
-    if (!result?.ok) {
-      if (academicScheduleLoading instanceof HTMLElement) academicScheduleLoading.style.display = 'none';
-      if (academicScheduleEmpty instanceof HTMLElement) {
-        academicScheduleEmpty.style.display = '';
-        academicScheduleEmpty.textContent = result?.code === 'not-logged-in'
-          ? '教务系统未登录'
-          : `课表读取失败：${result?.message || '未知错误'}`;
-      }
-      return result;
-    }
-    academicScheduleData = result;
-    if (result.weekSource === 'bksy') {
-      setMsg('智慧课程平台周次接口未登录，当前周数使用本科生院教学服务平台');
-    }
-    const preferredWeek = String(
-      academicScheduleWeek?.value || academicScheduleSettings?.academicScheduleWeek || 'all'
-    );
-    renderAcademicScheduleWeekOptions(result, preferredWeek);
-    renderAcademicSchedule();
-    return result;
-  };
-
-  const refreshAcademicContext = async () => {
-    const context = await chrome.runtime.sendMessage({ type: 'ACADEMIC_GET_CONTEXT' }).catch(() => null);
-    if (context?.ok) academicContext = context;
-    if (academicStudentIdInput instanceof HTMLInputElement && document.activeElement !== academicStudentIdInput) {
-      academicStudentIdInput.value = String(academicContext?.studentId || '').trim();
-    }
-    if (academicMonitorInput instanceof HTMLInputElement) academicMonitorInput.checked = academicContext?.monitorEnabled === true;
-    if (academicExamMonitorInput instanceof HTMLInputElement) {
-      academicExamMonitorInput.checked = academicContext?.examMonitorEnabled === true;
-    }
-    if (academicClassReminderInput instanceof HTMLInputElement) {
-      academicClassReminderInput.checked = academicContext?.classReminderEnabled === true;
-    }
-    updateAcademicMonitorIntervalDisabled();
-    renderAcademicAccounts(academicContext);
-    renderAcademicMonitorStatus(academicContext?.monitorStatus);
-    renderAcademicExamMonitorStatus(academicContext?.examMonitorStatus);
-    return academicContext;
-  };
-
-  const loadAcademicScores = async () => {
-    if (academicScoreLoading instanceof HTMLElement) academicScoreLoading.style.display = 'flex';
-    if (academicScoreEmpty instanceof HTMLElement) academicScoreEmpty.style.display = 'none';
-    if (academicScoreTableWrap instanceof HTMLElement) academicScoreTableWrap.style.display = 'none';
-    if (academicScoreCount instanceof HTMLElement) academicScoreCount.textContent = '';
-    if (academicStatus instanceof HTMLElement) academicStatus.textContent = '正在检查教务系统登录状态并读取成绩…';
-    const result = await chrome.runtime.sendMessage({ type: 'ACADEMIC_LOAD_SCORES' }).catch((error) => ({
-      ok: false, message: String(error?.message || error)
-    }));
-    if (!result?.ok) {
-      if (academicScoreLoading instanceof HTMLElement) academicScoreLoading.style.display = 'none';
-      if (academicScoreEmpty instanceof HTMLElement) {
-        academicScoreEmpty.style.display = '';
-        academicScoreEmpty.textContent = result?.code === 'not-logged-in' ? '教务系统未登录' : '成绩读取失败';
-      }
-      if (academicStatus instanceof HTMLElement) {
-        academicStatus.textContent = result?.code === 'not-logged-in'
-          ? '教务系统未登录，请输入账号密码或通过 MIS 登录后重试。'
-          : `成绩读取失败：${result?.message || '未知错误'}`;
-      }
-      return result;
-    }
-    renderAcademicScores(result.rows);
-    renderAcademicCheckedAt(academicScoreCheckedAt, result.checkedAt);
-    if (academicStatus instanceof HTMLElement) {
-      academicStatus.style.display = 'none';
-      academicStatus.textContent = '';
-    }
-    await refreshAcademicContext();
-    return result;
-  };
-
-  const loadAcademicExams = async () => {
-    if (academicExamLoading instanceof HTMLElement) academicExamLoading.style.display = 'flex';
-    if (academicExamEmpty instanceof HTMLElement) academicExamEmpty.style.display = 'none';
-    if (academicExamTableWrap instanceof HTMLElement) academicExamTableWrap.style.display = 'none';
-    if (academicExamCount instanceof HTMLElement) academicExamCount.textContent = '';
-    const result = await chrome.runtime.sendMessage({ type: 'ACADEMIC_LOAD_EXAMS' }).catch((error) => ({
-      ok: false, message: String(error?.message || error)
-    }));
-    if (!result?.ok) {
-      if (academicExamLoading instanceof HTMLElement) academicExamLoading.style.display = 'none';
-      if (academicExamEmpty instanceof HTMLElement) {
-        academicExamEmpty.style.display = '';
-        academicExamEmpty.textContent = result?.code === 'not-logged-in' ? '教务系统未登录' : '考试信息读取失败';
-      }
-      if (academicExamStatus instanceof HTMLElement) {
-        academicExamStatus.style.display = '';
-        academicExamStatus.textContent = result?.code === 'not-logged-in'
-          ? '教务系统未登录，请输入账号密码或通过 MIS 登录后重试。'
-          : `考试信息读取失败：${result?.message || '未知错误'}`;
-      }
-      return result;
-    }
-    renderAcademicExams(result.rows);
-    renderAcademicCheckedAt(academicExamCheckedAt, result.checkedAt);
-    if (academicExamStatus instanceof HTMLElement) {
-      academicExamStatus.style.display = 'none';
-      academicExamStatus.textContent = '';
-    }
-    await refreshAcademicContext();
-    return result;
-  };
-
-  const loadAcademicInformation = () => Promise.allSettled([
-    loadAcademicScores(),
-    loadAcademicExams(),
-    loadAcademicSchedule()
-  ]);
-
-  if (academicStudentIdInput instanceof HTMLInputElement) academicStudentIdInput.value = String(academicContext?.studentId || '').trim();
-  if (academicMonitorInput instanceof HTMLInputElement) academicMonitorInput.checked = academicContext?.monitorEnabled === true;
-  if (academicExamMonitorInput instanceof HTMLInputElement) {
-    academicExamMonitorInput.checked = academicContext?.examMonitorEnabled === true;
-  }
-  if (academicClassReminderInput instanceof HTMLInputElement) {
-    academicClassReminderInput.checked = academicContext?.classReminderEnabled === true;
-  }
-  updateAcademicMonitorIntervalDisabled();
-  renderAcademicAccounts(academicContext);
-  renderAcademicMonitorStatus(academicContext?.monitorStatus);
-  renderAcademicExamMonitorStatus(academicContext?.examMonitorStatus);
 
   const updateHomeworkReminderDisabled = () => {
     const disabled = !document.getElementById('homeworkReminderEnabled').checked;
@@ -1459,34 +997,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.injectPortalLoginOnTimeoutPage) {
         applyBooleanUi('injectPortalLoginOnTimeoutPage', changes.injectPortalLoginOnTimeoutPage.newValue, true);
       }
-      if (changes.academicScoreMonitorEnabled) {
-        applyBooleanUi('academicScoreMonitorEnabled', changes.academicScoreMonitorEnabled.newValue, false);
-        updateAcademicMonitorIntervalDisabled();
-      }
-      if (changes.academicExamMonitorEnabled) {
-        applyBooleanUi('academicExamMonitorEnabled', changes.academicExamMonitorEnabled.newValue, false);
-        updateAcademicMonitorIntervalDisabled();
-      }
-      if (changes.academicClassReminderEnabled) {
-        applyBooleanUi('academicClassReminderEnabled', changes.academicClassReminderEnabled.newValue, false);
-        updateAcademicMonitorIntervalDisabled();
-      }
-      if (changes.academicClassReminderLeadMinutes) {
-        setScheduleIntervalEditor('academicClassReminderLead', changes.academicClassReminderLeadMinutes.newValue, DEFAULT_ACADEMIC_CLASS_REMINDER_LEAD_MINUTES);
-      }
-      if (changes.academicScoreMonitorIntervalMinutes) {
-        setScheduleIntervalEditor('academicScoreMonitorInterval', changes.academicScoreMonitorIntervalMinutes.newValue, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
-      }
-      if (changes.academicSystemStudentId && academicStudentIdInput instanceof HTMLInputElement) {
-        academicStudentIdInput.value = String(changes.academicSystemStudentId.newValue || '').trim();
-      }
-      if (changes.username && academicStudentIdInput instanceof HTMLInputElement && document.activeElement !== academicStudentIdInput) {
-        academicStudentIdInput.value = String(changes.username.newValue || '').trim();
-      }
-      if (changes.academicScoreMonitorStatus) renderAcademicMonitorStatus(changes.academicScoreMonitorStatus.newValue);
-      if (changes.academicExamMonitorStatus) {
-        renderAcademicExamMonitorStatus(changes.academicExamMonitorStatus.newValue);
-      }
       if (changes.backgroundAutoUpdateEnabled) {
         applyBooleanUi('backgroundAutoUpdateEnabled', changes.backgroundAutoUpdateEnabled.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED);
         updateBackgroundAutoInstallOptionalDisabled();
@@ -1686,70 +1196,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
   });
 
-  const academicLoginBtn = document.getElementById('academicLoginBtn');
-  const bindAcademicSystemBtn = document.getElementById('bindAcademicSystemBtn');
-  const submitAcademicLogin = async () => {
-    const studentId = String(academicStudentIdInput?.value || '').trim();
-    const password = String(academicPasswordInput?.value || '').trim();
-    if (!studentId) { setMsg('请输入学号', false); return; }
-    if (!password) { setMsg('请输入身份证号后六位', false); return; }
-    if (password.length !== 6) { setMsg('身份证号后六位必须为 6 个字符', false); return; }
-    academicLoginBtn.disabled = true;
-    setMsg('正在登录教务系统…');
-    try {
-      const result = await chrome.runtime.sendMessage({ type: 'ACADEMIC_LOGIN_WITH_PASSWORD', payload: { studentId, password } });
-      if (!result?.ok) throw new Error(result?.message || '教务系统登录失败');
-      academicPasswordInput.value = '';
-      await refreshAcademicContext();
-      await loadAcademicInformation();
-      setMsg('教务系统登录成功');
-    } catch (error) {
-      setMsg('教务系统登录失败：' + String(error?.message || error), false);
-    } finally {
-      academicLoginBtn.disabled = false;
-    }
-  };
-  academicLoginBtn?.addEventListener('click', submitAcademicLogin);
-  academicAccountSelect?.addEventListener('change', async () => {
-    const studentId = String(academicAccountSelect.value || '').trim();
-    if (!studentId) return;
-    academicAccountSelect.disabled = true;
-    if (academicStudentIdInput instanceof HTMLInputElement) academicStudentIdInput.value = studentId;
-    setMsg(`正在切换至教务系统账号 ${studentId}…`);
-    try {
-      const result = await chrome.runtime.sendMessage({ type: 'ACADEMIC_SWITCH_ACCOUNT', payload: { studentId } });
-      if (!result?.ok) throw new Error(result?.message || '账号切换失败');
-      await loadAcademicInformation();
-      setMsg(`已切换至教务系统账号 ${studentId}`);
-    } catch (error) {
-      setMsg(`切换教务系统账号失败：${String(error?.message || error)}`, false);
-      await refreshAcademicContext();
-    } finally {
-      academicAccountSelect.disabled = false;
-    }
-  });
-  academicPasswordInput?.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') { event.preventDefault(); void submitAcademicLogin(); }
-  });
-  academicStudentIdInput?.addEventListener('change', async () => {
-    await chrome.storage.local.set({ academicSystemStudentId: String(academicStudentIdInput.value || '').trim() });
-  });
-  bindAcademicSystemBtn?.addEventListener('click', async () => {
-    bindAcademicSystemBtn.disabled = true;
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'START_ACADEMIC_MIS_LOGIN' });
-      if (!response?.ok) throw new Error(response?.message || '无法打开 MIS');
-      setMsg('已打开 MIS，请完成教务系统登录');
-    } catch (error) {
-      bindAcademicSystemBtn.disabled = false;
-      setMsg('打开 MIS 失败：' + String(error?.message || error), false);
-    }
-  });
-  academicMonitorInput?.addEventListener('change', async () => {
-    await chrome.storage.local.set({ academicScoreMonitorEnabled: !!academicMonitorInput.checked });
-    updateAcademicMonitorIntervalDisabled();
-    setMsg(academicMonitorInput.checked ? '已启用本学期成绩监控' : '已关闭本学期成绩监控');
-  });
   document.getElementById('backgroundAutoUpdateEnabled')?.addEventListener('change', async (event) => {
     const enabled = !!event.currentTarget.checked;
     await chrome.storage.local.set({ backgroundAutoUpdateEnabled: enabled });
@@ -1761,40 +1207,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const enabled = !!event.currentTarget.checked;
     await chrome.storage.local.set({ backgroundAutoInstallOptionalEnabled: enabled });
     setMsg(enabled ? '已启用非强制更新自动安装' : '已关闭非强制更新自动安装');
-  });
-  academicExamMonitorInput?.addEventListener('change', async () => {
-    await chrome.storage.local.set({ academicExamMonitorEnabled: !!academicExamMonitorInput.checked });
-    updateAcademicMonitorIntervalDisabled();
-    setMsg(academicExamMonitorInput.checked ? '已启用考试信息监控' : '已关闭考试信息监控');
-  });
-  academicClassReminderInput?.addEventListener('change', async () => {
-    await chrome.storage.local.set({ academicClassReminderEnabled: !!academicClassReminderInput.checked });
-    updateAcademicMonitorIntervalDisabled();
-    setMsg(academicClassReminderInput.checked ? '已启用上课前通知' : '已关闭上课前通知');
-  });
-  academicScheduleType?.addEventListener('change', async () => {
-    await chrome.storage.local.set({
-      academicScheduleType: academicScheduleType.value === 'selection' ? 'selection' : 'semester'
-    });
-    await loadAcademicSchedule();
-  });
-  academicScheduleWeek?.addEventListener('change', async () => {
-    await chrome.storage.local.set({ academicScheduleWeek: String(academicScheduleWeek.value || 'all') });
-    if (academicScheduleCurrentWeekBtn instanceof HTMLButtonElement) {
-      academicScheduleCurrentWeekBtn.textContent = academicScheduleWeek.value
-        === String(academicScheduleData?.currentWeek || '')
-        ? '全部'
-        : '本周';
-    }
-    renderAcademicSchedule();
-  });
-  academicScheduleCurrentWeekBtn?.addEventListener('click', async () => {
-    if (!(academicScheduleWeek instanceof HTMLSelectElement)) return;
-    const currentWeek = Number(academicScheduleData?.currentWeek || 0);
-    const isCurrent = currentWeek > 0 && academicScheduleWeek.value === String(currentWeek);
-    academicScheduleWeek.value = isCurrent ? 'all' : String(currentWeek);
-    if (!academicScheduleWeek.value) academicScheduleWeek.value = 'all';
-    academicScheduleWeek.dispatchEvent(new Event('change'));
   });
   ['homeworkDetailCollapsedLines', 'replayDetailCollapsedLines'].forEach((id) => {
     document.getElementById(id).addEventListener('change', async () => {
@@ -1850,8 +1262,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById(`${prefix}Value`)?.addEventListener('change', save);
     document.getElementById(`${prefix}Unit`)?.addEventListener('change', save);
   };
-  bindScheduleIntervalSetting('academicScoreMonitorInterval', 'academicScoreMonitorIntervalMinutes', DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES, '教务信息检查间隔');
-  bindScheduleIntervalSetting('academicClassReminderLead', 'academicClassReminderLeadMinutes', DEFAULT_ACADEMIC_CLASS_REMINDER_LEAD_MINUTES, '上课前通知提前时间');
   bindScheduleIntervalSetting('backgroundAutoUpdateInterval', 'backgroundAutoUpdateIntervalMinutes', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, '更新检查间隔');
   bindScheduleIntervalSetting('homeworkBackgroundRefreshInterval', 'homeworkBackgroundRefreshIntervalMinutes', DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES, '后台作业刷新间隔');
   const bindScheduleIntervalSecondsSetting = (prefix, key, fallback, label) => {
@@ -2025,39 +1435,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   });
 
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === 'ACADEMIC_DATA_UPDATED') {
-      const payload = message.payload || {};
-      if (payload.kind === 'scores') {
-        renderAcademicScores(payload.rows);
-        renderAcademicCheckedAt(academicScoreCheckedAt, payload.checkedAt);
-        if (academicStatus instanceof HTMLElement) {
-          academicStatus.style.display = 'none';
-          academicStatus.textContent = '';
-        }
-      } else if (payload.kind === 'exams') {
-        renderAcademicExams(payload.rows);
-        renderAcademicCheckedAt(academicExamCheckedAt, payload.checkedAt);
-        if (academicExamStatus instanceof HTMLElement) {
-          academicExamStatus.style.display = 'none';
-          academicExamStatus.textContent = '';
-        }
-      }
-      return;
-    }
-    if (message?.type === 'ACADEMIC_SYSTEM_STATUS') {
-      const status = message.payload || {};
-      if (status.status === 'mis-login-done') {
-        if (bindAcademicSystemBtn) bindAcademicSystemBtn.disabled = false;
-        void refreshAcademicContext().then(() => loadAcademicInformation());
-        setMsg(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`);
-      } else if (status.status === 'mis-login-cancelled') {
-        if (bindAcademicSystemBtn) bindAcademicSystemBtn.disabled = false;
-        setMsg('已取消通过 MIS 登录教务系统', false);
-      } else if (status.status === 'credentials-saved') {
-        void refreshAcademicContext();
-      }
-      return;
-    }
     if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
     const st = message.payload || {};
     if (st.status === 'done') {
@@ -2123,6 +1500,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   // Reset: restore defaults. Platform display/load should only check VE.
   const restoreDefaultSettings = async () => {
+    await globalThis.BjtuOptionsModules?.resetAll();
     const defaultPlatform = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
     await chrome.storage.local.set({
       platformEnabled: defaultPlatform,
@@ -2144,13 +1522,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       homeworkBackgroundRefreshAccount: '',
       homeworkBackgroundRefreshIntervalMinutes: DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES,
       homeworkNewAssignmentNotificationEnabled: false,
-      academicScoreMonitorEnabled: false,
-      academicExamMonitorEnabled: false,
-      academicClassReminderEnabled: false,
-      academicClassReminderLeadMinutes: DEFAULT_ACADEMIC_CLASS_REMINDER_LEAD_MINUTES,
-      academicScoreMonitorIntervalMinutes: DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES,
-      academicScheduleType: 'semester',
-      academicScheduleWeek: 'all',
       campusNetworkReconnectEnabled: false,
       campusNetworkReconnectIntervalSeconds: DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS,
       campusNetworkReconnectNotifyOnSuccess: true,
@@ -2199,11 +1570,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     currentHomeworkBackgroundRefreshAccount = '';
     renderHomeworkBackgroundAccounts(portalLoginContext);
     updateHomeworkBackgroundRefreshDisabled();
-    document.getElementById('academicScoreMonitorEnabled').checked = false;
-    document.getElementById('academicExamMonitorEnabled').checked = false;
-    document.getElementById('academicClassReminderEnabled').checked = false;
-    document.getElementById('academicScheduleType').value = 'semester';
-    document.getElementById('academicScheduleWeek').value = 'all';
     document.getElementById('campusNetworkReconnectEnabled').checked = false;
     document.getElementById('campusNetworkReconnectNotifyOnSuccess').checked = true;
     setScheduleIntervalSecondsEditor('campusNetworkReconnectInterval', DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS, DEFAULT_CAMPUS_NETWORK_RECONNECT_INTERVAL_SECONDS);
@@ -2211,10 +1577,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     renderCampusNetworkReconnectStatus(null);
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;
-    setScheduleIntervalEditor('academicScoreMonitorInterval', DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES, DEFAULT_ACADEMIC_SCORE_MONITOR_INTERVAL_MINUTES);
-    setScheduleIntervalEditor('academicClassReminderLead', DEFAULT_ACADEMIC_CLASS_REMINDER_LEAD_MINUTES, DEFAULT_ACADEMIC_CLASS_REMINDER_LEAD_MINUTES);
     setScheduleIntervalEditor('backgroundAutoUpdateInterval', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
-    updateAcademicMonitorIntervalDisabled();
     updateBackgroundAutoInstallOptionalDisabled();
     renderBackgroundAutoUpdateStatus(null);
     updateThemeModeUi(DEFAULT_THEME_MODE);
@@ -2271,5 +1634,4 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (event.key === 'Escape' && resetConfirmModal?.style.display === 'flex') closeResetConfirmModal();
   });
   document.documentElement.classList.remove('options-loading');
-  void loadAcademicInformation();
 })();

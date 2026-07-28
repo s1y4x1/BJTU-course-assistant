@@ -42,10 +42,12 @@
   }
 
   async function fetchAcademicWith503Retry(url, options = {}) {
+    const { on503, ...fetchOptions } = options;
     while (true) {
-      const response = await fetch(url, options);
+      const response = await fetch(url, fetchOptions);
       if (response.status !== 503) return response;
       response.body?.cancel?.().catch?.(() => {});
+      if (typeof on503 === 'function') await on503();
       await wait(1000);
     }
   }
@@ -617,7 +619,18 @@
   async function fetchAcademicPage(url, label) {
     const account = await ensureAcademicSession();
     const response = await fetchAcademicWith503Retry(url, {
-      credentials: 'include', cache: 'no-store', redirect: 'follow'
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'follow',
+      on503: label === '考试信息'
+        ? () => chrome.storage.local.set({
+          [EXAM_STATUS_KEY]: {
+            status: 'retrying',
+            error: '考试信息页面 HTTP 503',
+            checkedAt: Date.now()
+          }
+        }).catch(() => {})
+        : undefined
     });
     const html = await response.text();
     if (!response.ok) throw new Error(`${label}页面 HTTP ${response.status}`);
