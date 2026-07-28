@@ -223,10 +223,6 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .seven-seg-colon::after { bottom:5px; }
 html[data-color-scheme="dark"] .deadline-countdown-normal { color:#f8fafc; }
 .extension-runtime-info {
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:center;
-  gap:6px 18px;
   margin:10px 0 4px;
   padding-top:12px;
   border-top:1px solid #e2e8f0;
@@ -235,5 +231,46 @@ html[data-color-scheme="dark"] .deadline-countdown-normal { color:#f8fafc; }
   line-height:1.5;
   font-variant-numeric:tabular-nums;
 }
+.extension-runtime-meta,
+.extension-developer-links { display:flex; flex-wrap:wrap; justify-content:center; gap:6px 18px; }
+.extension-developer-links { margin-top:5px; }
 .extension-runtime-info strong { color:inherit; font-weight:600; }
 .extension-runtime-info time { white-space:nowrap; }
+.extension-developer-links a,
+.extension-image-preview-trigger { color:#2563eb; text-decoration:none; cursor:pointer; }
+.extension-developer-links a:hover { text-decoration:underline; }
+.extension-image-preview-trigger { position:relative; outline:none; }
+.extension-image-preview-trigger:focus-visible { border-radius:3px; outline:2px solid #2563eb; outline-offset:2px; }
+.extension-image-preview {
+  position:absolute;
+  z-index:1200;
+  left:50%;
+  bottom:calc(100% + 8px);
+  width:max-content;
+  max-width:min(260px, calc(100vw - 24px));
+  padding:6px;
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  background:#fff;
+  box-shadow:0 8px 24px rgba(15,23,42,.22);
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transform:translate(-50%, 4px);
+  transition:opacity .14s ease, transform .14s ease, visibility .14s;
+}
+.extension-image-preview img { display:block; width:auto; max-width:240px; max-height:320px; object-fit:contain; }
+.extension-image-preview-trigger:hover .extension-image-preview,
+.extension-image-preview-trigger:focus .extension-image-preview,
+.extension-image-preview-trigger:focus-within .extension-image-preview {
+  opacity:1;
+  visibility:visible;
+  transform:translate(-50%, 0);
+}
+html[data-color-scheme="dark"] .extension-developer-links a,
+html[data-color-scheme="dark"] .extension-image-preview-trigger { color:#60a5fa; }
+html[data-color-scheme="dark"] .extension-image-preview {
+  border-color:#475569;
+  background:#111827;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);
+}
