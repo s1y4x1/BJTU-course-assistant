@@ -450,19 +450,28 @@
       chrome.storage.local.set({ academicSystemStudentId: String(event.currentTarget.value || '').trim() });
     });
     element('academicAccountSelect')?.addEventListener('change', async (event) => {
+      const select = event.currentTarget;
       const studentId = String(event.currentTarget.value || '').trim();
       if (!studentId) return;
-      event.currentTarget.disabled = true;
+      select.disabled = true;
       element('academicStudentId').value = studentId;
-      const result = await send('ACADEMIC_SWITCH_ACCOUNT', { studentId });
-      if (result?.ok) {
-        await loadAll();
-        setMessage(`已切换至教务系统账号 ${studentId}`);
-      } else {
-        setMessage(`切换教务系统账号失败：${result?.message || '未知错误'}`, false);
+      setMessage(`正在切换至教务系统账号 ${studentId}…`);
+      try {
+        const result = await send('ACADEMIC_SWITCH_ACCOUNT', { studentId });
+        if (!result?.ok) {
+          setMessage(`切换教务系统账号失败：${result?.message || '未知错误'}`, false);
+          await refreshContext();
+          return;
+        }
         await refreshContext();
+        setMessage(`已切换至教务系统账号 ${studentId}`);
+        void loadAll();
+      } catch (error) {
+        setMessage(`切换教务系统账号失败：${String(error?.message || error)}`, false);
+        await refreshContext();
+      } finally {
+        select.disabled = false;
       }
-      event.currentTarget.disabled = false;
     });
     element('bindAcademicSystemBtn')?.addEventListener('click', async (event) => {
       event.currentTarget.disabled = true;

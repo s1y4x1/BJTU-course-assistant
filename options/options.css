@@ -93,8 +93,14 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   page-break-inside: avoid;
 }
 .options-wide-card { column-span: all; }
-#options-module-slots { column-span:all; }
-#options-module-slots > [data-options-module] { min-width:0; }
+#options-module-slots { display:none; }
+#options-controlled-content > [data-options-module] {
+  min-width:0;
+  box-sizing:border-box;
+  margin:0 0 14px !important;
+  break-inside:avoid;
+  page-break-inside:avoid;
+}
 #options-controlled-content > .options-wide-card {
   margin-top: 14px !important;
 }

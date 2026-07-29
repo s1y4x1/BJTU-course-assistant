@@ -1,0 +1,61 @@
+.captcha-options-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.captcha-model-row {
+  display: block;
+}
+
+.captcha-model-row select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.captcha-resource-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.captcha-resource-actions button {
+  margin: 0;
+}
+
+.captcha-resource-actions .option-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  margin: 0;
+}
+
+.captcha-resource-actions .option-status.error {
+  color: #b91c1c;
+}
+
+html[data-color-scheme="dark"] .captcha-options-card {
+  border-color: #334155;
+  background: #111827;
+}
+
+html[data-color-scheme="dark"] .captcha-model-row select {
+  border-color: #475569;
+  background: #111827;
+  color: #f8fafc;
+}
+
+html[data-color-scheme="dark"] .captcha-resource-actions .option-status.error {
+  color: #fca5a5;
+}

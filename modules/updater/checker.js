@@ -50,6 +50,7 @@ let versionUpdateDirectoryHandle = null;
 let versionUpdateDirectoryHandleLoaded = false;
 let versionUpdateDirectoryHandleLoadPromise = null;
 let versionPendingDirectoryUpdate = null;
+let versionSupplementalReloadRequired = false;
 let versionButtonLatestReload = true;
 let versionButtonLatestForce = false;
 let versionButtonLatestUpdate = null;
@@ -1691,6 +1692,59 @@ async function requestModuleManagementDirectory() {
   return handle;
 }
 
+async function directoryFileExists(root, relativePath, expectedSize = 0) {
+  if (!root) return false;
+  const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  if (!parts.length) return false;
+  try {
+    let directory = root;
+    for (const part of parts.slice(0, -1)) {
+      directory = await directory.getDirectoryHandle(part);
+    }
+    const fileHandle = await directory.getFileHandle(parts.at(-1));
+    const file = await fileHandle.getFile();
+    return expectedSize > 0 ? file.size === expectedSize : file.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function prepareCaptchaAssets({
+  interactive = true,
+  modelReady = false,
+  root = null,
+  onProgress = null
+} = {}) {
+  const assets = globalThis.BjtuCaptchaAssets;
+  if (!assets) throw new Error('验证码资源管理器未加载');
+  if (!modelReady) await assets.ensureModel({ onProgress });
+
+  let directory = root;
+  if (!directory) {
+    directory = interactive
+      ? await requestModuleManagementDirectory()
+      : await getWritableVersionUpdateDirectory();
+  }
+  if (!directory) {
+    const coreReady = await assets.extensionCoreExists();
+    return {
+      modelReady: true,
+      coreReady,
+      corePending: !coreReady,
+      written: 0
+    };
+  }
+  if (await directoryFileExists(directory, assets.CORE_RELATIVE_PATH, assets.CORE_SIZE)) {
+    return { modelReady: true, coreReady: true, corePending: false, written: 0 };
+  }
+  const coreBytes = await assets.downloadCore({ onProgress });
+  onProgress?.({ phase: 'write', path: assets.CORE_RELATIVE_PATH, completed: 0, total: 1 });
+  await globalThis.BjtuUpdateFileSystem.writeFile(directory, assets.CORE_RELATIVE_PATH, coreBytes);
+  versionSupplementalReloadRequired = true;
+  onProgress?.({ phase: 'write', path: assets.CORE_RELATIVE_PATH, completed: 1, total: 1 });
+  return { modelReady: true, coreReady: true, corePending: false, written: 1 };
+}
+
 async function fetchModuleArchive(onProgress) {
   onProgress?.({ phase: 'download', loaded: 0, total: 0 });
   const release = await fetchLatestReleaseFromUrl(VERSION_LATEST_URL);
@@ -1727,6 +1781,9 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
   const removals = [...installedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id) && !selectedSet.has(id));
   if (!additions.length && !removals.length) return { added: [], removed: [], written: 0 };
 
+  if (additions.includes('captcha')) {
+    await globalThis.BjtuCaptchaAssets?.ensureModel({ onProgress });
+  }
   await requestModuleManagementDirectory();
   let archiveFiles = [];
   if (additions.length) {
@@ -1769,6 +1826,14 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
         if (error?.name !== 'NotFoundError') throw error;
       });
     }
+    if (selectedSet.has('captcha')) {
+      const prepared = await prepareCaptchaAssets({
+        root: versionUpdateDirectoryHandle,
+        modelReady: additions.includes('captcha'),
+        onProgress
+      });
+      written += prepared.written;
+    }
   });
   await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selectedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)) });
   return { added: additions, removed: removals, written };
@@ -1776,7 +1841,8 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
 
 globalThis.BjtuUpdaterModuleManager = Object.freeze({
   prepare: () => readVersionUpdateDirectoryHandle(),
-  applyModuleSelection
+  applyModuleSelection,
+  prepareCaptchaAssets
 });
 
 function filterFilesByModules(files, selectedModules) {
@@ -1871,6 +1937,21 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
     .filter((item) => item.path);
   const selectedModules = await chooseUpdateModules(archiveFiles);
   VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
+  if (selectedModules.has('captcha')) {
+    await globalThis.BjtuCaptchaAssets?.ensureModel({
+      onProgress({ loaded, total }) {
+        setVersionDownloadProgressUi({
+          visible: true,
+          status: total > 0
+            ? `正在下载验证码识别模型：${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
+            : `正在下载验证码识别模型：${formatDownloadBytes(loaded)}`,
+          title: '正在准备验证码识别资源',
+          body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。',
+          phase: 'extracting'
+        });
+      }
+    });
+  }
   if (cleanUpdate) await cleanVersionUpdateScopes(updateRule, selectedModules);
   else if (!normalizeVersionUpdateScopes(updateRule)) await removeUnselectedModuleDirectories(selectedModules);
   const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
@@ -1965,7 +2046,39 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   }));
   const failedResult = results.find((result) => result.status === 'rejected');
   if (failedResult) throw failedResult.reason;
-  return files.length;
+  let supplementalWrites = 0;
+  if (selectedModules.has('captcha')) {
+    const prepared = await prepareCaptchaAssets({
+      root: versionUpdateDirectoryHandle,
+      onProgress(progress) {
+        const loaded = Math.max(0, Number(progress?.loaded) || 0);
+        const total = Math.max(0, Number(progress?.total) || 0);
+        if (progress?.phase === 'model') {
+          setVersionDownloadProgressUi({
+            visible: true,
+            status: total > 0
+              ? `正在下载验证码识别模型：${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
+              : `正在下载验证码识别模型：${formatDownloadBytes(loaded)}`,
+            title: '正在准备验证码识别资源',
+            body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。',
+            phase: 'extracting'
+          });
+        } else if (progress?.phase === 'core') {
+          setVersionDownloadProgressUi({
+            visible: true,
+            status: total > 0
+              ? `正在下载 OCR 核心：${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
+              : `正在下载 OCR 核心：${formatDownloadBytes(loaded)}`,
+            title: '正在准备验证码识别资源',
+            body: 'OCR 核心下载完成后将写入验证码模块目录。',
+            phase: 'extracting'
+          });
+        }
+      }
+    });
+    supplementalWrites = prepared.written;
+  }
+  return files.length + supplementalWrites;
 }
 
 async function downloadVersionByUrlWithProgress(url) {
@@ -1973,6 +2086,7 @@ async function downloadVersionByUrlWithProgress(url) {
   if (!finalUrl) throw new Error('下载链接为空');
   if (!versionUpdateDirectoryHandle) throw new Error('尚未授权更新目录');
 
+  versionSupplementalReloadRequired = false;
   const archiveBytes = await fetchUpdateArchiveWithProgress(finalUrl);
   const updateRule = versionDownloadFullExtraction
     ? null
@@ -1980,7 +2094,7 @@ async function downloadVersionByUrlWithProgress(url) {
   const fileCount = await globalThis.BjtuUpdateFileSystem.withInstallLock(() => (
     extractUpdateArchiveToDirectory(archiveBytes, updateRule, !versionDownloadFullExtraction && versionButtonLatestClean)
   ));
-  const reloadRequired = versionButtonLatestReload;
+  const reloadRequired = versionButtonLatestReload || versionSupplementalReloadRequired;
   const forcedUpdate = versionButtonLatestForce;
   const appliedRecord = {
     ver: versionButtonLatestVersion,

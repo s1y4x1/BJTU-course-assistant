@@ -1,0 +1,12 @@
+<section class="captcha-options-card">
+  <div class="section-title">本地验证码识别</div>
+  <label for="captchaModelVersion">识别模型版本</label>
+  <div class="captcha-model-row">
+    <select id="captchaModelVersion" aria-label="验证码识别模型版本"></select>
+  </div>
+  <div class="captcha-resource-actions">
+    <button id="captchaPrepareResources" type="button">下载或修复识别资源</button>
+    <span id="captchaResourceStatus" class="option-status">正在检查识别资源…</span>
+  </div>
+  <div class="tip">模型按版本下载并保存在 IndexedDB；OCR 核心需写入扩展安装目录。首次使用或切换模型版本时需要联网。</div>
+</section>

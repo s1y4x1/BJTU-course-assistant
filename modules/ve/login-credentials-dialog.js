@@ -22,6 +22,7 @@
       const encryptPassword = typeof options.encryptPassword === 'function' ? options.encryptPassword : () => '';
       const loadCaptcha = typeof options.loadCaptcha === 'function' ? options.loadCaptcha : null;
       const recognizeCaptcha = typeof options.recognizeCaptcha === 'function' ? options.recognizeCaptcha : null;
+      const initialMessageText = String(options.messageText || '账号或密码错误');
       let captchaUrl = String(options.initialCaptchaUrl || '');
       let captchaLoading = false;
       let captchaVersion = 0;
@@ -40,16 +41,22 @@
         passcodeInput.value = '';
         passcodeInput.placeholder = '正在识别';
         passcodeInput.dataset.recognizing = '1';
+        let failed = false;
         try {
           const passcode = String(await recognizeCaptcha(imageUrl) || '').replace(/\D/g, '').slice(0, 4);
           if (settled || version !== captchaVersion) return;
-          if (!passcodeInput.value && passcode.length === 4) passcodeInput.value = passcode;
-        } catch {
-          // Keep the input available for manual entry when local recognition fails.
+          if (passcode.length !== 4) throw new Error('未能识别出 4 位数字');
+          if (!/^\d{4}$/.test(passcodeInput.value)) passcodeInput.value = passcode;
+          if (message instanceof HTMLElement) message.textContent = initialMessageText;
+        } catch (error) {
+          failed = true;
+          if (message instanceof HTMLElement) {
+            message.textContent = '验证码识别失败：' + String(error?.message || error);
+          }
         } finally {
           if (!settled && version === captchaVersion) {
             delete passcodeInput.dataset.recognizing;
-            passcodeInput.placeholder = '输入 4 位验证码';
+            passcodeInput.placeholder = failed && !passcodeInput.value ? '识别失败' : '输入 4 位验证码';
           }
         }
       };
@@ -59,17 +66,23 @@
         const version = ++captchaVersion;
         if (passcodeInput instanceof HTMLInputElement) {
           passcodeInput.value = '';
-          passcodeInput.placeholder = '正在识别';
+          passcodeInput.placeholder = '正在获取';
+          passcodeInput.dataset.fetching = '1';
         }
         try {
           captchaUrl = String(await loadCaptcha() || '');
           if (!captchaUrl) throw new Error('验证码图片为空');
           if (captchaImage instanceof HTMLImageElement) captchaImage.src = captchaUrl;
+          if (passcodeInput instanceof HTMLInputElement) delete passcodeInput.dataset.fetching;
           await recognizeCurrentCaptcha(captchaUrl, version);
           passcodeInput?.focus();
         } catch (error) {
           if (message instanceof HTMLElement) message.textContent = '验证码图片获取失败：' + String(error?.message || error);
+          if (!settled && version === captchaVersion && passcodeInput instanceof HTMLInputElement) {
+            passcodeInput.placeholder = '输入 4 位验证码';
+          }
         } finally {
+          if (passcodeInput instanceof HTMLInputElement) delete passcodeInput.dataset.fetching;
           captchaLoading = false;
         }
       };
@@ -157,7 +170,7 @@
         modal.removeEventListener('mouseup', onMaskUp);
       };
 
-      if (message instanceof HTMLElement) message.textContent = String(options.messageText || '账号或密码错误');
+      if (message instanceof HTMLElement) message.textContent = initialMessageText;
       if (choice instanceof HTMLElement) choice.style.display = startManual ? 'none' : 'flex';
       if (manual instanceof HTMLElement) manual.style.display = 'none';
       buttons.reinitialize?.addEventListener('click', onReinitialize);

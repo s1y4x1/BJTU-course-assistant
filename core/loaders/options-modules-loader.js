@@ -29,12 +29,14 @@
       if (!response.ok) throw new Error(`${definition.label}选项片段 HTTP ${response.status}`);
       const slot = document.createElement('div');
       slot.dataset.optionsModule = id;
+      slot.classList.toggle('options-wide-card', options.wide === true);
       slot.innerHTML = await response.text();
-      host.appendChild(slot);
+      host.before(slot);
       if (options.style) await global.BjtuModuleRegistry.loadStyle(`modules/${id}/${options.style}`);
       if (options.script) await global.BjtuModuleRegistry.loadScript(`modules/${id}/${options.script}`);
       loaded.push(id);
     }
+    host.remove();
     return loaded;
   })().catch((error) => {
     console.warn('[bjtu] options modules unavailable:', String(error?.message || error));
