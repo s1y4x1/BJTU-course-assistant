@@ -400,5 +400,6 @@
     await chrome.runtime.sendMessage({ type: 'CAPTCHA_MODEL_VERSION_CHANGED' }).catch(() => {});
   }
 
-  global.BjtuOptionsModules?.register('captcha', { init, reset });
+  global.BjtuCaptchaOptions = { init, reset };
+  global.BjtuOptionsModules?.register('captcha', global.BjtuCaptchaOptions);
 })(globalThis);

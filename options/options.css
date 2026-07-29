@@ -1,4 +1,9 @@
 body { font-family: Segoe UI, sans-serif; max-width: min(1180px, calc(100vw - 32px)); margin: 24px auto 4px; padding: 0 16px; }
+body.module-options-standalone {
+  max-width: min(1120px, calc(100vw - 32px));
+  margin: 24px auto;
+}
+body.module-options-standalone > [data-options-fragment] { margin:0 !important; }
 h2 { margin: 0; }
 label { display: block; margin: 12px 0 6px; }
 input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }

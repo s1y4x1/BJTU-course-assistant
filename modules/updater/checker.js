@@ -971,6 +971,42 @@ function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, et
   statusEl.dataset.percent = explicitPercent === null ? '' : String(explicitPercent);
 }
 
+const captchaResourceTransferStates = new Map();
+function showCaptchaResourceDownloadProgress(progress, {
+  filename,
+  body
+}) {
+  const loaded = Math.max(0, Number(progress?.loaded) || 0);
+  const total = Math.max(0, Number(progress?.total) || 0);
+  const key = String(progress?.phase || filename || 'captcha-resource');
+  const now = performance.now();
+  let state = captchaResourceTransferStates.get(key);
+  if (!state || loaded <= 0 || loaded < state.lastLoaded) {
+    state = { startedAt: now, lastLoaded: 0 };
+    captchaResourceTransferStates.set(key, state);
+  }
+  state.lastLoaded = loaded;
+  const elapsedSeconds = Math.max(0.001, (now - state.startedAt) / 1000);
+  const speed = loaded / elapsedSeconds;
+  const eta = total > loaded
+    ? (speed > 0 ? (total - loaded) / speed : null)
+    : (total > 0 ? 0 : null);
+  const percent = total > 0 ? loaded / total * 100 : null;
+  setVersionDownloadProgressUi({
+    visible: true,
+    status: `正在下载 ${filename}`,
+    title: '正在准备验证码识别资源',
+    body: `正在下载 ${filename}。${body}`,
+    phase: 'extracting'
+  });
+  setVersionDownloadBar({
+    visible: true,
+    percent: percent ?? 0,
+    indeterminate: percent === null
+  });
+  setVersionDownloadTransferStatus({ loaded, total, speed, eta, percent });
+}
+
 function resetVersionUpdateFileTree() {
   versionUpdateFileTreeRows = new Map();
   const wrapper = document.getElementById('version-update-files');
@@ -1799,6 +1835,14 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
       }
     }
   }
+  if (removals.includes('captcha')) {
+    if (chrome.offscreen?.closeDocument) {
+      await chrome.offscreen.closeDocument().catch(() => {});
+    }
+    const assets = globalThis.BjtuCaptchaAssets;
+    if (!assets?.deleteDatabases) throw new Error('验证码资源管理器未加载，无法清理识别模型数据库');
+    await assets.deleteDatabases();
+  }
 
   let written = 0;
   await globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
@@ -1939,15 +1983,10 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
   if (selectedModules.has('captcha')) {
     await globalThis.BjtuCaptchaAssets?.ensureModel({
-      onProgress({ loaded, total }) {
-        setVersionDownloadProgressUi({
-          visible: true,
-          status: total > 0
-            ? `正在下载验证码识别模型：${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
-            : `正在下载验证码识别模型：${formatDownloadBytes(loaded)}`,
-          title: '正在准备验证码识别资源',
-          body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。',
-          phase: 'extracting'
+      onProgress(progress) {
+        showCaptchaResourceDownloadProgress(progress, {
+          filename: 'eng.traineddata.gz',
+          body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。'
         });
       }
     });
@@ -2054,24 +2093,14 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
         const loaded = Math.max(0, Number(progress?.loaded) || 0);
         const total = Math.max(0, Number(progress?.total) || 0);
         if (progress?.phase === 'model') {
-          setVersionDownloadProgressUi({
-            visible: true,
-            status: total > 0
-              ? `正在下载验证码识别模型：${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
-              : `正在下载验证码识别模型：${formatDownloadBytes(loaded)}`,
-            title: '正在准备验证码识别资源',
-            body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。',
-            phase: 'extracting'
+          showCaptchaResourceDownloadProgress({ ...progress, loaded, total }, {
+            filename: 'eng.traineddata.gz',
+            body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。'
           });
         } else if (progress?.phase === 'core') {
-          setVersionDownloadProgressUi({
-            visible: true,
-            status: total > 0
-              ? `正在下载 OCR 核心：${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
-              : `正在下载 OCR 核心：${formatDownloadBytes(loaded)}`,
-            title: '正在准备验证码识别资源',
-            body: 'OCR 核心下载完成后将写入验证码模块目录。',
-            phase: 'extracting'
+          showCaptchaResourceDownloadProgress({ ...progress, loaded, total }, {
+            filename: 'tesseract-core-simd.wasm.js',
+            body: 'OCR 核心下载完成后将写入验证码模块目录。'
           });
         }
       }

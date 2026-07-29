@@ -1,4 +1,16 @@
-<section class="captcha-options-card">
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>本地验证码识别选项</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="captcha">
+<section class="captcha-options-card" data-options-fragment>
   <div class="section-title">本地验证码识别</div>
   <div id="captcha-model-label" class="captcha-model-label">识别模型版本</div>
   <div id="captchaModelList" class="captcha-model-list" role="radiogroup" aria-label="验证码识别模型版本">
@@ -15,3 +27,11 @@
   </div>
   <div class="tip" data-tip-target="#captcha-model-label">模型下载后保存在 IndexedDB，只有已下载的模型可以选用；OCR 核心仍需写入扩展安装目录。</div>
 </section>
+<div id="msg"></div>
+<script src="../../core/module-registry.js"></script>
+<script src="../../core/captcha-assets.js"></script>
+<script src="../../core/loaders/updater-loader.js"></script>
+<script src="options.js"></script>
+<script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>

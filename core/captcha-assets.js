@@ -202,6 +202,26 @@
     return normalized;
   }
 
+  function deleteIndexedDatabase(databaseName) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(databaseName);
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(request.error || new Error(`无法删除数据库 ${databaseName}`));
+      request.onblocked = () => reject(new Error(`数据库 ${databaseName} 正在使用，暂时无法删除`));
+    });
+  }
+
+  async function deleteDatabases() {
+    const pendingDownloads = [...modelDownloadPromises.values()];
+    for (const controller of modelDownloadControllers.values()) controller.abort();
+    await Promise.allSettled(pendingDownloads);
+    await Promise.all([
+      deleteIndexedDatabase(MODEL_DB_NAME),
+      deleteIndexedDatabase('keyval-store')
+    ]);
+    return true;
+  }
+
   async function fetchBytes(url, onProgress, { signal = null, expectedSize = 0 } = {}) {
     const response = await fetch(url, {
       cache: 'no-store',
@@ -344,9 +364,14 @@
     setSelectedModelVersion,
     getCachedModel,
     deleteCachedModel,
+    deleteDatabases,
     ensureModel,
     cancelModelDownload,
     extensionCoreExists,
     downloadCore
+  });
+
+  void deleteIndexedDatabase('keyval-store').catch((error) => {
+    console.info('[bjtu] legacy captcha cache cleanup deferred:', String(error?.message || error));
   });
 })(globalThis);

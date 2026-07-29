@@ -1,0 +1,51 @@
+.campusnet-options-card {
+  box-sizing:border-box;
+  margin:0;
+  padding:10px 12px;
+  border:1px solid #e5e7eb;
+  border-radius:8px;
+  background:#f9fafb;
+}
+.campusnet-option-check {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:6px 0;
+}
+.campusnet-option-check input { width:auto; margin:0; }
+.campusnet-options-detail { margin-left:22px; }
+.campusnet-options-detail > label[for] {
+  margin:6px 0 4px;
+  color:#475569;
+  font-size:13px;
+}
+.campusnet-interval-editor {
+  display:grid;
+  grid-template-columns:auto minmax(72px,1fr) auto;
+  align-items:center;
+  gap:8px;
+  margin:8px 0;
+}
+.campusnet-interval-editor input,
+.campusnet-interval-editor select {
+  box-sizing:border-box;
+  min-width:0;
+  height:34px;
+  padding:6px 8px;
+  border:1px solid #ccc;
+  border-radius:6px;
+  background:#fff;
+}
+.campusnet-status { margin:4px 0 0; }
+.campusnet-options-detail.is-disabled { opacity:.5; pointer-events:none; }
+html[data-color-scheme="dark"] .campusnet-options-card {
+  border-color:#334155;
+  background:#111827;
+}
+html[data-color-scheme="dark"] .campusnet-options-detail > label[for] { color:#cbd5e1; }
+html[data-color-scheme="dark"] .campusnet-interval-editor input,
+html[data-color-scheme="dark"] .campusnet-interval-editor select {
+  border-color:#475569;
+  background:#0f172a;
+  color:#f8fafc;
+}

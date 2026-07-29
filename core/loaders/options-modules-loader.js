@@ -30,7 +30,10 @@
       const slot = document.createElement('div');
       slot.dataset.optionsModule = id;
       slot.classList.toggle('options-wide-card', options.wide === true);
-      slot.innerHTML = await response.text();
+      const source = await response.text();
+      const parsed = new DOMParser().parseFromString(source, 'text/html');
+      const fragment = parsed.querySelector('[data-options-fragment]');
+      slot.innerHTML = fragment ? fragment.outerHTML : source;
       host.before(slot);
       if (options.style) await global.BjtuModuleRegistry.loadStyle(`modules/${id}/${options.style}`);
       if (options.script) await global.BjtuModuleRegistry.loadScript(`modules/${id}/${options.script}`);
