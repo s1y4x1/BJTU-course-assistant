@@ -201,7 +201,7 @@
     if (!recognizer?.recognize) {
       throw Object.assign(
         new Error('本地验证码识别模块未安装'),
-        { code: 'captcha-resources-missing' }
+        { code: 'captcha-module-missing' }
       );
     }
     const result = await recognizer.recognize(image);

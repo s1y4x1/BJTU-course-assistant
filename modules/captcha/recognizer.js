@@ -13,7 +13,7 @@
   let creatingDocument = null;
   let offscreenReadyPromise = null;
 
-  async function runtimeFilesReady() {
+  async function runtimeFilesState() {
     const results = await Promise.all(REQUIRED_RUNTIME_FILES.map(async (path) => {
       try {
         return (await fetch(chrome.runtime.getURL(path), { cache: 'no-store' })).ok;
@@ -21,7 +21,10 @@
         return false;
       }
     }));
-    return results.every(Boolean);
+    return {
+      installed: results[0] === true,
+      ready: results.every(Boolean)
+    };
   }
 
   async function ensureOffscreenDocument() {
@@ -105,7 +108,14 @@
 
   async function recognize(image) {
     if (!global.BjtuCaptchaAssets) throw new Error('验证码识别资源管理器未加载');
-    if (!(await runtimeFilesReady())) {
+    const runtimeState = await runtimeFilesState();
+    if (!runtimeState.installed) {
+      throw Object.assign(
+        new Error('本地验证码识别模块未安装'),
+        { code: 'captcha-module-missing' }
+      );
+    }
+    if (!runtimeState.ready) {
       throw Object.assign(
         new Error('本地验证码识别模块尚未完整安装'),
         { code: 'captcha-resources-missing' }
