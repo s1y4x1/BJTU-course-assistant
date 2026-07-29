@@ -108,6 +108,19 @@
     target.textContent = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN', { hour12: false });
   }
 
+  function renderEmptyDataStatus(target, bodyId, loadingId, message) {
+    if (!(target instanceof HTMLElement)) return;
+    const loading = element(loadingId);
+    if (loading instanceof HTMLElement && loading.style.display !== 'none') {
+      target.style.display = 'none';
+      target.textContent = '';
+      return;
+    }
+    const empty = element(bodyId)?.childElementCount === 0;
+    target.style.display = empty ? 'block' : 'none';
+    target.textContent = empty ? message : '';
+  }
+
   function renderMonitorStatus(status) {
     const target = element('academicSystemStatus');
     if (!(target instanceof HTMLElement) || !status) return;
@@ -115,8 +128,7 @@
       target.style.display = 'block';
       target.textContent = `成绩检查失败：${status.error || '未知错误'}`;
     } else if (status.status === 'complete' || status.status === 'ok') {
-      target.style.display = 'none';
-      target.textContent = '';
+      renderEmptyDataStatus(target, 'academicScoreTableBody', 'academicScoreLoading', '暂无成绩数据');
       renderCheckedAt(element('academicScoreCheckedAt'), status.checkedAt);
     }
   }
@@ -125,8 +137,7 @@
     const target = element('academicExamStatus');
     if (!(target instanceof HTMLElement)) return;
     if (!status) {
-      target.style.display = 'none';
-      target.textContent = '';
+      renderEmptyDataStatus(target, 'academicExamTableBody', 'academicExamLoading', '暂无考试信息');
       return;
     }
     if (status.status === 'error') {
@@ -136,8 +147,7 @@
       target.style.display = 'block';
       target.textContent = '考试信息服务暂不可用，1 秒后自动重试…';
     } else if (status.status === 'complete' || status.status === 'ok') {
-      target.style.display = 'none';
-      target.textContent = '';
+      renderEmptyDataStatus(target, 'academicExamTableBody', 'academicExamLoading', '暂无考试信息');
       renderCheckedAt(element('academicExamCheckedAt'), status.checkedAt);
     } else {
       target.style.display = 'none';
@@ -151,7 +161,6 @@
     if (body instanceof HTMLElement) body.replaceChildren();
     element('academicScoreLoading').style.display = 'none';
     element('academicScoreCount').textContent = `共 ${list.length} 项`;
-    element('academicScoreEmpty').style.display = list.length ? 'none' : 'block';
     element('academicScoreTableWrap').style.display = list.length ? 'block' : 'none';
     for (const row of list) {
       const tr = document.createElement('tr');
@@ -177,6 +186,7 @@
       tr.appendChild(detailsCell);
       body?.appendChild(tr);
     }
+    renderEmptyDataStatus(element('academicSystemStatus'), 'academicScoreTableBody', 'academicScoreLoading', '暂无成绩数据');
   }
 
   function renderExams(rows) {
@@ -185,7 +195,6 @@
     if (body instanceof HTMLElement) body.replaceChildren();
     element('academicExamLoading').style.display = 'none';
     element('academicExamCount').textContent = `共 ${list.length} 项`;
-    element('academicExamEmpty').style.display = list.length ? 'none' : 'block';
     element('academicExamTableWrap').style.display = list.length ? 'block' : 'none';
     const groupSizes = new Map();
     list.forEach((row) => groupSizes.set(row.exam, (groupSizes.get(row.exam) || 0) + 1));
@@ -233,6 +242,7 @@
       });
       body?.appendChild(tr);
     }
+    renderEmptyDataStatus(element('academicExamStatus'), 'academicExamTableBody', 'academicExamLoading', '暂无考试信息');
     global.updateAllCountdowns?.();
   }
 
@@ -371,14 +381,11 @@
 
   async function loadScores() {
     element('academicScoreLoading').style.display = 'flex';
-    element('academicScoreEmpty').style.display = 'none';
     element('academicScoreTableWrap').style.display = 'none';
     element('academicSystemStatus').style.display = 'none';
     const result = await send('ACADEMIC_LOAD_SCORES');
     if (!result?.ok) {
       element('academicScoreLoading').style.display = 'none';
-      element('academicScoreEmpty').style.display = 'block';
-      element('academicScoreEmpty').textContent = result?.code === 'not-logged-in' ? '教务系统未登录' : '成绩读取失败';
       element('academicSystemStatus').style.display = 'block';
       element('academicSystemStatus').textContent = result?.code === 'not-logged-in'
         ? '教务系统未登录，请输入账号密码或通过 MIS 登录'
@@ -387,22 +394,18 @@
     }
     renderScores(result.rows);
     renderCheckedAt(element('academicScoreCheckedAt'), result.checkedAt);
-    element('academicSystemStatus').style.display = 'none';
     await refreshContext();
     return result;
   }
 
   async function loadExams() {
     element('academicExamLoading').style.display = 'flex';
-    element('academicExamEmpty').style.display = 'none';
     element('academicExamTableWrap').style.display = 'none';
     element('academicExamStatus').style.display = 'none';
     element('academicExamStatus').textContent = '';
     const result = await send('ACADEMIC_LOAD_EXAMS');
     if (!result?.ok) {
       element('academicExamLoading').style.display = 'none';
-      element('academicExamEmpty').style.display = 'block';
-      element('academicExamEmpty').textContent = result?.code === 'not-logged-in' ? '教务系统未登录' : '考试信息读取失败';
       element('academicExamStatus').style.display = 'block';
       element('academicExamStatus').textContent = result?.code === 'not-logged-in'
         ? '教务系统未登录'
@@ -411,7 +414,6 @@
     }
     renderExams(result.rows);
     renderCheckedAt(element('academicExamCheckedAt'), result.checkedAt);
-    element('academicExamStatus').style.display = 'none';
     await refreshContext();
     return result;
   }

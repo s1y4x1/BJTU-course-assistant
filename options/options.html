@@ -146,11 +146,13 @@
             style="width:auto;" checked />学堂在线</label></div>
       <div id="xuetangxPlatformDetail" class="platform-option-detail" data-module="xuetangx" hidden>
         <label><input type="checkbox" id="enableXuetangx" style="width:auto;" />启用</label>
+        <div class="platform-option-divider" role="separator"></div>
         <div class="platform-option-subtitle">要显示的课程状态</div>
         <label><input type="checkbox" class="xuetangx-course-status" value="1" style="width:auto;" checked />正在上课</label>
         <label><input type="checkbox" class="xuetangx-course-status" value="2" style="width:auto;" />即将开课</label>
         <label><input type="checkbox" class="xuetangx-course-status" value="3" style="width:auto;" />已结课</label>
         <label><input type="checkbox" class="xuetangx-course-status" value="4" style="width:auto;" />已退课</label>
+        <div class="platform-option-divider" role="separator"></div>
         <div class="platform-option-subtitle">要显示的作业类型</div>
         <div class="xuetangx-activity-type-options">
           <label><input type="checkbox" class="xuetangx-activity-type" value="6" style="width:auto;" checked />视频</label>
@@ -242,6 +244,7 @@
         <div class="tip" style="margin:4px 0 0;">仅在未打开全屏页面时运行；必要时会登录固定账号，刷新作业提醒数据和弹出窗口缓存。</div>
         <div id="homeworkBackgroundRefreshStatus" class="option-status" style="margin:4px 0 0;">后台作业获取未启用。</div>
       </div>
+      <div class="option-divider" role="separator"></div>
       <div class="system-notification-test-row">
         <button id="testSystemNotificationBtn" type="button">发送测试通知</button>
         <span id="systemNotificationStatus" class="option-status">尚未测试系统通知。</span>
@@ -255,7 +258,14 @@
         <div id="installedModuleList" class="installed-module-list"></div>
         <button id="applyInstalledModules" type="button" disabled>应用模块更改</button>
         <div id="installedModuleStatus" class="option-status" style="margin:6px 0 10px;">正在读取模块状态…</div>
+        <div id="installedModuleProgress" class="option-download-progress" hidden>
+          <div id="installedModuleProgressLabel" class="option-download-progress-label"></div>
+          <div class="option-download-progress-track">
+            <div id="installedModuleProgressBar" class="option-download-progress-bar"></div>
+          </div>
+        </div>
       </div>
+      <div class="option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:0;">
         <input type="checkbox" id="backgroundAutoUpdateEnabled" style="width:auto;" />
         后台自动检查并安装更新
@@ -340,6 +350,7 @@
       </div>
     </div>
   </div>
+  <div class="option-divider option-divider--footer" role="separator"></div>
   <footer class="extension-runtime-info" aria-label="扩展版本与运行时间">
     <div class="extension-runtime-meta">
       <span>版本 <strong id="extension-version">正在读取…</strong></span>

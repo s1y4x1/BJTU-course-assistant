@@ -1462,6 +1462,13 @@
       payload: { imageUrl }
     });
     if (!response?.ok || !/^\d{4}$/.test(String(response.passcode || ''))) {
+      if (response?.code === 'captcha-resources-missing') {
+        const suffix = new URLSearchParams(String(location.search || '')).get('popup') === '1'
+          ? '?popup=1'
+          : '';
+        const optionsUrl = chrome.runtime.getURL(`options/options.html${suffix}`);
+        location.href = optionsUrl;
+      }
       throw new Error(response?.message || '验证码本地识别失败');
     }
     return String(response.passcode);

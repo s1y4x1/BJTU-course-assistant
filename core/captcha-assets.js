@@ -12,6 +12,7 @@
   const MODEL_PACKAGE = '@tesseract.js-data/eng';
   const MODEL_SOURCE_API = `https://data.jsdelivr.com/v1/package/npm/${MODEL_PACKAGE}`;
   const modelDownloadPromises = new Map();
+  const modelDownloadControllers = new Map();
   let modelCatalogPromise = null;
 
   const FALLBACK_MODEL_VERSIONS = Object.freeze({
@@ -147,6 +148,21 @@
     }
   }
 
+  async function deleteStoreValue(databaseName, storeName, key) {
+    const db = await openDatabase(databaseName, storeName);
+    try {
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction(storeName, 'readwrite');
+        transaction.objectStore(storeName).delete(key);
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error || new Error('无法卸载验证码识别模型'));
+        transaction.onabort = () => reject(transaction.error || new Error('卸载验证码识别模型已中止'));
+      });
+    } finally {
+      db.close();
+    }
+  }
+
   function modelStorageKey(version) {
     return `eng.traineddata.gz:${normalizeVersion(version)}`;
   }
@@ -176,14 +192,26 @@
     return { ...record, version: normalized, blob };
   }
 
-  async function fetchBytes(url, onProgress) {
+  async function deleteCachedModel(version) {
+    await getModelVersions();
+    const normalized = normalizeVersion(version);
+    if (modelDownloadPromises.has(normalized)) {
+      throw new Error('该识别模型正在下载，暂时无法卸载');
+    }
+    await deleteStoreValue(MODEL_DB_NAME, MODEL_DB_STORE, modelStorageKey(normalized));
+    return normalized;
+  }
+
+  async function fetchBytes(url, onProgress, { signal = null, expectedSize = 0 } = {}) {
     const response = await fetch(url, {
       cache: 'no-store',
       credentials: 'omit',
-      headers: { Accept: 'application/octet-stream,*/*' }
+      headers: { Accept: 'application/octet-stream,*/*' },
+      signal
     });
     if (!response.ok) throw new Error(`验证码识别资源下载失败（HTTP ${response.status}）`);
-    const total = Math.max(0, Number(response.headers.get('content-length') || 0));
+    const responseSize = Math.max(0, Number(response.headers.get('content-length') || 0));
+    const total = Math.max(responseSize, Number(expectedSize) || 0);
     if (!response.body?.getReader) {
       const bytes = new Uint8Array(await response.arrayBuffer());
       onProgress?.({ loaded: bytes.byteLength, total: total || bytes.byteLength });
@@ -236,10 +264,19 @@
     if (cached) return { ...cached, downloaded: false };
     if (!modelDownloadPromises.has(version)) {
       const definition = modelVersions[version];
+      const controller = new AbortController();
+      if (options.signal?.aborted) {
+        controller.abort(options.signal.reason);
+      } else {
+        options.signal?.addEventListener('abort', () => {
+          controller.abort(options.signal.reason);
+        }, { once: true });
+      }
+      modelDownloadControllers.set(version, controller);
       modelDownloadPromises.set(version, (async () => {
         const bytes = await fetchBytes(definition.url, ({ loaded, total }) => {
           options.onProgress?.({ phase: 'model', loaded, total, version });
-        });
+        }, { signal: controller.signal, expectedSize: definition.size });
         if (bytes.byteLength < 100000 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) {
           throw new Error('验证码识别模型内容无效');
         }
@@ -254,10 +291,21 @@
         };
         await writeStoreValue(MODEL_DB_NAME, MODEL_DB_STORE, modelStorageKey(version), record);
         return { ...record, downloaded: true };
-      })().finally(() => modelDownloadPromises.delete(version)));
+      })().finally(() => {
+        modelDownloadPromises.delete(version);
+        modelDownloadControllers.delete(version);
+      }));
     }
     options.onProgress?.({ phase: 'model', loaded: 0, total: 0, version });
     return modelDownloadPromises.get(version);
+  }
+
+  function cancelModelDownload(version) {
+    const normalized = normalizeVersion(version);
+    const controller = modelDownloadControllers.get(normalized);
+    if (!controller) return false;
+    controller.abort();
+    return true;
   }
 
   async function extensionCoreExists() {
@@ -276,7 +324,7 @@
     options.onProgress?.({ phase: 'core', loaded: 0, total: 0 });
     const bytes = await fetchBytes(CORE_URL, ({ loaded, total }) => {
       options.onProgress?.({ phase: 'core', loaded, total });
-    });
+    }, { expectedSize: CORE_SIZE });
     if (bytes.byteLength < 1000000) throw new Error('验证码识别核心内容无效');
     await validateAsset(bytes, { size: CORE_SIZE, sha256: CORE_SHA256 }, '验证码识别核心');
     return bytes;
@@ -295,7 +343,9 @@
     getSelectedModelVersion,
     setSelectedModelVersion,
     getCachedModel,
+    deleteCachedModel,
     ensureModel,
+    cancelModelDownload,
     extensionCoreExists,
     downloadCore
   });

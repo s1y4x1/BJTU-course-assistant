@@ -5,10 +5,6 @@
   let creatingDocument = null;
   let offscreenReadyPromise = null;
 
-  void global.BjtuCaptchaAssets?.ensureModel().catch((error) => {
-    console.info('[bjtu] captcha model preload deferred:', String(error?.message || error));
-  });
-
   async function ensureOffscreenDocument() {
     if (!chrome.offscreen) throw new Error('当前浏览器不支持本地验证码识别');
     if (!(await chrome.offscreen.hasDocument?.())) {
@@ -90,7 +86,21 @@
 
   async function recognize(image) {
     if (!global.BjtuCaptchaAssets) throw new Error('验证码识别资源管理器未加载');
-    const model = await global.BjtuCaptchaAssets.ensureModel();
+    const version = await global.BjtuCaptchaAssets.getSelectedModelVersion();
+    const [model, coreReady] = await Promise.all([
+      global.BjtuCaptchaAssets.getCachedModel(version),
+      global.BjtuCaptchaAssets.extensionCoreExists()
+    ]);
+    if (!model || !coreReady) {
+      const missing = [
+        !model ? '识别模型' : '',
+        !coreReady ? 'OCR 核心' : ''
+      ].filter(Boolean).join('和');
+      throw Object.assign(
+        new Error(`${missing}尚未下载，请在扩展选项中完成本地验证码识别资源安装`),
+        { code: 'captcha-resources-missing' }
+      );
+    }
     const imageUrl = await blobToDataUrl(image);
     let response;
     try {

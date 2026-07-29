@@ -280,7 +280,24 @@ async function setupInstalledModuleOptions() {
   const list = document.getElementById('installedModuleList');
   const applyButton = document.getElementById('applyInstalledModules');
   const status = document.getElementById('installedModuleStatus');
+  const progressElement = document.getElementById('installedModuleProgress');
+  const progressLabel = document.getElementById('installedModuleProgressLabel');
+  const progressBar = document.getElementById('installedModuleProgressBar');
   if (!(list instanceof HTMLElement) || !(applyButton instanceof HTMLButtonElement)) return;
+
+  const updateProgress = ({ visible = true, label = '', completed = 0, total = 0 } = {}) => {
+    if (!(progressElement instanceof HTMLElement)
+        || !(progressLabel instanceof HTMLElement)
+        || !(progressBar instanceof HTMLElement)) return;
+    progressElement.hidden = !visible;
+    if (!visible) return;
+    progressLabel.textContent = label;
+    const determinate = Number(total) > 0;
+    progressElement.classList.toggle('is-indeterminate', !determinate);
+    progressBar.style.width = determinate
+      ? `${Math.min(100, Math.max(0, Number(completed) || 0) / Number(total) * 100)}%`
+      : '';
+  };
 
   const definitions = globalThis.BjtuModuleRegistry?.definitions || {};
   const available = await globalThis.BjtuModuleRegistry.ready;
@@ -327,7 +344,8 @@ async function setupInstalledModuleOptions() {
     if (!hasChanges()) return;
     applyButton.disabled = true;
     list.querySelectorAll('input').forEach((input) => { input.disabled = true; });
-    if (status instanceof HTMLElement) status.textContent = '正在准备模块更改…';
+    if (status instanceof HTMLElement) status.style.display = 'none';
+    updateProgress({ label: '正在准备模块更改…' });
     try {
       const manager = updaterReady && globalThis.BjtuUpdaterModuleManager;
       if (!manager?.applyModuleSelection) throw new Error('updater 模块未能加载');
@@ -335,13 +353,40 @@ async function setupInstalledModuleOptions() {
         selected: selectedIds(),
         installed: [...installed],
         onProgress(progress) {
-          if (!(status instanceof HTMLElement)) return;
           if (progress.phase === 'download') {
-            status.textContent = progress.total > 0
+            const label = progress.total > 0
               ? `正在下载模块：${formatModuleBytes(progress.loaded)} / ${formatModuleBytes(progress.total)}`
               : `正在下载模块：${formatModuleBytes(progress.loaded)}`;
+            updateProgress({
+              label,
+              completed: progress.loaded,
+              total: progress.total
+            });
           } else if (progress.phase === 'write') {
-            status.textContent = `正在安装模块：${progress.completed} / ${progress.total} · ${progress.path || ''}`;
+            const label = `正在安装模块：${progress.completed} / ${progress.total} · ${progress.path || ''}`;
+            updateProgress({
+              label,
+              completed: progress.completed,
+              total: progress.total
+            });
+          } else if (progress.phase === 'model') {
+            const label = progress.total > 0
+              ? `正在下载验证码模型：${formatModuleBytes(progress.loaded)} / ${formatModuleBytes(progress.total)}`
+              : `正在下载验证码模型：${formatModuleBytes(progress.loaded)}`;
+            updateProgress({
+              label,
+              completed: progress.loaded,
+              total: progress.total
+            });
+          } else if (progress.phase === 'core') {
+            const label = progress.total > 0
+              ? `正在下载 OCR 核心：${formatModuleBytes(progress.loaded)} / ${formatModuleBytes(progress.total)}`
+              : `正在下载 OCR 核心：${formatModuleBytes(progress.loaded)}`;
+            updateProgress({
+              label,
+              completed: progress.loaded,
+              total: progress.total
+            });
           }
         }
       });
@@ -350,10 +395,19 @@ async function setupInstalledModuleOptions() {
         result.removed.length ? `卸载 ${result.removed.length} 个` : ''
       ].filter(Boolean).join('，');
       if (status instanceof HTMLElement) status.textContent = `模块更改完成（${changes}），正在重新加载扩展…`;
+      updateProgress({
+        label: `模块更改完成（${changes}），正在重新加载扩展…`,
+        completed: 1,
+        total: 1
+      });
       setMsg(`模块更改完成：${changes}`);
       setTimeout(() => chrome.runtime.reload(), 1000);
     } catch (error) {
-      if (status instanceof HTMLElement) status.textContent = `模块更改失败：${String(error?.message || error)}`;
+      if (status instanceof HTMLElement) {
+        status.style.display = '';
+        status.textContent = `模块更改失败：${String(error?.message || error)}`;
+      }
+      updateProgress({ visible: false });
       setMsg(`模块更改失败：${String(error?.message || error)}`, false);
       list.querySelectorAll('input').forEach((input) => {
         input.disabled = installed.has(input.value) && (input.value === 've' || input.value === 'updater');

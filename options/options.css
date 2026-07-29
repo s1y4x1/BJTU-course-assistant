@@ -80,7 +80,7 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .page-header h1 { min-width: 0; flex: 1 1 auto; }
 .page-header #resetBtn { flex: 0 0 auto; white-space: nowrap; }
-.section-title { font-weight: 600; margin-bottom: 8px; font-size: 16px; }
+.section-title { font-weight: 600; margin-bottom: 8px; font-size: 18px; }
 #options-controlled-content {
   margin-top: 14px;
   display: block;
@@ -117,8 +117,8 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   }
   .page-header h1 { font-size: clamp(1.05rem, 4vw, 1.5rem) !important; }
 }
-.installed-modules-block { margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #e2e8f0; }
-.installed-modules-label { margin-bottom:7px; font-size:13px; font-weight:600; color:#334155; }
+.installed-modules-block { margin-bottom:0; }
+.installed-modules-label { margin-bottom:7px; font-size:15px; font-weight:600; color:#334155; }
 .installed-module-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:9px; }
 .installed-module-item { display:inline-flex; align-items:center; gap:6px; margin:0; padding:6px 8px; border:1px solid #dbe2ea; border-radius:6px; background:#fff; font-size:13px; }
 .installed-module-item input { width:auto; margin:0; padding:0; }
@@ -130,6 +130,41 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   pointer-events:none;
   opacity:1;
 }
+.option-download-progress { margin:8px 0 10px; }
+.option-download-progress-label {
+  margin-bottom:5px;
+  overflow:hidden;
+  color:#475569;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.option-download-progress-track {
+  width:100%;
+  height:4px;
+  overflow:hidden;
+  border-radius:2px;
+  background:#dbeafe;
+}
+.option-download-progress-bar {
+  width:0;
+  height:100%;
+  border-radius:inherit;
+  background:#1976d2;
+  transition:width .15s ease;
+}
+.option-download-progress.is-indeterminate .option-download-progress-bar {
+  width:35%;
+  animation:optionDownloadProgressIndeterminate 1s ease-in-out infinite;
+}
+@keyframes optionDownloadProgressIndeterminate {
+  from { transform:translateX(-110%); }
+  to { transform:translateX(300%); }
+}
+html[data-color-scheme="dark"] .option-download-progress-label { color:#94a3b8; }
+html[data-color-scheme="dark"] .option-download-progress-track { background:#1e3a5f; }
+html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5fa; }
 .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
 .back-home-link:hover { text-decoration: underline; }
 .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
@@ -143,7 +178,7 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   cursor:help;
 }
 .platform-option { margin:8px 0; }
-.platform-option > label { display:flex; align-items:center; gap:8px; margin:0; font-weight:600; }
+.platform-option > label { display:flex; align-items:center; gap:8px; margin:0; font-size:15px; font-weight:600; }
 .platform-option-detail {
   --platform-theme: #64748b;
   --platform-bg: #f8fafc;
@@ -154,21 +189,23 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   border-radius:6px;
 }
 .platform-option-detail input[type="checkbox"] { accent-color: var(--platform-theme); }
+.option-divider,
 .platform-option-divider {
   height:0;
   margin:10px 0;
   border:0;
-  border-top:1px solid var(--platform-theme);
+  border-top:1px solid var(--platform-theme, #94a3b8);
   background:none;
   opacity:.24;
 }
+.option-divider--footer { width:min(100%, 1480px); margin:10px auto 0; }
 #vePlatformDetail { --platform-theme:#2563eb; --platform-bg:#eff6ff; }
 #yktPlatformDetail { --platform-theme:#5096f5; --platform-bg:#eff6ff; }
 #mrjzyPlatformDetail { --platform-theme:#29a9fc; --platform-bg:#ecfeff; }
 #jlgjPlatformDetail { --platform-theme:#ffd243; --platform-bg:#fffbeb; }
 #moocPlatformDetail { --platform-theme:#00cc7e; --platform-bg:#ecfdf5; }
 #xuetangxPlatformDetail { --platform-theme:#1769fe; --platform-bg:#eff6ff; }
-.platform-option-subtitle { display:flex; align-items:center; gap:4px; margin:7px 0 3px; color:var(--platform-theme); font-size:13px; font-weight:700; }
+.platform-option-subtitle { display:flex; align-items:center; gap:4px; margin:7px 0 3px; color:var(--platform-theme); font-size:14px; font-weight:700; }
 .platform-option-detail label { display:flex; align-items:center; gap:8px; margin:4px 0; font-weight:400; }
 .xuetangx-activity-type-options { display:flex; flex-wrap:wrap; gap:0 14px; }
 .xuetangx-activity-type-options label { white-space:nowrap; }
@@ -195,7 +232,7 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .homework-background-refresh-detail { margin-left:22px; }
 .homework-background-refresh-detail > label[for] { margin:6px 0 4px; font-size:13px; color:#475569; }
 .homework-background-refresh-detail > select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
-.system-notification-test-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin-top:12px; padding-top:10px; border-top:1px solid #e2e8f0; }
+.system-notification-test-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
 .system-notification-test-row button { flex:0 0 auto; margin:0; }
 .system-notification-test-row .option-status { min-width:180px; margin:0; }
 .reminder-node-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
@@ -230,8 +267,6 @@ html.options-loading #options-loading-placeholder { display:flex; }
 html[data-color-scheme="dark"] .deadline-countdown-normal { color:#f8fafc; }
 .extension-runtime-info {
   margin:10px 0 4px;
-  padding-top:12px;
-  border-top:1px solid #e2e8f0;
   color:#64748b;
   font-size:12px;
   line-height:1.5;

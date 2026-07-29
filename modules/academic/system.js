@@ -46,7 +46,11 @@
     while (true) {
       const response = await fetch(url, fetchOptions);
       if (response.status !== 503) return response;
-      response.body?.cancel?.().catch?.(() => {});
+      try {
+        await response.body?.cancel?.();
+      } catch {
+        // A locked or already-consumed response body must not stop the retry loop.
+      }
       if (typeof on503 === 'function') await on503();
       await wait(1000);
     }

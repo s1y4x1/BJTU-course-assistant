@@ -1,12 +1,17 @@
 <section class="captcha-options-card">
   <div class="section-title">本地验证码识别</div>
-  <label for="captchaModelVersion">识别模型版本</label>
-  <div class="captcha-model-row">
-    <select id="captchaModelVersion" aria-label="验证码识别模型版本"></select>
+  <div id="captcha-model-label" class="captcha-model-label">识别模型版本</div>
+  <div id="captchaModelList" class="captcha-model-list" role="radiogroup" aria-label="验证码识别模型版本">
+    <div class="captcha-model-loading"><span class="options-page-spinner"></span>正在获取模型列表…</div>
   </div>
-  <div class="captcha-resource-actions">
-    <button id="captchaPrepareResources" type="button">下载或修复识别资源</button>
-    <span id="captchaResourceStatus" class="option-status">正在检查识别资源…</span>
+  <div class="captcha-core-status">
+    <span class="captcha-core-name">tesseract-core-simd.wasm.js</span>
+    <span id="captchaCoreStatusValue">正在检查…</span>
+    <div id="captchaCoreProgress" class="captcha-core-progress" hidden>
+      <div class="captcha-core-progress-track">
+        <div id="captchaCoreProgressBar" class="captcha-core-progress-bar"></div>
+      </div>
+    </div>
   </div>
-  <div class="tip">模型按版本下载并保存在 IndexedDB；OCR 核心需写入扩展安装目录。首次使用或切换模型版本时需要联网。</div>
+  <div class="tip" data-tip-target="#captcha-model-label">模型下载后保存在 IndexedDB，只有已下载的模型可以选用；OCR 核心仍需写入扩展安装目录。</div>
 </section>

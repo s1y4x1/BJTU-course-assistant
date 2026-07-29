@@ -3,6 +3,14 @@
 
   let initialized = false;
   let setMessage = () => {};
+  let versions = {};
+  let selectedVersion = '';
+  let cachedVersions = new Set();
+  const busyVersions = new Set();
+  const cancelingVersions = new Set();
+  const modelAbortControllers = new Map();
+  const modelProgress = new Map();
+  const modelStateMessages = new Map();
 
   function formatBytes(value) {
     const bytes = Math.max(0, Number(value) || 0);
@@ -12,11 +20,43 @@
     return `${parseFloat((bytes / (1024 ** index)).toFixed(2))} ${units[index]}`;
   }
 
-  function setStatus(text, error = false) {
-    const status = document.getElementById('captchaResourceStatus');
-    if (!(status instanceof HTMLElement)) return;
-    status.textContent = text;
-    status.classList.toggle('error', error);
+  function modelLabel(version) {
+    return versions[version]?.label || version;
+  }
+
+  function setCoreStatus(text, error = false) {
+    const target = document.getElementById('captchaCoreStatusValue');
+    if (!(target instanceof HTMLElement)) return;
+    target.textContent = text;
+    target.classList.toggle('error', error);
+  }
+
+  function setCoreProgress({ visible = true, loaded = 0, total = 0 } = {}) {
+    const progress = document.getElementById('captchaCoreProgress');
+    const bar = document.getElementById('captchaCoreProgressBar');
+    if (!(progress instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
+    progress.hidden = !visible;
+    if (!visible) {
+      progress.classList.remove('is-indeterminate');
+      bar.style.width = '0';
+      return;
+    }
+    const normalizedLoaded = Math.max(0, Number(loaded) || 0);
+    const normalizedTotal = Math.max(0, Number(total) || 0);
+    const determinate = normalizedTotal > 0;
+    progress.classList.toggle('is-indeterminate', !determinate);
+    bar.style.width = determinate
+      ? `${Math.min(100, normalizedLoaded / normalizedTotal * 100)}%`
+      : '';
+  }
+
+  async function refreshCoreStatus() {
+    const assets = global.BjtuCaptchaAssets;
+    if (!assets) return false;
+    const ready = await assets.extensionCoreExists();
+    setCoreStatus(ready ? `已就绪 · ${formatBytes(assets.CORE_SIZE)}` : '未安装', !ready);
+    setCoreProgress({ visible: false });
+    return ready;
   }
 
   function progressText(prefix, progress) {
@@ -25,84 +65,339 @@
     return `${prefix}：${loaded}${total}`;
   }
 
-  async function prepareResources(interactive) {
-    const button = document.getElementById('captchaPrepareResources');
-    if (button instanceof HTMLButtonElement) button.disabled = true;
-    try {
-      const assets = global.BjtuCaptchaAssets;
-      if (!assets) throw new Error('验证码资源管理器未加载');
-      const version = await assets.getSelectedModelVersion();
-      await assets.ensureModel({
-        version,
-        onProgress: (progress) => setStatus(progressText('正在下载识别模型', progress))
-      });
-      const manager = await global.__bjtuUpdaterReady && global.BjtuUpdaterModuleManager;
-      if (!manager?.prepareCaptchaAssets) {
-        const coreReady = await assets.extensionCoreExists();
-        if (!coreReady) throw new Error('OCR 核心缺失，且 updater 模块不可用');
-        setStatus(`识别模型 ${version} 已缓存，OCR 核心已就绪`);
-        return;
+  function setModelProgress(version, label, loaded = 0, total = 0) {
+    modelProgress.set(version, {
+      label,
+      loaded: Math.max(0, Number(loaded) || 0),
+      total: Math.max(0, Number(total) || 0)
+    });
+    const item = [...document.querySelectorAll('.captcha-model-item')]
+      .find((element) => element.dataset.version === version);
+    if (!(item instanceof HTMLElement)) return;
+    const progress = modelProgress.get(version);
+    const container = item.querySelector('.captcha-model-progress');
+    const text = item.querySelector('.captcha-model-progress-label');
+    const bar = item.querySelector('.captcha-model-progress-bar');
+    if (!(container instanceof HTMLElement)
+        || !(text instanceof HTMLElement)
+        || !(bar instanceof HTMLElement)) return;
+    text.textContent = progress.label;
+    const determinate = progress.total > 0;
+    container.classList.toggle('is-indeterminate', !determinate);
+    bar.style.width = determinate
+      ? `${Math.min(100, progress.loaded / progress.total * 100)}%`
+      : '';
+  }
+
+  async function refreshCachedVersions() {
+    const assets = global.BjtuCaptchaAssets;
+    const entries = await Promise.all(Object.keys(versions).map(async (version) => [
+      version,
+      Boolean(await assets.getCachedModel(version))
+    ]));
+    cachedVersions = new Set(entries.filter(([, cached]) => cached).map(([version]) => version));
+  }
+
+  function createActionButton(text, action, version, className = '') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.dataset.action = action;
+    button.dataset.version = version;
+    if (className) button.className = className;
+    button.disabled = busyVersions.has(version);
+    return button;
+  }
+
+  function renderModels() {
+    const list = document.getElementById('captchaModelList');
+    if (!(list instanceof HTMLElement)) return;
+    const fragment = document.createDocumentFragment();
+    for (const [index, [version, definition]] of Object.entries(versions).entries()) {
+      const cached = cachedVersions.has(version);
+      const busy = busyVersions.has(version);
+      const item = document.createElement('div');
+      item.className = 'captcha-model-item';
+      item.dataset.version = version;
+
+      const choice = document.createElement('label');
+      choice.className = 'captcha-model-choice';
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'captchaModelVersion';
+      radio.value = version;
+      radio.id = `captchaModelVersion-${index}`;
+      radio.checked = version === selectedVersion;
+      radio.disabled = !cached || busy;
+      const name = document.createElement('span');
+      name.className = 'captcha-model-name';
+      name.textContent = definition.label;
+      const size = document.createElement('span');
+      size.className = 'captcha-model-size';
+      size.textContent = formatBytes(definition.size);
+      choice.append(radio, name, size);
+
+      const actions = document.createElement('div');
+      actions.className = 'captcha-model-actions';
+      const state = document.createElement('span');
+      state.className = 'captcha-model-state';
+      const stateMessage = modelStateMessages.get(version);
+      state.textContent = busy
+        ? (cancelingVersions.has(version) ? '正在取消…' : '处理中…')
+        : (stateMessage?.text || (cached ? '已下载' : '未下载'));
+      state.classList.toggle('error', stateMessage?.error === true);
+      actions.append(state);
+      if (busy) {
+        const cancel = createActionButton('取消', 'cancel', version, 'captcha-model-cancel');
+        cancel.disabled = cancelingVersions.has(version);
+        actions.append(cancel);
+      } else if (cached) {
+        actions.append(createActionButton('修复', 'download', version));
+        const uninstall = createActionButton('卸载', 'uninstall', version, 'captcha-model-uninstall');
+        uninstall.disabled = busy || version === selectedVersion;
+        if (version === selectedVersion) uninstall.title = '当前使用的模型不能卸载';
+        actions.append(uninstall);
+      } else {
+        actions.append(createActionButton('下载', 'download', version));
       }
-      const result = await manager.prepareCaptchaAssets({
+      item.append(choice, actions);
+      if (busy) {
+        const progress = modelProgress.get(version) || { label: '正在准备…', loaded: 0, total: 0 };
+        const progressContainer = document.createElement('div');
+        progressContainer.className = `captcha-model-progress${progress.total > 0 ? '' : ' is-indeterminate'}`;
+        const progressLabel = document.createElement('div');
+        progressLabel.className = 'captcha-model-progress-label';
+        progressLabel.textContent = progress.label;
+        const progressTrack = document.createElement('div');
+        progressTrack.className = 'captcha-model-progress-track';
+        const progressBar = document.createElement('div');
+        progressBar.className = 'captcha-model-progress-bar';
+        progressBar.style.width = progress.total > 0
+          ? `${Math.min(100, progress.loaded / progress.total * 100)}%`
+          : '';
+        progressTrack.append(progressBar);
+        progressContainer.append(progressLabel, progressTrack);
+        item.append(progressContainer);
+      }
+      fragment.append(item);
+    }
+    list.replaceChildren(fragment);
+  }
+
+  async function ensureCore(interactive) {
+    const assets = global.BjtuCaptchaAssets;
+    if (await assets.extensionCoreExists()) {
+      setCoreStatus(`已就绪 · ${formatBytes(assets.CORE_SIZE)}`);
+      setCoreProgress({ visible: false });
+      return { written: 0, corePending: false };
+    }
+    setCoreStatus('准备下载…');
+    setCoreProgress({ loaded: 0, total: 0 });
+    const manager = await global.__bjtuUpdaterReady && global.BjtuUpdaterModuleManager;
+    if (!manager?.prepareCaptchaAssets) {
+      const coreReady = await assets.extensionCoreExists();
+      if (!coreReady) {
+        setCoreStatus('未安装，updater 不可用', true);
+        setCoreProgress({ visible: false });
+        throw new Error('OCR 核心缺失，且 updater 模块不可用');
+      }
+      return { written: 0, corePending: false };
+    }
+    try {
+      return await manager.prepareCaptchaAssets({
         interactive,
         modelReady: true,
         onProgress(progress) {
-          if (progress.phase === 'core') setStatus(progressText('正在下载 OCR 核心', progress));
-          else if (progress.phase === 'write') setStatus(`正在写入 ${progress.path}`);
+          if (progress.phase === 'core') {
+            setCoreStatus(progressText('下载中', progress));
+            setCoreProgress({ loaded: progress.loaded, total: progress.total });
+          } else if (progress.phase === 'write') {
+            setCoreStatus(progress.completed >= progress.total ? '写入完成' : '正在写入…');
+            setCoreProgress({ loaded: progress.completed, total: progress.total });
+          }
         }
       });
-      if (result.corePending) {
-        setStatus(`识别模型 ${version} 已缓存；OCR 核心缺失，请点击按钮并授权扩展目录`, true);
-      } else if (result.written > 0) {
-        setStatus('OCR 核心已写入，正在重新加载扩展…');
-        setTimeout(() => chrome.runtime.reload(), 800);
-      } else {
-        setStatus(`识别模型 ${version} 已缓存，OCR 核心已就绪`);
-      }
     } catch (error) {
-      setStatus(String(error?.message || error), true);
-      if (interactive) setMessage(`验证码识别资源准备失败：${String(error?.message || error)}`, false);
-    } finally {
-      if (button instanceof HTMLButtonElement) button.disabled = false;
+      setCoreStatus(String(error?.message || error), true);
+      setCoreProgress({ visible: false });
+      throw error;
     }
   }
 
-  async function init(context) {
+  async function prepareModel(version, { interactive = true, notify = true } = {}) {
+    const assets = global.BjtuCaptchaAssets;
+    if (!assets || !versions[version] || busyVersions.has(version)) return false;
+    busyVersions.add(version);
+    const abortController = new AbortController();
+    modelAbortControllers.set(version, abortController);
+    modelStateMessages.delete(version);
+    modelProgress.set(version, { label: '正在准备…', loaded: 0, total: 0 });
+    renderModels();
+    try {
+      const [modelOutcome, coreOutcome] = await Promise.allSettled([
+        assets.ensureModel({
+          version,
+          signal: abortController.signal,
+          onProgress: (progress) => setModelProgress(
+            version,
+            progressText('正在下载识别模型', progress),
+            progress.loaded,
+            progress.total
+          )
+        }),
+        ensureCore(interactive)
+      ]);
+      if (modelOutcome.status === 'rejected') {
+        if (coreOutcome.status === 'fulfilled' && coreOutcome.value.written > 0) {
+          setTimeout(() => chrome.runtime.reload(), 800);
+        }
+        throw modelOutcome.reason;
+      }
+      if (coreOutcome.status === 'rejected') throw coreOutcome.reason;
+      const result = modelOutcome.value;
+      const coreResult = coreOutcome.value;
+      cachedVersions.add(version);
+      if (coreResult.corePending) {
+        setCoreStatus('未安装，请授权扩展目录', true);
+        setCoreProgress({ visible: false });
+        modelStateMessages.set(version, { text: 'OCR 核心缺失', error: true });
+        if (notify || interactive) setMessage('OCR 核心缺失，请授权扩展目录', false);
+        return false;
+      } else if (coreResult.written > 0) {
+        setCoreStatus(`已写入 · ${formatBytes(assets.CORE_SIZE)}`);
+        setCoreProgress({ loaded: 1, total: 1 });
+        if (notify) setMessage(`验证码识别模型 ${modelLabel(version)} 已下载，OCR 核心已修复`);
+        setTimeout(() => chrome.runtime.reload(), 800);
+      } else {
+        setCoreStatus(`已就绪 · ${formatBytes(assets.CORE_SIZE)}`);
+        setCoreProgress({ visible: false });
+        if (notify) {
+          setMessage(result.downloaded
+            ? `验证码识别模型 ${modelLabel(version)} 下载完成`
+            : `验证码识别模型 ${modelLabel(version)} 及 OCR 核心均已就绪`);
+        }
+      }
+      return true;
+    } catch (error) {
+      const message = String(error?.message || error);
+      const canceled = error?.name === 'AbortError' || /aborted|中止|取消/i.test(message);
+      modelStateMessages.set(version, {
+        text: canceled ? '下载已取消' : message,
+        error: !canceled
+      });
+      if (notify || interactive) {
+        setMessage(canceled ? '验证码识别模型下载已取消' : `验证码识别资源准备失败：${message}`, canceled);
+      }
+      return false;
+    } finally {
+      busyVersions.delete(version);
+      cancelingVersions.delete(version);
+      modelAbortControllers.delete(version);
+      modelProgress.delete(version);
+      await refreshCachedVersions().catch(() => {});
+      renderModels();
+    }
+  }
+
+  function cancelModelDownload(version) {
+    if (!busyVersions.has(version) || cancelingVersions.has(version)) return;
+    cancelingVersions.add(version);
+    modelAbortControllers.get(version)?.abort();
+    global.BjtuCaptchaAssets?.cancelModelDownload?.(version);
+    renderModels();
+  }
+
+  async function selectModel(version) {
+    const assets = global.BjtuCaptchaAssets;
+    if (!cachedVersions.has(version)) {
+      setMessage('请先下载该验证码识别模型', false);
+      renderModels();
+      return;
+    }
+    selectedVersion = await assets.setSelectedModelVersion(version);
+    renderModels();
+    await chrome.runtime.sendMessage({ type: 'CAPTCHA_MODEL_VERSION_CHANGED' }).catch(() => {});
+    setMessage(`已切换验证码识别模型：${modelLabel(selectedVersion)}`);
+  }
+
+  async function uninstallModel(version) {
+    const assets = global.BjtuCaptchaAssets;
+    if (version === selectedVersion) {
+      setMessage('当前使用的验证码识别模型不能卸载，请先切换至其他模型', false);
+      return;
+    }
+    busyVersions.add(version);
+    renderModels();
+    try {
+      await assets.deleteCachedModel(version);
+      cachedVersions.delete(version);
+      modelStateMessages.delete(version);
+      setMessage(`已卸载验证码识别模型：${modelLabel(version)}`);
+    } catch (error) {
+      const message = String(error?.message || error);
+      modelStateMessages.set(version, { text: message, error: true });
+      setMessage(`验证码识别模型卸载失败：${message}`, false);
+    } finally {
+      busyVersions.delete(version);
+      renderModels();
+    }
+  }
+
+  async function initializeModelOptions() {
+    const assets = global.BjtuCaptchaAssets;
+    const list = document.getElementById('captchaModelList');
+    if (!assets || !(list instanceof HTMLElement)) return;
+
+    const coreStatusPromise = refreshCoreStatus();
+    versions = await assets.getModelVersions();
+    selectedVersion = await assets.getSelectedModelVersion();
+    await Promise.all([
+      refreshCachedVersions(),
+      coreStatusPromise
+    ]);
+    renderModels();
+    await prepareModel(selectedVersion, { interactive: false, notify: false });
+  }
+
+  function init(context) {
     if (initialized) return;
     initialized = true;
     setMessage = typeof context?.setMessage === 'function' ? context.setMessage : setMessage;
-    const assets = global.BjtuCaptchaAssets;
-    const select = document.getElementById('captchaModelVersion');
-    if (!assets || !(select instanceof HTMLSelectElement)) return;
-    select.disabled = true;
-    setStatus('正在从识别模型源获取版本列表…');
-    const versions = await assets.getModelVersions();
-    for (const [version, definition] of Object.entries(versions)) {
-      const option = document.createElement('option');
-      option.value = version;
-      option.textContent = definition.label;
-      select.appendChild(option);
-    }
-    select.value = await assets.getSelectedModelVersion();
-    select.disabled = false;
-    select.addEventListener('change', async () => {
-      const version = await assets.setSelectedModelVersion(select.value);
-      setStatus(`已选择 ${versions[version]?.label || version}，正在下载…`);
-      await chrome.runtime.sendMessage({ type: 'CAPTCHA_MODEL_VERSION_CHANGED' }).catch(() => {});
-      await prepareResources(false);
+    const list = document.getElementById('captchaModelList');
+    if (!(list instanceof HTMLElement)) return;
+    list.addEventListener('change', (event) => {
+      const radio = event.target;
+      if (radio instanceof HTMLInputElement && radio.name === 'captchaModelVersion') {
+        void selectModel(radio.value);
+      }
     });
-    document.getElementById('captchaPrepareResources')?.addEventListener('click', () => {
-      void prepareResources(true);
+    list.addEventListener('click', (event) => {
+      const target = event.target;
+      const button = target instanceof Element
+        ? target.closest('button[data-action][data-version]')
+        : null;
+      if (!(button instanceof HTMLButtonElement)) return;
+      const version = String(button.dataset.version || '');
+      if (button.dataset.action === 'download') void prepareModel(version);
+      else if (button.dataset.action === 'cancel') cancelModelDownload(version);
+      else if (button.dataset.action === 'uninstall') void uninstallModel(version);
     });
-    await prepareResources(false);
+    void initializeModelOptions().catch((error) => {
+      list.textContent = `识别模型列表加载失败：${String(error?.message || error)}`;
+      setMessage(`识别模型列表加载失败：${String(error?.message || error)}`, false);
+    });
   }
 
   async function reset() {
     const assets = global.BjtuCaptchaAssets;
     if (!assets) return;
-    await assets.setSelectedModelVersion(assets.DEFAULT_MODEL_VERSION);
-    const select = document.getElementById('captchaModelVersion');
-    if (select instanceof HTMLSelectElement) select.value = assets.DEFAULT_MODEL_VERSION;
+    const version = assets.DEFAULT_MODEL_VERSION;
+    if (!cachedVersions.has(version)) {
+      await prepareModel(version, { interactive: false, notify: false });
+    }
+    selectedVersion = await assets.setSelectedModelVersion(version);
+    renderModels();
+    await chrome.runtime.sendMessage({ type: 'CAPTCHA_MODEL_VERSION_CHANGED' }).catch(() => {});
   }
 
   global.BjtuOptionsModules?.register('captcha', { init, reset });

@@ -8,6 +8,7 @@
 .academic-option-check input { width:auto; }
 #academicScoreMonitorIntervalEditor { padding-left:0; }
 .academic-score-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; }
+.academic-score-header > strong { font-size:15px; }
 .academic-score-header-meta { display:inline-flex; align-items:center; justify-content:flex-end; gap:8px; color:#64748b; font-size:12px; }
 .academic-score-header-meta time { white-space:nowrap; font-variant-numeric:tabular-nums; }
 .academic-score-count { color:#64748b; font-size:12px; }

@@ -622,7 +622,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'VE_LOGIN_RECOGNIZE_CAPTCHA') {
     globalThis.BjtuVeLoginService.recognizeCaptchaDataUrl(message?.payload?.imageUrl)
       .then((passcode) => sendResponse({ ok: true, passcode }))
-      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+      .catch((error) => sendResponse({
+        ok: false,
+        code: String(error?.code || ''),
+        message: String(error?.message || error)
+      }));
     return true;
   }
   if (message?.type === 'VE_LOGIN_REQUEST') {
