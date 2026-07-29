@@ -1466,7 +1466,7 @@
         const suffix = new URLSearchParams(String(location.search || '')).get('popup') === '1'
           ? '?popup=1'
           : '';
-        const optionsUrl = chrome.runtime.getURL(`options/options.html${suffix}`);
+        const optionsUrl = chrome.runtime.getURL(`modules/captcha/options.html${suffix}`);
         location.href = optionsUrl;
       }
       throw new Error(response?.message || '验证码本地识别失败');

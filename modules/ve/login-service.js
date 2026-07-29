@@ -198,7 +198,12 @@
     const response = await fetch(source);
     const image = await response.blob();
     const recognizer = global.BjtuCaptchaRecognizer;
-    if (!recognizer?.recognize) throw new Error('本地验证码识别模块未安装');
+    if (!recognizer?.recognize) {
+      throw Object.assign(
+        new Error('本地验证码识别模块未安装'),
+        { code: 'captcha-resources-missing' }
+      );
+    }
     const result = await recognizer.recognize(image);
     const passcode = global.BjtuVeLoginUtils.normalizePasscode(result?.passcode);
     if (!result?.ok || passcode.length !== 4) throw new Error('未能识别出 4 位数字');

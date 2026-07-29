@@ -2,8 +2,27 @@
   'use strict';
 
   const OFFSCREEN_URL = 'modules/captcha/offscreen.html';
+  const REQUIRED_RUNTIME_FILES = Object.freeze([
+    'modules/captcha/module.json',
+    OFFSCREEN_URL,
+    'modules/captcha/offscreen.js',
+    'modules/captcha/worker.js',
+    'modules/captcha/vendor/tesseract.min.js',
+    'modules/captcha/vendor/worker.min.js'
+  ]);
   let creatingDocument = null;
   let offscreenReadyPromise = null;
+
+  async function runtimeFilesReady() {
+    const results = await Promise.all(REQUIRED_RUNTIME_FILES.map(async (path) => {
+      try {
+        return (await fetch(chrome.runtime.getURL(path), { cache: 'no-store' })).ok;
+      } catch {
+        return false;
+      }
+    }));
+    return results.every(Boolean);
+  }
 
   async function ensureOffscreenDocument() {
     if (!chrome.offscreen) throw new Error('当前浏览器不支持本地验证码识别');
@@ -86,6 +105,12 @@
 
   async function recognize(image) {
     if (!global.BjtuCaptchaAssets) throw new Error('验证码识别资源管理器未加载');
+    if (!(await runtimeFilesReady())) {
+      throw Object.assign(
+        new Error('本地验证码识别模块尚未完整安装'),
+        { code: 'captcha-resources-missing' }
+      );
+    }
     const version = await global.BjtuCaptchaAssets.getSelectedModelVersion();
     const [model, coreReady] = await Promise.all([
       global.BjtuCaptchaAssets.getCachedModel(version),

@@ -5,6 +5,8 @@
   let setMessage = () => {};
   let versions = {};
   let selectedVersion = '';
+  let coreReady = false;
+  let coreReloadRequired = false;
   let cachedVersions = new Set();
   const busyVersions = new Set();
   const cancelingVersions = new Set();
@@ -50,13 +52,43 @@
       : '';
   }
 
+  function showCoreReadyStatus() {
+    setCoreStatus(coreReloadRequired
+      ? '已安装，重新加载后生效'
+      : '已就绪');
+    setCoreProgress({ visible: false });
+  }
+
   async function refreshCoreStatus() {
     const assets = global.BjtuCaptchaAssets;
     if (!assets) return false;
-    const ready = await assets.extensionCoreExists();
-    setCoreStatus(ready ? `已就绪 · ${formatBytes(assets.CORE_SIZE)}` : '未安装', !ready);
+    const size = document.getElementById('captchaCoreSize');
+    if (size instanceof HTMLElement) size.textContent = formatBytes(assets.CORE_SIZE);
+    setCoreStatus('检查中…');
     setCoreProgress({ visible: false });
-    return ready;
+    const runtimeCheck = assets.extensionCoreExists();
+    const directoryCheck = (async () => {
+      const updaterReady = await global.__bjtuUpdaterReady;
+      const manager = updaterReady && global.BjtuUpdaterModuleManager;
+      return manager?.captchaCoreExistsInDirectory
+        ? manager.captchaCoreExistsInDirectory()
+        : false;
+    })();
+    const [runtimeReady, directoryReady] = await Promise.all([
+      runtimeCheck.catch(() => false),
+      directoryCheck.catch(() => false)
+    ]);
+    coreReady = runtimeReady || directoryReady;
+    coreReloadRequired = !runtimeReady && directoryReady;
+    if (runtimeReady) {
+      showCoreReadyStatus();
+    } else if (directoryReady) {
+      showCoreReadyStatus();
+    } else {
+      setCoreStatus('未安装', true);
+    }
+    setCoreProgress({ visible: false });
+    return coreReady;
   }
 
   function progressText(prefix, progress) {
@@ -128,7 +160,7 @@
       radio.value = version;
       radio.id = `captchaModelVersion-${index}`;
       radio.checked = version === selectedVersion;
-      radio.disabled = !cached || busy;
+      radio.disabled = busy;
       const name = document.createElement('span');
       name.className = 'captcha-model-name';
       name.textContent = definition.label;
@@ -186,17 +218,29 @@
 
   async function ensureCore(interactive) {
     const assets = global.BjtuCaptchaAssets;
+    if (coreReady) {
+      showCoreReadyStatus();
+      return {
+        written: 0,
+        corePending: false,
+        coreReady: true,
+        reloadRequired: coreReloadRequired
+      };
+    }
     if (await assets.extensionCoreExists()) {
-      setCoreStatus(`已就绪 · ${formatBytes(assets.CORE_SIZE)}`);
-      setCoreProgress({ visible: false });
+      coreReady = true;
+      coreReloadRequired = false;
+      showCoreReadyStatus();
       return { written: 0, corePending: false };
     }
     setCoreStatus('准备下载…');
     setCoreProgress({ loaded: 0, total: 0 });
     const manager = await global.__bjtuUpdaterReady && global.BjtuUpdaterModuleManager;
     if (!manager?.prepareCaptchaAssets) {
-      const coreReady = await assets.extensionCoreExists();
-      if (!coreReady) {
+      const existingCoreReady = await assets.extensionCoreExists();
+      coreReady = existingCoreReady;
+      coreReloadRequired = false;
+      if (!existingCoreReady) {
         setCoreStatus('未安装，updater 不可用', true);
         setCoreProgress({ visible: false });
         throw new Error('OCR 核心缺失，且 updater 模块不可用');
@@ -204,7 +248,7 @@
       return { written: 0, corePending: false };
     }
     try {
-      return await manager.prepareCaptchaAssets({
+      const result = await manager.prepareCaptchaAssets({
         interactive,
         modelReady: true,
         onProgress(progress) {
@@ -217,7 +261,14 @@
           }
         }
       });
+      coreReady = result.corePending !== true && result.coreReady !== false;
+      // The runtime check above already failed, so any ready result here came
+      // from the install directory and still requires an extension reload.
+      coreReloadRequired = coreReady;
+      return result;
     } catch (error) {
+      coreReady = false;
+      coreReloadRequired = false;
       setCoreStatus(String(error?.message || error), true);
       setCoreProgress({ visible: false });
       throw error;
@@ -264,13 +315,12 @@
         if (notify || interactive) setMessage('OCR 核心缺失，请授权扩展目录', false);
         return false;
       } else if (coreResult.written > 0) {
-        setCoreStatus(`已写入 · ${formatBytes(assets.CORE_SIZE)}`);
+        setCoreStatus('已写入');
         setCoreProgress({ loaded: 1, total: 1 });
         if (notify) setMessage(`验证码识别模型 ${modelLabel(version)} 已下载，OCR 核心已修复`);
         setTimeout(() => chrome.runtime.reload(), 800);
       } else {
-        setCoreStatus(`已就绪 · ${formatBytes(assets.CORE_SIZE)}`);
-        setCoreProgress({ visible: false });
+        showCoreReadyStatus();
         if (notify) {
           setMessage(result.downloaded
             ? `验证码识别模型 ${modelLabel(version)} 下载完成`
@@ -310,9 +360,11 @@
   async function selectModel(version) {
     const assets = global.BjtuCaptchaAssets;
     if (!cachedVersions.has(version)) {
-      setMessage('请先下载该验证码识别模型', false);
-      renderModels();
-      return;
+      const prepared = await prepareModel(version);
+      if (!prepared && !cachedVersions.has(version)) {
+        renderModels();
+        return;
+      }
     }
     selectedVersion = await assets.setSelectedModelVersion(version);
     renderModels();
@@ -381,6 +433,20 @@
       if (button.dataset.action === 'download') void prepareModel(version);
       else if (button.dataset.action === 'cancel') cancelModelDownload(version);
       else if (button.dataset.action === 'uninstall') void uninstallModel(version);
+      return;
+    });
+    list.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)
+          || target.closest('button')) return;
+      const item = target.closest('.captcha-model-item');
+      if (!(item instanceof HTMLElement)) return;
+      const version = String(item.dataset.version || '');
+      if (!version || busyVersions.has(version)) return;
+      const clickedChoice = target.closest('.captcha-model-choice');
+      if (clickedChoice && cachedVersions.has(version)) return;
+      if (clickedChoice) event.preventDefault();
+      void selectModel(version);
     });
     void initializeModelOptions().catch((error) => {
       list.textContent = `识别模型列表加载失败：${String(error?.message || error)}`;

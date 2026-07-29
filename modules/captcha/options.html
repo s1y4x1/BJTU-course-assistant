@@ -11,13 +11,19 @@
 </head>
 <body class="module-options-standalone" data-options-module="captcha">
 <section class="captcha-options-card" data-options-fragment>
-  <div class="section-title">本地验证码识别</div>
+  <div class="section-title">
+    <a class="module-options-page-link" data-module-options-link="captcha" href="options.html"
+      target="_blank" rel="noopener noreferrer" title="在单独页面中打开本地验证码识别选项">本地验证码识别</a>
+  </div>
   <div id="captcha-model-label" class="captcha-model-label">识别模型版本</div>
   <div id="captchaModelList" class="captcha-model-list" role="radiogroup" aria-label="验证码识别模型版本">
     <div class="captcha-model-loading"><span class="options-page-spinner"></span>正在获取模型列表…</div>
   </div>
   <div class="captcha-core-status">
-    <span class="captcha-core-name">tesseract-core-simd.wasm.js</span>
+    <span class="captcha-core-file">
+      <span class="captcha-core-name">tesseract-core-simd.wasm.js</span>
+      <span id="captchaCoreSize" class="captcha-model-size">4.52 MB</span>
+    </span>
     <span id="captchaCoreStatusValue">正在检查…</span>
     <div id="captchaCoreProgress" class="captcha-core-progress" hidden>
       <div class="captcha-core-progress-track">

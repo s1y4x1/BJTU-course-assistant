@@ -1745,6 +1745,14 @@ async function directoryFileExists(root, relativePath, expectedSize = 0) {
   }
 }
 
+async function captchaCoreExistsInDirectory(root = null) {
+  const assets = globalThis.BjtuCaptchaAssets;
+  if (!assets) return false;
+  const directory = root || await getWritableVersionUpdateDirectory();
+  if (!directory) return false;
+  return directoryFileExists(directory, assets.CORE_RELATIVE_PATH, assets.CORE_SIZE);
+}
+
 async function prepareCaptchaAssets({
   interactive = true,
   modelReady = false,
@@ -1886,7 +1894,8 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
 globalThis.BjtuUpdaterModuleManager = Object.freeze({
   prepare: () => readVersionUpdateDirectoryHandle(),
   applyModuleSelection,
-  prepareCaptchaAssets
+  prepareCaptchaAssets,
+  captchaCoreExistsInDirectory
 });
 
 function filterFilesByModules(files, selectedModules) {

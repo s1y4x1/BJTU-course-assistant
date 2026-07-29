@@ -34,6 +34,13 @@
   font-size:12px;
 }
 
+.captcha-core-file {
+  display:flex;
+  align-items:center;
+  min-width:0;
+  gap:8px;
+}
+
 .captcha-core-name {
   min-width:0;
   overflow-wrap:anywhere;
@@ -88,6 +95,7 @@
   border: 1px solid #dbe2ea;
   border-radius: 6px;
   background: #fff;
+  cursor: pointer;
 }
 
 .captcha-model-loading {
@@ -140,12 +148,20 @@
 }
 
 .captcha-model-actions button {
+  cursor: pointer;
+}
+
+.captcha-model-actions button {
   min-width: 58px;
   margin: 0;
   padding: 6px 10px;
 }
 
 .captcha-model-actions .captcha-model-uninstall {
+  background: #dc2626;
+}
+
+.captcha-model-actions .captcha-model-cancel {
   background: #dc2626;
 }
 

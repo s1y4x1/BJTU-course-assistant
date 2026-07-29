@@ -34,6 +34,10 @@
       const parsed = new DOMParser().parseFromString(source, 'text/html');
       const fragment = parsed.querySelector('[data-options-fragment]');
       slot.innerHTML = fragment ? fragment.outerHTML : source;
+      slot.querySelectorAll('[data-module-options-link]').forEach((link) => {
+        if (!(link instanceof HTMLAnchorElement)) return;
+        link.href = chrome.runtime.getURL(`modules/${id}/${options.fragment}`);
+      });
       host.before(slot);
       if (options.style) await global.BjtuModuleRegistry.loadStyle(`modules/${id}/${options.style}`);
       if (options.script) await global.BjtuModuleRegistry.loadScript(`modules/${id}/${options.script}`);
