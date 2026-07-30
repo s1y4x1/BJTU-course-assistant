@@ -710,9 +710,12 @@
           [PENDING_RELOAD_KEY]: null,
           [STATUS_KEY]: { status: 'complete', ...record, checkedAt: Date.now(), directoryName: root.name }
         });
+        const refreshedAppCount = await globalThis.BjtuForegroundAppPages?.refresh?.().catch(() => 0) || 0;
         await notifyUpdateComplete(
           release,
-          `已更新到 ${release.name}，刷新已打开的扩展页面后生效。`
+          refreshedAppCount > 0
+            ? `已更新到 ${release.name}，并自动刷新已打开的课程助手页面。`
+            : `已更新到 ${release.name}，下次打开课程助手页面时生效。`
         ).catch(() => {});
         return { updated: true, reloaded: false, release, fileCount };
       }

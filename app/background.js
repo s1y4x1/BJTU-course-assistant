@@ -178,6 +178,34 @@ const APP_URL = chrome.runtime.getURL('app/app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 
+async function getOpenAppTabs() {
+  return (await chrome.tabs.query({}).catch(() => []))
+    .filter((tab) => String(tab?.url || '').startsWith(APP_URL));
+}
+
+async function refreshOpenAppTabs() {
+  const tabs = await getOpenAppTabs();
+  await Promise.allSettled(tabs.map((tab) => chrome.tabs.reload(tab.id)));
+  return tabs.length;
+}
+
+async function prepareAppRestoreAfterExtensionReload(payload = {}) {
+  const tabs = await getOpenAppTabs();
+  await chrome.storage.local.set({
+    [VERSION_AUTO_RELOAD_HANDOFF_KEY]: {
+      ...(payload && typeof payload === 'object' ? payload : {}),
+      requestedAt: Date.now(),
+      reopenApp: tabs.length > 0
+    }
+  });
+  return tabs.length;
+}
+
+globalThis.BjtuForegroundAppPages = Object.freeze({
+  refresh: refreshOpenAppTabs,
+  prepareReload: prepareAppRestoreAfterExtensionReload
+});
+
 async function restoreAppAfterAutomaticExtensionReload() {
   const stored = await chrome.storage.local.get([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => ({}));
   const handoff = stored?.[VERSION_AUTO_RELOAD_HANDOFF_KEY];
@@ -706,6 +734,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: false, error: String(e?.message || e) });
       }
     })();
+    return true;
+  }
+
+  if (message?.type === 'REFRESH_OPEN_APP_PAGES') {
+    refreshOpenAppTabs()
+      .then((count) => sendResponse({ ok: true, count }))
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
+  if (message?.type === 'PREPARE_APP_RESTORE_AFTER_RELOAD') {
+    prepareAppRestoreAfterExtensionReload(message?.payload)
+      .then((count) => sendResponse({ ok: true, count }))
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   }
 

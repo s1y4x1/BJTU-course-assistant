@@ -1798,7 +1798,7 @@ async function fetchModuleArchive(onProgress) {
   if (!response.body?.getReader) {
     const bytes = new Uint8Array(await response.arrayBuffer());
     onProgress?.({ phase: 'download', loaded: bytes.byteLength, total: total || bytes.byteLength });
-    return bytes;
+    return { bytes, release };
   }
   const reader = response.body.getReader();
   const chunks = [];
@@ -1814,7 +1814,7 @@ async function fetchModuleArchive(onProgress) {
   const bytes = new Uint8Array(loaded);
   let offset = 0;
   chunks.forEach((chunk) => { bytes.set(chunk, offset); offset += chunk.byteLength; });
-  return bytes;
+  return { bytes, release };
 }
 
 async function applyModuleSelection({ selected = [], installed = [], onProgress = null } = {}) {
@@ -1823,15 +1823,20 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
   selectedSet.add('updater');
   const additions = [...selectedSet].filter((id) => id !== 'updater' && !installedSet.has(id));
   const removals = [...installedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id) && !selectedSet.has(id));
-  if (!additions.length && !removals.length) return { added: [], removed: [], written: 0 };
+  if (!additions.length && !removals.length) {
+    return { added: [], removed: [], written: 0, reload: false };
+  }
 
   if (additions.includes('captcha')) {
     await globalThis.BjtuCaptchaAssets?.ensureModel({ onProgress });
   }
   await requestModuleManagementDirectory();
   let archiveFiles = [];
+  let archiveRelease = null;
   if (additions.length) {
-    const bytes = await fetchModuleArchive(onProgress);
+    const archive = await fetchModuleArchive(onProgress);
+    const bytes = archive.bytes;
+    archiveRelease = archive.release;
     const entries = parseZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
     const root = getZipCommonRoot(entries);
     archiveFiles = entries.filter((entry) => !entry.directory)
@@ -1888,7 +1893,12 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
     }
   });
   await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selectedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)) });
-  return { added: additions, removed: removals, written };
+  return {
+    added: additions,
+    removed: removals,
+    written,
+    reload: additions.length ? archiveRelease?.reload !== false : true
+  };
 }
 
 globalThis.BjtuUpdaterModuleManager = Object.freeze({

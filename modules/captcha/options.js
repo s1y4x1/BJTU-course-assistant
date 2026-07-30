@@ -10,9 +10,26 @@
   let cachedVersions = new Set();
   const busyVersions = new Set();
   const cancelingVersions = new Set();
+  const modelDownloadVersions = new Set();
   const modelAbortControllers = new Map();
   const modelProgress = new Map();
   const modelStateMessages = new Map();
+
+  async function refreshOrReturnToApp() {
+    const params = new URLSearchParams(location.search);
+    if (params.get('from') === 'app') {
+      setTimeout(() => {
+        if (history.length > 1) {
+          history.back();
+          return;
+        }
+        const suffix = params.get('popup') === '1' ? '?popup=1' : '';
+        location.replace(chrome.runtime.getURL(`app/app.html${suffix}`));
+      }, 250);
+      return;
+    }
+    await chrome.runtime.sendMessage({ type: 'REFRESH_OPEN_APP_PAGES' }).catch(() => null);
+  }
 
   function formatBytes(value) {
     const bytes = Math.max(0, Number(value) || 0);
@@ -98,11 +115,14 @@
   }
 
   function setModelProgress(version, label, loaded = 0, total = 0) {
+    const needsRender = !modelDownloadVersions.has(version);
+    modelDownloadVersions.add(version);
     modelProgress.set(version, {
       label,
       loaded: Math.max(0, Number(loaded) || 0),
       total: Math.max(0, Number(total) || 0)
     });
+    if (needsRender) renderModels();
     const item = [...document.querySelectorAll('.captcha-model-item')]
       .find((element) => element.dataset.version === version);
     if (!(item instanceof HTMLElement)) return;
@@ -148,6 +168,7 @@
     for (const [index, [version, definition]] of Object.entries(versions).entries()) {
       const cached = cachedVersions.has(version);
       const busy = busyVersions.has(version);
+      const modelDownloading = modelDownloadVersions.has(version);
       const item = document.createElement('div');
       item.className = 'captcha-model-item';
       item.dataset.version = version;
@@ -174,12 +195,12 @@
       const state = document.createElement('span');
       state.className = 'captcha-model-state';
       const stateMessage = modelStateMessages.get(version);
-      state.textContent = busy
+      state.textContent = modelDownloading
         ? (cancelingVersions.has(version) ? '正在取消…' : '处理中…')
         : (stateMessage?.text || (cached ? '已下载' : '未下载'));
       state.classList.toggle('error', stateMessage?.error === true);
       actions.append(state);
-      if (busy) {
+      if (modelDownloading) {
         const cancel = createActionButton('取消', 'cancel', version, 'captcha-model-cancel');
         cancel.disabled = cancelingVersions.has(version);
         actions.append(cancel);
@@ -193,7 +214,7 @@
         actions.append(createActionButton('下载', 'download', version));
       }
       item.append(choice, actions);
-      if (busy) {
+      if (modelDownloading) {
         const progress = modelProgress.get(version) || { label: '正在准备…', loaded: 0, total: 0 };
         const progressContainer = document.createElement('div');
         progressContainer.className = `captcha-model-progress${progress.total > 0 ? '' : ' is-indeterminate'}`;
@@ -262,9 +283,7 @@
         }
       });
       coreReady = result.corePending !== true && result.coreReady !== false;
-      // The runtime check above already failed, so any ready result here came
-      // from the install directory and still requires an extension reload.
-      coreReloadRequired = coreReady;
+      coreReloadRequired = false;
       return result;
     } catch (error) {
       coreReady = false;
@@ -282,26 +301,35 @@
     const abortController = new AbortController();
     modelAbortControllers.set(version, abortController);
     modelStateMessages.delete(version);
-    modelProgress.set(version, { label: '正在准备…', loaded: 0, total: 0 });
+    if (!cachedVersions.has(version)) {
+      modelDownloadVersions.add(version);
+      modelProgress.set(version, { label: '正在准备…', loaded: 0, total: 0 });
+    }
     renderModels();
     try {
-      const [modelOutcome, coreOutcome] = await Promise.allSettled([
-        assets.ensureModel({
+      const modelTask = assets.ensureModel({
+        version,
+        signal: abortController.signal,
+        onProgress: (progress) => setModelProgress(
           version,
-          signal: abortController.signal,
-          onProgress: (progress) => setModelProgress(
-            version,
-            progressText('正在下载识别模型', progress),
-            progress.loaded,
-            progress.total
-          )
-        }),
+          progressText('正在下载识别模型', progress),
+          progress.loaded,
+          progress.total
+        )
+      }).then((result) => {
+        cachedVersions.add(version);
+        return result;
+      }).finally(() => {
+        modelDownloadVersions.delete(version);
+        modelProgress.delete(version);
+        modelAbortControllers.delete(version);
+        renderModels();
+      });
+      const [modelOutcome, coreOutcome] = await Promise.allSettled([
+        modelTask,
         ensureCore(interactive)
       ]);
       if (modelOutcome.status === 'rejected') {
-        if (coreOutcome.status === 'fulfilled' && coreOutcome.value.written > 0) {
-          setTimeout(() => chrome.runtime.reload(), 800);
-        }
         throw modelOutcome.reason;
       }
       if (coreOutcome.status === 'rejected') throw coreOutcome.reason;
@@ -318,7 +346,6 @@
         setCoreStatus('已写入');
         setCoreProgress({ loaded: 1, total: 1 });
         if (notify) setMessage(`验证码识别模型 ${modelLabel(version)} 已下载，OCR 核心已修复`);
-        setTimeout(() => chrome.runtime.reload(), 800);
       } else {
         showCoreReadyStatus();
         if (notify) {
@@ -327,6 +354,7 @@
             : `验证码识别模型 ${modelLabel(version)} 及 OCR 核心均已就绪`);
         }
       }
+      if (result.downloaded || coreResult.written > 0) await refreshOrReturnToApp();
       return true;
     } catch (error) {
       const message = String(error?.message || error);
@@ -342,6 +370,7 @@
     } finally {
       busyVersions.delete(version);
       cancelingVersions.delete(version);
+      modelDownloadVersions.delete(version);
       modelAbortControllers.delete(version);
       modelProgress.delete(version);
       await refreshCachedVersions().catch(() => {});

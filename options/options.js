@@ -364,14 +364,31 @@ async function setupInstalledModuleOptions() {
         result.added.length ? `安装 ${result.added.length} 个` : '',
         result.removed.length ? `卸载 ${result.removed.length} 个` : ''
       ].filter(Boolean).join('，');
-      if (status instanceof HTMLElement) status.textContent = `模块更改完成（${changes}），正在重新加载扩展…`;
+      const reloadRequired = result.reload !== false;
+      const completionText = reloadRequired
+        ? `模块更改完成（${changes}），正在重新加载扩展…`
+        : `模块更改完成（${changes}），正在刷新已打开的全屏页面…`;
+      if (status instanceof HTMLElement) status.textContent = completionText;
       updateProgress({
-        label: `模块更改完成（${changes}），正在重新加载扩展…`,
+        label: completionText,
         completed: 1,
         total: 1
       });
       setMsg(`模块更改完成：${changes}`);
-      setTimeout(() => chrome.runtime.reload(), 1000);
+      if (reloadRequired) {
+        await chrome.runtime.sendMessage({
+          type: 'PREPARE_APP_RESTORE_AFTER_RELOAD',
+          payload: {
+            source: 'module-selection',
+            fileCount: Number(result.written || 0)
+          }
+        });
+        setTimeout(() => chrome.runtime.reload(), 1000);
+      } else {
+        await chrome.runtime.sendMessage({ type: 'REFRESH_OPEN_APP_PAGES' }).catch(() => null);
+        if (status instanceof HTMLElement) status.textContent = `模块更改完成（${changes}）`;
+        updateProgress({ visible: false });
+      }
     } catch (error) {
       if (status instanceof HTMLElement) {
         status.style.display = '';
