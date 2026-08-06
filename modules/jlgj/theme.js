@@ -19,23 +19,39 @@
   const isDarkNeutral = (parts) => isNeutral(parts) && parts[3] > 0.15 && (parts[0] + parts[1] + parts[2]) / 3 <= 128;
   const invertedNeutral = (parts) => `rgb(${parts.slice(0, 3).map((value) => Math.min(255, Math.max(0, Math.round(256 - value)))).join(', ')})`;
 
+  const DARK_BG_CLASS = '__bjtu-jlgj-dark-bg';
+  const DARK_TEXT_CLASS = '__bjtu-jlgj-dark-text';
+  const DARK_BORDER_CLASS = '__bjtu-jlgj-dark-border';
+  const TEXT_COLOR_VAR = '--bjtu-jlgj-dark-text-color';
+
   function classify(element) {
     if (!(element instanceof HTMLElement) || element instanceof HTMLIFrameElement || element.matches('.toggle, .toggle *')) return;
+    element.classList.remove(DARK_BG_CLASS, DARK_TEXT_CLASS, DARK_BORDER_CLASS);
+    element.style.removeProperty(TEXT_COLOR_VAR);
     const computed = getComputedStyle(element);
-    if (computed.backgroundImage === 'none' && isWhite(colorParts(computed.backgroundColor))) element.classList.add('__bjtu-jlgj-dark-bg');
+    if (computed.backgroundImage === 'none' && isWhite(colorParts(computed.backgroundColor))) element.classList.add(DARK_BG_CLASS);
     const foreground = colorParts(computed.color);
     if (isDarkNeutral(foreground)) {
-      element.classList.add('__bjtu-jlgj-dark-text');
-      element.style.setProperty('--bjtu-jlgj-dark-text-color', invertedNeutral(foreground));
+      element.classList.add(DARK_TEXT_CLASS);
+      element.style.setProperty(TEXT_COLOR_VAR, invertedNeutral(foreground));
     }
     const borders = [computed.borderTopColor, computed.borderRightColor, computed.borderBottomColor, computed.borderLeftColor].map(colorParts);
-    if (borders.some((parts) => isWhite(parts) || isDarkNeutral(parts))) element.classList.add('__bjtu-jlgj-dark-border');
+    if (borders.some((parts) => isWhite(parts) || isDarkNeutral(parts))) element.classList.add(DARK_BORDER_CLASS);
   }
 
   function classifyTree(node) {
     if (!(node instanceof Element)) return;
     classify(node);
     node.querySelectorAll('*').forEach(classify);
+  }
+
+  let reconcileTimer = null;
+  function scheduleFullReconcile(delay = 250) {
+    if (reconcileTimer) return;
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = null;
+      if (document.documentElement?.classList.contains(ROOT_CLASS)) classifyTree(document.documentElement);
+    }, delay);
   }
 
   function apply(enabled) {
@@ -63,15 +79,20 @@
       classifyTree(root);
       root.classList.add(ROOT_CLASS);
       if (!observer) {
-        observer = new MutationObserver((records) => records.forEach((record) =>
-          record.addedNodes.forEach(classifyTree)
-        ));
+        observer = new MutationObserver((records) => {
+          records.forEach((record) => record.addedNodes.forEach(classifyTree));
+          scheduleFullReconcile(250);
+        });
         observer.observe(root, { childList: true, subtree: true });
       }
       [0, 120, 500, 1200].forEach((delay) => setTimeout(() => {
         if (root.classList.contains(ROOT_CLASS)) classifyTree(root);
       }, delay));
       return;
+    }
+    if (reconcileTimer) {
+      clearTimeout(reconcileTimer);
+      reconcileTimer = null;
     }
     root.classList.remove(ROOT_CLASS);
     style?.remove();
@@ -140,4 +161,7 @@
   const onSystemThemeChange = () => { if (themeMode === 'system') sync(); };
   if (typeof media?.addEventListener === 'function') media.addEventListener('change', onSystemThemeChange);
   else if (typeof media?.addListener === 'function') media.addListener(onSystemThemeChange);
+
+  window.addEventListener('popstate', () => scheduleFullReconcile(150));
+  window.addEventListener('hashchange', () => scheduleFullReconcile(150));
 })();
