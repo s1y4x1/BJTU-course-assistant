@@ -1134,8 +1134,14 @@ html[data-color-scheme="dark"] .toolbar-pin-never {
     color: #cbd5e1;
     border-color: #475569;
 }
+html[data-color-scheme="dark"] .toolbar-pin-never {
+    background: #dc2626;
+    color: #fff;
+    border-color: #dc2626;
+}
 html[data-color-scheme="dark"] .toolbar-pin-later:hover,
 html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #475569; }
+html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #b91c1c; }
 .version-modal-header {
     display: flex;
     justify-content: space-between;
