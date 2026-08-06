@@ -118,7 +118,7 @@
 
   chrome.storage.local.get(['themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled']).then((data) => {
     themeMode = data?.themeMode === 'light' || data?.themeMode === 'dark' ? data.themeMode : 'system';
-    loginDarkEnabled = data?.jlgjDarkModeEnabled === true;
+    loginDarkEnabled = data?.jlgjDarkModeEnabled !== false;
     alwaysDarkEnabled = data?.jlgjAlwaysDarkModeEnabled === true;
     sync();
   }).catch(() => apply(false));
@@ -132,7 +132,7 @@
       const value = changes.themeMode.newValue;
       themeMode = value === 'light' || value === 'dark' ? value : 'system';
     }
-    if (changes.jlgjDarkModeEnabled) loginDarkEnabled = changes.jlgjDarkModeEnabled.newValue === true;
+    if (changes.jlgjDarkModeEnabled) loginDarkEnabled = changes.jlgjDarkModeEnabled.newValue !== false;
     if (changes.jlgjAlwaysDarkModeEnabled) alwaysDarkEnabled = changes.jlgjAlwaysDarkModeEnabled.newValue === true;
     if (changes.themeMode || changes.jlgjDarkModeEnabled || changes.jlgjAlwaysDarkModeEnabled) sync();
   });
