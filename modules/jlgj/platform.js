@@ -423,7 +423,7 @@ async function showJlgjLoginSuccessNotice(tabId) {
         if (!toast) {
           toast = document.createElement('div');
           toast.id = '__bjtu_jlgj_loading_toast__';
-          toast.textContent = '登录成功，请不要关闭此页面，作业数据读取完成后将自动关闭。';
+          toast.textContent = '登录成功，正在后台读取作业数据，读取完成后将自动关闭本页面。';
           Object.assign(toast.style, {
             position: 'fixed', top: '18px', left: '50%', transform: 'translateX(-50%)',
             zIndex: '2147483647', maxWidth: 'calc(100vw - 32px)', padding: '10px 16px',
@@ -540,7 +540,7 @@ async function fetchJlgjJsonFromPageContext(url, existingTabId = null) {
   }
 }
 
-async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbort = null) {
+async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbort = null, returnTarget = null) {
   const start = Date.now();
   let ownedTabId = null;
   let ownedTabCreated = false;
@@ -618,8 +618,12 @@ async function waitAndFetchJlgjGroupListFromBrowser(timeoutMs = 30000, shouldAbo
         }
 
         if (loginPending) {
-          loginSuccessDetected = true;
-          await showJlgjLoginSuccessNotice(tab.id);
+          if (!loginSuccessDetected) {
+            loginSuccessDetected = true;
+            await showJlgjLoginSuccessNotice(tab.id);
+            // 登录成功后立即定位回 app.html；页面继续在后台读取数据。
+            await returnToJlgjApp(returnTarget).catch(() => {});
+          }
         }
 
         const stateRes = await chrome.scripting.executeScript({
@@ -862,7 +866,8 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
 
     let listResp = await waitAndFetchJlgjGroupListFromBrowser(
       30000,
-      () => isStale() || !isPlatformEnabled('jlgj')
+      () => isStale() || !isPlatformEnabled('jlgj'),
+      appReturnTarget
     );
     if (listResp?.tabId && Number.isFinite(Number(listResp.tabId))) {
       bgTab = { id: Number(listResp.tabId) };

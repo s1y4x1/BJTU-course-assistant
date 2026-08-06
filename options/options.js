@@ -463,8 +463,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.__bjtuVeOptionsReady;
   await globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg });
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled'
   ]);
   const { xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'xuetangxCourseStatuses',
@@ -572,6 +572,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
     ? DEFAULT_HOMEWORK_REMINDER_ENABLED
     : !!homeworkReminderEnabled;
+  document.getElementById('toolbarPinReminderEnabled').checked = toolbarPinReminderEnabled !== false;
   document.getElementById('homeworkBackgroundRefreshEnabled').checked = homeworkBackgroundRefreshEnabled === true;
   document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = homeworkNewAssignmentNotificationEnabled === true;
   document.getElementById('backgroundAutoUpdateEnabled').checked = backgroundAutoUpdateEnabled === undefined
@@ -963,6 +964,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         applyBooleanUi('homeworkReminderEnabled', changes.homeworkReminderEnabled.newValue, DEFAULT_HOMEWORK_REMINDER_ENABLED);
         updateHomeworkReminderDisabled();
       }
+      if (changes.toolbarPinReminderEnabled) {
+        applyBooleanUi('toolbarPinReminderEnabled', changes.toolbarPinReminderEnabled.newValue, true);
+      }
       if (changes.homeworkReminderMinutes) {
         currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(changes.homeworkReminderMinutes.newValue);
         renderHomeworkReminderNodes();
@@ -1141,6 +1145,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('homeworkReminderEnabled').addEventListener('change', async () => {
     updateHomeworkReminderDisabled();
     await persistHomeworkReminderSettings();
+  });
+
+  document.getElementById('toolbarPinReminderEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      toolbarPinReminderEnabled: !!document.getElementById('toolbarPinReminderEnabled').checked
+    });
+    setMsg('已应用更改');
   });
 
   document.getElementById('deadlineCountdownStyle')?.addEventListener('change', async (event) => {
@@ -1458,6 +1469,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       parallelLimit: DEFAULT_PARALLEL_LIMIT,
       homeworkReminderEnabled: DEFAULT_HOMEWORK_REMINDER_ENABLED,
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
+      toolbarPinReminderEnabled: true,
       homeworkBackgroundRefreshEnabled: false,
       homeworkBackgroundRefreshAccount: '',
       homeworkBackgroundRefreshIntervalMinutes: DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES,
@@ -1501,6 +1513,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('deadlineCountdownStyle').value = DEFAULT_DEADLINE_COUNTDOWN_STYLE;
     document.getElementById('showCourseListDuringLayoutTransition').checked = DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION;
     document.getElementById('homeworkReminderEnabled').checked = DEFAULT_HOMEWORK_REMINDER_ENABLED;
+    document.getElementById('toolbarPinReminderEnabled').checked = true;
     document.getElementById('homeworkBackgroundRefreshEnabled').checked = false;
     document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = false;
     setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
