@@ -576,7 +576,7 @@
       }
       if (release.clean) {
         await cleanUpdateScopes(root, release.update, selectedModules);
-      } else if (!normalizeUpdateScopes(release.update)) {
+      } else {
         await removeUnselectedModules(root, selectedModules);
       }
       let completed = 0;

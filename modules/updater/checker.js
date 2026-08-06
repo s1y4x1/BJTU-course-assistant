@@ -1635,7 +1635,7 @@ async function chooseUpdateModules(archiveFiles) {
       <div class="version-modal-header"><div class="upload-duplicate-title">选择要保留的模块</div></div>
       <div style="margin:8px 0;color:#64748b;font-size:13px;">智慧课程平台、课程合并核心和更新组件始终保留。未勾选的可选模块不会解压，已安装时将被删除。</div>
       <div data-module-list style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0;"></div>
-      <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定（2 秒）</button></div>
+      <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定（3 秒）</button></div>
     </div>`;
     const list = mask.querySelector('[data-module-list]');
     appendUpdateModuleChoice(list, {
@@ -1693,7 +1693,7 @@ async function chooseUpdateModules(archiveFiles) {
     });
     confirmButton.addEventListener('click', confirmSelection);
     document.body.appendChild(mask);
-    const autoConfirmAt = Date.now() + 2000;
+    const autoConfirmAt = Date.now() + 3000;
     autoConfirmTimer = setInterval(() => {
       if (!mask.isConnected) {
         cancelAutoConfirm();
@@ -1832,11 +1832,9 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
   }
   await requestModuleManagementDirectory();
   let archiveFiles = [];
-  let archiveRelease = null;
   if (additions.length) {
     const archive = await fetchModuleArchive(onProgress);
     const bytes = archive.bytes;
-    archiveRelease = archive.release;
     const entries = parseZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
     const root = getZipCommonRoot(entries);
     archiveFiles = entries.filter((entry) => !entry.directory)
@@ -1897,7 +1895,7 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
     added: additions,
     removed: removals,
     written,
-    reload: additions.length ? archiveRelease?.reload !== false : true
+    reload: true
   };
 }
 
@@ -2011,7 +2009,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
     });
   }
   if (cleanUpdate) await cleanVersionUpdateScopes(updateRule, selectedModules);
-  else if (!normalizeVersionUpdateScopes(updateRule)) await removeUnselectedModuleDirectories(selectedModules);
+  else await removeUnselectedModuleDirectories(selectedModules);
   const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
   if (!selectedArchiveFiles.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
   const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
