@@ -167,14 +167,6 @@
     </div>
 
     <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
-      <div class="section-title">工具栏固定</div>
-      <label style="display:flex; align-items:center; gap:8px; margin:0;">
-        <input type="checkbox" id="toolbarPinReminderEnabled" style="width:auto;" checked />
-        <span>打开扩展页面时检查是否已固定到工具栏并提醒</span>
-      </label>
-      <div class="tip">未固定时，每次打开扩展页面都会提示您将其固定到工具栏，以便快速访问。</div>
-    </div>
-    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
       <div class="section-title">弹出窗口</div>
       <div class="open-mode-row" style="margin-top:0; padding:0; border:0; background:transparent;">
         <div>点击扩展按钮时：</div>
@@ -190,6 +182,11 @@
         <span>打开全屏页面时优先定位到已打开的页面</span>
       </label>
       <div class="tip">开启后会激活已有的全屏页面；关闭后，每次都会打开一个新的全屏页面。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 6px;">
+        <input type="checkbox" id="toolbarPinReminderEnabled" style="width:auto;" checked />
+        <span>打开扩展页面时检查是否已固定到工具栏并提醒</span>
+      </label>
+      <div class="tip">未固定时，每次打开扩展页面都会提示您将其固定到工具栏，以便快速访问。</div>
       <div id="popupCacheContainer">
         <div class="popup-size-editor">
           <label>

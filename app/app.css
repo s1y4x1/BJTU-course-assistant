@@ -1119,8 +1119,8 @@ body.platform-column-resizing {
 .toolbar-pin-goto:hover { background: #1e40af; }
 .toolbar-pin-later { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
 .toolbar-pin-later:hover { background: #e2e8f0; }
-.toolbar-pin-never { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
-.toolbar-pin-never:hover { background: #e2e8f0; }
+.toolbar-pin-never { background: #dc2626; color: #fff; border: 1px solid #dc2626; }
+.toolbar-pin-never:hover { background: #b91c1c; }
 html[data-color-scheme="dark"] .toolbar-pin-card {
     background: #1e293b;
     border-color: #334155;
