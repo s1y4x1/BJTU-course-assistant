@@ -628,11 +628,22 @@
       const deadline = [timeInfo.score_deadline, leaf.score_deadline, timeInfo.end_time, leaf.end_time, course.classEnd]
         .map(Number).find((value) => Number.isFinite(value) && value > 0) || 0;
       const scoreInfo = evaluationLeaf?.score_info || {};
-      const done = type.id === 11
+      const userScore = Number.isFinite(Number(scoreInfo.user_score)) ? Number(scoreInfo.user_score) : null;
+      const totalScore = Number.isFinite(Number(scoreInfo.leaf_score)) ? Number(scoreInfo.leaf_score) : null;
+      const hasFullScore = Number.isFinite(Number(userScore))
+        && Number.isFinite(Number(totalScore))
+        && Number(totalScore) > 0
+        && Number(userScore) >= Number(totalScore);
+      const discussionUnsubmitted = type.id === 10
+        && !(deadline > 0 && deadline < Date.now())
+        && !hasFullScore;
+      const done = discussionUnsubmitted
         ? false
-        : (type.id === 6
-          ? schedule >= 0.9995
-          : (evaluationLeaf?.quiz_commit === true || evaluationLeaf?.is_done === true || schedule >= 0.9995));
+        : (type.id === 11
+          ? false
+          : (type.id === 6
+            ? schedule >= 0.9995
+            : (evaluationLeaf?.quiz_commit === true || evaluationLeaf?.is_done === true || schedule >= 0.9995)));
       return {
         id: String(leaf.id),
         chapterLeafId: String(leaf.id),
@@ -648,8 +659,8 @@
         schedule,
         done,
         overdue: !done && deadline > 0 && deadline < Date.now(),
-        userScore: Number.isFinite(Number(scoreInfo.user_score)) ? Number(scoreInfo.user_score) : null,
-        totalScore: Number.isFinite(Number(scoreInfo.leaf_score)) ? Number(scoreInfo.leaf_score) : null,
+        userScore,
+        totalScore,
         locked: timeInfo.is_locked === true || leaf.is_locked === true
       };
     }).filter((task) => visibleActivityTypes.has(task.typeId));
