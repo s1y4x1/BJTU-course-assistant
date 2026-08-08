@@ -5253,10 +5253,6 @@ jsessionidInput.addEventListener('change', async () => {
       xuetangx: false
     };
   }
-  if (!window.__updateCheckerLoaded) {
-    const versionInfoEl = document.getElementById('version-info');
-    if (versionInfoEl) versionInfoEl.style.display = 'none';
-  }
   refreshPlatformLoginTip();
 
   if (restoredPopupCache) {

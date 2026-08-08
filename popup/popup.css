@@ -138,7 +138,3 @@ body.popup-mode #course-list {
 html[data-color-scheme="dark"] .popup-cache-loading {
     color: #cbd5e1;
 }
-
-body.popup-mode .version-info {
-    display: none !important;
-}
