@@ -126,9 +126,10 @@ function findAlreadyUploadedFile(file) {
   return null;
 }
 
-function promptDuplicateUploadConfirmation(entries) {
+async function promptDuplicateUploadConfirmation(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return Promise.resolve(new Set());
+  await globalThis.__bjtuUploadDuplicateDialogReady;
   const modal = document.getElementById('upload-duplicate-modal');
   const listEl = document.getElementById('upload-duplicate-list');
   const invertBtn = document.getElementById('upload-duplicate-invert');
