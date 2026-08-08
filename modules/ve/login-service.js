@@ -139,9 +139,13 @@
         if (!captcha?.ok) {
           return {
             ok: false,
-            reason: captcha?.reason === 'module-missing' ? 'captcha-module-missing' : 'captcha-required',
+            reason: ['module-missing', 'resources-missing'].includes(captcha?.reason)
+              ? 'captcha-module-missing'
+              : 'captcha-required',
             message: captcha?.reason === 'module-missing'
-              ? '本地验证码识别模块未安装，请输入验证码后继续登录。'
+              ? '本地验证码识别模块未安装，请先安装后继续登录。'
+              : captcha?.reason === 'resources-missing'
+                ? '本地验证码识别核心未加载，请先打开验证码识别选项完成配置。'
               : '验证码本地识别失败，请输入验证码后继续登录。'
           };
         }

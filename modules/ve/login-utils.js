@@ -80,7 +80,17 @@
         : { ok: false, reason: 'recognition-failed', image };
     } catch (error) {
       if (signal?.aborted || error?.name === 'AbortError') throw error;
-      return { ok: false, reason: 'recognition-failed', image, error };
+      const code = String(error?.code || '').trim();
+      return {
+        ok: false,
+        reason: code === 'captcha-module-missing'
+          ? 'module-missing'
+          : code === 'captcha-resources-missing'
+            ? 'resources-missing'
+            : 'recognition-failed',
+        image,
+        error
+      };
     }
   }
 
