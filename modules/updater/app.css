@@ -4,6 +4,15 @@
     margin-right: 6px;
     white-space: nowrap;
 }
+.file-size-emphasis {
+    display: inline-block;
+    vertical-align: baseline;
+    white-space: nowrap;
+}
+.update-module-size {
+    line-height: 1.35;
+    margin-left: auto;
+}
 .version-btn {
     display: inline-flex;
     align-items: center;

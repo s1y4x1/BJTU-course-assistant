@@ -1565,7 +1565,12 @@ function getArchiveModuleSize(files, moduleId) {
 
 function buildModuleSizeStyle(bytes) {
   if (typeof globalThis.buildFileSizeEmphasisStyle === 'function') {
-    return globalThis.buildFileSizeEmphasisStyle(bytes);
+    try {
+      const style = globalThis.buildFileSizeEmphasisStyle(bytes);
+      if (style) return style;
+    } catch {
+      // The VE size helper may not have loaded yet; use the local fallback below.
+    }
   }
   const mb = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
   if (mb <= 0) return 'font-size:10px;font-weight:500;color:#94a3b8;text-shadow:none;';
