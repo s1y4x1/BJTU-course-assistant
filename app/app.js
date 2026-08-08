@@ -2884,6 +2884,12 @@ async function handleAlreadyLoggedIn(username, userInfo) {
   }).catch(() => { });
 }
 
+function openCaptchaOptionsFromApp() {
+  const query = new URLSearchParams({ from: 'app' });
+  if (popupMode) query.set('popup', '1');
+  location.href = chrome.runtime.getURL(`modules/captcha/options.html?${query.toString()}`);
+}
+
 async function doLoginFlow() {
   if (isLoginInProgress) return;
   const username = String(usernameInput.value || '').trim();
@@ -2975,6 +2981,12 @@ async function doLoginFlow() {
         manualPassword = submittedPassword;
         manualPasswordPlain = submittedPasswordPlain;
         continue;
+      }
+      if (result?.reason === 'captcha-module-missing'
+          || /本地验证码识别模块未安装/i.test(String(result?.message || ''))) {
+        await restoreAfterFailure();
+        openCaptchaOptionsFromApp();
+        return;
       }
       if (result?.reason === 'locked' || result?.reason === 'password-reset') {
         if (result.reason === 'password-reset') {

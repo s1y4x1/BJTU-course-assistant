@@ -21,6 +21,9 @@
       await global.BjtuModuleRegistry.loadStyle(`modules/ve/${path}`);
     }
     for (const path of scripts) await global.BjtuModuleRegistry.loadScript(path);
+    if (available.captcha) {
+      await global.BjtuModuleRegistry.loadScript('modules/captcha/recognizer.js');
+    }
     return true;
   })().catch((error) => {
     console.warn('[bjtu] VE module unavailable:', String(error?.message || error));

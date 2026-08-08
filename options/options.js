@@ -324,9 +324,7 @@ async function setupInstalledModuleOptions() {
         installed: [...installed],
         onProgress(progress) {
           if (progress.phase === 'download') {
-            const label = progress.total > 0
-              ? `正在下载模块：${formatModuleBytes(progress.loaded)} / ${formatModuleBytes(progress.total)}`
-              : `正在下载模块：${formatModuleBytes(progress.loaded)}`;
+            const label = `正在下载程序包：${formatModuleBytes(progress.loaded)}${progress.total > 0 ? ` / ${formatModuleBytes(progress.total)}` : ''}`;
             updateProgress({
               label,
               completed: progress.loaded,

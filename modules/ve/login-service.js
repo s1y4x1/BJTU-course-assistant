@@ -139,7 +139,7 @@
         if (!captcha?.ok) {
           return {
             ok: false,
-            reason: 'captcha-required',
+            reason: captcha?.reason === 'module-missing' ? 'captcha-module-missing' : 'captcha-required',
             message: captcha?.reason === 'module-missing'
               ? '本地验证码识别模块未安装，请输入验证码后继续登录。'
               : '验证码本地识别失败，请输入验证码后继续登录。'

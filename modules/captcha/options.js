@@ -14,6 +14,23 @@
   const modelAbortControllers = new Map();
   const modelProgress = new Map();
   const modelStateMessages = new Map();
+  let extensionReloadStarted = false;
+
+  function reloadExtensionAndOpenApp() {
+    if (extensionReloadStarted) return;
+    extensionReloadStarted = true;
+    const params = new URLSearchParams(location.search);
+    const query = new URLSearchParams({ from: 'captcha-reload' });
+    if (params.get('popup') === '1') query.set('popup', '1');
+    const appUrl = chrome.runtime.getURL(`app/app.html?${query.toString()}`);
+    setMessage('OCR 核心已写入，正在重新加载扩展…');
+    try {
+      chrome.runtime.reload();
+    } catch {
+      // Navigate below even when the reload API is unavailable.
+    }
+    setTimeout(() => location.replace(appUrl), 800);
+  }
 
   async function refreshOrReturnToApp() {
     const params = new URLSearchParams(location.search);
@@ -101,6 +118,7 @@
       showCoreReadyStatus();
     } else if (directoryReady) {
       showCoreReadyStatus();
+      setTimeout(reloadExtensionAndOpenApp, 0);
     } else {
       setCoreStatus('未安装', true);
     }
