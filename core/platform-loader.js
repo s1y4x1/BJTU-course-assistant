@@ -8,6 +8,7 @@
     xuetangx: ['modules/xuetangx/platform.js']
   };
   global.__bjtuPlatformModulesReady = (async () => {
+    if (new URLSearchParams(global.location?.search || '').get('autoUpdate') === '1') return {};
     const available = await global.BjtuModuleRegistry.ready;
     for (const [id, paths] of Object.entries(scripts)) {
       if (!available[id]) continue;

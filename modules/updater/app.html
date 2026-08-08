@@ -1,0 +1,61 @@
+<div id="version-info" class="version-info">
+  <button id="version-btn" type="button" class="version-btn loading" disabled>
+    <span class="version-btn-spinner"></span>
+    <span>获取最新版本中…</span>
+  </button>
+</div>
+
+<div id="version-notice-modal" class="version-modal-mask version-notice-modal">
+  <div class="version-modal-card">
+    <div class="version-modal-header">
+      <div id="version-notice-title" class="version-notice-title">发现新版本：v--</div>
+      <button id="version-notice-close" class="btn version-close-btn" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div id="version-notice-body" class="version-notice-body"></div>
+    <div class="version-notice-footer">
+      <button id="version-notice-download" class="btn version-notice-download-btn">下载更新</button>
+      <button id="version-notice-ignore" class="btn version-notice-ignore-btn" type="button">
+        <span class="version-ignore-main">忽略本次更新</span>
+      </button>
+      <div class="version-source-row">
+        <label for="version-source-select">下载源：</label>
+        <select id="version-source-select">
+          <option value="zipball" selected>正式版</option>
+          <option value="master">开发版</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="version-download-modal" class="version-modal-mask version-download-modal">
+  <div class="version-modal-card">
+    <div class="version-modal-header">
+      <div id="version-download-title" class="version-download-title">正在下载</div>
+      <button id="version-download-minimize" class="btn version-min-btn" title="最小化" aria-label="最小化">−</button>
+      <button id="version-download-close" class="btn version-close-btn" style="display:none;" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div id="version-download-body" class="version-download-body">请稍候，正在准备下载…</div>
+    <div class="version-download-details">
+      <div id="version-download-release-notes" class="version-download-release-notes" style="display:none;">
+        <div class="version-download-release-notes-title">更新说明</div>
+        <div id="version-download-release-notes-body" class="version-download-release-notes-body"></div>
+      </div>
+      <div id="version-update-files" class="version-update-files" style="display:none;">
+        <div id="version-update-file-summary" class="version-update-file-summary"></div>
+        <div id="version-update-file-tree" class="version-update-file-tree" aria-label="本次更新文件及覆盖状态"></div>
+      </div>
+    </div>
+    <div id="version-download-status" class="version-download-status"></div>
+    <div id="version-download-progress" class="progress-bar-container version-download-progress" style="display:none;"
+      role="progressbar" aria-label="更新进度" aria-valuemin="0" aria-valuemax="100">
+      <div id="version-download-progress-bar" class="progress-bar"></div>
+    </div>
+    <div id="version-download-actions" class="version-download-actions">
+      <button id="version-download-retry" class="btn version-download-retry-btn">重试下载</button>
+      <button id="version-download-select-directory" class="btn version-download-retry-btn" style="display:none;">选择扩展目录</button>
+      <button id="version-download-open-extensions" class="btn version-download-retry-btn" style="display:none;">打开扩展管理</button>
+      <button id="version-download-refresh" class="btn version-download-retry-btn" style="display:none;">刷新（2 秒）</button>
+    </div>
+  </div>
+</div>

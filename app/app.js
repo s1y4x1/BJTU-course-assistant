@@ -5174,6 +5174,7 @@ jsessionidInput.addEventListener('change', async () => {
 
 // -------------------- Init --------------------
 (async function init() {
+  const autoUpdateMode = new URLSearchParams(location.search).get('autoUpdate') === '1';
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuVeAppReady;
   await globalThis.__bjtuPlatformModulesReady;
@@ -5181,8 +5182,12 @@ jsessionidInput.addEventListener('change', async () => {
   setupRightColumnResizer();
   updateTotalProgress();
   updateResourceDownloadTotals();
-  await loadPlatformEnabledFromStorage();
-  await loadPlatformVisibleFromStorage();
+  if (autoUpdateMode) {
+    window.platformEnabled = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
+  } else {
+    await loadPlatformEnabledFromStorage();
+    await loadPlatformVisibleFromStorage();
+  }
   window.BjtuMoocPlatform?.init({
     courseList: courseListDiv,
     escape: escapeHtml,
@@ -5293,7 +5298,9 @@ jsessionidInput.addEventListener('change', async () => {
 
   // VE startup owns both course and resource-space loading so account synchronization
   // cannot invalidate an independent resource request and leave its loading UI stale.
-  const startupPlatformLoadPromise = triggerInitialPlatformLoads();
+  const startupPlatformLoadPromise = autoUpdateMode
+    ? Promise.resolve(null)
+    : triggerInitialPlatformLoads();
 
   await loadCurrentXqOptions().catch(() => { });
 

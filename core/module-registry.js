@@ -39,7 +39,11 @@
       files: ['system.js', 'options.html', 'options.js'],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js', wide: true }
     },
-    updater: { label: '更新组件', files: ['checker.js', 'background.js', 'filesystem.js', 'vendor/marked.umd.js'] }
+    updater: {
+      label: '更新组件',
+      styles: ['app.css'],
+      files: ['app.html', 'checker.js', 'background.js', 'filesystem.js', 'vendor/marked.umd.js']
+    }
   });
 
   async function exists(id) {
