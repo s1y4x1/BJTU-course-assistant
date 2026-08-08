@@ -1,4 +1,4 @@
-// -------------------- MD5 (used by MRJZY signing) --------------------
+// Shared MD5 implementation used by MRJZY signing and VE credential checks.
 function md5cycle(x, k) {
   let [a, b, c, d] = x;
   function ff(a, b, c, d, x, s, t) { a = a + ((b & c) | (~b & d)) + x + t; return ((a << s) | (a >>> (32 - s))) + b; }

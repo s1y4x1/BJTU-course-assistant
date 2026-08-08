@@ -107,7 +107,7 @@ function tryImportModuleScripts(...paths) {
 
 const veBackgroundReady = tryImportModuleScripts(
   '../modules/ve/vendor/main.min.js',
-  '../modules/mrjzy/md5.js',
+  '../core/md5.js',
   '../modules/ve/password-cipher.js',
   '../modules/ve/login-utils.js',
   '../modules/ve/account-store.js',

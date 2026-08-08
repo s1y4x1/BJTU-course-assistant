@@ -2,7 +2,7 @@
   'use strict';
   const scripts = {
     ykt: ['modules/ykt/platform.js'],
-    mrjzy: ['modules/mrjzy/md5.js', 'modules/mrjzy/platform.js'],
+    mrjzy: ['core/md5.js', 'modules/mrjzy/platform.js'],
     jlgj: ['modules/jlgj/platform.js'],
     mooc: ['modules/mooc/platform.js'],
     xuetangx: ['modules/xuetangx/platform.js']
