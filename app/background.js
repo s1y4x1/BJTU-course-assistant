@@ -208,6 +208,7 @@ void initializeExtensionRuntimeMetadata();
 const APP_URL = chrome.runtime.getURL('app/app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
+const CAPTCHA_RELOAD_RESTORE_ALARM = 'bjtu-captcha-reload-restore';
 
 async function getOpenAppTabs() {
   return (await chrome.tabs.query({}).catch(() => []))
@@ -220,16 +221,43 @@ async function refreshOpenAppTabs() {
   return tabs.length;
 }
 
-async function prepareAppRestoreAfterExtensionReload(payload = {}) {
+async function prepareAppRestoreAfterExtensionReload(payload = {}, sourceTabId = null) {
   const tabs = await getOpenAppTabs();
+  const requestedSourceTabId = Number(sourceTabId || payload?.sourceTabId);
   await chrome.storage.local.set({
     [VERSION_AUTO_RELOAD_HANDOFF_KEY]: {
       ...(payload && typeof payload === 'object' ? payload : {}),
       requestedAt: Date.now(),
-      reopenApp: tabs.length > 0
+      reopenApp: payload?.reopenApp === true || tabs.length > 0,
+      sourceTabId: Number.isInteger(requestedSourceTabId) && requestedSourceTabId > 0
+        ? requestedSourceTabId
+        : null
     }
   });
   return tabs.length;
+}
+
+async function reloadExtensionAndOpenApp(payload = {}, sourceTabId = null) {
+  const requestedSourceTabId = Number(sourceTabId || payload?.sourceTabId);
+  await prepareAppRestoreAfterExtensionReload({
+    ...(payload && typeof payload === 'object' ? payload : {}),
+    reopenApp: true
+  }, requestedSourceTabId);
+  chrome.alarms.create(CAPTCHA_RELOAD_RESTORE_ALARM, { when: Date.now() + 1500 });
+
+  const suffix = payload?.popup === true ? '?popup=1' : '';
+  const targetUrl = `${APP_URL}${suffix}`;
+  const sourceTab = Number.isInteger(requestedSourceTabId) && requestedSourceTabId > 0
+    ? await chrome.tabs.get(requestedSourceTabId).catch(() => null)
+    : null;
+  if (sourceTab) {
+    await chrome.tabs.update(requestedSourceTabId, { url: targetUrl, active: true }).catch(() => null);
+  } else {
+    await chrome.tabs.create({ url: targetUrl, active: true }).catch(() => null);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  chrome.runtime.reload();
 }
 
 globalThis.BjtuForegroundAppPages = Object.freeze({
@@ -241,6 +269,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
   const stored = await chrome.storage.local.get([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => ({}));
   const handoff = stored?.[VERSION_AUTO_RELOAD_HANDOFF_KEY];
   if (!handoff) return;
+  await chrome.alarms.clear(CAPTCHA_RELOAD_RESTORE_ALARM).catch(() => false);
   await chrome.storage.local.set({
     [VERSION_AUTO_RELOAD_COMPLETED_KEY]: {
       ...handoff,
@@ -275,6 +304,15 @@ async function restoreAppAfterAutomaticExtensionReload() {
     }, 'background-update-complete', true).catch(() => {});
   }
   if (handoff.reopenApp === false) return;
+  const sourceTabId = Number(handoff.sourceTabId);
+  if (Number.isInteger(sourceTabId) && sourceTabId > 0) {
+    const sourceTab = await chrome.tabs.get(sourceTabId).catch(() => null);
+    if (sourceTab) {
+      await chrome.tabs.update(sourceTabId, { url: APP_URL, active: true }).catch(() => null);
+      if (sourceTab.windowId) await chrome.windows.update(sourceTab.windowId, { focused: true }).catch(() => null);
+      return;
+    }
+  }
   const tabs = (await chrome.tabs.query({}).catch(() => []))
     .filter((tab) => String(tab?.url || '').startsWith(APP_URL));
   if (tabs.length) {
@@ -497,6 +535,7 @@ function scheduleHomeworkReminderCheck() {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm?.name === HOMEWORK_REMINDER_ALARM) scheduleHomeworkReminderCheck();
+  if (alarm?.name === CAPTCHA_RELOAD_RESTORE_ALARM) void restoreAppAfterAutomaticExtensionReload();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -785,10 +824,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === 'PREPARE_APP_RESTORE_AFTER_RELOAD') {
-    prepareAppRestoreAfterExtensionReload(message?.payload)
+    prepareAppRestoreAfterExtensionReload(message?.payload, sender?.tab?.id)
       .then((count) => sendResponse({ ok: true, count }))
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
+  }
+
+  if (message?.type === 'RELOAD_EXTENSION_AND_OPEN_APP') {
+    void reloadExtensionAndOpenApp(message?.payload, sender?.tab?.id)
+      .catch((error) => console.warn('[bjtu] captcha reload handoff failed:', error));
+    sendResponse({ ok: true });
+    return false;
   }
 
   if (message?.type === 'GET_LATEST_RESPONSE_JSESSIONID') {

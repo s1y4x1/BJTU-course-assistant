@@ -1474,8 +1474,11 @@
       payload: { imageUrl }
     });
     if (!response?.ok || !/^\d{4}$/.test(String(response.passcode || ''))) {
-      if (response?.code === 'captcha-resources-missing') {
-        const params = new URLSearchParams({ from: 'app' });
+      if (['captcha-module-missing', 'captcha-resources-missing'].includes(response?.code)) {
+        const params = new URLSearchParams({
+          from: 'app',
+          reason: response.code
+        });
         if (new URLSearchParams(String(location.search || '')).get('popup') === '1') {
           params.set('popup', '1');
         }

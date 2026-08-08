@@ -2884,8 +2884,10 @@ async function handleAlreadyLoggedIn(username, userInfo) {
   }).catch(() => { });
 }
 
-function openCaptchaOptionsFromApp() {
+function openCaptchaOptionsFromApp(reason = '') {
   const query = new URLSearchParams({ from: 'app' });
+  const normalizedReason = String(reason || '').trim();
+  if (normalizedReason) query.set('reason', normalizedReason);
   if (popupMode) query.set('popup', '1');
   location.href = chrome.runtime.getURL(`modules/captcha/options.html?${query.toString()}`);
 }
@@ -2983,9 +2985,10 @@ async function doLoginFlow() {
         continue;
       }
       if (result?.reason === 'captcha-module-missing'
+          || result?.reason === 'captcha-resources-missing'
           || /本地验证码识别模块未安装/i.test(String(result?.message || ''))) {
         await restoreAfterFailure();
-        openCaptchaOptionsFromApp();
+        openCaptchaOptionsFromApp(result?.reason || 'captcha-module-missing');
         return;
       }
       if (result?.reason === 'locked' || result?.reason === 'password-reset') {

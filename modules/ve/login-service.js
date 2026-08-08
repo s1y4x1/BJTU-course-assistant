@@ -139,9 +139,11 @@
         if (!captcha?.ok) {
           return {
             ok: false,
-            reason: ['module-missing', 'resources-missing'].includes(captcha?.reason)
+            reason: captcha?.reason === 'module-missing'
               ? 'captcha-module-missing'
-              : 'captcha-required',
+              : captcha?.reason === 'resources-missing'
+                ? 'captcha-resources-missing'
+                : 'captcha-required',
             message: captcha?.reason === 'module-missing'
               ? '本地验证码识别模块未安装，请先安装后继续登录。'
               : captcha?.reason === 'resources-missing'

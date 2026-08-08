@@ -16,20 +16,31 @@
   const modelStateMessages = new Map();
   let extensionReloadStarted = false;
 
-  function reloadExtensionAndOpenApp() {
+  async function reloadExtensionAndOpenApp() {
     if (extensionReloadStarted) return;
     extensionReloadStarted = true;
-    const params = new URLSearchParams(location.search);
-    const query = new URLSearchParams({ from: 'captcha-reload' });
-    if (params.get('popup') === '1') query.set('popup', '1');
-    const appUrl = chrome.runtime.getURL(`app/app.html?${query.toString()}`);
     setMessage('OCR 核心已写入，正在重新加载扩展…');
+    const currentTab = await chrome.tabs.getCurrent().catch(() => null);
+    const response = await chrome.runtime.sendMessage({
+      type: 'RELOAD_EXTENSION_AND_OPEN_APP',
+      payload: {
+        reopenApp: true,
+        source: 'captcha-options',
+        sourceTabId: Number(currentTab?.id) || null,
+        popup: new URLSearchParams(location.search).get('popup') === '1'
+      }
+    }).catch(() => null);
+    if (response?.ok) return;
     try {
+      const params = new URLSearchParams(location.search);
+      const suffix = params.get('popup') === '1' ? '?popup=1' : '';
+      location.replace(chrome.runtime.getURL(`app/app.html${suffix}`));
       chrome.runtime.reload();
     } catch {
-      // Navigate below even when the reload API is unavailable.
+      const params = new URLSearchParams(location.search);
+      const suffix = params.get('popup') === '1' ? '?popup=1' : '';
+      location.replace(chrome.runtime.getURL(`app/app.html${suffix}`));
     }
-    setTimeout(() => location.replace(appUrl), 800);
   }
 
   async function refreshOrReturnToApp() {
@@ -112,13 +123,19 @@
       runtimeCheck.catch(() => false),
       directoryCheck.catch(() => false)
     ]);
+    const params = new URLSearchParams(location.search);
+    const returnReason = String(params.get('reason') || '').trim();
+    const staleCaptchaRuntime = params.get('from') === 'app'
+      && (!returnReason || returnReason === 'captcha-module-missing')
+      && (runtimeReady || directoryReady);
     coreReady = runtimeReady || directoryReady;
-    coreReloadRequired = !runtimeReady && directoryReady;
+    coreReloadRequired = (!runtimeReady && directoryReady) || staleCaptchaRuntime;
     if (runtimeReady) {
       showCoreReadyStatus();
+      if (coreReloadRequired) setTimeout(() => void reloadExtensionAndOpenApp(), 0);
     } else if (directoryReady) {
       showCoreReadyStatus();
-      setTimeout(reloadExtensionAndOpenApp, 0);
+      setTimeout(() => void reloadExtensionAndOpenApp(), 0);
     } else {
       setCoreStatus('未安装', true);
     }
@@ -301,7 +318,7 @@
         }
       });
       coreReady = result.corePending !== true && result.coreReady !== false;
-      coreReloadRequired = false;
+      coreReloadRequired = Number(result.written || 0) > 0;
       return result;
     } catch (error) {
       coreReady = false;
@@ -372,7 +389,11 @@
             : `验证码识别模型 ${modelLabel(version)} 及 OCR 核心均已就绪`);
         }
       }
-      if (result.downloaded || coreResult.written > 0) await refreshOrReturnToApp();
+      if (coreReloadRequired || coreResult.reloadRequired === true) {
+        await reloadExtensionAndOpenApp();
+      } else if (result.downloaded || coreResult.written > 0) {
+        await refreshOrReturnToApp();
+      }
       return true;
     } catch (error) {
       const message = String(error?.message || error);
