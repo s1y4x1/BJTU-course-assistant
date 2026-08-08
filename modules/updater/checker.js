@@ -1625,18 +1625,18 @@ async function chooseUpdateModules(archiveFiles) {
       body: '确认后将开始覆盖解压。',
       phase: 'extracting'
     });
-    const mask = document.createElement('div');
-    mask.className = 'version-modal-mask show';
-    mask.style.zIndex = '10030';
-    mask.style.display = 'flex';
-    mask.setAttribute('role', 'dialog');
-    mask.setAttribute('aria-modal', 'true');
-    mask.innerHTML = `<div class="version-modal-card" style="width:min(520px,calc(100vw - 32px));">
-      <div class="version-modal-header"><div class="upload-duplicate-title">选择要保留的模块</div></div>
-      <div style="margin:8px 0;color:#64748b;font-size:13px;">智慧课程平台、课程合并核心和更新组件始终保留。未勾选的可选模块不会解压，已安装时将被删除。</div>
-      <div data-module-list style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0;"></div>
-      <div class="upload-duplicate-footer"><button class="btn upload-duplicate-secondary" type="button" data-invert>反选</button><button class="btn upload-duplicate-primary" type="button" data-confirm>确定（3 秒）</button></div>
-    </div>`;
+    const template = document.getElementById('version-module-selection-template');
+    if (!(template instanceof HTMLTemplateElement)) {
+      resolve(new Set());
+      return;
+    }
+    const fragment = template.content.cloneNode(true);
+    const mask = fragment.firstElementChild;
+    if (!(mask instanceof HTMLElement)) {
+      resolve(new Set());
+      return;
+    }
+    document.body.appendChild(mask);
     const list = mask.querySelector('[data-module-list]');
     appendUpdateModuleChoice(list, {
       id: 've',
