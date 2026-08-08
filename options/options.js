@@ -219,7 +219,7 @@ function normalizePlatformVisible(raw) {
 }
 
 function normalizeDeadlineCountdownStyle(value) {
-  return value === 'normal' ? 'normal' : DEFAULT_DEADLINE_COUNTDOWN_STYLE;
+  return ['normal', 'seven-seg', 'none'].includes(value) ? value : DEFAULT_DEADLINE_COUNTDOWN_STYLE;
 }
 
 function normalizePopupDimension(value, fallback, min, max) {

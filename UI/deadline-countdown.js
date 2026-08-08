@@ -41,7 +41,7 @@
   }
 
   function normalizeStyle(value) {
-    return value === 'normal' ? 'normal' : DEFAULT_STYLE;
+    return ['normal', 'seven-seg', 'none'].includes(value) ? value : DEFAULT_STYLE;
   }
 
   function renderNormalTime(text) {
@@ -71,6 +71,12 @@
     document.querySelectorAll('.deadline-countdown').forEach((span) => {
       const normalStyle = countdownStyle === 'normal';
       span.classList.toggle('deadline-countdown--normal', normalStyle);
+      if (countdownStyle === 'none') {
+        syncCountdownPrefix(span, false);
+        span.innerHTML = '';
+        span.style.display = 'none';
+        return;
+      }
       const deadline = span.dataset.deadline;
       if (!deadline) {
         syncCountdownPrefix(span, false);

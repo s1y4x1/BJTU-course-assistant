@@ -359,6 +359,24 @@
     return put({ ...current, ...patch, loginName: id });
   }
 
+  async function clearCredentials(loginName, fields = []) {
+    const id = String(loginName || '').trim();
+    const allowed = new Set(['password', 'passwordMd5', 'quickUsername']);
+    const targets = [...new Set((Array.isArray(fields) ? fields : [fields])
+      .map((field) => String(field || '').trim())
+      .filter((field) => allowed.has(field)))];
+    if (!id || !targets.length) return null;
+    const current = await get(id);
+    if (!current) return null;
+    const record = { ...current, loginName: id };
+    targets.forEach((field) => { record[field] = ''; });
+    const db = await open();
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    transaction.objectStore(STORE_NAME).put(normalize(id, record));
+    await transactionDone(transaction);
+    return record;
+  }
+
   async function getQuickAccounts({ limit = Number.POSITIVE_INFINITY, onProgress = null } = {}) {
     const db = await open();
     const transaction = db.transaction(STORE_NAME);
@@ -676,6 +694,15 @@
     }
   }
 
+  async function getByQuickUsername(quickUsername) {
+    const quick = String(quickUsername || '').trim();
+    if (!quick) return null;
+    const db = await open();
+    const transaction = db.transaction(STORE_NAME);
+    const value = await requestResult(transaction.objectStore(STORE_NAME).index('quickUsername').get(quick));
+    return normalize(value?.loginName, value);
+  }
+
   global.BjtuAccountStore = {
     get,
     getAll,
@@ -683,8 +710,10 @@
     countByRole,
     put,
     update,
+    clearCredentials,
     search,
     getQuickAccounts,
+    getByQuickUsername,
     getCredentialAccounts,
     getAccountStates,
     deleteMany,

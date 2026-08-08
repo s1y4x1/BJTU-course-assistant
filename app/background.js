@@ -107,6 +107,7 @@ function tryImportModuleScripts(...paths) {
 
 const veBackgroundReady = tryImportModuleScripts(
   '../modules/ve/vendor/main.min.js',
+  '../modules/mrjzy/md5.js',
   '../modules/ve/password-cipher.js',
   '../modules/ve/login-utils.js',
   '../modules/ve/account-store.js',
@@ -155,8 +156,14 @@ async function doSyncOptionalContentScripts() {
     if (await extensionFileExists(`modules/${script.module}/module.json`)
         && scriptFilesExist) wanted.push(script);
   }
-  const managed = OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id);
-  await chrome.scripting.unregisterContentScripts({ ids: managed }).catch(() => {});
+  const managed = new Set([...OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id), 'bjtu-ve-login-response-detector']);
+  const registered = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
+  const registeredManagedIds = registered
+    .map((script) => String(script?.id || ''))
+    .filter((id) => managed.has(id));
+  if (registeredManagedIds.length) {
+    await chrome.scripting.unregisterContentScripts({ ids: registeredManagedIds });
+  }
   const registrations = wanted.map(({ module: _module, ...script }) => script);
   if (registrations.length) await chrome.scripting.registerContentScripts(registrations).catch((error) => {
     console.warn('[bjtu] optional content script registration failed:', error);
@@ -282,7 +289,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
 void restoreAppAfterAutomaticExtensionReload();
 
 const portalUsernameBindByTab = new Map(); // tabId -> { ts, loginName }
-const portalDetectedQuickUsernameByTab = new Map(); // tabId -> quickUsername seen during ordinary MIS redirects
+const portalDetectedQuickUsernameByTab = new Map(); // tabId -> { quickUsername, ts } from a pending successful-response check
 const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
 const portalDetectedPasswordLoginByTab = new Map(); // tabId -> encrypted password login request
 const portalPasswordRecordingTabs = new Set();
@@ -616,7 +623,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 refreshActionPopupFromStorage().catch(() => {});
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'PORTAL_LOGIN_CONTEXT') {
     (async () => {
       const stored = await chrome.storage.local.get(['username']);
@@ -683,7 +690,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === 'VE_LOGIN_REQUEST') {
     globalThis.BjtuVeLoginService.login(message?.payload)
-      .then((result) => sendResponse(result))
+      .then(async (result) => {
+        await showPortalCredentialEventsToast(sender, result);
+        sendResponse(result);
+      })
       .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
     return true;
   }
@@ -712,7 +722,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         recordHistory: message?.payload?.recordHistory !== false
       }
     )
-      .then((result) => sendResponse(result))
+      .then(async (result) => {
+        await showPortalCredentialEventsToast(sender, result);
+        sendResponse(result);
+      })
       .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
     return true;
   }
@@ -722,7 +735,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       loginName: message?.payload?.loginName,
       recordHistory: message?.payload?.recordHistory !== false
     })
-      .then((result) => sendResponse(result))
+      .then(async (result) => {
+        await showPortalCredentialEventsToast(sender, result);
+        sendResponse(result);
+      })
       .catch((error) => sendResponse({ ok: false, reason: 'network', message: String(error?.message || '登录失败') }));
     return true;
   }
@@ -812,6 +828,75 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   portalPasswordRecordingTabs.delete(tabId);
 });
 
+function isPortalLoginResponseSuccess(source, activeSuccessScript = false) {
+  const html = String(source || '');
+  const executableHtml = html.replace(/<!--[\s\S]*?-->/g, '');
+  return activeSuccessScript === true
+    || /location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(executableHtml);
+}
+
+function getPortalRequestBodyValue(requestBody, name) {
+  const key = String(name || '');
+  const formValue = requestBody?.formData?.[key];
+  if (Array.isArray(formValue)) return String(formValue[0] || '').trim();
+  if (formValue !== undefined && formValue !== null) return String(formValue).trim();
+  return '';
+}
+
+function decodePortalRequestBody(raw) {
+  try {
+    const chunks = (Array.isArray(raw) ? raw : []).map((part) => {
+      const bytes = part?.bytes;
+      if (!bytes) return new Uint8Array();
+      return bytes instanceof ArrayBuffer
+        ? new Uint8Array(bytes)
+        : ArrayBuffer.isView(bytes) ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : new Uint8Array(bytes);
+    });
+    const size = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+    if (!size) return '';
+    const array = new Uint8Array(size);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      array.set(chunk, offset);
+      offset += chunk.byteLength;
+    });
+    const utf8 = new TextDecoder('utf-8').decode(array);
+    if (!utf8.includes('\uFFFD')) return utf8;
+    return new TextDecoder('gbk').decode(array);
+  } catch {
+    return '';
+  }
+}
+
+function extractPortalPostLogin(details) {
+  if (String(details?.method || '').toUpperCase() !== 'POST') return null;
+  let url;
+  try {
+    url = new URL(String(details?.url || ''));
+  } catch {
+    return null;
+  }
+  if (!/123\.121\.147\.7:88$/i.test(url.host) || !/^\/ve\/s\.shtml$/i.test(url.pathname)) return null;
+
+  let body = details?.requestBody;
+  let loginName = getPortalRequestBodyValue(body, 'username');
+  let encryptedPassword = getPortalRequestBodyValue(body, 'password');
+  if (!loginName || !encryptedPassword) {
+    const rawText = decodePortalRequestBody(body?.raw);
+    if (rawText) {
+      try {
+        const params = new URLSearchParams(rawText);
+        loginName = loginName || String(params.get('username') || '').trim();
+        encryptedPassword = encryptedPassword || String(params.get('password') || '').trim();
+      } catch {
+        // Ignore non-form request bodies.
+      }
+    }
+  }
+  if (!loginName || !encryptedPassword) return null;
+  return { loginName, encryptedPassword, method: 'POST', ts: Date.now() };
+}
+
 function extractPortalQuickUsername(url) {
   try {
     const u = new URL(String(url || ''));
@@ -844,55 +929,99 @@ chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
     const tabId = Number(details?.tabId);
     if (!(tabId >= 0)) return;
-    const passwordLogin = extractPortalPasswordLogin(details?.url);
-    if (passwordLogin) portalDetectedPasswordLoginByTab.set(tabId, passwordLogin);
+    const method = String(details?.method || '').toUpperCase();
+    const postLogin = extractPortalPostLogin(details);
+    if (postLogin) {
+      portalDetectedPasswordLoginByTab.set(tabId, { ...postLogin, requestId: String(details?.requestId || '') });
+      console.info('[bjtu] captured VE POST login request', { tabId, type: details?.type });
+      return;
+    }
+    const passwordLogin = method === 'GET' ? extractPortalPasswordLogin(details?.url) : null;
+    if (passwordLogin) {
+      portalDetectedPasswordLoginByTab.set(tabId, { ...passwordLogin, requestId: String(details?.requestId || '') });
+      console.info('[bjtu] captured VE GET password login request', { tabId, type: details?.type });
+    }
     const quickUsername = extractPortalQuickUsername(details?.url);
     if (!quickUsername) return;
-    portalDetectedQuickUsernameByTab.set(tabId, quickUsername);
+    portalDetectedQuickUsernameByTab.set(tabId, {
+      quickUsername,
+      requestId: String(details?.requestId || ''),
+      ts: Date.now()
+    });
+    console.info('[bjtu] captured VE GET quick login request', { tabId, type: details?.type });
     const bindState = portalUsernameBindByTab.get(tabId);
     if (!bindState) return;
     portalUsernameBindByTab.set(tabId, { ...bindState, quickUsername, ts: Date.now() });
     notifyPortalUsernameBindStatus({ status: 'detected', tabId, quickUsername, ts: Date.now() });
   },
   {
-    urls: ['http://123.121.147.7:88/ve/s.shtml*'],
-    types: ['main_frame']
-  }
+    urls: ['http://123.121.147.7:88/ve/s.shtml*']
+  },
+  ['requestBody']
 );
 
-async function getPortalCurrentUserInfoFromTab(tabId) {
-  if (!tabId) return null;
-  const results = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'ISOLATED',
-    func: async () => {
-      for (let attempt = 0; attempt < 25; attempt += 1) {
+async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
+  if (!(Number(tabId) >= 0)) return null;
+  const expected = String(expectedLoginName || '').trim();
+  const matchesExpected = (userInfo) => {
+    const loginName = String(userInfo?.loginName || '').trim();
+    return !!loginName && (!expected || loginName === expected);
+  };
+
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const directUser = await globalThis.BjtuVeLoginService.fetchCurrentUserInfo().catch(() => null);
+    if (matchesExpected(directUser)) {
+      console.info('[bjtu] resolved VE current user', { tabId, source: 'background', attempt: attempt + 1 });
+      return directUser;
+    }
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: async () => {
         try {
           const res = await fetch('/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo', {
             credentials: 'include',
             cache: 'no-store',
             headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
           });
-          const source = String(await res.text() || '').trim();
+          const buffer = await res.arrayBuffer();
+          const utf8 = new TextDecoder('utf-8').decode(buffer);
+          const source = String(utf8.includes('\uFFFD') ? new TextDecoder('gbk').decode(buffer) : utf8).trim();
           const data = JSON.parse(source.startsWith('{}') && source.length > 2 ? source.slice(2) : source);
-          if (String(data?.STATUS) === '0' && data?.result?.loginName) return data.result;
-        } catch {}
-        await new Promise((resolve) => setTimeout(resolve, 300));
+          return String(data?.STATUS) === '0' && data?.result?.loginName ? data.result : null;
+        } catch {
+          return null;
+        }
       }
-      return null;
+    }).catch(() => []);
+    const tabUser = Array.isArray(results) && results[0] ? results[0].result || null : null;
+    if (matchesExpected(tabUser)) {
+      console.info('[bjtu] resolved VE current user', { tabId, source: 'tab', attempt: attempt + 1 });
+      return tabUser;
     }
-  }).catch(() => []);
-  return Array.isArray(results) && results[0] ? results[0].result || null : null;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  console.warn('[bjtu] unable to resolve VE current user after successful login response', {
+    tabId,
+    expectedAccount: !!expected
+  });
+  return null;
 }
 
-async function fetchBoundPortalAccountInfo(tabId, quickUsername, _preferredLoginName = '') {
+async function fetchBoundPortalAccountInfo(tabId, quickUsername, preferredLoginName = '') {
   const quick = String(quickUsername || '').trim();
   if (!quick) return null;
-  const currentUser = await getPortalCurrentUserInfoFromTab(tabId);
+  await globalThis.BjtuAccountStore.migrateLegacy();
+  const preferred = String(preferredLoginName || '').trim();
+  const knownAccount = preferred
+    ? await globalThis.BjtuAccountStore.get(preferred)
+    : await globalThis.BjtuAccountStore.getByQuickUsername(quick);
+  const expectedLoginName = preferred || String(knownAccount?.loginName || '').trim();
+  const currentUser = await getPortalCurrentUserInfoFromTab(tabId, expectedLoginName);
   const loginName = String(currentUser?.loginName || '').trim();
   if (!loginName) return null;
 
-  await globalThis.BjtuAccountStore.migrateLegacy();
   const stored = await chrome.storage.local.get([LOGIN_ACCOUNT_HISTORY_KEY]);
   const history = normalizePortalLoginAccountHistory(stored?.[LOGIN_ACCOUNT_HISTORY_KEY]);
   const prev = history.find((item) => item.userId === loginName || item.loginName === loginName) || null;
@@ -926,25 +1055,44 @@ async function fetchBoundPortalAccountInfo(tabId, quickUsername, _preferredLogin
   } : null;
 }
 
-async function showPortalPageToast(tabId, message) {
+function credentialEventsToastMessage(result) {
+  const types = new Set((Array.isArray(result?.credentialEvents) ? result.credentialEvents : [])
+    .map((event) => String(event?.type || '')));
+  if (types.has('quickUsername-cleared') && types.has('password-cleared')) {
+    return '极速登录凭据和保存的密码均已失效，已从本地账号中清除';
+  }
+  if (types.has('quickUsername-cleared')) return '极速登录凭据已失效，已清除该账号的 quickUsername';
+  if (types.has('password-cleared')) return '保存的密码已失效，已清除该账号的 password';
+  return '';
+}
+
+async function showPortalCredentialEventsToast(sender, result) {
+  const message = credentialEventsToastMessage(result);
+  const tabId = Number(sender?.tab?.id);
+  if (!message || !(tabId >= 0) || !/^http:\/\/123\.121\.147\.7:88\/ve(?:\/|$)/i.test(String(sender?.tab?.url || ''))) return;
+  await showPortalPageToast(tabId, message, 'warning');
+}
+
+async function showPortalPageToast(tabId, message, tone = 'success') {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
       world: 'ISOLATED',
-      func: (message) => {
+      func: (message, tone) => {
         const id = '__bjtu_quick_username_bind_toast__';
         const old = document.getElementById(id);
         if (old) old.remove();
         const toast = document.createElement('div');
         toast.id = id;
         toast.textContent = message;
+        const background = tone === 'warning' ? '#d97706' : tone === 'error' ? '#dc2626' : '#16a34a';
         toast.style.cssText = [
           'position:fixed',
           'top:18px',
           'left:50%',
           'transform:translateX(-50%)',
           'z-index:2147483647',
-          'background:#16a34a',
+          `background:${background}`,
           'color:#fff',
           'font-size:14px',
           'font-weight:600',
@@ -962,7 +1110,7 @@ async function showPortalPageToast(tabId, message) {
           setTimeout(() => toast.remove(), 280);
         }, 3600);
       },
-      args: [String(message || '')]
+      args: [String(message || ''), String(tone || 'success')]
     });
   } catch {
     // ignore
@@ -994,17 +1142,28 @@ function isPortalLoginFailurePageUrl(value) {
 }
 
 async function recordPortalPasswordLogin(tabId, state) {
-  const currentUser = await getPortalCurrentUserInfoFromTab(tabId);
+  const requestedLoginName = String(state?.loginName || '').trim();
+  const currentUser = await getPortalCurrentUserInfoFromTab(tabId, requestedLoginName);
   const loginName = String(currentUser?.loginName || '').trim();
-  if (!loginName || loginName !== String(state?.loginName || '').trim()) return false;
+  if (!loginName || loginName !== requestedLoginName) {
+    console.warn('[bjtu] skipped VE password recording because current account did not match', {
+      tabId,
+      hasCurrentUser: !!loginName
+    });
+    return false;
+  }
   await globalThis.BjtuAccountStore.migrateLegacy();
   const current = await globalThis.BjtuAccountStore.get(loginName);
   const encryptedPassword = String(state?.encryptedPassword || '').trim();
-  if (current?.passwordMd5
-      && String(current.passwordMd5).trim().toLowerCase() === encryptedPassword.toLowerCase()) return false;
   const cipher = globalThis.BjtuVePasswordCipher;
   const password = cipher?.decrypt?.(encryptedPassword);
-  if (!cipher?.isReasonablePassword?.(password)) return false;
+  if (!cipher?.isReasonablePassword?.(password)) {
+    console.warn('[bjtu] skipped VE password recording because payload decryption failed', {
+      tabId,
+      encryptedLength: encryptedPassword.length
+    });
+    return false;
+  }
   await globalThis.BjtuAccountStore.put({
     loginName,
     userName: String(currentUser?.userName || current?.userName || '').trim(),
@@ -1015,89 +1174,139 @@ async function recordPortalPasswordLogin(tabId, state) {
   });
   await savePortalLoginAccountRecord(loginName);
   await chrome.storage.local.set({ accountListRevision: Date.now() });
+  console.info('[bjtu] stored VE password in IndexedDB', { tabId });
   await showPortalPageToast(tabId, '已记录该智慧课程平台账号密码');
   return true;
 }
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  const url = String(changeInfo?.url || tab?.url || '');
+async function processPortalLoginResponse(tabId, responsePayload) {
+  const responseHtml = typeof responsePayload === 'string'
+    ? responsePayload
+    : String(responsePayload?.html || '');
+  const activeSuccessScript = responsePayload?.activeSuccessScript === true;
+  const quickState = portalDetectedQuickUsernameByTab.get(tabId) || null;
+  const passwordState = portalDetectedPasswordLoginByTab.get(tabId) || null;
+  const quickUsername = quickState && Date.now() - Number(quickState.ts || 0) <= 30000
+    ? String(quickState.quickUsername || '').trim()
+    : '';
+  const passwordLogin = passwordState && Date.now() - Number(passwordState.ts || 0) <= 30000
+    ? passwordState
+    : null;
+  if (quickState && Date.now() - Number(quickState.ts || 0) > 30000) {
+    portalDetectedQuickUsernameByTab.delete(tabId);
+  }
+  if (passwordState && !passwordLogin) portalDetectedPasswordLoginByTab.delete(tabId);
+  if (!quickUsername && !passwordLogin) return;
 
-  const passwordLogin = portalDetectedPasswordLoginByTab.get(tabId) || null;
-  if (changeInfo.status === 'complete' && passwordLogin && isPortalLoginFailurePageUrl(url)) {
+  const loginResponseSuccess = isPortalLoginResponseSuccess(responseHtml, activeSuccessScript);
+  console.info('[bjtu] observed VE login response', {
+    tabId,
+    loginKind: quickUsername ? 'quick' : 'password',
+    success: loginResponseSuccess
+  });
+
+  // A successful getUserInfo call is not enough: an old session can make it
+  // succeed after the actual login response reported a credential error.
+  if (!loginResponseSuccess) {
+    const events = [];
+    const source = String(responseHtml || '');
+    if (quickUsername && Number(quickState?.statusCode || 0) === 500
+        && /<title[^>]*>\s*系统发生了未处理的异常\s*<\/title>/i.test(source)) {
+      const preferredLoginName = String(portalUsernameBindByTab.get(tabId)?.loginName || '').trim();
+      const account = preferredLoginName
+        ? await globalThis.BjtuAccountStore.get(preferredLoginName)
+        : await globalThis.BjtuAccountStore.getByQuickUsername(quickUsername);
+      if (account && String(account.quickUsername || '').trim() === quickUsername) {
+        await globalThis.BjtuAccountStore.clearCredentials(account.loginName, ['quickUsername']);
+        events.push({ type: 'quickUsername-cleared', loginName: account.loginName });
+      }
+    }
+    if (passwordLogin && /账号或密码错误/i.test(source)) {
+      const account = await globalThis.BjtuAccountStore.get(passwordLogin.loginName);
+      if (String(account?.password || '')) {
+        await globalThis.BjtuAccountStore.clearCredentials(passwordLogin.loginName, ['password']);
+        events.push({ type: 'password-cleared', loginName: passwordLogin.loginName });
+      }
+    }
+    if (events.length) {
+      await chrome.storage.local.set({ accountListRevision: Date.now() });
+      await showPortalPageToast(tabId, credentialEventsToastMessage({ credentialEvents: events }), 'warning');
+    }
+    portalDetectedQuickUsernameByTab.delete(tabId);
     portalDetectedPasswordLoginByTab.delete(tabId);
-  } else if (changeInfo.status === 'complete' && passwordLogin
-      && isPortalAuthenticatedPageUrl(url) && !portalPasswordRecordingTabs.has(tabId)) {
+    return;
+  }
+
+  portalDetectedQuickUsernameByTab.delete(tabId);
+  portalDetectedPasswordLoginByTab.delete(tabId);
+
+  if (quickUsername) {
+    const bindState = portalUsernameBindByTab.get(tabId) || null;
+    try {
+      const record = await fetchBoundPortalAccountInfo(tabId, quickUsername, bindState?.loginName);
+      if (record) console.info('[bjtu] stored VE quickUsername in IndexedDB', { tabId });
+      else console.warn('[bjtu] skipped VE quickUsername recording because current user was unavailable', { tabId });
+      notifyPortalUsernameBindStatus({
+        status: record ? 'done' : 'detected',
+        tabId,
+        quickUsername,
+        userId: String(record?.userId || '').trim(),
+        ts: Date.now()
+      });
+      if (record && bindState) {
+        portalUsernameBindByTab.delete(tabId);
+        try { await chrome.tabs.remove(tabId); } catch {}
+      } else if (record?.quickUsernameChanged) {
+        portalQuickUsernameToastByTab.set(tabId, quickUsername);
+        await showPortalQuickUsernameBoundToast(tabId);
+      }
+    } catch (error) {
+      console.warn('[bjtu] failed to store VE quickUsername in IndexedDB', {
+        tabId,
+        error: String(error?.message || error)
+      });
+      notifyPortalUsernameBindStatus({
+        status: 'error',
+        tabId,
+        quickUsername,
+        error: String(error?.message || error),
+        ts: Date.now()
+      });
+    }
+  }
+
+  if (passwordLogin && !portalPasswordRecordingTabs.has(tabId)) {
     portalPasswordRecordingTabs.add(tabId);
     try {
-      if (await recordPortalPasswordLogin(tabId, passwordLogin)) {
-        portalDetectedPasswordLoginByTab.delete(tabId);
-      }
-    } catch {
-      // A manually performed portal login must continue even if local recording fails.
+      const recorded = await recordPortalPasswordLogin(tabId, passwordLogin);
+      if (!recorded) console.warn('[bjtu] VE password login succeeded but password was not recorded', { tabId });
+    } catch (error) {
+      console.warn('[bjtu] failed to store VE password in IndexedDB', {
+        tabId,
+        error: String(error?.message || error)
+      });
+      // The portal login itself has already succeeded; local recording is best effort.
     } finally {
       portalPasswordRecordingTabs.delete(tabId);
     }
   }
+}
 
-  let quickUsername = extractPortalQuickUsername(url);
-  if (quickUsername) {
-    portalDetectedQuickUsernameByTab.set(tabId, quickUsername);
-  } else {
-    quickUsername = String(portalDetectedQuickUsernameByTab.get(tabId) || '').trim();
-  }
-  const bindState = portalUsernameBindByTab.get(tabId) || null;
-  if (quickUsername && portalUsernameBindByTab.has(tabId)) {
-    portalUsernameBindByTab.set(tabId, { ...(bindState || {}), quickUsername, ts: Date.now() });
-    notifyPortalUsernameBindStatus({ status: 'detected', tabId, quickUsername, ts: Date.now() });
-  } else if (!quickUsername && bindState?.quickUsername) {
-    quickUsername = String(bindState.quickUsername || '').trim();
-  }
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type !== 'PORTAL_LOGIN_RESPONSE') return undefined;
+  const tabId = Number(sender?.tab?.id);
+  if (!(tabId >= 0)) return false;
+  processPortalLoginResponse(tabId, message?.payload).catch(() => {});
+  return false;
+});
 
-  if (changeInfo.status === 'complete' && quickUsername && portalUsernameBindByTab.has(tabId)) {
-      try {
-        const record = await fetchBoundPortalAccountInfo(tabId, quickUsername, bindState?.loginName);
-        notifyPortalUsernameBindStatus({
-          status: record ? 'done' : 'detected',
-          tabId,
-          quickUsername,
-          userId: String(record?.userId || '').trim(),
-          ts: Date.now()
-        });
-        if (record) {
-          portalUsernameBindByTab.delete(tabId);
-          portalDetectedQuickUsernameByTab.delete(tabId);
-          try { await chrome.tabs.remove(tabId); } catch {}
-          return;
-        }
-      } catch (e) {
-        notifyPortalUsernameBindStatus({
-          status: 'error',
-          tabId,
-          quickUsername,
-          error: String(e?.message || e),
-          ts: Date.now()
-        });
-      }
-  }
-
-  if (changeInfo.status === 'complete' && quickUsername && !portalUsernameBindByTab.has(tabId)) {
-    const toastedQuick = String(portalQuickUsernameToastByTab.get(tabId) || '').trim();
-    if (toastedQuick !== quickUsername) {
-      try {
-        const record = await fetchBoundPortalAccountInfo(tabId, quickUsername);
-        if (record) {
-          portalDetectedQuickUsernameByTab.delete(tabId);
-          if (record.quickUsernameChanged) {
-            portalQuickUsernameToastByTab.set(tabId, quickUsername);
-            await showPortalQuickUsernameBoundToast(tabId);
-          }
-        }
-      } catch {
-        // Ordinary portal navigation should not be interrupted by best-effort binding.
-      }
-    }
-  }
-
+chrome.runtime.onConnect.addListener((port) => {
+  if (port?.name !== 'bjtu-ve-login-response') return;
+  const tabId = Number(port?.sender?.tab?.id);
+  if (!(tabId >= 0)) return;
+  port.onMessage.addListener((payload) => {
+    processPortalLoginResponse(tabId, payload).catch(() => {});
+  });
 });
 
 chrome.action.onClicked.addListener(async () => {
@@ -1166,6 +1375,19 @@ chrome.webRequest.onHeadersReceived.addListener(
       // Only track Set-Cookie from login response.
       // Other endpoints may rotate JSESSIONID and pollute our login session selection.
       if (!isLoginResponse(details)) return;
+
+      const tabId = Number(details?.tabId);
+      const requestId = String(details?.requestId || '');
+      if (tabId >= 0 && requestId) {
+        const quickState = portalDetectedQuickUsernameByTab.get(tabId);
+        if (quickState?.requestId === requestId) {
+          portalDetectedQuickUsernameByTab.set(tabId, { ...quickState, statusCode: Number(details?.statusCode || 0) });
+        }
+        const passwordState = portalDetectedPasswordLoginByTab.get(tabId);
+        if (passwordState?.requestId === requestId) {
+          portalDetectedPasswordLoginByTab.set(tabId, { ...passwordState, statusCode: Number(details?.statusCode || 0) });
+        }
+      }
 
       const headers = details?.responseHeaders || [];
       let found = '';

@@ -42,9 +42,19 @@
   }
 
   async function fetchAcademicWith503Retry(url, options = {}) {
-    const { on503, ...fetchOptions } = options;
+    const { on503, onRetry = on503, ...fetchOptions } = options;
     while (true) {
-      const response = await fetch(url, fetchOptions);
+      let response;
+      try {
+        response = await fetch(url, fetchOptions);
+      } catch (error) {
+        if (error?.name === 'AbortError' || !/Failed to fetch/i.test(String(error?.message || error))) {
+          throw error;
+        }
+        if (typeof onRetry === 'function') await onRetry(error);
+        await wait(1000);
+        continue;
+      }
       if (response.status !== 503) return response;
       try {
         await response.body?.cancel?.();
@@ -62,6 +72,8 @@
   let examCheckPromise = null;
   let classReminderCheckPromise = null;
   let academicSessionPromise = null;
+  let academicAccountCache = null;
+  let academicSessionAccount = null;
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
@@ -493,6 +505,8 @@
     if (!id) throw new Error('请输入学号');
     if (!secret) throw new Error('请输入身份证后六位');
     if (secret.length !== 6) throw new Error('身份证后六位必须为 6 个字符');
+    academicAccountCache = null;
+    academicSessionAccount = null;
     await clearAcademicCookies();
     const { tab, temporary } = await ensureAcademicOriginTab();
     try {
@@ -573,6 +587,7 @@
   }
 
   async function fetchCurrentAcademicAccount() {
+    if (academicAccountCache) return academicAccountCache;
     const response = await fetchAcademicWith503Retry(TRAINING_PROGRAM_URL, {
       credentials: 'include', cache: 'no-store', redirect: 'follow'
     });
@@ -582,14 +597,19 @@
     const account = parseCurrentAccountPage(html);
     if (!account?.studentId) throw new Error('培养方案页面中未找到当前学生信息');
     await saveAcademicAccount(account.studentId, { userName: account.userName });
+    academicAccountCache = account;
     return account;
   }
 
   async function ensureAcademicSession() {
+    if (academicSessionAccount) return academicSessionAccount;
     if (academicSessionPromise) return academicSessionPromise;
     academicSessionPromise = (async () => {
-      let account = await fetchCurrentAcademicAccount();
-      if (account) return account;
+      let account = academicAccountCache || await fetchCurrentAcademicAccount();
+      if (account) {
+        academicSessionAccount = account;
+        return account;
+      }
       const stored = await chrome.storage.local.get([STUDENT_ID_KEY, 'username']);
       const studentId = String(stored?.[STUDENT_ID_KEY] || stored?.username || '').trim();
       try {
@@ -597,8 +617,10 @@
       } catch {
         throw Object.assign(new Error('教务系统未登录，请输入账号密码或通过 MIS 登录'), { code: 'not-logged-in' });
       }
+      academicAccountCache = null;
       account = await fetchCurrentAcademicAccount();
       if (!account) throw Object.assign(new Error('教务系统登录已失效'), { code: 'not-logged-in' });
+      academicSessionAccount = account;
       return account;
     })().finally(() => { academicSessionPromise = null; });
     return academicSessionPromise;
@@ -1268,6 +1290,18 @@
       if (message?.type === 'ACADEMIC_LOAD_SCORES') {
         checkScores('options', { force: true })
           .then((result) => sendResponse({ ok: true, ...result }))
+          .catch((error) => sendResponse({
+            ok: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
+        return true;
+      }
+      if (message?.type === 'ACADEMIC_PRELOAD_ACCOUNT') {
+        fetchCurrentAcademicAccount()
+          .then((account) => sendResponse(account
+            ? { ok: true, studentId: account.studentId, userName: account.userName }
+            : { ok: false, code: 'not-logged-in', message: '教务系统未登录' }))
           .catch((error) => sendResponse({
             ok: false,
             code: String(error?.code || ''),

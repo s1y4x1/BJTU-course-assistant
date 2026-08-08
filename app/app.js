@@ -2787,6 +2787,18 @@ function hideLoginModal() {
   loginModal.style.display = 'none';
 }
 
+function showLoginCredentialEvents(result) {
+  const types = new Set((Array.isArray(result?.credentialEvents) ? result.credentialEvents : [])
+    .map((event) => String(event?.type || '')));
+  if (types.has('quickUsername-cleared') && types.has('password-cleared')) {
+    showToast('极速登录凭据和保存的密码均已失效，已从本地账号中清除', 'warning', 4200);
+  } else if (types.has('quickUsername-cleared')) {
+    showToast('极速登录凭据已失效，已清除该账号的 quickUsername', 'warning', 4200);
+  } else if (types.has('password-cleared')) {
+    showToast('保存的密码已失效，已清除该账号的 password', 'warning', 4200);
+  }
+}
+
 function dismissLoginModal({ abort = true } = {}) {
   hideLoginModal();
   if (abort) {
@@ -2949,6 +2961,10 @@ async function doLoginFlow() {
         allowStoredCredentials
       });
       if (signal.aborted || loginCancelRequested) return;
+      showLoginCredentialEvents(result);
+      if (Array.isArray(result?.credentialEvents) && result.credentialEvents.length) {
+        account = await getLocalAccountInfo(username);
+      }
 
       if (result?.ok) {
         await handleLoginSuccess(username);
@@ -2988,7 +3004,6 @@ async function doLoginFlow() {
         }
       }
       const fallbackPassword = submittedPassword
-        || String(account?.passwordMd5 || '').trim()
         || (account?.password && typeof strEnc === 'function' ? strEnc(account.password) : '');
       const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage, {
         requireCaptcha: true,

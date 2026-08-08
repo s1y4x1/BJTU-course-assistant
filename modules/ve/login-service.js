@@ -12,21 +12,30 @@
     return gbk.includes('\uFFFD') ? utf8 : gbk;
   }
 
-  async function decodeResponse(response) {
-    return decodeBuffer(await response.arrayBuffer(), response.headers.get('content-type'));
+  async function decodeResponse(response, forcedEncoding = '') {
+    return decodeBuffer(
+      await response.arrayBuffer(),
+      forcedEncoding || response.headers.get('content-type')
+    );
   }
 
   function parseLoginResponse(text) {
     const source = String(text || '');
     const alerts = [...source.matchAll(/alert\s*\(\s*(['"])(.*?)\1\s*\)/gis)];
     const message = String(alerts.at(-1)?.[2] || '').trim();
+    if (/<title[^>]*>\s*系统发生了未处理的异常\s*<\/title>/i.test(source)) {
+      return { ok: false, reason: 'server-error', message: '智慧课程平台发生未处理的异常' };
+    }
     if (/错误次数过多|锁定10分钟/i.test(message)) return { ok: false, reason: 'locked', message };
     if (/请输入正确的验证码/i.test(message)) return { ok: false, reason: 'captcha', message };
     if (/账号或密码错误/i.test(message)) return { ok: false, reason: 'credential', message };
     if (/默认密码[\s\S]*弱密码[\s\S]*重置密码/i.test(source)) {
       return { ok: false, reason: 'password-reset', message: '需要重置密码后重新登录' };
     }
-    if (/index\.shtml\?method=index&type=qxkt/i.test(source)) return { ok: true };
+    const executableSource = source.replace(/<!--[\s\S]*?-->/g, '');
+    if (/location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(executableSource)) {
+      return { ok: true };
+    }
     return { ok: false, reason: 'other', message: message || '登录失败' };
   }
 
@@ -40,7 +49,7 @@
 
   async function requestLogin(url) {
     const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
-    return parseLoginResponse(await decodeResponse(response));
+    return { ...parseLoginResponse(await decodeResponse(response, 'gbk')), httpStatus: response.status };
   }
 
   async function rememberLogin(loginName) {
@@ -76,6 +85,26 @@
     return record;
   }
 
+  function withCredentialEvents(result, events = []) {
+    const merged = [
+      ...(Array.isArray(result?.credentialEvents) ? result.credentialEvents : []),
+      ...(Array.isArray(events) ? events : [])
+    ];
+    return merged.length ? { ...result, credentialEvents: merged } : result;
+  }
+
+  async function clearStoredCredential(loginName, field) {
+    const id = String(loginName || '').trim();
+    if (!id || !['password', 'quickUsername'].includes(field)) return false;
+    await global.BjtuAccountStore.migrateLegacy();
+    const current = await global.BjtuAccountStore.get(id);
+    if (!String(current?.[field] || '')) return false;
+    const updated = await global.BjtuAccountStore.clearCredentials(id, [field]);
+    if (!updated) return false;
+    await chrome.storage.local.set({ accountListRevision: Date.now() });
+    return true;
+  }
+
   async function completeSuccessfulLogin(result, fallbackLoginName, { recordHistory = true, passwordPlain = '' } = {}) {
     if (!result?.ok) return result;
     const userInfo = await fetchCurrentUserInfo();
@@ -89,6 +118,10 @@
     const quick = String(quickUsername || '').trim();
     if (!quick) return { ok: false, reason: 'needs-password', message: '未找到可用极速登录名' };
     const result = await requestLogin(global.BjtuVeLoginUtils.buildQuickLoginUrl(quick));
+    if (result?.httpStatus === 500 && result?.reason === 'server-error'
+        && await clearStoredCredential(options.loginName, 'quickUsername')) {
+      return withCredentialEvents(result, [{ type: 'quickUsername-cleared', loginName: String(options.loginName || '').trim() }]);
+    }
     return completeSuccessfulLogin(result, options.loginName, options);
   }
 
@@ -117,7 +150,11 @@
 
       const result = await requestLogin(global.BjtuVeLoginUtils.buildPasswordLoginUrl(id, encryptedPassword, code));
       if (result?.reason !== 'captcha') {
-        return completeSuccessfulLogin(result, id, { recordHistory, passwordPlain });
+        const completed = await completeSuccessfulLogin(result, id, { recordHistory, passwordPlain });
+        if (result?.reason === 'credential' && await clearStoredCredential(id, 'password')) {
+          return withCredentialEvents(completed, [{ type: 'password-cleared', loginName: id }]);
+        }
+        return completed;
       }
 
       captchaErrorCount += 1;
@@ -151,9 +188,11 @@
       ? (typeof global.strEnc === 'function' ? global.strEnc(passwordPlain) : '')
       : (/^(?:[0-9a-f]{16})+$/i.test(directPassword) ? directPassword : '');
     const allowStoredCredentials = payload?.allowStoredCredentials !== false;
+    const credentialEvents = [];
 
     if (!manualPassword && allowStoredCredentials && account?.quickUsername) {
       const quickResult = await loginWithQuickUsername(account.quickUsername, { loginName, recordHistory: true });
+      if (Array.isArray(quickResult?.credentialEvents)) credentialEvents.push(...quickResult.credentialEvents);
       if (quickResult.ok || quickResult.reason === 'locked' || quickResult.reason === 'password-reset') return quickResult;
     }
 
@@ -161,22 +200,32 @@
     const storedEncodedPassword = storedPlainPassword && typeof global.strEnc === 'function'
       ? global.strEnc(storedPlainPassword)
       : '';
-    const password = manualPassword || storedEncodedPassword
-      || (allowStoredCredentials ? String(account?.passwordMd5 || '').trim() : '');
+    let defaultPassword = '';
+    let defaultEncodedPassword = '';
+    const storedPasswordMd5 = allowStoredCredentials ? String(account?.passwordMd5 || '').trim().toLowerCase() : '';
+    if (!manualPassword && !storedEncodedPassword && storedPasswordMd5 && typeof global.md5 === 'function') {
+      const candidate = 'Bjtu@' + loginName;
+      if (String(global.md5(candidate) || '').toLowerCase() === storedPasswordMd5) {
+        defaultPassword = candidate;
+        defaultEncodedPassword = typeof global.strEnc === 'function' ? global.strEnc(candidate) : '';
+      }
+    }
+    const password = manualPassword || storedEncodedPassword || defaultEncodedPassword;
     if (!password) {
-      return {
+      return withCredentialEvents({
         ok: false,
         reason: account ? 'needs-password' : 'account-not-found',
         message: account
           ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
           : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。'
-      };
+      }, credentialEvents);
     }
-    return loginWithPassword(loginName, password, {
+    const result = await loginWithPassword(loginName, password, {
       passcode: payload?.passcode,
       recordHistory: true,
-      passwordPlain: passwordPlain || storedPlainPassword
+      passwordPlain: passwordPlain || storedPlainPassword || defaultPassword
     });
+    return withCredentialEvents(result, credentialEvents);
   }
 
   async function blobToDataUrl(blob) {

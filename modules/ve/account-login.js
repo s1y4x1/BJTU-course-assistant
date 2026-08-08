@@ -39,6 +39,18 @@
     });
   }
 
+  function applyCredentialEventsToCache(result) {
+    const events = Array.isArray(result?.credentialEvents) ? result.credentialEvents : [];
+    events.forEach((event) => {
+      const loginName = String(event?.loginName || '').trim();
+      const current = accountCache.get(loginName);
+      if (!loginName || !current) return;
+      if (event?.type === 'quickUsername-cleared') accountCache.set(loginName, { ...current, quickUsername: '' });
+      if (event?.type === 'password-cleared') accountCache.set(loginName, { ...current, password: '' });
+    });
+    return result;
+  }
+
   function isAdminLoginName(value) {
     return String(value || '').trim().toLowerCase() === ADMIN_LOGIN_NAME.toLowerCase();
   }
@@ -1419,7 +1431,7 @@
       payload: { loginName, password, passwordPlain, passcode }
     });
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-    return response;
+    return applyCredentialEventsToCache(response);
   }
 
   async function loginWithQuickUsername(quickUsername, { signal, loginName = '' } = {}) {
@@ -1429,7 +1441,7 @@
       payload: { quickUsername, loginName }
     });
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-    return response;
+    return applyCredentialEventsToCache(response);
   }
 
   async function login(loginName, options = {}) {
@@ -1447,7 +1459,7 @@
       }
     });
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-    return response;
+    return applyCredentialEventsToCache(response);
   }
 
   async function getCaptchaImageDataUrl() {

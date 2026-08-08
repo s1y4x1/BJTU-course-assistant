@@ -23,6 +23,21 @@
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
 
+  function isRetryableAcademicLoadFailure(result) {
+    const status = Number(result?.status || result?.httpStatus || 0);
+    const message = String(result?.message || result?.error || '');
+    return status === 503 || /(?:^|\D)503(?:\D|$)/i.test(message) || /Failed to fetch/i.test(message);
+  }
+
+  async function sendAcademicLoadWithRetry(type, payload, label, notify = false) {
+    while (true) {
+      const result = await send(type, payload);
+      if (!isRetryableAcademicLoadFailure(result)) return result;
+      if (notify) setMessage(`${label}暂时不可用，1 秒后自动重试…`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
   function normalizeMinutes(value, fallback) {
     const minutes = Math.round(Number(value));
     return Number.isFinite(minutes) && minutes >= 1 && minutes <= MAX_INTERVAL_MINUTES
@@ -144,8 +159,8 @@
       target.style.display = 'block';
       target.textContent = `考试信息检查失败：${status.error || '未知错误'}`;
     } else if (status.status === 'retrying') {
-      target.style.display = 'block';
-      target.textContent = '考试信息服务暂不可用，1 秒后自动重试…';
+      target.style.display = 'none';
+      target.textContent = '';
     } else if (status.status === 'complete' || status.status === 'ok') {
       renderEmptyDataStatus(target, 'academicExamTableBody', 'academicExamLoading', '暂无考试信息');
       renderCheckedAt(element('academicExamCheckedAt'), status.checkedAt);
@@ -361,18 +376,28 @@
     element('academicScheduleLoading').style.display = 'flex';
     element('academicScheduleEmpty').style.display = 'none';
     element('academicScheduleTableWrap').style.display = 'none';
+    element('academicScheduleStatus').style.display = 'none';
+    element('academicScheduleStatus').textContent = '';
     const type = element('academicScheduleType')?.value === 'selection' ? 'selection' : 'semester';
-    const result = await send('ACADEMIC_LOAD_SCHEDULE', { scheduleType: type });
+    const result = await sendAcademicLoadWithRetry(
+      'ACADEMIC_LOAD_SCHEDULE',
+      { scheduleType: type },
+      '课表服务'
+    );
     if (!result?.ok) {
       element('academicScheduleLoading').style.display = 'none';
       element('academicScheduleEmpty').style.display = 'block';
-      element('academicScheduleEmpty').textContent = result?.code === 'not-logged-in'
+      element('academicScheduleStatus').style.display = 'block';
+      element('academicScheduleStatus').textContent = result?.code === 'not-logged-in'
         ? '教务系统未登录'
         : `课表读取失败：${result?.message || '未知错误'}`;
       return result;
     }
     scheduleData = result;
-    if (result.weekSource === 'bksy') setMessage('智慧课程平台周次接口未登录，当前周数使用本科生院教学服务平台');
+    if (result.weekSource === 'bksy') {
+      element('academicScheduleStatus').style.display = 'block';
+      element('academicScheduleStatus').textContent = '智慧课程平台周次接口未登录，当前周数使用本科生院教学服务平台';
+    }
     const stored = await chrome.storage.local.get(['academicScheduleWeek']);
     renderScheduleWeekOptions(result, element('academicScheduleWeek')?.value || stored.academicScheduleWeek || 'all');
     renderSchedule();
@@ -383,7 +408,7 @@
     element('academicScoreLoading').style.display = 'flex';
     element('academicScoreTableWrap').style.display = 'none';
     element('academicSystemStatus').style.display = 'none';
-    const result = await send('ACADEMIC_LOAD_SCORES');
+    const result = await sendAcademicLoadWithRetry('ACADEMIC_LOAD_SCORES', undefined, '成绩服务');
     if (!result?.ok) {
       element('academicScoreLoading').style.display = 'none';
       element('academicSystemStatus').style.display = 'block';
@@ -403,7 +428,7 @@
     element('academicExamTableWrap').style.display = 'none';
     element('academicExamStatus').style.display = 'none';
     element('academicExamStatus').textContent = '';
-    const result = await send('ACADEMIC_LOAD_EXAMS');
+    const result = await sendAcademicLoadWithRetry('ACADEMIC_LOAD_EXAMS', undefined, '考试信息服务', false);
     if (!result?.ok) {
       element('academicExamLoading').style.display = 'none';
       element('academicExamStatus').style.display = 'block';
@@ -583,6 +608,7 @@
     bindMessages();
     updateDisabledState();
     await refreshContext();
+    await send('ACADEMIC_PRELOAD_ACCOUNT');
     void loadAll();
     return true;
   }
