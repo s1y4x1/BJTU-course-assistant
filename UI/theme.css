@@ -124,7 +124,6 @@ html[data-color-scheme="dark"] .file-size-placeholder:not(.hw-card-item *) {
 html[data-color-scheme="dark"] .save-uploads-toggle,
 html[data-color-scheme="dark"] .resource-space-count,
 html[data-color-scheme="dark"] .version-source-row,
-html[data-color-scheme="dark"] .version-ignore-sub,
 html[data-color-scheme="dark"] .account-init-progress-label,
 html[data-color-scheme="dark"] .ve-course-teacher-loading {
   color: #cbd5e1 !important;
