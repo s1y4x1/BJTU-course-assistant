@@ -2884,12 +2884,19 @@ async function handleAlreadyLoggedIn(username, userInfo) {
   }).catch(() => { });
 }
 
-function openCaptchaOptionsFromApp(reason = '') {
-  const query = new URLSearchParams({ from: 'app' });
-  const normalizedReason = String(reason || '').trim();
-  if (normalizedReason) query.set('reason', normalizedReason);
-  if (popupMode) query.set('popup', '1');
-  location.href = chrome.runtime.getURL(`modules/captcha/options.html?${query.toString()}`);
+async function captchaModuleManifestExists() {
+  try {
+    const response = await fetch(chrome.runtime.getURL('modules/captcha/module.json'), { cache: 'no-store' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function openCaptchaOptionsFromApp() {
+  if (!(await captchaModuleManifestExists())) return false;
+  location.href = chrome.runtime.getURL('modules/captcha/options.html?from=app');
+  return true;
 }
 
 async function doLoginFlow() {
@@ -2987,9 +2994,11 @@ async function doLoginFlow() {
       if (result?.reason === 'captcha-module-missing'
           || result?.reason === 'captcha-resources-missing'
           || /本地验证码识别模块未安装/i.test(String(result?.message || ''))) {
-        await restoreAfterFailure();
-        openCaptchaOptionsFromApp(result?.reason || 'captcha-module-missing');
-        return;
+        if (await openCaptchaOptionsFromApp()) {
+          await restoreAfterFailure();
+          return;
+        }
+        recoveryMessage = '本地验证码识别模块未安装，请手动输入验证码后继续登录。';
       }
       if (result?.reason === 'locked' || result?.reason === 'password-reset') {
         if (result.reason === 'password-reset') {
@@ -3000,14 +3009,16 @@ async function doLoginFlow() {
         showToast(result.message || '登录失败', 'error', 4000);
         return;
       }
-      if (!['credential', 'account-not-found', 'needs-password', 'captcha-required'].includes(result?.reason)) {
+      if (!['credential', 'account-not-found', 'needs-password', 'captcha-required',
+        'captcha-module-missing', 'captcha-resources-missing'].includes(result?.reason)) {
         await restoreAfterFailure();
         showToast(result?.message || '登录失败', 'error', 3000);
         return;
       }
 
       recoveryMessage = result?.message || recoveryMessage;
-      const startManualWithCaptcha = result?.reason === 'captcha-required';
+      const startManualWithCaptcha = ['captcha-required', 'captcha-module-missing',
+        'captcha-resources-missing'].includes(result?.reason);
       let captchaImageUrl = '';
       if (startManualWithCaptcha) {
         try {

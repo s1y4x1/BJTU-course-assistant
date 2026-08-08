@@ -717,6 +717,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   }
+  if (message?.type === 'CAPTCHA_RECOGNIZER_STATUS') {
+    sendResponse({
+      ok: true,
+      ready: typeof globalThis.BjtuCaptchaRecognizer?.recognize === 'function'
+    });
+    return false;
+  }
   if (message?.type === 'VE_LOGIN_RECOGNIZE_CAPTCHA') {
     globalThis.BjtuVeLoginService.recognizeCaptchaDataUrl(message?.payload?.imageUrl)
       .then((passcode) => sendResponse({ ok: true, passcode }))

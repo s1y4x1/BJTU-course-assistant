@@ -1468,6 +1468,17 @@
     return response.imageUrl;
   }
 
+  async function openCaptchaOptionsForRecognitionFailure() {
+    try {
+      const manifest = await fetch(chrome.runtime.getURL('modules/captcha/module.json'), { cache: 'no-store' });
+      if (!manifest.ok) return false;
+    } catch {
+      return false;
+    }
+    location.href = chrome.runtime.getURL('modules/captcha/options.html?from=app');
+    return true;
+  }
+
   async function recognizeCaptchaImageDataUrl(imageUrl) {
     const response = await sendRuntimeMessage({
       type: 'VE_LOGIN_RECOGNIZE_CAPTCHA',
@@ -1475,15 +1486,7 @@
     });
     if (!response?.ok || !/^\d{4}$/.test(String(response.passcode || ''))) {
       if (['captcha-module-missing', 'captcha-resources-missing'].includes(response?.code)) {
-        const params = new URLSearchParams({
-          from: 'app',
-          reason: response.code
-        });
-        if (new URLSearchParams(String(location.search || '')).get('popup') === '1') {
-          params.set('popup', '1');
-        }
-        const optionsUrl = chrome.runtime.getURL(`modules/captcha/options.html?${params.toString()}`);
-        location.href = optionsUrl;
+        await openCaptchaOptionsForRecognitionFailure();
       }
       throw new Error(response?.message || '验证码本地识别失败');
     }

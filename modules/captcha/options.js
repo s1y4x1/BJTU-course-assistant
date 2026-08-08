@@ -15,6 +15,18 @@
   const modelProgress = new Map();
   const modelStateMessages = new Map();
   let extensionReloadStarted = false;
+  let captchaRuntimeReloadRequired = false;
+
+  async function getCaptchaRuntimeState() {
+    const [available, background] = await Promise.all([
+      global.BjtuModuleRegistry.ready.catch(() => ({})),
+      chrome.runtime.sendMessage({ type: 'CAPTCHA_RECOGNIZER_STATUS' }).catch(() => null)
+    ]);
+    return {
+      moduleReady: available?.captcha === true,
+      recognizerReady: background?.ok === true && background?.ready === true
+    };
+  }
 
   async function reloadExtensionAndOpenApp() {
     if (extensionReloadStarted) return;
@@ -119,14 +131,18 @@
         ? manager.captchaCoreExistsInDirectory()
         : false;
     })();
-    const [runtimeReady, directoryReady] = await Promise.all([
+    const [runtimeReady, directoryReady, captchaRuntime] = await Promise.all([
       runtimeCheck.catch(() => false),
-      directoryCheck.catch(() => false)
+      directoryCheck.catch(() => false),
+      getCaptchaRuntimeState()
     ]);
     const params = new URLSearchParams(location.search);
-    const returnReason = String(params.get('reason') || '').trim();
+    captchaRuntimeReloadRequired = params.get('from') === 'app'
+      && captchaRuntime.moduleReady
+      && !captchaRuntime.recognizerReady;
     const staleCaptchaRuntime = params.get('from') === 'app'
-      && (!returnReason || returnReason === 'captcha-module-missing')
+      && captchaRuntimeReloadRequired
+      && cachedVersions.has(selectedVersion)
       && (runtimeReady || directoryReady);
     coreReady = runtimeReady || directoryReady;
     coreReloadRequired = (!runtimeReady && directoryReady) || staleCaptchaRuntime;
@@ -371,6 +387,7 @@
       const result = modelOutcome.value;
       const coreResult = coreOutcome.value;
       cachedVersions.add(version);
+      if (captchaRuntimeReloadRequired && coreReady) coreReloadRequired = true;
       if (coreResult.corePending) {
         setCoreStatus('未安装，请授权扩展目录', true);
         setCoreProgress({ visible: false });
@@ -468,13 +485,10 @@
     const list = document.getElementById('captchaModelList');
     if (!assets || !(list instanceof HTMLElement)) return;
 
-    const coreStatusPromise = refreshCoreStatus();
     versions = await assets.getModelVersions();
     selectedVersion = await assets.getSelectedModelVersion();
-    await Promise.all([
-      refreshCachedVersions(),
-      coreStatusPromise
-    ]);
+    await refreshCachedVersions();
+    await refreshCoreStatus();
     renderModels();
     await prepareModel(selectedVersion, { interactive: false, notify: false });
   }
