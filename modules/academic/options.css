@@ -10,6 +10,8 @@
 .academic-external-script-item { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto auto; align-items:center; gap:10px; padding:9px 10px; }
 .academic-external-script-choice { display:flex; align-items:center; gap:8px; min-width:0; margin:0; }
 .academic-external-script-choice input { width:auto; margin:0; }
+.academic-external-script-name { min-width:0; overflow-wrap:anywhere; }
+.academic-external-script-size { display:inline-block; flex:0 0 auto; vertical-align:baseline; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .academic-external-script-status { color:#64748b; font-size:12px; white-space:nowrap; }
 .academic-external-script-status.error { color:#dc2626; }
 .academic-external-script-action { width:auto; min-width:64px; margin:0; padding:5px 10px; }

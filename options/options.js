@@ -558,11 +558,13 @@ async function setupInstalledModuleOptions() {
       });
       setMsg(`模块更改完成：${changes}`);
       if (reloadRequired) {
+        const popup = new URLSearchParams(location.search).get('popup') === '1';
         await chrome.runtime.sendMessage({
           type: 'PREPARE_APP_RESTORE_AFTER_RELOAD',
           payload: {
             source: 'module-selection',
-            fileCount: Number(result.written || 0)
+            fileCount: Number(result.written || 0),
+            restoreOptionsPath: popup ? '' : 'options/options.html'
           }
         });
         setTimeout(() => chrome.runtime.reload(), 1000);

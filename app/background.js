@@ -249,11 +249,17 @@ async function refreshOpenAppTabs() {
 async function prepareAppRestoreAfterExtensionReload(payload = {}, sourceTabId = null) {
   const tabs = await getOpenAppTabs();
   const requestedSourceTabId = Number(sourceTabId || payload?.sourceTabId);
+  const requestedOptionsPath = String(payload?.restoreOptionsPath || '').replace(/^\/+/, '');
   await chrome.storage.local.set({
     [VERSION_AUTO_RELOAD_HANDOFF_KEY]: {
       ...(payload && typeof payload === 'object' ? payload : {}),
       requestedAt: Date.now(),
       reopenApp: payload?.reopenApp === true || tabs.length > 0,
+      appTabs: tabs.map((tab) => ({
+        id: Number(tab?.id) || null,
+        url: String(tab?.url || APP_URL)
+      })).filter((tab) => Number.isInteger(tab.id) && tab.id > 0),
+      restoreOptionsPath: RELOAD_REOPEN_PATHS.has(requestedOptionsPath) ? requestedOptionsPath : '',
       sourceTabId: Number.isInteger(requestedSourceTabId) && requestedSourceTabId > 0
         ? requestedSourceTabId
         : null
@@ -266,20 +272,9 @@ async function reloadExtensionAndOpenApp(payload = {}, sourceTabId = null) {
   const requestedSourceTabId = Number(sourceTabId || payload?.sourceTabId);
   await prepareAppRestoreAfterExtensionReload({
     ...(payload && typeof payload === 'object' ? payload : {}),
-    reopenApp: true
+    reopenApp: payload?.reopenApp !== false
   }, requestedSourceTabId);
   chrome.alarms.create(EXTENSION_RELOAD_RESTORE_ALARM, { when: Date.now() + 1500 });
-
-  const targetUrl = reloadTargetUrl(payload);
-  const sourceTab = Number.isInteger(requestedSourceTabId) && requestedSourceTabId > 0
-    ? await chrome.tabs.get(requestedSourceTabId).catch(() => null)
-    : null;
-  if (sourceTab) {
-    await chrome.tabs.update(requestedSourceTabId, { url: targetUrl, active: true }).catch(() => null);
-  } else {
-    await chrome.tabs.create({ url: targetUrl, active: true }).catch(() => null);
-  }
-
   await new Promise((resolve) => setTimeout(resolve, 100));
   chrome.runtime.reload();
 }
@@ -327,26 +322,71 @@ async function restoreAppAfterAutomaticExtensionReload() {
       priority: 1
     }, 'background-update-complete', true).catch(() => {});
   }
-  if (handoff.reopenApp === false) return;
-  const targetUrl = reloadTargetUrl(handoff);
-  const sourceTabId = Number(handoff.sourceTabId);
-  if (Number.isInteger(sourceTabId) && sourceTabId > 0) {
-    const sourceTab = await chrome.tabs.get(sourceTabId).catch(() => null);
-    if (sourceTab) {
-      await chrome.tabs.update(sourceTabId, { url: targetUrl, active: true }).catch(() => null);
-      if (sourceTab.windowId) await chrome.windows.update(sourceTab.windowId, { focused: true }).catch(() => null);
-      return;
+  const restoreOptionsPath = String(handoff.restoreOptionsPath || '').replace(/^\/+/, '');
+  const legacyTargetPath = String(handoff.targetPath || '').replace(/^\/+/, '');
+  const validOptionsPath = RELOAD_REOPEN_PATHS.has(restoreOptionsPath)
+    ? restoreOptionsPath
+    : (!Object.prototype.hasOwnProperty.call(handoff, 'appTabs') && RELOAD_REOPEN_PATHS.has(legacyTargetPath)
+      ? legacyTargetPath
+      : '');
+  const savedAppTabs = Array.isArray(handoff.appTabs) ? handoff.appTabs : [];
+  const restoredAppTabs = [];
+
+  if (handoff.reopenApp !== false) {
+    for (const saved of savedAppTabs) {
+      const tabId = Number(saved?.id);
+      if (!Number.isInteger(tabId) || tabId <= 0) continue;
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (!tab) continue;
+      const savedUrl = String(saved?.url || '');
+      const url = savedUrl.startsWith(APP_URL) ? savedUrl : APP_URL;
+      const updated = await chrome.tabs.update(tabId, { url, active: false }).catch(() => null);
+      if (updated) restoredAppTabs.push(updated);
+    }
+    if (!restoredAppTabs.length) {
+      const existing = await getOpenAppTabs();
+      if (existing.length) {
+        const updated = await chrome.tabs.update(existing[0].id, { url: existing[0].url || APP_URL, active: false }).catch(() => null);
+        if (updated) restoredAppTabs.push(updated);
+      } else {
+        const created = await chrome.tabs.create({ url: APP_URL, active: !validOptionsPath }).catch(() => null);
+        if (created) restoredAppTabs.push(created);
+      }
     }
   }
-  const tabs = (await chrome.tabs.query({}).catch(() => []))
-    .filter((tab) => String(tab?.url || '').startsWith(targetUrl));
-  if (tabs.length) {
-    const tab = tabs[0];
-    await chrome.tabs.update(tab.id, { url: targetUrl, active: true }).catch(() => null);
+
+  if (validOptionsPath) {
+    const optionsUrl = chrome.runtime.getURL(validOptionsPath);
+    const sourceTabId = Number(handoff.sourceTabId);
+    let optionsTab = Number.isInteger(sourceTabId) && sourceTabId > 0
+      ? await chrome.tabs.get(sourceTabId).catch(() => null)
+      : null;
+    if (optionsTab) {
+      optionsTab = await chrome.tabs.update(sourceTabId, { url: optionsUrl, active: true }).catch(() => null);
+    } else {
+      const existing = (await chrome.tabs.query({}).catch(() => []))
+        .find((tab) => String(tab?.url || '').startsWith(optionsUrl));
+      optionsTab = existing
+        ? await chrome.tabs.update(existing.id, { url: optionsUrl, active: true }).catch(() => null)
+        : await chrome.tabs.create({ url: optionsUrl, active: true }).catch(() => null);
+    }
+    if (optionsTab?.windowId) {
+      await chrome.windows.update(optionsTab.windowId, { focused: true }).catch(() => null);
+    }
+    return;
+  }
+
+  if (restoredAppTabs.length) {
+    const tab = restoredAppTabs[0];
+    await chrome.tabs.update(tab.id, { active: true }).catch(() => null);
     if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
     return;
   }
-  await chrome.tabs.create({ url: targetUrl, active: true }).catch(() => null);
+
+  // Compatibility with handoffs written by an older extension version.
+  if (handoff.reopenApp !== false) {
+    await chrome.tabs.create({ url: reloadTargetUrl(handoff), active: true }).catch(() => null);
+  }
 }
 
 void restoreAppAfterAutomaticExtensionReload();

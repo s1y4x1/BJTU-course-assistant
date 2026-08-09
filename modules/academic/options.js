@@ -27,6 +27,9 @@
   let assessmentScriptEnabled = false;
   let assessmentScriptBusy = false;
   let assessmentScriptReady = false;
+  let assessmentScriptSizeBytes = 0;
+  let assessmentScriptRuntimeReady = false;
+  let assessmentScriptReloadRequired = false;
 
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
@@ -63,6 +66,32 @@
     return `${parseFloat((bytes / 1024).toFixed(2))} KB`;
   }
 
+  function buildFileSizeEmphasisStyle(bytes) {
+    const mb = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
+    if (!(mb > 0)) return 'font-size:10px; font-weight:500; color:#94a3b8; text-shadow:none;';
+    const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
+    const fontPx = (10 + ratio * 6).toFixed(2);
+    const weight = Math.round(500 + ratio * 320);
+    const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
+    const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35);
+    if (document.documentElement.dataset.colorScheme === 'dark') {
+      const r = Math.round(182 + ratio * 73);
+      const g = Math.round(194 + ratio * 61);
+      const b = Math.round(209 + ratio * 46);
+      const shadow = shadowBlur === '0.00'
+        ? 'none'
+        : `0 1px ${shadowBlur}px rgba(255,255,255,${Math.min(1, shadowAlpha * 1.2).toFixed(2)})`;
+      return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${r},${g},${b}); text-shadow:${shadow};`;
+    }
+    const colorLight = Math.round(148 - ratio * 118);
+    const g = Math.max(18, colorLight + 8);
+    const b = Math.max(28, colorLight + 20);
+    const shadow = shadowBlur === '0.00'
+      ? 'none'
+      : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha.toFixed(2)})`;
+    return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${colorLight},${g},${b}); text-shadow:${shadow};`;
+  }
+
   function setAssessmentScriptProgress({ visible = true, loaded = 0, total = 0, label = '正在下载…' } = {}) {
     const container = element('academicAssessmentScriptProgress');
     const bar = element('academicAssessmentScriptProgressBar');
@@ -85,6 +114,7 @@
     const download = element('academicAssessmentScriptDownload');
     const checkUpdate = element('academicAssessmentScriptCheckUpdate');
     const deleteButton = element('academicAssessmentScriptDelete');
+    const size = element('academicAssessmentScriptSize');
     if (checkbox instanceof HTMLInputElement) {
       checkbox.disabled = assessmentScriptBusy || !assessmentScriptReady;
       checkbox.checked = assessmentScriptEnabled;
@@ -102,16 +132,25 @@
       deleteButton.hidden = !assessmentScriptInstalled;
       deleteButton.disabled = assessmentScriptBusy || assessmentScriptEnabled;
     }
+    if (size instanceof HTMLElement) {
+      size.textContent = assessmentScriptSizeBytes > 0
+        ? formatExternalScriptBytes(assessmentScriptSizeBytes)
+        : '';
+      size.style.cssText = buildFileSizeEmphasisStyle(assessmentScriptSizeBytes);
+    }
     if (!assessmentScriptBusy) {
       setAssessmentScriptStatus(assessmentScriptInstalled ? '已下载' : '未下载');
     }
   }
 
-  async function runtimeAssessmentScriptExists() {
+  async function runtimeAssessmentScriptInfo() {
     try {
-      return (await fetch(chrome.runtime.getURL(ASSESSMENT_SCRIPT_PATH), { cache: 'no-store' })).ok;
+      const response = await fetch(chrome.runtime.getURL(ASSESSMENT_SCRIPT_PATH), { cache: 'no-store' });
+      if (!response.ok) return { exists: false, size: 0 };
+      const bytes = await response.arrayBuffer();
+      return { exists: true, size: bytes.byteLength };
     } catch {
-      return false;
+      return { exists: false, size: 0 };
     }
   }
 
@@ -124,7 +163,11 @@
     } catch {
       // Runtime visibility is enough to display an already installed script.
     }
-    assessmentScriptInstalled = directoryReady || await runtimeAssessmentScriptExists();
+    const runtimeInfo = await runtimeAssessmentScriptInfo();
+    assessmentScriptInstalled = directoryReady || runtimeInfo.exists;
+    assessmentScriptSizeBytes = runtimeInfo.size;
+    assessmentScriptRuntimeReady = runtimeInfo.exists;
+    assessmentScriptReloadRequired = false;
     assessmentScriptEnabled = assessmentScriptInstalled && stored[ASSESSMENT_SCRIPT_STORAGE_KEY] === true;
     if (!assessmentScriptInstalled && stored[ASSESSMENT_SCRIPT_STORAGE_KEY] === true) {
       assessmentScriptEnabled = false;
@@ -150,11 +193,14 @@
   async function reloadAcademicOptionsPage() {
     const currentTab = await chrome.tabs.getCurrent().catch(() => null);
     const standalone = /\/modules\/academic\/options\.html$/i.test(location.pathname);
+    const popup = new URLSearchParams(location.search).get('popup') === '1';
     const result = await send('RELOAD_EXTENSION_AND_OPEN_APP', {
-      reopenApp: true,
+      reopenApp: false,
       source: ASSESSMENT_SCRIPT_ID,
       sourceTabId: Number(currentTab?.id) || null,
-      targetPath: standalone ? 'modules/academic/options.html' : 'options/options.html'
+      restoreOptionsPath: popup
+        ? ''
+        : (standalone ? 'modules/academic/options.html' : 'options/options.html')
     });
     if (!result?.ok) throw new Error(result?.message || '无法重新加载扩展');
   }
@@ -209,6 +255,8 @@
         });
       });
       await manager.writeManagedFile(root, ASSESSMENT_SCRIPT_PATH, new TextEncoder().encode(source));
+      assessmentScriptSizeBytes = new TextEncoder().encode(source).byteLength;
+      assessmentScriptReloadRequired = true;
       assessmentScriptInstalled = true;
       assessmentScriptEnabled = enableAfterDownload;
       await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: enableAfterDownload });
@@ -245,8 +293,14 @@
         await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: true });
         assessmentScriptBusy = false;
         renderAssessmentScriptState();
-        setAssessmentScriptStatus('正在启用并重新加载扩展…');
-        await reloadAcademicOptionsPage();
+        if (assessmentScriptRuntimeReady && !assessmentScriptReloadRequired) {
+          const result = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+          if (!result?.ok) throw new Error(result?.message || '脚本注册失败');
+          setMessage('已启用一键评教脚本');
+        } else {
+          setAssessmentScriptStatus('正在启用并重新加载扩展…');
+          await reloadAcademicOptionsPage();
+        }
       } catch (error) {
         await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: false });
         assessmentScriptEnabled = false;
@@ -286,6 +340,9 @@
       await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: false });
       await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
       assessmentScriptInstalled = false;
+      assessmentScriptSizeBytes = 0;
+      assessmentScriptRuntimeReady = false;
+      assessmentScriptReloadRequired = false;
       assessmentScriptBusy = false;
       renderAssessmentScriptState();
       setAssessmentScriptStatus('已删除，正在重新加载扩展…');
@@ -326,6 +383,8 @@
         return;
       }
       await manager.writeManagedFile(root, ASSESSMENT_SCRIPT_PATH, new TextEncoder().encode(latest));
+      assessmentScriptSizeBytes = new TextEncoder().encode(latest).byteLength;
+      assessmentScriptReloadRequired = true;
       assessmentScriptBusy = false;
       setAssessmentScriptProgress({ visible: false });
       renderAssessmentScriptState();
