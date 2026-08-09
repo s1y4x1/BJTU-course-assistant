@@ -135,7 +135,7 @@
     if (size instanceof HTMLElement) {
       size.textContent = assessmentScriptSizeBytes > 0
         ? formatExternalScriptBytes(assessmentScriptSizeBytes)
-        : '';
+        : '—';
       size.style.cssText = buildFileSizeEmphasisStyle(assessmentScriptSizeBytes);
     }
     if (!assessmentScriptBusy) {
@@ -157,15 +157,19 @@
   async function refreshAssessmentScriptState() {
     const stored = await chrome.storage.local.get([ASSESSMENT_SCRIPT_STORAGE_KEY]);
     let directoryReady = false;
+    let directorySize = 0;
     try {
       const manager = await getUpdaterManager();
       directoryReady = await manager.managedFileExists(ASSESSMENT_SCRIPT_PATH);
+      if (directoryReady && typeof manager.managedFileSize === 'function') {
+        directorySize = await manager.managedFileSize(ASSESSMENT_SCRIPT_PATH);
+      }
     } catch {
       // Runtime visibility is enough to display an already installed script.
     }
     const runtimeInfo = await runtimeAssessmentScriptInfo();
     assessmentScriptInstalled = directoryReady || runtimeInfo.exists;
-    assessmentScriptSizeBytes = runtimeInfo.size;
+    assessmentScriptSizeBytes = directorySize || runtimeInfo.size;
     assessmentScriptRuntimeReady = runtimeInfo.exists;
     assessmentScriptReloadRequired = false;
     assessmentScriptEnabled = assessmentScriptInstalled && stored[ASSESSMENT_SCRIPT_STORAGE_KEY] === true;

@@ -1937,6 +1937,16 @@ globalThis.BjtuUpdaterModuleManager = Object.freeze({
     const directory = root || await getWritableVersionUpdateDirectory();
     return directoryFileExists(directory, relativePath);
   },
+  managedFileSize: async (relativePath, root = null) => {
+    const directory = root || await getWritableVersionUpdateDirectory();
+    if (!directory) return 0;
+    try {
+      const file = await readDirectoryFile(directory, relativePath);
+      return Math.max(0, Number(file?.size) || 0);
+    } catch {
+      return 0;
+    }
+  },
   writeManagedFile: (root, relativePath, bytes) => globalThis.BjtuUpdateFileSystem.writeFile(root, relativePath, bytes),
   readManagedFile: readDirectoryFile,
   removeManagedFile: removeDirectoryFile,
