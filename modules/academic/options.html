@@ -67,9 +67,10 @@
       <button id="academicBbScriptCheckUpdate" type="button" class="academic-external-script-action" hidden disabled>检查更新</button>
       <button id="academicBbScriptDelete" type="button" class="academic-external-script-action academic-external-script-delete" hidden disabled>删除</button>
       <div class="academic-external-script-config">
-        <label for="academicBbWishListCourses">愿望课程（每行一个“课程号 班号”）</label>
-        <textarea id="academicBbWishListCourses" rows="3" spellcheck="false" placeholder="例如：A121078B 01"></textarea>
-        <label for="academicBbRefreshDelayMs">刷新间隔（毫秒）</label>
+        <label for="academicBbWishListCourses">愿望课程</label>
+        <textarea id="academicBbWishListCourses" rows="3" spellcheck="false" placeholder="每行一个「课程号 序号」
+如：A121078B 01"></textarea>
+        <label for="academicBbRefreshDelayMs">刷新间隔(㎳)</label>
         <input id="academicBbRefreshDelayMs" type="number" min="500" max="3600000" step="100" value="3000">
       </div>
       <div id="academicBbScriptProgress" class="academic-external-script-progress" hidden>
