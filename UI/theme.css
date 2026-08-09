@@ -159,7 +159,6 @@ html[data-color-scheme="dark"] .ve-course-teacher-pop {
 
 html[data-color-scheme="dark"] .version-notice-title,
 html[data-color-scheme="dark"] .version-download-title,
-html[data-color-scheme="dark"] .upload-duplicate-title,
 html[data-color-scheme="dark"] #login-modal .login-panel h3,
 html[data-color-scheme="dark"] .mooc-progress-title,
 html[data-color-scheme="dark"] .account-progress-title {
@@ -169,7 +168,6 @@ html[data-color-scheme="dark"] .account-progress-title {
 html[data-color-scheme="dark"] .version-notice-body,
 html[data-color-scheme="dark"] .version-download-body,
 html[data-color-scheme="dark"] .version-download-release-notes-body,
-html[data-color-scheme="dark"] .upload-duplicate-question,
 html[data-color-scheme="dark"] .account-init-status,
 html[data-color-scheme="dark"] .account-recovery-message,
 html[data-color-scheme="dark"] .account-init-quick-option,
@@ -249,17 +247,6 @@ html[data-color-scheme="dark"] .version-notice-footer {
   border-color: #334155;
 }
 
-html[data-color-scheme="dark"] .upload-duplicate-list {
-  background: #0f172a;
-  border-color: #334155;
-}
-
-html[data-color-scheme="dark"] .upload-duplicate-row {
-  background: #1e293b;
-  border-color: #334155;
-}
-
-html[data-color-scheme="dark"] .upload-duplicate-name,
 html[data-color-scheme="dark"] .version-download-release-notes-title {
   color: #f8fafc;
 }
@@ -383,13 +370,9 @@ html[data-color-scheme="dark"] .platform-column-resizer.dragging::after {
 html[data-color-scheme="dark"] #invert-save-uploads-btn,
 html[data-color-scheme="dark"] #resource-select-all-btn,
 html[data-color-scheme="dark"] .courseware-select-all-btn,
-html[data-color-scheme="dark"] #upload-duplicate-invert,
-html[data-color-scheme="dark"] .upload-duplicate-secondary,
 html[data-color-scheme="dark"] #invert-save-uploads-btn:hover,
 html[data-color-scheme="dark"] #resource-select-all-btn:hover,
-html[data-color-scheme="dark"] .courseware-select-all-btn:hover,
-html[data-color-scheme="dark"] #upload-duplicate-invert:hover,
-html[data-color-scheme="dark"] .upload-duplicate-secondary:hover {
+html[data-color-scheme="dark"] .courseware-select-all-btn:hover {
   background: #fff !important;
   border-color: #fff !important;
   color: #000 !important;
