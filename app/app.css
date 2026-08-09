@@ -688,15 +688,6 @@ body.platform-column-resizing {
     flex-wrap: wrap;
     flex-shrink: 0;
 }
-#resource-select-all-btn {
-    background: #1e3a8a !important;
-    padding: 3px 8px !important;
-    font-size: 11px !important;
-    line-height: 1.2 !important;
-}
-#resource-select-all-btn:hover {
-    background: #1e40af !important;
-}
 .resource-space-actions .btn {
     padding: 5px 10px;
     font-size: 12px;
