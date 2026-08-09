@@ -248,6 +248,180 @@ function normalizeMoocPeerReviewCount(value, fallback = DEFAULT_MOOC_PEER_REVIEW
     : fallback;
 }
 
+const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic'];
+const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
+const PLATFORM_ORDER_LABELS = {
+  ve: '智慧课程平台',
+  ykt: '雨课堂',
+  mrjzy: '每日交作业',
+  jlgj: '接龙管家',
+  mooc: '中国大学MOOC',
+  xuetangx: '学堂在线'
+};
+let currentOptionsSectionOrder = [...FALLBACK_OPTIONS_SECTION_ORDER];
+let currentPlatformOrder = [...FALLBACK_PLATFORM_ORDER];
+let uiOrderEditorReady = false;
+
+function normalizeOptionsSectionOrder(raw) {
+  return globalThis.BjtuUiOrder?.normalizeOptionsSections(raw)
+    || [...FALLBACK_OPTIONS_SECTION_ORDER];
+}
+
+function normalizePlatformOrder(raw) {
+  return globalThis.BjtuUiOrder?.normalizePlatforms(raw)
+    || [...FALLBACK_PLATFORM_ORDER];
+}
+
+function getPresentOptionsSections() {
+  const main = document.getElementById('options-controlled-content');
+  if (!main) return [];
+  return [...main.querySelectorAll(':scope > [data-options-section]')].map((element) => ({
+    id: String(element.dataset.optionsSection || ''),
+    label: String(element.dataset.optionsLabel || element.querySelector('.section-title')?.textContent || element.dataset.optionsSection || '').trim(),
+    element
+  })).filter((item) => item.id);
+}
+
+function applyOptionsSectionOrder(order = currentOptionsSectionOrder) {
+  const main = document.getElementById('options-controlled-content');
+  if (!main) return;
+  const entries = getPresentOptionsSections();
+  const byId = new Map(entries.map((item) => [item.id, item.element]));
+  order.forEach((id) => {
+    const element = byId.get(id);
+    if (element) main.appendChild(element);
+  });
+  entries.forEach(({ id, element }) => {
+    if (!order.includes(id)) main.appendChild(element);
+  });
+}
+
+function applyPlatformOrderToOptions(order = currentPlatformOrder) {
+  const container = document.getElementById('platform-options-title')?.parentElement;
+  const anchor = container?.querySelector(':scope > .tip[data-tip-target="#platform-options-title"]');
+  if (!container || !anchor) return;
+  order.forEach((id) => {
+    const choice = container.querySelector(`:scope > .platform-option[data-module="${id}"]`);
+    const detail = container.querySelector(`:scope > .platform-option-detail[data-module="${id}"]`);
+    if (choice) anchor.before(choice);
+    if (detail) anchor.before(detail);
+  });
+}
+
+function renderUiOrderList(containerId, entries, group) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.replaceChildren();
+  entries.forEach((entry, index) => {
+    const item = document.createElement('div');
+    item.className = 'ui-order-item';
+    item.draggable = true;
+    item.dataset.orderId = entry.id;
+    item.dataset.orderGroup = group;
+    item.innerHTML = `
+      <span class="ui-order-grip" title="拖动排序" aria-hidden="true">⋮⋮</span>
+      <span class="ui-order-label"></span>
+      <button type="button" class="ui-order-move" data-direction="-1" title="上移" aria-label="上移">↑</button>
+      <button type="button" class="ui-order-move" data-direction="1" title="下移" aria-label="下移">↓</button>`;
+    item.querySelector('.ui-order-label').textContent = entry.label;
+    item.querySelector('[data-direction="-1"]').disabled = index === 0;
+    item.querySelector('[data-direction="1"]').disabled = index === entries.length - 1;
+    container.appendChild(item);
+  });
+}
+
+function getVisibleOptionsOrderEntries() {
+  const labels = new Map(getPresentOptionsSections().map((item) => [item.id, item.label]));
+  return currentOptionsSectionOrder
+    .filter((id) => labels.has(id))
+    .map((id) => ({ id, label: labels.get(id) }));
+}
+
+function renderUiOrderEditor() {
+  renderUiOrderList('optionsSectionOrderList', getVisibleOptionsOrderEntries(), 'sections');
+  renderUiOrderList('platformOrderList', currentPlatformOrder.map((id) => ({
+    id,
+    label: PLATFORM_ORDER_LABELS[id] || id
+  })), 'platforms');
+}
+
+async function saveUiOrder(group, visibleOrder) {
+  if (group === 'sections') {
+    const visibleSet = new Set(visibleOrder);
+    currentOptionsSectionOrder = normalizeOptionsSectionOrder([
+      ...visibleOrder,
+      ...currentOptionsSectionOrder.filter((id) => !visibleSet.has(id))
+    ]);
+    applyOptionsSectionOrder();
+    await chrome.storage.local.set({ optionsSectionOrder: currentOptionsSectionOrder });
+  } else {
+    currentPlatformOrder = normalizePlatformOrder(visibleOrder);
+    applyPlatformOrderToOptions();
+    await chrome.storage.local.set({ platformOrder: currentPlatformOrder });
+  }
+  renderUiOrderEditor();
+  setMsg('已应用排序');
+}
+
+function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
+  currentOptionsSectionOrder = normalizeOptionsSectionOrder(rawSectionOrder);
+  currentPlatformOrder = normalizePlatformOrder(rawPlatformOrder);
+  applyOptionsSectionOrder();
+  applyPlatformOrderToOptions();
+  renderUiOrderEditor();
+  if (uiOrderEditorReady) return;
+  uiOrderEditorReady = true;
+
+  let dragged = null;
+  document.querySelectorAll('.ui-order-list').forEach((list) => {
+    list.addEventListener('click', (event) => {
+      const button = event.target.closest('.ui-order-move');
+      const item = button?.closest('.ui-order-item');
+      if (!button || !item) return;
+      const group = String(item.dataset.orderGroup || '');
+      const entries = group === 'sections' ? getVisibleOptionsOrderEntries() : currentPlatformOrder.map((id) => ({ id }));
+      const ids = entries.map((entry) => entry.id);
+      const index = ids.indexOf(String(item.dataset.orderId || ''));
+      const targetIndex = index + Number(button.dataset.direction || 0);
+      if (index < 0 || targetIndex < 0 || targetIndex >= ids.length) return;
+      [ids[index], ids[targetIndex]] = [ids[targetIndex], ids[index]];
+      void saveUiOrder(group, ids);
+    });
+    list.addEventListener('dragstart', (event) => {
+      const item = event.target.closest('.ui-order-item');
+      if (!item) return;
+      dragged = { id: String(item.dataset.orderId || ''), group: String(item.dataset.orderGroup || '') };
+      item.classList.add('dragging');
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    });
+    list.addEventListener('dragend', (event) => {
+      event.target.closest('.ui-order-item')?.classList.remove('dragging');
+      document.querySelectorAll('.ui-order-item.drag-over').forEach((item) => item.classList.remove('drag-over'));
+      dragged = null;
+    });
+    list.addEventListener('dragover', (event) => {
+      const target = event.target.closest('.ui-order-item');
+      if (!target || !dragged || target.dataset.orderGroup !== dragged.group) return;
+      if (target.dataset.orderId === dragged.id) return;
+      event.preventDefault();
+      target.classList.add('drag-over');
+    });
+    list.addEventListener('dragleave', (event) => event.target.closest('.ui-order-item')?.classList.remove('drag-over'));
+    list.addEventListener('drop', (event) => {
+      const target = event.target.closest('.ui-order-item');
+      if (!target || !dragged || target.dataset.orderGroup !== dragged.group) return;
+      event.preventDefault();
+      target.classList.remove('drag-over');
+      const entries = dragged.group === 'sections' ? getVisibleOptionsOrderEntries() : currentPlatformOrder.map((id) => ({ id }));
+      const ids = entries.map((entry) => entry.id).filter((id) => id !== dragged.id);
+      const targetIndex = ids.indexOf(String(target.dataset.orderId || ''));
+      const insertAfter = event.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
+      ids.splice(Math.max(0, targetIndex + (insertAfter ? 1 : 0)), 0, dragged.id);
+      void saveUiOrder(dragged.group, ids);
+    });
+  });
+}
+
 function formatModuleBytes(bytes) {
   const value = Math.max(0, Number(bytes) || 0);
   if (!value) return '0 B';
@@ -471,6 +645,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.__bjtuVeOptionsReady;
   await globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg });
   await setupInstalledModuleOptions();
+  const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
+  setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
   const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled } = await chrome.storage.local.get([
     'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled'
   ]);
@@ -893,6 +1069,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (area !== 'local') return;
       if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
       if (changes.platformVisible) applyPlatformVisibleUi(changes.platformVisible.newValue);
+      if (changes.optionsSectionOrder) {
+        currentOptionsSectionOrder = normalizeOptionsSectionOrder(changes.optionsSectionOrder.newValue);
+        applyOptionsSectionOrder();
+        renderUiOrderEditor();
+      }
+      if (changes.platformOrder) {
+        currentPlatformOrder = normalizePlatformOrder(changes.platformOrder.newValue);
+        applyPlatformOrderToOptions();
+        renderUiOrderEditor();
+      }
       if (changes.xuetangxCourseStatuses) {
         const values = Array.isArray(changes.xuetangxCourseStatuses.newValue)
           ? new Set(changes.xuetangxCourseStatuses.newValue.map(Number))
@@ -1484,6 +1670,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({
       platformEnabled: defaultPlatform,
       platformVisible: { ...DEFAULT_PLATFORM_VISIBLE },
+      optionsSectionOrder: [...FALLBACK_OPTIONS_SECTION_ORDER],
+      platformOrder: [...FALLBACK_PLATFORM_ORDER],
       injectMoocHelperEnabled: true,
       injectMoocPeerReviewEnabled: false,
       moocPeerReviewCount: DEFAULT_MOOC_PEER_REVIEW_COUNT,
@@ -1534,6 +1722,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('injectMoocHelperEnabled').checked = true;
     document.getElementById('injectMoocPeerReviewEnabled').checked = false;
     document.getElementById('moocPeerReviewCount').value = String(DEFAULT_MOOC_PEER_REVIEW_COUNT);
+    setupUiOrderEditor(FALLBACK_OPTIONS_SECTION_ORDER, FALLBACK_PLATFORM_ORDER);
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;

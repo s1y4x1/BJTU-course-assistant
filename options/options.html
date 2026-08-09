@@ -18,7 +18,8 @@
   </div>
   <div id="options-loading-placeholder" aria-label="正在加载扩展选项"><span class="options-page-spinner"></span></div>
   <main id="options-controlled-content">
-    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div data-options-section="appearance" data-options-label="外观"
+      style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
       <div class="section-title">外观</div>
       <label style="display:flex; align-items:center; gap:10px; margin:0;">
         <span>颜色模式</span>
@@ -50,8 +51,23 @@
         <span>作业详情默认显示行数</span>
         <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
       </label>
+      <details class="ui-order-editor" id="uiOrderEditor">
+        <summary>排序</summary>
+        <div class="tip">拖动项目或使用箭头调整顺序；更改会立即应用。</div>
+        <div class="ui-order-groups">
+          <section>
+            <div class="ui-order-title">扩展选项模块</div>
+            <div id="optionsSectionOrderList" class="ui-order-list"></div>
+          </section>
+          <section>
+            <div class="ui-order-title">平台</div>
+            <div id="platformOrderList" class="ui-order-list"></div>
+          </section>
+        </div>
+      </details>
     </div>
-    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div data-options-section="platforms" data-options-label="平台显示与加载"
+      style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
       <div class="section-title" id="platform-options-title">平台显示与加载</div>
       <div class="platform-option" data-module="ve" hidden>
         <label><input type="checkbox" id="showVe" style="width:auto;" checked />智慧课程平台</label>
@@ -172,7 +188,8 @@
       <div class="tip" data-tip-target="#platform-options-title">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
     </div>
 
-    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div data-options-section="popup" data-options-label="弹出窗口"
+      style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
       <div class="section-title">弹出窗口</div>
       <div class="open-mode-row" style="margin-top:0; padding:0; border:0; background:transparent;">
         <div>点击扩展按钮时：</div>
@@ -212,7 +229,8 @@
         <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。<br>关闭时，只启用智慧课程平台，其他平台需每次手动启用（设计如此）。</div>
       </div>
     </div>
-    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
+    <div data-options-section="reminders" data-options-label="作业截止提醒"
+      style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
       <div class="section-title" id="homework-reminder-title">作业截止提醒</div>
       <label style="display:flex; align-items:center; gap:8px; margin:0;">
         <input type="checkbox" id="homeworkReminderEnabled" style="width:auto;" checked />
@@ -261,7 +279,8 @@
         <span id="systemNotificationStatus" class="option-status">尚未测试系统通知。</span>
       </div>
     </div>
-    <div style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"
+    <div data-options-section="updater" data-options-label="更新"
+      style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;"
       data-module="updater" hidden>
       <div class="section-title" id="updater-options-title">更新</div>
       <div class="installed-modules-block">
@@ -354,6 +373,7 @@
     </div>
   </footer>
   <script src="../core/module-registry.js"></script>
+  <script src="../core/ui-order.js"></script>
   <script src="../core/storage-utils.js"></script>
   <script src="../core/captcha-assets.js"></script>
   <script src="../UI/deadline-countdown.js"></script>

@@ -171,6 +171,7 @@ window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boo
 window.veReplayScheduleByCourseId = {}; // {courseId: {list,promise,loaded,error}}
 window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 const PLATFORM_IDS = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
+window.platformOrder = [...PLATFORM_IDS];
 window.platformNeedLogin = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
 window.platformLoginState = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 'checking'])); // checking|offline|online
 window.platformLoginChecked = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
@@ -272,6 +273,29 @@ function sanitizePlatformVisible(raw, fallback = DEFAULT_PLATFORM_VISIBLE) {
     key,
     typeof src?.[key] === 'boolean' ? src[key] : !!fallback[key]
   ]));
+}
+
+function normalizePlatformOrderForApp(raw) {
+  return globalThis.BjtuUiOrder?.normalizePlatforms(raw) || [...PLATFORM_IDS];
+}
+
+function applyPlatformOrderInApp() {
+  const container = document.querySelector('.platform-status-actions');
+  if (!container) return;
+  window.platformOrder.forEach((id) => {
+    const button = document.getElementById(`${id}-status-btn`);
+    if (button) container.appendChild(button);
+  });
+}
+
+async function loadPlatformOrderFromStorage() {
+  try {
+    const data = await chrome.storage.local.get(['platformOrder']);
+    window.platformOrder = normalizePlatformOrderForApp(data?.platformOrder);
+  } catch {
+    window.platformOrder = [...PLATFORM_IDS];
+  }
+  applyPlatformOrderInApp();
 }
 
 function applyPlatformVisibility() {
@@ -839,6 +863,11 @@ function setupOptionsStorageLiveSync() {
       window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
       applyPlatformVisibility();
     }
+    if (changes.platformOrder) {
+      window.platformOrder = normalizePlatformOrderForApp(changes.platformOrder.newValue);
+      applyPlatformOrderInApp();
+      scheduleCourseCardsByPlatform();
+    }
     if ((changes.xuetangxCourseStatuses || changes.xuetangxActivityTypes) && isPlatformEnabled('xuetangx')) {
       clearPlatformData('xuetangx');
       window.platformLoadedOnce.xuetangx = false;
@@ -982,6 +1011,12 @@ const COURSE_PLATFORM_COLUMNS = Object.freeze([
   { id: 'mooc', label: '中国大学MOOC' },
   { id: 'xuetangx', label: '学堂在线' }
 ]);
+function getOrderedCoursePlatformColumns() {
+  const byId = new Map(COURSE_PLATFORM_COLUMNS.map((item) => [item.id, item]));
+  return normalizePlatformOrderForApp(window.platformOrder)
+    .map((id) => byId.get(id))
+    .filter(Boolean);
+}
 const COURSE_HELPER_EXPANDED_DEFAULT_KEY = 'courseHelperExpandedByDefault';
 const SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY = 'showCourseListDuringLayoutTransition';
 const COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY = 'courseHelperPlatformColumnWeights';
@@ -1161,7 +1196,7 @@ function organizeCourseCardsByPlatform() {
   try {
     const cards = [...courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]')];
     const cardPlatforms = new Set(cards.map(getCourseCardPlatform).filter(Boolean));
-    const desired = COURSE_PLATFORM_COLUMNS.filter(({ id }) => isPlatformEnabled(id) || cardPlatforms.has(id));
+    const desired = getOrderedCoursePlatformColumns().filter(({ id }) => isPlatformEnabled(id) || cardPlatforms.has(id));
     const weights = normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights);
     const availableWidth = Math.max(0, Number(courseListDiv.clientWidth || 0) - Math.max(0, desired.length - 1) * 12);
     const totalWeight = desired.reduce((sum, { id }) => sum + Number(weights[id] || 1), 0) || 1;
@@ -5214,6 +5249,7 @@ jsessionidInput.addEventListener('change', async () => {
     await loadPlatformEnabledFromStorage();
     await loadPlatformVisibleFromStorage();
   }
+  await loadPlatformOrderFromStorage();
   window.BjtuMoocPlatform?.init({
     courseList: courseListDiv,
     escape: escapeHtml,

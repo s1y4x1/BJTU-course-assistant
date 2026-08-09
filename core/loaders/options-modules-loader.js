@@ -29,6 +29,8 @@
       if (!response.ok) throw new Error(`${definition.label}选项片段 HTTP ${response.status}`);
       const slot = document.createElement('div');
       slot.dataset.optionsModule = id;
+      slot.dataset.optionsSection = `module:${id}`;
+      slot.dataset.optionsLabel = definition.label || id;
       slot.classList.toggle('options-wide-card', options.wide === true);
       const source = await response.text();
       const parsed = new DOMParser().parseFromString(source, 'text/html');
