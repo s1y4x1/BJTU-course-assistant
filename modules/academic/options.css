@@ -3,9 +3,9 @@
 .academic-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .academic-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
 #bindAcademicSystemBtn { background:#16a34a; }
-.academic-external-script-header { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin:14px 0 7px; }
+.academic-external-script-header { display:flex; align-items:baseline; justify-content:flex-start; gap:4px; margin:14px 0 7px; }
 .academic-external-script-header > strong { flex:0 0 auto; font-size:15px; }
-.academic-external-script-header > .tip { margin:0; font-size:12px; text-align:right; }
+.academic-external-script-header > .tip { margin:0; font-size:12px; text-align:left; }
 .academic-external-script-list { border:1px solid #d1d5db; border-radius:7px; overflow:hidden; background:#fff; }
 .academic-external-script-item { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto auto; align-items:center; gap:10px; padding:9px 10px; }
 .academic-external-script-choice { display:flex; align-items:center; gap:8px; min-width:0; margin:0; }

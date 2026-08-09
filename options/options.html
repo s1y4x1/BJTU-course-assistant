@@ -140,8 +140,13 @@
             style="width:auto;" checked />中国大学MOOC</label></div>
       <div id="moocPlatformDetail" class="platform-option-detail" data-module="mooc" hidden>
         <label><input type="checkbox" id="enableMooc" style="width:auto;" />启用</label>
-        <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />在中国大学MOOC页面注入 GinsMooc
-          操作按钮</label>
+        <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />注入用 GinsMooc 完成按钮</label>
+        <label><input type="checkbox" id="injectMoocPeerReviewEnabled" style="width:auto;" />注入自动互评按钮</label>
+        <div class="mooc-peer-review-count-editor" id="moocPeerReviewCountEditor">
+          <label for="moocPeerReviewCount">默认互评次数</label>
+          <input type="number" id="moocPeerReviewCount" min="1" step="1" value="5" />
+          <span>次</span>
+        </div>
       </div>
       <div class="platform-option" data-module="xuetangx" hidden><label><input type="checkbox" id="showXuetangx"
             style="width:auto;" checked />学堂在线</label></div>

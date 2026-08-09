@@ -36,6 +36,8 @@ const DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE = true;
 const DEFAULT_COURSE_HELPER_EXPANDED = false;
 const DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION = false;
 const DEFAULT_DEADLINE_COUNTDOWN_STYLE = 'seven-seg';
+const DEFAULT_MOOC_PEER_REVIEW_COUNT = 5;
+const MIN_MOOC_PEER_REVIEW_COUNT = 1;
 const MIN_POPUP_WIDTH_PX = 360;
 const MAX_POPUP_WIDTH_PX = 800;
 const MIN_POPUP_HEIGHT_PX = 420;
@@ -236,6 +238,14 @@ function normalizeDetailCollapsedLines(value, fallback = 3) {
 function normalizeParallelLimit(value, fallback = DEFAULT_PARALLEL_LIMIT) {
   const limit = Math.trunc(Number(value));
   return Number.isFinite(limit) && limit > 0 ? limit : fallback;
+}
+
+function normalizeMoocPeerReviewCount(value, fallback = DEFAULT_MOOC_PEER_REVIEW_COUNT) {
+  if (value === '' || value === null || value === undefined) return fallback;
+  const count = Math.trunc(Number(value));
+  return Number.isFinite(count)
+    ? Math.max(MIN_MOOC_PEER_REVIEW_COUNT, count)
+    : fallback;
 }
 
 function formatModuleBytes(bytes) {
@@ -461,8 +471,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.__bjtuVeOptionsReady;
   await globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg });
   await setupInstalledModuleOptions();
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled'
   ]);
   const { xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'xuetangxCourseStatuses',
@@ -514,6 +524,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ platformEnabled: effectiveEnabled });
   }
   document.getElementById('injectMoocHelperEnabled').checked = injectMoocHelperEnabled !== false;
+  document.getElementById('injectMoocPeerReviewEnabled').checked = injectMoocPeerReviewEnabled === true;
+  document.getElementById('moocPeerReviewCount').value = String(normalizeMoocPeerReviewCount(moocPeerReviewCount));
   document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
   document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
   document.getElementById('autoLoadAllHomeworkDetails').checked = autoLoadAllHomeworkDetails === true;
@@ -900,6 +912,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         });
       }
       if (changes.injectMoocHelperEnabled) applyBooleanUi('injectMoocHelperEnabled', changes.injectMoocHelperEnabled.newValue, true);
+      if (changes.injectMoocPeerReviewEnabled) {
+        applyBooleanUi('injectMoocPeerReviewEnabled', changes.injectMoocPeerReviewEnabled.newValue, false);
+      }
+      if (changes.moocPeerReviewCount) {
+        document.getElementById('moocPeerReviewCount').value = String(normalizeMoocPeerReviewCount(
+          changes.moocPeerReviewCount.newValue
+        ));
+      }
       if (changes.jlgjDarkModeEnabled) {
         applyBooleanUi('jlgjDarkModeEnabled', changes.jlgjDarkModeEnabled.newValue, true);
         void enforceJlgjDarkThemeAvailability();
@@ -1030,6 +1050,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   });
   document.getElementById('injectMoocHelperEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({ injectMoocHelperEnabled: !!document.getElementById('injectMoocHelperEnabled').checked });
+    setMsg('已应用更改');
+  });
+  document.getElementById('injectMoocPeerReviewEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({ injectMoocPeerReviewEnabled: !!document.getElementById('injectMoocPeerReviewEnabled').checked });
+    setMsg('已应用更改');
+  });
+  document.getElementById('moocPeerReviewCount').addEventListener('change', async (event) => {
+    const count = normalizeMoocPeerReviewCount(event.currentTarget.value);
+    event.currentTarget.value = String(count);
+    await chrome.storage.local.set({ moocPeerReviewCount: count });
     setMsg('已应用更改');
   });
   ['jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements'].forEach((id) => {
@@ -1455,6 +1485,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       platformEnabled: defaultPlatform,
       platformVisible: { ...DEFAULT_PLATFORM_VISIBLE },
       injectMoocHelperEnabled: true,
+      injectMoocPeerReviewEnabled: false,
+      moocPeerReviewCount: DEFAULT_MOOC_PEER_REVIEW_COUNT,
       jlgjDarkModeEnabled: true,
       jlgjAlwaysDarkModeEnabled: false,
       autoLoadAllHomeworkDetails: false,
@@ -1500,6 +1532,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.checked = DEFAULT_XUETANGX_ACTIVITY_TYPES.includes(Number(input.value));
     });
     document.getElementById('injectMoocHelperEnabled').checked = true;
+    document.getElementById('injectMoocPeerReviewEnabled').checked = false;
+    document.getElementById('moocPeerReviewCount').value = String(DEFAULT_MOOC_PEER_REVIEW_COUNT);
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
     document.getElementById('autoLoadAllHomeworkDetails').checked = false;

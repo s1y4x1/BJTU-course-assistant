@@ -234,6 +234,9 @@ html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5f
 #xuetangxPlatformDetail { --platform-theme:#1769fe; --platform-bg:#eff6ff; }
 .platform-option-subtitle { display:flex; align-items:center; gap:4px; margin:7px 0 3px; color:var(--platform-theme); font-size:14px; font-weight:700; }
 .platform-option-detail label { display:flex; align-items:center; gap:8px; margin:4px 0; font-weight:400; }
+.mooc-peer-review-count-editor { display:grid; grid-template-columns:auto 84px auto; align-items:center; justify-content:start; gap:8px; margin:6px 0 4px 22px; }
+.mooc-peer-review-count-editor label { margin:0; }
+.mooc-peer-review-count-editor input { box-sizing:border-box; width:84px; height:32px; padding:5px 7px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .xuetangx-activity-type-options { display:flex; flex-wrap:wrap; gap:0 14px; }
 .xuetangx-activity-type-options label { white-space:nowrap; }
 .account-progress-mask { position:fixed; inset:0; z-index:10001; background:rgba(15,23,42,.45); align-items:center; justify-content:center; }
