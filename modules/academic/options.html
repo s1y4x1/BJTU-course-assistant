@@ -56,6 +56,29 @@
         </div>
       </div>
     </div>
+    <div class="academic-external-script-item" data-script-id="bb-course-availability">
+      <label class="academic-external-script-choice">
+        <input id="academicBbScriptEnabled" type="checkbox" disabled>
+        <span class="academic-external-script-name">BB酱帮你查课余量 (2026修复版)</span>
+        <span id="academicBbScriptSize" class="academic-external-script-size file-size-emphasis"></span>
+      </label>
+      <span id="academicBbScriptStatus" class="academic-external-script-status">正在检查…</span>
+      <button id="academicBbScriptDownload" type="button" class="academic-external-script-action" disabled>下载</button>
+      <button id="academicBbScriptCheckUpdate" type="button" class="academic-external-script-action" hidden disabled>检查更新</button>
+      <button id="academicBbScriptDelete" type="button" class="academic-external-script-action academic-external-script-delete" hidden disabled>删除</button>
+      <div class="academic-external-script-config">
+        <label for="academicBbWishListCourses">愿望课程（每行一个“课程号 班号”）</label>
+        <textarea id="academicBbWishListCourses" rows="3" spellcheck="false" placeholder="例如：A121078B 01"></textarea>
+        <label for="academicBbRefreshDelayMs">刷新间隔（毫秒）</label>
+        <input id="academicBbRefreshDelayMs" type="number" min="500" max="3600000" step="100" value="3000">
+      </div>
+      <div id="academicBbScriptProgress" class="academic-external-script-progress" hidden>
+        <div class="academic-external-script-progress-label">正在下载…</div>
+        <div class="academic-external-script-progress-track">
+          <div id="academicBbScriptProgressBar" class="academic-external-script-progress-bar"></div>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="option-divider" role="separator"></div>
   <label class="academic-option-check">

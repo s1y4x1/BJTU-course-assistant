@@ -1,5 +1,6 @@
 const SYSTEM_NOTIFICATION_STATUS_KEY = 'systemNotificationStatus';
 const SYSTEM_NOTIFICATION_TEST_ID = 'bjtu-system-notification-test';
+const ACADEMIC_BB_NOTIFICATION_PREFIX = 'bjtu-academic-bb-availability:';
 
 async function createBjtuSystemNotification(notificationId, options, source = 'background', replaceExisting = false) {
   const id = String(notificationId || '').trim();
@@ -68,6 +69,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   )
     .then((notificationId) => sendResponse({ ok: true, notificationId }))
     .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'ACADEMIC_BB_COURSE_NOTIFICATION') return undefined;
+  const tabId = Number(sender?.tab?.id);
+  const key = String(message?.payload?.key || 'course').trim().slice(0, 160);
+  const title = String(message?.payload?.title || 'BB酱查课余量').slice(0, 160);
+  const notificationId = `${ACADEMIC_BB_NOTIFICATION_PREFIX}${Number.isInteger(tabId) ? tabId : 0}:${encodeURIComponent(key)}`;
+  const options = {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/128.png'),
+    title,
+    message: String(message?.payload?.text || '发现课程余量').slice(0, 500),
+    priority: 2,
+    requireInteraction: true
+  };
+  chrome.notifications.update(notificationId, options, (updated) => {
+    const updateError = chrome.runtime.lastError;
+    if (!updateError && updated) {
+      sendResponse({ ok: true, notificationId });
+      return;
+    }
+    chrome.notifications.create(notificationId, options, (createdId) => {
+      const createError = chrome.runtime.lastError;
+      sendResponse(createError
+        ? { ok: false, message: String(createError.message || createError) }
+        : { ok: true, notificationId: createdId || notificationId });
+    });
+  });
   return true;
 });
 
@@ -145,6 +176,14 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     matches: ['https://aa.bjtu.edu.cn/teaching_assessment/stu*'],
     js: ['modules/academic/external/assessment-satisfied.user.js'],
     runAt: 'document_start'
+  },
+  {
+    id: 'bjtu-academic-bb-course-availability',
+    module: 'academic',
+    enabledStorageKey: 'academicBbCourseAvailabilityExternalScriptEnabled',
+    matches: ['https://aa.bjtu.edu.cn/course_selection/courseselecttask/selects/*'],
+    js: ['modules/academic/external/bb-course-availability.user.js'],
+    runAt: 'document_start'
   }
 ];
 
@@ -184,7 +223,7 @@ async function doSyncOptionalContentScripts() {
       return { ok: false, message: String(error?.message || error) };
     }
   }
-  return { ok: true };
+  return { ok: true, registeredIds: registrations.map((script) => script.id) };
 }
 
 function syncOptionalContentScripts() {
@@ -424,6 +463,22 @@ const HOMEWORK_REMINDER_NOTIFICATION_PREFIX = 'bjtu-homework-reminder:';
 const BACKGROUND_UPDATE_NOTIFICATION_PREFIX = 'bjtu-background-update-';
 chrome.notifications.onClicked.addListener((notifId) => {
   const notificationId = String(notifId || '');
+  if (notificationId.startsWith(ACADEMIC_BB_NOTIFICATION_PREFIX)) {
+    const match = notificationId.slice(ACADEMIC_BB_NOTIFICATION_PREFIX.length).match(/^(\d+):(.*)$/);
+    const tabId = Number(match?.[1]);
+    const key = decodeURIComponent(match?.[2] || '');
+    if (Number.isInteger(tabId) && tabId > 0) {
+      chrome.tabs.update(tabId, { active: true }).then(async (tab) => {
+        if (tab?.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
+        await chrome.tabs.sendMessage(tabId, {
+          type: 'ACADEMIC_BB_NOTIFICATION_CLICKED',
+          payload: { key }
+        }).catch(() => null);
+      }).catch(() => null);
+    }
+    chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
+    return;
+  }
   if (notificationId.startsWith(HOMEWORK_REMINDER_NOTIFICATION_PREFIX)
     || notificationId.startsWith(BACKGROUND_UPDATE_NOTIFICATION_PREFIX)) {
     focusExistingAppTabOrOpen().catch(() => {});
@@ -897,7 +952,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === 'SYNC_OPTIONAL_CONTENT_SCRIPTS') {
     syncOptionalContentScripts()
-      .then((result) => sendResponse(result?.ok === false ? result : { ok: true }))
+      .then((result) => sendResponse(result?.ok === false ? result : { ok: true, ...result }))
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   }

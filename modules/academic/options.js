@@ -5,9 +5,18 @@
   const DEFAULT_CLASS_REMINDER_LEAD_MINUTES = 10;
   const MAX_INTERVAL_MINUTES = 525600;
   const ASSESSMENT_SCRIPT_ID = 'assessment-satisfied';
+  const ASSESSMENT_CONTENT_SCRIPT_ID = 'bjtu-academic-assessment-satisfied';
   const ASSESSMENT_SCRIPT_STORAGE_KEY = 'academicAssessmentExternalScriptEnabled';
   const ASSESSMENT_SCRIPT_PATH = 'modules/academic/external/assessment-satisfied.user.js';
   const ASSESSMENT_SCRIPT_URL = 'https://update.greasyfork.org/scripts/537626/BJTU%20%E5%8C%97%E4%BA%AC%E4%BA%A4%E9%80%9A%E5%A4%A7%E5%AD%A6%20%E4%B8%80%E9%94%AE%E8%AF%84%E6%95%99%E4%B8%BA%E2%80%9C%E9%9D%9E%E5%B8%B8%E6%BB%A1%E6%84%8F%E2%80%9D%E5%B9%B6%E5%A1%AB%E5%86%99%E4%B8%BB%E8%A7%82%E6%84%8F%E8%A7%81.user.js';
+  const BB_SCRIPT_ID = 'bb-course-availability';
+  const BB_CONTENT_SCRIPT_ID = 'bjtu-academic-bb-course-availability';
+  const BB_SCRIPT_STORAGE_KEY = 'academicBbCourseAvailabilityExternalScriptEnabled';
+  const BB_SCRIPT_PATH = 'modules/academic/external/bb-course-availability.user.js';
+  const BB_SCRIPT_URL = 'https://update.greasyfork.org/scripts/561136/BB%E9%85%B1%E5%B8%AE%E4%BD%A0%E6%9F%A5%E8%AF%BE%E4%BD%99%E9%87%8F%20%282026%E4%BF%AE%E5%A4%8D%E7%89%88%29.user.js';
+  const BB_WISH_LIST_KEY = 'academicBbWishListCourses';
+  const BB_REFRESH_DELAY_KEY = 'academicBbRefreshDelayMs';
+  const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
   const DEFAULTS = Object.freeze({
     academicOptionsWideEnabled: true,
     academicScoreMonitorEnabled: false,
@@ -16,7 +25,9 @@
     academicClassReminderLeadMinutes: DEFAULT_CLASS_REMINDER_LEAD_MINUTES,
     academicScoreMonitorIntervalMinutes: DEFAULT_MONITOR_INTERVAL_MINUTES,
     academicScheduleType: 'semester',
-    academicScheduleWeek: 'all'
+    academicScheduleWeek: 'all',
+    [BB_WISH_LIST_KEY]: [],
+    [BB_REFRESH_DELAY_KEY]: DEFAULT_BB_REFRESH_DELAY_MS
   });
 
   let initialized = false;
@@ -30,6 +41,13 @@
   let assessmentScriptSizeBytes = 0;
   let assessmentScriptRuntimeReady = false;
   let assessmentScriptReloadRequired = false;
+  let bbScriptInstalled = false;
+  let bbScriptEnabled = false;
+  let bbScriptBusy = false;
+  let bbScriptReady = false;
+  let bbScriptSizeBytes = 0;
+  let bbScriptRuntimeReady = false;
+  let bbScriptReloadRequired = false;
 
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
@@ -194,13 +212,13 @@
     return text;
   }
 
-  async function reloadAcademicOptionsPage() {
+  async function reloadAcademicOptionsPage(source = ASSESSMENT_SCRIPT_ID) {
     const currentTab = await chrome.tabs.getCurrent().catch(() => null);
     const standalone = /\/modules\/academic\/options\.html$/i.test(location.pathname);
     const popup = new URLSearchParams(location.search).get('popup') === '1';
     const result = await send('RELOAD_EXTENSION_AND_OPEN_APP', {
       reopenApp: false,
-      source: ASSESSMENT_SCRIPT_ID,
+      source,
       sourceTabId: Number(currentTab?.id) || null,
       restoreOptionsPath: popup
         ? ''
@@ -297,9 +315,12 @@
         await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: true });
         assessmentScriptBusy = false;
         renderAssessmentScriptState();
-        if (assessmentScriptRuntimeReady && !assessmentScriptReloadRequired) {
-          const result = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
-          if (!result?.ok) throw new Error(result?.message || '脚本注册失败');
+        const result = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+        if (!result?.ok) throw new Error(result?.message || '脚本注册失败');
+        if (!assessmentScriptReloadRequired && Array.isArray(result.registeredIds)
+            && result.registeredIds.includes(ASSESSMENT_CONTENT_SCRIPT_ID)) {
+          assessmentScriptRuntimeReady = true;
+          assessmentScriptReloadRequired = false;
           setMessage('已启用一键评教脚本');
         } else {
           setAssessmentScriptStatus('正在启用并重新加载扩展…');
@@ -338,6 +359,7 @@
     renderAssessmentScriptState();
     setAssessmentScriptStatus('正在删除…');
     try {
+      const shouldReload = assessmentScriptRuntimeReady;
       const manager = await getUpdaterManager();
       const root = await manager.requestDirectory();
       await manager.removeManagedFile(root, ASSESSMENT_SCRIPT_PATH);
@@ -349,8 +371,13 @@
       assessmentScriptReloadRequired = false;
       assessmentScriptBusy = false;
       renderAssessmentScriptState();
-      setAssessmentScriptStatus('已删除，正在重新加载扩展…');
-      await reloadAcademicOptionsPage();
+      if (shouldReload) {
+        setAssessmentScriptStatus('已删除，正在重新加载扩展…');
+        await reloadAcademicOptionsPage();
+      } else {
+        setAssessmentScriptStatus('未下载');
+        setMessage('一键评教脚本已删除');
+      }
     } catch (error) {
       assessmentScriptBusy = false;
       renderAssessmentScriptState();
@@ -403,6 +430,413 @@
       setAssessmentScriptProgress({ visible: false });
       renderAssessmentScriptState();
       setAssessmentScriptStatus(String(error?.message || error), true);
+      setMessage(`检查外部脚本更新失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  function normalizeBbWishList(value) {
+    const source = Array.isArray(value) ? value : String(value || '').split(/[\r\n,]+/);
+    return [...new Set(source.map((item) => String(item || '').trim().toUpperCase().replace(/\s+/g, ' '))
+      .filter((item) => /^[A-Z]\d{6}[A-Z]\s\d{2}$/.test(item)))];
+  }
+
+  function normalizeBbRefreshDelay(value) {
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? Math.min(3600000, Math.max(500, Math.round(number)))
+      : DEFAULT_BB_REFRESH_DELAY_MS;
+  }
+
+  function renderBbSettings(settings = {}) {
+    const wishList = element('academicBbWishListCourses');
+    const delay = element('academicBbRefreshDelayMs');
+    if (wishList instanceof HTMLTextAreaElement) {
+      wishList.value = normalizeBbWishList(settings[BB_WISH_LIST_KEY]).join('\n');
+    }
+    if (delay instanceof HTMLInputElement) {
+      delay.value = String(normalizeBbRefreshDelay(settings[BB_REFRESH_DELAY_KEY]));
+    }
+  }
+
+  async function saveBbSettings() {
+    const wishList = normalizeBbWishList(element('academicBbWishListCourses')?.value);
+    const refreshDelay = normalizeBbRefreshDelay(element('academicBbRefreshDelayMs')?.value);
+    await chrome.storage.local.set({
+      [BB_WISH_LIST_KEY]: wishList,
+      [BB_REFRESH_DELAY_KEY]: refreshDelay
+    });
+    renderBbSettings({ [BB_WISH_LIST_KEY]: wishList, [BB_REFRESH_DELAY_KEY]: refreshDelay });
+    setMessage(`BB酱查课设置已保存：${wishList.length} 门课程，间隔 ${refreshDelay} 毫秒`);
+  }
+
+  function setBbScriptStatus(text, error = false) {
+    const status = element('academicBbScriptStatus');
+    if (!(status instanceof HTMLElement)) return;
+    status.textContent = String(text || '');
+    status.classList.toggle('error', error);
+  }
+
+  function setBbScriptProgress({ visible = true, loaded = 0, total = 0, label = '正在下载…' } = {}) {
+    const container = element('academicBbScriptProgress');
+    const bar = element('academicBbScriptProgressBar');
+    const labelElement = container?.querySelector('.academic-external-script-progress-label');
+    if (!(container instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
+    container.hidden = !visible;
+    if (labelElement instanceof HTMLElement) labelElement.textContent = label;
+    if (!visible) {
+      container.classList.remove('is-indeterminate');
+      bar.style.width = '0';
+      return;
+    }
+    const determinate = Number(total) > 0;
+    container.classList.toggle('is-indeterminate', !determinate);
+    bar.style.width = determinate ? `${Math.min(100, Number(loaded) / Number(total) * 100)}%` : '';
+  }
+
+  function renderBbScriptState() {
+    const checkbox = element('academicBbScriptEnabled');
+    const download = element('academicBbScriptDownload');
+    const checkUpdate = element('academicBbScriptCheckUpdate');
+    const deleteButton = element('academicBbScriptDelete');
+    const size = element('academicBbScriptSize');
+    if (checkbox instanceof HTMLInputElement) {
+      checkbox.disabled = bbScriptBusy || !bbScriptReady;
+      checkbox.checked = bbScriptEnabled;
+    }
+    if (download instanceof HTMLButtonElement) {
+      download.hidden = bbScriptInstalled;
+      download.disabled = bbScriptBusy || !bbScriptReady;
+      download.textContent = bbScriptBusy ? '处理中…' : '下载';
+    }
+    if (checkUpdate instanceof HTMLButtonElement) {
+      checkUpdate.hidden = !bbScriptInstalled;
+      checkUpdate.disabled = bbScriptBusy;
+    }
+    if (deleteButton instanceof HTMLButtonElement) {
+      deleteButton.hidden = !bbScriptInstalled;
+      deleteButton.disabled = bbScriptBusy || bbScriptEnabled;
+    }
+    if (size instanceof HTMLElement) {
+      size.textContent = bbScriptSizeBytes > 0 ? formatExternalScriptBytes(bbScriptSizeBytes) : '—';
+      size.style.cssText = buildFileSizeEmphasisStyle(bbScriptSizeBytes);
+    }
+    if (!bbScriptBusy) setBbScriptStatus(bbScriptInstalled ? '已下载' : '未下载');
+  }
+
+  async function runtimeBbScriptInfo() {
+    try {
+      const response = await fetch(chrome.runtime.getURL(BB_SCRIPT_PATH), { cache: 'no-store' });
+      if (!response.ok) return { exists: false, size: 0 };
+      const bytes = await response.arrayBuffer();
+      return { exists: true, size: bytes.byteLength };
+    } catch {
+      return { exists: false, size: 0 };
+    }
+  }
+
+  async function refreshBbScriptState() {
+    const stored = await chrome.storage.local.get([BB_SCRIPT_STORAGE_KEY]);
+    let directoryReady = false;
+    let directorySize = 0;
+    try {
+      const manager = await getUpdaterManager();
+      directoryReady = await manager.managedFileExists(BB_SCRIPT_PATH);
+      if (directoryReady && typeof manager.managedFileSize === 'function') {
+        directorySize = await manager.managedFileSize(BB_SCRIPT_PATH);
+      }
+    } catch {}
+    const runtimeInfo = await runtimeBbScriptInfo();
+    bbScriptInstalled = directoryReady || runtimeInfo.exists;
+    bbScriptSizeBytes = directorySize || runtimeInfo.size;
+    bbScriptRuntimeReady = runtimeInfo.exists;
+    bbScriptReloadRequired = false;
+    bbScriptEnabled = bbScriptInstalled && stored[BB_SCRIPT_STORAGE_KEY] === true;
+    if (!bbScriptInstalled && stored[BB_SCRIPT_STORAGE_KEY] === true) {
+      bbScriptEnabled = false;
+      await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: false });
+      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+    }
+    bbScriptReady = true;
+    renderBbScriptState();
+  }
+
+  function transformBbScript(source) {
+    let text = String(source || '');
+    if (text.length < 2000 || text.length > 500000
+        || !text.includes('// ==UserScript==')
+        || !text.includes('@name         BB酱帮你查课余量 (2026修复版)')
+        || !/@match\s+https:\/\/aa\.bjtu\.edu\.cn\/course_selection\/courseselecttask\/selects\//.test(text)
+        || !text.includes('function main()')
+        || !text.includes('GM_notification')
+        || !text.includes('GM_addStyle')) {
+      throw new Error('下载内容不是预期的 BB酱查课余量脚本');
+    }
+    const original = text;
+    text = text.replace(/var\s+wishListCourses\s*=\s*\[[\s\S]*?\];/, 'let wishListCourses = [];');
+    text = text.replace(/const\s+REFRESH_DELAY\s*=\s*\d+\s*;/, `let REFRESH_DELAY = ${DEFAULT_BB_REFRESH_DELAY_MS};`);
+    text = text.replace(/\bGM_addStyle\b/g, '__bjtuGMAddStyle');
+    text = text.replace(/\bGM_notification\b/g, '__bjtuGMNotification');
+    const bootstrap = `
+    const __bjtuGMAddStyle = (css) => {
+        const style = document.createElement('style');
+        style.textContent = String(css || '');
+        (document.head || document.documentElement).appendChild(style);
+        return style;
+    };
+    const __bjtuNotificationCallbacks = new Map();
+    const __bjtuNormalizeWishList = (value) => {
+        const source = Array.isArray(value) ? value : String(value || '').split(/[\\r\\n,]+/);
+        return [...new Set(source.map(item => String(item || '').trim().toUpperCase().replace(/\\s+/g, ' '))
+            .filter(item => /^[A-Z]\\d{6}[A-Z]\\s\\d{2}$/.test(item)))];
+    };
+    const __bjtuNormalizeDelay = (value) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? Math.min(3600000, Math.max(500, Math.round(number))) : 3000;
+    };
+    const __bjtuGMNotification = (options = {}) => {
+        const text = String(options.text || '');
+        const key = String(text.match(/课程\\s+(.+?)\\s+有余量/)?.[1] || text || 'course').trim();
+        if (typeof options.onclick === 'function') __bjtuNotificationCallbacks.set(key, options.onclick);
+        chrome.runtime.sendMessage({
+            type: 'ACADEMIC_BB_COURSE_NOTIFICATION',
+            payload: { key, title: String(options.title || ''), text }
+        }).catch(() => {});
+    };
+    chrome.runtime.onMessage.addListener(message => {
+        if (message?.type !== 'ACADEMIC_BB_NOTIFICATION_CLICKED') return;
+        const callback = __bjtuNotificationCallbacks.get(String(message?.payload?.key || ''));
+        if (callback) { try { callback(); } catch {} }
+    });
+    const __bjtuApplyConfig = (settings) => {
+        wishListCourses = __bjtuNormalizeWishList(settings.academicBbWishListCourses);
+        REFRESH_DELAY = __bjtuNormalizeDelay(settings.academicBbRefreshDelayMs);
+    };
+    const __bjtuLoadConfig = async () => {
+        const settings = await chrome.storage.local.get(['academicBbWishListCourses', 'academicBbRefreshDelayMs']);
+        __bjtuApplyConfig(settings);
+    };
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        if (changes.academicBbWishListCourses) wishListCourses = __bjtuNormalizeWishList(changes.academicBbWishListCourses.newValue);
+        if (changes.academicBbRefreshDelayMs) REFRESH_DELAY = __bjtuNormalizeDelay(changes.academicBbRefreshDelayMs.newValue);
+    });
+`;
+    text = text.replace(/(['"]use strict['"];)/, `$1${bootstrap}`);
+    text = text.replace(/setTimeout\(\(\) => \{\s*LogManager\.init\(\);\s*main\(\);\s*\},\s*500\s*\);/, `setTimeout(() => {
+        void __bjtuLoadConfig().finally(() => {
+            LogManager.init();
+            main();
+        });
+    }, 500);`);
+    if (text === original || !text.includes('__bjtuLoadConfig().finally')
+        || !text.includes('let wishListCourses = [];') || !text.includes('let REFRESH_DELAY =')) {
+      throw new Error('BB酱脚本结构已变化，无法安全应用扩展配置');
+    }
+    return text;
+  }
+
+  async function fetchBbScript(onProgress) {
+    const response = await fetch(BB_SCRIPT_URL, { cache: 'no-store', redirect: 'follow' });
+    if (!response.ok) throw new Error(`GreasyFork 下载失败：HTTP ${response.status}`);
+    const total = Math.max(0, Number(response.headers.get('content-length') || 0));
+    const reader = response.body?.getReader?.();
+    if (!reader) {
+      const text = await response.text();
+      onProgress?.({ loaded: new TextEncoder().encode(text).byteLength, total });
+      return transformBbScript(text);
+    }
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      chunks.push(value);
+      loaded += value.byteLength;
+      onProgress?.({ loaded, total });
+    }
+    const bytes = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return transformBbScript(new TextDecoder().decode(bytes));
+  }
+
+  async function downloadBbScript({ enableAfterDownload = false } = {}) {
+    if (bbScriptBusy || bbScriptInstalled) return;
+    bbScriptBusy = true;
+    bbScriptEnabled = enableAfterDownload;
+    renderBbScriptState();
+    setBbScriptStatus('正在请求扩展目录写入权限…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      setBbScriptStatus('正在从 GreasyFork 下载…');
+      setBbScriptProgress({ visible: true });
+      const source = await fetchBbScript(({ loaded, total }) => {
+        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
+        setBbScriptProgress({
+          visible: true,
+          loaded,
+          total,
+          label: `正在下载：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+        });
+      });
+      const bytes = new TextEncoder().encode(source);
+      await manager.writeManagedFile(root, BB_SCRIPT_PATH, bytes);
+      bbScriptSizeBytes = bytes.byteLength;
+      bbScriptReloadRequired = true;
+      bbScriptInstalled = true;
+      bbScriptEnabled = enableAfterDownload;
+      await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: enableAfterDownload });
+      setBbScriptProgress({ visible: false });
+      bbScriptBusy = false;
+      renderBbScriptState();
+      if (enableAfterDownload) {
+        setBbScriptStatus('已下载，正在启用并重新加载扩展…');
+        await reloadAcademicOptionsPage(BB_SCRIPT_ID);
+      } else {
+        setMessage('「BB酱帮你查课余量」已下载');
+      }
+    } catch (error) {
+      bbScriptBusy = false;
+      bbScriptEnabled = false;
+      setBbScriptProgress({ visible: false });
+      renderBbScriptState();
+      setBbScriptStatus(String(error?.message || error), true);
+      setMessage(`外部脚本下载失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function setBbScriptEnabled(enabled) {
+    if (bbScriptBusy || !bbScriptReady) return;
+    if (enabled && !bbScriptInstalled) {
+      await downloadBbScript({ enableAfterDownload: true });
+      return;
+    }
+    bbScriptBusy = true;
+    bbScriptEnabled = enabled;
+    renderBbScriptState();
+    if (enabled) {
+      try {
+        await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: true });
+        bbScriptBusy = false;
+        renderBbScriptState();
+        const result = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+        if (!result?.ok) throw new Error(result?.message || '脚本注册失败');
+        if (!bbScriptReloadRequired && Array.isArray(result.registeredIds)
+            && result.registeredIds.includes(BB_CONTENT_SCRIPT_ID)) {
+          bbScriptRuntimeReady = true;
+          bbScriptReloadRequired = false;
+          setMessage('已启用「BB酱帮你查课余量」');
+        } else {
+          setBbScriptStatus('正在启用并重新加载扩展…');
+          await reloadAcademicOptionsPage(BB_SCRIPT_ID);
+        }
+      } catch (error) {
+        await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: false });
+        bbScriptEnabled = false;
+        bbScriptBusy = false;
+        renderBbScriptState();
+        setBbScriptStatus(String(error?.message || error), true);
+      }
+      return;
+    }
+    try {
+      await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: false });
+      const result = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+      if (!result?.ok) throw new Error(result?.message || '脚本注销失败');
+      bbScriptBusy = false;
+      renderBbScriptState();
+      setMessage('已停用「BB酱帮你查课余量」，可点击「删除」卸载');
+    } catch (error) {
+      await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: true });
+      bbScriptEnabled = true;
+      bbScriptBusy = false;
+      renderBbScriptState();
+      setBbScriptStatus(String(error?.message || error), true);
+      setMessage(`外部脚本停用失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function deleteBbScript() {
+    if (bbScriptBusy || !bbScriptInstalled || bbScriptEnabled) return;
+    bbScriptBusy = true;
+    renderBbScriptState();
+    setBbScriptStatus('正在删除…');
+    try {
+      const shouldReload = bbScriptRuntimeReady;
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      await manager.removeManagedFile(root, BB_SCRIPT_PATH);
+      await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: false });
+      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+      bbScriptInstalled = false;
+      bbScriptSizeBytes = 0;
+      bbScriptRuntimeReady = false;
+      bbScriptReloadRequired = false;
+      bbScriptBusy = false;
+      renderBbScriptState();
+      if (shouldReload) {
+        setBbScriptStatus('已删除，正在重新加载扩展…');
+        await reloadAcademicOptionsPage(BB_SCRIPT_ID);
+      } else {
+        setBbScriptStatus('未下载');
+        setMessage('BB酱查课余量脚本已删除');
+      }
+    } catch (error) {
+      bbScriptBusy = false;
+      renderBbScriptState();
+      setBbScriptStatus(String(error?.message || error), true);
+      setMessage(`外部脚本删除失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function checkBbScriptUpdate() {
+    if (bbScriptBusy || !bbScriptInstalled) return;
+    bbScriptBusy = true;
+    renderBbScriptState();
+    setBbScriptStatus('正在检查更新…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      const current = await (await manager.readManagedFile(root, BB_SCRIPT_PATH)).text();
+      setBbScriptProgress({ visible: true, label: '正在从 GreasyFork 检查更新…' });
+      const latest = await fetchBbScript(({ loaded, total }) => {
+        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
+        setBbScriptProgress({
+          visible: true,
+          loaded,
+          total,
+          label: `正在检查：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+        });
+      });
+      const normalize = (value) => String(value || '').replace(/\r\n/g, '\n').trim();
+      if (normalize(current) === normalize(latest)) {
+        bbScriptBusy = false;
+        setBbScriptProgress({ visible: false });
+        renderBbScriptState();
+        setBbScriptStatus('已下载（已是最新）');
+        return;
+      }
+      const bytes = new TextEncoder().encode(latest);
+      await manager.writeManagedFile(root, BB_SCRIPT_PATH, bytes);
+      bbScriptSizeBytes = bytes.byteLength;
+      bbScriptReloadRequired = true;
+      bbScriptBusy = false;
+      setBbScriptProgress({ visible: false });
+      renderBbScriptState();
+      setBbScriptStatus(bbScriptEnabled ? '已下载（已更新，重新启用后生效）' : '已下载（已更新）');
+      setMessage(bbScriptEnabled
+        ? 'BB酱查课余量脚本已更新，请取消勾选后重新启用'
+        : 'BB酱查课余量脚本已更新');
+    } catch (error) {
+      bbScriptBusy = false;
+      setBbScriptProgress({ visible: false });
+      renderBbScriptState();
+      setBbScriptStatus(String(error?.message || error), true);
       setMessage(`检查外部脚本更新失败：${String(error?.message || error)}`, false);
     }
   }
@@ -850,6 +1284,24 @@
     element('academicAssessmentScriptEnabled')?.addEventListener('change', (event) => {
       void setAssessmentScriptEnabled(event.currentTarget.checked === true);
     });
+    element('academicBbScriptDownload')?.addEventListener('click', () => {
+      void downloadBbScript();
+    });
+    element('academicBbScriptCheckUpdate')?.addEventListener('click', () => {
+      void checkBbScriptUpdate();
+    });
+    element('academicBbScriptDelete')?.addEventListener('click', () => {
+      void deleteBbScript();
+    });
+    element('academicBbScriptEnabled')?.addEventListener('change', (event) => {
+      void setBbScriptEnabled(event.currentTarget.checked === true);
+    });
+    element('academicBbWishListCourses')?.addEventListener('change', () => {
+      void saveBbSettings();
+    });
+    element('academicBbRefreshDelayMs')?.addEventListener('change', () => {
+      void saveBbSettings();
+    });
     element('academicLoginBtn')?.addEventListener('click', async () => {
       const button = element('academicLoginBtn');
       const studentId = String(element('academicStudentId')?.value || '').trim();
@@ -999,6 +1451,19 @@
           && changes[ASSESSMENT_SCRIPT_STORAGE_KEY].newValue === true;
         renderAssessmentScriptState();
       }
+      if (changes[BB_SCRIPT_STORAGE_KEY] && !bbScriptBusy) {
+        bbScriptEnabled = bbScriptInstalled && changes[BB_SCRIPT_STORAGE_KEY].newValue === true;
+        renderBbScriptState();
+      }
+      if (changes[BB_WISH_LIST_KEY] || changes[BB_REFRESH_DELAY_KEY]) {
+        const wishList = changes[BB_WISH_LIST_KEY]
+          ? changes[BB_WISH_LIST_KEY].newValue
+          : element('academicBbWishListCourses')?.value;
+        const refreshDelay = changes[BB_REFRESH_DELAY_KEY]
+          ? changes[BB_REFRESH_DELAY_KEY].newValue
+          : element('academicBbRefreshDelayMs')?.value;
+        renderBbSettings({ [BB_WISH_LIST_KEY]: wishList, [BB_REFRESH_DELAY_KEY]: refreshDelay });
+      }
       updateDisabledState();
     });
   }
@@ -1013,6 +1478,7 @@
     element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled === true;
     element('academicExamMonitorEnabled').checked = stored.academicExamMonitorEnabled === true;
     element('academicClassReminderEnabled').checked = stored.academicClassReminderEnabled === true;
+    renderBbSettings(stored);
     element('academicScheduleType').value = stored.academicScheduleType === 'selection' ? 'selection' : 'semester';
     setIntervalEditor('academicScoreMonitorInterval', stored.academicScoreMonitorIntervalMinutes,
       DEFAULT_MONITOR_INTERVAL_MINUTES);
@@ -1022,6 +1488,7 @@
     bindMessages();
     updateDisabledState();
     void refreshAssessmentScriptState();
+    void refreshBbScriptState();
     await refreshContext();
     await send('ACADEMIC_PRELOAD_ACCOUNT');
     void loadAll();
@@ -1036,6 +1503,7 @@
     applyWideOption(true);
     element('academicExamMonitorEnabled').checked = false;
     element('academicClassReminderEnabled').checked = false;
+    renderBbSettings(DEFAULTS);
     element('academicScheduleType').value = 'semester';
     element('academicScheduleWeek').value = 'all';
     setIntervalEditor('academicScoreMonitorInterval', DEFAULT_MONITOR_INTERVAL_MINUTES,

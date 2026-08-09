@@ -8,6 +8,7 @@
 .academic-external-script-header > .tip { margin:0; font-size:12px; text-align:left; }
 .academic-external-script-list { border:1px solid #d1d5db; border-radius:7px; overflow:hidden; background:#fff; }
 .academic-external-script-item { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto auto; align-items:center; gap:10px; padding:9px 10px; }
+.academic-external-script-item + .academic-external-script-item { border-top:1px solid #e5e7eb; }
 .academic-external-script-choice { display:flex; align-items:center; gap:8px; min-width:0; margin:0; }
 .academic-external-script-choice input { width:auto; margin:0; }
 .academic-external-script-name { min-width:0; overflow-wrap:anywhere; }
@@ -18,11 +19,16 @@
 .academic-external-script-delete { background:#dc2626; }
 .academic-external-script-delete:disabled { background:#fca5a5; }
 .academic-external-script-progress { grid-column:1/-1; min-width:0; }
-.academic-external-script-progress-label { margin-bottom:5px; color:#64748b; font-size:12px; }
-.academic-external-script-progress-track { height:6px; overflow:hidden; border-radius:999px; background:#e2e8f0; }
+.academic-external-script-config { grid-column:1/-1; display:grid; grid-template-columns:auto minmax(180px,1fr) auto minmax(110px,160px); align-items:center; gap:7px 9px; padding:8px; border-radius:6px; background:#f8fafc; }
+.academic-external-script-config label { margin:0; color:#475569; font-size:12px; white-space:nowrap; }
+.academic-external-script-config textarea, .academic-external-script-config input { width:100%; min-width:0; margin:0; box-sizing:border-box; }
+.academic-external-script-config textarea { resize:vertical; }
+.academic-external-script-config .tip { grid-column:1/-1; margin:0; text-align:left; }
+.academic-external-script-progress-label { margin-bottom:4px; overflow:hidden; color:#475569; font-size:12px; font-variant-numeric:tabular-nums; text-overflow:ellipsis; white-space:nowrap; }
+.academic-external-script-progress-track { width:100%; height:4px; overflow:hidden; border-radius:2px; background:#dbeafe; }
 .academic-external-script-progress-bar { width:0; height:100%; border-radius:inherit; background:#2563eb; transition:width .15s ease; }
-.academic-external-script-progress.is-indeterminate .academic-external-script-progress-bar { width:35%; animation:academic-external-progress 1s ease-in-out infinite alternate; }
-@keyframes academic-external-progress { from { transform:translateX(-20%); } to { transform:translateX(210%); } }
+.academic-external-script-progress.is-indeterminate .academic-external-script-progress-bar { width:35%; animation:academicExternalProgressIndeterminate 1s ease-in-out infinite; }
+@keyframes academicExternalProgressIndeterminate { from { transform:translateX(-110%); } to { transform:translateX(300%); } }
 .academic-option-check { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .academic-option-check:first-of-type { margin-top:12px; }
 .academic-option-check input { width:auto; }
@@ -70,7 +76,12 @@
 html[data-color-scheme="dark"] .academic-options-card { border-color:#334155; background:#0f172a; }
 html[data-color-scheme="dark"] .academic-account-row select { border-color:#475569; background:#111827; color:#f8fafc; }
 html[data-color-scheme="dark"] .academic-external-script-list { border-color:#475569; background:#111827; }
-html[data-color-scheme="dark"] .academic-external-script-progress-track { background:#334155; }
+html[data-color-scheme="dark"] .academic-external-script-item + .academic-external-script-item { border-top-color:#334155; }
+html[data-color-scheme="dark"] .academic-external-script-config { background:#1e293b; }
+html[data-color-scheme="dark"] .academic-external-script-config label { color:#cbd5e1; }
+html[data-color-scheme="dark"] .academic-external-script-progress-label { color:#94a3b8; }
+html[data-color-scheme="dark"] .academic-external-script-progress-track { background:#1e3a5f; }
+html[data-color-scheme="dark"] .academic-external-script-progress-bar { background:#60a5fa; }
 html[data-color-scheme="dark"] .academic-score-header-meta,
 html[data-color-scheme="dark"] .academic-schedule-controls label,
 html[data-color-scheme="dark"] .academic-schedule-period span,
@@ -82,3 +93,9 @@ html[data-color-scheme="dark"] .academic-score-table th,
 html[data-color-scheme="dark"] .academic-score-table td { border-color:#334155; }
 html[data-color-scheme="dark"] .academic-schedule-course + .academic-schedule-course { border-top-color:#475569; }
 html[data-color-scheme="dark"] .academic-schedule-course-code { color:#60a5fa; }
+
+@media (max-width:760px) {
+  .academic-external-script-item { grid-template-columns:minmax(0,1fr) auto; }
+  .academic-external-script-config { grid-template-columns:1fr; }
+  .academic-external-script-config .tip { grid-column:1; }
+}
