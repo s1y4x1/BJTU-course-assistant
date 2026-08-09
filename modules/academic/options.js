@@ -4,6 +4,10 @@
   const DEFAULT_MONITOR_INTERVAL_MINUTES = 1;
   const DEFAULT_CLASS_REMINDER_LEAD_MINUTES = 10;
   const MAX_INTERVAL_MINUTES = 525600;
+  const ASSESSMENT_SCRIPT_ID = 'assessment-satisfied';
+  const ASSESSMENT_SCRIPT_STORAGE_KEY = 'academicAssessmentExternalScriptEnabled';
+  const ASSESSMENT_SCRIPT_PATH = 'modules/academic/external/assessment-satisfied.user.js';
+  const ASSESSMENT_SCRIPT_URL = 'https://update.greasyfork.org/scripts/537626/BJTU%20%E5%8C%97%E4%BA%AC%E4%BA%A4%E9%80%9A%E5%A4%A7%E5%AD%A6%20%E4%B8%80%E9%94%AE%E8%AF%84%E6%95%99%E4%B8%BA%E2%80%9C%E9%9D%9E%E5%B8%B8%E6%BB%A1%E6%84%8F%E2%80%9D%E5%B9%B6%E5%A1%AB%E5%86%99%E4%B8%BB%E8%A7%82%E6%84%8F%E8%A7%81.user.js';
   const DEFAULTS = Object.freeze({
     academicScoreMonitorEnabled: false,
     academicExamMonitorEnabled: false,
@@ -18,10 +22,318 @@
   let context = null;
   let scheduleData = null;
   let setMessage = () => {};
+  let assessmentScriptInstalled = false;
+  let assessmentScriptEnabled = false;
+  let assessmentScriptBusy = false;
+  let assessmentScriptReady = false;
 
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
+
+  async function getUpdaterManager() {
+    const ready = await global.__bjtuUpdaterReady;
+    const manager = ready && global.BjtuUpdaterModuleManager;
+    if (!manager?.requestDirectory || !manager?.managedFileExists
+        || !manager?.writeManagedFile || !manager?.readManagedFile || !manager?.removeManagedFile) {
+      throw new Error('更新组件不可用，无法管理外部脚本');
+    }
+    return manager;
+  }
+
+  function setAssessmentScriptStatus(text, error = false) {
+    const status = element('academicAssessmentScriptStatus');
+    if (!(status instanceof HTMLElement)) return;
+    status.textContent = String(text || '');
+    status.classList.toggle('error', error);
+  }
+
+  function formatExternalScriptBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return `${bytes} B`;
+    return `${parseFloat((bytes / 1024).toFixed(2))} KB`;
+  }
+
+  function setAssessmentScriptProgress({ visible = true, loaded = 0, total = 0, label = '正在下载…' } = {}) {
+    const container = element('academicAssessmentScriptProgress');
+    const bar = element('academicAssessmentScriptProgressBar');
+    const labelElement = container?.querySelector('.academic-external-script-progress-label');
+    if (!(container instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
+    container.hidden = !visible;
+    if (labelElement instanceof HTMLElement) labelElement.textContent = label;
+    if (!visible) {
+      container.classList.remove('is-indeterminate');
+      bar.style.width = '0';
+      return;
+    }
+    const determinate = Number(total) > 0;
+    container.classList.toggle('is-indeterminate', !determinate);
+    bar.style.width = determinate ? `${Math.min(100, Number(loaded) / Number(total) * 100)}%` : '';
+  }
+
+  function renderAssessmentScriptState() {
+    const checkbox = element('academicAssessmentScriptEnabled');
+    const download = element('academicAssessmentScriptDownload');
+    const checkUpdate = element('academicAssessmentScriptCheckUpdate');
+    const deleteButton = element('academicAssessmentScriptDelete');
+    if (checkbox instanceof HTMLInputElement) {
+      checkbox.disabled = assessmentScriptBusy || !assessmentScriptReady;
+      checkbox.checked = assessmentScriptEnabled;
+    }
+    if (download instanceof HTMLButtonElement) {
+      download.hidden = assessmentScriptInstalled;
+      download.disabled = assessmentScriptBusy || !assessmentScriptReady;
+      download.textContent = assessmentScriptBusy ? '处理中…' : '下载';
+    }
+    if (checkUpdate instanceof HTMLButtonElement) {
+      checkUpdate.hidden = !assessmentScriptInstalled;
+      checkUpdate.disabled = assessmentScriptBusy;
+    }
+    if (deleteButton instanceof HTMLButtonElement) {
+      deleteButton.hidden = !assessmentScriptInstalled;
+      deleteButton.disabled = assessmentScriptBusy || assessmentScriptEnabled;
+    }
+    if (!assessmentScriptBusy) {
+      setAssessmentScriptStatus(assessmentScriptInstalled ? '已下载' : '未下载');
+    }
+  }
+
+  async function runtimeAssessmentScriptExists() {
+    try {
+      return (await fetch(chrome.runtime.getURL(ASSESSMENT_SCRIPT_PATH), { cache: 'no-store' })).ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function refreshAssessmentScriptState() {
+    const stored = await chrome.storage.local.get([ASSESSMENT_SCRIPT_STORAGE_KEY]);
+    let directoryReady = false;
+    try {
+      const manager = await getUpdaterManager();
+      directoryReady = await manager.managedFileExists(ASSESSMENT_SCRIPT_PATH);
+    } catch {
+      // Runtime visibility is enough to display an already installed script.
+    }
+    assessmentScriptInstalled = directoryReady || await runtimeAssessmentScriptExists();
+    assessmentScriptEnabled = assessmentScriptInstalled && stored[ASSESSMENT_SCRIPT_STORAGE_KEY] === true;
+    if (!assessmentScriptInstalled && stored[ASSESSMENT_SCRIPT_STORAGE_KEY] === true) {
+      assessmentScriptEnabled = false;
+      await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: false });
+      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+    }
+    assessmentScriptReady = true;
+    renderAssessmentScriptState();
+  }
+
+  function validateAssessmentScript(source) {
+    const text = String(source || '');
+    if (text.length < 500 || text.length > 500000
+        || !text.includes('// ==UserScript==')
+        || !/@match\s+https:\/\/aa\.bjtu\.edu\.cn\/teaching_assessment\/stu\*/.test(text)
+        || !text.includes('一键非常满意')
+        || !text.includes('function autoSelect()')) {
+      throw new Error('下载内容不是预期的一键评教脚本');
+    }
+    return text;
+  }
+
+  async function reloadAcademicOptionsPage() {
+    const currentTab = await chrome.tabs.getCurrent().catch(() => null);
+    const standalone = /\/modules\/academic\/options\.html$/i.test(location.pathname);
+    const result = await send('RELOAD_EXTENSION_AND_OPEN_APP', {
+      reopenApp: true,
+      source: ASSESSMENT_SCRIPT_ID,
+      sourceTabId: Number(currentTab?.id) || null,
+      targetPath: standalone ? 'modules/academic/options.html' : 'options/options.html'
+    });
+    if (!result?.ok) throw new Error(result?.message || '无法重新加载扩展');
+  }
+
+  async function fetchAssessmentScript(onProgress) {
+    const response = await fetch(ASSESSMENT_SCRIPT_URL, { cache: 'no-store', redirect: 'follow' });
+    if (!response.ok) throw new Error(`GreasyFork 下载失败：HTTP ${response.status}`);
+    const total = Math.max(0, Number(response.headers.get('content-length') || 0));
+    if (!response.body?.getReader) {
+      const text = await response.text();
+      onProgress?.({ loaded: new TextEncoder().encode(text).byteLength, total });
+      return validateAssessmentScript(text);
+    }
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      chunks.push(value);
+      loaded += value.byteLength;
+      onProgress?.({ loaded, total });
+    }
+    const bytes = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return validateAssessmentScript(new TextDecoder().decode(bytes));
+  }
+
+  async function downloadAssessmentScript({ enableAfterDownload = false } = {}) {
+    if (assessmentScriptBusy || assessmentScriptInstalled) return;
+    assessmentScriptBusy = true;
+    assessmentScriptEnabled = enableAfterDownload;
+    renderAssessmentScriptState();
+    setAssessmentScriptStatus('正在请求扩展目录写入权限…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      setAssessmentScriptStatus('正在从 GreasyFork 下载…');
+      setAssessmentScriptProgress({ visible: true });
+      const source = await fetchAssessmentScript(({ loaded, total }) => {
+        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
+        setAssessmentScriptProgress({
+          visible: true,
+          loaded,
+          total,
+          label: `正在下载：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+        });
+      });
+      await manager.writeManagedFile(root, ASSESSMENT_SCRIPT_PATH, new TextEncoder().encode(source));
+      assessmentScriptInstalled = true;
+      assessmentScriptEnabled = enableAfterDownload;
+      await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: enableAfterDownload });
+      setAssessmentScriptProgress({ visible: false });
+      assessmentScriptBusy = false;
+      renderAssessmentScriptState();
+      if (enableAfterDownload) {
+        setAssessmentScriptStatus('已下载，正在启用并重新加载扩展…');
+        await reloadAcademicOptionsPage();
+      } else {
+        setMessage('「注入一键评教按钮」已下载');
+      }
+    } catch (error) {
+      assessmentScriptBusy = false;
+      assessmentScriptEnabled = false;
+      setAssessmentScriptProgress({ visible: false });
+      renderAssessmentScriptState();
+      setAssessmentScriptStatus(String(error?.message || error), true);
+      setMessage(`外部脚本下载失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function setAssessmentScriptEnabled(enabled) {
+    if (assessmentScriptBusy || !assessmentScriptReady) return;
+    if (enabled && !assessmentScriptInstalled) {
+      await downloadAssessmentScript({ enableAfterDownload: true });
+      return;
+    }
+    assessmentScriptBusy = true;
+    assessmentScriptEnabled = enabled;
+    renderAssessmentScriptState();
+    if (enabled) {
+      try {
+        await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: true });
+        assessmentScriptBusy = false;
+        renderAssessmentScriptState();
+        setAssessmentScriptStatus('正在启用并重新加载扩展…');
+        await reloadAcademicOptionsPage();
+      } catch (error) {
+        await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: false });
+        assessmentScriptEnabled = false;
+        assessmentScriptBusy = false;
+        renderAssessmentScriptState();
+        setAssessmentScriptStatus(String(error?.message || error), true);
+      }
+      return;
+    }
+
+    try {
+      await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: false });
+      const result = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+      if (!result?.ok) throw new Error(result?.message || '脚本注销失败');
+      assessmentScriptBusy = false;
+      renderAssessmentScriptState();
+      setMessage('已停用「注入一键评教按钮」，可点击「删除」卸载');
+    } catch (error) {
+      await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: true });
+      assessmentScriptEnabled = true;
+      assessmentScriptBusy = false;
+      renderAssessmentScriptState();
+      setAssessmentScriptStatus(String(error?.message || error), true);
+      setMessage(`外部脚本停用失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function deleteAssessmentScript() {
+    if (assessmentScriptBusy || !assessmentScriptInstalled || assessmentScriptEnabled) return;
+    assessmentScriptBusy = true;
+    renderAssessmentScriptState();
+    setAssessmentScriptStatus('正在删除…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      await manager.removeManagedFile(root, ASSESSMENT_SCRIPT_PATH);
+      await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: false });
+      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+      assessmentScriptInstalled = false;
+      assessmentScriptBusy = false;
+      renderAssessmentScriptState();
+      setAssessmentScriptStatus('已删除，正在重新加载扩展…');
+      await reloadAcademicOptionsPage();
+    } catch (error) {
+      assessmentScriptBusy = false;
+      renderAssessmentScriptState();
+      setAssessmentScriptStatus(String(error?.message || error), true);
+      setMessage(`外部脚本删除失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function checkAssessmentScriptUpdate() {
+    if (assessmentScriptBusy || !assessmentScriptInstalled) return;
+    assessmentScriptBusy = true;
+    renderAssessmentScriptState();
+    setAssessmentScriptStatus('正在检查更新…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      const current = await (await manager.readManagedFile(root, ASSESSMENT_SCRIPT_PATH)).text();
+      setAssessmentScriptProgress({ visible: true, label: '正在从 GreasyFork 检查更新…' });
+      const latest = await fetchAssessmentScript(({ loaded, total }) => {
+        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
+        setAssessmentScriptProgress({
+          visible: true,
+          loaded,
+          total,
+          label: `正在检查：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+        });
+      });
+      const normalize = (value) => String(value || '').replace(/\r\n/g, '\n').trim();
+      if (normalize(current) === normalize(latest)) {
+        assessmentScriptBusy = false;
+        setAssessmentScriptProgress({ visible: false });
+        renderAssessmentScriptState();
+        setAssessmentScriptStatus('已下载（已是最新）');
+        return;
+      }
+      await manager.writeManagedFile(root, ASSESSMENT_SCRIPT_PATH, new TextEncoder().encode(latest));
+      assessmentScriptBusy = false;
+      setAssessmentScriptProgress({ visible: false });
+      renderAssessmentScriptState();
+      setAssessmentScriptStatus(assessmentScriptEnabled
+        ? '已下载（已更新，重新启用后生效）'
+        : '已下载（已更新）');
+      setMessage(assessmentScriptEnabled
+        ? '一键评教脚本已更新，请取消勾选后重新启用'
+        : '一键评教脚本已更新');
+    } catch (error) {
+      assessmentScriptBusy = false;
+      setAssessmentScriptProgress({ visible: false });
+      renderAssessmentScriptState();
+      setAssessmentScriptStatus(String(error?.message || error), true);
+      setMessage(`检查外部脚本更新失败：${String(error?.message || error)}`, false);
+    }
+  }
 
   function isRetryableAcademicLoadFailure(result) {
     const status = Number(result?.status || result?.httpStatus || 0);
@@ -448,6 +760,18 @@
   }
 
   function bindEvents() {
+    element('academicAssessmentScriptDownload')?.addEventListener('click', () => {
+      void downloadAssessmentScript();
+    });
+    element('academicAssessmentScriptCheckUpdate')?.addEventListener('click', () => {
+      void checkAssessmentScriptUpdate();
+    });
+    element('academicAssessmentScriptDelete')?.addEventListener('click', () => {
+      void deleteAssessmentScript();
+    });
+    element('academicAssessmentScriptEnabled')?.addEventListener('change', (event) => {
+      void setAssessmentScriptEnabled(event.currentTarget.checked === true);
+    });
     element('academicLoginBtn')?.addEventListener('click', async () => {
       const button = element('academicLoginBtn');
       const studentId = String(element('academicStudentId')?.value || '').trim();
@@ -587,6 +911,11 @@
       }
       if (changes.academicScoreMonitorStatus) renderMonitorStatus(changes.academicScoreMonitorStatus.newValue);
       if (changes.academicExamMonitorStatus) renderExamStatus(changes.academicExamMonitorStatus.newValue);
+      if (changes[ASSESSMENT_SCRIPT_STORAGE_KEY] && !assessmentScriptBusy) {
+        assessmentScriptEnabled = assessmentScriptInstalled
+          && changes[ASSESSMENT_SCRIPT_STORAGE_KEY].newValue === true;
+        renderAssessmentScriptState();
+      }
       updateDisabledState();
     });
   }
@@ -607,6 +936,7 @@
     bindEvents();
     bindMessages();
     updateDisabledState();
+    void refreshAssessmentScriptState();
     await refreshContext();
     await send('ACADEMIC_PRELOAD_ACCOUNT');
     void loadAll();

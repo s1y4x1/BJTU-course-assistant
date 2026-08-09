@@ -1750,6 +1750,32 @@ async function directoryFileExists(root, relativePath, expectedSize = 0) {
   }
 }
 
+async function removeDirectoryFile(root, relativePath) {
+  if (!root) throw new Error('尚未授权更新目录');
+  const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  if (!parts.length || parts.some((part) => part === '.' || part === '..')) {
+    throw new Error(`扩展文件路径无效：${relativePath}`);
+  }
+  let directory = root;
+  for (const part of parts.slice(0, -1)) {
+    directory = await directory.getDirectoryHandle(part);
+  }
+  await globalThis.BjtuUpdateFileSystem.removeEntry(directory, parts.at(-1), { recursive: false });
+}
+
+async function readDirectoryFile(root, relativePath) {
+  if (!root) throw new Error('尚未授权更新目录');
+  const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  if (!parts.length || parts.some((part) => part === '.' || part === '..')) {
+    throw new Error(`扩展文件路径无效：${relativePath}`);
+  }
+  let directory = root;
+  for (const part of parts.slice(0, -1)) {
+    directory = await directory.getDirectoryHandle(part);
+  }
+  return (await directory.getFileHandle(parts.at(-1))).getFile();
+}
+
 async function captchaCoreExistsInDirectory(root = null) {
   const assets = globalThis.BjtuCaptchaAssets;
   if (!assets) return false;
@@ -1906,6 +1932,14 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
 
 globalThis.BjtuUpdaterModuleManager = Object.freeze({
   prepare: () => readVersionUpdateDirectoryHandle(),
+  requestDirectory: requestModuleManagementDirectory,
+  managedFileExists: async (relativePath, root = null) => {
+    const directory = root || await getWritableVersionUpdateDirectory();
+    return directoryFileExists(directory, relativePath);
+  },
+  writeManagedFile: (root, relativePath, bytes) => globalThis.BjtuUpdateFileSystem.writeFile(root, relativePath, bytes),
+  readManagedFile: readDirectoryFile,
+  removeManagedFile: removeDirectoryFile,
   applyModuleSelection,
   prepareCaptchaAssets,
   captchaCoreExistsInDirectory

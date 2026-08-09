@@ -31,6 +31,28 @@
     <button id="bindAcademicSystemBtn" type="button">🔗 通过 MIS 登录教务系统</button>
   </div>
   <div class="tip">账号密码会在登录成功后按学号保存在扩展本地存储中，用于切换账号和恢复登录。</div>
+  <div class="academic-external-script-header">
+    <strong>外部脚本</strong>
+    <span class="tip">从 GreasyFork 下载；勾选启用，取消勾选仅停用。</span>
+  </div>
+  <div id="academicExternalScriptList" class="academic-external-script-list">
+    <div class="academic-external-script-item" data-script-id="assessment-satisfied">
+      <label class="academic-external-script-choice">
+        <input id="academicAssessmentScriptEnabled" type="checkbox" disabled>
+        <span>注入一键评教按钮</span>
+      </label>
+      <span id="academicAssessmentScriptStatus" class="academic-external-script-status">正在检查…</span>
+      <button id="academicAssessmentScriptDownload" type="button" class="academic-external-script-action" disabled>下载</button>
+      <button id="academicAssessmentScriptCheckUpdate" type="button" class="academic-external-script-action" hidden disabled>检查更新</button>
+      <button id="academicAssessmentScriptDelete" type="button" class="academic-external-script-action academic-external-script-delete" hidden disabled>删除</button>
+      <div id="academicAssessmentScriptProgress" class="academic-external-script-progress" hidden>
+        <div class="academic-external-script-progress-label">正在下载…</div>
+        <div class="academic-external-script-progress-track">
+          <div id="academicAssessmentScriptProgressBar" class="academic-external-script-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
   <label class="academic-option-check">
     <input type="checkbox" id="academicScoreMonitorEnabled">监控本学期成绩并通知
   </label>
@@ -132,7 +154,9 @@
   <div id="academicSystemStatus" class="option-status academic-score-status"></div>
 </section>
 <div id="msg"></div>
+<script src="../../core/module-registry.js"></script>
 <script src="../../UI/deadline-countdown.js"></script>
+<script src="../../core/loaders/updater-loader.js"></script>
 <script src="options.js"></script>
 <script src="../../core/loaders/module-options-standalone.js"></script>
 </body>

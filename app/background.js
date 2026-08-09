@@ -137,7 +137,15 @@ const OPTIONAL_CONTENT_SCRIPTS = [
   },
   { id: 'bjtu-mooc-inject', module: 'mooc', matches: ['https://www.icourse163.org/*'], js: ['modules/mooc/inject.js'], runAt: 'document_idle' },
   { id: 'bjtu-jlgj-theme', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/theme.js'], runAt: 'document_start' },
-  { id: 'bjtu-jlgj-capture', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/capture.js'], runAt: 'document_start', world: 'MAIN' }
+  { id: 'bjtu-jlgj-capture', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/capture.js'], runAt: 'document_start', world: 'MAIN' },
+  {
+    id: 'bjtu-academic-assessment-satisfied',
+    module: 'academic',
+    enabledStorageKey: 'academicAssessmentExternalScriptEnabled',
+    matches: ['https://aa.bjtu.edu.cn/teaching_assessment/stu*'],
+    js: ['modules/academic/external/assessment-satisfied.user.js'],
+    runAt: 'document_start'
+  }
 ];
 
 async function extensionFileExists(path) {
@@ -151,7 +159,10 @@ async function extensionFileExists(path) {
 let optionalContentScriptSyncPromise = null;
 async function doSyncOptionalContentScripts() {
   const wanted = [];
+  const enabledKeys = OPTIONAL_CONTENT_SCRIPTS.map((script) => script.enabledStorageKey).filter(Boolean);
+  const enabledState = enabledKeys.length ? await chrome.storage.local.get(enabledKeys) : {};
   for (const script of OPTIONAL_CONTENT_SCRIPTS) {
+    if (script.enabledStorageKey && enabledState[script.enabledStorageKey] !== true) continue;
     const scriptFilesExist = (await Promise.all(script.js.map(extensionFileExists))).every(Boolean);
     if (await extensionFileExists(`modules/${script.module}/module.json`)
         && scriptFilesExist) wanted.push(script);
@@ -164,10 +175,16 @@ async function doSyncOptionalContentScripts() {
   if (registeredManagedIds.length) {
     await chrome.scripting.unregisterContentScripts({ ids: registeredManagedIds });
   }
-  const registrations = wanted.map(({ module: _module, ...script }) => script);
-  if (registrations.length) await chrome.scripting.registerContentScripts(registrations).catch((error) => {
-    console.warn('[bjtu] optional content script registration failed:', error);
-  });
+  const registrations = wanted.map(({ module: _module, enabledStorageKey: _enabledStorageKey, ...script }) => script);
+  if (registrations.length) {
+    try {
+      await chrome.scripting.registerContentScripts(registrations);
+    } catch (error) {
+      console.warn('[bjtu] optional content script registration failed:', error);
+      return { ok: false, message: String(error?.message || error) };
+    }
+  }
+  return { ok: true };
 }
 
 function syncOptionalContentScripts() {
@@ -208,7 +225,15 @@ void initializeExtensionRuntimeMetadata();
 const APP_URL = chrome.runtime.getURL('app/app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
-const CAPTCHA_RELOAD_RESTORE_ALARM = 'bjtu-captcha-reload-restore';
+const EXTENSION_RELOAD_RESTORE_ALARM = 'bjtu-extension-reload-restore';
+const RELOAD_REOPEN_PATHS = new Set(['options/options.html', 'modules/academic/options.html']);
+
+function reloadTargetUrl(payload = {}) {
+  const targetPath = String(payload?.targetPath || '').replace(/^\/+/, '');
+  if (RELOAD_REOPEN_PATHS.has(targetPath)) return chrome.runtime.getURL(targetPath);
+  const suffix = payload?.popup === true ? '?popup=1' : '';
+  return `${APP_URL}${suffix}`;
+}
 
 async function getOpenAppTabs() {
   return (await chrome.tabs.query({}).catch(() => []))
@@ -243,10 +268,9 @@ async function reloadExtensionAndOpenApp(payload = {}, sourceTabId = null) {
     ...(payload && typeof payload === 'object' ? payload : {}),
     reopenApp: true
   }, requestedSourceTabId);
-  chrome.alarms.create(CAPTCHA_RELOAD_RESTORE_ALARM, { when: Date.now() + 1500 });
+  chrome.alarms.create(EXTENSION_RELOAD_RESTORE_ALARM, { when: Date.now() + 1500 });
 
-  const suffix = payload?.popup === true ? '?popup=1' : '';
-  const targetUrl = `${APP_URL}${suffix}`;
+  const targetUrl = reloadTargetUrl(payload);
   const sourceTab = Number.isInteger(requestedSourceTabId) && requestedSourceTabId > 0
     ? await chrome.tabs.get(requestedSourceTabId).catch(() => null)
     : null;
@@ -269,7 +293,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
   const stored = await chrome.storage.local.get([VERSION_AUTO_RELOAD_HANDOFF_KEY]).catch(() => ({}));
   const handoff = stored?.[VERSION_AUTO_RELOAD_HANDOFF_KEY];
   if (!handoff) return;
-  await chrome.alarms.clear(CAPTCHA_RELOAD_RESTORE_ALARM).catch(() => false);
+  await chrome.alarms.clear(EXTENSION_RELOAD_RESTORE_ALARM).catch(() => false);
   await chrome.storage.local.set({
     [VERSION_AUTO_RELOAD_COMPLETED_KEY]: {
       ...handoff,
@@ -304,24 +328,25 @@ async function restoreAppAfterAutomaticExtensionReload() {
     }, 'background-update-complete', true).catch(() => {});
   }
   if (handoff.reopenApp === false) return;
+  const targetUrl = reloadTargetUrl(handoff);
   const sourceTabId = Number(handoff.sourceTabId);
   if (Number.isInteger(sourceTabId) && sourceTabId > 0) {
     const sourceTab = await chrome.tabs.get(sourceTabId).catch(() => null);
     if (sourceTab) {
-      await chrome.tabs.update(sourceTabId, { url: APP_URL, active: true }).catch(() => null);
+      await chrome.tabs.update(sourceTabId, { url: targetUrl, active: true }).catch(() => null);
       if (sourceTab.windowId) await chrome.windows.update(sourceTab.windowId, { focused: true }).catch(() => null);
       return;
     }
   }
   const tabs = (await chrome.tabs.query({}).catch(() => []))
-    .filter((tab) => String(tab?.url || '').startsWith(APP_URL));
+    .filter((tab) => String(tab?.url || '').startsWith(targetUrl));
   if (tabs.length) {
     const tab = tabs[0];
-    await chrome.tabs.update(tab.id, { url: APP_URL, active: true }).catch(() => null);
+    await chrome.tabs.update(tab.id, { url: targetUrl, active: true }).catch(() => null);
     if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
     return;
   }
-  await chrome.tabs.create({ url: APP_URL, active: true }).catch(() => null);
+  await chrome.tabs.create({ url: targetUrl, active: true }).catch(() => null);
 }
 
 void restoreAppAfterAutomaticExtensionReload();
@@ -535,7 +560,7 @@ function scheduleHomeworkReminderCheck() {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm?.name === HOMEWORK_REMINDER_ALARM) scheduleHomeworkReminderCheck();
-  if (alarm?.name === CAPTCHA_RELOAD_RESTORE_ALARM) void restoreAppAfterAutomaticExtensionReload();
+  if (alarm?.name === EXTENSION_RELOAD_RESTORE_ALARM) void restoreAppAfterAutomaticExtensionReload();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -826,6 +851,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'REFRESH_OPEN_APP_PAGES') {
     refreshOpenAppTabs()
       .then((count) => sendResponse({ ok: true, count }))
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
+  if (message?.type === 'SYNC_OPTIONAL_CONTENT_SCRIPTS') {
+    syncOptionalContentScripts()
+      .then((result) => sendResponse(result?.ok === false ? result : { ok: true }))
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   }
