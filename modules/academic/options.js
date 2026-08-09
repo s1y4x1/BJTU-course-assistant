@@ -9,6 +9,7 @@
   const ASSESSMENT_SCRIPT_PATH = 'modules/academic/external/assessment-satisfied.user.js';
   const ASSESSMENT_SCRIPT_URL = 'https://update.greasyfork.org/scripts/537626/BJTU%20%E5%8C%97%E4%BA%AC%E4%BA%A4%E9%80%9A%E5%A4%A7%E5%AD%A6%20%E4%B8%80%E9%94%AE%E8%AF%84%E6%95%99%E4%B8%BA%E2%80%9C%E9%9D%9E%E5%B8%B8%E6%BB%A1%E6%84%8F%E2%80%9D%E5%B9%B6%E5%A1%AB%E5%86%99%E4%B8%BB%E8%A7%82%E6%84%8F%E8%A7%81.user.js';
   const DEFAULTS = Object.freeze({
+    academicOptionsWideEnabled: true,
     academicScoreMonitorEnabled: false,
     academicExamMonitorEnabled: false,
     academicClassReminderEnabled: false,
@@ -30,6 +31,14 @@
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
+
+  function applyWideOption(enabled) {
+    const section = element('academic-system-section');
+    const slot = section?.closest('[data-options-module="academic"]');
+    if (slot instanceof HTMLElement && slot.parentElement?.id === 'options-controlled-content') {
+      slot.classList.toggle('options-wide-card', enabled === true);
+    }
+  }
 
   async function getUpdaterManager() {
     const ready = await global.__bjtuUpdaterReady;
@@ -760,6 +769,12 @@
   }
 
   function bindEvents() {
+    element('academicOptionsWideEnabled')?.addEventListener('change', async (event) => {
+      const enabled = event.currentTarget.checked === true;
+      applyWideOption(enabled);
+      await chrome.storage.local.set({ academicOptionsWideEnabled: enabled });
+      setMessage(enabled ? '教务系统将在宽屏时占满宽度' : '教务系统将在宽屏时按普通模块宽度显示');
+    });
     element('academicAssessmentScriptDownload')?.addEventListener('click', () => {
       void downloadAssessmentScript();
     });
@@ -909,6 +924,11 @@
       if (changes.academicSystemStudentId && element('academicStudentId')) {
         element('academicStudentId').value = String(changes.academicSystemStudentId.newValue || '');
       }
+      if (changes.academicOptionsWideEnabled) {
+        const enabled = changes.academicOptionsWideEnabled.newValue !== false;
+        element('academicOptionsWideEnabled').checked = enabled;
+        applyWideOption(enabled);
+      }
       if (changes.academicScoreMonitorStatus) renderMonitorStatus(changes.academicScoreMonitorStatus.newValue);
       if (changes.academicExamMonitorStatus) renderExamStatus(changes.academicExamMonitorStatus.newValue);
       if (changes[ASSESSMENT_SCRIPT_STORAGE_KEY] && !assessmentScriptBusy) {
@@ -925,6 +945,8 @@
     initialized = true;
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
     const stored = await chrome.storage.local.get(Object.keys(DEFAULTS));
+    element('academicOptionsWideEnabled').checked = stored.academicOptionsWideEnabled !== false;
+    applyWideOption(stored.academicOptionsWideEnabled !== false);
     element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled === true;
     element('academicExamMonitorEnabled').checked = stored.academicExamMonitorEnabled === true;
     element('academicClassReminderEnabled').checked = stored.academicClassReminderEnabled === true;
@@ -947,6 +969,8 @@
     await chrome.storage.local.set(DEFAULTS);
     if (!initialized) return;
     element('academicScoreMonitorEnabled').checked = false;
+    element('academicOptionsWideEnabled').checked = true;
+    applyWideOption(true);
     element('academicExamMonitorEnabled').checked = false;
     element('academicClassReminderEnabled').checked = false;
     element('academicScheduleType').value = 'semester';

@@ -79,8 +79,12 @@ html[data-color-scheme="dark"] .module-options-page-link:focus-visible {
 .theme-mode-btn:not(.theme-mode-btn--text) { width:40px; }
 .theme-mode-btn--text { width:auto; padding:0 10px; font-size:13px; color:#000; }
 .ui-order-editor { margin-top:12px; border-top:1px solid #e5e7eb; padding-top:9px; }
-.ui-order-editor > summary { width:max-content; color:#1976d2; font-weight:600; cursor:pointer; user-select:none; }
-.ui-order-editor > .tip { margin:7px 0 0; }
+.ui-order-editor > summary { display:flex; width:max-content; max-width:100%; align-items:baseline; gap:8px; color:#1976d2; cursor:pointer; user-select:none; list-style:none; }
+.ui-order-editor > summary::-webkit-details-marker { display:none; }
+.ui-order-editor > summary::before { content:'▶'; flex:0 0 auto; font-size:10px; transition:transform .15s; }
+.ui-order-editor[open] > summary::before { transform:rotate(90deg); }
+.ui-order-summary-label { flex:0 0 auto; font-size:15px; font-weight:700; }
+.ui-order-editor > summary > .tip { margin:0; font-size:12px; font-weight:400; }
 .ui-order-groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:9px; }
 .ui-order-groups > section { min-width:0; }
 .ui-order-title { margin-bottom:5px; color:#475569; font-size:13px; font-weight:600; }

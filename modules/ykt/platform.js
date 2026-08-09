@@ -149,7 +149,6 @@ async function verifyYktLoginAfterPopupClosed() {
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  window.platformInteractiveLoginPending.ykt = false;
   return false;
 }
 
@@ -173,11 +172,22 @@ async function checkYktLoginAssistPopupUrl() {
       }
     }
   } catch {
-    // The WeChat page can close itself immediately after committing the session.
-    yktLoginAssistPopupWindowId = null;
-    yktLoginAssistPopupTabId = null;
+    // Keep the known IDs until verification finishes. A transient tabs.get failure can
+    // happen during the success redirect while the popup window is still open.
     stopYktLoginAssistWatcher();
-    void verifyYktLoginAfterPopupClosed();
+    void (async () => {
+      if (await verifyYktLoginAfterPopupClosed()) return;
+      const popupStillOpen = yktLoginAssistPopupWindowId
+        ? await chrome.windows.get(Number(yktLoginAssistPopupWindowId)).then(() => true).catch(() => false)
+        : false;
+      if (popupStillOpen && window.platformInteractiveLoginPending?.ykt) {
+        startYktLoginAssistWatcher();
+      } else {
+        yktLoginAssistPopupWindowId = null;
+        yktLoginAssistPopupTabId = null;
+        window.platformInteractiveLoginPending.ykt = false;
+      }
+    })();
   } finally {
     yktLoginAssistChecking = false;
   }
@@ -193,15 +203,26 @@ function startYktLoginAssistWatcher() {
 }
 
 function closeYktLoginAssistPopup(cancelPending = false) {
-  if (yktLoginAssistPopupWindowId) {
-    chrome.windows.remove(Number(yktLoginAssistPopupWindowId)).catch(() => {});
-  }
+  const knownWindowId = Number(yktLoginAssistPopupWindowId || 0);
+  const knownTabId = Number(yktLoginAssistPopupTabId || 0);
   yktLoginAssistPopupWindowId = null;
   yktLoginAssistPopupTabId = null;
   stopYktLoginAssistWatcher();
   if (cancelPending) {
     window.platformInteractiveLoginPending.ykt = false;
   }
+  void (async () => {
+    let windowId = knownWindowId;
+    if (!windowId && knownTabId) {
+      const tab = await chrome.tabs.get(knownTabId).catch(() => null);
+      windowId = Number(tab?.windowId || 0);
+    }
+    if (windowId) {
+      const removed = await chrome.windows.remove(windowId).then(() => true).catch(() => false);
+      if (removed) return;
+    }
+    if (knownTabId) await chrome.tabs.remove(knownTabId).catch(() => {});
+  })();
 }
 
 function openYktLoginAssistPopup(force = false) {

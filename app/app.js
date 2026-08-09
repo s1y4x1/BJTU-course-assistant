@@ -57,6 +57,7 @@ const leftColumn = document.querySelector('.left-column');
 const rightColumn = document.getElementById('right-column');
 const columnResizer = document.getElementById('column-resizer');
 const columnCollapseToggle = document.getElementById('column-collapse-toggle');
+const courseHelperEvenWidthsButton = document.getElementById('course-helper-even-widths');
 const veStatusBtn = document.getElementById('ve-status-btn');
 const yktStatusBtn = document.getElementById('ykt-status-btn');
 const mrjzyStatusBtn = document.getElementById('mrjzy-status-btn');
@@ -880,13 +881,6 @@ function setupOptionsStorageLiveSync() {
       window.showCourseListDuringLayoutTransition = changes[SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY].newValue === true;
       syncCourseHelperLayoutProcessingPlaceholder();
     }
-    if (!popupMode && changes[COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]) {
-      window.courseHelperPlatformColumnWeights = normalizeCourseHelperPlatformColumnWeights(
-        changes[COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY].newValue
-      );
-      if (window.courseHelperPlatformSplitMode) applyCourseHelperPlatformColumnWeights();
-    }
-
     if (changes.saveUploadedFilesEnabled) {
       window.saveUploadedFilesEnabled = changes.saveUploadedFilesEnabled.newValue === undefined
         ? true
@@ -1100,6 +1094,7 @@ function unwrapCoursePlatformColumns() {
   courseListDiv.querySelectorAll(':scope > .platform-column-resizer').forEach((resizer) => resizer.remove());
   courseListDiv.classList.remove('platform-split-grid');
   courseListDiv.style.removeProperty('grid-template-columns');
+  syncCourseHelperEvenWidthsButton();
 }
 
 function normalizeCourseHelperPlatformColumnWeights(raw) {
@@ -1110,6 +1105,47 @@ function normalizeCourseHelperPlatformColumnWeights(raw) {
   }));
 }
 
+function readCourseHelperPlatformColumnWeightsFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCourseHelperPlatformColumnWeightsToLocalStorage(weights) {
+  try {
+    localStorage.setItem(
+      COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY,
+      JSON.stringify(normalizeCourseHelperPlatformColumnWeights(weights))
+    );
+  } catch {
+    // Keep the in-memory layout when local storage is unavailable.
+  }
+}
+
+function getActiveCourseHelperPlatformIds() {
+  if (!courseListDiv) return [];
+  return [...courseListDiv.querySelectorAll(':scope > .platform-course-column')]
+    .map((column) => String(column.dataset.platform || ''))
+    .filter(Boolean);
+}
+
+function syncCourseHelperEvenWidthsButton() {
+  if (!(courseHelperEvenWidthsButton instanceof HTMLButtonElement)) return;
+  const activeIds = getActiveCourseHelperPlatformIds();
+  const weights = normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights);
+  const activeWeights = activeIds.map((id) => Number(weights[id] || 1));
+  const uneven = activeWeights.length > 1
+    && Math.max(...activeWeights) - Math.min(...activeWeights) > 0.01;
+  courseHelperEvenWidthsButton.hidden = popupMode
+    || window.courseHelperPlatformSplitMode !== true
+    || !uneven;
+}
+
 function applyCourseHelperPlatformColumnWeights() {
   if (!courseListDiv) return;
   const weights = normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights);
@@ -1117,6 +1153,7 @@ function applyCourseHelperPlatformColumnWeights() {
     const platform = String(column.dataset.platform || '');
     column.style.flex = `${weights[platform] || 1} 1 0px`;
   });
+  syncCourseHelperEvenWidthsButton();
 }
 
 async function persistCourseHelperPlatformColumnWeights() {
@@ -1134,7 +1171,7 @@ async function persistCourseHelperPlatformColumnWeights() {
   });
   window.courseHelperPlatformColumnWeights = next;
   applyCourseHelperPlatformColumnWeights();
-  await chrome.storage.local.set({ [COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]: next }).catch(() => { });
+  saveCourseHelperPlatformColumnWeightsToLocalStorage(next);
 }
 
 function bindPlatformColumnResizer(resizer) {
@@ -1217,11 +1254,15 @@ function organizeCourseCardsByPlatform() {
         structureChanged = true;
       }
     });
+    const desiredPairs = new Set(desired.slice(1).map(({ id }, index) => `${desired[index].id}|${id}`));
+    const retainedPairs = new Set();
     courseListDiv.querySelectorAll(':scope > .platform-column-resizer').forEach((resizer) => {
-      if (!desiredIds.has(String(resizer.dataset.leftPlatform || ''))
-        || !desiredIds.has(String(resizer.dataset.rightPlatform || ''))) {
+      const pair = `${String(resizer.dataset.leftPlatform || '')}|${String(resizer.dataset.rightPlatform || '')}`;
+      if (!desiredPairs.has(pair) || retainedPairs.has(pair)) {
         resizer.remove();
         structureChanged = true;
+      } else {
+        retainedPairs.add(pair);
       }
     });
 
@@ -1350,6 +1391,7 @@ function setCourseHelperFocusMode(enabled) {
   syncCourseHelperLayoutProcessingPlaceholder();
   window.courseHelperPlatformSplitMode = next;
   syncCourseHelperCollapseTogglePresentation();
+  syncCourseHelperEvenWidthsButton();
 
   if (!next) {
     const deferMergedCourseList = window.showCourseListDuringLayoutTransition !== true;
@@ -1406,9 +1448,17 @@ async function loadCourseHelperLayoutSettings() {
     COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY,
     SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY
   ]).catch(() => ({}));
+  const locallyStoredWeights = readCourseHelperPlatformColumnWeightsFromLocalStorage();
+  const legacyWeights = stored[COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY];
   window.courseHelperPlatformColumnWeights = normalizeCourseHelperPlatformColumnWeights(
-    stored[COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY]
+    locallyStoredWeights || legacyWeights
   );
+  if (!locallyStoredWeights && legacyWeights && typeof legacyWeights === 'object') {
+    saveCourseHelperPlatformColumnWeightsToLocalStorage(window.courseHelperPlatformColumnWeights);
+  }
+  if (legacyWeights !== undefined) {
+    await chrome.storage.local.remove(COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY).catch(() => {});
+  }
   window.showCourseListDuringLayoutTransition = stored[SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY] === true;
   setCourseHelperFocusMode(stored[COURSE_HELPER_EXPANDED_DEFAULT_KEY] === true);
 }
@@ -1606,6 +1656,16 @@ function setupRightColumnResizer() {
       event.preventDefault();
       event.stopPropagation();
       setCourseHelperFocusMode(!window.courseHelperPlatformSplitMode);
+    });
+  }
+
+  if (courseHelperEvenWidthsButton instanceof HTMLButtonElement) {
+    courseHelperEvenWidthsButton.addEventListener('click', () => {
+      window.courseHelperPlatformColumnWeights = Object.fromEntries(
+        COURSE_PLATFORM_COLUMNS.map(({ id }) => [id, 1])
+      );
+      applyCourseHelperPlatformColumnWeights();
+      saveCourseHelperPlatformColumnWeightsToLocalStorage(window.courseHelperPlatformColumnWeights);
     });
   }
 
@@ -3435,7 +3495,7 @@ function setPlatformLoginState(platform, state) {
     window.platformLoginChecked[p] = true;
   }
   window.platformNeedLogin[p] = isPlatformEnabled(p) && s === 'offline';
-  if (s === 'offline' && prev !== 'offline') {
+  if (window.platformNeedLogin[p] && s === 'offline' && prev !== 'offline') {
     showPlatformNeedLoginToast(p);
   }
   if (s === 'offline') {

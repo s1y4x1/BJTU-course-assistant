@@ -1579,6 +1579,24 @@ a.homework-type-badge { text-decoration:none; }
     flex: 0 0 auto;
     white-space: nowrap;
 }
+.course-helper-even-widths {
+    display: none;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 3px 8px;
+    border: 1px solid #93c5fd;
+    border-radius: 5px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.course-helper-even-widths:hover { background: #dbeafe; }
+.course-helper-even-widths[hidden] { display: none !important; }
+body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inline-flex; }
 .course-header .platform-options-slot {
     flex: 1 1 auto;
     min-width: 0;
