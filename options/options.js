@@ -337,12 +337,16 @@ function getVisibleOptionsOrderEntries() {
     .map((id) => ({ id, label: labels.get(id) }));
 }
 
+function getVisiblePlatformOrderEntries() {
+  const available = globalThis.__bjtuAvailableModules || {};
+  return currentPlatformOrder
+    .filter((id) => available[id] === true)
+    .map((id) => ({ id, label: PLATFORM_ORDER_LABELS[id] || id }));
+}
+
 function renderUiOrderEditor() {
   renderUiOrderList('optionsSectionOrderList', getVisibleOptionsOrderEntries(), 'sections');
-  renderUiOrderList('platformOrderList', currentPlatformOrder.map((id) => ({
-    id,
-    label: PLATFORM_ORDER_LABELS[id] || id
-  })), 'platforms');
+  renderUiOrderList('platformOrderList', getVisiblePlatformOrderEntries(), 'platforms');
 }
 
 async function saveUiOrder(group, visibleOrder) {
@@ -355,7 +359,11 @@ async function saveUiOrder(group, visibleOrder) {
     applyOptionsSectionOrder();
     await chrome.storage.local.set({ optionsSectionOrder: currentOptionsSectionOrder });
   } else {
-    currentPlatformOrder = normalizePlatformOrder(visibleOrder);
+    const visibleSet = new Set(getVisiblePlatformOrderEntries().map((entry) => entry.id));
+    const reorderedVisible = [...visibleOrder];
+    currentPlatformOrder = normalizePlatformOrder(currentPlatformOrder.map((id) => (
+      visibleSet.has(id) ? reorderedVisible.shift() : id
+    )));
     applyPlatformOrderToOptions();
     await chrome.storage.local.set({ platformOrder: currentPlatformOrder });
   }
@@ -379,7 +387,7 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
       const item = button?.closest('.ui-order-item');
       if (!button || !item) return;
       const group = String(item.dataset.orderGroup || '');
-      const entries = group === 'sections' ? getVisibleOptionsOrderEntries() : currentPlatformOrder.map((id) => ({ id }));
+      const entries = group === 'sections' ? getVisibleOptionsOrderEntries() : getVisiblePlatformOrderEntries();
       const ids = entries.map((entry) => entry.id);
       const index = ids.indexOf(String(item.dataset.orderId || ''));
       const targetIndex = index + Number(button.dataset.direction || 0);
@@ -412,7 +420,7 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
       if (!target || !dragged || target.dataset.orderGroup !== dragged.group) return;
       event.preventDefault();
       target.classList.remove('drag-over');
-      const entries = dragged.group === 'sections' ? getVisibleOptionsOrderEntries() : currentPlatformOrder.map((id) => ({ id }));
+      const entries = dragged.group === 'sections' ? getVisibleOptionsOrderEntries() : getVisiblePlatformOrderEntries();
       const ids = entries.map((entry) => entry.id).filter((id) => id !== dragged.id);
       const targetIndex = ids.indexOf(String(target.dataset.orderId || ''));
       const insertAfter = event.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
@@ -519,24 +527,6 @@ async function setupInstalledModuleOptions() {
             updateProgress({
               label,
               completed: progress.completed,
-              total: progress.total
-            });
-          } else if (progress.phase === 'model') {
-            const label = progress.total > 0
-              ? `正在下载验证码模型：${formatModuleBytes(progress.loaded)} / ${formatModuleBytes(progress.total)}`
-              : `正在下载验证码模型：${formatModuleBytes(progress.loaded)}`;
-            updateProgress({
-              label,
-              completed: progress.loaded,
-              total: progress.total
-            });
-          } else if (progress.phase === 'core') {
-            const label = progress.total > 0
-              ? `正在下载 OCR 核心：${formatModuleBytes(progress.loaded)} / ${formatModuleBytes(progress.total)}`
-              : `正在下载 OCR 核心：${formatModuleBytes(progress.loaded)}`;
-            updateProgress({
-              label,
-              completed: progress.loaded,
               total: progress.total
             });
           }

@@ -1858,9 +1858,6 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
     return { added: [], removed: [], written: 0, reload: false };
   }
 
-  if (additions.includes('captcha')) {
-    await globalThis.BjtuCaptchaAssets?.ensureModel({ onProgress });
-  }
   await requestModuleManagementDirectory();
   let archiveFiles = [];
   if (additions.length) {
@@ -1911,14 +1908,6 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
       await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
         if (error?.name !== 'NotFoundError') throw error;
       });
-    }
-    if (selectedSet.has('captcha')) {
-      const prepared = await prepareCaptchaAssets({
-        root: versionUpdateDirectoryHandle,
-        modelReady: additions.includes('captcha'),
-        onProgress
-      });
-      written += prepared.written;
     }
   });
   await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selectedSet].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)) });
