@@ -174,7 +174,7 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     module: 'academic',
     enabledStorageKey: 'academicAssessmentExternalScriptEnabled',
     matches: ['https://aa.bjtu.edu.cn/teaching_assessment/stu*'],
-    js: ['modules/academic/external/assessment-satisfied.user.js'],
+    js: ['modules/academic/external/BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见.user.js'],
     runAt: 'document_start'
   },
   {
@@ -182,7 +182,7 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     module: 'academic',
     enabledStorageKey: 'academicBbCourseAvailabilityExternalScriptEnabled',
     matches: ['https://aa.bjtu.edu.cn/course_selection/courseselecttask/selects/*'],
-    js: ['modules/academic/external/bb-course-availability.user.js'],
+    js: ['modules/academic/external/BB酱帮你查课余量 (2026修复版).user.js'],
     runAt: 'document_start'
   }
 ];

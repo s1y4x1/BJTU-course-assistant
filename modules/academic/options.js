@@ -7,13 +7,13 @@
   const ASSESSMENT_SCRIPT_ID = 'assessment-satisfied';
   const ASSESSMENT_CONTENT_SCRIPT_ID = 'bjtu-academic-assessment-satisfied';
   const ASSESSMENT_SCRIPT_STORAGE_KEY = 'academicAssessmentExternalScriptEnabled';
-  const ASSESSMENT_SCRIPT_PATH = 'modules/academic/external/assessment-satisfied.user.js';
   const ASSESSMENT_SCRIPT_URL = 'https://update.greasyfork.org/scripts/537626/BJTU%20%E5%8C%97%E4%BA%AC%E4%BA%A4%E9%80%9A%E5%A4%A7%E5%AD%A6%20%E4%B8%80%E9%94%AE%E8%AF%84%E6%95%99%E4%B8%BA%E2%80%9C%E9%9D%9E%E5%B8%B8%E6%BB%A1%E6%84%8F%E2%80%9D%E5%B9%B6%E5%A1%AB%E5%86%99%E4%B8%BB%E8%A7%82%E6%84%8F%E8%A7%81.user.js';
+  const ASSESSMENT_SCRIPT_PATH = `modules/academic/external/${decodeURIComponent(ASSESSMENT_SCRIPT_URL.split('/').at(-1))}`;
   const BB_SCRIPT_ID = 'bb-course-availability';
   const BB_CONTENT_SCRIPT_ID = 'bjtu-academic-bb-course-availability';
   const BB_SCRIPT_STORAGE_KEY = 'academicBbCourseAvailabilityExternalScriptEnabled';
-  const BB_SCRIPT_PATH = 'modules/academic/external/bb-course-availability.user.js';
   const BB_SCRIPT_URL = 'https://update.greasyfork.org/scripts/561136/BB%E9%85%B1%E5%B8%AE%E4%BD%A0%E6%9F%A5%E8%AF%BE%E4%BD%99%E9%87%8F%20%282026%E4%BF%AE%E5%A4%8D%E7%89%88%29.user.js';
+  const BB_SCRIPT_PATH = `modules/academic/external/${decodeURIComponent(BB_SCRIPT_URL.split('/').at(-1))}`;
   const BB_WISH_LIST_KEY = 'academicBbWishListCourses';
   const BB_REFRESH_DELAY_KEY = 'academicBbRefreshDelayMs';
   const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
@@ -207,7 +207,7 @@
         || !/@match\s+https:\/\/aa\.bjtu\.edu\.cn\/teaching_assessment\/stu\*/.test(text)
         || !text.includes('一键非常满意')
         || !text.includes('function autoSelect()')) {
-      throw new Error('下载内容不是预期的一键评教脚本');
+      throw new Error('下载内容不是预期的「BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见」');
     }
     return text;
   }
@@ -289,7 +289,7 @@
         setAssessmentScriptStatus('已下载，正在启用并重新加载扩展…');
         await reloadAcademicOptionsPage();
       } else {
-        setMessage('「注入一键评教按钮」已下载');
+        setMessage('「BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见」已下载');
       }
     } catch (error) {
       assessmentScriptBusy = false;
@@ -321,7 +321,7 @@
             && result.registeredIds.includes(ASSESSMENT_CONTENT_SCRIPT_ID)) {
           assessmentScriptRuntimeReady = true;
           assessmentScriptReloadRequired = false;
-          setMessage('已启用一键评教脚本');
+          setMessage('已启用「BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见」');
         } else {
           setAssessmentScriptStatus('正在启用并重新加载扩展…');
           await reloadAcademicOptionsPage();
@@ -342,7 +342,7 @@
       if (!result?.ok) throw new Error(result?.message || '脚本注销失败');
       assessmentScriptBusy = false;
       renderAssessmentScriptState();
-      setMessage('已停用「注入一键评教按钮」，可点击「删除」卸载');
+      setMessage('已停用「BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见」，可点击「删除」卸载');
     } catch (error) {
       await chrome.storage.local.set({ [ASSESSMENT_SCRIPT_STORAGE_KEY]: true });
       assessmentScriptEnabled = true;
@@ -376,7 +376,7 @@
         await reloadAcademicOptionsPage();
       } else {
         setAssessmentScriptStatus('未下载');
-        setMessage('一键评教脚本已删除');
+        setMessage('「BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见」已删除');
       }
     } catch (error) {
       assessmentScriptBusy = false;
@@ -423,8 +423,8 @@
         ? '已下载（已更新，重新启用后生效）'
         : '已下载（已更新）');
       setMessage(assessmentScriptEnabled
-        ? '一键评教脚本已更新，请取消勾选后重新启用'
-        : '一键评教脚本已更新');
+        ? '「BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见」已更新，请取消勾选后重新启用'
+        : '「BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见」已更新');
     } catch (error) {
       assessmentScriptBusy = false;
       setAssessmentScriptProgress({ visible: false });
@@ -569,7 +569,7 @@
         || !text.includes('function main()')
         || !text.includes('GM_notification')
         || !text.includes('GM_addStyle')) {
-      throw new Error('下载内容不是预期的 BB酱查课余量脚本');
+      throw new Error('下载内容不是预期的「BB酱帮你查课余量 (2026修复版)」');
     }
     const original = text;
     text = text.replace(/var\s+wishListCourses\s*=\s*\[[\s\S]*?\];/, 'let wishListCourses = [];');
@@ -630,9 +630,357 @@
     }, 500);`);
     if (text === original || !text.includes('__bjtuLoadConfig().finally')
         || !text.includes('let wishListCourses = [];') || !text.includes('let REFRESH_DELAY =')) {
-      throw new Error('BB酱脚本结构已变化，无法安全应用扩展配置');
+      throw new Error('「BB酱帮你查课余量 (2026修复版)」结构已变化，无法安全应用扩展配置');
     }
     return text;
+  }
+
+  // 新增外部脚本时只需补充这一项；下载、启用、更新、删除均复用下方通用流程。
+  const EXTERNAL_SCRIPTS = Object.freeze([
+    {
+      id: ASSESSMENT_SCRIPT_ID,
+      name: 'BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见',
+      storageKey: ASSESSMENT_SCRIPT_STORAGE_KEY,
+      path: ASSESSMENT_SCRIPT_PATH,
+      url: ASSESSMENT_SCRIPT_URL,
+      contentScriptId: ASSESSMENT_CONTENT_SCRIPT_ID,
+      controlPrefix: 'academicAssessmentScript',
+      prepare: validateAssessmentScript
+    },
+    {
+      id: BB_SCRIPT_ID,
+      name: 'BB酱帮你查课余量 (2026修复版)',
+      storageKey: BB_SCRIPT_STORAGE_KEY,
+      path: BB_SCRIPT_PATH,
+      url: BB_SCRIPT_URL,
+      contentScriptId: BB_CONTENT_SCRIPT_ID,
+      controlPrefix: 'academicBbScript',
+      prepare: transformBbScript
+    }
+  ]);
+  const externalScriptById = new Map(EXTERNAL_SCRIPTS.map((script) => [script.id, script]));
+  const externalScriptState = new Map(EXTERNAL_SCRIPTS.map((script) => [script.id, {
+    installed: false,
+    enabled: false,
+    busy: false,
+    ready: false,
+    localSizeBytes: 0,
+    remoteSizeBytes: 0,
+    prefetchedSource: null,
+    runtimeReady: false,
+    reloadRequired: false
+  }]));
+
+  function getExternalScriptState(script) {
+    return externalScriptState.get(script.id);
+  }
+
+  function externalScriptElement(script, suffix) {
+    return element(`${script.controlPrefix}${suffix}`);
+  }
+
+  function setExternalScriptStatus(script, text, error = false) {
+    const status = externalScriptElement(script, 'Status');
+    if (!(status instanceof HTMLElement)) return;
+    status.textContent = String(text || '');
+    status.classList.toggle('error', error);
+  }
+
+  function setExternalScriptProgress(script, { visible = true, loaded = 0, total = 0, label = '正在下载…' } = {}) {
+    const container = externalScriptElement(script, 'Progress');
+    const bar = externalScriptElement(script, 'ProgressBar');
+    const labelElement = container?.querySelector('.academic-external-script-progress-label');
+    if (!(container instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
+    container.hidden = !visible;
+    if (labelElement instanceof HTMLElement) labelElement.textContent = label;
+    if (!visible) {
+      container.classList.remove('is-indeterminate');
+      bar.style.width = '0';
+      return;
+    }
+    const determinate = Number(total) > 0;
+    container.classList.toggle('is-indeterminate', !determinate);
+    bar.style.width = determinate ? `${Math.min(100, Number(loaded) / Number(total) * 100)}%` : '';
+  }
+
+  function renderExternalScriptState(script) {
+    const state = getExternalScriptState(script);
+    const checkbox = externalScriptElement(script, 'Enabled');
+    const download = externalScriptElement(script, 'Download');
+    const checkUpdate = externalScriptElement(script, 'CheckUpdate');
+    const deleteButton = externalScriptElement(script, 'Delete');
+    const size = externalScriptElement(script, 'Size');
+    if (checkbox instanceof HTMLInputElement) {
+      checkbox.disabled = state.busy || !state.ready;
+      checkbox.checked = state.enabled;
+    }
+    if (download instanceof HTMLButtonElement) {
+      download.hidden = state.installed;
+      download.disabled = state.busy || !state.ready;
+      download.textContent = state.busy ? '处理中…' : '下载';
+    }
+    if (checkUpdate instanceof HTMLButtonElement) {
+      checkUpdate.hidden = !state.installed;
+      checkUpdate.disabled = state.busy;
+    }
+    if (deleteButton instanceof HTMLButtonElement) {
+      deleteButton.hidden = !state.installed;
+      deleteButton.disabled = state.busy || state.enabled;
+    }
+    if (size instanceof HTMLElement) {
+      const bytes = state.localSizeBytes || state.remoteSizeBytes;
+      size.textContent = bytes > 0
+        ? formatExternalScriptBytes(bytes)
+        : (state.ready && !state.installed ? '正在获取…' : '—');
+      size.style.cssText = buildFileSizeEmphasisStyle(bytes);
+      size.title = state.localSizeBytes > 0 ? '已下载文件大小' : (bytes > 0 ? '远端文件大小' : '正在获取远端文件大小');
+    }
+    if (!state.busy) setExternalScriptStatus(script, state.installed ? '已下载' : '未下载');
+  }
+
+  async function runtimeExternalScriptInfo(script) {
+    try {
+      const response = await fetch(chrome.runtime.getURL(script.path), { cache: 'no-store' });
+      if (!response.ok) return { exists: false, size: 0 };
+      return { exists: true, size: (await response.arrayBuffer()).byteLength };
+    } catch {
+      return { exists: false, size: 0 };
+    }
+  }
+
+  async function refreshExternalScriptState(script) {
+    const state = getExternalScriptState(script);
+    const stored = await chrome.storage.local.get([script.storageKey]);
+    let directoryReady = false;
+    let directorySize = 0;
+    try {
+      const manager = await getUpdaterManager();
+      directoryReady = await manager.managedFileExists(script.path);
+      if (directoryReady && typeof manager.managedFileSize === 'function') {
+        directorySize = await manager.managedFileSize(script.path);
+      }
+    } catch {}
+    const runtimeInfo = await runtimeExternalScriptInfo(script);
+    state.installed = directoryReady || runtimeInfo.exists;
+    state.localSizeBytes = directorySize || runtimeInfo.size;
+    state.runtimeReady = runtimeInfo.exists;
+    state.reloadRequired = false;
+    state.enabled = state.installed && stored[script.storageKey] === true;
+    if (!state.installed && stored[script.storageKey] === true) {
+      state.enabled = false;
+      await chrome.storage.local.set({ [script.storageKey]: false });
+      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+    }
+    state.ready = true;
+    renderExternalScriptState(script);
+    if (!state.localSizeBytes) await prefetchExternalScriptSource(script);
+  }
+
+  async function fetchExternalScriptSource(script, onProgress) {
+    const response = await fetch(script.url, { cache: 'no-store', redirect: 'follow' });
+    if (!response.ok) throw new Error(`GreasyFork 下载失败：HTTP ${response.status}`);
+    const total = Math.max(0, Number(response.headers.get('content-length') || 0));
+    const reader = response.body?.getReader?.();
+    if (!reader) {
+      const text = await response.text();
+      onProgress?.({ loaded: new TextEncoder().encode(text).byteLength, total });
+      return script.prepare(text);
+    }
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      chunks.push(value);
+      loaded += value.byteLength;
+      onProgress?.({ loaded, total });
+    }
+    const bytes = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return script.prepare(new TextDecoder().decode(bytes));
+  }
+
+  async function prefetchExternalScriptSource(script) {
+    const state = getExternalScriptState(script);
+    try {
+      const source = await fetchExternalScriptSource(script);
+      if (state.installed) return;
+      state.prefetchedSource = source;
+      state.remoteSizeBytes = new TextEncoder().encode(source).byteLength;
+      renderExternalScriptState(script);
+    } catch {
+      // The download button remains available; only the optional size preview is unavailable.
+    }
+  }
+
+  async function downloadExternalScript(script, { enableAfterDownload = false } = {}) {
+    const state = getExternalScriptState(script);
+    if (state.busy || state.installed) return;
+    state.busy = true;
+    state.enabled = enableAfterDownload;
+    renderExternalScriptState(script);
+    setExternalScriptStatus(script, '正在请求扩展目录写入权限…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      setExternalScriptStatus(script, '正在从 GreasyFork 下载…');
+      setExternalScriptProgress(script, { visible: true });
+      const source = state.prefetchedSource || await fetchExternalScriptSource(script, ({ loaded, total }) => {
+        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
+        setExternalScriptProgress(script, {
+          visible: true, loaded, total,
+          label: `正在下载：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+        });
+      });
+      const bytes = new TextEncoder().encode(source);
+      await manager.writeManagedFile(root, script.path, bytes);
+      state.localSizeBytes = bytes.byteLength;
+      state.remoteSizeBytes = 0;
+      state.prefetchedSource = null;
+      state.reloadRequired = true;
+      state.installed = true;
+      state.enabled = enableAfterDownload;
+      await chrome.storage.local.set({ [script.storageKey]: enableAfterDownload });
+      setExternalScriptProgress(script, { visible: false });
+      state.busy = false;
+      renderExternalScriptState(script);
+      if (enableAfterDownload) {
+        await setExternalScriptEnabled(script, true);
+      } else {
+        setMessage(`「${script.name}」已下载`);
+      }
+    } catch (error) {
+      state.busy = false;
+      state.enabled = false;
+      setExternalScriptProgress(script, { visible: false });
+      renderExternalScriptState(script);
+      setExternalScriptStatus(script, String(error?.message || error), true);
+      setMessage(`外部脚本下载失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function setExternalScriptEnabled(script, enabled) {
+    const state = getExternalScriptState(script);
+    if (state.busy || !state.ready) return;
+    if (enabled && !state.installed) return downloadExternalScript(script, { enableAfterDownload: true });
+    state.busy = true;
+    state.enabled = enabled;
+    renderExternalScriptState(script);
+    try {
+      await chrome.storage.local.set({ [script.storageKey]: enabled });
+      const result = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+      if (!result?.ok) throw new Error(result?.message || `脚本${enabled ? '注册' : '注销'}失败`);
+      state.busy = false;
+      renderExternalScriptState(script);
+      if (!enabled) {
+        setMessage(`已停用「${script.name}」，可点击「删除」卸载`);
+        return;
+      }
+      if (Array.isArray(result.registeredIds)
+          && result.registeredIds.includes(script.contentScriptId)) {
+        state.runtimeReady = true;
+        state.reloadRequired = false;
+        setMessage(`已启用「${script.name}」`);
+      } else {
+        setExternalScriptStatus(script, '正在启用并重新加载扩展…');
+        await reloadAcademicOptionsPage(script.id);
+      }
+    } catch (error) {
+      await chrome.storage.local.set({ [script.storageKey]: !enabled });
+      state.enabled = !enabled;
+      state.busy = false;
+      renderExternalScriptState(script);
+      setExternalScriptStatus(script, String(error?.message || error), true);
+      setMessage(`外部脚本${enabled ? '启用' : '停用'}失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function deleteExternalScript(script) {
+    const state = getExternalScriptState(script);
+    if (state.busy || !state.installed || state.enabled) return;
+    state.busy = true;
+    renderExternalScriptState(script);
+    setExternalScriptStatus(script, '正在删除…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      await manager.removeManagedFile(root, script.path);
+      await chrome.storage.local.set({ [script.storageKey]: false });
+      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+      Object.assign(state, { installed: false, localSizeBytes: 0, remoteSizeBytes: 0, prefetchedSource: null, runtimeReady: false, reloadRequired: false, busy: false });
+      renderExternalScriptState(script);
+      setExternalScriptStatus(script, '已删除，正在重新加载扩展…');
+      await reloadAcademicOptionsPage(script.id);
+    } catch (error) {
+      state.busy = false;
+      renderExternalScriptState(script);
+      setExternalScriptStatus(script, String(error?.message || error), true);
+      setMessage(`外部脚本删除失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  async function checkExternalScriptUpdate(script) {
+    const state = getExternalScriptState(script);
+    if (state.busy || !state.installed) return;
+    state.busy = true;
+    renderExternalScriptState(script);
+    setExternalScriptStatus(script, '正在检查更新…');
+    try {
+      const manager = await getUpdaterManager();
+      const root = await manager.requestDirectory();
+      const current = await (await manager.readManagedFile(root, script.path)).text();
+      setExternalScriptProgress(script, { visible: true, label: '正在从 GreasyFork 检查更新…' });
+      const latest = await fetchExternalScriptSource(script, ({ loaded, total }) => {
+        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
+        setExternalScriptProgress(script, {
+          visible: true, loaded, total,
+          label: `正在检查：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+        });
+      });
+      const normalize = (value) => String(value || '').replace(/\r\n/g, '\n').trim();
+      if (normalize(current) === normalize(latest)) {
+        state.busy = false;
+        setExternalScriptProgress(script, { visible: false });
+        renderExternalScriptState(script);
+        setExternalScriptStatus(script, '已下载（已是最新）');
+        return;
+      }
+      const bytes = new TextEncoder().encode(latest);
+      await manager.writeManagedFile(root, script.path, bytes);
+      state.localSizeBytes = bytes.byteLength;
+      state.remoteSizeBytes = 0;
+      state.reloadRequired = true;
+      state.busy = false;
+      setExternalScriptProgress(script, { visible: false });
+      renderExternalScriptState(script);
+      setExternalScriptStatus(script, state.enabled ? '已下载（已更新，重新启用后生效）' : '已下载（已更新）');
+      setMessage(state.enabled
+        ? `「${script.name}」已更新，请取消勾选后重新启用`
+        : `「${script.name}」已更新`);
+    } catch (error) {
+      state.busy = false;
+      setExternalScriptProgress(script, { visible: false });
+      renderExternalScriptState(script);
+      setExternalScriptStatus(script, String(error?.message || error), true);
+      setMessage(`检查外部脚本更新失败：${String(error?.message || error)}`, false);
+    }
+  }
+
+  function externalScriptAction(scriptId, action, value) {
+    const script = externalScriptById.get(scriptId);
+    if (!script) return;
+    const actions = {
+      download: () => downloadExternalScript(script),
+      update: () => checkExternalScriptUpdate(script),
+      delete: () => deleteExternalScript(script),
+      enabled: () => setExternalScriptEnabled(script, value === true)
+    };
+    return actions[action]?.();
   }
 
   async function fetchBbScript(onProgress) {
@@ -698,7 +1046,7 @@
         setBbScriptStatus('已下载，正在启用并重新加载扩展…');
         await reloadAcademicOptionsPage(BB_SCRIPT_ID);
       } else {
-        setMessage('「BB酱帮你查课余量」已下载');
+        setMessage('「BB酱帮你查课余量 (2026修复版)」已下载');
       }
     } catch (error) {
       bbScriptBusy = false;
@@ -730,7 +1078,7 @@
             && result.registeredIds.includes(BB_CONTENT_SCRIPT_ID)) {
           bbScriptRuntimeReady = true;
           bbScriptReloadRequired = false;
-          setMessage('已启用「BB酱帮你查课余量」');
+          setMessage('已启用「BB酱帮你查课余量 (2026修复版)」');
         } else {
           setBbScriptStatus('正在启用并重新加载扩展…');
           await reloadAcademicOptionsPage(BB_SCRIPT_ID);
@@ -750,7 +1098,7 @@
       if (!result?.ok) throw new Error(result?.message || '脚本注销失败');
       bbScriptBusy = false;
       renderBbScriptState();
-      setMessage('已停用「BB酱帮你查课余量」，可点击「删除」卸载');
+      setMessage('已停用「BB酱帮你查课余量 (2026修复版)」，可点击「删除」卸载');
     } catch (error) {
       await chrome.storage.local.set({ [BB_SCRIPT_STORAGE_KEY]: true });
       bbScriptEnabled = true;
@@ -784,7 +1132,7 @@
         await reloadAcademicOptionsPage(BB_SCRIPT_ID);
       } else {
         setBbScriptStatus('未下载');
-        setMessage('BB酱查课余量脚本已删除');
+        setMessage('「BB酱帮你查课余量 (2026修复版)」已删除');
       }
     } catch (error) {
       bbScriptBusy = false;
@@ -830,8 +1178,8 @@
       renderBbScriptState();
       setBbScriptStatus(bbScriptEnabled ? '已下载（已更新，重新启用后生效）' : '已下载（已更新）');
       setMessage(bbScriptEnabled
-        ? 'BB酱查课余量脚本已更新，请取消勾选后重新启用'
-        : 'BB酱查课余量脚本已更新');
+        ? '「BB酱帮你查课余量 (2026修复版)」已更新，请取消勾选后重新启用'
+        : '「BB酱帮你查课余量 (2026修复版)」已更新');
     } catch (error) {
       bbScriptBusy = false;
       setBbScriptProgress({ visible: false });
@@ -1272,29 +1620,19 @@
       await chrome.storage.local.set({ academicOptionsWideEnabled: enabled });
       setMessage(enabled ? '教务系统将在宽屏时占满宽度' : '教务系统将在宽屏时按普通模块宽度显示');
     });
-    element('academicAssessmentScriptDownload')?.addEventListener('click', () => {
-      void downloadAssessmentScript();
-    });
-    element('academicAssessmentScriptCheckUpdate')?.addEventListener('click', () => {
-      void checkAssessmentScriptUpdate();
-    });
-    element('academicAssessmentScriptDelete')?.addEventListener('click', () => {
-      void deleteAssessmentScript();
-    });
-    element('academicAssessmentScriptEnabled')?.addEventListener('change', (event) => {
-      void setAssessmentScriptEnabled(event.currentTarget.checked === true);
-    });
-    element('academicBbScriptDownload')?.addEventListener('click', () => {
-      void downloadBbScript();
-    });
-    element('academicBbScriptCheckUpdate')?.addEventListener('click', () => {
-      void checkBbScriptUpdate();
-    });
-    element('academicBbScriptDelete')?.addEventListener('click', () => {
-      void deleteBbScript();
-    });
-    element('academicBbScriptEnabled')?.addEventListener('change', (event) => {
-      void setBbScriptEnabled(event.currentTarget.checked === true);
+    EXTERNAL_SCRIPTS.forEach((script) => {
+      externalScriptElement(script, 'Download')?.addEventListener('click', () => {
+        void externalScriptAction(script.id, 'download');
+      });
+      externalScriptElement(script, 'CheckUpdate')?.addEventListener('click', () => {
+        void externalScriptAction(script.id, 'update');
+      });
+      externalScriptElement(script, 'Delete')?.addEventListener('click', () => {
+        void externalScriptAction(script.id, 'delete');
+      });
+      externalScriptElement(script, 'Enabled')?.addEventListener('change', (event) => {
+        void externalScriptAction(script.id, 'enabled', event.currentTarget.checked === true);
+      });
     });
     element('academicBbWishListCourses')?.addEventListener('change', () => {
       void saveBbSettings();
@@ -1446,15 +1784,13 @@
       }
       if (changes.academicScoreMonitorStatus) renderMonitorStatus(changes.academicScoreMonitorStatus.newValue);
       if (changes.academicExamMonitorStatus) renderExamStatus(changes.academicExamMonitorStatus.newValue);
-      if (changes[ASSESSMENT_SCRIPT_STORAGE_KEY] && !assessmentScriptBusy) {
-        assessmentScriptEnabled = assessmentScriptInstalled
-          && changes[ASSESSMENT_SCRIPT_STORAGE_KEY].newValue === true;
-        renderAssessmentScriptState();
-      }
-      if (changes[BB_SCRIPT_STORAGE_KEY] && !bbScriptBusy) {
-        bbScriptEnabled = bbScriptInstalled && changes[BB_SCRIPT_STORAGE_KEY].newValue === true;
-        renderBbScriptState();
-      }
+      EXTERNAL_SCRIPTS.forEach((script) => {
+        const state = getExternalScriptState(script);
+        if (changes[script.storageKey] && !state.busy) {
+          state.enabled = state.installed && changes[script.storageKey].newValue === true;
+          renderExternalScriptState(script);
+        }
+      });
       if (changes[BB_WISH_LIST_KEY] || changes[BB_REFRESH_DELAY_KEY]) {
         const wishList = changes[BB_WISH_LIST_KEY]
           ? changes[BB_WISH_LIST_KEY].newValue
@@ -1487,8 +1823,7 @@
     bindEvents();
     bindMessages();
     updateDisabledState();
-    void refreshAssessmentScriptState();
-    void refreshBbScriptState();
+    EXTERNAL_SCRIPTS.forEach((script) => { void refreshExternalScriptState(script); });
     await refreshContext();
     await send('ACADEMIC_PRELOAD_ACCOUNT');
     void loadAll();
