@@ -1571,9 +1571,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         const loginName = String(acc.loginName || acc.userId || '').trim();
         const quickUsername = String(acc.quickUsername || '').trim();
         if (!loginName || !quickUsername) continue;
-        try {
-          lines.push(`${loginName}:${atob(quickUsername)}`);
-        } catch { /* skip invalid base64 */ }
+        lines.push(`${loginName}:${quickUsername}`);
       }
       if (!lines.length) {
         setMsg('没有找到有效的绑定数据', false);
