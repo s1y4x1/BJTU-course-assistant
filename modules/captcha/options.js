@@ -105,6 +105,31 @@
     return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${colorLight},${g},${b}); text-shadow:${shadow};`;
   }
 
+  function escapeOptionsHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
+    ));
+  }
+
+  function renderCaptchaFileSizeText(bytes, text = '') {
+    const n = Math.max(0, Number(bytes) || 0);
+    const label = text || formatBytes(n);
+    return `<span class="file-size-emphasis" data-file-size-bytes="${n}" style="${escapeOptionsHtml(buildFileSizeEmphasisStyle(n))}">${escapeOptionsHtml(label)}</span>`;
+  }
+
+  function renderCaptchaFileSizePair(loaded, total) {
+    return `${renderCaptchaFileSizeText(loaded)} <span class="file-size-separator">/</span> ${renderCaptchaFileSizeText(total)}`;
+  }
+
+  window.addEventListener('bjtu-theme-change', () => {
+    const root = document.querySelector('[data-options-module="captcha"]');
+    if (!(root instanceof HTMLElement)) return;
+    root.querySelectorAll('[data-file-size-bytes]').forEach((element) => {
+      if (!(element instanceof HTMLElement)) return;
+      element.style.cssText = buildFileSizeEmphasisStyle(Number(element.dataset.fileSizeBytes || 0));
+    });
+  });
+
   function modelLabel(version) {
     return versions[version]?.label || version;
   }
@@ -112,7 +137,7 @@
   function setCoreStatus(text, error = false) {
     const target = document.getElementById('captchaCoreStatusValue');
     if (!(target instanceof HTMLElement)) return;
-    target.textContent = text;
+    target.innerHTML = text;
     target.classList.toggle('error', error);
   }
 
@@ -146,7 +171,9 @@
     const assets = global.BjtuCaptchaAssets;
     if (!assets) return false;
     const size = document.getElementById('captchaCoreSize');
-    if (size instanceof HTMLElement) size.textContent = formatBytes(assets.CORE_SIZE);
+    if (size instanceof HTMLElement) {
+      size.innerHTML = renderCaptchaFileSizeText(assets.CORE_SIZE);
+    }
     setCoreStatus('检查中…');
     setCoreProgress({ visible: false });
     const runtimeCheck = assets.extensionCoreExists();
@@ -186,9 +213,10 @@
   }
 
   function progressText(prefix, progress) {
-    const loaded = formatBytes(progress?.loaded);
-    const total = Number(progress?.total) > 0 ? ` / ${formatBytes(progress.total)}` : '';
-    return `${prefix}：${loaded}${total}`;
+    const sizeHtml = Number(progress?.total) > 0
+      ? renderCaptchaFileSizePair(progress?.loaded, progress.total)
+      : renderCaptchaFileSizeText(progress?.loaded);
+    return `${prefix}：${sizeHtml}`;
   }
 
   function setModelProgress(version, label, loaded = 0, total = 0) {
@@ -210,7 +238,7 @@
     if (!(container instanceof HTMLElement)
         || !(text instanceof HTMLElement)
         || !(bar instanceof HTMLElement)) return;
-    text.textContent = progress.label;
+    text.innerHTML = progress.label;
     const determinate = progress.total > 0;
     container.classList.toggle('is-indeterminate', !determinate);
     bar.style.width = determinate
@@ -265,6 +293,7 @@
       const size = document.createElement('span');
       size.className = 'captcha-model-size';
       size.textContent = formatBytes(definition.size);
+      size.dataset.fileSizeBytes = String(Math.max(0, Number(definition.size) || 0));
       size.style.cssText = buildFileSizeEmphasisStyle(definition.size);
       choice.append(radio, name, size);
 
@@ -298,7 +327,7 @@
         progressContainer.className = `captcha-model-progress${progress.total > 0 ? '' : ' is-indeterminate'}`;
         const progressLabel = document.createElement('div');
         progressLabel.className = 'captcha-model-progress-label';
-        progressLabel.textContent = progress.label;
+        progressLabel.innerHTML = progress.label;
         const progressTrack = document.createElement('div');
         progressTrack.className = 'captcha-model-progress-track';
         const progressBar = document.createElement('div');
@@ -366,7 +395,7 @@
     } catch (error) {
       coreReady = false;
       coreReloadRequired = false;
-      setCoreStatus(String(error?.message || error), true);
+      setCoreStatus(escapeOptionsHtml(String(error?.message || error)), true);
       setCoreProgress({ visible: false });
       throw error;
     }
