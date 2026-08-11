@@ -2957,28 +2957,6 @@ async function handleLoginSuccess(username) {
   }).catch(() => { });
 }
 
-async function handleAlreadyLoggedIn(username, userInfo) {
-  if (!isPlatformEnabled('ve')) {
-    window.platformEnabled.ve = true;
-    savePlatformEnabledToStorage().catch(() => { });
-  }
-  window.platformLoadedOnce.ve = false;
-  setPlatformLoginState('ve', 'checking');
-  isLoginSessionValid = true;
-  loginCancelRequested = false;
-  hideLoginModal();
-  suppressedUsernameChangeValue = String(username || '').trim();
-  runPendingLoginCallbacks();
-  showToast('已登录该账号', 'success', 1800);
-  await loadAutoLoadCourseResourcesSetting().catch(() => { });
-  await syncAccountInfoAndReloadVeCourses({
-    userId: String(username || '').trim(),
-    reloadCourses: true,
-    reloadResourceSpace: true,
-    knownUserInfo: userInfo || null
-  }).catch(() => { });
-}
-
 async function captchaModuleManifestExists() {
   try {
     const response = await fetch(chrome.runtime.getURL('modules/captcha/module.json'), { cache: 'no-store' });
@@ -3029,14 +3007,6 @@ async function doLoginFlow() {
   const signal = loginAbortController.signal;
 
   try {
-    showToast('正在检查当前登录账号…', 'info', 0);
-    const currentUser = await globalThis.BjtuAccountLogin.getCurrentUserInfo({ signal });
-    if (signal.aborted || loginCancelRequested) return;
-    if (String(currentUser?.loginName || '').trim() === username) {
-      await handleAlreadyLoggedIn(username, currentUser);
-      return;
-    }
-
     showToast('正在读取账号列表…', 'info', 0);
     const initialInitializationResult = await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
     if (signal.aborted || loginCancelRequested) return;
@@ -3060,7 +3030,7 @@ async function doLoginFlow() {
       manualPassword = '';
       manualPasswordPlain = '';
       manualPasscode = '';
-      showToast(submittedPassword ? '正在登录…' : '正在检查账号并登录…', 'info', 0);
+      showToast('正在登录…', 'info', 0);
       await enforceJsessionidBeforeLoginRequest();
       const result = await globalThis.BjtuAccountLogin.login(username, {
         signal,
@@ -3151,11 +3121,6 @@ async function doLoginFlow() {
             : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
           allowStoredCredentials = true;
           if (account) {
-            const currentAfterInitialize = await globalThis.BjtuAccountLogin.getCurrentUserInfo({ signal });
-            if (String(currentAfterInitialize?.loginName || '').trim() === username) {
-              await handleAlreadyLoggedIn(username, currentAfterInitialize);
-              return;
-            }
             showToast('账号列表已更新，正在重新登录…', 'info', 0);
           }
         } catch (error) {

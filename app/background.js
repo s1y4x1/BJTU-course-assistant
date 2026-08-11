@@ -435,6 +435,7 @@ const portalDetectedQuickUsernameByTab = new Map(); // tabId -> { quickUsername,
 const portalQuickUsernameToastByTab = new Map(); // tabId -> quickUsername already toasted
 const portalDetectedPasswordLoginByTab = new Map(); // tabId -> encrypted password login request
 const portalPasswordRecordingTabs = new Set();
+const portalQuickUsernameFinalizing = new Set(); // tabId -> avoid concurrent/double finalization
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
 let latestResponseJsessionid = null;
 
@@ -1006,6 +1007,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   portalQuickUsernameToastByTab.delete(tabId);
   portalDetectedPasswordLoginByTab.delete(tabId);
   portalPasswordRecordingTabs.delete(tabId);
+  portalQuickUsernameFinalizing.delete(tabId);
 });
 
 function isPortalLoginResponseSuccess(source, activeSuccessScript = false) {
@@ -1134,10 +1136,41 @@ chrome.webRequest.onBeforeRequest.addListener(
     portalUsernameBindByTab.set(tabId, { ...bindState, quickUsername, ts: Date.now() });
     notifyPortalUsernameBindStatus({ status: 'detected', tabId, quickUsername, ts: Date.now() });
   },
-  {
+{
     urls: ['http://123.121.147.7:88/ve/s.shtml*']
   },
   ['requestBody']
+);
+
+// Fallback: the in-page response detector may occasionally miss a login navigation
+// (the tab can be mid-redirect, scripts paused, etc.), which previously left the bind
+// stuck at "已检测到新 username" and never closed the page. webRequest.onCompleted
+// runs for the same GET quick-login request regardless of page script timing, so we
+// finalize the binding directly using the username captured from the URL.
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    try {
+      const tabId = Number(details?.tabId);
+      if (!(tabId >= 0)) return;
+      if (String(details?.method || 'GET').toUpperCase() !== 'GET') return;
+      const quickUsername = extractPortalQuickUsername(details?.url);
+      if (!quickUsername) return;
+      const quickState = portalDetectedQuickUsernameByTab.get(tabId) || null;
+      if (!quickState) return;
+      if (String(quickState.quickUsername || '').trim() !== quickUsername) return;
+      if (Date.now() - Number(quickState.ts || 0) > 30000) return;
+      // A 500 GET login response means the quick login failed (e.g. invalid /
+      // stale quick username). Never record it — otherwise the fallback would
+      // bind a dead username and bind the wrong account.
+      if (Number(quickState.statusCode || 0) === 500) return;
+      portalDetectedQuickUsernameByTab.delete(tabId);
+      finalizePortalQuickUsernameBind(tabId, quickUsername).catch(() => {});
+    } catch {
+      // ignore
+    }
+  },
+  { urls: ['http://123.121.147.7:88/ve/s.shtml*'] },
+  []
 );
 
 async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
@@ -1189,16 +1222,15 @@ async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
   return null;
 }
 
-async function fetchBoundPortalAccountInfo(tabId, quickUsername, preferredLoginName = '') {
+async function fetchBoundPortalAccountInfo(tabId, quickUsername) {
   const quick = String(quickUsername || '').trim();
   if (!quick) return null;
   await globalThis.BjtuAccountStore.migrateLegacy();
-  const preferred = String(preferredLoginName || '').trim();
-  const knownAccount = preferred
-    ? await globalThis.BjtuAccountStore.get(preferred)
-    : await globalThis.BjtuAccountStore.getByQuickUsername(quick);
-  const expectedLoginName = preferred || String(knownAccount?.loginName || '').trim();
-  const currentUser = await getPortalCurrentUserInfoFromTab(tabId, expectedLoginName);
+  // Do NOT gate on the previously-selected login name: the quick-login GET
+  // belongs to whatever account the MIS session actually logged in as. Resolving
+  // the CURRENT user once is enough and avoids retrying getUserInfo in a loop
+  // (which previously left the bind page open forever when the accounts differed).
+  const currentUser = await getPortalCurrentUserInfoFromTab(tabId);
   const loginName = String(currentUser?.loginName || '').trim();
   if (!loginName) return null;
 
@@ -1254,51 +1286,117 @@ async function showPortalCredentialEventsToast(sender, result) {
 }
 
 async function showPortalPageToast(tabId, message, tone = 'success') {
-  try {
+  const toneClass = tone === 'warning' ? 'warning' : tone === 'error' ? 'error' : 'success';
+  if (toneClass === 'success') {
+    // Wait for the login navigation to settle on the authenticated platform page
+    // (coursePlatform.shtml / index.shtml), so the toast is not lost mid-redirect.
+    const startAt = Date.now();
+    while (Date.now() - startAt < 4000) {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (isPortalAuthenticatedPageUrl(tab?.url)) break;
+        if (isPortalLoginFailurePageUrl(tab?.url)) break;
+      } catch {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  const inject = async () => {
     await chrome.scripting.executeScript({
       target: { tabId },
       world: 'ISOLATED',
-      func: (message, tone) => {
-        const id = '__bjtu_quick_username_bind_toast__';
-        const old = document.getElementById(id);
-        if (old) old.remove();
+      func: (message, toneClass) => {
+        const styleId = '__bjtu_page_toast_style__';
+        const containerId = '__bjtu_page_toast_container__';
+        const toastId = '__bjtu_page_toast__';
+        if (!document.getElementById(styleId)) {
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = [
+            '#' + containerId + '{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;flex-direction:column;align-items:center;pointer-events:none;}',
+            '#' + toastId + '{pointer-events:auto;min-width:250px;max-width:min(80vw,520px);box-sizing:border-box;padding:12px 20px;margin-bottom:10px;border-radius:8px;background-color:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);display:flex;align-items:center;justify-content:center;font-size:14px;color:#333;cursor:copy;animation:bjtuPageToastEnter .25s ease-out;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
+            '#' + toastId + '.toast.success{background-color:#E8F5E9;color:#2E7D32;border:1px solid #C8E6C9;}',
+            '#' + toastId + '.toast.error{background-color:#FFEBEE;color:#C62828;border:1px solid #FFCDD2;}',
+            '#' + toastId + '.toast.warning{background-color:#FFF8E1;color:#F57F17;border:1px solid #FFECB3;}',
+            '@keyframes bjtuPageToastEnter{from{transform:translateY(-12px);opacity:0;}to{transform:translateY(0);opacity:1;}}'
+          ].join('');
+          document.documentElement.appendChild(style);
+        }
+        let container = document.getElementById(containerId);
+        if (!(container instanceof HTMLElement)) {
+          container = document.createElement('div');
+          container.id = containerId;
+          document.documentElement.appendChild(container);
+        } else {
+          const old = container.querySelector('#' + toastId);
+          if (old) old.remove();
+        }
         const toast = document.createElement('div');
-        toast.id = id;
+        toast.id = toastId;
+        toast.className = 'toast ' + toneClass;
         toast.textContent = message;
-        const background = tone === 'warning' ? '#d97706' : tone === 'error' ? '#dc2626' : '#16a34a';
-        toast.style.cssText = [
-          'position:fixed',
-          'top:18px',
-          'left:50%',
-          'transform:translateX(-50%)',
-          'z-index:2147483647',
-          `background:${background}`,
-          'color:#fff',
-          'font-size:14px',
-          'font-weight:600',
-          'line-height:1.5',
-          'padding:10px 14px',
-          'border-radius:8px',
-          'box-shadow:0 10px 30px rgba(0,0,0,.22)',
-          'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
-        ].join(';');
-        document.documentElement.appendChild(toast);
-        setTimeout(() => {
-          toast.style.transition = 'opacity .25s ease, transform .25s ease';
-          toast.style.opacity = '0';
-          toast.style.transform = 'translateX(-50%) translateY(-8px)';
-          setTimeout(() => toast.remove(), 280);
-        }, 3600);
+        toast.title = '点击复制通知内容并关闭';
+        toast.addEventListener('click', () => {
+          try { navigator.clipboard.writeText(message); } catch (e) {}
+          toast.remove();
+        });
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3600);
       },
-      args: [String(message || ''), String(tone || 'success')]
+      args: [String(message || ''), toneClass]
     });
+  };
+  try {
+    await inject();
   } catch {
-    // ignore
+    // The tab may be mid-navigation; ignore.
   }
 }
 
 async function showPortalQuickUsernameBoundToast(tabId) {
   return showPortalPageToast(tabId, '已为您成功绑定智慧课程平台快速登录');
+}
+
+async function finalizePortalQuickUsernameBind(tabId, quickUsername) {
+  if (portalQuickUsernameFinalizing.has(tabId)) return;
+  portalQuickUsernameFinalizing.add(tabId);
+  try {
+    const bindState = portalUsernameBindByTab.get(tabId) || null;
+    const record = await fetchBoundPortalAccountInfo(tabId, quickUsername);
+    if (record) console.info('[bjtu] stored VE quickUsername in IndexedDB', { tabId });
+    else console.warn('[bjtu] skipped VE quickUsername recording because current user was unavailable', { tabId });
+    notifyPortalUsernameBindStatus({
+      status: record ? 'done' : 'detected',
+      tabId,
+      quickUsername,
+      userId: String(record?.userId || '').trim(),
+      ts: Date.now()
+    });
+    if (record && bindState) {
+      portalUsernameBindByTab.delete(tabId);
+      try { await chrome.tabs.remove(tabId); } catch {}
+      return;
+    }
+    if (record) {
+      portalQuickUsernameToastByTab.set(tabId, quickUsername);
+      await showPortalQuickUsernameBoundToast(tabId);
+    }
+  } catch (error) {
+    console.warn('[bjtu] failed to store VE quickUsername in IndexedDB', {
+      tabId,
+      error: String(error?.message || error)
+    });
+    notifyPortalUsernameBindStatus({
+      status: 'error',
+      tabId,
+      quickUsername,
+      error: String(error?.message || error),
+      ts: Date.now()
+    });
+  } finally {
+    portalQuickUsernameFinalizing.delete(tabId);
+  }
 }
 
 function isPortalAuthenticatedPageUrl(value) {
@@ -1387,11 +1485,14 @@ async function processPortalLoginResponse(tabId, responsePayload) {
 
   // A successful getUserInfo call is not enough: an old session can make it
   // succeed after the actual login response reported a credential error.
-  if (!loginResponseSuccess) {
+if (!loginResponseSuccess) {
     const events = [];
     const source = String(responseHtml || '');
-    if (quickUsername && Number(quickState?.statusCode || 0) === 500
-        && /<title[^>]*>\s*系统发生了未处理的异常\s*<\/title>/i.test(source)) {
+    if (quickUsername && (Number(quickState?.statusCode || 0) === 500
+        || /账号或密码错误/i.test(source))) {
+      // A quick login that fails (server error or credential error) means the
+      // stored quickUsername is dead — drop it so the extension does not keep
+      // trying it (and falls back to the password login).
       const preferredLoginName = String(portalUsernameBindByTab.get(tabId)?.loginName || '').trim();
       const account = preferredLoginName
         ? await globalThis.BjtuAccountStore.get(preferredLoginName)
@@ -1412,47 +1513,27 @@ async function processPortalLoginResponse(tabId, responsePayload) {
       await chrome.storage.local.set({ accountListRevision: Date.now() });
       await showPortalPageToast(tabId, credentialEventsToastMessage({ credentialEvents: events }), 'warning');
     }
+    // Do not leave a bind in the "已检测到新 username，正在匹配账号信息" state forever:
+    // report the failure so the options page re-enables the bind button.
+    if (portalUsernameBindByTab.has(tabId) && quickUsername) {
+      notifyPortalUsernameBindStatus({
+        status: 'error',
+        tabId,
+        quickUsername: String(quickUsername || '').trim(),
+        error: '绑定失败：登录未成功，请重新尝试',
+        ts: Date.now()
+      });
+    }
     portalDetectedQuickUsernameByTab.delete(tabId);
     portalDetectedPasswordLoginByTab.delete(tabId);
     return;
   }
 
-  portalDetectedQuickUsernameByTab.delete(tabId);
+portalDetectedQuickUsernameByTab.delete(tabId);
   portalDetectedPasswordLoginByTab.delete(tabId);
 
   if (quickUsername) {
-    const bindState = portalUsernameBindByTab.get(tabId) || null;
-    try {
-      const record = await fetchBoundPortalAccountInfo(tabId, quickUsername, bindState?.loginName);
-      if (record) console.info('[bjtu] stored VE quickUsername in IndexedDB', { tabId });
-      else console.warn('[bjtu] skipped VE quickUsername recording because current user was unavailable', { tabId });
-      notifyPortalUsernameBindStatus({
-        status: record ? 'done' : 'detected',
-        tabId,
-        quickUsername,
-        userId: String(record?.userId || '').trim(),
-        ts: Date.now()
-      });
-      if (record && bindState) {
-        portalUsernameBindByTab.delete(tabId);
-        try { await chrome.tabs.remove(tabId); } catch {}
-      } else if (record?.quickUsernameChanged) {
-        portalQuickUsernameToastByTab.set(tabId, quickUsername);
-        await showPortalQuickUsernameBoundToast(tabId);
-      }
-    } catch (error) {
-      console.warn('[bjtu] failed to store VE quickUsername in IndexedDB', {
-        tabId,
-        error: String(error?.message || error)
-      });
-      notifyPortalUsernameBindStatus({
-        status: 'error',
-        tabId,
-        quickUsername,
-        error: String(error?.message || error),
-        ts: Date.now()
-      });
-    }
+    await finalizePortalQuickUsernameBind(tabId, quickUsername);
   }
 
   if (passwordLogin && !portalPasswordRecordingTabs.has(tabId)) {

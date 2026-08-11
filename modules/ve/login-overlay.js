@@ -273,14 +273,6 @@
     selectedLoginName = loginName;
     if (username instanceof HTMLInputElement) username.value = loginName;
     loginRunning = true;
-    setStatus('正在检查登录状态…');
-    const statusResponse = await sendMessage({ type: 'VE_LOGIN_CHECK_STATUS', payload: { loginName } });
-    if (statusResponse?.alreadyLoggedIn) {
-      loginRunning = false;
-      setStatus('已登录该账号', 'success');
-      setTimeout(() => { location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt'; }, 350);
-      return;
-    }
     setStatus('正在登录…');
     const response = await sendMessage({
       type: 'VE_LOGIN_REQUEST',
@@ -294,7 +286,7 @@
     });
     loginRunning = false;
     if (response?.ok) {
-      setStatus(response.alreadyLoggedIn ? '已登录该账号' : '登录成功', 'success');
+      setStatus('登录成功', 'success');
       setTimeout(() => { location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt'; }, 350);
       return;
     }

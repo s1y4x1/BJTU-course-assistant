@@ -10,7 +10,7 @@
     selection: 'https://aa.bjtu.edu.cn/course_selection/courseselecttask/schedule/'
   });
   const BKSY_SEMESTER_URL = 'https://bksy.bjtu.edu.cn/Admin/SemesterHandler.ashx';
-  const VE_WEEK_URL = 'http://123.121.147.7:88/ve/back/rp/common/myTimeTableDetail.shtml?method=getJxz';
+  const VE_WEEK_URL = 'http://123.121.147.7:88/ve/back/coursePlatform/course.shtml?method=getTimeList';
   const TRAINING_PROGRAM_URL = 'https://aa.bjtu.edu.cn/training/training/program/';
   const MIS_MODULE_URL = 'https://mis.bjtu.edu.cn/module/module/10/';
   const ACCOUNTS_KEY = 'academicSystemAccounts';
@@ -687,12 +687,12 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
-  async function fetchVeWeekContext() {
+async function fetchVeWeekContext() {
     let text = '';
     let response = null;
     if (global.BjtuVeHomeworkCore?.requestText) {
       const result = await global.BjtuVeHomeworkCore.requestText(VE_WEEK_URL, {
-        method: 'POST',
+        method: 'GET',
         timeoutMs: 8000,
         redirect: 'manual',
         headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
@@ -701,7 +701,7 @@
       response = result?.response || null;
     } else {
       response = await fetch(VE_WEEK_URL, {
-        method: 'POST', credentials: 'include', cache: 'no-store',
+        method: 'GET', credentials: 'include', cache: 'no-store',
         redirect: 'manual',
         headers: { Accept: 'application/json, text/javascript, */*; q=0.01' },
         signal: AbortSignal.timeout(8000)
@@ -715,24 +715,17 @@
     const data = global.BjtuVeHomeworkCore?.parseJson
       ? global.BjtuVeHomeworkCore.parseJson(text)
       : JSON.parse(String(text || '').trim());
-    const list = Array.isArray(data?.jxzList) ? data.jxzList : [];
-    const today = localDateText();
-    const current = list.find((item) => {
-      const begin = String(item?.BEGIN_DATE || '').slice(0, 10);
-      const end = String(item?.END_DATE || '').slice(0, 10);
-      return begin && end && begin <= today && today <= end;
-    });
+    const week = Number(data?.weekCode || 0);
+    if (!week) throw new Error('智慧课程平台周次接口未返回周数');
     let termName = '';
     if (global.BjtuVeHomeworkCore?.fetchTerms) {
       const terms = await global.BjtuVeHomeworkCore.fetchTerms().catch(() => []);
       termName = String(terms.find((item) => Number(item?.currentFlag || 0) === 2)?.xqName || '').trim();
     }
     return {
-      week: Number(current?.WEEK_CODE || 0),
-      weeks: list.map((item) => Number(item?.WEEK_CODE || 0)).filter((week) => week > 0),
-      weekLabels: Object.fromEntries(list
-        .map((item) => [Number(item?.WEEK_CODE || 0), String(item?.sfyk || '').trim()])
-        .filter(([week]) => week > 0)),
+      week,
+      weeks: [week],
+      weekLabels: { [week]: '本周' },
       termName,
       source: 've'
     };

@@ -118,8 +118,9 @@
     const quick = String(quickUsername || '').trim();
     if (!quick) return { ok: false, reason: 'needs-password', message: '未找到可用极速登录名' };
     const result = await requestLogin(global.BjtuVeLoginUtils.buildQuickLoginUrl(quick));
-    if (result?.httpStatus === 500 && result?.reason === 'server-error'
-        && await clearStoredCredential(options.loginName, 'quickUsername')) {
+    const quickUsernameDead = result?.reason === 'credential'
+      || (result?.httpStatus === 500 && result?.reason === 'server-error');
+    if (quickUsernameDead && await clearStoredCredential(options.loginName, 'quickUsername')) {
       return withCredentialEvents(result, [{ type: 'quickUsername-cleared', loginName: String(options.loginName || '').trim() }]);
     }
     return completeSuccessfulLogin(result, options.loginName, options);
@@ -179,13 +180,8 @@
     const loginName = String(payload?.loginName || '').trim();
     if (!loginName) return { ok: false, reason: 'empty', message: '请输入账号' };
 
-    if (payload?.skipCurrentCheck !== true) {
-      const currentUser = await fetchCurrentUserInfo();
-      if (String(currentUser?.loginName || '').trim() === loginName) {
-        return { ok: true, alreadyLoggedIn: true, userInfo: currentUser };
-      }
-    }
-
+    // No pre-login getUserInfo needed: the login request itself is the
+    // authoritative check, so we never have to "检查当前账号" first.
     await global.BjtuAccountStore.migrateLegacy();
     const account = await global.BjtuAccountStore.get(loginName);
     const passwordPlain = String(payload?.passwordPlain || '');

@@ -292,6 +292,12 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .reminder-node { display:inline-flex; align-items:center; gap:6px; padding:4px 5px 4px 9px; border:1px solid #bfdbfe; border-radius:6px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
 .reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; line-height:22px; }
 .reset-confirm-card { position:relative; }
+.export-bind-data-card { position:relative; }
+.export-bind-data-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; }
+.export-bind-data-actions a { display:flex; align-items:center; justify-content:center; padding:10px 12px; border-radius:6px; background:#f1f5f9; color:#2563eb; font-size:14px; font-weight:600; text-decoration:none; }
+.export-bind-data-actions a:hover { background:#e2e8f0; }
+html[data-color-scheme="dark"] .export-bind-data-actions a { background:#1e293b; color:#60a5fa; }
+html[data-color-scheme="dark"] .export-bind-data-actions a:hover { background:#334155; }
 .reset-confirm-message { margin:12px 0 16px; color:#475569; font-size:14px; line-height:1.6; }
 .reset-confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .reset-confirm-actions button { width:100%; margin:0; }

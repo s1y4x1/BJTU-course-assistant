@@ -1531,6 +1531,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   document.getElementById('exportBindDataBtn').addEventListener('click', async () => {
     const button = document.getElementById('exportBindDataBtn');
+    const exportModal = document.getElementById('export-bind-data-modal');
+    const exportMessage = document.getElementById('export-bind-data-message');
     const progressModal = document.getElementById('account-init-modal');
     const progressTitle = progressModal?.querySelector('.account-progress-title');
     const progressStatus = document.getElementById('account-init-status');
@@ -1541,52 +1543,76 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (button instanceof HTMLButtonElement) button.disabled = true;
     if (progressTitle instanceof HTMLElement) progressTitle.textContent = '导出 MIS 绑定数据';
     if (progressStatus instanceof HTMLElement) progressStatus.textContent = '正在读取绑定账号…';
-    if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = '已读取 0 / 17';
+    if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = '已读取 0 个';
     if (teacherBar instanceof HTMLElement) teacherBar.style.width = '0%';
     if (teacherRow instanceof HTMLElement) teacherRow.style.display = '';
     if (studentRow instanceof HTMLElement) studentRow.style.display = 'none';
     if (progressModal instanceof HTMLElement) progressModal.style.display = 'flex';
     try {
       const withQuick = await globalThis.BjtuAccountStore.getQuickAccounts({
-        limit: 17,
-        onProgress: ({ read, done }) => {
-          if (teacherLabel instanceof HTMLElement) {
-            teacherLabel.textContent = done && read < 17 ? `已读取 ${read} 个` : `已读取 ${read} / 17`;
-          }
-          if (teacherBar instanceof HTMLElement) {
-            teacherBar.style.width = `${done ? 100 : Math.min(100, (Number(read || 0) / 17) * 100)}%`;
-          }
+        limit: 10000,
+        onProgress: ({ read }) => {
+          if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = `已读取 ${read} 个`;
+          if (teacherBar instanceof HTMLElement) teacherBar.style.width = '100%';
         }
       });
-      if (!withQuick.length) {
-        setMsg('没有找到已绑定 MIS 的账号', false);
-        return;
-      }
-      if (withQuick.length > 16) {
-        setMsg('绑定的账号很多！请点击「导出账号列表」按钮', false);
-        return;
-      }
+      const context = await chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).catch(() => null);
+      const history = Array.isArray(context?.history) ? context.history : [];
+      const historyIdSet = new Set(history
+        .map((it) => String(it?.loginName || it?.userId || '').trim())
+        .filter(Boolean));
       const lines = [];
       for (const acc of withQuick) {
         const loginName = String(acc.loginName || acc.userId || '').trim();
         const quickUsername = String(acc.quickUsername || '').trim();
         if (!loginName || !quickUsername) continue;
+        if (!historyIdSet.has(loginName)) continue;
         lines.push(`${loginName}:${quickUsername}`);
       }
       if (!lines.length) {
-        setMsg('没有找到有效的绑定数据', false);
+        setMsg('没有找到已绑定 MIS 的账号', false);
         return;
       }
-      await navigator.clipboard.writeText(lines.join('\n'));
-      setMsg('已复制到剪贴板');
+      const content = lines.join('\n');
+      let savedToFile = false;
+      if (lines.length > 128) {
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'bjtu-mis-bindings.txt';
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        savedToFile = true;
+      } else {
+        await navigator.clipboard.writeText(content);
+        savedToFile = false;
+      }
+      if (exportMessage instanceof HTMLElement) {
+        exportMessage.textContent = (savedToFile ? '已保存到本地文件。' : '已复制到剪贴板。')
+          + '我们恳请您点击下方按钮发送此内容，以帮助我们继续开发核心功能。';
+      }
+      if (exportModal instanceof HTMLElement) exportModal.style.display = 'flex';
     } catch (error) {
-      setMsg('复制到剪贴板失败：' + String(error?.message || error), false);
+      setMsg('导出失败：' + String(error?.message || error), false);
     } finally {
       if (progressModal instanceof HTMLElement) progressModal.style.display = 'none';
       if (studentRow instanceof HTMLElement) studentRow.style.display = '';
       if (teacherBar instanceof HTMLElement) teacherBar.style.width = '0%';
       if (button instanceof HTMLButtonElement) button.disabled = false;
     }
+  });
+
+  const exportBindDataModal = document.getElementById('export-bind-data-modal');
+  const closeExportBindDataModal = () => {
+    if (exportBindDataModal instanceof HTMLElement) exportBindDataModal.style.display = 'none';
+  };
+  document.getElementById('export-bind-data-close')?.addEventListener('click', closeExportBindDataModal);
+  exportBindDataModal?.addEventListener('click', (event) => {
+    if (event.target === exportBindDataModal) closeExportBindDataModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && exportBindDataModal?.style.display === 'flex') closeExportBindDataModal();
   });
 
   chrome.runtime.onMessage.addListener((message) => {
