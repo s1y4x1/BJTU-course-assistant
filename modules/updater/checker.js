@@ -971,42 +971,6 @@ function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, et
   statusEl.dataset.percent = explicitPercent === null ? '' : String(explicitPercent);
 }
 
-const captchaResourceTransferStates = new Map();
-function showCaptchaResourceDownloadProgress(progress, {
-  filename,
-  body
-}) {
-  const loaded = Math.max(0, Number(progress?.loaded) || 0);
-  const total = Math.max(0, Number(progress?.total) || 0);
-  const key = String(progress?.phase || filename || 'captcha-resource');
-  const now = performance.now();
-  let state = captchaResourceTransferStates.get(key);
-  if (!state || loaded <= 0 || loaded < state.lastLoaded) {
-    state = { startedAt: now, lastLoaded: 0 };
-    captchaResourceTransferStates.set(key, state);
-  }
-  state.lastLoaded = loaded;
-  const elapsedSeconds = Math.max(0.001, (now - state.startedAt) / 1000);
-  const speed = loaded / elapsedSeconds;
-  const eta = total > loaded
-    ? (speed > 0 ? (total - loaded) / speed : null)
-    : (total > 0 ? 0 : null);
-  const percent = total > 0 ? loaded / total * 100 : null;
-  setVersionDownloadProgressUi({
-    visible: true,
-    status: `正在下载 ${filename}`,
-    title: '正在准备验证码识别资源',
-    body: `正在下载 ${filename}。${body}`,
-    phase: 'extracting'
-  });
-  setVersionDownloadBar({
-    visible: true,
-    percent: percent ?? 0,
-    indeterminate: percent === null
-  });
-  setVersionDownloadTransferStatus({ loaded, total, speed, eta, percent });
-}
-
 function resetVersionUpdateFileTree() {
   versionUpdateFileTreeRows = new Map();
   const wrapper = document.getElementById('version-update-files');
@@ -2036,16 +2000,6 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
     .filter((item) => item.path);
   const selectedModules = await chooseUpdateModules(archiveFiles);
   VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-  if (selectedModules.has('captcha')) {
-    await globalThis.BjtuCaptchaAssets?.ensureModel({
-      onProgress(progress) {
-        showCaptchaResourceDownloadProgress(progress, {
-          filename: 'eng.traineddata.gz',
-          body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。'
-        });
-      }
-    });
-  }
   if (cleanUpdate) await cleanVersionUpdateScopes(updateRule, selectedModules);
   else await removeUnselectedModuleDirectories(selectedModules);
   const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
@@ -2140,29 +2094,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   }));
   const failedResult = results.find((result) => result.status === 'rejected');
   if (failedResult) throw failedResult.reason;
-  let supplementalWrites = 0;
-  if (selectedModules.has('captcha')) {
-    const prepared = await prepareCaptchaAssets({
-      root: versionUpdateDirectoryHandle,
-      onProgress(progress) {
-        const loaded = Math.max(0, Number(progress?.loaded) || 0);
-        const total = Math.max(0, Number(progress?.total) || 0);
-        if (progress?.phase === 'model') {
-          showCaptchaResourceDownloadProgress({ ...progress, loaded, total }, {
-            filename: 'eng.traineddata.gz',
-            body: '验证码识别模型将保存在 IndexedDB，不写入扩展安装目录。'
-          });
-        } else if (progress?.phase === 'core') {
-          showCaptchaResourceDownloadProgress({ ...progress, loaded, total }, {
-            filename: 'tesseract-core-simd.wasm.js',
-            body: 'OCR 核心下载完成后将写入验证码模块目录。'
-          });
-        }
-      }
-    });
-    supplementalWrites = prepared.written;
-  }
-  return files.length + supplementalWrites;
+  return files.length;
 }
 
 async function downloadVersionByUrlWithProgress(url) {

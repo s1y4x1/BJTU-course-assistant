@@ -551,6 +551,20 @@
     return (value / 1024 / 1024).toFixed(value < 100 * 1024 * 1024 ? 1 : 0) + ' MB';
   }
 
+  function renderAccountImportDownloadLabel(loaded, total, hasReliableTotal) {
+    const prefix = '下载：';
+    if (hasReliableTotal && typeof global.renderFileSizePair === 'function') {
+      return prefix + global.renderFileSizePair(loaded, total);
+    }
+    if (hasReliableTotal) {
+      return prefix + formatBytesForAccountImport(loaded) + ' / ' + formatBytesForAccountImport(total);
+    }
+    if (typeof global.renderFileSizeText === 'function') {
+      return prefix + '已下载 ' + global.renderFileSizeText(loaded);
+    }
+    return prefix + '已下载 ' + formatBytesForAccountImport(loaded);
+  }
+
   function setAccountImportDownloadProgress({ loaded = 0, total = 0, visible = true } = {}) {
     const row = document.getElementById('account-init-download-progress');
     const label = document.getElementById('account-init-download-label');
@@ -564,25 +578,64 @@
       row.setAttribute('aria-valuenow', hasReliableTotal ? String(Math.min(100, (safeLoaded / safeTotal) * 100)) : '0');
     }
     if (label instanceof HTMLElement) {
-      label.textContent = hasReliableTotal
-        ? `下载：${formatBytesForAccountImport(safeLoaded)} / ${formatBytesForAccountImport(safeTotal)}`
-        : `下载：已下载 ${formatBytesForAccountImport(safeLoaded)}`;
+      label.innerHTML = renderAccountImportDownloadLabel(safeLoaded, safeTotal, hasReliableTotal);
     }
     if (bar instanceof HTMLElement) {
       bar.style.width = hasReliableTotal ? Math.min(100, (safeLoaded / safeTotal) * 100) + '%' : '35%';
     }
   }
 
-  async function readAccountImportResponseText(response, statusPrefix = '正在从远程仓库下载账号列表…') {
+  function buildRemoteAccountListSizeUrl() {
+    try {
+      const url = new URL(REMOTE_ACCOUNT_LIST_URL);
+      const hostname = String(url.hostname || '').toLowerCase();
+      const match = hostname.match(/^([^.]+)\.github\.io$/i);
+      if (!match) return null;
+      const owner = match[1];
+      const repo = `${owner}.github.io`;
+      const path = String(url.pathname || '').replace(/^\/+/, '')
+        .split('/').filter(Boolean).map((part) => encodeURIComponent(part)).join('/');
+      if (!path) return null;
+      return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`;
+    } catch {
+      return null;
+    }
+  }
+
+  async function resolveRemoteAccountListTotalSize() {
+    const sizeUrl = buildRemoteAccountListSizeUrl();
+    if (!sizeUrl) return 0;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(sizeUrl, { cache: 'no-store', credentials: 'omit', signal: controller.signal });
+      if (!response.ok) return 0;
+      const data = JSON.parse(String(await response.text()).replace(/^\uFEFF/, ''));
+      return Math.max(0, Number(data?.size) || 0);
+    } catch {
+      return 0;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function readAccountImportResponseText(response, statusPrefix = '正在从远程仓库下载账号列表…', knownTotalPromise = null) {
+    const knownTotal = knownTotalPromise
+      ? await Promise.resolve(knownTotalPromise).catch(() => 0)
+      : 0;
     if (!response?.body?.getReader) {
       const text = await response.text();
-      setAccountImportDownloadProgress({ loaded: new TextEncoder().encode(text).byteLength, visible: true });
+      const loaded = new TextEncoder().encode(text).byteLength;
+      setAccountImportDownloadProgress({ loaded, total: Math.max(knownTotal, loaded), visible: true });
       return text;
     }
     const contentEncoding = String(response.headers.get('content-encoding') || '').trim().toLowerCase();
     const headerTotal = Number(response.headers.get('content-length') || 0);
-    // Fetch exposes decoded response bytes. A compressed Content-Length therefore cannot be used as their total.
-    let total = contentEncoding && contentEncoding !== 'identity' ? 0 : headerTotal;
+    // Fetch exposes decoded response bytes. A compressed Content-Length therefore cannot be used as their total,
+    // and the GitHub Pages CDN may intercept/compress the download, so prefer the size probed via the GitHub API.
+    let total = knownTotal > 0
+      ? knownTotal
+      : (contentEncoding && contentEncoding !== 'identity' ? 0 : headerTotal);
     const reader = response.body.getReader();
     const chunks = [];
     let loaded = 0;
@@ -1058,9 +1111,10 @@
           setImportButtonsDisabled(true);
           setAccountImportDownloadProgress({ loaded: 0, visible: true });
           setProgress(0, '正在从远程仓库下载账号列表…');
+          const knownTotalPromise = resolveRemoteAccountListTotalSize();
           const response = await fetch(REMOTE_ACCOUNT_LIST_URL, { cache: 'no-store', credentials: 'omit' });
           if (!response.ok) throw new Error('远程仓库返回 HTTP ' + response.status);
-          await finishImport(await readAccountImportResponseText(response));
+          await finishImport(await readAccountImportResponseText(response, undefined, knownTotalPromise));
         } catch (error) {
           setImportButtonsDisabled(false);
           showImportActions('远程导入失败：' + String(error?.message || error));

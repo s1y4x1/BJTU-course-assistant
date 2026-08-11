@@ -41,7 +41,6 @@
   const IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   let runningPromise = null;
-  let supplementalReloadRequired = false;
 
   function normalizeIntervalMinutes(value) {
     const minutes = Math.round(Number(value));
@@ -486,66 +485,6 @@
     return globalThis.BjtuUpdateFileSystem.writeFile(root, path, bytes);
   }
 
-  async function directoryFileExists(root, relativePath, expectedSize = 0) {
-    const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
-    if (!root || !parts.length) return false;
-    try {
-      let directory = root;
-      for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
-      const file = await (await directory.getFileHandle(parts.at(-1))).getFile();
-      return expectedSize > 0 ? file.size === expectedSize : file.size > 0;
-    } catch {
-      return false;
-    }
-  }
-
-  async function ensureCaptchaAssets(root, release) {
-    const assets = globalThis.BjtuCaptchaAssets;
-    if (!assets) throw new Error('验证码资源管理器未加载');
-    await assets.ensureModel({
-      onProgress: release ? ({ loaded, total }) => setStatus('installing-captcha-model', {
-        version: release.version,
-        name: release.name,
-        loaded,
-        total,
-        directoryName: root.name
-      }) : null
-    });
-    if (await directoryFileExists(root, assets.CORE_RELATIVE_PATH, assets.CORE_SIZE)) return 0;
-    const bytes = await assets.downloadCore({
-      onProgress: release ? ({ loaded, total }) => setStatus('installing-captcha-core', {
-        version: release.version,
-        name: release.name,
-        loaded,
-        total,
-        directoryName: root.name
-      }) : null
-    });
-    await writeFile(root, assets.CORE_RELATIVE_PATH, bytes);
-    supplementalReloadRequired = true;
-    return 1;
-  }
-
-  async function repairInstalledCaptchaAssets() {
-    try {
-      const moduleResponse = await fetch(chrome.runtime.getURL('modules/captcha/module.json'), { cache: 'no-store' });
-      if (!moduleResponse.ok || !globalThis.BjtuCaptchaAssets) return false;
-      await globalThis.BjtuCaptchaAssets.ensureModel();
-      const root = await validateDirectory(await readDirectoryHandle());
-      if (!root) return false;
-      const written = await globalThis.BjtuUpdateFileSystem.withInstallLock(() => (
-        ensureCaptchaAssets(root, null)
-      ));
-      if (written > 0) {
-        chrome.runtime.reload();
-        return true;
-      }
-    } catch (error) {
-      console.info('[bjtu] captcha runtime asset repair deferred:', String(error?.message || error));
-    }
-    return false;
-  }
-
   async function downloadArchive(url) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
@@ -559,7 +498,6 @@
   }
 
   async function installRelease(root, release) {
-    supplementalReloadRequired = false;
     const archive = await retryNetworkOperation(() => downloadArchive(release.url), 2);
     return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
       const entries = parseZipEntries(archive);
@@ -571,9 +509,6 @@
       const selectedArchiveFiles = selectFiles(entries, release.update);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
-      if (selectedModules.has('captcha')) {
-        await globalThis.BjtuCaptchaAssets?.ensureModel();
-      }
       if (release.clean) {
         await cleanUpdateScopes(root, release.update, selectedModules);
       } else {
@@ -593,10 +528,7 @@
           });
         }));
       }
-      const supplementalWrites = selectedModules.has('captcha')
-        ? await ensureCaptchaAssets(root, release)
-        : 0;
-      return files.length + supplementalWrites;
+      return files.length;
     });
   }
 
@@ -694,7 +626,7 @@
         directoryName: root.name
       });
       const fileCount = await installRelease(root, release);
-      const reloadRequired = release.reload || supplementalReloadRequired;
+      const reloadRequired = release.reload;
       const record = {
         ver: release.version,
         name: release.name,
@@ -788,6 +720,5 @@
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   });
-  void repairInstalledCaptchaAssets();
   void ensureAlarm();
 })();
