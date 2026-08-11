@@ -438,6 +438,47 @@ function formatModuleBytes(bytes) {
   return `${parseFloat((value / (1024 ** index)).toFixed(2))} ${units[index]}`;
 }
 
+function escapeOptionsHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
+  ));
+}
+
+function renderInstalledModuleFileSize(bytes) {
+  const safeBytes = Math.max(0, Number(bytes) || 0);
+  const style = typeof globalThis.buildVersionDownloadEmphasisStyle === 'function'
+    ? globalThis.buildVersionDownloadEmphasisStyle(safeBytes)
+    : 'font-size:12px;font-weight:500;color:#1976d2;';
+  const text = typeof globalThis.formatDownloadBytes === 'function'
+    ? globalThis.formatDownloadBytes(safeBytes)
+    : formatModuleBytes(safeBytes);
+  return `<span class="file-size-emphasis" data-file-size-bytes="${safeBytes}" style="${escapeOptionsHtml(style)}">${escapeOptionsHtml(text)}</span>`;
+}
+
+function buildInstalledModuleProgressHtml(state) {
+  if (!state) return '';
+  if (state.mode === 'download') {
+    const separator = state.total > 0
+      ? ` <span class="option-download-progress-separator">/</span> ${renderInstalledModuleFileSize(state.total)}`
+      : '';
+    return `正在下载程序包：${renderInstalledModuleFileSize(state.completed)}${separator}`;
+  }
+  if (state.mode === 'write') {
+    return `正在安装模块：${state.completed} / ${state.total}${state.path ? ` · ${escapeOptionsHtml(state.path)}` : ''}`;
+  }
+  return escapeOptionsHtml(state.text);
+}
+
+let installedModuleProgressState = null;
+
+window.addEventListener('bjtu-theme-change', () => {
+  if (!installedModuleProgressState) return;
+  const label = document.getElementById('installedModuleProgressLabel');
+  if (label instanceof HTMLElement) {
+    label.innerHTML = buildInstalledModuleProgressHtml(installedModuleProgressState);
+  }
+});
+
 async function setupInstalledModuleOptions() {
   const list = document.getElementById('installedModuleList');
   const applyButton = document.getElementById('applyInstalledModules');
@@ -447,13 +488,17 @@ async function setupInstalledModuleOptions() {
   const progressBar = document.getElementById('installedModuleProgressBar');
   if (!(list instanceof HTMLElement) || !(applyButton instanceof HTMLButtonElement)) return;
 
-  const updateProgress = ({ visible = true, label = '', completed = 0, total = 0 } = {}) => {
+  const updateProgress = ({ visible = true, label = '', mode = 'plain', completed = 0, total = 0, path = '' } = {}) => {
     if (!(progressElement instanceof HTMLElement)
         || !(progressLabel instanceof HTMLElement)
         || !(progressBar instanceof HTMLElement)) return;
     progressElement.hidden = !visible;
-    if (!visible) return;
-    progressLabel.textContent = label;
+    if (!visible) {
+      installedModuleProgressState = null;
+      return;
+    }
+    installedModuleProgressState = { mode, text: label, completed: Math.max(0, Number(completed) || 0), total: Math.max(0, Number(total) || 0), path };
+    progressLabel.innerHTML = buildInstalledModuleProgressHtml(installedModuleProgressState);
     const determinate = Number(total) > 0;
     progressElement.classList.toggle('is-indeterminate', !determinate);
     progressBar.style.width = determinate
@@ -516,18 +561,17 @@ async function setupInstalledModuleOptions() {
         installed: [...installed],
         onProgress(progress) {
           if (progress.phase === 'download') {
-            const label = `正在下载程序包：${formatModuleBytes(progress.loaded)}${progress.total > 0 ? ` / ${formatModuleBytes(progress.total)}` : ''}`;
             updateProgress({
-              label,
-              completed: progress.loaded,
-              total: progress.total
+              mode: 'download',
+              completed: Math.max(0, Number(progress.loaded) || 0),
+              total: Math.max(0, Number(progress.total) || 0)
             });
           } else if (progress.phase === 'write') {
-            const label = `正在安装模块：${progress.completed} / ${progress.total} · ${progress.path || ''}`;
             updateProgress({
-              label,
-              completed: progress.completed,
-              total: progress.total
+              mode: 'write',
+              completed: Math.max(0, Number(progress.completed) || 0),
+              total: Math.max(0, Number(progress.total) || 0),
+              path: String(progress.path || '')
             });
           }
         }

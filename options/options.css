@@ -197,6 +197,12 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
   border-radius:2px;
   background:#dbeafe;
 }
+.option-download-progress-separator {
+  margin:0 2px;
+  color:#64748b;
+  font-size:12px;
+  font-weight:500;
+}
 .option-download-progress-bar {
   width:0;
   height:100%;
