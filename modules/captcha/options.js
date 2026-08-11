@@ -32,6 +32,8 @@
     if (extensionReloadStarted) return;
     extensionReloadStarted = true;
     setMessage('OCR 核心已写入，正在重新加载扩展…');
+    const params = new URLSearchParams(location.search);
+    const isPopupWindow = params.get('popupWindow') === '1';
     const currentTab = await chrome.tabs.getCurrent().catch(() => null);
     const response = await chrome.runtime.sendMessage({
       type: 'RELOAD_EXTENSION_AND_OPEN_APP',
@@ -39,17 +41,18 @@
         reopenApp: true,
         source: 'captcha-options',
         sourceTabId: Number(currentTab?.id) || null,
-        popup: new URLSearchParams(location.search).get('popup') === '1'
+        popup: params.get('popup') === '1'
       }
     }).catch(() => null);
-    if (response?.ok) return;
+    if (response?.ok) {
+      if (isPopupWindow) setTimeout(() => window.close(), 50);
+      return;
+    }
     try {
-      const params = new URLSearchParams(location.search);
       const suffix = params.get('popup') === '1' ? '?popup=1' : '';
       location.replace(chrome.runtime.getURL(`app/app.html${suffix}`));
       chrome.runtime.reload();
     } catch {
-      const params = new URLSearchParams(location.search);
       const suffix = params.get('popup') === '1' ? '?popup=1' : '';
       location.replace(chrome.runtime.getURL(`app/app.html${suffix}`));
     }
