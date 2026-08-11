@@ -2998,11 +2998,7 @@ async function doLoginFlow() {
   const restoreAfterFailure = async () => {
     if (restoredAfterFailure) return;
     restoredAfterFailure = true;
-    const fallback = await restoreLoginFallbackUsername(username);
-    if (fallback) {
-      await resumeVeAfterAccountSwitchFailure();
-      await loadResourceSpaceForCurrentAccount().catch(() => { });
-    }
+    await restoreLoginFallbackUsername(username);
   };
 
   if (loginBtn) {

@@ -9,18 +9,6 @@ function parseVeJson(text) {
   return JSON.parse(s.startsWith('{}') ? s.slice(2) : s);
 }
 
-async function resumeVeAfterAccountSwitchFailure() {
-  resetAccountSwitchInterruption();
-  if (!isPlatformEnabled('ve')) return;
-  try {
-    await loadCourses();
-  } catch {
-    // ignore
-  } finally {
-    window.syncRightColumnResizer?.();
-  }
-}
-
 async function fetchCurrentVeUserInfo() {
   try {
     return await globalThis.BjtuVeHomeworkCore.fetchCurrentUserInfo();
