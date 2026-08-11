@@ -350,6 +350,64 @@
     return bytes;
   }
 
+  const POPUP_TRACK_KEY = '__bjtuCaptchaOptionsPopupWindowId';
+
+  function openOptionsPopup(options = {}) {
+    const popupWidth = Math.max(300, Math.min(800, Number(options?.width) || 420));
+    const popupHeight = Math.max(400, Math.min(900, Number(options?.height) || 560));
+    const params = new URLSearchParams();
+    if (options?.from) params.set('from', String(options.from));
+    params.set('popupWindow', '1');
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const url = chrome.runtime.getURL(`modules/captcha/options.html${suffix}`);
+    const reuseExisting = async () => {
+      const knownWindowId = Number(global[POPUP_TRACK_KEY] || 0);
+      if (!knownWindowId) return null;
+      const exists = await chrome.windows.get(knownWindowId).then(() => true).catch(() => false);
+      if (!exists) {
+        global[POPUP_TRACK_KEY] = null;
+        return null;
+      }
+      await chrome.windows.update(knownWindowId, { focused: true }).catch(() => {});
+      return knownWindowId;
+    };
+    return (async () => {
+      const reusedWindowId = await reuseExisting();
+      if (reusedWindowId) return { opened: true, reused: true, windowId: reusedWindowId };
+      let left;
+      let top;
+      try {
+        const currentWin = await chrome.windows.getCurrent();
+        if (Number.isFinite(Number(currentWin?.left))
+            && Number.isFinite(Number(currentWin?.top))
+            && Number.isFinite(Number(currentWin?.width))
+            && Number.isFinite(Number(currentWin?.height))) {
+          left = Math.max(0, Number(currentWin.left) + Math.round((Number(currentWin.width) - popupWidth) / 2));
+          top = Math.max(0, Number(currentWin.top) + Math.round((Number(currentWin.height) - popupHeight) / 2));
+        }
+      } catch {
+        left = undefined;
+        top = undefined;
+      }
+      try {
+        const created = await chrome.windows.create({
+          url,
+          type: 'popup',
+          focused: true,
+          width: popupWidth,
+          height: popupHeight,
+          left,
+          top
+        });
+        global[POPUP_TRACK_KEY] = Number(created?.id || 0) || null;
+        return { opened: Boolean(created?.id), reused: false, windowId: Number(created?.id || 0) || null };
+      } catch {
+        global[POPUP_TRACK_KEY] = null;
+        return { opened: false, reused: false, windowId: null };
+      }
+    })();
+  }
+
   global.BjtuCaptchaAssets = Object.freeze({
     MODEL_VERSION_KEY,
     DEFAULT_MODEL_VERSION,
@@ -368,7 +426,8 @@
     ensureModel,
     cancelModelDownload,
     extensionCoreExists,
-    downloadCore
+    downloadCore,
+    openOptionsPopup
   });
 
   void deleteIndexedDatabase('keyval-store').catch((error) => {

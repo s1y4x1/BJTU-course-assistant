@@ -2968,7 +2968,16 @@ async function captchaModuleManifestExists() {
 
 async function openCaptchaOptionsFromApp() {
   if (!(await captchaModuleManifestExists())) return false;
-  location.href = chrome.runtime.getURL('modules/captcha/options.html?from=app');
+  const assets = globalThis.BjtuCaptchaAssets;
+  const opener = typeof assets?.openOptionsPopup === 'function'
+    ? assets.openOptionsPopup
+    : null;
+  const result = opener
+    ? await opener.call(assets, { from: 'app' })
+    : null;
+  if (!result?.opened) {
+    location.href = chrome.runtime.getURL('modules/captcha/options.html?from=app');
+  }
   return true;
 }
 

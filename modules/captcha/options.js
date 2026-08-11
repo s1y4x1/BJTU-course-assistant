@@ -59,6 +59,10 @@
     const params = new URLSearchParams(location.search);
     if (params.get('from') === 'app') {
       setTimeout(() => {
+        if (params.get('popupWindow') === '1') {
+          window.close();
+          return;
+        }
         if (history.length > 1) {
           history.back();
           return;
@@ -69,6 +73,10 @@
       return;
     }
     await chrome.runtime.sendMessage({ type: 'REFRESH_OPEN_APP_PAGES' }).catch(() => null);
+  }
+
+  function isCaptchaOptionsPopupWindow() {
+    return new URLSearchParams(location.search).get('popupWindow') === '1';
   }
 
   function formatBytes(value) {
@@ -466,6 +474,8 @@
         await reloadExtensionAndOpenApp();
       } else if (result.downloaded || coreResult.written > 0) {
         await refreshOrReturnToApp();
+      } else if (isCaptchaOptionsPopupWindow()) {
+        window.close();
       }
       return true;
     } catch (error) {
