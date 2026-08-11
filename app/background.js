@@ -1147,6 +1147,12 @@ chrome.webRequest.onBeforeRequest.addListener(
 // stuck at "已检测到新 username" and never closed the page. webRequest.onCompleted
 // runs for the same GET quick-login request regardless of page script timing, so we
 // finalize the binding directly using the username captured from the URL.
+//
+// webRequest cannot read the response body, so instead of trusting the response
+// blindly we confirm the login actually succeeded by waiting for the tab to reach
+// the authenticated platform page. The failure page (e.g. GBK encoded
+// alert('账号或密码错误!') based script redirecting to /ve) never navigates to an
+// authenticated page, so a failed quick login is never recorded.
 chrome.webRequest.onCompleted.addListener(
   (details) => {
     try {
@@ -1164,7 +1170,26 @@ chrome.webRequest.onCompleted.addListener(
       // bind a dead username and bind the wrong account.
       if (Number(quickState.statusCode || 0) === 500) return;
       portalDetectedQuickUsernameByTab.delete(tabId);
-      finalizePortalQuickUsernameBind(tabId, quickUsername).catch(() => {});
+      void waitForPortalLoginLandingPage(tabId)
+        .then((outcome) => {
+          if (outcome === 'authenticated') {
+            return finalizePortalQuickUsernameBind(tabId, quickUsername);
+          }
+          console.warn('[bjtu] skipped VE quickUsername fallback recording because the login did not succeed', { tabId, outcome });
+          // Do not leave a bind in the "已检测到新 username，正在匹配账号信息" state
+          // forever: report the failure so the options page re-enables the bind button.
+          if (portalUsernameBindByTab.has(tabId)) {
+            notifyPortalUsernameBindStatus({
+              status: 'error',
+              tabId,
+              quickUsername: String(quickUsername || '').trim(),
+              error: '绑定失败：登录未成功，请重新尝试',
+              ts: Date.now()
+            });
+          }
+          return undefined;
+        })
+        .catch(() => {});
     } catch {
       // ignore
     }
@@ -1172,6 +1197,23 @@ chrome.webRequest.onCompleted.addListener(
   { urls: ['http://123.121.147.7:88/ve/s.shtml*'] },
   []
 );
+
+async function waitForPortalLoginLandingPage(tabId, timeoutMs = 4000) {
+  const startAt = Date.now();
+  while (Date.now() - startAt < Number(timeoutMs || 0)) {
+    let url = '';
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      url = String(tab?.url || '');
+    } catch {
+      return 'unknown';
+    }
+    if (isPortalAuthenticatedPageUrl(url)) return 'authenticated';
+    if (isPortalLoginFailurePageUrl(url)) return 'failed';
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return 'unknown';
+}
 
 async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
   if (!(Number(tabId) >= 0)) return null;
@@ -1337,8 +1379,29 @@ async function showPortalPageToast(tabId, message, tone = 'success') {
         toast.className = 'toast ' + toneClass;
         toast.textContent = message;
         toast.title = '点击复制通知内容并关闭';
+        const copyTextToClipboard = (text) => {
+          const fallbackCopy = () => {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+            (document.body || document.documentElement).appendChild(textarea);
+            textarea.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            textarea.remove();
+          };
+          try {
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+              navigator.clipboard.writeText(text).catch(fallbackCopy);
+              return;
+            }
+          } catch (e) {
+            // fall through to the fallback below
+          }
+          fallbackCopy();
+        };
         toast.addEventListener('click', () => {
-          try { navigator.clipboard.writeText(message); } catch (e) {}
+          copyTextToClipboard(message);
           toast.remove();
         });
         container.appendChild(toast);
