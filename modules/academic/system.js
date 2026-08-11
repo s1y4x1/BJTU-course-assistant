@@ -711,7 +711,10 @@ async function fetchVeWeekContext() {
     if (Number(response?.status || 0) === 302 || response?.type === 'opaqueredirect') {
       throw Object.assign(new Error('智慧课程平台周次接口要求重新登录'), { code: 've-week-redirect' });
     }
-    if (!response?.ok) throw new Error(`智慧课程平台周次接口 HTTP ${response?.status || 0}`);
+    if (!response?.ok) throw Object.assign(
+      new Error(`智慧课程平台周次接口 HTTP ${response?.status || 0}`),
+      { code: 've-week-http' }
+    );
     const data = global.BjtuVeHomeworkCore?.parseJson
       ? global.BjtuVeHomeworkCore.parseJson(text)
       : JSON.parse(String(text || '').trim());
@@ -749,12 +752,13 @@ async function fetchVeWeekContext() {
     };
   }
 
-  async function fetchCurrentWeekContext(scheduleWeeks = []) {
+async function fetchCurrentWeekContext(scheduleWeeks = []) {
     let preferred = null;
     try {
       preferred = await fetchVeWeekContext();
     } catch (error) {
-      if (String(error?.code || '') !== 've-week-redirect') throw error;
+      const canFallback = ['ve-week-redirect', 've-week-http'].includes(String(error?.code || ''));
+      if (!canFallback) throw error;
       preferred = await fetchBksyWeekContext();
     }
     const weeks = new Set([
