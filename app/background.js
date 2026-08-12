@@ -119,13 +119,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // 卸载后打开讨论页
 chrome.runtime.setUninstallURL('https://github.com/s1y4x1/BJTU-course-assistant/discussions/3').catch(() => {});
 
-// 首次安装：必定打开引导页指导固定到工具栏
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details?.reason !== 'install') return;
-  const onboardingUrl = chrome.runtime.getURL('app/app.html?onboardPin=1');
-  chrome.tabs.create({ url: onboardingUrl, active: true }).catch(() => {});
-});
-
 function tryImportModuleScripts(...paths) {
   try {
     importScripts(...paths);

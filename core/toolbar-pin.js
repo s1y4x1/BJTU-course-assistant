@@ -3,7 +3,6 @@
   if (typeof chrome === 'undefined' || !chrome?.runtime?.id) return;
 
   const REMINDER_KEY = 'toolbarPinReminderEnabled';
-  const isOnboarding = new URLSearchParams(String(location.search || '')).get('onboardPin') === '1';
   const MODAL_ID = '__bjtu_toolbar_pin_modal__';
   let pinPollTimer = 0;
 
@@ -140,12 +139,6 @@
       await globalThis.__bjtuAppReadyCheck?.() || undefined;
     } catch {
       // ignore
-    }
-    if (isOnboarding) {
-      // 首次安装引导：无论如何都弹出指导页面
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      openModal({ title: '将扩展固定到浏览器工具栏', showNever: false });
-      return;
     }
     const stored = await chrome.storage.local.get([REMINDER_KEY]).catch(() => ({}));
     if (stored[REMINDER_KEY] === false) return;
