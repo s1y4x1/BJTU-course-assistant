@@ -199,16 +199,6 @@
           <input type="radio" name="openMode" id="openModePage" value="page" style="width:auto;"> 打开新页面
         </label>
       </div>
-      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 6px;">
-        <input type="checkbox" id="preferExistingFullscreenPage" style="width:auto;" checked />
-        <span>打开全屏页面时优先定位到已打开的页面</span>
-      </label>
-      <div class="tip">开启后会激活已有的全屏页面；关闭后，每次都会打开一个新的全屏页面。</div>
-      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 6px;">
-        <input type="checkbox" id="toolbarPinReminderEnabled" style="width:auto;" checked />
-        <span>打开扩展页面时检查是否已固定到工具栏并提醒</span>
-      </label>
-      <div class="tip">未固定时，每次打开扩展页面都会提示您将其固定到工具栏，以便快速访问。</div>
       <div id="popupCacheContainer">
         <div class="popup-size-editor">
           <label>
@@ -227,6 +217,16 @@
         </label>
         <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。<br>关闭时，只启用智慧课程平台，其他平台需每次手动启用（设计如此）。</div>
       </div>
+      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 6px;">
+        <input type="checkbox" id="preferExistingFullscreenPage" style="width:auto;" checked />
+        <span>打开全屏页面时优先定位到已打开的页面</span>
+      </label>
+      <div class="tip">开启后会激活已有的全屏页面；关闭后，每次都会打开一个新的全屏页面。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 6px;">
+        <input type="checkbox" id="toolbarPinReminderEnabled" style="width:auto;" checked />
+        <span>打开扩展页面时检查是否已固定到工具栏并提醒</span>
+      </label>
+      <div class="tip">未固定时，每次打开扩展页面都会提示您将其固定到工具栏，以便快速访问。</div>
     </div>
     <div data-options-section="reminders" data-options-label="作业截止提醒"
       style="margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
