@@ -426,6 +426,18 @@ function setupFullscreenCourseCacheObserver() {
   }
 }
 
+function restorePopupPlatformStates(cache) {
+  window.platformLoginState = { ...window.platformLoginState, ...(cache?.platformLoginState || {}) };
+  window.platformLoginChecked = { ...window.platformLoginChecked, ...(cache?.platformLoginChecked || {}) };
+  window.platformLoadedOnce = { ...window.platformLoadedOnce, ...(cache?.platformLoadedOnce || {}) };
+  window.platformNeedLogin = { ...window.platformNeedLogin, ...(cache?.platformNeedLogin || {}) };
+  PLATFORM_IDS.forEach((id) => {
+    if (window.platformLoadedOnce?.[id] === true && window.platformLoginState?.[id] === 'checking') {
+      window.platformLoginState[id] = 'online';
+    }
+  });
+}
+
 async function restorePopupFullscreenCacheIfNeeded() {
   if (!popupMode || !window.popupUseFullscreenCacheEnabled) return false;
   window.__popupUsingFullscreenCache = true;
@@ -458,6 +470,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
       && !hasStructuredExternalData
       && !String(cache.courseListHtml || '').trim())) {
     window.platformEnabled = sanitizePlatformEnabled(cache?.platformEnabled || window.platformEnabled, window.platformEnabled);
+    restorePopupPlatformStates(cache);
     refreshPlatformLoginTip();
     showPopupCacheNotice(cache);
     if (courseListDiv) {
@@ -468,10 +481,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
   }
 
   window.platformEnabled = sanitizePlatformEnabled(cache.platformEnabled || {}, window.platformEnabled);
-  window.platformLoginState = { ...window.platformLoginState, ...(cache.platformLoginState || {}) };
-  window.platformLoginChecked = { ...window.platformLoginChecked, ...(cache.platformLoginChecked || {}) };
-  window.platformLoadedOnce = { ...window.platformLoadedOnce, ...(cache.platformLoadedOnce || {}) };
-  window.platformNeedLogin = { ...window.platformNeedLogin, ...(cache.platformNeedLogin || {}) };
+  restorePopupPlatformStates(cache);
   window.currentVeCourseList = veModuleAvailable && Array.isArray(cache.currentVeCourseList)
     ? cache.currentVeCourseList
     : [];

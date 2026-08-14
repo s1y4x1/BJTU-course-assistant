@@ -3473,6 +3473,9 @@ function setPlatformLoginState(platform, state) {
   }
   refreshPlatformLoginTip();
   updateCourseListEmptyPlaceholder();
+  if (s === 'online' || s === 'offline') {
+    scheduleFullscreenCourseCacheSave(300);
+  }
   if (!isAnyExternalPlatformChecking()) {
     flushPendingCourseCardSortIfIdle();
   }
