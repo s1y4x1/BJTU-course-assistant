@@ -149,6 +149,23 @@ if (veBackgroundReady) tryImportModuleScripts('../modules/ve/background-homework
 
 const OPTIONAL_CONTENT_SCRIPTS = [
   {
+    id: 'bjtu-ve-login-response-detector',
+    module: 've',
+    matches: ['http://123.121.147.7:88/*'],
+    js: ['modules/ve/login-response-detector.js'],
+    runAt: 'document_start',
+    allFrames: true
+  },
+  {
+    id: 'bjtu-ve-login-network-observer',
+    module: 've',
+    matches: ['http://123.121.147.7:88/*'],
+    js: ['modules/ve/login-network-observer-main.js'],
+    runAt: 'document_start',
+    world: 'MAIN',
+    allFrames: true
+  },
+  {
     id: 'bjtu-ve-login-overlay',
     module: 've',
     matches: ['http://123.121.147.7:88/ve/*'],
@@ -199,7 +216,7 @@ async function doSyncOptionalContentScripts() {
     if (await extensionFileExists(`modules/${script.module}/module.json`)
         && scriptFilesExist) wanted.push(script);
   }
-  const managed = new Set([...OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id), 'bjtu-ve-login-response-detector']);
+  const managed = new Set(OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id));
   const registered = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
   const registeredManagedIds = registered
     .map((script) => String(script?.id || ''))

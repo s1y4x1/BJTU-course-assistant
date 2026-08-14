@@ -69,29 +69,6 @@
   "background": {
     "service_worker": "app/background.js"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://123.121.147.7:88/*"
-      ],
-      "js": [
-        "modules/ve/login-response-detector.js"
-      ],
-      "run_at": "document_start",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "http://123.121.147.7:88/*"
-      ],
-      "js": [
-        "modules/ve/login-network-observer-main.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [
