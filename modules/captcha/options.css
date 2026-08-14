@@ -97,7 +97,6 @@
   box-sizing: border-box;
   padding: 8px 9px;
   background: #fff;
-  cursor: pointer;
 }
 
 .captcha-model-item + .captcha-model-item {
@@ -126,6 +125,7 @@
   min-width: 0;
   gap: 8px;
   margin: 0;
+  cursor: pointer;
 }
 
 .captcha-model-choice input {

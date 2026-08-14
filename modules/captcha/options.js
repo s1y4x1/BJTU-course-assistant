@@ -590,13 +590,14 @@
       const target = event.target;
       if (!(target instanceof Element)
           || target.closest('button')) return;
-      const item = target.closest('.captcha-model-item');
+      const clickedChoice = target.closest('.captcha-model-choice');
+      if (!(clickedChoice instanceof HTMLElement)) return;
+      const item = clickedChoice.closest('.captcha-model-item');
       if (!(item instanceof HTMLElement)) return;
       const version = String(item.dataset.version || '');
       if (!version || busyVersions.has(version)) return;
-      const clickedChoice = target.closest('.captcha-model-choice');
-      if (clickedChoice && cachedVersions.has(version)) return;
-      if (clickedChoice) event.preventDefault();
+      if (cachedVersions.has(version)) return;
+      event.preventDefault();
       void selectModel(version);
     });
     void initializeModelOptions().catch((error) => {
