@@ -2212,6 +2212,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
 function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestDisplayVersion = '', latestPublishedAt = '', downloadUrl = '', body = '', zipballUrl = '', reload = true, force = false, update = null, clean = false } = {}) {
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
+  versionBtn.style.display = '';
   versionButtonMode = String(mode || 'loading').trim();
   versionButtonDownloadUrl = String(downloadUrl || '').trim();
   versionButtonLatestZipballUrl = String(zipballUrl || '').trim();
@@ -2647,6 +2648,7 @@ function setupVersionButton() {
   // 确保版本按钮区域可见
   const versionInfoEl = document.getElementById('version-info');
   if (versionInfoEl) versionInfoEl.style.display = '';
+  versionBtn.style.display = '';
 
   versionBtn.addEventListener('click', async () => {
     if (versionButtonMode === 'failure') {

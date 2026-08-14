@@ -19,6 +19,7 @@
     console.error('[bjtu] updater module failed to load:', error);
     const versionBtn = typeof document !== 'undefined' ? document.getElementById('version-btn') : null;
     if (versionBtn instanceof HTMLButtonElement) {
+      versionBtn.style.display = '';
       versionBtn.className = 'version-btn failure';
       versionBtn.disabled = false;
       versionBtn.textContent = '更新组件加载失败';
