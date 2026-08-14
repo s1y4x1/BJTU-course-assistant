@@ -725,7 +725,8 @@
     }
     if (deleteButton instanceof HTMLButtonElement) {
       deleteButton.hidden = !state.installed;
-      deleteButton.disabled = state.busy || state.enabled;
+      deleteButton.disabled = state.busy;
+      deleteButton.classList.toggle('is-locked', state.enabled);
     }
     if (size instanceof HTMLElement) {
       const bytes = state.localSizeBytes || state.remoteSizeBytes;
@@ -902,7 +903,11 @@
 
   async function deleteExternalScript(script) {
     const state = getExternalScriptState(script);
-    if (state.busy || !state.installed || state.enabled) return;
+    if (state.busy || !state.installed) return;
+    if (state.enabled) {
+      setMessage('请先停用该脚本，再删除', false);
+      return;
+    }
     state.busy = true;
     renderExternalScriptState(script);
     setExternalScriptStatus(script, '正在删除…');
