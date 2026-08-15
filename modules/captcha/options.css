@@ -115,11 +115,11 @@
   color: #334155;
 }
 
-.mis-captcha-status #misCaptchaStatusValue {
+.mis-captcha-status #casCaptchaStatusValue {
   color: #64748b;
 }
 
-.mis-captcha-status #misCaptchaStatusValue.error {
+.mis-captcha-status #casCaptchaStatusValue.error {
   color: #b91c1c;
 }
 
@@ -170,11 +170,11 @@
   cursor: pointer;
 }
 
-.mis-captcha-status-right #misCaptchaDelete {
+.mis-captcha-status-right #casCaptchaDelete {
   background: #dc2626;
 }
 
-.mis-captcha-status-right #misCaptchaDelete:hover {
+.mis-captcha-status-right #casCaptchaDelete:not(:disabled):hover {
   background: #b91c1c;
 }
 
@@ -182,11 +182,16 @@
   display: none;
 }
 
+.mis-captcha-status-right .captcha-model-action:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
 html[data-color-scheme="dark"] .mis-captcha-toggle-label {
   color: #e2e8f0;
 }
 
-html[data-color-scheme="dark"] .mis-captcha-status #misCaptchaStatusValue.error {
+html[data-color-scheme="dark"] .mis-captcha-status #casCaptchaStatusValue.error {
   color: #fca5a5;
 }
 
@@ -202,11 +207,11 @@ html[data-color-scheme="dark"] .mis-captcha-files .captcha-core-status + .captch
   border-top-color: #334155;
 }
 
-html[data-color-scheme="dark"] .mis-captcha-status-right #misCaptchaDelete {
+html[data-color-scheme="dark"] .mis-captcha-status-right #casCaptchaDelete {
   background: #b91c1c;
 }
 
-html[data-color-scheme="dark"] .mis-captcha-status-right #misCaptchaDelete:hover {
+html[data-color-scheme="dark"] .mis-captcha-status-right #casCaptchaDelete:not(:disabled):hover {
   background: #991b1b;
 }
 

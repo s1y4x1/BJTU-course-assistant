@@ -905,7 +905,7 @@
     const state = getExternalScriptState(script);
     if (state.busy || !state.installed) return;
     if (state.enabled) {
-      setMessage('请先停用该脚本，再删除', false);
+      setMessage('请先停用该脚本再删除', false);
       return;
     }
     state.busy = true;

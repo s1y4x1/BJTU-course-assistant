@@ -158,7 +158,7 @@
   let misDownloading = false;
 
   function setMisStatus(text, error = false) {
-    const target = document.getElementById('misCaptchaStatusValue');
+    const target = document.getElementById('casCaptchaStatusValue');
     if (!(target instanceof HTMLElement)) return;
     target.innerHTML = text;
     target.classList.toggle('error', error);
@@ -166,8 +166,8 @@
 
   function setMisFileProgress(key, visible, loaded = 0, total = 0) {
     const suffix = misElementSuffix(key);
-    const progress = document.getElementById(`misCaptchaProgress${suffix}`);
-    const bar = document.getElementById(`misCaptchaProgressBar${suffix}`);
+    const progress = document.getElementById(`casCaptchaProgress${suffix}`);
+    const bar = document.getElementById(`casCaptchaProgressBar${suffix}`);
     if (!(progress instanceof HTMLElement)) return;
     progress.hidden = !visible;
     if (bar instanceof HTMLElement) {
@@ -177,15 +177,19 @@
   }
 
   function setMisActionButtons({ downloading = false, downloadLabel = '下载', downloadVisible = true, deleteVisible = false } = {}) {
-    const downloadBtn = document.getElementById('misCaptchaDownload');
-    const deleteBtn = document.getElementById('misCaptchaDelete');
+    const downloadBtn = document.getElementById('casCaptchaDownload');
+    const deleteBtn = document.getElementById('casCaptchaDelete');
     if (downloadBtn instanceof HTMLButtonElement) {
       downloadBtn.hidden = downloading || !downloadVisible;
       downloadBtn.textContent = downloadLabel;
       downloadBtn.dataset.mode = downloadLabel === '修复' ? 'repair' : 'download';
     }
     if (deleteBtn instanceof HTMLButtonElement) {
+      const toggle = document.getElementById('casCaptchaRecognitionEnabled');
+      const enabled = toggle instanceof HTMLInputElement && toggle.checked;
       deleteBtn.hidden = downloading || !deleteVisible;
+      deleteBtn.disabled = enabled;
+      deleteBtn.title = enabled ? `请先取消勾选「${MIS_CAPTCHA_FEATURE_LABEL}」再删除` : '';
     }
   }
 
@@ -199,7 +203,7 @@
   }
 
   function setMisFileStatus(key, text, error = false, asHtml = false) {
-    const target = document.getElementById(`misCaptchaStatus${misElementSuffix(key)}`);
+    const target = document.getElementById(`casCaptchaStatus${misElementSuffix(key)}`);
     if (!(target instanceof HTMLElement)) return;
     if (asHtml) {
       target.innerHTML = String(text ?? '');
@@ -210,7 +214,7 @@
   }
 
   function setMisFileSize(key, text, asHtml = false) {
-    const target = document.getElementById(`misCaptchaSize${misElementSuffix(key)}`);
+    const target = document.getElementById(`casCaptchaSize${misElementSuffix(key)}`);
     if (!(target instanceof HTMLElement)) return;
     if (asHtml) {
       target.innerHTML = String(text ?? '');
@@ -220,7 +224,7 @@
   }
 
   async function refreshMisCaptchaOptions() {
-    const toggle = document.getElementById('misCaptchaRecognitionEnabled');
+    const toggle = document.getElementById('casCaptchaRecognitionEnabled');
     const assets = await getMisAssets();
     if (!toggle && !assets) return null;
     try {
@@ -327,7 +331,7 @@
   async function deleteMisAssets() {
     const assets = await getMisAssets();
     if (!assets) return;
-    const toggle = document.getElementById('misCaptchaRecognitionEnabled');
+    const toggle = document.getElementById('casCaptchaRecognitionEnabled');
     if (toggle instanceof HTMLInputElement && toggle.checked) {
       setMessage(`请先取消勾选「${MIS_CAPTCHA_FEATURE_LABEL}」再删除`, false);
       return;
@@ -518,10 +522,10 @@
         actions.append(cancel);
       } else if (cached) {
         actions.append(createActionButton('修复', 'download', version));
-        const uninstall = createActionButton('卸载', 'uninstall', version, 'captcha-model-uninstall');
-        uninstall.disabled = busy || version === selectedVersion;
-        if (version === selectedVersion) uninstall.title = '当前使用的模型不能卸载';
-        actions.append(uninstall);
+        const deleteButton = createActionButton('删除', 'uninstall', version, 'captcha-model-uninstall');
+        deleteButton.disabled = busy || version === selectedVersion;
+        if (version === selectedVersion) deleteButton.title = '当前使用的模型不能删除';
+        actions.append(deleteButton);
       } else {
         actions.append(createActionButton('下载', 'download', version));
       }
@@ -780,6 +784,15 @@
       else if (button.dataset.action === 'uninstall') void uninstallModel(version);
       return;
     });
+    list.addEventListener('pointerdown', (event) => {
+      const target = event.target;
+      const button = target instanceof Element
+        ? target.closest('button.captcha-model-uninstall')
+        : null;
+      if (!(button instanceof HTMLButtonElement) || !button.disabled) return;
+      event.preventDefault();
+      setMessage('请先选择其他版本再删除', false);
+    });
     list.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof Element)
@@ -794,7 +807,7 @@
       event.preventDefault();
       void selectModel(version);
     });
-    const toggle = document.getElementById('misCaptchaRecognitionEnabled');
+    const toggle = document.getElementById('casCaptchaRecognitionEnabled');
     if (toggle instanceof HTMLInputElement) {
       toggle.addEventListener('change', () => {
         const enabled = toggle.checked === true;
@@ -820,18 +833,25 @@
         } else {
           setMessage(`已禁用${MIS_CAPTCHA_FEATURE_LABEL}`);
         }
+        void refreshMisCaptchaOptions();
       });
     }
-    const downloadButton = document.getElementById('misCaptchaDownload');
+    const downloadButton = document.getElementById('casCaptchaDownload');
     if (downloadButton instanceof HTMLButtonElement) {
       downloadButton.addEventListener('click', () => {
         if (downloadButton.dataset.mode === 'repair') void repairMisAssets();
         else startMisDownload();
       });
     }
-    const deleteButton = document.getElementById('misCaptchaDelete');
+    const deleteButton = document.getElementById('casCaptchaDelete');
     if (deleteButton instanceof HTMLButtonElement) {
       deleteButton.addEventListener('click', () => void deleteMisAssets());
+      deleteButton.addEventListener('pointerdown', (event) => {
+        if (deleteButton.disabled) {
+          event.preventDefault();
+          setMessage(`请先取消勾选「${MIS_CAPTCHA_FEATURE_LABEL}」再删除`, false);
+        }
+      });
     }
     void initializeModelOptions().catch((error) => {
       list.textContent = `识别模型列表加载失败：${String(error?.message || error)}`;
