@@ -187,15 +187,40 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     js: ['modules/academic/external/BJTU 北京交通大学 一键评教为“非常满意”并填写主观意见.user.js'],
     runAt: 'document_start'
   },
-  {
+{
     id: 'bjtu-academic-bb-course-availability',
     module: 'academic',
     enabledStorageKey: 'academicBbCourseAvailabilityExternalScriptEnabled',
     matches: ['https://aa.bjtu.edu.cn/course_selection/courseselecttask/selects/*'],
     js: ['modules/academic/external/BB酱帮你查课余量 (2026修复版).user.js'],
     runAt: 'document_start'
+  },
+  {
+    id: 'bjtu-cas-captcha-login',
+    module: 'captcha',
+    matches: ['https://cas.bjtu.edu.cn/auth/login/*'],
+    js: ['modules/captcha/cas-login.js'],
+    runAt: 'document_idle'
   }
 ];
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== 'MIS_CAPTCHA_RECOGNIZE') return false;
+  (async () => {
+    try {
+      if (!globalThis.BjtuCaptchaRecognizer?.recognizeMisCaptcha) {
+        sendResponse({ ok: false, message: '验证码识别模块尚未就绪' });
+        return;
+      }
+      const blob = await (await fetch(String(message.imageUrl || ''))).blob();
+      const result = await globalThis.BjtuCaptchaRecognizer.recognizeMisCaptcha(blob);
+      sendResponse(result);
+    } catch (error) {
+      sendResponse({ ok: false, message: String(error?.message || error) });
+    }
+  })();
+  return true;
+});
 
 async function extensionFileExists(path) {
   try {

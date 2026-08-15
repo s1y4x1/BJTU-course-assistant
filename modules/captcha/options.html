@@ -32,6 +32,22 @@
     </div>
   </div>
   <div class="tip" data-tip-target="#captcha-model-label">模型下载后保存在 IndexedDB，只有已下载的模型可以选用；OCR 核心仍需写入扩展安装目录。</div>
+  <div class="mis-captcha-section">
+    <div class="mis-captcha-toggle-row">
+      <label class="mis-captcha-toggle">
+        <input type="checkbox" id="misCaptchaRecognitionEnabled">
+        <span class="mis-captcha-toggle-label">启用 MIS 算术验证码识别</span>
+      </label>
+    </div>
+    <div class="captcha-core-status mis-captcha-status">
+      <span class="captcha-core-file">
+        <span class="captcha-core-name">omis.onnx + ONNX Runtime（内置）</span>
+        <span id="misCaptchaSize" class="captcha-model-size">…</span>
+      </span>
+      <span id="misCaptchaStatusValue">正在检查…</span>
+    </div>
+    <div class="tip" data-tip-target=".mis-captcha-toggle-row">MIS 登录验证码为算术表达式（如 12+5=？），由内置模型本地识别并计算结果，无需联网。</div>
+  </div>
 </section>
 <div id="msg"></div>
 <script src="../../core/module-registry.js"></script>

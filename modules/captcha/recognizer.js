@@ -10,6 +10,12 @@
     'modules/captcha/vendor/tesseract.min.js',
     'modules/captcha/vendor/worker.min.js'
   ]);
+  const MIS_RUNTIME_FILES = Object.freeze([
+    'modules/captcha/vendor/omis.onnx',
+    'modules/captcha/vendor/ort.min.js',
+    'modules/captcha/vendor/ort-wasm-simd.wasm'
+  ]);
+  const MIS_CAPTCHA_ENABLED_KEY = 'misCaptchaRecognitionEnabled';
   let creatingDocument = null;
   let offscreenReadyPromise = null;
 
@@ -25,6 +31,29 @@
       installed: results[0] === true,
       ready: results.every(Boolean)
     };
+  }
+
+  async function misRuntimeFilesState() {
+    const results = await Promise.all(MIS_RUNTIME_FILES.map(async (path) => {
+      try {
+        return (await fetch(chrome.runtime.getURL(path), { cache: 'no-store' })).ok;
+      } catch {
+        return false;
+      }
+    }));
+    return {
+      installed: results[0] === true,
+      ready: results.every(Boolean)
+    };
+  }
+
+  async function isMisRecognitionEnabled() {
+    try {
+      const stored = await chrome.storage.local.get([MIS_CAPTCHA_ENABLED_KEY]);
+      return stored[MIS_CAPTCHA_ENABLED_KEY] !== false;
+    } catch {
+      return true;
+    }
   }
 
   async function ensureOffscreenDocument() {
@@ -83,14 +112,14 @@
     return `data:${blob.type || 'image/jpeg'};base64,${btoa(binary)}`;
   }
 
-  async function sendRecognitionRequest(imageUrl, modelVersion) {
+  async function sendRecognitionRequest(imageUrl, modelVersion, type = 'VE_CAPTCHA_RECOGNIZE_LOCAL') {
     await ensureOffscreenDocument();
     let timer = null;
     let response;
     try {
       response = await Promise.race([
         chrome.runtime.sendMessage({
-          type: 'VE_CAPTCHA_RECOGNIZE_LOCAL',
+          type,
           imageUrl,
           modelVersion
         }),
@@ -160,6 +189,53 @@
       : { ok: false, reason: 'recognition-failed' };
   }
 
+  async function recognizeMisCaptcha(image) {
+    if (!(await isMisRecognitionEnabled())) {
+      throw Object.assign(
+        new Error('MIS 算术验证码识别已禁用，请在扩展选项中启用'),
+        { code: 'mis-captcha-disabled' }
+      );
+    }
+    const runtimeState = await misRuntimeFilesState();
+    if (!runtimeState.installed) {
+      throw Object.assign(
+        new Error('MIS 验证码识别模型未安装'),
+        { code: 'mis-captcha-module-missing' }
+      );
+    }
+    if (!runtimeState.ready) {
+      throw Object.assign(
+        new Error('MIS 验证码识别资源尚未完整安装'),
+        { code: 'mis-captcha-resources-missing' }
+      );
+    }
+    const imageUrl = await blobToDataUrl(image);
+    let response;
+    try {
+      response = await sendRecognitionRequest(imageUrl, '', 'MIS_CAPTCHA_RECOGNIZE_LOCAL');
+    } catch (error) {
+      await resetOffscreenDocument();
+      try {
+        response = await sendRecognitionRequest(imageUrl, '', 'MIS_CAPTCHA_RECOGNIZE_LOCAL');
+      } catch (retryError) {
+        const firstMessage = String(error?.message || error || '');
+        const retryMessage = String(retryError?.message || retryError || '');
+        throw new Error(
+          retryMessage && retryMessage !== firstMessage
+            ? `${retryMessage}；首次尝试：${firstMessage}`
+            : retryMessage || firstMessage || 'MIS 验证码识别失败'
+        );
+      }
+    }
+    const answer = Number(response.answer);
+    return {
+      ok: true,
+      expression: String(response.expression || ''),
+      answer: Number.isFinite(answer) ? answer : null,
+      trace: Array.isArray(response.trace) ? response.trace : []
+    };
+  }
+
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== 'CAPTCHA_MODEL_VERSION_CHANGED') return false;
     if (chrome.offscreen?.hasDocument && chrome.offscreen?.closeDocument) {
@@ -171,5 +247,9 @@
     return false;
   });
 
-  global.BjtuCaptchaRecognizer = { recognize };
+  global.BjtuCaptchaRecognizer = {
+    recognize,
+    recognizeMisCaptcha,
+    isMisRecognitionEnabled
+  };
 })(globalThis);

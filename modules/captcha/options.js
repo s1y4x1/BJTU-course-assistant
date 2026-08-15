@@ -152,6 +152,46 @@
     target.classList.toggle('error', error);
   }
 
+  const MIS_RUNTIME_FILES = Object.freeze([
+    { name: 'omis.onnx', path: 'modules/captcha/vendor/omis.onnx' },
+    { name: 'ort.min.js', path: 'modules/captcha/vendor/ort.min.js' },
+    { name: 'ort-wasm-simd.wasm', path: 'modules/captcha/vendor/ort-wasm-simd.wasm' }
+  ]);
+  const MIS_CAPTCHA_ENABLED_KEY = 'misCaptchaRecognitionEnabled';
+
+  function setMisStatus(text, error = false) {
+    const target = document.getElementById('misCaptchaStatusValue');
+    if (!(target instanceof HTMLElement)) return;
+    target.innerHTML = text;
+    target.classList.toggle('error', error);
+  }
+
+  async function refreshMisCaptchaOptions() {
+    const toggle = document.getElementById('misCaptchaRecognitionEnabled');
+    const sizeEl = document.getElementById('misCaptchaSize');
+    if (!toggle && !sizeEl) return;
+    try {
+      const results = await Promise.all(MIS_RUNTIME_FILES.map(async ({ name, path }) => {
+        try {
+          const response = await fetch(chrome.runtime.getURL(path), { cache: 'no-store' });
+          if (!response.ok) return { name, ok: false, size: 0 };
+          const blob = await response.blob();
+          return { name, ok: true, size: blob.size };
+        } catch {
+          return { name, ok: false, size: 0 };
+        }
+      }));
+      const total = results.reduce((sum, item) => sum + item.size, 0);
+      if (sizeEl instanceof HTMLElement) sizeEl.textContent = formatBytes(total);
+      const missing = results.filter((item) => !item.ok).map((item) => item.name);
+      setMisStatus(missing.length ? `缺失：${missing.join('、')}` : '已就绪', missing.length > 0);
+      const stored = await chrome.storage.local.get([MIS_CAPTCHA_ENABLED_KEY]).catch(() => ({}));
+      if (toggle instanceof HTMLInputElement) toggle.checked = stored[MIS_CAPTCHA_ENABLED_KEY] !== false;
+    } catch (error) {
+      setMisStatus(`检查失败：${String(error?.message || error)}`, true);
+    }
+  }
+
   function setCoreProgress({ visible = true, loaded = 0, total = 0 } = {}) {
     const progress = document.getElementById('captchaCoreProgress');
     const bar = document.getElementById('captchaCoreProgressBar');
@@ -600,10 +640,20 @@
       event.preventDefault();
       void selectModel(version);
     });
+    const toggle = document.getElementById('misCaptchaRecognitionEnabled');
+    if (toggle instanceof HTMLInputElement) {
+      toggle.addEventListener('change', () => {
+        const enabled = toggle.checked === true;
+        chrome.storage.local.set({ [MIS_CAPTCHA_ENABLED_KEY]: enabled }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'MIS_CAPTCHA_SETTING_CHANGED', enabled }).catch(() => {});
+        setMessage(enabled ? '已启用 MIS 算术验证码识别' : '已禁用 MIS 算术验证码识别');
+      });
+    }
     void initializeModelOptions().catch((error) => {
       list.textContent = `识别模型列表加载失败：${String(error?.message || error)}`;
       setMessage(`识别模型列表加载失败：${String(error?.message || error)}`, false);
     });
+    void refreshMisCaptchaOptions();
   }
 
   async function reset() {
