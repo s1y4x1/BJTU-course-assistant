@@ -14,6 +14,8 @@
     'modules/captcha/mis-assets.js',
     'modules/captcha/vendor/ort.min.js'
   ]);
+  const MIS_CAPTCHA_RESOURCE_LABEL = globalThis.BjtuMisAssets?.MIS_CAPTCHA_RESOURCE_LABEL || '';
+  const MIS_CAPTCHA_FEATURE_LABEL = globalThis.BjtuMisAssets?.MIS_CAPTCHA_FEATURE_LABEL || '';
   let creatingDocument = null;
   let offscreenReadyPromise = null;
 
@@ -196,20 +198,20 @@
   async function recognizeMisCaptcha(image) {
     if (!(await isMisRecognitionEnabled())) {
       throw Object.assign(
-        new Error('自动识别填充 CAS 验证码已禁用，请在扩展选项中启用'),
+        new Error(`${MIS_CAPTCHA_FEATURE_LABEL}已禁用，请在扩展选项中启用`),
         { code: 'mis-captcha-disabled' }
       );
     }
     const runtimeState = await misRuntimeFilesState();
     if (!runtimeState.installed) {
       throw Object.assign(
-        new Error('CAS 验证码识别模型未安装'),
+        new Error(`${MIS_CAPTCHA_RESOURCE_LABEL}未安装`),
         { code: 'mis-captcha-module-missing' }
       );
     }
     if (!runtimeState.ready) {
       throw Object.assign(
-        new Error('CAS 验证码识别资源尚未完整安装'),
+        new Error(`${MIS_CAPTCHA_RESOURCE_LABEL}尚未完整安装`),
         { code: 'mis-captcha-resources-missing' }
       );
     }
@@ -227,7 +229,7 @@
         throw new Error(
           retryMessage && retryMessage !== firstMessage
             ? `${retryMessage}；首次尝试：${firstMessage}`
-            : retryMessage || firstMessage || 'CAS 验证码识别失败'
+            : retryMessage || firstMessage || `${MIS_CAPTCHA_FEATURE_LABEL}失败`
         );
       }
     }

@@ -8,11 +8,14 @@
   const MIS_CAPTCHA_SETTING_FEATURE = 'Recognition';
   const MIS_CAPTCHA_SETTING_STATE = 'Enabled';
   const MIS_CAPTCHA_ENABLED_KEY = MIS_CAPTCHA_SETTING_PREFIX + MIS_CAPTCHA_SETTING_FEATURE + MIS_CAPTCHA_SETTING_STATE;
+  const MIS_CAPTCHA_RESOURCE_LABEL = 'CAS 验证码识别资源';
+  const MIS_CAPTCHA_MODEL_LABEL = 'CAS 验证码识别模型';
+  const MIS_CAPTCHA_FEATURE_LABEL = '自动识别填充 CAS 验证码';
 
   const MIS_FILES = Object.freeze([
     Object.freeze({
       key: 'omis.onnx',
-      label: 'omis.onnx（CAS 验证码识别模型）',
+      label: `omis.onnx（${MIS_CAPTCHA_MODEL_LABEL}）`,
       url: 'https://raw.githubusercontent.com/hyskr/bjtu-mis-helper/refs/heads/main/public/omis.onnx',
       size: 10905617,
       sha256: 'D7CF5FB8AFAEEEAC751E05CACB1D7F6F0CDE0687D5B2B666C0ED7916C151E5BC'
@@ -130,7 +133,7 @@
       headers: { Accept: 'application/octet-stream,*/*' },
       signal
     });
-    if (!response.ok) throw new Error(`CAS 验证码识别资源下载失败（HTTP ${response.status}）`);
+    if (!response.ok) throw new Error(`${MIS_CAPTCHA_RESOURCE_LABEL}下载失败（HTTP ${response.status}）`);
     const responseSize = Math.max(0, Number(response.headers.get('content-length') || 0));
     const total = Math.max(responseSize, Number(expectedSize) || 0);
     if (!response.body?.getReader) {
@@ -247,6 +250,9 @@
   global.BjtuMisAssets = Object.freeze({
     MIS_FILES,
     MIS_CAPTCHA_ENABLED_KEY,
+    MIS_CAPTCHA_RESOURCE_LABEL,
+    MIS_CAPTCHA_FEATURE_LABEL,
+    MIS_CAPTCHA_MODEL_LABEL,
     getMisAsset,
     getMisAssetsStatus,
     ensureMisAssets,

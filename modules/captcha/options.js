@@ -153,6 +153,8 @@
   }
 
   const MIS_CAPTCHA_ENABLED_KEY = global.BjtuMisAssets?.MIS_CAPTCHA_ENABLED_KEY || '';
+  const MIS_CAPTCHA_RESOURCE_LABEL = global.BjtuMisAssets?.MIS_CAPTCHA_RESOURCE_LABEL || '';
+  const MIS_CAPTCHA_FEATURE_LABEL = global.BjtuMisAssets?.MIS_CAPTCHA_FEATURE_LABEL || '';
   let misDownloading = false;
 
   function setMisStatus(text, error = false) {
@@ -273,7 +275,7 @@
         await Promise.all(targets.map((item) => assets.downloadMisAsset(item.key, { onProgress: misDownloadProgressHandler })));
       })
       .then(() => {
-        setMessage('CAS 验证码识别资源已下载完成');
+        setMessage(`${MIS_CAPTCHA_RESOURCE_LABEL}已下载完成`);
         void refreshMisCaptchaOptions();
       })
       .catch((error) => {
@@ -281,7 +283,7 @@
           setMisStatus('下载已取消', true);
         } else {
           setMisStatus(`下载失败：${String(error?.message || error)}`, true);
-          setMessage(`CAS 验证码识别资源下载失败：${String(error?.message || error)}`, false);
+          setMessage(`${MIS_CAPTCHA_RESOURCE_LABEL}下载失败：${String(error?.message || error)}`, false);
         }
         void refreshMisCaptchaOptions();
       })
@@ -293,7 +295,7 @@
   async function repairMisAssets() {
     const assets = await getMisAssets();
     if (!assets) return;
-    setMessage('正在检查 CAS 验证码识别资源完整性…');
+    setMessage(`正在检查 ${MIS_CAPTCHA_RESOURCE_LABEL}完整性…`);
     try {
       for (const item of assets.MIS_FILES) {
         const record = await assets.getMisAsset(item.key);
@@ -302,7 +304,7 @@
           await assets.downloadMisAsset(item.key, { onProgress: misDownloadProgressHandler });
         }
       }
-      setMessage('CAS 验证码识别资源完好');
+      setMessage(`${MIS_CAPTCHA_RESOURCE_LABEL}完好`);
       void refreshMisCaptchaOptions();
     } catch (error) {
       setMessage(`修复失败：${String(error?.message || error)}`, false);
@@ -315,7 +317,7 @@
     if (!assets) return;
     const toggle = document.getElementById('misCaptchaRecognitionEnabled');
     if (toggle instanceof HTMLInputElement && toggle.checked) {
-      setMessage('请先取消勾选「自动识别填充 CAS 验证码」再删除', false);
+      setMessage(`请先取消勾选「${MIS_CAPTCHA_FEATURE_LABEL}」再删除`, false);
       return;
     }
     try {
@@ -325,7 +327,7 @@
           await assets.uninstallMisAsset(item.key);
         }
       }
-      setMessage('已删除 CAS 验证码识别资源');
+      setMessage(`已删除 ${MIS_CAPTCHA_RESOURCE_LABEL}`);
       void refreshMisCaptchaOptions();
     } catch (error) {
       setMessage(`删除失败：${String(error?.message || error)}`, false);
@@ -792,14 +794,14 @@
               ? await global.BjtuMisAssets.getMisAssetsStatus().catch(() => null)
               : null;
             if (status && !status.installed && !status.downloading.length) {
-              setMessage('正在自动下载 CAS 验证码识别资源…');
+              setMessage(`正在自动下载 ${MIS_CAPTCHA_RESOURCE_LABEL}…`);
               startMisDownload();
             } else {
-              setMessage('已启用自动识别填充 CAS 验证码');
+              setMessage(`已启用${MIS_CAPTCHA_FEATURE_LABEL}`);
             }
           })();
         } else {
-          setMessage('已禁用自动识别填充 CAS 验证码');
+          setMessage(`已禁用${MIS_CAPTCHA_FEATURE_LABEL}`);
         }
       });
     }

@@ -5,6 +5,7 @@
   let recognitionQueue = Promise.resolve();
 
   const MIS_WASM_FILENAME = 'ort-wasm-simd.wasm';
+  const MIS_CAPTCHA_RESOURCE_LABEL = globalThis.BjtuMisAssets?.MIS_CAPTCHA_RESOURCE_LABEL || '';
   const MIS_CHARSET = [' ', '9', '5', '-', '7', '0', '2', '6', '1', '3', 'x', '8', '=', '4', '+'];
   const MIS_HEIGHT = 64;
   let misSessionPromise = null;
@@ -15,7 +16,7 @@
     }
     const record = await globalThis.BjtuMisAssets.getMisAsset(key);
     if (!record?.blob) {
-      throw new Error(`CAS 验证码识别资源未安装：${key}`);
+      throw new Error(`${MIS_CAPTCHA_RESOURCE_LABEL}未安装：${key}`);
     }
     return record.blob;
   }
