@@ -951,7 +951,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const targetParams = new URLSearchParams();
         if (message?.payload?.accountInit) targetParams.set('accountInit', '1');
-        if (message?.payload?.autoUpdate) targetParams.set('autoUpdate', '1');
+        if (message?.payload?.autoUpdate) targetParams.set('autoUpdate', message.payload.autoUpdate === 2 ? '2' : '1');
         const targetUrl = targetParams.size
           ? chrome.runtime.getURL(`app/app.html?${targetParams.toString()}`)
           : APP_URL;

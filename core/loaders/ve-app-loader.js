@@ -14,7 +14,8 @@
   ];
 
   global.__bjtuVeAppReady = (async () => {
-    if (new URLSearchParams(global.location?.search || '').get('autoUpdate') === '1') return false;
+    const autoUpdateParam = new URLSearchParams(global.location?.search || '').get('autoUpdate');
+    if (autoUpdateParam === '1' || autoUpdateParam === '2') return false;
     const available = await global.BjtuModuleRegistry.ready;
     if (!available.ve) return false;
     for (const path of global.BjtuModuleRegistry.definitions.ve?.styles || []) {

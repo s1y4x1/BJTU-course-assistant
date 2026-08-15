@@ -5268,7 +5268,8 @@ jsessionidInput.addEventListener('change', async () => {
 
 // -------------------- Init --------------------
 (async function init() {
-  const autoUpdateMode = new URLSearchParams(location.search).get('autoUpdate') === '1';
+  const autoUpdateParam = new URLSearchParams(location.search).get('autoUpdate');
+  const autoUpdateMode = autoUpdateParam === '1' || autoUpdateParam === '2';
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuVeAppReady;
   await globalThis.__bjtuPlatformModulesReady;

@@ -10,7 +10,8 @@
   };
   global.__bjtuOptionalPlatformAdaptersReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
-    if (new URLSearchParams(global.location?.search || '').get('autoUpdate') === '1') {
+    const autoUpdateParam = new URLSearchParams(global.location?.search || '').get('autoUpdate');
+    if (autoUpdateParam === '1' || autoUpdateParam === '2') {
       for (const id of ['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']) {
         if (!available[id]) continue;
         if (id === 'mooc') global.BjtuMoocPlatform = null;

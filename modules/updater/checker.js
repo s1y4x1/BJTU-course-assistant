@@ -299,7 +299,8 @@ async function handoffUpdateToFullscreen(url, source, fullExtraction = false) {
     fullExtraction: fullExtraction === true,
     requestedAt: Date.now()
   });
-  await chrome.runtime.sendMessage({ type: 'OPEN_APP', payload: { autoUpdate: true } });
+  const channel = String(source || '').trim() === 'master' ? 2 : 1;
+  await chrome.runtime.sendMessage({ type: 'OPEN_APP', payload: { autoUpdate: channel } });
 }
 
 let versionMarkdownParser = null;
@@ -2413,13 +2414,15 @@ function queueHigherVersionRelease(release) {
 
 async function loadVersionInfoInternal(releaseOverride = null) {
   const isPopupPage = typeof popupMode !== 'undefined' && popupMode;
-  const autoUpdateRequested = !isPopupPage && (() => {
+  const autoUpdateParam = !isPopupPage ? (() => {
     try {
-      return new URL(location.href).searchParams.get('autoUpdate') === '1';
+      return new URL(location.href).searchParams.get('autoUpdate');
     } catch {
-      return false;
+      return '';
     }
-  })();
+  })() : '';
+  const autoUpdateRequested = autoUpdateParam === '1' || autoUpdateParam === '2';
+  const autoUpdateChannel = autoUpdateParam === '2' ? 2 : 1;
   let fullscreenUpdateRequest = null;
   if (autoUpdateRequested) {
     fullscreenUpdateRequest = await getLocal(VERSION_FULLSCREEN_REQUEST_KEY, null);
@@ -2476,8 +2479,8 @@ async function loadVersionInfoInternal(releaseOverride = null) {
       const requestIsFresh = autoUpdateRequested && requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
       if (requestIsFresh) {
         await startVersionDownloadWithFallback(
-          String(fullscreenUpdateRequest?.url || '').trim() || pickReleaseDownloadUrl(latestRelease),
-          String(fullscreenUpdateRequest?.source || '').trim() || 'zipball',
+          String(fullscreenUpdateRequest?.url || '').trim() || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
+          String(fullscreenUpdateRequest?.source || '').trim() || (autoUpdateChannel === 2 ? 'master' : 'zipball'),
           fullscreenUpdateRequest?.fullExtraction === true
         );
       }
@@ -2586,8 +2589,8 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         const requestedUrl = requestIsFresh ? String(fullscreenUpdateRequest?.url || '').trim() : '';
         const requestedSource = requestIsFresh ? String(fullscreenUpdateRequest?.source || '').trim() : '';
         await startVersionDownloadWithFallback(
-          requestedUrl || pickReleaseDownloadUrl(latestRelease),
-          requestedSource || 'zipball',
+          requestedUrl || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
+          requestedSource || (autoUpdateChannel === 2 ? 'master' : 'zipball'),
           requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
         );
         return;
@@ -2612,6 +2615,18 @@ async function loadVersionInfoInternal(releaseOverride = null) {
     versionButtonLocalPublishedAt = localRelease?.published_at || '';
     const aheadBody = buildAllReleaseNotes(releases, latestTag);
     setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '', zipballUrl: latestRelease?.zipball_url || '', body: aheadBody, reload: latestReload, force: latestForce, update: latestUpdate });
+    if (autoUpdateRequested) {
+      const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
+      const requestIsFresh = requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
+      const requestedUrl = requestIsFresh ? String(fullscreenUpdateRequest?.url || '').trim() : '';
+      const requestedSource = requestIsFresh ? String(fullscreenUpdateRequest?.source || '').trim() : '';
+      await startVersionDownloadWithFallback(
+        requestedUrl || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
+        requestedSource || (autoUpdateChannel === 2 ? 'master' : 'zipball'),
+        requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
+      );
+      return;
+    }
   } catch (err) {
     setVersionButtonState('failure', { localVersion });
     const msg = String(err?.message || '').trim();
