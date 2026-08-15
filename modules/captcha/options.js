@@ -198,16 +198,25 @@
     return key === 'ort-wasm-simd.wasm' ? 'Wasm' : 'Omis';
   }
 
-  function setMisFileStatus(key, text, error = false) {
+  function setMisFileStatus(key, text, error = false, asHtml = false) {
     const target = document.getElementById(`misCaptchaStatus${misElementSuffix(key)}`);
     if (!(target instanceof HTMLElement)) return;
-    target.textContent = String(text ?? '');
+    if (asHtml) {
+      target.innerHTML = String(text ?? '');
+    } else {
+      target.textContent = String(text ?? '');
+    }
     target.classList.toggle('error', error);
   }
 
-  function setMisFileSize(key, text) {
+  function setMisFileSize(key, text, asHtml = false) {
     const target = document.getElementById(`misCaptchaSize${misElementSuffix(key)}`);
-    if (target instanceof HTMLElement) target.textContent = String(text ?? '');
+    if (!(target instanceof HTMLElement)) return;
+    if (asHtml) {
+      target.innerHTML = String(text ?? '');
+    } else {
+      target.textContent = String(text ?? '');
+    }
   }
 
   async function refreshMisCaptchaOptions() {
@@ -227,10 +236,10 @@
           const downloading = status.downloading.includes(item.key);
           const installed = status.files[item.key] === 'installed';
           const record = installed ? await assets.getMisAsset(item.key) : null;
-          setMisFileSize(item.key, installed ? formatBytes(record?.blob?.size || 0) : '—');
+          setMisFileSize(item.key, installed ? renderCaptchaFileSizeText(record?.blob?.size || 0) : '—', installed);
           if (downloading) {
             setMisFileProgress(item.key, true, 0, 1);
-            setMisFileStatus(item.key, '下载中…', false);
+            setMisFileStatus(item.key, `${renderCaptchaFileSizePair(0, item.size)} 0%`, false, true);
           } else {
             setMisFileProgress(item.key, false);
             setMisFileStatus(item.key, installed ? '已安装' : '未安装', !installed);
@@ -258,7 +267,7 @@
   function misDownloadProgressHandler({ key, loaded, total }) {
     setMisStatus('下载中…', false);
     const ratio = total > 0 ? Math.round((loaded / total) * 100) : 0;
-    setMisFileStatus(key, `下载中 ${ratio}%`, false);
+    setMisFileStatus(key, `${renderCaptchaFileSizePair(loaded, total)} ${ratio}%`, false, true);
     setMisFileProgress(key, true, loaded, total);
   }
 
