@@ -42,6 +42,14 @@
     defineFallback('syncJsessionidToUi', async () => {});
     defineFallback('loadResourceSpaceForCurrentAccount', async () => null);
     defineFallback('reloadVePlatformFromSession', async () => null);
+    defineFallback('setResourceSpaceStatus', (text = '', tone = 'normal') => {
+      if (!resourceSpaceStatus) return;
+      resourceSpaceStatus.textContent = String(text || '');
+      if (tone === 'error') resourceSpaceStatus.style.color = '#b91c1c';
+      else if (tone === 'success') resourceSpaceStatus.style.color = '#166534';
+      else if (tone === 'warning') resourceSpaceStatus.style.color = '#92400e';
+      else resourceSpaceStatus.style.color = '#64748b';
+    });
     defineFallback('updateAssessmentButtonVisibility', () => {});
     defineFallback('bindCourseCardActionButtons', () => {});
     defineFallback('renderForcePublishScoreButton', () => '');
