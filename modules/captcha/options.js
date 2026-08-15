@@ -152,7 +152,7 @@
     target.classList.toggle('error', error);
   }
 
-  const MIS_CAPTCHA_ENABLED_KEY = 'misCaptchaRecognitionEnabled';
+  const MIS_CAPTCHA_ENABLED_KEY = global.BjtuMisAssets?.MIS_CAPTCHA_ENABLED_KEY || '';
   let misDownloading = false;
 
   function setMisStatus(text, error = false) {
@@ -162,9 +162,10 @@
     target.classList.toggle('error', error);
   }
 
-  function setMisProgress(visible, loaded = 0, total = 0) {
-    const progress = document.getElementById('misCaptchaProgress');
-    const bar = document.getElementById('misCaptchaProgressBar');
+  function setMisFileProgress(key, visible, loaded = 0, total = 0) {
+    const suffix = misElementSuffix(key);
+    const progress = document.getElementById(`misCaptchaProgress${suffix}`);
+    const bar = document.getElementById(`misCaptchaProgressBar${suffix}`);
     if (!(progress instanceof HTMLElement)) return;
     progress.hidden = !visible;
     if (bar instanceof HTMLElement) {
@@ -173,9 +174,17 @@
     }
   }
 
-  function updateMisUninstallButton(visible) {
-    const button = document.getElementById('misCaptchaUninstall');
-    if (button instanceof HTMLElement) button.hidden = !visible;
+  function setMisActionButtons({ downloading = false, downloadLabel = '下载', downloadVisible = true, deleteVisible = false } = {}) {
+    const downloadBtn = document.getElementById('misCaptchaDownload');
+    const deleteBtn = document.getElementById('misCaptchaDelete');
+    if (downloadBtn instanceof HTMLButtonElement) {
+      downloadBtn.hidden = downloading || !downloadVisible;
+      downloadBtn.textContent = downloadLabel;
+      downloadBtn.dataset.mode = downloadLabel === '修复' ? 'repair' : 'download';
+    }
+    if (deleteBtn instanceof HTMLButtonElement) {
+      deleteBtn.hidden = downloading || !deleteVisible;
+    }
   }
 
   async function getMisAssets() {
@@ -210,79 +219,116 @@
       ]);
       if (toggle instanceof HTMLInputElement) toggle.checked = stored[MIS_CAPTCHA_ENABLED_KEY] !== false;
       const missing = [];
+      let installedCount = 0;
       if (assets) {
         for (const item of assets.MIS_FILES) {
+          const downloading = status.downloading.includes(item.key);
           const installed = status.files[item.key] === 'installed';
           const record = installed ? await assets.getMisAsset(item.key) : null;
           setMisFileSize(item.key, installed ? formatBytes(record?.blob?.size || 0) : '—');
-          setMisFileStatus(item.key, installed ? '已安装' : '未安装', !installed);
-          if (!installed) missing.push(item.label);
+          if (downloading) {
+            setMisFileProgress(item.key, true, 0, 1);
+            setMisFileStatus(item.key, '下载中…', false);
+          } else {
+            setMisFileProgress(item.key, false);
+            setMisFileStatus(item.key, installed ? '已安装' : '未安装', !installed);
+          }
+          if (installed) installedCount += 1;
+          else missing.push(item.label);
         }
       }
       if (status.downloading.length) {
-        setMisStatus(`正在下载 ${status.downloading.join('、')}…`, false);
-        setMisProgress(true);
-        updateMisUninstallButton(false);
-      } else if (missing.length) {
-        setMisStatus(`未安装：${missing.join('；')}`, true);
-        setMisProgress(false);
-        updateMisUninstallButton(false);
+        setMisStatus('下载中…', false);
+        setMisActionButtons({ downloading: true });
       } else {
-        setMisStatus('已就绪', false);
-        setMisProgress(false);
-        updateMisUninstallButton(true);
+        const allInstalled = missing.length === 0;
+        setMisStatus(allInstalled ? '已就绪' : '未安装', !allInstalled);
+        setMisActionButtons({
+          downloadLabel: allInstalled ? '修复' : '下载',
+          deleteVisible: installedCount > 0
+        });
       }
     } catch (error) {
       setMisStatus(`检查失败：${String(error?.message || error)}`, true);
     }
   }
 
-  function startMisDownload() {
-    if (misDownloading || !global.BjtuMisAssets) return;
-    misDownloading = true;
-    setMisStatus('开始下载…', false);
-    setMisProgress(true, 0, 1);
-    updateMisUninstallButton(false);
-    global.BjtuMisAssets.ensureMisAssets({
-      onProgress: ({ key, loaded, total }) => {
-        setMisStatus(`正在下载 ${key}…`, false);
-        setMisProgress(true, loaded, total);
-      }
-    }).then(() => {
-      setMisProgress(false);
-      updateMisUninstallButton(true);
-      setMessage('MIS 验证码识别资源已下载完成');
-      void refreshMisCaptchaOptions();
-    }).catch((error) => {
-      if (error?.name === 'AbortError') {
-        setMisStatus('下载已取消', true);
-      } else {
-        setMisStatus(`下载失败：${String(error?.message || error)}`, true);
-        setMessage(`MIS 验证码识别资源下载失败：${String(error?.message || error)}`, false);
-      }
-      setMisProgress(false);
-      void refreshMisCaptchaOptions();
-    }).finally(() => {
-      misDownloading = false;
-    });
+  function misDownloadProgressHandler({ key, loaded, total }) {
+    setMisStatus('下载中…', false);
+    const ratio = total > 0 ? Math.round((loaded / total) * 100) : 0;
+    setMisFileStatus(key, `下载中 ${ratio}%`, false);
+    setMisFileProgress(key, true, loaded, total);
   }
 
-  async function uninstallMisAssets() {
+  function startMisDownload() {
+    if (misDownloading || !global.BjtuMisAssets) return;
+    const assets = global.BjtuMisAssets;
+    misDownloading = true;
+    setMisStatus('下载中…', false);
+    setMisActionButtons({ downloading: true });
+    assets.getMisAssetsStatus()
+      .then(async (status) => {
+        const targets = assets.MIS_FILES.filter((item) => status.files[item.key] !== 'installed');
+        if (!targets.length) return;
+        await Promise.all(targets.map((item) => assets.downloadMisAsset(item.key, { onProgress: misDownloadProgressHandler })));
+      })
+      .then(() => {
+        setMessage('CAS 验证码识别资源已下载完成');
+        void refreshMisCaptchaOptions();
+      })
+      .catch((error) => {
+        if (error?.name === 'AbortError') {
+          setMisStatus('下载已取消', true);
+        } else {
+          setMisStatus(`下载失败：${String(error?.message || error)}`, true);
+          setMessage(`CAS 验证码识别资源下载失败：${String(error?.message || error)}`, false);
+        }
+        void refreshMisCaptchaOptions();
+      })
+      .finally(() => {
+        misDownloading = false;
+      });
+  }
+
+  async function repairMisAssets() {
+    const assets = await getMisAssets();
+    if (!assets) return;
+    setMessage('正在检查 CAS 验证码识别资源完整性…');
+    try {
+      for (const item of assets.MIS_FILES) {
+        const record = await assets.getMisAsset(item.key);
+        if (!record) {
+          setMessage(`${item.label} 已损坏，正在重新下载…`);
+          await assets.downloadMisAsset(item.key, { onProgress: misDownloadProgressHandler });
+        }
+      }
+      setMessage('CAS 验证码识别资源完好');
+      void refreshMisCaptchaOptions();
+    } catch (error) {
+      setMessage(`修复失败：${String(error?.message || error)}`, false);
+      void refreshMisCaptchaOptions();
+    }
+  }
+
+  async function deleteMisAssets() {
     const assets = await getMisAssets();
     if (!assets) return;
     const toggle = document.getElementById('misCaptchaRecognitionEnabled');
     if (toggle instanceof HTMLInputElement && toggle.checked) {
-      setMessage('请先取消勾选「启用 MIS 算术验证码识别」再卸载', false);
+      setMessage('请先取消勾选「自动识别填充 CAS 验证码」再删除', false);
       return;
     }
     try {
+      const status = await assets.getMisAssetsStatus();
       for (const item of assets.MIS_FILES) {
-        await assets.uninstallMisAsset(item.key);
+        if (status.files[item.key] === 'installed') {
+          await assets.uninstallMisAsset(item.key);
+        }
       }
-      setMessage('已卸载 MIS 验证码识别资源');
+      setMessage('已删除 CAS 验证码识别资源');
       void refreshMisCaptchaOptions();
     } catch (error) {
-      setMessage(`卸载失败：${String(error?.message || error)}`, false);
+      setMessage(`删除失败：${String(error?.message || error)}`, false);
     }
   }
 
@@ -746,20 +792,27 @@
               ? await global.BjtuMisAssets.getMisAssetsStatus().catch(() => null)
               : null;
             if (status && !status.installed && !status.downloading.length) {
-              setMessage('正在自动下载 MIS 验证码识别资源…');
+              setMessage('正在自动下载 CAS 验证码识别资源…');
               startMisDownload();
             } else {
-              setMessage('已启用 MIS 算术验证码识别');
+              setMessage('已启用自动识别填充 CAS 验证码');
             }
           })();
         } else {
-          setMessage('已禁用 MIS 算术验证码识别');
+          setMessage('已禁用自动识别填充 CAS 验证码');
         }
       });
     }
-    const uninstallButton = document.getElementById('misCaptchaUninstall');
-    if (uninstallButton instanceof HTMLButtonElement) {
-      uninstallButton.addEventListener('click', () => void uninstallMisAssets());
+    const downloadButton = document.getElementById('misCaptchaDownload');
+    if (downloadButton instanceof HTMLButtonElement) {
+      downloadButton.addEventListener('click', () => {
+        if (downloadButton.dataset.mode === 'repair') void repairMisAssets();
+        else startMisDownload();
+      });
+    }
+    const deleteButton = document.getElementById('misCaptchaDelete');
+    if (deleteButton instanceof HTMLButtonElement) {
+      deleteButton.addEventListener('click', () => void deleteMisAssets());
     }
     void initializeModelOptions().catch((error) => {
       list.textContent = `识别模型列表加载失败：${String(error?.message || error)}`;

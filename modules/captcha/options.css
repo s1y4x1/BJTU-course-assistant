@@ -123,6 +123,38 @@
   color: #b91c1c;
 }
 
+.mis-captcha-section .captcha-core-status {
+  margin-top: 0;
+}
+
+.mis-captcha-group .mis-captcha-files {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  border-top: 1px solid #dbe2ea;
+}
+
+.mis-captcha-files .captcha-core-status {
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 6px 2px;
+}
+
+.mis-captcha-files .captcha-core-status + .captcha-core-status {
+  border-top: 1px solid #e5e7eb;
+}
+
+.mis-captcha-file-status {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: #64748b;
+}
+
+.mis-captcha-file-status.error {
+  color: #b91c1c;
+}
+
 .mis-captcha-status-right {
   display: inline-flex;
   align-items: center;
@@ -132,18 +164,17 @@
 }
 
 .mis-captcha-status-right .captcha-model-action {
+  min-width: 58px;
   margin: 0;
-  padding: 4px 12px;
-  border: none;
-  border-radius: 6px;
-  background: #dc2626;
-  color: #fff;
-  font-size: 12px;
-  line-height: 1.4;
+  padding: 6px 10px;
   cursor: pointer;
 }
 
-.mis-captcha-status-right .captcha-model-action:hover {
+.mis-captcha-status-right #misCaptchaDelete {
+  background: #dc2626;
+}
+
+.mis-captcha-status-right #misCaptchaDelete:hover {
   background: #b91c1c;
 }
 
@@ -159,11 +190,23 @@ html[data-color-scheme="dark"] .mis-captcha-status #misCaptchaStatusValue.error 
   color: #fca5a5;
 }
 
-html[data-color-scheme="dark"] .mis-captcha-status-right .captcha-model-action {
+html[data-color-scheme="dark"] .mis-captcha-file-status.error {
+  color: #fca5a5;
+}
+
+html[data-color-scheme="dark"] .mis-captcha-group .mis-captcha-files {
+  border-top-color: #334155;
+}
+
+html[data-color-scheme="dark"] .mis-captcha-files .captcha-core-status + .captcha-core-status {
+  border-top-color: #334155;
+}
+
+html[data-color-scheme="dark"] .mis-captcha-status-right #misCaptchaDelete {
   background: #b91c1c;
 }
 
-html[data-color-scheme="dark"] .mis-captcha-status-right .captcha-model-action:hover {
+html[data-color-scheme="dark"] .mis-captcha-status-right #misCaptchaDelete:hover {
   background: #991b1b;
 }
 

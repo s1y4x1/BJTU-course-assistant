@@ -15,7 +15,7 @@
     }
     const record = await globalThis.BjtuMisAssets.getMisAsset(key);
     if (!record?.blob) {
-      throw new Error(`MIS 验证码识别资源未安装：${key}`);
+      throw new Error(`CAS 验证码识别资源未安装：${key}`);
     }
     return record.blob;
   }
