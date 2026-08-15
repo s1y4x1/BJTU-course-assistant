@@ -222,13 +222,13 @@
   async function refreshMisCaptchaOptions() {
     const toggle = document.getElementById('misCaptchaRecognitionEnabled');
     const assets = await getMisAssets();
-    if (!toggle && !assets) return;
+    if (!toggle && !assets) return null;
     try {
       const [status, stored] = await Promise.all([
         assets ? assets.getMisAssetsStatus() : Promise.resolve({ files: {}, downloading: [], installed: false }),
         chrome.storage.local.get([MIS_CAPTCHA_ENABLED_KEY]).catch(() => ({}))
       ]);
-      if (toggle instanceof HTMLInputElement) toggle.checked = stored[MIS_CAPTCHA_ENABLED_KEY] !== false;
+      const enabled = stored[MIS_CAPTCHA_ENABLED_KEY] !== false;
       const missing = [];
       let installedCount = 0;
       if (assets) {
@@ -248,19 +248,22 @@
           else missing.push(item.label);
         }
       }
+      const allInstalled = missing.length === 0;
+      if (toggle instanceof HTMLInputElement) toggle.checked = enabled && allInstalled;
       if (status.downloading.length) {
         setMisStatus('下载中…', false);
         setMisActionButtons({ downloading: true });
       } else {
-        const allInstalled = missing.length === 0;
         setMisStatus(allInstalled ? '已就绪' : '未安装', !allInstalled);
         setMisActionButtons({
           downloadLabel: allInstalled ? '修复' : '下载',
           deleteVisible: installedCount > 0
         });
       }
+      return { enabled, allInstalled, downloading: status.downloading.length > 0 };
     } catch (error) {
       setMisStatus(`检查失败：${String(error?.message || error)}`, true);
+      return null;
     }
   }
 
@@ -802,9 +805,14 @@
             const status = global.BjtuMisAssets
               ? await global.BjtuMisAssets.getMisAssetsStatus().catch(() => null)
               : null;
-            if (status && !status.installed && !status.downloading.length) {
-              setMessage(`正在自动下载 ${MIS_CAPTCHA_RESOURCE_LABEL}…`);
-              startMisDownload();
+            if (status && !status.installed) {
+              if (toggle instanceof HTMLInputElement) toggle.checked = false;
+              if (!status.downloading.length) {
+                setMessage(`正在自动下载 ${MIS_CAPTCHA_RESOURCE_LABEL}…`);
+                startMisDownload();
+              } else {
+                setMessage(`正在下载 ${MIS_CAPTCHA_RESOURCE_LABEL}…`);
+              }
             } else {
               setMessage(`已启用${MIS_CAPTCHA_FEATURE_LABEL}`);
             }
@@ -829,7 +837,12 @@
       list.textContent = `识别模型列表加载失败：${String(error?.message || error)}`;
       setMessage(`识别模型列表加载失败：${String(error?.message || error)}`, false);
     });
-    void refreshMisCaptchaOptions();
+    void (async () => {
+      const state = await refreshMisCaptchaOptions();
+      if (state?.enabled && !state.allInstalled && !state.downloading && !misDownloading) {
+        startMisDownload();
+      }
+    })();
   }
 
   async function reset() {
