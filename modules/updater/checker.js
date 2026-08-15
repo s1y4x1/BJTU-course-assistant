@@ -946,7 +946,7 @@ function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, et
   const loadedBytes = Math.max(0, Number(loaded) || 0);
   const totalBytes = Math.max(0, Number(total) || 0);
   const speedBytes = Math.max(0, Number(speed) || 0);
-  const etaSeconds = Number.isFinite(Number(eta)) && Number(eta) >= 0 ? Number(eta) : null;
+  const etaSeconds = totalBytes > 0 && Number.isFinite(Number(eta)) && Number(eta) >= 0 ? Number(eta) : null;
   const explicitPercent = percent !== null && percent !== undefined && Number.isFinite(Number(percent))
     ? Number(percent)
     : null;
