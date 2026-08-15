@@ -85,9 +85,7 @@
 }
 
 .mis-captcha-section {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed #dbe2ea;
+  margin-top: 0;
 }
 
 .mis-captcha-toggle-row {
@@ -123,10 +121,6 @@
 
 .mis-captcha-status #misCaptchaStatusValue.error {
   color: #b91c1c;
-}
-
-html[data-color-scheme="dark"] .mis-captcha-section {
-  border-top-color: #334155;
 }
 
 html[data-color-scheme="dark"] .mis-captcha-toggle-label {
