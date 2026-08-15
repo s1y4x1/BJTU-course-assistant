@@ -51,6 +51,8 @@
     "https://cdn.jsdelivr.net/*",
     "https://data.jsdelivr.com/*",
     "https://codeload.github.com/*",
+    "https://raw.githubusercontent.com/*",
+    "https://github.com/*",
     "https://s1y4x1.github.io/*"
   ],
   "content_security_policy": {

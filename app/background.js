@@ -138,6 +138,7 @@ const veBackgroundReady = tryImportModuleScripts(
   '../modules/ve/homework-core.js'
 );
 tryImportModuleScripts('../core/captcha-assets.js');
+tryImportModuleScripts('../modules/captcha/mis-assets.js');
 tryImportModuleScripts('../modules/captcha/recognizer.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/login-service.js');
 tryImportModuleScripts('../modules/academic/system.js');

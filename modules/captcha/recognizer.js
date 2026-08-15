@@ -10,10 +10,9 @@
     'modules/captcha/vendor/tesseract.min.js',
     'modules/captcha/vendor/worker.min.js'
   ]);
-  const MIS_RUNTIME_FILES = Object.freeze([
-    'modules/captcha/vendor/omis.onnx',
-    'modules/captcha/vendor/ort.min.js',
-    'modules/captcha/vendor/ort-wasm-simd.wasm'
+  const MIS_BUNDLED_RUNTIME_FILES = Object.freeze([
+    'modules/captcha/mis-assets.js',
+    'modules/captcha/vendor/ort.min.js'
   ]);
   const MIS_CAPTCHA_ENABLED_KEY = 'misCaptchaRecognitionEnabled';
   let creatingDocument = null;
@@ -34,16 +33,20 @@
   }
 
   async function misRuntimeFilesState() {
-    const results = await Promise.all(MIS_RUNTIME_FILES.map(async (path) => {
+    const bundledResults = await Promise.all(MIS_BUNDLED_RUNTIME_FILES.map(async (path) => {
       try {
         return (await fetch(chrome.runtime.getURL(path), { cache: 'no-store' })).ok;
       } catch {
         return false;
       }
     }));
+    const assets = globalThis.BjtuMisAssets
+      ? await globalThis.BjtuMisAssets.getMisAssetsStatus().catch(() => null)
+      : null;
+    const allInstalled = bundledResults.every(Boolean) && assets?.installed === true;
     return {
-      installed: results[0] === true,
-      ready: results.every(Boolean)
+      installed: allInstalled,
+      ready: allInstalled && !assets?.downloading?.length
     };
   }
 

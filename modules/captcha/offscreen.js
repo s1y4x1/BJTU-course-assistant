@@ -4,11 +4,21 @@
   let workerPromise = null;
   let recognitionQueue = Promise.resolve();
 
-  const MIS_MODEL_PATH = 'modules/captcha/vendor/omis.onnx';
-  const MIS_WASM_DIR = 'modules/captcha/vendor/';
+  const MIS_WASM_FILENAME = 'ort-wasm-simd.wasm';
   const MIS_CHARSET = [' ', '9', '5', '-', '7', '0', '2', '6', '1', '3', 'x', '8', '=', '4', '+'];
   const MIS_HEIGHT = 64;
   let misSessionPromise = null;
+
+  async function readMisAsset(key) {
+    if (!globalThis.BjtuMisAssets?.getMisAsset) {
+      throw new Error('MIS 资源管理器未加载');
+    }
+    const record = await globalThis.BjtuMisAssets.getMisAsset(key);
+    if (!record?.blob) {
+      throw new Error(`MIS 验证码识别资源未安装：${key}`);
+    }
+    return record.blob;
+  }
 
   function loadMisImageElement(url) {
     return new Promise((resolve, reject) => {
@@ -23,9 +33,15 @@
     if (!misSessionPromise) {
       misSessionPromise = (async () => {
         if (!globalThis.ort?.InferenceSession) throw new Error('ONNX Runtime 未加载');
-        ort.env.wasm.wasmPaths = chrome.runtime.getURL(MIS_WASM_DIR);
+        const [modelBlob, wasmBlob] = await Promise.all([
+          readMisAsset('omis.onnx'),
+          readMisAsset(MIS_WASM_FILENAME)
+        ]);
+        ort.env.wasm.wasmPaths = {
+          [MIS_WASM_FILENAME]: URL.createObjectURL(wasmBlob)
+        };
         ort.env.wasm.numThreads = 1;
-        return ort.InferenceSession.create(chrome.runtime.getURL(MIS_MODEL_PATH));
+        return ort.InferenceSession.create(new Uint8Array(await modelBlob.arrayBuffer()));
       })().catch((error) => {
         misSessionPromise = null;
         throw error;

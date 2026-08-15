@@ -40,19 +40,41 @@
         <span class="mis-captcha-toggle-label">启用 MIS 算术验证码识别</span>
       </label>
     </div>
+    <div class="captcha-core-status mis-captcha-status mis-captcha-file-row">
+      <span class="captcha-core-file">
+        <span class="captcha-core-name">omis.onnx</span>
+        <span id="misCaptchaSizeOmis" class="captcha-model-size">…</span>
+      </span>
+      <span id="misCaptchaStatusOmis" class="mis-captcha-file-status">…</span>
+    </div>
+    <div class="captcha-core-status mis-captcha-status mis-captcha-file-row">
+      <span class="captcha-core-file">
+        <span class="captcha-core-name">ort-wasm-simd.wasm</span>
+        <span id="misCaptchaSizeWasm" class="captcha-model-size">…</span>
+      </span>
+      <span id="misCaptchaStatusWasm" class="mis-captcha-file-status">…</span>
+    </div>
     <div class="captcha-core-status mis-captcha-status">
       <span class="captcha-core-file">
-        <span class="captcha-core-name">omis.onnx + ONNX Runtime（内置）</span>
-        <span id="misCaptchaSize" class="captcha-model-size">…</span>
+        <span class="captcha-core-name">资源状态</span>
       </span>
-      <span id="misCaptchaStatusValue">正在检查…</span>
+      <span class="mis-captcha-status-right">
+        <span id="misCaptchaStatusValue">正在检查…</span>
+        <button type="button" id="misCaptchaUninstall" class="captcha-model-action" hidden>卸载</button>
+      </span>
+      <div id="misCaptchaProgress" class="captcha-core-progress" hidden>
+        <div class="captcha-core-progress-track">
+          <div id="misCaptchaProgressBar" class="captcha-core-progress-bar"></div>
+        </div>
+      </div>
     </div>
-    <div class="tip" data-tip-target=".mis-captcha-toggle-row">MIS 登录验证码为算术表达式（如 12+5=？），由内置模型本地识别并计算结果，无需联网。</div>
+    <div class="tip" data-tip-target=".mis-captcha-toggle-row">MIS 登录验证码为算术表达式（如 12+5=？），由本地模型识别并计算结果，无需联网。模型与 ONNX Runtime 不随扩展内置，勾选启用后如未下载将自动开始下载；卸载前请先取消勾选。</div>
   </div>
 </section>
 <div id="msg"></div>
 <script src="../../core/module-registry.js"></script>
 <script src="../../core/captcha-assets.js"></script>
+<script src="mis-assets.js"></script>
 <script src="../../core/loaders/updater-loader.js"></script>
 <script src="options.js"></script>
 <script src="../../core/loaders/module-options-standalone.js"></script>

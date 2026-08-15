@@ -152,12 +152,8 @@
     target.classList.toggle('error', error);
   }
 
-  const MIS_RUNTIME_FILES = Object.freeze([
-    { name: 'omis.onnx', path: 'modules/captcha/vendor/omis.onnx' },
-    { name: 'ort.min.js', path: 'modules/captcha/vendor/ort.min.js' },
-    { name: 'ort-wasm-simd.wasm', path: 'modules/captcha/vendor/ort-wasm-simd.wasm' }
-  ]);
   const MIS_CAPTCHA_ENABLED_KEY = 'misCaptchaRecognitionEnabled';
+  let misDownloading = false;
 
   function setMisStatus(text, error = false) {
     const target = document.getElementById('misCaptchaStatusValue');
@@ -166,29 +162,127 @@
     target.classList.toggle('error', error);
   }
 
+  function setMisProgress(visible, loaded = 0, total = 0) {
+    const progress = document.getElementById('misCaptchaProgress');
+    const bar = document.getElementById('misCaptchaProgressBar');
+    if (!(progress instanceof HTMLElement)) return;
+    progress.hidden = !visible;
+    if (bar instanceof HTMLElement) {
+      const ratio = total > 0 ? Math.max(0, Math.min(100, (loaded / total) * 100)) : 0;
+      bar.style.width = `${ratio}%`;
+    }
+  }
+
+  function updateMisUninstallButton(visible) {
+    const button = document.getElementById('misCaptchaUninstall');
+    if (button instanceof HTMLElement) button.hidden = !visible;
+  }
+
+  async function getMisAssets() {
+    if (!global.BjtuMisAssets) return null;
+    return global.BjtuMisAssets;
+  }
+
+  function misElementSuffix(key) {
+    return key === 'ort-wasm-simd.wasm' ? 'Wasm' : 'Omis';
+  }
+
+  function setMisFileStatus(key, text, error = false) {
+    const target = document.getElementById(`misCaptchaStatus${misElementSuffix(key)}`);
+    if (!(target instanceof HTMLElement)) return;
+    target.textContent = String(text ?? '');
+    target.classList.toggle('error', error);
+  }
+
+  function setMisFileSize(key, text) {
+    const target = document.getElementById(`misCaptchaSize${misElementSuffix(key)}`);
+    if (target instanceof HTMLElement) target.textContent = String(text ?? '');
+  }
+
   async function refreshMisCaptchaOptions() {
     const toggle = document.getElementById('misCaptchaRecognitionEnabled');
-    const sizeEl = document.getElementById('misCaptchaSize');
-    if (!toggle && !sizeEl) return;
+    const assets = await getMisAssets();
+    if (!toggle && !assets) return;
     try {
-      const results = await Promise.all(MIS_RUNTIME_FILES.map(async ({ name, path }) => {
-        try {
-          const response = await fetch(chrome.runtime.getURL(path), { cache: 'no-store' });
-          if (!response.ok) return { name, ok: false, size: 0 };
-          const blob = await response.blob();
-          return { name, ok: true, size: blob.size };
-        } catch {
-          return { name, ok: false, size: 0 };
-        }
-      }));
-      const total = results.reduce((sum, item) => sum + item.size, 0);
-      if (sizeEl instanceof HTMLElement) sizeEl.textContent = formatBytes(total);
-      const missing = results.filter((item) => !item.ok).map((item) => item.name);
-      setMisStatus(missing.length ? `缺失：${missing.join('、')}` : '已就绪', missing.length > 0);
-      const stored = await chrome.storage.local.get([MIS_CAPTCHA_ENABLED_KEY]).catch(() => ({}));
+      const [status, stored] = await Promise.all([
+        assets ? assets.getMisAssetsStatus() : Promise.resolve({ files: {}, downloading: [], installed: false }),
+        chrome.storage.local.get([MIS_CAPTCHA_ENABLED_KEY]).catch(() => ({}))
+      ]);
       if (toggle instanceof HTMLInputElement) toggle.checked = stored[MIS_CAPTCHA_ENABLED_KEY] !== false;
+      const missing = [];
+      if (assets) {
+        for (const item of assets.MIS_FILES) {
+          const installed = status.files[item.key] === 'installed';
+          const record = installed ? await assets.getMisAsset(item.key) : null;
+          setMisFileSize(item.key, installed ? formatBytes(record?.blob?.size || 0) : '—');
+          setMisFileStatus(item.key, installed ? '已安装' : '未安装', !installed);
+          if (!installed) missing.push(item.label);
+        }
+      }
+      if (status.downloading.length) {
+        setMisStatus(`正在下载 ${status.downloading.join('、')}…`, false);
+        setMisProgress(true);
+        updateMisUninstallButton(false);
+      } else if (missing.length) {
+        setMisStatus(`未安装：${missing.join('；')}`, true);
+        setMisProgress(false);
+        updateMisUninstallButton(false);
+      } else {
+        setMisStatus('已就绪', false);
+        setMisProgress(false);
+        updateMisUninstallButton(true);
+      }
     } catch (error) {
       setMisStatus(`检查失败：${String(error?.message || error)}`, true);
+    }
+  }
+
+  function startMisDownload() {
+    if (misDownloading || !global.BjtuMisAssets) return;
+    misDownloading = true;
+    setMisStatus('开始下载…', false);
+    setMisProgress(true, 0, 1);
+    updateMisUninstallButton(false);
+    global.BjtuMisAssets.ensureMisAssets({
+      onProgress: ({ key, loaded, total }) => {
+        setMisStatus(`正在下载 ${key}…`, false);
+        setMisProgress(true, loaded, total);
+      }
+    }).then(() => {
+      setMisProgress(false);
+      updateMisUninstallButton(true);
+      setMessage('MIS 验证码识别资源已下载完成');
+      void refreshMisCaptchaOptions();
+    }).catch((error) => {
+      if (error?.name === 'AbortError') {
+        setMisStatus('下载已取消', true);
+      } else {
+        setMisStatus(`下载失败：${String(error?.message || error)}`, true);
+        setMessage(`MIS 验证码识别资源下载失败：${String(error?.message || error)}`, false);
+      }
+      setMisProgress(false);
+      void refreshMisCaptchaOptions();
+    }).finally(() => {
+      misDownloading = false;
+    });
+  }
+
+  async function uninstallMisAssets() {
+    const assets = await getMisAssets();
+    if (!assets) return;
+    const toggle = document.getElementById('misCaptchaRecognitionEnabled');
+    if (toggle instanceof HTMLInputElement && toggle.checked) {
+      setMessage('请先取消勾选「启用 MIS 算术验证码识别」再卸载', false);
+      return;
+    }
+    try {
+      for (const item of assets.MIS_FILES) {
+        await assets.uninstallMisAsset(item.key);
+      }
+      setMessage('已卸载 MIS 验证码识别资源');
+      void refreshMisCaptchaOptions();
+    } catch (error) {
+      setMessage(`卸载失败：${String(error?.message || error)}`, false);
     }
   }
 
@@ -646,8 +740,26 @@
         const enabled = toggle.checked === true;
         chrome.storage.local.set({ [MIS_CAPTCHA_ENABLED_KEY]: enabled }).catch(() => {});
         chrome.runtime.sendMessage({ type: 'MIS_CAPTCHA_SETTING_CHANGED', enabled }).catch(() => {});
-        setMessage(enabled ? '已启用 MIS 算术验证码识别' : '已禁用 MIS 算术验证码识别');
+        if (enabled) {
+          void (async () => {
+            const status = global.BjtuMisAssets
+              ? await global.BjtuMisAssets.getMisAssetsStatus().catch(() => null)
+              : null;
+            if (status && !status.installed && !status.downloading.length) {
+              setMessage('正在自动下载 MIS 验证码识别资源…');
+              startMisDownload();
+            } else {
+              setMessage('已启用 MIS 算术验证码识别');
+            }
+          })();
+        } else {
+          setMessage('已禁用 MIS 算术验证码识别');
+        }
       });
+    }
+    const uninstallButton = document.getElementById('misCaptchaUninstall');
+    if (uninstallButton instanceof HTMLButtonElement) {
+      uninstallButton.addEventListener('click', () => void uninstallMisAssets());
     }
     void initializeModelOptions().catch((error) => {
       list.textContent = `识别模型列表加载失败：${String(error?.message || error)}`;

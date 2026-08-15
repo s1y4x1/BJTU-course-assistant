@@ -123,12 +123,48 @@
   color: #b91c1c;
 }
 
+.mis-captcha-status-right {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.mis-captcha-status-right .captcha-model-action {
+  margin: 0;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.mis-captcha-status-right .captcha-model-action:hover {
+  background: #b91c1c;
+}
+
+.mis-captcha-status-right .captcha-model-action[hidden] {
+  display: none;
+}
+
 html[data-color-scheme="dark"] .mis-captcha-toggle-label {
   color: #e2e8f0;
 }
 
 html[data-color-scheme="dark"] .mis-captcha-status #misCaptchaStatusValue.error {
   color: #fca5a5;
+}
+
+html[data-color-scheme="dark"] .mis-captcha-status-right .captcha-model-action {
+  background: #b91c1c;
+}
+
+html[data-color-scheme="dark"] .mis-captcha-status-right .captcha-model-action:hover {
+  background: #991b1b;
 }
 
 @keyframes captchaCoreProgressIndeterminate {
