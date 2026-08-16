@@ -16,15 +16,17 @@
     <span>尚未登录 chat.qwen.ai</span>
     <button id="qwen-chat-login-btn" class="btn qwen-chat-login-btn" type="button">打开登录页</button>
   </div>
-  <div class="qwen-chat-tools-row">
-    <label class="qwen-chat-thinking-toggle" title="是否让模型在回答前进行深度思考">
-      <input type="checkbox" id="qwen-chat-thinking" checked>
-      <span>思考</span>
-    </label>
-  </div>
   <form id="qwen-chat-input-form" class="qwen-chat-input-row">
     <textarea id="qwen-chat-input" class="qwen-chat-input" rows="1" placeholder="向 AI 提问，例如：我还有哪些作业没交？"></textarea>
-    <button id="qwen-chat-stop" class="btn qwen-chat-stop" type="button" hidden>停止</button>
-    <button id="qwen-chat-send" class="btn qwen-chat-send" type="submit">发送</button>
+    <span class="qwen-chat-input-actions">
+      <label class="qwen-chat-thinking-toggle" title="是否让模型在回答前进行深度思考">
+        <input type="checkbox" id="qwen-chat-thinking">
+        <span>思考</span>
+      </label>
+      <span class="qwen-chat-input-buttons">
+        <button id="qwen-chat-stop" class="btn qwen-chat-stop" type="button" hidden>停止</button>
+        <button id="qwen-chat-send" class="btn qwen-chat-send" type="submit">发送</button>
+      </span>
+    </span>
   </form>
 </div>

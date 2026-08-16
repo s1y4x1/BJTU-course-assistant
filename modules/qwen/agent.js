@@ -129,9 +129,11 @@
       const response = await client.streamCompletions({
         chatId: effectiveChatId,
         modelId,
-        messages: history.concat([message]),
+        messages: [message],
         onEvent: (event) => {
-          if (event?.text) {
+          if (event?.thinking) {
+            onEvent?.({ thinking: event.thinking, iteration });
+          } else if (event?.text) {
             fullText += event.text;
             onDelta?.(event.text);
           } else if (event?.finished) {

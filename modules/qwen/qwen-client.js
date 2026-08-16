@@ -111,18 +111,47 @@
     };
   }
 
+  async function buildBrowserHeadersWithAntiBot() {
+    const base = buildBrowserHeaders();
+    let antiBot = {};
+    try {
+      const data = await chrome?.storage?.session?.get?.('qwenAntiBotHeaders') || {};
+      const h = data?.qwenAntiBotHeaders || {};
+      if (h.bxUa && h.capturedAt && (Date.now() - h.capturedAt <= 120000)) {
+        antiBot = { 'bx-ua': h.bxUa };
+        if (h.bxUmidtoken) antiBot['bx-umidtoken'] = h.bxUmidtoken;
+      }
+    } catch {
+      // 忽略
+    }
+    return { ...base, ...antiBot };
+  }
+
+  function detectApiErrorText(text) {
+    const t = String(text || '').trim();
+    if (!t) return '';
+    if (t.startsWith('<')) return 'WAF_CHALLENGE';
+    try {
+      const obj = JSON.parse(t);
+      const ret0 = String((Array.isArray(obj?.ret) ? obj.ret[0] : '') || '');
+      const dataUrl = String(obj?.data?.url || '');
+      if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') || ret0.includes('RGV587') || dataUrl.includes('/_____tmd_____/punish')) {
+        return 'WAF_PUNISH';
+      }
+      return '';
+    } catch {
+      return 'WAF_CHALLENGE';
+    }
+  }
+
   function parseJsonOrThrow(text) {
     if (!text) return null;
+    const kind = detectApiErrorText(text);
+    if (kind === 'WAF_PUNISH') throw wafPunishError();
+    if (kind === 'WAF_CHALLENGE') throw unparsableError();
     try {
-      const value = JSON.parse(text);
-      const ret0 = String((Array.isArray(value?.ret) ? value.ret[0] : '') || '');
-      const dataUrl = String(value?.data?.url || '');
-      if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') || ret0.includes('RGV587') || dataUrl.includes('/_____tmd_____/punish')) {
-        throw wafPunishError();
-      }
-      return value;
-    } catch (error) {
-      if (error?.code === 'WAF_PUNISH') throw error;
+      return JSON.parse(text);
+    } catch {
       throw unparsableError();
     }
   }
@@ -135,7 +164,7 @@
         Accept: 'application/json, text/plain, */*',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        ...buildBrowserHeaders(),
+        ...(await buildBrowserHeadersWithAntiBot()),
         ...(options.headers || {})
       },
       credentials: 'include',
@@ -201,6 +230,7 @@
     const data = await requestJson(`${CHAT_BASE}/api/v2/chats/new`, {
       method: 'POST',
       body: {
+        title: 'New Chat',
         chatId: '',
         models: [String(modelId || '')],
         project_id: '',
@@ -334,7 +364,7 @@
         Accept: 'text/event-stream',
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...buildBrowserHeaders()
+        ...(await buildBrowserHeadersWithAntiBot())
       },
       credentials: 'include',
       body: JSON.stringify({
@@ -354,20 +384,26 @@
     });
     if (response.status === 401 || response.status === 403) throw notLoggedInError();
     if (!response.ok) throw new Error(`通义千问 API 请求失败：HTTP ${response.status}`);
-    if (!response.body?.getReader) {
+    const contentType = String(response.headers.get('content-type') || '');
+    if (!response.body?.getReader || !contentType.includes('event-stream')) {
       const text = await response.text();
-      if (text) onEvent?.({ text });
-      return { text, responseId: '' };
+      const kind = detectApiErrorText(text);
+      if (kind === 'WAF_PUNISH') throw wafPunishError();
+      if (kind || text.trim()) throw unparsableError();
+      return { text: '', responseId: '' };
     }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let rawText = '';
+    let sawDataLine = false;
     let responseId = '';
     let fullText = '';
 
     const handleLine = (line) => {
       if (!line.startsWith('data:')) return;
+      sawDataLine = true;
       let payload;
       try {
         payload = JSON.parse(line.slice(5).trim());
@@ -385,20 +421,27 @@
       }
       const content = String(delta.content || '');
       const status = String(delta.status || '');
+      const phase = String(delta.phase || '');
       if (status === 'finished') {
         onEvent?.({ finished: true, responseId });
         return;
       }
       if (content) {
-        fullText += content;
-        onEvent?.({ text: content, responseId });
+        if (phase === 'think') {
+          onEvent?.({ thinking: content, responseId });
+        } else {
+          fullText += content;
+          onEvent?.({ text: content, responseId });
+        }
       }
     };
 
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true });
+      rawText += chunk;
+      buffer += chunk;
       let newlineIndex;
       while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, newlineIndex).trim();
@@ -407,6 +450,11 @@
       }
     }
     if (buffer.trim()) handleLine(buffer.trim());
+    if (!sawDataLine && rawText.trim()) {
+      const kind = detectApiErrorText(rawText);
+      if (kind === 'WAF_PUNISH') throw wafPunishError();
+      if (kind) throw unparsableError();
+    }
     return { text: fullText, responseId };
   }
 
@@ -422,19 +470,22 @@
     let tab = await findChatTab();
     if (!tab) tab = await ensureChatTab();
     if (tab) {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      let lastError = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
         if (attempt > 0) {
           if (receivedAny) break;
-          await sleep(2500);
+          await sleep(3000 * attempt);
         }
         try {
           return await streamViaContentScript(tab, wrappedOptions);
         } catch (error) {
           if (error?.name === 'AbortError') throw error;
-          if (error?.code === 'WAF_PUNISH' && attempt === 0 && !receivedAny) continue;
+          lastError = error;
+          if (error?.code === 'WAF_PUNISH' && attempt < 2 && !receivedAny) continue;
           break;
         }
       }
+      if (lastError) throw lastError;
     }
     return streamCompletionsDirect(wrappedOptions);
   }

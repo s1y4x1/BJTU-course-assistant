@@ -16,6 +16,8 @@
   let port = null;
   let activeBubble = null;
   let busy = false;
+  let sessionChatId = '';
+  let nextReplyFresh = false;
 
   function el(id) {
     return document.getElementById(id);
@@ -129,6 +131,8 @@
       setStatus('未登录', 'error');
       showLoginHint(true);
     }
+    const thinking = el(THINKING_ID);
+    if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
     return status;
   }
 
@@ -141,6 +145,30 @@
       activeBubble = bubble;
     }
     return activeBubble;
+  }
+
+  function appendAssistantText(bubble, text) {
+    if (!text) return;
+    if (bubble.lastChild instanceof Text) {
+      bubble.lastChild.appendData(String(text));
+    } else {
+      bubble.appendChild(document.createTextNode(String(text)));
+    }
+  }
+
+  function ensureThinkingBlock(bubble) {
+    let details = bubble.querySelector(':scope > .qwen-chat-thinking');
+    if (!(details instanceof HTMLElement)) {
+      details = document.createElement('details');
+      details.className = 'qwen-chat-thinking';
+      const summary = document.createElement('summary');
+      summary.textContent = '思考过程';
+      const body = document.createElement('div');
+      body.className = 'qwen-chat-thinking-body';
+      details.append(summary, body);
+      bubble.appendChild(details);
+    }
+    return details.querySelector('.qwen-chat-thinking-body');
   }
 
   function sendMessage(text) {
@@ -157,15 +185,34 @@
       port = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
       port.onMessage.addListener((message) => {
         if (message?.type === 'delta') {
+          if (nextReplyFresh) {
+            activeBubble = null;
+            nextReplyFresh = false;
+          }
           const bubble = ensureAssistantBubble();
-          if (bubble) bubble.textContent += message.text;
+          if (bubble) appendAssistantText(bubble, message.text);
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+        } else if (message?.type === 'thinking') {
+          if (nextReplyFresh) {
+            activeBubble = null;
+            nextReplyFresh = false;
+          }
+          const bubble = ensureAssistantBubble();
+          if (bubble) {
+            const body = ensureThinkingBlock(bubble);
+            if (body) appendAssistantText(body, message.text);
+            const messages = el(MESSAGES_ID);
+            if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+          }
         } else if (message?.type === 'operation') {
           lastOperationCard.card = appendOperationCard(message.operation);
         } else if (message?.type === 'operationResult') {
           updateOperationResult(lastOperationCard.card, message.result);
+          nextReplyFresh = true;
         } else if (message?.type === 'done') {
+          sessionChatId = String(message.chatId || sessionChatId);
+          nextReplyFresh = false;
           if (activeBubble instanceof HTMLElement && !activeBubble.textContent) {
             activeBubble.textContent = '（无回复）';
           }
@@ -175,8 +222,10 @@
           port.disconnect();
           port = null;
         } else if (message?.type === 'stopped') {
-          if (activeBubble instanceof HTMLElement && activeBubble.textContent) {
-            activeBubble.textContent += '\n（已停止）';
+          nextReplyFresh = false;
+          if (activeBubble instanceof HTMLElement) {
+            if (activeBubble.textContent) appendAssistantText(activeBubble, '\n（已停止）');
+            else appendAssistantText(activeBubble, '（已停止）');
           }
           activeBubble = null;
           setBusy(false);
@@ -184,19 +233,21 @@
           port.disconnect();
           port = null;
         } else if (message?.type === 'error') {
+          nextReplyFresh = false;
           if (message.code === 'NOT_LOGGED_IN') {
             setStatus('未登录', 'error');
             showLoginHint(true);
             if (activeBubble instanceof HTMLElement) activeBubble.remove();
             activeBubble = null;
-          } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_CHALLENGE') {
-            if (activeBubble instanceof HTMLElement) {
-              if (activeBubble.textContent) activeBubble.textContent += '\n';
-              activeBubble.textContent += `（${message.message || '请求失败'}）`;
-            }
-            activeBubble = null;
-            setStatus('风控校验', 'error');
-            void send('QWEN_OPEN_LOGIN');
+} else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_CHALLENGE') {
+          const bubble = ensureAssistantBubble();
+          if (bubble instanceof HTMLElement) {
+            if (bubble.textContent) bubble.textContent += '\n';
+            bubble.textContent += `（${message.message || '请求失败'}）`;
+          }
+          activeBubble = null;
+          setStatus('风控校验', 'error');
+          void send('QWEN_OPEN_LOGIN');
           } else {
             appendMessage('error', message.message || '请求失败');
           }
@@ -212,7 +263,7 @@
         }
         port = null;
       });
-      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked });
+      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId });
     };
 
     try {
@@ -259,6 +310,12 @@
     if (modelSelect instanceof HTMLSelectElement) {
       modelSelect.addEventListener('change', () => {
         void send('QWEN_SETTINGS_SET', { modelId: modelSelect.value });
+      });
+    }
+    const thinkingToggle = el(THINKING_ID);
+    if (thinkingToggle instanceof HTMLInputElement) {
+      thinkingToggle.addEventListener('change', () => {
+        void send('QWEN_SETTINGS_SET', { thinkingEnabled: thinkingToggle.checked === true });
       });
     }
     if (closeBtn instanceof HTMLButtonElement) {

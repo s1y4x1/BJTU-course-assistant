@@ -85,6 +85,8 @@
     const status = await send('QWEN_GET_STATUS');
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
+    const thinking = document.getElementById('qwenThinkingEnabled');
+    if (thinking instanceof HTMLInputElement) thinking.checked = status.thinkingEnabled === true;
     if (status.ok) {
       if (status.loggedIn) {
         setLoginStatus('已登录 chat.qwen.ai', 'ok');
@@ -147,6 +149,15 @@
       });
     }
 
+    const thinking = document.getElementById('qwenThinkingEnabled');
+    if (thinking instanceof HTMLInputElement) {
+      thinking.addEventListener('change', () => {
+        void send('QWEN_SETTINGS_SET', { thinkingEnabled: thinking.checked === true }).then((response) => {
+          setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
+        });
+      });
+    }
+
     const openLogin = document.getElementById('qwenOpenLogin');
     if (openLogin instanceof HTMLButtonElement) {
       openLogin.addEventListener('click', () => {
@@ -185,7 +196,7 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null });
+    await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null, thinkingEnabled: false });
     void refresh();
   }
 

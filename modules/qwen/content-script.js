@@ -49,9 +49,23 @@
       'X-Request-Id': newRequestId(),
       source: 'web',
       'bx-v': '2.5.37',
+      'Content-Type': 'application/json',
       Accept: isStream ? 'application/json' : 'application/json, text/plain, */*',
       ...(extra || {})
     };
+  }
+
+  async function getAntiBotHeaders() {
+    try {
+      const data = await chrome?.storage?.session?.get?.('qwenAntiBotHeaders') || {};
+      const h = data?.qwenAntiBotHeaders || {};
+      if (!h.bxUa || !h.capturedAt || (Date.now() - h.capturedAt > 120000)) return {};
+      const out = { 'bx-ua': h.bxUa };
+      if (h.bxUmidtoken) out['bx-umidtoken'] = h.bxUmidtoken;
+      return out;
+    } catch {
+      return {};
+    }
   }
 
   // 识别 baxia WAF 的惩罚/挑战响应文本，返回错误代号
@@ -83,7 +97,7 @@
     try {
       const response = await fetch(url, {
         method,
-        headers: buildApiHeaders(isStream, payload.headers || {}),
+        headers: buildApiHeaders(isStream, { ...(await getAntiBotHeaders()), ...(payload.headers || {}) }),
         credentials: 'include',
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal
@@ -147,13 +161,18 @@
         }
         const content = String(delta.content || '');
         const status = String(delta.status || '');
+        const phase = String(delta.phase || '');
         if (status === 'finished') {
           emit({ finished: true, responseId });
           return;
         }
         if (content) {
-          fullText += content;
-          emit({ text: content, responseId });
+          if (phase === 'think') {
+            emit({ thinking: content, responseId });
+          } else {
+            fullText += content;
+            emit({ text: content, responseId });
+          }
         }
       };
 

@@ -223,12 +223,18 @@ html[data-color-scheme="dark"] .qwen-chat-login-hint {
   font-size: 12px;
 }
 
-.qwen-chat-tools-row {
+.qwen-chat-input-actions {
   flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   justify-content: flex-end;
-  align-items: center;
-  padding: 6px 12px 0;
+  gap: 6px;
+}
+
+.qwen-chat-input-buttons {
+  display: flex;
+  gap: 8px;
 }
 
 .qwen-chat-thinking-toggle {
@@ -303,4 +309,41 @@ html[data-color-scheme="dark"] .qwen-chat-input {
 
 .qwen-chat-stop:hover {
   background: #b91c1c;
+}
+
+.qwen-chat-thinking {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.qwen-chat-thinking summary {
+  cursor: pointer;
+  color: #64748b;
+  user-select: none;
+  list-style-position: inside;
+}
+
+.qwen-chat-thinking summary:hover {
+  color: #475569;
+}
+
+.qwen-chat-thinking-body {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  color: #64748b;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-thinking summary {
+  color: #94a3b8;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-thinking-body {
+  background: #1e293b;
+  color: #94a3b8;
 }

@@ -2,7 +2,7 @@
 (function initBjtuQwenBackground(global) {
   'use strict';
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenThinkingEnabled'];
 
   async function getSettings() {
     const stored = await chrome.storage.local.get(SETTINGS_KEYS).catch(() => ({}));
@@ -11,7 +11,8 @@
       modelId: String(stored.qwenModelId || ''),
       enabledOperations: Array.isArray(stored.qwenEnabledOperations)
         ? stored.qwenEnabledOperations
-        : null
+        : null,
+      thinkingEnabled: stored.qwenThinkingEnabled === true
     };
   }
 
@@ -24,6 +25,7 @@
         ? patch.enabledOperations
         : null;
     }
+    if (typeof patch?.thinkingEnabled === 'boolean') next.qwenThinkingEnabled = patch.thinkingEnabled;
     if (Object.keys(next).length) await chrome.storage.local.set(next);
     return getSettings();
   }
@@ -63,11 +65,12 @@
             const result = await global.BjtuQwenAgent.runTurn({
               modelId,
               userText: String(message.text).trim(),
+              chatId: String(message.chatId || ''),
               enabledOps: settings.enabledOperations,
               groups,
               signal: abortController.signal,
               turnRef,
-              thinking: message.thinking === true,
+              thinking: settings.thinkingEnabled === true,
               onDelta: (text) => {
                 if (port.disconnected) return;
                 port.postMessage({ type: 'delta', text });
@@ -76,6 +79,7 @@
                 if (port.disconnected) return;
                 if (event?.operation) port.postMessage({ type: 'operation', operation: event.operation });
                 if (event?.operationResult) port.postMessage({ type: 'operationResult', result: event.operationResult });
+                if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
               }
             });
             if (port.disconnected) return;
@@ -197,5 +201,35 @@
       }
       return false;
     });
+  }
+
+  // 捕获 chat.qwen.ai 页面自身 API 请求中 baxia 动态生成的反爬标头（bx-ua /
+  // bx-umidtoken），存入 session 存储供扩展请求复用，降低触发风控（WAF punish）的概率。
+  if (typeof chrome === 'object' && chrome?.webRequest?.onBeforeSendHeaders) {
+    chrome.webRequest.onBeforeSendHeaders.addListener(
+      (details) => {
+        try {
+          const headers = details?.requestHeaders || [];
+          const pick = (name) => {
+            const lower = name.toLowerCase();
+            const item = headers.find((h) => String(h?.name || '').toLowerCase() === lower);
+            return String(item?.value || '');
+          };
+          const bxUa = pick('bx-ua');
+          if (!bxUa) return;
+          void chrome.storage.session.set({
+            qwenAntiBotHeaders: {
+              bxUa,
+              bxUmidtoken: pick('bx-umidtoken'),
+              capturedAt: Date.now()
+            }
+          }).catch(() => {});
+        } catch {
+          // 忽略捕获失败
+        }
+      },
+      { urls: ['https://chat.qwen.ai/api/*'] },
+      ['requestHeaders']
+    );
   }
 })(globalThis);
