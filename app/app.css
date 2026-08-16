@@ -448,6 +448,8 @@ body.course-helper-focus .column-collapse-toggle {
     width: 18px;
     height: 18px;
     border-width: 2px;
+    border-color: #64748b;
+    border-top-color: transparent;
 }
 body.course-helper-layout-processing .course-list-stage {
     min-height: 180px;
