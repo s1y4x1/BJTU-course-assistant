@@ -127,6 +127,31 @@
     return String(message?.content || '');
   }
 
+  function isResBlock(text) {
+    return /^```res\s*[\s\S]*```\s*$/.test(String(text || '').trim());
+  }
+
+  function extractResJson(text) {
+    const match = /^```res\s*([\s\S]*?)```\s*$/.exec(String(text || '').trim());
+    return match ? String(match[1] || '').trim() : String(text || '');
+  }
+
+  function appendResCard(text) {
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement)) return;
+    const card = document.createElement('div');
+    card.className = 'qwen-chat-op';
+    const name = document.createElement('div');
+    name.className = 'qwen-chat-op-name';
+    name.textContent = '操作结果';
+    const content = document.createElement('div');
+    content.className = 'qwen-chat-op-result';
+    content.textContent = extractResJson(text);
+    card.append(name, content);
+    messages.appendChild(card);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
   function renderHistory(messages) {
     const messagesEl = el(MESSAGES_ID);
     if (!(messagesEl instanceof HTMLElement)) return;
@@ -135,7 +160,12 @@
     for (const message of list) {
       const role = String(message?.role || '');
       if (role === 'user') {
-        appendMessage('user', extractUserQuestion(message?.content));
+        const content = String(message?.content || '');
+        if (isResBlock(content)) {
+          appendResCard(content);
+        } else {
+          appendMessage('user', extractUserQuestion(content));
+        }
       } else if (role === 'assistant') {
         const text = extractAssistantReply(message);
         appendMessage('assistant', text || '（无回复）');

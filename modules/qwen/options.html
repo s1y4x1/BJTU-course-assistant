@@ -23,11 +23,6 @@
     </label>
   </div>
 
-  <div id="qwen-login-status" class="qwen-login-status">
-    <span id="qwenLoginStatusValue" class="qwen-login-status-value">正在检查登录状态…</span>
-    <button type="button" id="qwenOpenLogin" class="qwen-action-btn" hidden>打开登录页</button>
-  </div>
-
   <div class="qwen-setting-row">
     <label class="qwen-setting-label" for="qwenModelSelect">模型</label>
     <select id="qwenModelSelect" class="qwen-model-select" disabled>
@@ -52,7 +47,7 @@
     <div class="qwen-operation-loading"><span class="options-page-spinner"></span>正在获取操作列表…</div>
   </div>
 
-  <div class="tip" data-tip-target="#qwenLoginStatusValue">AI 需要登录 chat.qwen.ai 才能使用。操作由本扩展各模块提供，AI 会在回复末尾调用操作并自动把结果继续发送给它。</div>
+  <div class="tip">操作由本扩展各模块提供，AI 会在回复末尾调用操作并自动把结果继续发送给它。</div>
 </section>
 
 <script src="../../core/storage-utils.js"></script>

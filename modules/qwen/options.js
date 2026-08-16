@@ -19,16 +19,6 @@
     });
   }
 
-  function setLoginStatus(text, state = '') {
-    const value = document.getElementById('qwenLoginStatusValue');
-    const openBtn = document.getElementById('qwenOpenLogin');
-    if (value instanceof HTMLElement) {
-      value.textContent = text;
-      value.className = `qwen-login-status-value ${state}`;
-    }
-    if (openBtn instanceof HTMLButtonElement) openBtn.hidden = state !== 'error';
-  }
-
   function renderOperations(groups, selectedNames, allSelected) {
     const list = document.getElementById('qwenOperationList');
     if (!(list instanceof HTMLElement)) return;
@@ -50,12 +40,14 @@
       const items = document.createElement('div');
       items.className = 'qwen-operation-group-items';
       for (const name of names) {
+        const isMeta = String(name).startsWith('qwen.');
         const label = document.createElement('label');
         label.className = 'qwen-operation-item';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.dataset.operationName = name;
-        checkbox.checked = allSelected || selectedSet.has(name) || anySelected.has(name) || selectedSet.size === 0;
+        checkbox.checked = isMeta || allSelected || selectedSet.has(name) || anySelected.has(name) || selectedSet.size === 0;
+        checkbox.disabled = isMeta;
         const code = document.createElement('code');
         code.textContent = name;
         label.append(checkbox, code);
@@ -87,15 +79,6 @@
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
     const thinking = document.getElementById('qwenThinkingEnabled');
     if (thinking instanceof HTMLInputElement) thinking.checked = status.thinkingEnabled === true;
-    if (status.ok) {
-      if (status.loggedIn) {
-        setLoginStatus('已登录 chat.qwen.ai', 'ok');
-      } else {
-        setLoginStatus('未登录 chat.qwen.ai，请打开登录页', 'error');
-      }
-    } else {
-      setLoginStatus('状态获取失败', 'error');
-    }
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
     const select = document.getElementById('qwenModelSelect');
@@ -134,12 +117,6 @@
     initialized = true;
     setMessage = typeof context?.setMessage === 'function' ? context.setMessage : setMessage;
 
-    chrome.runtime.onMessage.addListener((message) => {
-      if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
-        void refresh().catch(() => {});
-      }
-    });
-
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) {
       toggle.addEventListener('change', () => {
@@ -154,16 +131,6 @@
       thinking.addEventListener('change', () => {
         void send('QWEN_SETTINGS_SET', { thinkingEnabled: thinking.checked === true }).then((response) => {
           setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
-        });
-      });
-    }
-
-    const openLogin = document.getElementById('qwenOpenLogin');
-    if (openLogin instanceof HTMLButtonElement) {
-      openLogin.addEventListener('click', () => {
-        void send('QWEN_OPEN_LOGIN').then(() => {
-          setLoginStatus('请在打开的页面中登录 chat.qwen.ai…', '');
-          setTimeout(() => void refresh(), 5000);
         });
       });
     }
@@ -187,7 +154,7 @@
     const opsToggle = document.getElementById('qwenOpsToggle');
     if (opsToggle instanceof HTMLButtonElement) {
       opsToggle.addEventListener('click', () => {
-        document.querySelectorAll('#qwenOperationList input[type="checkbox"]').forEach((input) => { input.checked = !input.checked; });
+        document.querySelectorAll('#qwenOperationList input[type="checkbox"]:not(:disabled)').forEach((input) => { input.checked = !input.checked; });
         void send('QWEN_SETTINGS_SET', { enabledOperations: collectSelectedOperations() }).then(() => setMessage('已保存'));
       });
     }

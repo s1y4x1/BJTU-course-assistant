@@ -66,6 +66,16 @@
     return requireGlobal('BjtuVeHomeworkCore');
   }
 
+  async function getEnabledOperationSet() {
+    try {
+      const stored = await chrome?.storage?.local?.get?.(['qwenEnabledOperations']) || {};
+      const list = stored?.qwenEnabledOperations;
+      return Array.isArray(list) ? new Set(list.map((item) => String(item).trim())) : null;
+    } catch {
+      return null;
+    }
+  }
+
   const ACADEMIC_DIRECT = {
     currentAccount: { fn: 'getContext', type: 'ACADEMIC_GET_CONTEXT' },
     scores: { fn: 'loadScores', type: 'ACADEMIC_LOAD_SCORES' },
@@ -93,7 +103,7 @@
         '',
         '获取智慧课程平台当前登录账号的信息。',
         '',
-        '**调用示例**：{"name":"ve.currentUser","arguments":{}}',
+        '**调用示例**：`ve.currentUser()`',
         '',
         '**返回示例**：{"userId":"...","userName":"张三","loginName":"zhangsan","roleCode":"student","roleName":"学生"}',
         '未登录时返回 {"ok":false,"code":"LOGIN_REQUIRED"}。'
@@ -115,7 +125,7 @@
         '',
         '列出智慧课程平台本地保存的所有账号（不含密码等敏感字段）。',
         '',
-        '**调用示例**：{"name":"ve.accounts","arguments":{}}',
+        '**调用示例**：`ve.accounts()`',
         '',
         '**返回示例**：[{"loginName":"zhangsan","userName":"张三","roleName":"学生"}]'
       ].join('\n'),
@@ -141,7 +151,7 @@
         '',
         '获取智慧课程平台当前的学期列表，并给出建议使用的学期代码。',
         '',
-        '**调用示例**：{"name":"ve.terms","arguments":{}}',
+        '**调用示例**：`ve.terms()`',
         '',
         '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","currentFlag":2}],"recommended":"2025-2026-1"}'
       ].join('\n'),
@@ -164,7 +174,7 @@
         '',
         '**参数**：{"xqCode":"可选，学期代码，如 2025-2026-1"}',
         '',
-        '**调用示例**：{"name":"ve.courses","arguments":{}}',
+        '**调用示例**：`ve.courses()`',
         '',
         '**返回示例**：[{"id":"...","name":"高等数学","teacherName":"..."}]',
         '返回的每一项至少包含 id（课程ID）、name（课程名）。'
@@ -197,7 +207,7 @@
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：{"name":"ve.courseHomework","arguments":{"courseId":"xxx"}}',
+        '**调用示例**：`ve.courseHomework({courseId: "xxx"})`',
         '',
         '**返回示例**：[{"id":"...","title":"作业标题","end_time":"2026-01-01 00:00:00","subStatus":"未提交"}]'
       ].join('\n'),
@@ -221,7 +231,7 @@
         '',
         '**参数**：{"futureOnly":true,"可选，默认 true，只返回有截止时间的未提交作业"}',
         '',
-        '**调用示例**：{"name":"ve.pendingAssignments","arguments":{}}',
+        '**调用示例**：`ve.pendingAssignments()`',
         '',
         '**返回示例**：[{"key":"...","platform":"智慧课程平台","courseName":"课程名","title":"作业标题","deadline":1234567890000,"actionUrl":"..."}]'
       ].join('\n'),
@@ -257,7 +267,7 @@
         '',
         '**参数**：{"loginName":"登录名，必填","useQuickLogin":true,"可选，优先使用极速登录"}',
         '',
-        '**调用示例**：{"name":"ve.login","arguments":{"loginName":"zhangsan"}}',
+        '**调用示例**：`ve.login({loginName: "zhangsan"})`',
         '',
         '**返回示例**：{"ok":true,"userName":"张三"}。失败时 ok 为 false 并带 message。'
       ].join('\n'),
@@ -285,7 +295,7 @@
         '',
         '获取教务系统当前登录的学号、已保存账号与各项监控开关状态。',
         '',
-        '**调用示例**：{"name":"academic.currentAccount","arguments":{}}',
+        '**调用示例**：`academic.currentAccount()`',
         '',
         '**返回示例**：{"ok":true,"studentId":"...","accounts":[{"studentId":"...","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
       ].join('\n'),
@@ -303,7 +313,7 @@
         '',
         '查询教务系统最新成绩。需要教务系统已登录。',
         '',
-        '**调用示例**：{"name":"academic.scores","arguments":{}}',
+        '**调用示例**：`academic.scores()`',
         '',
         '**返回示例**：{"ok":true,"scores":[{"courseName":"高等数学","score":95,"credits":4}]}'
       ].join('\n'),
@@ -321,7 +331,7 @@
         '',
         '查询教务系统最新考试安排。需要教务系统已登录。',
         '',
-        '**调用示例**：{"name":"academic.exams","arguments":{}}',
+        '**调用示例**：`academic.exams()`',
         '',
         '**返回示例**：{"ok":true,"exams":[{"courseName":"高等数学","examTime":"2026-01-10 09:00"}]}'
       ].join('\n'),
@@ -341,7 +351,7 @@
         '',
         '**参数**：{"scheduleType":"可选，semester 或 week"}',
         '',
-        '**调用示例**：{"name":"academic.schedule","arguments":{}}',
+        '**调用示例**：`academic.schedule()`',
         '',
         '**返回示例**：{"ok":true,"rows":[{"courseName":"高等数学","weekDay":1,"startSection":1}],"currentWeek":1}'
       ].join('\n'),
@@ -361,7 +371,7 @@
         '',
         '**参数**：{"studentId":"学号，必填","password":"密码，必填"}',
         '',
-        '**调用示例**：{"name":"academic.login","arguments":{"studentId":"xxx","password":"yyy"}}',
+        '**调用示例**：`academic.login({studentId: "xxx", password: "yyy"})`',
         '',
         '**返回示例**：{"ok":true,"studentId":"..."}'
       ].join('\n'),
@@ -382,7 +392,7 @@
         '',
         '获取中国大学MOOC（中国大学MOOC）当前账号的课程列表。需要已在 icourse163.org 登录。',
         '',
-        '**调用示例**：{"name":"mooc.courseList","arguments":{}}',
+        '**调用示例**：`mooc.courseList()`',
         '',
         '**返回示例**：{"ok":true,"courses":[{"courseId":"...","courseName":"..."}]}'
       ].join('\n'),
@@ -402,7 +412,7 @@
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：{"name":"mooc.courseDetail","arguments":{"courseId":"xxx"}}',
+        '**调用示例**：`mooc.courseDetail({courseId: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"detail":{...}}'
       ].join('\n'),
@@ -424,7 +434,7 @@
         '',
         '**参数**：{"courseId":"课程ID，必填","contentType":1,"可选测验类型，1=随堂测 2=测验 3=考试 4=练习 5=作业"}',
         '',
-        '**调用示例**：{"name":"mooc.quizPaper","arguments":{"courseId":"xxx"}}',
+        '**调用示例**：`mooc.quizPaper({courseId: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"papers":[...]}'
       ].join('\n'),
@@ -444,7 +454,7 @@
         '',
         '检查当前是否已登录中国大学MOOC。',
         '',
-        '**调用示例**：{"name":"mooc.loginStatus","arguments":{}}',
+        '**调用示例**：`mooc.loginStatus()`',
         '',
         '**返回示例**：{"loggedIn":true}'
       ].join('\n'),
@@ -464,7 +474,7 @@
         '',
         '**参数**：{"imageUrl":"图片URL，必填"}',
         '',
-        '**调用示例**：{"name":"captcha.recognize","arguments":{"imageUrl":"https://..."}}',
+        '**调用示例**：`captcha.recognize({imageUrl: "https://..."})`',
         '',
         '**返回示例**：{"ok":true,"text":"1234"}'
       ].join('\n'),
@@ -484,18 +494,20 @@
         '',
         '列出所有可按模块分组操作名（仅名称，不含详细说明）。',
         '',
-        '**调用示例**：{"name":"qwen.listOperations","arguments":{}}',
+        '**调用示例**：`qwen.listOperations()`',
         '',
         '**返回示例**：{"groups":[{"module":"ve","label":"智慧课程平台","operations":["ve.courses"]}]}'
       ].join('\n'),
       async run() {
-        return {
-          groups: OPERATION_GROUPS.map((group) => ({
-            module: group.id,
-            label: group.label,
-            operations: group.operations.map((op) => op.name)
-          }))
-        };
+        const enabledSet = await getEnabledOperationSet();
+        const groups = OPERATION_GROUPS.map((group) => ({
+          module: group.id,
+          label: group.label,
+          operations: group.operations
+            .map((op) => op.name)
+            .filter((name) => !enabledSet || enabledSet.has(name) || String(name).startsWith('qwen.'))
+        })).filter((group) => group.operations.length > 0);
+        return { groups };
       }
     },
     {
@@ -510,7 +522,7 @@
         '',
         '**参数**：{"name":"操作名，必填，如 ve.courses"}',
         '',
-        '**调用示例**：{"name":"qwen.getOperationDocs","arguments":{"name":"ve.courses"}}',
+        '**调用示例**：`qwen.getOperationDocs({name: "ve.courses"})`',
         '',
         '**返回示例**：{"name":"ve.courses","module":"ve","doc":"## ve.courses —— ..."}'
       ].join('\n'),

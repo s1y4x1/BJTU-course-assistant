@@ -179,7 +179,7 @@
 
   async function requestJson(url, options = {}) {
     let tab = await findChatTab();
-    if (!tab) tab = await ensureChatTab();
+    if (!tab && !options.noEnsureTab) tab = await ensureChatTab();
     if (tab) {
       let punished = false;
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -215,7 +215,7 @@
   }
 
   async function fetchModels() {
-    const data = await requestJson(`${CHAT_BASE}/api/v2/models/`);
+    const data = await requestJson(`${CHAT_BASE}/api/v2/models/`, { noEnsureTab: true });
     const list = Array.isArray(data?.data?.data) ? data.data.data : [];
     return list.map((item) => ({
       id: String(item?.id || ''),

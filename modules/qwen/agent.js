@@ -3,6 +3,15 @@
   'use strict';
 
   const OPERATION_BLOCK_PATTERN = /```op\s*\n?([\s\S]*?)```/g;
+  const OP_CALL_PATTERN = /^\s*([A-Za-z_$][A-Za-z0-9_$.]*)\s*\((.*)\)\s*$/s;
+
+  function parseOpArguments(argText) {
+    const trimmed = String(argText || '').trim();
+    if (!trimmed) return {};
+    const jsonText = trimmed.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":');
+    const parsed = JSON.parse(jsonText);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  }
 
   function parseTrailingOperation(reply) {
     const text = String(reply || '');
@@ -15,50 +24,40 @@
     if (!last) return null;
     const remainder = text.slice(last.index + last[0].length).trim();
     if (remainder) return null;
+    const call = OP_CALL_PATTERN.exec(last[1].trim());
+    if (!call) return null;
+    const name = String(call[1] || '').trim();
+    if (!name) return null;
     try {
-      const parsed = JSON.parse(last[1].trim());
-      const name = String(parsed?.name || '').trim();
-      if (!name) return null;
-      return { name, arguments: (parsed?.arguments || {}) };
+      return { name, arguments: parseOpArguments(call[2]) };
     } catch {
       return null;
     }
   }
 
   function renderOperationCall({ name, arguments: args }) {
+    const entries = Object.keys(args || {});
+    const argText = entries.map((key) => `${key}: ${JSON.stringify(args[key])}`).join(', ');
     return [
       '```op',
-      JSON.stringify({ name, arguments: args || {} }),
+      entries.length ? `${name}({${argText}})` : `${name}()`,
       '```'
     ].join('\n');
   }
 
-  function buildSystemPrompt({ groups, enabledOps = null, qwenDocs = '' }) {
-    const enabledSet = Array.isArray(enabledOps) && enabledOps.length
-      ? new Set(enabledOps.map((item) => String(item).trim()))
-      : null;
+  function buildSystemPrompt({ qwenDocs = '' }) {
     const lines = [
       '你是「BJTU 课程助手」的智能代理，可以调用扩展提供的操作来获取或操作数据。',
       '',
-      '## 可用操作（按模块分组）',
-      '**请优先获取操作的调用说明再调用它**：在调用任何非 qwen 模块的操作之前，必须先调用 `qwen.getOperationDocs` 查询该操作的说明（含参数与返回示例），确认参数名与格式后再调用。',
-      ''
-    ];
-    for (const group of (Array.isArray(groups) ? groups : [])) {
-      const names = (group.operations || []).filter((name) => !enabledSet || enabledSet.has(name) || name.startsWith('qwen.'));
-      if (!names.length) continue;
-      lines.push(`### ${group.label}`);
-      lines.push(names.map((name) => `- \`${name}\``).join('\n'));
-      lines.push('');
-    }
-    lines.push(
-      '## 元操作说明（已内嵌，可直接照此调用）',
+      '## 发现可用操作',
+      '可用的操作由本扩展各模块提供，名称会随模块与配置而变化。请先调用 `qwen.listOperations` 获取当前可用的操作名列表（按模块分组），再调用 `qwen.getOperationDocs` 查询具体某个操作的说明（含参数与返回示例），确认参数名与格式后再调用。',
+      '',
       ...(String(qwenDocs || '').trim() ? [qwenDocs, ''] : []),
       '## 如何调用操作',
-      '当你需要调用某个操作时，在你的**回复末尾**附上一个以 ```op 标记的代码块，内容为一个 JSON 对象：',
+      '当你需要调用某个操作时，在你的**回复末尾**附上一个以 ```op 标记的代码块，形式为 `操作名({参数名: 参数值, ...})`，参数名无需加引号，参数值用 JSON 语法（字符串加引号）；无参数时写作 `操作名()`：',
       '',
       '```op',
-      '{"name":"操作名","arguments":{参数对象}}',
+      've.courses({xqCode: "2025-2026-1"})',
       '```',
       '',
       '- 操作调用必须位于回复的最后，代码块之后不能再有其它内容。',
@@ -71,7 +70,7 @@
       '- 使用与用户问题相同的语言回答。',
       '- 基于真实操作返回的数据作答，不要编造。',
       '- 内容简洁、条理清晰。'
-    );
+    ];
     return lines.join('\n');
   }
 
@@ -108,8 +107,6 @@
     if (turnRef) turnRef.chatId = effectiveChatId;
     const isNewChat = !String(chatId || '');
     const systemPrompt = isNewChat ? buildSystemPrompt({
-      groups: Array.isArray(groups) && groups.length ? groups : operations.groups(),
-      enabledOps,
       qwenDocs: [
         operations.docs('qwen.listOperations')?.doc,
         operations.docs('qwen.getOperationDocs')?.doc
@@ -243,14 +240,7 @@
 
       const doc = operations.docs(call.name)?.doc || '';
       if (outcome.ok) {
-        lastResultText = [
-          '你此前在回复末尾调用了操作，操作调用与结果如下：',
-          '',
-          renderOperationCall(call),
-          '',
-          '操作结果（JSON）：',
-          JSON.stringify(outcome.result)
-        ].join('\n');
+        lastResultText = `\`\`\`res\n${JSON.stringify(outcome.result)}\n\`\`\``;
       } else {
         lastResultText = [
           '你此前调用的操作失败了，调用与失败结果如下：',
