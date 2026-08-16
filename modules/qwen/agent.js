@@ -117,6 +117,24 @@
     }) : '';
 
     let parentId = String(previousParentId || '');
+    if (effectiveChatId && !isNewChat && !parentId && typeof client.fetchChatHistory === 'function') {
+      try {
+        const history = await client.fetchChatHistory(effectiveChatId);
+        const list = Array.isArray(history) ? history : [];
+        for (let i = list.length - 1; i >= 0; i -= 1) {
+          const msg = list[i];
+          if (String(msg?.role || '') === 'assistant') {
+            const id = String(msg?.response_id || msg?.id || '');
+            if (id) {
+              parentId = id;
+              break;
+            }
+          }
+        }
+      } catch {
+        parentId = '';
+      }
+    }
     const history = [];
     let fullText = '';
     let lastResultText = '';

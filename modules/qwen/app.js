@@ -352,6 +352,7 @@
         } else if (message?.type === 'done') {
           sessionChatId = String(message.chatId || sessionChatId);
           sessionParentId = String(message.responseId || sessionParentId);
+          if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
           nextReplyFresh = false;
           hideAsk();
           if (message.stoppedByLimit === true) {
@@ -449,6 +450,10 @@
     const input = el(INPUT_ID);
     const loginBtn = el('qwen-chat-login-btn');
 
+    void chrome.storage.local.get('qwenLastChatId').then((data) => {
+      sessionChatId = String(data?.qwenLastChatId || '');
+    });
+
     if (fab instanceof HTMLButtonElement) {
       fab.addEventListener('click', () => {
         if (panel instanceof HTMLElement) {
@@ -480,6 +485,18 @@
       closeBtn.addEventListener('click', () => {
         if (panel instanceof HTMLElement) panel.hidden = true;
         if (fab instanceof HTMLButtonElement) fab.style.display = '';
+      });
+    }
+    const newChatBtn = el('qwen-chat-new');
+    if (newChatBtn instanceof HTMLButtonElement) {
+      newChatBtn.addEventListener('click', () => {
+        sessionChatId = '';
+        sessionParentId = '';
+        nextReplyFresh = false;
+        hideAsk();
+        const messages = el(MESSAGES_ID);
+        if (messages instanceof HTMLElement) messages.replaceChildren();
+        void chrome.storage.local.remove('qwenLastChatId');
       });
     }
     if (stopBtn instanceof HTMLButtonElement) {

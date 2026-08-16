@@ -224,6 +224,13 @@
     })).filter((item) => item.id);
   }
 
+  async function fetchChatHistory(chatId) {
+    const effectiveChatId = String(chatId || '');
+    if (!effectiveChatId) return [];
+    const data = await requestJson(`${CHAT_BASE}/api/v2/chats/${encodeURIComponent(effectiveChatId)}`);
+    return Array.isArray(data?.data?.chat?.messages) ? data.data.chat.messages : [];
+  }
+
   async function newChat(modelId) {
     if (!await isLoggedIn()) throw notLoggedInError();
     const timestamp = Date.now();
@@ -516,6 +523,7 @@
     captureToken,
     fetchModels,
     newChat,
+    fetchChatHistory,
     buildUserMessage,
     streamCompletions,
     stopGeneration

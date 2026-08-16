@@ -117,6 +117,34 @@ html[data-color-scheme="dark"] .qwen-chat-close:hover {
   color: #e2e8f0;
 }
 
+.qwen-chat-new {
+  border: 1px solid rgba(97, 92, 237, 0.4);
+  background: transparent;
+  color: #615ced;
+  font-size: 15px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qwen-chat-new:hover {
+  background: rgba(97, 92, 237, 0.12);
+}
+
+html[data-color-scheme="dark"] .qwen-chat-new {
+  border-color: rgba(165, 180, 252, 0.4);
+  color: #a5b4fc;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-new:hover {
+  background: rgba(165, 180, 252, 0.14);
+}
+
 .qwen-chat-messages {
   flex: 1 1 auto;
   overflow-y: auto;
