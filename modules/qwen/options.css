@@ -1,0 +1,185 @@
+.qwen-options-card {
+  --qwen-accent: #615ced;
+}
+
+.qwen-toggle-row {
+  margin-bottom: 12px;
+}
+
+.qwen-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.qwen-toggle input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--qwen-accent);
+}
+
+.qwen-toggle-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+  white-space: nowrap;
+}
+
+html[data-color-scheme="dark"] .qwen-toggle-label {
+  color: #e2e8f0;
+}
+
+.qwen-login-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.qwen-login-status-value {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.qwen-login-status-value.ok {
+  color: #16a34a;
+}
+
+.qwen-login-status-value.error {
+  color: #dc2626;
+}
+
+.qwen-action-btn {
+  min-width: 58px;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #1976d2;
+  color: #fff;
+  cursor: pointer;
+}
+
+.qwen-action-btn:hover {
+  background: #1565c0;
+}
+
+.qwen-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.qwen-setting-label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+html[data-color-scheme="dark"] .qwen-setting-label {
+  color: #e2e8f0;
+}
+
+.qwen-model-select {
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 13px;
+  max-width: 340px;
+}
+
+html[data-color-scheme="dark"] .qwen-model-select {
+  background: #1e293b;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.qwen-ops-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.qwen-link-btn {
+  border: none;
+  background: transparent;
+  color: #1976d2;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.qwen-link-btn:hover {
+  text-decoration: underline;
+}
+
+.qwen-operation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.qwen-operation-group {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.qwen-operation-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+html[data-color-scheme="dark"] .qwen-operation-group-title {
+  color: #cbd5e1;
+}
+
+.qwen-operation-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qwen-operation-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.qwen-operation-item input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--qwen-accent);
+}
+
+html[data-color-scheme="dark"] .qwen-operation-item {
+  color: #94a3b8;
+}
+
+.qwen-operation-item code {
+  font-family: inherit;
+  background: rgba(148, 163, 184, 0.15);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.qwen-operation-loading {
+  font-size: 13px;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

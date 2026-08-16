@@ -43,6 +43,12 @@
       label: '更新组件',
       styles: ['app.css'],
       files: ['app.html', 'checker.js', 'background.js', 'filesystem.js', 'vendor/marked.umd.js']
+    },
+    qwen: {
+      label: '通义千问',
+      styles: ['options.css', 'app.css'],
+      files: ['background.js', 'operations.js', 'qwen-client.js', 'agent.js', 'app.html', 'app.js', 'options.html', 'options.js'],
+      options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     }
   });
 

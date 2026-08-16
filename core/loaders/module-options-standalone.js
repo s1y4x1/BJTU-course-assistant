@@ -29,7 +29,8 @@
     const controllers = {
       academic: global.BjtuAcademicOptions,
       campusnet: global.BjtuCampusnetOptions,
-      captcha: global.BjtuCaptchaOptions
+      captcha: global.BjtuCaptchaOptions,
+      qwen: global.BjtuQwenOptions
     };
     const controller = controllers[id];
     if (!controller?.init) {

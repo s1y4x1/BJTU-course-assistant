@@ -146,6 +146,12 @@ tryImportModuleScripts('../modules/campusnet/background.js');
 tryImportModuleScripts('../modules/updater/filesystem.js', '../modules/updater/background.js');
 tryImportModuleScripts('../modules/jlgj/background.js');
 tryImportModuleScripts('../modules/mooc/background.js');
+tryImportModuleScripts(
+  '../modules/qwen/operations.js',
+  '../modules/qwen/qwen-client.js',
+  '../modules/qwen/agent.js',
+  '../modules/qwen/background.js'
+);
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/background-homework.js');
 
 const OPTIONAL_CONTENT_SCRIPTS = [

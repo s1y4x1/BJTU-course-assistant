@@ -1,0 +1,30 @@
+<button id="qwen-chat-fab" class="qwen-chat-fab" type="button" aria-label="打开千问助手" title="千问助手">
+  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+    <path fill="currentColor" d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-8 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm4 4c0 1.1-.9 2-2 2h-4a2 2 0 0 1-2-2c0-1.1.9-2 2-2h4c1.1 0 2 .9 2 2z"/>
+  </svg>
+</button>
+
+<div id="qwen-chat-panel" class="qwen-chat-panel" hidden>
+  <div class="qwen-chat-header">
+    <span class="qwen-chat-title">千问助手</span>
+    <select id="qwen-chat-model" class="qwen-chat-model" title="选择模型"></select>
+    <span id="qwen-chat-status" class="qwen-chat-status"></span>
+    <button id="qwen-chat-close" class="qwen-chat-close" type="button" aria-label="关闭" title="关闭">×</button>
+  </div>
+  <div id="qwen-chat-messages" class="qwen-chat-messages"></div>
+  <div id="qwen-chat-login-hint" class="qwen-chat-login-hint" hidden>
+    <span>尚未登录 chat.qwen.ai</span>
+    <button id="qwen-chat-login-btn" class="btn qwen-chat-login-btn" type="button">打开登录页</button>
+  </div>
+  <div class="qwen-chat-tools-row">
+    <label class="qwen-chat-thinking-toggle" title="是否让模型在回答前进行深度思考">
+      <input type="checkbox" id="qwen-chat-thinking" checked>
+      <span>思考</span>
+    </label>
+  </div>
+  <form id="qwen-chat-input-form" class="qwen-chat-input-row">
+    <textarea id="qwen-chat-input" class="qwen-chat-input" rows="1" placeholder="向 AI 提问，例如：我还有哪些作业没交？"></textarea>
+    <button id="qwen-chat-stop" class="btn qwen-chat-stop" type="button" hidden>停止</button>
+    <button id="qwen-chat-send" class="btn qwen-chat-send" type="submit">发送</button>
+  </form>
+</div>
