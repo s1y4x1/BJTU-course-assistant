@@ -1425,7 +1425,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     try {
       const result = await chrome.runtime.sendMessage({ type: 'SYSTEM_NOTIFICATION_TEST' });
       if (!result?.ok) throw new Error(result?.message || '浏览器未能创建系统通知');
-      setMsg('测试通知已交给浏览器；若未看到横幅，请检查 Windows 或浏览器通知设置');
+      setMsg('测试通知已交给浏览器；若未看到横幅，请检查系统或浏览器通知设置');
     } catch (error) {
       setMsg(`系统通知发送失败：${String(error?.message || error)}`, false);
     } finally {
