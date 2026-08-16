@@ -66,6 +66,7 @@
               modelId,
               userText: String(message.text).trim(),
               chatId: String(message.chatId || ''),
+              parentId: String(message.parentId || ''),
               enabledOps: settings.enabledOperations,
               groups,
               signal: abortController.signal,
@@ -83,7 +84,7 @@
               }
             });
             if (port.disconnected) return;
-            port.postMessage({ type: 'done', text: result.text, chatId: result.chatId });
+            port.postMessage({ type: 'done', text: result.text, chatId: result.chatId, responseId: String(result.responseId || '') });
           } catch (error) {
             if (port.disconnected) return;
             if (error?.name === 'AbortError' || abortController.signal.aborted) {

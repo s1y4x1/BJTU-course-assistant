@@ -17,6 +17,7 @@
   let activeBubble = null;
   let busy = false;
   let sessionChatId = '';
+  let sessionParentId = '';
   let nextReplyFresh = false;
 
   function el(id) {
@@ -212,6 +213,7 @@
           nextReplyFresh = true;
         } else if (message?.type === 'done') {
           sessionChatId = String(message.chatId || sessionChatId);
+          sessionParentId = String(message.responseId || sessionParentId);
           nextReplyFresh = false;
           if (activeBubble instanceof HTMLElement && !activeBubble.textContent) {
             activeBubble.textContent = '（无回复）';
@@ -263,7 +265,7 @@
         }
         port = null;
       });
-      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId });
+      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: sessionParentId });
     };
 
     try {
@@ -275,7 +277,13 @@
   }
 
   function init() {
-    if (new URLSearchParams(global.location?.search || '').get('popup') === '1') return;
+    if (new URLSearchParams(global.location?.search || '').get('popup') === '1') {
+      const fab = el(FAB_ID);
+      if (fab instanceof HTMLElement) fab.style.display = 'none';
+      const panel = el(PANEL_ID);
+      if (panel instanceof HTMLElement) panel.hidden = true;
+      return;
+    }
 
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {

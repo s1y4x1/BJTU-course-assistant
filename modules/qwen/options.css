@@ -1,5 +1,16 @@
 .qwen-options-card {
   --qwen-accent: #615ced;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+html[data-color-scheme="dark"] .qwen-options-card {
+  border-color: #334155;
+  background: #111827;
 }
 
 .qwen-toggle-row {

@@ -87,6 +87,7 @@
       modelId,
       userText,
       chatId,
+      parentId: previousParentId = '',
       enabledOps,
       groups,
       onDelta,
@@ -112,7 +113,7 @@
       ].filter(Boolean).join('\n\n')
     });
 
-    let parentId = '';
+    let parentId = String(previousParentId || '');
     const history = [];
     let fullText = '';
     let lastResultText = '';
@@ -129,6 +130,7 @@
       const response = await client.streamCompletions({
         chatId: effectiveChatId,
         modelId,
+        parentId,
         messages: [message],
         onEvent: (event) => {
           if (event?.thinking) {
@@ -171,6 +173,7 @@
       if (!call) {
         return {
           chatId: effectiveChatId,
+          responseId: parentId,
           modelId,
           text: replyText,
           fullText,

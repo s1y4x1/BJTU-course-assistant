@@ -296,18 +296,19 @@
     });
   }
 
-  function streamViaContentScript(tab, { chatId, modelId, messages, onEvent, signal }) {
+  function streamViaContentScript(tab, { chatId, modelId, messages, onEvent, signal, parentId }) {
     const id = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const parent = String(parentId || '');
     const body = {
       stream: true,
       version: '2.1',
       incremental_output: true,
       chatId,
-      parentId: '',
+      parentId: parent,
       chat_id: chatId,
       chat_mode: 'normal',
       model: String(modelId || ''),
-      parent_id: null,
+      parent_id: parent || null,
       messages,
       timestamp: Date.now()
     };
@@ -354,10 +355,11 @@
     });
   }
 
-  async function streamCompletionsDirect({ chatId, modelId, messages, onEvent, signal }) {
+  async function streamCompletionsDirect({ chatId, modelId, messages, onEvent, signal, parentId }) {
     if (!await isLoggedIn()) throw notLoggedInError();
     const url = `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`;
     const token = await getStoredToken();
+    const parent = String(parentId || '');
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -372,11 +374,11 @@
         version: '2.1',
         incremental_output: true,
         chatId,
-        parentId: '',
+        parentId: parent,
         chat_id: chatId,
         chat_mode: 'normal',
         model: String(modelId || ''),
-        parent_id: null,
+        parent_id: parent || null,
         messages,
         timestamp: Date.now()
       }),
