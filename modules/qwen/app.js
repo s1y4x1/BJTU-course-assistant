@@ -591,13 +591,22 @@
     const newChatBtn = el('qwen-chat-new');
     if (newChatBtn instanceof HTMLButtonElement) {
       newChatBtn.addEventListener('click', () => {
-        sessionChatId = '';
-        sessionParentId = '';
-        nextReplyFresh = false;
-        hideAsk();
-        const messages = el(MESSAGES_ID);
-        if (messages instanceof HTMLElement) messages.replaceChildren();
-        void chrome.storage.local.remove('qwenLastChatId');
+        const currentId = sessionChatId;
+        const doNew = () => {
+          sessionChatId = '';
+          sessionParentId = '';
+          nextReplyFresh = false;
+          hideAsk();
+          const messages = el(MESSAGES_ID);
+          if (messages instanceof HTMLElement) messages.replaceChildren();
+          void chrome.storage.local.remove('qwenLastChatId');
+        };
+        if (!currentId) {
+          doNew();
+          return;
+        }
+        if (!global.confirm('是否删除当前会话？')) return;
+        void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(() => doNew()).catch(() => doNew());
       });
     }
     if (stopBtn instanceof HTMLButtonElement) {

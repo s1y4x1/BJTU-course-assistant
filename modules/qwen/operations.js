@@ -265,24 +265,19 @@
         '',
         '使用本地保存的账号凭据登录智慧课程平台。账号需存在于本地账号列表。',
         '',
-        '**参数**：{"loginName":"登录名，必填","useQuickLogin":true,"可选，优先使用极速登录"}',
+        '**参数**：{"loginName":"登录名，必填"}',
         '',
         '**调用示例**：`ve.login({loginName: "zhangsan"})`',
         '',
         '**返回示例**：{"ok":true,"userName":"张三"}。失败时 ok 为 false 并带 message。'
       ].join('\n'),
       async run(args) {
-        const login = requireGlobal('BjtuAccountLogin');
+        const loginService = requireGlobal('BjtuVeLoginService');
         const loginName = String(args?.loginName || '').trim();
         if (!loginName) throw new Error('缺少参数 loginName');
-        await login.ensureInitialized();
-        const account = await login.getAccount(loginName);
-        if (account?.quickUsername && args?.useQuickLogin !== false) {
-          const result = await login.loginWithQuickUsername(account.quickUsername, { loginName });
-          return { ok: !!result?.ok, message: String(result?.message || ''), userName: String(account?.userName || '') };
-        }
-        const result = await login.login(loginName, { allowStoredCredentials: true });
-        return { ok: !!result?.ok, message: String(result?.message || ''), userName: String(account?.userName || '') };
+        const result = await loginService.login({ loginName, allowStoredCredentials: true });
+        const userName = String(result?.userInfo?.userName || '');
+        return { ok: !!result?.ok, message: String(result?.message || ''), userName };
       }
     },
     {
@@ -367,11 +362,11 @@
       doc: [
         '## academic.login —— 教务系统登录',
         '',
-        '使用学号和密码登录教务系统（密码为教务系统密码）。',
+        '使用学号和身份证后六位登录教务系统。',
         '',
-        '**参数**：{"studentId":"学号，必填","password":"密码，必填"}',
+        '**参数**：{"studentId":"学号，必填","password":"身份证后六位，必填，6 个字符"}',
         '',
-        '**调用示例**：`academic.login({studentId: "xxx", password: "yyy"})`',
+        '**调用示例**：`academic.login({studentId: "xxx", password: "123456"})`',
         '',
         '**返回示例**：{"ok":true,"studentId":"..."}'
       ].join('\n'),

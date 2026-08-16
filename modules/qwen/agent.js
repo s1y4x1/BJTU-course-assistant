@@ -50,7 +50,7 @@
       '你是「BJTU 课程助手」的智能代理，可以调用扩展提供的操作来获取或操作数据。',
       '',
       '## 发现可用操作',
-      '可用的操作由本扩展各模块提供，名称会随模块与配置而变化。请先调用 `qwen.listOperations` 获取当前可用的操作名列表（按模块分组），再调用 `qwen.getOperationDocs` 查询具体某个操作的说明（含参数与返回示例），确认参数名与格式后再调用。',
+      '可用的操作由本扩展各模块提供，名称会随模块与配置而变化。请**立即**先调用 `qwen.listOperations` 获取当前可用的操作名列表（按模块分组），再调用 `qwen.getOperationDocs` 查询具体某个操作的说明（含参数与返回示例），确认参数名与格式后再调用。',
       '',
       ...(String(qwenDocs || '').trim() ? [qwenDocs, ''] : []),
       '## 如何调用操作',
@@ -222,6 +222,19 @@
 
       const call = parseTrailingOperation(replyText);
       if (!call) {
+        OPERATION_BLOCK_PATTERN.lastIndex = 0;
+        if (OPERATION_BLOCK_PATTERN.test(replyText)) {
+          lastResultText = [
+            '```res',
+            JSON.stringify({ ok: false, error: '操作调用语法有误，请按规范重新编写 op 代码块', code: 'OP_PARSE' }),
+            '```',
+            '',
+            '调用规范：在回复末尾附上以 ```op 标记的代码块，形式为 `操作名({参数名: 参数值, ...})`，参数名无需加引号，参数值用 JSON 语法（字符串加引号）；无参数时写作 `操作名()`。',
+            '若无法给出正确的调用，请直接给出最终答复，不要再重复调用。'
+          ].join('\n');
+          iteration += 1;
+          continue;
+        }
         return {
           chatId: effectiveChatId,
           responseId: parentId,
@@ -238,19 +251,13 @@
       const outcome = await operations.run(call.name, call.arguments);
       onEvent?.({ operationResult: outcome, iteration });
 
-      const doc = operations.docs(call.name)?.doc || '';
       if (outcome.ok) {
         lastResultText = `\`\`\`res\n${JSON.stringify(outcome.result)}\n\`\`\``;
       } else {
         lastResultText = [
-          '你此前调用的操作失败了，调用与失败结果如下：',
-          '',
-          renderOperationCall(call),
-          '',
-          '操作结果（JSON）：',
+          '```res',
           JSON.stringify(outcome),
-          '',
-          ...(doc ? ['该操作的说明文档如下，请按文档修正参数后重试：', '', doc] : []),
+          '```',
           '',
           '若该操作无法成功（例如需要用户先登录、操作不可用，或修正后仍失败），请直接给出最终答复，不要再重复调用。'
         ].join('\n');

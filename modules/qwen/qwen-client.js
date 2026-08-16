@@ -231,6 +231,12 @@
     return Array.isArray(data?.data?.chat?.messages) ? data.data.chat.messages : [];
   }
 
+  async function deleteChat(chatId) {
+    const effectiveChatId = String(chatId || '');
+    if (!effectiveChatId) return;
+    await requestJson(`${CHAT_BASE}/api/v2/chats/${encodeURIComponent(effectiveChatId)}`, { method: 'DELETE' });
+  }
+
   async function newChat(modelId) {
     if (!await isLoggedIn()) throw notLoggedInError();
     const timestamp = Date.now();
@@ -524,6 +530,7 @@
     fetchModels,
     newChat,
     fetchChatHistory,
+    deleteChat,
     buildUserMessage,
     streamCompletions,
     stopGeneration

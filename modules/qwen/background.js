@@ -193,6 +193,23 @@
         })();
         return true;
       }
+      if (type === 'QWEN_DELETE_CHAT') {
+        void (async () => {
+          const chatId = String(message?.payload?.chatId || '');
+          const client = global.BjtuQwenClient;
+          if (!chatId || !client?.deleteChat) {
+            sendResponse({ ok: false, message: '无会话或客户端未就绪' });
+            return;
+          }
+          try {
+            await client.deleteChat(chatId);
+            sendResponse({ ok: true });
+          } catch (error) {
+            sendResponse({ ok: false, message: String(error?.message || error) });
+          }
+        })();
+        return true;
+      }
       if (type === 'QWEN_TOKEN_CAPTURED') {
         const token = String(message?.payload?.token || '');
         if (token && global.BjtuQwenClient?.captureToken) {
