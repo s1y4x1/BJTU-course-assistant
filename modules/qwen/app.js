@@ -110,6 +110,45 @@
     return container?._mdText || '';
   }
 
+  function extractUserQuestion(content) {
+    const source = String(content || '');
+    const marker = '用户问题：';
+    const index = source.lastIndexOf(marker);
+    return index >= 0 ? source.slice(index + marker.length).trim() : source;
+  }
+
+  function extractAssistantReply(message) {
+    const list = Array.isArray(message?.content_list) ? message.content_list : [];
+    const parts = [];
+    for (const item of list) {
+      if (item?.phase === 'answer' && item?.content) parts.push(String(item.content));
+    }
+    if (parts.length) return parts.join('\n');
+    return String(message?.content || '');
+  }
+
+  function renderHistory(messages) {
+    const messagesEl = el(MESSAGES_ID);
+    if (!(messagesEl instanceof HTMLElement)) return;
+    messagesEl.replaceChildren();
+    const list = Array.isArray(messages) ? messages : [];
+    for (const message of list) {
+      const role = String(message?.role || '');
+      if (role === 'user') {
+        appendMessage('user', extractUserQuestion(message?.content));
+      } else if (role === 'assistant') {
+        const text = extractAssistantReply(message);
+        appendMessage('assistant', text || '（无回复）');
+      }
+    }
+  }
+
+  async function loadHistory() {
+    if (!sessionChatId) return;
+    const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: sessionChatId });
+    if (response?.ok && Array.isArray(response.messages)) renderHistory(response.messages);
+  }
+
   function send(type, payload) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ type, payload }, (response) => {
@@ -386,6 +425,11 @@
         } else if (message?.type === 'error') {
           nextReplyFresh = false;
           hideAsk();
+          const errorChatId = String(message.chatId || '');
+          if (errorChatId) {
+            sessionChatId = errorChatId;
+            void chrome.storage.local.set({ qwenLastChatId: errorChatId });
+          }
           if (message.code === 'NOT_LOGGED_IN') {
             setStatus('未登录', 'error');
             showLoginHint(true);
@@ -450,8 +494,35 @@
     const input = el(INPUT_ID);
     const loginBtn = el('qwen-chat-login-btn');
 
+    if (panel instanceof HTMLElement) {
+      const header = panel.querySelector('.qwen-chat-header');
+      if (header instanceof HTMLElement) {
+        header.addEventListener('pointerdown', (event) => {
+          if (event.button !== 0) return;
+          if (event.target.closest('button, select, input, a')) return;
+          const rect = panel.getBoundingClientRect();
+          const offsetX = event.clientX - rect.left;
+          const offsetY = event.clientY - rect.top;
+          const onMove = (moveEvent) => {
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            panel.style.left = `${Math.max(0, moveEvent.clientX - offsetX)}px`;
+            panel.style.top = `${Math.max(0, moveEvent.clientY - offsetY)}px`;
+          };
+          const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+          };
+          window.addEventListener('pointermove', onMove);
+          window.addEventListener('pointerup', onUp, { once: true });
+          event.preventDefault();
+        });
+      }
+    }
+
     void chrome.storage.local.get('qwenLastChatId').then((data) => {
       sessionChatId = String(data?.qwenLastChatId || '');
+      if (sessionChatId) void loadHistory();
     });
 
     if (fab instanceof HTMLButtonElement) {

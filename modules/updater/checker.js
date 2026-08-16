@@ -1585,13 +1585,9 @@ async function chooseUpdateModules(archiveFiles) {
   const stored = await chrome.storage.local.get(VERSION_MODULE_SELECTION_KEY).catch(() => ({}));
   const previous = stored?.[VERSION_MODULE_SELECTION_KEY];
   const alreadyChosen = new Set(Array.isArray(previous) ? previous : []);
-  const defaultChosen = (id) => available[id] === true || packaged.includes(id);
   const initial = new Set(Array.isArray(previous)
-    ? [
-      ...alreadyChosen,
-      ...candidates.filter((id) => !alreadyChosen.has(id) && defaultChosen(id))
-    ]
-    : candidates.filter(defaultChosen));
+    ? candidates.filter((id) => alreadyChosen.has(id) || (packaged.includes(id) && available[id] !== true))
+    : candidates.filter((id) => available[id] === true || packaged.includes(id)));
 
   return new Promise((resolve) => {
     setVersionDownloadProgressUi({

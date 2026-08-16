@@ -147,7 +147,8 @@
             port.postMessage({
               type: 'error',
               message: String(error?.message || error),
-              code: String(error?.code || '')
+              code: String(error?.code || ''),
+              chatId: String(turnRef?.chatId || '')
             });
           }
         })();
@@ -172,6 +173,23 @@
           let modelName = '';
           if (settings.modelId) modelName = settings.modelId;
           sendResponse({ ok: true, ...settings, loggedIn, modelId: settings.modelId, modelName });
+        })();
+        return true;
+      }
+      if (type === 'QWEN_GET_CHAT_HISTORY') {
+        void (async () => {
+          const chatId = String(message?.payload?.chatId || '');
+          const client = global.BjtuQwenClient;
+          if (!chatId || !client?.fetchChatHistory) {
+            sendResponse({ ok: false, message: '无会话或客户端未就绪' });
+            return;
+          }
+          try {
+            const messages = await client.fetchChatHistory(chatId);
+            sendResponse({ ok: true, messages });
+          } catch (error) {
+            sendResponse({ ok: false, message: String(error?.message || error) });
+          }
         })();
         return true;
       }

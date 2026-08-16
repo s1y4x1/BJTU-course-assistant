@@ -13,7 +13,7 @@
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(97, 92, 237, 0.4);
-  z-index: 998;
+  z-index: 2147483647;
 }
 
 .qwen-chat-fab:hover {
@@ -25,15 +25,18 @@
   right: 20px;
   bottom: 20px;
   width: 380px;
-  max-width: calc(100vw - 40px);
-  height: min(560px, calc(100vh - 44px));
+  min-width: 280px;
+  max-width: calc(100vw - 16px);
+  min-height: 320px;
+  max-height: calc(100vh - 16px);
+  resize: both;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
   display: flex;
   flex-direction: column;
-  z-index: 999;
+  z-index: 2147483647;
   overflow: hidden;
 }
 
