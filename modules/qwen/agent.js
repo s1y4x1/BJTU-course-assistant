@@ -95,7 +95,9 @@
       signal,
       turnRef,
       maxIterations = 6,
-      thinking = false
+      thinking = false,
+      askUser,
+      sessionRef
     } = options || {};
     const client = global.BjtuQwenClient;
     const operations = global.BjtuQwenOperations;
@@ -104,24 +106,58 @@
 
     const effectiveChatId = String(chatId || '') || await client.newChat(modelId);
     if (turnRef) turnRef.chatId = effectiveChatId;
-    const systemPrompt = buildSystemPrompt({
+    const isNewChat = !String(chatId || '');
+    const systemPrompt = isNewChat ? buildSystemPrompt({
       groups: Array.isArray(groups) && groups.length ? groups : operations.groups(),
       enabledOps,
       qwenDocs: [
         operations.docs('qwen.listOperations')?.doc,
         operations.docs('qwen.getOperationDocs')?.doc
       ].filter(Boolean).join('\n\n')
-    });
+    }) : '';
 
     let parentId = String(previousParentId || '');
     const history = [];
     let fullText = '';
     let lastResultText = '';
+    let lastCleanReply = '';
+    const loopSession = options.sessionRef || {};
+    const iterationLimit = Number(maxIterations) > 0 ? Number(maxIterations) : 6;
+    let effectiveLimit = loopSession.alwaysAllow === true ? Infinity : iterationLimit;
+    let iteration = 0;
 
-    for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    while (true) {
       if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+
+      if (iteration >= effectiveLimit) {
+        const decision = typeof askUser === 'function'
+          ? await askUser({ message: '操作调用次数过多，是否继续？', mode: 'iterate', count: iterationLimit })
+          : null;
+        if (!decision || decision.action === 'stop') {
+          onEvent?.({ stoppedByLimit: true, iteration });
+          return {
+            chatId: effectiveChatId,
+            responseId: parentId,
+            modelId,
+            text: lastCleanReply,
+            fullText,
+            operations: [],
+            final: lastCleanReply,
+            stoppedByLimit: true
+          };
+        }
+        if (decision.action === 'always') {
+          loopSession.alwaysAllow = true;
+          effectiveLimit = Infinity;
+          continue;
+        }
+        const extra = Math.max(1, Number(decision.count) || 0);
+        effectiveLimit = iteration + extra;
+        continue;
+      }
+
       const content = iteration === 0
-        ? [systemPrompt, '', '---', '', '用户问题：', userText].join('\n')
+        ? (isNewChat ? [systemPrompt, '', '---', '', '用户问题：', userText].join('\n') : userText)
         : lastResultText;
       const message = client.buildUserMessage({ modelId, content, thinking });
       message.parent_id = parentId || null;
@@ -182,6 +218,7 @@
         };
       }
 
+      lastCleanReply = replyText;
       onEvent?.({ operation: call, iteration });
       const outcome = await operations.run(call.name, call.arguments);
       onEvent?.({ operationResult: outcome, iteration });
@@ -210,9 +247,8 @@
           '若该操作无法成功（例如需要用户先登录、操作不可用，或修正后仍失败），请直接给出最终答复，不要再重复调用。'
         ].join('\n');
       }
+      iteration += 1;
     }
-
-    throw new Error('操作调用次数过多，已停止循环。');
   }
 
   global.BjtuQwenAgent = {

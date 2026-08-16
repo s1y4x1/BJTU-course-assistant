@@ -11,6 +11,7 @@
     const holder = document.createElement('template');
     holder.innerHTML = await markupResponse.text();
     document.body.appendChild(holder.content.cloneNode(true));
+    await global.BjtuModuleRegistry.loadScript('modules/updater/vendor/marked.umd.js');
     await global.BjtuModuleRegistry.loadScript('modules/qwen/app.js');
     return true;
   })().catch((error) => {

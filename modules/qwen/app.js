@@ -24,6 +24,92 @@
     return document.getElementById(id);
   }
 
+  function escapeHtmlQwen(value) {
+    return String(value).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[c]));
+  }
+
+  function safeUrlQwen(href, allowed) {
+    try {
+      const url = new URL(href, global.location?.href);
+      return allowed.has(url.protocol) ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  let qwenMarkdownParser = null;
+  function getQwenMarkdownParser() {
+    if (qwenMarkdownParser) return qwenMarkdownParser;
+    const markedApi = global.marked;
+    if (!markedApi?.Marked || !markedApi?.Renderer) return null;
+    const renderer = new markedApi.Renderer();
+    renderer.html = ({ text }) => escapeHtmlQwen(text);
+    renderer.link = function renderSafeLink({ href, title, tokens }) {
+      const text = this.parser.parseInline(tokens || []);
+      const safeHref = safeUrlQwen(href, new Set(['http:', 'https:', 'mailto:']));
+      if (!safeHref) return text;
+      const titleAttribute = title ? ` title="${escapeHtmlQwen(title)}"` : '';
+      return `<a href="${escapeHtmlQwen(safeHref)}"${titleAttribute} target="_blank" rel="noopener noreferrer">${text}</a>`;
+    };
+    renderer.image = ({ href, title, text }) => {
+      const safeSrc = safeUrlQwen(href, new Set(['http:', 'https:']));
+      if (!safeSrc) return escapeHtmlQwen(String(text || ''));
+      const titleAttribute = title ? ` title="${escapeHtmlQwen(title)}"` : '';
+      return `<img src="${escapeHtmlQwen(safeSrc)}" alt="${escapeHtmlQwen(String(text || ''))}"${titleAttribute} loading="lazy">`;
+    };
+    renderer.codespan = ({ text }) => `<code class="qwen-md-inline-code">${escapeHtmlQwen(text)}</code>`;
+    renderer.code = ({ text, lang }) => {
+      const language = String(lang || '').trim().split(/\s+/)[0];
+      const languageAttribute = language ? ` data-language="${escapeHtmlQwen(language)}"` : '';
+      return `<pre class="qwen-md-codeblock"${languageAttribute}><code>${escapeHtmlQwen(String(text || ''))}</code></pre>`;
+    };
+    renderer.blockquote = function renderBlockquote({ tokens }) {
+      return `<blockquote class="qwen-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
+    };
+    qwenMarkdownParser = new markedApi.Marked({
+      gfm: true,
+      breaks: true,
+      pedantic: false,
+      renderer
+    });
+    return qwenMarkdownParser;
+  }
+
+  function renderQwenMarkdown(text) {
+    const source = String(text || '').replace(/\r\n?/g, '\n');
+    if (!source) return '';
+    const parser = getQwenMarkdownParser();
+    if (!parser) return escapeHtmlQwen(source);
+    try {
+      return parser.parse(source, { async: false });
+    } catch {
+      return escapeHtmlQwen(source);
+    }
+  }
+
+  function mdContainer(bubble) {
+    let container = bubble.querySelector(':scope > .qwen-chat-md');
+    if (!(container instanceof HTMLElement)) {
+      container = document.createElement('div');
+      container.className = 'qwen-chat-md';
+      container._mdText = '';
+      bubble.appendChild(container);
+    }
+    return container;
+  }
+
+  function mdRawText(bubble) {
+    if (!(bubble instanceof HTMLElement)) return '';
+    const container = bubble.querySelector(':scope > .qwen-chat-md');
+    return container?._mdText || '';
+  }
+
   function send(type, payload) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ type, payload }, (response) => {
@@ -56,7 +142,14 @@
     if (!(messages instanceof HTMLElement)) return;
     const bubble = document.createElement('div');
     bubble.className = `qwen-chat-msg ${role}`;
-    bubble.textContent = String(text || '');
+    const str = String(text || '');
+    if (role === 'error') {
+      bubble.textContent = str;
+    } else {
+      const container = mdContainer(bubble);
+      container._mdText = str;
+      container.innerHTML = renderQwenMarkdown(str);
+    }
     messages.appendChild(bubble);
     messages.scrollTop = messages.scrollHeight;
     return bubble;
@@ -150,11 +243,9 @@
 
   function appendAssistantText(bubble, text) {
     if (!text) return;
-    if (bubble.lastChild instanceof Text) {
-      bubble.lastChild.appendData(String(text));
-    } else {
-      bubble.appendChild(document.createTextNode(String(text)));
-    }
+    const container = mdContainer(bubble);
+    container._mdText = String(container._mdText || '') + String(text);
+    container.innerHTML = renderQwenMarkdown(container._mdText);
   }
 
   function ensureThinkingBlock(bubble) {
@@ -172,11 +263,58 @@
     return details.querySelector('.qwen-chat-thinking-body');
   }
 
+  let pendingAskId = null;
+
+  function updateAskContinueLabel() {
+    const count = el('qwen-chat-ask-count');
+    const button = el('qwen-chat-ask-continue');
+    if (button instanceof HTMLButtonElement) {
+      const value = count instanceof HTMLInputElement ? parseInt(count.value, 10) : 0;
+      button.textContent = `继续 ${value > 0 ? value : 1} 次`;
+    }
+  }
+
+  function showAsk(message) {
+    pendingAskId = String(message?.id || '');
+    const container = el('qwen-chat-ask');
+    const text = el('qwen-chat-ask-text');
+    const count = el('qwen-chat-ask-count');
+    if (container instanceof HTMLElement) {
+      if (text instanceof HTMLElement) text.textContent = message?.message || '操作调用次数过多，是否继续？';
+      const value = Number(message?.count) > 0 ? Number(message.count) : 3;
+      if (count instanceof HTMLInputElement) count.value = String(value);
+      updateAskContinueLabel();
+      container.hidden = false;
+    }
+  }
+
+  function hideAsk() {
+    const container = el('qwen-chat-ask');
+    if (container instanceof HTMLElement) container.hidden = true;
+    pendingAskId = null;
+  }
+
+  function resolveAsk(action) {
+    const container = el('qwen-chat-ask');
+    if (container instanceof HTMLElement) container.hidden = true;
+    if (!pendingAskId) return;
+    const id = pendingAskId;
+    pendingAskId = null;
+    const countEl = el('qwen-chat-ask-count');
+    const count = countEl instanceof HTMLInputElement ? parseInt(countEl.value, 10) : 0;
+    try {
+      port?.postMessage({ type: 'askResponse', id, action, count: count > 0 ? count : 1 });
+    } catch {
+      // 端口可能已断开
+    }
+  }
+
   function sendMessage(text) {
     if (busy) return;
     appendMessage('user', text);
     const input = el(INPUT_ID);
     if (input instanceof HTMLTextAreaElement) input.value = '';
+    hideAsk();
     setBusy(true);
     setStatus('思考中…');
     activeBubble = null;
@@ -215,8 +353,15 @@
           sessionChatId = String(message.chatId || sessionChatId);
           sessionParentId = String(message.responseId || sessionParentId);
           nextReplyFresh = false;
-          if (activeBubble instanceof HTMLElement && !activeBubble.textContent) {
-            activeBubble.textContent = '（无回复）';
+          hideAsk();
+          if (message.stoppedByLimit === true) {
+            const bubble = ensureAssistantBubble();
+            if (bubble instanceof HTMLElement) {
+              if (mdRawText(bubble)) appendAssistantText(bubble, '\n\n_（操作调用次数过多，已结束本次。）_');
+              else appendAssistantText(bubble, '_（操作调用次数过多，已结束本次。）_');
+            }
+          } else if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) {
+            appendAssistantText(activeBubble, '（无回复）');
           }
           activeBubble = null;
           setBusy(false);
@@ -225,31 +370,35 @@
           port = null;
         } else if (message?.type === 'stopped') {
           nextReplyFresh = false;
+          hideAsk();
           if (activeBubble instanceof HTMLElement) {
-            if (activeBubble.textContent) appendAssistantText(activeBubble, '\n（已停止）');
-            else appendAssistantText(activeBubble, '（已停止）');
+            const raw = mdRawText(activeBubble);
+            appendAssistantText(activeBubble, raw ? '\n（已停止）' : '（已停止）');
           }
           activeBubble = null;
           setBusy(false);
           setStatus('已登录', 'ok');
           port.disconnect();
           port = null;
+        } else if (message?.type === 'ask') {
+          showAsk(message);
         } else if (message?.type === 'error') {
           nextReplyFresh = false;
+          hideAsk();
           if (message.code === 'NOT_LOGGED_IN') {
             setStatus('未登录', 'error');
             showLoginHint(true);
             if (activeBubble instanceof HTMLElement) activeBubble.remove();
             activeBubble = null;
-} else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_CHALLENGE') {
-          const bubble = ensureAssistantBubble();
-          if (bubble instanceof HTMLElement) {
-            if (bubble.textContent) bubble.textContent += '\n';
-            bubble.textContent += `（${message.message || '请求失败'}）`;
-          }
-          activeBubble = null;
-          setStatus('风控校验', 'error');
-          void send('QWEN_OPEN_LOGIN');
+          } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_CHALLENGE') {
+            const bubble = ensureAssistantBubble();
+            if (bubble instanceof HTMLElement) {
+              const raw = mdRawText(bubble);
+              appendAssistantText(bubble, raw ? `\n（${message.message || '请求失败'}）` : `（${message.message || '请求失败'}）`);
+            }
+            activeBubble = null;
+            setStatus('风控校验', 'error');
+            void send('QWEN_OPEN_LOGIN');
           } else {
             appendMessage('error', message.message || '请求失败');
           }
@@ -259,6 +408,7 @@
         }
       });
       port.onDisconnect.addListener(() => {
+        hideAsk();
         if (activeBubble) {
           activeBubble = null;
           setBusy(false);
@@ -342,6 +492,22 @@
           }
         }
       });
+    }
+    const askCount = el('qwen-chat-ask-count');
+    if (askCount instanceof HTMLInputElement) {
+      askCount.addEventListener('input', updateAskContinueLabel);
+    }
+    const askContinue = el('qwen-chat-ask-continue');
+    if (askContinue instanceof HTMLButtonElement) {
+      askContinue.addEventListener('click', () => resolveAsk('continue'));
+    }
+    const askAlways = el('qwen-chat-ask-always');
+    if (askAlways instanceof HTMLButtonElement) {
+      askAlways.addEventListener('click', () => resolveAsk('always'));
+    }
+    const askStop = el('qwen-chat-ask-stop');
+    if (askStop instanceof HTMLButtonElement) {
+      askStop.addEventListener('click', () => resolveAsk('stop'));
     }
     if (form instanceof HTMLFormElement) {
       form.addEventListener('submit', (event) => {

@@ -38,12 +38,32 @@
       activeChatPorts.add(port);
       const abortController = new AbortController();
       const turnRef = {};
+      let pendingAsk = null;
+      const loopSession = {};
+      const resolveAskOnAbort = () => {
+        if (pendingAsk) {
+          const resolve = pendingAsk.resolve;
+          pendingAsk = null;
+          resolve?.({ action: 'stop' });
+        }
+      };
       port.onDisconnect.addListener(() => {
         activeChatPorts.delete(port);
+        resolveAskOnAbort();
         abortController.abort();
       });
       port.onMessage.addListener((message) => {
+        if (message?.type === 'askResponse' && pendingAsk?.id === message.id) {
+          const resolve = pendingAsk.resolve;
+          pendingAsk = null;
+          resolve?.({
+            action: String(message.action || 'stop'),
+            count: Number(message.count) || 0
+          });
+          return;
+        }
         if (message?.type === 'stop') {
+          resolveAskOnAbort();
           abortController.abort();
           if (turnRef.chatId && turnRef.responseId) {
             void global.BjtuQwenClient?.stopGeneration?.({
@@ -72,6 +92,33 @@
               signal: abortController.signal,
               turnRef,
               thinking: settings.thinkingEnabled === true,
+              sessionRef: loopSession,
+              askUser: (payload) => new Promise((resolve) => {
+                const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                pendingAsk = { id, resolve };
+                abortController.signal.addEventListener('abort', resolveAskOnAbort, { once: true });
+                const safeMessage = String(payload?.message || '操作调用次数过多，是否继续？');
+                port.postMessage({
+                  type: 'ask',
+                  id,
+                  message: safeMessage,
+                  mode: String(payload?.mode || 'iterate'),
+                  count: Number(payload?.count) || 3
+                });
+                try {
+                  if (chrome?.notifications?.create) {
+                    chrome.notifications.create('qwen-ask-limit', {
+                      type: 'basic',
+                      iconUrl: chrome.runtime.getURL('icons/128.png'),
+                      title: '千问助手',
+                      message: safeMessage,
+                      priority: 2
+                    });
+                  }
+                } catch {
+                  // 通知失败不影响主流程
+                }
+              }),
               onDelta: (text) => {
                 if (port.disconnected) return;
                 port.postMessage({ type: 'delta', text });
@@ -84,7 +131,13 @@
               }
             });
             if (port.disconnected) return;
-            port.postMessage({ type: 'done', text: result.text, chatId: result.chatId, responseId: String(result.responseId || '') });
+            port.postMessage({
+              type: 'done',
+              text: result.text,
+              chatId: result.chatId,
+              responseId: String(result.responseId || ''),
+              stoppedByLimit: result.stoppedByLimit === true
+            });
           } catch (error) {
             if (port.disconnected) return;
             if (error?.name === 'AbortError' || abortController.signal.aborted) {

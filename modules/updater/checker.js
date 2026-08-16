@@ -80,7 +80,8 @@ const VERSION_OPTIONAL_MODULES = Object.freeze({
   academic: '教务系统',
   campusnet: '校园网自动重连',
   captcha: '本地验证码识别',
-  updater: '更新组件'
+  updater: '更新组件',
+  qwen: '通义千问'
 });
 const VERSION_MODULE_SCOPE_IDS = ['ve', ...Object.keys(VERSION_OPTIONAL_MODULES)];
 const VERSION_REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
@@ -1583,9 +1584,14 @@ async function chooseUpdateModules(archiveFiles) {
   if (!candidates.length) return new Set();
   const stored = await chrome.storage.local.get(VERSION_MODULE_SELECTION_KEY).catch(() => ({}));
   const previous = stored?.[VERSION_MODULE_SELECTION_KEY];
+  const alreadyChosen = new Set(Array.isArray(previous) ? previous : []);
+  const defaultChosen = (id) => available[id] === true || packaged.includes(id);
   const initial = new Set(Array.isArray(previous)
-    ? previous.filter((id) => candidates.includes(id))
-    : candidates.filter((id) => available[id] === true || packaged.includes(id)));
+    ? [
+      ...alreadyChosen,
+      ...candidates.filter((id) => !alreadyChosen.has(id) && defaultChosen(id))
+    ]
+    : candidates.filter(defaultChosen));
 
   return new Promise((resolve) => {
     setVersionDownloadProgressUi({

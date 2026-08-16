@@ -16,6 +16,15 @@
     <span>尚未登录 chat.qwen.ai</span>
     <button id="qwen-chat-login-btn" class="btn qwen-chat-login-btn" type="button">打开登录页</button>
   </div>
+  <div id="qwen-chat-ask" class="qwen-chat-ask" hidden>
+    <div id="qwen-chat-ask-text" class="qwen-chat-ask-text"></div>
+    <div class="qwen-chat-ask-row">
+      <input id="qwen-chat-ask-count" class="qwen-chat-ask-count" type="number" min="1" step="1" value="3">
+      <button id="qwen-chat-ask-continue" class="btn qwen-chat-ask-btn" type="button">继续 3 次</button>
+      <button id="qwen-chat-ask-always" class="btn qwen-chat-ask-btn" type="button">始终允许</button>
+      <button id="qwen-chat-ask-stop" class="btn qwen-chat-ask-btn qwen-chat-ask-stop" type="button">结束本次</button>
+    </div>
+  </div>
   <form id="qwen-chat-input-form" class="qwen-chat-input-row">
     <textarea id="qwen-chat-input" class="qwen-chat-input" rows="1" placeholder="向 AI 提问，例如：我还有哪些作业没交？"></textarea>
     <span class="qwen-chat-input-actions">

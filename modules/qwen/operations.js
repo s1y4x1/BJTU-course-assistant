@@ -66,6 +66,22 @@
     return requireGlobal('BjtuVeHomeworkCore');
   }
 
+  const ACADEMIC_DIRECT = {
+    currentAccount: { fn: 'getContext', type: 'ACADEMIC_GET_CONTEXT' },
+    scores: { fn: 'loadScores', type: 'ACADEMIC_LOAD_SCORES' },
+    exams: { fn: 'loadExams', type: 'ACADEMIC_LOAD_EXAMS' },
+    schedule: { fn: 'loadSchedule', type: 'ACADEMIC_LOAD_SCHEDULE' },
+    login: { fn: 'loginWithPassword', type: 'ACADEMIC_LOGIN_WITH_PASSWORD' }
+  };
+
+  async function academicInvoke(kind, args, timeoutMs = 90000) {
+    const direct = ACADEMIC_DIRECT[kind];
+    const internals = typeof requireGlobal === 'function' ? requireGlobal('BjtuAcademicSystemInternals') : null;
+    const fn = internals?.[direct?.fn];
+    if (typeof fn === 'function') return fn(args);
+    return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
+  }
+
   const OPERATIONS = [
     {
       module: 've',
@@ -274,7 +290,7 @@
         '**返回示例**：{"ok":true,"studentId":"...","accounts":[{"studentId":"...","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
       ].join('\n'),
       async run() {
-        return sendRuntimeMessage({ type: 'ACADEMIC_GET_CONTEXT' });
+        return academicInvoke('currentAccount');
       }
     },
     {
@@ -292,7 +308,7 @@
         '**返回示例**：{"ok":true,"scores":[{"courseName":"高等数学","score":95,"credits":4}]}'
       ].join('\n'),
       async run() {
-        return sendRuntimeMessage({ type: 'ACADEMIC_LOAD_SCORES' }, 120000);
+        return academicInvoke('scores', undefined, 120000);
       }
     },
     {
@@ -310,7 +326,7 @@
         '**返回示例**：{"ok":true,"exams":[{"courseName":"高等数学","examTime":"2026-01-10 09:00"}]}'
       ].join('\n'),
       async run() {
-        return sendRuntimeMessage({ type: 'ACADEMIC_LOAD_EXAMS' }, 120000);
+        return academicInvoke('exams', undefined, 120000);
       }
     },
     {
@@ -330,7 +346,7 @@
         '**返回示例**：{"ok":true,"rows":[{"courseName":"高等数学","weekDay":1,"startSection":1}],"currentWeek":1}'
       ].join('\n'),
       async run(args) {
-        return sendRuntimeMessage({ type: 'ACADEMIC_LOAD_SCHEDULE', payload: { scheduleType: String(args?.scheduleType || '') } }, 120000);
+        return academicInvoke('schedule', { scheduleType: String(args?.scheduleType || '') }, 120000);
       }
     },
     {
@@ -353,7 +369,7 @@
         const studentId = String(args?.studentId || '').trim();
         const password = String(args?.password || '');
         if (!studentId || !password) throw new Error('缺少参数 studentId 或 password');
-        return sendRuntimeMessage({ type: 'ACADEMIC_LOGIN_WITH_PASSWORD', payload: { studentId, password } }, 60000);
+        return academicInvoke('login', { studentId, password }, 60000);
       }
     },
     {

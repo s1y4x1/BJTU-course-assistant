@@ -1259,6 +1259,51 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     await chrome.storage.local.remove(OBSOLETE_BINDING_KEYS);
   }
 
+  async function buildAcademicContext() {
+    const stored = await chrome.storage.local.get([
+      STUDENT_ID_KEY, MONITOR_KEY, EXAM_MONITOR_KEY, CLASS_REMINDER_KEY,
+      CLASS_REMINDER_LEAD_KEY, MONITOR_INTERVAL_KEY,
+      STATUS_KEY, EXAM_STATUS_KEY, 'username'
+    ]);
+    const accounts = await getAcademicAccounts();
+    const studentId = String(stored?.[STUDENT_ID_KEY] || stored?.username || '').trim();
+    const summaries = Object.values(accounts)
+      .map((account) => ({
+        studentId: account.studentId,
+        userName: String(account.userName || ''),
+        hasPassword: !!account.password,
+        updatedAt: Number(account.updatedAt || 0),
+        lastLoginAt: Number(account.lastLoginAt || 0)
+      }))
+      .sort((a, b) => Number(b.lastLoginAt || b.updatedAt || 0) - Number(a.lastLoginAt || a.updatedAt || 0));
+    return {
+      ok: true, studentId,
+      accounts: summaries,
+      monitorEnabled: stored?.[MONITOR_KEY] === true,
+      examMonitorEnabled: stored?.[EXAM_MONITOR_KEY] === true,
+      classReminderEnabled: stored?.[CLASS_REMINDER_KEY] === true,
+      classReminderLeadMinutes: normalizeClassReminderLeadMinutes(stored?.[CLASS_REMINDER_LEAD_KEY]),
+      monitorIntervalMinutes: normalizeMonitorIntervalMinutes(stored?.[MONITOR_INTERVAL_KEY]),
+      monitorStatus: stored?.[STATUS_KEY] || null,
+      examMonitorStatus: stored?.[EXAM_STATUS_KEY] || null
+    };
+  }
+
+  async function loadAcademicSchedule(args) {
+    const schedule = await fetchSchedulePage(args?.scheduleType);
+    const weekContext = await fetchCurrentWeekContext(schedule.weeks);
+    return {
+      ok: true,
+      type: schedule.type,
+      rows: schedule.rows,
+      weeks: weekContext.weeks,
+      currentWeek: weekContext.week,
+      weekLabels: weekContext.weekLabels,
+      termName: weekContext.termName,
+      weekSource: weekContext.source
+    };
+  }
+
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'ACADEMIC_LOGIN_WITH_PASSWORD') {
@@ -1316,25 +1361,14 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
           }));
         return true;
       }
-      if (message?.type === 'ACADEMIC_LOAD_SCHEDULE') {
-        (async () => {
-          const schedule = await fetchSchedulePage(message?.payload?.scheduleType);
-          const weekContext = await fetchCurrentWeekContext(schedule.weeks);
-          sendResponse({
-            ok: true,
-            type: schedule.type,
-            rows: schedule.rows,
-            weeks: weekContext.weeks,
-            currentWeek: weekContext.week,
-            weekLabels: weekContext.weekLabels,
-            termName: weekContext.termName,
-            weekSource: weekContext.source
-          });
-        })().catch((error) => sendResponse({
-          ok: false,
-          code: String(error?.code || ''),
-          message: String(error?.message || error)
-        }));
+if (message?.type === 'ACADEMIC_LOAD_SCHEDULE') {
+        loadAcademicSchedule(message?.payload)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({
+            ok: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
         return true;
       }
       if (message?.type === 'ACADEMIC_SWITCH_ACCOUNT') {
@@ -1343,36 +1377,10 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
-      if (message?.type === 'ACADEMIC_GET_CONTEXT') {
-        (async () => {
-          const stored = await chrome.storage.local.get([
-            STUDENT_ID_KEY, MONITOR_KEY, EXAM_MONITOR_KEY, CLASS_REMINDER_KEY,
-            CLASS_REMINDER_LEAD_KEY, MONITOR_INTERVAL_KEY,
-            STATUS_KEY, EXAM_STATUS_KEY, 'username'
-          ]);
-          const accounts = await getAcademicAccounts();
-          const studentId = String(stored?.[STUDENT_ID_KEY] || stored?.username || '').trim();
-          const summaries = Object.values(accounts)
-            .map((account) => ({
-              studentId: account.studentId,
-              userName: String(account.userName || ''),
-              hasPassword: !!account.password,
-              updatedAt: Number(account.updatedAt || 0),
-              lastLoginAt: Number(account.lastLoginAt || 0)
-            }))
-            .sort((a, b) => Number(b.lastLoginAt || b.updatedAt || 0) - Number(a.lastLoginAt || a.updatedAt || 0));
-          sendResponse({
-            ok: true, studentId,
-            accounts: summaries,
-            monitorEnabled: stored?.[MONITOR_KEY] === true,
-            examMonitorEnabled: stored?.[EXAM_MONITOR_KEY] === true,
-            classReminderEnabled: stored?.[CLASS_REMINDER_KEY] === true,
-            classReminderLeadMinutes: normalizeClassReminderLeadMinutes(stored?.[CLASS_REMINDER_LEAD_KEY]),
-            monitorIntervalMinutes: normalizeMonitorIntervalMinutes(stored?.[MONITOR_INTERVAL_KEY]),
-            monitorStatus: stored?.[STATUS_KEY] || null,
-            examMonitorStatus: stored?.[EXAM_STATUS_KEY] || null
-          });
-        })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+if (message?.type === 'ACADEMIC_GET_CONTEXT') {
+        buildAcademicContext()
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
       return false;
@@ -1493,6 +1501,12 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   global.BjtuAcademicSystemInternals = {
+    getContext: () => buildAcademicContext(),
+    loadScores: () => checkScores('options', { force: true }),
+    loadExams: () => checkExams('options', { force: true }),
+    loadSchedule: (args) => loadAcademicSchedule(args),
+    loginWithPassword: (studentId, password) => loginWithPassword(studentId, password),
+    loginSavedAccount: (studentId) => loginSavedAcademicAccount(studentId),
     extractLoginCredentials,
     parseCurrentAccountPage,
     normalizeScoreRow,
