@@ -86,6 +86,19 @@
     }
   }
 
+  // 复用已有 chat.qwen.ai 页面或后台新开一个，等待内容脚本重新上报登录令牌后复查登录状态
+  async function tryRefreshLogin() {
+    if (await isLoggedIn()) return true;
+    let tab = await findChatTab();
+    if (!tab) tab = await ensureChatTab();
+    if (!tab) return false;
+    for (let i = 0; i < 12; i += 1) {
+      if (await isLoggedIn()) return true;
+      await sleep(500);
+    }
+    return await isLoggedIn();
+  }
+
   function sendToTab(tabId, message) {
     return new Promise((resolve) => {
       try {
@@ -486,6 +499,7 @@
     if (!tab) tab = await ensureChatTab();
     if (tab) {
       let lastError = null;
+      let refreshed = false;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         if (attempt > 0) {
           if (receivedAny) break;
@@ -497,6 +511,11 @@
           if (error?.name === 'AbortError') throw error;
           lastError = error;
           if (error?.code === 'WAF_PUNISH' && attempt < 2 && !receivedAny) continue;
+          if (String(error?.message || '').includes('页面未就绪') && !refreshed) {
+            refreshed = true;
+            tab = await ensureChatTab();
+            if (tab) continue;
+          }
           break;
         }
       }
@@ -525,6 +544,7 @@
   global.BjtuQwenClient = {
     CHAT_BASE,
     isLoggedIn,
+    tryRefreshLogin,
     openLoginPage,
     captureToken,
     fetchModels,

@@ -169,7 +169,9 @@
           const settings = await getSettings();
           const client = global.BjtuQwenClient;
           let loggedIn = false;
-          try { loggedIn = client ? await client.isLoggedIn() : false; } catch { loggedIn = false; }
+          try {
+            loggedIn = client ? await (message?.payload?.ensureLogin ? client.tryRefreshLogin() : client.isLoggedIn()) : false;
+          } catch { loggedIn = false; }
           let modelName = '';
           if (settings.modelId) modelName = settings.modelId;
           sendResponse({ ok: true, ...settings, loggedIn, modelId: settings.modelId, modelName });

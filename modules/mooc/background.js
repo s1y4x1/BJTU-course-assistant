@@ -227,6 +227,19 @@ async function handleMoocRequest(action, payload, tabId, pageUrl = '') {
   return result.data;
 }
 
+  globalThis.BjtuMoocBackground = {
+    handleRequest: async (args) => handleMoocRequest(
+      String(args?.action || ''),
+      args?.payload || {},
+      Number(args?.tabId || 0),
+      String(args?.pageUrl || '')
+    ),
+    loginStatus: async () => {
+      const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
+      return { ok: true, loggedIn: !!String(cookie?.value || '').trim(), tabId: null, temporaryTab: false };
+    }
+  };
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'MOOC_LOGIN_STATUS') {
     (async () => {

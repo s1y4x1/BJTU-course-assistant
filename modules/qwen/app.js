@@ -66,6 +66,10 @@
     renderer.codespan = ({ text }) => `<code class="qwen-md-inline-code">${escapeHtmlQwen(text)}</code>`;
     renderer.code = ({ text, lang }) => {
       const language = String(lang || '').trim().split(/\s+/)[0];
+      if (language === 'res') {
+        const jsonText = String(text || '').trim();
+        return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
+      }
       const languageAttribute = language ? ` data-language="${escapeHtmlQwen(language)}"` : '';
       return `<pre class="qwen-md-codeblock"${languageAttribute}><code>${escapeHtmlQwen(String(text || ''))}</code></pre>`;
     };
@@ -127,13 +131,18 @@
     return String(message?.content || '');
   }
 
-  function isResBlock(text) {
-    return /^```res\s*[\s\S]*```\s*$/.test(String(text || '').trim());
-  }
-
   function extractResJson(text) {
     const match = /^```res\s*([\s\S]*?)```\s*$/.exec(String(text || '').trim());
     return match ? String(match[1] || '').trim() : String(text || '');
+  }
+
+  function resBlocksFromText(text) {
+    const blocks = [];
+    const regex = /```res\s*([\s\S]*?)```/g;
+    const source = String(text || '');
+    let match;
+    while ((match = regex.exec(source))) blocks.push(match[0]);
+    return blocks;
   }
 
   function appendResCard(text) {
@@ -161,8 +170,9 @@
       const role = String(message?.role || '');
       if (role === 'user') {
         const content = String(message?.content || '');
-        if (isResBlock(content)) {
-          appendResCard(content);
+        const blocks = resBlocksFromText(content);
+        if (blocks.length) {
+          for (const block of blocks) appendResCard(block);
         } else {
           appendMessage('user', extractUserQuestion(content));
         }
@@ -231,11 +241,8 @@
     card.className = 'qwen-chat-op';
     const name = document.createElement('div');
     name.className = 'qwen-chat-op-name';
-    name.textContent = `操作：${operation.name}`;
-    const args = document.createElement('div');
-    args.className = 'qwen-chat-op-result';
-    args.textContent = `参数：${JSON.stringify(operation.arguments || {})}`;
-    card.append(name, args);
+    name.textContent = '操作结果';
+    card.append(name);
     messages.appendChild(card);
     messages.scrollTop = messages.scrollHeight;
     return card;
@@ -243,13 +250,11 @@
 
   function updateOperationResult(card, result) {
     if (!(card instanceof HTMLElement)) return;
+    const existing = card.querySelector(':scope > .qwen-chat-op-result');
+    if (existing instanceof HTMLElement) existing.remove();
     const content = document.createElement('div');
     content.className = 'qwen-chat-op-result';
-    if (result?.ok) {
-      content.textContent = `结果：${JSON.stringify(result.result)}`;
-    } else {
-      content.textContent = `失败：${result?.error || '未知错误'}`;
-    }
+    content.textContent = JSON.stringify(result);
     card.appendChild(content);
     const messages = el(MESSAGES_ID);
     if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
@@ -263,7 +268,7 @@
   async function refreshModels() {
     const select = el(MODEL_ID);
     if (!(select instanceof HTMLSelectElement)) return;
-    const status = await send('QWEN_GET_STATUS');
+    const status = await send('QWEN_GET_STATUS', { ensureLogin: true });
     const response = await send('QWEN_LIST_MODELS');
     select.replaceChildren();
     if (response?.ok && Array.isArray(response.models) && response.models.length) {
@@ -286,7 +291,7 @@
   }
 
   async function refreshStatus() {
-    const status = await send('QWEN_GET_STATUS');
+    const status = await send('QWEN_GET_STATUS', { ensureLogin: true });
     if (status?.loggedIn) {
       setStatus('已登录', 'ok');
       showLoginHint(false);

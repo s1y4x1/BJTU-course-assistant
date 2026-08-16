@@ -92,6 +92,20 @@
     return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
   }
 
+  async function moocInvoke(args, timeoutMs = 120000) {
+    const bg = typeof requireGlobal === 'function' ? requireGlobal('BjtuMoocBackground') : null;
+    const fn = bg?.handleRequest;
+    if (typeof fn === 'function') {
+      try {
+        const data = await fn(args);
+        return { ok: true, data };
+      } catch (error) {
+        return { ok: false, code: String(error?.code || ''), message: String(error?.message || error || '中国大学MOOC请求失败') };
+      }
+    }
+    return sendRuntimeMessage({ type: 'MOOC_REQUEST', payload: args }, timeoutMs);
+  }
+
   const OPERATIONS = [
     {
       module: 've',
@@ -392,7 +406,7 @@
         '**返回示例**：{"ok":true,"courses":[{"courseId":"...","courseName":"..."}]}'
       ].join('\n'),
       async run() {
-        return sendRuntimeMessage({ type: 'MOOC_REQUEST', payload: { action: 'course-list' } }, 120000);
+        return moocInvoke({ action: 'course-list' }, 120000);
       }
     },
     {
@@ -414,7 +428,7 @@
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         if (!courseId) throw new Error('缺少参数 courseId');
-        return sendRuntimeMessage({ type: 'MOOC_REQUEST', payload: { action: 'course-detail', courseId } }, 120000);
+        return moocInvoke({ action: 'course-detail', courseId }, 120000);
       }
     },
     {
@@ -436,7 +450,7 @@
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         if (!courseId) throw new Error('缺少参数 courseId');
-        return sendRuntimeMessage({ type: 'MOOC_REQUEST', payload: { action: 'quiz-paper', courseId, contentType: Number(args?.contentType) || undefined } }, 120000);
+        return moocInvoke({ action: 'quiz-paper', courseId, contentType: Number(args?.contentType) || undefined }, 120000);
       }
     },
     {
@@ -454,7 +468,8 @@
         '**返回示例**：{"loggedIn":true}'
       ].join('\n'),
       async run() {
-        return sendRuntimeMessage({ type: 'MOOC_LOGIN_STATUS' });
+        const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
+        return { ok: true, loggedIn: !!String(cookie?.value || '').trim(), tabId: null, temporaryTab: false };
       }
     },
     {
@@ -476,6 +491,11 @@
       async run(args) {
         const imageUrl = String(args?.imageUrl || '').trim();
         if (!imageUrl) throw new Error('缺少参数 imageUrl');
+        const recognizer = requireGlobal('BjtuCaptchaRecognizer');
+        if (typeof recognizer?.recognizeMisCaptcha === 'function') {
+          const blob = await (await fetch(imageUrl)).blob();
+          return recognizer.recognizeMisCaptcha(blob);
+        }
         return sendRuntimeMessage({ type: 'MIS_CAPTCHA_RECOGNIZE', payload: { imageUrl } }, 60000);
       }
     },
