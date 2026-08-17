@@ -138,7 +138,7 @@
                 if (event?.operation) port.postMessage({ type: 'operation', operation: event.operation });
                 if (event?.operationResult) port.postMessage({ type: 'operationResult', result: event.operationResult });
                 if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
-                if (event?.firstMessage) port.postMessage({ type: 'firstMessage', text: event.text });
+                if (event?.firstMessage) port.postMessage({ type: 'firstMessage' });
               }
             });
             if (port.disconnected) return;
@@ -160,7 +160,8 @@
               message: String(error?.message || error),
               code: String(error?.code || ''),
               chatId: String(turnRef?.chatId || ''),
-              parentId: String(turnRef?.lastMessageId || '')
+              parentId: String(turnRef?.lastMessageId || ''),
+              retryText: String(turnRef?.pendingContent || '')
             });
           }
         })();
@@ -275,6 +276,24 @@
           const settings = await getSettings();
           sendResponse({ ok: true, groups: await operations.groupsDetailed(), enabledOperations: settings.enabledOperations });
         })();
+        return true;
+      }
+      if (type === 'QWEN_BUILD_SYSTEM_PROMPT') {
+        const agent = global.BjtuQwenAgent;
+        const operations = global.BjtuQwenOperations;
+        if (!agent?.buildSystemPrompt) {
+          sendResponse({ ok: false, message: '通义千问代理未就绪' });
+          return false;
+        }
+        try {
+          const qwenDocs = [
+            operations?.docs?.('qwen.listOperations')?.doc,
+            operations?.docs?.('qwen.getDocs')?.doc
+          ].filter(Boolean).join('\n\n');
+          sendResponse({ ok: true, text: agent.buildSystemPrompt({ qwenDocs }) });
+        } catch (error) {
+          sendResponse({ ok: false, message: String(error?.message || error) });
+        }
         return true;
       }
       if (type === 'QWEN_OPERATION_DOCS') {

@@ -21,7 +21,6 @@
   let nextReplyFresh = false;
   let inThinking = false;
   let lastSendText = '';
-  let lastWasOpening = false;
   let pendingEditParentId = '';
   let pendingEdit = false;
 
@@ -123,14 +122,6 @@
     return container?._mdText || '';
   }
 
-  function removeEmptyAssistantBubbles() {
-    const messages = el(MESSAGES_ID);
-    if (!(messages instanceof HTMLElement)) return;
-    messages.querySelectorAll(':scope > .qwen-chat-msg.assistant').forEach((bubble) => {
-      if (bubble instanceof HTMLElement && !mdRawText(bubble)) bubble.remove();
-    });
-  }
-
   function extractUserQuestion(content) {
     const source = String(content || '');
     const marker = '用户问题：';
@@ -188,7 +179,7 @@
       const role = String(message?.role || '');
       if (role === 'user') {
         const content = String(message?.content || '');
-        if (content.includes('现在，请做个开场白。')) continue;
+        if (content.includes('你是「BJTU 课程助手」的智能代理')) continue;
         const blocks = resBlocksFromText(content);
         if (blocks.length) {
           for (const block of blocks) appendResCard(block);
@@ -302,7 +293,7 @@
     return bubble;
   }
 
-  function appendRetryButton(bubble) {
+  function appendRetryButton(bubble, retryText) {
     if (!(bubble instanceof HTMLElement)) return;
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -313,8 +304,9 @@
       if (busy) return;
       if (activeBubble instanceof HTMLElement) activeBubble.remove();
       activeBubble = null;
-      if (lastWasOpening) sendOpening();
-      else if (lastSendText) sendMessage(lastSendText);
+      const text = retryText || lastSendText;
+      if (!text) return;
+      sendMessage(text);
     });
     bubble.appendChild(btn);
   }
@@ -626,18 +618,6 @@
             collapseThinking(activeBubble);
             inThinking = false;
           }
-          const bubble = activeBubble instanceof HTMLElement ? activeBubble : ensureAssistantBubble();
-          if (message?.text && bubble instanceof HTMLElement) {
-            const container = mdContainer(bubble);
-            if (container) {
-              const current = String(container._mdText || '');
-              const want = String(message.text);
-              if (!current || current !== want) {
-                container._mdText = want;
-                container.innerHTML = renderQwenMarkdown(want);
-              }
-            }
-          }
           if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
           activeBubble = null;
           const messages = el(MESSAGES_ID);
@@ -666,7 +646,6 @@
           setStatus('已登录', 'ok');
           port.disconnect();
           port = null;
-          removeEmptyAssistantBubbles();
         } else if (message?.type === 'stopped') {
           hideAsk();
           if (message?.parentId) sessionParentId = String(message.parentId);
@@ -710,14 +689,15 @@
             }
             activeBubble = null;
             const bubble = appendMessage('error', message.message || '请求失败');
-            appendRetryButton(bubble);
+            appendRetryButton(bubble, String(message.retryText || ''));
             setStatus('风控校验', 'error');
             void send('QWEN_OPEN_LOGIN');
           } else {
             removeCursor(activeBubble);
             if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) activeBubble.remove();
             activeBubble = null;
-            appendMessage('error', message.message || '请求失败');
+            const bubble = appendMessage('error', message.message || '请求失败');
+            if (String(message.retryText || '').trim()) appendRetryButton(bubble, String(message.retryText));
           }
           setBusy(false);
           port.disconnect();
@@ -745,7 +725,6 @@
 
   function sendMessage(text) {
     if (busy) return;
-    lastWasOpening = false;
     const editParent = pendingEditParentId;
     pendingEditParentId = '';
     const isEditSend = pendingEdit;
@@ -755,8 +734,12 @@
 
   function sendOpening() {
     if (busy) return;
-    lastWasOpening = true;
-    startStream({ text: '', showUserBubble: false });
+    void send('QWEN_BUILD_SYSTEM_PROMPT').then((response) => {
+      if (busy) return;
+      const text = String(response?.text || '').trim();
+      if (!text) return;
+      startStream({ text, showUserBubble: false });
+    });
   }
 
   function init() {

@@ -117,17 +117,11 @@
     await ensureLoggedIn();
 
     const providedChatId = String(chatId || '');
-    let isNewChat = !providedChatId;
     let effectiveChatId = providedChatId;
     let fetchedHistory = [];
-    if (!isNewChat && typeof client.fetchChatHistory === 'function') {
+    if (providedChatId && typeof client.fetchChatHistory === 'function') {
       try {
         fetchedHistory = await client.fetchChatHistory(providedChatId);
-        const list = Array.isArray(fetchedHistory) ? fetchedHistory : [];
-        if (!list.some((m) => String(m?.role || '') === 'user' || String(m?.role || '') === 'assistant')) {
-          // 会话里没有任何消息：视为全新会话，仍注入 systemPrompt（可能由陈旧/残留的 chatId 等引起）
-          isNewChat = true;
-        }
       } catch {
         // 拉取失败：保守按已有会话处理
       }
@@ -136,7 +130,7 @@
     if (turnRef) turnRef.chatId = effectiveChatId;
 
     let parentId = String(previousParentId || '');
-    if (!parentIdExplicit && !isNewChat && !parentId) {
+    if (!parentIdExplicit && fetchedHistory.length && !parentId) {
       const list = Array.isArray(fetchedHistory) ? fetchedHistory : [];
       for (let i = list.length - 1; i >= 0; i -= 1) {
         const msg = list[i];
@@ -153,85 +147,6 @@
     let fullText = '';
     let lastResultText = '';
     let lastCleanReply = '';
-
-    if (isNewChat) {
-      const openingPrompt = buildSystemPrompt({
-        qwenDocs: [
-          operations.docs('qwen.listOperations')?.doc,
-          operations.docs('qwen.getDocs')?.doc
-        ].filter(Boolean).join('\n\n')
-      });
-      let openingContent = openingPrompt;
-      let openingReplyText = '';
-      let openingParent = '';
-      for (let openingIteration = 0; openingIteration < 6; openingIteration += 1) {
-        if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-        const openingMessage = client.buildUserMessage({ modelId, content: openingContent, thinking });
-        openingMessage.parent_id = openingParent || null;
-        openingMessage.parentId = openingParent || null;
-        const openingResponse = await client.streamCompletions({
-          chatId: effectiveChatId,
-          modelId,
-          parentId: openingParent,
-          messages: [openingMessage],
-          onEvent: (event) => {
-            if (event?.responseParentId && turnRef) {
-              turnRef.lastMessageId = String(event.responseParentId);
-            }
-            if (event?.thinking) onEvent?.({ thinking: event.thinking, iteration: -1 });
-            else if (event?.finished) onEvent?.({ finished: true, iteration: -1 });
-            else if (event?.meta) onEvent?.({ meta: event.meta, iteration: -1 });
-          },
-          signal
-        });
-        openingParent = String(openingResponse?.responseId || openingParent);
-        if (turnRef) turnRef.lastMessageId = String(openingResponse?.responseParentId || turnRef.lastMessageId || '');
-        const openingReply = String(openingResponse?.text || '');
-        const openingCall = parseTrailingOperation(openingReply);
-        if (!openingCall || openingIteration >= 5) {
-          openingReplyText = openingReply;
-          break;
-        }
-        onEvent?.({ operation: openingCall, iteration: -1 });
-        const openingOutcome = await operations.run(openingCall.name, openingCall.arguments);
-        onEvent?.({ operationResult: openingOutcome, iteration: -1 });
-        openingContent = openingOutcome.ok
-          ? `\`\`\`res\n${operations.formatResult(openingOutcome.result)}\n\`\`\``
-          : [
-              '```res',
-              formatOutcomeError(openingOutcome),
-              '```',
-              '',
-              '若无法继续，请直接给出开场白。'
-            ].join('\n');
-      }
-      parentId = openingParent;
-      if (turnRef) turnRef.responseId = parentId;
-      fullText = openingReplyText;
-      const greetingText = String(openingReplyText || '').trim();
-      if (greetingText) {
-        for (let i = 0; i < greetingText.length; i += 3) {
-          if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-          onDelta?.(greetingText.slice(i, i + 3));
-          await sleep(16);
-        }
-        onEvent?.({ firstMessage: true, text: greetingText });
-      }
-      isNewChat = false;
-
-      if (!String(userText || '').trim()) {
-        onEvent?.({ done: true });
-        return {
-          chatId: effectiveChatId,
-          responseId: parentId,
-          modelId,
-          text: openingReplyText,
-          fullText,
-          operations: [],
-          final: openingReplyText
-        };
-      }
-    }
 
     const loopSession = options.sessionRef || {};
     if (alwaysAllow === true) loopSession.alwaysAllow = true;
@@ -270,6 +185,7 @@
       }
 
       const content = iteration === 0 ? userText : lastResultText;
+      if (turnRef) turnRef.pendingContent = String(content || '');
       const message = client.buildUserMessage({ modelId, content, thinking });
       message.parent_id = parentId || null;
       message.parentId = parentId || null;
