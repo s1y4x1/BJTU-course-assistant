@@ -584,6 +584,7 @@
           port = null;
         } else if (message?.type === 'stopped') {
           hideAsk();
+          if (message?.parentId) sessionParentId = String(message.parentId);
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;
@@ -602,6 +603,7 @@
           showAsk(message);
         } else if (message?.type === 'error') {
           hideAsk();
+          if (message?.parentId) sessionParentId = String(message.parentId);
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;

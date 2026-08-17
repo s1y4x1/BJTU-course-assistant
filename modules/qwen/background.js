@@ -152,14 +152,15 @@
           } catch (error) {
             if (port.disconnected) return;
             if (error?.name === 'AbortError' || abortController.signal.aborted) {
-              port.postMessage({ type: 'stopped' });
+              port.postMessage({ type: 'stopped', parentId: String(turnRef?.lastMessageId || '') });
               return;
             }
             port.postMessage({
               type: 'error',
               message: String(error?.message || error),
               code: String(error?.code || ''),
-              chatId: String(turnRef?.chatId || '')
+              chatId: String(turnRef?.chatId || ''),
+              parentId: String(turnRef?.lastMessageId || '')
             });
           }
         })();

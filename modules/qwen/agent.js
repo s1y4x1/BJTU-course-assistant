@@ -168,6 +168,9 @@
           parentId: openingParent,
           messages: [openingMessage],
           onEvent: (event) => {
+            if (event?.responseParentId && turnRef) {
+              turnRef.lastMessageId = String(event.responseParentId);
+            }
             if (event?.thinking) onEvent?.({ thinking: event.thinking, iteration: -1 });
             else if (event?.finished) onEvent?.({ finished: true, iteration: -1 });
             else if (event?.meta) onEvent?.({ meta: event.meta, iteration: -1 });
@@ -175,6 +178,7 @@
           signal
         });
         openingParent = String(openingResponse?.responseId || openingParent);
+        if (turnRef) turnRef.lastMessageId = String(openingResponse?.responseParentId || turnRef.lastMessageId || '');
         const openingReply = String(openingResponse?.text || '');
         const openingCall = parseTrailingOperation(openingReply);
         if (!openingCall || openingIteration >= 5) {
@@ -263,6 +267,9 @@
         parentId,
         messages: [message],
         onEvent: (event) => {
+          if (event?.responseParentId && turnRef) {
+            turnRef.lastMessageId = String(event.responseParentId);
+          }
           if (event?.thinking) {
             onEvent?.({ thinking: event.thinking, iteration });
           } else if (event?.text) {
@@ -278,6 +285,7 @@
       });
       parentId = String(response?.responseId || parentId);
       if (turnRef) turnRef.responseId = parentId;
+      if (turnRef) turnRef.lastMessageId = String(response?.responseParentId || turnRef.lastMessageId || '');
       const replyText = String(response?.text || '');
       history.push(message, {
         id: null,

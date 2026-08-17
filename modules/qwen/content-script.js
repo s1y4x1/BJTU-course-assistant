@@ -174,7 +174,7 @@
         } else if (raw) {
           emit({ error: 'UNEXPECTED_RESPONSE' });
         } else {
-          emit({ end: true, text: '', responseId: '' });
+          emit({ end: true, text: '', responseId: '', responseParentId });
         }
         return null;
       }
@@ -185,6 +185,7 @@
       let rawText = '';
       let fullText = '';
       let responseId = '';
+      let responseParentId = '';
       let sawDataLine = false;
 
       const handleLine = (line) => {
@@ -198,6 +199,14 @@
         }
         if (data?.response_id) responseId = String(data.response_id);
         if (data?.['response.created']?.response_id) responseId = String(data['response.created'].response_id);
+        const createdParentId = String(data?.['response.created']?.response?.parent_id
+          || data?.['response.created']?.response?.parentId
+          || data?.['response.created']?.parent_id
+          || '');
+        if (createdParentId && createdParentId !== responseParentId) {
+          responseParentId = createdParentId;
+          emit({ responseParentId });
+        }
         if (data?.error) {
           emit({ error: 'STREAM_ERROR', message: apiStreamErrorMessage(data.error) });
           return;
@@ -249,7 +258,7 @@
           return null;
         }
       }
-      emit({ end: true, text: fullText, responseId });
+      emit({ end: true, text: fullText, responseId, responseParentId });
       return null;
     } catch (error) {
       STREAM_CONTROLLERS.delete(id);

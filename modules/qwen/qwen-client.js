@@ -424,7 +424,11 @@
         else pending.reject(new Error(code));
       } else if (data.end) {
         pendingStreams.delete(data.id);
-        pending.resolve({ text: String(data.text || ''), responseId: String(data.responseId || '') });
+        pending.resolve({
+          text: String(data.text || ''),
+          responseId: String(data.responseId || ''),
+          responseParentId: String(data.responseParentId || '')
+        });
       } else {
         pending.onEvent?.(data);
       }
@@ -537,29 +541,38 @@
       if (kind === 'WAF_BUSY') throw wafBusyError();
       if (kind === 'WAF_PUNISH') throw wafPunishError();
       if (kind || text.trim()) throw unparsableError();
-      return { text: '', responseId: '' };
+      return { text: '', responseId: '', responseParentId: '' };
     }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let rawText = '';
-    let sawDataLine = false;
-    let responseId = '';
-    let fullText = '';
+      let sawDataLine = false;
+      let responseId = '';
+      let responseParentId = '';
+      let fullText = '';
 
-    const handleLine = (line) => {
-      if (!line.startsWith('data:')) return;
-      sawDataLine = true;
-      let payload;
-      try {
-        payload = JSON.parse(line.slice(5).trim());
-      } catch {
-        return;
-      }
-      if (payload?.response_id) responseId = String(payload.response_id);
-      if (payload?.['response.created']?.response_id) responseId = String(payload['response.created'].response_id);
-      if (payload?.error) {
+      const handleLine = (line) => {
+        if (!line.startsWith('data:')) return;
+        sawDataLine = true;
+        let payload;
+        try {
+          payload = JSON.parse(line.slice(5).trim());
+        } catch {
+          return;
+        }
+        if (payload?.response_id) responseId = String(payload.response_id);
+        if (payload?.['response.created']?.response_id) responseId = String(payload['response.created'].response_id);
+        const createdParentId = String(payload?.['response.created']?.response?.parent_id
+          || payload?.['response.created']?.response?.parentId
+          || payload?.['response.created']?.parent_id
+          || '');
+        if (createdParentId && createdParentId !== responseParentId) {
+          responseParentId = createdParentId;
+          onEvent?.({ responseParentId });
+        }
+        if (payload?.error) {
         throw new Error(String(payload.error.details || payload.error.message || '通义千问返回了错误'));
       }
       const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
@@ -606,7 +619,7 @@
       if (kind === 'WAF_PUNISH') throw wafPunishError();
       if (kind) throw unparsableError();
     }
-    return { text: fullText, responseId };
+    return { text: fullText, responseId, responseParentId };
   }
 
   async function streamCompletions(options) {
