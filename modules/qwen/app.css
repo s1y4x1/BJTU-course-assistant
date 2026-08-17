@@ -211,6 +211,10 @@ html[data-color-scheme="dark"] .qwen-chat-edit-btn {
   max-width: 100%;
 }
 
+.qwen-chat-generating .qwen-chat-edit-btn {
+  display: none !important;
+}
+
 .qwen-chat-retry-btn {
   display: inline-block;
   margin-top: 8px;

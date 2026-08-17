@@ -76,6 +76,23 @@
     }
   }
 
+  let moduleAvailabilityCache = null;
+  async function getModuleAvailability() {
+    if (moduleAvailabilityCache) return moduleAvailabilityCache;
+    let availability = {};
+    try {
+      const registry = global.BjtuModuleRegistry;
+      if (registry && typeof registry?.ready?.then === 'function') {
+        const resolved = await registry.ready;
+        availability = resolved || {};
+      }
+    } catch {
+      availability = {};
+    }
+    moduleAvailabilityCache = availability;
+    return availability;
+  }
+
   const ACADEMIC_DIRECT = {
     currentAccount: { fn: 'getContext', type: 'ACADEMIC_GET_CONTEXT' },
     scores: { fn: 'loadScores', type: 'ACADEMIC_LOAD_SCORES' },
@@ -357,6 +374,11 @@ name: 've.accounts',
         if (!loginName) throw new Error('缺少参数 loginName，且本地无登录历史账号可用');
         const result = await loginService.login({ loginName, allowStoredCredentials: true });
         const userName = String(result?.userInfo?.userName || '');
+        try {
+          await pageInvoke('ve', 'enable', {}, 30000);
+        } catch {
+          // 应用页启用平台失败不阻断登录结果
+        }
         return { ok: !!result?.ok, message: String(result?.message || ''), userName };
       }
     },
@@ -1066,10 +1088,12 @@ name: 've.teachers_of_',
       ].join('\n'),
       async run() {
         const enabledSet = await getEnabledOperationSet();
+        const availability = await getModuleAvailability();
         const operations = {};
         for (const op of OPERATIONS) {
-          if (enabledSet && !enabledSet.has(op.name) && !String(op.name).startsWith('qwen.')) continue;
           const module = String(op.module || '');
+          if (availability[module] === false) continue;
+          if (enabledSet && !enabledSet.has(op.name) && !String(op.name).startsWith('qwen.')) continue;
           const key = String(op.name).split('.').slice(1).join('.');
           if (!operations[module]) operations[module] = {};
           operations[module][key] = op.summary || op.name;
@@ -1141,7 +1165,12 @@ name: 've.teachers_of_',
   }
 
   global.BjtuQwenOperations = {
-    groups: () => OPERATION_GROUPS.map((group) => ({ ...group, operations: group.operations.map((op) => op.name) })),
+    groups: async () => {
+      const availability = await getModuleAvailability();
+      return OPERATION_GROUPS
+        .filter((group) => availability[group.id] !== false)
+        .map((group) => ({ ...group, operations: group.operations.map((op) => op.name) }));
+    },
     list: allOperations,
     get: findOperation,
     docs: (name) => {

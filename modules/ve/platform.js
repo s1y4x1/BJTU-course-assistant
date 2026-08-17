@@ -2712,7 +2712,15 @@ globalThis.BjtuVePageApi = Object.freeze({
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
-  archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim())
+  archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
+  enable: () => {
+    if (typeof globalThis.togglePlatformSelection === 'function'
+        && typeof globalThis.isPlatformEnabled === 'function'
+        && !globalThis.isPlatformEnabled('ve')) {
+      globalThis.togglePlatformSelection('ve', { interactive: false, persist: true });
+    }
+    return { ok: true };
+  }
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

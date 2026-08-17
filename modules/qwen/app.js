@@ -19,6 +19,7 @@
   let sessionChatId = '';
   let sessionParentId = '';
   let nextReplyFresh = false;
+  let inThinking = false;
   let lastSendText = '';
   let pendingEditParentId = '';
   let pendingEdit = false;
@@ -216,9 +217,11 @@
     const sendBtn = el(SEND_ID);
     const input = el(INPUT_ID);
     const stopBtn = el(STOP_ID);
-    if (sendBtn instanceof HTMLButtonElement) sendBtn.disabled = busy;
+    if (sendBtn instanceof HTMLButtonElement) sendBtn.hidden = busy;
     if (input instanceof HTMLTextAreaElement) input.disabled = busy;
     if (stopBtn instanceof HTMLButtonElement) stopBtn.hidden = !busy;
+    const messages = el(MESSAGES_ID);
+    if (messages instanceof HTMLElement) messages.classList.toggle('qwen-chat-generating', busy);
   }
 
   function appendMessage(role, text, parentId) {
@@ -306,6 +309,32 @@
   function removeCursor(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
     bubble.querySelectorAll(':scope > .qwen-chat-cursor').forEach((node) => node.remove());
+    const body = bubble.querySelector(':scope > .qwen-chat-thinking .qwen-chat-thinking-body');
+    if (body instanceof HTMLElement) body.querySelectorAll(':scope > .qwen-chat-cursor').forEach((node) => node.remove());
+  }
+
+  function collapseThinking(bubble) {
+    if (!(bubble instanceof HTMLElement)) return;
+    const details = bubble.querySelector(':scope > .qwen-chat-thinking');
+    if (details instanceof HTMLDetailsElement) details.open = false;
+  }
+
+  function placeCursor(bubble, inThinkingFlag) {
+    if (!(bubble instanceof HTMLElement)) return;
+    removeCursor(bubble);
+    if (inThinkingFlag) {
+      const details = bubble.querySelector(':scope > .qwen-chat-thinking');
+      const body = details instanceof HTMLElement ? details.querySelector('.qwen-chat-thinking-body') : null;
+      if (body instanceof HTMLElement) {
+        const cursor = document.createElement('span');
+        cursor.className = 'qwen-chat-cursor';
+        body.appendChild(cursor);
+      } else {
+        ensureCursor(bubble);
+      }
+    } else {
+      ensureCursor(bubble);
+    }
   }
 
   function appendOperationCard(operation) {
@@ -470,49 +499,63 @@
     hideAsk();
     setBusy(true);
     setStatus('思考中…');
+    inThinking = false;
     activeBubble = ensureAssistantBubble();
-    ensureCursor(activeBubble);
+    placeCursor(activeBubble, false);
     const lastOperationCard = { card: null };
 
     const connectPort = () => {
       port = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
       port.onMessage.addListener((message) => {
         if (message?.type === 'delta') {
-          if (nextReplyFresh) {
-            removeCursor(activeBubble);
-            activeBubble = null;
-            nextReplyFresh = false;
-          }
           const bubble = ensureAssistantBubble();
           if (bubble) appendAssistantText(bubble, message.text);
-          ensureCursor(bubble);
+          if (inThinking) {
+            collapseThinking(bubble);
+            inThinking = false;
+          }
+          placeCursor(bubble, false);
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'thinking') {
-          if (nextReplyFresh) {
-            removeCursor(activeBubble);
-            activeBubble = null;
-            nextReplyFresh = false;
-          }
           const bubble = ensureAssistantBubble();
           if (bubble) {
             const body = ensureThinkingBlock(bubble);
             if (body) appendAssistantText(body, message.text);
-            ensureCursor(bubble);
+            const details = bubble.querySelector(':scope > .qwen-chat-thinking');
+            if (details instanceof HTMLDetailsElement) details.open = true;
+            inThinking = true;
+            placeCursor(bubble, true);
             const messages = el(MESSAGES_ID);
             if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
           }
         } else if (message?.type === 'operation') {
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
+          removeCursor(activeBubble);
           lastOperationCard.card = appendOperationCard(message.operation);
+          const messages = el(MESSAGES_ID);
+          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'operationResult') {
           updateOperationResult(lastOperationCard.card, message.result);
-          nextReplyFresh = true;
+          nextReplyFresh = false;
+          if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
+          activeBubble = null;
+          const fresh = ensureAssistantBubble();
+          placeCursor(fresh, false);
+          const messages = el(MESSAGES_ID);
+          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'done') {
           sessionChatId = String(message.chatId || sessionChatId);
           sessionParentId = String(message.responseId || sessionParentId);
           if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
-          nextReplyFresh = false;
           hideAsk();
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
           if (message.stoppedByLimit === true) {
             const bubble = ensureAssistantBubble();
             if (bubble instanceof HTMLElement) {
@@ -529,8 +572,11 @@
           port.disconnect();
           port = null;
         } else if (message?.type === 'stopped') {
-          nextReplyFresh = false;
           hideAsk();
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
           if (activeBubble instanceof HTMLElement) {
             const raw = mdRawText(activeBubble);
             appendAssistantText(activeBubble, raw ? '\n（已停止）' : '（已停止）');
@@ -544,8 +590,11 @@
         } else if (message?.type === 'ask') {
           showAsk(message);
         } else if (message?.type === 'error') {
-          nextReplyFresh = false;
           hideAsk();
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
           const errorChatId = String(message.chatId || '');
           if (errorChatId) {
             sessionChatId = errorChatId;

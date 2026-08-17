@@ -87,7 +87,7 @@
             const operations = global.BjtuQwenOperations;
             if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
             const modelId = settings.modelId || await resolveDefaultModel(client);
-            const groups = operations.groups();
+            const groups = await operations.groups();
             const result = await global.BjtuQwenAgent.runTurn({
               modelId,
               userText: String(message.text).trim(),
@@ -270,7 +270,7 @@
         }
         void (async () => {
           const settings = await getSettings();
-          sendResponse({ ok: true, groups: operations.groups(), enabledOperations: settings.enabledOperations });
+          sendResponse({ ok: true, groups: await operations.groups(), enabledOperations: settings.enabledOperations });
         })();
         return true;
       }
