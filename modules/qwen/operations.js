@@ -1285,7 +1285,7 @@ name: 've.teachers_of_',
         '**返回示例**：{"loginState":"online","loggedIn":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mooc', 'loginStatus', {}, 60000);
+        return pageInvoke('jlgj', 'loginStatus', {}, 60000);
       }
     },
     {
@@ -1484,17 +1484,17 @@ name: 've.teachers_of_',
     },
     {
       module: 'qwen',
-      name: 'qwen.getDocs',
+      name: 'qwen.getDoc',
       label: '查询操作说明',
       summary: '查询指定操作的使用说明（Markdown）',
       doc: [
-        '## qwen.getDocs —— 查询操作说明',
+        '## qwen.getDoc —— 查询操作说明',
         '',
         '查询指定操作的详细使用说明（Markdown）。在执行任何操作前，应先调用本操作查询其说明。',
         '',
         '**参数**：{"name":"操作名，必填，如 ve.courseList"}',
         '',
-        '**调用示例**：`qwen.getDocs({name: "ve.courseList"})`',
+        '**调用示例**：`qwen.getDoc({name: "ve.courseList"})`',
         '',
         '**返回示例**：{"name":"ve.courseList","module":"ve","doc":"## ve.courseList —— ..."}'
       ].join('\n'),
@@ -1503,7 +1503,7 @@ name: 've.teachers_of_',
         if (!name) throw new Error('缺少参数 name');
         const op = OPERATIONS.find((item) => item.name === name);
         if (!op) throw new Error(`未找到操作：${name}`);
-        return { name: op.name, module: op.module, doc: op.doc };
+        return op.doc;
       }
     }
   ];

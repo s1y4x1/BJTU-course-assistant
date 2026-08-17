@@ -288,7 +288,7 @@
         try {
           const qwenDocs = [
             operations?.docs?.('qwen.listOperations')?.doc,
-            operations?.docs?.('qwen.getDocs')?.doc
+            operations?.docs?.('qwen.getDoc')?.doc
           ].filter(Boolean).join('\n\n');
           sendResponse({ ok: true, text: agent.buildSystemPrompt({ qwenDocs }) });
         } catch (error) {
