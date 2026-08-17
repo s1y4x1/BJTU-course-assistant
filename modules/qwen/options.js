@@ -83,6 +83,7 @@
     if (maxIterations instanceof HTMLInputElement) maxIterations.value = String(Math.max(1, Number(status.maxIterations) || 6));
     const alwaysAllow = document.getElementById('qwenAlwaysAllow');
     if (alwaysAllow instanceof HTMLInputElement) alwaysAllow.checked = status.alwaysAllow === true;
+    if (maxIterations instanceof HTMLInputElement && alwaysAllow instanceof HTMLInputElement) maxIterations.disabled = alwaysAllow.checked === true;
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
     const select = document.getElementById('qwenModelSelect');
@@ -142,6 +143,8 @@
     const alwaysAllow = document.getElementById('qwenAlwaysAllow');
     if (alwaysAllow instanceof HTMLInputElement) {
       alwaysAllow.addEventListener('change', () => {
+        const maxIterationsInput = document.getElementById('qwenMaxIterations');
+        if (maxIterationsInput instanceof HTMLInputElement) maxIterationsInput.disabled = alwaysAllow.checked === true;
         void send('QWEN_SETTINGS_SET', { alwaysAllow: alwaysAllow.checked === true }).then((response) => {
           setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
         });

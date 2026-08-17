@@ -17,6 +17,21 @@ html[data-color-scheme="dark"] .qwen-options-card {
   margin-bottom: 12px;
 }
 
+.qwen-sub-options {
+  margin-top: 2px;
+  padding-left: 18px;
+}
+
+.qwen-sub-options .qwen-toggle-label,
+.qwen-sub-options .qwen-setting-label {
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.qwen-sub-options .qwen-model-select[disabled] {
+  cursor: not-allowed;
+}
+
 .qwen-toggle {
   display: inline-flex;
   align-items: center;

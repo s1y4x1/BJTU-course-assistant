@@ -548,14 +548,13 @@
             if (activeBubble instanceof HTMLElement) activeBubble.remove();
             activeBubble = null;
           } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_CHALLENGE') {
-            const bubble = ensureAssistantBubble();
-            if (bubble instanceof HTMLElement) {
-              const raw = mdRawText(bubble);
-              appendAssistantText(bubble, raw ? `\n（${message.message || '请求失败'}）` : `（${message.message || '请求失败'}）`);
-              appendRetryButton(bubble);
+            if (activeBubble instanceof HTMLElement) {
+              removeCursor(activeBubble);
+              activeBubble.remove();
             }
-            removeCursor(bubble);
             activeBubble = null;
+            const bubble = appendMessage('error', message.message || '请求失败');
+            appendRetryButton(bubble);
             setStatus('风控校验', 'error');
             void send('QWEN_OPEN_LOGIN');
           } else {
