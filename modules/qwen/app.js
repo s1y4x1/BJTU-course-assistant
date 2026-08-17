@@ -175,6 +175,7 @@
       const role = String(message?.role || '');
       if (role === 'user') {
         const content = String(message?.content || '');
+        if (content.includes('现在，请做个开场白。')) continue;
         const blocks = resBlocksFromText(content);
         if (blocks.length) {
           for (const block of blocks) appendResCard(block);
@@ -623,6 +624,8 @@
             void send('QWEN_OPEN_LOGIN');
           } else {
             removeCursor(activeBubble);
+            if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) activeBubble.remove();
+            activeBubble = null;
             appendMessage('error', message.message || '请求失败');
           }
           setBusy(false);

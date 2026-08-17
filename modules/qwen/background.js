@@ -138,6 +138,7 @@
                 if (event?.operation) port.postMessage({ type: 'operation', operation: event.operation });
                 if (event?.operationResult) port.postMessage({ type: 'operationResult', result: event.operationResult });
                 if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
+                if (event?.firstMessage) port.postMessage({ type: 'firstMessage' });
               }
             });
             if (port.disconnected) return;

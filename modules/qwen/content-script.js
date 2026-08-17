@@ -104,6 +104,12 @@
     }
   }
 
+  function apiStreamErrorMessage(err) {
+    const code = String(err?.code || '');
+    if (code === 'quota_limit') return '通义千问当前访问量较大，请稍后再试。';
+    return String(err?.details || err?.message || '通义千问返回了错误');
+  }
+
   async function executeRequest(payload) {
     const id = String(payload.id || '');
     const url = String(payload.url || '');
@@ -173,6 +179,10 @@
         }
         if (data?.response_id) responseId = String(data.response_id);
         if (data?.['response.created']?.response_id) responseId = String(data['response.created'].response_id);
+        if (data?.error) {
+          emit({ error: 'STREAM_ERROR', message: apiStreamErrorMessage(data.error) });
+          return;
+        }
         const choice = Array.isArray(data?.choices) ? data.choices[0] : null;
         if (choice?.response_id) responseId = String(choice.response_id);
         const delta = choice?.delta;

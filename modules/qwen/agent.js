@@ -5,6 +5,8 @@
   const OPERATION_BLOCK_PATTERN = /```op\s*\n?([\s\S]*?)```/g;
   const OP_CALL_PATTERN = /^\s*([A-Za-z_$][A-Za-z0-9_$.]*)\s*\((.*)\)\s*$/s;
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   function parseOpArguments(argText) {
     const trimmed = String(argText || '').trim();
     if (!trimmed) return {};
@@ -189,8 +191,15 @@
       parentId = openingParent;
       if (turnRef) turnRef.responseId = parentId;
       fullText = openingReplyText;
-      if (String(openingReplyText || '').trim()) onDelta?.(openingReplyText);
-      onEvent?.({ firstMessage: true });
+      const greetingText = String(openingReplyText || '').trim();
+      if (greetingText) {
+        for (let i = 0; i < greetingText.length; i += 3) {
+          if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+          onDelta?.(greetingText.slice(i, i + 3));
+          await sleep(16);
+        }
+        onEvent?.({ firstMessage: true });
+      }
       isNewChat = false;
 
       if (!String(userText || '').trim()) {
