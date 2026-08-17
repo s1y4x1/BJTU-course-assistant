@@ -93,6 +93,7 @@
               userText: String(message.text).trim(),
               chatId: String(message.chatId || ''),
               parentId: String(message.parentId || ''),
+              parentIdExplicit: message.editParentGiven === true,
               enabledOps: settings.enabledOperations,
               groups,
               signal: abortController.signal,

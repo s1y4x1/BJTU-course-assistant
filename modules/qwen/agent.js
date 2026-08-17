@@ -97,7 +97,8 @@
       thinking = false,
       askUser,
       sessionRef,
-      alwaysAllow = false
+      alwaysAllow = false,
+      parentIdExplicit = false
     } = options || {};
     const client = global.BjtuQwenClient;
     const operations = global.BjtuQwenOperations;
@@ -130,7 +131,7 @@
     }) : '';
 
     let parentId = String(previousParentId || '');
-    if (!isNewChat && !parentId) {
+    if (!parentIdExplicit && !isNewChat && !parentId) {
       const list = Array.isArray(fetchedHistory) ? fetchedHistory : [];
       for (let i = list.length - 1; i >= 0; i -= 1) {
         const msg = list[i];

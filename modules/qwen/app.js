@@ -21,6 +21,7 @@
   let nextReplyFresh = false;
   let lastSendText = '';
   let pendingEditParentId = '';
+  let pendingEdit = false;
 
   function el(id) {
     return document.getElementById(id);
@@ -235,12 +236,18 @@
       editBtn.textContent = '编辑';
       editBtn.title = '编辑此消息（发送时将以此消息为基准续接）';
       editBtn.addEventListener('click', () => {
+        pendingEditParentId = String(parentId || '');
+        pendingEdit = true;
+        const container = row.parentElement;
+        if (container instanceof HTMLElement) {
+          while (row.nextSibling) row.nextSibling.remove();
+          row.remove();
+        }
         const input = el(INPUT_ID);
         if (input instanceof HTMLTextAreaElement) {
           input.value = str;
           input.style.height = 'auto';
           input.style.height = `${Math.min(120, input.scrollHeight)}px`;
-          pendingEditParentId = String(parentId || '');
           const panel = el(PANEL_ID);
           if (panel instanceof HTMLElement) panel.hidden = false;
           const fab = el(FAB_ID);
@@ -455,6 +462,8 @@
     lastSendText = text;
     const editParent = pendingEditParentId;
     pendingEditParentId = '';
+    const isEditSend = pendingEdit;
+    pendingEdit = false;
     appendMessage('user', text, editParent || sessionParentId);
     const input = el(INPUT_ID);
     if (input instanceof HTMLTextAreaElement) input.value = '';
@@ -574,7 +583,7 @@
         }
         port = null;
       });
-      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: editParent || sessionParentId });
+      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: editParent || sessionParentId, editParentGiven: isEditSend });
     };
 
     try {
@@ -690,6 +699,7 @@
           sessionParentId = '';
           nextReplyFresh = false;
           pendingEditParentId = '';
+          pendingEdit = false;
           hideAsk();
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.replaceChildren();
