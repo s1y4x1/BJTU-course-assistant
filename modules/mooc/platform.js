@@ -888,7 +888,42 @@ async function moocPageLogin(args = {}) {
 }
 
 globalThis.BjtuMoocPageApi = Object.freeze({
-  login: (args) => moocPageLogin(args)
+  login: (args) => moocPageLogin(args),
+  assignments: async (args) => {
+    await checkLogin();
+    const statusFilter = String(args?.status || 'all').trim().toLowerCase();
+    const typeFilter = String(args?.type || 'all').trim();
+    const panels = await request('course-list');
+    const courses = (Array.isArray(panels) ? panels : []).map((panel) => normalizeCourse(panel, null));
+    const items = [];
+    for (const course of courses.slice(0, 60)) {
+      try {
+        const response = await request('course-detail', { tid: Number(course.tid) });
+        const term = response?.result?.mocTermDto || response?.mocTermDto;
+        const tasks = normalizeTasks(term);
+        for (const task of tasks) {
+          const type = typeText(task.type);
+          if (typeFilter !== 'all' && type !== typeFilter) continue;
+          const st = task?.done ? 'submitted' : (task?.overdue ? 'overdue' : 'pending');
+          if (statusFilter !== 'all' && st !== statusFilter) continue;
+          const detailed = normalizeCourse({ id: course.id, name: course.name, termPanel: { id: course.tid } }, term);
+          items.push({
+            key: `mooc:${course.id}:${task.id}`,
+            platform: '中国大学MOOC',
+            courseName: String(course.name || ''),
+            title: String(task?.title || ''),
+            type,
+            status: st,
+            deadline: Number(task?.deadline || 0),
+            actionUrl: taskUrl(detailed, task) || ''
+          });
+        }
+      } catch (error) {
+        if (error?.code === 'not-logged-in') throw error;
+      }
+    }
+    return { total: items.length, items: items.slice(0, 300) };
+  }
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

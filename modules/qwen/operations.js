@@ -133,6 +133,65 @@
     return response.value;
   }
 
+  function parseDeadline(value) {
+    if (value == null || value === '') return 0;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value > 0 && value < 1e12 ? value * 1000 : value;
+    }
+    const ms = Date.parse(String(value).replace(/-/g, '/'));
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function normalizeAssignmentStatus(value) {
+    const s = String(value ?? 'all').trim().toLowerCase();
+    if (s === 'submitted' || s === 'done' || s === 'completed' || s === '已交' || s === '已提交') return 'submitted';
+    if (s === 'pending' || s === '未交' || s === 'unsubmitted' || s === 'todo') return 'pending';
+    if (s === 'overdue' || s === '逾期' || s === 'expired') return 'overdue';
+    return 'all';
+  }
+
+  function computeAssignmentStatus(done, overdue) {
+    if (done) return 'submitted';
+    if (overdue) return 'overdue';
+    return 'pending';
+  }
+
+  function buildAssignmentItem(key, platform, courseName, title, type, status, deadline, actionUrl) {
+    return {
+      key: String(key || ''),
+      platform: String(platform || ''),
+      courseName: String(courseName || ''),
+      title: String(title || ''),
+      type: String(type || 'all'),
+      status: String(status || 'pending'),
+      deadline: Number(deadline) || 0,
+      actionUrl: String(actionUrl || '')
+    };
+  }
+
+  const VE_SUBTYPE_LABELS = { 0: '作业', 1: '课程报告', 2: '实验' };
+
+  function veSubTypeLabel(subType) {
+    return VE_SUBTYPE_LABELS[Number(subType ?? 0)] || '作业';
+  }
+
+  function veAssignmentActionUrl(course, courseId, subType) {
+    const courseToPage = ({ 0: 10460, 1: 10461, 2: 10462 })[Number(subType ?? 0)] || 10460;
+    const courseNum = course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || courseId;
+    const fzId = course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '';
+    const xqCode = course?.xq_code || course?.xqCode || '';
+    return `${global.BjtuVeHomeworkCore?.BASE_VE || ''}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=${courseToPage}&courseId=${encodeURIComponent(courseNum)}&cId=${encodeURIComponent(courseId)}&xknId=${encodeURIComponent(fzId)}&xkhId=${encodeURIComponent(fzId)}&xqCode=${encodeURIComponent(xqCode)}`;
+  }
+
+  function yktIsHomeworkDone(hw) {
+    const progress = Number(hw?.progress ?? 0);
+    const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
+    if (problemCount > 0) return progress >= problemCount;
+    if (hw?.done != null) return !!hw?.done;
+    if (hw?.unfinished != null) return Number(hw?.unfinished) === 0;
+    return false;
+  }
+
   async function findVeCourseById(courseId) {
     const core = await veHomework();
     const terms = await core.fetchTerms();
@@ -288,17 +347,17 @@ name: 've.accounts',
     },
     {
       module: 've',
-      name: 've.homework_of_',
+      name: 've.assignments_of_',
       label: '课程作业',
       summary: '获取指定智慧课程平台课程的作业列表',
       doc: [
-        '## ve.homework_of_ —— 课程作业',
+        '## ve.assignments_of_ —— 课程作业',
         '',
         '获取指定课程的作业列表（含已交/未交）。courseId 为课程ID，可先调用 ve.courseList 获取。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`ve.homework_of_({courseId: "xxx"})`',
+        '**调用示例**：`ve.assignments_of_({courseId: "xxx"})`',
         '',
         '**返回示例**：[{"id":"...","title":"作业标题","end_time":"2026-01-01 00:00:00","subStatus":"未提交"}]'
       ].join('\n'),
@@ -312,74 +371,72 @@ name: 've.accounts',
     },
     {
       module: 've',
-      name: 've.pendingAssignments',
-      label: '待办作业汇总',
-      summary: '汇总智慧课程平台所有课程中未提交且未逾期的作业',
+      name: 've.assignments',
+      label: '全平台作业查询',
+      summary: '按状态与类型查询智慧课程平台所有课程的作业',
       doc: [
-        '## ve.pendingAssignments —— 待办作业汇总',
+        '## ve.assignments —— 全平台作业查询',
         '',
-        '遍历当前学期所有课程，汇总尚未提交且未逾期的作业，按截止时间排序。',
+        '遍历当前学期所有课程，按提交状态与类型查询作业。status：all（全部，默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 作业 / 课程报告 / 实验。',
         '',
-        '**参数**：{"futureOnly":true,"可选，默认 true，只返回有截止时间的未提交作业"}',
+        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|作业|课程报告|实验，默认 all"}',
         '',
-        '**调用示例**：`ve.pendingAssignments()`',
+        '**调用示例**：`ve.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：[{"key":"...","platform":"智慧课程平台","courseName":"课程名","title":"作业标题","deadline":1234567890000,"actionUrl":"..."}]'
+        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"...","platform":"智慧课程平台","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"..."}]}'
       ].join('\n'),
       async run(args) {
+        const status = normalizeAssignmentStatus(args?.status);
+        const typeFilter = String(args?.type ?? 'all').trim();
         const core = await veHomework();
         const terms = await core.fetchTerms();
         const xqCode = core.chooseTermCode(terms);
         const courses = await core.fetchCourses(xqCode);
-        const data = {};
+        const now = Date.now();
+        const items = [];
         for (const course of (Array.isArray(courses) ? courses : []).slice(0, 60)) {
           const courseId = core.getCourseId(course);
           if (!courseId) continue;
           try {
             const list = await core.fetchCourseHomework(courseId);
-            data[courseId] = { list, course: serialize(course) };
+            for (const hw of (Array.isArray(list) ? list : [])) {
+              const type = veSubTypeLabel(hw?.subType ?? hw?.sub_type);
+              if (typeFilter !== 'all' && type !== typeFilter) continue;
+              const done = core.isHomeworkDone(hw);
+              const deadline = core.parseDeadline(hw?.end_time ?? hw?.endTime ?? '');
+              const overdue = !done && deadline > 0 && deadline < now;
+              const st = computeAssignmentStatus(done, overdue);
+              if (status !== 'all' && st !== status) continue;
+              const title = String(hw?.title || hw?.workTitle || hw?.courseNoteTitle || '未命名作业').trim();
+              items.push(buildAssignmentItem(
+                `ve:${courseId}:${hw?.id ?? hw?.noteId ?? hw?.upId ?? title}`,
+                '智慧课程平台', core.getCourseName(course), title, type, st, deadline,
+                veAssignmentActionUrl(course, courseId, hw?.subType ?? hw?.sub_type)
+              ));
+            }
           } catch (error) {
             if (error?.loginRequired || error?.message === 'LOGIN_REQUIRED') throw loginRequiredError();
           }
         }
-        const pending = core.collectPendingAssignments(courses, data, { futureOnly: args?.futureOnly !== false });
-        return { total: pending.length, items: pending };
+        return { ok: true, total: items.length, items: items.slice(0, 300) };
       }
     },
     {
       module: 've',
       name: 've.login',
-      label: '登录账号',
-      summary: '使用本地保存的账号凭据登录智慧课程平台',
+      label: '智慧课程平台登录',
+      summary: '启用并触发智慧课程平台登录流程',
       doc: [
-        '## ve.login —— 登录账号',
+        '## ve.login —— 智慧课程平台登录',
         '',
-        '使用本地保存的账号凭据登录智慧课程平台。账号需存在于本地账号列表；若不传 loginName，则使用登录历史中最新的账号。',
+        '启用智慧课程平台（若未启用）并触发其登录流程。调用 courseList 等操作前若未登录，应先调用本操作。',
         '',
-        '**参数**：{"loginName":"可选，登录名，缺省时用登录历史中最新的账号"}',
+        '**调用示例**：`ve.login()`',
         '',
-        '**调用示例**：`ve.login({loginName: "zhangsan"})` 或 `ve.login()`',
-        '',
-        '**返回示例**：{"ok":true,"userName":"张三"}。失败时 ok 为 false 并带 message。'
+        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
-      async run(args) {
-        const loginService = requireGlobal('BjtuVeLoginService');
-        let loginName = String(args?.loginName || '').trim();
-        if (!loginName) {
-          const stored = await chrome.storage.local.get('loginAccountHistory');
-          const history = Array.isArray(stored?.loginAccountHistory) ? stored.loginAccountHistory : [];
-          const latest = history.find((record) => String(record?.loginName || record?.userId || '').trim());
-          loginName = String(latest?.loginName || latest?.userId || '').trim();
-        }
-        if (!loginName) throw new Error('缺少参数 loginName，且本地无登录历史账号可用');
-        const result = await loginService.login({ loginName, allowStoredCredentials: true });
-        const userName = String(result?.userInfo?.userName || '');
-        try {
-          await pageInvoke('ve', 'enable', {}, 30000);
-        } catch {
-          // 应用页启用平台失败不阻断登录结果
-        }
-        return { ok: !!result?.ok, message: String(result?.message || ''), userName };
+      async run() {
+        return pageInvoke('ve', 'login', { timeoutMs: 180000 }, 200000);
       }
     },
     {
@@ -520,17 +577,17 @@ name: 've.teachers_of_',
     },
     {
       module: 'ykt',
-      name: 'ykt.homework_of_',
+      name: 'ykt.assignments_of_',
       label: '雨课堂课程作业',
       summary: ' 获取雨课堂指定课程的作业列表',
       doc: [
-        '## ykt.homework_of_ —— 雨课堂课程作业',
+        '## ykt.assignments_of_ —— 雨课堂课程作业',
         '',
         '根据 classroomId 获取雨课堂指定课程的作业/活动列表。classroomId 可先调用 ykt.courseList 获取。需要已打开助手页面并在 yuketang.cn 登录。',
         '',
         '**参数**：{"classroomId":"班级ID，必填"}',
         '',
-        '**调用示例**：`ykt.homework_of_({classroomId: "xxx"})`',
+        '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"classroomId":"xxx","homework":[{"id":"...","title":"作业名","actype":15,"activityType":"课件","end":"时间","done":false,"score":90,"link":"https://..."}]}'
       ].join('\n'),
@@ -538,6 +595,58 @@ name: 've.teachers_of_',
         const classroomId = String(args?.classroomId || '').trim();
         await assertCourseIdOf('ykt', classroomId, 'classroomId');
         return pageInvoke('ykt', 'courseHomework', { classroomId }, 120000);
+      }
+    },
+    {
+      module: 'ykt',
+      name: 'ykt.assignments',
+      label: '全平台作业查询',
+      summary: '按状态与类型查询雨课堂所有课程的作业',
+      doc: [
+        '## ykt.assignments —— 全平台作业查询',
+        '',
+        '遍历雨课堂当前账号所有课程，按提交状态与类型查询作业。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 试卷 / 公告。',
+        '',
+        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|试卷|公告，默认 all"}',
+        '',
+        '**调用示例**：`ykt.assignments({status: "pending", type: "试卷"})`',
+        '',
+        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"ykt:...:...","platform":"雨课堂","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const status = normalizeAssignmentStatus(args?.status);
+        const typeFilter = String(args?.type ?? 'all').trim();
+        const courseList = await pageInvoke('ykt', 'courseList', {}, 120000);
+        if (courseList?.loggedIn === false) {
+          return { ok: false, code: 'LOGIN_REQUIRED', message: '雨课堂未登录，请先调用 ykt.login 完成登录后再查询作业' };
+        }
+        const courses = Array.isArray(courseList?.courses) ? courseList.courses : [];
+        const now = Date.now();
+        const items = [];
+        for (const course of courses.slice(0, 60)) {
+          const cid = String(course?.classroomId || '').trim();
+          if (!cid) continue;
+          try {
+            const data = await pageInvoke('ykt', 'courseHomework', { classroomId: cid }, 120000);
+            const homework = Array.isArray(data?.homework) ? data.homework : [];
+            for (const h of homework) {
+              const type = String(h?.activityType || '').trim() || 'all';
+              if (typeFilter !== 'all' && type !== typeFilter) continue;
+              const deadline = parseDeadline(h?.end);
+              const done = yktIsHomeworkDone(h);
+              const overdue = !done && deadline > 0 && deadline < now;
+              const st = computeAssignmentStatus(done, overdue);
+              if (status !== 'all' && st !== status) continue;
+              items.push(buildAssignmentItem(
+                `ykt:${cid}:${h?.id}`, '雨课堂', String(course?.courseName || ''),
+                String(h?.title || ''), type, st, deadline, String(h?.link || '')
+              ));
+            }
+          } catch {
+            // 单个课程失败不阻断查询
+          }
+        }
+        return { ok: true, total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -739,6 +848,31 @@ name: 've.teachers_of_',
       }
     },
     {
+      module: 'mooc',
+      name: 'mooc.assignments',
+      label: '全平台作业查询',
+      summary: '按状态与类型查询中国大学MOOC所有课程的作业',
+      doc: [
+        '## mooc.assignments —— 全平台作业查询',
+        '',
+        '遍历中国大学MOOC当前账号所有课程，按提交状态与类型查询作业。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 单元作业 / 单元测试 / 考试。',
+        '',
+        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|单元作业|单元测试|考试，默认 all"}',
+        '',
+        '**调用示例**：`mooc.assignments({status: "pending", type: "单元作业"})`',
+        '',
+        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"mooc:...:...","platform":"中国大学MOOC","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
+        if (!String(cookie?.value || '').trim()) {
+          return { ok: false, code: 'LOGIN_REQUIRED', message: '中国大学MOOC未登录，请先调用 mooc.login 完成登录后再查询作业' };
+        }
+        const value = await pageInvoke('mooc', 'assignments', { status: String(args?.status || 'all'), type: String(args?.type || 'all') }, 240000);
+        return { ok: true, ...value };
+      }
+    },
+    {
       module: 'captcha',
       name: 'captcha.recognize',
       label: '验证码识别',
@@ -842,17 +976,17 @@ name: 've.teachers_of_',
     },
     {
       module: 'mrjzy',
-      name: 'mrjzy.homework_of_',
+      name: 'mrjzy.assignments_of_',
       label: '每日交作业课程作业',
       summary: '根据 classNum 获取每日交作业指定班级的作业列表',
       doc: [
-        '## mrjzy.homework_of_ —— 每日交作业课程作业',
+        '## mrjzy.assignments_of_ —— 每日交作业课程作业',
         '',
         '根据 classNum（班级号）获取每日交作业指定班级的作业列表。classNum 可先调用 mrjzy.courseList 获取。需要已打开助手页面并登录。',
         '',
         '**参数**：{"classNum":"班级号，必填"}',
         '',
-        '**调用示例**：`mrjzy.homework_of_({classNum: "xxx"})`',
+        '**调用示例**：`mrjzy.assignments_of_({classNum: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"classNum":"xxx","divClass":"课程名","teacherName":"老师","homework":[{"workId":"...","title":"作业名","end":"时间","done":false,"link":"https://..."}]}'
       ].join('\n'),
@@ -860,6 +994,55 @@ name: 've.teachers_of_',
         const classNum = String(args?.classNum || '').trim();
         if (!classNum) throw new Error('缺少参数 classNum，请先调用 mrjzy.courseList 获取班级号');
         return pageInvoke('mrjzy', 'homework_of_', { classNum }, 120000);
+      }
+    },
+    {
+      module: 'mrjzy',
+      name: 'mrjzy.assignments',
+      label: '全平台作业查询',
+      summary: '按状态查询每日交作业所有班级的作业',
+      doc: [
+        '## mrjzy.assignments —— 全平台作业查询',
+        '',
+        '遍历每日交作业当前账号所有班级，按提交状态查询作业。本平台不区分作业类型，type 仅支持 all。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。',
+        '',
+        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all，本平台仅支持 all"}',
+        '',
+        '**调用示例**：`mrjzy.assignments({status: "pending"})`',
+        '',
+        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"mrjzy:...:...","platform":"每日交作业","courseName":"课程名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const status = normalizeAssignmentStatus(args?.status);
+        const courseList = await pageInvoke('mrjzy', 'courseList', {}, 120000);
+        if (String(courseList?.loginState || '') === 'offline') {
+          return { ok: false, code: 'LOGIN_REQUIRED', message: '每日交作业未登录，请先调用 mrjzy.login 完成登录后再查询作业' };
+        }
+        const courses = Array.isArray(courseList?.courses) ? courseList.courses : [];
+        const now = Date.now();
+        const items = [];
+        for (const course of courses.slice(0, 60)) {
+          const classNum = String(course?.classNum || '').trim();
+          if (!classNum) continue;
+          try {
+            const data = await pageInvoke('mrjzy', 'homework_of_', { classNum }, 120000);
+            const homework = Array.isArray(data?.homework) ? data.homework : [];
+            for (const h of homework) {
+              const deadline = parseDeadline(h?.end);
+              const done = h?.done === true;
+              const overdue = !done && deadline > 0 && deadline < now;
+              const st = computeAssignmentStatus(done, overdue);
+              if (status !== 'all' && st !== status) continue;
+              items.push(buildAssignmentItem(
+                `mrjzy:${classNum}:${h?.workId}`, '每日交作业', String(course?.divClass || ''),
+                String(h?.title || ''), 'all', st, deadline, String(h?.link || '')
+              ));
+            }
+          } catch {
+            // 单个班级失败不阻断查询
+          }
+        }
+        return { ok: true, total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -920,17 +1103,17 @@ name: 've.teachers_of_',
     },
     {
       module: 'jlgj',
-      name: 'jlgj.homework_of_',
+      name: 'jlgj.assignments_of_',
       label: '接龙管家课程作业',
       summary: '根据 groupId 获取接龙管家指定群组的作业列表',
       doc: [
-        '## jlgj.homework_of_ —— 接龙管家课程作业',
+        '## jlgj.assignments_of_ —— 接龙管家课程作业',
         '',
         '根据 groupId（群组ID）获取接龙管家指定群组的作业列表。groupId 可先调用 jlgj.courseList 获取。需要已打开助手页面并登录。',
         '',
         '**参数**：{"groupId":"群组ID，必填"}',
         '',
-        '**调用示例**：`jlgj.homework_of_({groupId: "xxx"})`',
+        '**调用示例**：`jlgj.assignments_of_({groupId: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"groupId":"xxx","name":"群组名","teacherName":"老师","homework":[{"threadId":"...","title":"作业名","done":false,"link":"https://..."}]}'
       ].join('\n'),
@@ -938,6 +1121,52 @@ name: 've.teachers_of_',
         const groupId = String(args?.groupId || '').trim();
         if (!groupId) throw new Error('缺少参数 groupId，请先调用 jlgj.courseList 获取群组ID');
         return pageInvoke('jlgj', 'homework_of_', { groupId }, 120000);
+      }
+    },
+    {
+      module: 'jlgj',
+      name: 'jlgj.assignments',
+      label: '全平台作业查询',
+      summary: '按状态查询接龙管家所有群组的作业',
+      doc: [
+        '## jlgj.assignments —— 全平台作业查询',
+        '',
+        '遍历接龙管家当前账号所有群组，按提交状态查询作业。本平台不区分作业类型且无截止时间，type 仅支持 all，status 为 all/pending/submitted。',
+        '',
+        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all，本平台仅支持 all"}',
+        '',
+        '**调用示例**：`jlgj.assignments({status: "pending"})`',
+        '',
+        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"jlgj:...:...","platform":"接龙管家","courseName":"群组名","title":"作业名","type":"all","status":"pending","deadline":0,"actionUrl":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const status = normalizeAssignmentStatus(args?.status);
+        const courseList = await pageInvoke('jlgj', 'courseList', {}, 120000);
+        if (String(courseList?.loginState || '') === 'offline') {
+          return { ok: false, code: 'LOGIN_REQUIRED', message: '接龙管家未登录，请先调用 jlgj.login 完成登录后再查询作业' };
+        }
+        const courses = Array.isArray(courseList?.courses) ? courseList.courses : [];
+        const items = [];
+        for (const course of courses.slice(0, 60)) {
+          const groupId = String(course?.groupId || '').trim();
+          if (!groupId) continue;
+          try {
+            const data = await pageInvoke('jlgj', 'homework_of_', { groupId }, 120000);
+            const homework = Array.isArray(data?.homework) ? data.homework : [];
+            for (const h of homework) {
+              const done = h?.done === true;
+              const st = done ? 'submitted' : 'pending';
+              if (status !== 'all' && st !== status) continue;
+              items.push(buildAssignmentItem(
+                `jlgj:${groupId}:${h?.threadId}`, '接龙管家', String(course?.name || ''),
+                String(h?.title || ''), 'all', st, 0, String(h?.link || '')
+              ));
+            }
+          } catch {
+            // 单个群组失败不阻断查询
+          }
+        }
+        return { ok: true, total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -1016,17 +1245,17 @@ name: 've.teachers_of_',
     },
     {
       module: 'xuetangx',
-      name: 'xuetangx.homework_of_',
+      name: 'xuetangx.assignments_of_',
       label: '学堂在线课程作业',
       summary: '根据 classroomId 获取学堂在线指定课程的任务列表',
       doc: [
-        '## xuetangx.homework_of_ —— 学堂在线课程任务',
+        '## xuetangx.assignments_of_ —— 学堂在线课程任务',
         '',
         '根据 classroomId 获取学堂在线指定课程的任务/作业列表。classroomId 可先调用 xuetangx.courseList 获取。需要已打开助手页面并登录。',
         '',
         '**参数**：{"classroomId":"教室ID，必填"}',
         '',
-        '**调用示例**：`xuetangx.homework_of_({classroomId: "xxx"})`',
+        '**调用示例**：`xuetangx.assignments_of_({classroomId: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"classroomId":"xxx","name":"课程名","homework":[{"id":"...","title":"任务名","typeLabel":"视频","done":false,"deadline":1234567890000}]}'
       ].join('\n'),
@@ -1034,6 +1263,57 @@ name: 've.teachers_of_',
         const classroomId = String(args?.classroomId || '').trim();
         if (!classroomId) throw new Error('缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID');
         return pageInvoke('xuetangx', 'homework_of_', { classroomId }, 120000);
+      }
+    },
+    {
+      module: 'xuetangx',
+      name: 'xuetangx.assignments',
+      label: '全平台作业查询',
+      summary: '按状态与类型查询学堂在线所有课程的任务',
+      doc: [
+        '## xuetangx.assignments —— 全平台作业查询',
+        '',
+        '遍历学堂在线当前账号所有课程，按提交状态与类型查询任务。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 视频 / 图文 / 直播 / 讨论 / 作业 / 考试。',
+        '',
+        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|视频|图文|直播|讨论|作业|考试，默认 all"}',
+        '',
+        '**调用示例**：`xuetangx.assignments({status: "pending", type: "作业"})`',
+        '',
+        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"xuetangx:...:...","platform":"学堂在线","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const status = normalizeAssignmentStatus(args?.status);
+        const typeFilter = String(args?.type ?? 'all').trim();
+        const courseList = await pageInvoke('xuetangx', 'courseList', {}, 120000);
+        if (String(courseList?.loginState || '') === 'offline') {
+          return { ok: false, code: 'LOGIN_REQUIRED', message: '学堂在线未登录，请先调用 xuetangx.login 完成登录后再查询作业' };
+        }
+        const courses = Array.isArray(courseList?.courses) ? courseList.courses : [];
+        const items = [];
+        for (const course of courses.slice(0, 60)) {
+          const classroomId = String(course?.classroomId || '').trim();
+          if (!classroomId) continue;
+          try {
+            const data = await pageInvoke('xuetangx', 'homework_of_', { classroomId }, 120000);
+            const homework = Array.isArray(data?.homework) ? data.homework : [];
+            for (const h of homework) {
+              const type = String(h?.typeLabel || '').trim() || 'all';
+              if (typeFilter !== 'all' && type !== typeFilter) continue;
+              const deadline = parseDeadline(h?.deadline);
+              const done = !!h?.done;
+              const overdue = !!h?.overdue;
+              const st = computeAssignmentStatus(done, overdue);
+              if (status !== 'all' && st !== status) continue;
+              items.push(buildAssignmentItem(
+                `xuetangx:${classroomId}:${h?.id}`, '学堂在线', String(course?.name || ''),
+                String(h?.title || ''), type, st, deadline, String(h?.link || '')
+              ));
+            }
+          } catch {
+            // 单个课程失败不阻断查询
+          }
+        }
+        return { ok: true, total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -1084,7 +1364,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`qwen.listOperations()`',
         '',
-        '**返回示例**：{"ve":{"courseList":"获取智慧课程平台的课程列表","homework_of_":"获取指定课程的作业列表"},"ykt":{"courseList":"获取雨课堂课程列表","homework_of_":"根据 classroomId 获取雨课堂课程作业列表"}}'
+        '**返回示例**：{"ve":{"courseList":"获取智慧课程平台的课程列表","assignments":"按状态与类型查询全部作业"},"ykt":{"courseList":"获取雨课堂课程列表","assignments":"按状态与类型查询全部作业"}}'
       ].join('\n'),
       async run() {
         const enabledSet = await getEnabledOperationSet();

@@ -2713,13 +2713,17 @@ globalThis.BjtuVePageApi = Object.freeze({
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
   archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
-  enable: () => {
-    if (typeof globalThis.togglePlatformSelection === 'function'
-        && typeof globalThis.isPlatformEnabled === 'function'
-        && !globalThis.isPlatformEnabled('ve')) {
-      globalThis.togglePlatformSelection('ve', { interactive: false, persist: true });
+  login: (args) => {
+    const platform = 've';
+    const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
+    if (enabled) {
+      if (typeof globalThis.triggerExternalPlatformLoad === 'function') {
+        try { globalThis.triggerExternalPlatformLoad(platform, true); } catch {}
+      }
+    } else if (typeof globalThis.togglePlatformSelection === 'function') {
+      try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
     }
-    return { ok: true };
+    return globalThis.waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
   }
 });
 
