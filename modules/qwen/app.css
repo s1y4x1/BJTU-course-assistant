@@ -305,7 +305,7 @@ html[data-color-scheme="dark"] .qwen-chat-op {
   color: #64748b;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 140px;
+  max-height: 48px;
   overflow-y: auto;
 }
 

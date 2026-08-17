@@ -880,11 +880,11 @@ name: 've.teachers_of_',
       doc: [
         '## captcha.recognize —— 验证码识别',
         '',
-        '识别验证码图片，返回识别结果。图片须为可访问的 URL。',
+        '识别验证码图片，返回识别结果。图片须为可访问的 URL。支持两类识别模型：Tesseract OCR 模型与 omis.onnx（CAS 验证码识别模型）。',
         '',
-        '**参数**：{"imageUrl":"图片URL，必填","model":"可选，使用的 OCR 模型版本（如 4.0.0_fast），省略时使用当前已选模型；指定 model 时按 OCR 识别返回 passcode，未指定时按默认验证码识别返回 expression/answer"}',
+        '**参数**：{"imageUrl":"图片URL，必填","model":"可选。指定 omis/cas/omis.onnx 时使用 omis.onnx 模型识别（返回 expression/answer）；指定其他值时按 Tesseract OCR 模型版本处理（如 4.0.0_fast，返回 passcode）；省略时使用默认验证码识别（omis.onnx）"}',
         '',
-        '**调用示例**：`captcha.recognize({imageUrl: "https://...", model: "4.0.0_fast"})`',
+        '**调用示例**：`captcha.recognize({imageUrl: "https://...", model: "omis.onnx"})` 或 `captcha.recognize({imageUrl: "https://...", model: "4.0.0_fast"})`',
         '',
         '**返回示例**：{"ok":true,"passcode":"1234"}'
       ].join('\n'),
@@ -892,8 +892,14 @@ name: 've.teachers_of_',
         const imageUrl = String(args?.imageUrl || '').trim();
         if (!imageUrl) throw new Error('缺少参数 imageUrl');
         const model = String(args?.model || '').trim();
+        const lowerModel = model.toLowerCase();
+        const isOmis = /^(omis|omis\.onnx|cas|mis)$/.test(lowerModel);
         const recognizer = requireGlobal('BjtuCaptchaRecognizer');
-        if (typeof recognizer?.recognize === 'function' && model) {
+        if (isOmis && typeof recognizer?.recognizeMisCaptcha === 'function') {
+          const blob = await (await fetch(imageUrl)).blob();
+          return recognizer.recognizeMisCaptcha(blob);
+        }
+        if (model && typeof recognizer?.recognize === 'function') {
           const blob = await (await fetch(imageUrl)).blob();
           return recognizer.recognize(blob, model);
         }
