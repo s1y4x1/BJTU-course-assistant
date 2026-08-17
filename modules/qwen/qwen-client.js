@@ -528,11 +528,7 @@
       if (payload?.response_id) responseId = String(payload.response_id);
       if (payload?.['response.created']?.response_id) responseId = String(payload['response.created'].response_id);
       if (payload?.error) {
-        const errCode = String(payload.error.code || '');
-        const errMsg = errCode === 'quota_limit'
-          ? '通义千问当前访问量较大，请稍后再试。'
-          : String(payload.error.details || payload.error.message || '通义千问返回了错误');
-        throw new Error(errMsg);
+        throw new Error(String(payload.error.details || payload.error.message || '通义千问返回了错误'));
       }
       const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
       if (choice?.response_id) responseId = String(choice.response_id);

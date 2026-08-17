@@ -105,8 +105,6 @@
   }
 
   function apiStreamErrorMessage(err) {
-    const code = String(err?.code || '');
-    if (code === 'quota_limit') return '通义千问当前访问量较大，请稍后再试。';
     return String(err?.details || err?.message || '通义千问返回了错误');
   }
 

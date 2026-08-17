@@ -53,7 +53,11 @@
     const markedApi = global.marked;
     if (!markedApi?.Marked || !markedApi?.Renderer) return null;
     const renderer = new markedApi.Renderer();
-    renderer.html = ({ text }) => escapeHtmlQwen(text);
+    renderer.html = ({ text }) => {
+      const value = String(text || '').trim();
+      if (/^<br\s*\/?\s*>$/i.test(value)) return '<br>';
+      return escapeHtmlQwen(text);
+    };
     renderer.link = function renderSafeLink({ href, title, tokens }) {
       const text = this.parser.parseInline(tokens || []);
       const safeHref = safeUrlQwen(href, new Set(['http:', 'https:', 'mailto:']));
@@ -612,7 +616,7 @@
             showLoginHint(true);
             if (activeBubble instanceof HTMLElement) activeBubble.remove();
             activeBubble = null;
-          } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_CHALLENGE') {
+          } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
             if (activeBubble instanceof HTMLElement) {
               removeCursor(activeBubble);
               activeBubble.remove();

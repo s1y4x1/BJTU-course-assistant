@@ -1131,13 +1131,13 @@ name: 've.teachers_of_',
       doc: [
         '## jlgj.assignments —— 全平台作业查询',
         '',
-        '遍历接龙管家当前账号所有群组，按提交状态查询作业。本平台不区分作业类型且无截止时间，type 仅支持 all，status 为 all/pending/submitted。',
+        '遍历接龙管家当前账号所有群组，按提交状态查询作业。本平台不区分作业类型，type 仅支持 all。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期，截止时间已过且未交）。',
         '',
         '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all，本平台仅支持 all"}',
         '',
         '**调用示例**：`jlgj.assignments({status: "pending"})`',
         '',
-        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"jlgj:...:...","platform":"接龙管家","courseName":"群组名","title":"作业名","type":"all","status":"pending","deadline":0,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"jlgj:...:...","platform":"接龙管家","courseName":"群组名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1146,6 +1146,7 @@ name: 've.teachers_of_',
           return { ok: false, code: 'LOGIN_REQUIRED', message: '接龙管家未登录，请先调用 jlgj.login 完成登录后再查询作业' };
         }
         const courses = Array.isArray(courseList?.courses) ? courseList.courses : [];
+        const now = Date.now();
         const items = [];
         for (const course of courses.slice(0, 60)) {
           const groupId = String(course?.groupId || '').trim();
@@ -1155,11 +1156,13 @@ name: 've.teachers_of_',
             const homework = Array.isArray(data?.homework) ? data.homework : [];
             for (const h of homework) {
               const done = h?.done === true;
-              const st = done ? 'submitted' : 'pending';
+              const deadline = parseDeadline(h?.end);
+              const overdue = !done && deadline > 0 && deadline < now;
+              const st = computeAssignmentStatus(done, overdue);
               if (status !== 'all' && st !== status) continue;
               items.push(buildAssignmentItem(
                 `jlgj:${groupId}:${h?.threadId}`, '接龙管家', String(course?.name || ''),
-                String(h?.title || ''), 'all', st, 0, String(h?.link || '')
+                String(h?.title || ''), 'all', st, deadline, String(h?.link || '')
               ));
             }
           } catch {
