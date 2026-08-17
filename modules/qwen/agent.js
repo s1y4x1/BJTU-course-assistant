@@ -215,7 +215,7 @@
           onDelta?.(greetingText.slice(i, i + 3));
           await sleep(16);
         }
-        onEvent?.({ firstMessage: true });
+        onEvent?.({ firstMessage: true, text: greetingText });
       }
       isNewChat = false;
 

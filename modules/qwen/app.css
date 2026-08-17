@@ -26,9 +26,9 @@
   bottom: 20px;
   width: 380px;
   min-width: 280px;
-  max-width: calc(100vw - 16px);
+  max-width: calc(100vw - 40px);
   min-height: 320px;
-  max-height: calc(100vh - 16px);
+  max-height: calc(100vh - 40px);
   resize: both;
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -156,6 +156,42 @@ html[data-color-scheme="dark"] .qwen-chat-new:hover {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+}
+
+.qwen-chat-history-loading {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #64748b;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.qwen-chat-history-loading[hidden] {
+  display: none;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-history-loading {
+  color: #94a3b8;
+  border-bottom-color: #334155;
+}
+
+.qwen-chat-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(97, 92, 237, 0.25);
+  border-top-color: #615ced;
+  border-radius: 50%;
+  animation: qwen-chat-spin 0.8s linear infinite;
+}
+
+@keyframes qwen-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .qwen-chat-msg {

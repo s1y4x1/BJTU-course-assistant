@@ -194,10 +194,18 @@
     }
   }
 
+  const HISTORY_LOADING_ID = 'qwen-chat-history-loading';
+
   async function loadHistory() {
     if (!sessionChatId) return;
-    const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: sessionChatId });
-    if (response?.ok && Array.isArray(response.messages)) renderHistory(response.messages);
+    const loadingEl = el(HISTORY_LOADING_ID);
+    if (loadingEl instanceof HTMLElement) loadingEl.hidden = false;
+    try {
+      const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: sessionChatId });
+      if (response?.ok && Array.isArray(response.messages)) renderHistory(response.messages);
+    } finally {
+      if (loadingEl instanceof HTMLElement) loadingEl.hidden = true;
+    }
   }
 
   function send(type, payload) {
@@ -372,7 +380,7 @@
       const items = value.map((item) => `${childIndent}${formatResult(item, depth + 1)}`);
       return `[\n${items.join(',\n')}\n${indent}]`;
     }
-    const keys = Object.keys(value);
+    const keys = Object.keys(value).filter((key) => key !== 'ok');
     if (!keys.length) return '{}';
     const entries = keys.map((key) => {
       const keyText = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
@@ -592,6 +600,18 @@
             collapseThinking(activeBubble);
             inThinking = false;
           }
+          const bubble = activeBubble instanceof HTMLElement ? activeBubble : ensureAssistantBubble();
+          if (message?.text && bubble instanceof HTMLElement) {
+            const container = mdContainer(bubble);
+            if (container) {
+              const current = String(container._mdText || '');
+              const want = String(message.text);
+              if (!current || current !== want) {
+                container._mdText = want;
+                container.innerHTML = renderQwenMarkdown(want);
+              }
+            }
+          }
           if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
           activeBubble = null;
           const messages = el(MESSAGES_ID);
@@ -754,8 +774,15 @@
           const onMove = (moveEvent) => {
             panel.style.right = 'auto';
             panel.style.bottom = 'auto';
-            panel.style.left = `${Math.max(0, moveEvent.clientX - offsetX)}px`;
-            panel.style.top = `${Math.max(0, moveEvent.clientY - offsetY)}px`;
+            const size = panel.getBoundingClientRect();
+            const maxLeft = Math.max(0, window.innerWidth - size.width);
+            const maxTop = Math.max(0, window.innerHeight - size.height);
+            const left = Math.min(Math.max(0, moveEvent.clientX - offsetX), maxLeft);
+            const top = Math.min(Math.max(0, moveEvent.clientY - offsetY), maxTop);
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+            panel.style.maxWidth = `${Math.max(280, window.innerWidth - left)}px`;
+            panel.style.maxHeight = `${Math.max(320, window.innerHeight - top)}px`;
           };
           const onUp = () => {
             window.removeEventListener('pointermove', onMove);
@@ -766,6 +793,26 @@
           event.preventDefault();
         });
       }
+      const clampPanel = () => {
+        if (panel.hidden) return;
+        const rect = panel.getBoundingClientRect();
+        const inBounds =
+          rect.left >= 0 && rect.top >= 0 &&
+          rect.right <= window.innerWidth && rect.bottom <= window.innerHeight;
+        if (inBounds) return;
+        const size = rect;
+        const maxLeft = Math.max(0, window.innerWidth - size.width);
+        const maxTop = Math.max(0, window.innerHeight - size.height);
+        const left = Math.min(Math.max(0, size.left), maxLeft);
+        const top = Math.min(Math.max(0, size.top), maxTop);
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+        panel.style.maxWidth = `${Math.max(280, window.innerWidth - left)}px`;
+        panel.style.maxHeight = `${Math.max(320, window.innerHeight - top)}px`;
+      };
+      window.addEventListener('resize', clampPanel);
     }
 
     void chrome.storage.local.get('qwenLastChatId').then((data) => {

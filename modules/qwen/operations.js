@@ -58,7 +58,7 @@
       const items = value.map((item) => `${childIndent}${formatResult(item, depth + 1)}`);
       return `[\n${items.join(',\n')}\n${indent}]`;
     }
-    const keys = Object.keys(value);
+    const keys = Object.keys(value).filter((key) => key !== 'ok');
     if (!keys.length) return '{}';
     const entries = keys.map((key) => {
       const keyText = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
