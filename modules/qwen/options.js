@@ -39,8 +39,10 @@
 
       const items = document.createElement('div');
       items.className = 'qwen-operation-group-items';
-      for (const name of names) {
-        const isMeta = String(name).startsWith('qwen.');
+      for (const entry of names) {
+        const name = String(entry?.name ?? entry ?? '');
+        const summary = String(entry?.summary || '');
+        const isMeta = name.startsWith('qwen.');
         const label = document.createElement('label');
         label.className = 'qwen-operation-item';
         const checkbox = document.createElement('input');
@@ -51,6 +53,12 @@
         const code = document.createElement('code');
         code.textContent = name;
         label.append(checkbox, code);
+        if (summary) {
+          const desc = document.createElement('span');
+          desc.className = 'qwen-operation-item-desc';
+          desc.textContent = summary;
+          label.appendChild(desc);
+        }
         items.appendChild(label);
       }
       container.appendChild(items);

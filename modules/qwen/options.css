@@ -167,6 +167,17 @@ html[data-color-scheme="dark"] .qwen-operation-item {
   border-radius: 4px;
 }
 
+.qwen-operation-item-desc {
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.4;
+  margin-left: 2px;
+}
+
+html[data-color-scheme="dark"] .qwen-operation-item-desc {
+  color: #64748b;
+}
+
 .qwen-operation-loading {
   font-size: 13px;
   color: #64748b;

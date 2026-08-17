@@ -272,7 +272,7 @@
         }
         void (async () => {
           const settings = await getSettings();
-          sendResponse({ ok: true, groups: await operations.groups(), enabledOperations: settings.enabledOperations });
+          sendResponse({ ok: true, groups: await operations.groupsDetailed(), enabledOperations: settings.enabledOperations });
         })();
         return true;
       }
