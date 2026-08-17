@@ -45,6 +45,7 @@
       const abortController = new AbortController();
       const turnRef = {};
       let pendingAsk = null;
+      let pendingRetry = null;
       const loopSession = {};
       const resolveAskOnAbort = () => {
         if (pendingAsk) {
@@ -53,12 +54,26 @@
           resolve?.({ action: 'stop' });
         }
       };
+      const resolveRetryOnAbort = () => {
+        if (pendingRetry) {
+          const resolve = pendingRetry.resolve;
+          pendingRetry = null;
+          resolve?.('stop');
+        }
+      };
       port.onDisconnect.addListener(() => {
         activeChatPorts.delete(port);
         resolveAskOnAbort();
+        resolveRetryOnAbort();
         abortController.abort();
       });
       port.onMessage.addListener((message) => {
+        if (message?.type === 'retryDecision' && pendingRetry) {
+          const resolve = pendingRetry.resolve;
+          pendingRetry = null;
+          resolve?.(String(message.action || 'stop'));
+          return;
+        }
         if (message?.type === 'askResponse' && pendingAsk?.id === message.id) {
           const resolve = pendingAsk.resolve;
           pendingAsk = null;
@@ -70,6 +85,7 @@
         }
         if (message?.type === 'stop') {
           resolveAskOnAbort();
+          resolveRetryOnAbort();
           abortController.abort();
           if (turnRef.chatId && turnRef.responseId) {
             void global.BjtuQwenClient?.stopGeneration?.({
@@ -103,6 +119,15 @@
               maxIterations: settings.maxIterations,
               alwaysAllow: settings.alwaysAllow === true,
               sessionRef: loopSession,
+              onRetryRequest: (info) => new Promise((resolve) => {
+                pendingRetry = { resolve };
+                const safeMessage = String(info?.message || '请求失败');
+                port.postMessage({
+                  type: 'retryRequest',
+                  message: safeMessage,
+                  code: String(info?.code || '')
+                });
+              }),
               askUser: (payload) => new Promise((resolve) => {
                 const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 pendingAsk = { id, resolve };
@@ -160,8 +185,7 @@
               message: String(error?.message || error),
               code: String(error?.code || ''),
               chatId: String(turnRef?.chatId || ''),
-              parentId: String(turnRef?.lastMessageId || ''),
-              retryText: String(turnRef?.pendingContent || '')
+              parentId: String(turnRef?.lastMessageId || '')
             });
           }
         })();

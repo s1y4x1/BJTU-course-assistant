@@ -107,6 +107,7 @@
       maxIterations = 6,
       thinking = false,
       askUser,
+      onRetryRequest,
       sessionRef,
       alwaysAllow = false,
       parentIdExplicit = false
@@ -185,33 +186,43 @@
       }
 
       const content = iteration === 0 ? userText : lastResultText;
-      if (turnRef) turnRef.pendingContent = String(content || '');
       const message = client.buildUserMessage({ modelId, content, thinking });
       message.parent_id = parentId || null;
       message.parentId = parentId || null;
 
-      const response = await client.streamCompletions({
-        chatId: effectiveChatId,
-        modelId,
-        parentId,
-        messages: [message],
-        onEvent: (event) => {
-          if (event?.responseParentId && turnRef) {
-            turnRef.lastMessageId = String(event.responseParentId);
-          }
-          if (event?.thinking) {
-            onEvent?.({ thinking: event.thinking, iteration });
-          } else if (event?.text) {
-            fullText += event.text;
-            onDelta?.(event.text);
-          } else if (event?.finished) {
-            onEvent?.({ finished: true, iteration });
-          } else if (event?.meta) {
-            onEvent?.({ meta: event.meta, iteration });
-          }
-        },
-        signal
-      });
+      let response;
+      try {
+        response = await client.streamCompletions({
+          chatId: effectiveChatId,
+          modelId,
+          parentId,
+          messages: [message],
+          onEvent: (event) => {
+            if (event?.responseParentId && turnRef) {
+              turnRef.lastMessageId = String(event.responseParentId);
+            }
+            if (event?.thinking) {
+              onEvent?.({ thinking: event.thinking, iteration });
+            } else if (event?.text) {
+              fullText += event.text;
+              onDelta?.(event.text);
+            } else if (event?.finished) {
+              onEvent?.({ finished: true, iteration });
+            } else if (event?.meta) {
+              onEvent?.({ meta: event.meta, iteration });
+            }
+          },
+          signal
+        });
+      } catch (error) {
+        const code = String(error?.code || '');
+        if (code === 'NOT_LOGGED_IN' || code === 'DISABLED') throw error;
+        const decision = typeof onRetryRequest === 'function'
+          ? await onRetryRequest({ message: String(error?.message || error), code })
+          : null;
+        if (decision !== 'retry') throw error;
+        continue;
+      }
       parentId = String(response?.responseId || parentId);
       if (turnRef) turnRef.responseId = parentId;
       if (turnRef) turnRef.lastMessageId = String(response?.responseParentId || turnRef.lastMessageId || '');

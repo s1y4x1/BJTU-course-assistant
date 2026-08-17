@@ -21,7 +21,6 @@
   let nextReplyFresh = false;
   let inThinking = false;
   let lastSendText = '';
-  let retryShowUserBubble = true;
   let pendingEditParentId = '';
   let pendingEdit = false;
 
@@ -294,25 +293,6 @@
     return bubble;
   }
 
-  function appendRetryButton(bubble, retryText) {
-    if (!(bubble instanceof HTMLElement)) return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'qwen-chat-retry-btn';
-    btn.textContent = '重试';
-    btn.title = '重新发送刚才的消息';
-    btn.addEventListener('click', () => {
-      if (busy) return;
-      bubble.remove();
-      if (activeBubble instanceof HTMLElement) activeBubble.remove();
-      activeBubble = null;
-      const text = retryText || lastSendText;
-      if (!text) return;
-      startStream({ text, showUserBubble: retryShowUserBubble });
-    });
-    bubble.appendChild(btn);
-  }
-
   function cursorHost(bubble) {
     if (!(bubble instanceof HTMLElement)) return bubble;
     const md = bubble.querySelector(':scope > .qwen-chat-md');
@@ -559,7 +539,6 @@
 
   function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true }) {
     lastSendText = text;
-    retryShowUserBubble = showUserBubble === true;
     if (showUserBubble) {
       appendMessage('user', text, editParent || sessionParentId);
       const input = el(INPUT_ID);
@@ -668,6 +647,35 @@
           port = null;
         } else if (message?.type === 'ask') {
           showAsk(message);
+        } else if (message?.type === 'retryRequest') {
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
+          removeCursor(activeBubble);
+          if (activeBubble instanceof HTMLElement) activeBubble.remove();
+          activeBubble = null;
+          const bubble = appendMessage('error', message.message || '请求失败');
+          if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
+            setStatus('风控校验', 'error');
+            void send('QWEN_OPEN_LOGIN');
+          }
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'qwen-chat-retry-btn';
+          btn.textContent = '重试';
+          btn.title = '重新发送刚才的请求';
+          btn.addEventListener('click', () => {
+            bubble.remove();
+            try {
+              port?.postMessage({ type: 'retryDecision', action: 'retry' });
+            } catch {
+              // 端口可能已断开
+            }
+          });
+          bubble.appendChild(btn);
+          const messages = el(MESSAGES_ID);
+          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'error') {
           hideAsk();
           if (message?.parentId) sessionParentId = String(message.parentId);
@@ -691,16 +699,14 @@
               activeBubble.remove();
             }
             activeBubble = null;
-            const bubble = appendMessage('error', message.message || '请求失败');
-            appendRetryButton(bubble, String(message.retryText || ''));
+            appendMessage('error', message.message || '请求失败');
             setStatus('风控校验', 'error');
             void send('QWEN_OPEN_LOGIN');
           } else {
             removeCursor(activeBubble);
             if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) activeBubble.remove();
             activeBubble = null;
-            const bubble = appendMessage('error', message.message || '请求失败');
-            if (String(message.retryText || '').trim()) appendRetryButton(bubble, String(message.retryText));
+            appendMessage('error', message.message || '请求失败');
           }
           setBusy(false);
           port.disconnect();
