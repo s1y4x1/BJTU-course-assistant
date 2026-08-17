@@ -141,8 +141,20 @@
     return response;
   }
 
-  async function recognize(image) {
+  async function recognize(image, modelVersion) {
     if (!global.BjtuCaptchaAssets) throw new Error('验证码识别资源管理器未加载');
+    const assets = global.BjtuCaptchaAssets;
+    let version;
+    const rawModel = String(modelVersion || '').trim();
+    if (rawModel) {
+      await assets.getModelVersions();
+      if (!assets.MODEL_VERSIONS || !Object.prototype.hasOwnProperty.call(assets.MODEL_VERSIONS, rawModel)) {
+        throw new Error(`指定的识别模型版本不存在：${rawModel}`);
+      }
+      version = rawModel;
+    } else {
+      version = await assets.getSelectedModelVersion();
+    }
     const runtimeState = await runtimeFilesState();
     if (!runtimeState.installed) {
       throw Object.assign(
@@ -156,10 +168,9 @@
         { code: 'captcha-resources-missing' }
       );
     }
-    const version = await global.BjtuCaptchaAssets.getSelectedModelVersion();
     const [model, coreReady] = await Promise.all([
-      global.BjtuCaptchaAssets.getCachedModel(version),
-      global.BjtuCaptchaAssets.extensionCoreExists()
+      assets.getCachedModel(version),
+      assets.extensionCoreExists()
     ]);
     if (!model || !coreReady) {
       const missing = [

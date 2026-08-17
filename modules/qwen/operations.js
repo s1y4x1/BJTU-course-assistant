@@ -880,23 +880,60 @@ name: 've.teachers_of_',
       doc: [
         '## captcha.recognize —— 验证码识别',
         '',
-        '识别验证码图片，返回识别文本。图片须为可访问的 URL。',
+        '识别验证码图片，返回识别结果。图片须为可访问的 URL。',
         '',
-        '**参数**：{"imageUrl":"图片URL，必填"}',
+        '**参数**：{"imageUrl":"图片URL，必填","model":"可选，使用的 OCR 模型版本（如 4.0.0_fast），省略时使用当前已选模型；指定 model 时按 OCR 识别返回 passcode，未指定时按默认验证码识别返回 expression/answer"}',
         '',
-        '**调用示例**：`captcha.recognize({imageUrl: "https://..."})`',
+        '**调用示例**：`captcha.recognize({imageUrl: "https://...", model: "4.0.0_fast"})`',
         '',
-        '**返回示例**：{"ok":true,"text":"1234"}'
+        '**返回示例**：{"ok":true,"passcode":"1234"}'
       ].join('\n'),
       async run(args) {
         const imageUrl = String(args?.imageUrl || '').trim();
         if (!imageUrl) throw new Error('缺少参数 imageUrl');
+        const model = String(args?.model || '').trim();
         const recognizer = requireGlobal('BjtuCaptchaRecognizer');
+        if (typeof recognizer?.recognize === 'function' && model) {
+          const blob = await (await fetch(imageUrl)).blob();
+          return recognizer.recognize(blob, model);
+        }
         if (typeof recognizer?.recognizeMisCaptcha === 'function') {
           const blob = await (await fetch(imageUrl)).blob();
           return recognizer.recognizeMisCaptcha(blob);
         }
         return sendRuntimeMessage({ type: 'MIS_CAPTCHA_RECOGNIZE', payload: { imageUrl } }, 60000);
+      }
+    },
+    {
+      module: 'captcha',
+      name: 'captcha.models',
+      label: '获取已安装模型',
+      summary: '列出验证码识别已安装的 OCR 模型',
+      doc: [
+        '## captcha.models —— 获取已安装模型',
+        '',
+        '列出验证码识别（Tesseract OCR）的所有可用模型版本及其安装状态，并标识当前选中的模型。',
+        '',
+        '**调用示例**：`captcha.models()`',
+        '',
+        '**返回示例**：{"ok":true,"selected":"4.0.0_fast","models":[{"version":"4.0.0_fast","label":"4.0.0 Fast（原内置模型，推荐）","installed":true,"selected":true}]}'
+      ].join('\n'),
+      async run() {
+        const assets = requireGlobal('BjtuCaptchaAssets');
+        const versions = await assets.getModelVersions();
+        const selected = await assets.getSelectedModelVersion();
+        const models = [];
+        for (const key of Object.keys(versions || {})) {
+          const definition = versions[key];
+          const cached = await assets.getCachedModel(key).catch(() => null);
+          models.push({
+            version: key,
+            label: definition?.label || key,
+            installed: Boolean(cached),
+            selected: key === selected
+          });
+        }
+        return { ok: true, selected, models };
       }
     },
     {
