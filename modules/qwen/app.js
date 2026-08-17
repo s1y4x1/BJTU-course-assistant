@@ -21,6 +21,7 @@
   let nextReplyFresh = false;
   let inThinking = false;
   let lastSendText = '';
+  let retryShowUserBubble = true;
   let pendingEditParentId = '';
   let pendingEdit = false;
 
@@ -302,11 +303,12 @@
     btn.title = '重新发送刚才的消息';
     btn.addEventListener('click', () => {
       if (busy) return;
+      bubble.remove();
       if (activeBubble instanceof HTMLElement) activeBubble.remove();
       activeBubble = null;
       const text = retryText || lastSendText;
       if (!text) return;
-      sendMessage(text);
+      startStream({ text, showUserBubble: retryShowUserBubble });
     });
     bubble.appendChild(btn);
   }
@@ -557,6 +559,7 @@
 
   function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true }) {
     lastSendText = text;
+    retryShowUserBubble = showUserBubble === true;
     if (showUserBubble) {
       appendMessage('user', text, editParent || sessionParentId);
       const input = el(INPUT_ID);
