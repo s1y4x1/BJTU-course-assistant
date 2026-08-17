@@ -218,6 +218,7 @@ async function openJlgjBackgroundTab() {
   );
   if (reusableTab?.id) return reusableTab;
   const tab = await chrome.tabs.create({ url: 'https://i.jielong.com/my-class#bjtu-bg', active: false });
+  void groupBjtuOpenedTab(tab?.id);
   if (tab?.id) jlgjOwnedBackgroundTabIds.add(Number(tab.id));
   return tab;
 }

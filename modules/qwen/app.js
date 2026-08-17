@@ -19,6 +19,8 @@
   let sessionChatId = '';
   let sessionParentId = '';
   let nextReplyFresh = false;
+  let lastSendText = '';
+  let pendingEditParentId = '';
 
   function el(id) {
     return document.getElementById(id);
@@ -166,6 +168,7 @@
     if (!(messagesEl instanceof HTMLElement)) return;
     messagesEl.replaceChildren();
     const list = Array.isArray(messages) ? messages : [];
+    let lastAssistantResponseId = '';
     for (const message of list) {
       const role = String(message?.role || '');
       if (role === 'user') {
@@ -174,11 +177,12 @@
         if (blocks.length) {
           for (const block of blocks) appendResCard(block);
         } else {
-          appendMessage('user', extractUserQuestion(content));
+          appendMessage('user', extractUserQuestion(content), String(message?.parentId || message?.parent_id || lastAssistantResponseId));
         }
       } else if (role === 'assistant') {
         const text = extractAssistantReply(message);
         appendMessage('assistant', text || '（无回复）');
+        lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
     }
   }
@@ -216,12 +220,44 @@
     if (stopBtn instanceof HTMLButtonElement) stopBtn.hidden = !busy;
   }
 
-  function appendMessage(role, text) {
+  function appendMessage(role, text, parentId) {
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return;
-    const bubble = document.createElement('div');
-    bubble.className = `qwen-chat-msg ${role}`;
     const str = String(text || '');
+    let bubble;
+    let anchor;
+    if (role === 'user') {
+      const row = document.createElement('div');
+      row.className = 'qwen-chat-msg-row user';
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'qwen-chat-edit-btn';
+      editBtn.textContent = '编辑';
+      editBtn.title = '编辑此消息（发送时将以此消息为基准续接）';
+      editBtn.addEventListener('click', () => {
+        const input = el(INPUT_ID);
+        if (input instanceof HTMLTextAreaElement) {
+          input.value = str;
+          input.style.height = 'auto';
+          input.style.height = `${Math.min(120, input.scrollHeight)}px`;
+          pendingEditParentId = String(parentId || '');
+          const panel = el(PANEL_ID);
+          if (panel instanceof HTMLElement) panel.hidden = false;
+          const fab = el(FAB_ID);
+          if (fab instanceof HTMLElement) fab.style.display = 'none';
+          input.focus();
+        }
+      });
+      row.appendChild(editBtn);
+      bubble = document.createElement('div');
+      bubble.className = 'qwen-chat-msg user';
+      row.appendChild(bubble);
+      anchor = row;
+    } else {
+      bubble = document.createElement('div');
+      bubble.className = `qwen-chat-msg ${role}`;
+      anchor = bubble;
+    }
     if (role === 'error') {
       bubble.textContent = str;
     } else {
@@ -229,9 +265,40 @@
       container._mdText = str;
       container.innerHTML = renderQwenMarkdown(str);
     }
-    messages.appendChild(bubble);
+    messages.appendChild(anchor);
     messages.scrollTop = messages.scrollHeight;
     return bubble;
+  }
+
+  function appendRetryButton(bubble) {
+    if (!(bubble instanceof HTMLElement)) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'qwen-chat-retry-btn';
+    btn.textContent = '重试';
+    btn.title = '重新发送刚才的消息';
+    btn.addEventListener('click', () => {
+      const text = lastSendText;
+      if (busy || !text) return;
+      if (activeBubble instanceof HTMLElement) activeBubble.remove();
+      activeBubble = null;
+      sendMessage(text);
+    });
+    bubble.appendChild(btn);
+  }
+
+  function ensureCursor(bubble) {
+    if (!(bubble instanceof HTMLElement)) return;
+    if (!bubble.querySelector(':scope > .qwen-chat-cursor')) {
+      const cursor = document.createElement('span');
+      cursor.className = 'qwen-chat-cursor';
+      bubble.appendChild(cursor);
+    }
+  }
+
+  function removeCursor(bubble) {
+    if (!(bubble instanceof HTMLElement)) return;
+    bubble.querySelectorAll(':scope > .qwen-chat-cursor').forEach((node) => node.remove());
   }
 
   function appendOperationCard(operation) {
@@ -385,13 +452,17 @@
 
   function sendMessage(text) {
     if (busy) return;
-    appendMessage('user', text);
+    lastSendText = text;
+    const editParent = pendingEditParentId;
+    pendingEditParentId = '';
+    appendMessage('user', text, editParent || sessionParentId);
     const input = el(INPUT_ID);
     if (input instanceof HTMLTextAreaElement) input.value = '';
     hideAsk();
     setBusy(true);
     setStatus('思考中…');
-    activeBubble = null;
+    activeBubble = ensureAssistantBubble();
+    ensureCursor(activeBubble);
     const lastOperationCard = { card: null };
 
     const connectPort = () => {
@@ -399,15 +470,18 @@
       port.onMessage.addListener((message) => {
         if (message?.type === 'delta') {
           if (nextReplyFresh) {
+            removeCursor(activeBubble);
             activeBubble = null;
             nextReplyFresh = false;
           }
           const bubble = ensureAssistantBubble();
           if (bubble) appendAssistantText(bubble, message.text);
+          ensureCursor(bubble);
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'thinking') {
           if (nextReplyFresh) {
+            removeCursor(activeBubble);
             activeBubble = null;
             nextReplyFresh = false;
           }
@@ -415,6 +489,7 @@
           if (bubble) {
             const body = ensureThinkingBlock(bubble);
             if (body) appendAssistantText(body, message.text);
+            ensureCursor(bubble);
             const messages = el(MESSAGES_ID);
             if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
           }
@@ -438,6 +513,7 @@
           } else if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) {
             appendAssistantText(activeBubble, '（无回复）');
           }
+          removeCursor(activeBubble);
           activeBubble = null;
           setBusy(false);
           setStatus('已登录', 'ok');
@@ -450,6 +526,7 @@
             const raw = mdRawText(activeBubble);
             appendAssistantText(activeBubble, raw ? '\n（已停止）' : '（已停止）');
           }
+          removeCursor(activeBubble);
           activeBubble = null;
           setBusy(false);
           setStatus('已登录', 'ok');
@@ -475,11 +552,14 @@
             if (bubble instanceof HTMLElement) {
               const raw = mdRawText(bubble);
               appendAssistantText(bubble, raw ? `\n（${message.message || '请求失败'}）` : `（${message.message || '请求失败'}）`);
+              appendRetryButton(bubble);
             }
+            removeCursor(bubble);
             activeBubble = null;
             setStatus('风控校验', 'error');
             void send('QWEN_OPEN_LOGIN');
           } else {
+            removeCursor(activeBubble);
             appendMessage('error', message.message || '请求失败');
           }
           setBusy(false);
@@ -495,7 +575,7 @@
         }
         port = null;
       });
-      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: sessionParentId });
+      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: editParent || sessionParentId });
     };
 
     try {
@@ -610,6 +690,7 @@
           sessionChatId = '';
           sessionParentId = '';
           nextReplyFresh = false;
+          pendingEditParentId = '';
           hideAsk();
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.replaceChildren();
@@ -619,8 +700,11 @@
           doNew();
           return;
         }
-        if (!global.confirm('是否删除当前会话？')) return;
-        void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(() => doNew()).catch(() => doNew());
+        if (global.confirm('是否删除当前会话？')) {
+          void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(() => doNew()).catch(() => doNew());
+        } else {
+          doNew();
+        }
       });
     }
     if (stopBtn instanceof HTMLButtonElement) {

@@ -172,6 +172,79 @@ html[data-color-scheme="dark"] .qwen-chat-new:hover {
   align-self: flex-end;
   background: #615ced;
   color: #fff;
+  max-width: 100%;
+}
+
+.qwen-chat-msg-row.user {
+  align-self: flex-end;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 85%;
+}
+
+.qwen-chat-edit-btn {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: #615ced;
+  opacity: 0.7;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1.4;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.qwen-chat-edit-btn:hover {
+  opacity: 1;
+  background: rgba(97, 92, 237, 0.12);
+}
+
+html[data-color-scheme="dark"] .qwen-chat-edit-btn {
+  color: #a5b4fc;
+}
+
+.qwen-chat-edit-btn + .qwen-chat-msg.user {
+  max-width: 100%;
+}
+
+.qwen-chat-retry-btn {
+  display: inline-block;
+  margin-top: 8px;
+  border: 1px solid rgba(97, 92, 237, 0.5);
+  background: rgba(97, 92, 237, 0.1);
+  color: #4338ca;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.qwen-chat-retry-btn:hover {
+  background: rgba(97, 92, 237, 0.18);
+}
+
+html[data-color-scheme="dark"] .qwen-chat-retry-btn {
+  color: #a5b4fc;
+}
+
+.qwen-chat-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: qwen-cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes qwen-cursor-blink {
+  to {
+    visibility: hidden;
+  }
 }
 
 .qwen-chat-msg.assistant {

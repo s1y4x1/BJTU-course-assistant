@@ -442,7 +442,8 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
                 ctx.createdTab = false;
                 return ctx.tabId;
               }
-              const t = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
+const t = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
+              void groupBjtuOpenedTab(t?.id);
               ctx.tabId = Number(t?.id || 0) || null;
               ctx.createdTab = true;
               if (ctx.cancelled) {
@@ -471,6 +472,7 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
             tab = exists[0];
           } else {
             tab = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
+            void groupBjtuOpenedTab(tab?.id);
             created = true;
           }
         }

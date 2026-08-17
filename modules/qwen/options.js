@@ -79,6 +79,10 @@
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
     const thinking = document.getElementById('qwenThinkingEnabled');
     if (thinking instanceof HTMLInputElement) thinking.checked = status.thinkingEnabled === true;
+    const maxIterations = document.getElementById('qwenMaxIterations');
+    if (maxIterations instanceof HTMLInputElement) maxIterations.value = String(Math.max(1, Number(status.maxIterations) || 6));
+    const alwaysAllow = document.getElementById('qwenAlwaysAllow');
+    if (alwaysAllow instanceof HTMLInputElement) alwaysAllow.checked = status.alwaysAllow === true;
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
     const select = document.getElementById('qwenModelSelect');
@@ -135,6 +139,15 @@
       });
     }
 
+    const alwaysAllow = document.getElementById('qwenAlwaysAllow');
+    if (alwaysAllow instanceof HTMLInputElement) {
+      alwaysAllow.addEventListener('change', () => {
+        void send('QWEN_SETTINGS_SET', { alwaysAllow: alwaysAllow.checked === true }).then((response) => {
+          setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
+        });
+      });
+    }
+
     const select = document.getElementById('qwenModelSelect');
     if (select instanceof HTMLSelectElement) {
       select.addEventListener('change', () => {
@@ -163,7 +176,7 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null, thinkingEnabled: false });
+    await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null, thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
     void refresh();
   }
 

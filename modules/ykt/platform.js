@@ -601,6 +601,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
       let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
       if (!tab) {
         tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
+        void groupBjtuOpenedTab(tab?.id);
         requestTabCreated = true;
       }
       if (isCancelled()) {
@@ -892,6 +893,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       yktExamSharedTabCreated = false;
       if (!tab) {
         tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
+        void groupBjtuOpenedTab(tab?.id);
         yktExamSharedTabCreated = true;
       }
       if (isStale() || !isPlatformEnabled('ykt')) {
@@ -1227,6 +1229,8 @@ async function yktPageCourseHomework(classroomId) {
     const coursewareId = a?.courseware_id;
     const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
     return {
+      ...a,
+      __actype: Number(a?.__actype),
       id: a?.id,
       title: a?.title || '雨课堂作业',
       end: getYktActivityDeadline(a),
@@ -1246,7 +1250,9 @@ async function yktPageCourseHomework(classroomId) {
             : yktHomeworkLink(cid, coursewareId, a?.id)),
       courseware_id: coursewareId,
       leaf_id: leafId,
-      classroom_id: cid
+      classroom_id: cid,
+      detail_content: a?.content ?? null,
+      view: a?.view ?? null
     };
   });
   return { ok: true, classroomId: cid, homework };

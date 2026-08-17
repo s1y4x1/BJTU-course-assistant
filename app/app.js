@@ -3501,6 +3501,21 @@ async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {
   };
 }
 
+// 把扩展在后台打开的登录/请求页面归入「北交大助手」标签分组（复用已存在的分组）。
+async function groupBjtuOpenedTab(tabId) {
+  if (typeof chrome !== 'object' || !chrome?.tabs?.group || !chrome?.tabGroups?.query || tabId == null) return;
+  try {
+    const existing = await chrome.tabGroups.query({ title: '北交大助手' });
+    if (existing?.[0]?.id != null) {
+      await chrome.tabs.group({ tabIds: [tabId], groupId: existing[0].id });
+    } else {
+      await chrome.tabs.group({ tabIds: [tabId], createProperties: { title: '北交大助手', color: 'blue' } });
+    }
+  } catch {
+    // 分组失败不影响主流程
+  }
+}
+
 function setPlatformContentLoadProgress(platform, completed, total) {
   const p = normalizePlatformId(platform);
   const count = Math.max(0, Number(completed) || 0);

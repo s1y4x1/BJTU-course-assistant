@@ -128,6 +128,7 @@
     if (!originTabPromise) {
       originTabPromise = chrome.tabs.create({ url: REQUEST_PAGE_URL, active: false }).then(async (tab) => {
         if (!tab?.id) throw new Error('无法创建学堂在线请求页面');
+        void groupBjtuOpenedTab(tab.id);
         helperTabIds.add(tab.id);
         activeRequestTabId = tab.id;
         return waitForTabComplete(tab.id);

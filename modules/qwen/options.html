@@ -38,6 +38,19 @@
   </div>
 
   <div class="qwen-setting-row">
+    <label class="qwen-setting-label" for="qwenMaxIterations">操作循环上限</label>
+    <input type="number" id="qwenMaxIterations" class="qwen-model-select" min="1" step="1">
+    <div class="tip">AI 连续调用操作达到该次数后，会询问是否继续（发送新消息时生效）。</div>
+  </div>
+
+  <div class="qwen-toggle-row">
+    <label class="qwen-toggle">
+      <input type="checkbox" id="qwenAlwaysAllow">
+      <span class="qwen-toggle-label">始终允许 AI 循环调用操作（忽略次数限制）</span>
+    </label>
+  </div>
+
+  <div class="qwen-setting-row">
     <span class="qwen-setting-label">允许 AI 调用以下操作</span>
     <div class="tip">操作由本扩展各模块提供，AI 会在回复末尾调用操作并自动把结果继续发送给它。</div>
     <span class="qwen-ops-actions">

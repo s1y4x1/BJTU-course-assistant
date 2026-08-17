@@ -117,6 +117,7 @@ let moocLoginAssistPopupTabId = null;
         active: false
       }).then((tab) => {
         if (!tab?.id) throw new Error('无法创建中国大学MOOC请求页面');
+        void groupBjtuOpenedTab(tab.id);
         helperTabIds.add(tab.id);
         activeRequestTabId = tab.id;
         return waitForTabComplete(tab.id);

@@ -96,16 +96,32 @@
       maxIterations = 6,
       thinking = false,
       askUser,
-      sessionRef
+      sessionRef,
+      alwaysAllow = false
     } = options || {};
     const client = global.BjtuQwenClient;
     const operations = global.BjtuQwenOperations;
     if (!client || !operations) throw new Error('通义千问模块未就绪');
     await ensureLoggedIn();
 
-    const effectiveChatId = String(chatId || '') || await client.newChat(modelId);
+    const providedChatId = String(chatId || '');
+    let isNewChat = !providedChatId;
+    let effectiveChatId = providedChatId;
+    let fetchedHistory = [];
+    if (!isNewChat && typeof client.fetchChatHistory === 'function') {
+      try {
+        fetchedHistory = await client.fetchChatHistory(providedChatId);
+        const list = Array.isArray(fetchedHistory) ? fetchedHistory : [];
+        if (!list.some((m) => String(m?.role || '') === 'user' || String(m?.role || '') === 'assistant')) {
+          // 会话里没有任何消息：视为全新会话，仍注入 systemPrompt（可能由陈旧/残留的 chatId 等引起）
+          isNewChat = true;
+        }
+      } catch {
+        // 拉取失败：保守按已有会话处理
+      }
+    }
+    if (!effectiveChatId) effectiveChatId = await client.newChat(modelId);
     if (turnRef) turnRef.chatId = effectiveChatId;
-    const isNewChat = !String(chatId || '');
     const systemPrompt = isNewChat ? buildSystemPrompt({
       qwenDocs: [
         operations.docs('qwen.listOperations')?.doc,
@@ -114,22 +130,17 @@
     }) : '';
 
     let parentId = String(previousParentId || '');
-    if (effectiveChatId && !isNewChat && !parentId && typeof client.fetchChatHistory === 'function') {
-      try {
-        const history = await client.fetchChatHistory(effectiveChatId);
-        const list = Array.isArray(history) ? history : [];
-        for (let i = list.length - 1; i >= 0; i -= 1) {
-          const msg = list[i];
-          if (String(msg?.role || '') === 'assistant') {
-            const id = String(msg?.response_id || msg?.id || '');
-            if (id) {
-              parentId = id;
-              break;
-            }
+    if (!isNewChat && !parentId) {
+      const list = Array.isArray(fetchedHistory) ? fetchedHistory : [];
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const msg = list[i];
+        if (String(msg?.role || '') === 'assistant') {
+          const id = String(msg?.response_id || msg?.id || '');
+          if (id) {
+            parentId = id;
+            break;
           }
         }
-      } catch {
-        parentId = '';
       }
     }
     const history = [];
@@ -137,6 +148,7 @@
     let lastResultText = '';
     let lastCleanReply = '';
     const loopSession = options.sessionRef || {};
+    if (alwaysAllow === true) loopSession.alwaysAllow = true;
     const iterationLimit = Number(maxIterations) > 0 ? Number(maxIterations) : 6;
     let effectiveLimit = loopSession.alwaysAllow === true ? Infinity : iterationLimit;
     let iteration = 0;

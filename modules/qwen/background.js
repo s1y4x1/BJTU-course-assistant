@@ -2,7 +2,7 @@
 (function initBjtuQwenBackground(global) {
   'use strict';
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenThinkingEnabled'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
 
   async function getSettings() {
     const stored = await chrome.storage.local.get(SETTINGS_KEYS).catch(() => ({}));
@@ -12,7 +12,9 @@
       enabledOperations: Array.isArray(stored.qwenEnabledOperations)
         ? stored.qwenEnabledOperations
         : null,
-      thinkingEnabled: stored.qwenThinkingEnabled === true
+      thinkingEnabled: stored.qwenThinkingEnabled === true,
+      maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
+      alwaysAllow: stored.qwenAlwaysAllow === true
     };
   }
 
@@ -26,6 +28,10 @@
         : null;
     }
     if (typeof patch?.thinkingEnabled === 'boolean') next.qwenThinkingEnabled = patch.thinkingEnabled;
+    if (patch?.maxIterations !== undefined) {
+      next.qwenMaxIterations = Math.max(1, Math.floor(Number(patch.maxIterations) || 6));
+    }
+    if (typeof patch?.alwaysAllow === 'boolean') next.qwenAlwaysAllow = patch.alwaysAllow;
     if (Object.keys(next).length) await chrome.storage.local.set(next);
     return getSettings();
   }
@@ -92,6 +98,8 @@
               signal: abortController.signal,
               turnRef,
               thinking: settings.thinkingEnabled === true,
+              maxIterations: settings.maxIterations,
+              alwaysAllow: settings.alwaysAllow === true,
               sessionRef: loopSession,
               askUser: (payload) => new Promise((resolve) => {
                 const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
