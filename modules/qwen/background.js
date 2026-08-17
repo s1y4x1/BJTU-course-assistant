@@ -79,7 +79,8 @@
           }
           return;
         }
-        if (message?.type !== 'send' || !String(message.text || '').trim()) return;
+        if (message?.type !== 'send') return;
+        if (!String(message.text || '').trim() && String(message.chatId || '')) return;
         void (async () => {
           try {
             const settings = await getSettings();

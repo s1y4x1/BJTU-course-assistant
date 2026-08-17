@@ -80,6 +80,10 @@
       if (String(obj?.data?.code || '') === 'RateLimited') {
         return 'RATE_LIMITED';
       }
+      const ret1 = String((Array.isArray(obj?.ret) ? obj.ret[1] : '') || '');
+      if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') && ret1.includes('被挤爆')) {
+        return 'WAF_BUSY';
+      }
       if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') || ret0.includes('RGV587') || dataUrl.includes('/_____tmd_____/punish')) {
         return 'WAF_PUNISH';
       }

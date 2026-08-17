@@ -486,16 +486,13 @@
     }
   }
 
-  function sendMessage(text) {
-    if (busy) return;
+  function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true }) {
     lastSendText = text;
-    const editParent = pendingEditParentId;
-    pendingEditParentId = '';
-    const isEditSend = pendingEdit;
-    pendingEdit = false;
-    appendMessage('user', text, editParent || sessionParentId);
-    const input = el(INPUT_ID);
-    if (input instanceof HTMLTextAreaElement) input.value = '';
+    if (showUserBubble) {
+      appendMessage('user', text, editParent || sessionParentId);
+      const input = el(INPUT_ID);
+      if (input instanceof HTMLTextAreaElement) input.value = '';
+    }
     hideAsk();
     setBusy(true);
     setStatus('思考中…');
@@ -545,6 +542,15 @@
           activeBubble = null;
           const fresh = ensureAssistantBubble();
           placeCursor(fresh, false);
+          const messages = el(MESSAGES_ID);
+          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+        } else if (message?.type === 'firstMessage') {
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
+          if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
+          activeBubble = null;
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'done') {
@@ -641,6 +647,20 @@
       appendMessage('error', `无法连接：${String(error?.message || error)}`);
       setBusy(false);
     }
+  }
+
+  function sendMessage(text) {
+    if (busy) return;
+    const editParent = pendingEditParentId;
+    pendingEditParentId = '';
+    const isEditSend = pendingEdit;
+    pendingEdit = false;
+    startStream({ text, editParent, isEditSend, showUserBubble: true });
+  }
+
+  function sendOpening() {
+    if (busy) return;
+    startStream({ text: '', showUserBubble: false });
   }
 
   function init() {
@@ -753,6 +773,7 @@
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.replaceChildren();
           void chrome.storage.local.remove('qwenLastChatId');
+          sendOpening();
         };
         if (!currentId) {
           doNew();

@@ -18,6 +18,10 @@
     return Object.assign(new Error('通义千问触发风控校验（可能要求完成验证码或被限流），请到 chat.qwen.ai 页面完成验证后重试'), { code: 'WAF_PUNISH' });
   }
 
+  function wafBusyError() {
+    return Object.assign(new Error('通义千问触发风控校验（可能要求完成验证码或被限流），请到 chat.qwen.ai 页面完成验证后重试'), { code: 'WAF_BUSY' });
+  }
+
   function rateLimitMessage(num) {
     const hours = Math.max(0, Math.ceil(Number(num) || 0));
     return hours
@@ -211,6 +215,10 @@
       if (String(obj?.data?.code || '') === 'RateLimited') {
         return 'RATE_LIMITED';
       }
+      const ret1 = String((Array.isArray(obj?.ret) ? obj.ret[1] : '') || '');
+      if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') && ret1.includes('被挤爆')) {
+        return 'WAF_BUSY';
+      }
       if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') || ret0.includes('RGV587') || dataUrl.includes('/_____tmd_____/punish')) {
         return 'WAF_PUNISH';
       }
@@ -224,6 +232,7 @@
     if (!text) return null;
     const kind = detectApiErrorText(text);
     if (kind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
+    if (kind === 'WAF_BUSY') throw wafBusyError();
     if (kind === 'WAF_PUNISH') throw wafPunishError();
     if (kind === 'WAF_CHALLENGE') throw unparsableError();
     try {
@@ -384,6 +393,7 @@
         pendingStreams.delete(data.id);
         const code = String(data.error || '');
         if (code === 'WAF_PUNISH') pending.reject(wafPunishError());
+        else if (code === 'WAF_BUSY') pending.reject(wafBusyError());
         else if (code === 'WAF_CHALLENGE') pending.reject(unparsableError());
         else if (code === 'RATE_LIMITED') pending.reject(rateLimitError(0, String(data.message || '')));
         else pending.reject(new Error(code));
@@ -491,6 +501,7 @@
     if (!response.body?.getReader || !contentType.includes('event-stream')) {
       const text = await response.text();
       const kind = detectApiErrorText(text);
+      if (kind === 'WAF_BUSY') throw wafBusyError();
       if (kind === 'WAF_PUNISH') throw wafPunishError();
       if (kind || text.trim()) throw unparsableError();
       return { text: '', responseId: '' };
@@ -555,6 +566,7 @@
     if (buffer.trim()) handleLine(buffer.trim());
     if (!sawDataLine && rawText.trim()) {
       const kind = detectApiErrorText(rawText);
+      if (kind === 'WAF_BUSY') throw wafBusyError();
       if (kind === 'WAF_PUNISH') throw wafPunishError();
       if (kind) throw unparsableError();
     }

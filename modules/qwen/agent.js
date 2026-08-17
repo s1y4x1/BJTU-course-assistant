@@ -69,7 +69,9 @@
       '## 回答要求',
       '- 使用与用户问题相同的语言回答。',
       '- 基于真实操作返回的数据作答，不要编造。',
-      '- 内容简洁、条理清晰。'
+      '- 内容简洁、条理清晰。',
+      '',
+      '现在，请做个开场白。'
     ];
     return lines.join('\n');
   }
@@ -123,12 +125,6 @@
     }
     if (!effectiveChatId) effectiveChatId = await client.newChat(modelId);
     if (turnRef) turnRef.chatId = effectiveChatId;
-    const systemPrompt = isNewChat ? buildSystemPrompt({
-      qwenDocs: [
-        operations.docs('qwen.listOperations')?.doc,
-        operations.docs('qwen.getDocs')?.doc
-      ].filter(Boolean).join('\n\n')
-    }) : '';
 
     let parentId = String(previousParentId || '');
     if (!parentIdExplicit && !isNewChat && !parentId) {
@@ -148,6 +144,69 @@
     let fullText = '';
     let lastResultText = '';
     let lastCleanReply = '';
+
+    if (isNewChat) {
+      const openingPrompt = buildSystemPrompt({
+        qwenDocs: [
+          operations.docs('qwen.listOperations')?.doc,
+          operations.docs('qwen.getDocs')?.doc
+        ].filter(Boolean).join('\n\n')
+      });
+      let openingContent = openingPrompt;
+      let openingReplyText = '';
+      let openingParent = '';
+      for (let openingIteration = 0; openingIteration < 6; openingIteration += 1) {
+        if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+        const openingMessage = client.buildUserMessage({ modelId, content: openingContent, thinking });
+        openingMessage.parent_id = openingParent || null;
+        openingMessage.parentId = openingParent || null;
+        const openingResponse = await client.streamCompletions({
+          chatId: effectiveChatId,
+          modelId,
+          parentId: openingParent,
+          messages: [openingMessage],
+          onEvent: (event) => {
+            if (event?.thinking) onEvent?.({ thinking: event.thinking, iteration: -1 });
+            else if (event?.finished) onEvent?.({ finished: true, iteration: -1 });
+            else if (event?.meta) onEvent?.({ meta: event.meta, iteration: -1 });
+          },
+          signal
+        });
+        openingParent = String(openingResponse?.responseId || openingParent);
+        const openingReply = String(openingResponse?.text || '');
+        const openingCall = parseTrailingOperation(openingReply);
+        if (!openingCall || openingIteration >= 5) {
+          openingReplyText = openingReply;
+          break;
+        }
+        onEvent?.({ operation: openingCall, iteration: -1 });
+        const openingOutcome = await operations.run(openingCall.name, openingCall.arguments);
+        onEvent?.({ operationResult: openingOutcome, iteration: -1 });
+        openingContent = openingOutcome.ok
+          ? `\`\`\`res\n${JSON.stringify(openingOutcome.result)}\n\`\`\``
+          : ['```res', JSON.stringify(openingOutcome), '```', '', '若无法继续，请直接给出开场白。'].join('\n');
+      }
+      parentId = openingParent;
+      if (turnRef) turnRef.responseId = parentId;
+      fullText = openingReplyText;
+      if (String(openingReplyText || '').trim()) onDelta?.(openingReplyText);
+      onEvent?.({ firstMessage: true });
+      isNewChat = false;
+
+      if (!String(userText || '').trim()) {
+        onEvent?.({ done: true });
+        return {
+          chatId: effectiveChatId,
+          responseId: parentId,
+          modelId,
+          text: openingReplyText,
+          fullText,
+          operations: [],
+          final: openingReplyText
+        };
+      }
+    }
+
     const loopSession = options.sessionRef || {};
     if (alwaysAllow === true) loopSession.alwaysAllow = true;
     const iterationLimit = Number(maxIterations) > 0 ? Number(maxIterations) : 6;
@@ -184,9 +243,7 @@
         continue;
       }
 
-      const content = iteration === 0
-        ? (isNewChat ? [systemPrompt, '', '---', '', '用户问题：', userText].join('\n') : userText)
-        : lastResultText;
+      const content = iteration === 0 ? userText : lastResultText;
       const message = client.buildUserMessage({ modelId, content, thinking });
       message.parent_id = parentId || null;
       message.parentId = parentId || null;
