@@ -485,7 +485,9 @@ name: 've.teachers_of_',
         '**返回示例**：{"ok":true,"courses":[{"classroomId":"...","courseName":"课程名","teacher":"老师","universityId":"..."}]}'
       ].join('\n'),
       async run() {
-        return pageInvoke('ykt', 'courseList', {}, 120000);
+        const value = await pageInvoke('ykt', 'courseList', {}, 120000);
+        if (value?.loggedIn === false) return { ok: false, code: 'LOGIN_REQUIRED', message: '雨课堂未登录，请先调用 ykt.login 完成登录后再获取课程列表' };
+        return value;
       }
     },
     {
@@ -508,6 +510,24 @@ name: 've.teachers_of_',
         const classroomId = String(args?.classroomId || '').trim();
         await assertCourseIdOf('ykt', classroomId, 'classroomId');
         return pageInvoke('ykt', 'courseHomework', { classroomId }, 120000);
+      }
+    },
+    {
+      module: 'ykt',
+      name: 'ykt.login',
+      label: '雨课堂登录',
+      summary: '启用并触发雨课堂（yuketang.cn）登录流程',
+      doc: [
+        '## ykt.login —— 雨课堂登录',
+        '',
+        '启用雨课堂平台（若未启用）并触发其登录流程（通常在助手页面弹出扫码/授权）。调用 courseList 等操作前若未登录，应先调用本操作。',
+        '',
+        '**调用示例**：`ykt.login()`',
+        '',
+        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发雨课堂登录流程，请在弹出的登录中完成验证"}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('ykt', 'login', {}, 60000);
       }
     },
     {
@@ -622,6 +642,8 @@ name: 've.teachers_of_',
         '**返回示例**：{"ok":true,"courses":[{"courseId":"...","courseName":"..."}]}'
       ].join('\n'),
       async run() {
+        const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
+        if (!String(cookie?.value || '').trim()) return { ok: false, code: 'LOGIN_REQUIRED', message: '中国大学MOOC未登录，请先调用 mooc.login 完成登录后再获取课程列表' };
         return moocInvoke({ action: 'course-list' }, 120000);
       }
     },
@@ -716,6 +738,313 @@ name: 've.teachers_of_',
       }
     },
     {
+      module: 'campusnet',
+      name: 'campusnet.status',
+      label: '校园网重连状态',
+      summary: '获取校园网自动重连的启用状态与最近结果',
+      doc: [
+        '## campusnet.status —— 校园网重连状态',
+        '',
+        '获取校园网自动重连的启用状态、账号、间隔与最近一次检查结果。',
+        '',
+        '**调用示例**：`campusnet.status()`',
+        '',
+        '**返回示例**：{"enabled":true,"account":"zhangsan","intervalSeconds":60,"status":{"status":"online","message":"已经在线。","account":"zhangsan"}}'
+      ].join('\n'),
+      async run() {
+        const stored = await chrome.storage.local.get([
+          'campusNetworkReconnectEnabled',
+          'campusNetworkReconnectAccount',
+          'campusNetworkReconnectIntervalSeconds',
+          'campusNetworkReconnectNotifyOnSuccess',
+          'campusNetworkReconnectStatus'
+        ]).catch(() => ({}));
+        return {
+          enabled: stored?.campusNetworkReconnectEnabled === true,
+          account: String(stored?.campusNetworkReconnectAccount || ''),
+          intervalSeconds: Number(stored?.campusNetworkReconnectIntervalSeconds || 0) || 0,
+          notifyOnSuccess: stored?.campusNetworkReconnectNotifyOnSuccess !== false,
+          status: stored?.campusNetworkReconnectStatus || null
+        };
+      }
+    },
+    {
+      module: 'campusnet',
+      name: 'campusnet.reconnect',
+      label: '触发校园网重连',
+      summary: '启用校园网自动重连并立即触发一次认证检查',
+      doc: [
+        '## campusnet.reconnect —— 触发校园网重连',
+        '',
+        '开启校园网自动重连（若未启用）并立即触发一次认证检查。需要账号与密码已在校园网设置中保存。',
+        '',
+        '**调用示例**：`campusnet.reconnect()`',
+        '',
+        '**返回示例**：{"ok":true,"message":"已触发校园网重连"}'
+      ].join('\n'),
+      async run() {
+        await chrome.storage.local.set({ campusNetworkReconnectEnabled: true }).catch(() => {});
+        const service = requireGlobal('BjtuCampusNetworkReconnect');
+        if (typeof service?.restart === 'function') {
+          await Promise.resolve(service.restart());
+          return { ok: true, message: '已触发校园网重连' };
+        }
+        return { ok: false, message: '校园网重连模块未就绪' };
+      }
+    },
+    {
+      module: 'mrjzy',
+      name: 'mrjzy.courseList',
+      label: '每日交作业课程列表',
+      summary: '获取每日交作业（lulufind）当前账号的课程列表',
+      doc: [
+        '## mrjzy.courseList —— 每日交作业课程列表',
+        '',
+        '获取每日交作业平台当前账号的课程（班级）列表。需要已打开助手页面并在 zuoye.lulufind.com 登录。',
+        '',
+        '**调用示例**：`mrjzy.courseList()`',
+        '',
+        '**返回示例**：{"loaded":true,"loginState":"online","courses":[{"classNum":"...","divClass":"课程名","teacherName":"老师","homeworkCount":3}]}'
+      ].join('\n'),
+      async run() {
+        const value = await pageInvoke('mrjzy', 'courseList', {}, 120000);
+        if (String(value?.loginState || '') === 'offline') return { ok: false, code: 'LOGIN_REQUIRED', message: '每日交作业未登录，请先调用 mrjzy.login 完成登录后再获取课程列表' };
+        return value;
+      }
+    },
+    {
+      module: 'mrjzy',
+      name: 'mrjzy.homework_of_',
+      label: '每日交作业课程作业',
+      summary: '根据 classNum 获取每日交作业指定班级的作业列表',
+      doc: [
+        '## mrjzy.homework_of_ —— 每日交作业课程作业',
+        '',
+        '根据 classNum（班级号）获取每日交作业指定班级的作业列表。classNum 可先调用 mrjzy.courseList 获取。需要已打开助手页面并登录。',
+        '',
+        '**参数**：{"classNum":"班级号，必填"}',
+        '',
+        '**调用示例**：`mrjzy.homework_of_({classNum: "xxx"})`',
+        '',
+        '**返回示例**：{"ok":true,"classNum":"xxx","divClass":"课程名","teacherName":"老师","homework":[{"workId":"...","title":"作业名","end":"时间","done":false,"link":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const classNum = String(args?.classNum || '').trim();
+        if (!classNum) throw new Error('缺少参数 classNum，请先调用 mrjzy.courseList 获取班级号');
+        return pageInvoke('mrjzy', 'homework_of_', { classNum }, 120000);
+      }
+    },
+    {
+      module: 'mrjzy',
+      name: 'mrjzy.loginStatus',
+      label: '每日交作业登录状态',
+      summary: '检查每日交作业（lulufind）登录状态',
+      doc: [
+        '## mrjzy.loginStatus —— 每日交作业登录状态',
+        '',
+        '检查当前是否已登录每日交作业平台。',
+        '',
+        '**调用示例**：`mrjzy.loginStatus()`',
+        '',
+        '**返回示例**：{"loginState":"online","loggedIn":true}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('mrjzy', 'loginStatus', {}, 60000);
+      }
+    },
+    {
+      module: 'mrjzy',
+      name: 'mrjzy.login',
+      label: '每日交作业登录',
+      summary: '启用并触发每日交作业（lulufind）登录流程',
+      doc: [
+        '## mrjzy.login —— 每日交作业登录',
+        '',
+        '启用每日交作业平台（若未启用）并触发其登录流程（通常在助手页面弹出扫码/授权）。调用 courseList 等操作前若未登录，应先调用本操作。',
+        '',
+        '**调用示例**：`mrjzy.login()`',
+        '',
+        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发每日交作业登录流程，请在弹出的登录中完成验证"}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('mrjzy', 'login', {}, 60000);
+      }
+    },
+    {
+      module: 'jlgj',
+      name: 'jlgj.courseList',
+      label: '接龙管家课程列表',
+      summary: '获取接龙管家（i.jielong.com）当前账号的课程列表',
+      doc: [
+        '## jlgj.courseList —— 接龙管家课程列表',
+        '',
+        '获取接龙管家平台当前账号的群组（课程）列表。需要已打开助手页面并在 i.jielong.com 登录。',
+        '',
+        '**调用示例**：`jlgj.courseList()`',
+        '',
+        '**返回示例**：{"loaded":true,"loginState":"online","courses":[{"groupId":"...","name":"群组名","teacherName":"老师","homeworkCount":2}]}'
+      ].join('\n'),
+      async run() {
+        const value = await pageInvoke('jlgj', 'courseList', {}, 120000);
+        if (String(value?.loginState || '') === 'offline') return { ok: false, code: 'LOGIN_REQUIRED', message: '接龙管家未登录，请先调用 jlgj.login 完成登录后再获取课程列表' };
+        return value;
+      }
+    },
+    {
+      module: 'jlgj',
+      name: 'jlgj.homework_of_',
+      label: '接龙管家课程作业',
+      summary: '根据 groupId 获取接龙管家指定群组的作业列表',
+      doc: [
+        '## jlgj.homework_of_ —— 接龙管家课程作业',
+        '',
+        '根据 groupId（群组ID）获取接龙管家指定群组的作业列表。groupId 可先调用 jlgj.courseList 获取。需要已打开助手页面并登录。',
+        '',
+        '**参数**：{"groupId":"群组ID，必填"}',
+        '',
+        '**调用示例**：`jlgj.homework_of_({groupId: "xxx"})`',
+        '',
+        '**返回示例**：{"ok":true,"groupId":"xxx","name":"群组名","teacherName":"老师","homework":[{"threadId":"...","title":"作业名","done":false,"link":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const groupId = String(args?.groupId || '').trim();
+        if (!groupId) throw new Error('缺少参数 groupId，请先调用 jlgj.courseList 获取群组ID');
+        return pageInvoke('jlgj', 'homework_of_', { groupId }, 120000);
+      }
+    },
+    {
+      module: 'jlgj',
+      name: 'jlgj.loginStatus',
+      label: '接龙管家登录状态',
+      summary: '检查接龙管家（i.jielong.com）登录状态',
+      doc: [
+        '## jlgj.loginStatus —— 接龙管家登录状态',
+        '',
+        '检查当前是否已登录接龙管家平台。',
+        '',
+        '**调用示例**：`jlgj.loginStatus()`',
+        '',
+        '**返回示例**：{"loginState":"online","loggedIn":true}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('mooc', 'loginStatus', {}, 60000);
+      }
+    },
+    {
+      module: 'mooc',
+      name: 'mooc.login',
+      label: 'MOOC 登录',
+      summary: '启用并触发中国大学MOOC（icourse163.org）登录流程',
+      doc: [
+        '## mooc.login —— MOOC 登录',
+        '',
+        '启用中国大学MOOC平台（若未启用）并触发其登录流程（通常弹出登录窗口）。调用 courseList 等操作前若未登录，应先调用本操作。',
+        '',
+        '**调用示例**：`mooc.login()`',
+        '',
+        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发中国大学MOOC登录流程，请在登录弹窗中完成验证"}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('jlgj', 'loginStatus', {}, 60000);
+      }
+    },
+    {
+      module: 'jlgj',
+      name: 'jlgj.login',
+      label: '接龙管家登录',
+      summary: '启用并触发接龙管家（i.jielong.com）登录流程',
+      doc: [
+        '## jlgj.login —— 接龙管家登录',
+        '',
+        '启用接龙管家平台（若未启用）并触发其登录流程（通常在助手页面弹出扫码/授权）。调用 courseList 等操作前若未登录，应先调用本操作。',
+        '',
+        '**调用示例**：`jlgj.login()`',
+        '',
+        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发接龙管家登录流程，请在弹出的登录中完成验证"}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('jlgj', 'login', {}, 60000);
+      }
+    },
+    {
+      module: 'xuetangx',
+      name: 'xuetangx.courseList',
+      label: '学堂在线课程列表',
+      summary: '获取学堂在线（www.xuetangx.com）当前账号的课程列表',
+      doc: [
+        '## xuetangx.courseList —— 学堂在线课程列表',
+        '',
+        '获取学堂在线当前账号的课程列表。需要已打开助手页面并在 www.xuetangx.com 登录。',
+        '',
+        '**调用示例**：`xuetangx.courseList()`',
+        '',
+        '**返回示例**：{"loaded":true,"loginState":"online","courses":[{"classroomId":"...","name":"课程名","teachers":["老师"],"taskCount":5}]}'
+      ].join('\n'),
+      async run() {
+        const value = await pageInvoke('xuetangx', 'courseList', {}, 120000);
+        if (String(value?.loginState || '') === 'offline') return { ok: false, code: 'LOGIN_REQUIRED', message: '学堂在线未登录，请先调用 xuetangx.login 完成登录后再获取课程列表' };
+        return value;
+      }
+    },
+    {
+      module: 'xuetangx',
+      name: 'xuetangx.homework_of_',
+      label: '学堂在线课程作业',
+      summary: '根据 classroomId 获取学堂在线指定课程的任务列表',
+      doc: [
+        '## xuetangx.homework_of_ —— 学堂在线课程任务',
+        '',
+        '根据 classroomId 获取学堂在线指定课程的任务/作业列表。classroomId 可先调用 xuetangx.courseList 获取。需要已打开助手页面并登录。',
+        '',
+        '**参数**：{"classroomId":"教室ID，必填"}',
+        '',
+        '**调用示例**：`xuetangx.homework_of_({classroomId: "xxx"})`',
+        '',
+        '**返回示例**：{"ok":true,"classroomId":"xxx","name":"课程名","homework":[{"id":"...","title":"任务名","typeLabel":"视频","done":false,"deadline":1234567890000}]}'
+      ].join('\n'),
+      async run(args) {
+        const classroomId = String(args?.classroomId || '').trim();
+        if (!classroomId) throw new Error('缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID');
+        return pageInvoke('xuetangx', 'homework_of_', { classroomId }, 120000);
+      }
+    },
+    {
+      module: 'xuetangx',
+      name: 'xuetangx.loginStatus',
+      label: '学堂在线登录状态',
+      summary: '检查学堂在线（www.xuetangx.com）登录状态',
+      doc: [
+        '## xuetangx.loginStatus —— 学堂在线登录状态',
+        '',
+        '检查当前是否已登录学堂在线平台。',
+        '',
+        '**调用示例**：`xuetangx.loginStatus()`',
+        '',
+        '**返回示例**：{"loginState":"online","loggedIn":true}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('xuetangx', 'loginStatus', {}, 60000);
+      }
+    },
+    {
+      module: 'xuetangx',
+      name: 'xuetangx.login',
+      label: '学堂在线登录',
+      summary: '启用并触发学堂在线（www.xuetangx.com）登录流程',
+      doc: [
+        '## xuetangx.login —— 学堂在线登录',
+        '',
+        '启用学堂在线平台（若未启用）并触发其登录流程（通常在助手页面弹出扫码/授权）。调用 courseList 等操作前若未登录，应先调用本操作。',
+        '',
+        '**调用示例**：`xuetangx.login()`',
+        '',
+        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发学堂在线登录流程，请在弹出的登录中完成验证"}'
+      ].join('\n'),
+      async run() {
+        return pageInvoke('xuetangx', 'login', {}, 60000);
+      }
+    },
+    {
       module: 'qwen',
       name: 'qwen.listOperations',
       label: '列出全部操作',
@@ -773,6 +1102,10 @@ name: 've.teachers_of_',
     { id: 'academic', label: '教务系统', operations: OPERATIONS.filter((op) => op.module === 'academic') },
     { id: 'mooc', label: '中国大学MOOC', operations: OPERATIONS.filter((op) => op.module === 'mooc') },
     { id: 'ykt', label: '雨课堂', operations: OPERATIONS.filter((op) => op.module === 'ykt') },
+    { id: 'mrjzy', label: '每日交作业', operations: OPERATIONS.filter((op) => op.module === 'mrjzy') },
+    { id: 'jlgj', label: '接龙管家', operations: OPERATIONS.filter((op) => op.module === 'jlgj') },
+    { id: 'xuetangx', label: '学堂在线', operations: OPERATIONS.filter((op) => op.module === 'xuetangx') },
+    { id: 'campusnet', label: '校园网重连', operations: OPERATIONS.filter((op) => op.module === 'campusnet') },
     { id: 'captcha', label: '本地验证码识别', operations: OPERATIONS.filter((op) => op.module === 'captcha') },
     { id: 'qwen', label: '通义千问元操作', operations: OPERATIONS.filter((op) => op.module === 'qwen') }
   ];

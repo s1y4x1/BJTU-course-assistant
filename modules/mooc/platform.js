@@ -868,3 +868,38 @@ function openMoocLoginAssistPopup(force = false) {
     showToast('打开中国大学MOOC登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
   });
 }
+
+/* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
+
+function moocPageLogin() {
+  const platform = 'mooc';
+  const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
+  if (!enabled && typeof togglePlatformSelection === 'function') {
+    try { togglePlatformSelection(platform, { interactive: true }); } catch {}
+  }
+  if (typeof openMoocLoginAssistPopup === 'function') {
+    try { openMoocLoginAssistPopup(true); } catch {}
+  }
+  return { ok: true, enabled: true, message: '已触发中国大学MOOC登录流程，请在登录弹窗中完成验证' };
+}
+
+globalThis.BjtuMoocPageApi = Object.freeze({
+  login: () => moocPageLogin()
+});
+
+if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'mooc') return false;
+    const api = globalThis.BjtuMoocPageApi;
+    const fn = api && typeof api[String(message.payload?.fn || '')] === 'function' ? api[String(message.payload.fn)] : null;
+    if (!fn) {
+      sendResponse({ ok: false, error: 'MOOC 页面接口不存在' });
+      return true;
+    }
+    Promise.resolve(fn(message.payload?.args || {})).then(
+      (value) => sendResponse({ ok: true, value }),
+      (error) => sendResponse({ ok: false, error: String(error?.message || error), code: String(error?.code || '') })
+    );
+    return true;
+  });
+}

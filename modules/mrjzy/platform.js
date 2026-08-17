@@ -839,3 +839,102 @@ function scheduleMrjzyLoad(courses, loadVersion = 0) {
     .then(() => loadMrjzyCoursesAndHomework(list, loadVersion));
   return window.__mrjzyLoadSerialPromise;
 }
+
+/* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
+
+function mrjzyPageSnapshot() {
+  return Array.isArray(window.mrjzyCourseGroupsSnapshot) ? window.mrjzyCourseGroupsSnapshot : [];
+}
+
+async function ensureMrjzyLoaded() {
+  if (mrjzyPageSnapshot().length) return;
+  try {
+    await scheduleMrjzyLoad([], Date.now());
+  } catch {
+    /* 忽略触发失败，交由读取方判断 loaded */
+  }
+}
+
+async function mrjzyPageCourseList() {
+  await ensureMrjzyLoaded();
+  const snap = mrjzyPageSnapshot();
+  return {
+    loaded: snap.length > 0,
+    loginState: String(window.platformLoginState?.mrjzy || 'checking'),
+    courses: snap.map((group) => ({
+      classNum: String(group?.classNum || ''),
+      divClass: String(group?.divClass || ''),
+      teacherName: String(group?.teacherName || ''),
+      homeworkCount: Array.isArray(group?.homeworks) ? group.homeworks.length : 0
+    }))
+  };
+}
+
+async function mrjzyPageHomeworkOf(classNum) {
+  const key = String(classNum || '').trim();
+  if (!key) return { ok: false, message: '缺少参数 classNum，请先调用 mrjzy.courseList 获取班级号' };
+  await ensureMrjzyLoaded();
+  const group = mrjzyPageSnapshot().find((g) => {
+    const a = String(g?.classNum || '').trim();
+    const b = String(g?.divClass || '').trim();
+    return a === key || b === key;
+  }) || null;
+  if (!group) return { ok: false, message: `班级号无效：${key} 不在每日交作业课程列表中，请先调用 mrjzy.courseList 获取有效班级号` };
+  return {
+    ok: true,
+    classNum: String(group?.classNum || ''),
+    divClass: String(group?.divClass || ''),
+    teacherName: String(group?.teacherName || ''),
+    homework: (Array.isArray(group?.homeworks) ? group.homeworks : []).map((hw) => ({
+      workId: hw?.workId,
+      title: hw?.title,
+      end: hw?.end,
+      submit: Number(hw?.submit || 0),
+      isSubmit: Number(hw?.isSubmit || 0),
+      done: !!hw?.done,
+      link: hw?.link
+    }))
+  };
+}
+
+async function mrjzyPageLoginStatus() {
+  const state = String(window.platformLoginState?.mrjzy || 'checking');
+  return { loginState: state, loggedIn: state === 'online', snapshotLoaded: mrjzyPageSnapshot().length > 0 };
+}
+
+function mrjzyPageLogin() {
+  const platform = 'mrjzy';
+  const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
+  if (enabled) {
+    if (typeof triggerExternalPlatformLoad === 'function') {
+      try { triggerExternalPlatformLoad(platform, true); } catch {}
+    }
+  } else if (typeof togglePlatformSelection === 'function') {
+    try { togglePlatformSelection(platform, { interactive: true }); } catch {}
+  }
+  return { ok: true, enabled: true, message: '已触发每日交作业登录流程，请在弹出的登录中完成验证' };
+}
+
+globalThis.BjtuMrjzyPageApi = Object.freeze({
+  courseList: () => mrjzyPageCourseList(),
+  homework_of_: (args) => mrjzyPageHomeworkOf(String(args?.classNum || args?.courseId || '').trim()),
+  loginStatus: () => mrjzyPageLoginStatus(),
+  login: () => mrjzyPageLogin()
+});
+
+if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'mrjzy') return false;
+    const api = globalThis.BjtuMrjzyPageApi;
+    const fn = api && typeof api[String(message.payload?.fn || '')] === 'function' ? api[String(message.payload.fn)] : null;
+    if (!fn) {
+      sendResponse({ ok: false, error: 'MRJZY 页面接口不存在' });
+      return true;
+    }
+    Promise.resolve(fn(message.payload?.args || {})).then(
+      (value) => sendResponse({ ok: true, value }),
+      (error) => sendResponse({ ok: false, error: String(error?.message || error), code: String(error?.code || '') })
+    );
+    return true;
+  });
+}

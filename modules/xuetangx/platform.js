@@ -1043,4 +1043,106 @@
     },
     themeColor: THEME_COLOR
   };
+
+  /* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
+
+  async function ensureXuetangxLoaded() {
+    if (Array.isArray(courses) && courses.length) return;
+    try {
+      await load();
+    } catch {
+      /* 忽略触发失败，交由读取方判断 loaded */
+    }
+  }
+
+  function xuetangxPageCourseList() {
+    return {
+      loaded: Array.isArray(courses) && courses.length > 0,
+      loginState: String(globalThis.platformLoginState?.xuetangx || 'checking'),
+      courses: (Array.isArray(courses) ? courses : []).map((course) => ({
+        classroomId: String(course?.classroomId || course?.id || ''),
+        name: String(course?.name || ''),
+        sign: String(course?.sign || course?.courseSign || ''),
+        teachers: Array.isArray(course?.teachers) ? course.teachers : [],
+        status: Number(course?.status || 0),
+        totalSchedule: Number(course?.totalSchedule || 0),
+        score: Number(course?.score || 0),
+        taskCount: Array.isArray(course?.tasks) ? course.tasks.length : 0
+      }))
+    };
+  }
+
+  async function xuetangxPageHomeworkOf(classroomId) {
+    const key = String(classroomId || '').trim();
+    if (!key) return { ok: false, message: '缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID' };
+    await ensureXuetangxLoaded();
+    const course = (Array.isArray(courses) ? courses : []).find((c) => String(c?.classroomId || c?.id || '') === key) || null;
+    if (!course) return { ok: false, message: `教室ID无效：${key} 不在学堂在线课程列表中，请先调用 xuetangx.courseList 获取有效ID` };
+    return {
+      ok: true,
+      classroomId: String(course?.classroomId || course?.id || ''),
+      name: String(course?.name || ''),
+      teachers: Array.isArray(course?.teachers) ? course.teachers : [],
+      totalSchedule: Number(course?.totalSchedule || 0),
+      score: Number(course?.score || 0),
+      homework: (Array.isArray(course?.tasks) ? course.tasks : []).map((task) => ({
+        id: task?.id,
+        chapterLeafId: task?.chapterLeafId,
+        title: task?.title,
+        typeId: Number(task?.typeId || 0),
+        typeLabel: String(task?.typeLabel || ''),
+        startTime: task?.startTime,
+        deadline: task?.deadline,
+        schedule: Number(task?.schedule || 0),
+        done: !!task?.done,
+        overdue: !!task?.overdue,
+        userScore: Number(task?.userScore || 0),
+        totalScore: Number(task?.totalScore || 0),
+        locked: !!task?.locked,
+        action: task?.action
+      }))
+    };
+  }
+
+  async function xuetangxPageLoginStatus() {
+    const state = String(globalThis.platformLoginState?.xuetangx || 'checking');
+    return { loginState: state, loggedIn: state === 'online', loaded: Array.isArray(courses) && courses.length > 0 };
+  }
+
+  function xuetangxPageLogin() {
+    const platform = 'xuetangx';
+    const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
+    if (enabled) {
+      if (typeof globalThis.triggerExternalPlatformLoad === 'function') {
+        try { globalThis.triggerExternalPlatformLoad(platform, true); } catch {}
+      }
+    } else if (typeof globalThis.togglePlatformSelection === 'function') {
+      try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
+    }
+    return { ok: true, enabled: true, message: '已触发学堂在线登录流程，请在弹出的登录中完成验证' };
+  }
+
+  globalThis.BjtuXuetangxPageApi = Object.freeze({
+    courseList: () => xuetangxPageCourseList(),
+    homework_of_: (args) => xuetangxPageHomeworkOf(String(args?.classroomId || args?.courseId || '').trim()),
+    loginStatus: () => xuetangxPageLoginStatus(),
+    login: () => xuetangxPageLogin()
+  });
+
+  if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'xuetangx') return false;
+      const api = globalThis.BjtuXuetangxPageApi;
+      const fn = api && typeof api[String(message.payload?.fn || '')] === 'function' ? api[String(message.payload.fn)] : null;
+      if (!fn) {
+        sendResponse({ ok: false, error: 'XUETANGX 页面接口不存在' });
+        return true;
+      }
+      Promise.resolve(fn(message.payload?.args || {})).then(
+        (value) => sendResponse({ ok: true, value }),
+        (error) => sendResponse({ ok: false, error: String(error?.message || error), code: String(error?.code || '') })
+      );
+      return true;
+    });
+  }
 })(globalThis);

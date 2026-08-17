@@ -1189,3 +1189,97 @@ function scheduleJlgjLoad(courses, loadVersion = 0) {
     .then(() => loadJlgjCoursesAndHomework(list, loadVersion));
   return window.__jlgjLoadSerialPromise;
 }
+
+/* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
+
+function jlgjPageSnapshot() {
+  return Array.isArray(window.jlgjCourseGroupsSnapshot) ? window.jlgjCourseGroupsSnapshot : [];
+}
+
+async function ensureJlgjLoaded() {
+  if (jlgjPageSnapshot().length) return;
+  try {
+    await scheduleJlgjLoad([], Date.now());
+  } catch {
+    /* 忽略触发失败，交由读取方判断 loaded */
+  }
+}
+
+async function jlgjPageCourseList() {
+  await ensureJlgjLoaded();
+  const snap = jlgjPageSnapshot();
+  return {
+    loaded: snap.length > 0,
+    loginState: String(window.platformLoginState?.jlgj || 'checking'),
+    courses: snap.map((group) => ({
+      groupId: String(group?.groupId || ''),
+      name: String(group?.name || ''),
+      teacherName: String(group?.teacherName || ''),
+      homeworkCount: Array.isArray(group?.homeworks) ? group.homeworks.length : 0
+    }))
+  };
+}
+
+async function jlgjPageHomeworkOf(groupId) {
+  const key = String(groupId || '').trim();
+  if (!key) return { ok: false, message: '缺少参数 groupId，请先调用 jlgj.courseList 获取群组ID' };
+  await ensureJlgjLoaded();
+  const group = jlgjPageSnapshot().find((g) => String(g?.groupId || '').trim() === key) || null;
+  if (!group) return { ok: false, message: `群组ID无效：${key} 不在接龙管家课程列表中，请先调用 jlgj.courseList 获取有效群组ID` };
+  return {
+    ok: true,
+    groupId: String(group?.groupId || ''),
+    name: String(group?.name || ''),
+    teacherName: String(group?.teacherName || ''),
+    homework: (Array.isArray(group?.homeworks) ? group.homeworks : []).map((hw) => ({
+      threadId: hw?.threadId,
+      title: hw?.title,
+      end: hw?.end,
+      content: hw?.content,
+      done: !!hw?.done,
+      link: hw?.link
+    }))
+  };
+}
+
+async function jlgjPageLoginStatus() {
+  const state = String(window.platformLoginState?.jlgj || 'checking');
+  return { loginState: state, loggedIn: state === 'online', snapshotLoaded: jlgjPageSnapshot().length > 0 };
+}
+
+function jlgjPageLogin() {
+  const platform = 'jlgj';
+  const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
+  if (enabled) {
+    if (typeof triggerExternalPlatformLoad === 'function') {
+      try { triggerExternalPlatformLoad(platform, true); } catch {}
+    }
+  } else if (typeof togglePlatformSelection === 'function') {
+    try { togglePlatformSelection(platform, { interactive: true }); } catch {}
+  }
+  return { ok: true, enabled: true, message: '已触发接龙管家登录流程，请在弹出的登录中完成验证' };
+}
+
+globalThis.BjtuJlgjPageApi = Object.freeze({
+  courseList: () => jlgjPageCourseList(),
+  homework_of_: (args) => jlgjPageHomeworkOf(String(args?.groupId || args?.courseId || '').trim()),
+  loginStatus: () => jlgjPageLoginStatus(),
+  login: () => jlgjPageLogin()
+});
+
+if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'jlgj') return false;
+    const api = globalThis.BjtuJlgjPageApi;
+    const fn = api && typeof api[String(message.payload?.fn || '')] === 'function' ? api[String(message.payload.fn)] : null;
+    if (!fn) {
+      sendResponse({ ok: false, error: 'JLGJ 页面接口不存在' });
+      return true;
+    }
+    Promise.resolve(fn(message.payload?.args || {})).then(
+      (value) => sendResponse({ ok: true, value }),
+      (error) => sendResponse({ ok: false, error: String(error?.message || error), code: String(error?.code || '') })
+    );
+    return true;
+  });
+}
