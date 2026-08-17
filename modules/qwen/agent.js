@@ -7,6 +7,13 @@
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  function formatOutcomeError(outcome) {
+    const parts = [];
+    if (outcome?.code) parts.push(`错误代码：${outcome.code}`);
+    parts.push(String(outcome?.error || '操作失败'));
+    return parts.join('\n');
+  }
+
   function parseOpArguments(argText) {
     const trimmed = String(argText || '').trim();
     if (!trimmed) return {};
@@ -189,8 +196,14 @@
         const openingOutcome = await operations.run(openingCall.name, openingCall.arguments);
         onEvent?.({ operationResult: openingOutcome, iteration: -1 });
         openingContent = openingOutcome.ok
-          ? `\`\`\`res\n${JSON.stringify(openingOutcome.result)}\n\`\`\``
-          : ['```res', JSON.stringify(openingOutcome), '```', '', '若无法继续，请直接给出开场白。'].join('\n');
+          ? `\`\`\`res\n${operations.formatResult(openingOutcome.result)}\n\`\`\``
+          : [
+              '```res',
+              formatOutcomeError(openingOutcome),
+              '```',
+              '',
+              '若无法继续，请直接给出开场白。'
+            ].join('\n');
       }
       parentId = openingParent;
       if (turnRef) turnRef.responseId = parentId;
@@ -313,7 +326,7 @@
         if (OPERATION_BLOCK_PATTERN.test(replyText)) {
           lastResultText = [
             '```res',
-            JSON.stringify({ ok: false, error: '操作调用语法有误，请按规范重新编写 op 代码块', code: 'OP_PARSE' }),
+            '操作调用语法有误，请按规范重新编写 op 代码块',
             '```',
             '',
             '调用规范：在回复末尾附上以 ```op 标记的代码块，形式为 `操作名({参数名: 参数值, ...})`，参数名无需加引号，参数值用 JSON 语法（字符串加引号）；无参数时写作 `操作名()`。',
@@ -339,11 +352,11 @@
       onEvent?.({ operationResult: outcome, iteration });
 
       if (outcome.ok) {
-        lastResultText = `\`\`\`res\n${JSON.stringify(outcome.result)}\n\`\`\``;
+        lastResultText = `\`\`\`res\n${operations.formatResult(outcome.result)}\n\`\`\``;
       } else {
         lastResultText = [
           '```res',
-          JSON.stringify(outcome),
+          formatOutcomeError(outcome),
           '```',
           '',
           '若该操作无法成功（例如需要用户先登录、操作不可用，或修正后仍失败），请直接给出最终答复，不要再重复调用。'

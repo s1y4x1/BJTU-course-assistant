@@ -39,6 +39,45 @@
     return output;
   }
 
+  // 将操作结果格式化为给大模型看的内容：仅输出 result 本身；
+  // 顶层字符串直接原样返回（非 JSON 更直观）；结构化数据用 JSON 风格输出，
+  // 但字符串内的特殊字符不转义，含换行符的字符串用三引号包裹。
+  function formatResult(value, depth = 0) {
+    if (value === null || value === undefined) return 'null';
+    const type = typeof value;
+    if (type === 'string') {
+      const text = String(value);
+      if (depth === 0) return text;
+      return /[\r\n]/.test(text) ? `"""${text}"""` : `"${text}"`;
+    }
+    if (type === 'number' || type === 'boolean') return String(value);
+    const indent = '  '.repeat(depth);
+    const childIndent = '  '.repeat(depth + 1);
+    if (Array.isArray(value)) {
+      if (!value.length) return '[]';
+      const items = value.map((item) => `${childIndent}${formatResult(item, depth + 1)}`);
+      return `[\n${items.join(',\n')}\n${indent}]`;
+    }
+    const keys = Object.keys(value);
+    if (!keys.length) return '{}';
+    const entries = keys.map((key) => {
+      const keyText = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+        ? key
+        : formatResult(key, depth + 1);
+      return `${childIndent}${keyText}: ${formatResult(value[key], depth + 1)}`;
+    });
+    return `{\n${entries.join(',\n')}\n${indent}}`;
+  }
+
+  // 去掉结果中冗余的 ok 字段（识别器等底层结果常带 ok 标记）。
+  function withoutOk(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'ok')) {
+      const { ok, ...rest } = value;
+      return rest;
+    }
+    return value;
+  }
+
   async function sendRuntimeMessage(message, timeoutMs = 90000) {
     if (typeof chrome !== 'object' || !chrome?.runtime?.sendMessage) {
       throw new Error('当前环境不支持消息通信');
@@ -115,7 +154,7 @@
     if (typeof fn === 'function') {
       try {
         const data = await fn(args);
-        return { ok: true, data };
+        return data;
       } catch (error) {
         return { ok: false, code: String(error?.code || ''), message: String(error?.message || error || '中国大学MOOC请求失败') };
       }
@@ -383,7 +422,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"...","platform":"智慧课程平台","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"...","platform":"智慧课程平台","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -418,7 +457,7 @@ name: 've.accounts',
             if (error?.loginRequired || error?.message === 'LOGIN_REQUIRED') throw loginRequiredError();
           }
         }
-        return { ok: true, total: items.length, items: items.slice(0, 300) };
+        return { total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -433,7 +472,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.login()`',
         '',
-        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
         return pageInvoke('ve', 'login', { timeoutMs: 180000 }, 200000);
@@ -567,7 +606,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.courseList()`',
         '',
-        '**返回示例**：{"ok":true,"courses":[{"classroomId":"...","courseName":"课程名","teacher":"老师","universityId":"..."}]}'
+        '**返回示例**：{"courses":[{"classroomId":"...","courseName":"课程名","teacher":"老师","universityId":"..."}]}'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('ykt', 'courseList', {}, 120000);
@@ -589,7 +628,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：{"ok":true,"classroomId":"xxx","homework":[{"id":"...","title":"作业名","actype":15,"activityType":"课件","end":"时间","done":false,"score":90,"link":"https://..."}]}'
+        '**返回示例**：{"classroomId":"xxx","homework":[{"id":"...","title":"作业名","actype":15,"activityType":"课件","end":"时间","done":false,"score":90,"link":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -611,7 +650,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments({status: "pending", type: "试卷"})`',
         '',
-        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"ykt:...:...","platform":"雨课堂","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"ykt:...:...","platform":"雨课堂","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -646,7 +685,7 @@ name: 've.teachers_of_',
             // 单个课程失败不阻断查询
           }
         }
-        return { ok: true, total: items.length, items: items.slice(0, 300) };
+        return { total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -661,7 +700,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.login()`',
         '',
-        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
         return pageInvoke('ykt', 'login', { timeoutMs: 180000 }, 200000);
@@ -679,7 +718,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.currentAccount()`',
         '',
-        '**返回示例**：{"ok":true,"studentId":"...","accounts":[{"studentId":"...","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
+        '**返回示例**：{"studentId":"...","accounts":[{"studentId":"...","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
       ].join('\n'),
       async run() {
         return academicInvoke('currentAccount');
@@ -697,7 +736,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.scores()`',
         '',
-        '**返回示例**：{"ok":true,"scores":[{"courseName":"高等数学","score":95,"credits":4}]}'
+        '**返回示例**：{"scores":[{"courseName":"高等数学","score":95,"credits":4}]}'
       ].join('\n'),
       async run() {
         return academicInvoke('scores', undefined, 120000);
@@ -715,7 +754,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.exams()`',
         '',
-        '**返回示例**：{"ok":true,"exams":[{"courseName":"高等数学","examTime":"2026-01-10 09:00"}]}'
+        '**返回示例**：{"exams":[{"courseName":"高等数学","examTime":"2026-01-10 09:00"}]}'
       ].join('\n'),
       async run() {
         return academicInvoke('exams', undefined, 120000);
@@ -735,7 +774,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.schedule()`',
         '',
-        '**返回示例**：{"ok":true,"rows":[{"courseName":"高等数学","weekDay":1,"startSection":1}],"currentWeek":1}'
+        '**返回示例**：{"rows":[{"courseName":"高等数学","weekDay":1,"startSection":1}],"currentWeek":1}'
       ].join('\n'),
       async run(args) {
         return academicInvoke('schedule', { scheduleType: String(args?.scheduleType || '') }, 120000);
@@ -755,7 +794,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.login({studentId: "xxx", password: "123456"})`',
         '',
-        '**返回示例**：{"ok":true,"studentId":"..."}'
+        '**返回示例**：{"studentId":"..."}'
       ].join('\n'),
       async run(args) {
         const studentId = String(args?.studentId || '').trim();
@@ -776,7 +815,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.courseList()`',
         '',
-        '**返回示例**：{"ok":true,"courses":[{"courseId":"...","courseName":"..."}]}'
+        '**返回示例**：{"courses":[{"courseId":"...","courseName":"..."}]}'
       ].join('\n'),
       async run() {
         const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
@@ -798,7 +837,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.detail_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：{"ok":true,"detail":{...}}'
+        '**返回示例**：{"detail":{...}}'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -820,7 +859,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.quizPaper_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：{"ok":true,"papers":[...]}'
+        '**返回示例**：{"papers":[...]}'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -844,7 +883,7 @@ name: 've.teachers_of_',
       ].join('\n'),
       async run() {
         const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
-        return { ok: true, loggedIn: !!String(cookie?.value || '').trim(), tabId: null, temporaryTab: false };
+        return { loggedIn: !!String(cookie?.value || '').trim(), tabId: null, temporaryTab: false };
       }
     },
     {
@@ -861,7 +900,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.assignments({status: "pending", type: "单元作业"})`',
         '',
-        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"mooc:...:...","platform":"中国大学MOOC","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"mooc:...:...","platform":"中国大学MOOC","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
@@ -869,7 +908,7 @@ name: 've.teachers_of_',
           return { ok: false, code: 'LOGIN_REQUIRED', message: '中国大学MOOC未登录，请先调用 mooc.login 完成登录后再查询作业' };
         }
         const value = await pageInvoke('mooc', 'assignments', { status: String(args?.status || 'all'), type: String(args?.type || 'all') }, 240000);
-        return { ok: true, ...value };
+        return { ...value };
       }
     },
     {
@@ -886,7 +925,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`captcha.recognize({imageUrl: "https://...", model: "omis.onnx"})` 或 `captcha.recognize({imageUrl: "https://...", model: "4.0.0_fast"})`',
         '',
-        '**返回示例**：{"ok":true,"passcode":"1234"}'
+        '**返回示例**：{"passcode":"1234"}'
       ].join('\n'),
       async run(args) {
         const imageUrl = String(args?.imageUrl || '').trim();
@@ -897,17 +936,17 @@ name: 've.teachers_of_',
         const recognizer = requireGlobal('BjtuCaptchaRecognizer');
         if (isOmis && typeof recognizer?.recognizeMisCaptcha === 'function') {
           const blob = await (await fetch(imageUrl)).blob();
-          return recognizer.recognizeMisCaptcha(blob);
+          return withoutOk(recognizer.recognizeMisCaptcha(blob));
         }
         if (model && typeof recognizer?.recognize === 'function') {
           const blob = await (await fetch(imageUrl)).blob();
-          return recognizer.recognize(blob, model);
+          return withoutOk(recognizer.recognize(blob, model));
         }
         if (typeof recognizer?.recognizeMisCaptcha === 'function') {
           const blob = await (await fetch(imageUrl)).blob();
-          return recognizer.recognizeMisCaptcha(blob);
+          return withoutOk(recognizer.recognizeMisCaptcha(blob));
         }
-        return sendRuntimeMessage({ type: 'MIS_CAPTCHA_RECOGNIZE', payload: { imageUrl } }, 60000);
+        return withoutOk(sendRuntimeMessage({ type: 'MIS_CAPTCHA_RECOGNIZE', payload: { imageUrl } }, 60000));
       }
     },
     {
@@ -918,11 +957,11 @@ name: 've.teachers_of_',
       doc: [
         '## captcha.models —— 获取已安装模型',
         '',
-        '列出验证码识别（Tesseract OCR）的所有可用模型版本及其安装状态，并标识当前选中的模型。',
+        '列出验证码识别可用模型（Tesseract OCR 与 omis.onnx）及其安装状态，并标识当前选中的 Tesseract 模型。',
         '',
         '**调用示例**：`captcha.models()`',
         '',
-        '**返回示例**：{"ok":true,"selected":"4.0.0_fast","models":[{"version":"4.0.0_fast","label":"4.0.0 Fast（原内置模型，推荐）","installed":true,"selected":true}]}'
+        '**返回示例**：{"selected":"4.0.0_fast","models":[{"version":"4.0.0_fast","label":"4.0.0 Fast（原内置模型，推荐）","installed":true,"selected":true},{"version":"omis.onnx","label":"omis.onnx（CAS 验证码识别模型）","installed":true,"selected":false}]}'
       ].join('\n'),
       async run() {
         const assets = requireGlobal('BjtuCaptchaAssets');
@@ -939,7 +978,23 @@ name: 've.teachers_of_',
             selected: key === selected
           });
         }
-        return { ok: true, selected, models };
+        const misAssets = global.BjtuMisAssets;
+        if (misAssets && typeof misAssets.getMisAssetsStatus === 'function') {
+          let misInstalled = false;
+          try {
+            const status = await misAssets.getMisAssetsStatus();
+            misInstalled = status?.files?.['omis.onnx'] === 'installed';
+          } catch {
+            // 状态读取失败时按未安装处理
+          }
+          models.push({
+            version: 'omis.onnx',
+            label: 'omis.onnx（CAS 验证码识别模型）',
+            installed: misInstalled,
+            selected: false
+          });
+        }
+        return { selected, models };
       }
     },
     {
@@ -985,14 +1040,14 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`campusnet.reconnect()`',
         '',
-        '**返回示例**：{"ok":true,"message":"已触发校园网重连"}'
+        '**返回示例**：{"message":"已触发校园网重连"}'
       ].join('\n'),
       async run() {
         await chrome.storage.local.set({ campusNetworkReconnectEnabled: true }).catch(() => {});
         const service = requireGlobal('BjtuCampusNetworkReconnect');
         if (typeof service?.restart === 'function') {
           await Promise.resolve(service.restart());
-          return { ok: true, message: '已触发校园网重连' };
+          return { message: '已触发校园网重连' };
         }
         return { ok: false, message: '校园网重连模块未就绪' };
       }
@@ -1031,7 +1086,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.assignments_of_({classNum: "xxx"})`',
         '',
-        '**返回示例**：{"ok":true,"classNum":"xxx","divClass":"课程名","teacherName":"老师","homework":[{"workId":"...","title":"作业名","end":"时间","done":false,"link":"https://..."}]}'
+        '**返回示例**：{"classNum":"xxx","divClass":"课程名","teacherName":"老师","homework":[{"workId":"...","title":"作业名","end":"时间","done":false,"link":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const classNum = String(args?.classNum || '').trim();
@@ -1053,7 +1108,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.assignments({status: "pending"})`',
         '',
-        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"mrjzy:...:...","platform":"每日交作业","courseName":"课程名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"mrjzy:...:...","platform":"每日交作业","courseName":"课程名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1085,7 +1140,7 @@ name: 've.teachers_of_',
             // 单个班级失败不阻断查询
           }
         }
-        return { ok: true, total: items.length, items: items.slice(0, 300) };
+        return { total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -1118,7 +1173,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.login()`',
         '',
-        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
         return pageInvoke('mrjzy', 'login', { timeoutMs: 180000 }, 200000);
@@ -1158,7 +1213,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.assignments_of_({groupId: "xxx"})`',
         '',
-        '**返回示例**：{"ok":true,"groupId":"xxx","name":"群组名","teacherName":"老师","homework":[{"threadId":"...","title":"作业名","done":false,"link":"https://..."}]}'
+        '**返回示例**：{"groupId":"xxx","name":"群组名","teacherName":"老师","homework":[{"threadId":"...","title":"作业名","done":false,"link":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const groupId = String(args?.groupId || '').trim();
@@ -1180,7 +1235,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.assignments({status: "pending"})`',
         '',
-        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"jlgj:...:...","platform":"接龙管家","courseName":"群组名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"jlgj:...:...","platform":"接龙管家","courseName":"群组名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1212,7 +1267,7 @@ name: 've.teachers_of_',
             // 单个群组失败不阻断查询
           }
         }
-        return { ok: true, total: items.length, items: items.slice(0, 300) };
+        return { total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -1245,7 +1300,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.login()`',
         '',
-        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
         return pageInvoke('mooc', 'login', { timeoutMs: 180000 }, 200000);
@@ -1263,7 +1318,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.login()`',
         '',
-        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
         return pageInvoke('jlgj', 'login', { timeoutMs: 180000 }, 200000);
@@ -1303,7 +1358,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：{"ok":true,"classroomId":"xxx","name":"课程名","homework":[{"id":"...","title":"任务名","typeLabel":"视频","done":false,"deadline":1234567890000}]}'
+        '**返回示例**：{"classroomId":"xxx","name":"课程名","homework":[{"id":"...","title":"任务名","typeLabel":"视频","done":false,"deadline":1234567890000}]}'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -1325,7 +1380,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：{"ok":true,"total":1,"items":[{"key":"xuetangx:...:...","platform":"学堂在线","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"xuetangx:...:...","platform":"学堂在线","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1359,7 +1414,7 @@ name: 've.teachers_of_',
             // 单个课程失败不阻断查询
           }
         }
-        return { ok: true, total: items.length, items: items.slice(0, 300) };
+        return { total: items.length, items: items.slice(0, 300) };
       }
     },
     {
@@ -1392,7 +1447,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.login()`',
         '',
-        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
         return pageInvoke('xuetangx', 'login', { timeoutMs: 180000 }, 200000);
@@ -1512,6 +1567,7 @@ name: 've.teachers_of_',
       const op = findOperation(name);
       return op ? { name: op.name, module: op.module, label: op.label, summary: op.summary, doc: op.doc } : null;
     },
+    formatResult,
     run: runOperation
   };
 })(globalThis);

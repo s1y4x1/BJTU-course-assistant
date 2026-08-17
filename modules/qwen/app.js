@@ -356,13 +356,51 @@
     return card;
   }
 
+  function formatResult(value, depth = 0) {
+    if (value === null || value === undefined) return 'null';
+    const type = typeof value;
+    if (type === 'string') {
+      const text = String(value);
+      if (depth === 0) return text;
+      return /[\r\n]/.test(text) ? `"""${text}"""` : `"${text}"`;
+    }
+    if (type === 'number' || type === 'boolean') return String(value);
+    const indent = '  '.repeat(depth);
+    const childIndent = '  '.repeat(depth + 1);
+    if (Array.isArray(value)) {
+      if (!value.length) return '[]';
+      const items = value.map((item) => `${childIndent}${formatResult(item, depth + 1)}`);
+      return `[\n${items.join(',\n')}\n${indent}]`;
+    }
+    const keys = Object.keys(value);
+    if (!keys.length) return '{}';
+    const entries = keys.map((key) => {
+      const keyText = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+        ? key
+        : formatResult(key, depth + 1);
+      return `${childIndent}${keyText}: ${formatResult(value[key], depth + 1)}`;
+    });
+    return `{\n${entries.join(',\n')}\n${indent}}`;
+  }
+
+  function formatOutcomeText(outcome) {
+    if (outcome && typeof outcome === 'object' && typeof outcome.ok === 'boolean') {
+      if (outcome.ok) return formatResult(outcome.result);
+      const parts = [];
+      if (outcome.code) parts.push(`错误代码：${outcome.code}`);
+      parts.push(String(outcome.error || '操作失败'));
+      return parts.join('\n');
+    }
+    return formatResult(outcome);
+  }
+
   function updateOperationResult(card, result) {
     if (!(card instanceof HTMLElement)) return;
     const existing = card.querySelector(':scope > .qwen-chat-op-result');
     if (existing instanceof HTMLElement) existing.remove();
     const content = document.createElement('div');
     content.className = 'qwen-chat-op-result';
-    content.textContent = JSON.stringify(result);
+    content.textContent = formatOutcomeText(result);
     card.appendChild(content);
     const messages = el(MESSAGES_ID);
     if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
