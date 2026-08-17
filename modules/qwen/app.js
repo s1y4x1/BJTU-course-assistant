@@ -21,6 +21,7 @@
   let nextReplyFresh = false;
   let inThinking = false;
   let lastSendText = '';
+  let lastWasOpening = false;
   let pendingEditParentId = '';
   let pendingEdit = false;
 
@@ -120,6 +121,14 @@
     if (!(bubble instanceof HTMLElement)) return '';
     const container = bubble.querySelector(':scope > .qwen-chat-md');
     return container?._mdText || '';
+  }
+
+  function removeEmptyAssistantBubbles() {
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement)) return;
+    messages.querySelectorAll(':scope > .qwen-chat-msg.assistant').forEach((bubble) => {
+      if (bubble instanceof HTMLElement && !mdRawText(bubble)) bubble.remove();
+    });
   }
 
   function extractUserQuestion(content) {
@@ -301,29 +310,46 @@
     btn.textContent = '重试';
     btn.title = '重新发送刚才的消息';
     btn.addEventListener('click', () => {
-      const text = lastSendText;
-      if (busy || !text) return;
+      if (busy) return;
       if (activeBubble instanceof HTMLElement) activeBubble.remove();
       activeBubble = null;
-      sendMessage(text);
+      if (lastWasOpening) sendOpening();
+      else if (lastSendText) sendMessage(lastSendText);
     });
     bubble.appendChild(btn);
   }
 
+  function cursorHost(bubble) {
+    if (!(bubble instanceof HTMLElement)) return bubble;
+    const md = bubble.querySelector(':scope > .qwen-chat-md');
+    const container = md instanceof HTMLElement ? md : bubble;
+    let host = container;
+    const last = container.lastElementChild;
+    if (last instanceof HTMLElement) {
+      if (last.matches('ul, ol, table')) {
+        host = last.lastElementChild instanceof HTMLElement ? last.lastElementChild : last;
+      } else {
+        host = last;
+      }
+      const code = host.querySelector(':scope > code, :scope > .qwen-md-inline-code');
+      if (code instanceof HTMLElement) host = code;
+    }
+    return host;
+  }
+
   function ensureCursor(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
-    if (!bubble.querySelector(':scope > .qwen-chat-cursor')) {
+    const host = cursorHost(bubble);
+    if (!host.querySelector(':scope > .qwen-chat-cursor')) {
       const cursor = document.createElement('span');
       cursor.className = 'qwen-chat-cursor';
-      bubble.appendChild(cursor);
+      host.appendChild(cursor);
     }
   }
 
   function removeCursor(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
-    bubble.querySelectorAll(':scope > .qwen-chat-cursor').forEach((node) => node.remove());
-    const body = bubble.querySelector(':scope > .qwen-chat-thinking .qwen-chat-thinking-body');
-    if (body instanceof HTMLElement) body.querySelectorAll(':scope > .qwen-chat-cursor').forEach((node) => node.remove());
+    bubble.querySelectorAll('.qwen-chat-cursor').forEach((node) => node.remove());
   }
 
   function collapseThinking(bubble) {
@@ -640,6 +666,7 @@
           setStatus('已登录', 'ok');
           port.disconnect();
           port = null;
+          removeEmptyAssistantBubbles();
         } else if (message?.type === 'stopped') {
           hideAsk();
           if (message?.parentId) sessionParentId = String(message.parentId);
@@ -718,6 +745,7 @@
 
   function sendMessage(text) {
     if (busy) return;
+    lastWasOpening = false;
     const editParent = pendingEditParentId;
     pendingEditParentId = '';
     const isEditSend = pendingEdit;
@@ -727,6 +755,7 @@
 
   function sendOpening() {
     if (busy) return;
+    lastWasOpening = true;
     startStream({ text: '', showUserBubble: false });
   }
 
