@@ -2678,13 +2678,41 @@ async function prefetchCourseScores(courseId) {
 }
 
 // 供 qwen 模块（service worker）经 app 页面消息桥调用的平台页面级接口
+async function veCoursewareItemsWithLinks(courseNum, xkhId) {
+  const payload = await fetchCoursewareItems(String(courseNum || '').trim(), String(xkhId || '').trim());
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const resolved = await Promise.all(items.map(async (item) => {
+    if (!item?.rpId) return item;
+    try {
+      const link = await fetchCoursewareRpUrl(String(item.rpId).trim());
+      return { ...item, url: String(link?.url || '') };
+    } catch {
+      return item;
+    }
+  }));
+  return { loginRequired: !!payload?.loginRequired, aborted: !!payload?.aborted, items: resolved };
+}
+
+async function veArchiveItemsWithLinks(courseId) {
+  const payload = await fetchCourseArchiveItems(String(courseId || '').trim());
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const resolved = await Promise.all(items.map(async (item) => {
+    if (!item?.rpId) return item;
+    try {
+      const link = await fetchCoursewareRpUrl(String(item.rpId).trim());
+      return { ...item, url: String(link?.url || '') };
+    } catch {
+      return item;
+    }
+  }));
+  return { loginRequired: !!payload?.loginRequired, items: resolved };
+}
+
 globalThis.BjtuVePageApi = Object.freeze({
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
-  coursewareItems: (args) => fetchCoursewareItems(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
-  coursewareUrl: (args) => fetchCoursewareRpUrl(String(args?.rpId || '').trim()),
+  coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
-  archiveItems: (args) => fetchCourseArchiveItems(String(args?.courseId || '').trim()),
-  archiveDownloadUrl: (args) => getCourseArchiveDownloadUrl(String(args?.courseId || '').trim())
+  archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim())
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

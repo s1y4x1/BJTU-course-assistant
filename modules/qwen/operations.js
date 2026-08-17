@@ -116,6 +116,42 @@
     return response.value;
   }
 
+  async function findVeCourseById(courseId) {
+    const core = await veHomework();
+    const terms = await core.fetchTerms();
+    const xqCode = core.chooseTermCode(terms);
+    const courses = await core.fetchCourses(xqCode);
+    const target = String(courseId || '').trim();
+    const course = (Array.isArray(courses) ? courses : []).find((c) => String(core.getCourseId(c) || '') === target) || null;
+    return { core, xqCode, courses: Array.isArray(courses) ? courses : [], course };
+  }
+
+  // 校验“针对某课程/班级 id”的操作参数：id 缺失或不在当前课程列表中时报错并说明如何获取有效 id。
+  async function assertCourseIdOf(module, id, idLabel = 'courseId') {
+    const value = String(id || '').trim();
+    if (!value) throw new Error(`缺少参数 ${idLabel}，请先调用 ${module}.courseList 获取有效ID`);
+    if (module === 've') {
+      const found = await findVeCourseById(value).catch(() => false);
+      if (!found) throw new Error(`课程ID无效：${value} 不在当前学期课程列表中，请先调用 ve.courseList 获取有效ID`);
+    } else if (module === 'mooc') {
+      try {
+        const data = await moocInvoke({ action: 'course-list' }, 120000);
+        const known = (Array.isArray(data?.data) ? data.data : []).map((c) => String(c?.id ?? c?.courseId ?? '').trim()).filter(Boolean);
+        if (known.length && !known.includes(value)) throw new Error(`课程ID无效：${value} 不在中国大学MOOC课程列表中，请先调用 mooc.courseList 获取有效ID`);
+      } catch (error) {
+        if (error?.message && String(error?.message).startsWith('课程ID无效')) throw error;
+      }
+    } else if (module === 'ykt') {
+      try {
+        const data = await pageInvoke('ykt', 'courseList', {}, 120000);
+        const known = (Array.isArray(data?.courses) ? data.courses : []).map((c) => String(c?.classroomId || '').trim()).filter(Boolean);
+        if (known.length && !known.includes(value)) throw new Error(`班级ID无效：${value} 不在雨课堂课程列表中，请先调用 ykt.courseList 获取有效ID`);
+      } catch (error) {
+        if (error?.message && String(error?.message).startsWith('班级ID无效')) throw error;
+      }
+    }
+  }
+
   const OPERATIONS = [
     {
       module: 've',
@@ -141,28 +177,42 @@
     },
     {
       module: 've',
-      name: 've.accounts',
-      label: '账号列表',
-      summary: '列出智慧课程平台本地保存的所有账号',
+name: 've.accounts',
+      label: '登录历史账号',
+      summary: '列出智慧课程平台登录历史（loginAccountHistory）中的账号',
       doc: [
-        '## ve.accounts —— 账号列表',
+        '## ve.accounts —— 登录历史账号',
         '',
-        '列出智慧课程平台本地保存的所有账号（不含密码等敏感字段）。',
+        '列出智慧课程平台登录历史（loginAccountHistory）中的账号（不含密码等敏感字段），并按最近登录时间排序。',
         '',
         '**调用示例**：`ve.accounts()`',
         '',
-        '**返回示例**：[{"loginName":"zhangsan","userName":"张三","roleName":"学生"}]'
+        '**返回示例**：[{"loginName":"zhangsan","userName":"张三","roleName":"学生","lastLoginAt":1735689600000}]'
       ].join('\n'),
       async run() {
         const store = requireGlobal('BjtuAccountStore');
-        const accounts = await store.getAll();
-        return (Array.isArray(accounts) ? accounts : []).map((item) => ({
-          loginName: String(item?.loginName || item?.userId || ''),
-          userName: String(item?.userName || ''),
-          roleName: String(item?.roleName || ''),
-          quickUsername: String(item?.quickUsername || ''),
-          hasPassword: !!(item?.password || item?.passwordEncoded || item?.passwordPlain)
-        }));
+        const stored = await chrome.storage.local.get('loginAccountHistory');
+        const history = Array.isArray(stored?.loginAccountHistory) ? stored.loginAccountHistory : [];
+        const detailById = new Map();
+        for (const record of history) {
+          const loginName = String(record?.loginName || record?.userId || '').trim();
+          if (!loginName || detailById.has(loginName)) continue;
+          const item = await store.get(loginName).catch(() => null);
+          detailById.set(loginName, item || null);
+        }
+        return history
+          .map((record) => {
+            const loginName = String(record?.loginName || record?.userId || '').trim();
+            const detail = detailById.get(loginName) || {};
+            return {
+              loginName,
+              userName: String(detail?.userName || record?.userName || ''),
+              roleName: String(detail?.roleName || record?.roleName || ''),
+              quickUsername: String(detail?.quickUsername || ''),
+              lastLoginAt: Number(record?.lastLoginAt || 0) || 0
+            };
+          })
+          .filter((item) => item.loginName);
       }
     },
     {
@@ -188,17 +238,17 @@
     },
     {
       module: 've',
-      name: 've.courses',
+      name: 've.courseList',
       label: '课程列表',
       summary: '获取智慧课程平台的课程列表',
       doc: [
-        '## ve.courses —— 课程列表',
+        '## ve.courseList —— 课程列表',
         '',
         '获取智慧课程平台的课程列表。若不传 xqCode 则自动使用当前学期。',
         '',
         '**参数**：{"xqCode":"可选，学期代码，如 2025-2026-1"}',
         '',
-        '**调用示例**：`ve.courses()`',
+        '**调用示例**：`ve.courseList()`',
         '',
         '**返回示例**：[{"id":"...","name":"高等数学","teacherName":"..."}]',
         '返回的每一项至少包含 id（课程ID）、name（课程名）。'
@@ -221,24 +271,24 @@
     },
     {
       module: 've',
-      name: 've.courseHomework',
+      name: 've.homework_of_',
       label: '课程作业',
-      summary: '获取指定智慧课程平台课程的全部作业',
+      summary: '获取指定智慧课程平台课程的作业列表',
       doc: [
-        '## ve.courseHomework —— 课程作业',
+        '## ve.homework_of_ —— 课程作业',
         '',
-        '获取指定课程的作业列表（含已交/未交）。需要先调用 ve.courses 获取课程 id。',
+        '获取指定课程的作业列表（含已交/未交）。courseId 为课程ID，可先调用 ve.courseList 获取。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`ve.courseHomework({courseId: "xxx"})`',
+        '**调用示例**：`ve.homework_of_({courseId: "xxx"})`',
         '',
         '**返回示例**：[{"id":"...","title":"作业标题","end_time":"2026-01-01 00:00:00","subStatus":"未提交"}]'
       ].join('\n'),
       async run(args) {
-        const core = await veHomework();
         const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
+        await assertCourseIdOf('ve', courseId);
+        const core = await veHomework();
         const list = await core.fetchCourseHomework(courseId);
         return serialize(list);
       }
@@ -306,166 +356,125 @@
     },
     {
       module: 've',
-      name: 've.teachers',
+name: 've.teachers_of_',
       label: '课程老师列表',
       summary: '获取智慧课程平台指定课程的老师与助教列表',
       doc: [
-        '## ve.teachers —— 课程老师列表',
+        '## ve.teachers_of_ —— 课程老师列表',
         '',
-        '获取指定课程的老师与助教列表（含 userType：1=任课教师 2=助教）。',
+        '获取指定课程的老师与助教列表（含 userType：1=任课教师 2=助教）。courseId 可先调用 ve.courseList 获取。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`ve.teachers({courseId: "xxx"})`',
+        '**调用示例**：`ve.teachers_of_({courseId: "xxx"})`',
         '',
         '**返回示例**：[{"userName":"张三","loginName":"zhangsan","userType":"1"}]'
       ].join('\n'),
       async run(args) {
-        const core = await veHomework();
         const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
-        return serialize(await core.fetchCourseTeachers(courseId));
+        await assertCourseIdOf('ve', courseId);
+        const core = await veHomework();
+        const list = await core.fetchCourseTeachers(courseId);
+        return serialize(list);
       }
     },
     {
       module: 've',
-      name: 've.students',
+      name: 've.students_of_',
       label: '课程学生列表',
       summary: '获取智慧课程平台指定课程的学生列表',
       doc: [
-        '## ve.students —— 课程学生列表',
+        '## ve.students_of_ —— 课程学生列表',
         '',
-        '获取指定课程的学生列表。需要已打开助手页面并登录智慧课程平台。',
+        '获取指定课程的学生列表。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录智慧课程平台。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`ve.students({courseId: "xxx"})`',
+        '**调用示例**：`ve.students_of_({courseId: "xxx"})`',
         '',
         '**返回示例**：{"students":[{"groupName":"组名","stuNo":"学号","stuName":"姓名","className":"班级"}],"total":60}'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
+        await assertCourseIdOf('ve', courseId);
         return pageInvoke('ve', 'students', { courseId }, 120000);
       }
     },
     {
       module: 've',
-      name: 've.coursewareList',
+      name: 've.courseware_of_',
       label: '课件列表',
-      summary: '获取智慧课程平台指定课程的课件列表',
+      summary: '获取智慧课程平台指定课程的课件列表（含下载链接）',
       doc: [
-        '## ve.coursewareList —— 课件列表',
+        '## ve.courseware_of_ —— 课件列表',
         '',
-        '获取指定课程的课件列表。courseNum 为课程号，xkhId 为课序号（可先调用 ve.courses 获取）。需要已打开助手页面并登录。',
+        '获取指定课程的课件列表，每个课件均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
         '',
-        '**参数**：{"courseNum":"课程号，必填","xkhId":"课序号，必填"}',
+        '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`ve.coursewareList({courseNum: "xxx", xkhId: "yyy"})`',
+        '**调用示例**：`ve.courseware_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","name":"课件名","extName":"pdf","rpId":"...","sizeMb":2.3}]'
+        '**返回示例**：{"loginRequired":false,"items":[{"id":"...","name":"课件名","extName":"pdf","rpId":"...","sizeMb":2.3,"url":"https://..."}]}'
       ].join('\n'),
       async run(args) {
-        const courseNum = String(args?.courseNum || '').trim();
-        const xkhId = String(args?.xkhId || '').trim();
-        if (!courseNum || !xkhId) throw new Error('缺少参数 courseNum 或 xkhId');
-        return pageInvoke('ve', 'coursewareItems', { courseNum, xkhId }, 120000);
+        const courseId = String(args?.courseId || '').trim();
+        await assertCourseIdOf('ve', courseId);
+        const { core, course } = await findVeCourseById(courseId);
+        const courseNum = String(course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || courseId).trim();
+        const fzId = String(course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '').trim();
+        if (!courseNum || !fzId) throw new Error(`课程ID无效：${courseId} 缺少课件所需参数（课程号/课序号）`);
+        return pageInvoke('ve', 'coursewareItems', { courseNum, xkhId: fzId }, 120000);
       }
     },
     {
       module: 've',
-      name: 've.coursewareUrl',
-      label: '课件下载链接',
-      summary: '获取智慧课程平台课件的真实下载链接',
-      doc: [
-        '## ve.coursewareUrl —— 课件下载链接',
-        '',
-        '根据课件的 rpId 获取真实下载链接。需要已打开助手页面并登录。',
-        '',
-        '**参数**：{"rpId":"课件 rpId，必填"}',
-        '',
-        '**调用示例**：`ve.coursewareUrl({rpId: "xxx"})`',
-        '',
-        '**返回示例**：{"url":"https://...","loginExpired":false}'
-      ].join('\n'),
-      async run(args) {
-        const rpId = String(args?.rpId || '').trim();
-        if (!rpId) throw new Error('缺少参数 rpId');
-        return pageInvoke('ve', 'coursewareUrl', { rpId }, 120000);
-      }
-    },
-    {
-      module: 've',
-      name: 've.replayList',
+      name: 've.replay_of_',
       label: '课程回放列表',
       summary: '获取智慧课程平台指定课程的回放列表',
       doc: [
-        '## ve.replayList —— 课程回放列表',
+        '## ve.replay_of_ —— 课程回放列表',
         '',
-        '获取指定课程的回放/直播日程列表。需要已打开助手页面并登录。',
+        '获取指定课程的回放/直播日程列表。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
         '',
         '**参数**：{"courseId":"课程ID，必填","forceReload":false,"可选，是否强制重新拉取"}',
         '',
-        '**调用示例**：`ve.replayList({courseId: "xxx"})`',
+        '**调用示例**：`ve.replay_of_({courseId: "xxx"})`',
         '',
         '**返回示例**：[{"rpId":"...","videoId":"...","rpName":"回放名","teacherName":"老师","content":"内容"}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
+        await assertCourseIdOf('ve', courseId);
         return pageInvoke('ve', 'replaySchedule', { courseId, forceReload: args?.forceReload === true }, 120000);
       }
     },
     {
       module: 've',
-      name: 've.archiveList',
+      name: 've.archive_of_',
       label: '课程归档列表',
-      summary: '获取智慧课程平台指定课程的归档资源列表',
+      summary: '获取智慧课程平台指定课程的归档资源列表（含下载链接）',
       doc: [
-        '## ve.archiveList —— 课程归档列表',
+        '## ve.archive_of_ —— 课程归档列表',
         '',
-        '获取指定课程的归档资源列表。需要已打开助手页面并登录。',
+        '获取指定课程的归档资源列表，每个资源均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`ve.archiveList({courseId: "xxx"})`',
+        '**调用示例**：`ve.archive_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：{"items":[{"name":"归档名","extName":"pdf","rpId":"..."}],"loginRequired":false}'
+        '**返回示例**：{"loginRequired":false,"items":[{"name":"归档名","extName":"pdf","rpId":"...","url":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
+        await assertCourseIdOf('ve', courseId);
         return pageInvoke('ve', 'archiveItems', { courseId }, 120000);
-      }
-    },
-    {
-      module: 've',
-      name: 've.archiveDownloadUrl',
-      label: '归档打包下载链接',
-      summary: '获取智慧课程平台指定课程归档的打包下载链接',
-      doc: [
-        '## ve.archiveDownloadUrl —— 归档打包下载链接',
-        '',
-        '获取指定课程全部归档资源的打包下载链接。需要已打开助手页面并登录。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填"}',
-        '',
-        '**调用示例**：`ve.archiveDownloadUrl({courseId: "xxx"})`',
-        '',
-        '**返回示例**：{"url":"https://.../batchDownloadFiles?courseId=xxx"}'
-      ].join('\n'),
-      async run(args) {
-        const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
-        const url = await pageInvoke('ve', 'archiveDownloadUrl', { courseId }, 60000);
-        return { url };
       }
     },
     {
       module: 'ykt',
       name: 'ykt.courseList',
       label: '雨课堂课程列表',
-      summary: '获取雨课堂（yuketang）当前账号的课程列表',
+      summary: '获取雨课堂的课程列表',
       doc: [
         '## ykt.courseList —— 雨课堂课程列表',
         '',
@@ -477,6 +486,28 @@
       ].join('\n'),
       async run() {
         return pageInvoke('ykt', 'courseList', {}, 120000);
+      }
+    },
+    {
+      module: 'ykt',
+      name: 'ykt.homework_of_',
+      label: '雨课堂课程作业',
+      summary: ' 获取雨课堂指定课程的作业列表',
+      doc: [
+        '## ykt.homework_of_ —— 雨课堂课程作业',
+        '',
+        '根据 classroomId 获取雨课堂指定课程的作业/活动列表。classroomId 可先调用 ykt.courseList 获取。需要已打开助手页面并在 yuketang.cn 登录。',
+        '',
+        '**参数**：{"classroomId":"班级ID，必填"}',
+        '',
+        '**调用示例**：`ykt.homework_of_({classroomId: "xxx"})`',
+        '',
+        '**返回示例**：{"ok":true,"classroomId":"xxx","homework":[{"id":"...","title":"作业名","actype":15,"activityType":"课件","end":"时间","done":false,"score":90,"link":"https://..."}]}'
+      ].join('\n'),
+      async run(args) {
+        const classroomId = String(args?.classroomId || '').trim();
+        await assertCourseIdOf('ykt', classroomId, 'classroomId');
+        return pageInvoke('ykt', 'courseHomework', { classroomId }, 120000);
       }
     },
     {
@@ -596,45 +627,45 @@
     },
     {
       module: 'mooc',
-      name: 'mooc.courseDetail',
+      name: 'mooc.detail_of_',
       label: 'MOOC 课程详情',
       summary: '获取中国大学MOOC课程详情',
       doc: [
-        '## mooc.courseDetail —— MOOC 课程详情',
+        '## mooc.detail_of_ —— MOOC 课程详情',
         '',
-        '获取中国大学MOOC课程详情（含章节列表）。',
+        '获取中国大学MOOC课程详情（含章节列表）。courseId 可先调用 mooc.courseList 获取。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`mooc.courseDetail({courseId: "xxx"})`',
+        '**调用示例**：`mooc.detail_of_({courseId: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"detail":{...}}'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
+        await assertCourseIdOf('mooc', courseId);
         return moocInvoke({ action: 'course-detail', courseId }, 120000);
       }
     },
     {
       module: 'mooc',
-      name: 'mooc.quizPaper',
+      name: 'mooc.quizPaper_of_',
       label: 'MOOC 测验试卷',
       summary: '获取中国大学MOOC测验试卷',
       doc: [
-        '## mooc.quizPaper —— MOOC 测验试卷',
+        '## mooc.quizPaper_of_ —— MOOC 测验试卷',
         '',
-        '获取中国大学MOOC测验试卷。',
+        '获取中国大学MOOC测验试卷。courseId 可先调用 mooc.courseList 获取。',
         '',
         '**参数**：{"courseId":"课程ID，必填","contentType":1,"可选测验类型，1=随堂测 2=测验 3=考试 4=练习 5=作业"}',
         '',
-        '**调用示例**：`mooc.quizPaper({courseId: "xxx"})`',
+        '**调用示例**：`mooc.quizPaper_of_({courseId: "xxx"})`',
         '',
         '**返回示例**：{"ok":true,"papers":[...]}'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId');
+        await assertCourseIdOf('mooc', courseId);
         return moocInvoke({ action: 'quiz-paper', courseId, contentType: Number(args?.contentType) || undefined }, 120000);
       }
     },
@@ -692,39 +723,40 @@
       doc: [
         '## qwen.listOperations —— 列出全部操作',
         '',
-        '列出所有可按模块分组操作名（仅名称，不含详细说明）。',
+        '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/qwen），内层为操作名（不含 module. 前缀）→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
         '',
         '**调用示例**：`qwen.listOperations()`',
         '',
-        '**返回示例**：{"groups":[{"module":"ve","label":"智慧课程平台","operations":["ve.courses"]}]}'
+        '**返回示例**：{"ve":{"courseList":"获取智慧课程平台的课程列表","homework_of_":"获取指定课程的作业列表"},"ykt":{"courseList":"获取雨课堂课程列表","homework_of_":"根据 classroomId 获取雨课堂课程作业列表"}}'
       ].join('\n'),
       async run() {
         const enabledSet = await getEnabledOperationSet();
-        const groups = OPERATION_GROUPS.map((group) => ({
-          module: group.id,
-          label: group.label,
-          operations: group.operations
-            .map((op) => op.name)
-            .filter((name) => !enabledSet || enabledSet.has(name) || String(name).startsWith('qwen.'))
-        })).filter((group) => group.operations.length > 0);
-        return { groups };
+        const operations = {};
+        for (const op of OPERATIONS) {
+          if (enabledSet && !enabledSet.has(op.name) && !String(op.name).startsWith('qwen.')) continue;
+          const module = String(op.module || '');
+          const key = String(op.name).split('.').slice(1).join('.');
+          if (!operations[module]) operations[module] = {};
+          operations[module][key] = op.summary || op.name;
+        }
+        return operations;
       }
     },
     {
       module: 'qwen',
-      name: 'qwen.getOperationDocs',
+      name: 'qwen.getDocs',
       label: '查询操作说明',
       summary: '查询指定操作的使用说明（Markdown）',
       doc: [
-        '## qwen.getOperationDocs —— 查询操作说明',
+        '## qwen.getDocs —— 查询操作说明',
         '',
         '查询指定操作的详细使用说明（Markdown）。在执行任何操作前，应先调用本操作查询其说明。',
         '',
-        '**参数**：{"name":"操作名，必填，如 ve.courses"}',
+        '**参数**：{"name":"操作名，必填，如 ve.courseList"}',
         '',
-        '**调用示例**：`qwen.getOperationDocs({name: "ve.courses"})`',
+        '**调用示例**：`qwen.getDocs({name: "ve.courseList"})`',
         '',
-        '**返回示例**：{"name":"ve.courses","module":"ve","doc":"## ve.courses —— ..."}'
+        '**返回示例**：{"name":"ve.courseList","module":"ve","doc":"## ve.courseList —— ..."}'
       ].join('\n'),
       async run(args) {
         const name = String(args?.name || '').trim();

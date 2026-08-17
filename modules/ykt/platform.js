@@ -1205,8 +1205,56 @@ async function yktPageCourseList() {
   return { ok: true, loggedIn: true, courses };
 }
 
+async function yktPageCourseHomework(classroomId) {
+  const cid = String(classroomId || '').trim();
+  if (!cid) return { ok: false, classroomId: '', homework: [], message: '缺少 classroomId' };
+  const actypes = [14, 15, 5, 9];
+  const urls = actypes.map((actype) => `${YKT_BASE}/v2/api/web/logs/learn/${encodeURIComponent(cid)}?actype=${actype}&page=0&offset=100`);
+  const settled = await Promise.allSettled(urls.map((url) => fetchYktJson(url)));
+  const acts = [];
+  settled.forEach((result, index) => {
+    if (result.status !== 'fulfilled') return;
+    const lr = result.value;
+    const hasError = (lr?.errcode !== undefined && Number(lr.errcode) !== 0) || lr?.success === false;
+    if (!hasError && Array.isArray(lr?.data?.activities)) {
+      acts.push(...lr.data.activities.map((a) => ({ ...a, __actype: actypes[index] })));
+    }
+  });
+  const homework = acts.map((a) => {
+    const isExam = Number(a?.__actype) === 5;
+    const isCard = Number(a?.__actype) === 15;
+    const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
+    const coursewareId = a?.courseware_id;
+    const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
+    return {
+      id: a?.id,
+      title: a?.title || '雨课堂作业',
+      end: getYktActivityDeadline(a),
+      type: a?.type,
+      actype: Number(a?.__actype),
+      activityType: YKT_ACTIVITY_TYPE_LABELS[Number(a?.__actype)] || '',
+      done: (a?.view && a?.view?.done) !== undefined ? !!(a?.view && a?.view?.done) : undefined,
+      unfinished: a?.unfinished,
+      progress: a?.progress,
+      problem_count: a?.problem_count,
+      score: a?.score,
+      total_score: a?.total_score,
+      link: isExam
+        ? yktExamLink(a?.course_id || cid, coursewareId)
+        : (isCard && String(leafId || '').trim()
+            ? yktVideoStudentLink(cid, leafId)
+            : yktHomeworkLink(cid, coursewareId, a?.id)),
+      courseware_id: coursewareId,
+      leaf_id: leafId,
+      classroom_id: cid
+    };
+  });
+  return { ok: true, classroomId: cid, homework };
+}
+
 globalThis.BjtuYktPageApi = Object.freeze({
-  courseList: () => yktPageCourseList()
+  courseList: () => yktPageCourseList(),
+  courseHomework: (args) => yktPageCourseHomework(String(args?.classroomId || '').trim())
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

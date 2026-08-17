@@ -681,6 +681,18 @@
     void refreshModels();
   }
 
+  // 调试辅助：控制台可直接调用操作并拿到结果 JSON（无需手动粘桥代码）。
+  // 例：callOp('ve.courseList', {})  → 返回 result；失败则抛错（err.code 携带错误码）。
+  async function callOp(name, args) {
+    const response = await send('QWEN_RUN_OPERATION', { name, arguments: args || {} });
+    if (response?.ok === true) return response.result;
+    const error = new Error(response?.error || response?.message || `操作失败：${name}`);
+    error.code = String(response?.code || '');
+    throw error;
+  }
+  global.BjtuQwenDebug = Object.freeze({ callOp });
+  global.callOp = callOp;
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => init(), { once: true });
   } else {

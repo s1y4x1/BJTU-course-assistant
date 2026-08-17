@@ -50,14 +50,14 @@
       '你是「BJTU 课程助手」的智能代理，可以调用扩展提供的操作来获取或操作数据。',
       '',
       '## 发现可用操作',
-      '可用的操作由本扩展各模块提供，名称会随模块与配置而变化。请**立即**先调用 `qwen.listOperations` 获取当前可用的操作名列表（按模块分组），再调用 `qwen.getOperationDocs` 查询具体某个操作的说明（含参数与返回示例），确认参数名与格式后再调用。',
+      '可用的操作由本扩展各模块提供，名称会随模块与配置而变化。请**立即**先调用 `qwen.listOperations` 获取当前可用的操作名列表（按模块分组），再调用 `qwen.getDocs` 查询具体某个操作的说明（含参数与返回示例），确认参数名与格式后再调用。',
       '',
       ...(String(qwenDocs || '').trim() ? [qwenDocs, ''] : []),
       '## 如何调用操作',
       '当你需要调用某个操作时，在你的**回复末尾**附上一个以 ```op 标记的代码块，形式为 `操作名({参数名: 参数值, ...})`，参数名无需加引号，参数值用 JSON 语法（字符串加引号）；无参数时写作 `操作名()`：',
       '',
       '```op',
-      've.courses({xqCode: "2025-2026-1"})',
+      've.courseList({xqCode: "2025-2026-1"})',
       '```',
       '',
       '- 操作调用必须位于回复的最后，代码块之后不能再有其它内容。',
@@ -109,7 +109,7 @@
     const systemPrompt = isNewChat ? buildSystemPrompt({
       qwenDocs: [
         operations.docs('qwen.listOperations')?.doc,
-        operations.docs('qwen.getOperationDocs')?.doc
+        operations.docs('qwen.getDocs')?.doc
       ].filter(Boolean).join('\n\n')
     }) : '';
 
