@@ -1040,14 +1040,19 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`campusnet.reconnect()`',
         '',
-        '**返回示例**：{"message":"已触发校园网重连"}'
+        '**返回示例**：{"triggered":true,"status":"success","message":"Portal协议认证成功！","checkedAt":1723456789012}'
       ].join('\n'),
       async run() {
         await chrome.storage.local.set({ campusNetworkReconnectEnabled: true }).catch(() => {});
         const service = requireGlobal('BjtuCampusNetworkReconnect');
         if (typeof service?.restart === 'function') {
-          await Promise.resolve(service.restart());
-          return { message: '已触发校园网重连' };
+          const status = await Promise.resolve(service.restart());
+          return {
+            triggered: true,
+            status: String(status?.status || 'triggered'),
+            message: String(status?.message || '已触发校园网重连'),
+            checkedAt: status?.checkedAt || null
+          };
         }
         return { ok: false, message: '校园网重连模块未就绪' };
       }
@@ -1529,6 +1534,19 @@ name: 've.teachers_of_',
     return OPERATIONS.find((op) => op.name === name) || null;
   }
 
+  // 分组顺序优先遵循选项页「排序」编辑器中用户配置的平台顺序（ui-order-groups）。
+  async function orderedGroups() {
+    const stored = await chrome.storage.local.get('platformOrder').catch(() => ({}));
+    const platformOrder = Array.isArray(stored?.platformOrder) ? stored.platformOrder.map(String) : [];
+    return OPERATION_GROUPS.slice().sort((a, b) => {
+      const ia = platformOrder.indexOf(String(a.id));
+      const ib = platformOrder.indexOf(String(b.id));
+      const ra = ia === -1 ? platformOrder.length : ia;
+      const rb = ib === -1 ? platformOrder.length : ib;
+      return ra - rb;
+    });
+  }
+
   async function runOperation(name, args, options = {}) {
     const op = findOperation(name);
     if (!op) throw new Error(`未找到操作：${name}`);
@@ -1548,13 +1566,13 @@ name: 've.teachers_of_',
   global.BjtuQwenOperations = {
     groups: async () => {
       const availability = await getModuleAvailability();
-      return OPERATION_GROUPS
+      return (await orderedGroups())
         .filter((group) => availability[group.id] !== false)
         .map((group) => ({ ...group, operations: group.operations.map((op) => op.name) }));
     },
     groupsDetailed: async () => {
       const availability = await getModuleAvailability();
-      return OPERATION_GROUPS
+      return (await orderedGroups())
         .filter((group) => availability[group.id] !== false)
         .map((group) => ({
           ...group,

@@ -289,9 +289,12 @@
 
   function parseSchedulePage(html) {
     const source = String(html || '');
-    const table = [...source.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)]
-      .find((match) => /\bclass\s*=\s*["'][^"']*\btable-bordered\b/i.test(match[1])
-        && /星期一/u.test(match[2]) && /星期日/u.test(match[2]));
+    const tables = [...source.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)];
+    const weekHeaderPattern = /(?:星期|周)[一二三四五六日]/u;
+    const hasFullWeek = (text) => /(?:星期|周)一/u.test(text) && /(?:星期|周)日/u.test(text);
+    const table = tables.find((match) => /\btable-bordered\b/i.test(match[1]) && hasFullWeek(match[2]))
+      || tables.find((match) => weekHeaderPattern.test(match[2]) && /第\s*\d+\s*节/u.test(match[2]))
+      || null;
     const rows = [];
     const allWeeks = new Set();
     for (const rowMatch of String(table?.[2] || '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {

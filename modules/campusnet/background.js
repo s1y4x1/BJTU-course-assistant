@@ -57,29 +57,27 @@
   }
 
   async function setStatus(patch) {
-    await chrome.storage.local.set({
-      [STATUS_KEY]: {
-        ...(patch && typeof patch === 'object' ? patch : {}),
-        checkedAt: Date.now()
-      }
-    }).catch(() => {});
+    const record = {
+      ...(patch && typeof patch === 'object' ? patch : {}),
+      checkedAt: Date.now()
+    };
+    await chrome.storage.local.set({ [STATUS_KEY]: record }).catch(() => {});
+    return record;
   }
 
   async function tick() {
-    if (running) return;
+    if (running) return null;
     running = true;
     try {
       const settings = await chrome.storage.local.get(SETTINGS_KEYS);
       if (settings.campusNetworkReconnectEnabled !== true) {
-        await setStatus({ status: 'disabled', message: '校园网自动重连未启用。' });
-        return;
+        return setStatus({ status: 'disabled', message: '校园网自动重连未启用。' });
       }
       const account = String(settings.campusNetworkReconnectAccount || settings.username || '').trim();
       const password = String(settings.campusNetworkReconnectPassword || '').trim();
       if (!account || !password) {
         lastState = 'missing-credentials';
-        await setStatus({ status: 'missing-credentials', message: '请先填写校园网账号和密码。' });
-        return;
+        return setStatus({ status: 'missing-credentials', message: '请先填写校园网账号和密码。' });
       }
 
       let response;
@@ -92,13 +90,11 @@
         });
       } catch (error) {
         lastState = 'network-error';
-        await setStatus({ status: 'network-error', message: String(error?.message || error), account });
-        return;
+        return setStatus({ status: 'network-error', message: String(error?.message || error), account });
       }
 
       if (response.status === 503) {
-        await setStatus({ status: 'retrying', message: '校园网认证服务暂不可用，正在重试。', account, statusCode: 503 });
-        return;
+        return setStatus({ status: 'retrying', message: '校园网认证服务暂不可用，正在重试。', account, statusCode: 503 });
       }
 
       const text = await response.text();
@@ -107,8 +103,7 @@
         data = parseJsonpReturn(text);
       } catch (error) {
         lastState = 'parse-error';
-        await setStatus({ status: 'parse-error', message: String(error?.message || error), account, statusCode: response.status });
-        return;
+        return setStatus({ status: 'parse-error', message: String(error?.message || error), account, statusCode: response.status });
       }
 
       const result = Number(data?.result);
@@ -116,16 +111,14 @@
       if (result === 1) {
         if (lastState !== 'success') await notifyReconnected();
         lastState = 'success';
-        await setStatus({ status: 'success', message: msg || 'Portal协议认证成功！', account });
-        return;
+        return setStatus({ status: 'success', message: msg || 'Portal协议认证成功！', account });
       }
       if (result === 0 && Number(data?.ret_code) === 2) {
         lastState = 'online';
-        await setStatus({ status: 'online', message: msg || '已经在线。', account });
-        return;
+        return setStatus({ status: 'online', message: msg || '已经在线。', account });
       }
       lastState = 'failed';
-      await setStatus({ status: 'failed', message: msg || text.slice(0, 160) || '校园网登录失败。', account, result, retCode: data?.ret_code });
+      return setStatus({ status: 'failed', message: msg || text.slice(0, 160) || '校园网登录失败。', account, result, retCode: data?.ret_code });
     } finally {
       running = false;
       scheduleNext();
@@ -143,7 +136,7 @@
   function restart() {
     if (timerId) clearTimeout(timerId);
     timerId = null;
-    void tick();
+    return tick();
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
