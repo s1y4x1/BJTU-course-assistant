@@ -212,6 +212,14 @@
       const obj = JSON.parse(t);
       const ret0 = String((Array.isArray(obj?.ret) ? obj.ret[0] : '') || '');
       const dataUrl = String(obj?.data?.url || '');
+      if (obj?.success === false && obj?.data != null && typeof obj.data === 'object') {
+        const apiCode = String(obj.data.code || '');
+        const details = String(obj.data.details || obj.data.message || '');
+        if (apiCode === 'Unauthorized' || apiCode === '401' || apiCode === 'AuthenticationFailed' || apiCode === 'TokenExpired') {
+          return 'NOT_LOGGED_IN';
+        }
+        if (details) return 'API_ERROR';
+      }
       if (String(obj?.data?.code || '') === 'RateLimited') {
         return 'RATE_LIMITED';
       }
@@ -228,10 +236,21 @@
     }
   }
 
+  function extractApiDetails(text) {
+    try {
+      const obj = JSON.parse(String(text || ''));
+      return String(obj?.data?.details || obj?.data?.message || '');
+    } catch {
+      return '';
+    }
+  }
+
   function parseJsonOrThrow(text) {
     if (!text) return null;
     const kind = detectApiErrorText(text);
     if (kind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
+    if (kind === 'NOT_LOGGED_IN') throw notLoggedInError();
+    if (kind === 'API_ERROR') throw new Error(extractApiDetails(text) || '通义千问返回了错误');
     if (kind === 'WAF_BUSY') throw wafBusyError();
     if (kind === 'WAF_PUNISH') throw wafPunishError();
     if (kind === 'WAF_CHALLENGE') throw unparsableError();
@@ -290,9 +309,12 @@
         if (result.status === 401 || result.status === 403) throw notLoggedInError();
         if (result.status < 200 || result.status >= 300) {
           const raw = String(result.text || '');
-          if (detectApiErrorText(raw) === 'RATE_LIMITED') {
+          const errKind = detectApiErrorText(raw);
+          if (errKind === 'RATE_LIMITED') {
             throw rateLimitError(extractRateLimitNum(raw), rateLimitMessage(extractRateLimitNum(raw)));
           }
+          if (errKind === 'NOT_LOGGED_IN') throw notLoggedInError();
+          if (errKind === 'API_ERROR') throw new Error(extractApiDetails(raw) || `通义千问 API 请求失败：HTTP ${result.status}`);
           throw new Error(`通义千问 API 请求失败：HTTP ${result.status}`);
         }
         try {
@@ -397,6 +419,8 @@
         else if (code === 'WAF_CHALLENGE') pending.reject(unparsableError());
         else if (code === 'RATE_LIMITED') pending.reject(rateLimitError(0, String(data.message || '')));
         else if (code === 'STREAM_ERROR') pending.reject(new Error(String(data.message || '通义千问返回了错误')));
+        else if (code === 'NOT_LOGGED_IN') pending.reject(notLoggedInError());
+        else if (code === 'API_ERROR') pending.reject(new Error(String(data.message || '通义千问返回了错误')));
         else pending.reject(new Error(code));
       } else if (data.end) {
         pendingStreams.delete(data.id);
@@ -497,11 +521,19 @@
       signal
     });
     if (response.status === 401 || response.status === 403) throw notLoggedInError();
-    if (!response.ok) throw new Error(`通义千问 API 请求失败：HTTP ${response.status}`);
+    if (!response.ok) {
+      const text = await response.text();
+      const errKind = detectApiErrorText(text);
+      if (errKind === 'NOT_LOGGED_IN') throw notLoggedInError();
+      if (errKind === 'API_ERROR') throw new Error(extractApiDetails(text) || `通义千问 API 请求失败：HTTP ${response.status}`);
+      throw new Error(`通义千问 API 请求失败：HTTP ${response.status}`);
+    }
     const contentType = String(response.headers.get('content-type') || '');
     if (!response.body?.getReader || !contentType.includes('event-stream')) {
       const text = await response.text();
       const kind = detectApiErrorText(text);
+      if (kind === 'NOT_LOGGED_IN') throw notLoggedInError();
+      if (kind === 'API_ERROR') throw new Error(extractApiDetails(text) || '通义千问返回了错误');
       if (kind === 'WAF_BUSY') throw wafBusyError();
       if (kind === 'WAF_PUNISH') throw wafPunishError();
       if (kind || text.trim()) throw unparsableError();

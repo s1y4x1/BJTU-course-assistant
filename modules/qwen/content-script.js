@@ -77,6 +77,14 @@
       const obj = JSON.parse(t);
       const ret0 = String((Array.isArray(obj?.ret) ? obj.ret[0] : '') || '');
       const dataUrl = String(obj?.data?.url || '');
+      if (obj?.success === false && obj?.data != null && typeof obj.data === 'object') {
+        const apiCode = String(obj.data.code || '');
+        const details = String(obj.data.details || obj.data.message || '');
+        if (apiCode === 'Unauthorized' || apiCode === '401' || apiCode === 'AuthenticationFailed' || apiCode === 'TokenExpired') {
+          return 'NOT_LOGGED_IN';
+        }
+        if (details) return 'API_ERROR';
+      }
       if (String(obj?.data?.code || '') === 'RateLimited') {
         return 'RATE_LIMITED';
       }
@@ -108,6 +116,15 @@
     return String(err?.details || err?.message || '通义千问返回了错误');
   }
 
+  function extractApiDetails(text) {
+    try {
+      const obj = JSON.parse(String(text || ''));
+      return String(obj?.data?.details || obj?.data?.message || '');
+    } catch {
+      return '';
+    }
+  }
+
   async function executeRequest(payload) {
     const id = String(payload.id || '');
     const url = String(payload.url || '');
@@ -137,7 +154,9 @@
         const raw = await response.text();
         STREAM_CONTROLLERS.delete(id);
         const kind = detectApiErrorText(raw);
-        emit(kind === 'RATE_LIMITED' ? { error: kind, message: rateLimitMessageFromText(raw) } : { error: kind || `HTTP ${response.status}` });
+        if (kind === 'RATE_LIMITED') emit({ error: kind, message: rateLimitMessageFromText(raw) });
+        else if (kind === 'API_ERROR') emit({ error: kind, message: extractApiDetails(raw) });
+        else emit({ error: kind || `HTTP ${response.status}` });
         return null;
       }
 
@@ -148,6 +167,8 @@
         const kind = detectApiErrorText(raw);
         if (kind === 'RATE_LIMITED') {
           emit({ error: kind, message: rateLimitMessageFromText(raw) });
+        } else if (kind === 'API_ERROR') {
+          emit({ error: kind, message: extractApiDetails(raw) });
         } else if (kind) {
           emit({ error: kind });
         } else if (raw) {
