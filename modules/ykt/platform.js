@@ -1252,7 +1252,7 @@ async function yktPageCourseHomework(classroomId) {
   return { ok: true, classroomId: cid, homework };
 }
 
-function yktPageLogin() {
+async function yktPageLogin(args = {}) {
   const platform = 'ykt';
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
   if (enabled) {
@@ -1262,13 +1262,13 @@ function yktPageLogin() {
   } else if (typeof togglePlatformSelection === 'function') {
     try { togglePlatformSelection(platform, { interactive: true }); } catch {}
   }
-  return { ok: true, enabled: true, message: '已触发雨课堂登录流程，请在弹出的登录中完成验证' };
+  return await waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
 }
 
 globalThis.BjtuYktPageApi = Object.freeze({
   courseList: () => yktPageCourseList(),
   courseHomework: (args) => yktPageCourseHomework(String(args?.classroomId || '').trim()),
-  login: () => yktPageLogin()
+  login: (args) => yktPageLogin(args)
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

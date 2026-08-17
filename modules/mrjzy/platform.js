@@ -902,7 +902,7 @@ async function mrjzyPageLoginStatus() {
   return { loginState: state, loggedIn: state === 'online', snapshotLoaded: mrjzyPageSnapshot().length > 0 };
 }
 
-function mrjzyPageLogin() {
+async function mrjzyPageLogin(args = {}) {
   const platform = 'mrjzy';
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
   if (enabled) {
@@ -912,14 +912,14 @@ function mrjzyPageLogin() {
   } else if (typeof togglePlatformSelection === 'function') {
     try { togglePlatformSelection(platform, { interactive: true }); } catch {}
   }
-  return { ok: true, enabled: true, message: '已触发每日交作业登录流程，请在弹出的登录中完成验证' };
+  return await waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
 }
 
 globalThis.BjtuMrjzyPageApi = Object.freeze({
   courseList: () => mrjzyPageCourseList(),
   homework_of_: (args) => mrjzyPageHomeworkOf(String(args?.classNum || args?.courseId || '').trim()),
   loginStatus: () => mrjzyPageLoginStatus(),
-  login: () => mrjzyPageLogin()
+  login: (args) => mrjzyPageLogin(args)
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

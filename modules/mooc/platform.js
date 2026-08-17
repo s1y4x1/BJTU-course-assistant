@@ -871,20 +871,23 @@ function openMoocLoginAssistPopup(force = false) {
 
 /* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
 
-function moocPageLogin() {
+async function moocPageLogin(args = {}) {
   const platform = 'mooc';
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
   if (!enabled && typeof togglePlatformSelection === 'function') {
     try { togglePlatformSelection(platform, { interactive: true }); } catch {}
   }
+  if (typeof triggerExternalPlatformLoad === 'function') {
+    try { triggerExternalPlatformLoad(platform, true); } catch {}
+  }
   if (typeof openMoocLoginAssistPopup === 'function') {
     try { openMoocLoginAssistPopup(true); } catch {}
   }
-  return { ok: true, enabled: true, message: '已触发中国大学MOOC登录流程，请在登录弹窗中完成验证' };
+  return await waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
 }
 
 globalThis.BjtuMoocPageApi = Object.freeze({
-  login: () => moocPageLogin()
+  login: (args) => moocPageLogin(args)
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

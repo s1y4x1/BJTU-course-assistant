@@ -337,18 +337,24 @@ name: 've.accounts',
       doc: [
         '## ve.login —— 登录账号',
         '',
-        '使用本地保存的账号凭据登录智慧课程平台。账号需存在于本地账号列表。',
+        '使用本地保存的账号凭据登录智慧课程平台。账号需存在于本地账号列表；若不传 loginName，则使用登录历史中最新的账号。',
         '',
-        '**参数**：{"loginName":"登录名，必填"}',
+        '**参数**：{"loginName":"可选，登录名，缺省时用登录历史中最新的账号"}',
         '',
-        '**调用示例**：`ve.login({loginName: "zhangsan"})`',
+        '**调用示例**：`ve.login({loginName: "zhangsan"})` 或 `ve.login()`',
         '',
         '**返回示例**：{"ok":true,"userName":"张三"}。失败时 ok 为 false 并带 message。'
       ].join('\n'),
       async run(args) {
         const loginService = requireGlobal('BjtuVeLoginService');
-        const loginName = String(args?.loginName || '').trim();
-        if (!loginName) throw new Error('缺少参数 loginName');
+        let loginName = String(args?.loginName || '').trim();
+        if (!loginName) {
+          const stored = await chrome.storage.local.get('loginAccountHistory');
+          const history = Array.isArray(stored?.loginAccountHistory) ? stored.loginAccountHistory : [];
+          const latest = history.find((record) => String(record?.loginName || record?.userId || '').trim());
+          loginName = String(latest?.loginName || latest?.userId || '').trim();
+        }
+        if (!loginName) throw new Error('缺少参数 loginName，且本地无登录历史账号可用');
         const result = await loginService.login({ loginName, allowStoredCredentials: true });
         const userName = String(result?.userInfo?.userName || '');
         return { ok: !!result?.ok, message: String(result?.message || ''), userName };
@@ -524,10 +530,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.login()`',
         '',
-        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发雨课堂登录流程，请在弹出的登录中完成验证"}'
+        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('ykt', 'login', {}, 60000);
+        return pageInvoke('ykt', 'login', { timeoutMs: 180000 }, 200000);
       }
     },
     {
@@ -864,10 +870,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.login()`',
         '',
-        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发每日交作业登录流程，请在弹出的登录中完成验证"}'
+        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mrjzy', 'login', {}, 60000);
+        return pageInvoke('mrjzy', 'login', { timeoutMs: 180000 }, 200000);
       }
     },
     {
@@ -942,10 +948,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.login()`',
         '',
-        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发中国大学MOOC登录流程，请在登录弹窗中完成验证"}'
+        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('jlgj', 'loginStatus', {}, 60000);
+        return pageInvoke('mooc', 'login', { timeoutMs: 180000 }, 200000);
       }
     },
     {
@@ -960,10 +966,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.login()`',
         '',
-        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发接龙管家登录流程，请在弹出的登录中完成验证"}'
+        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('jlgj', 'login', {}, 60000);
+        return pageInvoke('jlgj', 'login', { timeoutMs: 180000 }, 200000);
       }
     },
     {
@@ -1038,10 +1044,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.login()`',
         '',
-        '**返回示例**：{"ok":true,"enabled":true,"message":"已触发学堂在线登录流程，请在弹出的登录中完成验证"}'
+        '**返回示例**：{"ok":true,"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('xuetangx', 'login', {}, 60000);
+        return pageInvoke('xuetangx', 'login', { timeoutMs: 180000 }, 200000);
       }
     },
     {

@@ -1109,7 +1109,7 @@
     return { loginState: state, loggedIn: state === 'online', loaded: Array.isArray(courses) && courses.length > 0 };
   }
 
-  function xuetangxPageLogin() {
+  async function xuetangxPageLogin(args = {}) {
     const platform = 'xuetangx';
     const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
     if (enabled) {
@@ -1119,14 +1119,14 @@
     } else if (typeof globalThis.togglePlatformSelection === 'function') {
       try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
     }
-    return { ok: true, enabled: true, message: '已触发学堂在线登录流程，请在弹出的登录中完成验证' };
+    return await waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
   }
 
   globalThis.BjtuXuetangxPageApi = Object.freeze({
     courseList: () => xuetangxPageCourseList(),
     homework_of_: (args) => xuetangxPageHomeworkOf(String(args?.classroomId || args?.courseId || '').trim()),
     loginStatus: () => xuetangxPageLoginStatus(),
-    login: () => xuetangxPageLogin()
+    login: (args) => xuetangxPageLogin(args)
   });
 
   if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

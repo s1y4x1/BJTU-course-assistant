@@ -3481,6 +3481,26 @@ function setPlatformLoginState(platform, state) {
   }
 }
 
+// 等待某个平台登录流程结束（loginState 不再是 checking），返回登录是否成功。
+// 供各平台页面桥的 login 操作调用。
+async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {
+  const p = normalizePlatformId(platform);
+  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 120000);
+  while (Date.now() < deadline) {
+    const state = String(window.platformLoginState?.[p] || 'checking');
+    if (state === 'online') return { ok: true, loggedIn: true, loginState: state, message: '登录成功' };
+    if (state === 'offline') return { ok: false, loggedIn: false, loginState: state, message: '登录失败或尚未登录' };
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  const finalState = String(window.platformLoginState?.[p] || 'checking');
+  return {
+    ok: finalState === 'online',
+    loggedIn: finalState === 'online',
+    loginState: finalState,
+    message: finalState === 'online' ? '登录成功' : '等待登录超时，请在助手页面完成登录后重试'
+  };
+}
+
 function setPlatformContentLoadProgress(platform, completed, total) {
   const p = normalizePlatformId(platform);
   const count = Math.max(0, Number(completed) || 0);

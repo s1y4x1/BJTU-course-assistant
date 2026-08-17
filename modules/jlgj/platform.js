@@ -1247,7 +1247,7 @@ async function jlgjPageLoginStatus() {
   return { loginState: state, loggedIn: state === 'online', snapshotLoaded: jlgjPageSnapshot().length > 0 };
 }
 
-function jlgjPageLogin() {
+async function jlgjPageLogin(args = {}) {
   const platform = 'jlgj';
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
   if (enabled) {
@@ -1257,14 +1257,14 @@ function jlgjPageLogin() {
   } else if (typeof togglePlatformSelection === 'function') {
     try { togglePlatformSelection(platform, { interactive: true }); } catch {}
   }
-  return { ok: true, enabled: true, message: '已触发接龙管家登录流程，请在弹出的登录中完成验证' };
+  return await waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
 }
 
 globalThis.BjtuJlgjPageApi = Object.freeze({
   courseList: () => jlgjPageCourseList(),
   homework_of_: (args) => jlgjPageHomeworkOf(String(args?.groupId || args?.courseId || '').trim()),
   loginStatus: () => jlgjPageLoginStatus(),
-  login: () => jlgjPageLogin()
+  login: (args) => jlgjPageLogin(args)
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
