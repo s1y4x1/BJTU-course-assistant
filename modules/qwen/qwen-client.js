@@ -18,6 +18,28 @@
     return Object.assign(new Error('通义千问触发风控校验（可能要求完成验证码或被限流），请到 chat.qwen.ai 页面完成验证后重试'), { code: 'WAF_PUNISH' });
   }
 
+  function rateLimitMessage(num) {
+    const hours = Math.max(0, Math.ceil(Number(num) || 0));
+    return hours
+      ? `已达通义千问今日用量上限，请等待约 ${hours} 小时后再试。`
+      : '已达通义千问今日用量上限，请稍后再试。';
+  }
+
+  function rateLimitError(num, message = '') {
+    return Object.assign(
+      new Error(String(message || '').trim() || rateLimitMessage(num)),
+      { code: 'RATE_LIMITED' }
+    );
+  }
+
+  function extractRateLimitNum(text) {
+    try {
+      return Number(JSON.parse(String(text || ''))?.data?.num) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   async function getCookies() {
@@ -148,6 +170,9 @@
       const obj = JSON.parse(t);
       const ret0 = String((Array.isArray(obj?.ret) ? obj.ret[0] : '') || '');
       const dataUrl = String(obj?.data?.url || '');
+      if (String(obj?.data?.code || '') === 'RateLimited') {
+        return 'RATE_LIMITED';
+      }
       if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') || ret0.includes('RGV587') || dataUrl.includes('/_____tmd_____/punish')) {
         return 'WAF_PUNISH';
       }
@@ -160,6 +185,7 @@
   function parseJsonOrThrow(text) {
     if (!text) return null;
     const kind = detectApiErrorText(text);
+    if (kind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
     if (kind === 'WAF_PUNISH') throw wafPunishError();
     if (kind === 'WAF_CHALLENGE') throw unparsableError();
     try {
@@ -185,7 +211,13 @@
       signal: options.signal
     });
     if (response.status === 401 || response.status === 403) throw notLoggedInError();
-    if (!response.ok) throw new Error(`通义千问 API 请求失败：HTTP ${response.status}`);
+    if (!response.ok) {
+      const raw = await response.text().catch(() => '');
+      if (detectApiErrorText(raw) === 'RATE_LIMITED') {
+        throw rateLimitError(extractRateLimitNum(raw), rateLimitMessage(extractRateLimitNum(raw)));
+      }
+      throw new Error(`通义千问 API 请求失败：HTTP ${response.status}`);
+    }
     const text = await response.text();
     return parseJsonOrThrow(text);
   }
@@ -210,6 +242,10 @@
         if (!result?.ok) continue;
         if (result.status === 401 || result.status === 403) throw notLoggedInError();
         if (result.status < 200 || result.status >= 300) {
+          const raw = String(result.text || '');
+          if (detectApiErrorText(raw) === 'RATE_LIMITED') {
+            throw rateLimitError(extractRateLimitNum(raw), rateLimitMessage(extractRateLimitNum(raw)));
+          }
           throw new Error(`通义千问 API 请求失败：HTTP ${result.status}`);
         }
         try {
@@ -311,6 +347,7 @@
         const code = String(data.error || '');
         if (code === 'WAF_PUNISH') pending.reject(wafPunishError());
         else if (code === 'WAF_CHALLENGE') pending.reject(unparsableError());
+        else if (code === 'RATE_LIMITED') pending.reject(rateLimitError(0, String(data.message || '')));
         else pending.reject(new Error(code));
       } else if (data.end) {
         pendingStreams.delete(data.id);

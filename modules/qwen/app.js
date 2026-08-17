@@ -515,6 +515,15 @@
       return;
     }
 
+    void chrome.storage.local.get(['qwenEnabled']).then((data) => {
+      if (data?.qwenEnabled === false) {
+        const fab = el(FAB_ID);
+        if (fab instanceof HTMLElement) fab.style.display = 'none';
+        const panel = el(PANEL_ID);
+        if (panel instanceof HTMLElement) panel.hidden = true;
+      }
+    });
+
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
         void refreshStatus();

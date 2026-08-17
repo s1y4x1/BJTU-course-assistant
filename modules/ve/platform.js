@@ -2676,3 +2676,30 @@ async function prefetchCourseScores(courseId) {
   }
   renderHomeworkList(courseId);
 }
+
+// 供 qwen 模块（service worker）经 app 页面消息桥调用的平台页面级接口
+globalThis.BjtuVePageApi = Object.freeze({
+  students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
+  coursewareItems: (args) => fetchCoursewareItems(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
+  coursewareUrl: (args) => fetchCoursewareRpUrl(String(args?.rpId || '').trim()),
+  replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
+  archiveItems: (args) => fetchCourseArchiveItems(String(args?.courseId || '').trim()),
+  archiveDownloadUrl: (args) => getCourseArchiveDownloadUrl(String(args?.courseId || '').trim())
+});
+
+if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'PAGE_API' || message?.payload?.module !== 've') return false;
+    const api = globalThis.BjtuVePageApi;
+    const fn = api && typeof api[String(message.payload?.fn || '')] === 'function' ? api[String(message.payload.fn)] : null;
+    if (!fn) {
+      sendResponse({ ok: false, error: 'VE 页面接口不存在' });
+      return true;
+    }
+    Promise.resolve(fn(message.payload?.args || {})).then(
+      (value) => sendResponse({ ok: true, value }),
+      (error) => sendResponse({ ok: false, error: String(error?.message || error) })
+    );
+    return true;
+  });
+}

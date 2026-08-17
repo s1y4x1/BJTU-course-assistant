@@ -77,12 +77,26 @@
       const obj = JSON.parse(t);
       const ret0 = String((Array.isArray(obj?.ret) ? obj.ret[0] : '') || '');
       const dataUrl = String(obj?.data?.url || '');
+      if (String(obj?.data?.code || '') === 'RateLimited') {
+        return 'RATE_LIMITED';
+      }
       if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') || ret0.includes('RGV587') || dataUrl.includes('/_____tmd_____/punish')) {
         return 'WAF_PUNISH';
       }
       return '';
     } catch {
       return 'WAF_CHALLENGE';
+    }
+  }
+
+  function rateLimitMessageFromText(text) {
+    try {
+      const num = Number(JSON.parse(String(text || ''))?.data?.num) || 0;
+      return num
+        ? `你已达到每日使用限制。请在 ${Math.max(0, Math.ceil(num))} 小时后再试。`
+        : '你已达到每日使用限制。请稍后再试。';
+    } catch {
+      return '已达通义千问今日用量上限，请稍后再试。';
     }
   }
 
@@ -114,7 +128,8 @@
       if (!response.ok) {
         const raw = await response.text();
         STREAM_CONTROLLERS.delete(id);
-        emit({ error: detectApiErrorText(raw) || `HTTP ${response.status}` });
+        const kind = detectApiErrorText(raw);
+        emit(kind === 'RATE_LIMITED' ? { error: kind, message: rateLimitMessageFromText(raw) } : { error: kind || `HTTP ${response.status}` });
         return null;
       }
 
@@ -123,7 +138,9 @@
         const raw = await response.text();
         STREAM_CONTROLLERS.delete(id);
         const kind = detectApiErrorText(raw);
-        if (kind) {
+        if (kind === 'RATE_LIMITED') {
+          emit({ error: kind, message: rateLimitMessageFromText(raw) });
+        } else if (kind) {
           emit({ error: kind });
         } else if (raw) {
           emit({ error: 'UNEXPECTED_RESPONSE' });
@@ -195,7 +212,7 @@
       if (!sawDataLine && rawText.trim()) {
         const kind = detectApiErrorText(rawText);
         if (kind) {
-          emit({ error: kind });
+          emit(kind === 'RATE_LIMITED' ? { error: kind, message: rateLimitMessageFromText(rawText) } : { error: kind });
           return null;
         }
       }

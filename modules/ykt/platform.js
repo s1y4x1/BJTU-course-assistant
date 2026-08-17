@@ -1185,3 +1185,43 @@ function scheduleYktLoad(courses, loadVersion = 0) {
     .then(() => loadYktCoursesAndHomework(list, loadVersion));
   return window.__yktLoadSerialPromise;
 }
+
+// 供 qwen 模块（service worker）经 app 页面消息桥调用的雨课堂接口
+async function yktPageCourseList() {
+  const listResp = await fetchYktJson(YKT_COURSE_LIST_API);
+  if (Number(listResp?.errcode) !== 0) {
+    return { ok: false, loggedIn: false, courses: [], message: '未登录或会话已失效' };
+  }
+  const yktCourses = Array.isArray(listResp?.data?.list) ? listResp.data.list : [];
+  const courses = yktCourses
+    .map((item) => ({
+      classroomId: String(item?.classroom_id || '').trim(),
+      name: String(item?.name || '').trim(),
+      courseName: String(item?.course?.name || item?.name || '').trim(),
+      teacher: String(item?.teacher?.name || '').trim(),
+      universityId: pickYktUniversityId(item, listResp?.data) || ''
+    }))
+    .filter((course) => course.classroomId);
+  return { ok: true, loggedIn: true, courses };
+}
+
+globalThis.BjtuYktPageApi = Object.freeze({
+  courseList: () => yktPageCourseList()
+});
+
+if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'ykt') return false;
+    const api = globalThis.BjtuYktPageApi;
+    const fn = api && typeof api[String(message.payload?.fn || '')] === 'function' ? api[String(message.payload.fn)] : null;
+    if (!fn) {
+      sendResponse({ ok: false, error: '雨课堂页面接口不存在' });
+      return true;
+    }
+    Promise.resolve(fn(message.payload?.args || {})).then(
+      (value) => sendResponse({ ok: true, value }),
+      (error) => sendResponse({ ok: false, error: String(error?.message || error) })
+    );
+    return true;
+  });
+}
