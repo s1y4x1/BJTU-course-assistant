@@ -24,6 +24,10 @@
   let lastSendText = '';
   let pendingEditParentId = '';
   let pendingEdit = false;
+  let chatStateLoaded = false;
+  let lastKnownLoggedIn = false;
+  let lastKnownEnabled = true;
+  let openingStarted = false;
 
   function el(id) {
     return document.getElementById(id);
@@ -567,7 +571,7 @@
   async function refreshModels() {
     const select = el(MODEL_ID);
     if (!(select instanceof HTMLSelectElement)) return;
-    const status = await send('QWEN_GET_STATUS', { ensureLogin: true });
+    const status = await send('QWEN_GET_STATUS', { ensureLogin: false });
     const response = await send('QWEN_LIST_MODELS');
     select.replaceChildren();
     if (response?.ok && Array.isArray(response.models) && response.models.length) {
@@ -590,7 +594,9 @@
   }
 
   async function refreshStatus() {
-    const status = await send('QWEN_GET_STATUS', { ensureLogin: true });
+    const status = await send('QWEN_GET_STATUS', { ensureLogin: false });
+    lastKnownLoggedIn = status?.loggedIn === true;
+    lastKnownEnabled = status?.enabled !== false;
     if (status?.loggedIn) {
       setStatus('已登录', 'ok');
       showLoginHint(false);
@@ -600,6 +606,7 @@
     }
     const thinking = el(THINKING_ID);
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
+    maybeSendOpening();
     return status;
   }
 
@@ -801,6 +808,11 @@
         } else if (message?.type === 'ask') {
           showAsk(message);
         } else if (message?.type === 'retryRequest') {
+          const retryChatId = String(message?.chatId || sessionChatId || '');
+          if (retryChatId) {
+            sessionChatId = retryChatId;
+            void chrome.storage.local.set({ qwenLastChatId: retryChatId });
+          }
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;
@@ -821,7 +833,11 @@
           btn.addEventListener('click', () => {
             bubble.remove();
             try {
-              port?.postMessage({ type: 'retryDecision', action: 'retry' });
+              port?.postMessage({
+                type: 'retryDecision',
+                action: 'retry',
+                chatId: retryChatId || sessionChatId
+              });
             } catch {
               // 端口可能已断开
             }
@@ -894,12 +910,26 @@
     startStream({ text, editParent, isEditSend, showUserBubble: true });
   }
 
+  function maybeSendOpening() {
+    if (!chatStateLoaded || !lastKnownEnabled || !lastKnownLoggedIn || sessionChatId || busy || openingStarted) return;
+    const messages = el(MESSAGES_ID);
+    if (messages instanceof HTMLElement && messages.childElementCount > 0) return;
+    sendOpening();
+  }
+
   function sendOpening() {
-    if (busy) return;
+    if (busy || openingStarted) return;
+    openingStarted = true;
     void send('QWEN_BUILD_SYSTEM_PROMPT').then((response) => {
-      if (busy) return;
+      if (busy) {
+        openingStarted = false;
+        return;
+      }
       const text = String(response?.text || '').trim();
-      if (!text) return;
+      if (!text) {
+        openingStarted = false;
+        return;
+      }
       startStream({ text, showUserBubble: false });
     });
   }
@@ -991,7 +1021,9 @@
 
     void chrome.storage.local.get('qwenLastChatId').then((data) => {
       sessionChatId = String(data?.qwenLastChatId || '');
+      chatStateLoaded = true;
       if (sessionChatId) void loadHistory();
+      else maybeSendOpening();
     });
 
     if (fab instanceof HTMLButtonElement) {
@@ -1041,6 +1073,7 @@
           nextReplyFresh = false;
           pendingEditParentId = '';
           pendingEdit = false;
+          openingStarted = false;
           hideAsk();
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.replaceChildren();
@@ -1106,7 +1139,7 @@
     }
     if (loginBtn instanceof HTMLButtonElement) {
       loginBtn.addEventListener('click', () => {
-        void send('QWEN_OPEN_LOGIN');
+        void send('QWEN_OPEN_LOGIN', { auth: true });
         setTimeout(() => void refreshStatus(), 4000);
         setTimeout(() => void refreshModels(), 4000);
       });

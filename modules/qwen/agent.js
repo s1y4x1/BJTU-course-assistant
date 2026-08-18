@@ -220,7 +220,11 @@
         const code = String(error?.code || '');
         if (code === 'NOT_LOGGED_IN' || code === 'DISABLED') throw error;
         const decision = typeof onRetryRequest === 'function'
-          ? await onRetryRequest({ message: String(error?.message || error), code })
+          ? await onRetryRequest({
+            message: String(error?.message || error),
+            code,
+            chatId: effectiveChatId
+          })
           : null;
         if (decision !== 'retry') throw error;
         continue;

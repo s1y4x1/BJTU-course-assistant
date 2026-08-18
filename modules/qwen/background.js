@@ -3,6 +3,51 @@
   'use strict';
 
   const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
+  const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
+  const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
+  let qwenLoginCompletionPromise = null;
+
+  async function broadcastTokenCaptured() {
+    try {
+      await chrome.runtime.sendMessage({ type: 'QWEN_TOKEN_CAPTURED_BROADCAST' });
+    } catch {
+      // app 页面可能尚未打开
+    }
+  }
+
+  async function focusQwenAppPage() {
+    const appUrl = chrome.runtime.getURL('app/app.html');
+    const tabs = await chrome.tabs.query({}).catch(() => []);
+    const appTab = tabs.find((tab) => {
+      const url = String(tab?.url || '');
+      return url.startsWith(appUrl) && !/[?&]popup=1(?:&|$)/.test(url);
+    });
+    const tab = appTab
+      ? await chrome.tabs.update(appTab.id, { active: true }).catch(() => appTab)
+      : await global.BjtuTabs.create({ url: appUrl, active: true }).catch(() => null);
+    if (Number.isInteger(tab?.windowId)) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
+  }
+
+  async function completeQwenLogin(token) {
+    const value = String(token || '').trim();
+    if (!value) return;
+    if (qwenLoginCompletionPromise) return qwenLoginCompletionPromise;
+    qwenLoginCompletionPromise = (async () => {
+      await global.BjtuQwenClient?.captureToken?.(value);
+      await broadcastTokenCaptured();
+      const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
+      const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
+      if (!Number.isInteger(loginTabId)) return;
+      const loginTab = await chrome.tabs.get(loginTabId).catch(() => null);
+      await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
+      if (!loginTab || !String(loginTab.url || loginTab.pendingUrl || '').startsWith('https://chat.qwen.ai/')) return;
+      await chrome.tabs.remove(loginTabId).catch(() => {});
+      await focusQwenAppPage();
+    })().finally(() => {
+      qwenLoginCompletionPromise = null;
+    });
+    return qwenLoginCompletionPromise;
+  }
 
   async function getSettings() {
     const stored = await chrome.storage.local.get(SETTINGS_KEYS).catch(() => ({}));
@@ -69,6 +114,8 @@
       });
       port.onMessage.addListener((message) => {
         if (message?.type === 'retryDecision' && pendingRetry) {
+          const retryChatId = String(message?.chatId || pendingRetry.chatId || turnRef.chatId || '');
+          if (retryChatId) turnRef.chatId = retryChatId;
           const resolve = pendingRetry.resolve;
           pendingRetry = null;
           resolve?.(String(message.action || 'stop'));
@@ -120,12 +167,14 @@
               alwaysAllow: settings.alwaysAllow === true,
               sessionRef: loopSession,
               onRetryRequest: (info) => new Promise((resolve) => {
-                pendingRetry = { resolve };
+                const retryChatId = String(info?.chatId || turnRef.chatId || '');
+                pendingRetry = { resolve, chatId: retryChatId };
                 const safeMessage = String(info?.message || '请求失败');
                 port.postMessage({
                   type: 'retryRequest',
                   message: safeMessage,
-                  code: String(info?.code || '')
+                  code: String(info?.code || ''),
+                  chatId: retryChatId
                 });
               }),
               askUser: (payload) => new Promise((resolve) => {
@@ -252,15 +301,7 @@
       if (type === 'QWEN_TOKEN_CAPTURED') {
         const token = String(message?.payload?.token || '');
         if (token && global.BjtuQwenClient?.captureToken) {
-          void global.BjtuQwenClient.captureToken(token).then(() => {
-            try {
-              chrome.runtime.sendMessage({ type: 'QWEN_TOKEN_CAPTURED_BROADCAST' }, () => {
-                void chrome?.runtime?.lastError;
-              });
-            } catch {
-              // 忽略
-            }
-          });
+          void global.BjtuQwenClient.captureToken(token).then(() => broadcastTokenCaptured());
         }
         return false;
       }
@@ -269,7 +310,19 @@
           try {
             const client = global.BjtuQwenClient;
             if (!client) throw new Error('通义千问客户端未就绪');
-            await client.openLoginPage();
+            const auth = message?.payload?.auth === true;
+            let notificationPromise = Promise.resolve();
+            if (!auth && typeof global.BjtuSystemNotifications?.create === 'function') {
+              notificationPromise = global.BjtuSystemNotifications.create(WAF_NOTIFICATION_ID, {
+                type: 'basic',
+                iconUrl: 'icons/128.png',
+                title: '通义千问触发风控校验',
+                message: '请在页面上完成验证后自行回到对话中重试。看不到验证？刷新页面试试。',
+                priority: 2,
+                requireInteraction: true
+              }, 'qwen-waf-verification', true).catch(() => {});
+            }
+            await Promise.all([client.openLoginPage({ auth }), notificationPromise]);
             sendResponse({ ok: true });
           } catch (error) {
             sendResponse({ ok: false, message: String(error?.message || error) });
@@ -346,6 +399,16 @@
         return true;
       }
       return false;
+    });
+  }
+
+  if (typeof chrome === 'object' && chrome?.cookies?.onChanged) {
+    chrome.cookies.onChanged.addListener((changeInfo) => {
+      const cookie = changeInfo?.cookie;
+      if (changeInfo?.removed || String(cookie?.name || '') !== 'token' || !String(cookie?.value || '').trim()) return;
+      const domain = String(cookie?.domain || '').replace(/^\./, '').toLowerCase();
+      if (domain !== 'chat.qwen.ai' && !domain.endsWith('.qwen.ai')) return;
+      void completeQwenLogin(cookie.value);
     });
   }
 

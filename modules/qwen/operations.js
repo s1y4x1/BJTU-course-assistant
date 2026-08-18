@@ -472,11 +472,11 @@ name: 've.accounts',
         '',
         '**参数**：`{"account":"可选，账号；省略时仅启用平台不触发自动登录"}`',
         '',
-        '**调用示例**：`ve.login()` 仅启用平台；`ve.login({account: "2023xxxx"})` 自动填写账号并触发登录',
+        '**调用示例**：`ve.login()` 仅启用平台；`ve.login({account: "2428xxxx"})` 自动填写账号并触发登录',
         '',
         '指定账号时会等待密码/验证码弹窗关闭，并返回该目标账号本次是否登录成功；已有的其他账号会话不会被当作成功。',
         '',
-        '**返回示例**：{"account":"2023xxxx","loginState":"online","loggedIn":true,"message":"账号 2023xxxx 登录成功"}'
+        '**返回示例**：{"account":"2428xxxx","loginState":"online","loggedIn":true,"message":"账号 2023xxxx 登录成功"}'
       ].join('\n'),
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();

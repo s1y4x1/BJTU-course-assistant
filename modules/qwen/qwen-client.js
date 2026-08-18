@@ -5,6 +5,17 @@
   'use strict';
 
   const CHAT_BASE = 'https://chat.qwen.ai';
+  const AUTH_URL = `${CHAT_BASE}/auth`;
+  const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
+  let ensureChatTabPromise = null;
+  let openLoginPagePromise = null;
+  let qwenPageOperationQueue = Promise.resolve();
+
+  function queueQwenPageOperation(operation) {
+    const task = qwenPageOperationQueue.then(operation);
+    qwenPageOperationQueue = task.catch(() => null);
+    return task;
+  }
 
   function notLoggedInError() {
     return Object.assign(new Error('尚未登录通义千问，请先打开 https://chat.qwen.ai/ 登录'), { code: 'NOT_LOGGED_IN' });
@@ -82,9 +93,55 @@
     return cookies.some((cookie) => String(cookie.name || '') === 'token' && !!cookie.value);
   }
 
-  async function openLoginPage() {
-    const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
-    await keepChatTabResident(tab?.id);
+  async function openLoginPage(options = {}) {
+    if (openLoginPagePromise) return openLoginPagePromise;
+    openLoginPagePromise = queueQwenPageOperation(async () => {
+      const auth = options?.auth === true;
+      if (auth) {
+        const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
+        const storedTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
+        const existingLoginTab = Number.isInteger(storedTabId)
+          ? await chrome.tabs.get(storedTabId).catch(() => null)
+          : null;
+        if (existingLoginTab && String(existingLoginTab.url || existingLoginTab.pendingUrl || '').startsWith(CHAT_BASE)) {
+          await chrome.tabs.update(existingLoginTab.id, { active: true, autoDiscardable: false }).catch(() => null);
+          if (Number.isInteger(existingLoginTab.windowId)) {
+            await chrome.windows.update(existingLoginTab.windowId, { focused: true }).catch(() => null);
+          }
+          return existingLoginTab;
+        }
+        await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
+        const reusable = await findChatTab();
+        if (reusable) {
+          const loginTab = await chrome.tabs.update(reusable.id, {
+            url: AUTH_URL,
+            active: true,
+            autoDiscardable: false
+          }).catch(() => reusable);
+          await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: reusable.id }).catch(() => {});
+          if (Number.isInteger(reusable.windowId)) await chrome.windows.update(reusable.windowId, { focused: true }).catch(() => null);
+          return loginTab;
+        }
+      } else {
+        const existing = await findChatTab();
+        if (existing) {
+          await keepChatTabResident(existing.id);
+          await chrome.tabs.update(existing.id, { active: true }).catch(() => null);
+          if (Number.isInteger(existing.windowId)) await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
+          return existing;
+        }
+      }
+
+      const tab = await global.BjtuTabs.create({ url: auth ? AUTH_URL : CHAT_BASE, active: true });
+      await keepChatTabResident(tab?.id);
+      if (auth && Number.isInteger(tab?.id)) {
+        await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: tab.id }).catch(() => {});
+      }
+      return tab;
+    }).finally(() => {
+      openLoginPagePromise = null;
+    });
+    return openLoginPagePromise;
   }
 
   async function findChatTab() {
@@ -99,19 +156,30 @@
 
   // 无可用页面时静默打开 chat.qwen.ai 标签页，等待其内容脚本就绪（确保请求走同源路径）
   async function ensureChatTab() {
-    if (typeof chrome !== 'object' || !chrome?.tabs?.create) return null;
-    try {
-      const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: false });
-      await keepChatTabResident(tab?.id);
-      for (let i = 0; i < 24; i += 1) {
-        await sleep(500);
-        const ping = await sendToTab(tab.id, { type: 'QWEN_PING' });
-        if (ping?.ready) return tab;
+    if (ensureChatTabPromise) return ensureChatTabPromise;
+    ensureChatTabPromise = queueQwenPageOperation(async () => {
+      if (typeof chrome !== 'object' || !chrome?.tabs?.create) return null;
+      try {
+        const existing = await findChatTab();
+        if (existing) {
+          await keepChatTabResident(existing.id);
+          return existing;
+        }
+        const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: false });
+        await keepChatTabResident(tab?.id);
+        for (let i = 0; i < 24; i += 1) {
+          await sleep(500);
+          const ping = await sendToTab(tab.id, { type: 'QWEN_PING' });
+          if (ping?.ready) return tab;
+        }
+        return tab;
+      } catch {
+        return null;
       }
-      return tab;
-    } catch {
-      return null;
-    }
+    }).finally(() => {
+      ensureChatTabPromise = null;
+    });
+    return ensureChatTabPromise;
   }
 
   // 复用已有 chat.qwen.ai 页面或后台新开一个，等待内容脚本重新上报登录令牌后复查登录状态。
