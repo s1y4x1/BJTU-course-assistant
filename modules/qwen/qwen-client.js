@@ -163,8 +163,10 @@
     return ping?.ready === true;
   }
 
-  // 若后台打开的 chat.qwen.ai 页面因闲置过久被浏览器置为不活跃（已丢弃/卸载），
-  // 发送请求前先重新激活该页面，确保其内容脚本在运行、请求能经由该页面发出。
+  // 复用后台的 chat.qwen.ai 页面发请求前，先把它从闲置状态唤醒：
+  // 1) 若页面已被浏览器丢弃（discarded）或内容脚本丢失，先激活（前台唤起）该标签页；
+  // 2) 仍无法与内容脚本通信时，重载页面以重新注入内容脚本；
+  // 3) 若页面在别的窗口，同时把该窗口提到前台，确保请求能经由该页面发出。
   async function ensureChatTabActive(tab) {
     if (!tab) return null;
     let current = tab;
@@ -174,13 +176,22 @@
     } catch {
       // 页面可能已关闭，沿用原引用
     }
-    const needsWake = current.discarded === true || current.status === 'unloaded';
-    if (!needsWake) return current;
+    const stale = current.discarded === true || current.status === 'unloaded';
+    if (!stale && await pingChatTab(current.id)) return current;
+
     try {
       await chrome.tabs.update(current.id, { active: true });
+      if (current.windowId != null) {
+        await chrome.windows.update(current.windowId, { focused: true });
+      }
     } catch {
-      return current;
+      // 激活失败不阻断后续重载
     }
+
+    if (stale || !(await pingChatTab(current.id))) {
+      try { await chrome.tabs.reload(current.id); } catch { /* 重载失败则按原样返回 */ }
+    }
+
     for (let i = 0; i < 24; i += 1) {
       await sleep(500);
       if (await pingChatTab(current.id)) return current;

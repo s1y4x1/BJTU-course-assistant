@@ -118,10 +118,27 @@
         select.disabled = true;
       }
     }
+  }
 
+  async function refreshOperations() {
+    const list = document.getElementById('qwenOperationList');
+    if (list instanceof HTMLElement) {
+      const loading = document.createElement('div');
+      loading.className = 'qwen-operation-loading';
+      loading.textContent = '操作加载中…';
+      if (!list.childElementCount) list.appendChild(loading);
+    }
     const opsResponse = await send('QWEN_LIST_OPERATIONS');
     if (opsResponse.ok) {
       renderOperations(opsResponse.groups, opsResponse.enabledOperations, !Array.isArray(opsResponse.enabledOperations));
+    } else {
+      if (list instanceof HTMLElement) {
+        list.replaceChildren();
+        const empty = document.createElement('div');
+        empty.className = 'qwen-operation-loading';
+        empty.textContent = String(opsResponse.message || '操作加载失败');
+        list.appendChild(empty);
+      }
     }
   }
 
@@ -184,6 +201,7 @@
     }
 
     void refresh().catch((error) => setMessage(`初始化失败：${String(error?.message || error)}`, false));
+    void refreshOperations().catch((error) => setMessage(`操作加载失败：${String(error?.message || error)}`, false));
   }
 
   async function reset() {

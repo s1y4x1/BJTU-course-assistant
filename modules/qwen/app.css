@@ -414,10 +414,12 @@ html[data-color-scheme="dark"] .qwen-chat-ops-toggle {
 }
 
 .qwen-chat-ops-popover {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  z-index: 60;
+  position: fixed;
+  top: auto;
+  left: auto;
+  bottom: auto;
+  right: auto;
+  z-index: 2147483647;
   width: 300px;
   max-height: 50vh;
   overflow: auto;

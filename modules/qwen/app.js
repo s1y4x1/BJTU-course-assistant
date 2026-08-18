@@ -245,8 +245,9 @@
         item.className = 'qwen-chat-ops-item';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.checked = isMeta || allSelected || enabledSet.has(name);
-        checkbox.disabled = true;
+        checkbox.dataset.operationName = name;
+        checkbox.checked = isMeta || allSelected || enabledSet.has(name) || enabledSet.size === 0;
+        checkbox.disabled = isMeta;
         const code = document.createElement('code');
         code.textContent = name;
         item.append(checkbox, code);
@@ -265,37 +266,91 @@
     const wrap = document.querySelector('.qwen-chat-ops-toggle-wrap');
     const popover = el('qwen-chat-ops-popover');
     if (!(wrap instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
+    const list = el('qwen-chat-ops-list');
+    const toggle = el('qwen-chat-ops-toggle');
+    if (popover.parentElement !== document.body) {
+      document.body.appendChild(popover);
+    }
     let loaded = false;
+    let closeTimer = null;
+    const clearCloseTimer = () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
+    };
+    const positionPopover = () => {
+      if (popover.hidden) return;
+      const btnRect = toggle.getBoundingClientRect();
+      const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      popover.style.visibility = 'hidden';
+      popover.style.top = 'auto';
+      popover.style.left = 'auto';
+      popover.style.right = '0px';
+      popover.style.bottom = '0px';
+      const pw = popover.offsetWidth || 300;
+      const ph = popover.offsetHeight || 0;
+      const right = pw > vw ? 0 : Math.max(0, vw - btnRect.right);
+      popover.style.right = `${right}px`;
+      if (ph <= btnRect.top) {
+        popover.style.bottom = `${vh - btnRect.top}px`;
+        popover.style.top = 'auto';
+      } else {
+        popover.style.top = `${btnRect.bottom}px`;
+        popover.style.bottom = 'auto';
+      }
+      popover.style.visibility = '';
+    };
     const open = () => {
+      clearCloseTimer();
       popover.hidden = false;
+      positionPopover();
       if (loaded) return;
       loaded = true;
       void send('QWEN_LIST_OPERATIONS').then((response) => {
         if (response?.ok === true) {
           renderOperationsPopover(response.groups, response.enabledOperations);
         } else {
-          const list = el('qwen-chat-ops-list');
-          if (list instanceof HTMLElement) {
-            list.replaceChildren();
+          const l = el('qwen-chat-ops-list');
+          if (l instanceof HTMLElement) {
+            l.replaceChildren();
             const empty = document.createElement('div');
             empty.className = 'qwen-chat-ops-empty';
             empty.textContent = String(response?.message || '操作加载失败');
-            list.appendChild(empty);
+            l.appendChild(empty);
           }
         }
+        positionPopover();
       });
     };
     const close = () => {
+      clearCloseTimer();
       popover.hidden = true;
     };
+    const scheduleClose = () => {
+      clearCloseTimer();
+      closeTimer = setTimeout(close, 140);
+    };
     wrap.addEventListener('mouseenter', open);
-    wrap.addEventListener('mouseleave', close);
-    const toggle = el('qwen-chat-ops-toggle');
+    wrap.addEventListener('mouseleave', scheduleClose);
+    popover.addEventListener('mouseenter', clearCloseTimer);
+    popover.addEventListener('mouseleave', scheduleClose);
     if (toggle instanceof HTMLButtonElement) {
       toggle.addEventListener('click', () => {
         if (popover.hidden) open();
         else close();
       });
+    }
+    if (list instanceof HTMLElement) {
+      list.addEventListener('change', (event) => {
+        if (!(event.target instanceof HTMLInputElement) || event.target.type !== 'checkbox') return;
+        const inputs = [...list.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
+        const checked = inputs.filter((cb) => cb.checked).map((cb) => String(cb.dataset.operationName || '')).filter(Boolean);
+        const payload = inputs.length > 0 && checked.length === inputs.length ? null : checked;
+        void send('QWEN_SETTINGS_SET', { enabledOperations: payload });
+      });
+      window.addEventListener('resize', () => positionPopover());
     }
   }
 

@@ -1568,6 +1568,12 @@ name: 've.teachers_of_',
   async function runOperation(name, args, options = {}) {
     const op = findOperation(name);
     if (!op) throw new Error(`未找到操作：${name}`);
+    if (!String(op.name).startsWith('qwen.')) {
+      const enabledSet = await getEnabledOperationSet();
+      if (enabledSet && !enabledSet.has(op.name)) {
+        return { ok: false, name, error: `操作「${op.name}」已被禁止调用，请先在「操作」面板中启用它。` };
+      }
+    }
     try {
       const result = await op.run(args || {}, options);
       return { ok: true, name, result };
