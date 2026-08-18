@@ -384,6 +384,103 @@ html[data-color-scheme="dark"] .qwen-chat-login-hint {
   gap: 8px;
 }
 
+.qwen-chat-ops-toggle-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.qwen-chat-ops-toggle {
+  margin: 0;
+  padding: 2px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-ops-toggle {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+.qwen-chat-ops-toggle:hover {
+  border-color: #615ced;
+  color: #615ced;
+}
+
+.qwen-chat-ops-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 300px;
+  max-height: 50vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #1e293b;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+}
+
+html[data-color-scheme="dark"] .qwen-chat-ops-popover {
+  background: #1e293b;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.qwen-chat-ops-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.qwen-chat-ops-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  margin: 6px 0 2px;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-ops-group-title {
+  color: #94a3b8;
+}
+
+.qwen-chat-ops-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 1px 0;
+}
+
+.qwen-chat-ops-item input {
+  width: auto;
+  margin: 2px 0 0;
+  accent-color: #615ced;
+}
+
+.qwen-chat-ops-item code {
+  color: #1e293b;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-ops-item code {
+  color: #e2e8f0;
+}
+
+.qwen-chat-ops-empty {
+  font-size: 12px;
+  color: #64748b;
+  padding: 4px 0;
+}
+
 .qwen-chat-thinking-toggle {
   display: inline-flex;
   align-items: center;

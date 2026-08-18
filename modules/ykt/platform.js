@@ -182,10 +182,13 @@ async function checkYktLoginAssistPopupUrl() {
         : false;
       if (popupStillOpen && window.platformInteractiveLoginPending?.ykt) {
         startYktLoginAssistWatcher();
-      } else {
+} else {
         yktLoginAssistPopupWindowId = null;
         yktLoginAssistPopupTabId = null;
         window.platformInteractiveLoginPending.ykt = false;
+        if (String(window.platformLoginState?.ykt || '') === 'checking') {
+          setPlatformLoginState('ykt', 'offline');
+        }
       }
     })();
   } finally {
@@ -279,13 +282,15 @@ function renderYktNeedLoginMessage() {
   window.platformLoadedOnce.ykt = false;
   clearPlatformData('ykt');
   rerenderAllHomeworkAreas();
-  setPlatformLoginState('ykt', 'offline');
 
   if (shouldOpenAssist) {
+    // 二维码登录弹窗将打开：保持 checking，等弹窗关闭后再给出登录结果。
+    setPlatformLoginState('ykt', 'checking');
     openYktLoginAssistPopup(true);
     return;
   }
 
+  setPlatformLoginState('ykt', 'offline');
   closeYktLoginAssistPopup(true);
   window.platformNeedLogin.ykt = false;
   refreshPlatformLoginTip();

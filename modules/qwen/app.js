@@ -225,6 +225,80 @@
     }
   }
 
+  function renderOperationsPopover(groups, enabledOperations) {
+    const list = el('qwen-chat-ops-list');
+    if (!(list instanceof HTMLElement)) return;
+    list.replaceChildren();
+    const enabledSet = new Set(Array.isArray(enabledOperations) ? enabledOperations : []);
+    const allSelected = !Array.isArray(enabledOperations);
+    for (const group of groups || []) {
+      const names = group.operations || [];
+      if (!names.length) continue;
+      const title = document.createElement('div');
+      title.className = 'qwen-chat-ops-group-title';
+      title.textContent = String(group.label || '');
+      list.appendChild(title);
+      for (const entry of names) {
+        const name = String(entry?.name ?? entry ?? '');
+        const isMeta = name.startsWith('qwen.');
+        const item = document.createElement('label');
+        item.className = 'qwen-chat-ops-item';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = isMeta || allSelected || enabledSet.has(name);
+        checkbox.disabled = true;
+        const code = document.createElement('code');
+        code.textContent = name;
+        item.append(checkbox, code);
+        list.appendChild(item);
+      }
+    }
+    if (list.childElementCount === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'qwen-chat-ops-empty';
+      empty.textContent = '暂无可调用的操作';
+      list.appendChild(empty);
+    }
+  }
+
+  function initOperationsPopover() {
+    const wrap = document.querySelector('.qwen-chat-ops-toggle-wrap');
+    const popover = el('qwen-chat-ops-popover');
+    if (!(wrap instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
+    let loaded = false;
+    const open = () => {
+      popover.hidden = false;
+      if (loaded) return;
+      loaded = true;
+      void send('QWEN_LIST_OPERATIONS').then((response) => {
+        if (response?.ok === true) {
+          renderOperationsPopover(response.groups, response.enabledOperations);
+        } else {
+          const list = el('qwen-chat-ops-list');
+          if (list instanceof HTMLElement) {
+            list.replaceChildren();
+            const empty = document.createElement('div');
+            empty.className = 'qwen-chat-ops-empty';
+            empty.textContent = String(response?.message || '操作加载失败');
+            list.appendChild(empty);
+          }
+        }
+      });
+    };
+    const close = () => {
+      popover.hidden = true;
+    };
+    wrap.addEventListener('mouseenter', open);
+    wrap.addEventListener('mouseleave', close);
+    const toggle = el('qwen-chat-ops-toggle');
+    if (toggle instanceof HTMLButtonElement) {
+      toggle.addEventListener('click', () => {
+        if (popover.hidden) open();
+        else close();
+      });
+    }
+  }
+
   function setBusy(value) {
     busy = value === true;
     const sendBtn = el(SEND_ID);
@@ -957,6 +1031,7 @@
 
     void refreshStatus();
     void refreshModels();
+    initOperationsPopover();
   }
 
   // 调试辅助：控制台可直接调用操作并拿到结果 JSON（无需手动粘桥代码）。

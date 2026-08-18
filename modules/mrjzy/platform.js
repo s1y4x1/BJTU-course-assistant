@@ -82,6 +82,9 @@ function closeMrjzyLoginAssistPopup(cancelPending = false) {
   stopMrjzyLoginAssistPolling();
   if (cancelPending) {
     window.platformInteractiveLoginPending.mrjzy = false;
+    if (String(window.platformLoginState?.mrjzy || '') === 'checking') {
+      setPlatformLoginState('mrjzy', 'offline');
+    }
   }
 }
 
@@ -269,13 +272,15 @@ function renderMrjzyNeedLoginMessage() {
   window.platformLoadedOnce.mrjzy = false;
   clearPlatformData('mrjzy');
   rerenderAllHomeworkAreas();
-  setPlatformLoginState('mrjzy', 'offline');
 
   if (shouldOpenAssist) {
+    // 二维码登录弹窗将打开：保持 checking，等弹窗关闭后再给出登录结果。
+    setPlatformLoginState('mrjzy', 'checking');
     openMrjzyLoginAssistPopup(true);
     return;
   }
 
+  setPlatformLoginState('mrjzy', 'offline');
   closeMrjzyLoginAssistPopup(true);
   window.platformNeedLogin.mrjzy = false;
   refreshPlatformLoginTip();
