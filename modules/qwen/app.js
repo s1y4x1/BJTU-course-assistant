@@ -192,6 +192,16 @@
         lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
     }
+    scrollMessagesToBottom(messagesEl);
+  }
+
+  // 历史记录渲染完成后滚动到最后一条消息（Markdown 可能异步渲染，多拍几次确保到位）
+  function scrollMessagesToBottom(container) {
+    if (!(container instanceof HTMLElement)) return;
+    const scroll = () => { container.scrollTop = container.scrollHeight; };
+    scroll();
+    requestAnimationFrame(scroll);
+    setTimeout(scroll, 60);
   }
 
   const HISTORY_LOADING_ID = 'qwen-chat-history-loading';

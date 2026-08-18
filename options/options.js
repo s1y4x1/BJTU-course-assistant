@@ -1575,14 +1575,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           payload: { loginName: String(username || '').trim() }
         });
         if (!resp?.ok) {
-          await chrome.tabs.create({ url: bindUrl, active: true });
+          const tab = await chrome.tabs.create({ url: bindUrl, active: true });
+          await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab?.id }).catch(() => null);
           setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
           return;
         }
         setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
       } catch (e) {
         try {
-          await chrome.tabs.create({ url: bindUrl, active: true });
+          const tab = await chrome.tabs.create({ url: bindUrl, active: true });
+          await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab?.id }).catch(() => null);
           setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
         } catch (err) {
           setMsg(String(err?.message || e?.message || e || '无法打开 MIS 绑定页面'), false);

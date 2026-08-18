@@ -83,25 +83,7 @@
   }
 
   async function openLoginPage() {
-    const tab = await chrome.tabs.create({ url: CHAT_BASE, active: true });
-    void groupChatTab(tab?.id);
-  }
-
-  const TAB_GROUP_NAME = '北交大助手';
-
-  // 把扩展打开的 chat.qwen.ai 页面归入「北交大助手」标签分组（复用已存在的分组）。
-  async function groupChatTab(tabId) {
-    if (typeof chrome !== 'object' || !chrome?.tabs?.group || !chrome?.tabGroups?.query || tabId == null) return;
-    try {
-      const existing = await chrome.tabGroups.query({ title: TAB_GROUP_NAME });
-      if (existing?.[0]?.id != null) {
-        await chrome.tabs.group({ tabIds: [tabId], groupId: existing[0].id });
-      } else {
-        await chrome.tabs.group({ tabIds: [tabId], createProperties: { title: TAB_GROUP_NAME, color: 'blue' } });
-      }
-    } catch {
-      // 分组失败不影响主流程
-    }
+    await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
   }
 
   async function findChatTab() {
@@ -118,8 +100,7 @@
   async function ensureChatTab() {
     if (typeof chrome !== 'object' || !chrome?.tabs?.create) return null;
     try {
-      const tab = await chrome.tabs.create({ url: CHAT_BASE, active: false });
-      void groupChatTab(tab?.id);
+      const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: false });
       for (let i = 0; i < 24; i += 1) {
         await sleep(500);
         const ping = await sendToTab(tab.id, { type: 'QWEN_PING' });

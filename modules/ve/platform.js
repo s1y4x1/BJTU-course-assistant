@@ -2713,19 +2713,57 @@ globalThis.BjtuVePageApi = Object.freeze({
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
   archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
+  // ve.login：支持账号参数。
+  // - 省略账号：仅触发平台启用（相当于点击 ve-status-btn），不自动登录。
+  // - 填写账号：自动填写 app 页面的 username-input 并触发完整登录流程。
   login: (args) => {
     const platform = 've';
+    const account = String(args?.account || args?.loginName || '').trim();
     const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
-    if (enabled) {
-      if (typeof globalThis.triggerExternalPlatformLoad === 'function') {
-        try { globalThis.triggerExternalPlatformLoad(platform, true); } catch {}
+
+    if (account) return triggerVeLoginWithAccount(platform, account, args?.timeoutMs);
+
+    // 无账号：仅触发平台启用（相当于点击 ve-status-btn）
+    if (!enabled) {
+      if (typeof globalThis.togglePlatformSelection === 'function') {
+        try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
       }
-    } else if (typeof globalThis.togglePlatformSelection === 'function') {
-      try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
+    } else if (typeof globalThis.triggerExternalPlatformLoad === 'function') {
+      try { globalThis.triggerExternalPlatformLoad(platform, true); } catch {}
     }
-    return globalThis.waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
+    const loginState = String(window?.platformLoginState?.[platform] || '');
+    return Promise.resolve({
+      ok: true,
+      enabled: true,
+      account: '',
+      loginState,
+      message: enabled
+        ? '智慧课程平台已启用。未指定账号，未触发自动登录；如需登录请调用 ve.login({account:"..."}) 或手动填写账号。'
+        : '已启用智慧课程平台（未指定账号，未触发自动登录）；如需登录请调用 ve.login({account:"..."}) 或手动填写账号。'
+    });
   }
 });
+
+// 填写 app 页面的 username-input 并触发完整登录流程，随后等待登录结果。
+async function triggerVeLoginWithAccount(platform, account, timeoutMs) {
+  if (typeof globalThis.isPlatformEnabled !== 'function' || !globalThis.isPlatformEnabled(platform)) {
+    if (typeof globalThis.togglePlatformSelection === 'function') {
+      try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
+    }
+  }
+  const input = document?.getElementById?.('username-input');
+  if (input instanceof HTMLInputElement) {
+    input.value = account;
+  }
+  if (typeof globalThis.doLoginFlow === 'function') {
+    try { globalThis.doLoginFlow(); } catch {}
+  }
+  if (typeof globalThis.waitForPlatformLoginResult === 'function') {
+    return globalThis.waitForPlatformLoginResult(platform, Number(timeoutMs) || 120000);
+  }
+  const state = String(window?.platformLoginState?.[platform] || '');
+  return { ok: state === 'online', loggedIn: state === 'online', loginState: state };
+}
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

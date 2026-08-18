@@ -482,7 +482,7 @@ if (openOptionsBtn) {
       try { chrome.runtime.openOptionsPage(); return; } catch { }
     }
     // fallback
-    try { chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') }); } catch { }
+    try { chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') }).then((tab) => groupBjtuOpenedTab(tab?.id)); } catch { }
   });
 }
 
@@ -491,11 +491,11 @@ if (popupOpenFullscreenBtn) {
     try {
       chrome.runtime.sendMessage({ type: 'OPEN_APP' }, () => {
         if (chrome.runtime.lastError) {
-          try { chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }); } catch { }
+          try { chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }).then((tab) => groupBjtuOpenedTab(tab?.id)); } catch { }
         }
       });
     } catch {
-      try { chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }); } catch { }
+      try { chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }).then((tab) => groupBjtuOpenedTab(tab?.id)); } catch { }
     }
   });
 }
@@ -2033,13 +2033,17 @@ function triggerHomeworkAttachmentDownload(url, fileName) {
       { url: safeUrl, filename: safeName, conflictAction: 'uniquify', saveAs: false },
       () => {
         if (chrome.runtime?.lastError) {
-          window.open(safeUrl, '_blank', 'noopener,noreferrer');
+          chrome.tabs.create({ url: safeUrl, active: true })
+            .then((tab) => groupBjtuOpenedTab(tab?.id))
+            .catch(() => {});
         }
       }
     );
     return;
   }
-  window.open(safeUrl, '_blank', 'noopener,noreferrer');
+  chrome.tabs.create({ url: safeUrl, active: true })
+    .then((tab) => groupBjtuOpenedTab(tab?.id))
+    .catch(() => {});
 }
 
 function syncHomeworkAttachmentItemsIndex(courseId, items) {
@@ -3073,7 +3077,9 @@ async function doLoginFlow() {
       if (result?.reason === 'locked' || result?.reason === 'password-reset') {
         if (result.reason === 'password-reset') {
           const resetUrl = BASE_VE + 'CheckEmail.shtml?method=resetPassword&username=' + encodeURIComponent(username);
-          chrome.tabs.create({ url: resetUrl, active: true }).catch(() => { });
+          chrome.tabs.create({ url: resetUrl, active: true })
+            .then((tab) => groupBjtuOpenedTab(tab?.id))
+            .catch(() => { });
         }
         await restoreAfterFailure();
         showToast(result.message || '登录失败', 'error', 4000);
@@ -3501,16 +3507,11 @@ async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {
   };
 }
 
-// 把扩展在后台打开的登录/请求页面归入「北交大助手」标签分组（复用已存在的分组）。
+// 把扩展在后台打开的登录/请求页面归入「BJTU 课程助手」标签分组（复用已存在的分组）。
 async function groupBjtuOpenedTab(tabId) {
-  if (typeof chrome !== 'object' || !chrome?.tabs?.group || !chrome?.tabGroups?.query || tabId == null) return;
+  if (typeof chrome !== 'object' || !chrome?.runtime?.sendMessage || tabId == null) return;
   try {
-    const existing = await chrome.tabGroups.query({ title: '北交大助手' });
-    if (existing?.[0]?.id != null) {
-      await chrome.tabs.group({ tabIds: [tabId], groupId: existing[0].id });
-    } else {
-      await chrome.tabs.group({ tabIds: [tabId], createProperties: { title: '北交大助手', color: 'blue' } });
-    }
+    await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId });
   } catch {
     // 分组失败不影响主流程
   }

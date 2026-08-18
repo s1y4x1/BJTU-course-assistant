@@ -6,6 +6,12 @@
   const MODAL_ID = '__bjtu_toolbar_pin_modal__';
   let pinPollTimer = 0;
 
+  async function createGroupedTab(createProperties) {
+    const tab = await chrome.tabs.create(createProperties);
+    await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab?.id }).catch(() => null);
+    return tab;
+  }
+
   async function queryPinnedState() {
     try {
       const res = await chrome.runtime.sendMessage({ type: 'GET_ACTION_PINNED_STATE' });
@@ -18,8 +24,8 @@
   function openExtensionsPage() {
     const isEdge = /Edg\//i.test(String(navigator.userAgent || ''));
     const scheme = isEdge ? 'edge://' : 'chrome://';
-    chrome.tabs.create({ url: `${scheme}extensions/?id=${chrome.runtime.id}` }).catch(() => {
-      chrome.tabs.create({ url: 'about:extensions' }).catch(() => {});
+    createGroupedTab({ url: `${scheme}extensions/?id=${chrome.runtime.id}` }).catch(() => {
+      createGroupedTab({ url: 'about:extensions' }).catch(() => {});
     });
   }
 

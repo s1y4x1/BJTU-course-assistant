@@ -566,7 +566,10 @@ function ensureVersionDownloadModal() {
   }
   const openExtensionsBtn = document.getElementById('version-download-open-extensions');
   if (openExtensionsBtn instanceof HTMLButtonElement) {
-    openExtensionsBtn.addEventListener('click', () => chrome.tabs.create({ url: 'about:extensions' }));
+    openExtensionsBtn.addEventListener('click', async () => {
+      const tab = await chrome.tabs.create({ url: 'about:extensions' });
+      await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab?.id }).catch(() => null);
+    });
   }
   const closeDownloadBtn = document.getElementById('version-download-close');
   if (closeDownloadBtn instanceof HTMLButtonElement) {

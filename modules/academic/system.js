@@ -485,7 +485,7 @@
     const tabs = await chrome.tabs.query({ url: ['https://aa.bjtu.edu.cn/*'] }).catch(() => []);
     const reusable = tabs.find((tab) => tab?.id && tab.status === 'complete');
     if (reusable) return { tab: reusable, temporary: false };
-    const tab = await chrome.tabs.create({ url: LOGIN_URL, active: false });
+    const tab = await globalThis.BjtuTabs.create({ url: LOGIN_URL, active: false });
     if (!tab?.id) throw new Error('无法打开教务系统登录页');
     const loaded = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => finish(null, new Error('教务系统登录页加载超时')), 20000);
@@ -1218,7 +1218,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
       return;
     }
-    await chrome.tabs.create({ url: SCORE_URL, active: true });
+    await globalThis.BjtuTabs.create({ url: SCORE_URL, active: true });
   }
 
   async function focusExamPage() {
@@ -1229,7 +1229,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
       return;
     }
-    await chrome.tabs.create({ url: EXAM_URL, active: true });
+    await globalThis.BjtuTabs.create({ url: EXAM_URL, active: true });
   }
 
   function extractLoginCredentials(details) {
@@ -1318,7 +1318,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       if (message?.type === 'START_ACADEMIC_MIS_LOGIN') {
         (async () => {
           await clearAcademicCookies();
-          const tab = await chrome.tabs.create({ url: 'about:blank', active: true });
+          const tab = await globalThis.BjtuTabs.create({ url: 'about:blank', active: true });
           if (!tab?.id) throw new Error('无法打开 MIS 登录页');
           misLoginTabs.add(tab.id);
           await chrome.tabs.update(tab.id, { url: MIS_MODULE_URL });
@@ -1494,7 +1494,7 @@ if (message?.type === 'ACADEMIC_GET_CONTEXT') {
       if (id.startsWith(NOTIFICATION_PREFIX)) focusScorePage().catch(() => {});
       else if (id.startsWith(EXAM_NOTIFICATION_PREFIX)) focusExamPage().catch(() => {});
       else if (id.startsWith(CLASS_NOTIFICATION_PREFIX)) {
-        chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html'), active: true }).catch(() => {});
+        globalThis.BjtuTabs.create({ url: chrome.runtime.getURL('options/options.html'), active: true }).catch(() => {});
       }
       else return;
       chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);

@@ -1,6 +1,75 @@
 const SYSTEM_NOTIFICATION_STATUS_KEY = 'systemNotificationStatus';
 const SYSTEM_NOTIFICATION_TEST_ID = 'bjtu-system-notification-test';
 const ACADEMIC_BB_NOTIFICATION_PREFIX = 'bjtu-academic-bb-availability:';
+const BJTU_TAB_GROUP_TITLE = 'BJTU 课程助手';
+const BJTU_TAB_GROUP_COLOR = 'blue';
+
+let bjtuTabGroupingQueue = Promise.resolve();
+
+async function groupBjtuExtensionOpenedTabNow(tabId) {
+  const id = Number(tabId);
+  if (!Number.isInteger(id) || id <= 0 || !chrome?.tabs?.group || !chrome?.tabGroups?.query) return null;
+  try {
+    const tab = await chrome.tabs.get(id).catch(() => null);
+    if (!tab || !Number.isInteger(tab.windowId)) return null;
+
+    const [groups, windowTabs] = await Promise.all([
+      chrome.tabGroups.query({ windowId: tab.windowId }).catch(() => []),
+      chrome.tabs.query({ windowId: tab.windowId }).catch(() => [])
+    ]);
+    const existing = groups.find((group) => group.title === BJTU_TAB_GROUP_TITLE);
+    const extensionBase = chrome.runtime.getURL('');
+    const tabIds = [id, ...windowTabs
+      .filter((item) => item?.pinned !== true && String(item?.url || item?.pendingUrl || '').startsWith(extensionBase))
+      .map((item) => Number(item.id))]
+      .filter((value, index, values) => Number.isInteger(value) && value > 0 && values.indexOf(value) === index);
+
+    const groupId = await chrome.tabs.group(existing
+      ? { groupId: existing.id, tabIds }
+      : { tabIds });
+    if (!existing) {
+      await chrome.tabGroups.update(groupId, {
+        title: BJTU_TAB_GROUP_TITLE,
+        color: BJTU_TAB_GROUP_COLOR
+      });
+    }
+    return groupId;
+  } catch (error) {
+    console.info('[bjtu] tab grouping failed:', String(error?.message || error));
+    return null;
+  }
+}
+
+function groupBjtuExtensionOpenedTab(tabId) {
+  const task = bjtuTabGroupingQueue.then(() => groupBjtuExtensionOpenedTabNow(tabId));
+  bjtuTabGroupingQueue = task.catch(() => null);
+  return task;
+}
+
+async function createBjtuGroupedTab(createProperties) {
+  const tab = await chrome.tabs.create(createProperties);
+  await groupBjtuExtensionOpenedTab(tab?.id);
+  return tab;
+}
+
+globalThis.BjtuTabs = Object.freeze({
+  create: createBjtuGroupedTab,
+  group: groupBjtuExtensionOpenedTab
+});
+
+chrome.tabs.onCreated.addListener((tab) => {
+  const createdUrl = String(tab?.pendingUrl || tab?.url || '');
+  if (createdUrl.startsWith(chrome.runtime.getURL(''))) {
+    void groupBjtuExtensionOpenedTab(tab.id);
+    return;
+  }
+  if (!Number.isInteger(tab?.openerTabId)) return;
+  chrome.tabs.get(tab.openerTabId).then((opener) => {
+    if (String(opener?.url || '').startsWith(chrome.runtime.getURL(''))) {
+      void groupBjtuExtensionOpenedTab(tab.id);
+    }
+  }).catch(() => {});
+});
 
 async function createBjtuSystemNotification(notificationId, options, source = 'background', replaceExisting = false) {
   const id = String(notificationId || '').trim();
@@ -44,6 +113,15 @@ async function createBjtuSystemNotification(notificationId, options, source = 'b
 }
 
 globalThis.BjtuSystemNotifications = Object.freeze({ create: createBjtuSystemNotification });
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'GROUP_BJTU_OPENED_TAB') return undefined;
+  const tabId = Number(message?.tabId ?? sender?.tab?.id);
+  groupBjtuExtensionOpenedTab(tabId)
+    .then((groupId) => sendResponse({ ok: groupId != null, groupId }))
+    .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+  return true;
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!['SYSTEM_NOTIFICATION_TEST', 'SYSTEM_NOTIFICATION_CREATE'].includes(message?.type)) return undefined;
@@ -431,7 +509,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
         const updated = await chrome.tabs.update(existing[0].id, { url: existing[0].url || APP_URL, active: false }).catch(() => null);
         if (updated) restoredAppTabs.push(updated);
       } else {
-        const created = await chrome.tabs.create({ url: APP_URL, active: !validOptionsPath }).catch(() => null);
+        const created = await globalThis.BjtuTabs.create({ url: APP_URL, active: !validOptionsPath }).catch(() => null);
         if (created) restoredAppTabs.push(created);
       }
     }
@@ -450,7 +528,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
         .find((tab) => String(tab?.url || '').startsWith(optionsUrl));
       optionsTab = existing
         ? await chrome.tabs.update(existing.id, { url: optionsUrl, active: true }).catch(() => null)
-        : await chrome.tabs.create({ url: optionsUrl, active: true }).catch(() => null);
+        : await globalThis.BjtuTabs.create({ url: optionsUrl, active: true }).catch(() => null);
     }
     if (optionsTab?.windowId) {
       await chrome.windows.update(optionsTab.windowId, { focused: true }).catch(() => null);
@@ -467,7 +545,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
 
   // Compatibility with handoffs written by an older extension version.
   if (handoff.reopenApp !== false) {
-    await chrome.tabs.create({ url: reloadTargetUrl(handoff), active: true }).catch(() => null);
+    await globalThis.BjtuTabs.create({ url: reloadTargetUrl(handoff), active: true }).catch(() => null);
   }
 }
 
@@ -530,7 +608,7 @@ chrome.notifications.onClicked.addListener((notifId) => {
     return;
   }
   if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
-  chrome.tabs.create({ url: 'about:extensions' });
+  globalThis.BjtuTabs.create({ url: 'about:extensions' }).catch(() => {});
   chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
 });
 
@@ -556,7 +634,7 @@ async function focusExistingAppTabOrOpen() {
     if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
     return tab.id;
   }
-  const tab = await chrome.tabs.create({ url: APP_URL, active: true });
+  const tab = await globalThis.BjtuTabs.create({ url: APP_URL, active: true });
   return tab?.id || null;
 }
 
@@ -716,7 +794,7 @@ ensureHomeworkReminderAlarm();
 chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
   if (notifId !== VERSION_UPDATE_NOTIFICATION_ID) return;
   if (buttonIndex === 0) {
-    chrome.tabs.create({ url: 'about:extensions' });
+    globalThis.BjtuTabs.create({ url: 'about:extensions' }).catch(() => {});
     chrome.notifications.clear(notifId, () => void chrome.runtime.lastError);
   }
 });
@@ -978,7 +1056,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, reused: true, tabId: t.id });
           return;
         }
-        const newTab = await chrome.tabs.create({ url: targetUrl });
+        const newTab = await globalThis.BjtuTabs.create({ url: targetUrl });
         sendResponse({ ok: true, reused: false, tabId: newTab?.id || null });
       } catch (e) {
         sendResponse({ ok: false, error: String(e?.message || e) });
@@ -1025,12 +1103,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === 'START_BIND_PORTAL_USERNAME') {
     const requestedLoginName = String(message?.payload?.loginName || '').trim();
-    chrome.tabs.create({ url: 'http://123.121.147.7:88/oauth/api/user/thirdLogin', active: true }, async (tab) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        sendResponse({ ok: false, error: err.message || String(err) });
-        return;
-      }
+    globalThis.BjtuTabs.create({ url: 'http://123.121.147.7:88/oauth/api/user/thirdLogin', active: true }).then(async (tab) => {
       const tabId = tab?.id || null;
       if (tabId) {
         const stored = requestedLoginName ? null : await chrome.storage.local.get(['username']);
@@ -1039,7 +1112,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         notifyPortalUsernameBindStatus({ status: 'started', tabId, ts: Date.now() });
       }
       sendResponse({ ok: true, tabId });
-    });
+    }).catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
     return true;
   }
 });
@@ -1691,7 +1764,7 @@ chrome.action.onClicked.addListener(async () => {
           return;
         }
       } catch (e) {}
-      chrome.tabs.create({ url: APP_URL });
+      globalThis.BjtuTabs.create({ url: APP_URL }).catch(() => {});
       return;
     }
     // In popup mode if popup is unset, fall back to opening the app page
@@ -1699,14 +1772,14 @@ chrome.action.onClicked.addListener(async () => {
       if (chrome.action.getPopup) {
         const popup = await chrome.action.getPopup({});
         if (!popup) {
-          chrome.tabs.create({ url: APP_URL });
+          globalThis.BjtuTabs.create({ url: APP_URL }).catch(() => {});
         }
       }
     } catch (e) {
       // ignore
     }
   } catch (e) {
-    try { chrome.tabs.create({ url: APP_URL }); } catch (e2) {}
+    try { globalThis.BjtuTabs.create({ url: APP_URL }).catch(() => {}); } catch (e2) {}
   }
 });
 

@@ -464,18 +464,21 @@ name: 've.accounts',
       module: 've',
       name: 've.login',
       label: '智慧课程平台登录',
-      summary: '启用并触发智慧课程平台登录流程',
+      summary: '启用并触发智慧课程平台登录流程（可指定账号）',
       doc: [
         '## ve.login —— 智慧课程平台登录',
         '',
-        '启用智慧课程平台（若未启用）并触发其登录流程。调用 courseList 等操作前若未登录，应先调用本操作。',
+        '启用智慧课程平台并触发其登录流程。调用 courseList 等操作前若未登录，应先调用本操作。',
         '',
-        '**调用示例**：`ve.login()`',
+        '**参数**：`{"account":"可选，账号；省略时仅启用平台不触发自动登录"}`',
+        '',
+        '**调用示例**：`ve.login()` 仅启用平台；`ve.login({account: "2023xxxx"})` 自动填写账号并触发登录',
         '',
         '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
-      async run() {
-        return pageInvoke('ve', 'login', { timeoutMs: 180000 }, 200000);
+      async run(args) {
+        const account = String(args?.account || args?.loginName || '').trim();
+        return pageInvoke('ve', 'login', { account, timeoutMs: 180000 }, 200000);
       }
     },
     {

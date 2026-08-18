@@ -13,6 +13,7 @@
   "permissions": [
     "storage",
     "tabs",
+    "tabGroups",
     "cookies",
     "webRequest",
     "scripting",
