@@ -226,7 +226,7 @@
   }
 
   function renderOperationsPopover(groups, enabledOperations) {
-    const list = el('qwen-chat-ops-list');
+    const list = document.querySelector('#qwen-chat-ops-popover [data-operation-list]');
     if (!(list instanceof HTMLElement)) return;
     if (global.BjtuQwenOperationsUi) {
       BjtuQwenOperationsUi.render(list, groups, enabledOperations, !Array.isArray(enabledOperations));
@@ -270,7 +270,6 @@
     const wrap = document.querySelector('.qwen-chat-ops-toggle-wrap');
     const popover = el('qwen-chat-ops-popover');
     if (!(wrap instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
-    const list = el('qwen-chat-ops-list');
     const toggle = el('qwen-chat-ops-toggle');
     if (popover.parentElement !== document.body) {
       document.body.appendChild(popover);
@@ -312,15 +311,19 @@
       positionPopover();
       if (loaded) return;
       loaded = true;
-      void send('QWEN_LIST_OPERATIONS').then((response) => {
+      const opsUi = global.BjtuQwenOperationsUi;
+      const load = opsUi?.mounted
+        ? Promise.resolve(opsUi.mounted).then(() => send('QWEN_LIST_OPERATIONS'))
+        : send('QWEN_LIST_OPERATIONS');
+      void load.then((response) => {
         if (response?.ok === true) {
           renderOperationsPopover(response.groups, response.enabledOperations);
         } else {
-          const l = el('qwen-chat-ops-list');
+          const l = document.querySelector('#qwen-chat-ops-popover [data-operation-list]');
           if (l instanceof HTMLElement) {
             l.replaceChildren();
             const empty = document.createElement('div');
-            empty.className = 'qwen-chat-ops-empty';
+            empty.className = 'qwen-operation-loading';
             empty.textContent = String(response?.message || '操作加载失败');
             l.appendChild(empty);
           }
@@ -346,20 +349,7 @@
         else close();
       });
     }
-    if (list instanceof HTMLElement) {
-      list.addEventListener('change', (event) => {
-        if (!(event.target instanceof HTMLInputElement) || event.target.type !== 'checkbox') return;
-        const payload = global.BjtuQwenOperationsUi
-          ? BjtuQwenOperationsUi.collect(list)
-          : (() => {
-            const inputs = [...list.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
-            const checked = inputs.filter((cb) => cb.checked).map((cb) => String(cb.dataset.operationName || '')).filter(Boolean);
-            return inputs.length > 0 && checked.length === inputs.length ? null : checked;
-          })();
-        void send('QWEN_SETTINGS_SET', { enabledOperations: payload });
-      });
-      window.addEventListener('resize', () => positionPopover());
-    }
+    window.addEventListener('resize', () => positionPopover());
   }
 
   function setBusy(value) {

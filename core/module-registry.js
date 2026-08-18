@@ -47,7 +47,7 @@
     qwen: {
       label: '通义千问',
       styles: ['options.css', 'app.css', 'operations-ui.css'],
-      files: ['background.js', 'operations.js', 'qwen-client.js', 'agent.js', 'app.html', 'app.js', 'options.html', 'options.js', 'operations-ui.js'],
+      files: ['background.js', 'operations.js', 'qwen-client.js', 'agent.js', 'app.html', 'app.js', 'options.html', 'options.js', 'operations-ui.js', 'operations-ui.html'],
       options: {
         fragment: 'options.html',
         style: 'options.css',

@@ -1,5 +1,57 @@
 /* 共享的「允许 AI 调用以下操作」列表样式。
  * 同时被 modules/qwen/options.html 与聊天面板的「操作」弹窗使用，保证两处显示一致。 */
+.qwen-operation-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.qwen-operation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qwen-operation-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+html[data-color-scheme="dark"] .qwen-operation-header-title {
+  color: #cbd5e1;
+}
+
+.qwen-operation-toggle-all {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #1976d2;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+html[data-color-scheme="dark"] .qwen-operation-toggle-all {
+  color: #60a5fa;
+}
+
+.qwen-operation-toggle-all:hover {
+  text-decoration: underline;
+}
+
+.qwen-operation-tip {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+html[data-color-scheme="dark"] .qwen-operation-tip {
+  color: #94a3b8;
+}
+
 .qwen-operation-list {
   display: flex;
   flex-direction: column;

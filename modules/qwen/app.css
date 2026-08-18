@@ -437,12 +437,6 @@ html[data-color-scheme="dark"] .qwen-chat-ops-popover {
   color: #e2e8f0;
 }
 
-.qwen-chat-ops-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
 .qwen-chat-ops-group-title {
   font-size: 12px;
   font-weight: 600;

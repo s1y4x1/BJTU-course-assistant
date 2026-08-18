@@ -19,10 +19,6 @@
     });
   }
 
-  function operationList() {
-    return document.getElementById('qwenOperationList');
-  }
-
   async function refresh() {
     const status = await send('QWEN_GET_STATUS');
     const toggle = document.getElementById('qwenEnabled');
@@ -63,7 +59,12 @@
   }
 
   async function refreshOperations() {
-    const list = document.getElementById('qwenOperationList');
+    const opsUi = global.BjtuQwenOperationsUi;
+    let list = document.querySelector('.qwen-operation-panel [data-operation-list]');
+    if (!list && opsUi?.mounted) {
+      await opsUi.mounted;
+      list = document.querySelector('.qwen-operation-panel [data-operation-list]');
+    }
     if (list instanceof HTMLElement) {
       const loading = document.createElement('div');
       loading.className = 'qwen-operation-loading';
@@ -127,22 +128,10 @@
       });
     }
 
-    const list = document.getElementById('qwenOperationList');
-    if (list instanceof HTMLElement) {
-      list.addEventListener('change', (event) => {
-        if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox') {
-          void send('QWEN_SETTINGS_SET', { enabledOperations: BjtuQwenOperationsUi.collect(list) }).then(() => setMessage('已保存'));
-        }
-      });
-    }
-
-    const opsToggle = document.getElementById('qwenOpsToggle');
-    if (opsToggle instanceof HTMLButtonElement) {
-      opsToggle.addEventListener('click', () => {
-        list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((input) => { input.checked = !input.checked; });
-        void send('QWEN_SETTINGS_SET', { enabledOperations: BjtuQwenOperationsUi.collect(list) }).then(() => setMessage('已保存'));
-      });
-    }
+    document.addEventListener('qwenOperationsPersisted', (event) => {
+      const ok = event?.detail?.ok !== false;
+      setMessage(ok ? '已保存' : '保存失败', ok);
+    });
 
     void refresh().catch((error) => setMessage(`初始化失败：${String(error?.message || error)}`, false));
     void refreshOperations().catch((error) => setMessage(`操作加载失败：${String(error?.message || error)}`, false));
