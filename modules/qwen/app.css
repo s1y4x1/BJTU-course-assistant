@@ -167,7 +167,6 @@ html[data-color-scheme="dark"] .qwen-chat-new:hover {
   padding: 8px 12px;
   font-size: 12px;
   color: #64748b;
-  border-bottom: 1px solid #e2e8f0;
 }
 
 .qwen-chat-history-loading[hidden] {
@@ -176,7 +175,6 @@ html[data-color-scheme="dark"] .qwen-chat-new:hover {
 
 html[data-color-scheme="dark"] .qwen-chat-history-loading {
   color: #94a3b8;
-  border-bottom-color: #334155;
 }
 
 .qwen-chat-spinner {
