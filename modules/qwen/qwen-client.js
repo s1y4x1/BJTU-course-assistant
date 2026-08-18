@@ -163,6 +163,31 @@
     return ping?.ready === true;
   }
 
+  // 若后台打开的 chat.qwen.ai 页面因闲置过久被浏览器置为不活跃（已丢弃/卸载），
+  // 发送请求前先重新激活该页面，确保其内容脚本在运行、请求能经由该页面发出。
+  async function ensureChatTabActive(tab) {
+    if (!tab) return null;
+    let current = tab;
+    try {
+      const fresh = await chrome.tabs.get(tab.id);
+      if (fresh) current = fresh;
+    } catch {
+      // 页面可能已关闭，沿用原引用
+    }
+    const needsWake = current.discarded === true || current.status === 'unloaded';
+    if (!needsWake) return current;
+    try {
+      await chrome.tabs.update(current.id, { active: true });
+    } catch {
+      return current;
+    }
+    for (let i = 0; i < 24; i += 1) {
+      await sleep(500);
+      if (await pingChatTab(current.id)) return current;
+    }
+    return current;
+  }
+
   function sendToTab(tabId, message) {
     return new Promise((resolve) => {
       try {
@@ -651,10 +676,16 @@
     if (tab) {
       let lastError = null;
       let refreshed = false;
+      let activated = false;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         if (attempt > 0) {
           if (receivedAny) break;
           await sleep(3000 * attempt);
+        }
+        if (!activated) {
+          const ready = await ensureChatTabActive(tab);
+          if (ready) tab = ready;
+          activated = true;
         }
         try {
           return await streamViaContentScript(tab, wrappedOptions);
