@@ -74,18 +74,6 @@
   "background": {
     "service_worker": "app/background.js"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://chat.qwen.ai/*"
-      ],
-      "js": [
-        "modules/qwen/content-script.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [

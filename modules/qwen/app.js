@@ -10,6 +10,7 @@
   const INPUT_ID = 'qwen-chat-input';
   const SEND_ID = 'qwen-chat-send';
   const STOP_ID = 'qwen-chat-stop';
+  const SCROLL_BOTTOM_ID = 'qwen-chat-scroll-bottom';
   const MODEL_ID = 'qwen-chat-model';
   const THINKING_ID = 'qwen-chat-thinking';
 
@@ -28,6 +29,9 @@
   let lastKnownLoggedIn = false;
   let lastKnownEnabled = true;
   let openingStarted = false;
+  let openingCompleted = false;
+  let autoScrollEnabled = true;
+  let lastMessagesScrollTop = 0;
 
   function el(id) {
     return document.getElementById(id);
@@ -127,6 +131,46 @@
     return container?._mdText || '';
   }
 
+  async function copyQwenText(text, button) {
+    const value = String(text || '');
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    if (button instanceof HTMLButtonElement) {
+      const previous = button.textContent;
+      button.textContent = '已复制';
+      setTimeout(() => { button.textContent = previous; }, 900);
+    }
+  }
+
+  function createCopyButton(getText, className = 'qwen-chat-copy-btn') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = '复制';
+    button.title = '复制 Markdown 原文';
+    button.addEventListener('click', () => void copyQwenText(getText?.(), button));
+    return button;
+  }
+
+  function enhanceOperationCopyButtons(container) {
+    if (!(container instanceof HTMLElement)) return;
+    container.querySelectorAll('.qwen-chat-op').forEach((card) => {
+      const name = card.querySelector(':scope > .qwen-chat-op-name');
+      if (!(name instanceof HTMLElement) || name.querySelector('.qwen-chat-copy-btn')) return;
+      name.appendChild(createCopyButton(() => card.querySelector(':scope > .qwen-chat-op-result')?.textContent || ''));
+    });
+  }
+
   function extractUserQuestion(content) {
     const source = String(content || '');
     const marker = '用户问题：';
@@ -165,13 +209,15 @@
     card.className = 'qwen-chat-op';
     const name = document.createElement('div');
     name.className = 'qwen-chat-op-name';
-    name.textContent = '操作结果';
+    const nameText = document.createElement('span');
+    nameText.textContent = '操作结果';
     const content = document.createElement('div');
     content.className = 'qwen-chat-op-result';
     content.textContent = extractResJson(text);
+    name.append(nameText, createCopyButton(() => content.textContent || ''));
     card.append(name, content);
     messages.appendChild(card);
-    messages.scrollTop = messages.scrollHeight;
+    maybeAutoScrollMessages(messages);
   }
 
   function renderHistory(messages) {
@@ -197,17 +243,43 @@
         lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
     }
-    scrollMessagesToBottom(messagesEl);
+    scrollMessagesToBottom(messagesEl, { force: true });
   }
 
   // 历史记录渲染完成后滚动到最后一条消息（Markdown 可能异步渲染，多拍几次确保到位）
-  function scrollMessagesToBottom(container) {
+  function isMessagesAtBottom(container) {
+    return container instanceof HTMLElement
+      && container.scrollHeight - container.scrollTop - container.clientHeight <= 3;
+  }
+
+  function updateScrollBottomButton(container) {
+    const button = el(SCROLL_BOTTOM_ID);
+    if (button instanceof HTMLButtonElement) button.hidden = autoScrollEnabled || isMessagesAtBottom(container);
+  }
+
+  function scrollMessagesToBottom(container, { force = false, settle = true } = {}) {
     if (!(container instanceof HTMLElement)) return;
-    const scroll = () => { container.scrollTop = container.scrollHeight; };
+    if (!force && !autoScrollEnabled) {
+      updateScrollBottomButton(container);
+      return;
+    }
+    if (force) autoScrollEnabled = true;
+    const scroll = () => {
+      if (!autoScrollEnabled) return;
+      container.scrollTop = container.scrollHeight;
+      lastMessagesScrollTop = container.scrollTop;
+      updateScrollBottomButton(container);
+    };
     scroll();
-    requestAnimationFrame(scroll);
-    setTimeout(scroll, 60);
-    setTimeout(scroll, 180);
+    if (settle) {
+      requestAnimationFrame(scroll);
+      setTimeout(scroll, 60);
+      setTimeout(scroll, 180);
+    }
+  }
+
+  function maybeAutoScrollMessages(container) {
+    scrollMessagesToBottom(container, { settle: false });
   }
 
   const HISTORY_LOADING_ID = 'qwen-chat-history-loading';
@@ -225,7 +297,7 @@
     } finally {
       if (loadingEl instanceof HTMLElement) loadingEl.hidden = true;
       const messagesEl = el(MESSAGES_ID);
-      scrollMessagesToBottom(messagesEl);
+      scrollMessagesToBottom(messagesEl, { force: true });
       if (messagesEl instanceof HTMLElement && messagesEl.clientHeight > 0) historyNeedsInitialScroll = false;
     }
   }
@@ -380,7 +452,6 @@
     const input = el(INPUT_ID);
     const stopBtn = el(STOP_ID);
     if (sendBtn instanceof HTMLButtonElement) sendBtn.hidden = busy;
-    if (input instanceof HTMLTextAreaElement) input.disabled = busy;
     if (stopBtn instanceof HTMLButtonElement) stopBtn.hidden = !busy;
     const messages = el(MESSAGES_ID);
     if (messages instanceof HTMLElement) messages.classList.toggle('qwen-chat-generating', busy);
@@ -411,8 +482,6 @@
         const input = el(INPUT_ID);
         if (input instanceof HTMLTextAreaElement) {
           input.value = str;
-          input.style.height = 'auto';
-          input.style.height = `${Math.min(120, input.scrollHeight)}px`;
           const panel = el(PANEL_ID);
           if (panel instanceof HTMLElement) panel.hidden = false;
           const fab = el(FAB_ID);
@@ -425,6 +494,13 @@
       bubble.className = 'qwen-chat-msg user';
       row.appendChild(bubble);
       anchor = row;
+    } else if (role === 'assistant') {
+      const row = document.createElement('div');
+      row.className = 'qwen-chat-msg-row assistant';
+      bubble = document.createElement('div');
+      bubble.className = 'qwen-chat-msg assistant';
+      row.append(bubble, createCopyButton(() => mdRawText(bubble), 'qwen-chat-copy-btn qwen-chat-assistant-copy-btn'));
+      anchor = row;
     } else {
       bubble = document.createElement('div');
       bubble.className = `qwen-chat-msg ${role}`;
@@ -436,10 +512,18 @@
       const container = mdContainer(bubble);
       container._mdText = str;
       container.innerHTML = renderQwenMarkdown(str);
+      enhanceOperationCopyButtons(container);
     }
     messages.appendChild(anchor);
-    messages.scrollTop = messages.scrollHeight;
+    maybeAutoScrollMessages(messages);
     return bubble;
+  }
+
+  function removeMessageBubble(bubble) {
+    if (!(bubble instanceof HTMLElement)) return;
+    const row = bubble.closest('.qwen-chat-msg-row.assistant');
+    if (row instanceof HTMLElement) row.remove();
+    else bubble.remove();
   }
 
   function cursorHost(bubble) {
@@ -488,9 +572,7 @@
       const details = bubble.querySelector(':scope > .qwen-chat-thinking');
       const body = details instanceof HTMLElement ? details.querySelector('.qwen-chat-thinking-body') : null;
       if (body instanceof HTMLElement) {
-        const cursor = document.createElement('span');
-        cursor.className = 'qwen-chat-cursor';
-        body.appendChild(cursor);
+        ensureCursor(body);
       } else {
         ensureCursor(bubble);
       }
@@ -506,10 +588,12 @@
     card.className = 'qwen-chat-op';
     const name = document.createElement('div');
     name.className = 'qwen-chat-op-name';
-    name.textContent = '操作结果';
+    const nameText = document.createElement('span');
+    nameText.textContent = '操作结果';
+    name.append(nameText, createCopyButton(() => card.querySelector(':scope > .qwen-chat-op-result')?.textContent || ''));
     card.append(name);
     messages.appendChild(card);
-    messages.scrollTop = messages.scrollHeight;
+    maybeAutoScrollMessages(messages);
     return card;
   }
 
@@ -560,7 +644,7 @@
     content.textContent = formatOutcomeText(result);
     card.appendChild(content);
     const messages = el(MESSAGES_ID);
-    if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+    maybeAutoScrollMessages(messages);
   }
 
   function showLoginHint(show) {
@@ -613,10 +697,7 @@
   function ensureAssistantBubble() {
     const messages = el(MESSAGES_ID);
     if (!activeBubble && messages instanceof HTMLElement) {
-      const bubble = document.createElement('div');
-      bubble.className = 'qwen-chat-msg assistant';
-      messages.appendChild(bubble);
-      activeBubble = bubble;
+      activeBubble = appendMessage('assistant', '');
     }
     return activeBubble;
   }
@@ -626,6 +707,7 @@
     const container = mdContainer(bubble);
     container._mdText = String(container._mdText || '') + String(text);
     container.innerHTML = renderQwenMarkdown(container._mdText);
+    enhanceOperationCopyButtons(container);
   }
 
   function ensureThinkingBlock(bubble) {
@@ -702,7 +784,7 @@
     inThinking = false;
     activeBubble = ensureAssistantBubble();
     placeCursor(activeBubble, false);
-    scrollMessagesToBottom(el(MESSAGES_ID));
+    scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
     const lastOperationCard = { card: null };
 
     const connectPort = () => {
@@ -718,7 +800,7 @@
           }
           placeCursor(bubble, false);
           const messages = el(MESSAGES_ID);
-          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+          maybeAutoScrollMessages(messages);
         } else if (message?.type === 'thinking') {
           setStatus('思考中…');
           const bubble = ensureAssistantBubble();
@@ -732,7 +814,7 @@
             placeCursor(bubble, true);
             if (body instanceof HTMLElement) body.scrollTop = body.scrollHeight;
             const messages = el(MESSAGES_ID);
-            if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+            maybeAutoScrollMessages(messages);
           }
         } else if (message?.type === 'operation') {
           setStatus('操作中…');
@@ -743,7 +825,7 @@
           removeCursor(activeBubble);
           lastOperationCard.card = appendOperationCard(message.operation);
           const messages = el(MESSAGES_ID);
-          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+          maybeAutoScrollMessages(messages);
         } else if (message?.type === 'operationResult') {
           setStatus('思考中…');
           updateOperationResult(lastOperationCard.card, message.result);
@@ -753,7 +835,7 @@
           const fresh = ensureAssistantBubble();
           placeCursor(fresh, false);
           const messages = el(MESSAGES_ID);
-          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+          maybeAutoScrollMessages(messages);
         } else if (message?.type === 'firstMessage') {
           setStatus('思考中…');
           if (inThinking) {
@@ -763,11 +845,16 @@
           if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
           activeBubble = null;
           const messages = el(MESSAGES_ID);
-          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+          maybeAutoScrollMessages(messages);
         } else if (message?.type === 'done') {
           sessionChatId = String(message.chatId || sessionChatId);
           sessionParentId = String(message.responseId || sessionParentId);
           if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
+          if (openingStarted) {
+            openingStarted = false;
+            openingCompleted = true;
+            void chrome.storage.local.remove('qwenOpeningPendingChatId');
+          }
           hideAsk();
           if (inThinking) {
             collapseThinking(activeBubble);
@@ -790,6 +877,14 @@
           port = null;
         } else if (message?.type === 'stopped') {
           hideAsk();
+          const stoppedChatId = String(message?.chatId || '');
+          if (stoppedChatId) {
+            sessionChatId = stoppedChatId;
+            const patch = { qwenLastChatId: stoppedChatId };
+            if (openingStarted) patch.qwenOpeningPendingChatId = stoppedChatId;
+            void chrome.storage.local.set(patch);
+          }
+          if (openingStarted) openingStarted = false;
           if (message?.parentId) sessionParentId = String(message.parentId);
           if (inThinking) {
             collapseThinking(activeBubble);
@@ -807,18 +902,22 @@
           port = null;
         } else if (message?.type === 'ask') {
           showAsk(message);
+        } else if (message?.type === 'askResolved') {
+          if (!message?.id || String(message.id) === pendingAskId) hideAsk();
         } else if (message?.type === 'retryRequest') {
           const retryChatId = String(message?.chatId || sessionChatId || '');
           if (retryChatId) {
             sessionChatId = retryChatId;
-            void chrome.storage.local.set({ qwenLastChatId: retryChatId });
+            const patch = { qwenLastChatId: retryChatId };
+            if (openingStarted) patch.qwenOpeningPendingChatId = retryChatId;
+            void chrome.storage.local.set(patch);
           }
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;
           }
           removeCursor(activeBubble);
-          if (activeBubble instanceof HTMLElement) activeBubble.remove();
+          removeMessageBubble(activeBubble);
           activeBubble = null;
           const bubble = appendMessage('error', message.message || '请求失败');
           if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
@@ -844,7 +943,7 @@
           });
           bubble.appendChild(btn);
           const messages = el(MESSAGES_ID);
-          if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
+          maybeAutoScrollMessages(messages);
         } else if (message?.type === 'error') {
           hideAsk();
           if (message?.parentId) sessionParentId = String(message.parentId);
@@ -855,17 +954,20 @@
           const errorChatId = String(message.chatId || '');
           if (errorChatId) {
             sessionChatId = errorChatId;
-            void chrome.storage.local.set({ qwenLastChatId: errorChatId });
+            const patch = { qwenLastChatId: errorChatId };
+            if (openingStarted) patch.qwenOpeningPendingChatId = errorChatId;
+            void chrome.storage.local.set(patch);
           }
+          if (openingStarted) openingStarted = false;
           if (message.code === 'NOT_LOGGED_IN') {
             setStatus('未登录', 'error');
             showLoginHint(true);
-            if (activeBubble instanceof HTMLElement) activeBubble.remove();
+            removeMessageBubble(activeBubble);
             activeBubble = null;
           } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
             if (activeBubble instanceof HTMLElement) {
               removeCursor(activeBubble);
-              activeBubble.remove();
+              removeMessageBubble(activeBubble);
             }
             activeBubble = null;
             appendMessage('error', message.message || '请求失败');
@@ -873,7 +975,7 @@
             void send('QWEN_OPEN_LOGIN');
           } else {
             removeCursor(activeBubble);
-            if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) activeBubble.remove();
+            if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) removeMessageBubble(activeBubble);
             activeBubble = null;
             appendMessage('error', message.message || '请求失败');
           }
@@ -888,6 +990,7 @@
           activeBubble = null;
           setBusy(false);
         }
+        if (openingStarted) openingStarted = false;
         port = null;
       });
       port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: editParent || sessionParentId, editParentGiven: isEditSend });
@@ -903,6 +1006,10 @@
 
   function sendMessage(text) {
     if (busy) return;
+    if (!chatStateLoaded || !openingCompleted) {
+      maybeSendOpening();
+      return;
+    }
     const editParent = pendingEditParentId;
     pendingEditParentId = '';
     const isEditSend = pendingEdit;
@@ -911,26 +1018,23 @@
   }
 
   function maybeSendOpening() {
-    if (!chatStateLoaded || !lastKnownEnabled || !lastKnownLoggedIn || sessionChatId || busy || openingStarted) return;
-    const messages = el(MESSAGES_ID);
-    if (messages instanceof HTMLElement && messages.childElementCount > 0) return;
+    if (!chatStateLoaded || !lastKnownEnabled || !lastKnownLoggedIn || openingCompleted || openingStarted) return;
     sendOpening();
   }
 
   function sendOpening() {
-    if (busy || openingStarted) return;
+    if (!lastKnownEnabled || !lastKnownLoggedIn || openingStarted || openingCompleted) return;
     openingStarted = true;
+    setBusy(true);
+    setStatus('思考中…');
     void send('QWEN_BUILD_SYSTEM_PROMPT').then((response) => {
-      if (busy) {
-        openingStarted = false;
-        return;
-      }
       const text = String(response?.text || '').trim();
-      if (!text) {
-        openingStarted = false;
-        return;
-      }
+      if (!text) throw new Error('系统提示词为空');
       startStream({ text, showUserBubble: false });
+    }).catch((error) => {
+      openingStarted = false;
+      appendMessage('error', `系统提示词发送准备失败：${String(error?.message || error)}`);
+      setTimeout(() => sendOpening(), 1000);
     });
   }
 
@@ -954,6 +1058,13 @@
 
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
+        lastKnownLoggedIn = true;
+        showLoginHint(false);
+        if (!sessionChatId) {
+          setBusy(true);
+          setStatus('思考中…');
+        }
+        if (chatStateLoaded) sendOpening();
         void refreshStatus();
       }
     });
@@ -965,28 +1076,66 @@
     const form = el('qwen-chat-input-form');
     const input = el(INPUT_ID);
     const loginBtn = el('qwen-chat-login-btn');
+    const messages = el(MESSAGES_ID);
+    const scrollBottomBtn = el(SCROLL_BOTTOM_ID);
+
+    if (messages instanceof HTMLElement) {
+      lastMessagesScrollTop = messages.scrollTop;
+      messages.addEventListener('wheel', (event) => {
+        if (event.deltaY < 0) {
+          autoScrollEnabled = false;
+          updateScrollBottomButton(messages);
+        }
+      }, { passive: true });
+      messages.addEventListener('scroll', () => {
+        const current = messages.scrollTop;
+        if (isMessagesAtBottom(messages)) autoScrollEnabled = true;
+        else if (current < lastMessagesScrollTop - 1) autoScrollEnabled = false;
+        lastMessagesScrollTop = current;
+        updateScrollBottomButton(messages);
+      }, { passive: true });
+    }
+    if (scrollBottomBtn instanceof HTMLButtonElement) {
+      scrollBottomBtn.addEventListener('click', () => {
+        scrollMessagesToBottom(messages, { force: true });
+      });
+    }
 
     if (panel instanceof HTMLElement) {
+      const panelEdgeGap = 20;
+      const syncPanelViewportHeight = () => {
+        const availableHeight = Math.max(1, window.innerHeight - panelEdgeGap * 2);
+        panel.style.maxHeight = `${availableHeight}px`;
+        panel.style.minHeight = `${Math.min(320, availableHeight)}px`;
+        const currentHeight = panel.getBoundingClientRect().height;
+        if (currentHeight > availableHeight) panel.style.height = `${availableHeight}px`;
+      };
+      syncPanelViewportHeight();
       const header = panel.querySelector('.qwen-chat-header');
       if (header instanceof HTMLElement) {
         header.addEventListener('pointerdown', (event) => {
           if (event.button !== 0) return;
           if (event.target.closest('button, select, input, a')) return;
           const rect = panel.getBoundingClientRect();
-          const offsetX = event.clientX - rect.left;
-          const offsetY = event.clientY - rect.top;
+          const edgeGap = panelEdgeGap;
+          const availableHeight = Math.max(1, window.innerHeight - edgeGap * 2);
+          const fixedHeight = Math.min(rect.height, availableHeight);
+          panel.style.height = `${fixedHeight}px`;
+          panel.style.maxHeight = `${availableHeight}px`;
+          const fixedRect = panel.getBoundingClientRect();
+          const offsetX = event.clientX - fixedRect.left;
+          const offsetY = event.clientY - fixedRect.top;
           const onMove = (moveEvent) => {
             panel.style.right = 'auto';
             panel.style.bottom = 'auto';
             const size = panel.getBoundingClientRect();
-            const maxLeft = Math.max(0, window.innerWidth - size.width);
-            const maxTop = Math.max(0, window.innerHeight - size.height);
-            const left = Math.min(Math.max(0, moveEvent.clientX - offsetX), maxLeft);
-            const top = Math.min(Math.max(0, moveEvent.clientY - offsetY), maxTop);
+            const maxLeft = Math.max(edgeGap, window.innerWidth - size.width - edgeGap);
+            const maxTop = Math.max(edgeGap, window.innerHeight - size.height - edgeGap);
+            const left = Math.min(Math.max(edgeGap, moveEvent.clientX - offsetX), maxLeft);
+            const top = Math.min(Math.max(edgeGap, moveEvent.clientY - offsetY), maxTop);
             panel.style.left = `${left}px`;
             panel.style.top = `${top}px`;
-            panel.style.maxWidth = `${Math.max(280, window.innerWidth - left)}px`;
-            panel.style.maxHeight = `${Math.max(320, window.innerHeight - top)}px`;
+            panel.style.maxWidth = `${Math.max(280, window.innerWidth - left - edgeGap)}px`;
           };
           const onUp = () => {
             window.removeEventListener('pointermove', onMove);
@@ -998,31 +1147,41 @@
         });
       }
       const clampPanel = () => {
+        syncPanelViewportHeight();
         if (panel.hidden) return;
         const rect = panel.getBoundingClientRect();
+        const edgeGap = panelEdgeGap;
         const inBounds =
-          rect.left >= 0 && rect.top >= 0 &&
-          rect.right <= window.innerWidth && rect.bottom <= window.innerHeight;
+          rect.left >= edgeGap && rect.top >= edgeGap &&
+          rect.right <= window.innerWidth - edgeGap && rect.bottom <= window.innerHeight - edgeGap;
         if (inBounds) return;
         const size = rect;
-        const maxLeft = Math.max(0, window.innerWidth - size.width);
-        const maxTop = Math.max(0, window.innerHeight - size.height);
-        const left = Math.min(Math.max(0, size.left), maxLeft);
-        const top = Math.min(Math.max(0, size.top), maxTop);
+        const maxHeight = Math.max(1, window.innerHeight - edgeGap * 2);
+        panel.style.height = `${Math.min(size.height, maxHeight)}px`;
+        panel.style.maxHeight = `${maxHeight}px`;
+        const resized = panel.getBoundingClientRect();
+        const maxLeft = Math.max(edgeGap, window.innerWidth - resized.width - edgeGap);
+        const maxTop = Math.max(edgeGap, window.innerHeight - resized.height - edgeGap);
+        const left = Math.min(Math.max(edgeGap, resized.left), maxLeft);
+        const top = Math.min(Math.max(edgeGap, resized.top), maxTop);
         panel.style.right = 'auto';
         panel.style.bottom = 'auto';
         panel.style.left = `${left}px`;
         panel.style.top = `${top}px`;
-        panel.style.maxWidth = `${Math.max(280, window.innerWidth - left)}px`;
-        panel.style.maxHeight = `${Math.max(320, window.innerHeight - top)}px`;
+        panel.style.maxWidth = `${Math.max(280, window.innerWidth - left - edgeGap)}px`;
       };
       window.addEventListener('resize', clampPanel);
     }
 
-    void chrome.storage.local.get('qwenLastChatId').then((data) => {
+    void chrome.storage.local.get(['qwenLastChatId', 'qwenOpeningPendingChatId']).then((data) => {
       sessionChatId = String(data?.qwenLastChatId || '');
+      const pendingOpeningChatId = String(data?.qwenOpeningPendingChatId || '');
+      openingCompleted = !!sessionChatId && pendingOpeningChatId !== sessionChatId;
       chatStateLoaded = true;
-      if (sessionChatId) void loadHistory();
+      if (sessionChatId) {
+        if (!port && !openingStarted) setBusy(false);
+        void loadHistory().finally(() => maybeSendOpening());
+      }
       else maybeSendOpening();
     });
 
@@ -1035,7 +1194,7 @@
             void refreshStatus();
             void refreshModels();
             if (historyNeedsInitialScroll) {
-              scrollMessagesToBottom(el(MESSAGES_ID));
+              scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
               historyNeedsInitialScroll = false;
             }
             if (input instanceof HTMLTextAreaElement) input.focus();
@@ -1074,10 +1233,11 @@
           pendingEditParentId = '';
           pendingEdit = false;
           openingStarted = false;
+          openingCompleted = false;
           hideAsk();
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.replaceChildren();
-          void chrome.storage.local.remove('qwenLastChatId');
+          void chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']);
           sendOpening();
         };
         if (!currentId) {
@@ -1126,10 +1286,6 @@
       });
     }
     if (input instanceof HTMLTextAreaElement) {
-      input.addEventListener('input', () => {
-        input.style.height = 'auto';
-        input.style.height = `${Math.min(120, input.scrollHeight)}px`;
-      });
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();

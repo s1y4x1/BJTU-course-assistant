@@ -16,7 +16,10 @@
     <span class="qwen-chat-spinner"></span>
     <span>正在加载历史记录…</span>
   </div>
-  <div id="qwen-chat-messages" class="qwen-chat-messages"></div>
+  <div class="qwen-chat-messages-wrap">
+    <div id="qwen-chat-messages" class="qwen-chat-messages"></div>
+    <button id="qwen-chat-scroll-bottom" class="qwen-chat-scroll-bottom" type="button" title="滚动到底部" aria-label="滚动到底部" hidden>↓</button>
+  </div>
   <div id="qwen-chat-login-hint" class="qwen-chat-login-hint" hidden>
     <span>尚未登录 chat.qwen.ai</span>
     <button id="qwen-chat-login-btn" class="btn qwen-chat-login-btn" type="button">打开登录页</button>

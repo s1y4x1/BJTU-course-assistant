@@ -148,14 +148,69 @@ html[data-color-scheme="dark"] .qwen-chat-new:hover {
   background: rgba(165, 180, 252, 0.14);
 }
 
-.qwen-chat-messages {
+.qwen-chat-messages-wrap {
   flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.qwen-chat-messages {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+}
+
+.qwen-chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.qwen-chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.qwen-chat-messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.55);
+}
+
+.qwen-chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.75);
+}
+
+.qwen-chat-scroll-bottom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(97, 92, 237, 0.45);
+  border-radius: 50%;
+  background: #fff;
+  color: #615ced;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
+  cursor: pointer;
+  z-index: 2;
+}
+
+.qwen-chat-scroll-bottom[hidden] {
+  display: none;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-scroll-bottom {
+  background: #1e293b;
+  color: #a5b4fc;
+  border-color: rgba(165, 180, 252, 0.45);
 }
 
 .qwen-chat-history-loading {
@@ -215,6 +270,18 @@ html[data-color-scheme="dark"] .qwen-chat-history-loading {
   align-items: flex-start;
   gap: 8px;
   max-width: 85%;
+}
+
+.qwen-chat-msg-row.assistant {
+  align-self: flex-start;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 92%;
+}
+
+.qwen-chat-msg-row.assistant > .qwen-chat-msg.assistant {
+  max-width: calc(100% - 42px);
 }
 
 .qwen-chat-edit-btn {
@@ -335,7 +402,38 @@ html[data-color-scheme="dark"] .qwen-chat-op {
 }
 
 .qwen-chat-op-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-weight: 600;
+}
+
+.qwen-chat-copy-btn {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 1px 5px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #615ced;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  opacity: 0.78;
+}
+
+.qwen-chat-copy-btn:hover {
+  background: rgba(97, 92, 237, 0.12);
+  opacity: 1;
+}
+
+.qwen-chat-assistant-copy-btn {
+  margin-bottom: 1px;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-copy-btn {
+  color: #a5b4fc;
 }
 
 .qwen-chat-op-result {
@@ -376,6 +474,7 @@ html[data-color-scheme="dark"] .qwen-chat-login-hint {
 
 .qwen-chat-input-actions {
   flex: 0 0 auto;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -516,6 +615,7 @@ html[data-color-scheme="dark"] .qwen-chat-input-row {
 
 .qwen-chat-input {
   flex: 1 1 auto;
+  align-self: stretch;
   resize: none;
   border: 1px solid #cbd5e1;
   border-radius: 8px;

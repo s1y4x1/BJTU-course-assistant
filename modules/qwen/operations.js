@@ -392,7 +392,7 @@ name: 've.accounts',
       doc: [
         '## ve.assignments_of_ —— 课程作业',
         '',
-        '获取指定课程的作业列表（含已交/未交）。courseId 为课程ID，可先调用 ve.courseList 获取。',
+        '获取指定课程的作业列表（含已交/未交）。courseId 为课程ID，可先调用 ve.courseList 获取。若有已交作业的成绩暂未公布，会临时公布成绩、重新获取结果，并在返回前立即取消公布。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
@@ -404,7 +404,32 @@ name: 've.accounts',
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
         const core = await veHomework();
-        const list = await core.fetchCourseHomework(courseId);
+        let list = await core.fetchCourseHomework(courseId);
+        const unpublishedIds = typeof core.getUnpublishedDoneScoreHomeworkIds === 'function'
+          ? core.getUnpublishedDoneScoreHomeworkIds(list)
+          : [];
+        if (unpublishedIds.length && typeof core.setHomeworkScoreDisplayStatus === 'function') {
+          const openedIds = [];
+          let primaryError = null;
+          let closeError = null;
+          try {
+            for (const homeworkId of unpublishedIds) {
+              await core.setHomeworkScoreDisplayStatus(homeworkId, 1);
+              openedIds.push(homeworkId);
+            }
+            list = await core.fetchCourseHomework(courseId, { previousList: list });
+          } catch (error) {
+            primaryError = error;
+          } finally {
+            const results = await Promise.allSettled(openedIds.map((homeworkId) => (
+              core.setHomeworkScoreDisplayStatus(homeworkId, 2)
+            )));
+            const rejected = results.find((result) => result.status === 'rejected');
+            if (rejected) closeError = rejected.reason;
+          }
+          if (primaryError) throw primaryError;
+          if (closeError) throw new Error(`取消公布作业成绩失败：${String(closeError?.message || closeError)}`);
+        }
         return serialize(list);
       }
     },
@@ -672,6 +697,7 @@ name: 've.teachers_of_',
           if (!cid) continue;
           try {
             const data = await pageInvoke('ykt', 'courseHomework', { classroomId: cid }, 120000);
+            if (isLoginRequiredValue(data)) throw Object.assign(new Error('雨课堂需要登录'), { code: 'LOGIN_REQUIRED' });
             const homework = Array.isArray(data?.homework) ? data.homework : [];
             for (const h of homework) {
               const type = String(h?.activityType || '').trim() || 'all';
@@ -686,7 +712,8 @@ name: 've.teachers_of_',
                 String(h?.title || ''), type, st, deadline, String(h?.link || '')
               ));
             }
-          } catch {
+          } catch (error) {
+            if (isLoginRequiredError(error)) throw error;
             // 单个课程失败不阻断查询
           }
         }
@@ -773,16 +800,25 @@ name: 've.teachers_of_',
       doc: [
         '## academic.schedule —— 课表查询',
         '',
-        '查询教务系统当前课表。需要教务系统已登录。',
+        '查询教务系统课表。支持“本学期课表”和“选课课表”，需要教务系统已登录。',
         '',
-        '**参数**：{"scheduleType":"可选，semester 或 week"}',
+        '**参数**：{"scheduleType":"可选，semester（本学期课表，默认）或 selection（选课课表）"}',
         '',
-        '**调用示例**：`academic.schedule()`',
+        '**调用示例**：`academic.schedule({scheduleType: "selection"})`',
         '',
         '**返回示例**：{"rows":[{"courseName":"高等数学","weekDay":1,"startSection":1}],"currentWeek":1}'
       ].join('\n'),
       async run(args) {
-        return academicInvoke('schedule', { scheduleType: String(args?.scheduleType || '') }, 120000);
+        const sourceType = String(args?.scheduleType || 'semester').trim();
+        const aliases = new Map([
+          ['semester', 'semester'],
+          ['本学期课表', 'semester'],
+          ['selection', 'selection'],
+          ['选课课表', 'selection']
+        ]);
+        const scheduleType = aliases.get(sourceType);
+        if (!scheduleType) throw new Error('scheduleType 仅支持 semester（本学期课表）或 selection（选课课表）');
+        return academicInvoke('schedule', { scheduleType }, 120000);
       }
     },
     {
@@ -1134,6 +1170,7 @@ name: 've.teachers_of_',
           if (!classNum) continue;
           try {
             const data = await pageInvoke('mrjzy', 'homework_of_', { classNum }, 120000);
+            if (isLoginRequiredValue(data)) throw Object.assign(new Error('每日交作业需要登录'), { code: 'LOGIN_REQUIRED' });
             const homework = Array.isArray(data?.homework) ? data.homework : [];
             for (const h of homework) {
               const deadline = parseDeadline(h?.end);
@@ -1146,7 +1183,8 @@ name: 've.teachers_of_',
                 String(h?.title || ''), 'all', st, deadline, String(h?.link || '')
               ));
             }
-          } catch {
+          } catch (error) {
+            if (isLoginRequiredError(error)) throw error;
             // 单个班级失败不阻断查询
           }
         }
@@ -1261,6 +1299,7 @@ name: 've.teachers_of_',
           if (!groupId) continue;
           try {
             const data = await pageInvoke('jlgj', 'homework_of_', { groupId }, 120000);
+            if (isLoginRequiredValue(data)) throw Object.assign(new Error('接龙管家需要登录'), { code: 'LOGIN_REQUIRED' });
             const homework = Array.isArray(data?.homework) ? data.homework : [];
             for (const h of homework) {
               const done = h?.done === true;
@@ -1273,7 +1312,8 @@ name: 've.teachers_of_',
                 String(h?.title || ''), 'all', st, deadline, String(h?.link || '')
               ));
             }
-          } catch {
+          } catch (error) {
+            if (isLoginRequiredError(error)) throw error;
             // 单个群组失败不阻断查询
           }
         }
@@ -1406,6 +1446,7 @@ name: 've.teachers_of_',
           if (!classroomId) continue;
           try {
             const data = await pageInvoke('xuetangx', 'homework_of_', { classroomId }, 120000);
+            if (isLoginRequiredValue(data)) throw Object.assign(new Error('学堂在线需要登录'), { code: 'LOGIN_REQUIRED' });
             const homework = Array.isArray(data?.homework) ? data.homework : [];
             for (const h of homework) {
               const type = String(h?.typeLabel || '').trim() || 'all';
@@ -1420,7 +1461,8 @@ name: 've.teachers_of_',
                 String(h?.title || ''), type, st, deadline, String(h?.link || '')
               ));
             }
-          } catch {
+          } catch (error) {
+            if (isLoginRequiredError(error)) throw error;
             // 单个课程失败不阻断查询
           }
         }
@@ -1539,6 +1581,71 @@ name: 've.teachers_of_',
     return OPERATIONS.find((op) => op.name === name) || null;
   }
 
+  const LOGIN_GUARDED_PLATFORMS = new Set(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
+
+  function operationNeedsPlatformLogin(op) {
+    if (!LOGIN_GUARDED_PLATFORMS.has(String(op?.module || ''))) return false;
+    const shortName = String(op?.name || '').split('.').slice(1).join('.');
+    return !['login', 'loginStatus', 'accounts'].includes(shortName);
+  }
+
+  function isLoggedInValue(value) {
+    if (value?.loggedIn === true) return true;
+    return ['online', 'logged-in', 'authenticated'].includes(String(value?.loginState || '').toLowerCase());
+  }
+
+  function isLoginRequiredValue(value) {
+    return String(value?.code || '') === 'LOGIN_REQUIRED'
+      || value?.loggedIn === false
+      || String(value?.loginState || '').toLowerCase() === 'offline';
+  }
+
+  function isLoginRequiredError(error) {
+    return error?.loginRequired === true
+      || String(error?.code || '') === 'LOGIN_REQUIRED'
+      || String(error?.message || '') === 'LOGIN_REQUIRED';
+  }
+
+  async function readPlatformLoginStatus(module) {
+    if (module === 've') {
+      try {
+        return !!(await (await veHomework()).fetchCurrentUserInfo());
+      } catch {
+        return false;
+      }
+    }
+    if (module === 'mooc') {
+      const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
+      return !!String(cookie?.value || '').trim();
+    }
+    try {
+      const statusFn = module === 'ykt' ? 'courseList' : 'loginStatus';
+      return isLoggedInValue(await pageInvoke(module, statusFn, {}, 60000));
+    } catch {
+      return false;
+    }
+  }
+
+  async function loginPlatformOnce(module) {
+    const loginOperation = findOperation(`${module}.login`);
+    if (!loginOperation) throw Object.assign(new Error(`${module} 未提供登录操作`), { code: 'LOGIN_REQUIRED' });
+    try {
+      await loginOperation.run({});
+    } catch (error) {
+      throw Object.assign(new Error(`${module} 登录失败：${String(error?.message || error)}`), { code: 'LOGIN_REQUIRED' });
+    }
+    if (!await readPlatformLoginStatus(module)) {
+      throw Object.assign(new Error(`${module} 登录失败或登录流程未完成，请登录后重试`), { code: 'LOGIN_REQUIRED' });
+    }
+  }
+
+  async function ensurePlatformLogin(op) {
+    if (!operationNeedsPlatformLogin(op)) return false;
+    if (await readPlatformLoginStatus(op.module)) return false;
+    await loginPlatformOnce(op.module);
+    return true;
+  }
+
   const PLATFORM_GROUP_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
 
   // 分组顺序遵循选项页「排序」编辑器（ui-order-groups）：
@@ -1580,7 +1687,28 @@ name: 've.teachers_of_',
       }
     }
     try {
-      const result = await op.run(args || {}, options);
+      let loginAttempted = await ensurePlatformLogin(op);
+      let result;
+      try {
+        result = await op.run(args || {}, options);
+      } catch (error) {
+        if (!operationNeedsPlatformLogin(op) || loginAttempted || !isLoginRequiredError(error)) throw error;
+        await loginPlatformOnce(op.module);
+        loginAttempted = true;
+        result = await op.run(args || {}, options);
+      }
+      if (operationNeedsPlatformLogin(op)) {
+        let loginMissing = isLoginRequiredValue(result) || !await readPlatformLoginStatus(op.module);
+        if (loginMissing && !loginAttempted) {
+          await loginPlatformOnce(op.module);
+          loginAttempted = true;
+          result = await op.run(args || {}, options);
+          loginMissing = isLoginRequiredValue(result) || !await readPlatformLoginStatus(op.module);
+        }
+        if (loginMissing) {
+          throw Object.assign(new Error(String(result?.message || `${op.module} 需要登录`)), { code: 'LOGIN_REQUIRED' });
+        }
+      }
       return { ok: true, name, result };
     } catch (error) {
       return {

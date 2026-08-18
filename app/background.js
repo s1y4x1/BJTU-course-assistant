@@ -287,6 +287,13 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     matches: ['https://cas.bjtu.edu.cn/auth/login/*'],
     js: ['modules/captcha/cas-login.js'],
     runAt: 'document_idle'
+  },
+  {
+    id: 'bjtu-qwen-page-bridge',
+    module: 'qwen',
+    matches: ['https://chat.qwen.ai/*'],
+    js: ['modules/qwen/content-script.js'],
+    runAt: 'document_idle'
   }
 ];
 

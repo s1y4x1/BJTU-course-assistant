@@ -38,6 +38,14 @@
     sendToken(readToken());
   }
 
+  function reportWafPageLoad() {
+    const navigationEntry = performance.getEntriesByType?.('navigation')?.[0];
+    sendToBackground({
+      type: 'QWEN_WAF_PAGE_LOADED',
+      payload: { navigationType: String(navigationEntry?.type || '') }
+    });
+  }
+
   function newRequestId() {
     return (crypto?.randomUUID?.() || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   }
@@ -309,6 +317,7 @@
   });
 
   check();
+  reportWafPageLoad();
   window.addEventListener('pageshow', check);
   setInterval(check, 8000);
 })();

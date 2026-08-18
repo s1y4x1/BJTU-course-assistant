@@ -290,6 +290,40 @@
     return (status && status !== '未提交') || !!time;
   }
 
+  function getHomeworkPublishScoreId(homework) {
+    return String(homework?.id ?? homework?.noteId ?? homework?.courseNoteId
+      ?? homework?.snId ?? homework?.noteSnId ?? homework?.upId ?? '').trim();
+  }
+
+  function isHomeworkScoreUnpublished(homework) {
+    const text = `${String(homework?.lastScore ?? homework?.last_score ?? '')} ${String(homework?.scoreStatus ?? homework?.score_status ?? '')}`;
+    return /暂未公布/.test(text);
+  }
+
+  function getUnpublishedDoneScoreHomeworkIds(homeworkList) {
+    const seen = new Set();
+    const ids = [];
+    for (const homework of Array.isArray(homeworkList) ? homeworkList : []) {
+      if (!isHomeworkDone(homework) || !isHomeworkScoreUnpublished(homework)) continue;
+      const id = getHomeworkPublishScoreId(homework);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  async function setHomeworkScoreDisplayStatus(homeworkId, isOpen, { signal } = {}) {
+    const id = String(homeworkId || '').trim();
+    if (!id) throw new Error('缺少作业 ID');
+    const url = `${BASE_VE}back/rp/common/courseTeachTask.shtml?method=updateWorkScoreDisplyStatus&id=${encodeURIComponent(id)}&isOpen=${encodeURIComponent(String(isOpen))}`;
+    const { text, response } = await requestText(url, {
+      signal,
+      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+    });
+    if (isLoginResponse(text, response)) throw loginError();
+  }
+
   function collectPendingAssignments(courses, courseHomeworkData, { futureOnly = false } = {}) {
     const now = Date.now();
     const output = [];
@@ -343,6 +377,8 @@
     getCourseName,
     parseDeadline,
     isHomeworkDone,
+    getUnpublishedDoneScoreHomeworkIds,
+    setHomeworkScoreDisplayStatus,
     collectPendingAssignments
   });
 })(globalThis);

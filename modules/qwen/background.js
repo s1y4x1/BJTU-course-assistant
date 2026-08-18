@@ -5,7 +5,63 @@
   const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
+  const WAF_TAB_STATE_KEY = 'qwenWafTabState';
+  const ASK_NOTIFICATION_PREFIX = 'bjtu-qwen-ask-limit:';
+  const pendingAskNotifications = new Map();
   let qwenLoginCompletionPromise = null;
+
+  async function beginWafRefreshFlow(tab) {
+    const tabId = Number(tab?.id);
+    if (!Number.isInteger(tabId)) return;
+    await chrome.storage.session.set({
+      [WAF_TAB_STATE_KEY]: {
+        tabId,
+        phase: 'waiting-auto-refresh',
+        startedAt: Date.now()
+      }
+    }).catch(() => {});
+    await chrome.tabs.reload(tabId).catch(() => {});
+  }
+
+  async function handleWafPageLoaded(sender, payload) {
+    const tabId = Number(sender?.tab?.id);
+    if (!Number.isInteger(tabId)) return { ok: false };
+    const stored = await chrome.storage.session.get(WAF_TAB_STATE_KEY).catch(() => ({}));
+    const state = stored?.[WAF_TAB_STATE_KEY];
+    if (Number(state?.tabId) !== tabId) return { ok: false };
+    const navigationType = String(payload?.navigationType || '');
+    if (navigationType !== 'reload') return { ok: true, waiting: true };
+    if (state?.phase === 'waiting-auto-refresh') {
+      await chrome.storage.session.set({
+        [WAF_TAB_STATE_KEY]: { ...state, phase: 'waiting-user-refresh', autoRefreshedAt: Date.now() }
+      }).catch(() => {});
+      return { ok: true, autoRefreshObserved: true };
+    }
+    if (state?.phase === 'waiting-user-refresh') {
+      await chrome.storage.session.remove(WAF_TAB_STATE_KEY).catch(() => {});
+      const appUrl = chrome.runtime.getURL('app/app.html');
+      const appTab = await chrome.tabs.update(tabId, {
+        url: appUrl,
+        active: true,
+        autoDiscardable: false
+      }).catch(() => null);
+      if (Number.isInteger(appTab?.windowId)) {
+        await chrome.windows.update(appTab.windowId, { focused: true }).catch(() => null);
+      }
+      return { ok: true, returnedToApp: true };
+    }
+    return { ok: true };
+  }
+
+  if (typeof chrome === 'object' && chrome?.notifications?.onButtonClicked) {
+    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+      const id = String(notificationId || '');
+      if (!id.startsWith(ASK_NOTIFICATION_PREFIX)) return;
+      const handler = pendingAskNotifications.get(id);
+      if (!handler) return;
+      handler(buttonIndex === 0 ? 'continue' : 'stop');
+    });
+  }
 
   async function broadcastTokenCaptured() {
     try {
@@ -92,12 +148,24 @@
       let pendingAsk = null;
       let pendingRetry = null;
       const loopSession = {};
-      const resolveAskOnAbort = () => {
-        if (pendingAsk) {
-          const resolve = pendingAsk.resolve;
-          pendingAsk = null;
-          resolve?.({ action: 'stop' });
+      const settlePendingAsk = (action = 'stop', count = 0, notifyPage = false) => {
+        if (!pendingAsk) return;
+        const current = pendingAsk;
+        pendingAsk = null;
+        if (current.notificationId) {
+          pendingAskNotifications.delete(current.notificationId);
+          chrome.notifications.clear(current.notificationId, () => void chrome.runtime.lastError);
         }
+        current.resolve?.({
+          action: String(action || 'stop'),
+          count: Number(count) || Number(current.count) || 1
+        });
+        if (notifyPage && !port.disconnected) {
+          port.postMessage({ type: 'askResolved', id: current.id });
+        }
+      };
+      const resolveAskOnAbort = () => {
+        settlePendingAsk('stop');
       };
       const resolveRetryOnAbort = () => {
         if (pendingRetry) {
@@ -122,12 +190,7 @@
           return;
         }
         if (message?.type === 'askResponse' && pendingAsk?.id === message.id) {
-          const resolve = pendingAsk.resolve;
-          pendingAsk = null;
-          resolve?.({
-            action: String(message.action || 'stop'),
-            count: Number(message.count) || 0
-          });
+          settlePendingAsk(message.action, message.count);
           return;
         }
         if (message?.type === 'stop') {
@@ -179,7 +242,12 @@
               }),
               askUser: (payload) => new Promise((resolve) => {
                 const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-                pendingAsk = { id, resolve };
+                const count = Number(payload?.count) || 3;
+                const notificationId = `${ASK_NOTIFICATION_PREFIX}${id}`;
+                pendingAsk = { id, resolve, count, notificationId };
+                pendingAskNotifications.set(notificationId, (action) => {
+                  settlePendingAsk(action, count, true);
+                });
                 abortController.signal.addEventListener('abort', resolveAskOnAbort, { once: true });
                 const safeMessage = String(payload?.message || '操作调用次数过多，是否继续？');
                 port.postMessage({
@@ -187,16 +255,21 @@
                   id,
                   message: safeMessage,
                   mode: String(payload?.mode || 'iterate'),
-                  count: Number(payload?.count) || 3
+                  count
                 });
                 try {
                   if (chrome?.notifications?.create) {
-                    chrome.notifications.create('qwen-ask-limit', {
+                    chrome.notifications.create(notificationId, {
                       type: 'basic',
                       iconUrl: chrome.runtime.getURL('icons/128.png'),
                       title: '千问助手',
                       message: safeMessage,
-                      priority: 2
+                      priority: 2,
+                      requireInteraction: true,
+                      buttons: [
+                        { title: '继续' },
+                        { title: '终止' }
+                      ]
                     });
                   }
                 } catch {
@@ -226,7 +299,11 @@
           } catch (error) {
             if (port.disconnected) return;
             if (error?.name === 'AbortError' || abortController.signal.aborted) {
-              port.postMessage({ type: 'stopped', parentId: String(turnRef?.lastMessageId || '') });
+              port.postMessage({
+                type: 'stopped',
+                chatId: String(turnRef?.chatId || ''),
+                parentId: String(turnRef?.lastMessageId || '')
+              });
               return;
             }
             port.postMessage({
@@ -248,8 +325,14 @@
   }
 
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
-    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const type = String(message?.type || '');
+      if (type === 'QWEN_WAF_PAGE_LOADED') {
+        void handleWafPageLoaded(sender, message?.payload).then(sendResponse).catch((error) => {
+          sendResponse({ ok: false, message: String(error?.message || error) });
+        });
+        return true;
+      }
       if (type === 'QWEN_GET_STATUS') {
         void (async () => {
           const settings = await getSettings();
@@ -301,7 +384,12 @@
       if (type === 'QWEN_TOKEN_CAPTURED') {
         const token = String(message?.payload?.token || '');
         if (token && global.BjtuQwenClient?.captureToken) {
-          void global.BjtuQwenClient.captureToken(token).then(() => broadcastTokenCaptured());
+          void (async () => {
+            const stored = await chrome.storage.session.get('qwenToken').catch(() => ({}));
+            const changed = String(stored?.qwenToken || '') !== token;
+            await global.BjtuQwenClient.captureToken(token);
+            if (changed) await broadcastTokenCaptured();
+          })();
         }
         return false;
       }
@@ -317,12 +405,13 @@
                 type: 'basic',
                 iconUrl: 'icons/128.png',
                 title: '通义千问触发风控校验',
-                message: '请在页面上完成验证后自行回到对话中重试。看不到验证？刷新页面试试。',
+                message: '请在页面上完成验证。扩展会先自动刷新一次；验证完成后将自动刷新页面并返回对话中，可以手动重试。',
                 priority: 2,
                 requireInteraction: true
               }, 'qwen-waf-verification', true).catch(() => {});
             }
-            await Promise.all([client.openLoginPage({ auth }), notificationPromise]);
+            const [tab] = await Promise.all([client.openLoginPage({ auth }), notificationPromise]);
+            if (!auth) await beginWafRefreshFlow(tab);
             sendResponse({ ok: true });
           } catch (error) {
             sendResponse({ ok: false, message: String(error?.message || error) });
