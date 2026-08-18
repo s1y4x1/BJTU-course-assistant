@@ -330,7 +330,12 @@
     if (tab) {
       let punished = false;
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        if (attempt > 0) await sleep(2500);
+        if (attempt > 0) {
+          await sleep(2500);
+          // 首次经标签页发送失败时，唤醒/刷新闲置标签页后再重试一次
+          const ready = await ensureChatTabActive(tab);
+          if (ready) tab = ready;
+        }
         const result = await sendToTab(tab.id, {
           type: 'QWEN_API_REQUEST',
           payload: {
@@ -369,7 +374,9 @@
   }
 
   async function fetchModels() {
-    const data = await requestJson(`${CHAT_BASE}/api/v2/models/`, { noEnsureTab: true });
+    // 直接从扩展自身页面（Service Worker）请求模型列表，不依赖 chat.qwen.ai 标签页
+    // （标签页可能闲置/未激活，导致选项页的模型下拉框等不到结果）。
+    const data = await requestJsonDirect(`${CHAT_BASE}/api/v2/models/`);
     const list = Array.isArray(data?.data?.data) ? data.data.data : [];
     return list.map((item) => ({
       id: String(item?.id || ''),
@@ -687,8 +694,9 @@
     if (tab) {
       let lastError = null;
       let refreshed = false;
+      let replaced = false;
       let activated = false;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
         if (attempt > 0) {
           if (receivedAny) break;
           await sleep(3000 * attempt);
@@ -704,15 +712,37 @@
           if (error?.name === 'AbortError') throw error;
           lastError = error;
           if (error?.code === 'WAF_PUNISH' && attempt < 2 && !receivedAny) continue;
-          if (String(error?.message || '').includes('页面未就绪') && !refreshed) {
+          const notReady = String(error?.message || '').includes('页面未就绪');
+          if (notReady && !refreshed) {
+            // 激活后内容脚本仍未就绪：刷新页面以重新注入内容脚本
             refreshed = true;
+            try {
+              await chrome.tabs.reload(tab.id);
+              for (let i = 0; i < 24; i += 1) {
+                await sleep(500);
+                if (await pingChatTab(tab.id)) break;
+              }
+              continue;
+            } catch {
+              // 刷新失败则继续走关闭重建
+            }
+          }
+          if (notReady && !replaced) {
+            // 刷新后仍无法通信：关闭旧页面（如可关闭）并打开新页面
+            replaced = true;
+            try {
+              await chrome.tabs.remove(tab.id);
+            } catch {
+              // 旧页面无法关闭（如无权限），继续尝试新页面
+            }
             tab = await ensureChatTab();
             if (tab) continue;
           }
           break;
         }
       }
-      if (lastError) throw lastError;
+      // 页面路径彻底失败时回退为扩展自身页面直接请求
+      if (lastError && !String(lastError?.message || '').includes('页面未就绪')) throw lastError;
     }
     return streamCompletionsDirect(wrappedOptions);
   }
