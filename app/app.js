@@ -502,9 +502,9 @@ if (popupOpenFullscreenBtn) {
 
 function triggerExternalPlatformLoad(platform, forceReload = false) {
   platform = normalizePlatformId(platform);
-  if (!['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'].includes(platform)) return;
-  if (!isPlatformEnabled(platform)) return;
-  if (!forceReload && window.platformLoadedOnce?.[platform]) return;
+  if (!['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'].includes(platform)) return Promise.resolve();
+  if (!isPlatformEnabled(platform)) return Promise.resolve();
+  if (!forceReload && window.platformLoadedOnce?.[platform]) return window.platformLoadPromises?.[platform] || Promise.resolve();
 
   if (platform === 'jlgj') {
     clearPlatformData('jlgj');
@@ -524,21 +524,22 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
     if (platform === 'jlgj') renderJlgjStandaloneCourses();
   };
 
+  let loadPromise;
   if (platform === 'ykt') {
     setPlatformLoginState('ykt', 'checking');
-    scheduleYktLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => {
+    loadPromise = scheduleYktLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => {
       if (isPlatformEnabled('ykt') && version === Number(window.platformLoadVersion?.ykt || 0)) renderYktNeedLoginMessage();
     });
   } else if (platform === 'mrjzy') {
     setPlatformLoginState('mrjzy', 'checking');
-    scheduleMrjzyLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => {
+    loadPromise = scheduleMrjzyLoad(independentCourseInput, version).then(finishIndependentLoad).catch(() => {
       if (isPlatformEnabled('mrjzy') && version === Number(window.platformLoadVersion?.mrjzy || 0)) {
         renderMrjzyNeedLoginMessage();
       }
     });
   } else if (platform === 'jlgj') {
     setPlatformLoginState('jlgj', 'checking');
-    scheduleJlgjLoad(independentCourseInput, version).then(finishIndependentLoad).catch((error) => {
+    loadPromise = scheduleJlgjLoad(independentCourseInput, version).then(finishIndependentLoad).catch((error) => {
       if (!isPlatformEnabled('jlgj') || version !== Number(window.platformLoadVersion?.jlgj || 0)) return;
       console.error('[bjtu] 接龙管家加载失败', error);
       window.platformLoadedOnce.jlgj = true;
@@ -550,11 +551,22 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
     });
   } else if (platform === 'mooc') {
     setPlatformLoginState('mooc', 'checking');
-    window.BjtuMoocPlatform?.load().catch(() => { });
+    loadPromise = window.BjtuMoocPlatform?.load().catch(() => { });
   } else {
     setPlatformLoginState('xuetangx', 'checking');
-    window.BjtuXuetangxPlatform?.load().catch(() => { });
+    loadPromise = window.BjtuXuetangxPlatform?.load().catch(() => { });
   }
+  window.platformLoadPromises ||= {};
+  window.platformLoadPending ||= {};
+  const trackedPromise = Promise.resolve(loadPromise);
+  window.platformLoadPromises[platform] = trackedPromise;
+  window.platformLoadPending[platform] = true;
+  void trackedPromise.finally(() => {
+    if (window.platformLoadPromises?.[platform] === trackedPromise) {
+      window.platformLoadPending[platform] = false;
+    }
+  });
+  return trackedPromise;
 }
 
 async function triggerInitialPlatformLoads() {
@@ -3510,23 +3522,63 @@ function setPlatformLoginState(platform, state) {
   }
 }
 
-// 等待某个平台登录流程结束（loginState 不再是 checking），返回登录是否成功。
+async function waitForPlatformDataReady(platform, timeoutMs = 120000) {
+  const p = normalizePlatformId(platform);
+  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 120000);
+  while (Date.now() < deadline) {
+    const state = String(window.platformLoginState?.[p] || 'checking');
+    if (state === 'offline') return false;
+    const pending = window.platformLoadPromises?.[p];
+    if (pending && typeof pending.then === 'function') {
+      const remaining = Math.max(1, deadline - Date.now());
+      await Promise.race([
+        Promise.resolve(pending).catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, Math.min(remaining, 1000)))
+      ]);
+    }
+    const progress = window.platformContentLoadProgress?.[p];
+    const progressFinished = !(Number(progress?.total) > 0 && Number(progress?.completed) < Number(progress?.total));
+    if (String(window.platformLoginState?.[p] || '') === 'online'
+      && window.platformLoadedOnce?.[p] === true
+      && progressFinished
+      && window.platformLoadPending?.[p] !== true
+      && window.platformLoadPromises?.[p] === pending) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return false;
+}
+window.waitForPlatformDataReady = waitForPlatformDataReady;
+
+// 等待某个平台登录流程结束，登录成功后还要等课程和作业数据完全加载。
 // 供各平台页面桥的 login 操作调用。
 async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {
   const p = normalizePlatformId(platform);
   const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 120000);
   while (Date.now() < deadline) {
     const state = String(window.platformLoginState?.[p] || 'checking');
-    if (state === 'online') return { ok: true, loggedIn: true, loginState: state, message: '登录成功' };
-    if (state === 'offline') return { ok: false, loggedIn: false, loginState: state, message: '登录失败或尚未登录' };
+    if (state === 'online') {
+      const ready = await waitForPlatformDataReady(p, deadline - Date.now());
+      const finalState = String(window.platformLoginState?.[p] || 'checking');
+      if (ready && finalState === 'online') {
+        return { ok: true, loggedIn: true, ready: true, loginState: finalState, message: '登录成功，平台数据已加载完毕' };
+      }
+      if (finalState === 'offline') return { ok: false, loggedIn: false, ready: false, loginState: finalState, message: '登录失败或会话已失效' };
+      return { ok: false, loggedIn: true, ready: false, loginState: finalState, message: '已登录，但等待平台数据加载超时' };
+    }
+    if (state === 'offline' && !window.platformInteractiveLoginPending?.[p]) {
+      return { ok: false, loggedIn: false, ready: false, loginState: state, message: '登录失败或尚未登录' };
+    }
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   const finalState = String(window.platformLoginState?.[p] || 'checking');
   return {
-    ok: finalState === 'online',
+    ok: false,
     loggedIn: finalState === 'online',
+    ready: false,
     loginState: finalState,
-    message: finalState === 'online' ? '登录成功' : '等待登录超时，请在助手页面完成登录后重试'
+    message: finalState === 'online' ? '已登录，但等待平台数据加载超时' : '等待登录超时，请在助手页面完成登录后重试'
   };
 }
 

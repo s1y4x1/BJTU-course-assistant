@@ -303,6 +303,17 @@
       if (response?.ok && Array.isArray(response.messages)) {
         historyNeedsInitialScroll = true;
         renderHistory(response.messages);
+      } else if (response?.code === 'CHAT_NOT_FOUND') {
+        // 原会话已被用户删除：清空会话并重新触发开场，
+        // 由 maybeSendOpening/sendOpening 自动新建会话并发送系统提示词。
+        sessionChatId = '';
+        sessionParentId = '';
+        nextReplyFresh = false;
+        pendingEditParentId = '';
+        pendingEdit = false;
+        openingStarted = false;
+        openingCompleted = false;
+        void chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']).catch(() => { });
       }
     } finally {
       if (loadingEl instanceof HTMLElement) loadingEl.hidden = true;
@@ -1122,6 +1133,21 @@
         if (currentHeight > availableHeight) panel.style.height = `${availableHeight}px`;
       };
       syncPanelViewportHeight();
+      panel.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        const rect = panel.getBoundingClientRect();
+        const resizeHandleSize = 20;
+        const onNativeResizeHandle = event.clientX >= rect.right - resizeHandleSize
+          && event.clientY >= rect.bottom - resizeHandleSize;
+        if (!onNativeResizeHandle) return;
+        // fixed + bottom 会使原生右下角缩放以底部为锚点；缩放前改为 top 锚定。
+        panel.style.left = `${rect.left}px`;
+        panel.style.top = `${rect.top}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+        panel.style.width = `${rect.width}px`;
+        panel.style.height = `${rect.height}px`;
+      }, { capture: true });
       const header = panel.querySelector('.qwen-chat-header');
       if (header instanceof HTMLElement) {
         header.addEventListener('pointerdown', (event) => {

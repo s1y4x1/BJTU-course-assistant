@@ -1194,7 +1194,18 @@ function scheduleYktLoad(courses, loadVersion = 0) {
 }
 
 // 供 qwen 模块（service worker）经 app 页面消息桥调用的雨课堂接口
+async function waitYktPageDataReady(timeoutMs = 120000) {
+  if (String(window.platformLoginState?.ykt || '') !== 'online') return false;
+  if (typeof window.waitForPlatformDataReady === 'function') {
+    return window.waitForPlatformDataReady('ykt', timeoutMs);
+  }
+  const pending = window.__yktLoadSerialPromise;
+  if (pending && typeof pending.then === 'function') await pending.catch(() => {});
+  return String(window.platformLoginState?.ykt || '') === 'online';
+}
+
 async function yktPageCourseList() {
+  if (String(window.platformLoginState?.ykt || '') === 'online') await waitYktPageDataReady();
   const listResp = await fetchYktJson(YKT_COURSE_LIST_API);
   if (Number(listResp?.errcode) !== 0) {
     return { ok: false, loggedIn: false, courses: [], message: '未登录或会话已失效' };
@@ -1215,6 +1226,15 @@ async function yktPageCourseList() {
 async function yktPageCourseHomework(classroomId) {
   const cid = String(classroomId || '').trim();
   if (!cid) return { ok: false, classroomId: '', homework: [], message: '缺少 classroomId' };
+  if (String(window.platformLoginState?.ykt || '') === 'online') {
+    const ready = await waitYktPageDataReady();
+    if (!ready) return { ok: false, loggedIn: false, classroomId: cid, homework: [], message: '雨课堂未登录或数据未加载完毕' };
+    const snapshot = (Array.isArray(window.yktCourseGroupsSnapshot) ? window.yktCourseGroupsSnapshot : [])
+      .find((course) => String(course?.classroom_id || '') === cid);
+    if (snapshot) {
+      return { ok: true, loggedIn: true, ready: true, classroomId: cid, homework: snapshot.homeworks || [] };
+    }
+  }
   const actypes = [14, 15, 5, 9];
   const urls = actypes.map((actype) => `${YKT_BASE}/v2/api/web/logs/learn/${encodeURIComponent(cid)}?actype=${actype}&page=0&offset=100`);
   const settled = await Promise.allSettled(urls.map((url) => fetchYktJson(url)));
@@ -1260,7 +1280,12 @@ async function yktPageCourseHomework(classroomId) {
       view: a?.view ?? null
     };
   });
-  return { ok: true, classroomId: cid, homework };
+  const successfulResponses = settled.filter((result) => result.status === 'fulfilled'
+    && !((result.value?.errcode !== undefined && Number(result.value.errcode) !== 0) || result.value?.success === false));
+  if (!successfulResponses.length) {
+    return { ok: false, loggedIn: false, classroomId: cid, homework: [], message: '雨课堂未登录或会话已失效' };
+  }
+  return { ok: true, loggedIn: true, classroomId: cid, homework };
 }
 
 async function yktPageLogin(args = {}) {

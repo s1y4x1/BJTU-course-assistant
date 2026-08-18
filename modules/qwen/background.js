@@ -23,6 +23,20 @@
     await chrome.tabs.reload(tabId).catch(() => {});
   }
 
+  async function findOpenQwenAppTab(excludeTabId = null) {
+    const appUrl = chrome.runtime.getURL('app/app.html');
+    const tabs = await chrome.tabs.query({}).catch(() => []);
+    return tabs
+      .filter((tab) => {
+        const url = String(tab?.url || tab?.pendingUrl || '');
+        return Number(tab?.id) !== Number(excludeTabId)
+          && url.startsWith(appUrl)
+          && !/[?&]popup=1(?:&|$)/.test(url);
+      })
+      .sort((left, right) => Number(right?.active === true) - Number(left?.active === true)
+        || Number(right?.lastAccessed || 0) - Number(left?.lastAccessed || 0))[0] || null;
+  }
+
   async function handleWafPageLoaded(sender, payload) {
     const tabId = Number(sender?.tab?.id);
     if (!Number.isInteger(tabId)) return { ok: false };
@@ -40,15 +54,26 @@
     if (state?.phase === 'waiting-user-refresh') {
       await chrome.storage.session.remove(WAF_TAB_STATE_KEY).catch(() => {});
       const appUrl = chrome.runtime.getURL('app/app.html');
-      const appTab = await chrome.tabs.update(tabId, {
-        url: appUrl,
-        active: true,
-        autoDiscardable: false
-      }).catch(() => null);
+      const existingAppTab = await findOpenQwenAppTab(tabId);
+      let reused = false;
+      let appTab = existingAppTab
+        ? await chrome.tabs.update(existingAppTab.id, {
+          active: true,
+          autoDiscardable: false
+        }).catch(() => null)
+        : null;
+      if (appTab) reused = true;
+      else {
+        appTab = await chrome.tabs.update(tabId, {
+          url: appUrl,
+          active: true,
+          autoDiscardable: false
+        }).catch(() => null);
+      }
       if (Number.isInteger(appTab?.windowId)) {
         await chrome.windows.update(appTab.windowId, { focused: true }).catch(() => null);
       }
-      return { ok: true, returnedToApp: true };
+      return { ok: true, returnedToApp: true, reused };
     }
     return { ok: true };
   }
@@ -73,11 +98,7 @@
 
   async function focusQwenAppPage() {
     const appUrl = chrome.runtime.getURL('app/app.html');
-    const tabs = await chrome.tabs.query({}).catch(() => []);
-    const appTab = tabs.find((tab) => {
-      const url = String(tab?.url || '');
-      return url.startsWith(appUrl) && !/[?&]popup=1(?:&|$)/.test(url);
-    });
+    const appTab = await findOpenQwenAppTab();
     const tab = appTab
       ? await chrome.tabs.update(appTab.id, { active: true }).catch(() => appTab)
       : await global.BjtuTabs.create({ url: appUrl, active: true }).catch(() => null);
@@ -359,7 +380,7 @@
             const messages = await client.fetchChatHistory(chatId);
             sendResponse({ ok: true, messages });
           } catch (error) {
-            sendResponse({ ok: false, message: String(error?.message || error) });
+            sendResponse({ ok: false, code: error?.code || '', message: String(error?.message || error) });
           }
         })();
         return true;

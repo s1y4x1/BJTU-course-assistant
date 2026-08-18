@@ -317,6 +317,7 @@
           return 'NOT_LOGGED_IN';
         }
         if (apiCode === 'RateLimited') return 'RATE_LIMITED';
+        if (apiCode === 'Not_Found') return 'CHAT_NOT_FOUND';
         if (details) return 'API_ERROR';
       }
       const ret1 = String((Array.isArray(obj?.ret) ? obj.ret[1] : '') || '');
@@ -346,6 +347,7 @@
     const kind = detectApiErrorText(text);
     if (kind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
     if (kind === 'NOT_LOGGED_IN') throw notLoggedInError();
+    if (kind === 'CHAT_NOT_FOUND') throw Object.assign(new Error(extractApiDetails(text) || '会话不存在或已被删除'), { code: 'CHAT_NOT_FOUND' });
     if (kind === 'API_ERROR') throw new Error(extractApiDetails(text) || '通义千问返回了错误');
     if (kind === 'WAF_BUSY') throw wafBusyError();
     if (kind === 'WAF_PUNISH') throw wafPunishError();

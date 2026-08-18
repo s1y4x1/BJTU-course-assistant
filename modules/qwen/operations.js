@@ -1629,10 +1629,14 @@ name: 've.teachers_of_',
   async function loginPlatformOnce(module) {
     const loginOperation = findOperation(`${module}.login`);
     if (!loginOperation) throw Object.assign(new Error(`${module} 未提供登录操作`), { code: 'LOGIN_REQUIRED' });
+    let loginResult;
     try {
-      await loginOperation.run({});
+      loginResult = await loginOperation.run({});
     } catch (error) {
       throw Object.assign(new Error(`${module} 登录失败：${String(error?.message || error)}`), { code: 'LOGIN_REQUIRED' });
+    }
+    if (loginResult?.ok === false || loginResult?.loggedIn === false || loginResult?.ready === false) {
+      throw Object.assign(new Error(`${module} 登录失败：${String(loginResult?.message || '平台数据未加载完毕')}`), { code: 'LOGIN_REQUIRED' });
     }
     if (!await readPlatformLoginStatus(module)) {
       throw Object.assign(new Error(`${module} 登录失败或登录流程未完成，请登录后重试`), { code: 'LOGIN_REQUIRED' });
