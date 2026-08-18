@@ -89,9 +89,22 @@ html[data-color-scheme="dark"] .module-options-page-link:focus-visible {
 .ui-order-groups > section { min-width:0; }
 .ui-order-title { margin-bottom:5px; color:#475569; font-size:13px; font-weight:600; }
 .ui-order-list { display:flex; flex-direction:column; gap:5px; }
-.ui-order-item { display:grid; grid-template-columns:20px minmax(0,1fr) 28px 28px; align-items:center; gap:5px; min-height:34px; padding:4px 5px; border:1px solid #d1d5db; border-radius:6px; background:#fff; color:#1f2937; }
+.ui-order-item { position:relative; display:grid; grid-template-columns:20px minmax(0,1fr) 28px 28px; align-items:center; gap:5px; min-height:34px; padding:4px 5px; border:1px solid #d1d5db; border-radius:6px; background:#fff; color:#1f2937; }
 .ui-order-item.dragging { opacity:.45; }
-.ui-order-item.drag-over { border-color:#1976d2; box-shadow:0 0 0 1px #1976d2; }
+.ui-order-item.drop-before::before,
+.ui-order-item.drop-after::after {
+  content:'';
+  position:absolute;
+  left:0; right:0;
+  height:2px;
+  background:#1976d2;
+  border-radius:2px;
+  pointer-events:none;
+}
+.ui-order-item.drop-before::before { top:-4px; }
+.ui-order-item.drop-after::after { bottom:-4px; }
+html[data-color-scheme="dark"] .ui-order-item.drop-before::before,
+html[data-color-scheme="dark"] .ui-order-item.drop-after::after { background:#60a5fa; }
 .ui-order-grip { color:#94a3b8; text-align:center; cursor:grab; user-select:none; }
 .ui-order-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ui-order-move { width:28px; height:26px; margin:0; padding:0; border-radius:5px; background:#64748b; font-size:13px; line-height:26px; }

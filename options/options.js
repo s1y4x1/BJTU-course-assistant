@@ -248,7 +248,7 @@ function normalizeMoocPeerReviewCount(value, fallback = DEFAULT_MOOC_PEER_REVIEW
     : fallback;
 }
 
-const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic'];
+const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:qwen'];
 const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
 const PLATFORM_ORDER_LABELS = {
   ve: '智慧课程平台',
@@ -395,6 +395,10 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
       [ids[index], ids[targetIndex]] = [ids[targetIndex], ids[index]];
       void saveUiOrder(group, ids);
     });
+    const clearDropIndicator = () => {
+      list.querySelectorAll('.ui-order-item.drop-before, .ui-order-item.drop-after')
+        .forEach((item) => item.classList.remove('drop-before', 'drop-after'));
+    };
     list.addEventListener('dragstart', (event) => {
       const item = event.target.closest('.ui-order-item');
       if (!item) return;
@@ -404,22 +408,30 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
     });
     list.addEventListener('dragend', (event) => {
       event.target.closest('.ui-order-item')?.classList.remove('dragging');
-      document.querySelectorAll('.ui-order-item.drag-over').forEach((item) => item.classList.remove('drag-over'));
+      clearDropIndicator();
       dragged = null;
     });
     list.addEventListener('dragover', (event) => {
       const target = event.target.closest('.ui-order-item');
       if (!target || !dragged || target.dataset.orderGroup !== dragged.group) return;
-      if (target.dataset.orderId === dragged.id) return;
+      if (target.dataset.orderId === dragged.id) {
+        clearDropIndicator();
+        return;
+      }
       event.preventDefault();
-      target.classList.add('drag-over');
+      clearDropIndicator();
+      const rect = target.getBoundingClientRect();
+      const insertAfter = event.clientY > rect.top + rect.height / 2;
+      target.classList.add(insertAfter ? 'drop-after' : 'drop-before');
     });
-    list.addEventListener('dragleave', (event) => event.target.closest('.ui-order-item')?.classList.remove('drag-over'));
+    list.addEventListener('dragleave', (event) => {
+      if (!list.contains(event.relatedTarget)) clearDropIndicator();
+    });
     list.addEventListener('drop', (event) => {
       const target = event.target.closest('.ui-order-item');
       if (!target || !dragged || target.dataset.orderGroup !== dragged.group) return;
       event.preventDefault();
-      target.classList.remove('drag-over');
+      clearDropIndicator();
       const entries = dragged.group === 'sections' ? getVisibleOptionsOrderEntries() : getVisiblePlatformOrderEntries();
       const ids = entries.map((entry) => entry.id).filter((id) => id !== dragged.id);
       const targetIndex = ids.indexOf(String(target.dataset.orderId || ''));

@@ -1534,17 +1534,35 @@ name: 've.teachers_of_',
     return OPERATIONS.find((op) => op.name === name) || null;
   }
 
-  // 分组顺序优先遵循选项页「排序」编辑器中用户配置的平台顺序（ui-order-groups）。
+  const PLATFORM_GROUP_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
+
+  // 分组顺序遵循选项页「排序」编辑器（ui-order-groups）：
+  // 先按「扩展选项模块」的区块顺序，遇到「平台显示与加载」（platforms）时按「平台」顺序展开其中的课程平台分组，
+  // 其余（未出现在两块中的）分组按默认顺序追加到末尾。
   async function orderedGroups() {
-    const stored = await chrome.storage.local.get('platformOrder').catch(() => ({}));
+    const stored = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']).catch(() => ({}));
+    const sectionOrder = Array.isArray(stored?.optionsSectionOrder) ? stored.optionsSectionOrder.map(String) : [];
     const platformOrder = Array.isArray(stored?.platformOrder) ? stored.platformOrder.map(String) : [];
-    return OPERATION_GROUPS.slice().sort((a, b) => {
-      const ia = platformOrder.indexOf(String(a.id));
-      const ib = platformOrder.indexOf(String(b.id));
-      const ra = ia === -1 ? platformOrder.length : ia;
-      const rb = ib === -1 ? platformOrder.length : ib;
-      return ra - rb;
-    });
+    const byId = new Map(OPERATION_GROUPS.map((group) => [group.id, group]));
+    const ordered = [];
+    const seen = new Set();
+    const push = (id) => {
+      const groupId = String(id || '');
+      if (byId.has(groupId) && !seen.has(groupId)) {
+        seen.add(groupId);
+        ordered.push(byId.get(groupId));
+      }
+    };
+    for (const sectionId of sectionOrder) {
+      if (sectionId === 'platforms') {
+        platformOrder.forEach(push);
+        PLATFORM_GROUP_IDS.forEach(push);
+      } else if (sectionId.startsWith('module:')) {
+        push(sectionId.slice('module:'.length));
+      }
+    }
+    OPERATION_GROUPS.forEach((group) => push(group.id));
+    return ordered;
   }
 
   async function runOperation(name, args, options = {}) {

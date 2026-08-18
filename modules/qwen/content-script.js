@@ -187,6 +187,8 @@
       let responseId = '';
       let responseParentId = '';
       let sawDataLine = false;
+      let targetResponseId = '';
+      let sawAlternateResponse = false;
 
       const handleLine = (line) => {
         if (!line.startsWith('data:')) return;
@@ -199,6 +201,16 @@
         }
         if (data?.response_id) responseId = String(data.response_id);
         if (data?.['response.created']?.response_id) responseId = String(data['response.created'].response_id);
+        const created = data?.['response.created'];
+        if (created) {
+          const idx = String(created.response_index ?? '');
+          const rid = String(created.response_id || '');
+          if (idx === '0') {
+            targetResponseId = rid;
+          } else if (rid && !targetResponseId) {
+            sawAlternateResponse = true;
+          }
+        }
         const createdParentId = String(data?.['response.created']?.response?.parent_id
           || data?.['response.created']?.response?.parentId
           || data?.['response.created']?.parent_id
@@ -218,6 +230,9 @@
           emit({ meta: data });
           return;
         }
+        // 千问可能一次返回多条 response（response_index 0/1），只需读取 index==0 对应的回复。
+        if (targetResponseId && responseId && responseId !== targetResponseId) return;
+        if (!targetResponseId && sawAlternateResponse) return;
         const content = String(delta.content || '');
         const status = String(delta.status || '');
         const phase = String(delta.phase || '');

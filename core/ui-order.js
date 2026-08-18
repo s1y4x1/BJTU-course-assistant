@@ -9,7 +9,8 @@
     'updater',
     'module:campusnet',
     'module:captcha',
-    'module:academic'
+    'module:academic',
+    'module:qwen'
   ]);
   const DEFAULT_PLATFORM_ORDER = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
 
