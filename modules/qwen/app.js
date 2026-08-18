@@ -228,6 +228,10 @@
   function renderOperationsPopover(groups, enabledOperations) {
     const list = el('qwen-chat-ops-list');
     if (!(list instanceof HTMLElement)) return;
+    if (global.BjtuQwenOperationsUi) {
+      BjtuQwenOperationsUi.render(list, groups, enabledOperations, !Array.isArray(enabledOperations));
+      return;
+    }
     list.replaceChildren();
     const enabledSet = new Set(Array.isArray(enabledOperations) ? enabledOperations : []);
     const allSelected = !Array.isArray(enabledOperations);
@@ -345,9 +349,13 @@
     if (list instanceof HTMLElement) {
       list.addEventListener('change', (event) => {
         if (!(event.target instanceof HTMLInputElement) || event.target.type !== 'checkbox') return;
-        const inputs = [...list.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
-        const checked = inputs.filter((cb) => cb.checked).map((cb) => String(cb.dataset.operationName || '')).filter(Boolean);
-        const payload = inputs.length > 0 && checked.length === inputs.length ? null : checked;
+        const payload = global.BjtuQwenOperationsUi
+          ? BjtuQwenOperationsUi.collect(list)
+          : (() => {
+            const inputs = [...list.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
+            const checked = inputs.filter((cb) => cb.checked).map((cb) => String(cb.dataset.operationName || '')).filter(Boolean);
+            return inputs.length > 0 && checked.length === inputs.length ? null : checked;
+          })();
         void send('QWEN_SETTINGS_SET', { enabledOperations: payload });
       });
       window.addEventListener('resize', () => positionPopover());

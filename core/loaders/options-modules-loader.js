@@ -42,6 +42,12 @@
       });
       host.before(slot);
       if (options.style) await global.BjtuModuleRegistry.loadStyle(`modules/${id}/${options.style}`);
+      for (const extraStyle of options.styles || []) {
+        await global.BjtuModuleRegistry.loadStyle(`modules/${id}/${extraStyle}`);
+      }
+      for (const extraScript of options.scripts || []) {
+        await global.BjtuModuleRegistry.loadScript(`modules/${id}/${extraScript}`);
+      }
       if (options.script) await global.BjtuModuleRegistry.loadScript(`modules/${id}/${options.script}`);
       loaded.push(id);
     }
