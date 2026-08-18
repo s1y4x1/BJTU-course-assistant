@@ -85,6 +85,11 @@ html[data-color-scheme="dark"] .qwen-setting-label {
   max-width: 340px;
 }
 
+.qwen-model-select[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 html[data-color-scheme="dark"] .qwen-model-select {
   background: #1e293b;
   border-color: #334155;
