@@ -83,7 +83,8 @@
   }
 
   async function openLoginPage() {
-    await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
+    const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
+    await keepChatTabResident(tab?.id);
   }
 
   async function findChatTab() {
@@ -101,6 +102,7 @@
     if (typeof chrome !== 'object' || !chrome?.tabs?.create) return null;
     try {
       const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: false });
+      await keepChatTabResident(tab?.id);
       for (let i = 0; i < 24; i += 1) {
         await sleep(500);
         const ping = await sendToTab(tab.id, { type: 'QWEN_PING' });
@@ -119,18 +121,10 @@
     if (await isLoggedIn()) return true;
     let tab = await findChatTab();
     if (tab) {
-      if (await pingChatTab(tab.id)) {
-        for (let i = 0; i < 12; i += 1) {
-          if (await isLoggedIn()) return true;
-          await sleep(500);
-        }
-      }
-      if (!await isLoggedIn()) {
-        try { await chrome.tabs.reload(tab.id); } catch { /* 重载失败则继续走新页面 */ }
-        for (let i = 0; i < 12; i += 1) {
-          if (await isLoggedIn()) return true;
-          await sleep(500);
-        }
+      tab = await ensureChatTabReady(tab);
+      for (let i = 0; tab && i < 12; i += 1) {
+        if (await isLoggedIn()) return true;
+        await sleep(500);
       }
     }
     if (!await isLoggedIn()) {
@@ -140,15 +134,30 @@
   }
 
   async function pingChatTab(tabId) {
-    const ping = await sendToTab(tabId, { type: 'QWEN_PING' });
+    const ping = await Promise.race([
+      sendToTab(tabId, { type: 'QWEN_PING' }),
+      sleep(1500).then(() => null)
+    ]);
     return ping?.ready === true;
   }
 
-  // 复用后台的 chat.qwen.ai 页面发请求前，先把它从闲置状态唤醒：
-  // 1) 若页面已被浏览器丢弃（discarded）或内容脚本丢失，先激活（前台唤起）该标签页；
-  // 2) 仍无法与内容脚本通信时，重载页面以重新注入内容脚本；
-  // 3) 若页面在别的窗口，同时把该窗口提到前台，确保请求能经由该页面发出。
-  async function ensureChatTabActive(tab) {
+  async function keepChatTabResident(tabId) {
+    const id = Number(tabId);
+    if (!Number.isInteger(id)) return null;
+    return chrome.tabs.update(id, { autoDiscardable: false }).catch(() => null);
+  }
+
+  async function waitForChatTabReady(tabId, attempts = 24) {
+    for (let i = 0; i < attempts; i += 1) {
+      if (await pingChatTab(tabId)) return true;
+      await sleep(500);
+    }
+    return false;
+  }
+
+  // frozen/discarded 标签只能通过激活解除休眠。这里短暂激活 Qwen 页，
+  // 等内容脚本恢复后立即切回原标签，并通过 autoDiscardable=false 避免再次被自动丢弃。
+  async function ensureChatTabReady(tab) {
     if (!tab) return null;
     let current = tab;
     try {
@@ -157,27 +166,31 @@
     } catch {
       // 页面可能已关闭，沿用原引用
     }
-    const stale = current.discarded === true || current.status === 'unloaded';
-    if (!stale && await pingChatTab(current.id)) return current;
+    await keepChatTabResident(current.id);
+    const sleeping = current.discarded === true || current.frozen === true || current.status === 'unloaded';
+    if (!sleeping && await pingChatTab(current.id)) return current;
 
+    const activeTabs = Number.isInteger(current.windowId)
+      ? await chrome.tabs.query({ windowId: current.windowId, active: true }).catch(() => [])
+      : [];
+    const restoreTabId = activeTabs.find((item) => item?.id !== current.id)?.id;
+    let ready = false;
     try {
-      await chrome.tabs.update(current.id, { active: true });
-      if (current.windowId != null) {
-        await chrome.windows.update(current.windowId, { focused: true });
+      await chrome.tabs.update(current.id, { active: true, autoDiscardable: false });
+      ready = await waitForChatTabReady(current.id, sleeping ? 24 : 8);
+      if (!ready) {
+        await chrome.tabs.reload(current.id);
+        ready = await waitForChatTabReady(current.id, 24);
       }
     } catch {
-      // 激活失败不阻断后续重载
+      ready = false;
+    } finally {
+      if (Number.isInteger(restoreTabId)) {
+        await chrome.tabs.update(restoreTabId, { active: true }).catch(() => null);
+      }
     }
-
-    if (stale || !(await pingChatTab(current.id))) {
-      try { await chrome.tabs.reload(current.id); } catch { /* 重载失败则按原样返回 */ }
-    }
-
-    for (let i = 0; i < 24; i += 1) {
-      await sleep(500);
-      if (await pingChatTab(current.id)) return current;
-    }
-    return current;
+    if (!ready) return null;
+    return await chrome.tabs.get(current.id).catch(() => current);
   }
 
   function sendToTab(tabId, message) {
@@ -309,12 +322,17 @@
     let tab = await findChatTab();
     if (!tab && !options.noEnsureTab) tab = await ensureChatTab();
     if (tab) {
+      const staleTab = tab;
+      tab = await ensureChatTabReady(tab);
+      if (!tab && !options.noEnsureTab) {
+        await chrome.tabs.remove(staleTab.id).catch(() => null);
+        tab = await ensureChatTab();
+      }
       let punished = false;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      for (let attempt = 0; tab && attempt < 2; attempt += 1) {
         if (attempt > 0) {
           await sleep(2500);
-          // 首次经标签页发送失败时，唤醒/刷新闲置标签页后再重试一次
-          const ready = await ensureChatTabActive(tab);
+          const ready = await ensureChatTabReady(tab);
           if (ready) tab = ready;
         }
         const result = await sendToTab(tab.id, {
@@ -673,19 +691,20 @@
     let tab = await findChatTab();
     if (!tab) tab = await ensureChatTab();
     if (tab) {
+      const staleTab = tab;
+      tab = await ensureChatTabReady(tab);
+      if (!tab) {
+        await chrome.tabs.remove(staleTab.id).catch(() => null);
+        tab = await ensureChatTab();
+      }
+    }
+    if (tab) {
       let lastError = null;
-      let refreshed = false;
       let replaced = false;
-      let activated = false;
       for (let attempt = 0; attempt < 4; attempt += 1) {
         if (attempt > 0) {
           if (receivedAny) break;
           await sleep(3000 * attempt);
-        }
-        if (!activated) {
-          const ready = await ensureChatTabActive(tab);
-          if (ready) tab = ready;
-          activated = true;
         }
         try {
           return await streamViaContentScript(tab, wrappedOptions);
@@ -694,22 +713,14 @@
           lastError = error;
           if (error?.code === 'WAF_PUNISH' && attempt < 2 && !receivedAny) continue;
           const notReady = String(error?.message || '').includes('页面未就绪');
-          if (notReady && !refreshed) {
-            // 激活后内容脚本仍未就绪：刷新页面以重新注入内容脚本
-            refreshed = true;
-            try {
-              await chrome.tabs.reload(tab.id);
-              for (let i = 0; i < 24; i += 1) {
-                await sleep(500);
-                if (await pingChatTab(tab.id)) break;
-              }
+          if (notReady) {
+            const ready = await ensureChatTabReady(tab);
+            if (ready) {
+              tab = ready;
               continue;
-            } catch {
-              // 刷新失败则继续走关闭重建
             }
           }
           if (notReady && !replaced) {
-            // 刷新后仍无法通信：关闭旧页面（如可关闭）并打开新页面
             replaced = true;
             try {
               await chrome.tabs.remove(tab.id);
@@ -717,7 +728,10 @@
               // 旧页面无法关闭（如无权限），继续尝试新页面
             }
             tab = await ensureChatTab();
-            if (tab) continue;
+            if (tab) {
+              tab = await ensureChatTabReady(tab);
+              if (tab) continue;
+            }
           }
           break;
         }

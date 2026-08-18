@@ -2756,13 +2756,43 @@ async function triggerVeLoginWithAccount(platform, account, timeoutMs) {
     input.value = account;
   }
   if (typeof globalThis.doLoginFlow === 'function') {
-    try { globalThis.doLoginFlow(); } catch {}
+    try {
+      const result = await globalThis.doLoginFlow();
+      const resultAccount = String(result?.userInfo?.loginName || '').trim();
+      const accountMatched = result?.ok === true && (!resultAccount || resultAccount === account);
+      const sessionLoginState = String(window?.platformLoginState?.[platform] || '');
+      return {
+        ...result,
+        ok: accountMatched,
+        loggedIn: accountMatched,
+        account,
+        loginState: accountMatched ? 'online' : 'offline',
+        sessionLoginState,
+        message: accountMatched
+          ? (result?.message || `账号 ${account} 登录成功`)
+          : (result?.message || `账号 ${account} 未登录成功`)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        loggedIn: false,
+        account,
+        loginState: 'offline',
+        sessionLoginState: String(window?.platformLoginState?.[platform] || ''),
+        reason: 'error',
+        message: String(error?.message || error || '登录失败')
+      };
+    }
   }
-  if (typeof globalThis.waitForPlatformLoginResult === 'function') {
-    return globalThis.waitForPlatformLoginResult(platform, Number(timeoutMs) || 120000);
-  }
-  const state = String(window?.platformLoginState?.[platform] || '');
-  return { ok: state === 'online', loggedIn: state === 'online', loginState: state };
+  return {
+    ok: false,
+    loggedIn: false,
+    account,
+    loginState: 'offline',
+    sessionLoginState: String(window?.platformLoginState?.[platform] || ''),
+    reason: 'unavailable',
+    message: '智慧课程平台登录流程不可用'
+  };
 }
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

@@ -14,6 +14,7 @@
   const THINKING_ID = 'qwen-chat-thinking';
 
   let port = null;
+  let historyNeedsInitialScroll = false;
   let activeBubble = null;
   let busy = false;
   let sessionChatId = '';
@@ -202,6 +203,7 @@
     scroll();
     requestAnimationFrame(scroll);
     setTimeout(scroll, 60);
+    setTimeout(scroll, 180);
   }
 
   const HISTORY_LOADING_ID = 'qwen-chat-history-loading';
@@ -212,9 +214,15 @@
     if (loadingEl instanceof HTMLElement) loadingEl.hidden = false;
     try {
       const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: sessionChatId });
-      if (response?.ok && Array.isArray(response.messages)) renderHistory(response.messages);
+      if (response?.ok && Array.isArray(response.messages)) {
+        historyNeedsInitialScroll = true;
+        renderHistory(response.messages);
+      }
     } finally {
       if (loadingEl instanceof HTMLElement) loadingEl.hidden = true;
+      const messagesEl = el(MESSAGES_ID);
+      scrollMessagesToBottom(messagesEl);
+      if (messagesEl instanceof HTMLElement && messagesEl.clientHeight > 0) historyNeedsInitialScroll = false;
     }
   }
 
@@ -687,12 +695,14 @@
     inThinking = false;
     activeBubble = ensureAssistantBubble();
     placeCursor(activeBubble, false);
+    scrollMessagesToBottom(el(MESSAGES_ID));
     const lastOperationCard = { card: null };
 
     const connectPort = () => {
       port = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
       port.onMessage.addListener((message) => {
         if (message?.type === 'delta') {
+          setStatus('回复中…');
           const bubble = ensureAssistantBubble();
           if (bubble) appendAssistantText(bubble, message.text);
           if (inThinking) {
@@ -703,18 +713,22 @@
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'thinking') {
+          setStatus('思考中…');
           const bubble = ensureAssistantBubble();
           if (bubble) {
+            const existingDetails = bubble.querySelector(':scope > .qwen-chat-thinking');
             const body = ensureThinkingBlock(bubble);
             if (body) appendAssistantText(body, message.text);
             const details = bubble.querySelector(':scope > .qwen-chat-thinking');
-            if (details instanceof HTMLDetailsElement) details.open = true;
+            if (!(existingDetails instanceof HTMLDetailsElement) && details instanceof HTMLDetailsElement) details.open = true;
             inThinking = true;
             placeCursor(bubble, true);
+            if (body instanceof HTMLElement) body.scrollTop = body.scrollHeight;
             const messages = el(MESSAGES_ID);
             if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
           }
         } else if (message?.type === 'operation') {
+          setStatus('操作中…');
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;
@@ -724,6 +738,7 @@
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'operationResult') {
+          setStatus('思考中…');
           updateOperationResult(lastOperationCard.card, message.result);
           nextReplyFresh = false;
           if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
@@ -733,6 +748,7 @@
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.scrollTop = messages.scrollHeight;
         } else if (message?.type === 'firstMessage') {
+          setStatus('思考中…');
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;
@@ -986,6 +1002,10 @@
             fab.style.display = 'none';
             void refreshStatus();
             void refreshModels();
+            if (historyNeedsInitialScroll) {
+              scrollMessagesToBottom(el(MESSAGES_ID));
+              historyNeedsInitialScroll = false;
+            }
             if (input instanceof HTMLTextAreaElement) input.focus();
           } else {
             fab.style.display = '';

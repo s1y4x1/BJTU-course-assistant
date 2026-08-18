@@ -474,7 +474,9 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.login()` 仅启用平台；`ve.login({account: "2023xxxx"})` 自动填写账号并触发登录',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '指定账号时会等待密码/验证码弹窗关闭，并返回该目标账号本次是否登录成功；已有的其他账号会话不会被当作成功。',
+        '',
+        '**返回示例**：{"account":"2023xxxx","loginState":"online","loggedIn":true,"message":"账号 2023xxxx 登录成功"}'
       ].join('\n'),
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();
@@ -1469,7 +1471,7 @@ name: 've.teachers_of_',
       doc: [
         '## qwen.listOperations —— 列出全部操作',
         '',
-        '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/qwen），内层为操作名（不含 module. 前缀）→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
+        '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/qwen），内层为操作名→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
         '',
         '**调用示例**：`qwen.listOperations()`',
         '',
@@ -1504,7 +1506,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`qwen.getDoc({name: "ve.courseList"})`',
         '',
-        '**返回示例**：{"name":"ve.courseList","module":"ve","doc":"## ve.courseList —— ..."}'
+        '**返回示例**："## ve.courseList —— 课程列表\n……"'
       ].join('\n'),
       async run(args) {
         const name = String(args?.name || '').trim();

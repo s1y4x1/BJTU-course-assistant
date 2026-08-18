@@ -1716,6 +1716,7 @@ let totalRecentSpeedBps = 0;
 let lastValidUsername = '';
 let pendingUsernameChange = null; // { from: string, to: string } | null
 let isLoginInProgress = false;
+let activeLoginFlowPromise = null;
 let loginCancelRequested = false;
 let loginAbortController = null;
 let suppressedUsernameChangeValue = '';
@@ -2985,12 +2986,20 @@ async function openCaptchaOptionsFromApp() {
   return true;
 }
 
-async function doLoginFlow() {
-  if (isLoginInProgress) return;
+function doLoginFlow() {
+  if (activeLoginFlowPromise) return activeLoginFlowPromise;
+  activeLoginFlowPromise = runLoginFlow().finally(() => {
+    activeLoginFlowPromise = null;
+  });
+  return activeLoginFlowPromise;
+}
+
+async function runLoginFlow() {
+  if (isLoginInProgress) return { ok: false, reason: 'busy', message: '已有登录流程正在进行' };
   const username = String(usernameInput.value || '').trim();
   if (!username) {
     showToast('请输入账号，或改为填写 JSESSIONID', 'warning');
-    return;
+    return { ok: false, reason: 'empty', message: '请输入账号' };
   }
 
   loginFlowUsernameSet = true;
@@ -3018,8 +3027,7 @@ async function doLoginFlow() {
   try {
     showToast('正在读取账号列表…', 'info', 0);
     const initialInitializationResult = await globalThis.BjtuAccountLogin.ensureInitialized({ showProgress: true });
-    if (signal.aborted || loginCancelRequested) return;
-    let skipNextAutomaticLoginAttempt = initialInitializationResult?.skipped === true;
+    if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', message: '登录已取消' };
 
     let account = await getLocalAccountInfo(username);
     let manualPassword = '';
@@ -3031,7 +3039,7 @@ async function doLoginFlow() {
       : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
 
     while (true) {
-      if (signal.aborted || loginCancelRequested) return;
+      if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', message: '登录已取消' };
 
       const submittedPassword = manualPassword;
       const submittedPasswordPlain = manualPasswordPlain;
@@ -3049,15 +3057,29 @@ async function doLoginFlow() {
         skipCurrentCheck: true,
         allowStoredCredentials
       });
-      if (signal.aborted || loginCancelRequested) return;
+      if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', message: '登录已取消' };
       showLoginCredentialEvents(result);
       if (Array.isArray(result?.credentialEvents) && result.credentialEvents.length) {
         account = await getLocalAccountInfo(username);
       }
 
       if (result?.ok) {
+        const resultLoginName = String(result?.userInfo?.loginName || '').trim();
+        if (resultLoginName && resultLoginName !== username) {
+          await restoreAfterFailure();
+          const mismatchResult = {
+            ...result,
+            ok: false,
+            reason: 'account-mismatch',
+            account: username,
+            actualAccount: resultLoginName,
+            message: `登录响应账号为 ${resultLoginName}，目标账号 ${username} 未登录成功`
+          };
+          showToast(mismatchResult.message, 'error', 3500);
+          return mismatchResult;
+        }
         await handleLoginSuccess(username);
-        return;
+        return { ...result, account: username };
       }
       if (result?.reason === 'captcha') {
         showToast('验证码错误，正在重新识别…', 'warning', 1800);
@@ -3070,7 +3092,7 @@ async function doLoginFlow() {
           || /本地验证码识别模块未安装/i.test(String(result?.message || ''))) {
         if (await openCaptchaOptionsFromApp()) {
           await restoreAfterFailure();
-          return;
+          return { ...result, account: username };
         }
         recoveryMessage = '本地验证码识别模块未安装，请手动输入验证码后继续登录。';
       }
@@ -3083,13 +3105,13 @@ async function doLoginFlow() {
         }
         await restoreAfterFailure();
         showToast(result.message || '登录失败', 'error', 4000);
-        return;
+        return { ...result, account: username };
       }
       if (!['credential', 'account-not-found', 'needs-password', 'captcha-required',
         'captcha-module-missing', 'captcha-resources-missing'].includes(result?.reason)) {
         await restoreAfterFailure();
         showToast(result?.message || '登录失败', 'error', 3000);
-        return;
+        return { ...result, account: username };
       }
 
       recoveryMessage = result?.message || recoveryMessage;
@@ -3102,7 +3124,7 @@ async function doLoginFlow() {
         } catch (error) {
           await restoreAfterFailure();
           showToast('验证码图片获取失败：' + String(error?.message || error), 'error', 3000);
-          return;
+          return { ok: false, reason: 'captcha-image', account: username, message: String(error?.message || error) };
         }
       }
       const fallbackPassword = submittedPassword
@@ -3113,11 +3135,11 @@ async function doLoginFlow() {
         captchaImageUrl,
         fallbackPassword
       });
-      if (signal.aborted || loginCancelRequested) return;
+      if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', account: username, message: '登录已取消' };
       if (recovery?.action === 'cancel') {
         await restoreAfterFailure();
         showToast('登录失败，已恢复原账号', 'warning', 2200);
-        return;
+        return { ok: false, reason: 'cancelled', account: username, message: '用户已取消登录' };
       }
       if (recovery?.action === 'reinitialize') {
         try {
@@ -3147,10 +3169,11 @@ async function doLoginFlow() {
       }
     }
   } catch (error) {
-    if (signal.aborted || loginCancelRequested) return;
+    if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', account: username, message: '登录已取消' };
     console.error('Login error:', error);
     await restoreAfterFailure();
     showToast('登录过程中出现异常：' + String(error?.message || error), 'error', 3500);
+    return { ok: false, reason: 'error', account: username, message: String(error?.message || error) };
   } finally {
     const switchModalClosed = !loginModal || loginModal.style.display === 'none';
     if (wasSwitchingAccount && pendingUsernameChange && switchModalClosed) {

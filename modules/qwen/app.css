@@ -251,7 +251,7 @@ html[data-color-scheme="dark"] .qwen-chat-edit-btn {
 
 .qwen-chat-retry-btn {
   display: inline-block;
-  margin-top: 8px;
+  margin: 0;
   border: 1px solid rgba(97, 92, 237, 0.5);
   background: rgba(97, 92, 237, 0.1);
   color: #4338ca;
@@ -259,6 +259,10 @@ html[data-color-scheme="dark"] .qwen-chat-edit-btn {
   padding: 4px 12px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.qwen-chat-msg.error > .qwen-chat-retry-btn {
+  margin-left: 8px;
 }
 
 .qwen-chat-retry-btn:hover {
