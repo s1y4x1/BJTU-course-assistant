@@ -298,13 +298,20 @@ function applyOptionsSectionOrder(order = currentOptionsSectionOrder) {
 
 function applyPlatformOrderToOptions(order = currentPlatformOrder) {
   const container = document.getElementById('platform-options-title')?.parentElement;
-  const anchor = container?.querySelector(':scope > .tip[data-tip-target="#platform-options-title"]');
-  if (!container || !anchor) return;
+  if (!container) return;
+  const anchor = container.querySelector(':scope > .tip[data-tip-target="#platform-options-title"]');
+  const beforeAnchor = (element) => {
+    if (anchor) anchor.before(element);
+    else container.appendChild(element);
+  };
   order.forEach((id) => {
     const choice = container.querySelector(`:scope > .platform-option[data-module="${id}"]`);
+    if (choice) beforeAnchor(choice);
     const detail = container.querySelector(`:scope > .platform-option-detail[data-module="${id}"]`);
-    if (choice) anchor.before(choice);
-    if (detail) anchor.before(detail);
+    if (detail) beforeAnchor(detail);
+  });
+  container.querySelectorAll(':scope > .platform-option, :scope > .platform-option-detail').forEach((element) => {
+    if (!order.includes(String(element.dataset.module || ''))) beforeAnchor(element);
   });
 }
 
