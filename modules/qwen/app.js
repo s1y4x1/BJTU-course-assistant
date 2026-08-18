@@ -6,6 +6,7 @@
   const PANEL_ID = 'qwen-chat-panel';
   const STATUS_ID = 'qwen-chat-status';
   const MESSAGES_ID = 'qwen-chat-messages';
+  const MESSAGES_SCROLL_ID = 'qwen-chat-messages-scroll';
   const LOGIN_HINT_ID = 'qwen-chat-login-hint';
   const INPUT_ID = 'qwen-chat-input';
   const SEND_ID = 'qwen-chat-send';
@@ -247,17 +248,26 @@
   }
 
   // 历史记录渲染完成后滚动到最后一条消息（Markdown 可能异步渲染，多拍几次确保到位）
+  function getMessagesScrollContainer(container) {
+    const scroller = el(MESSAGES_SCROLL_ID);
+    if (scroller instanceof HTMLElement) return scroller;
+    return container instanceof HTMLElement ? container : null;
+  }
+
   function isMessagesAtBottom(container) {
+    container = getMessagesScrollContainer(container);
     return container instanceof HTMLElement
       && container.scrollHeight - container.scrollTop - container.clientHeight <= 3;
   }
 
   function updateScrollBottomButton(container) {
+    container = getMessagesScrollContainer(container);
     const button = el(SCROLL_BOTTOM_ID);
     if (button instanceof HTMLButtonElement) button.hidden = autoScrollEnabled || isMessagesAtBottom(container);
   }
 
   function scrollMessagesToBottom(container, { force = false, settle = true } = {}) {
+    container = getMessagesScrollContainer(container);
     if (!(container instanceof HTMLElement)) return;
     if (!force && !autoScrollEnabled) {
       updateScrollBottomButton(container);
@@ -1077,22 +1087,23 @@
     const input = el(INPUT_ID);
     const loginBtn = el('qwen-chat-login-btn');
     const messages = el(MESSAGES_ID);
+    const messagesScroller = getMessagesScrollContainer(messages);
     const scrollBottomBtn = el(SCROLL_BOTTOM_ID);
 
-    if (messages instanceof HTMLElement) {
-      lastMessagesScrollTop = messages.scrollTop;
-      messages.addEventListener('wheel', (event) => {
+    if (messagesScroller instanceof HTMLElement) {
+      lastMessagesScrollTop = messagesScroller.scrollTop;
+      messagesScroller.addEventListener('wheel', (event) => {
         if (event.deltaY < 0) {
           autoScrollEnabled = false;
-          updateScrollBottomButton(messages);
+          updateScrollBottomButton(messagesScroller);
         }
       }, { passive: true });
-      messages.addEventListener('scroll', () => {
-        const current = messages.scrollTop;
-        if (isMessagesAtBottom(messages)) autoScrollEnabled = true;
+      messagesScroller.addEventListener('scroll', () => {
+        const current = messagesScroller.scrollTop;
+        if (isMessagesAtBottom(messagesScroller)) autoScrollEnabled = true;
         else if (current < lastMessagesScrollTop - 1) autoScrollEnabled = false;
         lastMessagesScrollTop = current;
-        updateScrollBottomButton(messages);
+        updateScrollBottomButton(messagesScroller);
       }, { passive: true });
     }
     if (scrollBottomBtn instanceof HTMLButtonElement) {

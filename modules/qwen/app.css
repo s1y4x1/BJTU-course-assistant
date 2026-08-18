@@ -21,6 +21,7 @@
 }
 
 .qwen-chat-panel {
+  box-sizing: border-box;
   position: fixed;
   left: 20px;
   bottom: 20px;
@@ -151,39 +152,48 @@ html[data-color-scheme="dark"] .qwen-chat-new:hover {
 .qwen-chat-messages-wrap {
   flex: 1 1 auto;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
+}
+
+.qwen-chat-messages-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
 }
 
 .qwen-chat-messages {
   box-sizing: border-box;
   width: 100%;
-  height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
+  min-height: 100%;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 0;
 }
 
-.qwen-chat-messages::-webkit-scrollbar {
+.qwen-chat-messages-scroll::-webkit-scrollbar {
   width: 6px;
 }
 
-.qwen-chat-messages::-webkit-scrollbar-track {
+.qwen-chat-messages-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.qwen-chat-messages::-webkit-scrollbar-thumb {
+.qwen-chat-messages-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgba(100, 116, 139, 0.55);
 }
 
-.qwen-chat-messages::-webkit-scrollbar-thumb:hover {
+.qwen-chat-messages-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(71, 85, 105, 0.75);
 }
 

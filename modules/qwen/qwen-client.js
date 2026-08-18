@@ -316,10 +316,8 @@
         if (apiCode === 'Unauthorized' || apiCode === '401' || apiCode === 'AuthenticationFailed' || apiCode === 'TokenExpired') {
           return 'NOT_LOGGED_IN';
         }
+        if (apiCode === 'RateLimited') return 'RATE_LIMITED';
         if (details) return 'API_ERROR';
-      }
-      if (String(obj?.data?.code || '') === 'RateLimited') {
-        return 'RATE_LIMITED';
       }
       const ret1 = String((Array.isArray(obj?.ret) ? obj.ret[1] : '') || '');
       if (ret0.startsWith('FAIL_SYS_USER_VALIDATE') && ret1.includes('被挤爆')) {
