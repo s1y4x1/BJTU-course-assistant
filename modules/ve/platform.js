@@ -2739,6 +2739,11 @@ globalThis.BjtuVePageApi = Object.freeze({
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
   archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
   uploadedFiles: (args) => vePageUploadedFiles(args),
+  uploadFile: (args) => {
+    const upload = globalThis.BjtuVeUploadApi?.uploadFile;
+    if (typeof upload !== 'function') throw new Error('智慧课程平台上传接口尚未就绪');
+    return upload(args || {});
+  },
   // ve.login：支持账号参数。
   // - 省略账号：仅触发平台启用（相当于点击 ve-status-btn），不自动登录。
   // - 填写账号：自动填写 app 页面的 username-input 并触发完整登录流程。
@@ -2835,7 +2840,11 @@ if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
     }
     Promise.resolve(fn(message.payload?.args || {})).then(
       (value) => sendResponse({ ok: true, value }),
-      (error) => sendResponse({ ok: false, error: String(error?.message || error) })
+      (error) => sendResponse({
+        ok: false,
+        error: String(error?.message || error),
+        code: String(error?.code || (error?.loginRequired ? 'LOGIN_REQUIRED' : ''))
+      })
     );
     return true;
   });

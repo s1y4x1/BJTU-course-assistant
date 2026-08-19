@@ -894,6 +894,181 @@ function handleFiles(e) {
   processFilesForUpload(files);
 }
 
+function decodeApiUploadBase64(value) {
+  const source = String(value || '').trim().replace(/^data:[^,]*;base64,/i, '').replace(/\s+/g, '');
+  if (!source) return new Uint8Array();
+  let binary;
+  try { binary = atob(source); } catch { throw new Error('base64 文件内容无效'); }
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function buildApiUploadFile(args = {}) {
+  if (args?.__localFile instanceof File) return args.__localFile;
+  let fileName = String(args?.fileName || args?.name || '').trim();
+  const requestedMimeType = String(args?.mimeType || args?.type || '').trim();
+  let blob;
+  if (args?.dataBase64 !== undefined || args?.base64 !== undefined) {
+    blob = new Blob([decodeApiUploadBase64(args.dataBase64 ?? args.base64)], { type: requestedMimeType || 'application/octet-stream' });
+  } else if (Array.isArray(args?.bytes)) {
+    const values = args.bytes.map((item) => Number(item));
+    if (values.some((item) => !Number.isInteger(item) || item < 0 || item > 255)) {
+      throw new Error('bytes 必须是由 0 至 255 整数组成的数组');
+    }
+    blob = new Blob([new Uint8Array(values)], { type: requestedMimeType || 'application/octet-stream' });
+  } else if (args?.text !== undefined || args?.content !== undefined) {
+    blob = new Blob([String(args.text ?? args.content ?? '')], { type: requestedMimeType || 'text/plain' });
+  } else if (String(args?.url || '').trim()) {
+    const sourceUrl = new URL(String(args.url).trim()).href;
+    const response = await fetch(sourceUrl, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) throw new Error(`获取待上传文件失败：HTTP ${response.status}`);
+    blob = await response.blob();
+    if (!fileName) {
+      const inferredName = new URL(response.url || sourceUrl).pathname.split('/').filter(Boolean).pop() || 'upload.bin';
+      try { fileName = decodeURIComponent(inferredName); } catch { fileName = inferredName; }
+    }
+  } else {
+    throw new Error('缺少文件内容：请提供 text/content、base64/dataBase64、bytes 或 url');
+  }
+  if (!fileName) throw new Error('缺少参数 fileName');
+  return new File([blob], fileName, { type: requestedMimeType || blob.type || 'application/octet-stream', lastModified: Date.now() });
+}
+
+function selectLocalFileForApi({ accept = '' } = {}) {
+  return new Promise((resolve, reject) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.48);';
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'width:min(420px,calc(100vw - 40px));padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.28);color:#0f172a;font-family:inherit;';
+    const title = document.createElement('div');
+    title.textContent = '选择要上传的本地文件';
+    title.style.cssText = 'font-size:17px;font-weight:700;margin-bottom:8px;';
+    const tip = document.createElement('div');
+    tip.textContent = '扩展操作请求向智慧课程平台上传一个文件。';
+    tip.style.cssText = 'font-size:14px;color:#475569;line-height:1.6;margin-bottom:18px;';
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.textContent = '取消';
+    cancelButton.style.cssText = 'padding:8px 15px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;cursor:pointer;';
+    const chooseButton = document.createElement('button');
+    chooseButton.type = 'button';
+    chooseButton.textContent = '选择文件';
+    chooseButton.style.cssText = 'padding:8px 15px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;';
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
+    if (String(accept || '').trim()) input.accept = String(accept).trim();
+    actions.append(cancelButton, chooseButton);
+    dialog.append(title, tip, actions, input);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    let settled = false;
+    let focusTimer = 0;
+    let pickerOpened = false;
+    const cleanup = () => {
+      clearTimeout(focusTimer);
+      globalThis.removeEventListener('focus', onWindowFocus, true);
+      overlay.remove();
+    };
+    const finish = (file) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (file instanceof File) resolve(file);
+      else reject(Object.assign(new Error('用户取消选择文件'), { code: 'USER_CANCELLED' }));
+    };
+    const onWindowFocus = () => {
+      if (!pickerOpened) return;
+      clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => finish(input.files?.[0] || null), 300);
+    };
+    input.addEventListener('change', () => finish(input.files?.[0] || null), { once: true });
+    input.addEventListener('cancel', () => finish(null), { once: true });
+    cancelButton.addEventListener('click', () => finish(null), { once: true });
+    chooseButton.addEventListener('click', () => {
+      pickerOpened = true;
+      try { input.click(); } catch (error) {
+        settled = true;
+        cleanup();
+        reject(error);
+      }
+    });
+    globalThis.addEventListener('focus', onWindowFocus, true);
+    chooseButton.focus();
+  });
+}
+
+async function uploadFileForApi(args = {}) {
+  const hasSerializedSource = args?.dataBase64 !== undefined || args?.base64 !== undefined
+    || Array.isArray(args?.bytes) || args?.text !== undefined || args?.content !== undefined
+    || !!String(args?.url || '').trim();
+  const file = hasSerializedSource
+    ? await buildApiUploadFile(args)
+    : await selectLocalFileForApi({ accept: args?.accept });
+  const manualJsessionMode = !String(usernameInput?.value || '').trim();
+  const jsid = String(jsessionidInput?.value || await getLocal('jsessionid', '') || '').trim();
+  if (manualJsessionMode && !jsid) {
+    throw Object.assign(new Error('LOGIN_REQUIRED'), { code: 'LOGIN_REQUIRED', loginRequired: true });
+  }
+  const uploadUrl = manualJsessionMode
+    ? `http://123.121.147.7:88/ve/back/rp/common/rpUpload.shtml;jsessionid=${encodeURIComponent(jsid)}`
+    : 'http://123.121.147.7:88/ve/back/rp/common/rpUpload.shtml';
+  const body = new FormData();
+  body.append('file', file);
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Upgrade-Insecure-Requests': '1' },
+    body
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`上传失败：HTTP ${response.status}`);
+  if (typeof isLikelyLoginPageHtml === 'function' && isLikelyLoginPageHtml(text, response.url)) {
+    throw Object.assign(new Error('LOGIN_REQUIRED'), { code: 'LOGIN_REQUIRED', loginRequired: true });
+  }
+  let data;
+  try { data = JSON.parse(text || '{}'); } catch { throw new Error(text.trim().slice(0, 300) || '上传接口返回非 JSON'); }
+  const visitName = String(data?.visitName || '').trim();
+  if (!visitName) {
+    const message = String(data?.ERRMSG || data?.message || '上传失败');
+    if (/登录|不合法/.test(message)) {
+      throw Object.assign(new Error('LOGIN_REQUIRED'), { code: 'LOGIN_REQUIRED', loginRequired: true });
+    }
+    throw new Error(message);
+  }
+  const url = convertVisitNameToUrl(visitName);
+  const fileId = `up_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const nameParts = splitFileName(file.name);
+  window.uploadedFileMetaById[fileId] = {
+    fileNameNoExt: String(data?.fileNameNoExt || nameParts.fileNameNoExt || '').trim(),
+    fileExtName: String(data?.fileExtName || nameParts.fileExtName || '').trim(),
+    fileSize: Number(data?.fileSize || file.size || 0),
+    visitName,
+    pid: '',
+    ftype: 'insert',
+    fileName: file.name,
+    url
+  };
+  await addSavedUpload(file, data, url);
+  renderSavedUploadsSection();
+  const saved = (window.savedUploadedFiles || []).find((item) => String(item?.visitName || '') === visitName);
+  return {
+    id: fileId,
+    savedId: String(saved?.id || ''),
+    fileName: file.name,
+    fileSize: file.size,
+    mimeType: file.type,
+    url,
+    visitName
+  };
+}
+
+globalThis.BjtuVeUploadApi = Object.freeze({ uploadFile: uploadFileForApi });
+
 async function convertTextDropToFiles(dt) {
   if (!dt) return [];
   const types = Array.from(dt.types || []);

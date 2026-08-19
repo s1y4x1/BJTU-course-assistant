@@ -1626,8 +1626,7 @@
     initOperationsPopover();
   }
 
-  // 调试辅助：控制台可直接调用操作并拿到结果 JSON（无需手动粘桥代码）。
-  // 例：callOp('ve.courseList', {})  → 返回 result；失败则抛错（err.code 携带错误码）。
+  // 调试辅助：控制台可直接调用 ve.courseList() 等命名空间方法；callOp 继续兼容旧用法。
   async function callOp(name, args) {
     const response = await send('QWEN_RUN_OPERATION', { name, arguments: args || {} });
     if (response?.ok === true) return response.result;
@@ -1637,6 +1636,50 @@
   }
   global.BjtuQwenDebug = Object.freeze({ callOp });
   global.callOp = callOp;
+
+  async function installConsoleOperationNamespaces() {
+    const response = await send('QWEN_LIST_OPERATIONS');
+    if (!response?.ok || !Array.isArray(response.groups)) return false;
+    for (const group of response.groups) {
+      for (const entry of Array.isArray(group?.operations) ? group.operations : []) {
+        const operationName = String(entry?.name || entry || '').trim();
+        const parts = operationName.split('.');
+        if (parts.length !== 2 || !parts[0] || !parts[1]) continue;
+        const [moduleName, methodName] = parts;
+        let namespace = global[moduleName];
+        if (!namespace || (typeof namespace !== 'object' && typeof namespace !== 'function')) {
+          namespace = {};
+          Object.defineProperty(global, moduleName, {
+            value: namespace,
+            configurable: true,
+            enumerable: true,
+            writable: false
+          });
+        }
+        if (Object.prototype.hasOwnProperty.call(namespace, methodName)) continue;
+        Object.defineProperty(namespace, methodName, {
+          value: (args = {}) => {
+            const promise = callOp(operationName, args);
+            promise.then(
+              (result) => console.log(`[${operationName}]`, result),
+              (error) => console.error(`[${operationName}]`, error)
+            );
+            return promise;
+          },
+          configurable: true,
+          enumerable: true,
+          writable: false
+        });
+      }
+    }
+    return true;
+  }
+  void (async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (await installConsoleOperationNamespaces()) return;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  })();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => init(), { once: true });

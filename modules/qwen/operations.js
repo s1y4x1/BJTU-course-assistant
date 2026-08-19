@@ -443,6 +443,26 @@ name: 've.accounts',
     },
     {
       module: 've',
+      name: 've.uploadFile',
+      label: '上传文件',
+      summary: '向智慧课程平台上传文件并返回可用于提交作业的文件 ID',
+      doc: [
+        '## ve.uploadFile —— 上传文件',
+        '',
+        '向智慧课程平台上传文件，返回的 id 可直接放入 ve.submitAssignment 的 fileIds。不提供文件内容来源时，会在 app.html 弹出本地文件选择窗口。',
+        '',
+        '**参数**：不传参数时由用户选择本地文件，可用 accept 限制文件类型；也可传 fileName，并从 text/content（文本）、base64/dataBase64、bytes（0~255 数组）或 url 四种可序列化来源中选择一种；mimeType 可选。使用 url 时若省略 fileName，会从 URL 推断。',
+        '',
+        '**调用示例**：`ve.uploadFile()`；`ve.uploadFile({accept:".pdf,.doc,.docx"})`；`ve.uploadFile({fileName:"answer.txt", text:"作业内容", mimeType:"text/plain"})`',
+        '',
+        '**返回示例**：{"id":"up_xxx","savedId":"up_xxx","fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","url":"http://..."}'
+      ].join('\n'),
+      async run(args) {
+        return pageInvoke('ve', 'uploadFile', args || {}, 120000);
+      }
+    },
+    {
+      module: 've',
       name: 've.uploadedFiles',
       label: '获取已上传文件',
       summary: '获取智慧课程平台中由扩展保存的已上传文件列表',
