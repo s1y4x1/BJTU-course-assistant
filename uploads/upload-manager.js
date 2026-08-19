@@ -937,41 +937,17 @@ async function buildApiUploadFile(args = {}) {
 
 function selectLocalFileForApi({ accept = '' } = {}) {
   return new Promise((resolve, reject) => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.48);';
-    const dialog = document.createElement('div');
-    dialog.style.cssText = 'width:min(420px,calc(100vw - 40px));padding:22px;border-radius:14px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.28);color:#0f172a;font-family:inherit;';
-    const title = document.createElement('div');
-    title.textContent = '选择要上传的本地文件';
-    title.style.cssText = 'font-size:17px;font-weight:700;margin-bottom:8px;';
-    const tip = document.createElement('div');
-    tip.textContent = '扩展操作请求向智慧课程平台上传一个文件。';
-    tip.style.cssText = 'font-size:14px;color:#475569;line-height:1.6;margin-bottom:18px;';
-    const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;';
-    const cancelButton = document.createElement('button');
-    cancelButton.type = 'button';
-    cancelButton.textContent = '取消';
-    cancelButton.style.cssText = 'padding:8px 15px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;cursor:pointer;';
-    const chooseButton = document.createElement('button');
-    chooseButton.type = 'button';
-    chooseButton.textContent = '选择文件';
-    chooseButton.style.cssText = 'padding:8px 15px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;';
     const input = document.createElement('input');
     input.type = 'file';
     input.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
     if (String(accept || '').trim()) input.accept = String(accept).trim();
-    actions.append(cancelButton, chooseButton);
-    dialog.append(title, tip, actions, input);
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
+    document.body.appendChild(input);
     let settled = false;
     let focusTimer = 0;
-    let pickerOpened = false;
     const cleanup = () => {
       clearTimeout(focusTimer);
       globalThis.removeEventListener('focus', onWindowFocus, true);
-      overlay.remove();
+      input.remove();
     };
     const finish = (file) => {
       if (settled) return;
@@ -981,23 +957,17 @@ function selectLocalFileForApi({ accept = '' } = {}) {
       else reject(Object.assign(new Error('用户取消选择文件'), { code: 'USER_CANCELLED' }));
     };
     const onWindowFocus = () => {
-      if (!pickerOpened) return;
       clearTimeout(focusTimer);
       focusTimer = setTimeout(() => finish(input.files?.[0] || null), 300);
     };
     input.addEventListener('change', () => finish(input.files?.[0] || null), { once: true });
     input.addEventListener('cancel', () => finish(null), { once: true });
-    cancelButton.addEventListener('click', () => finish(null), { once: true });
-    chooseButton.addEventListener('click', () => {
-      pickerOpened = true;
-      try { input.click(); } catch (error) {
-        settled = true;
-        cleanup();
-        reject(error);
-      }
-    });
     globalThis.addEventListener('focus', onWindowFocus, true);
-    chooseButton.focus();
+    try { input.click(); } catch (error) {
+      settled = true;
+      cleanup();
+      reject(error);
+    }
   });
 }
 
