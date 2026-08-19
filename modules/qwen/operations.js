@@ -137,7 +137,8 @@
     scores: { fn: 'loadScores', type: 'ACADEMIC_LOAD_SCORES' },
     exams: { fn: 'loadExams', type: 'ACADEMIC_LOAD_EXAMS' },
     schedule: { fn: 'loadSchedule', type: 'ACADEMIC_LOAD_SCHEDULE' },
-    login: { fn: 'loginWithPassword', type: 'ACADEMIC_LOGIN_WITH_PASSWORD' }
+    login: { fn: 'loginWithPassword', type: 'ACADEMIC_LOGIN_WITH_PASSWORD' },
+    loginSaved: { fn: 'loginSavedAccount', type: 'ACADEMIC_SWITCH_ACCOUNT' }
   };
 
   async function academicInvoke(kind, args, timeoutMs = 90000) {
@@ -920,23 +921,26 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.login',
       label: '教务系统登录',
-      summary: '使用学号密码登录教务系统',
+      summary: '使用传入密码或该学号已保存的密码登录教务系统',
       doc: [
         '## academic.login —— 教务系统登录',
         '',
-        '使用学号和身份证后六位登录教务系统。',
+        '使用学号登录教务系统。传入 password 时使用该密码；省略 password 时自动读取该学号已保存的密码，如果账号或密码尚未保存则报错。',
         '',
-        '**参数**：{"studentId":"学号，必填","password":"身份证后六位，必填，6 个字符"}',
+        '**参数**：{"studentId":"学号，必填","password":"身份证后六位，可选；省略时使用已保存密码"}',
         '',
-        '**调用示例**：`academic.login({studentId: "xxx", password: "123456"})`',
+        '**调用示例**：`academic.login({studentId: "xxx"})`；`academic.login({studentId: "xxx", password: "123456"})`',
         '',
         '**返回示例**：{"studentId":"..."}'
       ].join('\n'),
       async run(args) {
         const studentId = String(args?.studentId || '').trim();
         const password = String(args?.password || '');
-        if (!studentId || !password) throw new Error('缺少参数 studentId 或 password');
-        return academicInvoke('login', { studentId, password }, 60000);
+        if (!studentId) throw new Error('缺少参数 studentId');
+        if (password) return academicInvoke('login', { studentId, password }, 60000);
+        const result = await academicInvoke('loginSaved', { studentId }, 60000);
+        if (result?.ok === false) throw new Error(String(result?.message || '使用已保存密码登录失败'));
+        return result;
       }
     },
     {
