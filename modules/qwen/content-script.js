@@ -8,7 +8,7 @@
 
   const SESSION_KEY_CANDIDATES = ['token', 'access_token', 'qwen_token', 'jwt_token'];
   const STREAM_CONTROLLERS = new Map();
-  let lastSent = '';
+  let lastSent = null;
 
   function readToken() {
     for (const key of SESSION_KEY_CANDIDATES) {
@@ -29,9 +29,12 @@
   }
 
   function sendToken(token) {
-    if (!token || token === lastSent) return;
-    lastSent = token;
-    sendToBackground({ type: 'QWEN_TOKEN_CAPTURED', payload: { token } });
+    const value = String(token || '').trim();
+    if (value === lastSent) return;
+    lastSent = value;
+    sendToBackground(value
+      ? { type: 'QWEN_TOKEN_CAPTURED', payload: { token: value } }
+      : { type: 'QWEN_TOKEN_CLEARED' });
   }
 
   function check() {
@@ -317,5 +320,5 @@
   check();
   reportWafPageLoad();
   window.addEventListener('pageshow', check);
-  setInterval(check, 8000);
+  setInterval(check, location.pathname.startsWith('/auth') ? 500 : 8000);
 })();

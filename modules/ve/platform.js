@@ -2718,7 +2718,10 @@ globalThis.BjtuVePageApi = Object.freeze({
   // - 填写账号：自动填写 app 页面的 username-input 并触发完整登录流程。
   login: (args) => {
     const platform = 've';
-    const account = String(args?.account || args?.loginName || '').trim();
+    const auto = args?.auto === true;
+    const requestedAccount = String(args?.account || args?.loginName || '').trim();
+    const currentAccount = String(document?.getElementById?.('username-input')?.value || '').trim();
+    const account = requestedAccount || (auto ? currentAccount : '');
     const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
 
     if (account) return triggerVeLoginWithAccount(platform, account, args?.timeoutMs);

@@ -104,21 +104,25 @@
           ? await chrome.tabs.get(storedTabId).catch(() => null)
           : null;
         if (existingLoginTab && String(existingLoginTab.url || existingLoginTab.pendingUrl || '').startsWith(CHAT_BASE)) {
-          await chrome.tabs.update(existingLoginTab.id, { active: true, autoDiscardable: false }).catch(() => null);
+          const loginTab = await chrome.tabs.update(existingLoginTab.id, {
+            url: AUTH_URL,
+            active: true,
+            autoDiscardable: false
+          }).catch(() => existingLoginTab);
           if (Number.isInteger(existingLoginTab.windowId)) {
             await chrome.windows.update(existingLoginTab.windowId, { focused: true }).catch(() => null);
           }
-          return existingLoginTab;
+          return loginTab;
         }
         await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
         const reusable = await findChatTab();
         if (reusable) {
+          await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: reusable.id }).catch(() => {});
           const loginTab = await chrome.tabs.update(reusable.id, {
             url: AUTH_URL,
             active: true,
             autoDiscardable: false
           }).catch(() => reusable);
-          await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: reusable.id }).catch(() => {});
           if (Number.isInteger(reusable.windowId)) await chrome.windows.update(reusable.windowId, { focused: true }).catch(() => null);
           return loginTab;
         }
@@ -132,11 +136,21 @@
         }
       }
 
-      const tab = await global.BjtuTabs.create({ url: auth ? AUTH_URL : CHAT_BASE, active: true });
-      await keepChatTabResident(tab?.id);
-      if (auth && Number.isInteger(tab?.id)) {
-        await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: tab.id }).catch(() => {});
+      let tab;
+      if (auth) {
+        tab = await global.BjtuTabs.create({ url: 'about:blank', active: true });
+        if (Number.isInteger(tab?.id)) {
+          await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: tab.id }).catch(() => {});
+          tab = await chrome.tabs.update(tab.id, {
+            url: AUTH_URL,
+            active: true,
+            autoDiscardable: false
+          }).catch(() => tab);
+        }
+      } else {
+        tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
       }
+      await keepChatTabResident(tab?.id);
       return tab;
     }).finally(() => {
       openLoginPagePromise = null;

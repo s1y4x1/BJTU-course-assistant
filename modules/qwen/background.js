@@ -110,15 +110,18 @@
     if (!value) return;
     if (qwenLoginCompletionPromise) return qwenLoginCompletionPromise;
     qwenLoginCompletionPromise = (async () => {
+      const tokenState = await chrome.storage.session.get('qwenToken').catch(() => ({}));
+      const tokenChanged = String(tokenState?.qwenToken || '') !== value;
       await global.BjtuQwenClient?.captureToken?.(value);
-      await broadcastTokenCaptured();
+      if (tokenChanged) await broadcastTokenCaptured();
       const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
       const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
       if (!Number.isInteger(loginTabId)) return;
       const loginTab = await chrome.tabs.get(loginTabId).catch(() => null);
       await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
-      if (!loginTab || !String(loginTab.url || loginTab.pendingUrl || '').startsWith('https://chat.qwen.ai/')) return;
-      await chrome.tabs.remove(loginTabId).catch(() => {});
+      if (loginTab && String(loginTab.url || loginTab.pendingUrl || '').startsWith('https://chat.qwen.ai/')) {
+        await chrome.tabs.update(loginTabId, { autoDiscardable: false }).catch(() => null);
+      }
       await focusQwenAppPage();
     })().finally(() => {
       qwenLoginCompletionPromise = null;
@@ -202,11 +205,17 @@
         abortController.abort();
       });
       port.onMessage.addListener((message) => {
-        if (message?.type === 'retryDecision' && pendingRetry) {
+        if (message?.type === 'retryDecision') {
+          const retryId = String(message?.retryId || '');
+          if (!pendingRetry || (retryId && retryId !== pendingRetry.id)) {
+            if (!port.disconnected) port.postMessage({ type: 'retryRejected', retryId });
+            return;
+          }
           const retryChatId = String(message?.chatId || pendingRetry.chatId || turnRef.chatId || '');
           if (retryChatId) turnRef.chatId = retryChatId;
           const resolve = pendingRetry.resolve;
           pendingRetry = null;
+          if (!port.disconnected) port.postMessage({ type: 'retryAccepted', retryId });
           resolve?.(String(message.action || 'stop'));
           return;
         }
@@ -252,13 +261,17 @@
               sessionRef: loopSession,
               onRetryRequest: (info) => new Promise((resolve) => {
                 const retryChatId = String(info?.chatId || turnRef.chatId || '');
-                pendingRetry = { resolve, chatId: retryChatId };
+                const retryId = `retry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                pendingRetry = { id: retryId, resolve, chatId: retryChatId };
                 const safeMessage = String(info?.message || '请求失败');
                 port.postMessage({
                   type: 'retryRequest',
+                  retryId,
                   message: safeMessage,
                   code: String(info?.code || ''),
-                  chatId: retryChatId
+                  chatId: retryChatId,
+                  afterOperationResult: info?.afterOperationResult === true,
+                  operationResult: info?.afterOperationResult === true ? info.operationResult : undefined
                 });
               }),
               askUser: (payload) => new Promise((resolve) => {
@@ -404,14 +417,11 @@
       }
       if (type === 'QWEN_TOKEN_CAPTURED') {
         const token = String(message?.payload?.token || '');
-        if (token && global.BjtuQwenClient?.captureToken) {
-          void (async () => {
-            const stored = await chrome.storage.session.get('qwenToken').catch(() => ({}));
-            const changed = String(stored?.qwenToken || '') !== token;
-            await global.BjtuQwenClient.captureToken(token);
-            if (changed) await broadcastTokenCaptured();
-          })();
-        }
+        if (token && global.BjtuQwenClient?.captureToken) void completeQwenLogin(token);
+        return false;
+      }
+      if (type === 'QWEN_TOKEN_CLEARED') {
+        void chrome.storage.session.remove('qwenToken').catch(() => {});
         return false;
       }
       if (type === 'QWEN_OPEN_LOGIN') {
@@ -515,9 +525,13 @@
   if (typeof chrome === 'object' && chrome?.cookies?.onChanged) {
     chrome.cookies.onChanged.addListener((changeInfo) => {
       const cookie = changeInfo?.cookie;
-      if (changeInfo?.removed || String(cookie?.name || '') !== 'token' || !String(cookie?.value || '').trim()) return;
+      if (String(cookie?.name || '') !== 'token') return;
       const domain = String(cookie?.domain || '').replace(/^\./, '').toLowerCase();
       if (domain !== 'chat.qwen.ai' && !domain.endsWith('.qwen.ai')) return;
+      if (changeInfo?.removed || !String(cookie?.value || '').trim()) {
+        void chrome.storage.session.remove('qwenToken').catch(() => {});
+        return;
+      }
       void completeQwenLogin(cookie.value);
     });
   }

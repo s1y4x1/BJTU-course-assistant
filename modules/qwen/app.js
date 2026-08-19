@@ -33,6 +33,8 @@
   let openingCompleted = false;
   let autoScrollEnabled = true;
   let lastMessagesScrollTop = 0;
+  let historyLoadPromise = null;
+  let historyReloadAfterLogin = false;
 
   function el(id) {
     return document.getElementById(id);
@@ -244,6 +246,7 @@
         lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
     }
+    sessionParentId = lastAssistantResponseId;
     scrollMessagesToBottom(messagesEl, { force: true });
   }
 
@@ -294,7 +297,7 @@
 
   const HISTORY_LOADING_ID = 'qwen-chat-history-loading';
 
-  async function loadHistory() {
+  async function loadHistoryOnce() {
     if (!sessionChatId) return;
     const loadingEl = el(HISTORY_LOADING_ID);
     if (loadingEl instanceof HTMLElement) loadingEl.hidden = false;
@@ -321,6 +324,23 @@
       scrollMessagesToBottom(messagesEl, { force: true });
       if (messagesEl instanceof HTMLElement && messagesEl.clientHeight > 0) historyNeedsInitialScroll = false;
     }
+  }
+
+  function loadHistory() {
+    if (!sessionChatId) return Promise.resolve();
+    if (historyLoadPromise) return historyLoadPromise;
+    historyLoadPromise = loadHistoryOnce().finally(() => {
+      historyLoadPromise = null;
+    });
+    return historyLoadPromise;
+  }
+
+  function restoreHistoryAfterLogin() {
+    if (!chatStateLoaded || !historyReloadAfterLogin) return Promise.resolve();
+    historyReloadAfterLogin = false;
+    return (sessionChatId ? loadHistory() : Promise.resolve()).finally(() => {
+      maybeSendOpening();
+    });
   }
 
   function send(type, payload) {
@@ -571,7 +591,30 @@
     if (!host.querySelector(':scope > .qwen-chat-cursor')) {
       const cursor = document.createElement('span');
       cursor.className = 'qwen-chat-cursor';
-      host.appendChild(cursor);
+      let insertionPoint = null;
+      let tail = host.lastChild;
+      while (tail) {
+        if (tail instanceof HTMLBRElement) {
+          insertionPoint = tail;
+          tail = tail.previousSibling;
+          continue;
+        }
+        if (tail.nodeType === Node.TEXT_NODE) {
+          const trailingNewlines = /[\r\n]+$/.exec(tail.data || '');
+          if (!trailingNewlines) break;
+          const splitAt = trailingNewlines.index;
+          if (splitAt > 0) {
+            insertionPoint = tail.splitText(splitAt);
+            break;
+          }
+          insertionPoint = tail;
+          tail = tail.previousSibling;
+          continue;
+        }
+        break;
+      }
+      if (insertionPoint) host.insertBefore(cursor, insertionPoint);
+      else host.appendChild(cursor);
     }
   }
 
@@ -698,7 +741,7 @@
     }
   }
 
-  async function refreshStatus() {
+  async function refreshStatus({ openLoginIfNeeded = false } = {}) {
     const status = await send('QWEN_GET_STATUS', { ensureLogin: false });
     lastKnownLoggedIn = status?.loggedIn === true;
     lastKnownEnabled = status?.enabled !== false;
@@ -708,6 +751,10 @@
     } else {
       setStatus('未登录', 'error');
       showLoginHint(true);
+      const panel = el(PANEL_ID);
+      if (openLoginIfNeeded && panel instanceof HTMLElement && !panel.hidden) {
+        void send('QWEN_OPEN_LOGIN', { auth: true });
+      }
     }
     const thinking = el(THINKING_ID);
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
@@ -741,8 +788,8 @@
       const body = document.createElement('div');
       body.className = 'qwen-chat-thinking-body';
       details.append(summary, body);
-      bubble.appendChild(details);
     }
+    if (bubble.firstElementChild !== details) bubble.prepend(details);
     return details.querySelector('.qwen-chat-thinking-body');
   }
 
@@ -807,10 +854,12 @@
     placeCursor(activeBubble, false);
     scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
     const lastOperationCard = { card: null };
+    let retryPrompt = null;
 
     const connectPort = () => {
-      port = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
-      port.onMessage.addListener((message) => {
+      const chatPort = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
+      port = chatPort;
+      chatPort.onMessage.addListener((message) => {
         if (message?.type === 'delta') {
           setStatus('回复中…');
           const bubble = ensureAssistantBubble();
@@ -894,8 +943,8 @@
           activeBubble = null;
           setBusy(false);
           setStatus('已登录', 'ok');
-          port.disconnect();
-          port = null;
+          chatPort.disconnect();
+          if (port === chatPort) port = null;
         } else if (message?.type === 'stopped') {
           hideAsk();
           const stoppedChatId = String(message?.chatId || '');
@@ -919,14 +968,15 @@
           activeBubble = null;
           setBusy(false);
           setStatus('已登录', 'ok');
-          port.disconnect();
-          port = null;
+          chatPort.disconnect();
+          if (port === chatPort) port = null;
         } else if (message?.type === 'ask') {
           showAsk(message);
         } else if (message?.type === 'askResolved') {
           if (!message?.id || String(message.id) === pendingAskId) hideAsk();
         } else if (message?.type === 'retryRequest') {
           const retryChatId = String(message?.chatId || sessionChatId || '');
+          const retryId = String(message?.retryId || '');
           if (retryChatId) {
             sessionChatId = retryChatId;
             const patch = { qwenLastChatId: retryChatId };
@@ -936,6 +986,12 @@
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;
+          }
+          if (message?.afterOperationResult === true) {
+            if (!(lastOperationCard.card instanceof HTMLElement) || !lastOperationCard.card.isConnected) {
+              lastOperationCard.card = appendOperationCard();
+            }
+            updateOperationResult(lastOperationCard.card, message.operationResult);
           }
           removeCursor(activeBubble);
           removeMessageBubble(activeBubble);
@@ -951,20 +1007,40 @@
           btn.textContent = '重试';
           btn.title = '重新发送刚才的请求';
           btn.addEventListener('click', () => {
-            bubble.remove();
+            btn.disabled = true;
+            btn.textContent = '正在重试…';
             try {
-              port?.postMessage({
+              chatPort.postMessage({
                 type: 'retryDecision',
                 action: 'retry',
+                retryId,
                 chatId: retryChatId || sessionChatId
               });
             } catch {
-              // 端口可能已断开
+              btn.disabled = false;
+              btn.textContent = '重试';
+              btn.title = '重试连接已失效，请重新发送消息';
             }
           });
           bubble.appendChild(btn);
+          retryPrompt = { id: retryId, bubble, button: btn };
           const messages = el(MESSAGES_ID);
           maybeAutoScrollMessages(messages);
+        } else if (message?.type === 'retryAccepted') {
+          if (!retryPrompt || (message?.retryId && String(message.retryId) !== retryPrompt.id)) return;
+          retryPrompt.bubble.remove();
+          retryPrompt = null;
+          activeBubble = null;
+          const fresh = ensureAssistantBubble();
+          placeCursor(fresh, false);
+          setBusy(true);
+          setStatus('思考中…');
+          maybeAutoScrollMessages(el(MESSAGES_ID));
+        } else if (message?.type === 'retryRejected') {
+          if (!retryPrompt || (message?.retryId && String(message.retryId) !== retryPrompt.id)) return;
+          retryPrompt.button.disabled = false;
+          retryPrompt.button.textContent = '重试';
+          retryPrompt.button.title = '重试连接已失效，请重新发送消息';
         } else if (message?.type === 'error') {
           hideAsk();
           if (message?.parentId) sessionParentId = String(message.parentId);
@@ -1001,20 +1077,20 @@
             appendMessage('error', message.message || '请求失败');
           }
           setBusy(false);
-          port.disconnect();
-          port = null;
+          chatPort.disconnect();
+          if (port === chatPort) port = null;
         }
       });
-      port.onDisconnect.addListener(() => {
+      chatPort.onDisconnect.addListener(() => {
         hideAsk();
         if (activeBubble) {
           activeBubble = null;
           setBusy(false);
         }
         if (openingStarted) openingStarted = false;
-        port = null;
+        if (port === chatPort) port = null;
       });
-      port.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: editParent || sessionParentId, editParentGiven: isEditSend });
+      chatPort.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: editParent || sessionParentId, editParentGiven: isEditSend });
     };
 
     try {
@@ -1039,7 +1115,8 @@
   }
 
   function maybeSendOpening() {
-    if (!chatStateLoaded || !lastKnownEnabled || !lastKnownLoggedIn || openingCompleted || openingStarted) return;
+    if (!chatStateLoaded || !lastKnownEnabled || !lastKnownLoggedIn
+      || openingCompleted || openingStarted || historyLoadPromise) return;
     sendOpening();
   }
 
@@ -1081,11 +1158,8 @@
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
         lastKnownLoggedIn = true;
         showLoginHint(false);
-        if (!sessionChatId) {
-          setBusy(true);
-          setStatus('思考中…');
-        }
-        if (chatStateLoaded) sendOpening();
+        historyReloadAfterLogin = true;
+        void restoreHistoryAfterLogin();
         void refreshStatus();
       }
     });
@@ -1217,8 +1291,13 @@
       chatStateLoaded = true;
       if (sessionChatId) {
         if (!port && !openingStarted) setBusy(false);
-        void loadHistory().finally(() => maybeSendOpening());
+        if (historyReloadAfterLogin) {
+          void restoreHistoryAfterLogin();
+        } else {
+          void loadHistory().finally(() => maybeSendOpening());
+        }
       }
+      else if (historyReloadAfterLogin) void restoreHistoryAfterLogin();
       else maybeSendOpening();
     });
 
@@ -1228,7 +1307,7 @@
           panel.hidden = !panel.hidden;
           if (!panel.hidden) {
             fab.style.display = 'none';
-            void refreshStatus();
+            void refreshStatus({ openLoginIfNeeded: true });
             void refreshModels();
             if (historyNeedsInitialScroll) {
               scrollMessagesToBottom(el(MESSAGES_ID), { force: true });

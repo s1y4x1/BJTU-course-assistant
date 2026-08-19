@@ -1631,14 +1631,26 @@ name: 've.teachers_of_',
     if (!loginOperation) throw Object.assign(new Error(`${module} 未提供登录操作`), { code: 'LOGIN_REQUIRED' });
     let loginResult;
     try {
-      loginResult = await loginOperation.run({});
+      let loginArgs = {};
+      if (module === 've') {
+        loginArgs = { auto: true };
+      }
+      loginResult = await loginOperation.run(loginArgs);
     } catch (error) {
       throw Object.assign(new Error(`${module} 登录失败：${String(error?.message || error)}`), { code: 'LOGIN_REQUIRED' });
     }
     if (loginResult?.ok === false || loginResult?.loggedIn === false || loginResult?.ready === false) {
       throw Object.assign(new Error(`${module} 登录失败：${String(loginResult?.message || '平台数据未加载完毕')}`), { code: 'LOGIN_REQUIRED' });
     }
-    if (!await readPlatformLoginStatus(module)) {
+    const loginStatusDeadline = Date.now() + (module === 've' ? 30000 : 10000);
+    let loggedIn = loginResult?.ok === true && loginResult?.loggedIn === true;
+    do {
+      if (loggedIn) break;
+      loggedIn = await readPlatformLoginStatus(module);
+      if (loggedIn) break;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } while (Date.now() < loginStatusDeadline);
+    if (!loggedIn) {
       throw Object.assign(new Error(`${module} 登录失败或登录流程未完成，请登录后重试`), { code: 'LOGIN_REQUIRED' });
     }
   }
@@ -1702,12 +1714,13 @@ name: 've.teachers_of_',
         result = await op.run(args || {}, options);
       }
       if (operationNeedsPlatformLogin(op)) {
-        let loginMissing = isLoginRequiredValue(result) || !await readPlatformLoginStatus(op.module);
+        let loginMissing = isLoginRequiredValue(result)
+          || (!loginAttempted && !await readPlatformLoginStatus(op.module));
         if (loginMissing && !loginAttempted) {
           await loginPlatformOnce(op.module);
           loginAttempted = true;
           result = await op.run(args || {}, options);
-          loginMissing = isLoginRequiredValue(result) || !await readPlatformLoginStatus(op.module);
+          loginMissing = isLoginRequiredValue(result);
         }
         if (loginMissing) {
           throw Object.assign(new Error(String(result?.message || `${op.module} 需要登录`)), { code: 'LOGIN_REQUIRED' });

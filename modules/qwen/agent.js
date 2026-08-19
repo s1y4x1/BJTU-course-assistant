@@ -150,6 +150,8 @@
     let fullText = '';
     let lastResultText = '';
     let lastCleanReply = '';
+    let pendingOperationResult;
+    let hasPendingOperationResult = false;
 
     const loopSession = options.sessionRef || {};
     if (alwaysAllow === true) loopSession.alwaysAllow = true;
@@ -223,12 +225,16 @@
           ? await onRetryRequest({
             message: String(error?.message || error),
             code,
-            chatId: effectiveChatId
+            chatId: effectiveChatId,
+            afterOperationResult: hasPendingOperationResult,
+            operationResult: hasPendingOperationResult ? pendingOperationResult : undefined
           })
           : null;
         if (decision !== 'retry') throw error;
         continue;
       }
+      hasPendingOperationResult = false;
+      pendingOperationResult = undefined;
       parentId = String(response?.responseId || parentId);
       if (turnRef) turnRef.responseId = parentId;
       if (turnRef) turnRef.lastMessageId = String(response?.responseParentId || turnRef.lastMessageId || '');
@@ -283,6 +289,8 @@
       onEvent?.({ operation: call, iteration });
       const outcome = await operations.run(call.name, call.arguments);
       onEvent?.({ operationResult: outcome, iteration });
+      pendingOperationResult = outcome;
+      hasPendingOperationResult = true;
 
       if (outcome.ok) {
         lastResultText = `\`\`\`res\n${operations.formatResult(outcome.result)}\n\`\`\``;
