@@ -277,8 +277,9 @@
               askUser: (payload) => new Promise((resolve) => {
                 const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 const count = Number(payload?.count) || 3;
+                const mode = String(payload?.mode || 'iterate');
                 const notificationId = `${ASK_NOTIFICATION_PREFIX}${id}`;
-                pendingAsk = { id, resolve, count, notificationId };
+                pendingAsk = { id, resolve, count, mode, notificationId };
                 pendingAskNotifications.set(notificationId, (action) => {
                   settlePendingAsk(action, count, true);
                 });
@@ -288,7 +289,7 @@
                   type: 'ask',
                   id,
                   message: safeMessage,
-                  mode: String(payload?.mode || 'iterate'),
+                  mode,
                   count
                 });
                 try {
@@ -296,13 +297,13 @@
                     chrome.notifications.create(notificationId, {
                       type: 'basic',
                       iconUrl: chrome.runtime.getURL('icons/128.png'),
-                      title: '千问助手',
+                      title: mode === 'operation-permission' ? '千问请求执行 JavaScript' : '千问助手',
                       message: safeMessage,
                       priority: 2,
                       requireInteraction: true,
                       buttons: [
-                        { title: '继续' },
-                        { title: '终止' }
+                        { title: mode === 'operation-permission' ? '允许一次' : '继续' },
+                        { title: mode === 'operation-permission' ? '拒绝' : '终止' }
                       ]
                     });
                   }
@@ -358,9 +359,82 @@
     return String(models[0]?.id || '');
   }
 
+  function backgroundBridgePathParts(path) {
+    const parts = String(path || '').split('.').map((part) => part.trim()).filter(Boolean);
+    if (!parts.length) throw new Error('桥接路径为空');
+    if (parts.some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
+      throw new Error('桥接路径包含不允许访问的属性');
+    }
+    if (['globalThis', 'self'].includes(parts[0])) parts.shift();
+    if (!parts.length) throw new Error('不能直接访问整个后台全局对象');
+    return parts;
+  }
+
+  function resolveBackgroundBridgePath(path) {
+    const parts = backgroundBridgePathParts(path);
+    let owner = global;
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      owner = owner?.[parts[i]];
+      if (owner == null) throw new Error(`后台桥接路径不存在：${parts.slice(0, i + 1).join('.')}`);
+    }
+    const key = parts.at(-1);
+    return { owner, key, value: owner?.[key] };
+  }
+
+  function backgroundBridgeSerializable(value, seen = new WeakSet(), depth = 0) {
+    if (value === undefined) return { __type: 'undefined' };
+    if (typeof value === 'bigint') return `${value}n`;
+    if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
+    if (typeof value === 'symbol') return String(value);
+    if (value === null || typeof value !== 'object') return value;
+    if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack || '' };
+    if (depth > 8) return '[深度受限]';
+    if (seen.has(value)) return '[循环引用]';
+    seen.add(value);
+    if (Array.isArray(value)) return value.map((item) => backgroundBridgeSerializable(item, seen, depth + 1));
+    const output = {};
+    for (const key of Object.keys(value)) {
+      try { output[key] = backgroundBridgeSerializable(value[key], seen, depth + 1); } catch (error) {
+        output[key] = `[读取失败：${String(error?.message || error)}]`;
+      }
+    }
+    return output;
+  }
+
+  async function handleBackgroundJsBridge(action, payload) {
+    const target = resolveBackgroundBridgePath(payload?.path);
+    if (action === 'get') return backgroundBridgeSerializable(target.value);
+    if (action === 'set') {
+      target.owner[target.key] = payload?.value;
+      return true;
+    }
+    if (action === 'call') {
+      if (typeof target.value !== 'function') throw new Error(`后台方法不存在：${String(payload?.path || '')}`);
+      const result = await target.value.apply(target.owner, Array.isArray(payload?.args) ? payload.args : []);
+      return backgroundBridgeSerializable(result);
+    }
+    throw new Error(`未知 background 桥接操作：${String(action || '')}`);
+  }
+
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const type = String(message?.type || '');
+      if (type === 'QWEN_JS_BACKGROUND_BRIDGE') {
+        const senderUrl = String(sender?.url || '');
+        if (!senderUrl.startsWith(chrome.runtime.getURL('app/app.html'))) {
+          sendResponse({ ok: false, message: '只允许 app.html 调用后台 JavaScript 桥接' });
+          return false;
+        }
+        void handleBackgroundJsBridge(
+          String(message?.payload?.action || ''),
+          message?.payload?.payload
+        ).then((value) => {
+          sendResponse({ ok: true, value });
+        }).catch((error) => {
+          sendResponse({ ok: false, message: String(error?.message || error) });
+        });
+        return true;
+      }
       if (type === 'QWEN_WAF_PAGE_LOADED') {
         void handleWafPageLoaded(sender, message?.payload).then(sendResponse).catch((error) => {
           sendResponse({ ok: false, message: String(error?.message || error) });

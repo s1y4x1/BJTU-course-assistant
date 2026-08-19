@@ -223,6 +223,14 @@
   }
 
   function yktIsHomeworkDone(hw) {
+    if (Number(hw?.__actype ?? hw?.actype) === 15) {
+      if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
+        return Number(hw.video_progress_ratio) >= 0.9995;
+      }
+      if (hw?.video_total_done !== null && hw?.video_total_done !== undefined) {
+        return Number(hw.video_total_done) === 1;
+      }
+    }
     const progress = Number(hw?.progress ?? 0);
     const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
     if (problemCount > 0) return progress >= problemCount;
@@ -431,6 +439,73 @@ name: 've.accounts',
           if (closeError) throw new Error(`取消公布作业成绩失败：${String(closeError?.message || closeError)}`);
         }
         return serialize(list);
+      }
+    },
+    {
+      module: 've',
+      name: 've.uploadedFiles',
+      label: '获取已上传文件',
+      summary: '获取智慧课程平台中由扩展保存的已上传文件列表',
+      doc: [
+        '## ve.uploadedFiles —— 获取已上传文件',
+        '',
+        '获取扩展本地保存的智慧课程平台已上传文件。返回的 id 可传给 ve.submitAssignment 的 fileIds。',
+        '',
+        '**调用示例**：`ve.uploadedFiles()`',
+        '',
+        '**返回示例**：[{"id":"up_xxx","fileName":"作业.pdf","fileSize":12345,"url":"http://..."}]'
+      ].join('\n'),
+      async run() {
+        const current = await pageInvoke('ve', 'uploadedFiles', {}, 30000).catch(() => []);
+        if (Array.isArray(current) && current.length) return current;
+        const stored = await chrome.storage.local.get('savedUploadedFiles').catch(() => ({}));
+        return (Array.isArray(stored?.savedUploadedFiles) ? stored.savedUploadedFiles : []).map((item) => ({
+          id: String(item?.id || '').trim(),
+          fileName: String(item?.fileName || '').trim(),
+          fileSize: Math.max(0, Number(item?.fileSize || 0) || 0),
+          url: String(item?.url || '').trim(),
+          savedAt: Number(item?.savedAt || 0) || 0
+        })).filter((item) => item.id);
+      }
+    },
+    {
+      module: 've',
+      name: 've.submitAssignment',
+      label: '提交作业',
+      summary: '向智慧课程平台指定课程提交作业正文和已上传附件',
+      doc: [
+        '## ve.submitAssignment —— 提交作业',
+        '',
+        '提交智慧课程平台作业。assignmentId 可从 ve.assignments_of_ 获取；附件必须先由 ve.uploadedFiles 获取，并仅传其 id。正文与附件至少提供一项。',
+        '',
+        '**参数**：{"courseId":"课程ID，必填","assignmentId":"作业ID，必填","content":"正文，可选","fileIds":["已上传文件ID，可选"]}',
+        '',
+        '**调用示例**：`ve.submitAssignment({courseId: "xxx", assignmentId: "yyy", content: "作业正文", fileIds: ["up_xxx"]})`',
+        '',
+        '**返回示例**：{"submitted":true,"courseId":"xxx","assignmentId":"yyy","fileCount":1}'
+      ].join('\n'),
+      async run(args) {
+        const courseId = String(args?.courseId || '').trim();
+        const assignmentId = String(args?.assignmentId || '').trim();
+        const content = String(args?.content || '');
+        const fileIds = [...new Set((Array.isArray(args?.fileIds) ? args.fileIds : [])
+          .map((id) => String(id || '').trim()).filter(Boolean))];
+        await assertCourseIdOf('ve', courseId);
+        if (!assignmentId) throw new Error('缺少参数 assignmentId');
+        if (!content.trim() && !fileIds.length) throw new Error('作业正文与附件不能同时为空');
+        const core = await veHomework();
+        const assignments = await core.fetchCourseHomework(courseId);
+        const homework = assignments.find((item) => String(core.homeworkKey(item) || '') === assignmentId);
+        if (!homework) throw new Error(`作业ID无效：${assignmentId} 不在该课程作业列表中`);
+        let uploaded = await pageInvoke('ve', 'uploadedFiles', { includePrivate: true }, 30000).catch(() => []);
+        if (!Array.isArray(uploaded) || !uploaded.length) {
+          const stored = await chrome.storage.local.get('savedUploadedFiles').catch(() => ({}));
+          uploaded = Array.isArray(stored?.savedUploadedFiles) ? stored.savedUploadedFiles : [];
+        }
+        const byId = new Map(uploaded.map((item) => [String(item?.id || '').trim(), item]));
+        const missing = fileIds.filter((id) => !byId.has(id));
+        if (missing.length) throw new Error(`未找到已上传文件：${missing.join(', ')}，请重新调用 ve.uploadedFiles`);
+        return core.submitHomework(courseId, homework, content, fileIds.map((id) => byId.get(id)));
       }
     },
     {
@@ -1507,6 +1582,42 @@ name: 've.teachers_of_',
     },
     {
       module: 'qwen',
+      name: 'qwen.executeJs',
+      label: '执行任意 JavaScript',
+      summary: '以 sandbox、app 或 background 模式执行任意 JavaScript 并返回结果',
+      requiresAuthorization: true,
+      authorizationMessage(args) {
+        const mode = ['sandbox', 'app', 'background'].includes(String(args?.mode)) ? String(args.mode) : 'sandbox';
+        const preview = String(args?.code || '').trim().slice(0, 500);
+        return `通义千问请求以 ${mode} 模式执行任意 JavaScript 代码，是否允许？${preview ? `\n\n${preview}` : ''}`;
+      },
+      doc: [
+        '## qwen.executeJs —— 执行任意 JavaScript',
+        '',
+        '执行 JavaScript 并返回可序列化结果。每次执行前都需要用户授权。所有模式中的代码均由隔离执行器解析；app/background 模式通过受控异步桥接访问相应上下文。',
+        '',
+        '**参数**：{"code":"JavaScript 代码，必填；表达式会直接返回值，语句可显式使用 return","mode":"sandbox | app | background；默认 sandbox"}',
+        '',
+        '**sandbox**：无桥接权限。示例：`qwen.executeJs({mode:"sandbox",code:"[1,2,3].map(x=>x*2)"})`',
+        '',
+        '**app**：使用异步 `app.get(path)`、`app.set(path,value)`、`app.call(path,...args)` 和 `app.dom.*`。示例：`qwen.executeJs({mode:"app",code:"await app.dom.query(\"#qwen-chat-panel\")"})`',
+        '',
+        '**background**：使用异步 `background.get(path)`、`background.set(path,value)`、`background.call(path,...args)`。示例：`qwen.executeJs({mode:"background",code:"await background.call(\"chrome.tabs.query\", {})"})`',
+        '',
+        '**返回示例**：[2,4,6]'
+      ].join('\n'),
+      async run(args) {
+        const code = String(args?.code || '');
+        if (!code.trim()) throw new Error('缺少参数 code');
+        const mode = String(args?.mode || 'sandbox').trim().toLowerCase();
+        if (!['sandbox', 'app', 'background'].includes(mode)) {
+          throw new Error('参数 mode 只能是 sandbox、app 或 background');
+        }
+        return pageInvoke('qwen', 'executeJs', { code, mode }, 45000);
+      }
+    },
+    {
+      module: 'qwen',
       name: 'qwen.listOperations',
       label: '列出全部操作',
       summary: '列出可按模块分组的所有可用操作名',
@@ -1524,6 +1635,7 @@ name: 've.teachers_of_',
         const availability = await getModuleAvailability();
         const operations = {};
         for (const op of OPERATIONS) {
+          if (op.hiddenFromPrompt === true) continue;
           const module = String(op.module || '');
           if (availability[module] === false) continue;
           if (enabledSet && !enabledSet.has(op.name) && !String(op.name).startsWith('qwen.')) continue;
@@ -1703,6 +1815,21 @@ name: 've.teachers_of_',
       }
     }
     try {
+      if (op.requiresAuthorization === true) {
+        if (typeof options?.authorize !== 'function') {
+          throw Object.assign(new Error(`操作「${op.name}」需要用户授权`), { code: 'AUTHORIZATION_REQUIRED' });
+        }
+        const decision = await options.authorize({
+          name: op.name,
+          label: op.label,
+          message: typeof op.authorizationMessage === 'function'
+            ? op.authorizationMessage(args || {})
+            : `是否允许执行操作「${op.label || op.name}」？`
+        });
+        if (decision !== 'allow' && decision !== 'always') {
+          throw Object.assign(new Error(`用户拒绝执行操作「${op.label || op.name}」`), { code: 'USER_DENIED' });
+        }
+      }
       let loginAttempted = await ensurePlatformLogin(op);
       let result;
       try {

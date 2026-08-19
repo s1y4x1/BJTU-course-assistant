@@ -29,7 +29,9 @@ function isYktHomeworkDone(hw) {
     if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
       return Number(hw.video_progress_ratio) >= 0.9995;
     }
-    return Number(hw?.video_total_done) === 1;
+    if (hw?.video_total_done !== null && hw?.video_total_done !== undefined) {
+      return Number(hw.video_total_done) === 1;
+    }
   }
   const progress = Number(hw?.progress ?? 0);
   const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
@@ -1197,7 +1199,8 @@ function scheduleYktLoad(courses, loadVersion = 0) {
 async function waitYktPageDataReady(timeoutMs = 120000) {
   if (String(window.platformLoginState?.ykt || '') !== 'online') return false;
   if (typeof window.waitForPlatformDataReady === 'function') {
-    return window.waitForPlatformDataReady('ykt', timeoutMs);
+    const ready = await window.waitForPlatformDataReady('ykt', timeoutMs);
+    if (!ready) return false;
   }
   const pending = window.__yktLoadSerialPromise;
   if (pending && typeof pending.then === 'function') await pending.catch(() => {});

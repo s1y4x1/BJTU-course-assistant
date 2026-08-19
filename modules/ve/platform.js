@@ -2708,11 +2708,37 @@ async function veArchiveItemsWithLinks(courseId) {
   return { loginRequired: !!payload?.loginRequired, items: resolved };
 }
 
+function vePageUploadedFiles(args = {}) {
+  const includePrivate = args?.includePrivate === true;
+  const output = [];
+  const seen = new Set();
+  for (const [id, meta] of Object.entries(window.uploadedFileMetaById || {})) {
+    const fileId = String(id || '').trim();
+    const visitName = String(meta?.visitName || '').trim();
+    if (!fileId || !visitName || seen.has(fileId)) continue;
+    seen.add(fileId);
+    const fileName = String(meta?.fileName || `${String(meta?.fileNameNoExt || '')}${meta?.fileExtName ? `.${meta.fileExtName}` : ''}`).trim();
+    output.push({
+      id: fileId,
+      fileName,
+      fileSize: Math.max(0, Number(meta?.fileSize || 0) || 0),
+      url: String(meta?.url || '').trim(),
+      ...(includePrivate ? {
+        visitName,
+        fileNameNoExt: String(meta?.fileNameNoExt || '').trim(),
+        fileExtName: String(meta?.fileExtName || '').trim()
+      } : {})
+    });
+  }
+  return output;
+}
+
 globalThis.BjtuVePageApi = Object.freeze({
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
   archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
+  uploadedFiles: (args) => vePageUploadedFiles(args),
   // ve.login：支持账号参数。
   // - 省略账号：仅触发平台启用（相当于点击 ve-status-btn），不自动登录。
   // - 填写账号：自动填写 app 页面的 username-input 并触发完整登录流程。

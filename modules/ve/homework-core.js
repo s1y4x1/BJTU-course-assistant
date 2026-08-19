@@ -324,6 +324,70 @@
     if (isLoginResponse(text, response)) throw loginError();
   }
 
+  function splitUploadFileName(value) {
+    const name = String(value || '').trim();
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot === name.length - 1) return { fileNameNoExt: name, fileExtName: '' };
+    return { fileNameNoExt: name.slice(0, dot), fileExtName: name.slice(dot + 1) };
+  }
+
+  function buildHomeworkUploadFile(entry) {
+    const visitName = String(entry?.visitName || '').trim();
+    if (!visitName) return null;
+    const parts = splitUploadFileName(entry?.fileName || entry?.name || '');
+    return {
+      fileNameNoExt: encodeURIComponent(parts.fileNameNoExt),
+      fileExtName: parts.fileExtName,
+      fileSize: String(Math.max(0, Number(entry?.fileSize || 0) || 0)),
+      visitName,
+      pid: '',
+      ftype: 'insert'
+    };
+  }
+
+  async function submitHomework(courseId, homework, content, uploadedFiles, options = {}) {
+    const cid = String(courseId || '').trim();
+    const upId = String(homework?.id ?? homework?.upId ?? homework?.upid ?? homework?.UPID ?? homework?.up_id ?? '').trim();
+    if (!cid) throw new Error('缺少课程 ID');
+    if (!upId) throw new Error('缺少作业 ID');
+    const fileList = (Array.isArray(uploadedFiles) ? uploadedFiles : [])
+      .map(buildHomeworkUploadFile)
+      .filter(Boolean);
+    const body = new URLSearchParams({
+      method: 'sendStuHomeWorks',
+      content: encodeURIComponent(String(content || '')),
+      groupName: '',
+      groupId: '',
+      courseId: cid,
+      contentType: '0',
+      fz: String(homework?.is_fz ?? '0'),
+      jxrl_id: '',
+      fileList: JSON.stringify(fileList),
+      upId,
+      return_num: '0',
+      isTeacher: '0'
+    });
+    const { text, response } = await requestText(`${BASE_VE}back/course/courseWorkInfo.shtml`, {
+      signal: options.signal,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: body.toString()
+    });
+    if (isLoginResponse(text, response) || (response?.redirected && String(response.url || '').includes('/ve/s.shtml'))) {
+      throw loginError();
+    }
+    let data;
+    try { data = parseJson(text); } catch { data = null; }
+    if (String(data?.STATUS) === '0' || String(data?.flag || '').toLowerCase() === 'success') {
+      return { submitted: true, courseId: cid, assignmentId: upId, fileCount: fileList.length, response: data };
+    }
+    throw new Error(String(data?.ERRMSG || data?.message || text || '提交失败'));
+  }
+
   function collectPendingAssignments(courses, courseHomeworkData, { futureOnly = false } = {}) {
     const now = Date.now();
     const output = [];
@@ -379,6 +443,8 @@
     isHomeworkDone,
     getUnpublishedDoneScoreHomeworkIds,
     setHomeworkScoreDisplayStatus,
+    buildHomeworkUploadFile,
+    submitHomework,
     collectPendingAssignments
   });
 })(globalThis);

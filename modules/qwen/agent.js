@@ -287,7 +287,24 @@
 
       lastCleanReply = replyText;
       onEvent?.({ operation: call, iteration });
-      const outcome = await operations.run(call.name, call.arguments);
+      const outcome = await operations.run(call.name, call.arguments, {
+        authorize: async (request) => {
+          const operationName = String(request?.name || call.name || '');
+          const alwaysAllowed = loopSession.alwaysAllowedOperations || (loopSession.alwaysAllowedOperations = {});
+          if (alwaysAllowed[operationName] === true) return 'always';
+          if (typeof askUser !== 'function') return 'deny';
+          const decision = await askUser({
+            mode: 'operation-permission',
+            message: String(request?.message || `是否允许执行操作「${operationName}」？`),
+            count: 1
+          });
+          if (decision?.action === 'always') {
+            alwaysAllowed[operationName] = true;
+            return 'always';
+          }
+          return decision?.action === 'continue' ? 'allow' : 'deny';
+        }
+      });
       onEvent?.({ operationResult: outcome, iteration });
       pendingOperationResult = outcome;
       hasPendingOperationResult = true;

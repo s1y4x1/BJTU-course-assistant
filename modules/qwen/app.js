@@ -352,6 +352,183 @@
     });
   }
 
+  const JS_SANDBOX_CHANNEL = 'bjtu-qwen-js-sandbox';
+  let jsSandboxFramePromise = null;
+
+  function ensureJsSandboxFrame() {
+    if (jsSandboxFramePromise) return jsSandboxFramePromise;
+    jsSandboxFramePromise = new Promise((resolve, reject) => {
+      const frame = document.createElement('iframe');
+      frame.hidden = true;
+      frame.setAttribute('aria-hidden', 'true');
+      frame.src = chrome.runtime.getURL('core/sandbox/js-executor.html');
+      const timer = setTimeout(() => {
+        frame.remove();
+        jsSandboxFramePromise = null;
+        reject(new Error('JavaScript 沙箱加载超时'));
+      }, 10000);
+      frame.addEventListener('load', () => {
+        clearTimeout(timer);
+        resolve(frame);
+      }, { once: true });
+      frame.addEventListener('error', () => {
+        clearTimeout(timer);
+        frame.remove();
+        jsSandboxFramePromise = null;
+        reject(new Error('JavaScript 沙箱加载失败'));
+      }, { once: true });
+      document.body.appendChild(frame);
+    });
+    return jsSandboxFramePromise;
+  }
+
+  function jsBridgePathParts(path) {
+    const parts = String(path || '').split('.').map((part) => part.trim()).filter(Boolean);
+    if (!parts.length) throw new Error('桥接路径为空');
+    if (parts.some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
+      throw new Error('桥接路径包含不允许访问的属性');
+    }
+    if (['window', 'globalThis', 'self'].includes(parts[0])) parts.shift();
+    if (!parts.length) throw new Error('不能直接访问整个页面全局对象');
+    return parts;
+  }
+
+  function resolveJsBridgePath(root, path) {
+    const parts = jsBridgePathParts(path);
+    let owner = root;
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      owner = owner?.[parts[i]];
+      if (owner == null) throw new Error(`桥接路径不存在：${parts.slice(0, i + 1).join('.')}`);
+    }
+    const key = parts.at(-1);
+    return { owner, key, value: owner?.[key] };
+  }
+
+  function jsBridgeSerializable(value, seen = new WeakSet(), depth = 0) {
+    if (value === undefined) return { __type: 'undefined' };
+    if (typeof value === 'bigint') return `${value}n`;
+    if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
+    if (typeof value === 'symbol') return String(value);
+    if (value === null || typeof value !== 'object') return value;
+    if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack || '' };
+    if (value instanceof Element) {
+      return {
+        tagName: value.tagName.toLowerCase(),
+        id: value.id || '',
+        className: typeof value.className === 'string' ? value.className : '',
+        textContent: String(value.textContent || '').slice(0, 10000),
+        attributes: Object.fromEntries(Array.from(value.attributes || []).map((item) => [item.name, item.value]))
+      };
+    }
+    if (depth > 8) return '[深度受限]';
+    if (seen.has(value)) return '[循环引用]';
+    seen.add(value);
+    if (Array.isArray(value)) return value.map((item) => jsBridgeSerializable(item, seen, depth + 1));
+    const output = {};
+    for (const key of Object.keys(value)) {
+      try { output[key] = jsBridgeSerializable(value[key], seen, depth + 1); } catch (error) {
+        output[key] = `[读取失败：${String(error?.message || error)}]`;
+      }
+    }
+    return output;
+  }
+
+  function requireJsBridgeElement(selector) {
+    const element = document.querySelector(String(selector || ''));
+    if (!(element instanceof Element)) throw new Error(`未找到元素：${String(selector || '')}`);
+    return element;
+  }
+
+  async function handleAppJsBridge(action, payload) {
+    if (action === 'dom.query') return jsBridgeSerializable(document.querySelector(String(payload?.selector || '')));
+    if (action === 'dom.queryAll') {
+      return jsBridgeSerializable(Array.from(document.querySelectorAll(String(payload?.selector || ''))));
+    }
+    if (action.startsWith('dom.')) {
+      const element = requireJsBridgeElement(payload?.selector);
+      if (action === 'dom.get') return jsBridgeSerializable(resolveJsBridgePath(element, payload?.property).value);
+      if (action === 'dom.set') {
+        const target = resolveJsBridgePath(element, payload?.property);
+        target.owner[target.key] = payload?.value;
+        return true;
+      }
+      if (action === 'dom.call') {
+        const target = resolveJsBridgePath(element, payload?.method);
+        if (typeof target.value !== 'function') throw new Error(`DOM 方法不存在：${String(payload?.method || '')}`);
+        return jsBridgeSerializable(await target.value.apply(target.owner, Array.isArray(payload?.args) ? payload.args : []));
+      }
+    }
+    const target = resolveJsBridgePath(global, payload?.path);
+    if (action === 'get') return jsBridgeSerializable(target.value);
+    if (action === 'set') {
+      target.owner[target.key] = payload?.value;
+      return true;
+    }
+    if (action === 'call') {
+      if (typeof target.value !== 'function') throw new Error(`页面方法不存在：${String(payload?.path || '')}`);
+      return jsBridgeSerializable(await target.value.apply(target.owner, Array.isArray(payload?.args) ? payload.args : []));
+    }
+    throw new Error(`未知 app 桥接操作：${String(action || '')}`);
+  }
+
+  async function handleJsBridge(mode, action, payload) {
+    if (mode === 'app') return handleAppJsBridge(action, payload);
+    if (mode === 'background') {
+      const response = await send('QWEN_JS_BACKGROUND_BRIDGE', { action, payload });
+      if (!response?.ok) throw new Error(String(response?.message || '后台桥接调用失败'));
+      return response.value;
+    }
+    throw new Error('sandbox 模式不能调用上下文桥接');
+  }
+
+  async function executeJsInSandbox(code, mode = 'sandbox') {
+    const frame = await ensureJsSandboxFrame();
+    const id = `js-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        global.removeEventListener('message', onMessage);
+        reject(new Error('JavaScript 执行超时'));
+      }, 30000);
+      const onMessage = (event) => {
+        const data = event?.data;
+        if (event.source !== frame.contentWindow || data?.channel !== JS_SANDBOX_CHANNEL) return;
+        if (data?.type === 'bridge-call' && String(data.executionId || '') === id) {
+          void handleJsBridge(mode, String(data.action || ''), data.payload).then((result) => {
+            frame.contentWindow?.postMessage({
+              channel: JS_SANDBOX_CHANNEL,
+              type: 'bridge-result',
+              requestId: String(data.requestId || ''),
+              ok: true,
+              result: jsBridgeSerializable(result)
+            }, '*');
+          }).catch((error) => {
+            frame.contentWindow?.postMessage({
+              channel: JS_SANDBOX_CHANNEL,
+              type: 'bridge-result',
+              requestId: String(data.requestId || ''),
+              ok: false,
+              error: String(error?.message || error)
+            }, '*');
+          });
+          return;
+        }
+        if (data?.type !== 'result' || String(data.id || '') !== id) return;
+        clearTimeout(timer);
+        global.removeEventListener('message', onMessage);
+        if (data.ok === true) resolve(data.result);
+        else reject(new Error(String(data.error || 'JavaScript 执行失败')));
+      };
+      global.addEventListener('message', onMessage);
+      frame.contentWindow?.postMessage({
+        channel: JS_SANDBOX_CHANNEL,
+        type: 'execute',
+        id,
+        code: String(code || ''),
+        mode: String(mode || 'sandbox')
+      }, '*');
+    });
+  }
+
   function setStatus(text, state = '') {
     const statusEl = el(STATUS_ID);
     if (statusEl instanceof HTMLElement) {
@@ -794,11 +971,16 @@
   }
 
   let pendingAskId = null;
+  let pendingAskMode = '';
 
   function updateAskContinueLabel() {
     const count = el('qwen-chat-ask-count');
     const button = el('qwen-chat-ask-continue');
     if (button instanceof HTMLButtonElement) {
+      if (pendingAskMode === 'operation-permission') {
+        button.textContent = '允许一次';
+        return;
+      }
       const value = count instanceof HTMLInputElement ? parseInt(count.value, 10) : 0;
       button.textContent = `继续 ${value > 0 ? value : 1} 次`;
     }
@@ -806,13 +988,21 @@
 
   function showAsk(message) {
     pendingAskId = String(message?.id || '');
+    pendingAskMode = String(message?.mode || '');
     const container = el('qwen-chat-ask');
     const text = el('qwen-chat-ask-text');
     const count = el('qwen-chat-ask-count');
+    const always = el('qwen-chat-ask-always');
+    const stop = el('qwen-chat-ask-stop');
     if (container instanceof HTMLElement) {
       if (text instanceof HTMLElement) text.textContent = message?.message || '操作调用次数过多，是否继续？';
       const value = Number(message?.count) > 0 ? Number(message.count) : 3;
-      if (count instanceof HTMLInputElement) count.value = String(value);
+      if (count instanceof HTMLInputElement) {
+        count.value = String(value);
+        count.hidden = pendingAskMode === 'operation-permission';
+      }
+      if (always instanceof HTMLButtonElement) always.textContent = '始终允许';
+      if (stop instanceof HTMLButtonElement) stop.textContent = pendingAskMode === 'operation-permission' ? '拒绝' : '结束本次';
       updateAskContinueLabel();
       container.hidden = false;
     }
@@ -822,6 +1012,7 @@
     const container = el('qwen-chat-ask');
     if (container instanceof HTMLElement) container.hidden = true;
     pendingAskId = null;
+    pendingAskMode = '';
   }
 
   function resolveAsk(action) {
@@ -830,6 +1021,7 @@
     if (!pendingAskId) return;
     const id = pendingAskId;
     pendingAskId = null;
+    pendingAskMode = '';
     const countEl = el('qwen-chat-ask-count');
     const count = countEl instanceof HTMLInputElement ? parseInt(countEl.value, 10) : 0;
     try {
@@ -1154,14 +1346,26 @@
       }
     });
 
-    chrome.runtime.onMessage.addListener((message) => {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
         lastKnownLoggedIn = true;
         showLoginHint(false);
         historyReloadAfterLogin = true;
         void restoreHistoryAfterLogin();
         void refreshStatus();
+        return false;
       }
+      if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'qwen') return false;
+      if (String(message?.payload?.fn || '') !== 'executeJs') {
+        sendResponse({ ok: false, error: `未知页面操作：${String(message?.payload?.fn || '')}` });
+        return false;
+      }
+      void executeJsInSandbox(message?.payload?.args?.code, message?.payload?.args?.mode).then((value) => {
+        sendResponse({ ok: true, value });
+      }).catch((error) => {
+        sendResponse({ ok: false, error: String(error?.message || error) });
+      });
+      return true;
     });
 
     const fab = el(FAB_ID);
