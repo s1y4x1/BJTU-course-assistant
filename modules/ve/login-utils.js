@@ -44,10 +44,30 @@
     return String(value || '').replace(/\D/g, '').slice(0, 4);
   }
 
-  function buildPasswordLoginUrl(loginName, password, passcode = '') {
-    return BASE_VE + 's.shtml?login=main_2&username=' + gbkUrlEncode(String(loginName || '').trim())
+  function buildPasswordLoginBody(loginName, password, passcode = '') {
+    const plainLoginName = String(loginName || '').trim();
+    const encryptedLoginName = typeof global.strEnc === 'function'
+      ? global.strEnc(plainLoginName)
+      : plainLoginName;
+    return 'login=main_2&username=' + encodeURIComponent(encryptedLoginName)
       + '&password=' + encodeURIComponent(String(password || '').trim())
       + '&passcode=' + encodeURIComponent(normalizePasscode(passcode));
+  }
+
+  function buildPasswordLoginRequest(loginName, password, passcode = '') {
+    return {
+      url: BASE_VE + 's.shtml',
+      options: {
+        method: 'POST',
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+          'Cache-Control': 'max-age=0',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: buildPasswordLoginBody(loginName, password, passcode)
+      }
+    };
   }
 
   function buildQuickLoginUrl(quickUsername) {
@@ -73,7 +93,10 @@
       return { ok: false, reason: 'module-missing', image };
     }
     try {
-      const result = await recognizer.recognize(image, { signal });
+      // recognize() 的第二个参数是模型版本，不是请求选项；把 { signal }
+      // 传进去会被当成名为 "[object Object]" 的模型，导致自动识别必定失败。
+      const result = await recognizer.recognize(image);
+      if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
       const passcode = normalizePasscode(result?.passcode);
       return result?.ok && passcode.length === 4
         ? { ok: true, passcode, image }
@@ -99,7 +122,8 @@
     CAPTCHA_URL,
     gbkUrlEncode,
     normalizePasscode,
-    buildPasswordLoginUrl,
+    buildPasswordLoginBody,
+    buildPasswordLoginRequest,
     buildQuickLoginUrl,
     getCaptchaImage,
     recognizeCaptcha

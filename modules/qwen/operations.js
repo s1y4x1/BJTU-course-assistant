@@ -591,11 +591,11 @@ name: 've.accounts',
       doc: [
         '## ve.login —— 智慧课程平台登录',
         '',
-        '启用智慧课程平台并触发其登录流程。调用 courseList 等操作前若未登录，应先调用本操作。',
+        '启用智慧课程平台并触发其登录流程。省略账号时使用 app.html 当前填写的账号。操作会等待密码/验证码/错误恢复弹窗关闭，再返回该账号本次是否登录成功。调用 courseList 等操作前若未登录，应先调用本操作。',
         '',
-        '**参数**：`{"account":"可选，账号；省略时仅启用平台不触发自动登录"}`',
+        '**参数**：`{"account":"可选，账号；省略时使用当前填写的账号"}`',
         '',
-        '**调用示例**：`ve.login()` 仅启用平台；`ve.login({account: "2428xxxx"})` 自动填写账号并触发登录',
+        '**调用示例**：`ve.login()` 使用当前账号；`ve.login({account: "2428xxxx"})` 切换到指定账号并登录',
         '',
         '指定账号时会等待密码/验证码弹窗关闭，并返回该目标账号本次是否登录成功；已有的其他账号会话不会被当作成功。',
         '',
@@ -603,7 +603,7 @@ name: 've.accounts',
       ].join('\n'),
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();
-        return pageInvoke('ve', 'login', { account, timeoutMs: 180000 }, 200000);
+        return pageInvoke('ve', 'login', { account, auto: true, timeoutMs: 180000 }, 200000);
       }
     },
     {

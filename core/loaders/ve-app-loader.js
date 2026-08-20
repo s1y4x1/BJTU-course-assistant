@@ -2,7 +2,7 @@
   'use strict';
 
   const scripts = [
-    'modules/ve/vendor/main.min.js',
+    'modules/ve/vendor/main2.min.js',
     'modules/ve/login-utils.js',
     'modules/ve/login-credentials-dialog.js',
     'modules/ve/account-store.js',

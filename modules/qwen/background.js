@@ -10,6 +10,19 @@
   const pendingAskNotifications = new Map();
   let qwenLoginCompletionPromise = null;
 
+  async function broadcastWafVerified() {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        const response = await chrome.runtime.sendMessage({ type: 'QWEN_WAF_VERIFIED_BROADCAST' });
+        if (response?.ok === true) return true;
+      } catch {
+        // app.html 可能仍在加载，稍后重试。
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return false;
+  }
+
   async function beginWafRefreshFlow(tab) {
     const tabId = Number(tab?.id);
     if (!Number.isInteger(tabId)) return;
@@ -73,6 +86,7 @@
       if (Number.isInteger(appTab?.windowId)) {
         await chrome.windows.update(appTab.windowId, { focused: true }).catch(() => null);
       }
+      void broadcastWafVerified();
       return { ok: true, returnedToApp: true, reused };
     }
     return { ok: true };
@@ -171,6 +185,7 @@
       const turnRef = {};
       let pendingAsk = null;
       let pendingRetry = null;
+      let stopRequested = false;
       const loopSession = {};
       const settlePendingAsk = (action = 'stop', count = 0, notifyPage = false) => {
         if (!pendingAsk) return;
@@ -224,15 +239,25 @@
           return;
         }
         if (message?.type === 'stop') {
+          if (stopRequested) return;
+          stopRequested = true;
           resolveAskOnAbort();
           resolveRetryOnAbort();
-          abortController.abort();
-          if (turnRef.chatId && turnRef.responseId) {
-            void global.BjtuQwenClient?.stopGeneration?.({
-              chatId: turnRef.chatId,
-              responseId: turnRef.responseId
-            });
-          }
+          void (async () => {
+            // response_id 由流首个 response.created/delta 事件给出。若用户点得
+            // 很早，短暂等待该事件，否则无法构造千问要求的停止请求。
+            const deadline = Date.now() + 1200;
+            while (turnRef.chatId && !turnRef.responseId && Date.now() < deadline) {
+              await new Promise((resolve) => setTimeout(resolve, 25));
+            }
+            if (turnRef.chatId && turnRef.responseId) {
+              void global.BjtuQwenClient?.stopGeneration?.({
+                chatId: turnRef.chatId,
+                responseId: turnRef.responseId
+              });
+            }
+            abortController.abort(new DOMException('生成中止', 'AbortError'));
+          })();
           return;
         }
         if (message?.type !== 'send') return;
@@ -337,7 +362,9 @@
               port.postMessage({
                 type: 'stopped',
                 chatId: String(turnRef?.chatId || ''),
-                parentId: String(turnRef?.lastMessageId || '')
+                parentId: String(turnRef?.retryParentId || ''),
+                retryText: String(turnRef?.retryText || ''),
+                retryParentId: String(turnRef?.retryParentId || '')
               });
               return;
             }
@@ -574,14 +601,20 @@
         sendResponse(doc ? { ok: true, ...doc } : { ok: false, message: `未找到操作：${name}` });
         return false;
       }
-      if (type === 'QWEN_RUN_OPERATION') {
+      if (type === 'BJTU_RUN_OPERATION' || type === 'QWEN_RUN_OPERATION') {
         const operations = global.BjtuQwenOperations;
         const name = String(message?.payload?.name || '');
         if (!operations) {
           sendResponse({ ok: false, error: '通义千问操作注册表未就绪', code: 'MODULE_UNAVAILABLE' });
           return false;
         }
-        void operations.run(name, message?.payload?.arguments || {}).then(sendResponse);
+        const senderUrl = String(sender?.url || sender?.tab?.url || '');
+        const directAppInvocation = type === 'BJTU_RUN_OPERATION'
+          && senderUrl.startsWith(chrome.runtime.getURL('app/app.html'));
+        void operations.run(name, message?.payload?.arguments || {}, directAppInvocation ? {
+          // DevTools/app 页面中的显式调用本身即为用户授权；千问代理调用仍走逐次授权弹窗。
+          authorize: async () => 'allow'
+        } : {}).then(sendResponse);
         return true;
       }
       if (type === 'QWEN_SETTINGS_GET') {

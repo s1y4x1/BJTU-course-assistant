@@ -582,7 +582,7 @@
 
       const abort = () => {
         pendingStreams.delete(id);
-        reject(new DOMException('Aborted', 'AbortError'));
+        reject(new DOMException('生成中止', 'AbortError'));
         try {
           chrome.tabs.sendMessage(tab.id, { type: 'QWEN_ABORT_STREAM', payload: { id } }, () => {
             void chrome?.runtime?.lastError;
@@ -688,8 +688,11 @@
         } catch {
           return;
         }
-        if (payload?.response_id) responseId = String(payload.response_id);
-        if (payload?.['response.created']?.response_id) responseId = String(payload['response.created'].response_id);
+        const incomingResponseId = String(payload?.response_id || payload?.['response.created']?.response_id || '');
+        if (incomingResponseId && incomingResponseId !== responseId) {
+          responseId = incomingResponseId;
+          onEvent?.({ responseId });
+        }
         const created = payload?.['response.created'];
         if (created) {
           const idx = String(created.response_index ?? '');
@@ -712,7 +715,10 @@
         throw new Error(String(payload.error.details || payload.error.message || '通义千问返回了错误'));
       }
       const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
-      if (choice?.response_id) responseId = String(choice.response_id);
+      if (choice?.response_id && String(choice.response_id) !== responseId) {
+        responseId = String(choice.response_id);
+        onEvent?.({ responseId });
+      }
       const delta = choice?.delta;
       if (!delta) {
         onEvent?.({ meta: payload });

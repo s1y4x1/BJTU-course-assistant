@@ -6,7 +6,7 @@
       label: '智慧课程平台',
       styles: ['platform.css'],
       files: [
-        'vendor/main.min.js', 'password-cipher.js', 'login-utils.js',
+        'vendor/main2.min.js', 'password-cipher.js', 'login-utils.js',
         'login-credentials-dialog.js', 'login-overlay.js', 'account-store.js',
         'account-login.js', 'homework-core.js', 'platform.js', 'session.js',
         'resource-download.js', 'login-service.js', 'background-homework.js'

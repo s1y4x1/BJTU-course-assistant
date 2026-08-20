@@ -160,7 +160,7 @@
     let iteration = 0;
 
     while (true) {
-      if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+      if (signal?.aborted) throw signal.reason || new DOMException('生成中止', 'AbortError');
 
       if (iteration >= effectiveLimit) {
         const decision = typeof askUser === 'function'
@@ -190,6 +190,10 @@
       }
 
       const content = iteration === 0 ? userText : lastResultText;
+      if (turnRef) {
+        turnRef.retryText = content;
+        turnRef.retryParentId = parentId;
+      }
       const message = client.buildUserMessage({ modelId, content, thinking });
       message.parent_id = parentId || null;
       message.parentId = parentId || null;
@@ -202,6 +206,9 @@
           parentId,
           messages: [message],
           onEvent: (event) => {
+            if (event?.responseId && turnRef) {
+              turnRef.responseId = String(event.responseId);
+            }
             if (event?.responseParentId && turnRef) {
               turnRef.lastMessageId = String(event.responseParentId);
             }
@@ -219,6 +226,7 @@
           signal
         });
       } catch (error) {
+        if (error?.name === 'AbortError' || signal?.aborted) throw error;
         const code = String(error?.code || '');
         if (code === 'NOT_LOGGED_IN' || code === 'DISABLED') throw error;
         const decision = typeof onRetryRequest === 'function'
@@ -263,6 +271,16 @@
       if (!call) {
         OPERATION_BLOCK_PATTERN.lastIndex = 0;
         if (OPERATION_BLOCK_PATTERN.test(replyText)) {
+          const syntaxOutcome = {
+            ok: false,
+            name: '',
+            code: 'OPERATION_SYNTAX_ERROR',
+            error: '操作调用语法有误，请按规范重新编写 op 代码块'
+          };
+          onEvent?.({ operation: { name: '', arguments: {}, syntaxError: true }, iteration });
+          onEvent?.({ operationResult: syntaxOutcome, iteration });
+          pendingOperationResult = syntaxOutcome;
+          hasPendingOperationResult = true;
           lastResultText = [
             '```res',
             '操作调用语法有误，请按规范重新编写 op 代码块',

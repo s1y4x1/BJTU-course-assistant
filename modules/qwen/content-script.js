@@ -208,8 +208,11 @@
         } catch {
           return;
         }
-        if (data?.response_id) responseId = String(data.response_id);
-        if (data?.['response.created']?.response_id) responseId = String(data['response.created'].response_id);
+        const incomingResponseId = String(data?.response_id || data?.['response.created']?.response_id || '');
+        if (incomingResponseId && incomingResponseId !== responseId) {
+          responseId = incomingResponseId;
+          emit({ responseId });
+        }
         const created = data?.['response.created'];
         if (created) {
           const idx = String(created.response_index ?? '');
@@ -233,7 +236,10 @@
           return;
         }
         const choice = Array.isArray(data?.choices) ? data.choices[0] : null;
-        if (choice?.response_id) responseId = String(choice.response_id);
+        if (choice?.response_id && String(choice.response_id) !== responseId) {
+          responseId = String(choice.response_id);
+          emit({ responseId });
+        }
         const delta = choice?.delta;
         if (!delta) {
           emit({ meta: data });

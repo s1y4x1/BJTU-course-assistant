@@ -2745,36 +2745,22 @@ globalThis.BjtuVePageApi = Object.freeze({
     return upload(args || {});
   },
   // ve.login：支持账号参数。
-  // - 省略账号：仅触发平台启用（相当于点击 ve-status-btn），不自动登录。
-  // - 填写账号：自动填写 app 页面的 username-input 并触发完整登录流程。
+  // - 省略账号：使用 app 页面的当前账号并触发完整登录流程。
+  // - 填写账号：切换到该账号并触发完整登录流程。
   login: (args) => {
     const platform = 've';
-    const auto = args?.auto === true;
     const requestedAccount = String(args?.account || args?.loginName || '').trim();
     const currentAccount = String(document?.getElementById?.('username-input')?.value || '').trim();
-    const account = requestedAccount || (auto ? currentAccount : '');
-    const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
-
-    if (account) return triggerVeLoginWithAccount(platform, account, args?.timeoutMs);
-
-    // 无账号：仅触发平台启用（相当于点击 ve-status-btn）
-    if (!enabled) {
-      if (typeof globalThis.togglePlatformSelection === 'function') {
-        try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
-      }
-    } else if (typeof globalThis.triggerExternalPlatformLoad === 'function') {
-      try { globalThis.triggerExternalPlatformLoad(platform, true); } catch {}
-    }
-    const loginState = String(window?.platformLoginState?.[platform] || '');
-    return Promise.resolve({
-      ok: true,
-      enabled: true,
+    const account = requestedAccount || currentAccount;
+    if (!account) return Promise.resolve({
+      ok: false,
+      loggedIn: false,
       account: '',
-      loginState,
-      message: enabled
-        ? '智慧课程平台已启用。未指定账号，未触发自动登录；如需登录请调用 ve.login({account:"..."}) 或手动填写账号。'
-        : '已启用智慧课程平台（未指定账号，未触发自动登录）；如需登录请调用 ve.login({account:"..."}) 或手动填写账号。'
+      loginState: 'offline',
+      reason: 'empty',
+      message: '请先在 app.html 填写智慧课程平台账号'
     });
+    return triggerVeLoginWithAccount(platform, account, args?.timeoutMs);
   }
 });
 

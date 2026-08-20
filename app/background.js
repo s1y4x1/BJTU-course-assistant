@@ -208,9 +208,8 @@ function tryImportModuleScripts(...paths) {
 }
 
 const veBackgroundReady = tryImportModuleScripts(
-  '../modules/ve/vendor/main.min.js',
+  '../modules/ve/vendor/main2.min.js',
   '../core/md5.js',
-  '../modules/ve/password-cipher.js',
   '../modules/ve/login-utils.js',
   '../modules/ve/account-store.js',
   '../modules/ve/homework-core.js'
@@ -256,7 +255,7 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     module: 've',
     matches: ['http://123.121.147.7:88/ve/*'],
     js: [
-      'modules/ve/vendor/main.min.js',
+      'modules/ve/vendor/main2.min.js',
       'modules/ve/login-credentials-dialog.js',
       'modules/ve/login-overlay.js'
     ],
@@ -1619,9 +1618,14 @@ async function recordPortalPasswordLogin(tabId, state) {
   await globalThis.BjtuAccountStore.migrateLegacy();
   const current = await globalThis.BjtuAccountStore.get(loginName);
   const encryptedPassword = String(state?.encryptedPassword || '').trim();
-  const cipher = globalThis.BjtuVePasswordCipher;
-  const password = cipher?.decrypt?.(encryptedPassword);
-  if (!cipher?.isReasonablePassword?.(password)) {
+  const password = typeof globalThis.strDec === 'function'
+    ? globalThis.strDec(encryptedPassword)
+    : '';
+  const reasonablePassword = !!password && password.length <= 256 && (
+    /^[\x20-\x7e]+$/.test(password)
+    || (/[\x21-\x7e]/.test(password) && /^[\p{L}\p{N}\p{P}\p{S}\p{Zs}]+$/u.test(password))
+  );
+  if (!reasonablePassword) {
     console.warn('[bjtu] skipped VE password recording because payload decryption failed', {
       tabId,
       encryptedLength: encryptedPassword.length

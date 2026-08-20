@@ -2,6 +2,43 @@
   'use strict';
 
   const HISTORY_KEY = 'loginAccountHistory';
+  const PASSWORD_LOGIN_HEADER_RULE_ID = 914302;
+  const PASSWORD_LOGIN_ACCEPT = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7';
+
+  async function installPasswordLoginHeaderRule() {
+    if (!chrome?.declarativeNetRequest?.updateSessionRules) return false;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [PASSWORD_LOGIN_HEADER_RULE_ID],
+      addRules: [{
+        id: PASSWORD_LOGIN_HEADER_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Accept', operation: 'set', value: PASSWORD_LOGIN_ACCEPT },
+            { header: 'Accept-Language', operation: 'set', value: 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6' },
+            { header: 'Cache-Control', operation: 'set', value: 'max-age=0' },
+            { header: 'Origin', operation: 'set', value: 'http://123.121.147.7:88' },
+            { header: 'Referer', operation: 'set', value: 'http://123.121.147.7:88/ve/' },
+            { header: 'Upgrade-Insecure-Requests', operation: 'set', value: '1' }
+          ]
+        },
+        condition: {
+          urlFilter: '|http://123.121.147.7:88/ve/s.shtml|',
+          resourceTypes: ['xmlhttprequest'],
+          requestMethods: ['post']
+        }
+      }]
+    });
+    return true;
+  }
+
+  async function removePasswordLoginHeaderRule() {
+    if (!chrome?.declarativeNetRequest?.updateSessionRules) return;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [PASSWORD_LOGIN_HEADER_RULE_ID]
+    }).catch(() => {});
+  }
 
   function decodeBuffer(buffer, contentType = '') {
     const type = String(contentType || '').toLowerCase();
@@ -47,9 +84,22 @@
     }
   }
 
-  async function requestLogin(url) {
-    const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+  async function requestLogin(url, options = {}) {
+    const response = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      cache: 'no-store'
+    });
     return { ...parseLoginResponse(await decodeResponse(response, 'gbk')), httpStatus: response.status };
+  }
+
+  async function requestPasswordLogin(url, options) {
+    const ruleInstalled = await installPasswordLoginHeaderRule();
+    try {
+      return await requestLogin(url, options);
+    } finally {
+      if (ruleInstalled) await removePasswordLoginHeaderRule();
+    }
   }
 
   async function rememberLogin(loginName) {
@@ -136,26 +186,30 @@
 
     while (true) {
       if (!code) {
-        const captcha = await global.BjtuVeLoginUtils.recognizeCaptcha();
-        if (!captcha?.ok) {
+        try {
+          // 与密码恢复弹窗共用同一条已验证可用的识别链路，避免后台自动
+          // 登录和手动弹窗分别维护两套 Blob/Data URL 调用方式。
+          code = await recognizeCaptchaDataUrl(await getCaptchaDataUrl());
+        } catch (error) {
+          const errorCode = String(error?.code || '').trim();
           return {
             ok: false,
-            reason: captcha?.reason === 'module-missing'
+            reason: errorCode === 'captcha-module-missing'
               ? 'captcha-module-missing'
-              : captcha?.reason === 'resources-missing'
+              : errorCode === 'captcha-resources-missing'
                 ? 'captcha-resources-missing'
                 : 'captcha-required',
-            message: captcha?.reason === 'module-missing'
+            message: errorCode === 'captcha-module-missing'
               ? '本地验证码识别模块未安装，请先安装后继续登录。'
-              : captcha?.reason === 'resources-missing'
+              : errorCode === 'captcha-resources-missing'
                 ? '本地验证码识别核心未加载，请先打开验证码识别选项完成配置。'
-              : '验证码本地识别失败，请输入验证码后继续登录。'
+                : `验证码本地识别失败：${String(error?.message || error || '未知错误')}`
           };
         }
-        code = captcha.passcode;
       }
 
-      const result = await requestLogin(global.BjtuVeLoginUtils.buildPasswordLoginUrl(id, encryptedPassword, code));
+      const request = global.BjtuVeLoginUtils.buildPasswordLoginRequest(id, encryptedPassword, code);
+      const result = await requestPasswordLogin(request.url, request.options);
       if (result?.reason !== 'captcha') {
         const completed = await completeSuccessfulLogin(result, id, { recordHistory, passwordPlain });
         if (result?.reason === 'credential' && await clearStoredCredential(id, 'password')) {
