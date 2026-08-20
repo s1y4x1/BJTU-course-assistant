@@ -252,11 +252,27 @@ function renderAlreadyUploadedFile(file, fileId, known) {
 function enqueueUploadFile(file) {
   const fileId = Math.random().toString(36).slice(2);
   window.filesData[fileId] = { size: file.size, uploaded: 0 };
-  uploadFile(file, fileId);
-  return fileId;
+  return uploadFile(file, fileId);
 }
 
 function uploadFile(file, fileId) {
+  let completionSettled = false;
+  let resolveCompletion;
+  let rejectCompletion;
+  const completion = new Promise((resolve, reject) => {
+    resolveCompletion = resolve;
+    rejectCompletion = reject;
+  });
+  const completeUpload = (value) => {
+    if (completionSettled) return;
+    completionSettled = true;
+    resolveCompletion(value);
+  };
+  const failUpload = (message, code = '') => {
+    if (completionSettled) return;
+    completionSettled = true;
+    rejectCompletion(Object.assign(new Error(String(message || '上传失败')), { code: String(code || '') }));
+  };
   const item = document.createElement('div');
   item.className = 'file-item';
   item.dataset.uploadFileId = fileId;
@@ -333,6 +349,7 @@ function uploadFile(file, fileId) {
       delete window.filesData[fileId];
       updateTotalProgress();
     }
+    failUpload(statusText, 'USER_CANCELLED');
   };
 
   const queueAutoRetryAfterLogin = () => {
@@ -493,6 +510,7 @@ function uploadFile(file, fileId) {
           setInlineStatus(`上传失败 HTTP ${xhr.status}`, 'error');
           progressBar.style.backgroundColor = '#f44336';
           showRetry();
+          failUpload(`上传失败：HTTP ${xhr.status}`);
           resolve();
           return;
         }
@@ -505,7 +523,7 @@ function uploadFile(file, fileId) {
             sizeProgressDisplay.innerHTML = `(${renderFileSizePair(file.size, file.size)})`;
             setInlineStatus('上传完成', 'success');
 
-            addSavedUpload(file, data, convertedUrl);
+            await addSavedUpload(file, data, convertedUrl);
 
             const nameParts = splitFileName(file.name);
             window.uploadedFileMetaById[fileId] = {
@@ -558,6 +576,17 @@ function uploadFile(file, fileId) {
               updateTotalProgress();
             }
             cancelBtn.style.display = 'none';
+            const saved = (window.savedUploadedFiles || [])
+              .find((entry) => String(entry?.visitName || '') === String(data.visitName || ''));
+            completeUpload({
+              id: fileId,
+              savedId: String(saved?.id || ''),
+              fileName: String(file.name || ''),
+              fileSize: Number(file.size || 0),
+              mimeType: String(file.type || ''),
+              url: convertedUrl,
+              visitName: String(data.visitName || '')
+            });
           } else {
             const msg = data.ERRMSG || '未知错误';
             setInlineStatus(`上传失败：${msg}`, 'error');
@@ -567,6 +596,7 @@ function uploadFile(file, fileId) {
               queueAutoRetryAfterLogin();
             }
             showRetry();
+            failUpload(msg, /登录|不合法/.test(String(msg)) ? 'LOGIN_REQUIRED' : '');
           }
         } catch {
           const raw = String(xhr.responseText || '').trim();
@@ -575,6 +605,7 @@ function uploadFile(file, fileId) {
           setInlineStatus(`上传失败：${msg}`, 'error');
           progressBar.style.backgroundColor = '#f44336';
           showRetry();
+          failUpload(raw || '上传接口返回非 JSON');
         }
         resolve();
       };
@@ -594,6 +625,7 @@ function uploadFile(file, fileId) {
         setInlineStatus('网络请求失败', 'error');
         progressBar.style.backgroundColor = '#f44336';
         showRetry();
+        failUpload('网络请求失败');
         resolve();
       };
 
@@ -612,6 +644,7 @@ function uploadFile(file, fileId) {
 
   uploadQueue.push(performUpload);
   processQueue();
+  return completion;
 }
 
 // -------------------- Events --------------------
@@ -838,7 +871,7 @@ fileList.addEventListener('click', (e) => {
   cb.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
-async function processFilesForUpload(files) {
+async function processFilesForUpload(files, { waitForCompletion = false } = {}) {
   if (!files || !files.length) return;
   const filesList = Array.from(files).filter(Boolean);
   if (!filesList.length) return;
@@ -855,6 +888,7 @@ async function processFilesForUpload(files) {
   });
 
   let skippedDuplicateCount = 0;
+  const reusedResults = [];
   if (duplicateEntries.length > 0) {
     const selectedDuplicateIndexes = await promptDuplicateUploadConfirmation(duplicateEntries);
     if (selectedDuplicateIndexes instanceof Set) {
@@ -864,7 +898,19 @@ async function processFilesForUpload(files) {
           return;
         }
         const fileId = Math.random().toString(36).slice(2);
-        if (renderAlreadyUploadedFile(entry.file, fileId, entry.known)) skippedDuplicateCount++;
+        if (renderAlreadyUploadedFile(entry.file, fileId, entry.known)) {
+          skippedDuplicateCount++;
+          reusedResults.push({
+            id: fileId,
+            savedId: '',
+            fileName: String(entry.file?.name || entry.known?.fileName || ''),
+            fileSize: Number(entry.file?.size || entry.known?.fileSize || 0),
+            mimeType: String(entry.file?.type || ''),
+            url: String(entry.known?.url || ''),
+            visitName: String(entry.known?.visitName || ''),
+            reused: true
+          });
+        }
       });
     }
   }
@@ -874,19 +920,31 @@ async function processFilesForUpload(files) {
   }
   if (!pendingFiles.length) {
     updateTotalProgress();
-    return;
+    return reusedResults;
   }
 
   if (!isLoginSessionValid) {
+    if (waitForCompletion) {
+      return new Promise((resolve, reject) => {
+        handleLoginRequired(() => {
+          const tasks = pendingFiles.map(enqueueUploadFile);
+          updateTotalProgress();
+          Promise.all(tasks).then((results) => resolve([...reusedResults, ...results]), reject);
+        });
+      });
+    }
     handleLoginRequired(() => {
-      pendingFiles.forEach(enqueueUploadFile);
+      pendingFiles.map(enqueueUploadFile).forEach((task) => task.catch(() => {}));
       updateTotalProgress();
     });
-    return;
+    return reusedResults;
   }
 
-  pendingFiles.forEach(enqueueUploadFile);
+  const tasks = pendingFiles.map(enqueueUploadFile);
   updateTotalProgress();
+  if (waitForCompletion) return [...reusedResults, ...await Promise.all(tasks)];
+  tasks.forEach((task) => task.catch(() => {}));
+  return reusedResults;
 }
 
 function handleFiles(e) {
@@ -935,35 +993,48 @@ async function buildApiUploadFile(args = {}) {
   return new File([blob], fileName, { type: requestedMimeType || blob.type || 'application/octet-stream', lastModified: Date.now() });
 }
 
-function selectLocalFileForApi({ accept = '' } = {}) {
+function selectLocalFilesForApi({ accept = '' } = {}) {
   return new Promise((resolve, reject) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
-    if (String(accept || '').trim()) input.accept = String(accept).trim();
-    document.body.appendChild(input);
+    if (!(fileInput instanceof HTMLInputElement)) {
+      reject(new Error('页面文件选择器不存在'));
+      return;
+    }
+    const previousAccept = fileInput.accept;
+    fileInput.accept = String(accept || '').trim();
+    fileInput.value = '';
     let settled = false;
     let focusTimer = 0;
     const cleanup = () => {
       clearTimeout(focusTimer);
       globalThis.removeEventListener('focus', onWindowFocus, true);
-      input.remove();
+      fileInput.removeEventListener('change', onChange, true);
+      fileInput.removeEventListener('cancel', onCancel, true);
+      fileInput.accept = previousAccept;
     };
-    const finish = (file) => {
+    const finish = (files) => {
       if (settled) return;
       settled = true;
       cleanup();
-      if (file instanceof File) resolve(file);
+      const list = Array.from(files || []).filter((file) => file instanceof File);
+      if (list.length) resolve(list);
       else reject(Object.assign(new Error('用户取消选择文件'), { code: 'USER_CANCELLED' }));
+    };
+    const onChange = (event) => {
+      event.stopImmediatePropagation();
+      finish(fileInput.files);
+    };
+    const onCancel = (event) => {
+      event.stopImmediatePropagation();
+      finish([]);
     };
     const onWindowFocus = () => {
       clearTimeout(focusTimer);
-      focusTimer = setTimeout(() => finish(input.files?.[0] || null), 300);
+      focusTimer = setTimeout(() => finish(fileInput.files), 300);
     };
-    input.addEventListener('change', () => finish(input.files?.[0] || null), { once: true });
-    input.addEventListener('cancel', () => finish(null), { once: true });
+    fileInput.addEventListener('change', onChange, { capture: true, once: true });
+    fileInput.addEventListener('cancel', onCancel, { capture: true, once: true });
     globalThis.addEventListener('focus', onWindowFocus, true);
-    try { input.click(); } catch (error) {
+    try { fileInput.click(); } catch (error) {
       settled = true;
       cleanup();
       reject(error);
@@ -975,66 +1046,11 @@ async function uploadFileForApi(args = {}) {
   const hasSerializedSource = args?.dataBase64 !== undefined || args?.base64 !== undefined
     || Array.isArray(args?.bytes) || args?.text !== undefined || args?.content !== undefined
     || !!String(args?.url || '').trim();
-  const file = hasSerializedSource
-    ? await buildApiUploadFile(args)
-    : await selectLocalFileForApi({ accept: args?.accept });
-  const manualJsessionMode = !String(usernameInput?.value || '').trim();
-  const jsid = String(jsessionidInput?.value || await getLocal('jsessionid', '') || '').trim();
-  if (manualJsessionMode && !jsid) {
-    throw Object.assign(new Error('LOGIN_REQUIRED'), { code: 'LOGIN_REQUIRED', loginRequired: true });
-  }
-  const uploadUrl = manualJsessionMode
-    ? `http://123.121.147.7:88/ve/back/rp/common/rpUpload.shtml;jsessionid=${encodeURIComponent(jsid)}`
-    : 'http://123.121.147.7:88/ve/back/rp/common/rpUpload.shtml';
-  const body = new FormData();
-  body.append('file', file);
-  const response = await fetch(uploadUrl, {
-    method: 'POST',
-    credentials: 'include',
-    cache: 'no-store',
-    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Upgrade-Insecure-Requests': '1' },
-    body
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`上传失败：HTTP ${response.status}`);
-  if (typeof isLikelyLoginPageHtml === 'function' && isLikelyLoginPageHtml(text, response.url)) {
-    throw Object.assign(new Error('LOGIN_REQUIRED'), { code: 'LOGIN_REQUIRED', loginRequired: true });
-  }
-  let data;
-  try { data = JSON.parse(text || '{}'); } catch { throw new Error(text.trim().slice(0, 300) || '上传接口返回非 JSON'); }
-  const visitName = String(data?.visitName || '').trim();
-  if (!visitName) {
-    const message = String(data?.ERRMSG || data?.message || '上传失败');
-    if (/登录|不合法/.test(message)) {
-      throw Object.assign(new Error('LOGIN_REQUIRED'), { code: 'LOGIN_REQUIRED', loginRequired: true });
-    }
-    throw new Error(message);
-  }
-  const url = convertVisitNameToUrl(visitName);
-  const fileId = `up_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const nameParts = splitFileName(file.name);
-  window.uploadedFileMetaById[fileId] = {
-    fileNameNoExt: String(data?.fileNameNoExt || nameParts.fileNameNoExt || '').trim(),
-    fileExtName: String(data?.fileExtName || nameParts.fileExtName || '').trim(),
-    fileSize: Number(data?.fileSize || file.size || 0),
-    visitName,
-    pid: '',
-    ftype: 'insert',
-    fileName: file.name,
-    url
-  };
-  await addSavedUpload(file, data, url);
-  renderSavedUploadsSection();
-  const saved = (window.savedUploadedFiles || []).find((item) => String(item?.visitName || '') === visitName);
-  return {
-    id: fileId,
-    savedId: String(saved?.id || ''),
-    fileName: file.name,
-    fileSize: file.size,
-    mimeType: file.type,
-    url,
-    visitName
-  };
+  const files = hasSerializedSource
+    ? [await buildApiUploadFile(args)]
+    : await selectLocalFilesForApi({ accept: args?.accept });
+  const results = await processFilesForUpload(files, { waitForCompletion: true });
+  return results.length === 1 ? results[0] : results;
 }
 
 globalThis.BjtuVeUploadApi = Object.freeze({ uploadFile: uploadFileForApi });

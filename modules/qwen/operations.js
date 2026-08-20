@@ -225,6 +225,8 @@
 
   function yktIsHomeworkDone(hw) {
     if (Number(hw?.__actype ?? hw?.actype) === 15) {
+      const taskProgress = Number(hw?.progress);
+      if (Number.isFinite(taskProgress)) return taskProgress >= 0.9995;
       if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
         return Number(hw.video_progress_ratio) >= 0.9995;
       }
@@ -450,13 +452,13 @@ name: 've.accounts',
       doc: [
         '## ve.uploadFile —— 上传文件',
         '',
-        '向智慧课程平台上传文件，返回的 id 可直接放入 ve.submitAssignment 的 fileIds。不提供文件内容来源时，会在 app.html 弹出本地文件选择窗口。',
+        '向智慧课程平台上传文件，返回的 id 可直接放入 ve.submitAssignment 的 fileIds。不提供文件内容来源时，会直接触发 app.html 的 #file-input（与点击 #drop-zone 相同），支持选择多个本地文件。上传过程会显示在 #file-list 中。',
         '',
         '**参数**：不传参数时由用户选择本地文件，可用 accept 限制文件类型；也可传 fileName，并从 text/content（文本）、base64/dataBase64、bytes（0~255 数组）或 url 四种可序列化来源中选择一种；mimeType 可选。使用 url 时若省略 fileName，会从 URL 推断。',
         '',
         '**调用示例**：`ve.uploadFile()`；`ve.uploadFile({accept:".pdf,.doc,.docx"})`；`ve.uploadFile({fileName:"answer.txt", text:"作业内容", mimeType:"text/plain"})`',
         '',
-        '**返回示例**：{"id":"up_xxx","savedId":"up_xxx","fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","url":"http://..."}'
+        '**返回示例**：单个文件返回 `{"id":"up_xxx","savedId":"up_xxx","fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","url":"http://..."}`；选择多个文件时返回上述对象的数组。'
       ].join('\n'),
       async run(args) {
         return pageInvoke('ve', 'uploadFile', args || {}, 120000);
@@ -754,7 +756,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：{"classroomId":"xxx","homework":[{"id":"...","title":"作业名","actype":15,"activityType":"课件","end":"时间","done":false,"score":90,"link":"https://..."}]}'
+        '**返回示例**：{"classroomId":"xxx","homework":[{"id":"...","title":"作业名","actype":15,"activityType":"线上学习","end":"时间","progress":0.75,"done":false,"score":90,"link":"https://..."}]}。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -770,7 +772,7 @@ name: 've.teachers_of_',
       doc: [
         '## ykt.assignments —— 全平台作业查询',
         '',
-        '遍历雨课堂当前账号所有课程，按提交状态与类型查询作业。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 试卷 / 公告。',
+        '遍历雨课堂当前账号所有课程，按提交状态与类型查询作业。线上学习任务优先依据扩展获取的 0~1 进度判断：进度完成即为 submitted；仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 试卷 / 公告。',
         '',
         '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|试卷|公告，默认 all"}',
         '',

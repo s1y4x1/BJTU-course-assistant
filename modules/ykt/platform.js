@@ -1226,6 +1226,38 @@ async function yktPageCourseList() {
   return { ok: true, loggedIn: true, courses };
 }
 
+function stripYktLeafId(value, seen = new WeakSet()) {
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[循环引用]';
+  seen.add(value);
+  if (Array.isArray(value)) return value.map((item) => stripYktLeafId(item, seen));
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'leaf_id' || key === 'leafId') continue;
+    output[key] = stripYktLeafId(child, seen);
+  }
+  return output;
+}
+
+function yktHomeworkForPageApi(homework) {
+  const source = homework && typeof homework === 'object' ? homework : {};
+  const output = stripYktLeafId(source);
+  if (Number(source?.__actype ?? source?.actype) === 15) {
+    const rawRatio = source?.video_progress_ratio;
+    let ratio = rawRatio === null || rawRatio === undefined ? NaN : Number(rawRatio);
+    if (!Number.isFinite(ratio)) {
+      const totalDone = Number(source?.video_total_done);
+      ratio = totalDone === 1 ? 1 : 0;
+    }
+    output.progress = Math.max(0, Math.min(1, ratio));
+    output.done = isYktHomeworkDone(source);
+    delete output.video_progress_ratio;
+    delete output.video_total_done;
+    delete output.video_progress_loading;
+  }
+  return output;
+}
+
 async function yktPageCourseHomework(classroomId) {
   const cid = String(classroomId || '').trim();
   if (!cid) return { ok: false, classroomId: '', homework: [], message: '缺少 classroomId' };
@@ -1235,7 +1267,13 @@ async function yktPageCourseHomework(classroomId) {
     const snapshot = (Array.isArray(window.yktCourseGroupsSnapshot) ? window.yktCourseGroupsSnapshot : [])
       .find((course) => String(course?.classroom_id || '') === cid);
     if (snapshot) {
-      return { ok: true, loggedIn: true, ready: true, classroomId: cid, homework: snapshot.homeworks || [] };
+      return {
+        ok: true,
+        loggedIn: true,
+        ready: true,
+        classroomId: cid,
+        homework: (Array.isArray(snapshot.homeworks) ? snapshot.homeworks : []).map(yktHomeworkForPageApi)
+      };
     }
   }
   const actypes = [14, 15, 5, 9];
@@ -1283,12 +1321,47 @@ async function yktPageCourseHomework(classroomId) {
       view: a?.view ?? null
     };
   });
+  const videoCoursewareIds = homework
+    .filter((item) => Number(item?.__actype) === 15)
+    .map((item) => item?.courseware_id)
+    .filter((id) => String(id || '').trim());
+  if (videoCoursewareIds.length) {
+    try {
+      const listResp = await fetchYktJson(YKT_COURSE_LIST_API);
+      const courses = Array.isArray(listResp?.data?.list) ? listResp.data.list : [];
+      const course = courses.find((item) => String(item?.classroom_id || '') === cid);
+      const requestTabId = await ensureYktExamSharedTab();
+      const progressMap = await fetchYktCoursewareProgress(
+        cid,
+        videoCoursewareIds,
+        requestTabId,
+        pickYktUniversityId(course, listResp?.data),
+        String(course?.platform_id ?? course?.platformId ?? '3')
+      );
+      homework.forEach((item) => {
+        if (Number(item?.__actype) !== 15) return;
+        const progress = normalizeYktVideoProgress(
+          progressMap?.[String(item?.courseware_id || '')],
+          item?.leaf_id
+        );
+        item.video_total_done = progress?.totalDone;
+        item.video_progress_ratio = progress?.ratio;
+      });
+    } catch (error) {
+      console.warn('[bjtu] ykt page api progress failed:', String(error?.message || error));
+    }
+  }
   const successfulResponses = settled.filter((result) => result.status === 'fulfilled'
     && !((result.value?.errcode !== undefined && Number(result.value.errcode) !== 0) || result.value?.success === false));
   if (!successfulResponses.length) {
     return { ok: false, loggedIn: false, classroomId: cid, homework: [], message: '雨课堂未登录或会话已失效' };
   }
-  return { ok: true, loggedIn: true, classroomId: cid, homework };
+  return {
+    ok: true,
+    loggedIn: true,
+    classroomId: cid,
+    homework: homework.map(yktHomeworkForPageApi)
+  };
 }
 
 async function yktPageLogin(args = {}) {
