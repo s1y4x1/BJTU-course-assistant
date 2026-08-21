@@ -3,6 +3,20 @@
 
   const CHANNEL = 'bjtu-qwen-js-sandbox';
   const pendingBridgeCalls = new Map();
+  const LOCAL_LANGUAGE_ROOTS = new Set([
+    'undefined', 'NaN', 'Infinity',
+    'Object', 'Function', 'Boolean', 'Symbol', 'Number', 'BigInt', 'Math', 'Date',
+    'String', 'RegExp', 'Array', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise',
+    'Error', 'AggregateError', 'EvalError', 'RangeError', 'ReferenceError', 'SyntaxError',
+    'TypeError', 'URIError', 'JSON', 'Intl', 'ArrayBuffer', 'SharedArrayBuffer', 'DataView',
+    'Uint8Array', 'Uint8ClampedArray', 'Uint16Array', 'Uint32Array', 'BigUint64Array',
+    'Int8Array', 'Int16Array', 'Int32Array', 'BigInt64Array', 'Float32Array', 'Float64Array',
+    'Atomics', 'WebAssembly', 'Reflect', 'Proxy', 'URL', 'URLSearchParams',
+    'TextEncoder', 'TextDecoder', 'AbortController', 'AbortSignal',
+    'parseFloat', 'parseInt', 'isFinite', 'isNaN', 'decodeURI', 'decodeURIComponent',
+    'encodeURI', 'encodeURIComponent', 'escape', 'unescape', 'structuredClone',
+    'atob', 'btoa', 'queueMicrotask', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'
+  ]);
 
   function serializable(value, seen = new WeakSet(), depth = 0) {
     if (value === undefined) return { __type: 'undefined' };
@@ -44,40 +58,57 @@
     });
   }
 
-  function createContext(mode, executionId) {
-    const context = Object.freeze({
-      mode,
-      get: (path) => callBridge(executionId, 'get', { path }),
-      set: (path, value) => callBridge(executionId, 'set', { path, value }),
-      call: (path, ...args) => callBridge(executionId, 'call', { path, args }),
-      dom: mode === 'app' ? Object.freeze({
-        query: (selector) => callBridge(executionId, 'dom.query', { selector }),
-        queryAll: (selector) => callBridge(executionId, 'dom.queryAll', { selector }),
-        get: (selector, property) => callBridge(executionId, 'dom.get', { selector, property }),
-        set: (selector, property, value) => callBridge(executionId, 'dom.set', { selector, property, value }),
-        call: (selector, method, ...args) => callBridge(executionId, 'dom.call', { selector, method, args })
-      }) : undefined
+  function remotePathProxy(executionId, path) {
+    const callable = function remoteBridgeValue() {};
+    return new Proxy(callable, {
+      get(_target, property) {
+        if (property === Symbol.toStringTag) return 'RemoteBridgeValue';
+        if (property === 'then') {
+          return (resolve, reject) => callBridge(executionId, 'get', { path }).then(resolve, reject);
+        }
+        if (typeof property === 'symbol') return undefined;
+        return remotePathProxy(executionId, `${path}.${String(property)}`);
+      },
+      apply(_target, _thisArg, args) {
+        return callBridge(executionId, 'call', { path, args });
+      },
+      set() {
+        throw new Error('跨上下文属性不能直接赋值，请调用目标上下文中已有的设置函数');
+      }
     });
-    return context;
   }
 
-  async function execute(source, mode, executionId) {
+  function createDirectScope(mode, executionId, bindingRoots) {
+    if (mode === 'sandbox') return Object.create(null);
+    const roots = new Set((Array.isArray(bindingRoots) ? bindingRoots : [])
+      .map((name) => String(name || '').trim())
+      .filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name))
+      .filter((name) => !LOCAL_LANGUAGE_ROOTS.has(name)));
+    return new Proxy(Object.create(null), {
+      has(_target, property) {
+        return typeof property === 'string' && roots.has(property);
+      },
+      get(_target, property) {
+        if (property === Symbol.unscopables) return undefined;
+        if (typeof property !== 'string' || !roots.has(property)) return undefined;
+        return remotePathProxy(executionId, property);
+      }
+    });
+  }
+
+  async function execute(source, mode, executionId, bindingRoots) {
     const code = String(source || '');
     if (!code.trim()) throw new Error('JavaScript 代码为空');
     const normalizedMode = ['sandbox', 'app', 'background'].includes(String(mode)) ? String(mode) : 'sandbox';
-    const context = normalizedMode === 'sandbox' ? Object.freeze({ mode: 'sandbox' }) : createContext(normalizedMode, executionId);
+    const scope = createDirectScope(normalizedMode, executionId, bindingRoots);
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     let fn;
     try {
-      fn = new AsyncFunction('context', 'app', 'background', `"use strict"; return (\n${code}\n);`);
+      fn = new AsyncFunction('scope', `with (scope) { return (\n${code}\n); }`);
     } catch {
-      fn = new AsyncFunction('context', 'app', 'background', `"use strict";\n${code}`);
+      fn = new AsyncFunction('scope', `with (scope) { return (async () => {\n${code}\n})(); }`);
     }
-    return serializable(await fn(
-      context,
-      normalizedMode === 'app' ? context : undefined,
-      normalizedMode === 'background' ? context : undefined
-    ));
+    return serializable(await fn(scope));
   }
 
   window.addEventListener('message', (event) => {
@@ -94,7 +125,7 @@
     }
     if (data?.type !== 'execute') return;
     const id = String(data.id || '');
-    void execute(data.code, data.mode, id).then((result) => {
+    void execute(data.code, data.mode, id, data.bindingRoots).then((result) => {
       event.source?.postMessage({ channel: CHANNEL, type: 'result', id, ok: true, result }, '*');
     }).catch((error) => {
       event.source?.postMessage({

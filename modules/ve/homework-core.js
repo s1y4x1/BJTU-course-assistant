@@ -148,7 +148,7 @@
       ?? homework?.workId ?? homework?.homeworkId ?? '').trim();
   }
 
-  async function fetchCourseHomework(courseId, { previousList = [], signal } = {}) {
+  async function fetchCourseHomework(courseId, { previousList = [], signal, onTypeLoaded } = {}) {
     const cid = String(courseId || '').trim();
     const previousByKey = new Map((Array.isArray(previousList) ? previousList : [])
       .map((item) => [homeworkKey(item), item]).filter(([key]) => key));
@@ -183,6 +183,10 @@
         });
       } catch (error) {
         if (error?.loginRequired || error?.message === 'LOGIN_REQUIRED') throw error;
+      } finally {
+        if (typeof onTypeLoaded === 'function') {
+          await onTypeLoaded({ subType, list: [...merged] });
+        }
       }
     }
     return merged;

@@ -445,6 +445,12 @@
   }
 
   async function handleAppJsBridge(action, payload) {
+    if (action === 'roots') {
+      return [...new Set([
+        'document',
+        ...Object.getOwnPropertyNames(global)
+      ].filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(name))))];
+    }
     if (action === 'dom.query') return jsBridgeSerializable(document.querySelector(String(payload?.selector || '')));
     if (action === 'dom.queryAll') {
       return jsBridgeSerializable(Array.from(document.querySelectorAll(String(payload?.selector || ''))));
@@ -489,6 +495,15 @@
   async function executeJsInSandbox(code, mode = 'sandbox') {
     const frame = await ensureJsSandboxFrame();
     const id = `js-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const normalizedMode = ['sandbox', 'app', 'background'].includes(String(mode)) ? String(mode) : 'sandbox';
+    let bindingRoots = [];
+    if (normalizedMode === 'app') {
+      bindingRoots = await handleAppJsBridge('roots', {});
+    } else if (normalizedMode === 'background') {
+      const response = await send('QWEN_JS_BACKGROUND_BRIDGE', { action: 'roots', payload: {} });
+      if (!response?.ok) throw new Error(String(response?.message || '无法读取后台可用命名空间'));
+      bindingRoots = Array.isArray(response.value) ? response.value : [];
+    }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         global.removeEventListener('message', onMessage);
@@ -529,7 +544,8 @@
         type: 'execute',
         id,
         code: String(code || ''),
-        mode: String(mode || 'sandbox')
+        mode: normalizedMode,
+        bindingRoots
       }, '*');
     });
   }
@@ -1699,7 +1715,8 @@
     initOperationsPopover();
   }
 
-  // 所有注册操作（包括 qwen.executeJs）统一通过同一个调用入口；callOp 仅保留为兼容别名。
+  // 所有注册操作统一通过同一个调用入口；任意代码执行由回复末尾的
+  // sandbox/app/background 代码块触发，不再注册为 qwen.executeJs 操作。
   async function invokeOperation(name, args) {
     const response = await send('BJTU_RUN_OPERATION', { name, arguments: args || {} });
     if (response?.ok === true) return response.result;

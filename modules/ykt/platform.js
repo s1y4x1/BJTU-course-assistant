@@ -778,6 +778,54 @@ function renderYktStandaloneCourses() {
   updateCourseListEmptyPlaceholder();
 }
 
+function buildYktEntryHomeworks(entry, acts) {
+  const homeworksRaw = (Array.isArray(acts) ? acts : []).map((a) => {
+    const isExam = Number(a?.__actype) === 5;
+    const isCard = Number(a?.__actype) === 15;
+    const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
+    const coursewareId = a?.courseware_id;
+    const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
+    const detailKey = isExam ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}` : '';
+    const cache = detailKey ? window.yktDetailCacheByKey[detailKey] : null;
+    return {
+      title: a?.title || '雨课堂作业',
+      end: getYktActivityDeadline(a),
+      type: a?.type,
+      done: (a?.view && a?.view?.done) !== undefined ? !!(a?.view && a?.view?.done) : undefined,
+      unfinished: a?.unfinished,
+      progress: a?.progress,
+      problem_count: a?.problem_count,
+      score: a?.score,
+      total_score: a?.total_score,
+      link: isExam
+        ? yktExamLink(a?.course_id || entry.classroomId, coursewareId)
+        : (isCard && String(leafId || '').trim()
+            ? yktVideoStudentLink(entry.classroomId, leafId)
+            : yktHomeworkLink(entry.classroomId, coursewareId, a?.id)),
+      courseware_id: coursewareId,
+      leaf_id: leafId,
+      video_total_done: undefined,
+      video_progress_ratio: undefined,
+      video_progress_loading: isCard && !!String(coursewareId || '').trim(),
+      id: a?.id,
+      exam_id: examId,
+      __actype: a?.__actype,
+      exam_problems: Array.isArray(cache?.exam_problems) ? cache.exam_problems : [],
+      exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
+      detail_cache_key: detailKey,
+      course_id: a?.course_id || entry.classroomId,
+      classroom_id: entry.classroomId
+    };
+  });
+  const seen = new Set();
+  return homeworksRaw.filter((homework) => {
+    const key = `${homework.classroom_id}-${homework.courseware_id}-${homework.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   const isStale = () => (
     !isPlatformEnabled('ykt')
@@ -787,6 +835,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   if (!isPlatformEnabled('ykt')) {
     clearPlatformData('ykt');
     window.yktHomeworkLoadingByCourse = {};
+    window.yktHomeworkPendingTypesByCourse = {};
     rerenderAllHomeworkAreas();
     return;
   }
@@ -815,12 +864,19 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   window.yktMatchedCourseLinkByCourseId = {};
   window.yktCourseGroupsSnapshot = [];
   window.yktHomeworkLoadingByCourse = {};
+  window.yktHomeworkPendingTypesByCourse = {};
 
   setPlatformLoginState('ykt', 'online');
   window.platformLoadedOnce.ykt = true;
   removeYktLoginSection();
 
   const yktCourses = listResp?.data?.list || [];
+  const requestedActypes = [
+    ...(window.showYktClassroomActivities ? [14] : []),
+    15,
+    5,
+    ...(window.showYktAnnouncements ? [9] : [])
+  ];
   const openTabUniversityId = await getYktUniversityIdFromOpenTabs();
   const entries = [];
   const boundCourseIds = new Set();
@@ -861,10 +917,12 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       if (!window.yktMatchedHomeworkByCourseId[boundCourseId]) window.yktMatchedHomeworkByCourseId[boundCourseId] = [];
       window.yktMatchedCourseLinkByCourseId[boundCourseId] = yktCourseLink(item?.classroom_id);
       window.yktHomeworkLoadingByCourse[boundCourseId] = true;
+      window.yktHomeworkPendingTypesByCourse[boundCourseId] = requestedActypes.map((actype) => YKT_ACTIVITY_TYPE_LABELS[actype]);
       boundCourseIds.add(boundCourseId);
     } else {
       const sid = `ykt-${String(classroomId)}`;
       window.yktHomeworkLoadingByCourse[sid] = true;
+      window.yktHomeworkPendingTypesByCourse[sid] = requestedActypes.map((actype) => YKT_ACTIVITY_TYPE_LABELS[actype]);
       window.yktStandaloneCourses.push({
         name,
         teacher_name: item?.teacher?.name || '',
@@ -926,26 +984,38 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   };
   const courseTasks = entries.map(async (entry, idx) => {
     if (isStale()) return;
-    const actypes = [
-      ...(window.showYktClassroomActivities ? [14] : []),
-      15,
-      5,
-      ...(window.showYktAnnouncements ? [9] : [])
-    ];
-    const urls = actypes.map((actype) => `${YKT_BASE}/v2/api/web/logs/learn/${encodeURIComponent(String(entry.classroomId))}?actype=${actype}&page=0&offset=100`);
-    const logSettled = await Promise.allSettled(urls.map((u) => fetchYktJson(u)));
-    if (isStale()) return;
-
     const acts = [];
-    logSettled.forEach((r, i) => {
-      if (r.status !== 'fulfilled') return;
-      const lr = r.value;
-      const hasExplicitError = (lr?.errcode !== undefined && Number(lr.errcode) !== 0)
-        || lr?.success === false;
-      if (!hasExplicitError && Array.isArray(lr?.data?.activities)) {
-        acts.push(...lr.data.activities.map((a) => ({ ...a, __actype: actypes[i] })));
+    const updateIncrementalResult = (actype) => {
+      entry.homeworks = buildYktEntryHomeworks(entry, acts);
+      const snap = window.yktCourseGroupsSnapshot[idx];
+      if (snap) snap.homeworks = entry.homeworks;
+      const standaloneId = `ykt-${entry.classroomId}`;
+      const remaining = window.yktHomeworkPendingTypesByCourse[standaloneId]
+        || requestedActypes.map((item) => YKT_ACTIVITY_TYPE_LABELS[item]);
+      const displayIds = [standaloneId, entry.boundCourseId, getCurrentBoundCourseId(entry)].filter(Boolean);
+      displayIds.forEach((courseId) => {
+        window.yktHomeworkPendingTypesByCourse[courseId] = (window.yktHomeworkPendingTypesByCourse[courseId] || remaining)
+          .filter((label) => label !== YKT_ACTIVITY_TYPE_LABELS[actype]);
+      });
+      rematchExternalByVeCourses('ykt');
+      rerenderAllHomeworkAreas();
+      renderYktStandaloneCourses();
+    };
+    await Promise.allSettled(requestedActypes.map(async (actype) => {
+      try {
+        const url = `${YKT_BASE}/v2/api/web/logs/learn/${encodeURIComponent(String(entry.classroomId))}?actype=${actype}&page=0&offset=100`;
+        const response = await fetchYktJson(url);
+        if (isStale()) return;
+        const hasExplicitError = (response?.errcode !== undefined && Number(response.errcode) !== 0)
+          || response?.success === false;
+        if (!hasExplicitError && Array.isArray(response?.data?.activities)) {
+          acts.push(...response.data.activities.map((activity) => ({ ...activity, __actype: actype })));
+        }
+      } finally {
+        if (!isStale()) updateIncrementalResult(actype);
       }
-    });
+    }));
+    if (isStale()) return;
 
     const actype15CoursewareIds = acts
       .filter((a) => Number(a?.__actype) === 15)
@@ -988,53 +1058,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       }
     })() : Promise.resolve({});
 
-    const homeworksRaw = acts.map((a) => {
-      const isExam = Number(a?.__actype) === 5;
-      const isCard = Number(a?.__actype) === 15;
-      const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
-      const coursewareId = a?.courseware_id;
-      const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
-      const detailKey = isExam ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}` : '';
-      const cache = detailKey ? window.yktDetailCacheByKey[detailKey] : null;
-      const hw = {
-        title: a?.title || '雨课堂作业',
-        end: getYktActivityDeadline(a),
-        type: a?.type,
-        done: (a?.view && a?.view?.done) !== undefined ? !!(a?.view && a?.view?.done) : undefined,
-        unfinished: a?.unfinished,
-        progress: a?.progress,
-        problem_count: a?.problem_count,
-        score: a?.score,
-        total_score: a?.total_score,
-        link: isExam
-          ? yktExamLink(a?.course_id || entry.classroomId, coursewareId)
-          : (isCard && String(leafId || '').trim()
-              ? yktVideoStudentLink(entry.classroomId, leafId)
-              : yktHomeworkLink(entry.classroomId, coursewareId, a?.id)),
-        courseware_id: coursewareId,
-        leaf_id: leafId,
-        video_total_done: undefined,
-        video_progress_ratio: undefined,
-        video_progress_loading: isCard && !!String(coursewareId || '').trim(),
-        id: a?.id,
-        exam_id: examId,
-        __actype: a?.__actype,
-        exam_problems: Array.isArray(cache?.exam_problems) ? cache.exam_problems : [],
-        exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
-        detail_cache_key: detailKey,
-        course_id: a?.course_id || entry.classroomId,
-        classroom_id: entry.classroomId
-      };
-      return hw;
-    });
-
-    const seen = new Set();
-    const homeworks = homeworksRaw.filter((h) => {
-      const key = `${h.classroom_id}-${h.courseware_id}-${h.id}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    const homeworks = buildYktEntryHomeworks(entry, acts);
 
     entry.homeworks = homeworks;
     const snap = window.yktCourseGroupsSnapshot[idx];

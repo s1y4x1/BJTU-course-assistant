@@ -269,7 +269,8 @@ let moocLoginAssistPopupTabId = null;
       teachers: Array.isArray(panel?.teachers) ? panel.teachers : [],
       url: `https://www.icourse163.org/learn/${encodeURIComponent(schoolShortName)}-${encodeURIComponent(id)}?tid=${encodeURIComponent(tid)}`,
       tasks: normalizeTasks(term),
-      detailLoaded: !!term
+      detailLoaded: !!term,
+      pendingTypeLabels: term ? [] : ['单元作业', '单元测试', '考试']
     };
   }
 
@@ -399,7 +400,8 @@ let moocLoginAssistPopupTabId = null;
         ${overdue.length ? `<div class="homework-group homework-group--overdue ${expanded.overdue ? '' : 'is-hidden'}" data-homework-group="overdue" aria-hidden="${expanded.overdue ? 'false' : 'true'}">${overdueHtml}</div>` : ''}
         ${done.length ? renderToggle(course.id, 'done', expanded.done, done.length, '查看已交作业', '收起已交作业') : ''}
         ${done.length ? `<div class="homework-group homework-group--done ${expanded.done ? '' : 'is-hidden'}" data-homework-group="done" aria-hidden="${expanded.done ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
-    const card = globalThis.BjtuCourseCardUi.createCourseCard({
+      const typeLoadingHtml = globalThis.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels, { escape: env.escape });
+      const card = globalThis.BjtuCourseCardUi.createCourseCard({
         courseId: `mooc-${course.id}`,
         className: 'mooc-standalone-card',
         order: baseOrder + index,
@@ -407,7 +409,7 @@ let moocLoginAssistPopupTabId = null;
         titleHtml: `<a href="${env.escape(course.url)}" target="_blank" rel="noopener noreferrer">${env.escape(course.name)}</a>`,
         metaHtml: `<div class="mooc-course-meta">${renderTeachers(course)}</div>`,
         actionsHtml: `<button class="btn mooc-complete-all-btn" data-mooc-action="course" data-course-id="${env.escape(course.id)}">通过GinsMooc一键扫描并完成全部</button>`,
-        contentHtml: course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : `<span class="spinner mooc-inline-spinner" style="${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span> 正在读取课程作业…`,
+        contentHtml: `${typeLoadingHtml}${course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : ''}`,
         headerClass: 'mooc-course-head',
         identityClass: 'mooc-course-identity',
         homeworkClass: 'homework-area mooc-homework-area',
@@ -516,6 +518,7 @@ let moocLoginAssistPopupTabId = null;
           } catch (error) {
             if (error?.code === 'not-logged-in') throw error;
             courses[index].detailLoaded = true;
+            courses[index].pendingTypeLabels = [];
           } finally {
             if (serial === loadSerial) {
               completedCourseLoads += 1;

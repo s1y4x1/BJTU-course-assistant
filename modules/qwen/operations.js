@@ -1608,42 +1608,6 @@ name: 've.teachers_of_',
     },
     {
       module: 'qwen',
-      name: 'qwen.executeJs',
-      label: '执行任意 JavaScript',
-      summary: '以 sandbox、app 或 background 模式执行任意 JavaScript 并返回结果',
-      requiresAuthorization: true,
-      authorizationMessage(args) {
-        const mode = ['sandbox', 'app', 'background'].includes(String(args?.mode)) ? String(args.mode) : 'sandbox';
-        const preview = String(args?.code || '').trim().slice(0, 500);
-        return `通义千问请求以 ${mode} 模式执行任意 JavaScript 代码，是否允许？${preview ? `\n\n${preview}` : ''}`;
-      },
-      doc: [
-        '## qwen.executeJs —— 执行任意 JavaScript',
-        '',
-        '执行 JavaScript 并返回可序列化结果。每次执行前都需要用户授权。所有模式中的代码均由隔离执行器解析；app/background 模式通过受控异步桥接访问相应上下文。',
-        '',
-        '**参数**：{"code":"JavaScript 代码，必填；表达式会直接返回值，语句可显式使用 return","mode":"sandbox | app | background；默认 sandbox"}',
-        '',
-        '**sandbox**：无桥接权限。示例：`qwen.executeJs({mode:"sandbox",code:"[1,2,3].map(x=>x*2)"})`',
-        '',
-        '**app**：使用异步 `app.get(path)`、`app.set(path,value)`、`app.call(path,...args)` 和 `app.dom.*`。示例：`qwen.executeJs({mode:"app",code:"await app.dom.query(\"#qwen-chat-panel\")"})`',
-        '',
-        '**background**：使用异步 `background.get(path)`、`background.set(path,value)`、`background.call(path,...args)`。示例：`qwen.executeJs({mode:"background",code:"await background.call(\"chrome.tabs.query\", {})"})`',
-        '',
-        '**返回示例**：[2,4,6]'
-      ].join('\n'),
-      async run(args) {
-        const code = String(args?.code || '');
-        if (!code.trim()) throw new Error('缺少参数 code');
-        const mode = String(args?.mode || 'sandbox').trim().toLowerCase();
-        if (!['sandbox', 'app', 'background'].includes(mode)) {
-          throw new Error('参数 mode 只能是 sandbox、app 或 background');
-        }
-        return pageInvoke('qwen', 'executeJs', { code, mode }, 45000);
-      }
-    },
-    {
-      module: 'qwen',
       name: 'qwen.listOperations',
       label: '列出全部操作',
       summary: '列出可按模块分组的所有可用操作名',
@@ -1890,6 +1854,28 @@ name: 've.teachers_of_',
     }
   }
 
+  async function executeCode(mode, code) {
+    const normalizedMode = String(mode || '').trim().toLowerCase();
+    const source = String(code || '');
+    if (!['sandbox', 'app', 'background'].includes(normalizedMode)) {
+      return { ok: false, name: `code.${normalizedMode || 'unknown'}`, code: 'INVALID_EXECUTION_MODE', error: '代码执行环境无效' };
+    }
+    if (!source.trim()) {
+      return { ok: false, name: `code.${normalizedMode}`, code: 'EMPTY_CODE', error: 'JavaScript 代码为空' };
+    }
+    try {
+      const result = await pageInvoke('qwen', 'executeJs', { code: source, mode: normalizedMode }, 45000);
+      return { ok: true, name: `code.${normalizedMode}`, result };
+    } catch (error) {
+      return {
+        ok: false,
+        name: `code.${normalizedMode}`,
+        error: String(error?.message || error),
+        code: String(error?.code || 'CODE_EXECUTION_FAILED')
+      };
+    }
+  }
+
   global.BjtuQwenOperations = {
     groups: async () => {
       const availability = await getModuleAvailability();
@@ -1913,6 +1899,7 @@ name: 've.teachers_of_',
       return op ? { name: op.name, module: op.module, label: op.label, summary: op.summary, doc: op.doc } : null;
     },
     formatResult,
+    executeCode,
     run: runOperation
   };
 })(globalThis);

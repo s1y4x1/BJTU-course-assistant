@@ -2448,16 +2448,22 @@ async function prefetchHomeworkAttachments(courseId, list) {
 async function checkHomework(courseId) {
   const area = document.getElementById(`homework-area-${courseId}`);
   if (!area) return false;
-  const hasMatchedExternal = hasMatchedExternalHomework(courseId);
-  if (!hasMatchedExternal && !String(area.innerHTML || '').trim()) {
-    area.innerHTML = '<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;"></div> 正在获取作业…';
-  }
+  const typeLabels = ['作业', '课程报告', '实验'];
+  window.veHomeworkPendingTypesByCourse[courseId] = [...typeLabels];
+  renderHomeworkList(courseId);
   try {
     const previousList = window.courseHomeworkData?.[courseId]?.list || [];
     const list = await globalThis.BjtuVeHomeworkCore.fetchCourseHomework(courseId, {
       previousList,
-      signal: window.globalVeAbortController?.signal
+      signal: window.globalVeAbortController?.signal,
+      onTypeLoaded: ({ subType, list: partialList }) => {
+        window.courseHomeworkData[courseId] = { list: partialList, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
+        window.veHomeworkPendingTypesByCourse[courseId] = (window.veHomeworkPendingTypesByCourse[courseId] || [])
+          .filter((label) => label !== typeLabels[Number(subType)]);
+        renderHomeworkList(courseId);
+      }
     });
+    delete window.veHomeworkPendingTypesByCourse[courseId];
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
     // Concurrently fetch attachments; homework score lookup uses returned list fields only.
@@ -2467,6 +2473,7 @@ async function checkHomework(courseId) {
     }).catch(() => {});
     return true;
   } catch (e) {
+    delete window.veHomeworkPendingTypesByCourse[courseId];
     if (e?.loginRequired || String(e?.message || '') === 'LOGIN_REQUIRED') {
       await restartVePlatformForLoginExpired('作业列表登录已失效，正在重启智慧课程平台…');
       return false;

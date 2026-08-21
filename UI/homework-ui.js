@@ -38,6 +38,17 @@
     return `animation-delay:-${Date.now() % period}ms;`;
   }
 
+  function typeLoadingHtml(typeLabels, {
+    escape = (value) => String(value ?? ''),
+    className = ''
+  } = {}) {
+    const labels = [...new Set((Array.isArray(typeLabels) ? typeLabels : [])
+      .map((item) => String(item || '').trim()).filter(Boolean))];
+    if (!labels.length) return '';
+    const extraClass = String(className || '').trim();
+    return `<div class="homework-type-loading${extraClass ? ` ${escape(extraClass)}` : ''}"><span class="spinner" style="border-color:#2196F3;border-top-color:transparent;display:inline-block;${spinnerPhaseStyle()}"></span> 正在获取${escape(labels.join('、'))}…</div>`;
+  }
+
   function sanitizeRichHtml(value) {
     const template = document.createElement('template');
     template.innerHTML = String(value || '');
@@ -206,6 +217,7 @@
     text,
     detailOptions,
     spinnerPhaseStyle,
+    typeLoadingHtml,
     sanitizeRichHtml,
     statusHtml,
     actionLabel,

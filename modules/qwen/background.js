@@ -429,6 +429,12 @@
   }
 
   async function handleBackgroundJsBridge(action, payload) {
+    if (action === 'roots') {
+      return [...new Set([
+        'chrome',
+        ...Object.getOwnPropertyNames(global)
+      ].filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(name))))];
+    }
     const target = resolveBackgroundBridgePath(payload?.path);
     if (action === 'get') return backgroundBridgeSerializable(target.value);
     if (action === 'set') {

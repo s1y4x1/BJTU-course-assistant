@@ -155,11 +155,13 @@ let pendingLoginCallbacks = [];
 let isLoginSessionValid = true;
 window.filesData = {}; // {fileId: {size, uploaded}}
 window.courseHomeworkData = {};
+window.veHomeworkPendingTypesByCourse = {}; // {courseId: string[]}
 window.yktMatchedHomeworkByCourseId = {}; // {courseId: YktHomework[]}
 window.yktMatchedCourseLinkByCourseId = {}; // {courseId: yktCourseUrl}
 window.yktStandaloneCourses = []; // YktCourse[]
 window.yktCourseGroupsSnapshot = []; // [{token,name,teacher_name,classroom_id,course_name,homeworks}]
 window.yktHomeworkLoadingByCourse = {}; // {courseId: boolean}
+window.yktHomeworkPendingTypesByCourse = {}; // {courseId: string[]}
 window.mrjzyMatchedHomeworkByCourseId = {}; // {courseId: MrjzyHomework[]}
 window.mrjzyStandaloneCourses = []; // MrjzyCourse[]
 window.mrjzyCourseGroupsSnapshot = []; // [{token,divClass,classNum,teacherName,homeworks}]
@@ -445,12 +447,16 @@ function bumpPlatformLoadVersion(platform) {
 
 function clearPlatformData(platform) {
   delete window.platformContentLoadProgress?.[normalizePlatformId(platform)];
+  if (platform === 've') {
+    window.veHomeworkPendingTypesByCourse = {};
+  }
   if (platform === 'ykt') {
     window.yktMatchedHomeworkByCourseId = {};
     window.yktStandaloneCourses = [];
     window.yktMatchedCourseLinkByCourseId = {};
     window.yktCourseGroupsSnapshot = [];
     window.yktHomeworkLoadingByCourse = {};
+    window.yktHomeworkPendingTypesByCourse = {};
     window.yktDetailCacheByKey = {};
     clearYktStandaloneCards();
   } else if (platform === 'mrjzy') {
@@ -1795,6 +1801,8 @@ function abortAllCoursewareReplayFetches() {
   Object.keys(window.yktHomeworkLoadingByCourse || {}).forEach((k) => {
     window.yktHomeworkLoadingByCourse[k] = false;
   });
+  window.veHomeworkPendingTypesByCourse = {};
+  window.yktHomeworkPendingTypesByCourse = {};
 }
 
 function beginAccountSwitchInterruption() {
@@ -4575,22 +4583,30 @@ function renderHomeworkList(courseId) {
     ? `<div class="homework-toggle-row homework-toggle-row--overdue">${renderHomeworkToggle('overdue', 'toggle-overdue', data.showOverdue, mergedOverdueCount, overdueCollapsedText, overdueExpandedText, 'down', 'up')}</div>`
     : '';
 
+  const pendingTypeLabels = [
+    ...(window.veHomeworkPendingTypesByCourse?.[courseId] || []),
+    ...(window.yktHomeworkPendingTypesByCourse?.[courseId] || [])
+  ];
+  const hasTypeLoadingState = Object.prototype.hasOwnProperty.call(window.veHomeworkPendingTypesByCourse || {}, courseId)
+    || Object.prototype.hasOwnProperty.call(window.yktHomeworkPendingTypesByCourse || {}, courseId);
+  const hasPendingTypeLoads = pendingTypeLabels.length > 0;
+  const typeLoadingHtml = globalThis.BjtuHomeworkUi.typeLoadingHtml(pendingTypeLabels, { escape: escapeHtml });
   const loadingText = isMrjzyStandalone ? '正在同步每日交作业…' : '正在获取作业…';
   const standaloneSyncing = isYktStandalone ? (yktLoading || yktSyncing) : (isMrjzyStandalone ? mrjzySyncing : jlgjSyncing);
-  const loadingHtml = isExternalStandalone && standaloneSyncing ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;${spinnerPhaseDelayStyle()}"></div> ${loadingText}` : '';
+  const loadingHtml = isExternalStandalone && standaloneSyncing && !hasTypeLoadingState ? `<div class="spinner" style="border-color:#2196F3; border-top-color:transparent; display:inline-block;${spinnerPhaseDelayStyle()}"></div> ${loadingText}` : '';
   const emptyExternalTip = isExternalStandalone && totalHomeworkCount === 0 && !standaloneSyncing ? '<span style="color:#999;">没有作业数据</span>' : '';
-  const noPendingTip = !isTeacherMode2 && totalHomeworkCount > 0 && totalPendingCount === 0
+  const noPendingTip = !hasPendingTypeLoads && !isTeacherMode2 && totalHomeworkCount > 0 && totalPendingCount === 0
     ? `<div class="homework-empty-tip" style="color:#4CAF50; margin-top:2px;">${totalOverdueCount > 0 ? '✓ 没有作业待交' : '✓ 所有作业已交'}</div>`
     : '';
-  const noRelatedTip = !isTeacherMode2 && !pendingHtml && totalHomeworkCount > 0 && !noPendingTip ? '<span class="homework-empty-tip" style="color:#999;">无未交作业</span>' : '';
-  const noDataTip = !isExternalStandalone && totalHomeworkCount === 0 ? '<span style="color:#999;">没有作业数据</span>' : '';
+  const noRelatedTip = !hasPendingTypeLoads && !isTeacherMode2 && !pendingHtml && totalHomeworkCount > 0 && !noPendingTip ? '<span class="homework-empty-tip" style="color:#999;">无未交作业</span>' : '';
+  const noDataTip = !hasPendingTypeLoads && !isExternalStandalone && totalHomeworkCount === 0 ? '<span style="color:#999;">没有作业数据</span>' : '';
 
   // 教师账号：VE 非过时作业始终可见（蓝色）
   const teacherNonOverdueSectionHtml = (window.isTeacherAccount && teacherNonOverdueHtml)
     ? `<div class="homework-group homework-group--pending" data-homework-group="teacher-active">${teacherNonOverdueHtml}</div>`
     : '';
 
-  area.innerHTML = `${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${forcePublishScoreButtonHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
+  area.innerHTML = `${typeLoadingHtml}${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${forcePublishScoreButtonHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
   applyExpandableAutoToggle(area);
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();

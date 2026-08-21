@@ -1351,6 +1351,8 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
 .homework-card-actions { flex:0 0 auto; }
 .homework-card-title > a { color:inherit; text-decoration:none; }
 .homework-type-badge { display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; color:inherit; font-size:10px; line-height:1.3; vertical-align:1px; }
+.homework-type-loading { display:flex; align-items:center; gap:6px; margin:0 0 6px; color:#64748b; font-size:13px; line-height:1.5; }
+.homework-type-loading .spinner { flex:0 0 auto; }
 a.homework-type-badge { text-decoration:none; }
 .homework-progress-row { display:grid; grid-template-columns:auto minmax(40px,1fr); align-items:center; gap:8px; width:100%; margin-top:4px; color:#666; font-size:12px; }
 .homework-progress-label { display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }

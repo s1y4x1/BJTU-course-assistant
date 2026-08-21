@@ -604,7 +604,8 @@
       tasks: [],
       totalSchedule: 0,
       score: null,
-      detailLoaded: false
+      detailLoaded: false,
+      pendingTypeLabels: []
     };
   }
 
@@ -845,6 +846,7 @@
         ${overdue.length ? `<div class="homework-group homework-group--overdue ${expanded.overdue ? '' : 'is-hidden'}" data-homework-group="overdue" aria-hidden="${expanded.overdue ? 'false' : 'true'}">${overdue.map((task) => renderTask(course, task)).join('')}</div>` : ''}
         ${done.length ? renderToggle(course.id, 'done', expanded.done, done.length) : ''}
         ${done.length ? `<div class="homework-group homework-group--done ${expanded.done ? '' : 'is-hidden'}" data-homework-group="done" aria-hidden="${expanded.done ? 'false' : 'true'}">${done.map((task) => renderTask(course, task)).join('')}</div>` : ''}`;
+      const typeLoadingHtml = global.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels, { escape });
       const score = course.score;
       const scoreText = score
         ? ` · 成绩 ${escape(score.user_score ?? 0)}${score.title ? `（${escape(score.title)}）` : ''}`
@@ -857,11 +859,11 @@
         rank: pending.length ? 0 : (overdue.length ? 2 : (done.length ? 4 : 7)),
         titleHtml: `<a href="${escape(courseUrl(course))}" target="_blank" rel="noopener noreferrer">${escape(course.name)}</a>`,
         metaHtml: `<div class="xuetangx-course-meta">${meta}</div>`,
-        contentHtml: course.detailLoaded
+        contentHtml: `${typeLoadingHtml}${course.detailLoaded
           ? (course.loadError
             ? `<span class="xuetangx-empty">课程详情加载失败：${escape(course.loadError)}</span>`
             : (taskSections.trim() || '<span class="xuetangx-empty">暂无学习活动</span>'))
-          : `<span class="spinner xuetangx-inline-spinner" style="${global.BjtuHomeworkUi.spinnerPhaseStyle()}"></span> 正在获取作业…`,
+          : ''}`,
         headerClass: 'xuetangx-course-head',
         identityClass: 'xuetangx-course-identity',
         homeworkClass: 'homework-area xuetangx-homework-area',
@@ -899,6 +901,8 @@
       evaluation,
       visibleActivityTypes
     );
+    course.pendingTypeLabels = [];
+    render();
     await loadExerciseDetails(course, serial);
   }
 
@@ -922,6 +926,9 @@
       courses = response.data.product_list
         .filter((panel) => visibleStatuses.includes(Number(panel?.status)))
         .map(buildCourse).filter((course) => course.id && course.classroomId && course.sign);
+      const visibleTypeLabels = [...visibleActivityTypes]
+        .map((typeId) => ACTIVITY_TYPES[typeId]?.label).filter(Boolean);
+      courses.forEach((course) => { course.pendingTypeLabels = [...visibleTypeLabels]; });
       env?.setLoaded?.(true);
       env?.setState?.('online');
       env?.setProgress?.(0, courses.length);
@@ -938,6 +945,7 @@
             if (error?.code === 'not-logged-in' || error?.code === 'cancelled') throw error;
             courses[index].detailLoaded = true;
             courses[index].loadError = String(error?.message || error);
+            courses[index].pendingTypeLabels = [];
           } finally {
             if (serial === loadSerial) {
               completed += 1;
