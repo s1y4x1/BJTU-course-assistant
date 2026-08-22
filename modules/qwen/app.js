@@ -1543,8 +1543,12 @@
         lastKnownLoggedIn = true;
         showLoginHint(false);
         const retry = pendingWafRetryAction;
-        if (typeof retry === 'function') setTimeout(() => retry(), 100);
-        sendResponse({ ok: true, retryPending: typeof retry === 'function' });
+        const retryStarted = typeof retry === 'function' && retry() === true;
+        sendResponse({
+          ok: true,
+          retryPending: typeof retry === 'function',
+          retryStarted
+        });
         return false;
       }
       if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'qwen') return false;

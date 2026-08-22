@@ -59,7 +59,10 @@
     for (let attempt = 0; attempt < 20; attempt += 1) {
       try {
         const response = await chrome.runtime.sendMessage({ type: 'QWEN_WAF_VERIFIED_BROADCAST' });
-        if (response?.ok === true) return true;
+        if (response?.ok === true && response?.retryStarted === true) {
+          await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
+          return true;
+        }
       } catch {
         // app.html 可能仍在加载，稍后重试。
       }
@@ -111,7 +114,6 @@
     }
     if (state?.phase === 'waiting-user-refresh') {
       await chrome.storage.session.remove(WAF_TAB_STATE_KEY).catch(() => {});
-      await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
       const appUrl = chrome.runtime.getURL('app/app.html');
       const existingAppTab = await findOpenQwenAppTab(tabId);
       let reused = false;
@@ -175,7 +177,6 @@
       const wafState = await chrome.storage.session.get(WAF_TAB_STATE_KEY).catch(() => ({}));
       const tokenCaptureReason = wafState?.[WAF_TAB_STATE_KEY] ? 'waf' : 'login';
       await global.BjtuQwenClient?.captureToken?.(value);
-      if (tokenCaptureReason === 'waf') await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
       if (tokenChanged) await broadcastTokenCaptured(tokenCaptureReason);
       const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
       const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
