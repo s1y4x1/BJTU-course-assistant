@@ -866,21 +866,16 @@ function mrjzyPageSnapshot() {
   return Array.isArray(window.mrjzyCourseGroupsSnapshot) ? window.mrjzyCourseGroupsSnapshot : [];
 }
 
-async function ensureMrjzyLoaded() {
-  if (mrjzyPageSnapshot().length) return;
-  try {
-    await scheduleMrjzyLoad([], Date.now());
-  } catch {
-    /* 忽略触发失败，交由读取方判断 loaded */
-  }
-}
-
 async function mrjzyPageCourseList() {
-  await ensureMrjzyLoaded();
+  if (window.__mrjzyLoadSerialPromise && typeof window.__mrjzyLoadSerialPromise.then === 'function') {
+    await window.__mrjzyLoadSerialPromise.catch(() => {});
+  }
   const snap = mrjzyPageSnapshot();
+  const loginState = String(window.platformLoginState?.mrjzy || 'checking');
   return {
     loaded: snap.length > 0,
-    loginState: String(window.platformLoginState?.mrjzy || 'checking'),
+    loginState,
+    loggedIn: loginState === 'online',
     courses: snap.map((group) => ({
       classNum: String(group?.classNum || ''),
       divClass: String(group?.divClass || ''),
@@ -893,7 +888,11 @@ async function mrjzyPageCourseList() {
 async function mrjzyPageHomeworkOf(classNum) {
   const key = String(classNum || '').trim();
   if (!key) return { ok: false, message: '缺少参数 classNum，请先调用 mrjzy.courseList 获取班级号' };
-  await ensureMrjzyLoaded();
+  const loginState = String(window.platformLoginState?.mrjzy || 'checking');
+  if (loginState !== 'online') return { ok: false, code: 'LOGIN_REQUIRED', loggedIn: false, message: '每日交作业未登录，请先调用 mrjzy.login' };
+  if (window.__mrjzyLoadSerialPromise && typeof window.__mrjzyLoadSerialPromise.then === 'function') {
+    await window.__mrjzyLoadSerialPromise.catch(() => {});
+  }
   const group = mrjzyPageSnapshot().find((g) => {
     const a = String(g?.classNum || '').trim();
     const b = String(g?.divClass || '').trim();

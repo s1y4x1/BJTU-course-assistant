@@ -1209,21 +1209,16 @@ function jlgjPageSnapshot() {
   return Array.isArray(window.jlgjCourseGroupsSnapshot) ? window.jlgjCourseGroupsSnapshot : [];
 }
 
-async function ensureJlgjLoaded() {
-  if (jlgjPageSnapshot().length) return;
-  try {
-    await scheduleJlgjLoad([], Date.now());
-  } catch {
-    /* 忽略触发失败，交由读取方判断 loaded */
-  }
-}
-
 async function jlgjPageCourseList() {
-  await ensureJlgjLoaded();
+  if (window.__jlgjLoadSerialPromise && typeof window.__jlgjLoadSerialPromise.then === 'function') {
+    await window.__jlgjLoadSerialPromise.catch(() => {});
+  }
   const snap = jlgjPageSnapshot();
+  const loginState = String(window.platformLoginState?.jlgj || 'checking');
   return {
     loaded: snap.length > 0,
-    loginState: String(window.platformLoginState?.jlgj || 'checking'),
+    loginState,
+    loggedIn: loginState === 'online',
     courses: snap.map((group) => ({
       groupId: String(group?.groupId || ''),
       name: String(group?.name || ''),
@@ -1236,7 +1231,11 @@ async function jlgjPageCourseList() {
 async function jlgjPageHomeworkOf(groupId) {
   const key = String(groupId || '').trim();
   if (!key) return { ok: false, message: '缺少参数 groupId，请先调用 jlgj.courseList 获取群组ID' };
-  await ensureJlgjLoaded();
+  const loginState = String(window.platformLoginState?.jlgj || 'checking');
+  if (loginState !== 'online') return { ok: false, code: 'LOGIN_REQUIRED', loggedIn: false, message: '接龙管家未登录，请先调用 jlgj.login' };
+  if (window.__jlgjLoadSerialPromise && typeof window.__jlgjLoadSerialPromise.then === 'function') {
+    await window.__jlgjLoadSerialPromise.catch(() => {});
+  }
   const group = jlgjPageSnapshot().find((g) => String(g?.groupId || '').trim() === key) || null;
   if (!group) return { ok: false, message: `群组ID无效：${key} 不在接龙管家课程列表中，请先调用 jlgj.courseList 获取有效群组ID` };
   return {

@@ -2,13 +2,50 @@
 (function initBjtuQwenBackground(global) {
   'use strict';
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
   const WAF_TAB_STATE_KEY = 'qwenWafTabState';
+  const CHAT_PERMISSION_SESSIONS_KEY = 'qwenChatPermissionSessions';
   const ASK_NOTIFICATION_PREFIX = 'bjtu-qwen-ask-limit:';
   const pendingAskNotifications = new Map();
+  const chatPermissionSessions = new Map();
   let qwenLoginCompletionPromise = null;
+
+  async function loadChatPermissionSession(chatId) {
+    const id = String(chatId || '');
+    if (!id) return {};
+    if (chatPermissionSessions.has(id)) return chatPermissionSessions.get(id);
+    const stored = await chrome.storage.session.get(CHAT_PERMISSION_SESSIONS_KEY).catch(() => ({}));
+    const session = stored?.[CHAT_PERMISSION_SESSIONS_KEY]?.[id];
+    const value = session && typeof session === 'object' ? session : {};
+    chatPermissionSessions.set(id, value);
+    return value;
+  }
+
+  async function saveChatPermissionSession(chatId, session) {
+    const id = String(chatId || '');
+    if (!id) return;
+    chatPermissionSessions.set(id, session || {});
+    const stored = await chrome.storage.session.get(CHAT_PERMISSION_SESSIONS_KEY).catch(() => ({}));
+    const sessions = stored?.[CHAT_PERMISSION_SESSIONS_KEY] && typeof stored[CHAT_PERMISSION_SESSIONS_KEY] === 'object'
+      ? { ...stored[CHAT_PERMISSION_SESSIONS_KEY] }
+      : {};
+    sessions[id] = session || {};
+    await chrome.storage.session.set({ [CHAT_PERMISSION_SESSIONS_KEY]: sessions }).catch(() => {});
+  }
+
+  async function removeChatPermissionSession(chatId) {
+    const id = String(chatId || '');
+    if (!id) return;
+    chatPermissionSessions.delete(id);
+    const stored = await chrome.storage.session.get(CHAT_PERMISSION_SESSIONS_KEY).catch(() => ({}));
+    const sessions = stored?.[CHAT_PERMISSION_SESSIONS_KEY] && typeof stored[CHAT_PERMISSION_SESSIONS_KEY] === 'object'
+      ? { ...stored[CHAT_PERMISSION_SESSIONS_KEY] }
+      : {};
+    delete sessions[id];
+    await chrome.storage.session.set({ [CHAT_PERMISSION_SESSIONS_KEY]: sessions }).catch(() => {});
+  }
 
   async function broadcastWafVerified() {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -66,6 +103,7 @@
     }
     if (state?.phase === 'waiting-user-refresh') {
       await chrome.storage.session.remove(WAF_TAB_STATE_KEY).catch(() => {});
+      await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
       const appUrl = chrome.runtime.getURL('app/app.html');
       const existingAppTab = await findOpenQwenAppTab(tabId);
       let reused = false;
@@ -129,6 +167,7 @@
       const wafState = await chrome.storage.session.get(WAF_TAB_STATE_KEY).catch(() => ({}));
       const tokenCaptureReason = wafState?.[WAF_TAB_STATE_KEY] ? 'waf' : 'login';
       await global.BjtuQwenClient?.captureToken?.(value);
+      if (tokenCaptureReason === 'waf') await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
       if (tokenChanged) await broadcastTokenCaptured(tokenCaptureReason);
       const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
       const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
@@ -153,6 +192,9 @@
       enabledOperations: Array.isArray(stored.qwenEnabledOperations)
         ? stored.qwenEnabledOperations
         : null,
+      alwaysAllowedOperations: Array.isArray(stored.qwenAlwaysAllowedOperations)
+        ? [...new Set(stored.qwenAlwaysAllowedOperations.map(String).filter(Boolean))]
+        : [],
       thinkingEnabled: stored.qwenThinkingEnabled === true,
       maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
       alwaysAllow: stored.qwenAlwaysAllow === true
@@ -167,6 +209,20 @@
       next.qwenEnabledOperations = Array.isArray(patch.enabledOperations)
         ? patch.enabledOperations
         : null;
+    }
+    if (patch?.alwaysAllowedOperations !== undefined) {
+      next.qwenAlwaysAllowedOperations = Array.isArray(patch.alwaysAllowedOperations)
+        ? [...new Set(patch.alwaysAllowedOperations.map(String).filter(Boolean))]
+        : [];
+      if (patch?.enabledOperations === undefined) {
+        const current = await chrome.storage.local.get('qwenEnabledOperations').catch(() => ({}));
+        if (Array.isArray(current?.qwenEnabledOperations)) {
+          next.qwenEnabledOperations = [...new Set([
+            ...current.qwenEnabledOperations.map(String),
+            ...next.qwenAlwaysAllowedOperations
+          ].filter(Boolean))];
+        }
+      }
     }
     if (typeof patch?.thinkingEnabled === 'boolean') next.qwenThinkingEnabled = patch.thinkingEnabled;
     if (patch?.maxIterations !== undefined) {
@@ -188,7 +244,7 @@
       let pendingAsk = null;
       let pendingRetry = null;
       let stopRequested = false;
-      const loopSession = {};
+      let loopSession = {};
       const settlePendingAsk = (action = 'stop', count = 0, notifyPage = false) => {
         if (!pendingAsk) return;
         const current = pendingAsk;
@@ -272,6 +328,8 @@
             if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
             const modelId = settings.modelId || await resolveDefaultModel(client);
             const groups = await operations.groups();
+            const requestedChatId = String(message.chatId || '');
+            loopSession = requestedChatId ? await loadChatPermissionSession(requestedChatId) : {};
             const result = await global.BjtuQwenAgent.runTurn({
               modelId,
               userText: String(message.text).trim(),
@@ -285,6 +343,10 @@
               thinking: settings.thinkingEnabled === true,
               maxIterations: settings.maxIterations,
               alwaysAllow: settings.alwaysAllow === true,
+              alwaysAllowedOperations: settings.alwaysAllowedOperations,
+              onAlwaysAllowOperations: async (names) => {
+                await saveSettings({ alwaysAllowedOperations: names });
+              },
               sessionRef: loopSession,
               onRetryRequest: (info) => new Promise((resolve) => {
                 const retryChatId = String(info?.chatId || turnRef.chatId || '');
@@ -305,8 +367,12 @@
                 const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 const count = Number(payload?.count) || 3;
                 const mode = String(payload?.mode || 'iterate');
+                const executionMode = String(payload?.executionMode || '');
+                const operationNames = Array.isArray(payload?.operationNames)
+                  ? payload.operationNames.map(String).filter(Boolean)
+                  : [];
                 const notificationId = `${ASK_NOTIFICATION_PREFIX}${id}`;
-                pendingAsk = { id, resolve, count, mode, notificationId };
+                pendingAsk = { id, resolve, count, mode, executionMode, operationNames, notificationId };
                 pendingAskNotifications.set(notificationId, (action) => {
                   settlePendingAsk(action, count, true);
                 });
@@ -317,7 +383,9 @@
                   id,
                   message: safeMessage,
                   mode,
-                  count
+                  count,
+                  executionMode,
+                  operationNames
                 });
                 try {
                   if (chrome?.notifications?.create) {
@@ -350,6 +418,7 @@
                 if (event?.firstMessage) port.postMessage({ type: 'firstMessage' });
               }
             });
+            if (result.chatId) await saveChatPermissionSession(result.chatId, loopSession);
             if (port.disconnected) return;
             port.postMessage({
               type: 'done',
@@ -360,6 +429,7 @@
             });
           } catch (error) {
             if (port.disconnected) return;
+            if (turnRef?.chatId) await saveChatPermissionSession(turnRef.chatId, loopSession);
             if (error?.name === 'AbortError' || abortController.signal.aborted) {
               port.postMessage({
                 type: 'stopped',
@@ -517,6 +587,7 @@
           }
           try {
             await client.deleteChat(chatId);
+            await removeChatPermissionSession(chatId);
             sendResponse({ ok: true });
           } catch (error) {
             sendResponse({ ok: false, message: String(error?.message || error) });
@@ -580,7 +651,12 @@
         }
         void (async () => {
           const settings = await getSettings();
-          sendResponse({ ok: true, groups: await operations.groupsDetailed(), enabledOperations: settings.enabledOperations });
+          sendResponse({
+            ok: true,
+            groups: await operations.groupsDetailed(),
+            enabledOperations: settings.enabledOperations,
+            alwaysAllowedOperations: settings.alwaysAllowedOperations
+          });
         })();
         return true;
       }

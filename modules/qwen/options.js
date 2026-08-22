@@ -74,7 +74,9 @@
     const opsResponse = await send('QWEN_LIST_OPERATIONS');
     if (opsResponse.ok) {
       if (list instanceof HTMLElement) {
-        BjtuQwenOperationsUi.render(list, opsResponse.groups, opsResponse.enabledOperations, !Array.isArray(opsResponse.enabledOperations));
+        BjtuQwenOperationsUi.render(list, opsResponse.groups, opsResponse.enabledOperations, !Array.isArray(opsResponse.enabledOperations), {
+          alwaysAllowedOperations: opsResponse.alwaysAllowedOperations
+        });
       }
     } else {
       if (list instanceof HTMLElement) {
@@ -138,7 +140,7 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null, thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
+    await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
     void refresh();
   }
 

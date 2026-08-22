@@ -840,6 +840,8 @@ html[data-color-scheme="dark"] .qwen-chat-ask {
 .qwen-chat-ask-text {
   font-size: 13px;
   color: #0f172a;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 html[data-color-scheme="dark"] .qwen-chat-ask-text {

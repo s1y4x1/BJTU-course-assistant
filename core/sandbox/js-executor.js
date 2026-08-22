@@ -3,6 +3,7 @@
 
   const CHANNEL = 'bjtu-qwen-js-sandbox';
   const pendingBridgeCalls = new Map();
+  const deferredValues = new WeakMap();
   const LOCAL_LANGUAGE_ROOTS = new Set([
     'undefined', 'NaN', 'Infinity',
     'Object', 'Function', 'Boolean', 'Symbol', 'Number', 'BigInt', 'Math', 'Date',
@@ -58,6 +59,47 @@
     });
   }
 
+  async function resolveDeferredDeep(value, seen = new WeakSet()) {
+    if ((typeof value === 'object' && value !== null) || typeof value === 'function') {
+      if (deferredValues.has(value)) return resolveDeferredDeep(await deferredValues.get(value), seen);
+    }
+    if (value === null || typeof value !== 'object') return value;
+    if (seen.has(value)) return value;
+    seen.add(value);
+    if (Array.isArray(value)) return Promise.all(value.map((item) => resolveDeferredDeep(item, seen)));
+    const output = {};
+    for (const [key, child] of Object.entries(value)) output[key] = await resolveDeferredDeep(child, seen);
+    return output;
+  }
+
+  function deferredValueProxy(valuePromise, ownerPromise = null) {
+    const promise = Promise.resolve(valuePromise);
+    const callable = function deferredBridgeValue() {};
+    const proxy = new Proxy(callable, {
+      get(_target, property) {
+        if (property === Symbol.toStringTag) return 'DeferredBridgeValue';
+        if (property === 'then') return promise.then.bind(promise);
+        if (property === 'catch') return promise.catch.bind(promise);
+        if (property === 'finally') return promise.finally.bind(promise);
+        if (typeof property === 'symbol') return undefined;
+        return deferredValueProxy(promise.then((value) => value?.[property]), promise);
+      },
+      apply(_target, _thisArg, args) {
+        const next = Promise.all([
+          promise,
+          ownerPromise ? Promise.resolve(ownerPromise) : Promise.resolve(undefined),
+          resolveDeferredDeep(args)
+        ]).then(([fn, owner, resolvedArgs]) => {
+          if (typeof fn !== 'function') throw new TypeError('异步结果不是可调用函数');
+          return Reflect.apply(fn, owner, resolvedArgs);
+        });
+        return deferredValueProxy(next);
+      }
+    });
+    deferredValues.set(proxy, promise);
+    return proxy;
+  }
+
   function remotePathProxy(executionId, path) {
     const callable = function remoteBridgeValue() {};
     return new Proxy(callable, {
@@ -70,7 +112,8 @@
         return remotePathProxy(executionId, `${path}.${String(property)}`);
       },
       apply(_target, _thisArg, args) {
-        return callBridge(executionId, 'call', { path, args });
+        return deferredValueProxy(resolveDeferredDeep(args)
+          .then((resolvedArgs) => callBridge(executionId, 'call', { path, args: resolvedArgs })));
       },
       set() {
         throw new Error('跨上下文属性不能直接赋值，请调用目标上下文中已有的设置函数');

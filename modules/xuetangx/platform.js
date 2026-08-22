@@ -1058,19 +1058,12 @@
 
   /* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
 
-  async function ensureXuetangxLoaded() {
-    if (Array.isArray(courses) && courses.length) return;
-    try {
-      await load();
-    } catch {
-      /* 忽略触发失败，交由读取方判断 loaded */
-    }
-  }
-
   function xuetangxPageCourseList() {
+    const loginState = String(globalThis.platformLoginState?.xuetangx || 'checking');
     return {
       loaded: Array.isArray(courses) && courses.length > 0,
-      loginState: String(globalThis.platformLoginState?.xuetangx || 'checking'),
+      loginState,
+      loggedIn: loginState === 'online',
       courses: (Array.isArray(courses) ? courses : []).map((course) => ({
         classroomId: String(course?.classroomId || course?.id || ''),
         name: String(course?.name || ''),
@@ -1087,7 +1080,8 @@
   async function xuetangxPageHomeworkOf(classroomId) {
     const key = String(classroomId || '').trim();
     if (!key) return { ok: false, message: '缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID' };
-    await ensureXuetangxLoaded();
+    const loginState = String(globalThis.platformLoginState?.xuetangx || 'checking');
+    if (loginState !== 'online') return { ok: false, code: 'LOGIN_REQUIRED', loggedIn: false, message: '学堂在线未登录，请先调用 xuetangx.login' };
     const course = (Array.isArray(courses) ? courses : []).find((c) => String(c?.classroomId || c?.id || '') === key) || null;
     if (!course) return { ok: false, message: `教室ID无效：${key} 不在学堂在线课程列表中，请先调用 xuetangx.courseList 获取有效ID` };
     return {

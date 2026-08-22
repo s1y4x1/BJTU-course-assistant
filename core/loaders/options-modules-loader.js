@@ -39,6 +39,8 @@
       slot.querySelectorAll('[data-module-options-link]').forEach((link) => {
         if (!(link instanceof HTMLAnchorElement)) return;
         link.href = chrome.runtime.getURL(`modules/${id}/${options.fragment}`);
+        link.removeAttribute('target');
+        link.removeAttribute('rel');
       });
       host.before(slot);
       if (options.style) await global.BjtuModuleRegistry.loadStyle(`modules/${id}/${options.style}`);

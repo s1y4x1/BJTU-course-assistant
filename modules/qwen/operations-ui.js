@@ -30,6 +30,7 @@
     const showSummary = options.showSummary !== false;
     const selectedSet = new Set(allSelected ? [] : (selectedNames || []));
     const anySelected = new Set(selectedNames || []);
+    const alwaysAllowedSet = new Set((options.alwaysAllowedOperations || []).map(String));
 
     for (const group of groups || []) {
       const names = group.operations || [];
@@ -48,23 +49,40 @@
         const name = String(entry?.name ?? entry ?? '');
         const summary = String(entry?.summary || '');
         const isMeta = name.startsWith('qwen.');
+        const item = document.createElement('div');
+        item.className = 'qwen-operation-item';
         const label = document.createElement('label');
-        label.className = 'qwen-operation-item';
+        label.className = 'qwen-operation-enable';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.dataset.operationName = name;
-        checkbox.checked = isMeta || allSelected || selectedSet.has(name) || anySelected.has(name) || selectedSet.size === 0;
+        checkbox.dataset.operationSetting = 'enabled';
+        checkbox.checked = isMeta || allSelected || selectedSet.has(name) || anySelected.has(name) || alwaysAllowedSet.has(name);
         checkbox.disabled = isMeta;
         const code = document.createElement('code');
         code.textContent = name;
         label.append(checkbox, code);
+        item.appendChild(label);
         if (showSummary && summary) {
           const desc = document.createElement('span');
           desc.className = 'qwen-operation-item-desc';
           desc.textContent = summary;
-          label.appendChild(desc);
+          item.appendChild(desc);
         }
-        items.appendChild(label);
+        const alwaysLabel = document.createElement('label');
+        alwaysLabel.className = 'qwen-operation-always';
+        alwaysLabel.title = isMeta ? '千问元操作无需单独授权' : `在所有会话中始终允许 ${name}`;
+        const alwaysCheckbox = document.createElement('input');
+        alwaysCheckbox.type = 'checkbox';
+        alwaysCheckbox.dataset.operationName = name;
+        alwaysCheckbox.dataset.operationSetting = 'always';
+        alwaysCheckbox.checked = !isMeta && alwaysAllowedSet.has(name);
+        alwaysCheckbox.disabled = isMeta;
+        const alwaysText = document.createElement('span');
+        alwaysText.textContent = '始终允许';
+        alwaysLabel.append(alwaysCheckbox, alwaysText);
+        item.appendChild(alwaysLabel);
+        items.appendChild(item);
       }
       groupEl.appendChild(items);
       list.appendChild(groupEl);
@@ -78,9 +96,16 @@
     }
   }
 
+  function collectAlwaysAllowed(list) {
+    if (!(list instanceof HTMLElement)) return [];
+    return [...list.querySelectorAll('input[data-operation-setting="always"]:not(:disabled):checked')]
+      .map((checkbox) => String(checkbox.dataset.operationName || ''))
+      .filter(Boolean);
+  }
+
   function collect(list) {
     if (!(list instanceof HTMLElement)) return [];
-    const inputs = [...list.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
+    const inputs = [...list.querySelectorAll('input[data-operation-setting="enabled"]:not(:disabled)')];
     const checked = inputs
       .filter((checkbox) => checkbox.checked)
       .map((checkbox) => String(checkbox.dataset.operationName || ''))
@@ -88,9 +113,11 @@
     return inputs.length > 0 && checked.length === inputs.length ? null : checked;
   }
 
-  async function persist(list) {
-    const payload = collect(list);
-    const response = await send('QWEN_SETTINGS_SET', { enabledOperations: payload });
+  async function persistAll(list) {
+    const response = await send('QWEN_SETTINGS_SET', {
+      enabledOperations: collect(list),
+      alwaysAllowedOperations: collectAlwaysAllowed(list)
+    });
     document.dispatchEvent(new CustomEvent('qwenOperationsPersisted', {
       detail: { ok: response?.ok !== false }
     }));
@@ -102,13 +129,39 @@
     if (!(list instanceof HTMLElement)) return;
     list.addEventListener('change', (event) => {
       if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox') {
-        void persist(list);
+        const name = String(event.target.dataset.operationName || '');
+        if (event.target.dataset.operationSetting === 'always') {
+          if (event.target.checked) {
+            const enabled = [...list.querySelectorAll('input[data-operation-setting="enabled"]')]
+              .find((input) => String(input.dataset.operationName || '') === name);
+            if (enabled instanceof HTMLInputElement && !enabled.checked) {
+              enabled.checked = true;
+            }
+          }
+        } else {
+          if (!event.target.checked) {
+            const always = [...list.querySelectorAll('input[data-operation-setting="always"]')]
+              .find((input) => String(input.dataset.operationName || '') === name);
+            if (always instanceof HTMLInputElement && always.checked) {
+              always.checked = false;
+            }
+          }
+        }
+        void persistAll(list);
       }
     });
     if (toggle instanceof HTMLButtonElement) {
       toggle.addEventListener('click', () => {
-        list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
-        void persist(list);
+        list.querySelectorAll('input[data-operation-setting="enabled"]:not(:disabled)').forEach((checkbox) => {
+          checkbox.checked = !checkbox.checked;
+          if (!checkbox.checked) {
+            const name = String(checkbox.dataset.operationName || '');
+            const always = [...list.querySelectorAll('input[data-operation-setting="always"]')]
+              .find((input) => String(input.dataset.operationName || '') === name);
+            if (always instanceof HTMLInputElement) always.checked = false;
+          }
+        });
+        void persistAll(list);
       });
     }
   }
@@ -142,5 +195,5 @@
     return roots;
   })();
 
-  global[NS] = { mounted, render, collect };
+  global[NS] = { mounted, render, collect, collectAlwaysAllowed };
 })(globalThis);

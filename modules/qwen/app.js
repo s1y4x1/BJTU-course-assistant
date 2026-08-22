@@ -559,11 +559,11 @@
     }
   }
 
-  function renderOperationsPopover(groups, enabledOperations) {
+  function renderOperationsPopover(groups, enabledOperations, alwaysAllowedOperations = []) {
     const list = document.querySelector('#qwen-chat-ops-popover [data-operation-list]');
     if (!(list instanceof HTMLElement)) return;
     if (global.BjtuQwenOperationsUi) {
-      BjtuQwenOperationsUi.render(list, groups, enabledOperations, !Array.isArray(enabledOperations));
+      BjtuQwenOperationsUi.render(list, groups, enabledOperations, !Array.isArray(enabledOperations), { alwaysAllowedOperations });
       return;
     }
     list.replaceChildren();
@@ -651,7 +651,7 @@
         : send('QWEN_LIST_OPERATIONS');
       void load.then((response) => {
         if (response?.ok === true) {
-          renderOperationsPopover(response.groups, response.enabledOperations);
+          renderOperationsPopover(response.groups, response.enabledOperations, response.alwaysAllowedOperations);
         } else {
           const l = document.querySelector('#qwen-chat-ops-popover [data-operation-list]');
           if (l instanceof HTMLElement) {
@@ -896,7 +896,7 @@
       const items = value.map((item) => `${childIndent}${formatResult(item, depth + 1)}`);
       return `[\n${items.join(',\n')}\n${indent}]`;
     }
-    const keys = Object.keys(value).filter((key) => key !== 'ok');
+    const keys = Object.keys(value);
     if (!keys.length) return '{}';
     const entries = keys.map((key) => {
       const keyText = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
@@ -1035,6 +1035,8 @@
     const text = el('qwen-chat-ask-text');
     const count = el('qwen-chat-ask-count');
     const always = el('qwen-chat-ask-always');
+    const sessionAlways = el('qwen-chat-ask-session');
+    const operationsAlways = el('qwen-chat-ask-operations');
     const stop = el('qwen-chat-ask-stop');
     if (container instanceof HTMLElement) {
       if (text instanceof HTMLElement) text.textContent = message?.message || '操作调用次数过多，是否继续？';
@@ -1043,7 +1045,25 @@
         count.value = String(value);
         count.hidden = pendingAskMode === 'operation-permission';
       }
-      if (always instanceof HTMLButtonElement) always.textContent = '始终允许';
+      const executionMode = ['app', 'background'].includes(String(message?.executionMode || ''))
+        ? String(message.executionMode)
+        : 'app';
+      const operationNames = Array.isArray(message?.operationNames) ? message.operationNames.map(String).filter(Boolean) : [];
+      if (always instanceof HTMLButtonElement) {
+        always.textContent = pendingAskMode === 'operation-permission'
+          ? `在此轮对话中始终允许 ${executionMode} 所有操作`
+          : '始终允许';
+      }
+      if (sessionAlways instanceof HTMLButtonElement) {
+        sessionAlways.hidden = pendingAskMode !== 'operation-permission';
+        sessionAlways.textContent = `在本次会话中始终允许 ${executionMode} 所有操作`;
+      }
+      if (operationsAlways instanceof HTMLButtonElement) {
+        operationsAlways.hidden = pendingAskMode !== 'operation-permission' || operationNames.length === 0;
+        operationsAlways.textContent = operationNames.length
+          ? `在所有会话中始终允许 ${operationNames.join('、')}`
+          : '在所有会话中始终允许操作';
+      }
       if (stop instanceof HTMLButtonElement) stop.textContent = pendingAskMode === 'operation-permission' ? '拒绝' : '结束本次';
       updateAskContinueLabel();
       container.hidden = false;
@@ -1133,6 +1153,10 @@
             inThinking = false;
           }
           removeCursor(activeBubble);
+          if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble) && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+            removeMessageBubble(activeBubble);
+            activeBubble = null;
+          }
           lastOperationCard.card = appendOperationCard(message.operation);
           const messages = el(MESSAGES_ID);
           maybeAutoScrollMessages(messages);
@@ -1755,7 +1779,15 @@
     }
     const askAlways = el('qwen-chat-ask-always');
     if (askAlways instanceof HTMLButtonElement) {
-      askAlways.addEventListener('click', () => resolveAsk('always'));
+      askAlways.addEventListener('click', () => resolveAsk(pendingAskMode === 'operation-permission' ? 'always-turn' : 'always'));
+    }
+    const askSession = el('qwen-chat-ask-session');
+    if (askSession instanceof HTMLButtonElement) {
+      askSession.addEventListener('click', () => resolveAsk('always-session'));
+    }
+    const askOperations = el('qwen-chat-ask-operations');
+    if (askOperations instanceof HTMLButtonElement) {
+      askOperations.addEventListener('click', () => resolveAsk('always-operations'));
     }
     const askStop = el('qwen-chat-ask-stop');
     if (askStop instanceof HTMLButtonElement) {

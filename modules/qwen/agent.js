@@ -1,4 +1,4 @@
-/* 通义千问智能代理：解析回复末尾的 sandbox/app/background 代码块并循环执行。 */
+/* 通义千问智能代理：解析 sandbox/app/background 代码块并按顺序循环执行。 */
 (function initBjtuQwenAgent(global) {
   'use strict';
 
@@ -13,22 +13,48 @@
     return parts.join('\n');
   }
 
-  function parseTrailingExecution(reply) {
+  function parseExecutionBlocks(reply) {
     const text = String(reply || '');
     EXECUTION_BLOCK_PATTERN.lastIndex = 0;
     let match;
-    let last = null;
+    const matches = [];
     while ((match = EXECUTION_BLOCK_PATTERN.exec(text))) {
-      last = match;
+      matches.push({
+        index: match.index,
+        end: match.index + match[0].length,
+        mode: String(match[1] || '').toLowerCase(),
+        code: String(match[2] || '')
+      });
     }
-    if (!last) return null;
-    const remainder = text.slice(last.index + last[0].length).trim();
-    if (remainder) return null;
+    if (!matches.length) return null;
     return {
-      mode: String(last[1] || '').toLowerCase(),
-      code: String(last[2] || ''),
-      name: `code.${String(last[1] || '').toLowerCase()}`
+      cleanText: text.slice(0, matches[0].index).trimEnd(),
+      executions: matches.map((item, index) => ({
+        mode: item.mode,
+        code: item.code,
+        name: `code.${item.mode}`,
+        description: text.slice(item.end, matches[index + 1]?.index ?? text.length).trim()
+      }))
     };
+  }
+
+  function parseTrailingExecution(reply) {
+    return parseExecutionBlocks(reply)?.executions?.at(-1) || null;
+  }
+
+  function operationNamesInCode(code, operations, groups = []) {
+    const source = String(code || '');
+    const availableNames = new Set((groups || []).flatMap((group) => group?.operations || []).map((entry) => String(entry?.name ?? entry ?? '')));
+    return (typeof operations?.list === 'function' ? operations.list() : [])
+      .map((operation) => String(operation?.name || ''))
+      .filter((name) => name && !name.startsWith('qwen.'))
+      .filter((name) => availableNames.size === 0 || availableNames.has(name))
+      .filter((name) => {
+        const [namespace, method] = name.split('.');
+        if (!namespace || !method) return false;
+        const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(?:^|[^\\w$])${escapePattern(namespace)}\\s*\\.\\s*${escapePattern(method)}\\s*\\(`).test(source);
+      });
   }
 
   function buildSystemPrompt({ qwenDocs = '' }) {
@@ -41,7 +67,7 @@
       ...(String(qwenDocs || '').trim() ? [qwenDocs, ''] : []),
       '',
       '# 如何执行代码与调用操作',
-      '需要计算或调用扩展能力时，只能在回复末尾附上一个代码块；代码块之后不能再有内容。代码块语言决定执行环境：',
+      '需要计算或调用扩展能力时，可以输出一个或多个代码块。代码块语言决定执行环境：',
       '',
       '## sandbox',
       '- `sandbox` 在隔离沙箱中执行，不访问 app 页面、扩展后台、DOM 或 chrome API，也不需要询问用户。',
@@ -53,9 +79,17 @@
       '## app',
       '- `app` 的代码仍由隔离执行器求值，但可以直接调用 app.html 上的全局函数；执行前需要用户授权。',
       '- 各模块操作已作为页面全局命名空间提供，例如 `ve.login()`、`ve.assignments({status:"pending"})`；调用前先用 `qwen.getDoc()` 查参数。',
-      '- 单个函数调用可以直接作为末尾表达式，扩展会自动等待 Promise，不必额外写 `await`。',
+      '- 单个函数调用可以直接作为表达式，扩展会自动等待 Promise，不必额外写 `await`。也支持把一个操作的结果直接组合进另一个操作。',
       '```app',
       've.login()',
+      '```',
+      '- 平台的数据获取操作不会代替你自动登录。请先组合调用登录操作并检查结果，再继续工作流，例如：',
+      '```app',
+      've.login().then(login => login.ok ? ve.assignments({status:"pending"}) : login)',
+      '```',
+      '- 可以按课程名查找 ID 后直接调用课程操作，例如：',
+      '```app',
+      've.assignments_of_({ courseId: ve.courseList().find(item => item.name === "高等数学").id })',
       '```',
       '',
       '## background',
@@ -67,8 +101,10 @@
       '```',
       '',
       '# 执行规范',
-      '- 一次回复只能附一个 sandbox、app 或 background 代码块，且必须位于回复末尾。',
-      '- 扩展会把执行结果（无论成功或失败）作为新的输入继续发给你。',
+      '- 一次回复可以包含多个 sandbox、app 或 background 代码块，扩展会按出现顺序执行。',
+      '- 每个代码块之后、下一个代码块之前的文本是该代码块的操作说明；最后一个代码块后的文本是最后一个操作的说明。需要授权时，这些说明会展示给用户。',
+      '- 应主动组合多个操作完成完整工作流，而不是让用户逐步要求每一个中间操作。',
+      '- 所有代码块执行完毕后，扩展会把全部结果合并为一条新输入继续发给你。',
       '- app/background 权限更高，仅在确有必要时使用；sandbox 能完成的任务优先使用 sandbox。',
       '- 若执行失败是因为需要登录、能力不可用或连续重试仍无法解决，请直接告知用户，不要无限重复。',
       '- 如果不需要执行代码，直接给出最终答复，不附执行代码块。',
@@ -108,6 +144,8 @@
       askUser,
       onRetryRequest,
       sessionRef,
+      alwaysAllowedOperations = [],
+      onAlwaysAllowOperations,
       alwaysAllow = false,
       parentIdExplicit = false
     } = options || {};
@@ -151,6 +189,8 @@
     let hasPendingOperationResult = false;
 
     const loopSession = options.sessionRef || {};
+    const turnAllowedModes = new Set();
+    const persistentAllowedOperations = new Set((alwaysAllowedOperations || []).map(String));
     if (alwaysAllow === true) loopSession.alwaysAllow = true;
     const iterationLimit = Number(maxIterations) > 0 ? Number(maxIterations) : 6;
     let effectiveLimit = loopSession.alwaysAllow === true ? Infinity : iterationLimit;
@@ -264,8 +304,8 @@
         response_id: parentId
       });
 
-      const execution = parseTrailingExecution(replyText);
-      if (!execution) {
+      const parsedExecution = parseExecutionBlocks(replyText);
+      if (!parsedExecution) {
         return {
           chatId: effectiveChatId,
           responseId: parentId,
@@ -277,54 +317,74 @@
         };
       }
 
-      lastCleanReply = replyText;
-      onEvent?.({ operation: { name: execution.name, mode: execution.mode }, iteration });
-      let outcome;
-      if (execution.mode !== 'sandbox') {
-        const permissionKey = `code.${execution.mode}`;
-        const alwaysAllowed = loopSession.alwaysAllowedOperations || (loopSession.alwaysAllowedOperations = {});
-        let allowed = alwaysAllowed[permissionKey] === true;
-        if (!allowed && typeof askUser === 'function') {
-          const preview = execution.code.trim().slice(0, 500);
-          const decision = await askUser({
-            mode: 'operation-permission',
-            message: `通义千问请求在 ${execution.mode} 环境执行 JavaScript，是否允许？${preview ? `\n\n${preview}` : ''}`,
-            count: 1
-          });
-          if (decision?.action === 'always') {
-            alwaysAllowed[permissionKey] = true;
-            allowed = true;
-          } else {
-            allowed = decision?.action === 'continue';
+      lastCleanReply = parsedExecution.cleanText;
+      const outcomes = [];
+      for (const execution of parsedExecution.executions) {
+        const operationNames = operationNamesInCode(execution.code, operations, groups);
+        onEvent?.({ operation: { name: execution.name, mode: execution.mode, description: execution.description, operationNames }, iteration });
+        let outcome;
+        if (execution.mode !== 'sandbox') {
+          const sessionAllowedModes = loopSession.alwaysAllowedModes || (loopSession.alwaysAllowedModes = {});
+          const operationsAllowed = operationNames.length > 0
+            && operationNames.every((name) => persistentAllowedOperations.has(name));
+          let allowed = turnAllowedModes.has(execution.mode)
+            || sessionAllowedModes[execution.mode] === true
+            || operationsAllowed;
+          if (!allowed && typeof askUser === 'function') {
+            const preview = execution.code.trim().slice(0, 500);
+            const explanation = String(execution.description || '').trim();
+            const decision = await askUser({
+              mode: 'operation-permission',
+              executionMode: execution.mode,
+              operationNames,
+              message: [
+                `通义千问请求在 ${execution.mode} 环境执行 JavaScript，是否允许？`,
+                explanation ? `操作说明：${explanation}` : '',
+                preview ? `代码：\n${preview}` : ''
+              ].filter(Boolean).join('\n\n'),
+              count: 1
+            });
+            if (decision?.action === 'always-turn') {
+              turnAllowedModes.add(execution.mode);
+              allowed = true;
+            } else if (decision?.action === 'always-session') {
+              sessionAllowedModes[execution.mode] = true;
+              allowed = true;
+            } else if (decision?.action === 'always-operations' && operationNames.length) {
+              operationNames.forEach((name) => persistentAllowedOperations.add(name));
+              await onAlwaysAllowOperations?.([...persistentAllowedOperations]);
+              allowed = true;
+            } else {
+              allowed = decision?.action === 'continue';
+            }
           }
+          outcome = allowed
+            ? await operations.executeCode(execution.mode, execution.code)
+            : { ok: false, name: execution.name, code: 'USER_DENIED', error: `用户拒绝在 ${execution.mode} 环境执行 JavaScript` };
+        } else {
+          outcome = await operations.executeCode(execution.mode, execution.code);
         }
-        outcome = allowed
-          ? await operations.executeCode(execution.mode, execution.code)
-          : { ok: false, name: execution.name, code: 'USER_DENIED', error: `用户拒绝在 ${execution.mode} 环境执行 JavaScript` };
-      } else {
-        outcome = await operations.executeCode(execution.mode, execution.code);
+        outcomes.push({ execution, outcome });
+        onEvent?.({ operationResult: outcome, iteration });
       }
-      onEvent?.({ operationResult: outcome, iteration });
-      pendingOperationResult = outcome;
+      pendingOperationResult = outcomes.map(({ outcome }) => outcome);
       hasPendingOperationResult = true;
 
-      if (outcome.ok) {
-        lastResultText = `\`\`\`res\n${operations.formatResult(outcome.result)}\n\`\`\``;
-      } else {
-        lastResultText = [
-          '```res',
-          formatOutcomeError(outcome),
-          '```',
-          '',
-          '若该操作无法成功（例如需要用户先登录、操作不可用，或修正后仍失败），请直接给出最终答复，不要再重复调用。'
-        ].join('\n');
-      }
+      lastResultText = outcomes.map(({ execution, outcome }, index) => [
+        `操作 ${index + 1}（${execution.name}）${execution.description ? `：${execution.description}` : ''}`,
+        '```res',
+        outcome.ok ? operations.formatResult(outcome.result) : formatOutcomeError(outcome),
+        '```',
+        outcome.ok ? '' : '若该操作无法成功（例如需要用户先登录、操作不可用，或修正后仍失败），请直接给出最终答复，不要再重复调用。'
+      ].filter(Boolean).join('\n')).join('\n\n');
       iteration += 1;
     }
   }
 
   global.BjtuQwenAgent = {
     parseTrailingExecution,
+    parseExecutionBlocks,
+    operationNamesInCode,
     buildSystemPrompt,
     runTurn
   };

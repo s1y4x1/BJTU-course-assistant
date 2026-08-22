@@ -58,7 +58,7 @@
       const items = value.map((item) => `${childIndent}${formatResult(item, depth + 1)}`);
       return `[\n${items.join(',\n')}\n${indent}]`;
     }
-    const keys = Object.keys(value).filter((key) => key !== 'ok');
+    const keys = Object.keys(value);
     if (!keys.length) return '{}';
     const entries = keys.map((key) => {
       const keyText = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
@@ -257,8 +257,8 @@
     const value = String(id || '').trim();
     if (!value) throw new Error(`缺少参数 ${idLabel}，请先调用 ${module}.courseList 获取有效ID`);
     if (module === 've') {
-      const found = await findVeCourseById(value).catch(() => false);
-      if (!found) throw new Error(`课程ID无效：${value} 不在当前学期课程列表中，请先调用 ve.courseList 获取有效ID`);
+      const found = await findVeCourseById(value);
+      if (!found?.course) throw new Error(`课程ID无效：${value} 不在当前学期课程列表中，请先调用 ve.courseList 获取有效ID`);
     } else if (module === 'mooc') {
       try {
         const data = await moocInvoke({ action: 'course-list' }, 120000);
@@ -270,9 +270,11 @@
     } else if (module === 'ykt') {
       try {
         const data = await pageInvoke('ykt', 'courseList', {}, 120000);
+        if (data?.loggedIn === false) throw Object.assign(new Error('雨课堂未登录，请先调用 ykt.login'), { code: 'LOGIN_REQUIRED' });
         const known = (Array.isArray(data?.courses) ? data.courses : []).map((c) => String(c?.classroomId || '').trim()).filter(Boolean);
         if (known.length && !known.includes(value)) throw new Error(`班级ID无效：${value} 不在雨课堂课程列表中，请先调用 ykt.courseList 获取有效ID`);
       } catch (error) {
+        if (isLoginRequiredError(error)) throw error;
         if (error?.message && String(error?.message).startsWith('班级ID无效')) throw error;
       }
     }
@@ -407,7 +409,7 @@ name: 've.accounts',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
-        '**调用示例**：`ve.assignments_of_({courseId: "xxx"})`',
+        '**调用示例**：`ve.assignments_of_({courseId: "xxx"})`；也可直接按课程名组合调用：`ve.assignments_of_({ courseId: ve.courseList().find(item => item.name === "高等数学").id })`',
         '',
         '**返回示例**：[{"id":"...","title":"作业标题","end_time":"2026-01-01 00:00:00","subStatus":"未提交"}]'
       ].join('\n'),
@@ -603,7 +605,10 @@ name: 've.accounts',
       ].join('\n'),
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();
-        return pageInvoke('ve', 'login', { account, auto: true, timeoutMs: 180000 }, 200000);
+        const result = await pageInvoke('ve', 'login', { account, auto: true, timeoutMs: 180000 }, 200000);
+        const loggedIn = result?.loggedIn === true || String(result?.loginState || '').toLowerCase() === 'online';
+        const ok = typeof result?.ok === 'boolean' ? result.ok : loggedIn;
+        return { ...(result && typeof result === 'object' ? result : {}), ok, loggedIn };
       }
     },
     {
@@ -1694,11 +1699,6 @@ name: 've.teachers_of_',
     return !['login', 'loginStatus', 'accounts'].includes(shortName);
   }
 
-  function isLoggedInValue(value) {
-    if (value?.loggedIn === true) return true;
-    return ['online', 'logged-in', 'authenticated'].includes(String(value?.loginState || '').toLowerCase());
-  }
-
   function isLoginRequiredValue(value) {
     return String(value?.code || '') === 'LOGIN_REQUIRED'
       || value?.loggedIn === false
@@ -1709,62 +1709,6 @@ name: 've.teachers_of_',
     return error?.loginRequired === true
       || String(error?.code || '') === 'LOGIN_REQUIRED'
       || String(error?.message || '') === 'LOGIN_REQUIRED';
-  }
-
-  async function readPlatformLoginStatus(module) {
-    if (module === 've') {
-      try {
-        return !!(await (await veHomework()).fetchCurrentUserInfo());
-      } catch {
-        return false;
-      }
-    }
-    if (module === 'mooc') {
-      const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
-      return !!String(cookie?.value || '').trim();
-    }
-    try {
-      const statusFn = module === 'ykt' ? 'courseList' : 'loginStatus';
-      return isLoggedInValue(await pageInvoke(module, statusFn, {}, 60000));
-    } catch {
-      return false;
-    }
-  }
-
-  async function loginPlatformOnce(module) {
-    const loginOperation = findOperation(`${module}.login`);
-    if (!loginOperation) throw Object.assign(new Error(`${module} 未提供登录操作`), { code: 'LOGIN_REQUIRED' });
-    let loginResult;
-    try {
-      let loginArgs = {};
-      if (module === 've') {
-        loginArgs = { auto: true };
-      }
-      loginResult = await loginOperation.run(loginArgs);
-    } catch (error) {
-      throw Object.assign(new Error(`${module} 登录失败：${String(error?.message || error)}`), { code: 'LOGIN_REQUIRED' });
-    }
-    if (loginResult?.ok === false || loginResult?.loggedIn === false || loginResult?.ready === false) {
-      throw Object.assign(new Error(`${module} 登录失败：${String(loginResult?.message || '平台数据未加载完毕')}`), { code: 'LOGIN_REQUIRED' });
-    }
-    const loginStatusDeadline = Date.now() + (module === 've' ? 30000 : 10000);
-    let loggedIn = loginResult?.ok === true && loginResult?.loggedIn === true;
-    do {
-      if (loggedIn) break;
-      loggedIn = await readPlatformLoginStatus(module);
-      if (loggedIn) break;
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    } while (Date.now() < loginStatusDeadline);
-    if (!loggedIn) {
-      throw Object.assign(new Error(`${module} 登录失败或登录流程未完成，请登录后重试`), { code: 'LOGIN_REQUIRED' });
-    }
-  }
-
-  async function ensurePlatformLogin(op) {
-    if (!operationNeedsPlatformLogin(op)) return false;
-    if (await readPlatformLoginStatus(op.module)) return false;
-    await loginPlatformOnce(op.module);
-    return true;
   }
 
   const PLATFORM_GROUP_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
@@ -1823,26 +1767,9 @@ name: 've.teachers_of_',
           throw Object.assign(new Error(`用户拒绝执行操作「${op.label || op.name}」`), { code: 'USER_DENIED' });
         }
       }
-      let loginAttempted = await ensurePlatformLogin(op);
-      let result;
-      try {
-        result = await op.run(args || {}, options);
-      } catch (error) {
-        if (!operationNeedsPlatformLogin(op) || loginAttempted || !isLoginRequiredError(error)) throw error;
-        await loginPlatformOnce(op.module);
-        loginAttempted = true;
-        result = await op.run(args || {}, options);
-      }
+      const result = await op.run(args || {}, options);
       if (operationNeedsPlatformLogin(op)) {
-        let loginMissing = isLoginRequiredValue(result)
-          || (!loginAttempted && !await readPlatformLoginStatus(op.module));
-        if (loginMissing && !loginAttempted) {
-          await loginPlatformOnce(op.module);
-          loginAttempted = true;
-          result = await op.run(args || {}, options);
-          loginMissing = isLoginRequiredValue(result);
-        }
-        if (loginMissing) {
+        if (isLoginRequiredValue(result)) {
           throw Object.assign(new Error(String(result?.message || `${op.module} 需要登录`)), { code: 'LOGIN_REQUIRED' });
         }
       }
