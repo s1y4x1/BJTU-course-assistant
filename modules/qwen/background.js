@@ -3,6 +3,7 @@
   'use strict';
 
   const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
+  const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
   const WAF_TAB_STATE_KEY = 'qwenWafTabState';
@@ -11,6 +12,13 @@
   const pendingAskNotifications = new Map();
   const chatPermissionSessions = new Map();
   let qwenLoginCompletionPromise = null;
+
+  function withAlwaysAllowedMetaOperations(values) {
+    return [...new Set([
+      ...ALWAYS_ALLOWED_META_OPERATIONS,
+      ...(Array.isArray(values) ? values.map(String).filter(Boolean) : [])
+    ])];
+  }
 
   async function loadChatPermissionSession(chatId) {
     const id = String(chatId || '');
@@ -192,9 +200,7 @@
       enabledOperations: Array.isArray(stored.qwenEnabledOperations)
         ? stored.qwenEnabledOperations
         : null,
-      alwaysAllowedOperations: Array.isArray(stored.qwenAlwaysAllowedOperations)
-        ? [...new Set(stored.qwenAlwaysAllowedOperations.map(String).filter(Boolean))]
-        : [],
+      alwaysAllowedOperations: withAlwaysAllowedMetaOperations(stored.qwenAlwaysAllowedOperations),
       thinkingEnabled: stored.qwenThinkingEnabled === true,
       maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
       alwaysAllow: stored.qwenAlwaysAllow === true
@@ -211,9 +217,7 @@
         : null;
     }
     if (patch?.alwaysAllowedOperations !== undefined) {
-      next.qwenAlwaysAllowedOperations = Array.isArray(patch.alwaysAllowedOperations)
-        ? [...new Set(patch.alwaysAllowedOperations.map(String).filter(Boolean))]
-        : [];
+      next.qwenAlwaysAllowedOperations = withAlwaysAllowedMetaOperations(patch.alwaysAllowedOperations);
       if (patch?.enabledOperations === undefined) {
         const current = await chrome.storage.local.get('qwenEnabledOperations').catch(() => ({}));
         if (Array.isArray(current?.qwenEnabledOperations)) {
@@ -461,9 +465,6 @@
   function backgroundBridgePathParts(path) {
     const parts = String(path || '').split('.').map((part) => part.trim()).filter(Boolean);
     if (!parts.length) throw new Error('桥接路径为空');
-    if (parts.some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
-      throw new Error('桥接路径包含不允许访问的属性');
-    }
     if (['globalThis', 'self'].includes(parts[0])) parts.shift();
     if (!parts.length) throw new Error('不能直接访问整个后台全局对象');
     return parts;

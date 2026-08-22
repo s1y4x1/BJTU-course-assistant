@@ -43,11 +43,7 @@
   function callBridge(executionId, action, payload) {
     const requestId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pendingBridgeCalls.delete(requestId);
-        reject(new Error('上下文桥接调用超时'));
-      }, 30000);
-      pendingBridgeCalls.set(requestId, { resolve, reject, timer });
+      pendingBridgeCalls.set(requestId, { resolve, reject });
       parent.postMessage({
         channel: CHANNEL,
         type: 'bridge-call',
@@ -161,7 +157,6 @@
       const pending = pendingBridgeCalls.get(String(data.requestId || ''));
       if (!pending) return;
       pendingBridgeCalls.delete(String(data.requestId || ''));
-      clearTimeout(pending.timer);
       if (data.ok === true) pending.resolve(data.result);
       else pending.reject(new Error(String(data.error || '上下文桥接调用失败')));
       return;

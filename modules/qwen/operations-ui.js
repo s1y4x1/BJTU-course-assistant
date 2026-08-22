@@ -71,12 +71,12 @@
         }
         const alwaysLabel = document.createElement('label');
         alwaysLabel.className = 'qwen-operation-always';
-        alwaysLabel.title = isMeta ? '千问元操作无需单独授权' : `在所有会话中始终允许 ${name}`;
+        alwaysLabel.title = isMeta ? '千问元操作默认在所有会话中始终允许' : `在所有会话中始终允许 ${name}`;
         const alwaysCheckbox = document.createElement('input');
         alwaysCheckbox.type = 'checkbox';
         alwaysCheckbox.dataset.operationName = name;
         alwaysCheckbox.dataset.operationSetting = 'always';
-        alwaysCheckbox.checked = !isMeta && alwaysAllowedSet.has(name);
+        alwaysCheckbox.checked = isMeta || alwaysAllowedSet.has(name);
         alwaysCheckbox.disabled = isMeta;
         const alwaysText = document.createElement('span');
         alwaysText.textContent = '始终允许';

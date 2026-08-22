@@ -391,9 +391,6 @@
   function jsBridgePathParts(path) {
     const parts = String(path || '').split('.').map((part) => part.trim()).filter(Boolean);
     if (!parts.length) throw new Error('桥接路径为空');
-    if (parts.some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
-      throw new Error('桥接路径包含不允许访问的属性');
-    }
     if (['window', 'globalThis', 'self'].includes(parts[0])) parts.shift();
     if (!parts.length) throw new Error('不能直接访问整个页面全局对象');
     return parts;
@@ -506,10 +503,6 @@
       bindingRoots = Array.isArray(response.value) ? response.value : [];
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        global.removeEventListener('message', onMessage);
-        reject(new Error('JavaScript 执行超时'));
-      }, 30000);
       const onMessage = (event) => {
         const data = event?.data;
         if (event.source !== frame.contentWindow || data?.channel !== JS_SANDBOX_CHANNEL) return;
@@ -534,7 +527,6 @@
           return;
         }
         if (data?.type !== 'result' || String(data.id || '') !== id) return;
-        clearTimeout(timer);
         global.removeEventListener('message', onMessage);
         if (data.ok === true) resolve(data.result);
         else reject(new Error(String(data.error || 'JavaScript 执行失败')));
@@ -1061,7 +1053,7 @@
       if (operationsAlways instanceof HTMLButtonElement) {
         operationsAlways.hidden = pendingAskMode !== 'operation-permission' || operationNames.length === 0;
         operationsAlways.textContent = operationNames.length
-          ? `在所有会话中始终允许 ${operationNames.join('、')}`
+          ? `在所有会话中始终允许 \`${operationNames.join(' ')}\``
           : '在所有会话中始终允许操作';
       }
       if (stop instanceof HTMLButtonElement) stop.textContent = pendingAskMode === 'operation-permission' ? '拒绝' : '结束本次';

@@ -78,15 +78,13 @@
     return value;
   }
 
-  async function sendRuntimeMessage(message, timeoutMs = 90000) {
+  async function sendRuntimeMessage(message) {
     if (typeof chrome !== 'object' || !chrome?.runtime?.sendMessage) {
       throw new Error('当前环境不支持消息通信');
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('操作超时')), timeoutMs);
       try {
         chrome.runtime.sendMessage(message, (response) => {
-          clearTimeout(timer);
           const error = chrome?.runtime?.lastError;
           if (error) {
             reject(new Error(String(error.message || '消息发送失败')));
@@ -95,7 +93,6 @@
           resolve(response);
         });
       } catch (error) {
-        clearTimeout(timer);
         reject(error);
       }
     });
@@ -605,7 +602,7 @@ name: 've.accounts',
       ].join('\n'),
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();
-        const result = await pageInvoke('ve', 'login', { account, auto: true, timeoutMs: 180000 }, 200000);
+        const result = await pageInvoke('ve', 'login', { account, auto: true, timeoutMs: Number.POSITIVE_INFINITY });
         const loggedIn = result?.loggedIn === true || String(result?.loginState || '').toLowerCase() === 'online';
         const ok = typeof result?.ok === 'boolean' ? result.ok : loggedIn;
         return { ...(result && typeof result === 'object' ? result : {}), ok, loggedIn };
@@ -841,7 +838,7 @@ name: 've.teachers_of_',
         '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('ykt', 'login', { timeoutMs: 180000 }, 200000);
+        return pageInvoke('ykt', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
       }
     },
     {
@@ -1333,7 +1330,7 @@ name: 've.teachers_of_',
         '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mrjzy', 'login', { timeoutMs: 180000 }, 200000);
+        return pageInvoke('mrjzy', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
       }
     },
     {
@@ -1462,7 +1459,7 @@ name: 've.teachers_of_',
         '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mooc', 'login', { timeoutMs: 180000 }, 200000);
+        return pageInvoke('mooc', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
       }
     },
     {
@@ -1480,7 +1477,7 @@ name: 've.teachers_of_',
         '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('jlgj', 'login', { timeoutMs: 180000 }, 200000);
+        return pageInvoke('jlgj', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
       }
     },
     {
@@ -1611,7 +1608,7 @@ name: 've.teachers_of_',
         '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
       ].join('\n'),
       async run() {
-        return pageInvoke('xuetangx', 'login', { timeoutMs: 180000 }, 200000);
+        return pageInvoke('xuetangx', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
       }
     },
     {

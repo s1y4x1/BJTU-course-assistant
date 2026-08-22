@@ -26,7 +26,7 @@
         code: String(match[2] || '')
       });
     }
-    if (!matches.length) return null;
+    if (matches.length !== 1) return null;
     return {
       cleanText: text.slice(0, matches[0].index).trimEnd(),
       executions: matches.map((item, index) => ({
@@ -47,7 +47,7 @@
     const availableNames = new Set((groups || []).flatMap((group) => group?.operations || []).map((entry) => String(entry?.name ?? entry ?? '')));
     return (typeof operations?.list === 'function' ? operations.list() : [])
       .map((operation) => String(operation?.name || ''))
-      .filter((name) => name && !name.startsWith('qwen.'))
+      .filter(Boolean)
       .filter((name) => availableNames.size === 0 || availableNames.has(name))
       .filter((name) => {
         const [namespace, method] = name.split('.');
@@ -67,7 +67,7 @@
       ...(String(qwenDocs || '').trim() ? [qwenDocs, ''] : []),
       '',
       '# 如何执行代码与调用操作',
-      '需要计算或调用扩展能力时，可以输出一个或多个代码块。代码块语言决定执行环境：',
+      '需要计算或调用扩展能力时，一条回复只能输出一个代码块。代码块语言决定执行环境：',
       '',
       '## sandbox',
       '- `sandbox` 在隔离沙箱中执行，不访问 app 页面、扩展后台、DOM 或 chrome API，也不需要询问用户。',
@@ -101,10 +101,10 @@
       '```',
       '',
       '# 执行规范',
-      '- 一次回复可以包含多个 sandbox、app 或 background 代码块，扩展会按出现顺序执行。',
-      '- 每个代码块之后、下一个代码块之前的文本是该代码块的操作说明；最后一个代码块后的文本是最后一个操作的说明。需要授权时，这些说明会展示给用户。',
+      '- 一次回复只能包含一个 sandbox、app 或 background 代码块。',
+      '- 代码块后的文本是该操作的说明（可以为空）；需要授权时，这段说明会展示给用户。',
       '- 应主动组合多个操作完成完整工作流，而不是让用户逐步要求每一个中间操作。',
-      '- 所有代码块执行完毕后，扩展会把全部结果合并为一条新输入继续发给你。',
+      '- 代码执行完毕后，扩展会把结果作为一条新输入继续发给你。',
       '- app/background 权限更高，仅在确有必要时使用；sandbox 能完成的任务优先使用 sandbox。',
       '- 若执行失败是因为需要登录、能力不可用或连续重试仍无法解决，请直接告知用户，不要无限重复。',
       '- 如果不需要执行代码，直接给出最终答复，不附执行代码块。',
