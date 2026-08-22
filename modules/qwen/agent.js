@@ -370,13 +370,13 @@
       pendingOperationResult = outcomes.map(({ outcome }) => outcome);
       hasPendingOperationResult = true;
 
-      lastResultText = outcomes.map(({ execution, outcome }, index) => [
-        `操作 ${index + 1}（${execution.name}）${execution.description ? `：${execution.description}` : ''}`,
-        '```res',
+      const { execution, outcome } = outcomes[0];
+      lastResultText = [
+        `\`\`\`res: ${execution.mode}`,
         outcome.ok ? operations.formatResult(outcome.result) : formatOutcomeError(outcome),
         '```',
         outcome.ok ? '' : '若该操作无法成功（例如需要用户先登录、操作不可用，或修正后仍失败），请直接给出最终答复，不要再重复调用。'
-      ].filter(Boolean).join('\n')).join('\n\n');
+      ].filter(Boolean).join('\n');
       iteration += 1;
     }
   }

@@ -91,10 +91,13 @@
     };
     renderer.codespan = ({ text }) => `<code class="qwen-md-inline-code">${escapeHtmlQwen(text)}</code>`;
     renderer.code = ({ text, lang }) => {
-      const language = String(lang || '').trim().split(/\s+/)[0];
-      if (language === 'res') {
+      const languageInfo = String(lang || '').trim();
+      const language = languageInfo.split(/\s+/)[0];
+      const resultMode = /^res\s*:\s*(sandbox|app|background)$/i.exec(languageInfo)?.[1]?.toLowerCase() || '';
+      if (language === 'res' || resultMode) {
         const jsonText = String(text || '').trim();
-        return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
+        const modeText = resultMode ? `（${escapeHtmlQwen(resultMode)}）` : '';
+        return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果${modeText}</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
       }
       const languageAttribute = language ? ` data-language="${escapeHtmlQwen(language)}"` : '';
       return `<pre class="qwen-md-codeblock"${languageAttribute}><code>${escapeHtmlQwen(String(text || ''))}</code></pre>`;
@@ -198,13 +201,13 @@
   }
 
   function extractResJson(text) {
-    const match = /^```res\s*([\s\S]*?)```\s*$/.exec(String(text || '').trim());
+    const match = /^```res(?:[ \t]*:[ \t]*(?:sandbox|app|background))?[ \t]*\n?([\s\S]*?)```\s*$/i.exec(String(text || '').trim());
     return match ? String(match[1] || '').trim() : String(text || '');
   }
 
   function resBlocksFromText(text) {
     const blocks = [];
-    const regex = /```res\s*([\s\S]*?)```/g;
+    const regex = /```res(?:[ \t]*:[ \t]*(?:sandbox|app|background))?[ \t]*\n?([\s\S]*?)```/gi;
     const source = String(text || '');
     let match;
     while ((match = regex.exec(source))) blocks.push(match[0]);
