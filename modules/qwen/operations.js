@@ -212,6 +212,32 @@
     return VE_SUBTYPE_LABELS[Number(subType ?? 0)] || '作业';
   }
 
+  function veUploadedFilesPayload(items) {
+    const records = Array.isArray(items) ? items : [];
+    const files = [];
+    const fileList = [];
+    for (const item of records) {
+      const fileName = String(item?.fileName || '').trim();
+      const visitName = String(item?.visitName || '').trim();
+      const fileSize = Math.max(0, Number(item?.fileSize || 0) || 0);
+      const downloadUrl = String(item?.downloadUrl || item?.url || '').trim();
+      if (downloadUrl) files.push({ fileName, fileSize, downloadUrl });
+      if (!visitName || !fileName) continue;
+      const dot = fileName.lastIndexOf('.');
+      const fileNameNoExt = dot > 0 && dot < fileName.length - 1 ? fileName.slice(0, dot) : fileName;
+      const fileExtName = dot > 0 && dot < fileName.length - 1 ? fileName.slice(dot + 1) : '';
+      fileList.push({
+        fileNameNoExt: encodeURIComponent(fileNameNoExt),
+        fileExtName,
+        fileSize: String(fileSize),
+        visitName,
+        pid: '',
+        ftype: 'insert'
+      });
+    }
+    return { files, fileList };
+  }
+
   function veAssignmentActionUrl(course, courseId, subType) {
     const courseToPage = ({ 0: 10460, 1: 10461, 2: 10462 })[Number(subType ?? 0)] || 10460;
     const courseNum = course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || courseId;
@@ -447,17 +473,17 @@ name: 've.accounts',
       module: 've',
       name: 've.uploadFile',
       label: '上传文件',
-      summary: '向智慧课程平台上传文件并返回可用于提交作业的文件 ID',
+      summary: '向智慧课程平台上传文件并返回下载链接和可直接提交的 fileList',
       doc: [
         '## ve.uploadFile —— 上传文件',
         '',
-        '向智慧课程平台上传文件，返回的 id 可直接放入 ve.submitAssignment 的 fileIds。不提供文件内容来源时，会直接触发 app.html 的 #file-input（与点击 #drop-zone 相同），支持选择多个本地文件。上传过程会显示在 #file-list 中。',
+        '向智慧课程平台上传文件，直接返回可下载链接和可原样传给 ve.submitAssignment 的 fileList。不提供文件内容来源时，会直接触发 app.html 的 #file-input（与点击 #drop-zone 相同），支持选择多个本地文件。上传过程会显示在 #file-list 中。',
         '',
         '**参数**：不传参数时由用户选择本地文件，可用 accept 限制文件类型；也可传 fileName，并从 text/content（文本）、base64/dataBase64、bytes（0~255 数组）或 url 四种可序列化来源中选择一种；mimeType 可选。使用 url 时若省略 fileName，会从 URL 推断。',
         '',
         '**调用示例**：`ve.uploadFile()`；`ve.uploadFile({accept:".pdf,.doc,.docx"})`；`ve.uploadFile({fileName:"answer.txt", text:"作业内容", mimeType:"text/plain"})`',
         '',
-        '**返回示例**：单个文件返回 `{"id":"up_xxx","savedId":"up_xxx","fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","url":"http://..."}`；选择多个文件时返回上述对象的数组。'
+        '**返回示例**：`{"files":[{"fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","downloadUrl":"http://..."}],"fileList":[{"fileNameNoExt":"answer","fileExtName":"txt","fileSize":"12","visitName":"...","pid":"","ftype":"insert"}]}`。无论上传一个还是多个文件，均返回这一结构。'
       ].join('\n'),
       async run(args) {
         return pageInvoke('ve', 'uploadFile', args || {}, 120000);
@@ -467,27 +493,26 @@ name: 've.accounts',
       module: 've',
       name: 've.uploadedFiles',
       label: '获取已上传文件',
-      summary: '获取智慧课程平台中由扩展保存的已上传文件列表',
+      summary: '获取智慧课程平台已上传文件的下载链接和可直接提交的 fileList',
       doc: [
         '## ve.uploadedFiles —— 获取已上传文件',
         '',
-        '获取扩展本地保存的智慧课程平台已上传文件。返回的 id 可传给 ve.submitAssignment 的 fileIds。',
+        '获取扩展本地保存的智慧课程平台已上传文件，返回下载链接和可直接传给 ve.submitAssignment 的 fileList。',
         '',
         '**调用示例**：`ve.uploadedFiles()`',
         '',
-        '**返回示例**：[{"id":"up_xxx","fileName":"作业.pdf","fileSize":12345,"url":"http://..."}]'
+        '**返回示例**：{"files":[{"fileName":"作业.pdf","fileSize":12345,"downloadUrl":"http://..."}],"fileList":[{"fileNameNoExt":"%E4%BD%9C%E4%B8%9A","fileExtName":"pdf","fileSize":"12345","visitName":"...","pid":"","ftype":"insert"}]}'
       ].join('\n'),
       async run() {
-        const current = await pageInvoke('ve', 'uploadedFiles', {}, 30000).catch(() => []);
-        if (Array.isArray(current) && current.length) return current;
+        const current = await pageInvoke('ve', 'uploadedFiles', { includePrivate: true }).catch(() => []);
+        if (Array.isArray(current) && current.length) return veUploadedFilesPayload(current);
         const stored = await chrome.storage.local.get('savedUploadedFiles').catch(() => ({}));
-        return (Array.isArray(stored?.savedUploadedFiles) ? stored.savedUploadedFiles : []).map((item) => ({
-          id: String(item?.id || '').trim(),
+        return veUploadedFilesPayload((Array.isArray(stored?.savedUploadedFiles) ? stored.savedUploadedFiles : []).map((item) => ({
           fileName: String(item?.fileName || '').trim(),
           fileSize: Math.max(0, Number(item?.fileSize || 0) || 0),
           url: String(item?.url || '').trim(),
-          savedAt: Number(item?.savedAt || 0) || 0
-        })).filter((item) => item.id);
+          visitName: String(item?.visitName || '').trim()
+        })));
       }
     },
     {
@@ -498,11 +523,11 @@ name: 've.accounts',
       doc: [
         '## ve.submitAssignment —— 提交作业',
         '',
-        '提交智慧课程平台作业。assignmentId 可从 ve.assignments_of_ 获取；附件必须先由 ve.uploadedFiles 获取，并仅传其 id。正文与附件至少提供一项。',
+        '提交智慧课程平台作业。assignmentId 可从 ve.assignments_of_ 获取；附件可直接使用 ve.uploadFile 返回的 fileList，无需再调用 ve.uploadedFiles。正文与附件至少提供一项。',
         '',
-        '**参数**：{"courseId":"课程ID，必填","assignmentId":"作业ID，必填","content":"正文，可选","fileIds":["已上传文件ID，可选"]}',
+        '**参数**：{"courseId":"课程ID，必填","assignmentId":"作业ID，必填","content":"正文，可选","fileList":"ve.uploadFile 返回的 fileList 数组，可选"}',
         '',
-        '**调用示例**：`ve.submitAssignment({courseId: "xxx", assignmentId: "yyy", content: "作业正文", fileIds: ["up_xxx"]})`',
+        '**调用示例**：`const uploaded = await ve.uploadFile(); return ve.submitAssignment({courseId: "xxx", assignmentId: "yyy", content: "作业正文", fileList: uploaded.fileList})`',
         '',
         '**返回示例**：{"submitted":true,"courseId":"xxx","assignmentId":"yyy","fileCount":1}'
       ].join('\n'),
@@ -510,24 +535,23 @@ name: 've.accounts',
         const courseId = String(args?.courseId || '').trim();
         const assignmentId = String(args?.assignmentId || '').trim();
         const content = String(args?.content || '');
-        const fileIds = [...new Set((Array.isArray(args?.fileIds) ? args.fileIds : [])
-          .map((id) => String(id || '').trim()).filter(Boolean))];
+        const directFileList = (Array.isArray(args?.fileList) ? args.fileList : []).map((item) => ({
+          fileNameNoExt: String(item?.fileNameNoExt || '').trim(),
+          fileExtName: String(item?.fileExtName || '').trim(),
+          fileSize: String(Math.max(0, Number(item?.fileSize || 0) || 0)),
+          visitName: String(item?.visitName || '').trim(),
+          pid: '',
+          ftype: 'insert',
+          __homeworkFileListReady: true
+        })).filter((item) => item.fileNameNoExt && item.visitName);
         await assertCourseIdOf('ve', courseId);
         if (!assignmentId) throw new Error('缺少参数 assignmentId');
-        if (!content.trim() && !fileIds.length) throw new Error('作业正文与附件不能同时为空');
+        if (!content.trim() && !directFileList.length) throw new Error('作业正文与附件不能同时为空');
         const core = await veHomework();
         const assignments = await core.fetchCourseHomework(courseId);
         const homework = assignments.find((item) => String(core.homeworkKey(item) || '') === assignmentId);
         if (!homework) throw new Error(`作业ID无效：${assignmentId} 不在该课程作业列表中`);
-        let uploaded = await pageInvoke('ve', 'uploadedFiles', { includePrivate: true }, 30000).catch(() => []);
-        if (!Array.isArray(uploaded) || !uploaded.length) {
-          const stored = await chrome.storage.local.get('savedUploadedFiles').catch(() => ({}));
-          uploaded = Array.isArray(stored?.savedUploadedFiles) ? stored.savedUploadedFiles : [];
-        }
-        const byId = new Map(uploaded.map((item) => [String(item?.id || '').trim(), item]));
-        const missing = fileIds.filter((id) => !byId.has(id));
-        if (missing.length) throw new Error(`未找到已上传文件：${missing.join(', ')}，请重新调用 ve.uploadedFiles`);
-        return core.submitHomework(courseId, homework, content, fileIds.map((id) => byId.get(id)));
+        return core.submitHomework(courseId, homework, content, directFileList);
       }
     },
     {

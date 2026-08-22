@@ -338,6 +338,17 @@
   function buildHomeworkUploadFile(entry) {
     const visitName = String(entry?.visitName || '').trim();
     if (!visitName) return null;
+    const suppliedNameNoExt = String(entry?.fileNameNoExt || '').trim();
+    if (entry?.__homeworkFileListReady === true && suppliedNameNoExt) {
+      return {
+        fileNameNoExt: suppliedNameNoExt,
+        fileExtName: String(entry?.fileExtName || '').trim(),
+        fileSize: String(Math.max(0, Number(entry?.fileSize || 0) || 0)),
+        visitName,
+        pid: '',
+        ftype: 'insert'
+      };
+    }
     const parts = splitUploadFileName(entry?.fileName || entry?.name || '');
     return {
       fileNameNoExt: encodeURIComponent(parts.fileNameNoExt),

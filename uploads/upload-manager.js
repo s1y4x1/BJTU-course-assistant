@@ -639,11 +639,7 @@ function uploadFile(file, fileId) {
               updateTotalProgress();
             }
             cancelBtn.style.display = 'none';
-            const saved = (window.savedUploadedFiles || [])
-              .find((entry) => String(entry?.visitName || '') === String(data.visitName || ''));
             completeUpload({
-              id: fileId,
-              savedId: String(saved?.id || ''),
               fileName: String(file.name || ''),
               fileSize: Number(file.size || 0),
               mimeType: String(file.type || ''),
@@ -983,8 +979,6 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
         if (renderAlreadyUploadedFile(entry.file, fileId, entry.known)) {
           skippedDuplicateCount++;
           reusedResults.push({
-            id: fileId,
-            savedId: '',
             fileName: String(entry.file?.name || entry.known?.fileName || ''),
             fileSize: Number(entry.file?.size || entry.known?.fileSize || 0),
             mimeType: String(entry.file?.type || ''),
@@ -1133,7 +1127,28 @@ async function uploadFileForApi(args = {}) {
     ? [await buildApiUploadFile(args)]
     : await selectLocalFilesForApi({ accept: args?.accept });
   const results = await processFilesForUpload(files, { waitForCompletion: true });
-  return results.length === 1 ? results[0] : results;
+  const uploaded = Array.isArray(results) ? results : [];
+  const apiFiles = uploaded.map((item) => ({
+    fileName: String(item?.fileName || '').trim(),
+    fileSize: Math.max(0, Number(item?.fileSize || 0) || 0),
+    mimeType: String(item?.mimeType || ''),
+    downloadUrl: String(item?.url || '').trim(),
+    reused: item?.reused === true
+  }));
+  const homeworkFileList = uploaded.map((item) => {
+    const visitName = String(item?.visitName || '').trim();
+    if (!visitName) return null;
+    const parts = splitFileName(item?.fileName || '');
+    return {
+      fileNameNoExt: encodeURIComponent(String(parts?.fileNameNoExt || '')),
+      fileExtName: String(parts?.fileExtName || ''),
+      fileSize: String(Math.max(0, Number(item?.fileSize || 0) || 0)),
+      visitName,
+      pid: '',
+      ftype: 'insert'
+    };
+  }).filter(Boolean);
+  return { files: apiFiles, fileList: homeworkFileList };
 }
 
 globalThis.BjtuVeUploadApi = Object.freeze({

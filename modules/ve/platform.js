@@ -2820,14 +2820,12 @@ function vePageUploadedFiles(args = {}) {
   const includePrivate = args?.includePrivate === true;
   const output = [];
   const seen = new Set();
-  for (const [id, meta] of Object.entries(window.uploadedFileMetaById || {})) {
-    const fileId = String(id || '').trim();
+  for (const meta of Object.values(window.uploadedFileMetaById || {})) {
     const visitName = String(meta?.visitName || '').trim();
-    if (!fileId || !visitName || seen.has(fileId)) continue;
-    seen.add(fileId);
+    if (!visitName || seen.has(visitName)) continue;
+    seen.add(visitName);
     const fileName = String(meta?.fileName || `${String(meta?.fileNameNoExt || '')}${meta?.fileExtName ? `.${meta.fileExtName}` : ''}`).trim();
     output.push({
-      id: fileId,
       fileName,
       fileSize: Math.max(0, Number(meta?.fileSize || 0) || 0),
       url: String(meta?.url || '').trim(),
