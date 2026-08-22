@@ -1,4 +1,58 @@
 // -------------------- Upload --------------------
+const VE_UPLOAD_BASE = 'http://123.121.147.7:88';
+const VE_TEACHER_UPLOAD_URL = `${VE_UPLOAD_BASE}/ve/back/rp/common/rpUpload.shtml`;
+const VE_STUDENT_UPLOAD_URL = `${VE_UPLOAD_BASE}/ve/back/rp/common/homeworkUpload.shtml?noteId=1`;
+let veUploadSessionCheckPromise = null;
+
+function applyVeUploadAccountInfo(userInfo) {
+  const info = userInfo && typeof userInfo === 'object' ? userInfo : null;
+  const loginName = String(info?.loginName || info?.userId || '').trim();
+  if (!loginName) return null;
+  const roleName = String(info?.roleName || '').trim();
+  window.currentAccountLoginName = loginName;
+  window.isTeacherAccount = /教师|老师|助教/.test(roleName);
+  isLoginSessionValid = true;
+  if (typeof setPlatformLoginState === 'function') setPlatformLoginState('ve', 'online');
+  return info;
+}
+
+async function ensureVeUploadSession() {
+  if (veUploadSessionCheckPromise) return veUploadSessionCheckPromise;
+  veUploadSessionCheckPromise = (async () => {
+    let userInfo = await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.().catch(() => null);
+    if (applyVeUploadAccountInfo(userInfo)) return userInfo;
+
+    isLoginSessionValid = false;
+    if (typeof setPlatformLoginState === 'function') setPlatformLoginState('ve', 'offline');
+    const account = String(usernameInput?.value || '').trim();
+    if (!account) {
+      promptLoginIfPossible('请先输入智慧课程平台账号并登录后再上传文件');
+      throw Object.assign(new Error('请先登录智慧课程平台后再上传文件'), { code: 'LOGIN_REQUIRED' });
+    }
+
+    const result = typeof doLoginFlow === 'function' ? await doLoginFlow() : null;
+    if (result?.ok !== true) {
+      throw Object.assign(new Error(String(result?.message || '智慧课程平台登录失败或已取消')), { code: 'LOGIN_REQUIRED' });
+    }
+    userInfo = result?.userInfo
+      || await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.().catch(() => null);
+    if (!applyVeUploadAccountInfo(userInfo)) {
+      throw Object.assign(new Error('智慧课程平台登录流程完成，但未能确认当前账号'), { code: 'LOGIN_REQUIRED' });
+    }
+    return userInfo;
+  })().finally(() => {
+    veUploadSessionCheckPromise = null;
+  });
+  return veUploadSessionCheckPromise;
+}
+
+function getVeUploadUrl({ manualJsessionMode = false, jsessionid = '' } = {}) {
+  if (!window.isTeacherAccount) return VE_STUDENT_UPLOAD_URL;
+  return manualJsessionMode && String(jsessionid || '').trim()
+    ? `${VE_TEACHER_UPLOAD_URL};jsessionid=${encodeURIComponent(String(jsessionid).trim())}`
+    : VE_TEACHER_UPLOAD_URL;
+}
+
 function processQueue() {
   while (activeUploads < maxParallelUploads && uploadQueue.length > 0) {
     const task = uploadQueue.shift();
@@ -409,6 +463,17 @@ function uploadFile(file, fileId) {
   const performUpload = async () => {
     cancelRequested = false;
     isRunning = true;
+    try {
+      await ensureVeUploadSession();
+    } catch (error) {
+      setInlineStatus(String(error?.message || '请先登录智慧课程平台'), 'warning');
+      showRetry();
+      isRunning = false;
+      xhrRef = null;
+      activeUploads--; processQueue();
+      failUpload(error?.message || '请先登录智慧课程平台', error?.code || 'LOGIN_REQUIRED');
+      return;
+    }
     const manualJsessionMode = !usernameInput.value.trim();
     const jsid = (jsessionidInput.value.trim() || await getLocal('jsessionid', '')).trim();
     if (manualJsessionMode && !jsid) {
@@ -439,9 +504,7 @@ function uploadFile(file, fileId) {
       window.activeSpeeds[speedId] = 0;
       updateTotalSpeed();
 
-      const uploadUrl = manualJsessionMode
-        ? `${BASE}/ve/back/rp/common/rpUpload.shtml;jsessionid=${encodeURIComponent(jsid)}`
-        : `${BASE}/ve/back/rp/common/rpUpload.shtml`;
+      const uploadUrl = getVeUploadUrl({ manualJsessionMode, jsessionid: jsid });
       xhr.open('POST', uploadUrl, true);
       xhr.withCredentials = true;
       xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -648,7 +711,22 @@ function uploadFile(file, fileId) {
 }
 
 // -------------------- Events --------------------
-dropZone.addEventListener('click', () => fileInput.click());
+let dropZoneFilePickerOpening = false;
+dropZone.addEventListener('click', async (event) => {
+  const target = event?.target;
+  if (target === fileInput
+    || (target instanceof Element && target.closest('#paste-file-btn,button,a,input,label'))
+    || dropZoneFilePickerOpening) return;
+  dropZoneFilePickerOpening = true;
+  try {
+    await ensureVeUploadSession();
+    fileInput.click();
+  } catch {
+    // 登录流程自身负责提示；登录失败或取消时不打开文件选择器。
+  } finally {
+    dropZoneFilePickerOpening = false;
+  }
+});
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover', 'dragover-invalid', 'dragover-text');
@@ -777,10 +855,7 @@ if (pasteFileBtn) {
   pasteFileBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
-      if (!isLoginSessionValid) {
-        showToast('登录状态已失效，请重新登录', 'warning');
-        return;
-      }
+      await ensureVeUploadSession();
       const items = await navigator.clipboard.read();
       if (!items || !items.length) {
         showToast('剪贴板中没有可粘贴的内容', 'info', 2000);
@@ -875,6 +950,13 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
   if (!files || !files.length) return;
   const filesList = Array.from(files).filter(Boolean);
   if (!filesList.length) return;
+
+  try {
+    await ensureVeUploadSession();
+  } catch (error) {
+    if (waitForCompletion) throw error;
+    return [];
+  }
 
   const pendingFiles = [];
   const duplicateEntries = [];
@@ -1043,6 +1125,7 @@ function selectLocalFilesForApi({ accept = '' } = {}) {
 }
 
 async function uploadFileForApi(args = {}) {
+  await ensureVeUploadSession();
   const hasSerializedSource = args?.dataBase64 !== undefined || args?.base64 !== undefined
     || Array.isArray(args?.bytes) || args?.text !== undefined || args?.content !== undefined
     || !!String(args?.url || '').trim();
@@ -1053,7 +1136,11 @@ async function uploadFileForApi(args = {}) {
   return results.length === 1 ? results[0] : results;
 }
 
-globalThis.BjtuVeUploadApi = Object.freeze({ uploadFile: uploadFileForApi });
+globalThis.BjtuVeUploadApi = Object.freeze({
+  uploadFile: uploadFileForApi,
+  ensureSession: ensureVeUploadSession,
+  getUploadUrl: getVeUploadUrl
+});
 
 async function convertTextDropToFiles(dt) {
   if (!dt) return [];
