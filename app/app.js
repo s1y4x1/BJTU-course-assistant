@@ -736,6 +736,7 @@ function renderEnabledExternalStandaloneCourses() {
   if (isPlatformEnabled('ykt') && typeof renderYktStandaloneCourses === 'function') renderYktStandaloneCourses();
   if (isPlatformEnabled('mrjzy') && typeof renderMrjzyStandaloneCourses === 'function') renderMrjzyStandaloneCourses();
   if (isPlatformEnabled('jlgj') && typeof renderJlgjStandaloneCourses === 'function') renderJlgjStandaloneCourses();
+  if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
   if (isPlatformEnabled('xuetangx') && window.platformLoadedOnce?.xuetangx) window.BjtuXuetangxPlatform?.render();
 }
 globalThis.renderEnabledExternalStandaloneCourses = renderEnabledExternalStandaloneCourses;
@@ -1391,7 +1392,6 @@ function refreshCourseHelperLayoutMode() {
   rematchExternalByVeCourses();
   rerenderAllHomeworkAreas();
   renderEnabledExternalStandaloneCourses();
-  if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
   scheduleCourseCardsByPlatform();
   setTimeout(() => {
     sortCourseCardsWithGuard();
@@ -4532,7 +4532,18 @@ function renderHomeworkList(courseId) {
       background: bgColor,
       border: borderColor,
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: homeworkTypeLabel, typeHref: homeworkPageUrl, title, color: titleColor, href: homeworkPageUrl, escape: escapeHtml }),
-      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: deadline || '无', done: isDone, overdue, showStatus: !isTeacherMode, showCountdown: !isTeacherMode, tailHtml: submitCountHtml, escape: escapeHtml }),
+      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({
+        deadline,
+        formatted: deadline,
+        startTime: hw.open_date ?? hw.openDate ?? '',
+        startFormatted: hw.open_date ?? hw.openDate ?? '',
+        done: isDone,
+        overdue,
+        showStatus: !isTeacherMode,
+        showCountdown: !isTeacherMode,
+        tailHtml: submitCountHtml,
+        escape: escapeHtml
+      }),
       actionsHtml: `${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}${actionButtonsHtml}`,
       detailHtml: `${attachmentHtml}${expandable ? `<div style="margin-top:3px;border-top:1px dashed ${borderColor}40;padding-top:0;">${expandable}</div>` : ''}${submitPanelHtml}`
     });

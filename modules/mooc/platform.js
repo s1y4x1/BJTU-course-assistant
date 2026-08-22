@@ -230,6 +230,7 @@ let moocLoginAssistPopupTabId = null;
 
   function buildTask(test, type, chapterName) {
     const deadline = Number(test?.deadline || 0);
+    const startTime = Number(test?.startTime ?? test?.start_time ?? test?.openTime ?? test?.open_time ?? test?.beginTime ?? 0) || 0;
     const done = test?.userScore !== null && test?.userScore !== undefined && String(test.userScore) !== '';
     const task = {
       id: String(test.id),
@@ -237,6 +238,7 @@ let moocLoginAssistPopupTabId = null;
       title: String(test.name || typeText(type)),
       chapterName: String(chapterName || ''),
       deadline,
+      startTime,
       userScore: done ? test.userScore : null,
       totalScore: test?.totalScore ?? null,
       done,
@@ -361,8 +363,8 @@ let moocLoginAssistPopupTabId = null;
       headStyle: '',
       mainClass: 'mooc-task-main',
       actionsClass: 'mooc-task-actions',
-      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: typeText(task.type), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape: env.escape, className: 'mooc-task-title' }),
-      metaHtml: `${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div class="mooc-task-meta">${env.escape(task.chapterName)}</div>` : ''}`,
+      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: typeText(task.type), typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape: env.escape, className: 'mooc-task-title' }),
+      metaHtml: `${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div class="mooc-task-meta">${env.escape(task.chapterName)}</div>` : ''}`,
       actionsHtml: `${score}<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
           <button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>
@@ -388,7 +390,10 @@ let moocLoginAssistPopupTabId = null;
     clearCards();
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 120000;
     courses.forEach((course, index) => {
-      const pending = course.tasks.filter((task) => !task.done && !task.overdue);
+      const pending = course.tasks.filter((task) => !task.done && !task.overdue)
+        .map((task, taskIndex) => ({ task, taskIndex }))
+        .sort((a, b) => (Number(a.task.deadline) > 0 ? Number(a.task.deadline) : Number.MAX_SAFE_INTEGER) - (Number(b.task.deadline) > 0 ? Number(b.task.deadline) : Number.MAX_SAFE_INTEGER) || a.taskIndex - b.taskIndex)
+        .map(({ task }) => task);
       const overdue = course.tasks.filter((task) => task.overdue);
       const done = course.tasks.filter((task) => task.done);
       const expanded = expandedGroups.get(course.id) || { overdue: false, done: false };

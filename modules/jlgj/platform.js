@@ -747,6 +747,7 @@ function renderJlgjHomeworkItems(items) {
     const actionText = globalThis.BjtuHomeworkUi.actionLabel('jlgj', done ? 'view' : 'submit');
     const deadline = it?.end || it?.deadline || '';
     const endText = isLoadingMeta ? '正在加载……' : formatJlgjDateTime(it.end);
+    const startTime = it?.start || it?.startTime || '';
     const endSuffix = isLoadingMeta
       ? ` <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : '';
@@ -755,7 +756,17 @@ function renderJlgjHomeworkItems(items) {
       background: palette.background,
       border: palette.border,
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ title: it.title || '接龙作业', color: palette.foreground, href: link, escape: escapeHtml }),
-      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: endText, done, overdue, loading: isLoadingMeta, suffixHtml: endSuffix, escape: escapeHtml }),
+      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({
+        deadline,
+        formatted: endText,
+        startTime,
+        startFormatted: isLoadingMeta ? '' : formatJlgjDateTime(startTime),
+        done,
+        overdue,
+        loading: isLoadingMeta,
+        suffixHtml: endSuffix,
+        escape: escapeHtml
+      }),
       actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: link, label: actionText, color: palette.action, escape: escapeHtml }),
       detailHtml: `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;font-size:12px;color:#374151;line-height:1.45;">${expandableContentHtml}</div>`
     });
@@ -1162,6 +1173,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
           threadId,
           title: String(t?.Subject || t?.GroupName || '接龙作业').trim(),
           end: homework?.EndTime || '',
+          start: homework?.StartTime || threadData?.CreateTime || t?.CreateTime || '',
           content,
           done,
           link: `https://i.jielong.com/h/${threadId}`,

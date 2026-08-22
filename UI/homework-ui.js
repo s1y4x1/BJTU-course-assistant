@@ -105,12 +105,43 @@
     return { background: '#fff3e0', border: '#ff9800', foreground: '#e65100', action: '#E65100' };
   }
 
-  function deadlineMetaHtml({ deadline, formatted, done = false, overdue = false, loading = false, showStatus = true, showCountdown = true, suffixHtml = '', tailHtml = '', escape = (value) => String(value ?? '') } = {}) {
+  function deadlineMetaHtml({
+    deadline,
+    formatted,
+    label = '截止',
+    startTime = '',
+    startFormatted = '',
+    done = false,
+    overdue = false,
+    loading = false,
+    showStatus = true,
+    showCountdown = true,
+    suffixHtml = '',
+    tailHtml = '',
+    escape = (value) => String(value ?? '')
+  } = {}) {
     const status = showStatus ? statusHtml({ done, overdue }) : '';
     const countdown = showCountdown && !done && !overdue && !loading && deadline
       ? `<span class="deadline-countdown" data-deadline="${escape(String(deadline))}"></span>`
       : '';
-    return `<div class="homework-deadline-meta">截止：<span class="homework-deadline-value">${escape(formatted || '无期限')}</span>${suffixHtml}${status ? ` ${status}` : ''}${countdown}${tailHtml}</div>`;
+    const isVisibleTime = (raw, text) => {
+      if (raw !== null && raw !== undefined && String(raw).trim() && Number(raw) !== 0) return true;
+      const normalized = String(text ?? '').trim();
+      return !!normalized && !['无', '无期限', '-'].includes(normalized);
+    };
+    const hasDeadline = loading || isVisibleTime(deadline, formatted);
+    const hasStart = isVisibleTime(startTime, startFormatted);
+    const deadlineHtml = hasDeadline
+      ? `<span class="homework-time-item homework-time-deadline">${escape(label)}：<span class="homework-deadline-value">${escape(formatted || deadline)}</span>${suffixHtml}${status ? ` ${status}` : ''}${countdown}${tailHtml}</span>`
+      : '';
+    const startHtml = hasStart
+      ? `<span class="homework-time-item homework-time-start">开始：<span class="homework-deadline-value">${escape(startFormatted || startTime)}</span></span>`
+      : '';
+    const fallbackHtml = !hasDeadline && (status || tailHtml)
+      ? `<span class="homework-time-item homework-time-status">${status}${tailHtml}</span>`
+      : '';
+    if (!deadlineHtml && !startHtml && !fallbackHtml) return '';
+    return `<div class="homework-deadline-meta${hasDeadline && hasStart ? ' homework-time-meta--both' : ''}">${deadlineHtml}${startHtml}${fallbackHtml}</div>`;
   }
 
   function scoreBadgeHtml({ userScore = null, totalScore = null, visible = true, escape = (value) => String(value ?? ''), className = '' } = {}) {

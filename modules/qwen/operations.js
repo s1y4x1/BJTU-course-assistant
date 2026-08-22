@@ -800,9 +800,12 @@ name: 've.teachers_of_',
             for (const h of homework) {
               const type = String(h?.activityType || '').trim() || 'all';
               if (typeFilter !== 'all' && type !== typeFilter) continue;
-              const deadline = parseDeadline(h?.end);
+              const isClassroomActivity = Number(h?.__actype ?? h?.actype) === 14;
+              const deadline = isClassroomActivity ? 0 : parseDeadline(h?.end);
               const done = yktIsHomeworkDone(h);
-              const overdue = !done && deadline > 0 && deadline < now;
+              const overdue = isClassroomActivity
+                ? (!done && h?.is_finished === true)
+                : (!done && deadline > 0 && deadline < now);
               const st = computeAssignmentStatus(done, overdue);
               if (status !== 'all' && st !== status) continue;
               items.push(buildAssignmentItem(

@@ -40,7 +40,8 @@ function cancelMrjzyActiveLoad() {
 }
 
 function formatMrjzyDateTime(dt) {
-  const d = dt instanceof Date ? dt : new Date(dt);
+  const numeric = typeof dt === 'number' || /^\d{10,13}$/.test(String(dt || '').trim()) ? Number(dt) : NaN;
+  const d = dt instanceof Date ? dt : new Date(Number.isFinite(numeric) ? (numeric < 1e12 ? numeric * 1000 : numeric) : dt);
   if (Number.isNaN(d.getTime())) return '';
   const pad = (x) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
@@ -317,7 +318,17 @@ function renderMrjzyHomeworkItems(items) {
       background: palette.background,
       border: palette.border,
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ title: it.title || '每日交作业', color: palette.foreground, href: it.link, escape: escapeHtml }),
-      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: endText, done, overdue, loading: isLoadingMeta, suffixHtml: endSuffix, escape: escapeHtml }),
+      metaHtml: globalThis.BjtuHomeworkUi.deadlineMetaHtml({
+        deadline,
+        formatted: endText,
+        startTime: it?.start || '',
+        startFormatted: isLoadingMeta ? '' : (formatMrjzyDateTime(it?.start) || String(it?.start || '')),
+        done,
+        overdue,
+        loading: isLoadingMeta,
+        suffixHtml: endSuffix,
+        escape: escapeHtml
+      }),
       actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })
     });
   }).join('');
@@ -725,6 +736,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
       workId: w.workId,
       title: pickMrjzyTitle(w),
       end: '正在加载……',
+      start: '',
       submit: Number(w.submit || 0),
       isSubmit: Number(w.isSubmit || 0),
       done: Number(w.submit || 0) > 0,
@@ -796,6 +808,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
       workId: w.workId,
       title: pickMrjzyTitle(w),
       end: pickMrjzyDeadline(w),
+      start: w?.workTime ?? '',
       submit: Number(w.submit || 0),
       isSubmit: Number(w.isSubmit || 0),
       done: Number(w.submit || 0) > 0,

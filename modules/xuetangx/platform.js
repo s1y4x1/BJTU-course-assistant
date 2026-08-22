@@ -806,8 +806,8 @@
       headClass: 'xuetangx-task-head',
       mainClass: 'xuetangx-task-main',
       actionsClass: 'xuetangx-task-actions',
-      titleHtml: global.BjtuHomeworkUi.titleHtml({ typeLabel: task.typeLabel, title: task.title, color: palette.foreground, href: taskUrl(course, task), escape, className: 'xuetangx-task-title' }),
-      metaHtml: `${global.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), done: task.done, overdue: task.overdue, escape })}${chapter ? `<div class="xuetangx-task-meta">${escape(chapter)}</div>` : ''}
+      titleHtml: global.BjtuHomeworkUi.titleHtml({ typeLabel: task.typeLabel, typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape, className: 'xuetangx-task-title' }),
+      metaHtml: `${global.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape })}${chapter ? `<div class="xuetangx-task-meta">${escape(chapter)}</div>` : ''}
         ${global.BjtuHomeworkUi.progressHtml({ ratio: task.schedule, escape, color: THEME_COLOR })}`,
       actionsHtml: `${score}${global.BjtuHomeworkUi.renderActionLink({
         href: taskUrl(course, task),
@@ -837,7 +837,10 @@
     clearCards();
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 140000;
     courses.forEach((course, index) => {
-      const pending = course.tasks.filter((task) => !task.done && !task.overdue);
+      const pending = course.tasks.filter((task) => !task.done && !task.overdue)
+        .map((task, taskIndex) => ({ task, taskIndex }))
+        .sort((a, b) => (Number(a.task.deadline) > 0 ? Number(a.task.deadline) : Number.MAX_SAFE_INTEGER) - (Number(b.task.deadline) > 0 ? Number(b.task.deadline) : Number.MAX_SAFE_INTEGER) || a.taskIndex - b.taskIndex)
+        .map(({ task }) => task);
       const overdue = course.tasks.filter((task) => task.overdue);
       const done = course.tasks.filter((task) => task.done);
       const expanded = expandedGroups.get(course.id) || { overdue: false, done: false };

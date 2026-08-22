@@ -25,6 +25,7 @@ let yktLoginAssistChecking = false;
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
 function isYktHomeworkDone(hw) {
+  if (Number(hw?.__actype ?? hw?.actype) === 14) return hw?.attend_status === true;
   if (Number(hw?.__actype) === 15) {
     if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
       return Number(hw.video_progress_ratio) >= 0.9995;
@@ -44,10 +45,16 @@ function isYktHomeworkDone(hw) {
 }
 
 function isYktHomeworkPending(hw) {
+  if (Number(hw?.__actype ?? hw?.actype) === 14) {
+    return hw?.attend_status !== true && hw?.is_finished !== true;
+  }
   return !isYktHomeworkDone(hw) && !isDeadlinePassed(hw?.end);
 }
 
 function isYktHomeworkOverdue(hw) {
+  if (Number(hw?.__actype ?? hw?.actype) === 14) {
+    return hw?.attend_status !== true && hw?.is_finished === true;
+  }
   return !isYktHomeworkDone(hw) && isDeadlinePassed(hw?.end);
 }
 
@@ -61,6 +68,7 @@ function formatYktDateTime(ts) {
 }
 
 function getYktActivityDeadline(a) {
+  if (Number(a?.__actype ?? a?.actype) === 14) return '';
   if (Number(a?.__actype) === 15) {
     const scoreDeadline = a?.content?.score_d;
     if (scoreDeadline !== null && scoreDeadline !== undefined && String(scoreDeadline).trim() !== '') return scoreDeadline;
@@ -82,6 +90,10 @@ function yktCourseLink(classroomId) {
 
 function yktHomeworkLink(classroomId, coursewareId, id) {
   return `${YKT_BASE}/v2/web/studentCards/${encodeURIComponent(String(classroomId || ''))}/${encodeURIComponent(String(coursewareId || ''))}/${encodeURIComponent(String(id || ''))}`;
+}
+
+function yktClassroomReportLink(classroomId, coursewareId, id) {
+  return `${YKT_BASE}/v2/web/student-lesson-report/${encodeURIComponent(String(classroomId || ''))}/${encodeURIComponent(String(coursewareId || ''))}/${encodeURIComponent(String(id || ''))}`;
 }
 
 function yktVideoStudentLink(classroomId, leafId) {
@@ -704,6 +716,7 @@ function renderYktHomeworkItems(courseId, items) {
     const expandKey = `ykt:${yktIdSeed}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
     const actype = Number(it?.__actype);
+    const isClassroomActivity = actype === 14;
     const activityTypeLabel = YKT_ACTIVITY_TYPE_LABELS[actype] || '';
     const isExam = actype === 5;
     const examDetail = isExam ? renderYktExamProblemsHtml(it?.exam_problems || []) : '';
@@ -732,8 +745,18 @@ function renderYktHomeworkItems(courseId, items) {
       done,
       background: palette.background,
       border: palette.border,
-      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: activityTypeLabel, title: it.title || '雨课堂作业', color: palette.foreground, href: it.link, escape: escapeHtml }),
-      metaHtml: `${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline, formatted: formatYktDateTime(it.end), done, overdue, loading: !!Number(it?.__loading), escape: escapeHtml })}${progressHtml}`,
+      titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: activityTypeLabel, typeHref: it.link, title: it.title || '雨课堂作业', color: palette.foreground, href: it.link, escape: escapeHtml }),
+      metaHtml: `${globalThis.BjtuHomeworkUi.deadlineMetaHtml({
+        deadline: isClassroomActivity ? '' : deadline,
+        formatted: isClassroomActivity ? '' : formatYktDateTime(it?.end),
+        startTime: it?.create_time ?? '',
+        startFormatted: formatYktDateTime(it?.create_time),
+        done,
+        overdue,
+        loading: !!Number(it?.__loading),
+        showCountdown: !isClassroomActivity,
+        escape: escapeHtml
+      })}${progressHtml}`,
       actionsHtml: `${titleScoreBadge ? `<div style="font-size:12px;line-height:1;">${titleScoreBadge}</div>` : ''}${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })}`,
       detailHtml: `${detailExpandable ? `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;">${detailExpandable}</div>` : ''}${detailStatusHtml}`
     });
@@ -782,6 +805,7 @@ function buildYktEntryHomeworks(entry, acts) {
   const homeworksRaw = (Array.isArray(acts) ? acts : []).map((a) => {
     const isExam = Number(a?.__actype) === 5;
     const isCard = Number(a?.__actype) === 15;
+    const isClassroomActivity = Number(a?.__actype) === 14;
     const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
     const coursewareId = a?.courseware_id;
     const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
@@ -797,11 +821,16 @@ function buildYktEntryHomeworks(entry, acts) {
       problem_count: a?.problem_count,
       score: a?.score,
       total_score: a?.total_score,
+      attend_status: a?.attend_status,
+      is_finished: a?.is_finished,
+      create_time: a?.create_time,
       link: isExam
         ? yktExamLink(a?.course_id || entry.classroomId, coursewareId)
-        : (isCard && String(leafId || '').trim()
+        : (isClassroomActivity
+            ? yktClassroomReportLink(entry.classroomId, coursewareId, a?.id)
+            : (isCard && String(leafId || '').trim()
             ? yktVideoStudentLink(entry.classroomId, leafId)
-            : yktHomeworkLink(entry.classroomId, coursewareId, a?.id)),
+            : yktHomeworkLink(entry.classroomId, coursewareId, a?.id))),
       courseware_id: coursewareId,
       leaf_id: leafId,
       video_total_done: undefined,
@@ -1266,6 +1295,8 @@ function stripYktLeafId(value, seen = new WeakSet()) {
 function yktHomeworkForPageApi(homework) {
   const source = homework && typeof homework === 'object' ? homework : {};
   const output = stripYktLeafId(source);
+  output.done = isYktHomeworkDone(source);
+  output.overdue = isYktHomeworkOverdue(source);
   if (Number(source?.__actype ?? source?.actype) === 15) {
     const rawRatio = source?.video_progress_ratio;
     let ratio = rawRatio === null || rawRatio === undefined ? NaN : Number(rawRatio);
@@ -1274,7 +1305,6 @@ function yktHomeworkForPageApi(homework) {
       ratio = totalDone === 1 ? 1 : 0;
     }
     output.progress = Math.max(0, Math.min(1, ratio));
-    output.done = isYktHomeworkDone(source);
     delete output.video_progress_ratio;
     delete output.video_total_done;
     delete output.video_progress_loading;
@@ -1315,6 +1345,7 @@ async function yktPageCourseHomework(classroomId) {
   const homework = acts.map((a) => {
     const isExam = Number(a?.__actype) === 5;
     const isCard = Number(a?.__actype) === 15;
+    const isClassroomActivity = Number(a?.__actype) === 14;
     const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
     const coursewareId = a?.courseware_id;
     const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
@@ -1333,11 +1364,16 @@ async function yktPageCourseHomework(classroomId) {
       problem_count: a?.problem_count,
       score: a?.score,
       total_score: a?.total_score,
+      attend_status: a?.attend_status,
+      is_finished: a?.is_finished,
+      create_time: a?.create_time,
       link: isExam
         ? yktExamLink(a?.course_id || cid, coursewareId)
-        : (isCard && String(leafId || '').trim()
+        : (isClassroomActivity
+            ? yktClassroomReportLink(cid, coursewareId, a?.id)
+            : (isCard && String(leafId || '').trim()
             ? yktVideoStudentLink(cid, leafId)
-            : yktHomeworkLink(cid, coursewareId, a?.id)),
+            : yktHomeworkLink(cid, coursewareId, a?.id))),
       courseware_id: coursewareId,
       leaf_id: leafId,
       classroom_id: cid,
