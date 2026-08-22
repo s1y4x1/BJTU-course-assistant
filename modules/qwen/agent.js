@@ -68,6 +68,7 @@
       '',
       '# 如何执行代码与调用操作',
       '需要计算或调用扩展能力时，一条回复只能输出一个代码块。代码块语言决定执行环境：',
+      '调用本扩展执行操作时，禁止使用通义千问内置的 `code_interpreter`。只能在普通回复消息的末尾输出下述多行代码块，由扩展负责执行。',
       '',
       '## sandbox',
       '- `sandbox` 在隔离沙箱中执行，不访问 app 页面、扩展后台、DOM 或 chrome API，也不需要询问用户。',
@@ -254,6 +255,10 @@
             } else if (event?.text) {
               fullText += event.text;
               onDelta?.(event.text);
+            } else if (event?.functionCall) {
+              onEvent?.({ functionCall: event.functionCall, iteration });
+            } else if (event?.functionResult) {
+              onEvent?.({ functionResult: event.functionResult, iteration });
             } else if (event?.finished) {
               onEvent?.({ finished: true, iteration });
             } else if (event?.meta) {

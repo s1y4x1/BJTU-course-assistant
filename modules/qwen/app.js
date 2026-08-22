@@ -854,6 +854,54 @@
     return card;
   }
 
+  function appendFunctionCallCard(call) {
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement)) return null;
+    const card = document.createElement('div');
+    card.className = 'qwen-chat-op qwen-chat-function-call';
+    card.dataset.functionId = String(call?.id || '');
+    const name = document.createElement('div');
+    name.className = 'qwen-chat-op-name';
+    const nameText = document.createElement('span');
+    nameText.textContent = String(call?.name || 'function_call');
+    name.appendChild(nameText);
+    const content = document.createElement('div');
+    content.className = 'qwen-chat-op-result qwen-chat-function-body';
+    const argumentsEl = document.createElement('div');
+    argumentsEl.className = 'qwen-chat-function-arguments';
+    argumentsEl.textContent = String(call?.arguments || '');
+    content.appendChild(argumentsEl);
+    card.append(name, content);
+    messages.appendChild(card);
+    maybeAutoScrollMessages(messages);
+    return card;
+  }
+
+  function updateFunctionCallCard(card, call) {
+    if (!(card instanceof HTMLElement)) return;
+    const nameText = card.querySelector(':scope > .qwen-chat-op-name > span:first-child');
+    if (nameText instanceof HTMLElement && call?.name) nameText.textContent = String(call.name);
+    const argumentsEl = card.querySelector(':scope > .qwen-chat-function-body > .qwen-chat-function-arguments');
+    if (argumentsEl instanceof HTMLElement) argumentsEl.textContent = String(call?.arguments || '');
+    maybeAutoScrollMessages(el(MESSAGES_ID));
+  }
+
+  function finishFunctionCallCard(card, functionResult) {
+    if (!(card instanceof HTMLElement)) return;
+    const body = card.querySelector(':scope > .qwen-chat-function-body');
+    if (!(body instanceof HTMLElement)) return;
+    body.querySelector(':scope > .qwen-chat-function-divider')?.remove();
+    body.querySelector(':scope > .qwen-chat-function-result')?.remove();
+    const divider = document.createElement('hr');
+    divider.className = 'qwen-chat-function-divider';
+    const result = document.createElement('div');
+    result.className = 'qwen-chat-function-result';
+    result.textContent = String(functionResult?.result || '');
+    body.append(divider, result);
+    completeOperationCard(card);
+    maybeAutoScrollMessages(el(MESSAGES_ID));
+  }
+
   function formatResult(value, depth = 0) {
     if (value === null || value === undefined) return 'null';
     const type = typeof value;
@@ -1089,6 +1137,7 @@
     placeCursor(activeBubble, false);
     scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
     const lastOperationCard = { card: null };
+    const functionCallCards = new Map();
     let retryPrompt = null;
 
     const connectPort = () => {
@@ -1121,6 +1170,36 @@
             const messages = el(MESSAGES_ID);
             maybeAutoScrollMessages(messages);
           }
+        } else if (message?.type === 'functionCall') {
+          setStatus('操作中…');
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
+          removeCursor(activeBubble);
+          if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble) && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+            removeMessageBubble(activeBubble);
+            activeBubble = null;
+          }
+          const call = message.functionCall || {};
+          const key = String(call.id || call.name || 'function_call');
+          let card = functionCallCards.get(key);
+          if (!(card instanceof HTMLElement) || !card.isConnected) {
+            card = appendFunctionCallCard(call);
+            if (card instanceof HTMLElement) functionCallCards.set(key, card);
+          } else {
+            updateFunctionCallCard(card, call);
+          }
+        } else if (message?.type === 'functionResult') {
+          setStatus('操作中…');
+          const result = message.functionResult || {};
+          const key = String(result.id || result.name || 'function_call');
+          let card = functionCallCards.get(key);
+          if (!(card instanceof HTMLElement) || !card.isConnected) {
+            card = appendFunctionCallCard({ id: result.id, name: result.name, arguments: '' });
+            if (card instanceof HTMLElement) functionCallCards.set(key, card);
+          }
+          finishFunctionCallCard(card, result);
         } else if (message?.type === 'operation') {
           setStatus('操作中…');
           if (inThinking) {

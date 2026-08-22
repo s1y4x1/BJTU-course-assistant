@@ -420,6 +420,8 @@
                 if (event?.operation) port.postMessage({ type: 'operation', operation: event.operation });
                 if (event?.operationResult) port.postMessage({ type: 'operationResult', result: event.operationResult });
                 if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
+                if (event?.functionCall) port.postMessage({ type: 'functionCall', functionCall: event.functionCall });
+                if (event?.functionResult) port.postMessage({ type: 'functionResult', functionResult: event.functionResult });
                 if (event?.firstMessage) port.postMessage({ type: 'firstMessage' });
               }
             });

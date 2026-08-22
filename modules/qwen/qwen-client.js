@@ -730,14 +730,37 @@
       const content = String(delta.content || '');
       const status = String(delta.status || '');
       const phase = String(delta.phase || '');
-      if (status === 'finished') {
+      const functionCall = delta.function_call;
+      if (functionCall && typeof functionCall === 'object') {
+        const rawFunctionId = String(delta.function_id || functionCall.function_id || functionCall.id || '');
+        onEvent?.({
+          functionCall: {
+            id: rawFunctionId.match(/call_[\w-]+$/)?.[0] || rawFunctionId,
+            name: String(functionCall.name || delta.name || ''),
+            arguments: String(functionCall.arguments || '')
+          },
+          responseId
+        });
+      }
+      if (delta.extra && Object.prototype.hasOwnProperty.call(delta.extra, 'tool_result')) {
+        const rawFunctionId = String(delta.extra.function_id || delta.function_id || '');
+        onEvent?.({
+          functionResult: {
+            id: rawFunctionId.match(/call_[\w-]+$/)?.[0] || rawFunctionId,
+            name: String(delta.name || delta.function_call?.name || ''),
+            result: String(delta.extra.tool_result ?? '')
+          },
+          responseId
+        });
+      }
+      if (phase === 'answer' && status === 'finished') {
         onEvent?.({ finished: true, responseId });
         return;
       }
       if (content) {
         if (phase === 'think') {
           onEvent?.({ thinking: content, responseId });
-        } else {
+        } else if (phase === 'answer') {
           fullText += content;
           onEvent?.({ text: content, responseId });
         }
@@ -772,7 +795,7 @@
     const wrappedOptions = {
       ...options,
       onEvent: (event) => {
-        if (event?.text) receivedAny = true;
+        if (event?.text || event?.thinking || event?.functionCall || event?.functionResult) receivedAny = true;
         options.onEvent?.(event);
       }
     };
