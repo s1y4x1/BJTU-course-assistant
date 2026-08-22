@@ -790,8 +790,12 @@
       } else {
         host = last;
       }
-      const code = host.querySelector(':scope > code, :scope > .qwen-md-inline-code');
-      if (code instanceof HTMLElement) host = code;
+      // 围栏代码块的光标应留在 <code> 内；行内代码后的光标必须成为
+      // 段落的下一个节点，否则看起来会停在 `code` 的底色内部。
+      if (host.matches('pre')) {
+        const code = host.querySelector(':scope > code');
+        if (code instanceof HTMLElement) host = code;
+      }
     }
     return host;
   }
@@ -1053,7 +1057,7 @@
       if (operationsAlways instanceof HTMLButtonElement) {
         operationsAlways.hidden = pendingAskMode !== 'operation-permission' || operationNames.length === 0;
         operationsAlways.textContent = operationNames.length
-          ? `在所有会话中始终允许 \`${operationNames.join(' ')}\``
+          ? `在所有会话中始终允许 ${operationNames.map((name) => `\`${name}\``).join(' ')}`
           : '在所有会话中始终允许操作';
       }
       if (stop instanceof HTMLButtonElement) stop.textContent = pendingAskMode === 'operation-permission' ? '拒绝' : '结束本次';

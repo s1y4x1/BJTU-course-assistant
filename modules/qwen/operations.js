@@ -688,18 +688,28 @@ name: 've.teachers_of_',
       doc: [
         '## ve.replay_of_ —— 课程回放列表',
         '',
-        '获取指定课程的回放/直播日程列表。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
+        '获取指定课程的回放列表及实际视频地址。每项按视角返回 student（学生）、teacher（老师）、courseware（课件）链接。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
         '',
-        '**参数**：{"courseId":"课程ID，必填","forceReload":false,"可选，是否强制重新拉取"}',
+        '**参数**：{"courseId":"课程ID，必填","views":["student","teacher","courseware"],"forceReload":false}。views 可省略，默认获取全部三种视角；也可传入其中一项或多项，并兼容中文“学生”“老师”“课件”。',
         '',
-        '**调用示例**：`ve.replay_of_({courseId: "xxx"})`',
+        '**调用示例**：`ve.replay_of_({courseId: "xxx"})`；只查看学生和课件视角：`ve.replay_of_({courseId: "xxx", views: ["student", "courseware"]})`',
         '',
-        '**返回示例**：[{"rpId":"...","videoId":"...","rpName":"回放名","teacherName":"老师","content":"内容"}]'
+        '**返回示例**：[{"name":"回放名","teacherName":"老师","startTime":"...","endTime":"...","links":{"student":"https://...","teacher":"https://...","courseware":"https://..."}}]。不再返回内部 videoId。'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
-        return pageInvoke('ve', 'replaySchedule', { courseId, forceReload: args?.forceReload === true }, 120000);
+        const { course } = await findVeCourseById(courseId);
+        const courseNum = String(course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || courseId).trim();
+        const fzId = String(course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '').trim();
+        if (!courseNum || !fzId) throw new Error(`课程ID无效：${courseId} 缺少回放所需参数（课程号/课序号）`);
+        return pageInvoke('ve', 'replayItemsWithLinks', {
+          courseId,
+          courseNum,
+          xkhId: fzId,
+          views: args?.views ?? args?.type,
+          forceReload: args?.forceReload === true
+        });
       }
     },
     {

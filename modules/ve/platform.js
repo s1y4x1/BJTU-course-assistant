@@ -405,6 +405,107 @@ async function fetchVeReplaySchedule(courseId, { forceReload = false } = {}) {
   return task;
 }
 
+const VE_REPLAY_VIEWS = Object.freeze(['student', 'teacher', 'courseware']);
+
+function normalizeVeReplayViews(value) {
+  const aliases = {
+    student: 'student', '学生': 'student', '学生视角': 'student',
+    teacher: 'teacher', '老师': 'teacher', '教师': 'teacher', '老师视角': 'teacher', '教师视角': 'teacher',
+    courseware: 'courseware', '课件': 'courseware', '课件视角': 'courseware'
+  };
+  const source = value == null || value === '' ? VE_REPLAY_VIEWS : (Array.isArray(value) ? value : [value]);
+  const views = [...new Set(source.map((item) => aliases[String(item || '').trim().toLowerCase()]).filter(Boolean))];
+  if (!views.length) throw new Error('views 至少应包含 student、teacher、courseware（或学生、老师、课件）中的一项');
+  return VE_REPLAY_VIEWS.filter((view) => views.includes(view));
+}
+
+function absoluteVeReplayUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw || /^javascript:/i.test(raw)) return '';
+  try { return new URL(raw, BASE_VE).href; } catch { return raw; }
+}
+
+function replayViewFromLabel(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (/学生|student/.test(text)) return 'student';
+  if (/老师|教师|teacher/.test(text)) return 'teacher';
+  if (/课件|courseware|slides?|ppt/.test(text)) return 'courseware';
+  return '';
+}
+
+function parseVeReplayViewLinks(data, requestedViews) {
+  const links = Object.fromEntries(requestedViews.map((view) => [view, '']));
+  const html = String(data?.html || '').trim();
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('a').forEach((anchor, index) => {
+      const url = absoluteVeReplayUrl(anchor.getAttribute('href'));
+      if (!url) return;
+      const labeledView = replayViewFromLabel([
+        anchor.textContent,
+        anchor.getAttribute('title'),
+        anchor.getAttribute('class'),
+        anchor.getAttribute('data-type'),
+        anchor.getAttribute('data-view')
+      ].filter(Boolean).join(' '));
+      const view = labeledView || VE_REPLAY_VIEWS[index] || '';
+      if (view && requestedViews.includes(view) && !links[view]) links[view] = url;
+    });
+  }
+
+  const directCandidates = {
+    student: ['studentUrl', 'stuUrl', 'student_url'],
+    teacher: ['teacherUrl', 'teaUrl', 'teacher_url'],
+    courseware: ['coursewareUrl', 'courseUrl', 'pptUrl', 'courseware_url']
+  };
+  for (const view of requestedViews) {
+    if (links[view]) continue;
+    for (const key of directCandidates[view]) {
+      const url = absoluteVeReplayUrl(data?.[key]);
+      if (url) {
+        links[view] = url;
+        break;
+      }
+    }
+  }
+  return links;
+}
+
+async function fetchVeReplayItemsWithLinks(courseId, courseNum, fzId, views, { forceReload = false } = {}) {
+  const requestedViews = normalizeVeReplayViews(views);
+  const schedule = await fetchVeReplaySchedule(courseId, { forceReload });
+  return Promise.all(schedule.filter((item) => String(item?.rpId || item?.videoId || '').trim()).map(async (item) => {
+    const rpId = String(item?.rpId || item?.videoId || '').trim();
+    const postBody = new URLSearchParams({ method: 'rpinfoDownloadUrl', rpId });
+    const referer = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10480&courseId=${encodeURIComponent(courseNum)}&dataSource=1&cId=122618&xkhId=${encodeURIComponent(fzId)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&teacherId=${encodeURIComponent(String(item?.teacherId || ''))}`;
+    const { text, res } = await fetchText(`${BASE_VE}back/resourceSpace.shtml`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: referer,
+        Accept: 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: postBody.toString(),
+      signal: window.globalVeAbortController?.signal
+    });
+    if (isLikelyLoginPageHtml(text, res?.url)) throw new Error('LOGIN_REQUIRED');
+    const data = parseVeJson(text);
+    if (data?.flag === false || (String(data?.STATUS) === '1' && /不合法|登录/.test(String(data?.ERRMSG || data?.message || '')))) {
+      throw new Error('LOGIN_REQUIRED');
+    }
+    return {
+      name: String(item?.rpName || '').trim(),
+      roomName: String(item?.roomName || '').trim(),
+      teacherName: String(item?.teacherName || '').trim(),
+      content: String(item?.content || '').trim(),
+      startTime: String(item?.classBeginTime || '').trim(),
+      endTime: String(item?.classEndTime || '').trim(),
+      links: parseVeReplayViewLinks(data, requestedViews)
+    };
+  }));
+}
+
 function formatVeClassNumber(n) {
   return String(Math.max(1, Math.min(99, Number(n) || 1))).padStart(2, '0');
 }
@@ -2744,6 +2845,13 @@ globalThis.BjtuVePageApi = Object.freeze({
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),
+  replayItemsWithLinks: (args) => fetchVeReplayItemsWithLinks(
+    String(args?.courseId || '').trim(),
+    String(args?.courseNum || '').trim(),
+    String(args?.xkhId || '').trim(),
+    args?.views ?? args?.type,
+    { forceReload: args?.forceReload === true }
+  ),
   archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
   uploadedFiles: (args) => vePageUploadedFiles(args),
   uploadFile: (args) => {
