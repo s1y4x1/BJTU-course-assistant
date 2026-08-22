@@ -419,6 +419,18 @@ html[data-color-scheme="dark"] .qwen-chat-op {
   font-weight: 600;
 }
 
+.qwen-chat-op-actions {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.qwen-chat-op-size {
+  line-height: 1.4;
+}
+
 .qwen-chat-copy-btn {
   flex: 0 0 auto;
   margin: 0;
@@ -453,6 +465,25 @@ html[data-color-scheme="dark"] .qwen-chat-copy-btn {
   word-break: break-word;
   max-height: 48px;
   overflow-y: auto;
+}
+
+.qwen-chat-op-result-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  min-height: 16px;
+  overflow: hidden;
+}
+
+.qwen-chat-op-result-loading .spinner {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  min-height: 10px;
+  border-width: 1px;
+  border-color: rgba(97, 92, 237, 0.35);
+  border-top-color: #615ced;
 }
 
 .qwen-chat-login-hint {

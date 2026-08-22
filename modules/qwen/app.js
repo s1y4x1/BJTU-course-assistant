@@ -173,12 +173,39 @@
     return button;
   }
 
-  function enhanceOperationCopyButtons(container) {
+  function createOperationResultSize(text) {
+    const bytes = new TextEncoder().encode(String(text || '')).byteLength;
+    const size = document.createElement('span');
+    size.className = 'qwen-chat-op-size file-size-emphasis';
+    size.dataset.fileSizeBytes = String(bytes);
+    size.textContent = global.formatSize(bytes);
+    global.applyEmphasisStyle(size, global.buildFileSizeEmphasisStyle(bytes));
+    return size;
+  }
+
+  function completeOperationCard(card) {
+    if (!(card instanceof HTMLElement)) return;
+    const name = card.querySelector(':scope > .qwen-chat-op-name');
+    const result = card.querySelector(':scope > .qwen-chat-op-result');
+    if (!(name instanceof HTMLElement) || !(result instanceof HTMLElement)) return;
+    result.classList.remove('qwen-chat-op-result-loading');
+    let actions = name.querySelector(':scope > .qwen-chat-op-actions');
+    if (!(actions instanceof HTMLElement)) {
+      actions = document.createElement('span');
+      actions.className = 'qwen-chat-op-actions';
+      name.appendChild(actions);
+    }
+    actions.replaceChildren(
+      createOperationResultSize(result.textContent || ''),
+      createCopyButton(() => result.textContent || '')
+    );
+  }
+
+  function enhanceOperationResultControls(container) {
     if (!(container instanceof HTMLElement)) return;
     container.querySelectorAll('.qwen-chat-op').forEach((card) => {
-      const name = card.querySelector(':scope > .qwen-chat-op-name');
-      if (!(name instanceof HTMLElement) || name.querySelector('.qwen-chat-copy-btn')) return;
-      name.appendChild(createCopyButton(() => card.querySelector(':scope > .qwen-chat-op-result')?.textContent || ''));
+      if (card.querySelector(':scope > .qwen-chat-op-result-loading')) return;
+      completeOperationCard(card);
     });
   }
 
@@ -225,8 +252,9 @@
     const content = document.createElement('div');
     content.className = 'qwen-chat-op-result';
     content.textContent = extractResJson(text);
-    name.append(nameText, createCopyButton(() => content.textContent || ''));
+    name.appendChild(nameText);
     card.append(name, content);
+    completeOperationCard(card);
     messages.appendChild(card);
     maybeAutoScrollMessages(messages);
   }
@@ -686,7 +714,7 @@
       const container = mdContainer(bubble);
       container._mdText = str;
       container.innerHTML = renderQwenMarkdown(str);
-      enhanceOperationCopyButtons(container);
+      enhanceOperationResultControls(container);
     }
     messages.appendChild(anchor);
     maybeAutoScrollMessages(messages);
@@ -811,8 +839,16 @@
     name.className = 'qwen-chat-op-name';
     const nameText = document.createElement('span');
     nameText.textContent = '操作结果';
-    name.append(nameText, createCopyButton(() => card.querySelector(':scope > .qwen-chat-op-result')?.textContent || ''));
-    card.append(name);
+    name.appendChild(nameText);
+    const content = document.createElement('div');
+    content.className = 'qwen-chat-op-result qwen-chat-op-result-loading';
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    const loadingText = document.createElement('span');
+    loadingText.textContent = '执行中…';
+    content.append(spinner, loadingText);
+    card.append(name, content);
     messages.appendChild(card);
     maybeAutoScrollMessages(messages);
     return card;
@@ -864,6 +900,7 @@
     content.className = 'qwen-chat-op-result';
     content.textContent = formatOutcomeText(result);
     card.appendChild(content);
+    completeOperationCard(card);
     const messages = el(MESSAGES_ID);
     maybeAutoScrollMessages(messages);
   }
@@ -932,7 +969,7 @@
     const container = mdContainer(bubble);
     container._mdText = String(container._mdText || '') + String(text);
     container.innerHTML = renderQwenMarkdown(container._mdText);
-    enhanceOperationCopyButtons(container);
+    enhanceOperationResultControls(container);
   }
 
   function ensureThinkingBlock(bubble) {
