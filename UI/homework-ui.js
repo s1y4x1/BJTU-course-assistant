@@ -76,7 +76,7 @@
   }
 
   function statusHtml({ done = false, overdue = false } = {}) {
-    if (done) return '<span class="homework-status-done">(已提交)</span>';
+    if (done) return '';
     if (overdue) return '<span class="homework-status-overdue">(已逾期)</span>';
     return '';
   }
@@ -132,16 +132,19 @@
     const hasDeadline = loading || isVisibleTime(deadline, formatted);
     const hasStart = isVisibleTime(startTime, startFormatted);
     const deadlineHtml = hasDeadline
-      ? `<span class="homework-time-item homework-time-deadline">${escape(label)}：<span class="homework-deadline-value">${escape(formatted || deadline)}</span>${suffixHtml}${status ? ` ${status}` : ''}${countdown}${tailHtml}</span>`
+      ? `<span class="homework-time-item homework-time-deadline">${escape(label)}：<span class="homework-deadline-value">${escape(formatted || deadline)}</span>${suffixHtml}${countdown}</span>`
       : '';
     const startHtml = hasStart
       ? `<span class="homework-time-item homework-time-start">开始：<span class="homework-deadline-value">${escape(startFormatted || startTime)}</span></span>`
       : '';
-    const fallbackHtml = !hasDeadline && (status || tailHtml)
-      ? `<span class="homework-time-item homework-time-status">${status}${tailHtml}</span>`
+    const timeHtml = deadlineHtml || startHtml
+      ? `<span class="homework-time-group">${deadlineHtml}${startHtml}</span>`
       : '';
-    if (!deadlineHtml && !startHtml && !fallbackHtml) return '';
-    return `<div class="homework-deadline-meta${hasDeadline && hasStart ? ' homework-time-meta--both' : ''}">${deadlineHtml}${startHtml}${fallbackHtml}</div>`;
+    const otherHtml = status || tailHtml
+      ? `<span class="homework-meta-tail">${status}${tailHtml}</span>`
+      : '';
+    if (!timeHtml && !otherHtml) return '';
+    return `<div class="homework-deadline-meta">${timeHtml}${otherHtml}</div>`;
   }
 
   function scoreBadgeHtml({ userScore = null, totalScore = null, visible = true, escape = (value) => String(value ?? ''), className = '' } = {}) {

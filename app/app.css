@@ -1328,11 +1328,6 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     color: #dc2626;
     font-weight: 600;
 }
-.homework-status-done {
-    color: #16a34a;
-    font-weight: 600;
-}
-
 .deadline-countdown {
     display: inline-flex;
     align-items: center;
@@ -1343,10 +1338,11 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
 .deadline-countdown-label {
     font-weight: normal;
 }
-.homework-deadline-meta { display:flex; align-items:baseline; gap:8px; margin-top:2px; font-size:12px; line-height:1.4; color:#666; }
+.homework-deadline-meta { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-top:2px; font-size:12px; line-height:1.4; color:#666; }
+.homework-time-group { display:flex; align-items:baseline; justify-content:flex-start; gap:12px; min-width:0; text-align:left; }
 .homework-time-item { min-width:0; }
-.homework-time-meta--both { justify-content:space-between; }
-.homework-time-meta--both .homework-time-start { margin-left:auto; text-align:right; }
+.homework-time-start { text-align:left; }
+.homework-meta-tail { flex:0 0 auto; margin-left:auto; text-align:right; }
 .homework-deadline-value { font-size:12px; font-weight:700; line-height:inherit; color:#000; }
 .homework-score-badge { color:#e91e63; font-size:12px; font-weight:700; line-height:1; white-space:nowrap; }
 .homework-card-title { font-weight:700; overflow-wrap:anywhere; }
