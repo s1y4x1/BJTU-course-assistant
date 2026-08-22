@@ -408,7 +408,7 @@ let moocLoginAssistPopupTabId = null;
         rank: pending.length ? 0 : (overdue.length ? 2 : (done.length ? 4 : 7)),
         titleHtml: `<a href="${env.escape(course.url)}" target="_blank" rel="noopener noreferrer">${env.escape(course.name)}</a>`,
         metaHtml: `<div class="mooc-course-meta">${renderTeachers(course)}</div>`,
-        actionsHtml: `<button class="btn mooc-complete-all-btn" data-mooc-action="course" data-course-id="${env.escape(course.id)}">通过GinsMooc一键扫描并完成全部</button>`,
+        actionsHtml: `<button class="btn mooc-complete-all-btn" data-mooc-action="course" data-course-id="${env.escape(course.id)}">通过GinsMooc完成全部</button>`,
         contentHtml: `${typeLoadingHtml}${course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : ''}`,
         headerClass: 'mooc-course-head',
         identityClass: 'mooc-course-identity',

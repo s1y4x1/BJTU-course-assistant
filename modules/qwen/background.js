@@ -102,9 +102,9 @@
     });
   }
 
-  async function broadcastTokenCaptured() {
+  async function broadcastTokenCaptured(reason = 'login') {
     try {
-      await chrome.runtime.sendMessage({ type: 'QWEN_TOKEN_CAPTURED_BROADCAST' });
+      await chrome.runtime.sendMessage({ type: 'QWEN_TOKEN_CAPTURED_BROADCAST', reason: String(reason || 'login') });
     } catch {
       // app 页面可能尚未打开
     }
@@ -126,8 +126,10 @@
     qwenLoginCompletionPromise = (async () => {
       const tokenState = await chrome.storage.session.get('qwenToken').catch(() => ({}));
       const tokenChanged = String(tokenState?.qwenToken || '') !== value;
+      const wafState = await chrome.storage.session.get(WAF_TAB_STATE_KEY).catch(() => ({}));
+      const tokenCaptureReason = wafState?.[WAF_TAB_STATE_KEY] ? 'waf' : 'login';
       await global.BjtuQwenClient?.captureToken?.(value);
-      if (tokenChanged) await broadcastTokenCaptured();
+      if (tokenChanged) await broadcastTokenCaptured(tokenCaptureReason);
       const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
       const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
       if (!Number.isInteger(loginTabId)) return;
@@ -543,7 +545,7 @@
                 type: 'basic',
                 iconUrl: 'icons/128.png',
                 title: '通义千问触发风控校验',
-                message: '请在页面上完成验证。扩展会先自动刷新一次；验证完成后将自动刷新页面并返回对话中，可以手动重试。',
+                message: '请在页面上完成验证。扩展会先自动刷新一次；验证完成后将自动返回对话并重试原请求。',
                 priority: 2,
                 requireInteraction: true
               }, 'qwen-waf-verification', true).catch(() => {});

@@ -277,7 +277,7 @@ html[data-color-scheme="dark"] .qwen-chat-history-loading {
 .qwen-chat-msg-row.user {
   align-self: flex-end;
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 8px;
   max-width: 85%;
 }
@@ -305,7 +305,7 @@ html[data-color-scheme="dark"] .qwen-chat-history-loading {
   padding: 2px 6px;
   border-radius: 6px;
   line-height: 1.4;
-  align-self: center;
+  align-self: flex-end;
   white-space: nowrap;
 }
 

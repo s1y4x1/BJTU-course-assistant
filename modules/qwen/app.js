@@ -36,6 +36,7 @@
   let historyLoadPromise = null;
   let historyReloadAfterLogin = false;
   let pendingWafRetryAction = null;
+  let wafRecoveryActive = false;
   let chatStateLoadPromise = null;
   let panelActivationPromise = null;
   let panelActivated = false;
@@ -765,6 +766,26 @@
     else bubble.remove();
   }
 
+  function messageDisplayNode(bubble) {
+    if (!(bubble instanceof HTMLElement)) return null;
+    return bubble.closest('.qwen-chat-msg-row') || bubble;
+  }
+
+  function placeMessageAfter(bubble, anchor) {
+    const node = messageDisplayNode(bubble);
+    if (!(node instanceof HTMLElement) || !(anchor instanceof HTMLElement)
+      || !anchor.isConnected || node === anchor) return node;
+    anchor.after(node);
+    return node;
+  }
+
+  function latestRetryDisplayAnchor() {
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement)) return null;
+    const candidates = messages.querySelectorAll('.qwen-chat-msg-row.user, .qwen-chat-op, .qwen-chat-msg-row.assistant');
+    return candidates.length ? candidates[candidates.length - 1] : null;
+  }
+
   function cursorHost(bubble) {
     if (!(bubble instanceof HTMLElement)) return bubble;
     const md = bubble.querySelector(':scope > .qwen-chat-md');
@@ -1056,10 +1077,14 @@
     const requestParentId = editParent || sessionParentId;
     const wasOpeningStream = openingStarted;
     lastSendText = text;
+    let retryVisibleAnchor = null;
     if (showUserBubble) {
-      appendMessage('user', text, editParent || sessionParentId);
+      const userBubble = appendMessage('user', text, editParent || sessionParentId);
+      retryVisibleAnchor = messageDisplayNode(userBubble);
       const input = el(INPUT_ID);
       if (input instanceof HTMLTextAreaElement) input.value = '';
+    } else {
+      retryVisibleAnchor = latestRetryDisplayAnchor();
     }
     hideAsk();
     setBusy(true);
@@ -1114,6 +1139,7 @@
         } else if (message?.type === 'operationResult') {
           setStatus('思考中…');
           updateOperationResult(lastOperationCard.card, message.result);
+          if (lastOperationCard.card instanceof HTMLElement) retryVisibleAnchor = lastOperationCard.card;
           nextReplyFresh = false;
           if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
           activeBubble = null;
@@ -1133,6 +1159,7 @@
           maybeAutoScrollMessages(messages);
         } else if (message?.type === 'done') {
           pendingWafRetryAction = null;
+          wafRecoveryActive = false;
           sessionChatId = String(message.chatId || sessionChatId);
           sessionParentId = String(message.responseId || sessionParentId);
           if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
@@ -1163,6 +1190,7 @@
           if (port === chatPort) port = null;
         } else if (message?.type === 'stopped') {
           pendingWafRetryAction = null;
+          wafRecoveryActive = false;
           hideAsk();
           const stoppedChatId = String(message?.chatId || '');
           if (stoppedChatId) {
@@ -1224,16 +1252,24 @@
               lastOperationCard.card = appendOperationCard();
             }
             updateOperationResult(lastOperationCard.card, message.operationResult);
+            if (lastOperationCard.card instanceof HTMLElement) retryVisibleAnchor = lastOperationCard.card;
           }
           const retriedBubble = activeBubble instanceof HTMLElement ? activeBubble : null;
           removeCursor(retriedBubble);
-          if (retriedBubble instanceof HTMLElement && !mdRawText(retriedBubble)
-            && !retriedBubble.querySelector(':scope > .qwen-chat-thinking')) {
+          const retriedBubbleHasContent = retriedBubble instanceof HTMLElement
+            && (!!mdRawText(retriedBubble) || !!retriedBubble.querySelector(':scope > .qwen-chat-thinking'));
+          if (retriedBubbleHasContent) {
+            retryVisibleAnchor = messageDisplayNode(retriedBubble) || retryVisibleAnchor;
+          } else if (retriedBubble instanceof HTMLElement) {
             removeMessageBubble(retriedBubble);
           }
           activeBubble = null;
           const bubble = appendMessage('error', message.message || '请求失败');
-          if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
+          placeMessageAfter(bubble, retryVisibleAnchor);
+          const isWafError = message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE';
+          if (isWafError) {
+            wafRecoveryActive = true;
+            historyReloadAfterLogin = false;
             setStatus('风控校验', 'error');
             void send('QWEN_OPEN_LOGIN');
           }
@@ -1260,7 +1296,7 @@
           });
           bubble.appendChild(btn);
           retryPrompt = { id: retryId, bubble, button: btn, retriedBubble };
-          if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
+          if (isWafError) {
             pendingWafRetryAction = () => {
               if (retryPrompt?.id !== retryId || btn.disabled || !btn.isConnected) return false;
               btn.click();
@@ -1288,7 +1324,6 @@
           retryPrompt.button.textContent = '重试';
           retryPrompt.button.title = '重试连接已失效，请重新发送消息';
         } else if (message?.type === 'error') {
-          pendingWafRetryAction = null;
           hideAsk();
           if (message?.parentId) sessionParentId = String(message.parentId);
           if (inThinking) {
@@ -1304,20 +1339,45 @@
           }
           if (openingStarted) openingStarted = false;
           if (message.code === 'NOT_LOGGED_IN') {
+            pendingWafRetryAction = null;
+            wafRecoveryActive = false;
             setStatus('未登录', 'error');
             showLoginHint(true);
             removeMessageBubble(activeBubble);
             activeBubble = null;
           } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
+            wafRecoveryActive = true;
+            historyReloadAfterLogin = false;
+            let visibleAnchor = retryVisibleAnchor;
             if (activeBubble instanceof HTMLElement) {
               removeCursor(activeBubble);
-              removeMessageBubble(activeBubble);
+              if (mdRawText(activeBubble) || activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+                visibleAnchor = messageDisplayNode(activeBubble) || visibleAnchor;
+                retryVisibleAnchor = visibleAnchor;
+              } else {
+                removeMessageBubble(activeBubble);
+              }
             }
             activeBubble = null;
-            appendMessage('error', message.message || '请求失败');
+            const errorBubble = appendMessage('error', message.message || '请求失败');
+            placeMessageAfter(errorBubble, visibleAnchor);
             setStatus('风控校验', 'error');
             void send('QWEN_OPEN_LOGIN');
+            pendingWafRetryAction = () => {
+              if (busy) return false;
+              removeMessageBubble(errorBubble);
+              if (wasOpeningStream) openingStarted = true;
+              startStream({
+                text,
+                editParent: requestParentId,
+                isEditSend: true,
+                showUserBubble: false
+              });
+              return true;
+            };
           } else {
+            pendingWafRetryAction = null;
+            wafRecoveryActive = false;
             removeCursor(activeBubble);
             if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) removeMessageBubble(activeBubble);
             activeBubble = null;
@@ -1329,7 +1389,7 @@
         }
       });
       chatPort.onDisconnect.addListener(() => {
-        pendingWafRetryAction = null;
+        if (!wafRecoveryActive) pendingWafRetryAction = null;
         hideAsk();
         if (activeBubble) {
           activeBubble = null;
@@ -1408,7 +1468,10 @@
       if (status?.loggedIn !== true) return;
       await refreshModels();
 
-      if (historyReloadAfterLogin) {
+      if (wafRecoveryActive) {
+        historyReloadAfterLogin = false;
+        return;
+      } else if (historyReloadAfterLogin) {
         await restoreHistoryAfterLogin();
         panelHistoryInitialized = true;
       } else if (sessionChatId && !panelHistoryInitialized) {
@@ -1445,6 +1508,11 @@
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
         lastKnownLoggedIn = true;
+        if (wafRecoveryActive || message?.reason === 'waf') {
+          historyReloadAfterLogin = false;
+          showLoginHint(false);
+          return false;
+        }
         historyReloadAfterLogin = true;
         if (panelActivated) {
           showLoginHint(false);
@@ -1454,6 +1522,10 @@
         return false;
       }
       if (message?.type === 'QWEN_WAF_VERIFIED_BROADCAST') {
+        wafRecoveryActive = true;
+        historyReloadAfterLogin = false;
+        lastKnownLoggedIn = true;
+        showLoginHint(false);
         const retry = pendingWafRetryAction;
         if (typeof retry === 'function') setTimeout(() => retry(), 100);
         sendResponse({ ok: true, retryPending: typeof retry === 'function' });
