@@ -93,11 +93,10 @@
     renderer.code = ({ text, lang }) => {
       const languageInfo = String(lang || '').trim();
       const language = languageInfo.split(/\s+/)[0];
-      const resultMode = /^res\s*:\s*(sandbox|app|background)$/i.exec(languageInfo)?.[1]?.toLowerCase() || '';
-      if (language === 'res' || resultMode) {
+      const resultMode = /^res: (sandbox|app|background)$/.exec(languageInfo)?.[1] || '';
+      if (resultMode) {
         const jsonText = String(text || '').trim();
-        const modeText = resultMode ? `（${escapeHtmlQwen(resultMode)}）` : '';
-        return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果${modeText}</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
+        return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果（${escapeHtmlQwen(resultMode)}）</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
       }
       const languageAttribute = language ? ` data-language="${escapeHtmlQwen(language)}"` : '';
       return `<pre class="qwen-md-codeblock"${languageAttribute}><code>${escapeHtmlQwen(String(text || ''))}</code></pre>`;
@@ -201,13 +200,13 @@
   }
 
   function extractResJson(text) {
-    const match = /^```res(?:[ \t]*:[ \t]*(?:sandbox|app|background))?[ \t]*\n?([\s\S]*?)```\s*$/i.exec(String(text || '').trim());
-    return match ? String(match[1] || '').trim() : String(text || '');
+    const match = /^```res: (sandbox|app|background)\n([\s\S]*?)```$/.exec(String(text || '').trim());
+    return match ? String(match[2] || '').trim() : '';
   }
 
   function resBlocksFromText(text) {
     const blocks = [];
-    const regex = /```res(?:[ \t]*:[ \t]*(?:sandbox|app|background))?[ \t]*\n?([\s\S]*?)```/gi;
+    const regex = /```res: (sandbox|app|background)\n([\s\S]*?)```/g;
     const source = String(text || '');
     let match;
     while ((match = regex.exec(source))) blocks.push(match[0]);
@@ -554,47 +553,6 @@
     }
   }
 
-  function renderOperationsPopover(groups, enabledOperations, alwaysAllowedOperations = []) {
-    const list = document.querySelector('#qwen-chat-ops-popover [data-operation-list]');
-    if (!(list instanceof HTMLElement)) return;
-    if (global.BjtuQwenOperationsUi) {
-      BjtuQwenOperationsUi.render(list, groups, enabledOperations, !Array.isArray(enabledOperations), { alwaysAllowedOperations });
-      return;
-    }
-    list.replaceChildren();
-    const enabledSet = new Set(Array.isArray(enabledOperations) ? enabledOperations : []);
-    const allSelected = !Array.isArray(enabledOperations);
-    for (const group of groups || []) {
-      const names = group.operations || [];
-      if (!names.length) continue;
-      const title = document.createElement('div');
-      title.className = 'qwen-chat-ops-group-title';
-      title.textContent = String(group.label || '');
-      list.appendChild(title);
-      for (const entry of names) {
-        const name = String(entry?.name ?? entry ?? '');
-        const isMeta = name.startsWith('qwen.');
-        const item = document.createElement('label');
-        item.className = 'qwen-chat-ops-item';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.dataset.operationName = name;
-        checkbox.checked = isMeta || allSelected || enabledSet.has(name) || enabledSet.size === 0;
-        checkbox.disabled = isMeta;
-        const code = document.createElement('code');
-        code.textContent = name;
-        item.append(checkbox, code);
-        list.appendChild(item);
-      }
-    }
-    if (list.childElementCount === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'qwen-chat-ops-empty';
-      empty.textContent = '暂无可调用的操作';
-      list.appendChild(empty);
-    }
-  }
-
   function initOperationsPopover() {
     const wrap = document.querySelector('.qwen-chat-ops-toggle-wrap');
     const popover = el('qwen-chat-ops-popover');
@@ -603,7 +561,6 @@
     if (popover.parentElement !== document.body) {
       document.body.appendChild(popover);
     }
-    let loaded = false;
     let closeTimer = null;
     const clearCloseTimer = () => {
       if (closeTimer) {
@@ -638,25 +595,7 @@
       clearCloseTimer();
       popover.hidden = false;
       positionPopover();
-      if (loaded) return;
-      loaded = true;
-      const opsUi = global.BjtuQwenOperationsUi;
-      const load = opsUi?.mounted
-        ? Promise.resolve(opsUi.mounted).then(() => send('QWEN_LIST_OPERATIONS'))
-        : send('QWEN_LIST_OPERATIONS');
-      void load.then((response) => {
-        if (response?.ok === true) {
-          renderOperationsPopover(response.groups, response.enabledOperations, response.alwaysAllowedOperations);
-        } else {
-          const l = document.querySelector('#qwen-chat-ops-popover [data-operation-list]');
-          if (l instanceof HTMLElement) {
-            l.replaceChildren();
-            const empty = document.createElement('div');
-            empty.className = 'qwen-operation-loading';
-            empty.textContent = String(response?.message || '操作加载失败');
-            l.appendChild(empty);
-          }
-        }
+      void global.BjtuQwenOperationsUi.refresh({ showLoading: true }).then(() => {
         positionPopover();
       });
     };

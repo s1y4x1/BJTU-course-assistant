@@ -1,8 +1,7 @@
 /* 共享的「允许 AI 调用以下操作」界面。
  * 通过 fetch 注入 modules/qwen/operations-ui.html 到页面上每个 [data-operation-ui-mount] 占位符中，
  * 供 modules/qwen/options.html 与聊天面板的「操作」弹窗共用，保证两处显示一致。
- * 暴露：BjtuQwenOperationsUi.mounted（Promise，注入与事件绑定完成后 resolve）
- *        BjtuQwenOperationsUi.render(list, groups, selectedNames, allSelected, options)
+ * 暴露：BjtuQwenOperationsUi.refresh()（从后台读取并刷新当前页面上的全部操作面板）
  *        BjtuQwenOperationsUi.collect(list)  // 全部选中返回 null，否则返回已勾选操作名数组
  * 勾选变化与「反选」按钮会自动通过 QWEN_SETTINGS_SET 持久化，并派发
  * document 上的 'qwenOperationsPersisted'（detail.ok）事件供宿主提示。 */
@@ -10,6 +9,7 @@
   'use strict';
 
   const NS = 'BjtuQwenOperationsUi';
+  const refreshVersions = new WeakMap();
 
   function send(type, payload) {
     return new Promise((resolve) => {
@@ -94,6 +94,15 @@
       empty.textContent = '暂无可调用的操作';
       list.appendChild(empty);
     }
+  }
+
+  function renderState(list, message) {
+    if (!(list instanceof HTMLElement)) return;
+    list.replaceChildren();
+    const state = document.createElement('div');
+    state.className = 'qwen-operation-loading';
+    state.textContent = String(message || '操作加载失败');
+    list.appendChild(state);
   }
 
   function collectAlwaysAllowed(list) {
@@ -195,5 +204,45 @@
     return roots;
   })();
 
-  global[NS] = { mounted, render, collect, collectAlwaysAllowed };
+  async function refresh({ showLoading = false } = {}) {
+    const roots = await mounted;
+    const targets = roots.filter((root) => root instanceof HTMLElement && root.isConnected);
+    const versions = new Map();
+    for (const root of targets) {
+      const version = (refreshVersions.get(root) || 0) + 1;
+      refreshVersions.set(root, version);
+      versions.set(root, version);
+      const list = root.querySelector('[data-operation-list]');
+      if (showLoading && list instanceof HTMLElement && !list.childElementCount) renderState(list, '操作加载中…');
+    }
+    const response = await send('QWEN_LIST_OPERATIONS');
+    for (const root of targets) {
+      if (refreshVersions.get(root) !== versions.get(root)) continue;
+      const list = root.querySelector('[data-operation-list]');
+      if (!(list instanceof HTMLElement)) continue;
+      if (response?.ok === true) {
+        render(
+          list,
+          response.groups,
+          response.enabledOperations,
+          !Array.isArray(response.enabledOperations),
+          { alwaysAllowedOperations: response.alwaysAllowedOperations }
+        );
+      } else {
+        renderState(list, response?.message || '操作加载失败');
+      }
+    }
+    document.dispatchEvent(new CustomEvent('qwenOperationsRefreshed', {
+      detail: { ok: response?.ok === true }
+    }));
+    return response;
+  }
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (!changes.qwenEnabledOperations && !changes.qwenAlwaysAllowedOperations) return;
+    void refresh();
+  });
+
+  global[NS] = { refresh, collect, collectAlwaysAllowed };
 })(globalThis);

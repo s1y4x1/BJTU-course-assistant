@@ -59,34 +59,7 @@
   }
 
   async function refreshOperations() {
-    const opsUi = global.BjtuQwenOperationsUi;
-    let list = document.querySelector('.qwen-operation-panel [data-operation-list]');
-    if (!list && opsUi?.mounted) {
-      await opsUi.mounted;
-      list = document.querySelector('.qwen-operation-panel [data-operation-list]');
-    }
-    if (list instanceof HTMLElement) {
-      const loading = document.createElement('div');
-      loading.className = 'qwen-operation-loading';
-      loading.textContent = '操作加载中…';
-      if (!list.childElementCount) list.appendChild(loading);
-    }
-    const opsResponse = await send('QWEN_LIST_OPERATIONS');
-    if (opsResponse.ok) {
-      if (list instanceof HTMLElement) {
-        BjtuQwenOperationsUi.render(list, opsResponse.groups, opsResponse.enabledOperations, !Array.isArray(opsResponse.enabledOperations), {
-          alwaysAllowedOperations: opsResponse.alwaysAllowedOperations
-        });
-      }
-    } else {
-      if (list instanceof HTMLElement) {
-        list.replaceChildren();
-        const empty = document.createElement('div');
-        empty.className = 'qwen-operation-loading';
-        empty.textContent = String(opsResponse.message || '操作加载失败');
-        list.appendChild(empty);
-      }
-    }
+    return global.BjtuQwenOperationsUi.refresh({ showLoading: true });
   }
 
   function init(context) {
@@ -142,6 +115,7 @@
   async function reset() {
     await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
     void refresh();
+    void refreshOperations();
   }
 
   global.BjtuQwenOptions = { init, reset };
