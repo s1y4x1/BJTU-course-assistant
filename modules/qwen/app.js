@@ -886,6 +886,57 @@
     maybeAutoScrollMessages(el(MESSAGES_ID));
   }
 
+  function toolResultText(value) {
+    if (typeof value === 'string') return value;
+    if (value === undefined) return 'undefined';
+    try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+  }
+
+  function toolResultImageUrls(value, output = [], seen = new WeakSet()) {
+    if (!value || typeof value !== 'object') return output;
+    if (seen.has(value)) return output;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.forEach((item) => toolResultImageUrls(item, output, seen));
+      return output;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (String(key).toLowerCase() === 'image' && typeof child === 'string') {
+        const url = safeUrlQwen(child, new Set(['https:']));
+        if (url && !output.includes(url)) output.push(url);
+      } else {
+        toolResultImageUrls(child, output, seen);
+      }
+    }
+    return output;
+  }
+
+  function renderFunctionToolResult(container, value) {
+    container.replaceChildren();
+    const text = document.createElement('div');
+    text.className = 'qwen-chat-function-result-text';
+    text.textContent = toolResultText(value);
+    container.appendChild(text);
+    const imageUrls = toolResultImageUrls(value);
+    if (imageUrls.length) {
+      const previews = document.createElement('div');
+      previews.className = 'qwen-chat-function-images';
+      for (const url of imageUrls) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        const image = document.createElement('img');
+        image.src = url;
+        image.alt = '工具生成的图片';
+        image.loading = 'lazy';
+        link.appendChild(image);
+        previews.appendChild(link);
+      }
+      container.appendChild(previews);
+    }
+  }
+
   function finishFunctionCallCard(card, functionResult) {
     if (!(card instanceof HTMLElement)) return;
     const body = card.querySelector(':scope > .qwen-chat-function-body');
@@ -896,7 +947,7 @@
     divider.className = 'qwen-chat-function-divider';
     const result = document.createElement('div');
     result.className = 'qwen-chat-function-result';
-    result.textContent = String(functionResult?.result || '');
+    renderFunctionToolResult(result, functionResult?.result);
     body.append(divider, result);
     completeOperationCard(card);
     maybeAutoScrollMessages(el(MESSAGES_ID));

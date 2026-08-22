@@ -269,7 +269,7 @@
             functionResult: {
               id: rawFunctionId.match(/call_[\w-]+$/)?.[0] || rawFunctionId,
               name: String(delta.name || delta.function_call?.name || ''),
-              result: String(delta.extra.tool_result ?? '')
+              result: delta.extra.tool_result
             },
             responseId
           });
