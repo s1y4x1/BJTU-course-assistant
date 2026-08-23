@@ -326,6 +326,21 @@
     return loginWithPassword(id, account.password);
   }
 
+  // 打开选项页时若尚未登录且存在已保存密码的账号，
+  // 使用其中最近一次登录的账号自动登录。
+  async function autoLoginSavedCasAccount() {
+    const profile = await fetchCasProfile().catch(() => null);
+    if (profile) return { ok: true, skipped: true };
+    const accounts = await getCasAccounts();
+    const candidates = Object.values(accounts)
+      .filter((account) => account.password)
+      .sort((a, b) => Number(b.lastLoginAt || b.updatedAt || 0) - Number(a.lastLoginAt || a.updatedAt || 0));
+    const target = candidates[0];
+    if (!target) return { ok: false, code: 'no-saved-account', message: '没有已保存密码的账号' };
+    const result = await loginWithPassword(target.loginName, target.password);
+    return result.ok ? { ok: true, loginName: target.loginName, auto: true } : result;
+  }
+
   async function buildCasContext() {
     const stored = await chrome.storage.local.get([LOGIN_NAME_KEY, 'username']);
     const accounts = await getCasAccounts();
@@ -379,6 +394,12 @@
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
+      if (message?.type === 'CAS_AUTO_LOGIN') {
+        autoLoginSavedCasAccount()
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+        return true;
+      }
       if (message?.type === 'CAS_GET_CONTEXT') {
         buildCasContext()
           .then((result) => sendResponse(result))
@@ -388,18 +409,23 @@
       return false;
     });
 
-    // 监测用户自行提交的 CAS 登录表单：离开登录页即视为成功，
-    // 此时保存捕获到的账密并在页面顶部 toast 提示；仍停留在登录页则丢弃。
+    // 监测用户自行提交的 CAS 登录表单（含 /auth/login/?next=… 等带参数变体）：
+    // 提交后仍停留在登录页视为失败并丢弃；离开登录页（跳转到任意站点）
+    // 即视为成功，保存捕获到的账密；账号与密码均未变化时不重复 toast。
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.status !== 'complete') return;
-      let parsed = null;
-      try { parsed = new URL(String(changeInfo?.url || tab?.url || '')); } catch { parsed = null; }
-      if (parsed?.hostname !== 'cas.bjtu.edu.cn') return;
       const pending = pendingCredentialsByTab.get(tabId);
       if (!pending) return;
       pendingCredentialsByTab.delete(tabId);
-      if (/^\/auth\/login(?:\/|$)/i.test(parsed.pathname)) return;
+      let parsed = null;
+      try { parsed = new URL(String(changeInfo?.url || tab?.url || '')); } catch { parsed = null; }
+      const stillOnLoginPage = parsed?.hostname === 'cas.bjtu.edu.cn'
+        && /^\/auth\/login(?:\/|$)/i.test(parsed.pathname);
+      if (!parsed || stillOnLoginPage) return;
       void (async () => {
+        const accounts = await getCasAccounts();
+        const prior = accounts[pending.loginName];
+        const unchanged = !!prior && prior.password === pending.password;
         const profile = await fetchCasProfile().catch(() => null);
         await saveCasAccount(pending.loginName, {
           password: pending.password,
@@ -410,12 +436,15 @@
           status: 'credentials-saved',
           loginName: pending.loginName,
           userName: profile?.userName || '',
+          unchanged,
           silent: true
         });
-        await showCasPageToast(
-          tabId,
-          `统一身份认证登录成功，已保存账号 ${pending.loginName} 的登录密码`
-        );
+        if (!unchanged) {
+          await showCasPageToast(
+            tabId,
+            `统一身份认证登录成功，已保存账号 ${pending.loginName} 的登录密码`
+          );
+        }
       })().catch(() => {});
     });
 
@@ -430,7 +459,7 @@
           pendingCredentialsByTab.set(Number(details.tabId), credentials);
         }
       },
-      { urls: ['https://cas.bjtu.edu.cn/auth/login/*'] },
+      { urls: ['https://cas.bjtu.edu.cn/auth/login*'] },
       ['requestBody']
     );
   }
@@ -439,6 +468,7 @@
     getContext: () => buildCasContext(),
     loginWithPassword: (args) => loginWithPassword(args?.loginName, args?.password),
     loginSavedAccount: (args) => loginSavedCasAccount(args?.loginName),
+    autoLoginSavedAccount: () => autoLoginSavedCasAccount(),
     fetchProfile: () => fetchCasProfile(),
     extractLoginCredentials,
     parseProfilePage

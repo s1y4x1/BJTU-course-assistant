@@ -105,7 +105,9 @@
       const status = message.payload || {};
       if (status.status === 'credentials-saved') {
         refreshContext();
-        setMessage(`已捕获并保存 CAS 账号 ${status.loginName || ''} 的登录密码`);
+        if (status.unchanged !== true) {
+          setMessage(`已捕获并保存 CAS 账号 ${status.loginName || ''} 的登录密码`);
+        }
       } else if (status.status === 'login-done' || status.status === 'login-error') {
         refreshContext();
       }
@@ -119,6 +121,16 @@
     });
   }
 
+  async function autoLoginIfPossible() {
+    const result = await send('CAS_AUTO_LOGIN');
+    if (result?.ok && result.loginName) {
+      await refreshContext();
+      setMessage(`已使用保存的账号 ${result.loginName} 自动登录统一身份认证`);
+    } else if (result?.ok === false && result.code !== 'no-saved-account') {
+      setMessage(`统一身份认证自动登录失败：${result?.message || '未知错误'}`, false);
+    }
+  }
+
   async function init(options = {}) {
     if (initialized) return true;
     initialized = true;
@@ -126,6 +138,7 @@
     bindEvents();
     bindMessages();
     await refreshContext();
+    void autoLoginIfPossible();
     return true;
   }
 

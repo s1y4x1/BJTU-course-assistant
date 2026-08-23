@@ -1875,6 +1875,22 @@
     });
   }
 
+  async function autoLoginIfPossible() {
+    const preload = await send('ACADEMIC_PRELOAD_ACCOUNT');
+    if (preload?.ok || preload?.code !== 'not-logged-in') return;
+    const candidate = (context?.accounts || []).find((account) => account.hasPassword);
+    if (!candidate) return;
+    setMessage(`正在使用已保存账号 ${candidate.studentId} 自动登录教务系统…`);
+    try {
+      const result = await send('ACADEMIC_SWITCH_ACCOUNT', { studentId: candidate.studentId });
+      if (!result?.ok) throw new Error(result?.message || '未知错误');
+      await refreshContext();
+      setMessage(`已使用保存的账号 ${candidate.studentId} 自动登录教务系统`);
+    } catch (error) {
+      setMessage(`教务系统自动登录失败：${String(error?.message || error)}`, false);
+    }
+  }
+
   async function init(options = {}) {
     if (initialized) return true;
     initialized = true;
@@ -1897,8 +1913,7 @@
     updateDisabledState();
     EXTERNAL_SCRIPTS.forEach((script) => { void refreshExternalScriptState(script); });
     await refreshContext();
-    await send('ACADEMIC_PRELOAD_ACCOUNT');
-    void loadAll();
+    void autoLoginIfPossible().finally(() => { loadAll(); });
     return true;
   }
 
