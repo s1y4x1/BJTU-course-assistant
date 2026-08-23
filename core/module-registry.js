@@ -40,7 +40,7 @@
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js', wide: true }
     },
     cas: {
-      label: 'CAS 统一身份认证',
+      label: '统一身份认证',
       styles: ['options.css'],
       files: ['system.js', 'options.html', 'options.js'],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }

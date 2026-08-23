@@ -87,7 +87,7 @@
     return sid;
   }
 
-  // 自动登录：使用「CAS 统一身份认证」模块中已保存的账号密码完成 CAS 登录。
+  // 自动登录：使用「统一身份认证」模块中已保存的账号密码完成 CAS 登录。
   async function casLoginForMail() {
     const internals = global.BjtuCasSystemInternals;
     if (!internals?.getContext || !internals?.loginSavedAccount) {
@@ -100,7 +100,7 @@
       || accounts.find((item) => item.hasPassword);
     if (!account) {
       throw Object.assign(
-        new Error('CAS 未登录且没有已保存的账号密码，请先在「CAS 统一身份认证」中登录'),
+        new Error('CAS 未登录且没有已保存的账号密码，请先在「统一身份认证」中登录'),
         { code: 'not-logged-in' }
       );
     }
@@ -253,7 +253,33 @@
     ].filter(Boolean).join('\n');
   }
 
-  async function notifyNewMail(row) {
+  // 通知点击后打开对应邮件读取页；映射持久化保存，SW 重启后仍可跳转。
+  function buildMailReadUrl(target) {
+    const mid = String(target?.mid || '');
+    const sid = String(target?.sid || '');
+    if (!mid || !sid) return MAIL_HOME_URL;
+    const payload = JSON.stringify({
+      fid: Number(target?.fid) || INBOX_FID,
+      mid,
+      mboxa: ''
+    });
+    return `https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=${sid}#mail.read|${payload}`;
+  }
+
+  async function rememberNotificationTarget(notificationId, target) {
+    if (!target?.sid || !target?.mid) return;
+    const stored = await chrome.storage.local.get([NOTIFICATION_TARGETS_KEY]).catch(() => ({}));
+    const targets = stored?.[NOTIFICATION_TARGETS_KEY] && typeof stored[NOTIFICATION_TARGETS_KEY] === 'object'
+      ? { ...stored[NOTIFICATION_TARGETS_KEY] }
+      : {};
+    targets[notificationId] = { ...target, createdAt: Date.now() };
+    const trimmed = Object.fromEntries(Object.entries(targets)
+      .sort((a, b) => Number(b[1].createdAt || 0) - Number(a[1].createdAt || 0))
+      .slice(0, 100));
+    await chrome.storage.local.set({ [NOTIFICATION_TARGETS_KEY]: trimmed }).catch(() => {});
+  }
+
+  async function notifyNewMail(row, sid = '') {
     const notificationId = `${NOTIFICATION_PREFIX}${shortHash(`${row.id}|${mailFingerprint(row)}`)}`;
     await createSystemNotification(notificationId, {
       type: 'basic',
@@ -262,6 +288,7 @@
       message: formatMailNotification(row),
       priority: 2
     });
+    await rememberNotificationTarget(notificationId, { sid, fid: row.fid, mid: row.id });
     return notificationId;
   }
 
@@ -271,7 +298,11 @@
     for (const [key, item] of Object.entries(source)) {
       const row = normalizeMailRow(item?.row);
       if (!row.id) continue;
-      result[key] = { row, createdAt: Number(item?.createdAt || Date.now()) };
+      result[key] = {
+        row,
+        sid: String(item?.sid || ''),
+        createdAt: Number(item?.createdAt || Date.now())
+      };
     }
     return result;
   }
@@ -286,7 +317,7 @@
     let changed = false;
     for (const [key, item] of Object.entries(pending)) {
       try {
-        await notifyNewMail(item.row);
+        await notifyNewMail(item.row, item.sid);
         delete pending[key];
         changed = true;
       } catch {
@@ -299,7 +330,7 @@
     return pending;
   }
 
-  async function processMailRowsInternal(rows, total, unreadCount, source = 'poll') {
+  async function processMailRowsInternal(rows, total, unreadCount, source = 'poll', sid = '') {
     const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeMailRow)
       .filter((row) => row.id);
     const stored = await chrome.storage.local.get([SNAPSHOTS_KEY, PENDING_NOTIFICATIONS_KEY, ENABLED_KEY]);
@@ -325,6 +356,7 @@
       if (row.read === true) continue;
       pending[shortHash(`${key}|new|${row.id}|${mailFingerprint(row)}`)] = {
         row,
+        sid,
         createdAt: Date.now()
       };
     }
@@ -354,8 +386,10 @@
     };
   }
 
-  function processMailRows(rows, total, unreadCount, source = 'poll') {
-    const run = mailProcessPromise.then(() => processMailRowsInternal(rows, total, unreadCount, source));
+  function processMailRows(rows, total, unreadCount, source = 'poll', sid = '') {
+    const run = mailProcessPromise.then(
+      () => processMailRowsInternal(rows, total, unreadCount, source, sid)
+    );
     mailProcessPromise = run.catch(() => {});
     return run;
   }

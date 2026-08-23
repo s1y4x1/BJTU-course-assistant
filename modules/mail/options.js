@@ -156,7 +156,7 @@
     if (!result?.ok) {
       element('mailLoading').style.display = 'none';
       renderError(result?.code === 'not-logged-in'
-        ? '邮箱未登录：请先在「CAS 统一身份认证」中登录并保存账号密码'
+        ? '邮箱未登录：请先在「C统一身份认证」中登录并保存账号密码'
         : `收件箱读取失败：${result?.message || '未知错误'}`);
       await refreshContext();
       return result;

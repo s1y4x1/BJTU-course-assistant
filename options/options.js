@@ -59,89 +59,6 @@ const DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES = 30;
 const DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES = 30;
 const MAX_SCHEDULE_INTERVAL_MINUTES = 525600;
 
-function setupOptionTipTooltips() {
-  const popover = document.createElement('div');
-  popover.id = 'option-tip-popover';
-  popover.className = 'option-tip-popover';
-  popover.setAttribute('role', 'tooltip');
-  popover.hidden = true;
-  document.body.appendChild(popover);
-  let activeTrigger = null;
-
-  const positionPopover = () => {
-    if (!(activeTrigger instanceof HTMLElement) || popover.hidden) return;
-    const margin = 8;
-    const gap = 7;
-    const triggerRect = activeTrigger.getBoundingClientRect();
-    const popoverRect = popover.getBoundingClientRect();
-    const maxLeft = Math.max(margin, window.innerWidth - popoverRect.width - margin);
-    const left = Math.min(Math.max(margin, triggerRect.left), maxLeft);
-    const below = triggerRect.bottom + gap;
-    const above = triggerRect.top - popoverRect.height - gap;
-    const top = below + popoverRect.height <= window.innerHeight - margin
-      ? below
-      : Math.max(margin, above);
-    popover.style.left = `${Math.round(left)}px`;
-    popover.style.top = `${Math.round(top)}px`;
-  };
-
-  const showPopover = (trigger) => {
-    activeTrigger = trigger;
-    popover.textContent = String(trigger?.dataset?.tip || '');
-    popover.hidden = false;
-    positionPopover();
-  };
-  const hidePopover = (trigger) => {
-    if (activeTrigger !== trigger) return;
-    activeTrigger = null;
-    popover.hidden = true;
-  };
-
-  window.addEventListener('resize', positionPopover);
-  window.addEventListener('scroll', positionPopover, true);
-
-  document.querySelectorAll('.tip').forEach((tip) => {
-    const text = String(tip.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!text) {
-      tip.remove();
-      return;
-    }
-    const trigger = document.createElement('span');
-    trigger.className = 'option-tip-trigger';
-    trigger.textContent = 'ℹ️';
-    trigger.dataset.tip = text;
-    trigger.tabIndex = 0;
-    trigger.setAttribute('role', 'img');
-    trigger.setAttribute('aria-label', `提示：${text}`);
-    trigger.setAttribute('aria-describedby', popover.id);
-    trigger.addEventListener('mouseenter', () => showPopover(trigger));
-    trigger.addEventListener('mouseleave', () => hidePopover(trigger));
-    trigger.addEventListener('focus', () => showPopover(trigger));
-    trigger.addEventListener('blur', () => hidePopover(trigger));
-    trigger.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    const explicitTarget = String(tip.dataset.tipTarget || '').trim();
-    let target = explicitTarget
-      ? document.querySelector(explicitTarget)
-      : tip.previousElementSibling;
-    if (!explicitTarget && target instanceof HTMLElement && !target.matches('label')) {
-      target = target.querySelector(':scope > label:last-of-type') || target;
-    }
-    if (target instanceof HTMLElement && (
-      explicitTarget
-      || target.matches('label, .popup-size-editor')
-      || target.querySelector(':scope > label, :scope > button')
-    )) {
-      target.appendChild(trigger);
-      tip.remove();
-    } else {
-      tip.replaceWith(trigger);
-    }
-  });
-}
-
 function normalizeScheduleIntervalMinutes(value, fallback) {
   const minutes = Math.round(Number(value));
   return Number.isFinite(minutes) && minutes >= 1 && minutes <= MAX_SCHEDULE_INTERVAL_MINUTES
@@ -696,7 +613,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   void renderExtensionRuntimeInfo();
   await globalThis.BjtuModuleRegistry?.ready;
   await globalThis.__bjtuOptionsModulesReady;
-  setupOptionTipTooltips();
+  globalThis.BjtuOptionTips?.setup?.();
   await globalThis.__bjtuVeOptionsReady;
   await globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg });
   await setupInstalledModuleOptions();
