@@ -628,6 +628,20 @@
     return account;
   }
 
+  // 登录态探测：GET 培养方案页，未被重定向到登录页即视为已登录。
+  async function probeAcademicLoginState() {
+    try {
+      const response = await fetchAcademicWith503Retry(TRAINING_PROGRAM_URL, {
+        credentials: 'include', cache: 'no-store', redirect: 'follow'
+      });
+      const html = await response.text();
+      if (!response.ok) return { ok: true, loggedIn: false };
+      return { ok: true, loggedIn: !isLoginPageResponse(response.url, html) };
+    } catch (error) {
+      return { ok: false, loggedIn: false, message: String(error?.message || error) };
+    }
+  }
+
   async function ensureAcademicSession() {
     if (academicSessionAccount) return academicSessionAccount;
     if (academicSessionPromise) return academicSessionPromise;
@@ -1466,6 +1480,12 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
           }));
         return true;
       }
+      if (message?.type === 'ACADEMIC_LOGIN_STATUS') {
+        probeAcademicLoginState()
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+        return true;
+      }
       if (message?.type === 'ACADEMIC_LOAD_EXAMS') {
         checkExams('options', { force: true })
           .then((result) => sendResponse({ ok: true, ...result }))
@@ -1617,6 +1637,7 @@ if (message?.type === 'ACADEMIC_GET_CONTEXT') {
 
   global.BjtuAcademicSystemInternals = {
     getContext: () => buildAcademicContext(),
+    probeLoginState: () => probeAcademicLoginState(),
     loadScores: (args) => loadAcademicScores(args),
     loadScoreSemesters: () => loadAcademicScoreSemesters(),
     loadExams: () => checkExams('options', { force: true }),

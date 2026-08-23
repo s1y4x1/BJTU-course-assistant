@@ -1876,8 +1876,9 @@
   }
 
   async function autoLoginIfPossible() {
-    const preload = await send('ACADEMIC_PRELOAD_ACCOUNT');
-    if (preload?.ok || preload?.code !== 'not-logged-in') return;
+    // 通过 GET 培养方案页探测登录态；确认未登录才用最近登录的保存账号自动登录。
+    const status = await send('ACADEMIC_LOGIN_STATUS');
+    if (!status?.ok || status.loggedIn) return;
     const candidate = (context?.accounts || []).find((account) => account.hasPassword);
     if (!candidate) return;
     setMessage(`正在使用已保存账号 ${candidate.studentId} 自动登录教务系统…`);
