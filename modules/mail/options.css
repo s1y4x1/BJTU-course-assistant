@@ -16,31 +16,27 @@
 .mail-data-table, .mail-status { display:none; }
 .mail-status { margin:0 0 7px; color:#64748b; font-size:13px; }
 .mail-status.error { color:#dc2626; }
-/* 表头固定在滚动区域上方：表头表与正文表使用相同的固定布局与列宽。 */
-.mail-table-head { overflow:hidden; border:1px solid #d1d5db; border-bottom:0; border-radius:0; background:#f1f5f9; }
-.mail-table-wrap { border:1px solid #d1d5db; border-top:0; background:#fff; }
-.mail-thread-table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:12px; text-align:left; }
-.mail-thread-table th, .mail-thread-table td { padding:7px 8px; border-bottom:1px solid #e5e7eb; vertical-align:top; overflow-wrap:anywhere; }
-.mail-thread-table-fixed .mail-col-subject { width:46%; }
-.mail-thread-table-fixed .mail-col-from { width:24%; }
-.mail-thread-table-fixed .mail-col-date { width:19%; }
-.mail-thread-table-fixed .mail-col-thread { width:11%; }
-.mail-thread-table th { white-space:nowrap; }
+.mail-table-wrap { overflow:auto; border:1px solid #d1d5db; background:#fff; }
+/* 列宽由内容自适应；竖线用 border-right，末列留白避免与外框重叠。 */
+.mail-thread-table { width:100%; border-collapse:collapse; font-size:12px; text-align:left; }
+.mail-thread-table th, .mail-thread-table td { padding:7px 8px; border-bottom:1px solid #e5e7eb; border-right:1px solid #e5e7eb; vertical-align:top; overflow-wrap:anywhere; }
+.mail-thread-table th:last-child, .mail-thread-table td:last-child { border-right:0; }
+.mail-thread-table th { background:#f1f5f9; white-space:nowrap; }
 .mail-row-unread .mail-subject { font-weight:700; }
 .mail-subject { overflow-wrap:anywhere; }
 .mail-attachment { display:inline-block; margin-left:4px; color:#64748b; }
-.mail-from, .mail-summary-line { margin-top:2px; color:#64748b; font-size:11px; overflow-wrap:anywhere; }
+.mail-summary-line, .mail-from { color:#64748b; font-size:11px; overflow-wrap:anywhere; }
 html[data-color-scheme="dark"] .mail-options-card { border-color:#334155; background:#0f172a; }
-html[data-color-scheme="dark"] .mail-table-head { border-color:#475569; background:#1e293b; }
 html[data-color-scheme="dark"] .mail-table-wrap { border-color:#475569; background:#111827; }
+html[data-color-scheme="dark"] .mail-thread-table th { background:#1e293b; }
 html[data-color-scheme="dark"] .mail-thread-table th,
 html[data-color-scheme="dark"] .mail-thread-table td { border-color:#334155; }
 html[data-color-scheme="dark"] .mail-score-header-meta,
 html[data-color-scheme="dark"] .mail-score-count,
 html[data-color-scheme="dark"] .mail-limit-label,
 html[data-color-scheme="dark"] .mail-status,
-html[data-color-scheme="dark"] .mail-from,
 html[data-color-scheme="dark"] .mail-summary-line,
+html[data-color-scheme="dark"] .mail-from,
 html[data-color-scheme="dark"] .mail-attachment { color:#cbd5e1; }
 
 @media (max-width:760px) {

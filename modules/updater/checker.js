@@ -58,7 +58,7 @@ let versionNoticeSuppressedByDownload = false;
 let versionLatestReleaseRequestPromise = null;
 let versionInfoLoadPromise = null;
 let versionQueuedRelease = null;
-const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/master';
+const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/main';
 const VERSION_LATEST_URL = 'https://s1y4x1.github.io/release.json';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
@@ -300,7 +300,7 @@ async function handoffUpdateToFullscreen(url, source, fullExtraction = false) {
     fullExtraction: fullExtraction === true,
     requestedAt: Date.now()
   });
-  const channel = String(source || '').trim() === 'master' ? 2 : 1;
+  const channel = String(source || '').trim() === 'main' ? 2 : 1;
   await chrome.runtime.sendMessage({ type: 'OPEN_APP', payload: { autoUpdate: channel } });
 }
 
@@ -513,7 +513,7 @@ function openVersionNoticeModal(overrideMode) {
   if (sourceSelect instanceof HTMLSelectElement) {
     const isLatest = mode === 'latest';
     const optZipball = sourceSelect.querySelector('option[value="zipball"]');
-    const optMaster = sourceSelect.querySelector('option[value="master"]');
+    const optMaster = sourceSelect.querySelector('option[value="main"]');
     if (optZipball instanceof HTMLOptionElement) {
       optZipball.textContent = isLatest ? '修复' : '正式版';
     }
@@ -2183,7 +2183,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
   });
   const primaryUrl = String(downloadUrl || versionButtonDownloadUrl || VERSION_DOWNLOAD_URL).trim() || VERSION_DOWNLOAD_URL;
   const selectedSource = String(source || versionDownloadSelectedSource || '').trim()
-    || (primaryUrl === VERSION_DOWNLOAD_URL ? 'master' : 'zipball');
+    || (primaryUrl === VERSION_DOWNLOAD_URL ? 'main' : 'zipball');
   versionDownloadSelectedSource = selectedSource;
   versionDownloadSelectedUrl = primaryUrl;
   versionDownloadFullExtraction = fullExtraction === true;
@@ -2485,7 +2485,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
       if (requestIsFresh) {
         await startVersionDownloadWithFallback(
           String(fullscreenUpdateRequest?.url || '').trim() || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
-          String(fullscreenUpdateRequest?.source || '').trim() || (autoUpdateChannel === 2 ? 'master' : 'zipball'),
+          String(fullscreenUpdateRequest?.source || '').trim() || (autoUpdateChannel === 2 ? 'main' : 'zipball'),
           fullscreenUpdateRequest?.fullExtraction === true
         );
       }
@@ -2595,7 +2595,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         const requestedSource = requestIsFresh ? String(fullscreenUpdateRequest?.source || '').trim() : '';
         await startVersionDownloadWithFallback(
           requestedUrl || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
-          requestedSource || (autoUpdateChannel === 2 ? 'master' : 'zipball'),
+          requestedSource || (autoUpdateChannel === 2 ? 'main' : 'zipball'),
           requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
         );
         return;
@@ -2627,7 +2627,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
       const requestedSource = requestIsFresh ? String(fullscreenUpdateRequest?.source || '').trim() : '';
       await startVersionDownloadWithFallback(
         requestedUrl || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
-        requestedSource || (autoUpdateChannel === 2 ? 'master' : 'zipball'),
+        requestedSource || (autoUpdateChannel === 2 ? 'main' : 'zipball'),
         requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
       );
       return;

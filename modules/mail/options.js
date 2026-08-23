@@ -128,20 +128,24 @@
         subjectLine.appendChild(attach);
       }
       subjectCell.appendChild(subjectLine);
+      tr.appendChild(subjectCell);
+      const summaryCell = document.createElement('td');
+      summaryCell.className = 'mail-summary-cell';
       if (row.summary) {
         const summaryLine = document.createElement('div');
         summaryLine.className = 'mail-summary-line';
-        summaryLine.textContent = row.summary.slice(0, 80) + (row.summary.length > 80 ? '…' : '');
-        subjectCell.appendChild(summaryLine);
+        summaryLine.textContent = row.summary.slice(0, 100) + (row.summary.length > 100 ? '…' : '');
+        summaryCell.appendChild(summaryLine);
+      } else {
+        summaryCell.textContent = '-';
       }
-      tr.appendChild(subjectCell);
+      tr.appendChild(summaryCell);
       appendCell(tr, 'mail-from', row.from || row.sender || '-');
       appendCell(tr, '', row.receivedDate || row.sentDate || '-');
       appendCell(tr, '', Number(row.threadMessageCount) > 0 ? Number(row.threadMessageCount) : '-');
       body?.appendChild(tr);
     });
     element('mailLoading').style.display = 'none';
-    element('mailTableHeadWrap').style.display = list.length ? 'block' : 'none';
     element('mailTableWrap').style.display = list.length ? 'block' : 'none';
     if (!list.length) renderError('暂无邮件数据');
     else clearError();
@@ -149,7 +153,6 @@
 
   async function loadThreads() {
     element('mailLoading').style.display = 'flex';
-    element('mailTableHeadWrap').style.display = 'none';
     element('mailTableWrap').style.display = 'none';
     clearError();
     const result = await send('MAIL_LOAD_THREADS');
