@@ -298,7 +298,17 @@
           return;
         }
         if (message?.type === 'askResponse' && pendingAsk?.id === message.id) {
-          settlePendingAsk(message.action, message.count);
+          const action = String(message.action || 'stop');
+          if (action === 'always' && pendingAsk.mode === 'iterate') {
+            const askId = pendingAsk.id;
+            void saveSettings({ alwaysAllow: true })
+              .catch((error) => console.error('[qwen] 保存全局循环许可失败：', error))
+              .finally(() => {
+                if (pendingAsk?.id === askId) settlePendingAsk(action, message.count);
+              });
+            return;
+          }
+          settlePendingAsk(action, message.count);
           return;
         }
         if (message?.type === 'stop') {

@@ -19,6 +19,13 @@
     });
   }
 
+  function applyAlwaysAllowState(value) {
+    const alwaysAllow = document.getElementById('qwenAlwaysAllow');
+    const maxIterations = document.getElementById('qwenMaxIterations');
+    if (alwaysAllow instanceof HTMLInputElement) alwaysAllow.checked = value === true;
+    if (maxIterations instanceof HTMLInputElement) maxIterations.disabled = value === true;
+  }
+
   async function refresh() {
     const status = await send('QWEN_GET_STATUS');
     const toggle = document.getElementById('qwenEnabled');
@@ -27,9 +34,7 @@
     if (thinking instanceof HTMLInputElement) thinking.checked = status.thinkingEnabled === true;
     const maxIterations = document.getElementById('qwenMaxIterations');
     if (maxIterations instanceof HTMLInputElement) maxIterations.value = String(Math.max(1, Number(status.maxIterations) || 6));
-    const alwaysAllow = document.getElementById('qwenAlwaysAllow');
-    if (alwaysAllow instanceof HTMLInputElement) alwaysAllow.checked = status.alwaysAllow === true;
-    if (maxIterations instanceof HTMLInputElement && alwaysAllow instanceof HTMLInputElement) maxIterations.disabled = alwaysAllow.checked === true;
+    applyAlwaysAllowState(status.alwaysAllow === true);
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
     const select = document.getElementById('qwenModelSelect');
@@ -117,6 +122,11 @@
     void refresh();
     void refreshOperations();
   }
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes.qwenAlwaysAllow) return;
+    applyAlwaysAllowState(changes.qwenAlwaysAllow.newValue === true);
+  });
 
   global.BjtuQwenOptions = { init, reset };
   global.BjtuOptionsModules?.register('qwen', global.BjtuQwenOptions);

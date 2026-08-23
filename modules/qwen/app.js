@@ -1330,7 +1330,7 @@
       if (always instanceof HTMLButtonElement) {
         always.textContent = pendingAskMode === 'operation-permission'
           ? `在此轮对话中始终允许 ${executionMode} 所有操作`
-          : '始终允许';
+          : '在所有会话中始终允许';
       }
       if (sessionAlways instanceof HTMLButtonElement) {
         sessionAlways.hidden = pendingAskMode !== 'operation-permission';
