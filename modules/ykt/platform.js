@@ -1424,6 +1424,25 @@ async function yktPageCourseHomework(classroomId) {
   };
 }
 
+async function yktPageAssignmentSnapshot() {
+  if (typeof globalThis.isPlatformEnabled === 'function' && !globalThis.isPlatformEnabled('ykt')) {
+    throw Object.assign(new Error('雨课堂未启用，请先调用 ykt.login()'), { code: 'LOGIN_REQUIRED' });
+  }
+  if (String(window.platformLoginState?.ykt || '') !== 'online') {
+    throw Object.assign(new Error('雨课堂未登录，请先调用 ykt.login()'), { code: 'LOGIN_REQUIRED' });
+  }
+  const ready = await waitYktPageDataReady();
+  if (!ready) throw Object.assign(new Error('雨课堂数据尚未加载完毕，请先调用 ykt.login()'), { code: 'LOGIN_REQUIRED' });
+  return {
+    courses: (Array.isArray(window.yktCourseGroupsSnapshot) ? window.yktCourseGroupsSnapshot : []).map((course) => ({
+      classroomId: String(course?.classroom_id || '').trim(),
+      courseName: String(course?.course_name || course?.name || '').trim(),
+      teacher: String(course?.teacher_name || '').trim(),
+      homework: (Array.isArray(course?.homeworks) ? course.homeworks : []).map(yktHomeworkForPageApi)
+    }))
+  };
+}
+
 async function yktPageLogin(args = {}) {
   const platform = 'ykt';
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
@@ -1440,6 +1459,7 @@ async function yktPageLogin(args = {}) {
 globalThis.BjtuYktPageApi = Object.freeze({
   courseList: () => yktPageCourseList(),
   courseHomework: (args) => yktPageCourseHomework(String(args?.classroomId || '').trim()),
+  assignmentSnapshot: () => yktPageAssignmentSnapshot(),
   login: (args) => yktPageLogin(args)
 });
 

@@ -132,6 +132,7 @@
   const ACADEMIC_DIRECT = {
     currentAccount: { fn: 'getContext', type: 'ACADEMIC_GET_CONTEXT' },
     scores: { fn: 'loadScores', type: 'ACADEMIC_LOAD_SCORES' },
+    scoreSemesters: { fn: 'loadScoreSemesters', type: 'ACADEMIC_SCORE_SEMESTERS' },
     exams: { fn: 'loadExams', type: 'ACADEMIC_LOAD_EXAMS' },
     schedule: { fn: 'loadSchedule', type: 'ACADEMIC_LOAD_SCHEDULE' },
     login: { fn: 'loginWithPassword', type: 'ACADEMIC_LOGIN_WITH_PASSWORD' },
@@ -561,7 +562,7 @@ name: 've.accounts',
       doc: [
         '## ve.assignments —— 全平台作业查询',
         '',
-        '遍历当前学期所有课程，按提交状态与类型查询作业。status：all（全部，默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 作业 / 课程报告 / 实验。',
+        '直接筛选 ve.login 完成后 app.html 已加载的当前学期作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ve.login()。status：all（全部，默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 作业 / 课程报告 / 实验。',
         '',
         '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|作业|课程报告|实验，默认 all"}',
         '',
@@ -573,33 +574,28 @@ name: 've.accounts',
         const status = normalizeAssignmentStatus(args?.status);
         const typeFilter = String(args?.type ?? 'all').trim();
         const core = await veHomework();
-        const terms = await core.fetchTerms();
-        const xqCode = core.chooseTermCode(terms);
-        const courses = await core.fetchCourses(xqCode);
+        const snapshot = await pageInvoke('ve', 'assignmentSnapshot', {}, 120000);
+        const courses = Array.isArray(snapshot?.courses) ? snapshot.courses : [];
         const now = Date.now();
         const items = [];
-        for (const course of (Array.isArray(courses) ? courses : []).slice(0, 60)) {
+        for (const entry of courses.slice(0, 60)) {
+          const course = entry?.course || {};
           const courseId = core.getCourseId(course);
           if (!courseId) continue;
-          try {
-            const list = await core.fetchCourseHomework(courseId);
-            for (const hw of (Array.isArray(list) ? list : [])) {
-              const type = veSubTypeLabel(hw?.subType ?? hw?.sub_type);
-              if (typeFilter !== 'all' && type !== typeFilter) continue;
-              const done = core.isHomeworkDone(hw);
-              const deadline = core.parseDeadline(hw?.end_time ?? hw?.endTime ?? '');
-              const overdue = !done && deadline > 0 && deadline < now;
-              const st = computeAssignmentStatus(done, overdue);
-              if (status !== 'all' && st !== status) continue;
-              const title = String(hw?.title || hw?.workTitle || hw?.courseNoteTitle || '未命名作业').trim();
-              items.push(buildAssignmentItem(
-                `ve:${courseId}:${hw?.id ?? hw?.noteId ?? hw?.upId ?? title}`,
-                '智慧课程平台', core.getCourseName(course), title, type, st, deadline,
-                veAssignmentActionUrl(course, courseId, hw?.subType ?? hw?.sub_type)
-              ));
-            }
-          } catch (error) {
-            if (error?.loginRequired || error?.message === 'LOGIN_REQUIRED') throw loginRequiredError();
+          for (const hw of (Array.isArray(entry?.homework) ? entry.homework : [])) {
+            const type = veSubTypeLabel(hw?.subType ?? hw?.sub_type);
+            if (typeFilter !== 'all' && type !== typeFilter) continue;
+            const done = core.isHomeworkDone(hw);
+            const deadline = core.parseDeadline(hw?.end_time ?? hw?.endTime ?? '');
+            const overdue = !done && deadline > 0 && deadline < now;
+            const st = computeAssignmentStatus(done, overdue);
+            if (status !== 'all' && st !== status) continue;
+            const title = String(hw?.title || hw?.workTitle || hw?.courseNoteTitle || '未命名作业').trim();
+            items.push(buildAssignmentItem(
+              `ve:${courseId}:${hw?.id ?? hw?.noteId ?? hw?.upId ?? title}`,
+              '智慧课程平台', core.getCourseName(course), title, type, st, deadline,
+              veAssignmentActionUrl(course, courseId, hw?.subType ?? hw?.sub_type)
+            ));
           }
         }
         return { total: items.length, items: items.slice(0, 300) };
@@ -807,7 +803,7 @@ name: 've.teachers_of_',
       doc: [
         '## ykt.assignments —— 全平台作业查询',
         '',
-        '遍历雨课堂当前账号所有课程，按提交状态与类型查询作业。线上学习任务优先依据扩展获取的 0~1 进度判断：进度完成即为 submitted；仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 试卷 / 公告。',
+        '直接筛选 ykt.login 完成后 app.html 已加载的雨课堂作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ykt.login()。线上学习任务优先依据扩展获取的 0~1 进度判断：进度完成即为 submitted；仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 试卷 / 公告。',
         '',
         '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|试卷|公告，默认 all"}',
         '',
@@ -818,39 +814,29 @@ name: 've.teachers_of_',
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
         const typeFilter = String(args?.type ?? 'all').trim();
-        const courseList = await pageInvoke('ykt', 'courseList', {}, 120000);
-        if (courseList?.loggedIn === false) {
-          return { ok: false, code: 'LOGIN_REQUIRED', message: '雨课堂未登录，请先调用 ykt.login 完成登录后再查询作业' };
-        }
-        const courses = Array.isArray(courseList?.courses) ? courseList.courses : [];
+        const snapshot = await pageInvoke('ykt', 'assignmentSnapshot', {}, 120000);
+        const courses = Array.isArray(snapshot?.courses) ? snapshot.courses : [];
         const now = Date.now();
         const items = [];
         for (const course of courses.slice(0, 60)) {
           const cid = String(course?.classroomId || '').trim();
           if (!cid) continue;
-          try {
-            const data = await pageInvoke('ykt', 'courseHomework', { classroomId: cid }, 120000);
-            if (isLoginRequiredValue(data)) throw Object.assign(new Error('雨课堂需要登录'), { code: 'LOGIN_REQUIRED' });
-            const homework = Array.isArray(data?.homework) ? data.homework : [];
-            for (const h of homework) {
-              const type = String(h?.activityType || '').trim() || 'all';
-              if (typeFilter !== 'all' && type !== typeFilter) continue;
-              const isClassroomActivity = Number(h?.__actype ?? h?.actype) === 14;
-              const deadline = isClassroomActivity ? 0 : parseDeadline(h?.end);
-              const done = yktIsHomeworkDone(h);
-              const overdue = isClassroomActivity
-                ? (!done && h?.is_finished === true)
-                : (!done && deadline > 0 && deadline < now);
-              const st = computeAssignmentStatus(done, overdue);
-              if (status !== 'all' && st !== status) continue;
-              items.push(buildAssignmentItem(
-                `ykt:${cid}:${h?.id}`, '雨课堂', String(course?.courseName || ''),
-                String(h?.title || ''), type, st, deadline, String(h?.link || '')
-              ));
-            }
-          } catch (error) {
-            if (isLoginRequiredError(error)) throw error;
-            // 单个课程失败不阻断查询
+          const homework = Array.isArray(course?.homework) ? course.homework : [];
+          for (const h of homework) {
+            const type = String(h?.activityType || '').trim() || 'all';
+            if (typeFilter !== 'all' && type !== typeFilter) continue;
+            const isClassroomActivity = Number(h?.__actype ?? h?.actype) === 14;
+            const deadline = isClassroomActivity ? 0 : parseDeadline(h?.end);
+            const done = yktIsHomeworkDone(h);
+            const overdue = isClassroomActivity
+              ? (!done && h?.is_finished === true)
+              : (!done && deadline > 0 && deadline < now);
+            const st = computeAssignmentStatus(done, overdue);
+            if (status !== 'all' && st !== status) continue;
+            items.push(buildAssignmentItem(
+              `ykt:${cid}:${h?.id}`, '雨课堂', String(course?.courseName || ''),
+              String(h?.title || ''), type, st, deadline, String(h?.link || '')
+            ));
           }
         }
         return { total: items.length, items: items.slice(0, 300) };
@@ -894,20 +880,41 @@ name: 've.teachers_of_',
     },
     {
       module: 'academic',
+      name: 'academic.scoreSemesters',
+      label: '成绩学期列表',
+      summary: '获取教务系统成绩页面实际提供的学期及 zxjxjhh 参数',
+      doc: [
+        '## academic.scoreSemesters —— 成绩学期列表',
+        '',
+        '读取教务系统历年成绩页面上的 #zxjxjhh 下拉框，返回当前页面实际提供的学期，而不是使用固定学期列表。需要教务系统已登录。',
+        '',
+        '**调用示例**：`academic.scoreSemesters()`',
+        '',
+        '**返回示例**：`{"currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"},{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2"}]}`。currentZxjxjhh 通过本学期成绩任意一行的“学年”匹配页面 option 得出；academic.scores 可直接接收这些 zxjxjhh。'
+      ].join('\n'),
+      async run() {
+        return academicInvoke('scoreSemesters', undefined, 120000);
+      }
+    },
+    {
+      module: 'academic',
       name: 'academic.scores',
       label: '成绩查询',
-      summary: '获取教务系统最新成绩',
+      summary: '按一个或多个学期获取教务系统成绩',
       doc: [
         '## academic.scores —— 成绩查询',
         '',
-        '查询教务系统最新成绩。需要教务系统已登录。',
+        '按学期查询教务系统成绩。需要教务系统已登录。不传参数时获取当前学期成绩；传入多学期前可先调用 academic.scoreSemesters 获取页面当前实际提供的 zxjxjhh。',
         '',
-        '**调用示例**：`academic.scores()`',
+        '**参数**：zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也接受 academic.scoreSemesters 返回的 label，但不接受虚拟的当前学期字符串。列表中包含 currentZxjxjhh 时先获取当前学期成绩；包含其他学期时只获取一次完整历年成绩表，再按表格“学年”列筛选。某学期没有成绩时会正常返回空结果。',
         '',
-        '**返回示例**：{"scores":[{"courseName":"高等数学","score":95,"credits":4}]}'
+        '**调用示例**：`academic.scores()`；`academic.scores(["2024-2025-2-2","2023-2024-1-2"])`；`academic.scoreSemesters().then(({semesters}) => academic.scores(semesters.map(item => item.zxjxjhh)))`',
+        '',
+        '**返回示例**：`{"rows":[{"academicYear":"2024-2025-2","courseName":"高等数学","score":"95","credit":"4"}],"selectedSemesters":["2024-2025-2"],"count":1}`'
       ].join('\n'),
-      async run() {
-        return academicInvoke('scores', undefined, 120000);
+      async run(args) {
+        const semesters = Array.isArray(args) ? args : args?.semesters;
+        return academicInvoke('scores', semesters === undefined ? {} : { semesters }, 120000);
       }
     },
     {
@@ -1074,7 +1081,7 @@ name: 've.teachers_of_',
       doc: [
         '## mooc.assignments —— 全平台作业查询',
         '',
-        '遍历中国大学MOOC当前账号所有课程，按提交状态与类型查询作业。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 单元作业 / 单元测试 / 考试。',
+        '筛选 app.html 已加载的中国大学MOOC作业，不会为查询作业自动打开或请求 MOOC 页面。平台未启用或未完成登录时，请先调用 mooc.login()。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 单元作业 / 单元测试 / 考试。',
         '',
         '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|单元作业|单元测试|考试，默认 all"}',
         '',
@@ -1722,6 +1729,36 @@ name: 've.teachers_of_',
   }
 
   const LOGIN_GUARDED_PLATFORMS = new Set(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
+  const PLATFORM_ENABLED_DEFAULTS = Object.freeze({
+    ve: true,
+    ykt: false,
+    mrjzy: false,
+    jlgj: false,
+    mooc: false,
+    xuetangx: false
+  });
+  const PLATFORM_LABELS = Object.freeze({
+    ve: '智慧课程平台',
+    ykt: '雨课堂',
+    mrjzy: '每日交作业',
+    jlgj: '交理工教务',
+    mooc: '中国大学MOOC',
+    xuetangx: '学堂在线'
+  });
+
+  async function assertAssignmentsPlatformEnabled(op) {
+    const platform = String(op?.module || '');
+    const shortName = String(op?.name || '').split('.').slice(1).join('.');
+    if (shortName !== 'assignments' || !Object.hasOwn(PLATFORM_ENABLED_DEFAULTS, platform)) return;
+    const stored = await chrome.storage.local.get(['platformEnabled']).catch(() => ({}));
+    const configured = stored?.platformEnabled?.[platform];
+    const enabled = typeof configured === 'boolean' ? configured : PLATFORM_ENABLED_DEFAULTS[platform];
+    if (enabled) return;
+    throw Object.assign(
+      new Error(`${PLATFORM_LABELS[platform] || platform}未启用，请先调用 ${platform}.login()`),
+      { code: 'LOGIN_REQUIRED' }
+    );
+  }
 
   function operationNeedsPlatformLogin(op) {
     if (!LOGIN_GUARDED_PLATFORMS.has(String(op?.module || ''))) return false;
@@ -1782,6 +1819,7 @@ name: 've.teachers_of_',
       }
     }
     try {
+      await assertAssignmentsPlatformEnabled(op);
       if (op.requiresAuthorization === true) {
         if (typeof options?.authorize !== 'function') {
           throw Object.assign(new Error(`操作「${op.name}」需要用户授权`), { code: 'AUTHORIZATION_REQUIRED' });

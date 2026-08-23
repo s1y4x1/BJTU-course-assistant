@@ -777,41 +777,35 @@ let moocLoginAssistPopupTabId = null;
       }));
     },
     assignments: async (args = {}) => {
-      try {
-        await checkLogin();
-      } catch (error) {
-        if (error?.code === 'not-logged-in') throw Object.assign(new Error('未检查登录'), { code: 'not-logged-in' });
-        throw error;
+      if (!isPlatformEnabled('mooc')) {
+        throw Object.assign(new Error('中国大学MOOC未启用，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
+      }
+      if (String(window.platformLoginState?.mooc || '') !== 'online') {
+        throw Object.assign(new Error('中国大学MOOC未登录，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
+      }
+      if (typeof window.waitForPlatformDataReady === 'function') {
+        const ready = await window.waitForPlatformDataReady('mooc', 120000);
+        if (!ready) throw Object.assign(new Error('中国大学MOOC数据尚未加载完毕，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
       }
       const statusFilter = String(args?.status || 'all').trim().toLowerCase();
       const typeFilter = String(args?.type || 'all').trim();
-      const panels = await request('course-list');
-      const courseItems = (Array.isArray(panels) ? panels : []).map((panel) => normalizeCourse(panel, null));
       const items = [];
-      for (const course of courseItems.slice(0, 60)) {
-        try {
-          const response = await request('course-detail', { tid: Number(course.tid) });
-          const term = response?.result?.mocTermDto || response?.mocTermDto;
-          const tasks = normalizeTasks(term);
-          for (const task of tasks) {
-            const type = typeText(task.type);
-            if (typeFilter !== 'all' && type !== typeFilter) continue;
-            const st = task?.done ? 'submitted' : (task?.overdue ? 'overdue' : 'pending');
-            if (statusFilter !== 'all' && st !== statusFilter) continue;
-            const detailed = normalizeCourse({ id: course.id, name: course.name, termPanel: { id: course.tid } }, term);
-            items.push({
-              key: `mooc:${course.id}:${task.id}`,
-              platform: '中国大学MOOC',
-              courseName: String(course.name || ''),
-              title: String(task?.title || ''),
-              type,
-              status: st,
-              deadline: Number(task?.deadline || 0),
-              actionUrl: taskUrl(detailed, task) || ''
-            });
-          }
-        } catch (error) {
-          if (error?.code === 'not-logged-in') throw error;
+      for (const course of courses.slice(0, 60)) {
+        for (const task of (Array.isArray(course?.tasks) ? course.tasks : [])) {
+          const type = typeText(task.type);
+          if (typeFilter !== 'all' && type !== typeFilter) continue;
+          const st = task?.done ? 'submitted' : (task?.overdue ? 'overdue' : 'pending');
+          if (statusFilter !== 'all' && st !== statusFilter) continue;
+          items.push({
+            key: `mooc:${course.id}:${task.id}`,
+            platform: '中国大学MOOC',
+            courseName: String(course.name || ''),
+            title: String(task?.title || ''),
+            type,
+            status: st,
+            deadline: Number(task?.deadline || 0),
+            actionUrl: taskUrl(course, task) || ''
+          });
         }
       }
       return { total: items.length, items: items.slice(0, 300) };

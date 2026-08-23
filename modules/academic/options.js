@@ -26,6 +26,7 @@
     academicScoreMonitorIntervalMinutes: DEFAULT_MONITOR_INTERVAL_MINUTES,
     academicScheduleType: 'semester',
     academicScheduleWeek: 'all',
+    academicScoreSemester: '',
     [BB_WISH_LIST_KEY]: [],
     [BB_REFRESH_DELAY_KEY]: DEFAULT_BB_REFRESH_DELAY_MS
   });
@@ -33,6 +34,10 @@
   let initialized = false;
   let context = null;
   let scheduleData = null;
+  let scoreSemestersLoaded = false;
+  let scoreSemesterPreference = '';
+  let scoreCurrentZxjxjhh = '';
+  let scoreSemesterOptions = [];
   let setMessage = () => {};
   let assessmentScriptInstalled = false;
   let assessmentScriptEnabled = false;
@@ -1375,6 +1380,33 @@
     renderEmptyDataStatus(element('academicSystemStatus'), 'academicScoreTableBody', 'academicScoreLoading', '暂无成绩数据');
   }
 
+  function renderScoreSemesterOptions(semesters, currentZxjxjhh = '', preferredValue = '') {
+    const select = element('academicScoreSemester');
+    if (!(select instanceof HTMLSelectElement)) return;
+    scoreSemesterOptions = Array.isArray(semesters) ? semesters : [];
+    scoreCurrentZxjxjhh = String(currentZxjxjhh || '').trim();
+    select.replaceChildren(new Option('全部', '__all__'));
+    for (const semester of scoreSemesterOptions) {
+      const value = String(semester?.zxjxjhh || '').trim();
+      const label = String(semester?.label || '').trim();
+      if (!value || !label) continue;
+      select.append(new Option(
+        value === scoreCurrentZxjxjhh ? `${label}(本学期)` : label,
+        value
+      ));
+    }
+    const preferred = String(preferredValue || '');
+    select.value = preferred && [...select.options].some((option) => option.value === preferred)
+      ? preferred
+      : (scoreCurrentZxjxjhh || '__all__');
+    scoreSemesterPreference = select.value === scoreCurrentZxjxjhh ? '' : select.value;
+    const button = element('academicScoreCurrentSemesterBtn');
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = !scoreCurrentZxjxjhh;
+      button.textContent = select.value === scoreCurrentZxjxjhh ? '全部' : '本学期';
+    }
+  }
+
   function renderExams(rows) {
     const list = Array.isArray(rows) ? rows : [];
     const body = element('academicExamTableBody');
@@ -1579,7 +1611,25 @@
     element('academicScoreLoading').style.display = 'flex';
     element('academicScoreTableWrap').style.display = 'none';
     element('academicSystemStatus').style.display = 'none';
-    const result = await sendAcademicLoadWithRetry('ACADEMIC_LOAD_SCORES', undefined, '成绩服务');
+    const select = element('academicScoreSemester');
+    if (!scoreSemestersLoaded) {
+      const preferred = String(scoreSemesterPreference || '');
+      const semesterResult = await sendAcademicLoadWithRetry('ACADEMIC_SCORE_SEMESTERS', undefined, '成绩学期服务');
+      if (semesterResult?.ok) {
+        renderScoreSemesterOptions(semesterResult.semesters, semesterResult.currentZxjxjhh, preferred);
+        scoreSemestersLoaded = true;
+      }
+    }
+    const selected = String(select?.value || '');
+    const isCurrent = !scoreSemestersLoaded || selected === scoreCurrentZxjxjhh;
+    const semesters = selected === '__all__'
+      ? scoreSemesterOptions.map((item) => String(item?.zxjxjhh || '').trim()).filter(Boolean)
+      : [selected].filter(Boolean);
+    const result = await sendAcademicLoadWithRetry(
+      'ACADEMIC_LOAD_SCORES',
+      isCurrent ? undefined : { semesters },
+      '成绩服务'
+    );
     if (!result?.ok) {
       element('academicScoreLoading').style.display = 'none';
       element('academicSystemStatus').style.display = 'block';
@@ -1735,6 +1785,20 @@
       select.value = currentWeek > 0 && select.value !== String(currentWeek) ? String(currentWeek) : 'all';
       select.dispatchEvent(new Event('change'));
     });
+    element('academicScoreSemester')?.addEventListener('change', async (event) => {
+      const selected = String(event.currentTarget.value || '');
+      scoreSemesterPreference = selected === scoreCurrentZxjxjhh ? '' : selected;
+      const button = element('academicScoreCurrentSemesterBtn');
+      if (button instanceof HTMLButtonElement) button.textContent = selected === scoreCurrentZxjxjhh ? '全部' : '本学期';
+      await chrome.storage.local.set({ academicScoreSemester: scoreSemesterPreference });
+      await loadScores();
+    });
+    element('academicScoreCurrentSemesterBtn')?.addEventListener('click', () => {
+      const select = element('academicScoreSemester');
+      if (!(select instanceof HTMLSelectElement)) return;
+      select.value = select.value === scoreCurrentZxjxjhh ? '__all__' : scoreCurrentZxjxjhh;
+      select.dispatchEvent(new Event('change'));
+    });
     bindIntervalEditor('academicScoreMonitorInterval', 'academicScoreMonitorIntervalMinutes',
       DEFAULT_MONITOR_INTERVAL_MINUTES, '教务信息检查间隔');
     bindIntervalEditor('academicClassReminderLead', 'academicClassReminderLeadMinutes',
@@ -1746,8 +1810,10 @@
       if (message?.type === 'ACADEMIC_DATA_UPDATED') {
         const payload = message.payload || {};
         if (payload.kind === 'score' || payload.kind === 'scores') {
-          renderScores(payload.rows);
-          renderCheckedAt(element('academicScoreCheckedAt'), payload.checkedAt);
+          if (element('academicScoreSemester')?.value === scoreCurrentZxjxjhh) {
+            renderScores(payload.rows);
+            renderCheckedAt(element('academicScoreCheckedAt'), payload.checkedAt);
+          }
         } else if (payload.kind === 'exam' || payload.kind === 'exams') {
           renderExams(payload.rows);
           renderCheckedAt(element('academicExamCheckedAt'), payload.checkedAt);
@@ -1821,6 +1887,7 @@
     element('academicClassReminderEnabled').checked = stored.academicClassReminderEnabled === true;
     renderBbSettings(stored);
     element('academicScheduleType').value = stored.academicScheduleType === 'selection' ? 'selection' : 'semester';
+    scoreSemesterPreference = String(stored.academicScoreSemester || '');
     setIntervalEditor('academicScoreMonitorInterval', stored.academicScoreMonitorIntervalMinutes,
       DEFAULT_MONITOR_INTERVAL_MINUTES);
     setIntervalEditor('academicClassReminderLead', stored.academicClassReminderLeadMinutes,
@@ -1846,6 +1913,9 @@
     renderBbSettings(DEFAULTS);
     element('academicScheduleType').value = 'semester';
     element('academicScheduleWeek').value = 'all';
+    renderScoreSemesterOptions([], '', '');
+    scoreSemestersLoaded = false;
+    scoreSemesterPreference = '';
     setIntervalEditor('academicScoreMonitorInterval', DEFAULT_MONITOR_INTERVAL_MINUTES,
       DEFAULT_MONITOR_INTERVAL_MINUTES);
     setIntervalEditor('academicClassReminderLead', DEFAULT_CLASS_REMINDER_LEAD_MINUTES,

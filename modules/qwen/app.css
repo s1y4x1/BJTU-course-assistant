@@ -294,6 +294,41 @@ html[data-color-scheme="dark"] .qwen-chat-history-loading {
   max-width: calc(100% - 42px);
 }
 
+.qwen-chat-suggestions {
+  align-self: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 92%;
+}
+
+.qwen-chat-suggestion-btn {
+  border: 1px solid rgba(97, 92, 237, 0.45);
+  border-radius: 999px;
+  padding: 5px 11px;
+  background: rgba(97, 92, 237, 0.08);
+  color: #4338ca;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.qwen-chat-suggestion-btn:hover {
+  background: rgba(97, 92, 237, 0.16);
+}
+
+.qwen-chat-suggestion-btn:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-suggestion-btn {
+  color: #c7d2fe;
+  border-color: rgba(165, 180, 252, 0.5);
+  background: rgba(99, 102, 241, 0.16);
+}
+
 .qwen-chat-edit-btn {
   flex: 0 0 auto;
   border: none;
@@ -827,11 +862,35 @@ html[data-color-scheme="dark"] .qwen-chat-md blockquote {
 }
 
 .qwen-chat-md .qwen-md-inline-code {
+  position: relative;
   background: rgba(15, 23, 42, 0.08);
   color: #0f172a;
   padding: 1px 4px;
   border-radius: 4px;
   font-size: 0.92em;
+  cursor: pointer;
+}
+
+.qwen-chat-md .qwen-md-inline-code:hover,
+.qwen-chat-md .qwen-md-inline-code:focus-visible {
+  background: rgba(97, 92, 237, 0.16);
+  outline: none;
+}
+
+.qwen-chat-md .qwen-md-inline-code.qwen-copy-success::after {
+  content: attr(data-copy-feedback);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  z-index: 4;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #0f172a;
+  color: #fff;
+  font: 11px/1.4 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 html[data-color-scheme="dark"] .qwen-chat-md .qwen-md-inline-code {
@@ -839,13 +898,59 @@ html[data-color-scheme="dark"] .qwen-chat-md .qwen-md-inline-code {
   color: #e2e8f0;
 }
 
-.qwen-chat-md .qwen-md-codeblock {
+.qwen-chat-md .qwen-md-codeblock-wrap {
+  position: relative;
+  margin: 0.5em 0;
+  border-radius: 8px;
   background: #0f172a;
   color: #e2e8f0;
-  border-radius: 8px;
+}
+
+.qwen-chat-md .qwen-md-codeblock-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  background: #1e293b;
+  color: #94a3b8;
+  font: 11px/1.4 system-ui, sans-serif;
+}
+
+.qwen-chat-md .qwen-md-codeblock-language {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qwen-chat-md .qwen-md-codeblock-copy {
+  flex: 0 0 auto;
+  border: 0;
+  padding: 1px 4px;
+  background: transparent;
+  color: #cbd5e1;
+  font: inherit;
+  cursor: pointer;
+}
+
+.qwen-chat-md .qwen-md-codeblock-copy:hover {
+  color: #fff;
+}
+
+.qwen-chat-md .qwen-md-codeblock {
+  margin: 0;
   padding: 10px 12px;
   overflow-x: auto;
-  margin: 0.5em 0;
+  border-radius: 0 0 8px 8px;
+  background: transparent;
+  color: inherit;
   font-size: 0.92em;
   line-height: 1.5;
 }

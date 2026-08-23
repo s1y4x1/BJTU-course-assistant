@@ -14,7 +14,9 @@
   }
 
   function parseExecutionBlocks(reply) {
-    const text = String(reply || '');
+    const originalText = String(reply || '');
+    const suggestions = /(?:^|\n)[ \t]*```suggestions[ \t]*\n[\s\S]*?```[ \t]*$/i.exec(originalText);
+    const text = suggestions ? originalText.slice(0, suggestions.index).trimEnd() : originalText;
     EXECUTION_BLOCK_PATTERN.lastIndex = 0;
     let match;
     const matches = [];
@@ -67,9 +69,8 @@
       ...(String(qwenDocs || '').trim() ? [qwenDocs, ''] : []),
       '',
       '# 如何执行代码与调用操作',
+      '调用本扩展执行操作时，只能在普通回复消息的末尾输出下述多行代码块，由扩展负责执行。禁止使用通义千问内置的 `function_call`(以及其中的`code_interpreter` `web_search`等)。',
       '需要计算或调用扩展能力时，一条回复只能输出一个代码块。代码块语言决定执行环境：',
-      '调用本扩展执行操作时，禁止使用通义千问内置的 `code_interpreter`。只能在普通回复消息的末尾输出下述多行代码块，由扩展负责执行。',
-      '',
       '## sandbox',
       '- `sandbox` 在隔离沙箱中执行，不访问 app 页面、扩展后台、DOM 或 chrome API，也不需要询问用户。',
       '- 适合纯计算、数据整理和格式转换。表达式会直接返回；多条语句请显式 `return`。',
@@ -108,12 +109,17 @@
       '- 代码执行完毕后，扩展会把结果作为一条新输入继续发给你。',
       '- app/background 权限更高，仅在确有必要时使用；sandbox 能完成的任务优先使用 sandbox。',
       '- 若执行失败是因为需要登录、能力不可用或连续重试仍无法解决，请直接告知用户，不要无限重复。',
-      '- 如果不需要执行代码，直接给出最终答复，不附执行代码块。',
+      '- 如果不需要执行代码，直接给出最终答复。',
       '',
       '# 回答要求',
       '- 使用与用户问题相同的语言回答。',
       '- 基于真实操作返回的数据作答，不要编造。',
       '- 内容简洁、条理清晰。',
+      '- 在完成全部工具调用后的最终答复末尾，给出若干条你认为用户接下来可能发送的简短回复，数量由你根据上下文决定。使用一个 `suggestions` 围栏代码块，每行只写一条回复，不加序号、项目符号或说明；没有合适建议时可以省略。不要在仍包含 sandbox、app 或 background 执行代码块的中间回复中输出 suggestions。',
+      '```suggestions',
+      '查看未交作业',
+      '继续处理下一门课程',
+      '```',
       '',
       '---',
       '现在，请**立即**在 app 代码块中直接调用 `qwen.listOperations()` 获取当前可用操作名列表（按模块分组），再做个开场白（可以用诗歌，新旧形式皆可，或其他形式）。'

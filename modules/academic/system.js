@@ -3,7 +3,7 @@
 
   const LOGIN_URL = 'https://aa.bjtu.edu.cn/client/login/';
   const INDEX_URL = 'https://aa.bjtu.edu.cn/client/index/';
-  const SCORE_URL = 'https://aa.bjtu.edu.cn/score/scores/stu/view';
+  const SCORE_URL = 'https://aa.bjtu.edu.cn/score/scores/stu/view/';
   const EXAM_URL = 'https://aa.bjtu.edu.cn/examine/examplanstudent/stulist';
   const SCHEDULE_URLS = Object.freeze({
     semester: 'https://aa.bjtu.edu.cn/course_selection/courseselect/stuschedule/',
@@ -158,6 +158,30 @@
       if (row.academicYear && row.course) rows.push(row);
     }
     return { hasScoreTable, rows };
+  }
+
+  function parseScoreSemesters(html) {
+    const source = String(html || '');
+    const select = [...source.matchAll(/<select\b([^>]*)>([\s\S]*?)<\/select>/gi)]
+      .find((match) => /\b(?:id|name)\s*=\s*["']zxjxjhh["']/i.test(match[1]));
+    if (!select) return [];
+    const semesters = [];
+    const seen = new Set();
+    for (const option of select[2].matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/gi)) {
+      const value = attributeFromHtml(option[1], 'value');
+      const label = textFromHtml(option[2]);
+      if (!value || !label || seen.has(value)) continue;
+      seen.add(value);
+      semesters.push({ label, zxjxjhh: value });
+    }
+    return semesters;
+  }
+
+  function matchCurrentScoreSemester(rows, semesters) {
+    const academicYear = String((Array.isArray(rows) ? rows : [])
+      .find((row) => row?.academicYear)?.academicYear || '').trim();
+    return (Array.isArray(semesters) ? semesters : [])
+      .find((item) => String(item?.label || '').trim() === academicYear) || null;
   }
 
   function attributeFromHtml(value, name) {
@@ -669,8 +693,18 @@
     return { html, account };
   }
 
-  function fetchScorePage() {
-    return fetchAcademicPage(SCORE_URL, '成绩');
+  function scorePageUrl({ history = false, zxjxjhh = '' } = {}) {
+    const url = new URL(SCORE_URL);
+    if (history) {
+      url.searchParams.set('ctype', 'ln');
+      url.searchParams.set('perpage', '500');
+      if (zxjxjhh) url.searchParams.set('zxjxjhh', String(zxjxjhh));
+    }
+    return url.href;
+  }
+
+  function fetchScorePage(options = {}) {
+    return fetchAcademicPage(scorePageUrl(options), '成绩');
   }
 
   function fetchExamPage() {
@@ -1307,6 +1341,74 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     };
   }
 
+  async function loadAcademicScoreSemesters() {
+    const currentPage = await fetchScorePage();
+    const currentParsed = parseScorePage(currentPage.html);
+    if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
+    const historyPage = await fetchScorePage({ history: true });
+    const semesters = parseScoreSemesters(historyPage.html);
+    if (!semesters.length) throw new Error('历年成绩页面中未找到学期列表');
+    const currentZxjxjhh = String(matchCurrentScoreSemester(currentParsed.rows, semesters)?.zxjxjhh || '');
+    return {
+      ok: true,
+      currentZxjxjhh,
+      semesters
+    };
+  }
+
+  function requestedScoreSemesters(args) {
+    const provided = Array.isArray(args) ? args : args?.semesters;
+    if (provided !== undefined && !Array.isArray(provided)) {
+      throw new TypeError('semesters 必须是学期列表');
+    }
+    if (provided === undefined) return null;
+    const values = provided
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+    if (!values.length) throw new Error('semesters 不能为空');
+    return [...new Set(values)];
+  }
+
+  async function loadAcademicScores(args = {}) {
+    const requested = requestedScoreSemesters(args);
+    const currentPage = await fetchScorePage();
+    const currentParsed = parseScorePage(currentPage.html);
+    if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
+    const historyPage = await fetchScorePage({ history: true });
+    const historyParsed = parseScorePage(historyPage.html);
+    if (!historyParsed.hasScoreTable) throw new Error('历年成绩页面中未找到成绩表格');
+    const availableSemesters = parseScoreSemesters(historyPage.html);
+    const currentZxjxjhh = String(matchCurrentScoreSemester(currentParsed.rows, availableSemesters)?.zxjxjhh || '');
+    const selectedValues = requested === null
+      ? (currentZxjxjhh ? [currentZxjxjhh] : [])
+      : requested;
+    const byZxjxjhh = new Map(availableSemesters.map((item) => [item.zxjxjhh, item]));
+    const byLabel = new Map(availableSemesters.map((item) => [item.label, item]));
+    const selected = selectedValues.map((item) => byZxjxjhh.get(item) || byLabel.get(item)).filter(Boolean);
+    if (requested !== null && selected.length !== selectedValues.length) {
+      const unknown = selectedValues.filter((item) => !byZxjxjhh.has(item) && !byLabel.has(item));
+      throw new Error(`不可用的成绩学期：${unknown.join('、')}`);
+    }
+    const wantsCurrent = requested === null || (!!currentZxjxjhh && selected.some((item) => item.zxjxjhh === currentZxjxjhh));
+    const historical = selected.filter((item) => item.zxjxjhh !== currentZxjxjhh);
+    const academicYears = new Set(historical.map((item) => item.label));
+    const rows = [
+      ...(wantsCurrent ? currentParsed.rows : []),
+      ...historyParsed.rows.filter((row) => academicYears.has(String(row?.academicYear || '').trim()))
+    ];
+
+    return {
+      ok: true,
+      rows,
+      count: rows.length,
+      studentId: String(currentPage.account?.studentId || historyPage.account?.studentId || ''),
+      checkedAt: Date.now(),
+      currentZxjxjhh,
+      selectedSemesters: selected.map(({ label, zxjxjhh }) => ({ label, zxjxjhh })),
+      availableSemesters
+    };
+  }
+
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'ACADEMIC_LOGIN_WITH_PASSWORD') {
@@ -1333,8 +1435,18 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_LOAD_SCORES') {
-        checkScores('options', { force: true })
-          .then((result) => sendResponse({ ok: true, ...result }))
+        loadAcademicScores(message?.payload)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({
+            ok: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
+        return true;
+      }
+      if (message?.type === 'ACADEMIC_SCORE_SEMESTERS') {
+        loadAcademicScoreSemesters()
+          .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
             code: String(error?.code || ''),
@@ -1505,7 +1617,8 @@ if (message?.type === 'ACADEMIC_GET_CONTEXT') {
 
   global.BjtuAcademicSystemInternals = {
     getContext: () => buildAcademicContext(),
-    loadScores: () => checkScores('options', { force: true }),
+    loadScores: (args) => loadAcademicScores(args),
+    loadScoreSemesters: () => loadAcademicScoreSemesters(),
     loadExams: () => checkExams('options', { force: true }),
     loadSchedule: (args) => loadAcademicSchedule(args),
     loginWithPassword: (args) => loginWithPassword(args?.studentId, args?.password),
@@ -1514,6 +1627,8 @@ if (message?.type === 'ACADEMIC_GET_CONTEXT') {
     parseCurrentAccountPage,
     normalizeScoreRow,
     parseScorePage,
+    parseScoreSemesters,
+    matchCurrentScoreSemester,
     scoreFingerprint,
     processScoreRows,
     flushPendingScoreNotifications,

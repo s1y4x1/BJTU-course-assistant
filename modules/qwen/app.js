@@ -89,17 +89,19 @@
       const titleAttribute = title ? ` title="${escapeHtmlQwen(title)}"` : '';
       return `<img src="${escapeHtmlQwen(safeSrc)}" alt="${escapeHtmlQwen(String(text || ''))}"${titleAttribute} loading="lazy">`;
     };
-    renderer.codespan = ({ text }) => `<code class="qwen-md-inline-code">${escapeHtmlQwen(text)}</code>`;
+    renderer.codespan = ({ text }) => `<code class="qwen-md-inline-code" role="button" tabindex="0" title="点击复制">${escapeHtmlQwen(text)}</code>`;
     renderer.code = ({ text, lang }) => {
       const languageInfo = String(lang || '').trim();
       const language = languageInfo.split(/\s+/)[0];
+      if (language.toLowerCase() === 'suggestions') return '';
       const resultMode = /^res: (sandbox|app|background)$/.exec(languageInfo)?.[1] || '';
       if (resultMode) {
         const jsonText = String(text || '').trim();
         return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果（${escapeHtmlQwen(resultMode)}）</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
       }
       const languageAttribute = language ? ` data-language="${escapeHtmlQwen(language)}"` : '';
-      return `<pre class="qwen-md-codeblock"${languageAttribute}><code>${escapeHtmlQwen(String(text || ''))}</code></pre>`;
+      const languageLabel = language || '代码';
+      return `<div class="qwen-md-codeblock-wrap"${languageAttribute}><div class="qwen-md-codeblock-toolbar"><span class="qwen-md-codeblock-language">${escapeHtmlQwen(languageLabel)}</span><button type="button" class="qwen-md-codeblock-copy" title="复制代码">复制</button></div><pre class="qwen-md-codeblock"><code>${escapeHtmlQwen(String(text || ''))}</code></pre></div>`;
     };
     renderer.blockquote = function renderBlockquote({ tokens }) {
       return `<blockquote class="qwen-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
@@ -142,6 +144,85 @@
     return container?._mdText || '';
   }
 
+  function splitSuggestedReplies(text, { allowIncomplete = false } = {}) {
+    const source = String(text || '').replace(/\r\n?/g, '\n');
+    const completeMatch = /(?:^|\n)[ \t]*```suggestions[ \t]*\n([\s\S]*?)```[ \t]*$/i.exec(source);
+    const incompleteMatch = allowIncomplete && !completeMatch
+      ? /(?:^|\n)[ \t]*```suggestions[ \t]*(?:\n([\s\S]*)|$)/i.exec(source)
+      : null;
+    const match = completeMatch || incompleteMatch;
+    if (!match) return { text: source, suggestions: [], found: false, complete: false };
+    const suggestions = [...new Set(String(match[1] || '')
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean))];
+    return {
+      text: source.slice(0, match.index).trimEnd(),
+      suggestions,
+      found: true,
+      complete: !!completeMatch
+    };
+  }
+
+  function clearSuggestedReplies() {
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement)) return;
+    messages.querySelectorAll(':scope > .qwen-chat-suggestions').forEach((item) => item.remove());
+  }
+
+  function renderSuggestedReplies(bubble, suggestions) {
+    if (!(bubble instanceof HTMLElement) || !Array.isArray(suggestions)) return;
+    const anchor = messageDisplayNode(bubble);
+    if (!(anchor instanceof HTMLElement) || !anchor.isConnected) return;
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement)) return;
+    let container = [...messages.querySelectorAll(':scope > .qwen-chat-suggestions')]
+      .find((item) => item._qwenSuggestionBubble === bubble);
+    messages.querySelectorAll(':scope > .qwen-chat-suggestions').forEach((item) => {
+      if (item !== container) item.remove();
+    });
+    if (!(container instanceof HTMLElement)) {
+      container = document.createElement('div');
+      container.className = 'qwen-chat-suggestions';
+      container._qwenSuggestionBubble = bubble;
+      anchor.after(container);
+    }
+    suggestions.forEach((suggestion, index) => {
+      let button = container.children[index];
+      if (!(button instanceof HTMLButtonElement)) {
+        button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'qwen-chat-suggestion-btn';
+        button.addEventListener('click', () => {
+          if (busy) return;
+          const reply = String(button.textContent || '').trim();
+          if (!reply) return;
+          clearSuggestedReplies();
+          sendMessage(reply);
+        });
+        container.appendChild(button);
+      }
+      button.textContent = suggestion;
+      button.title = `发送：${suggestion}`;
+      button.disabled = busy;
+    });
+    while (container.children.length > suggestions.length) container.lastElementChild?.remove();
+    maybeAutoScrollMessages(messages);
+  }
+
+  function finalizeAssistantSuggestions(bubble, { render = true } = {}) {
+    if (!(bubble instanceof HTMLElement)) return null;
+    const parsed = splitSuggestedReplies(mdRawText(bubble), { allowIncomplete: true });
+    if (!parsed.suggestions.length) return null;
+    const container = mdContainer(bubble);
+    container._mdText = parsed.text;
+    container.innerHTML = renderQwenMarkdown(parsed.text);
+    enhanceOperationResultControls(container);
+    const candidate = { bubble, suggestions: parsed.suggestions };
+    if (render) renderSuggestedReplies(candidate.bubble, candidate.suggestions);
+    return candidate;
+  }
+
   async function copyQwenText(text, button) {
     const value = String(text || '');
     try {
@@ -160,6 +241,13 @@
       const previous = button.textContent;
       button.textContent = '已复制';
       setTimeout(() => { button.textContent = previous; }, 900);
+    } else if (button instanceof HTMLElement) {
+      button.classList.add('qwen-copy-success');
+      button.dataset.copyFeedback = '已复制';
+      setTimeout(() => {
+        button.classList.remove('qwen-copy-success');
+        delete button.dataset.copyFeedback;
+      }, 900);
     }
   }
 
@@ -237,15 +325,19 @@
   function renderAssistantHistoryMessage(message) {
     const list = Array.isArray(message?.content_list) ? message.content_list : [];
     if (!list.length) {
-      appendMessage('assistant', String(message?.content || '') || '（无回复）');
-      return;
+      const parsed = splitSuggestedReplies(String(message?.content || ''));
+      const bubble = appendMessage('assistant', parsed.text || '（无回复）');
+      return parsed.suggestions.length ? { bubble, suggestions: parsed.suggestions } : null;
     }
 
     let rendered = false;
     let answer = '';
+    let suggestionCandidate = null;
     const flushAnswer = () => {
       if (!answer) return;
-      appendMessage('assistant', answer);
+      const parsed = splitSuggestedReplies(answer);
+      const bubble = appendMessage('assistant', parsed.text || '（无回复）');
+      suggestionCandidate = parsed.suggestions.length ? { bubble, suggestions: parsed.suggestions } : null;
       answer = '';
       rendered = true;
     };
@@ -264,13 +356,19 @@
         const card = appendFunctionCallCard(call);
         const result = historyFunctionResult(item);
         if (result.found) finishFunctionCallCard(card, { result: result.value });
+        suggestionCandidate = null;
         rendered = true;
       } else if (String(item?.phase || '') === 'answer' && item?.content) {
         answer += String(item.content);
       }
     }
     flushAnswer();
-    if (!rendered) appendMessage('assistant', String(message?.content || '') || '（无回复）');
+    if (!rendered) {
+      const parsed = splitSuggestedReplies(String(message?.content || ''));
+      const bubble = appendMessage('assistant', parsed.text || '（无回复）');
+      suggestionCandidate = parsed.suggestions.length ? { bubble, suggestions: parsed.suggestions } : null;
+    }
+    return suggestionCandidate;
   }
 
   function extractResJson(text) {
@@ -312,9 +410,11 @@
     messagesEl.replaceChildren();
     const list = Array.isArray(messages) ? messages : [];
     let lastAssistantResponseId = '';
+    let suggestionCandidate = null;
     for (const message of list) {
       const role = String(message?.role || '');
       if (role === 'user') {
+        suggestionCandidate = null;
         const content = String(message?.content || '');
         if (content.includes('你是「BJTU 课程助手」的智能代理')) continue;
         const blocks = resBlocksFromText(content);
@@ -324,9 +424,12 @@
           appendMessage('user', extractUserQuestion(content), String(message?.parentId || message?.parent_id || lastAssistantResponseId));
         }
       } else if (role === 'assistant') {
-        renderAssistantHistoryMessage(message);
+        suggestionCandidate = renderAssistantHistoryMessage(message);
         lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
+    }
+    if (suggestionCandidate) {
+      renderSuggestedReplies(suggestionCandidate.bubble, suggestionCandidate.suggestions);
     }
     sessionParentId = lastAssistantResponseId;
     scrollMessagesToBottom(messagesEl, { force: true });
@@ -702,7 +805,12 @@
     if (sendBtn instanceof HTMLButtonElement) sendBtn.hidden = busy;
     if (stopBtn instanceof HTMLButtonElement) stopBtn.hidden = !busy;
     const messages = el(MESSAGES_ID);
-    if (messages instanceof HTMLElement) messages.classList.toggle('qwen-chat-generating', busy);
+    if (messages instanceof HTMLElement) {
+      messages.classList.toggle('qwen-chat-generating', busy);
+      messages.querySelectorAll('.qwen-chat-suggestion-btn').forEach((button) => {
+        if (button instanceof HTMLButtonElement) button.disabled = busy;
+      });
+    }
   }
 
   function appendMessage(role, text, parentId) {
@@ -808,7 +916,10 @@
       }
       // 围栏代码块的光标应留在 <code> 内；行内代码后的光标必须成为
       // 段落的下一个节点，否则看起来会停在 `code` 的底色内部。
-      if (host.matches('pre')) {
+      if (host.matches('.qwen-md-codeblock-wrap')) {
+        const code = host.querySelector(':scope > .qwen-md-codeblock > code');
+        if (code instanceof HTMLElement) host = code;
+      } else if (host.matches('pre')) {
         const code = host.querySelector(':scope > code');
         if (code instanceof HTMLElement) host = code;
       }
@@ -1113,8 +1224,10 @@
     if (!text) return;
     const container = mdContainer(bubble);
     container._mdText = String(container._mdText || '') + String(text);
-    container.innerHTML = renderQwenMarkdown(container._mdText);
+    const parsed = splitSuggestedReplies(container._mdText, { allowIncomplete: true });
+    container.innerHTML = renderQwenMarkdown(parsed.text);
     enhanceOperationResultControls(container);
+    if (parsed.found) renderSuggestedReplies(bubble, parsed.suggestions);
   }
 
   function ensureThinkingBlock(bubble) {
@@ -1214,6 +1327,7 @@
   }
 
   function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true }) {
+    clearSuggestedReplies();
     const requestParentId = editParent || sessionParentId;
     const wasOpeningStream = openingStarted;
     lastSendText = text;
@@ -1238,6 +1352,7 @@
     let retryPrompt = null;
 
     const closeActiveAnswerAtToolCall = () => {
+      clearSuggestedReplies();
       if (inThinking) {
         collapseThinking(activeBubble);
         inThinking = false;
@@ -1365,6 +1480,7 @@
             appendAssistantText(activeBubble, '（无回复）');
           }
           removeCursor(activeBubble);
+          finalizeAssistantSuggestions(activeBubble);
           activeBubble = null;
           setBusy(false);
           setStatus('已登录', 'ok');
@@ -1740,6 +1856,32 @@
     const messages = el(MESSAGES_ID);
     const messagesScroller = getMessagesScrollContainer(messages);
     const scrollBottomBtn = el(SCROLL_BOTTOM_ID);
+
+    if (messages instanceof HTMLElement) {
+      const copyMarkdownCode = (target, event) => {
+        const inline = target.closest('.qwen-md-inline-code');
+        if (inline instanceof HTMLElement && messages.contains(inline)) {
+          event?.preventDefault();
+          void copyQwenText(inline.textContent || '', inline);
+          return true;
+        }
+        const copyButton = target.closest('.qwen-md-codeblock-copy');
+        if (!(copyButton instanceof HTMLButtonElement) || !messages.contains(copyButton)) return false;
+        const wrapper = copyButton.closest('.qwen-md-codeblock-wrap');
+        const code = wrapper?.querySelector(':scope > .qwen-md-codeblock > code');
+        void copyQwenText(code?.textContent || '', copyButton);
+        return true;
+      };
+      messages.addEventListener('click', (event) => {
+        if (event.target instanceof Element) copyMarkdownCode(event.target, event);
+      });
+      messages.addEventListener('keydown', (event) => {
+        if (!(event.target instanceof HTMLElement) || !event.target.matches('.qwen-md-inline-code')) return;
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        copyMarkdownCode(event.target, event);
+      });
+    }
 
     // app.html 被扩展重载流程恢复时，始终从收起状态开始；
     // 仅在用户主动展开面板后，才检查登录并访问 chat.qwen.ai。

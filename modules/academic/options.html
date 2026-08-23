@@ -161,11 +161,18 @@
   </div>
   <div id="academicExamStatus" class="option-status academic-exam-status"></div>
 
-  <div class="academic-score-header">
-    <strong>本学期成绩</strong>
-    <span class="academic-score-header-meta">
-      <time id="academicScoreCheckedAt"></time>
-      <span id="academicScoreCount" class="academic-score-count"></span>
+  <div class="academic-score-header academic-schedule-header">
+    <strong>成绩</strong>
+    <span class="academic-schedule-controls">
+      <label for="academicScoreSemester">学期</label>
+      <select id="academicScoreSemester" aria-label="成绩学期">
+        <option value="__all__" selected>全部</option>
+      </select>
+      <button id="academicScoreCurrentSemesterBtn" type="button" disabled>本学期</button>
+      <span class="academic-score-header-meta">
+        <time id="academicScoreCheckedAt"></time>
+        <span id="academicScoreCount" class="academic-score-count"></span>
+      </span>
     </span>
   </div>
   <div id="academicScoreLoading" class="academic-score-loading">

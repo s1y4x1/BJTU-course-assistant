@@ -2839,6 +2839,31 @@ function vePageUploadedFiles(args = {}) {
   return output;
 }
 
+async function vePageAssignmentSnapshot() {
+  if (typeof globalThis.isPlatformEnabled === 'function' && !globalThis.isPlatformEnabled('ve')) {
+    throw Object.assign(new Error('智慧课程平台未启用，请先调用 ve.login()'), { code: 'LOGIN_REQUIRED' });
+  }
+  if (String(window.platformLoginState?.ve || '') !== 'online') {
+    throw Object.assign(new Error('智慧课程平台未登录，请先调用 ve.login()'), { code: 'LOGIN_REQUIRED' });
+  }
+  if (typeof globalThis.waitForPlatformDataReady === 'function') {
+    const ready = await globalThis.waitForPlatformDataReady('ve', 120000);
+    if (!ready) throw Object.assign(new Error('智慧课程平台数据尚未加载完毕，请先调用 ve.login()'), { code: 'LOGIN_REQUIRED' });
+  }
+  const courses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
+  return {
+    courses: courses.map((course) => {
+      const courseId = String(course?.id || course?.cId || course?.courseId || course?.course_id || '').trim();
+      return {
+        course,
+        homework: Array.isArray(window.courseHomeworkData?.[courseId]?.list)
+          ? window.courseHomeworkData[courseId].list
+          : []
+      };
+    })
+  };
+}
+
 globalThis.BjtuVePageApi = Object.freeze({
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
@@ -2852,6 +2877,7 @@ globalThis.BjtuVePageApi = Object.freeze({
   ),
   archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
   uploadedFiles: (args) => vePageUploadedFiles(args),
+  assignmentSnapshot: () => vePageAssignmentSnapshot(),
   uploadFile: (args) => {
     const upload = globalThis.BjtuVeUploadApi?.uploadFile;
     if (typeof upload !== 'function') throw new Error('智慧课程平台上传接口尚未就绪');
