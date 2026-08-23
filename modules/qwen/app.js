@@ -760,15 +760,23 @@
       const btnRect = toggle.getBoundingClientRect();
       const vw = window.innerWidth || document.documentElement.clientWidth || 0;
       const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      const viewportGap = 8;
       popover.style.visibility = 'hidden';
       popover.style.top = 'auto';
       popover.style.left = 'auto';
-      popover.style.right = '0px';
+      popover.style.right = 'auto';
       popover.style.bottom = '0px';
-      const pw = popover.offsetWidth || 300;
+      const pw = popover.offsetWidth;
       const ph = popover.offsetHeight || 0;
-      const right = pw > vw ? 0 : Math.max(0, vw - btnRect.right);
-      popover.style.right = `${right}px`;
+      const roomToLeft = Math.max(0, btnRect.right - viewportGap);
+      // 默认从按钮右上角向左展开；仅左侧确实放不下时才改为向右展开。
+      const expandRight = pw > roomToLeft;
+      const preferredLeft = expandRight ? btnRect.left : btnRect.right - pw;
+      const left = Math.min(
+        Math.max(viewportGap, preferredLeft),
+        Math.max(viewportGap, vw - viewportGap - pw)
+      );
+      popover.style.left = `${left}px`;
       if (ph <= btnRect.top) {
         popover.style.bottom = `${vh - btnRect.top}px`;
         popover.style.top = 'auto';

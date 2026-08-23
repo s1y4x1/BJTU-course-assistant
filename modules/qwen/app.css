@@ -25,7 +25,7 @@
   position: fixed;
   left: 20px;
   bottom: 20px;
-  width: 380px;
+  width: 641px;
   min-width: 280px;
   max-width: calc(100vw - 40px);
   min-height: 320px;
@@ -638,7 +638,10 @@ html[data-color-scheme="dark"] .qwen-chat-ops-toggle {
   bottom: auto;
   right: auto;
   z-index: 10004;
-  width: 300px;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(280px, calc(100vw - 16px));
+  max-width: min(640px, calc(100vw - 16px));
   max-height: 50vh;
   overflow: auto;
   padding: 8px 10px;

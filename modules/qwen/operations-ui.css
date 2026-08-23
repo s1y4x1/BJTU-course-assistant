@@ -96,6 +96,7 @@ html[data-color-scheme="dark"] .qwen-operation-group-title {
   display:inline-flex;
   align-items:center;
   gap:6px;
+  margin:0;
   cursor:pointer;
 }
 
