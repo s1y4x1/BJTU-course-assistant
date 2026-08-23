@@ -151,8 +151,15 @@
       ? /(?:^|\n)[ \t]*```suggestions[ \t]*(?:\n([\s\S]*)|$)/i.exec(source)
       : null;
     const match = completeMatch || incompleteMatch;
-    if (!match) return { text: source, suggestions: [], found: false, complete: false };
-    const suggestions = [...new Set(String(match[1] || '')
+    if (!match) return { text: source, suggestions: [], found: false, complete: false, cursorPlacement: '' };
+    const suggestionBody = String(match[1] || '');
+    const suggestionLines = suggestionBody.split('\n');
+    const trailingLine = String(suggestionLines.at(-1) || '').trim();
+    const partialClosingFence = !completeMatch && /^`{1,2}$/.test(trailingLine);
+    const visibleSuggestionBody = partialClosingFence
+      ? suggestionLines.slice(0, -1).join('\n')
+      : suggestionBody;
+    const suggestions = [...new Set(visibleSuggestionBody
       .split('\n')
       .map((item) => item.trim())
       .filter(Boolean))];
@@ -160,7 +167,8 @@
       text: source.slice(0, match.index).trimEnd(),
       suggestions,
       found: true,
-      complete: !!completeMatch
+      complete: !!completeMatch,
+      cursorPlacement: !completeMatch && trailingLine && !partialClosingFence ? 'button' : 'container'
     };
   }
 
@@ -171,11 +179,11 @@
   }
 
   function renderSuggestedReplies(bubble, suggestions) {
-    if (!(bubble instanceof HTMLElement) || !Array.isArray(suggestions)) return;
+    if (!(bubble instanceof HTMLElement) || !Array.isArray(suggestions)) return null;
     const anchor = messageDisplayNode(bubble);
-    if (!(anchor instanceof HTMLElement) || !anchor.isConnected) return;
+    if (!(anchor instanceof HTMLElement) || !anchor.isConnected) return null;
     const messages = el(MESSAGES_ID);
-    if (!(messages instanceof HTMLElement)) return;
+    if (!(messages instanceof HTMLElement)) return null;
     let container = [...messages.querySelectorAll(':scope > .qwen-chat-suggestions')]
       .find((item) => item._qwenSuggestionBubble === bubble);
     messages.querySelectorAll(':scope > .qwen-chat-suggestions').forEach((item) => {
@@ -187,6 +195,7 @@
       container._qwenSuggestionBubble = bubble;
       anchor.after(container);
     }
+    container.querySelectorAll('.qwen-chat-cursor').forEach((node) => node.remove());
     suggestions.forEach((suggestion, index) => {
       let button = container.children[index];
       if (!(button instanceof HTMLButtonElement)) {
@@ -208,6 +217,7 @@
     });
     while (container.children.length > suggestions.length) container.lastElementChild?.remove();
     maybeAutoScrollMessages(messages);
+    return container;
   }
 
   function finalizeAssistantSuggestions(bubble, { render = true } = {}) {
@@ -963,6 +973,33 @@
   function removeCursor(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
     bubble.querySelectorAll('.qwen-chat-cursor').forEach((node) => node.remove());
+    const messages = el(MESSAGES_ID);
+    if (messages instanceof HTMLElement) {
+      messages.querySelectorAll(':scope > .qwen-chat-suggestions').forEach((container) => {
+        if (container._qwenSuggestionBubble === bubble) {
+          container.querySelectorAll('.qwen-chat-cursor').forEach((node) => node.remove());
+        }
+      });
+    }
+  }
+
+  function placeSuggestionCursor(bubble) {
+    const parsed = splitSuggestedReplies(mdRawText(bubble), { allowIncomplete: true });
+    if (!parsed.found) return false;
+    const container = renderSuggestedReplies(bubble, parsed.suggestions);
+    if (!(container instanceof HTMLElement)) return false;
+    const cursor = document.createElement('span');
+    cursor.className = 'qwen-chat-cursor';
+    if (parsed.cursorPlacement === 'button') {
+      const buttons = container.querySelectorAll(':scope > .qwen-chat-suggestion-btn');
+      const button = buttons.length ? buttons[buttons.length - 1] : null;
+      if (button instanceof HTMLButtonElement) {
+        button.appendChild(cursor);
+        return true;
+      }
+    }
+    container.appendChild(cursor);
+    return true;
   }
 
   function collapseThinking(bubble) {
@@ -983,7 +1020,7 @@
         ensureCursor(bubble);
       }
     } else {
-      ensureCursor(bubble);
+      if (!placeSuggestionCursor(bubble)) ensureCursor(bubble);
     }
   }
 
