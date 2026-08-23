@@ -45,6 +45,12 @@
       files: ['system.js', 'options.html', 'options.js'],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     },
+    mail: {
+      label: 'BJTU 邮件系统',
+      styles: ['options.css'],
+      files: ['system.js', 'options.html', 'options.js'],
+      options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
+    },
     updater: {
       label: '更新组件',
       styles: ['app.css'],

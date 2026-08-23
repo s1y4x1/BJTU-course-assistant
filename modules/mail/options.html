@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BJTU 邮件系统选项</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="mail">
+<section id="mail-system-section" class="mail-options-card" data-options-fragment>
+  <div class="section-title">
+    <a class="module-options-page-link" data-module-options-link="mail" href="options.html"
+      title="在当前页面打开 BJTU 邮件系统选项">BJTU 邮件系统</a>
+  </div>
+  <label class="mail-option-check">
+    <input type="checkbox" id="mailMonitorEnabled">监控收件箱并通知
+  </label>
+  <div class="tip">检测时会自动通过 CAS 登录邮箱（需先在「CAS 统一身份认证」中保存账号密码）；首次检测仅建立基线，之后有新增邮件才发送系统通知。</div>
+  <div id="mailMonitorIntervalEditor" class="schedule-interval-editor">
+    <span>检查间隔</span>
+    <input type="number" id="mailMonitorIntervalValue" min="1" step="1" value="10"
+      aria-label="邮件检查间隔">
+    <select id="mailMonitorIntervalUnit" aria-label="邮件检查间隔单位">
+      <option value="1" selected>分钟</option>
+      <option value="60">小时</option>
+      <option value="1440">天</option>
+    </select>
+  </div>
+  <div class="mail-score-header mail-schedule-header">
+    <strong>收件箱</strong>
+    <span class="mail-schedule-controls">
+      <label for="mailListLimit" class="mail-limit-label">加载条数</label>
+      <input type="number" id="mailListLimit" min="1" step="1" placeholder="全部"
+        aria-label="收件箱加载条数，留空加载全部">
+      <span class="mail-score-header-meta">
+        <time id="mailCheckedAt"></time>
+        <span id="mailCount" class="mail-score-count"></span>
+      </span>
+    </span>
+  </div>
+  <div id="mailLoading" class="mail-loading">
+    <span class="options-page-spinner"></span><span>正在读取收件箱…</span>
+  </div>
+  <div id="mailTableHeadWrap" class="mail-table-head mail-data-table">
+    <table class="mail-thread-table mail-thread-table-fixed">
+      <colgroup>
+        <col class="mail-col-subject"><col class="mail-col-from">
+        <col class="mail-col-date"><col class="mail-col-thread">
+      </colgroup>
+      <thead><tr>
+        <th>主题</th><th>发件人</th><th>时间</th><th>会话消息数</th>
+      </tr></thead>
+    </table>
+  </div>
+  <div id="mailTableWrap" class="mail-table-wrap mail-data-table">
+    <table class="mail-thread-table mail-thread-table-fixed">
+      <colgroup>
+        <col class="mail-col-subject"><col class="mail-col-from">
+        <col class="mail-col-date"><col class="mail-col-thread">
+      </colgroup>
+      <tbody id="mailTableBody"></tbody>
+    </table>
+  </div>
+  <div id="mailStatus" class="option-status mail-status"></div>
+</section>
+<div id="msg"></div>
+<script src="options.js"></script>
+<script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>
