@@ -33,7 +33,11 @@
     const alwaysAllowedSet = new Set((options.alwaysAllowedOperations || []).map(String));
 
     for (const group of groups || []) {
-      const names = group.operations || [];
+      const names = [...(group.operations || [])].sort((left, right) => {
+        const leftName = String(left?.name ?? left ?? '');
+        const rightName = String(right?.name ?? right ?? '');
+        return leftName.localeCompare(rightName, 'en');
+      });
       if (!names.length) continue;
       const groupEl = document.createElement('div');
       groupEl.className = 'qwen-operation-group';
