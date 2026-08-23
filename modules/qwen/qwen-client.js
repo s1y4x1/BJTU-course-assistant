@@ -33,6 +33,20 @@
     return Object.assign(new Error('通义千问触发风控校验（可能要求完成验证码或被限流），请到 chat.qwen.ai 页面完成验证后重试'), { code: 'WAF_BUSY' });
   }
 
+  function networkError(responseId = '') {
+    return Object.assign(
+      new Error('与 chat.qwen.ai 的生成连接已中断，正在等待页面恢复'),
+      { code: 'NETWORK_ERROR', responseId: String(responseId || '') }
+    );
+  }
+
+  function requestEndedError(responseId = '') {
+    return Object.assign(
+      new Error('The request is ended!'),
+      { code: 'REQUEST_ENDED', responseId: String(responseId || '') }
+    );
+  }
+
   function rateLimitMessage(num) {
     const hours = Math.max(0, Math.ceil(Number(num) || 0));
     return hours
@@ -529,6 +543,14 @@
 
   const pendingStreams = new Map();
 
+  function rejectPendingStreamsForTab(tabId) {
+    for (const [id, pending] of pendingStreams) {
+      if (Number(pending?.tabId) !== Number(tabId)) continue;
+      pendingStreams.delete(id);
+      pending.reject(networkError(pending.responseId));
+    }
+  }
+
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'QWEN_STREAM_DATA') return false;
@@ -545,6 +567,8 @@
         else if (code === 'STREAM_ERROR') pending.reject(new Error(String(data.message || '通义千问返回了错误')));
         else if (code === 'NOT_LOGGED_IN') pending.reject(notLoggedInError());
         else if (code === 'API_ERROR') pending.reject(new Error(String(data.message || '通义千问返回了错误')));
+        else if (code === 'NETWORK_ERROR') pending.reject(networkError(data.responseId || pending.responseId));
+        else if (code === 'REQUEST_ENDED') pending.reject(requestEndedError(data.responseId || pending.responseId));
         else pending.reject(new Error(code));
       } else if (data.end) {
         pendingStreams.delete(data.id);
@@ -554,15 +578,21 @@
           responseParentId: String(data.responseParentId || '')
         });
       } else {
+        if (data.responseId) pending.responseId = String(data.responseId);
         pending.onEvent?.(data);
       }
       return false;
     });
+    chrome.tabs?.onRemoved?.addListener?.((tabId) => rejectPendingStreamsForTab(tabId));
+    chrome.tabs?.onUpdated?.addListener?.((tabId, changeInfo) => {
+      if (changeInfo?.status === 'loading' || changeInfo?.discarded === true) rejectPendingStreamsForTab(tabId);
+    });
   }
 
-  function streamViaContentScript(tab, { chatId, modelId, messages, onEvent, signal, parentId }) {
+  function streamViaContentScript(tab, { chatId, modelId, messages, onEvent, signal, parentId, resumeResponseId = '' }) {
     const id = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const parent = String(parentId || '');
+    const resumeId = String(resumeResponseId || '');
     const body = {
       stream: true,
       version: '2.1',
@@ -577,7 +607,7 @@
       timestamp: Date.now()
     };
     return new Promise((resolve, reject) => {
-      const pending = { onEvent, resolve, reject };
+      const pending = { onEvent, resolve, reject, tabId: tab.id, responseId: resumeId };
       pendingStreams.set(id, pending);
 
       const abort = () => {
@@ -604,11 +634,11 @@
         type: 'QWEN_API_REQUEST',
         payload: {
           id,
-          method: 'POST',
-          url: `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`,
-          body,
+          method: resumeId ? 'GET' : 'POST',
+          url: `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}${resumeId ? `&response_id=${encodeURIComponent(resumeId)}` : ''}`,
+          ...(resumeId ? {} : { body }),
           stream: true,
-          headers: { 'Content-Type': 'application/json' }
+          headers: resumeId ? {} : { 'Content-Type': 'application/json' }
         }
       }).then((response) => {
         if (!response?.ok) {
@@ -617,6 +647,30 @@
         }
       });
     });
+  }
+
+  async function resumeInterruptedCompletion(options, responseId) {
+    const targetResponseId = String(responseId || '');
+    if (!targetResponseId) throw networkError();
+    while (!options.signal?.aborted) {
+      let tab = await findChatTab();
+      if (!tab) tab = await ensureChatTab();
+      if (tab) tab = await ensureChatTabReady(tab);
+      if (!tab) {
+        await sleep(1000);
+        continue;
+      }
+      try {
+        options.onEvent?.({ streamRestart: true, responseId: targetResponseId });
+        return await streamViaContentScript(tab, { ...options, resumeResponseId: targetResponseId });
+      } catch (error) {
+        if (error?.name === 'AbortError' || options.signal?.aborted) throw error;
+        if (error?.code === 'REQUEST_ENDED') throw error;
+        if (error?.code !== 'NETWORK_ERROR' && !String(error?.message || '').includes('页面未就绪')) throw error;
+        await sleep(1000);
+      }
+    }
+    throw options.signal?.reason || new DOMException('生成中止', 'AbortError');
   }
 
   async function streamCompletionsDirect({ chatId, modelId, messages, onEvent, signal, parentId }) {
@@ -712,8 +766,12 @@
           onEvent?.({ responseParentId });
         }
         if (payload?.error) {
-        throw new Error(String(payload.error.details || payload.error.message || '通义千问返回了错误'));
-      }
+          const message = typeof payload.error === 'string'
+            ? payload.error
+            : String(payload.error.details || payload.error.message || '通义千问返回了错误');
+          if (message.trim() === 'The request is ended!') throw requestEndedError(payload?.response_id || responseId);
+          throw new Error(message);
+        }
       const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
       if (choice?.response_id && String(choice.response_id) !== responseId) {
         responseId = String(choice.response_id);
@@ -808,9 +866,11 @@
 
   async function streamCompletions(options) {
     let receivedAny = false;
+    let responseId = '';
     const wrappedOptions = {
       ...options,
       onEvent: (event) => {
+        if (event?.responseId) responseId = String(event.responseId);
         if (event?.text || event?.thinking || event?.functionCall || event?.functionResult) receivedAny = true;
         options.onEvent?.(event);
       }
@@ -837,6 +897,9 @@
           return await streamViaContentScript(tab, wrappedOptions);
         } catch (error) {
           if (error?.name === 'AbortError') throw error;
+          if (error?.code === 'NETWORK_ERROR' && (error?.responseId || responseId)) {
+            return resumeInterruptedCompletion(wrappedOptions, error.responseId || responseId);
+          }
           lastError = error;
           if (error?.code === 'WAF_PUNISH' && attempt < 2 && !receivedAny) continue;
           const notReady = String(error?.message || '').includes('页面未就绪');
@@ -866,7 +929,15 @@
       // 页面路径彻底失败时回退为扩展自身页面直接请求
       if (lastError && !String(lastError?.message || '').includes('页面未就绪')) throw lastError;
     }
-    return streamCompletionsDirect(wrappedOptions);
+    try {
+      return await streamCompletionsDirect(wrappedOptions);
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      if ((error?.code === 'NETWORK_ERROR' || error instanceof TypeError) && responseId) {
+        return resumeInterruptedCompletion(wrappedOptions, responseId);
+      }
+      throw error;
+    }
   }
 
   async function stopGeneration({ chatId, responseId }) {

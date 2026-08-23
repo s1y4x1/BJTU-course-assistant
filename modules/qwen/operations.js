@@ -968,22 +968,26 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.login',
       label: '教务系统登录',
-      summary: '使用传入密码或该学号已保存的密码登录教务系统',
+      summary: '使用当前账号或指定学号及其传入/已保存密码登录教务系统',
       doc: [
         '## academic.login —— 教务系统登录',
         '',
-        '使用学号登录教务系统。传入 password 时使用该密码；省略 password 时自动读取该学号已保存的密码，如果账号或密码尚未保存则报错。',
+        '登录教务系统。studentId 可省略，此时优先使用当前账号，其次使用最近保存的账号。传入 password 时使用该密码；省略 password 时自动读取所选账号已保存的密码，如果没有可用账号或密码则报错。',
         '',
-        '**参数**：{"studentId":"学号，必填","password":"身份证后六位，可选；省略时使用已保存密码"}',
+        '**参数**：{"studentId":"学号，可选；省略时使用当前或最近保存的账号","password":"身份证后六位，可选；省略时使用已保存密码"}',
         '',
-        '**调用示例**：`academic.login({studentId: "xxx"})`；`academic.login({studentId: "xxx", password: "123456"})`',
+        '**调用示例**：`academic.login()`；`academic.login({studentId: "xxx"})`；`academic.login({studentId: "xxx", password: "123456"})`',
         '',
         '**返回示例**：{"studentId":"..."}'
       ].join('\n'),
       async run(args) {
-        const studentId = String(args?.studentId || '').trim();
+        let studentId = String(args?.studentId || '').trim();
         const password = String(args?.password || '');
-        if (!studentId) throw new Error('缺少参数 studentId');
+        if (!studentId) {
+          const context = await academicInvoke('currentAccount');
+          studentId = String(context?.studentId || context?.accounts?.[0]?.studentId || '').trim();
+        }
+        if (!studentId) throw new Error('没有当前或已保存的教务系统账号，请传入 studentId');
         if (password) return academicInvoke('login', { studentId, password }, 60000);
         const result = await academicInvoke('loginSaved', { studentId }, 60000);
         if (result?.ok === false) throw new Error(String(result?.message || '使用已保存密码登录失败'));

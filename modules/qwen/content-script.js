@@ -122,6 +122,7 @@
   }
 
   function apiStreamErrorMessage(err) {
+    if (typeof err === 'string') return err;
     return String(err?.details || err?.message || '通义千问返回了错误');
   }
 
@@ -141,6 +142,7 @@
     const body = payload.body;
     const isStream = payload.stream === true;
     const controller = new AbortController();
+    let responseId = '';
     const emit = (data) => sendToBackground({ type: 'QWEN_STREAM_DATA', payload: { id, ...data } });
     try {
       const response = await fetch(url, {
@@ -193,7 +195,6 @@
       let buffer = '';
       let rawText = '';
       let fullText = '';
-      let responseId = '';
       let responseParentId = '';
       let sawDataLine = false;
       let targetResponseId = '';
@@ -232,7 +233,12 @@
           emit({ responseParentId });
         }
         if (data?.error) {
-          emit({ error: 'STREAM_ERROR', message: apiStreamErrorMessage(data.error) });
+          const message = apiStreamErrorMessage(data.error);
+          if (String(message).trim() === 'The request is ended!') {
+            emit({ error: 'REQUEST_ENDED', message, responseId: String(data?.response_id || responseId || '') });
+          } else {
+            emit({ error: 'STREAM_ERROR', message });
+          }
           return;
         }
         const choice = Array.isArray(data?.choices) ? data.choices[0] : null;
@@ -336,7 +342,7 @@
         return null;
       }
       if (isStream) {
-        emit({ error: 'NETWORK_ERROR' });
+        emit({ error: 'NETWORK_ERROR', responseId });
       }
       return { ok: false, id, error: String(error?.message || error) };
     }

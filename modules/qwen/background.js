@@ -417,6 +417,7 @@
               },
               onEvent: (event) => {
                 if (port.disconnected) return;
+                if (event?.streamRestart) port.postMessage({ type: 'streamRestart' });
                 if (event?.operation) port.postMessage({ type: 'operation', operation: event.operation });
                 if (event?.operationResult) port.postMessage({ type: 'operationResult', result: event.operationResult });
                 if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
@@ -427,6 +428,14 @@
             });
             if (result.chatId) await saveChatPermissionSession(result.chatId, loopSession);
             if (port.disconnected) return;
+            if (result.historyReloadRequired === true) {
+              port.postMessage({
+                type: 'historyReload',
+                chatId: result.chatId,
+                responseId: String(result.responseId || '')
+              });
+              return;
+            }
             port.postMessage({
               type: 'done',
               text: result.text,

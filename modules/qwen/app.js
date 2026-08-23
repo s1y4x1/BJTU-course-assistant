@@ -1328,8 +1328,8 @@
 
   function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true }) {
     clearSuggestedReplies();
-    const requestParentId = editParent || sessionParentId;
     const wasOpeningStream = openingStarted;
+    const requestParentId = wasOpeningStream ? '' : (editParent || sessionParentId);
     lastSendText = text;
     let retryVisibleAnchor = null;
     if (showUserBubble) {
@@ -1350,6 +1350,30 @@
     const lastOperationCard = { card: null };
     const functionCallCards = new Map();
     let retryPrompt = null;
+    let streamStartAnchor = retryVisibleAnchor;
+
+    const resetCurrentStreamRendering = () => {
+      const messages = el(MESSAGES_ID);
+      if (!(messages instanceof HTMLElement)) return;
+      let node = streamStartAnchor instanceof HTMLElement && streamStartAnchor.isConnected
+        ? streamStartAnchor.nextSibling
+        : messages.firstChild;
+      while (node) {
+        const next = node.nextSibling;
+        node.remove();
+        node = next;
+      }
+      functionCallCards.clear();
+      if (lastOperationCard.card instanceof HTMLElement && !lastOperationCard.card.isConnected) {
+        lastOperationCard.card = null;
+      }
+      activeBubble = null;
+      inThinking = false;
+      const fresh = ensureAssistantBubble();
+      placeCursor(fresh, false);
+      setStatus('思考中…');
+      maybeAutoScrollMessages(messages);
+    };
 
     const closeActiveAnswerAtToolCall = () => {
       clearSuggestedReplies();
@@ -1370,7 +1394,9 @@
       const chatPort = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
       port = chatPort;
       chatPort.onMessage.addListener((message) => {
-        if (message?.type === 'delta') {
+        if (message?.type === 'streamRestart') {
+          resetCurrentStreamRendering();
+        } else if (message?.type === 'delta') {
           setStatus('回复中…');
           const bubble = ensureAssistantBubble();
           if (bubble) appendAssistantText(bubble, message.text);
@@ -1437,6 +1463,7 @@
           setStatus('思考中…');
           updateOperationResult(lastOperationCard.card, message.result);
           if (lastOperationCard.card instanceof HTMLElement) retryVisibleAnchor = lastOperationCard.card;
+          streamStartAnchor = retryVisibleAnchor;
           nextReplyFresh = false;
           if (activeBubble instanceof HTMLElement) removeCursor(activeBubble);
           activeBubble = null;
@@ -1486,6 +1513,28 @@
           setStatus('已登录', 'ok');
           chatPort.disconnect();
           if (port === chatPort) port = null;
+        } else if (message?.type === 'historyReload') {
+          pendingWafRetryAction = null;
+          wafRecoveryActive = false;
+          hideAsk();
+          sessionChatId = String(message?.chatId || sessionChatId || '');
+          if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
+          if (openingStarted) {
+            openingStarted = false;
+            openingCompleted = true;
+            void chrome.storage.local.remove('qwenOpeningPendingChatId');
+          }
+          if (inThinking) {
+            collapseThinking(activeBubble);
+            inThinking = false;
+          }
+          removeCursor(activeBubble);
+          activeBubble = null;
+          setBusy(false);
+          setStatus('已登录', 'ok');
+          chatPort.disconnect();
+          if (port === chatPort) port = null;
+          void loadHistoryOnce();
         } else if (message?.type === 'stopped') {
           pendingWafRetryAction = null;
           wafRecoveryActive = false;
@@ -1696,7 +1745,14 @@
         if (openingStarted) openingStarted = false;
         if (port === chatPort) port = null;
       });
-      chatPort.postMessage({ type: 'send', text, thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked, chatId: sessionChatId, parentId: requestParentId, editParentGiven: isEditSend });
+      chatPort.postMessage({
+        type: 'send',
+        text,
+        thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked,
+        chatId: sessionChatId,
+        parentId: requestParentId,
+        editParentGiven: isEditSend || wasOpeningStream
+      });
     };
 
     try {

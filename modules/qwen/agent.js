@@ -198,6 +198,7 @@
       message.parentId = parentId || null;
 
       let response;
+      const fullTextBeforeRequest = fullText;
       try {
         response = await client.streamCompletions({
           chatId: effectiveChatId,
@@ -211,7 +212,10 @@
             if (event?.responseParentId && turnRef) {
               turnRef.lastMessageId = String(event.responseParentId);
             }
-            if (event?.thinking) {
+            if (event?.streamRestart) {
+              fullText = fullTextBeforeRequest;
+              onEvent?.({ streamRestart: true, iteration });
+            } else if (event?.thinking) {
               onEvent?.({ thinking: event.thinking, iteration });
             } else if (event?.text) {
               fullText += event.text;
@@ -231,6 +235,18 @@
       } catch (error) {
         if (error?.name === 'AbortError' || signal?.aborted) throw error;
         const code = String(error?.code || '');
+        if (code === 'REQUEST_ENDED') {
+          return {
+            chatId: effectiveChatId,
+            responseId: String(error?.responseId || turnRef?.responseId || parentId || ''),
+            modelId,
+            text: '',
+            fullText: fullTextBeforeRequest,
+            operations: [],
+            final: '',
+            historyReloadRequired: true
+          };
+        }
         if (code === 'NOT_LOGGED_IN' || code === 'DISABLED') throw error;
         const decision = typeof onRetryRequest === 'function'
           ? await onRetryRequest({
