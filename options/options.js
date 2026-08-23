@@ -248,7 +248,7 @@ function normalizeMoocPeerReviewCount(value, fallback = DEFAULT_MOOC_PEER_REVIEW
     : fallback;
 }
 
-const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:qwen'];
+const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:cas', 'module:qwen'];
 const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
 const PLATFORM_ORDER_LABELS = {
   ve: '智慧课程平台',

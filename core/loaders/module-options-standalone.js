@@ -30,6 +30,7 @@
       academic: global.BjtuAcademicOptions,
       campusnet: global.BjtuCampusnetOptions,
       captcha: global.BjtuCaptchaOptions,
+      cas: global.BjtuCasOptions,
       qwen: global.BjtuQwenOptions
     };
     const controller = controllers[id];

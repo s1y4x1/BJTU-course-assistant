@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CAS 统一身份认证选项</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="cas">
+<section id="cas-system-section" class="cas-options-card" data-options-fragment>
+  <div class="section-title">
+    <a class="module-options-page-link" data-module-options-link="cas" href="options.html"
+      title="在当前页面打开 CAS 统一身份认证选项">CAS 统一身份认证</a>
+  </div>
+  <label for="casAccountSelect">已保存账号</label>
+  <div class="cas-account-row">
+    <select id="casAccountSelect" aria-label="已保存的统一身份认证账号">
+      <option value="">暂无已保存账号</option>
+    </select>
+  </div>
+  <label for="casLoginName">学号 / 账号</label>
+  <input id="casLoginName" type="text" autocomplete="username" placeholder="默认为学号，自动使用智慧课程平台账号">
+  <label for="casPassword">密码</label>
+  <input id="casPassword" type="password" autocomplete="off"
+    placeholder="登录成功后保存在扩展本地存储">
+  <div class="cas-login-actions">
+    <button id="casLoginBtn" type="button">登录 CAS 统一身份认证</button>
+  </div>
+  <div class="tip">登录时会先读取 CAS 登录页以更新 CSRF Token，再自动识别验证码提交账号密码；账号密码会在登录成功后按账号保存在扩展本地存储中。在 CAS 页面自行登录时，扩展同样会捕获并保存账密。</div>
+</section>
+<div id="msg"></div>
+<script src="options.js"></script>
+<script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>

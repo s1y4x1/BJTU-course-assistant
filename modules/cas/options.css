@@ -1,0 +1,10 @@
+.cas-options-card { margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; }
+.cas-account-row { display:block; }
+.cas-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.cas-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
+html[data-color-scheme="dark"] .cas-options-card { border-color:#334155; background:#0f172a; }
+html[data-color-scheme="dark"] .cas-account-row select { border-color:#475569; background:#111827; color:#f8fafc; }
+
+@media (max-width:760px) {
+  .cas-login-actions button { flex:1 1 auto; }
+}
