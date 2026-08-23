@@ -22,6 +22,7 @@
   const INBOX_FID = 1;
 
   let cachedSid = '';
+  let cachedInboxTotal = 0;
   let mailCheckPromise = null;
   let mailProcessPromise = Promise.resolve();
 
@@ -199,8 +200,9 @@
     ]);
   }
 
-  // limit 为正整数时限制条数；为空时不传 limit，服务端返回全部邮件。
-  async function fetchInboxThreads(sid, limit = null) {
+  // limit 允许为 0（此时 summaryWindowSize 同样为 0）；
+  // null/留空时不传 limit，summaryWindowSize 取已知收件箱总数（首次未知时退化为 100）。
+  async function fetchInboxThreads(sid, limit = null, summaryWindowSizeHint = 0) {
     const params = new URLSearchParams({ func: 'mbox:listThreads', sid });
     const body = {
       start: 0,
@@ -213,12 +215,15 @@
       mboxa: '',
       topFirst: true
     };
-    const boundedLimit = Number(limit);
-    if (Number.isFinite(boundedLimit) && boundedLimit >= 1) {
-      body.limit = Math.floor(boundedLimit);
+    const hasExplicitLimit = !(limit === null || limit === undefined
+      || String(limit).trim() === '');
+    const requested = hasExplicitLimit ? Number(limit) : NaN;
+    if (Number.isFinite(requested) && requested >= 0) {
+      body.limit = Math.floor(requested);
       body.summaryWindowSize = body.limit;
     } else {
-      body.summaryWindowSize = 100;
+      const hint = Math.floor(Number(summaryWindowSizeHint) || 0);
+      body.summaryWindowSize = hint > 0 ? hint : 100;
     }
     const data = await requestJson(`${LIST_THREADS_URL}?${params.toString()}`, {
       method: 'POST',
@@ -227,13 +232,15 @@
     });
     if (data?.code !== 'S_OK') throw new Error(`读取收件箱失败：${data?.code || '无响应码'}`);
     const rows = (Array.isArray(data?.var) ? data.var : []).map(normalizeMailRow).filter((row) => row.id);
-    return { rows, total: Number(data?.total ?? rows.length) };
+    const total = Number(data?.total ?? rows.length);
+    cachedInboxTotal = Number.isFinite(total) ? total : cachedInboxTotal;
+    return { rows, total };
   }
 
   function normalizeListLimit(value) {
     if (String(value ?? '').trim() === '') return null;
     const number = Math.floor(Number(value));
-    return Number.isFinite(number) && number >= 1 ? number : DEFAULT_LIST_LIMIT;
+    return Number.isFinite(number) && number >= 0 ? number : DEFAULT_LIST_LIMIT;
   }
 
   async function currentAccountKey() {
@@ -398,9 +405,12 @@
   async function checkMail(source = 'poll', { force = false } = {}) {
     if (mailCheckPromise) return mailCheckPromise;
     mailCheckPromise = (async () => {
-      const settings = await chrome.storage.local.get([ENABLED_KEY, LIST_LIMIT_KEY]);
+      const settings = await chrome.storage.local.get([ENABLED_KEY, LIST_LIMIT_KEY, STATUS_KEY]);
       if (!force && settings?.[ENABLED_KEY] !== true) return { skipped: true };
       const listLimit = normalizeListLimit(settings?.[LIST_LIMIT_KEY] ?? DEFAULT_LIST_LIMIT);
+      // 不传 limit 时 summaryWindowSize 使用已知收件箱总数。
+      const summaryWindowSizeHint = cachedInboxTotal
+        || Number(settings?.[STATUS_KEY]?.total) || 0;
       try {
         await flushPendingNotifications();
         let sid = await getMailSid();
@@ -408,14 +418,14 @@
         let threads;
         try {
           [unreadCount, threads] = await Promise.all([
-            fetchUnreadCount(sid), fetchInboxThreads(sid, listLimit)
+            fetchUnreadCount(sid), fetchInboxThreads(sid, listLimit, summaryWindowSizeHint)
           ]);
         } catch (error) {
           // sid 可能已过期：重置后经 CAS 重新获取一次。
           invalidateSid();
           sid = await getMailSid();
           [unreadCount, threads] = await Promise.all([
-            fetchUnreadCount(sid), fetchInboxThreads(sid, listLimit)
+            fetchUnreadCount(sid), fetchInboxThreads(sid, listLimit, summaryWindowSizeHint)
           ]).catch(() => { throw error; });
         }
         return await processMailRows(threads.rows, threads.total, unreadCount, source, sid);

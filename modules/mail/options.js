@@ -204,13 +204,15 @@
         saved = null;
       } else {
         const number = Math.floor(Number(raw));
-        saved = Number.isFinite(number) && number >= 1 ? number : DEFAULT_LIST_LIMIT;
+        saved = Number.isFinite(number) && number >= 0 ? number : DEFAULT_LIST_LIMIT;
         await chrome.storage.local.set({ [LIST_LIMIT_KEY]: saved });
       }
       if (document.activeElement !== input) {
         input.value = saved === null ? '' : String(saved);
       }
-      setMessage(saved === null ? '收件箱将加载全部邮件' : `收件箱将加载最近 ${saved} 封邮件`);
+      setMessage(saved === null
+        ? '收件箱将加载全部邮件'
+        : `收件箱将加载最近 ${saved} 封邮件`);
       void loadThreads();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
