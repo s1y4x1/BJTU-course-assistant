@@ -917,6 +917,9 @@ function openMoocLoginAssistPopup(force = false) {
 async function moocPageLogin(args = {}) {
   const platform = 'mooc';
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
+  if (enabled) {
+    return globalThis.getEnabledPlatformLoginResult(platform);
+  }
   if (!enabled && typeof togglePlatformSelection === 'function') {
     try { togglePlatformSelection(platform, { interactive: true }); } catch {}
   }

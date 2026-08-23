@@ -1263,9 +1263,7 @@ async function jlgjPageLogin(args = {}) {
   const platform = 'jlgj';
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
   if (enabled) {
-    if (typeof triggerExternalPlatformLoad === 'function') {
-      try { triggerExternalPlatformLoad(platform, true); } catch {}
-    }
+    return globalThis.getEnabledPlatformLoginResult(platform);
   } else if (typeof togglePlatformSelection === 'function') {
     try { togglePlatformSelection(platform, { interactive: true }); } catch {}
   }

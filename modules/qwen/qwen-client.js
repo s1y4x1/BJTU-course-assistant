@@ -673,6 +673,34 @@
     throw options.signal?.reason || new DOMException('生成中止', 'AbortError');
   }
 
+  async function retryInterruptedCompletion(options, { resetRendered = false } = {}) {
+    let shouldReset = resetRendered === true;
+    while (!options.signal?.aborted) {
+      let tab = await findChatTab();
+      if (!tab) tab = await ensureChatTab();
+      if (tab) tab = await ensureChatTabReady(tab);
+      if (!tab) {
+        await sleep(1000);
+        continue;
+      }
+      try {
+        if (shouldReset) {
+          options.onEvent?.({ streamRestart: true, responseId: '' });
+          shouldReset = false;
+        }
+        return await streamViaContentScript(tab, options);
+      } catch (error) {
+        if (error?.name === 'AbortError' || options.signal?.aborted) throw error;
+        if (error?.code === 'NETWORK_ERROR' && error?.responseId) {
+          return resumeInterruptedCompletion(options, error.responseId);
+        }
+        if (error?.code !== 'NETWORK_ERROR' && !String(error?.message || '').includes('页面未就绪')) throw error;
+        await sleep(1000);
+      }
+    }
+    throw options.signal?.reason || new DOMException('生成中止', 'AbortError');
+  }
+
   async function streamCompletionsDirect({ chatId, modelId, messages, onEvent, signal, parentId }) {
     if (!await isLoggedIn()) throw notLoggedInError();
     const url = `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`;
@@ -897,8 +925,11 @@
           return await streamViaContentScript(tab, wrappedOptions);
         } catch (error) {
           if (error?.name === 'AbortError') throw error;
-          if (error?.code === 'NETWORK_ERROR' && (error?.responseId || responseId)) {
-            return resumeInterruptedCompletion(wrappedOptions, error.responseId || responseId);
+          if (error?.code === 'NETWORK_ERROR') {
+            const interruptedResponseId = String(error?.responseId || responseId || '');
+            return interruptedResponseId
+              ? resumeInterruptedCompletion(wrappedOptions, interruptedResponseId)
+              : retryInterruptedCompletion(wrappedOptions, { resetRendered: receivedAny });
           }
           lastError = error;
           if (error?.code === 'WAF_PUNISH' && attempt < 2 && !receivedAny) continue;
@@ -933,8 +964,10 @@
       return await streamCompletionsDirect(wrappedOptions);
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
-      if ((error?.code === 'NETWORK_ERROR' || error instanceof TypeError) && responseId) {
-        return resumeInterruptedCompletion(wrappedOptions, responseId);
+      if (error?.code === 'NETWORK_ERROR' || error instanceof TypeError) {
+        return responseId
+          ? resumeInterruptedCompletion(wrappedOptions, responseId)
+          : retryInterruptedCompletion(wrappedOptions, { resetRendered: receivedAny });
       }
       throw error;
     }

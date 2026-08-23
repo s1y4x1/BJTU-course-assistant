@@ -1119,9 +1119,7 @@
     const platform = 'xuetangx';
     const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
     if (enabled) {
-      if (typeof globalThis.triggerExternalPlatformLoad === 'function') {
-        try { globalThis.triggerExternalPlatformLoad(platform, true); } catch {}
-      }
+      return globalThis.getEnabledPlatformLoginResult(platform);
     } else if (typeof globalThis.togglePlatformSelection === 'function') {
       try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
     }

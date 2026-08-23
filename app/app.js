@@ -3559,6 +3559,29 @@ async function waitForPlatformDataReady(platform, timeoutMs = 120000) {
 }
 window.waitForPlatformDataReady = waitForPlatformDataReady;
 
+// login 操作只负责启用尚未启用的平台。已经启用时返回当前页面快照，
+// 避免再次触发平台加载、登录弹窗或账号切换。
+function getEnabledPlatformLoginResult(platform) {
+  const p = normalizePlatformId(platform);
+  const loginState = String(window.platformLoginState?.[p] || 'checking');
+  const progress = window.platformContentLoadProgress?.[p];
+  const progressFinished = !(Number(progress?.total) > 0 && Number(progress?.completed) < Number(progress?.total));
+  const ready = loginState === 'online'
+    && window.platformLoadedOnce?.[p] === true
+    && progressFinished
+    && window.platformLoadPending?.[p] !== true;
+  return {
+    ok: true,
+    enabled: true,
+    alreadyEnabled: true,
+    loggedIn: loginState === 'online',
+    ready,
+    loginState,
+    message: ready ? '平台已启用，数据已加载完毕' : '平台已启用，不重复触发登录'
+  };
+}
+window.getEnabledPlatformLoginResult = getEnabledPlatformLoginResult;
+
 // 等待某个平台登录流程结束，登录成功后还要等课程和作业数据完全加载。
 // 供各平台页面桥的 login 操作调用。
 async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {

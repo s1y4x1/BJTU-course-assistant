@@ -2884,13 +2884,22 @@ globalThis.BjtuVePageApi = Object.freeze({
     return upload(args || {});
   },
   // ve.login：支持账号参数。
-  // - 省略账号：使用 app 页面的当前账号并触发完整登录流程。
-  // - 填写账号：切换到该账号并触发完整登录流程。
-  login: (args) => {
+  // - 平台已启用且省略账号（或指定当前账号）：不重复登录，只等待作业加载完毕。
+  // - 指定非当前账号：切换到该账号，随后等待作业加载完毕。
+  login: async (args) => {
     const platform = 've';
     const requestedAccount = String(args?.account || args?.loginName || '').trim();
-    const currentAccount = String(document?.getElementById?.('username-input')?.value || '').trim();
-    const account = requestedAccount || currentAccount;
+    const enabled = typeof globalThis.isPlatformEnabled === 'function' && globalThis.isPlatformEnabled(platform);
+    let currentAccount = String(window.currentAccountLoginName || '').trim();
+    if (enabled && requestedAccount) {
+      const currentUser = await fetchCurrentVeUserInfoOnce();
+      currentAccount = String(currentUser?.loginName || currentUser?.userId || currentAccount).trim();
+    }
+    if (enabled && (!requestedAccount || (currentAccount && requestedAccount === currentAccount))) {
+      return waitForVeLoginHomeworkResult(args?.timeoutMs, currentAccount || requestedAccount);
+    }
+    const inputAccount = String(document?.getElementById?.('username-input')?.value || '').trim();
+    const account = requestedAccount || currentAccount || inputAccount;
     if (!account) return Promise.resolve({
       ok: false,
       loggedIn: false,
@@ -2920,6 +2929,10 @@ async function triggerVeLoginWithAccount(platform, account, timeoutMs) {
       const resultAccount = String(result?.userInfo?.loginName || '').trim();
       const accountMatched = result?.ok === true && (!resultAccount || resultAccount === account);
       const sessionLoginState = String(window?.platformLoginState?.[platform] || '');
+      if (accountMatched) {
+        const readyResult = await waitForVeLoginHomeworkResult(timeoutMs, account, false);
+        return { ...result, ...readyResult, account, sessionLoginState };
+      }
       return {
         ...result,
         ok: accountMatched,
@@ -2951,6 +2964,50 @@ async function triggerVeLoginWithAccount(platform, account, timeoutMs) {
     sessionLoginState: String(window?.platformLoginState?.[platform] || ''),
     reason: 'unavailable',
     message: '智慧课程平台登录流程不可用'
+  };
+}
+
+async function waitForVeLoginHomeworkResult(timeoutMs, account = '', alreadyEnabled = true) {
+  const timeout = Number(timeoutMs);
+  const effectiveTimeout = Number.isFinite(timeout) ? Math.max(1000, timeout) : Number.POSITIVE_INFINITY;
+  const deadline = Date.now() + effectiveTimeout;
+  const ready = typeof globalThis.waitForPlatformDataReady === 'function'
+    ? await globalThis.waitForPlatformDataReady('ve', effectiveTimeout)
+    : String(window.platformLoginState?.ve || '') === 'online';
+
+  while (ready && Date.now() < deadline) {
+    const pendingPromise = window.veHomeworkLoadPromise;
+    if (pendingPromise && typeof pendingPromise.then === 'function') {
+      if (Number.isFinite(deadline)) {
+        const remaining = Math.max(1, deadline - Date.now());
+        await Promise.race([
+          Promise.resolve(pendingPromise).catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, remaining))
+        ]);
+      } else {
+        await Promise.resolve(pendingPromise).catch(() => {});
+      }
+    }
+    const hasPendingTypes = Object.keys(window.veHomeworkPendingTypesByCourse || {}).length > 0;
+    if (!hasPendingTypes && window.veHomeworkLoadPromise === pendingPromise) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  const loginState = String(window.platformLoginState?.ve || 'checking');
+  const homeworkReady = ready
+    && loginState === 'online'
+    && Object.keys(window.veHomeworkPendingTypesByCourse || {}).length === 0;
+  return {
+    ok: homeworkReady,
+    enabled: true,
+    alreadyEnabled,
+    loggedIn: loginState === 'online',
+    ready: homeworkReady,
+    account: String(account || window.currentAccountLoginName || '').trim(),
+    loginState,
+    message: homeworkReady
+      ? '平台已启用，作业已全部加载完毕'
+      : (loginState === 'online' ? '已登录，但等待作业加载超时' : '登录失败或尚未登录')
   };
 }
 
