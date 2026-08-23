@@ -216,14 +216,61 @@
     return index >= 0 ? source.slice(index + marker.length).trim() : source;
   }
 
-  function extractAssistantReply(message) {
-    const list = Array.isArray(message?.content_list) ? message.content_list : [];
-    const parts = [];
-    for (const item of list) {
-      if (item?.phase === 'answer' && item?.content) parts.push(String(item.content));
+  function normalizeFunctionId(value) {
+    const raw = String(value || '');
+    return raw.match(/call_[\w-]+$/)?.[0] || raw;
+  }
+
+  function historyFunctionResult(item) {
+    const extra = item?.extra;
+    if (!extra || typeof extra !== 'object' || Array.isArray(extra)) return { found: false, value: undefined };
+    if (Object.prototype.hasOwnProperty.call(extra, 'tool_result')) {
+      return { found: true, value: extra.tool_result };
     }
-    if (parts.length) return parts.join('\n');
-    return String(message?.content || '');
+    const ignored = new Set(['display_position', 'function_id', 'code_interpreter_info']);
+    const entries = Object.entries(extra).filter(([key]) => !ignored.has(key));
+    return entries.length
+      ? { found: true, value: Object.fromEntries(entries) }
+      : { found: false, value: undefined };
+  }
+
+  function renderAssistantHistoryMessage(message) {
+    const list = Array.isArray(message?.content_list) ? message.content_list : [];
+    if (!list.length) {
+      appendMessage('assistant', String(message?.content || '') || '（无回复）');
+      return;
+    }
+
+    let rendered = false;
+    let answer = '';
+    const flushAnswer = () => {
+      if (!answer) return;
+      appendMessage('assistant', answer);
+      answer = '';
+      rendered = true;
+    };
+
+    for (const item of list) {
+      const functionCall = item?.function_call;
+      const isFunction = String(item?.role || '') === 'function'
+        || (functionCall && typeof functionCall === 'object');
+      if (isFunction) {
+        flushAnswer();
+        const call = {
+          id: normalizeFunctionId(item?.function_id || item?.extra?.function_id),
+          name: String(functionCall?.name || item?.name || item?.phase || 'function_call'),
+          arguments: String(functionCall?.arguments || '')
+        };
+        const card = appendFunctionCallCard(call);
+        const result = historyFunctionResult(item);
+        if (result.found) finishFunctionCallCard(card, { result: result.value });
+        rendered = true;
+      } else if (String(item?.phase || '') === 'answer' && item?.content) {
+        answer += String(item.content);
+      }
+    }
+    flushAnswer();
+    if (!rendered) appendMessage('assistant', String(message?.content || '') || '（无回复）');
   }
 
   function extractResJson(text) {
@@ -277,8 +324,7 @@
           appendMessage('user', extractUserQuestion(content), String(message?.parentId || message?.parent_id || lastAssistantResponseId));
         }
       } else if (role === 'assistant') {
-        const text = extractAssistantReply(message);
-        appendMessage('assistant', text || '（无回复）');
+        renderAssistantHistoryMessage(message);
         lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
     }
@@ -901,7 +947,7 @@
       return output;
     }
     for (const [key, child] of Object.entries(value)) {
-      if (String(key).toLowerCase() === 'image' && typeof child === 'string') {
+      if (['image', 'image_url'].includes(String(key).toLowerCase()) && typeof child === 'string') {
         const url = safeUrlQwen(child, new Set(['https:']));
         if (url && !output.includes(url)) output.push(url);
       } else {
@@ -1191,6 +1237,20 @@
     const functionCallCards = new Map();
     let retryPrompt = null;
 
+    const closeActiveAnswerAtToolCall = () => {
+      if (inThinking) {
+        collapseThinking(activeBubble);
+        inThinking = false;
+      }
+      removeCursor(activeBubble);
+      if (activeBubble instanceof HTMLElement
+        && !mdRawText(activeBubble)
+        && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+        removeMessageBubble(activeBubble);
+      }
+      activeBubble = null;
+    };
+
     const connectPort = () => {
       const chatPort = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
       port = chatPort;
@@ -1223,19 +1283,11 @@
           }
         } else if (message?.type === 'functionCall') {
           setStatus('操作中…');
-          if (inThinking) {
-            collapseThinking(activeBubble);
-            inThinking = false;
-          }
-          removeCursor(activeBubble);
-          if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble) && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
-            removeMessageBubble(activeBubble);
-            activeBubble = null;
-          }
           const call = message.functionCall || {};
           const key = String(call.id || call.name || 'function_call');
           let card = functionCallCards.get(key);
           if (!(card instanceof HTMLElement) || !card.isConnected) {
+            closeActiveAnswerAtToolCall();
             card = appendFunctionCallCard(call);
             if (card instanceof HTMLElement) functionCallCards.set(key, card);
           } else {
@@ -1247,6 +1299,7 @@
           const key = String(result.id || result.name || 'function_call');
           let card = functionCallCards.get(key);
           if (!(card instanceof HTMLElement) || !card.isConnected) {
+            closeActiveAnswerAtToolCall();
             card = appendFunctionCallCard({ id: result.id, name: result.name, arguments: '' });
             if (card instanceof HTMLElement) functionCallCards.set(key, card);
           }

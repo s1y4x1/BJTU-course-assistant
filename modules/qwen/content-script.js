@@ -263,13 +263,29 @@
             responseId
           });
         }
-        if (delta.extra && Object.prototype.hasOwnProperty.call(delta.extra, 'tool_result')) {
-          const rawFunctionId = String(delta.extra.function_id || delta.function_id || '');
+        const extra = delta.extra;
+        let hasFunctionResult = false;
+        let functionResult;
+        if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
+          if (Object.prototype.hasOwnProperty.call(extra, 'tool_result')) {
+            hasFunctionResult = true;
+            functionResult = extra.tool_result;
+          } else if (status === 'finished' && (delta.role === 'function' || functionCall)) {
+            const ignored = new Set(['display_position', 'function_id', 'code_interpreter_info']);
+            const entries = Object.entries(extra).filter(([key]) => !ignored.has(key));
+            if (entries.length) {
+              hasFunctionResult = true;
+              functionResult = Object.fromEntries(entries);
+            }
+          }
+        }
+        if (hasFunctionResult) {
+          const rawFunctionId = String(delta.function_id || extra.function_id || '');
           emit({
             functionResult: {
               id: rawFunctionId.match(/call_[\w-]+$/)?.[0] || rawFunctionId,
               name: String(delta.name || delta.function_call?.name || ''),
-              result: delta.extra.tool_result
+              result: functionResult
             },
             responseId
           });
