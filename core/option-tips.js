@@ -53,7 +53,6 @@
   function setup() {
     ensurePopover();
     document.querySelectorAll('.tip').forEach((tip) => {
-      if (tip.closest('.ui-order-editor')) return;
       const text = String(tip.textContent || '').replace(/\s+/g, ' ').trim();
       if (!text) {
         tip.remove();
