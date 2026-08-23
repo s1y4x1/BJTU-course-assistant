@@ -1741,7 +1741,7 @@ name: 've.teachers_of_',
     ve: '智慧课程平台',
     ykt: '雨课堂',
     mrjzy: '每日交作业',
-    jlgj: '交理工教务',
+    jlgj: '接龙管家',
     mooc: '中国大学MOOC',
     xuetangx: '学堂在线'
   });
