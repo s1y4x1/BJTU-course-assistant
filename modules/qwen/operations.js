@@ -78,6 +78,19 @@
     return value;
   }
 
+  function compactLoginResult(value) {
+    const result = value && typeof value === 'object' ? value : {};
+    const loginState = String(result.loginState || '').toLowerCase();
+    const ok = typeof result.ok === 'boolean'
+      ? result.ok
+      : (typeof result.loggedIn === 'boolean' ? result.loggedIn : (loginState ? loginState === 'online' : true));
+    if (ok) return { ok: true };
+    return {
+      ok: false,
+      message: String(result.message || '登录失败')
+    };
+  }
+
   async function sendRuntimeMessage(message) {
     if (typeof chrome !== 'object' || !chrome?.runtime?.sendMessage) {
       throw new Error('当前环境不支持消息通信');
@@ -617,14 +630,12 @@ name: 've.accounts',
         '',
         '指定账号时会等待密码/验证码弹窗关闭，并返回该目标账号本次是否登录成功；已有的其他账号会话不会被当作成功。',
         '',
-        '**返回示例**：{"account":"2428xxxx","loginState":"online","loggedIn":true,"message":"账号 2023xxxx 登录成功"}'
+        '**返回示例**：{"ok":true}'
       ].join('\n'),
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();
         const result = await pageInvoke('ve', 'login', { account, auto: true });
-        const loggedIn = result?.loggedIn === true || String(result?.loginState || '').toLowerCase() === 'online';
-        const ok = typeof result?.ok === 'boolean' ? result.ok : loggedIn;
-        return { ...(result && typeof result === 'object' ? result : {}), ok, loggedIn };
+        return compactLoginResult(result);
       }
     },
     {
@@ -854,10 +865,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.login()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"ok":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('ykt', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
+        return compactLoginResult(await pageInvoke('ykt', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
     },
     {
@@ -978,7 +989,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.login()`；`academic.login({studentId: "xxx"})`；`academic.login({studentId: "xxx", password: "123456"})`',
         '',
-        '**返回示例**：{"studentId":"..."}'
+        '**返回示例**：{"ok":true}'
       ].join('\n'),
       async run(args) {
         let studentId = String(args?.studentId || '').trim();
@@ -988,10 +999,11 @@ name: 've.teachers_of_',
           studentId = String(context?.studentId || context?.accounts?.[0]?.studentId || '').trim();
         }
         if (!studentId) throw new Error('没有当前或已保存的教务系统账号，请传入 studentId');
-        if (password) return academicInvoke('login', { studentId, password }, 60000);
-        const result = await academicInvoke('loginSaved', { studentId }, 60000);
+        const result = password
+          ? await academicInvoke('login', { studentId, password }, 60000)
+          : await academicInvoke('loginSaved', { studentId }, 60000);
         if (result?.ok === false) throw new Error(String(result?.message || '使用已保存密码登录失败'));
-        return result;
+        return compactLoginResult(result);
       }
     },
     {
@@ -1371,10 +1383,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.login()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"ok":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mrjzy', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
+        return compactLoginResult(await pageInvoke('mrjzy', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
     },
     {
@@ -1500,10 +1512,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.login()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"ok":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mooc', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
+        return compactLoginResult(await pageInvoke('mooc', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
     },
     {
@@ -1518,10 +1530,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.login()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"ok":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('jlgj', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
+        return compactLoginResult(await pageInvoke('jlgj', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
     },
     {
@@ -1649,10 +1661,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.login()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true,"message":"登录成功"}'
+        '**返回示例**：{"ok":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('xuetangx', 'login', { timeoutMs: Number.POSITIVE_INFINITY });
+        return compactLoginResult(await pageInvoke('xuetangx', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
     },
     {
