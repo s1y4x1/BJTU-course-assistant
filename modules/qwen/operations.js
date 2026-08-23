@@ -214,14 +214,11 @@
 
   function veUploadedFilesPayload(items) {
     const records = Array.isArray(items) ? items : [];
-    const files = [];
     const fileList = [];
     for (const item of records) {
       const fileName = String(item?.fileName || '').trim();
       const visitName = String(item?.visitName || '').trim();
       const fileSize = Math.max(0, Number(item?.fileSize || 0) || 0);
-      const downloadUrl = String(item?.downloadUrl || item?.url || '').trim();
-      if (downloadUrl) files.push({ fileName, fileSize, downloadUrl });
       if (!visitName || !fileName) continue;
       const dot = fileName.lastIndexOf('.');
       const fileNameNoExt = dot > 0 && dot < fileName.length - 1 ? fileName.slice(0, dot) : fileName;
@@ -235,7 +232,7 @@
         ftype: 'insert'
       });
     }
-    return { files, fileList };
+    return { fileList };
   }
 
   function veAssignmentActionUrl(course, courseId, subType) {
@@ -493,15 +490,17 @@ name: 've.accounts',
       module: 've',
       name: 've.uploadedFiles',
       label: '获取已上传文件',
-      summary: '获取智慧课程平台已上传文件的下载链接和可直接提交的 fileList',
+      summary: '获取智慧课程平台可直接提交的已上传文件 fileList',
       doc: [
         '## ve.uploadedFiles —— 获取已上传文件',
         '',
-        '获取扩展本地保存的智慧课程平台已上传文件，返回下载链接和可直接传给 ve.submitAssignment 的 fileList。',
+        '获取扩展本地保存的智慧课程平台已上传文件，返回可直接传给 ve.submitAssignment 的 fileList。',
+        '',
+        '**路径映射**：visitName 中的 `W:\\Root\\` 路径前缀就是 `http://123.121.147.7:8081/rp`；将其后的反斜杠改为正斜杠即可得到对应的 HTTP 文件地址。',
         '',
         '**调用示例**：`ve.uploadedFiles()`',
         '',
-        '**返回示例**：{"files":[{"fileName":"作业.pdf","fileSize":12345,"downloadUrl":"http://..."}],"fileList":[{"fileNameNoExt":"%E4%BD%9C%E4%B8%9A","fileExtName":"pdf","fileSize":"12345","visitName":"...","pid":"","ftype":"insert"}]}'
+        '**返回示例**：`{"fileList":[{"fileNameNoExt":"%E4%BD%9C%E4%B8%9A","fileExtName":"pdf","fileSize":"12345","visitName":"W:\\\\Root\\\\example.pdf","pid":"","ftype":"insert"}]}`'
       ].join('\n'),
       async run() {
         const current = await pageInvoke('ve', 'uploadedFiles', { includePrivate: true }).catch(() => []);
