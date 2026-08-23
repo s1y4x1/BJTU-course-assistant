@@ -71,6 +71,7 @@ const VERSION_FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
 const VERSION_FS_DB_STORE = 'handles';
 const VERSION_FS_DIRECTORY_KEY = 'update-directory';
 const VERSION_MODULE_SELECTION_KEY = 'updateModuleSelection';
+const VERSION_MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
 const VERSION_OPTIONAL_MODULES = Object.freeze({
   ykt: '雨课堂',
   mrjzy: '每日交作业',
@@ -1580,16 +1581,25 @@ async function chooseUpdateModules(archiveFiles) {
   const available = globalThis.__bjtuAvailableModules || {};
   const archiveLabels = await getArchiveModuleLabels(archiveFiles);
   const knownIds = getKnownOptionalModuleIds();
+  const knownIdSet = new Set(knownIds);
   const candidates = [...new Set([
     ...knownIds.filter((id) => packaged.includes(id) || available[id] === true),
     ...packaged
   ].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)))];
   if (!candidates.length) return new Set();
-  const stored = await chrome.storage.local.get(VERSION_MODULE_SELECTION_KEY).catch(() => ({}));
+  const stored = await chrome.storage.local.get([
+    VERSION_MODULE_SELECTION_KEY,
+    VERSION_MODULE_KNOWN_IDS_KEY
+  ]).catch(() => ({}));
   const previous = stored?.[VERSION_MODULE_SELECTION_KEY];
+  const previousKnown = stored?.[VERSION_MODULE_KNOWN_IDS_KEY];
+  const locallyKnownIds = new Set(Array.isArray(previousKnown) ? previousKnown : knownIdSet);
+  const archiveNewModuleIds = new Set(packaged.filter((id) => !locallyKnownIds.has(id)));
   const alreadyChosen = new Set(Array.isArray(previous) ? previous : []);
   const initial = new Set(Array.isArray(previous)
-    ? candidates.filter((id) => alreadyChosen.has(id) || (packaged.includes(id) && available[id] !== true))
+    ? candidates.filter((id) => alreadyChosen.has(id)
+      || archiveNewModuleIds.has(id)
+      || (packaged.includes(id) && available[id] !== true))
     : candidates.filter((id) => available[id] === true || packaged.includes(id)));
 
   return new Promise((resolve) => {
@@ -1653,7 +1663,10 @@ async function chooseUpdateModules(archiveFiles) {
       confirmInProgress = true;
       cancelAutoConfirm();
       const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
-      await chrome.storage.local.set({ [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)) }).catch(() => {});
+      await chrome.storage.local.set({
+        [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)),
+        [VERSION_MODULE_KNOWN_IDS_KEY]: candidates
+      }).catch(() => {});
       mask.remove();
       resolve(selected);
     };
@@ -2186,7 +2199,8 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
     || (primaryUrl === VERSION_DOWNLOAD_URL ? 'main' : 'zipball');
   versionDownloadSelectedSource = selectedSource;
   versionDownloadSelectedUrl = primaryUrl;
-  versionDownloadFullExtraction = fullExtraction === true;
+  // 开发版来自 main 分支完整仓库，不能继续套用正式版发布记录的局部 updateRule。
+  versionDownloadFullExtraction = selectedSource === 'main' || fullExtraction === true;
   try {
     await downloadVersionByUrlWithProgress(primaryUrl);
     // 成功 UI 已在 downloadVersionByUrlWithProgress 内部处理
