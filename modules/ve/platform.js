@@ -2968,8 +2968,12 @@ async function triggerVeLoginWithAccount(platform, account, timeoutMs) {
 }
 
 async function waitForVeLoginHomeworkResult(timeoutMs, account = '', alreadyEnabled = true) {
+  // Chrome 扩展消息使用 JSON 序列化，Infinity 跨上下文后会变成 null。
+  // VE 登录默认不设超时；只有明确传入正的有限毫秒数时才启用超时。
   const timeout = Number(timeoutMs);
-  const effectiveTimeout = Number.isFinite(timeout) ? Math.max(1000, timeout) : Number.POSITIVE_INFINITY;
+  const effectiveTimeout = timeoutMs != null && timeoutMs !== '' && Number.isFinite(timeout) && timeout > 0
+    ? Math.max(1000, timeout)
+    : Number.POSITIVE_INFINITY;
   const deadline = Date.now() + effectiveTimeout;
   const ready = typeof globalThis.waitForPlatformDataReady === 'function'
     ? await globalThis.waitForPlatformDataReady('ve', effectiveTimeout)

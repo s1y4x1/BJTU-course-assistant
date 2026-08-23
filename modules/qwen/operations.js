@@ -621,7 +621,7 @@ name: 've.accounts',
       ].join('\n'),
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();
-        const result = await pageInvoke('ve', 'login', { account, auto: true, timeoutMs: Number.POSITIVE_INFINITY });
+        const result = await pageInvoke('ve', 'login', { account, auto: true });
         const loggedIn = result?.loggedIn === true || String(result?.loginState || '').toLowerCase() === 'online';
         const ok = typeof result?.ok === 'boolean' ? result.ok : loggedIn;
         return { ...(result && typeof result === 'object' ? result : {}), ok, loggedIn };
