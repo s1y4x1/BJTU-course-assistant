@@ -11,6 +11,7 @@
   const LIST_LIMIT_KEY = 'mailListLimit';
   const SNAPSHOTS_KEY = 'mailSnapshots';
   const PENDING_NOTIFICATIONS_KEY = 'mailPendingNotifications';
+  const NOTIFICATION_TARGETS_KEY = 'mailNotificationTargets';
   const STATUS_KEY = 'mailMonitorStatus';
   const ALARM_NAME = 'bjtu-mail-check';
   const NOTIFICATION_PREFIX = 'bjtu-mail-new:';
@@ -417,7 +418,7 @@
             fetchUnreadCount(sid), fetchInboxThreads(sid, listLimit)
           ]).catch(() => { throw error; });
         }
-        return await processMailRows(threads.rows, threads.total, unreadCount, source);
+        return await processMailRows(threads.rows, threads.total, unreadCount, source, sid);
       } catch (error) {
         invalidateSid();
         await chrome.storage.local.set({
@@ -515,8 +516,23 @@
 
     chrome.notifications.onClicked.addListener((notificationId) => {
       if (!String(notificationId || '').startsWith(NOTIFICATION_PREFIX)) return;
-      globalThis.BjtuTabs.create({ url: MAIL_HOME_URL, active: true }).catch(() => {});
-      chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
+      void (async () => {
+        let url = MAIL_HOME_URL;
+        try {
+          const stored = await chrome.storage.local.get([NOTIFICATION_TARGETS_KEY]);
+          const targets = stored?.[NOTIFICATION_TARGETS_KEY];
+          const target = targets?.[notificationId];
+          url = buildMailReadUrl(target);
+          if (target) {
+            delete targets[notificationId];
+            await chrome.storage.local.set({ [NOTIFICATION_TARGETS_KEY]: targets });
+          }
+        } catch {
+          // Fall back to the mailbox home page.
+        }
+        await globalThis.BjtuTabs.create({ url, active: true }).catch(() => {});
+        chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
+      })();
     });
 
     void ensureAlarm();
