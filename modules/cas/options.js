@@ -25,7 +25,7 @@
     select.disabled = false;
     for (const account of accounts) {
       const id = String(account?.loginName || '');
-      const option = new Option(id, id);
+      const option = new Option([id, account?.userName].filter(Boolean).join(' '), id);
       option.disabled = !account?.hasPassword && id !== selected;
       select.append(option);
     }

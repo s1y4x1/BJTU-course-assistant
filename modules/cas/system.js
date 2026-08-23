@@ -2,6 +2,7 @@
   'use strict';
 
   const LOGIN_URL = 'https://cas.bjtu.edu.cn/auth/login/';
+  const PROFILE_URL = 'https://cas.bjtu.edu.cn/profile/';
   const ACCOUNTS_KEY = 'casAccounts';
   const LOGIN_NAME_KEY = 'casLoginName';
   const STATUS_TYPE = 'CAS_SYSTEM_STATUS';
@@ -11,6 +12,23 @@
 
   function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  }
+
+  function decodeHtmlEntities(value) {
+    const named = {
+      amp: '&', apos: "'", gt: '>', lt: '<', nbsp: ' ', quot: '"'
+    };
+    return String(value || '').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
+      const token = String(entity || '').toLowerCase();
+      if (token.startsWith('#x')) return String.fromCodePoint(parseInt(token.slice(2), 16));
+      if (token.startsWith('#')) return String.fromCodePoint(parseInt(token.slice(1), 10));
+      return Object.prototype.hasOwnProperty.call(named, token) ? named[token] : match;
+    });
+  }
+
+  function textFromHtml(value) {
+    return decodeHtmlEntities(String(value || '').replace(/<[^>]+>/g, ' '))
+      .replace(/[\t ]+/g, ' ').replace(/\r/g, '').trim();
   }
 
   async function broadcastStatus(payload) {
@@ -58,6 +76,7 @@
       if (!id) continue;
       accounts[id] = {
         loginName: id,
+        userName: String(source?.userName || ''),
         password: String(source?.password || ''),
         updatedAt: Number(source?.updatedAt || 0),
         lastLoginAt: Number(source?.lastLoginAt || 0)
@@ -71,11 +90,13 @@
     if (!id) throw new Error('账号为空');
     const write = accountWritePromise.then(async () => {
       const accounts = await getCasAccounts();
-      const current = accounts[id] || { loginName: id, password: '', updatedAt: 0, lastLoginAt: 0 };
+      const current = accounts[id]
+        || { loginName: id, userName: '', password: '', updatedAt: 0, lastLoginAt: 0 };
       accounts[id] = {
         ...current,
         ...patch,
         loginName: id,
+        userName: patch.userName === undefined ? String(current.userName || '') : String(patch.userName || ''),
         password: patch.password === undefined ? String(current.password || '') : String(patch.password || ''),
         updatedAt: Date.now()
       };
@@ -97,6 +118,37 @@
         storeId: cookie.storeId
       }).catch(() => null);
     }));
+  }
+
+  // 解析 /profile/ 页中 table.table-bordered.table-hover 的 th/td 键值对。
+  function parseProfilePage(html) {
+    const source = String(html || '');
+    const table = [...source.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)]
+      .find((match) => /\bclass\s*=\s*["'][^"']*\btable-bordered\b[^"']*["']/i.test(match[1]));
+    const pairs = {};
+    for (const match of String(table?.[2] || source).matchAll(
+      /<th\b[^>]*>([\s\S]*?)<\/th>\s*<td\b[^>]*>([\s\S]*?)<\/td>/gi
+    )) {
+      const key = textFromHtml(match[1]);
+      if (key && !(key in pairs)) pairs[key] = textFromHtml(match[2]);
+    }
+    return {
+      userName: String(pairs['姓名'] || '').trim(),
+      email: String(pairs['电子邮箱'] || '').trim()
+    };
+  }
+
+  async function fetchCasProfile() {
+    const response = await fetch(PROFILE_URL, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) throw new Error(`CAS 个人信息页 HTTP ${response.status}`);
+    const html = await response.text();
+    try {
+      if (/^\/auth\/login(?:\/|$)/i.test(new URL(response.url, PROFILE_URL).pathname)) return null;
+    } catch {
+      // Fall through to parsing the returned page.
+    }
+    const profile = parseProfilePage(html);
+    return profile.userName ? profile : null;
   }
 
   async function ensureCasOriginTab() {
@@ -246,8 +298,17 @@
         await wait(300);
       }
       if (lastResult.ok) {
-        await saveCasAccount(id, { password: secret, lastLoginAt: Date.now() });
-        await broadcastStatus({ status: 'login-done', loginName: id });
+        const profile = await fetchCasProfile().catch(() => null);
+        await saveCasAccount(id, {
+          password: secret,
+          lastLoginAt: Date.now(),
+          ...(profile?.userName ? { userName: profile.userName } : {})
+        });
+        await broadcastStatus({
+          status: 'login-done',
+          loginName: id,
+          userName: profile?.userName || ''
+        });
       } else {
         await broadcastStatus({ status: 'login-error', loginName: id, error: lastResult.message });
       }
@@ -272,6 +333,7 @@
     const summaries = Object.values(accounts)
       .map((account) => ({
         loginName: account.loginName,
+        userName: String(account.userName || ''),
         hasPassword: !!account.password,
         updatedAt: Number(account.updatedAt || 0),
         lastLoginAt: Number(account.lastLoginAt || 0)
@@ -338,11 +400,18 @@
       pendingCredentialsByTab.delete(tabId);
       if (/^\/auth\/login(?:\/|$)/i.test(parsed.pathname)) return;
       void (async () => {
+        const profile = await fetchCasProfile().catch(() => null);
         await saveCasAccount(pending.loginName, {
           password: pending.password,
-          lastLoginAt: Date.now()
+          lastLoginAt: Date.now(),
+          ...(profile?.userName ? { userName: profile.userName } : {})
         });
-        await broadcastStatus({ status: 'credentials-saved', loginName: pending.loginName, silent: true });
+        await broadcastStatus({
+          status: 'credentials-saved',
+          loginName: pending.loginName,
+          userName: profile?.userName || '',
+          silent: true
+        });
         await showCasPageToast(
           tabId,
           `统一身份认证登录成功，已保存账号 ${pending.loginName} 的登录密码`
@@ -370,6 +439,8 @@
     getContext: () => buildCasContext(),
     loginWithPassword: (args) => loginWithPassword(args?.loginName, args?.password),
     loginSavedAccount: (args) => loginSavedCasAccount(args?.loginName),
-    extractLoginCredentials
+    fetchProfile: () => fetchCasProfile(),
+    extractLoginCredentials,
+    parseProfilePage
   };
 })(globalThis);
