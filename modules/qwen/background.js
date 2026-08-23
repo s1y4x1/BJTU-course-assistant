@@ -671,15 +671,17 @@
           sendResponse({ ok: false, message: '通义千问代理未就绪' });
           return false;
         }
-        try {
-          const qwenDocs = [
-            operations?.docs?.('qwen.listOperations')?.doc,
-            operations?.docs?.('qwen.getDoc')?.doc
-          ].filter(Boolean).join('\n\n');
-          sendResponse({ ok: true, text: agent.buildSystemPrompt({ qwenDocs }) });
-        } catch (error) {
-          sendResponse({ ok: false, message: String(error?.message || error) });
-        }
+        void (async () => {
+          try {
+            const qwenDocs = [
+              operations?.docs?.('qwen.listOperations')?.doc,
+              operations?.docs?.('qwen.getDoc')?.doc
+            ].filter(Boolean).join('\n\n');
+            sendResponse({ ok: true, text: await agent.buildSystemPrompt({ qwenDocs }) });
+          } catch (error) {
+            sendResponse({ ok: false, message: String(error?.message || error) });
+          }
+        })();
         return true;
       }
       if (type === 'QWEN_OPERATION_DOCS') {
