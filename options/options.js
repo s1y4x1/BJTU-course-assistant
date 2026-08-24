@@ -426,6 +426,40 @@ window.addEventListener('bjtu-theme-change', () => {
   }
 });
 
+const INSTALLABLE_PLATFORM_MODULE_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
+
+// 已安装模块列表遵循「排序」编辑器的顺序：
+// 平台模块按「平台」顺序展开在「平台显示与加载」的位置，其余模块按「扩展选项模块」顺序，
+// 未出现在排序配置中的模块按注册顺序追加到末尾。
+async function getInstalledModuleOrderedIds(definitions) {
+  const stored = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']).catch(() => ({}));
+  const sectionOrder = Array.isArray(stored?.optionsSectionOrder)
+    ? stored.optionsSectionOrder.map(String)
+    : [...(globalThis.BjtuUiOrder?.DEFAULT_OPTIONS_SECTION_ORDER || [])];
+  const platformOrder = Array.isArray(stored?.platformOrder) ? stored.platformOrder.map(String) : [];
+  const ids = Object.keys(definitions || {});
+  const byId = new Set(ids);
+  const ordered = [];
+  const seen = new Set();
+  const push = (id) => {
+    const key = String(id || '');
+    if (byId.has(key) && !seen.has(key)) {
+      seen.add(key);
+      ordered.push(key);
+    }
+  };
+  for (const sectionId of sectionOrder) {
+    if (sectionId === 'platforms') {
+      platformOrder.forEach(push);
+      INSTALLABLE_PLATFORM_MODULE_IDS.forEach(push);
+    } else if (sectionId.startsWith('module:')) {
+      push(sectionId.slice('module:'.length));
+    }
+  }
+  ids.forEach(push);
+  return ordered;
+}
+
 async function setupInstalledModuleOptions() {
   const list = document.getElementById('installedModuleList');
   const applyButton = document.getElementById('applyInstalledModules');
@@ -461,7 +495,10 @@ async function setupInstalledModuleOptions() {
   }
   const installed = new Set(Object.keys(definitions).filter((id) => available[id] === true));
   list.innerHTML = '';
-  Object.entries(definitions).forEach(([id, definition]) => {
+  const orderedIds = await getInstalledModuleOrderedIds(definitions);
+  orderedIds.forEach((id) => {
+    const definition = definitions[id];
+    if (!definition) return;
     const label = document.createElement('label');
     label.className = 'installed-module-item';
     label.dataset.moduleId = id;
