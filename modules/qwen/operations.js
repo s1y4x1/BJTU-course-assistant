@@ -160,6 +160,35 @@
     return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
   }
 
+  const CAS_DIRECT = {
+    currentAccount: { fn: 'getContext', type: 'CAS_GET_CONTEXT' },
+    login: { fn: 'loginWithPassword', type: 'CAS_LOGIN_WITH_PASSWORD' },
+    loginSaved: { fn: 'loginSavedAccount', type: 'CAS_SWITCH_ACCOUNT' },
+    autoLogin: { fn: 'autoLoginSavedAccount', type: 'CAS_AUTO_LOGIN' }
+  };
+
+  async function casInvoke(kind, args, timeoutMs = 120000) {
+    const direct = CAS_DIRECT[kind];
+    const internals = typeof requireGlobal === 'function' ? requireGlobal('BjtuCasSystemInternals') : null;
+    const fn = internals?.[direct?.fn];
+    if (typeof fn === 'function') return fn(args);
+    if (!direct?.type) throw new Error('模块 BjtuCasSystemInternals 未安装或未就绪');
+    return sendRuntimeMessage({ type: direct.type, payload: args }, timeoutMs);
+  }
+
+  const MAIL_DIRECT = {
+    status: { fn: 'getContext', type: 'MAIL_GET_CONTEXT' },
+    inbox: { fn: 'checkNow', type: 'MAIL_LOAD_THREADS' }
+  };
+
+  async function mailInvoke(kind, args, timeoutMs = 240000) {
+    const direct = MAIL_DIRECT[kind];
+    const internals = typeof requireGlobal === 'function' ? requireGlobal('BjtuMailSystemInternals') : null;
+    const fn = internals?.[direct?.fn];
+    if (typeof fn === 'function') return fn(args);
+    return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
+  }
+
   async function moocInvoke(args, timeoutMs = 120000) {
     const bg = typeof requireGlobal === 'function' ? requireGlobal('BjtuMoocBackground') : null;
     const fn = bg?.handleRequest;
@@ -1007,6 +1036,127 @@ name: 've.teachers_of_',
       }
     },
     {
+      module: 'cas',
+      name: 'cas.currentAccount',
+      label: '统一身份认证当前账号',
+      summary: '获取 CAS 统一身份认证的当前账号与已保存账号列表',
+      doc: [
+        '## cas.currentAccount —— 统一身份认证当前账号',
+        '',
+        '获取 CAS 统一身份认证的当前偏好账号与已保存账号列表（含是否已保存密码）。',
+        '',
+        '**调用示例**：`cas.currentAccount()`',
+        '',
+        '**返回示例**：{"loginName":"24281271","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}'
+      ].join('\n'),
+      async run() {
+        return casInvoke('currentAccount');
+      }
+    },
+    {
+      module: 'cas',
+      name: 'cas.profile',
+      label: '统一身份认证个人信息',
+      summary: '获取 CAS 个人信息页中的姓名与电子邮箱',
+      doc: [
+        '## cas.profile —— 统一身份认证个人信息',
+        '',
+        'GET https://cas.bjtu.edu.cn/profile/ 并解析其中的姓名与电子邮箱。需要 CAS 已登录；未登录时返回 LOGIN_REQUIRED。',
+        '',
+        '**调用示例**：`cas.profile()`',
+        '',
+        '**返回示例**：{"userName":"苏义新","email":"24281271@bjtu.edu.cn"}'
+      ].join('\n'),
+      async run() {
+        const internals = requireGlobal('BjtuCasSystemInternals');
+        if (typeof internals?.fetchProfile !== 'function') {
+          throw Object.assign(new Error('模块 BjtuCasSystemInternals 未安装或未就绪'), { code: 'MODULE_UNAVAILABLE' });
+        }
+        const profile = await internals.fetchProfile().catch(() => null);
+        if (!profile) {
+          return { ok: false, code: 'LOGIN_REQUIRED', message: 'CAS 未登录，请先调用 cas.login 完成登录后再获取个人信息' };
+        }
+        return profile;
+      }
+    },
+    {
+      module: 'cas',
+      name: 'cas.login',
+      label: '统一身份认证登录',
+      summary: '使用传入或已保存的账号密码登录 CAS（自动识别验证码）',
+      doc: [
+        '## cas.login —— 统一身份认证登录',
+        '',
+        '登录 CAS 统一身份认证。loginName 可省略，此时优先使用当前偏好账号，其次使用最近保存的可登录账号。传入 password 时使用该密码；省略时使用该账号已保存的密码。验证码由本地模型自动识别，需要先在「本地验证码识别」中安装 MIS 资源。',
+        '',
+        '**参数**：{"loginName":"学号/账号，可选","password":"密码，可选；省略时使用已保存密码"}',
+        '',
+        '**调用示例**：`cas.login()`；`cas.login({loginName: "xxx"})`；`cas.login({loginName: "xxx", password: "xxx"})`',
+        '',
+        '**返回示例**：{"ok":true}'
+      ].join('\n'),
+      async run(args) {
+        let loginName = String(args?.loginName || '').trim();
+        const password = String(args?.password ?? '');
+        if (!loginName) {
+          const context = await casInvoke('currentAccount');
+          loginName = String(context?.loginName
+            || context?.accounts?.find((account) => account.hasPassword)?.loginName || '').trim();
+        }
+        if (!loginName) throw new Error('没有当前或已保存的 CAS 账号，请传入 loginName');
+        const result = password
+          ? await casInvoke('login', { loginName, password })
+          : await casInvoke('loginSaved', { loginName });
+        if (result?.ok === false) {
+          throw Object.assign(new Error(String(result?.message || 'CAS 登录失败')), { code: String(result?.code || '') });
+        }
+        return compactLoginResult(result);
+      }
+    },
+    {
+      module: 'mail',
+      name: 'mail.status',
+      label: '邮件监控状态',
+      summary: '获取邮件监控开关、检查间隔与最近一次检查结果',
+      doc: [
+        '## mail.status —— 邮件监控状态',
+        '',
+        '获取 BJTU 邮件系统监控的启用状态、检查间隔、加载条数设置与最近一次检查结果（含收件箱总数与未读数）。casLoginName 为当前关联的 CAS 账号。',
+        '',
+        '**调用示例**：`mail.status()`',
+        '',
+        '**返回示例**：{"enabled":true,"intervalMinutes":10,"listLimit":10,"status":{"status":"ok","total":363,"unreadCount":7,"checkedAt":1723456789012},"casLoginName":"24281271"}'
+      ].join('\n'),
+      async run() {
+        return mailInvoke('status');
+      }
+    },
+    {
+      module: 'mail',
+      name: 'mail.inbox',
+      label: '收件箱检测',
+      summary: '立即检测收件箱并返回最近邮件列表、总数与未读数',
+      doc: [
+        '## mail.inbox —— 收件箱检测',
+        '',
+        '立即触发一次邮件检测（忽略监控开关），返回按选项「加载条数」设置的最近邮件列表、收件箱总数与未读数。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱；若没有已保存的 CAS 账号密码则报错。',
+        '',
+        '**调用示例**：`mail.inbox()`',
+        '',
+        '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true}],"total":363,"unreadCount":7,"count":10,"changes":0,"checkedAt":1723456789012}'
+      ].join('\n'),
+      async run() {
+        const result = await mailInvoke('inbox');
+        if (result?.ok === false) {
+          throw Object.assign(
+            new Error(String(result?.message || '收件箱读取失败')),
+            { code: String(result?.code || '') }
+          );
+        }
+        return withoutOk(result) || {};
+      }
+    },
+    {
       module: 'mooc',
       name: 'mooc.courseList',
       label: 'MOOC 课程列表',
@@ -1726,6 +1876,8 @@ name: 've.teachers_of_',
   const OPERATION_GROUPS = [
     { id: 've', label: '智慧课程平台', operations: OPERATIONS.filter((op) => op.module === 've') },
     { id: 'academic', label: '教务系统', operations: OPERATIONS.filter((op) => op.module === 'academic') },
+    { id: 'cas', label: 'CAS 统一身份认证', operations: OPERATIONS.filter((op) => op.module === 'cas') },
+    { id: 'mail', label: 'BJTU 邮件系统', operations: OPERATIONS.filter((op) => op.module === 'mail') },
     { id: 'mooc', label: '中国大学MOOC', operations: OPERATIONS.filter((op) => op.module === 'mooc') },
     { id: 'ykt', label: '雨课堂', operations: OPERATIONS.filter((op) => op.module === 'ykt') },
     { id: 'mrjzy', label: '每日交作业', operations: OPERATIONS.filter((op) => op.module === 'mrjzy') },
