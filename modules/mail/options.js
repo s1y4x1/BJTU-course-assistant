@@ -309,13 +309,13 @@
 
   async function reset() {
     await chrome.storage.local.set({
-      [ENABLED_KEY]: false,
+      [ENABLED_KEY]: true,
       [INTERVAL_KEY]: DEFAULT_INTERVAL_MINUTES,
       [LIST_LIMIT_KEY]: DEFAULT_LIST_LIMIT
     });
     await chrome.storage.local.remove([STATUS_KEY]);
     if (!initialized) return;
-    element(ENABLED_KEY).checked = false;
+    element(ENABLED_KEY).checked = true;
     setIntervalEditor(DEFAULT_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES);
     const limitInput = element(LIST_LIMIT_INPUT_ID);
     if (limitInput instanceof HTMLInputElement) limitInput.value = String(DEFAULT_LIST_LIMIT);

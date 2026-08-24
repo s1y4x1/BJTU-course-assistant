@@ -375,7 +375,7 @@
       : null;
     const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.id, row]));
     const changes = [];
-    const notificationsEnabled = stored?.[ENABLED_KEY] === true;
+    const notificationsEnabled = stored?.[ENABLED_KEY] !== false;
     // 首次检测仅建立基线，避免把历史邮件全部当作新邮件通知。
     if (previous && notificationsEnabled) {
       for (const row of normalizedRows) {
@@ -430,7 +430,7 @@
     if (mailCheckPromise) return mailCheckPromise;
     mailCheckPromise = (async () => {
       const settings = await chrome.storage.local.get([ENABLED_KEY, LIST_LIMIT_KEY, STATUS_KEY]);
-      if (!force && settings?.[ENABLED_KEY] !== true) return { skipped: true };
+      if (!force && settings?.[ENABLED_KEY] === false) return { skipped: true };
       const listLimit = normalizeListLimit(settings?.[LIST_LIMIT_KEY] ?? DEFAULT_LIST_LIMIT);
       // 不传 limit 时 summaryWindowSize 使用已知收件箱总数。
       const summaryWindowSizeHint = cachedInboxTotal
@@ -502,7 +502,7 @@
     }
     return {
       ok: true,
-      enabled: stored?.[ENABLED_KEY] === true,
+      enabled: stored?.[ENABLED_KEY] !== false,
       intervalMinutes: normalizeIntervalMinutes(stored?.[INTERVAL_KEY]),
       listLimit: normalizeListLimit(stored?.[LIST_LIMIT_KEY] ?? DEFAULT_LIST_LIMIT),
       status: stored?.[STATUS_KEY] || null,
@@ -565,7 +565,7 @@
         || (!changes[ENABLED_KEY] && !changes[INTERVAL_KEY])) return;
       void ensureAlarm();
       if (changes[ENABLED_KEY]) {
-        if (changes[ENABLED_KEY].newValue === true) checkMail('enabled').catch(() => {});
+        if (changes[ENABLED_KEY].newValue !== false) checkMail('enabled').catch(() => {});
         else chrome.storage.local.remove([PENDING_NOTIFICATIONS_KEY]).catch(() => {});
       }
     });

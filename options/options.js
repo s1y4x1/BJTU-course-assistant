@@ -165,6 +165,17 @@ function normalizeMoocPeerReviewCount(value, fallback = DEFAULT_MOOC_PEER_REVIEW
     : fallback;
 }
 
+function updateMoocPeerReviewState() {
+  const enabled = document.getElementById('injectMoocPeerReviewEnabled')?.checked === true;
+  const editor = document.getElementById('moocPeerReviewCountEditor');
+  const input = document.getElementById('moocPeerReviewCount');
+  if (input instanceof HTMLInputElement) input.disabled = !enabled;
+  if (editor instanceof HTMLElement) {
+    editor.style.setProperty('opacity', enabled ? '' : '.5');
+    editor.style.setProperty('pointer-events', enabled ? '' : 'none');
+  }
+}
+
 const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:cas', 'module:mail', 'module:qwen'];
 const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
 const PLATFORM_ORDER_LABELS = {
@@ -672,8 +683,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ platformEnabled: effectiveEnabled });
   }
   document.getElementById('injectMoocHelperEnabled').checked = injectMoocHelperEnabled !== false;
-  document.getElementById('injectMoocPeerReviewEnabled').checked = injectMoocPeerReviewEnabled === true;
+  document.getElementById('injectMoocPeerReviewEnabled').checked = injectMoocPeerReviewEnabled !== false;
   document.getElementById('moocPeerReviewCount').value = String(normalizeMoocPeerReviewCount(moocPeerReviewCount));
+  updateMoocPeerReviewState();
   document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
   document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
   document.getElementById('autoLoadAllHomeworkDetails').checked = autoLoadAllHomeworkDetails === true;
@@ -1071,7 +1083,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       }
       if (changes.injectMoocHelperEnabled) applyBooleanUi('injectMoocHelperEnabled', changes.injectMoocHelperEnabled.newValue, true);
       if (changes.injectMoocPeerReviewEnabled) {
-        applyBooleanUi('injectMoocPeerReviewEnabled', changes.injectMoocPeerReviewEnabled.newValue, false);
+        applyBooleanUi('injectMoocPeerReviewEnabled', changes.injectMoocPeerReviewEnabled.newValue, true);
+        updateMoocPeerReviewState();
       }
       if (changes.moocPeerReviewCount) {
         document.getElementById('moocPeerReviewCount').value = String(normalizeMoocPeerReviewCount(
@@ -1211,6 +1224,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setMsg('已应用更改');
   });
   document.getElementById('injectMoocPeerReviewEnabled').addEventListener('change', async () => {
+    updateMoocPeerReviewState();
     await chrome.storage.local.set({ injectMoocPeerReviewEnabled: !!document.getElementById('injectMoocPeerReviewEnabled').checked });
     setMsg('已应用更改');
   });
@@ -1671,7 +1685,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       optionsSectionOrder: [...FALLBACK_OPTIONS_SECTION_ORDER],
       platformOrder: [...FALLBACK_PLATFORM_ORDER],
       injectMoocHelperEnabled: true,
-      injectMoocPeerReviewEnabled: false,
+      injectMoocPeerReviewEnabled: true,
       moocPeerReviewCount: DEFAULT_MOOC_PEER_REVIEW_COUNT,
       jlgjDarkModeEnabled: true,
       jlgjAlwaysDarkModeEnabled: false,
@@ -1718,8 +1732,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.checked = DEFAULT_XUETANGX_ACTIVITY_TYPES.includes(Number(input.value));
     });
     document.getElementById('injectMoocHelperEnabled').checked = true;
-    document.getElementById('injectMoocPeerReviewEnabled').checked = false;
+    document.getElementById('injectMoocPeerReviewEnabled').checked = true;
     document.getElementById('moocPeerReviewCount').value = String(DEFAULT_MOOC_PEER_REVIEW_COUNT);
+    updateMoocPeerReviewState();
     setupUiOrderEditor(FALLBACK_OPTIONS_SECTION_ORDER, FALLBACK_PLATFORM_ORDER);
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;

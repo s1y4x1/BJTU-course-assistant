@@ -13,7 +13,7 @@
 
     const initialSettings = await chrome.storage.local.get(SETTINGS_KEYS);
     let helperEnabled = initialSettings.injectMoocHelperEnabled !== false;
-    let peerReviewEnabled = initialSettings.injectMoocPeerReviewEnabled === true;
+    let peerReviewEnabled = initialSettings.injectMoocPeerReviewEnabled !== false;
     let peerReviewCount = normalizePeerReviewCount(initialSettings.moocPeerReviewCount);
 
     if (!new URL(location.href).searchParams.get('tid')) return;
@@ -424,7 +424,7 @@
             needsRender = true;
         }
         if (changes.injectMoocPeerReviewEnabled) {
-            peerReviewEnabled = changes.injectMoocPeerReviewEnabled.newValue === true;
+            peerReviewEnabled = changes.injectMoocPeerReviewEnabled.newValue !== false;
             needsRender = true;
         }
         if (changes.moocPeerReviewCount) {
