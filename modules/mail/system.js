@@ -243,6 +243,30 @@
     return Number.isFinite(number) && number >= 0 ? number : DEFAULT_LIST_LIMIT;
   }
 
+  // 邮箱用户信息：email 为邮箱地址，true_name 为姓名。
+  async function fetchMailUser(sid) {
+    const params = new URLSearchParams({ func: 'user:getAttrs', sid: String(sid || '') });
+    const data = await requestJson(`${LIST_THREADS_URL}?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json;charset=UTF-8', Accept: 'application/json' },
+      body: JSON.stringify({ optionalAttrIds: ['email', 'true_name'] })
+    });
+    if (data?.code !== 'S_OK') throw new Error(`读取邮箱用户信息失败：${data?.code || '无响应码'}`);
+    const attrs = data?.var && typeof data.var === 'object' ? data.var : {};
+    return {
+      email: String(attrs.email || ''),
+      trueName: String(attrs.true_name || ''),
+      ou: String(attrs['@ou'] || '')
+    };
+  }
+
+  async function getCurrentMailUser({ forceNewSid = false } = {}) {
+    // 强制重新经 osys_sso_email 换取新 sid（缓存失效后自动回退到已保存 CAS 凭据登录）。
+    if (forceNewSid) invalidateSid();
+    const sid = await getMailSid();
+    return fetchMailUser(sid);
+  }
+
   async function currentAccountKey() {
     try {
       const context = await global.BjtuCasSystemInternals?.getContext();
@@ -504,6 +528,28 @@
           }));
         return true;
       }
+      if (message?.type === 'MAIL_GET_USER_INFO') {
+        getCurrentMailUser(message?.payload || {})
+          .then((result) => sendResponse({ ok: true, ...result }))
+          .catch((error) => sendResponse({
+            ok: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
+        return true;
+      }
+      // 纯探测：只检查能否取得 sid，不触发 CAS 自动登录。
+      if (message?.type === 'MAIL_LOGIN_STATUS') {
+        resolveMailSid()
+          .then((sid) => sendResponse({ ok: true, loggedIn: true, sid }))
+          .catch((error) => sendResponse({
+            ok: false,
+            loggedIn: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
+        return true;
+      }
       return false;
     });
 
@@ -551,6 +597,7 @@
   global.BjtuMailSystemInternals = {
     getContext: () => buildMailContext(),
     checkNow: () => checkMail('manual', { force: true }),
+    getUserInfo: (args) => getCurrentMailUser(args),
     resolveMailSid,
     getMailSid,
     extractUnreadCount,

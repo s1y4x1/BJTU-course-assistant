@@ -178,7 +178,8 @@
 
   const MAIL_DIRECT = {
     status: { fn: 'getContext', type: 'MAIL_GET_CONTEXT' },
-    inbox: { fn: 'checkNow', type: 'MAIL_LOAD_THREADS' }
+    inbox: { fn: 'checkNow', type: 'MAIL_LOAD_THREADS' },
+    user: { fn: 'getUserInfo', type: 'MAIL_GET_USER_INFO' }
   };
 
   async function mailInvoke(kind, args, timeoutMs = 240000) {
@@ -187,6 +188,109 @@
     const fn = internals?.[direct?.fn];
     if (typeof fn === 'function') return fn(args);
     return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
+  }
+
+  // 轮询等待登录完成；超时返回 null。
+  async function waitForLoginPoll(check, { timeoutMs = 180000, intervalMs = 3000 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      let value = null;
+      try {
+        value = await check();
+        if (value) return value;
+      } catch {
+        // 单次探测失败继续轮询
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    return null;
+  }
+
+  const VE_GET_USER_INFO_URL = 'http://123.121.147.7:88/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
+
+  // 智慧课程平台会话检测：getUserInfo 返回 loginName 即视为已登录。
+  async function vePortalAccount() {
+    const core = requireGlobal('BjtuVeHomeworkCore');
+    const { text } = await core.requestText(VE_GET_USER_INFO_URL, {
+      method: 'GET', timeoutMs: 8000,
+      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+    });
+    const data = JSON.parse(String(text || '').trim());
+    const loginName = String(data?.result?.loginName || '').trim();
+    if (!loginName) return null;
+    return { loginName, userName: String(data?.result?.userName || '') };
+  }
+
+  async function casLoginServiceVe() {
+    let existing = null;
+    try { existing = await vePortalAccount(); } catch { existing = null; }
+    if (existing) return { ok: true, service: 've', alreadyLoggedIn: true, ...existing };
+    const tab = await globalThis.BjtuTabs.create({
+      url: 'http://123.121.147.7:88/oauth/api/user/thirdLogin', active: true
+    });
+    const account = await waitForLoginPoll(() => vePortalAccount());
+    if (tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
+    if (!account) throw new Error('等待智慧课程平台登录超时，请在打开的标签页中完成 CAS 登录后重试');
+    return { ok: true, service: 've', ...account };
+  }
+
+  async function casLoginServiceAcademic() {
+    const internals = requireGlobal('BjtuAcademicSystemInternals');
+    const probe = await internals.probeLoginState().catch(() => ({ loggedIn: false }));
+    if (probe?.loggedIn) return { ok: true, service: 'academic', alreadyLoggedIn: true };
+    await sendRuntimeMessage({ type: 'START_ACADEMIC_MIS_LOGIN', payload: {} }, 30000);
+    const verified = await waitForLoginPoll(async () => {
+      const state = await internals.probeLoginState();
+      return state?.loggedIn === true ? true : null;
+    });
+    if (!verified) throw new Error('等待教务系统登录超时，请在打开的标签页中完成 CAS 登录后重试');
+    const context = await internals.getContext().catch(() => null);
+    const studentId = String(context?.studentId || '');
+    const account = (Array.isArray(context?.accounts) ? context.accounts : [])
+      .find((item) => item.loginName === studentId) || null;
+    return { ok: true, service: 'academic', studentId, userName: String(account?.userName || '') };
+  }
+
+  async function resolveMailSidWithCasFallback() {
+    const mailInternals = requireGlobal('BjtuMailSystemInternals');
+    try {
+      const sid = await mailInternals.resolveMailSid();
+      if (sid) return { sid, headless: true };
+    } catch {
+      // CAS 未登录时走下方流程
+    }
+    let headless = false;
+    try {
+      const casInternals = requireGlobal('BjtuCasSystemInternals');
+      const context = await casInternals.getContext();
+      const account = (Array.isArray(context?.accounts) ? context.accounts : [])
+        .find((item) => item.hasPassword);
+      if (account) {
+        const result = await casInternals.loginSavedAccount({ loginName: account.loginName });
+        headless = result?.ok !== false;
+      }
+    } catch {
+      headless = false;
+    }
+    try {
+      const sid = await mailInternals.resolveMailSid();
+      return { sid, headless };
+    } catch {
+      return null;
+    }
+  }
+
+  async function casLoginServiceMail() {
+    const mailInternals = requireGlobal('BjtuMailSystemInternals');
+    const resolved = await resolveMailSidWithCasFallback();
+    if (resolved?.sid) return { ok: true, service: 'mail', sid: resolved.sid, viaSavedPassword: resolved.headless === true };
+    const tab = await globalThis.BjtuTabs.create({
+      url: 'https://mis.bjtu.edu.cn/osys_sso_email/', active: true
+    });
+    const sid = await waitForLoginPoll(() => mailInternals.resolveMailSid().catch(() => null));
+    if (!sid) throw new Error('等待邮箱登录超时，请在打开的标签页中完成 CAS 登录后重试');
+    if (tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
+    return { ok: true, service: 'mail', sid };
   }
 
   async function moocInvoke(args, timeoutMs = 120000) {
@@ -1114,6 +1218,36 @@ name: 've.teachers_of_',
       }
     },
     {
+      module: 'cas',
+      name: 'cas.loginService',
+      label: '通过 CAS 登录服务',
+      summary: '通过 CAS 单点登录智慧课程平台/教务系统/邮箱',
+      doc: [
+        '## cas.loginService —— 通过 CAS 登录服务',
+        '',
+        '通过 CAS 单点登录对应服务：打开该服务的 SSO 入口页，等待用户在新标签页完成 CAS 登录后返回。若会话已存在则直接返回 alreadyLoggedIn=true，不会重复打开页面；mail 服务还会先尝试用已保存的 CAS 账号密码无头登录。',
+        '',
+        '**参数**：{"service":"ve（智慧课程平台）| academic（教务系统）| mail（邮箱），必填"}',
+        '',
+        '**调用示例**：`cas.loginService({service: "ve"})`；`cas.loginService({service: "academic"})`；`cas.loginService({service: "mail"})`',
+        '',
+        '**返回示例**：{"ok":true,"service":"ve","loginName":"z24281271","userName":"苏义新"}；{"ok":true,"service":"academic","studentId":"24281271"}；{"ok":true,"service":"mail","sid":"...","viaSavedPassword":true}'
+      ].join('\n'),
+      async run(args) {
+        const service = String(args?.service || '').trim().toLowerCase();
+        const aliases = new Map([
+          ['ve', 've'], ['portal', 've'], ['智慧课程平台', 've'],
+          ['academic', 'academic'], ['jwxt', 'academic'], ['教务系统', 'academic'],
+          ['mail', 'mail'], ['email', 'mail'], ['邮箱', 'mail'], ['邮件系统', 'mail']
+        ]);
+        const key = aliases.get(service);
+        if (!key) throw new Error('service 仅支持 ve / academic / mail');
+        if (key === 've') return casLoginServiceVe();
+        if (key === 'academic') return casLoginServiceAcademic();
+        return casLoginServiceMail();
+      }
+    },
+    {
       module: 'mail',
       name: 'mail.status',
       label: '邮件监控状态',
@@ -1150,6 +1284,31 @@ name: 've.teachers_of_',
         if (result?.ok === false) {
           throw Object.assign(
             new Error(String(result?.message || '收件箱读取失败')),
+            { code: String(result?.code || '') }
+          );
+        }
+        return withoutOk(result) || {};
+      }
+    },
+    {
+      module: 'mail',
+      name: 'mail.user',
+      label: '邮箱用户信息',
+      summary: '获取邮箱地址与姓名（user:getAttrs）',
+      doc: [
+        '## mail.user —— 邮箱用户信息',
+        '',
+        '通过 user:getAttrs 接口获取当前邮箱账号的邮箱地址（email）与姓名（true_name）。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱。',
+        '',
+        '**调用示例**：`mail.user()`',
+        '',
+        '**返回示例**：{"ok":true,"email":"24281271@bjtu.edu.cn","trueName":"苏义新","ou":"student"}'
+      ].join('\n'),
+      async run() {
+        const result = await mailInvoke('user');
+        if (result?.ok === false) {
+          throw Object.assign(
+            new Error(String(result?.message || '读取邮箱用户信息失败')),
             { code: String(result?.code || '') }
           );
         }

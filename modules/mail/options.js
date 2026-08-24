@@ -183,6 +183,57 @@
     return context;
   }
 
+  function renderUserInfo(result) {
+    const target = element('mailUserInfo');
+    if (!(target instanceof HTMLElement)) return;
+    if (!result?.ok) return;
+    const name = String(result.trueName || '').trim();
+    const email = String(result.email || '').trim();
+    target.textContent = [name || '（未知姓名）', email].filter(Boolean).join(' · ');
+  }
+
+  async function loadUserInfo() {
+    const target = element('mailUserInfo');
+    if (!(target instanceof HTMLElement)) return null;
+    target.textContent = '正在读取用户信息…';
+    const result = await send('MAIL_GET_USER_INFO');
+    if (result?.ok) {
+      renderUserInfo(result);
+      return result;
+    }
+    if (result?.code === 'not-logged-in') {
+      target.textContent = '邮箱未登录：请先在「统一身份认证」中保存账号密码';
+    } else {
+      target.textContent = `用户信息读取失败：${result?.message || '未知错误'}`;
+    }
+    return null;
+  }
+
+  // 无头登录：无论是否已缓存会话，都强制重新经 osys_sso_email 换取 sid；
+  // 必要时自动用已保存的 CAS 账号密码完成登录；user:getAttrs 使用该新 sid。
+  async function bindMailViaMis(button) {
+    if (!(button instanceof HTMLButtonElement)) return;
+    button.disabled = true;
+    try {
+      setMessage('正在通过 MIS 登录邮箱…');
+      const result = await send('MAIL_GET_USER_INFO', { forceNewSid: true });
+      if (!result?.ok) throw Object.assign(new Error(result?.message || '未知错误'), { code: String(result?.code || '') });
+      setMessage('已通过 MIS 登录邮箱');
+      renderUserInfo(result);
+      await refreshContext();
+    } catch (error) {
+      if (error?.code === 'not-logged-in') {
+        const target = element('mailUserInfo');
+        if (target instanceof HTMLElement) {
+          target.textContent = '邮箱未登录：请先在「统一身份认证」中保存账号密码';
+        }
+      }
+      setMessage(`通过 MIS 登录邮箱失败：${String(error?.message || error)}`, false);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function bindEvents() {
     element(ENABLED_KEY)?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
@@ -215,8 +266,11 @@
       }
       setMessage(saved === null
         ? '收件箱将加载全部邮件'
-        : `收件箱将加载最近 ${saved} 封邮件`);
+        : (saved === 0 ? '收件箱将原样传递 limit=0' : `收件箱将加载最近 ${saved} 封邮件`));
       void loadThreads();
+    });
+    element('bindMailSystemBtn')?.addEventListener('click', (event) => {
+      void bindMailViaMis(event.currentTarget);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
@@ -247,6 +301,7 @@
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
     bindEvents();
     await refreshContext();
+    void loadUserInfo();
     void loadThreads();
     return true;
   }

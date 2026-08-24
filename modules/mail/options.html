@@ -19,6 +19,10 @@
     <input type="checkbox" id="mailMonitorEnabled">监控收件箱并通知
   </label>
   <div class="tip">检测时会自动通过 CAS 登录邮箱（需先在「统一身份认证」中保存账号密码）；首次检测仅建立基线，已读的新邮件不会发送通知。</div>
+  <div class="mail-login-actions">
+    <button id="bindMailSystemBtn" type="button">🔗 通过 MIS 登录邮箱</button>
+    <span id="mailUserInfo" class="mail-user-info">尚未读取用户信息。</span>
+  </div>
   <div id="mailMonitorIntervalEditor" class="schedule-interval-editor">
     <span>检查间隔</span>
     <input type="number" id="mailMonitorIntervalValue" min="1" step="1" value="10"

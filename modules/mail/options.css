@@ -3,6 +3,10 @@
 .mail-option-check:first-of-type { margin-top:12px; }
 .mail-option-check input { width:auto; }
 #mailMonitorIntervalEditor { padding-left:0; }
+.mail-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 2px; }
+#bindMailSystemBtn { background:#16a34a; }
+.mail-user-info { color:#64748b; font-size:12px; overflow-wrap:anywhere; }
+html[data-color-scheme="dark"] .mail-user-info { color:#cbd5e1; }
 .mail-schedule-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; flex-wrap:wrap; }
 .mail-schedule-header > strong { font-size:15px; }
 .mail-schedule-controls { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
