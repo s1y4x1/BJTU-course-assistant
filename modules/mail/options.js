@@ -188,7 +188,7 @@
       const enabled = event.currentTarget.checked === true;
       await chrome.storage.local.set({ [ENABLED_KEY]: enabled });
       updateDisabledState();
-      setMessage(enabled ? '已启用邮件监控，正在执行首次检测…' : '已关闭邮件监控');
+      setMessage(enabled ? '已启用邮件监控' : '已关闭邮件监控');
     });
     const saveInterval = async () => {
       const minutes = readIntervalEditor();
