@@ -2,6 +2,7 @@
   'use strict';
 
   const LOGIN_NAME_KEY = 'casLoginName';
+  const SWITCH_MIS_LOGOUT_KEY = 'casSwitchMisLogoutEnabled';
 
   let initialized = false;
   let context = null;
@@ -74,6 +75,13 @@
     element('casLoginName')?.addEventListener('change', (event) => {
       chrome.storage.local.set({ [LOGIN_NAME_KEY]: String(event.currentTarget.value || '').trim() });
     });
+    element(SWITCH_MIS_LOGOUT_KEY)?.addEventListener('change', async (event) => {
+      const enabled = event.currentTarget.checked === true;
+      await chrome.storage.local.set({ [SWITCH_MIS_LOGOUT_KEY]: enabled });
+      setMessage(enabled
+        ? '切换 CAS 账号时会先退出 MIS 登录'
+        : '切换 CAS 账号时不再额外退出 MIS 登录');
+    });
     element('casAccountSelect')?.addEventListener('change', async (event) => {
       const select = event.currentTarget;
       const loginName = String(select.value || '').trim();
@@ -118,6 +126,12 @@
       if (changes[LOGIN_NAME_KEY] && document.activeElement !== element('casLoginName')) {
         element('casLoginName').value = String(changes[LOGIN_NAME_KEY].newValue || '');
       }
+      if (changes[SWITCH_MIS_LOGOUT_KEY]) {
+        const checkbox = element(SWITCH_MIS_LOGOUT_KEY);
+        if (checkbox instanceof HTMLInputElement) {
+          checkbox.checked = changes[SWITCH_MIS_LOGOUT_KEY].newValue === true;
+        }
+      }
     });
   }
 
@@ -135,6 +149,11 @@
     if (initialized) return true;
     initialized = true;
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
+    const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY]);
+    const misCheckbox = element(SWITCH_MIS_LOGOUT_KEY);
+    if (misCheckbox instanceof HTMLInputElement) {
+      misCheckbox.checked = stored[SWITCH_MIS_LOGOUT_KEY] === true;
+    }
     bindEvents();
     bindMessages();
     await refreshContext();

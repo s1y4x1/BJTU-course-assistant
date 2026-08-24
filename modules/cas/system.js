@@ -3,8 +3,10 @@
 
   const LOGIN_URL = 'https://cas.bjtu.edu.cn/auth/login/';
   const PROFILE_URL = 'https://cas.bjtu.edu.cn/profile/';
+  const MIS_SLOGOUT_URL = 'https://mis.bjtu.edu.cn/auth/slogout/';
   const ACCOUNTS_KEY = 'casAccounts';
   const LOGIN_NAME_KEY = 'casLoginName';
+  const SWITCH_MIS_LOGOUT_KEY = 'casSwitchMisLogoutEnabled';
   const STATUS_TYPE = 'CAS_SYSTEM_STATUS';
 
   const pendingCredentialsByTab = new Map();
@@ -269,12 +271,27 @@
     return results?.[0]?.result || { ok: false, message: 'CAS 未返回登录结果' };
   }
 
+  // 勾选「切换 CAS 账号时同时切换 MIS」时，登录 CAS 前 GET slogout 退出 MIS，
+  // 避免切换账号后仍残留旧账号的 MIS 会话。
+  async function logoutMisIfEnabled() {
+    try {
+      const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY]);
+      if (stored?.[SWITCH_MIS_LOGOUT_KEY] !== true) return;
+      await fetch(MIS_SLOGOUT_URL, {
+        credentials: 'include', cache: 'no-store', redirect: 'follow'
+      });
+    } catch {
+      // MIS 登出失败不阻塞 CAS 登录
+    }
+  }
+
   async function loginWithPassword(loginName, password) {
     const id = String(loginName || '').trim();
     const secret = String(password ?? '');
     if (!id) throw new Error('请输入账号（学号）');
     if (!secret) throw new Error('请输入密码');
     await clearCasCookies();
+    await logoutMisIfEnabled();
     const { tab, temporary } = await ensureCasOriginTab();
     try {
       let lastResult = { ok: false, message: 'CAS 未返回登录结果' };
