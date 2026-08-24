@@ -284,6 +284,21 @@ function renderUiOrderEditor() {
   renderUiOrderList('platformOrderList', getVisiblePlatformOrderEntries(), 'platforms');
 }
 
+function applyInstalledModuleListOrder(
+  sectionOrder = currentOptionsSectionOrder,
+  platformOrder = currentPlatformOrder
+) {
+  const list = document.getElementById('installedModuleList');
+  const definitions = globalThis.BjtuModuleRegistry?.definitions || {};
+  if (!(list instanceof HTMLElement)) return;
+  const items = new Map([...list.querySelectorAll(':scope > .installed-module-item')]
+    .map((item) => [String(item.dataset.moduleId || ''), item]));
+  buildInstalledModuleOrderedIds(definitions, sectionOrder, platformOrder).forEach((id) => {
+    const item = items.get(id);
+    if (item) list.appendChild(item);
+  });
+}
+
 async function saveUiOrder(group, visibleOrder) {
   if (group === 'sections') {
     const visibleSet = new Set(visibleOrder);
@@ -302,6 +317,7 @@ async function saveUiOrder(group, visibleOrder) {
     applyPlatformOrderToOptions();
     await chrome.storage.local.set({ platformOrder: currentPlatformOrder });
   }
+  applyInstalledModuleListOrder();
   renderUiOrderEditor();
   setMsg('已应用排序');
 }
@@ -317,6 +333,10 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
 
   let dragged = null;
   document.querySelectorAll('.ui-order-list').forEach((list) => {
+    let dropTarget = null;
+    let dropAfter = false;
+    let itemDocumentMidpoints = new Map();
+
     list.addEventListener('click', (event) => {
       const button = event.target.closest('.ui-order-move');
       const item = button?.closest('.ui-order-item');
@@ -331,33 +351,56 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
       void saveUiOrder(group, ids);
     });
     const clearDropIndicator = () => {
-      list.querySelectorAll('.ui-order-item.drop-before, .ui-order-item.drop-after')
-        .forEach((item) => item.classList.remove('drop-before', 'drop-after'));
+      if (dropTarget) dropTarget.classList.remove('drop-before', 'drop-after');
+      dropTarget = null;
+      dropAfter = false;
+    };
+    const setDropIndicator = (target, insertAfter) => {
+      if (dropTarget === target && dropAfter === insertAfter) return;
+      clearDropIndicator();
+      dropTarget = target;
+      dropAfter = insertAfter;
+      target.classList.add(insertAfter ? 'drop-after' : 'drop-before');
+    };
+    const isAfterItemMidpoint = (item, clientY) => {
+      const id = String(item.dataset.orderId || '');
+      let midpoint = itemDocumentMidpoints.get(id);
+      if (!Number.isFinite(midpoint)) {
+        const rect = item.getBoundingClientRect();
+        midpoint = rect.top + window.scrollY + rect.height / 2;
+        itemDocumentMidpoints.set(id, midpoint);
+      }
+      return clientY + window.scrollY > midpoint;
     };
     list.addEventListener('dragstart', (event) => {
       const item = event.target.closest('.ui-order-item');
       if (!item) return;
       dragged = { id: String(item.dataset.orderId || ''), group: String(item.dataset.orderGroup || '') };
       item.classList.add('dragging');
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      itemDocumentMidpoints = new Map([...list.querySelectorAll(':scope > .ui-order-item')].map((entry) => {
+        const rect = entry.getBoundingClientRect();
+        return [String(entry.dataset.orderId || ''), rect.top + window.scrollY + rect.height / 2];
+      }));
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', dragged.id);
+      }
     });
     list.addEventListener('dragend', (event) => {
       event.target.closest('.ui-order-item')?.classList.remove('dragging');
       clearDropIndicator();
+      itemDocumentMidpoints.clear();
       dragged = null;
     });
     list.addEventListener('dragover', (event) => {
       const target = event.target.closest('.ui-order-item');
       if (!target || !dragged || target.dataset.orderGroup !== dragged.group) return;
+      event.preventDefault();
       if (target.dataset.orderId === dragged.id) {
         clearDropIndicator();
         return;
       }
-      event.preventDefault();
-      clearDropIndicator();
-      const rect = target.getBoundingClientRect();
-      const insertAfter = event.clientY > rect.top + rect.height / 2;
-      target.classList.add(insertAfter ? 'drop-after' : 'drop-before');
+      setDropIndicator(target, isAfterItemMidpoint(target, event.clientY));
     });
     list.addEventListener('dragleave', (event) => {
       if (!list.contains(event.relatedTarget)) clearDropIndicator();
@@ -366,13 +409,18 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
       const target = event.target.closest('.ui-order-item');
       if (!target || !dragged || target.dataset.orderGroup !== dragged.group) return;
       event.preventDefault();
+      const draggedId = dragged.id;
+      const draggedGroup = dragged.group;
+      const insertAfter = dropTarget === target
+        ? dropAfter
+        : isAfterItemMidpoint(target, event.clientY);
       clearDropIndicator();
-      const entries = dragged.group === 'sections' ? getVisibleOptionsOrderEntries() : getVisiblePlatformOrderEntries();
-      const ids = entries.map((entry) => entry.id).filter((id) => id !== dragged.id);
+      const entries = draggedGroup === 'sections' ? getVisibleOptionsOrderEntries() : getVisiblePlatformOrderEntries();
+      const ids = entries.map((entry) => entry.id).filter((id) => id !== draggedId);
       const targetIndex = ids.indexOf(String(target.dataset.orderId || ''));
-      const insertAfter = event.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
-      ids.splice(Math.max(0, targetIndex + (insertAfter ? 1 : 0)), 0, dragged.id);
-      void saveUiOrder(dragged.group, ids);
+      if (targetIndex < 0) return;
+      ids.splice(targetIndex + (insertAfter ? 1 : 0), 0, draggedId);
+      void saveUiOrder(draggedGroup, ids);
     });
   });
 }
@@ -428,15 +476,11 @@ window.addEventListener('bjtu-theme-change', () => {
 
 const INSTALLABLE_PLATFORM_MODULE_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
 
-// 已安装模块列表遵循「排序」编辑器的顺序：
-// 平台模块按「平台」顺序展开在「平台显示与加载」的位置，其余模块按「扩展选项模块」顺序，
-// 未出现在排序配置中的模块按注册顺序追加到末尾。
-async function getInstalledModuleOrderedIds(definitions) {
-  const stored = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']).catch(() => ({}));
-  const sectionOrder = Array.isArray(stored?.optionsSectionOrder)
-    ? stored.optionsSectionOrder.map(String)
-    : [...(globalThis.BjtuUiOrder?.DEFAULT_OPTIONS_SECTION_ORDER || [])];
-  const platformOrder = Array.isArray(stored?.platformOrder) ? stored.platformOrder.map(String) : [];
+// 已安装模块列表遵循「排序」编辑器的顺序：六个平台在「平台显示与加载」所在位置展开，
+// 更新组件在「更新」所在位置，其余模块在各自模块选项所在位置。
+function buildInstalledModuleOrderedIds(definitions, rawSectionOrder, rawPlatformOrder) {
+  const sectionOrder = normalizeOptionsSectionOrder(rawSectionOrder);
+  const platformOrder = normalizePlatformOrder(rawPlatformOrder);
   const ids = Object.keys(definitions || {});
   const byId = new Set(ids);
   const ordered = [];
@@ -452,12 +496,23 @@ async function getInstalledModuleOrderedIds(definitions) {
     if (sectionId === 'platforms') {
       platformOrder.forEach(push);
       INSTALLABLE_PLATFORM_MODULE_IDS.forEach(push);
+    } else if (sectionId === 'updater') {
+      push('updater');
     } else if (sectionId.startsWith('module:')) {
       push(sectionId.slice('module:'.length));
     }
   }
   ids.forEach(push);
   return ordered;
+}
+
+async function getInstalledModuleOrderedIds(definitions) {
+  const stored = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']).catch(() => ({}));
+  return buildInstalledModuleOrderedIds(
+    definitions,
+    stored?.optionsSectionOrder,
+    stored?.platformOrder
+  );
 }
 
 async function setupInstalledModuleOptions() {
@@ -1088,18 +1143,22 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      let uiOrderChanged = false;
       if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
       if (changes.platformVisible) applyPlatformVisibleUi(changes.platformVisible.newValue);
       if (changes.optionsSectionOrder) {
         currentOptionsSectionOrder = normalizeOptionsSectionOrder(changes.optionsSectionOrder.newValue);
         applyOptionsSectionOrder();
         renderUiOrderEditor();
+        uiOrderChanged = true;
       }
       if (changes.platformOrder) {
         currentPlatformOrder = normalizePlatformOrder(changes.platformOrder.newValue);
         applyPlatformOrderToOptions();
         renderUiOrderEditor();
+        uiOrderChanged = true;
       }
+      if (uiOrderChanged) applyInstalledModuleListOrder();
       if (changes.xuetangxCourseStatuses) {
         const values = Array.isArray(changes.xuetangxCourseStatuses.newValue)
           ? new Set(changes.xuetangxCourseStatuses.newValue.map(Number))
