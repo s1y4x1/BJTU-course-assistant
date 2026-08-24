@@ -221,6 +221,7 @@
       setMessage('已通过 MIS 登录邮箱');
       renderUserInfo(result);
       await refreshContext();
+      void loadThreads();
     } catch (error) {
       if (error?.code === 'not-logged-in') {
         const target = element('mailUserInfo');
