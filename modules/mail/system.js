@@ -244,20 +244,58 @@
   }
 
   // 邮箱用户信息：email 为邮箱地址，true_name 为姓名。
+  // 部分会话形态下携带 optionalAttrIds 会返回 FA_SECURITY，
+  // 因此依次尝试多种请求形态，取首个 S_OK 的响应。
   async function fetchMailUser(sid) {
     const params = new URLSearchParams({ func: 'user:getAttrs', sid: String(sid || '') });
-    const data = await requestJson(`${LIST_THREADS_URL}?${params.toString()}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json;charset=UTF-8', Accept: 'application/json' },
-      body: JSON.stringify({ optionalAttrIds: ['email', 'true_name'] })
-    });
-    if (data?.code !== 'S_OK') throw new Error(`读取邮箱用户信息失败：${data?.code || '无响应码'}`);
-    const attrs = data?.var && typeof data.var === 'object' ? data.var : {};
-    return {
-      email: String(attrs.email || ''),
-      trueName: String(attrs.true_name || ''),
-      ou: String(attrs['@ou'] || '')
-    };
+    const url = `${LIST_THREADS_URL}?${params.toString()}`;
+    const jsonHeaders = { 'Content-Type': 'application/json;charset=UTF-8', Accept: 'application/json' };
+    const attempts = [
+      {
+        label: 'json:optionalAttrIds',
+        options: {
+          method: 'POST',
+          headers: jsonHeaders,
+          body: JSON.stringify({ optionalAttrIds: ['email', 'true_name'] })
+        }
+      },
+      { label: 'json:empty', options: { method: 'POST', headers: jsonHeaders, body: '{}' } },
+      { label: 'empty-body', options: { method: 'POST', headers: { Accept: 'application/json' } } },
+      {
+        label: 'form:optionalAttrIds',
+        options: {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            Accept: 'application/json'
+          },
+          body: new URLSearchParams({
+            optionalAttrIds: JSON.stringify(['email', 'true_name'])
+          }).toString()
+        }
+      }
+    ];
+    let lastMessage = '';
+    for (const attempt of attempts) {
+      let data;
+      try {
+        data = await requestJson(url, attempt.options);
+      } catch (error) {
+        lastMessage = String(error?.message || error);
+        continue;
+      }
+      if (data?.code !== 'S_OK') {
+        lastMessage = `${data?.code || '无响应码'}${data?.message ? ` ${data.message}` : ''}`;
+        continue;
+      }
+      const attrs = data?.var && typeof data.var === 'object' ? data.var : {};
+      return {
+        email: String(attrs.email || ''),
+        trueName: String(attrs.true_name || ''),
+        ou: String(attrs['@ou'] || '')
+      };
+    }
+    throw new Error(`读取邮箱用户信息失败：${lastMessage || '所有请求方式均被拒绝'}`);
   }
 
   async function getCurrentMailUser({ forceNewSid = false } = {}) {
