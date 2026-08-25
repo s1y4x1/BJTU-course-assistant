@@ -2035,6 +2035,43 @@ name: 've.teachers_of_',
         if (!op) throw new Error(`未找到操作：${name}`);
         return op.doc;
       }
+    },
+    {
+      module: 'qwen',
+      name: 'qwen.setThemeMode',
+      label: '设置外观颜色模式',
+      summary: '查询或切换扩展外观颜色模式（light/dark/system）',
+      doc: [
+        '## qwen.setThemeMode —— 设置外观颜色模式',
+        '',
+        '查询或切换扩展的外观颜色模式，所有扩展页面会立即应用。省略 mode 时仅返回当前模式。',
+        '',
+        '**参数**：{"mode":"可选，light（亮色）/ dark（暗色）/ system（跟随系统）；省略时返回当前模式"}',
+        '',
+        '**调用示例**：`qwen.setThemeMode()`；`qwen.setThemeMode({mode: "dark"})`；`qwen.setThemeMode({mode: "system"})`',
+        '',
+        '**返回示例**：{"ok":true,"mode":"dark"}'
+      ].join('\n'),
+      async run(args) {
+        const raw = args?.mode;
+        if (raw === undefined || String(raw).trim() === '') {
+          const stored = await chrome.storage.local.get(['themeMode']).catch(() => ({}));
+          const current = ['light', 'dark'].includes(String(stored?.themeMode))
+            ? String(stored.themeMode)
+            : 'system';
+          return { ok: true, mode: current, unchanged: true };
+        }
+        const key = String(raw).trim();
+        const aliases = {
+          light: 'light', 亮色: 'light', 浅色: 'light',
+          dark: 'dark', 暗色: 'dark', 深色: 'dark',
+          system: 'system', 系统: 'system', auto: 'system', 跟随系统: 'system'
+        };
+        const mode = aliases[key] || aliases[key.toLowerCase()];
+        if (!mode) throw new Error('mode 仅支持 light / dark / system');
+        await chrome.storage.local.set({ themeMode: mode });
+        return { ok: true, mode };
+      }
     }
   ];
 
