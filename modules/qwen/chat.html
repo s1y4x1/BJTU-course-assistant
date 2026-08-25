@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>千问助手</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="operations-ui.css">
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body class="qwen-chat-standalone">
+  <div id="qwen-chat-panel" class="qwen-chat-panel">
+    <div class="qwen-chat-header">
+      <span class="qwen-chat-title">千问助手</span>
+      <select id="qwen-chat-model" class="qwen-chat-model" title="选择模型"></select>
+      <span id="qwen-chat-status" class="qwen-chat-status"></span>
+      <button id="qwen-chat-new" class="qwen-chat-new" type="button" title="新建会话" aria-label="新建会话">＋</button>
+      <button id="qwen-chat-close" class="qwen-chat-close" type="button" aria-label="关闭窗口" title="关闭窗口">×</button>
+    </div>
+    <div id="qwen-chat-history-loading" class="qwen-chat-history-loading" hidden>
+      <span class="qwen-chat-spinner"></span>
+      <span>正在加载历史记录…</span>
+    </div>
+    <div class="qwen-chat-messages-wrap">
+      <div id="qwen-chat-messages-scroll" class="qwen-chat-messages-scroll">
+        <div id="qwen-chat-messages" class="qwen-chat-messages"></div>
+      </div>
+      <button id="qwen-chat-scroll-bottom" class="qwen-chat-scroll-bottom" type="button" title="滚动到底部" aria-label="滚动到底部" hidden>↓</button>
+    </div>
+    <div id="qwen-chat-login-hint" class="qwen-chat-login-hint" hidden>
+      <span>尚未登录 chat.qwen.ai</span>
+      <button id="qwen-chat-login-btn" class="btn qwen-chat-login-btn" type="button">打开登录页</button>
+    </div>
+    <div id="qwen-chat-ask" class="qwen-chat-ask" hidden>
+      <div id="qwen-chat-ask-text" class="qwen-chat-ask-text"></div>
+      <div class="qwen-chat-ask-row">
+        <input id="qwen-chat-ask-count" class="qwen-chat-ask-count" type="number" min="1" step="1" value="3">
+        <button id="qwen-chat-ask-continue" class="btn qwen-chat-ask-btn" type="button">继续 3 次</button>
+        <button id="qwen-chat-ask-always" class="btn qwen-chat-ask-btn" type="button">始终允许</button>
+        <button id="qwen-chat-ask-session" class="btn qwen-chat-ask-btn" type="button" hidden>在本次会话中始终允许</button>
+        <button id="qwen-chat-ask-operations" class="btn qwen-chat-ask-btn" type="button" hidden>在所有会话中始终允许</button>
+        <button id="qwen-chat-ask-stop" class="btn qwen-chat-ask-btn qwen-chat-ask-stop" type="button">结束本次</button>
+      </div>
+    </div>
+    <form id="qwen-chat-input-form" class="qwen-chat-input-row">
+      <textarea id="qwen-chat-input" class="qwen-chat-input" rows="1" placeholder="向 AI 提问，例如：我还有哪些作业没交？"></textarea>
+      <span class="qwen-chat-input-actions">
+        <span class="qwen-chat-ops-toggle-wrap">
+          <button id="qwen-chat-ops-toggle" class="qwen-chat-ops-toggle" type="button" title="允许 AI 调用以下操作">操作</button>
+          <div id="qwen-chat-ops-popover" class="qwen-chat-ops-popover" hidden>
+            <div data-operation-ui-mount></div>
+          </div>
+        </span>
+        <label class="qwen-chat-thinking-toggle" title="是否让模型在回答前进行深度思考">
+          <input type="checkbox" id="qwen-chat-thinking">
+          <span>思考</span>
+        </label>
+        <span class="qwen-chat-input-buttons">
+          <button id="qwen-chat-stop" class="btn qwen-chat-stop" type="button" hidden>停止</button>
+          <button id="qwen-chat-send" class="btn qwen-chat-send" type="submit">发送</button>
+        </span>
+      </span>
+    </form>
+  </div>
+  <script src="../../core/module-registry.js"></script>
+  <script src="../../core/loaders/qwen-app-loader.js"></script>
+</body>
+</html>

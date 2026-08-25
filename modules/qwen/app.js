@@ -1,4 +1,4 @@
-/* Qwen 聊天面板（加载于 app 页面）。 */
+/* Qwen 聊天面板（加载于 app 页面；chat.html 以独立页面模式复用同一面板）。 */
 (function initQwenChatApp(global) {
   'use strict';
 
@@ -14,6 +14,9 @@
   const SCROLL_BOTTOM_ID = 'qwen-chat-scroll-bottom';
   const MODEL_ID = 'qwen-chat-model';
   const THINKING_ID = 'qwen-chat-thinking';
+
+  // 独立页面模式（modules/qwen/chat.html）：面板直接展开铺满窗口。
+  const STANDALONE_CHAT = /\/modules\/qwen\/chat\.html$/i.test(global.location?.pathname || '');
 
   let port = null;
   let historyNeedsInitialScroll = false;
@@ -1895,14 +1898,16 @@
       return;
     }
 
-    void chrome.storage.local.get(['qwenEnabled']).then((data) => {
-      if (data?.qwenEnabled === false) {
-        const fab = el(FAB_ID);
-        if (fab instanceof HTMLElement) fab.style.display = 'none';
-        const panel = el(PANEL_ID);
-        if (panel instanceof HTMLElement) panel.hidden = true;
-      }
-    });
+    if (!STANDALONE_CHAT) {
+      void chrome.storage.local.get(['qwenEnabled']).then((data) => {
+        if (data?.qwenEnabled === false) {
+          const fab = el(FAB_ID);
+          if (fab instanceof HTMLElement) fab.style.display = 'none';
+          const panel = el(PANEL_ID);
+          if (panel instanceof HTMLElement) panel.hidden = true;
+        }
+      });
+    }
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
@@ -1986,8 +1991,13 @@
 
     // app.html 被扩展重载流程恢复时，始终从收起状态开始；
     // 仅在用户主动展开面板后，才检查登录并访问 chat.qwen.ai。
-    if (panel instanceof HTMLElement) panel.hidden = true;
-    if (fab instanceof HTMLButtonElement) fab.style.display = '';
+    // 独立页面模式下面板常驻展开，并跳过悬浮/拖拽/视口高度逻辑。
+    if (STANDALONE_CHAT) {
+      if (panel instanceof HTMLElement) panel.hidden = false;
+    } else {
+      if (panel instanceof HTMLElement) panel.hidden = true;
+      if (fab instanceof HTMLButtonElement) fab.style.display = '';
+    }
 
     if (messagesScroller instanceof HTMLElement) {
       lastMessagesScrollTop = messagesScroller.scrollTop;
@@ -2011,7 +2021,7 @@
       });
     }
 
-    if (panel instanceof HTMLElement) {
+    if (!STANDALONE_CHAT && panel instanceof HTMLElement) {
       const panelEdgeGap = 20;
       const syncPanelViewportHeight = () => {
         const availableHeight = Math.max(1, window.innerHeight - panelEdgeGap * 2);
@@ -2130,6 +2140,10 @@
     }
     if (closeBtn instanceof HTMLButtonElement) {
       closeBtn.addEventListener('click', () => {
+        if (STANDALONE_CHAT) {
+          global.close();
+          return;
+        }
         if (panel instanceof HTMLElement) panel.hidden = true;
         if (fab instanceof HTMLButtonElement) fab.style.display = '';
       });
@@ -2222,6 +2236,17 @@
     }
 
     initOperationsPopover();
+
+    // 独立页面模式：面板已展开，直接激活（登录检查 + 历史加载）并聚焦输入框。
+    if (STANDALONE_CHAT) {
+      void activateQwenPanel();
+      if (historyNeedsInitialScroll) {
+        scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
+        historyNeedsInitialScroll = false;
+      }
+      const standaloneInput = el(INPUT_ID);
+      if (standaloneInput instanceof HTMLTextAreaElement) standaloneInput.focus();
+    }
   }
 
   // 所有注册操作统一通过同一个调用入口；任意代码执行由回复末尾的

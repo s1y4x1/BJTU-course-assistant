@@ -1,0 +1,32 @@
+/* 独立页面模式：面板铺满窗口，禁用悬浮/拖拽/缩放相关样式。 */
+body.qwen-chat-standalone {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+html[data-color-scheme="dark"] body.qwen-chat-standalone { background: #0f172a; }
+
+body.qwen-chat-standalone .qwen-chat-fab { display: none !important; }
+
+body.qwen-chat-standalone .qwen-chat-panel {
+  position: fixed !important;
+  inset: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  resize: none !important;
+}
+
+/* 关闭按钮改为关闭窗口（见 app.js），样式保持不变。 */

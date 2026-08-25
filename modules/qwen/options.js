@@ -81,6 +81,13 @@
       });
     }
 
+    const standaloneLink = document.getElementById('qwenOpenChatStandalone');
+    if (standaloneLink instanceof HTMLAnchorElement) {
+      standaloneLink.href = global.chrome?.runtime?.getURL
+        ? chrome.runtime.getURL('modules/qwen/chat.html')
+        : 'modules/qwen/chat.html';
+    }
+
     const thinking = document.getElementById('qwenThinkingEnabled');
     if (thinking instanceof HTMLInputElement) {
       thinking.addEventListener('change', () => {
