@@ -1273,14 +1273,20 @@ name: 've.teachers_of_',
       doc: [
         '## mail.inbox —— 收件箱检测',
         '',
-        '立即触发一次邮件检测（忽略监控开关），返回按选项「加载条数」设置的最近邮件列表、收件箱总数与未读数。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱；若没有已保存的 CAS 账号密码则报错。',
+        '立即触发一次邮件检测（忽略监控开关），返回最近邮件列表、收件箱总数与未读数。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱；若没有已保存的 CAS 账号密码则报错。',
         '',
-        '**调用示例**：`mail.inbox()`',
+        '**参数**：{"limit":"可选，加载条数；0 原样传递给接口；留空/省略时使用选项页「加载条数」设置（该设置为空则返回全部邮件）"}',
+        '',
+        '**调用示例**：`mail.inbox()`；`mail.inbox({limit: 20})`；`mail.inbox({limit: 0})`',
         '',
         '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true}],"total":363,"unreadCount":7,"count":10,"changes":0,"checkedAt":1723456789012}'
       ].join('\n'),
-      async run() {
-        const result = await mailInvoke('inbox');
+      async run(args) {
+        const payload = {};
+        if (args?.limit !== undefined && args?.limit !== null && String(args.limit).trim() !== '') {
+          payload.limit = args.limit;
+        }
+        const result = await mailInvoke('inbox', payload);
         if (result?.ok === false) {
           throw Object.assign(
             new Error(String(result?.message || '收件箱读取失败')),

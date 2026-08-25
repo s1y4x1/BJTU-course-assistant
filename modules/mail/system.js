@@ -426,12 +426,15 @@
     return run;
   }
 
-  async function checkMail(source = 'poll', { force = false } = {}) {
+  async function checkMail(source = 'poll', { force = false, listLimit } = {}) {
     if (mailCheckPromise) return mailCheckPromise;
     mailCheckPromise = (async () => {
       const settings = await chrome.storage.local.get([ENABLED_KEY, LIST_LIMIT_KEY, STATUS_KEY]);
       if (!force && settings?.[ENABLED_KEY] === false) return { skipped: true };
-      const listLimit = normalizeListLimit(settings?.[LIST_LIMIT_KEY] ?? DEFAULT_LIST_LIMIT);
+      // 显式传入 listLimit 时优先使用（undefined 表示跟随选项设置）。
+      const effectiveListLimit = listLimit === undefined
+        ? normalizeListLimit(settings?.[LIST_LIMIT_KEY] ?? DEFAULT_LIST_LIMIT)
+        : normalizeListLimit(listLimit);
       // 不传 limit 时 summaryWindowSize 使用已知收件箱总数。
       const summaryWindowSizeHint = cachedInboxTotal
         || Number(settings?.[STATUS_KEY]?.total) || 0;
@@ -442,14 +445,14 @@
         let threads;
         try {
           [unreadCount, threads] = await Promise.all([
-            fetchUnreadCount(sid), fetchInboxThreads(sid, listLimit, summaryWindowSizeHint)
-          ]);
+            fetchUnreadCount(sid), fetchInboxThreads(sid, effectiveListLimit, summaryWindowSizeHint)
+        ]);
         } catch (error) {
           // sid 可能已过期：重置后经 CAS 重新获取一次。
           invalidateSid();
           sid = await getMailSid();
           [unreadCount, threads] = await Promise.all([
-            fetchUnreadCount(sid), fetchInboxThreads(sid, listLimit, summaryWindowSizeHint)
+            fetchUnreadCount(sid), fetchInboxThreads(sid, effectiveListLimit, summaryWindowSizeHint)
           ]).catch(() => { throw error; });
         }
         return await processMailRows(threads.rows, threads.total, unreadCount, source, sid);
@@ -519,7 +522,13 @@
         return true;
       }
       if (message?.type === 'MAIL_LOAD_THREADS') {
-        checkMail('manual', { force: true })
+        const payload = message?.payload || {};
+        checkMail('manual', {
+          force: true,
+          listLimit: Object.prototype.hasOwnProperty.call(payload, 'limit')
+            ? payload.limit
+            : undefined
+        })
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch((error) => sendResponse({
             ok: false,
@@ -596,7 +605,12 @@
 
   global.BjtuMailSystemInternals = {
     getContext: () => buildMailContext(),
-    checkNow: () => checkMail('manual', { force: true }),
+    checkNow: (args) => checkMail('manual', {
+      force: true,
+      listLimit: args && Object.prototype.hasOwnProperty.call(args, 'limit')
+        ? args.limit
+        : undefined
+    }),
     getUserInfo: (args) => getCurrentMailUser(args),
     resolveMailSid,
     getMailSid,
