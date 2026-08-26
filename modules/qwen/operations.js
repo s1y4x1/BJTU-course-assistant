@@ -1387,15 +1387,15 @@ name: 've.teachers_of_',
     },
     {
       module: 'mooc',
-      name: 'mooc.loginStatus',
+      name: 'mooc.status',
       label: 'MOOC 登录状态',
       summary: '检查中国大学MOOC登录状态',
       doc: [
-        '## mooc.loginStatus —— MOOC 登录状态',
+        '## mooc.status —— MOOC 登录状态',
         '',
         '检查当前是否已登录中国大学MOOC。',
         '',
-        '**调用示例**：`mooc.loginStatus()`',
+        '**调用示例**：`mooc.status()`',
         '',
         '**返回示例**：{"loggedIn":true}'
       ].join('\n'),
@@ -1670,20 +1670,20 @@ name: 've.teachers_of_',
     },
     {
       module: 'mrjzy',
-      name: 'mrjzy.loginStatus',
+      name: 'mrjzy.status',
       label: '每日交作业登录状态',
       summary: '检查每日交作业登录状态',
       doc: [
-        '## mrjzy.loginStatus —— 每日交作业登录状态',
+        '## mrjzy.status —— 每日交作业登录状态',
         '',
         '检查当前是否已登录每日交作业平台。',
         '',
-        '**调用示例**：`mrjzy.loginStatus()`',
+        '**调用示例**：`mrjzy.status()`',
         '',
         '**返回示例**：{"loginState":"online","loggedIn":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mrjzy', 'loginStatus', {}, 60000);
+        return pageInvoke('mrjzy', 'status', {}, 60000);
       }
     },
     {
@@ -1799,20 +1799,20 @@ name: 've.teachers_of_',
     },
     {
       module: 'jlgj',
-      name: 'jlgj.loginStatus',
+      name: 'jlgj.status',
       label: '接龙管家登录状态',
       summary: '检查接龙管家登录状态',
       doc: [
-        '## jlgj.loginStatus —— 接龙管家登录状态',
+        '## jlgj.status —— 接龙管家登录状态',
         '',
         '检查当前是否已登录接龙管家平台。',
         '',
-        '**调用示例**：`jlgj.loginStatus()`',
+        '**调用示例**：`jlgj.status()`',
         '',
         '**返回示例**：{"loginState":"online","loggedIn":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('jlgj', 'loginStatus', {}, 60000);
+        return pageInvoke('jlgj', 'status', {}, 60000);
       }
     },
     {
@@ -1948,20 +1948,20 @@ name: 've.teachers_of_',
     },
     {
       module: 'xuetangx',
-      name: 'xuetangx.loginStatus',
+      name: 'xuetangx.status',
       label: '学堂在线登录状态',
       summary: '检查学堂在线登录状态',
       doc: [
-        '## xuetangx.loginStatus —— 学堂在线登录状态',
+        '## xuetangx.status —— 学堂在线登录状态',
         '',
         '检查当前是否已登录学堂在线平台。',
         '',
-        '**调用示例**：`xuetangx.loginStatus()`',
+        '**调用示例**：`xuetangx.status()`',
         '',
         '**返回示例**：{"loginState":"online","loggedIn":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('xuetangx', 'loginStatus', {}, 60000);
+        return pageInvoke('xuetangx', 'status', {}, 60000);
       }
     },
     {
@@ -2202,7 +2202,7 @@ name: 've.teachers_of_',
   function operationNeedsPlatformLogin(op) {
     if (!LOGIN_GUARDED_PLATFORMS.has(String(op?.module || ''))) return false;
     const shortName = String(op?.name || '').split('.').slice(1).join('.');
-    return !['login', 'loginStatus', 'accounts'].includes(shortName);
+    return !['login', 'status', 'accounts'].includes(shortName);
   }
 
   function isLoginRequiredValue(value) {

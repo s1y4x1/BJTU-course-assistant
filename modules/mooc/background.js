@@ -234,7 +234,7 @@ async function handleMoocRequest(action, payload, tabId, pageUrl = '') {
       Number(args?.tabId || 0),
       String(args?.pageUrl || '')
     ),
-    loginStatus: async () => {
+    status: async () => {
       const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
       return { ok: true, loggedIn: !!String(cookie?.value || '').trim(), tabId: null, temporaryTab: false };
     }

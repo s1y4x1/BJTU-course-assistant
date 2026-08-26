@@ -1129,7 +1129,7 @@
   globalThis.BjtuXuetangxPageApi = Object.freeze({
     courseList: () => xuetangxPageCourseList(),
     homework_of_: (args) => xuetangxPageHomeworkOf(String(args?.classroomId || args?.courseId || '').trim()),
-    loginStatus: () => xuetangxPageLoginStatus(),
+    status: () => xuetangxPageLoginStatus(),
     login: (args) => xuetangxPageLogin(args)
   });
 

@@ -935,7 +935,7 @@ async function mrjzyPageLogin(args = {}) {
 globalThis.BjtuMrjzyPageApi = Object.freeze({
   courseList: () => mrjzyPageCourseList(),
   homework_of_: (args) => mrjzyPageHomeworkOf(String(args?.classNum || args?.courseId || '').trim()),
-  loginStatus: () => mrjzyPageLoginStatus(),
+  status: () => mrjzyPageLoginStatus(),
   login: (args) => mrjzyPageLogin(args)
 });
 

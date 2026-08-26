@@ -1273,7 +1273,7 @@ async function jlgjPageLogin(args = {}) {
 globalThis.BjtuJlgjPageApi = Object.freeze({
   courseList: () => jlgjPageCourseList(),
   homework_of_: (args) => jlgjPageHomeworkOf(String(args?.groupId || args?.courseId || '').trim()),
-  loginStatus: () => jlgjPageLoginStatus(),
+  status: () => jlgjPageLoginStatus(),
   login: (args) => jlgjPageLogin(args)
 });
 
