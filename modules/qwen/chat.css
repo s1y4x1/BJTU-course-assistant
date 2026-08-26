@@ -30,3 +30,37 @@ body.qwen-chat-standalone .qwen-chat-panel {
 }
 
 /* 关闭按钮改为关闭窗口（见 app.js），样式保持不变。 */
+
+/* 依赖 app 页全局样式的元素在独立页面下的回退：
+   .btn（发送/停止/允许/拒绝等）与「执行中」的 .spinner 动画。 */
+body.qwen-chat-standalone .btn {
+  display: inline-block;
+  background-color: #4caf50;
+  color: #fff;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+body.qwen-chat-standalone .btn:hover { background-color: #45a049; }
+
+body.qwen-chat-standalone .btn[hidden] { display: none; }
+
+body.qwen-chat-standalone .spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  min-height: 10px;
+  aspect-ratio: 1 / 1;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  border: 2px solid rgba(97, 92, 237, 0.35);
+  border-radius: 50%;
+  border-top-color: #615ced;
+  margin-left: 5px;
+  vertical-align: middle;
+  animation: qwen-chat-spin 0.8s linear infinite;
+}

@@ -334,9 +334,83 @@
     return sendRuntimeMessage({ type: 'MOOC_REQUEST', payload: args }, timeoutMs);
   }
 
+  // ===== app 页面依赖（pageInvoke）守卫 =====
+  // 仅边栏/独立页打开而未打开课程助手页面时，先发系统通知询问用户是否打开。
+  const APP_PAGE_ASK_KEY = 'appPageOpenAsk';
+
+  async function isAppPageOpen() {
+    try {
+      const url = chrome.runtime.getURL('app/app.html');
+      const tabs = await chrome.tabs.query({ url: `${url}*` }).catch(() => []);
+      return tabs.length > 0;
+    } catch {
+      return true; // 无法查询时不阻塞操作
+    }
+  }
+
+  async function waitForAppPageReady(tabId, timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (!tab) throw new Error('课程助手页面被关闭');
+      if (tab.status === 'complete') {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error('课程助手页面加载超时');
+  }
+
+  async function ensureAppPageReadyForPageApi() {
+    if (await isAppPageOpen()) return;
+    await chrome.storage.session.set({ [APP_PAGE_ASK_KEY]: { id: APP_PAGE_ASK_ID, answer: null } }).catch(() => {});
+    try {
+      chrome.notifications.create(APP_PAGE_ASK_ID, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: '需要打开课程助手',
+        message: '当前操作需要在课程助手页面中执行，是否立即打开？',
+        buttons: [{ title: '打开' }, { title: '取消' }],
+        priority: 2
+      }, () => void chrome.runtime.lastError);
+    } catch {
+      throw Object.assign(new Error('该操作需要在课程助手页面中执行，请先打开课程助手'), { code: 'APP_PAGE_REQUIRED' });
+    }
+    let open = false;
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const stored = await chrome.storage.session.get([APP_PAGE_ASK_KEY]).catch(() => ({}));
+      const answer = stored?.[APP_PAGE_ASK_KEY]?.answer;
+      if (answer === null || answer === undefined) continue;
+      open = answer === true;
+      break;
+    }
+    try { chrome.notifications.clear(APP_PAGE_ASK_ID, () => void chrome.runtime.lastError); } catch {}
+    if (!open) {
+      throw Object.assign(new Error('用户取消打开课程助手页面，操作未执行'), { code: 'USER_DENIED' });
+    }
+    const tab = await chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }).catch(() => null);
+    if (!tab?.id) throw new Error('无法打开课程助手页面');
+    await waitForAppPageReady(tab.id);
+  }
+
+  if (typeof chrome === 'object' && chrome?.notifications?.onButtonClicked) {
+    chrome.notifications.onButtonClicked.addListener(async (nid, index) => {
+      if (nid !== 'bjtu-open-app-page') return;
+      await chrome.storage.session.set({ [APP_PAGE_ASK_KEY]: { id: nid, answer: index === 0 } }).catch(() => {});
+    });
+    chrome.notifications.onClicked.addListener(async (nid) => {
+      if (nid !== 'bjtu-open-app-page') return;
+      await chrome.storage.session.set({ [APP_PAGE_ASK_KEY]: { id: nid, answer: true } }).catch(() => {});
+    });
+  }
+
   // 经扩展 app 页面的消息桥调用平台页面级接口（学生列表/课件/回放/归档/雨课堂等）。
-  // 注意：这些功能依赖页面上下文，需要已打开 app 页面且相关平台已登录。
+  // 注意：这些功能依赖页面上下文；未打开课程助手页面时会先询问用户是否打开。
   async function pageInvoke(module, fn, args, timeoutMs = 90000) {
+    await ensureAppPageReadyForPageApi();
     const response = await sendRuntimeMessage({ type: 'PAGE_API', payload: { module, fn, args: args || {} } }, timeoutMs);
     if (!response?.ok) {
       throw Object.assign(new Error(String(response?.error || `${module}.${fn} 调用失败`)), { code: response?.code || '' });

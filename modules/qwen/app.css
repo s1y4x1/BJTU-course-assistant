@@ -521,6 +521,13 @@ html[data-color-scheme="dark"] .qwen-chat-copy-btn {
   border-top-color: #615ced;
 }
 
+.qwen-chat-execute-btn {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 12px !important;
+  font-size: 12px;
+}
+
 .qwen-chat-function-arguments,
 .qwen-chat-function-result-text {
   white-space: pre-wrap;

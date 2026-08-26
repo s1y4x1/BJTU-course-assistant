@@ -435,6 +435,44 @@
     maybeAutoScrollMessages(messages);
   }
 
+  function parseResBlock(block) {
+    const match = /^```res: (sandbox|app|background)\n([\s\S]*?)```$/.exec(String(block || '').trim());
+    return match ? { mode: match[1], code: String(match[2] || '').trim() } : null;
+  }
+
+  function hideHistoryExecuteButton() {
+    el(MESSAGES_ID)?.querySelector('.qwen-chat-execute-btn')?.remove();
+  }
+
+  // 历史最后一条为操作调用消息时，提供一键重新执行的按钮。
+  function appendHistoryExecuteButton(blocks) {
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement) || !Array.isArray(blocks) || !blocks.length) return;
+    hideHistoryExecuteButton();
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn qwen-chat-execute-btn';
+    button.textContent = '执行';
+    button.addEventListener('click', async () => {
+      hideHistoryExecuteButton();
+      for (const block of blocks) {
+        const parsed = parseResBlock(block);
+        if (!parsed?.code) continue;
+        try {
+          const value = await executeJsInSandbox(parsed.code, parsed.mode);
+          const resultText = typeof value === 'string'
+            ? value
+            : JSON.stringify(value ?? null, null, 2);
+          appendResCard(`\`\`\`res: ${parsed.mode}\n${resultText}\n\`\`\``);
+        } catch (error) {
+          appendMessage('error', `${parsed.mode} 执行失败：${String(error?.message || error)}`);
+        }
+      }
+    });
+    messages.appendChild(button);
+    maybeAutoScrollMessages(messages);
+  }
+
   function renderHistory(messages) {
     const messagesEl = el(MESSAGES_ID);
     if (!(messagesEl instanceof HTMLElement)) return;
@@ -442,6 +480,7 @@
     const list = Array.isArray(messages) ? messages : [];
     let lastAssistantResponseId = '';
     let suggestionCandidate = null;
+    let lastResBlocks = null;
     for (const message of list) {
       const role = String(message?.role || '');
       if (role === 'user') {
@@ -449,6 +488,7 @@
         const content = String(message?.content || '');
         if (content.includes('你是「BJTU 课程助手」的智能代理')) continue;
         const blocks = resBlocksFromText(content);
+        lastResBlocks = blocks.length ? blocks : null;
         if (blocks.length) {
           for (const block of blocks) appendResCard(block);
         } else {
@@ -456,12 +496,16 @@
         }
       } else if (role === 'assistant') {
         suggestionCandidate = renderAssistantHistoryMessage(message);
+        const blocks = resBlocksFromText(String(message?.content || ''));
+        lastResBlocks = blocks.length ? blocks : null;
         lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
     }
     if (suggestionCandidate) {
       renderSuggestedReplies(suggestionCandidate.bubble, suggestionCandidate.suggestions);
     }
+    // 最后一条消息是操作调用时，在下方追加「执行」按钮。
+    if (lastResBlocks) appendHistoryExecuteButton(lastResBlocks);
     sessionParentId = lastAssistantResponseId;
     scrollMessagesToBottom(messagesEl, { force: true });
   }
@@ -1831,6 +1875,7 @@
 
   function sendMessage(text) {
     if (busy) return;
+    hideHistoryExecuteButton();
     if (!chatStateLoaded || !openingCompleted) {
       maybeSendOpening();
       return;
