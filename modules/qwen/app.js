@@ -556,10 +556,12 @@
         }
       } else if (role === 'assistant') {
         suggestionCandidate = renderAssistantHistoryMessage(message);
-        const blocks = executionBlocksFromText(assistantHistoryText(message));
+        const historyText = assistantHistoryText(message);
+        const parsedSuggestions = splitSuggestedReplies(historyText);
+        const blocks = executionBlocksFromText(parsedSuggestions.text);
         lastExecutionBlocks = blocks.length ? blocks : null;
         const contentList = Array.isArray(message?.content_list) ? message.content_list : [];
-        lastHasFunctionCalls = contentList.some((item) => {
+        lastHasFunctionCalls = !parsedSuggestions.found && contentList.some((item) => {
           const fc = item?.function_call;
           return String(item?.role || '') === 'function' || (fc && typeof fc === 'object');
         });
@@ -1178,7 +1180,7 @@
     const content = document.createElement('div');
     content.className = 'qwen-chat-op-result qwen-chat-op-result-loading';
     const spinner = document.createElement('span');
-    spinner.className = 'spinner';
+    spinner.className = 'qwen-chat-op-spinner';
     spinner.setAttribute('aria-hidden', 'true');
     const loadingText = document.createElement('span');
     loadingText.textContent = '执行中…';

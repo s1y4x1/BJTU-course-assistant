@@ -73,11 +73,12 @@ chrome.tabs.onCreated.addListener((tab) => {
 
 async function createBjtuSystemNotification(notificationId, options, source = 'background', replaceExisting = false) {
   const id = String(notificationId || '').trim();
+  const requestedIconUrl = String(options?.iconUrl || '').trim();
   const payload = {
     ...(options && typeof options === 'object' ? options : {}),
-    iconUrl: String(options?.iconUrl || '').includes('://')
-      ? String(options.iconUrl)
-      : chrome.runtime.getURL(String(options?.iconUrl || 'icons/128.png').replace(/^\/+/, ''))
+    iconUrl: /^(?:data:|blob:|https?:|chrome-extension:)/i.test(requestedIconUrl)
+      ? requestedIconUrl
+      : chrome.runtime.getURL(String(requestedIconUrl || 'icons/128.png').replace(/^\/+/, ''))
   };
   const attemptedAt = Date.now();
   try {

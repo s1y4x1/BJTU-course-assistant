@@ -207,14 +207,23 @@
 
   function requireReminderMinutes(args) {
     const raw = args?.minutes;
-    if (raw === undefined || raw === null || String(raw).trim() === '') {
-      throw new Error('缺少参数 minutes（提前的分钟数）');
+    if (raw === undefined || raw === null || (!Array.isArray(raw) && String(raw).trim() === '')) {
+      throw new Error('缺少参数 minutes（提前的分钟数或数组）');
     }
-    const minutes = Math.round(Number(raw));
-    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 525600) {
-      throw new Error('minutes 必须是 1~525600 之间的数字');
+    const values = Array.isArray(raw) ? raw : [raw];
+    if (!values.length) throw new Error('minutes 数组不能为空');
+    const minutes = values.map((value) => Math.round(Number(value)));
+    if (minutes.some((value) => !Number.isFinite(value) || value < 1 || value > 525600)) {
+      throw new Error('minutes 中的每一项都必须是 1~525600 之间的数字');
     }
-    return minutes;
+    return [...new Set(minutes)];
+  }
+
+  function createQwenNotificationId() {
+    const suffix = typeof global.crypto?.randomUUID === 'function'
+      ? global.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return `bjtu-qwen-notification:${suffix}`;
   }
 
   // 轮询等待登录完成；超时返回 null。
@@ -937,7 +946,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ve.courseware_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：{"loginRequired":false,"items":[{"id":"...","name":"课件名","extName":"pdf","rpId":"...","sizeMb":2.3,"url":"https://..."}]}'
+        '**返回示例**：[{"id":"...","name":"课件名.pdf","sizeMb":2.3,"url":"https://..."}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -946,7 +955,18 @@ name: 've.teachers_of_',
         const courseNum = String(course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || courseId).trim();
         const fzId = String(course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '').trim();
         if (!courseNum || !fzId) throw new Error(`课程ID无效：${courseId} 缺少课件所需参数（课程号/课序号）`);
-        return pageInvoke('ve', 'coursewareItems', { courseNum, xkhId: fzId }, 120000);
+        const payload = await pageInvoke('ve', 'coursewareItems', { courseNum, xkhId: fzId }, 120000);
+        if (payload?.loginRequired === true) throw loginRequiredError();
+        if (payload?.aborted === true) throw new Error('课件获取已取消');
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        return items.map((item) => {
+          const result = { ...(item || {}) };
+          delete result.extName;
+          delete result.rpId;
+          delete result.courseId;
+          delete result.sizeMbRaw;
+          return result;
+        });
       }
     },
     {
@@ -2200,6 +2220,55 @@ name: 've.teachers_of_',
     },
     {
       module: 'reminder',
+      name: 'reminder.send',
+      label: '发送系统通知',
+      summary: '使用浏览器系统通知 API 发送 basic、image、list 或 progress 通知',
+      doc: [
+        '## reminder.send —— 发送系统通知',
+        '',
+        '发送一条浏览器系统通知。除 notificationId 和 replaceExisting 外，其余参数会作为 Chrome NotificationOptions 直接传入；未指定 iconUrl 时使用扩展图标。',
+        '',
+        '**必填参数**：`title`（标题）、`message`（正文）。',
+        '',
+        '**通用可选参数**：`notificationId`、`replaceExisting`、`type`（basic/image/list/progress，默认 basic）、`iconUrl`、`contextMessage`、`priority`（-2~2）、`eventTime`、`buttons`（最多两个）、`requireInteraction`、`silent`。',
+        '',
+        '**类型专用参数**：image 可传 `imageUrl`；list 可传 `items: [{title, message}]`；progress 可传 `progress`（0~100）。浏览器还会接收其支持的其他 NotificationOptions 字段。',
+        '',
+        '**调用示例**：`reminder.send({title: "课程提醒", message: "高等数学将在 30 分钟后开始", requireInteraction: true})`',
+        '',
+        '**进度通知示例**：`reminder.send({notificationId: "download-1", replaceExisting: true, type: "progress", title: "正在下载", message: "模型资源", progress: 45})`',
+        '',
+        '**返回示例**：`{"notificationId":"bjtu-qwen-notification:..."}`'
+      ].join('\n'),
+      async run(args) {
+        if (!args || typeof args !== 'object' || Array.isArray(args)) {
+          throw new Error('参数必须是通知选项对象');
+        }
+        if (!Object.prototype.hasOwnProperty.call(args, 'title')) throw new Error('缺少参数 title');
+        if (!Object.prototype.hasOwnProperty.call(args, 'message')) throw new Error('缺少参数 message');
+        const {
+          notificationId: requestedId,
+          replaceExisting = false,
+          ...notificationOptions
+        } = args;
+        const notificationId = String(requestedId || '').trim() || createQwenNotificationId();
+        notificationOptions.type = String(notificationOptions.type || 'basic').trim().toLowerCase();
+        if (!['basic', 'image', 'list', 'progress'].includes(notificationOptions.type)) {
+          throw new Error('type 仅支持 basic / image / list / progress');
+        }
+        const createNotification = requireGlobal('BjtuSystemNotifications')?.create;
+        if (typeof createNotification !== 'function') throw new Error('系统通知功能未就绪');
+        const createdId = await createNotification(
+          notificationId,
+          notificationOptions,
+          'qwen-operation',
+          replaceExisting === true
+        );
+        return { notificationId: createdId };
+      }
+    },
+    {
+      module: 'reminder',
       name: 'reminder.get',
       label: '获取提醒时间点',
       summary: '获取作业截止提醒的全部提前时间点（分钟）',
@@ -2246,54 +2315,53 @@ name: 've.teachers_of_',
       module: 'reminder',
       name: 'reminder.add',
       label: '添加提醒时间点',
-      summary: '新增一个作业截止提醒的提前时间点',
+      summary: '新增一个或多个作业截止提醒的提前时间点',
       doc: [
         '## reminder.add —— 添加提醒时间点',
         '',
-        '新增一个提前提醒时间点（分钟）。已存在时报 added:false。',
+        '新增一个或多个提前提醒时间点（分钟），自动去重；已存在的时间点列入 unchanged。',
         '',
-        '**参数**：{"minutes":"提前分钟数，必填，1~525600"}',
+        '**参数**：{"minutes":"提前分钟数或数组，必填，每项为 1~525600"}',
         '',
-        '**调用示例**：`reminder.add({minutes: 30})`',
+        '**调用示例**：`reminder.add({minutes: 30})`；`reminder.add({minutes: [1440, 30]})`',
         '',
-        '**返回示例**：{"ok":true,"points":[1440,120,30],"added":true}'
+        '**返回示例**：{"ok":true,"points":[1440,120,30],"added":[1440,30],"unchanged":[]}'
       ].join('\n'),
       async run(args) {
         const minutes = requireReminderMinutes(args);
         const points = await loadReminderPoints();
-        if (points.includes(minutes)) {
-          return { ok: true, points, added: false, message: `提前 ${minutes} 分钟的时间点已存在` };
-        }
-        const next = normalizeReminderMinutes([...points, minutes], points);
-        await chrome.storage.local.set({ homeworkReminderMinutes: next });
-        return { ok: true, points: next, added: true };
+        const added = minutes.filter((value) => !points.includes(value));
+        const unchanged = minutes.filter((value) => points.includes(value));
+        const next = normalizeReminderMinutes([...points, ...added], points);
+        if (added.length) await chrome.storage.local.set({ homeworkReminderMinutes: next });
+        return { ok: true, points: next, added, unchanged };
       }
     },
     {
       module: 'reminder',
       name: 'reminder.del',
       label: '删除提醒时间点',
-      summary: '删除一个作业截止提醒的提前时间点',
+      summary: '删除一个或多个作业截止提醒的提前时间点',
       doc: [
         '## reminder.del —— 删除提醒时间点',
         '',
-        '删除一个提前提醒时间点（分钟）。不存在时报 removed:false。',
+        '删除一个或多个提前提醒时间点（分钟），自动去重；不存在的时间点列入 missing。',
         '',
-        '**参数**：{"minutes":"提前分钟数，必填"}',
+        '**参数**：{"minutes":"提前分钟数或数组，必填"}',
         '',
-        '**调用示例**：`reminder.del({minutes: 120})`',
+        '**调用示例**：`reminder.del({minutes: 120})`；`reminder.del({minutes: [120, 30]})`',
         '',
-        '**返回示例**：{"ok":true,"points":[1440,30],"removed":true}'
+        '**返回示例**：{"ok":true,"points":[1440],"removed":[120,30],"missing":[]}'
       ].join('\n'),
       async run(args) {
         const minutes = requireReminderMinutes(args);
         const points = await loadReminderPoints();
-        if (!points.includes(minutes)) {
-          return { ok: true, points, removed: false, message: `提前 ${minutes} 分钟的时间点不存在` };
-        }
-        const next = points.filter((item) => item !== minutes);
-        await chrome.storage.local.set({ homeworkReminderMinutes: next });
-        return { ok: true, points: next, removed: true };
+        const removed = minutes.filter((value) => points.includes(value));
+        const missing = minutes.filter((value) => !points.includes(value));
+        const targets = new Set(removed);
+        const next = points.filter((item) => !targets.has(item));
+        if (removed.length) await chrome.storage.local.set({ homeworkReminderMinutes: next });
+        return { ok: true, points: next, removed, missing };
       }
     },
     {
