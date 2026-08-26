@@ -40,11 +40,15 @@
     );
   }
 
-  function requestEndedError(responseId = '') {
+  function requestEndedError(responseId = '', message = 'The request is ended!') {
     return Object.assign(
-      new Error('The request is ended!'),
+      new Error(String(message || 'The request is ended!')),
       { code: 'REQUEST_ENDED', responseId: String(responseId || '') }
     );
+  }
+
+  function isRequestFinishedMessage(message) {
+    return /^The request is (?:ended|finished)!$/i.test(String(message || '').trim());
   }
 
   function rateLimitMessage(num) {
@@ -568,7 +572,10 @@
         else if (code === 'NOT_LOGGED_IN') pending.reject(notLoggedInError());
         else if (code === 'API_ERROR') pending.reject(new Error(String(data.message || '通义千问返回了错误')));
         else if (code === 'NETWORK_ERROR') pending.reject(networkError(data.responseId || pending.responseId));
-        else if (code === 'REQUEST_ENDED') pending.reject(requestEndedError(data.responseId || pending.responseId));
+        else if (code === 'REQUEST_ENDED') pending.reject(requestEndedError(
+          data.responseId || pending.responseId,
+          data.message
+        ));
         else pending.reject(new Error(code));
       } else if (data.end) {
         pendingStreams.delete(data.id);
@@ -634,7 +641,7 @@
         type: 'QWEN_API_REQUEST',
         payload: {
           id,
-          method: resumeId ? 'GET' : 'POST',
+          method: 'POST',
           url: `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}${resumeId ? `&response_id=${encodeURIComponent(resumeId)}` : ''}`,
           ...(resumeId ? {} : { body }),
           stream: true,
@@ -797,7 +804,9 @@
           const message = typeof payload.error === 'string'
             ? payload.error
             : String(payload.error.details || payload.error.message || '通义千问返回了错误');
-          if (message.trim() === 'The request is ended!') throw requestEndedError(payload?.response_id || responseId);
+          if (isRequestFinishedMessage(message)) {
+            throw requestEndedError(payload?.response_id || responseId, message);
+          }
           throw new Error(message);
         }
       const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;

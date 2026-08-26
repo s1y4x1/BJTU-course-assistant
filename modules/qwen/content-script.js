@@ -126,6 +126,10 @@
     return String(err?.details || err?.message || '通义千问返回了错误');
   }
 
+  function isRequestFinishedMessage(message) {
+    return /^The request is (?:ended|finished)!$/i.test(String(message || '').trim());
+  }
+
   function extractApiDetails(text) {
     try {
       const obj = JSON.parse(String(text || ''));
@@ -234,7 +238,7 @@
         }
         if (data?.error) {
           const message = apiStreamErrorMessage(data.error);
-          if (String(message).trim() === 'The request is ended!') {
+          if (isRequestFinishedMessage(message)) {
             emit({ error: 'REQUEST_ENDED', message, responseId: String(data?.response_id || responseId || '') });
           } else {
             emit({ error: 'STREAM_ERROR', message });

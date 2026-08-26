@@ -1709,7 +1709,7 @@
           removeCursor(activeBubble);
           activeBubble = null;
           setBusy(false);
-          setStatus('已登录', 'ok');
+          setStatus('已生成完毕', 'ok');
           chatPort.disconnect();
           if (port === chatPort) port = null;
           void loadHistoryOnce();

@@ -337,6 +337,7 @@
   // ===== app 页面依赖（pageInvoke）守卫 =====
   // 仅边栏/独立页打开而未打开课程助手页面时，先发系统通知询问用户是否打开。
   const APP_PAGE_ASK_KEY = 'appPageOpenAsk';
+  const APP_PAGE_ASK_ID = 'bjtu-open-app-page';
 
   async function isAppPageOpen() {
     try {
@@ -368,11 +369,12 @@
     try {
       chrome.notifications.create(APP_PAGE_ASK_ID, {
         type: 'basic',
-        iconUrl: 'icons/128.png',
+        iconUrl: chrome.runtime.getURL('icons/128.png'),
         title: '需要打开课程助手',
         message: '当前操作需要在课程助手页面中执行，是否立即打开？',
         buttons: [{ title: '打开' }, { title: '取消' }],
-        priority: 2
+        priority: 2,
+        requireInteraction: true
       }, () => void chrome.runtime.lastError);
     } catch {
       throw Object.assign(new Error('该操作需要在课程助手页面中执行，请先打开课程助手'), { code: 'APP_PAGE_REQUIRED' });
@@ -391,18 +393,21 @@
     if (!open) {
       throw Object.assign(new Error('用户取消打开课程助手页面，操作未执行'), { code: 'USER_DENIED' });
     }
-    const tab = await chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') }).catch(() => null);
+    const appUrl = chrome.runtime.getURL('app/app.html');
+    const tab = await (globalThis.BjtuTabs?.create
+      ? globalThis.BjtuTabs.create({ url: appUrl, active: true })
+      : chrome.tabs.create({ url: appUrl, active: true })).catch(() => null);
     if (!tab?.id) throw new Error('无法打开课程助手页面');
     await waitForAppPageReady(tab.id);
   }
 
   if (typeof chrome === 'object' && chrome?.notifications?.onButtonClicked) {
     chrome.notifications.onButtonClicked.addListener(async (nid, index) => {
-      if (nid !== 'bjtu-open-app-page') return;
+      if (nid !== APP_PAGE_ASK_ID) return;
       await chrome.storage.session.set({ [APP_PAGE_ASK_KEY]: { id: nid, answer: index === 0 } }).catch(() => {});
     });
     chrome.notifications.onClicked.addListener(async (nid) => {
-      if (nid !== 'bjtu-open-app-page') return;
+      if (nid !== APP_PAGE_ASK_ID) return;
       await chrome.storage.session.set({ [APP_PAGE_ASK_KEY]: { id: nid, answer: true } }).catch(() => {});
     });
   }
