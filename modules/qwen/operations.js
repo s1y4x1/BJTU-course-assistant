@@ -91,6 +91,76 @@
     };
   }
 
+  function throwOperationFailure(value, fallbackMessage) {
+    if (!value || typeof value !== 'object' || value.ok !== false) return value;
+    const code = String(value.code || '').trim();
+    const message = String(value.message || fallbackMessage || '操作失败');
+    if (code === 'LOGIN_REQUIRED' || value.loggedIn === false) {
+      throw Object.assign(new Error(message), { code: 'LOGIN_REQUIRED' });
+    }
+    throw Object.assign(new Error(message), code ? { code } : {});
+  }
+
+  function compactPlatformStatus(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const loginState = String(source.loginState || '').toLowerCase();
+    const loggedIn = typeof source.loggedIn === 'boolean'
+      ? source.loggedIn
+      : loginState === 'online';
+    const loaded = typeof source.loaded === 'boolean'
+      ? source.loaded
+      : (typeof source.snapshotLoaded === 'boolean' ? source.snapshotLoaded : loggedIn);
+    return { loggedIn, loaded };
+  }
+
+  function compactVeResource(item) {
+    const source = item && typeof item === 'object' ? item : {};
+    const baseName = String(source.name || '').trim();
+    const extName = String(source.extName || '').trim().replace(/^\./, '');
+    const name = extName && !baseName.toLowerCase().endsWith(`.${extName.toLowerCase()}`)
+      ? `${baseName}.${extName}`
+      : baseName;
+    return {
+      id: String(source.rpId || '').trim(),
+      name,
+      size: source.sizeMb ?? source.size ?? '',
+      url: String(source.url || '').trim()
+    };
+  }
+
+  function compactAcademicScore(row) {
+    const source = row && typeof row === 'object' ? row : {};
+    return {
+      academicYear: String(source.academicYear || ''),
+      courseCode: String(source.courseCode || ''),
+      courseName: String(source.courseName || ''),
+      credit: String(source.credit || ''),
+      score: String(source.score || ''),
+      bonusScore: String(source.bonusScore || ''),
+      teacher: String(source.teacher || ''),
+      details: String(source.details || '')
+    };
+  }
+
+  function compactAcademicExam(row) {
+    const source = row && typeof row === 'object' ? row : {};
+    return {
+      exam: String(source.exam || ''),
+      course: String(source.course || ''),
+      courseCode: String(source.courseCode || ''),
+      startAt: Number(source.startAt || 0),
+      timeLocation: String(source.timeLocation || ''),
+      method: String(source.method || ''),
+      remarks: String(source.remarks || ''),
+      registration: String(source.registration || ''),
+      status: String(source.status || '')
+    };
+  }
+
+  function yktTypeLabel(value) {
+    return ({ 14: '课堂', 15: '线上学习', 5: '试卷', 9: '公告' })[Number(value)] || '';
+  }
+
   async function sendRuntimeMessage(message) {
     if (typeof chrome !== 'object' || !chrome?.runtime?.sendMessage) {
       throw new Error('当前环境不支持消息通信');
@@ -618,7 +688,6 @@ name: 've.accounts',
               loginName,
               userName: String(detail?.userName || record?.userName || ''),
               roleName: String(detail?.roleName || record?.roleName || ''),
-              quickUsername: String(detail?.quickUsername || ''),
               lastLoginAt: Number(record?.lastLoginAt || 0) || 0
             };
           })
@@ -637,13 +706,21 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.terms()`',
         '',
-        '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","currentFlag":2}],"recommended":"2025-2026-1"}'
+        '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"...","endDate":"..."}],"recommended":"2025-2026-1"}'
       ].join('\n'),
       async run() {
         const core = await veHomework();
         const terms = await core.fetchTerms();
         const recommended = core.chooseTermCode(terms);
-        return { terms: serialize(terms), recommended };
+        return {
+          terms: (Array.isArray(terms) ? terms : []).map((term) => ({
+            xqCode: String(term?.xqCode || term?.xq_code || ''),
+            xqName: String(term?.xqName || term?.xq_name || ''),
+            beginDate: String(term?.beginDate || term?.begin_date || ''),
+            endDate: String(term?.endDate || term?.end_date || '')
+          })),
+          recommended
+        };
       }
     },
     {
@@ -674,8 +751,7 @@ name: 've.accounts',
         return (Array.isArray(courses) ? courses : []).map((course) => ({
           id: core.getCourseId(course),
           name: core.getCourseName(course),
-          teacherName: String(course?.teacher_name || course?.teacherName || course?.fzr || ''),
-          courseNum: String(course?.course_num || course?.courseNum || course?.course_id || '')
+          teacherName: String(course?.teacher_name || course?.teacherName || course?.fzr || '')
         }));
       }
     },
@@ -693,7 +769,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments_of_({courseId: "xxx"})`；也可直接按课程名组合调用：`ve.assignments_of_({ courseId: ve.courseList().find(item => item.name === "高等数学").id })`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业标题","end_time":"2026-01-01 00:00:00","subStatus":"未提交"}]'
+        '**返回示例**：[{"id":"...","title":"作业标题","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -725,7 +801,25 @@ name: 've.accounts',
           if (primaryError) throw primaryError;
           if (closeError) throw new Error(`取消公布作业成绩失败：${String(closeError?.message || closeError)}`);
         }
-        return serialize(list);
+        const now = Date.now();
+        return (Array.isArray(list) ? list : []).map((homework) => {
+          const done = core.isHomeworkDone(homework);
+          const deadline = core.parseDeadline(homework?.end_time ?? homework?.endTime ?? '');
+          const overdue = !done && deadline > 0 && deadline < now;
+          const attachments = homework?.attachments ?? homework?.attachmentList ?? homework?.files ?? [];
+          return {
+            id: String(core.homeworkKey(homework) || ''),
+            title: String(homework?.title || homework?.workTitle || homework?.courseNoteTitle || '未命名作业').trim(),
+            type: veSubTypeLabel(homework?.subType ?? homework?.sub_type),
+            status: computeAssignmentStatus(done, overdue),
+            startTime: core.parseDeadline(homework?.open_date ?? homework?.openDate ?? homework?.start_time ?? homework?.startTime ?? ''),
+            deadline,
+            submittedAt: core.parseDeadline(homework?.submittedAt ?? homework?.submit_time ?? homework?.submitTime ?? homework?.subTime ?? homework?.sub_time ?? ''),
+            score: homework?.score ?? homework?.lastScore ?? homework?.last_score ?? homework?.homeworkScore ?? homework?.workScore ?? '',
+            attachments: serialize(Array.isArray(attachments) ? attachments : []),
+            submittedCount: Math.max(0, Number(homework?.submitCount ?? homework?.submit_count ?? homework?.subCount ?? homework?.submitNum ?? homework?.submittedCount ?? 0) || 0)
+          };
+        });
       }
     },
     {
@@ -790,7 +884,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`const uploaded = await ve.uploadFile(); return ve.submitAssignment({courseId: "xxx", assignmentId: "yyy", content: "作业正文", fileList: uploaded.fileList})`',
         '',
-        '**返回示例**：{"submitted":true,"courseId":"xxx","assignmentId":"yyy","fileCount":1}'
+        '**返回示例**：{"submitted":true}'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -812,7 +906,9 @@ name: 've.accounts',
         const assignments = await core.fetchCourseHomework(courseId);
         const homework = assignments.find((item) => String(core.homeworkKey(item) || '') === assignmentId);
         if (!homework) throw new Error(`作业ID无效：${assignmentId} 不在该课程作业列表中`);
-        return core.submitHomework(courseId, homework, content, directFileList);
+        const result = await core.submitHomework(courseId, homework, content, directFileList);
+        if (result?.submitted !== true) throw new Error(String(result?.message || '作业提交失败'));
+        return { submitted: true };
       }
     },
     {
@@ -924,12 +1020,13 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ve.students_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：{"students":[{"groupName":"组名","stuNo":"学号","stuName":"姓名","className":"班级"}],"total":60}'
+        '**返回示例**：[{"groupName":"组名","stuNo":"学号","stuName":"姓名","className":"班级"}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
-        return pageInvoke('ve', 'students', { courseId }, 120000);
+        const value = await pageInvoke('ve', 'students', { courseId }, 120000);
+        return Array.isArray(value?.students) ? value.students : [];
       }
     },
     {
@@ -946,7 +1043,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ve.courseware_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","name":"课件名.pdf","sizeMb":2.3,"url":"https://..."}]'
+        '**返回示例**：[{"id":"原始rpId","name":"课件名.pdf","size":"2.30MB","url":"https://..."}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -958,15 +1055,7 @@ name: 've.teachers_of_',
         const payload = await pageInvoke('ve', 'coursewareItems', { courseNum, xkhId: fzId }, 120000);
         if (payload?.loginRequired === true) throw loginRequiredError();
         if (payload?.aborted === true) throw new Error('课件获取已取消');
-        const items = Array.isArray(payload?.items) ? payload.items : [];
-        return items.map((item) => {
-          const result = { ...(item || {}) };
-          delete result.extName;
-          delete result.rpId;
-          delete result.courseId;
-          delete result.sizeMbRaw;
-          return result;
-        });
+        return (Array.isArray(payload?.items) ? payload.items : []).map(compactVeResource);
       }
     },
     {
@@ -1015,12 +1104,15 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ve.archive_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：{"loginRequired":false,"items":[{"name":"归档名","extName":"pdf","rpId":"...","url":"https://..."}]}'
+        '**返回示例**：[{"id":"原始rpId","name":"归档名.pdf","size":"2.30MB","url":"https://..."}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
-        return pageInvoke('ve', 'archiveItems', { courseId }, 120000);
+        const payload = await pageInvoke('ve', 'archiveItems', { courseId }, 120000);
+        if (payload?.loginRequired === true) throw loginRequiredError();
+        if (payload?.aborted === true) throw new Error('归档资源获取已取消');
+        return (Array.isArray(payload?.items) ? payload.items : []).map(compactVeResource);
       }
     },
     {
@@ -1035,12 +1127,12 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.courseList()`',
         '',
-        '**返回示例**：{"courses":[{"classroomId":"...","courseName":"课程名","teacher":"老师","universityId":"..."}]}'
+        '**返回示例**：[{"classroomId":"...","courseName":"课程名","teacher":"老师","universityId":"..."}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('ykt', 'courseList', {}, 120000);
-        if (value?.loggedIn === false) return { ok: false, code: 'LOGIN_REQUIRED', message: '雨课堂未登录，请先调用 ykt.login 完成登录后再获取课程列表' };
-        return value;
+        if (value?.loggedIn === false) throw Object.assign(new Error('雨课堂未登录，请先调用 ykt.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
+        return Array.isArray(value?.courses) ? value.courses : [];
       }
     },
     {
@@ -1057,12 +1149,27 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：{"classroomId":"xxx","homework":[{"id":"...","title":"作业名","actype":15,"activityType":"线上学习","end":"时间","progress":0.75,"done":false,"score":90,"link":"https://..."}]}。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
+        '**返回示例**：[{"id":"...","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"link":"https://..."}]。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
         await assertCourseIdOf('ykt', classroomId, 'classroomId');
-        return pageInvoke('ykt', 'courseHomework', { classroomId }, 120000);
+        const value = throwOperationFailure(
+          await pageInvoke('ykt', 'courseHomework', { classroomId }, 120000),
+          '雨课堂作业获取失败'
+        );
+        return (Array.isArray(value?.homework) ? value.homework : []).map((item) => ({
+          id: String(item?.id ?? item?.courseware_id ?? ''),
+          title: String(item?.title || '未命名作业'),
+          type: String(item?.activityType || yktTypeLabel(item?.__actype ?? item?.actype)),
+          status: computeAssignmentStatus(item?.done === true, item?.overdue === true),
+          startTime: parseDeadline(item?.create_time ?? item?.startTime ?? item?.start_time),
+          deadline: parseDeadline(item?.end ?? item?.deadline),
+          progress: Number(item?.progress ?? 0) || 0,
+          score: item?.score ?? '',
+          totalScore: item?.total_score ?? item?.totalScore ?? '',
+          link: String(item?.link || '')
+        }));
       }
     },
     {
@@ -1145,7 +1252,12 @@ name: 've.teachers_of_',
         '**返回示例**：{"studentId":"...","accounts":[{"studentId":"...","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
       ].join('\n'),
       async run() {
-        return academicInvoke('currentAccount');
+        const value = throwOperationFailure(await academicInvoke('currentAccount'), '教务系统账号信息获取失败');
+        const { ok: _ok, accounts, ...rest } = value && typeof value === 'object' ? value : {};
+        return {
+          ...rest,
+          accounts: (Array.isArray(accounts) ? accounts : []).map(({ updatedAt: _updatedAt, ...account }) => account)
+        };
       }
     },
     {
@@ -1163,7 +1275,14 @@ name: 've.teachers_of_',
         '**返回示例**：`{"currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"},{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2"}]}`。currentZxjxjhh 通过本学期成绩任意一行的“学年”匹配页面 option 得出；academic.scores 可直接接收这些 zxjxjhh。'
       ].join('\n'),
       async run() {
-        return academicInvoke('scoreSemesters', undefined, 120000);
+        const value = throwOperationFailure(await academicInvoke('scoreSemesters', undefined, 120000), '成绩学期列表获取失败');
+        return {
+          currentZxjxjhh: String(value?.currentZxjxjhh || ''),
+          semesters: (Array.isArray(value?.semesters) ? value.semesters : []).map((item) => ({
+            label: String(item?.label || ''),
+            zxjxjhh: String(item?.zxjxjhh || '')
+          }))
+        };
       }
     },
     {
@@ -1180,11 +1299,12 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.scores()`；`academic.scores(["2024-2025-2-2","2023-2024-1-2"])`；`academic.scoreSemesters().then(({semesters}) => academic.scores(semesters.map(item => item.zxjxjhh)))`',
         '',
-        '**返回示例**：`{"rows":[{"academicYear":"2024-2025-2","courseName":"高等数学","score":"95","credit":"4"}],"selectedSemesters":["2024-2025-2"],"count":1}`'
+        '**返回示例**：`[{"academicYear":"2024-2025-2","courseCode":"MATH1001","courseName":"高等数学","credit":"4","score":"95","bonusScore":"","teacher":"张老师","details":""}]`'
       ].join('\n'),
       async run(args) {
         const semesters = Array.isArray(args) ? args : args?.semesters;
-        return academicInvoke('scores', semesters === undefined ? {} : { semesters }, 120000);
+        const value = throwOperationFailure(await academicInvoke('scores', semesters === undefined ? {} : { semesters }, 120000), '成绩获取失败');
+        return (Array.isArray(value?.rows) ? value.rows : []).map(compactAcademicScore);
       }
     },
     {
@@ -1199,10 +1319,11 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.exams()`',
         '',
-        '**返回示例**：{"exams":[{"courseName":"高等数学","examTime":"2026-01-10 09:00"}]}'
+        '**返回示例**：[{"exam":"期末考试","course":"MATH1001 高等数学","courseCode":"MATH1001","startAt":1768006800000,"timeLocation":"2026-01-10 09:00 教室","method":"闭卷","remarks":"","registration":"已报名","status":"正常"}]'
       ].join('\n'),
       async run() {
-        return academicInvoke('exams', undefined, 120000);
+        const value = throwOperationFailure(await academicInvoke('exams', undefined, 120000), '考试安排获取失败');
+        return (Array.isArray(value?.rows) ? value.rows : []).map(compactAcademicExam);
       }
     },
     {
@@ -1231,7 +1352,14 @@ name: 've.teachers_of_',
         ]);
         const scheduleType = aliases.get(sourceType);
         if (!scheduleType) throw new Error('scheduleType 仅支持 semester（本学期课表）或 selection（选课课表）');
-        return academicInvoke('schedule', { scheduleType }, 120000);
+        const value = throwOperationFailure(await academicInvoke('schedule', { scheduleType }, 120000), '课表获取失败');
+        return {
+          rows: Array.isArray(value?.rows) ? value.rows : [],
+          weeks: Array.isArray(value?.weeks) ? value.weeks : [],
+          currentWeek: Number(value?.currentWeek || 0),
+          weekLabels: Array.isArray(value?.weekLabels) ? value.weekLabels : [],
+          termName: String(value?.termName || '')
+        };
       }
     },
     {
@@ -1408,7 +1536,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mail.inbox()`；`mail.inbox({limit: 20})`；`mail.inbox({limit: 0})`',
         '',
-        '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true}],"total":363,"unreadCount":7,"count":10,"changes":0,"checkedAt":1723456789012}'
+        '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","to":"...","summary":"...","sentDate":"...","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true,"threadMessageCount":1}],"total":363,"unreadCount":7}'
       ].join('\n'),
       async run(args) {
         const hasLimit = !!args && Object.prototype.hasOwnProperty.call(args, 'limit');
@@ -1424,7 +1552,22 @@ name: 've.teachers_of_',
             { code: String(result?.code || '') }
           );
         }
-        return withoutOk(result) || {};
+        return {
+          rows: (Array.isArray(result?.rows) ? result.rows : []).map((row) => ({
+            id: String(row?.id || ''),
+            subject: String(row?.subject || ''),
+            from: String(row?.from || row?.sender || ''),
+            to: String(row?.to || ''),
+            summary: String(row?.summary || ''),
+            sentDate: String(row?.sentDate || ''),
+            receivedDate: String(row?.receivedDate || ''),
+            read: row?.read === true,
+            attached: row?.attached === true,
+            threadMessageCount: Number(row?.threadMessageCount || 0)
+          })),
+          total: Math.max(0, Number(result?.total || 0) || 0),
+          unreadCount: Math.max(0, Number(result?.unreadCount || 0) || 0)
+        };
       }
     },
     {
@@ -1528,11 +1671,12 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.status()`',
         '',
-        '**返回示例**：{"loggedIn":true}'
+        '**返回示例**：{"loggedIn":true,"loaded":true}'
       ].join('\n'),
       async run() {
         const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
-        return { loggedIn: !!String(cookie?.value || '').trim(), tabId: null, temporaryTab: false };
+        const loggedIn = !!String(cookie?.value || '').trim();
+        return { loggedIn, loaded: loggedIn };
       }
     },
     {
@@ -1610,7 +1754,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`captcha.models()`',
         '',
-        '**返回示例**：{"selected":"4.0.0_fast","models":[{"version":"4.0.0_fast","label":"4.0.0 Fast（原内置模型，推荐）","installed":true,"selected":true},{"version":"omis.onnx","label":"omis.onnx（CAS 验证码识别模型）","installed":true,"selected":false}]}'
+        '**返回示例**：[{"version":"4.0.0_fast","label":"4.0.0 Fast（原内置模型，推荐）","installed":true,"selected":true},{"version":"omis.onnx","label":"omis.onnx（CAS 验证码识别模型）","installed":true,"selected":false}]'
       ].join('\n'),
       async run() {
         const assets = requireGlobal('BjtuCaptchaAssets');
@@ -1643,7 +1787,7 @@ name: 've.teachers_of_',
             selected: false
           });
         }
-        return { selected, models };
+        return models;
       }
     },
     {
@@ -1718,12 +1862,12 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.courseList()`',
         '',
-        '**返回示例**：{"loaded":true,"loginState":"online","courses":[{"classNum":"...","divClass":"课程名","teacherName":"老师","homeworkCount":3}]}'
+        '**返回示例**：[{"classNum":"...","divClass":"课程名","teacherName":"老师","homeworkCount":3}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('mrjzy', 'courseList', {}, 120000);
-        if (String(value?.loginState || '') === 'offline') return { ok: false, code: 'LOGIN_REQUIRED', message: '每日交作业未登录，请先调用 mrjzy.login 完成登录后再获取课程列表' };
-        return value;
+        if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('每日交作业未登录，请先调用 mrjzy.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
+        return Array.isArray(value?.courses) ? value.courses : [];
       }
     },
     {
@@ -1740,12 +1884,24 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.assignments_of_({classNum: "xxx"})`',
         '',
-        '**返回示例**：{"classNum":"xxx","divClass":"课程名","teacherName":"老师","homework":[{"workId":"...","title":"作业名","end":"时间","done":false,"link":"https://..."}]}'
+        '**返回示例**：[{"id":"...","title":"作业名","startTime":0,"deadline":1767225600000,"status":"pending","link":"https://..."}]'
       ].join('\n'),
       async run(args) {
         const classNum = String(args?.classNum || '').trim();
         if (!classNum) throw new Error('缺少参数 classNum，请先调用 mrjzy.courseList 获取班级号');
-        return pageInvoke('mrjzy', 'homework_of_', { classNum }, 120000);
+        const value = throwOperationFailure(await pageInvoke('mrjzy', 'homework_of_', { classNum }, 120000), '每日交作业作业获取失败');
+        const now = Date.now();
+        return (Array.isArray(value?.homework) ? value.homework : []).map((item) => {
+          const deadline = parseDeadline(item?.end ?? item?.deadline);
+          return {
+            id: String(item?.workId ?? item?.id ?? ''),
+            title: String(item?.title || ''),
+            startTime: parseDeadline(item?.workTime ?? item?.startTime),
+            deadline,
+            status: computeAssignmentStatus(item?.done === true, item?.done !== true && deadline > 0 && deadline < now),
+            link: String(item?.link || '')
+          };
+        });
       }
     },
     {
@@ -1811,10 +1967,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.status()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true}'
+        '**返回示例**：{"loggedIn":true,"loaded":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('mrjzy', 'status', {}, 60000);
+        return compactPlatformStatus(await pageInvoke('mrjzy', 'status', {}, 60000));
       }
     },
     {
@@ -1847,12 +2003,12 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.courseList()`',
         '',
-        '**返回示例**：{"loaded":true,"loginState":"online","courses":[{"groupId":"...","name":"群组名","teacherName":"老师","homeworkCount":2}]}'
+        '**返回示例**：[{"groupId":"...","name":"群组名","teacherName":"老师","homeworkCount":2}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('jlgj', 'courseList', {}, 120000);
-        if (String(value?.loginState || '') === 'offline') return { ok: false, code: 'LOGIN_REQUIRED', message: '接龙管家未登录，请先调用 jlgj.login 完成登录后再获取课程列表' };
-        return value;
+        if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('接龙管家未登录，请先调用 jlgj.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
+        return Array.isArray(value?.courses) ? value.courses : [];
       }
     },
     {
@@ -1869,12 +2025,24 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.assignments_of_({groupId: "xxx"})`',
         '',
-        '**返回示例**：{"groupId":"xxx","name":"群组名","teacherName":"老师","homework":[{"threadId":"...","title":"作业名","done":false,"link":"https://..."}]}'
+        '**返回示例**：[{"id":"...","title":"作业名","content":"作业说明","deadline":1767225600000,"status":"pending","link":"https://..."}]'
       ].join('\n'),
       async run(args) {
         const groupId = String(args?.groupId || '').trim();
         if (!groupId) throw new Error('缺少参数 groupId，请先调用 jlgj.courseList 获取群组ID');
-        return pageInvoke('jlgj', 'homework_of_', { groupId }, 120000);
+        const value = throwOperationFailure(await pageInvoke('jlgj', 'homework_of_', { groupId }, 120000), '接龙管家作业获取失败');
+        const now = Date.now();
+        return (Array.isArray(value?.homework) ? value.homework : []).map((item) => {
+          const deadline = parseDeadline(item?.end ?? item?.deadline);
+          return {
+            id: String(item?.threadId ?? item?.id ?? ''),
+            title: String(item?.title || ''),
+            content: String(item?.content || ''),
+            deadline,
+            status: computeAssignmentStatus(item?.done === true, item?.done !== true && deadline > 0 && deadline < now),
+            link: String(item?.link || '')
+          };
+        });
       }
     },
     {
@@ -1940,10 +2108,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.status()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true}'
+        '**返回示例**：{"loggedIn":true,"loaded":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('jlgj', 'status', {}, 60000);
+        return compactPlatformStatus(await pageInvoke('jlgj', 'status', {}, 60000));
       }
     },
     {
@@ -1994,12 +2162,12 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.courseList()`',
         '',
-        '**返回示例**：{"loaded":true,"loginState":"online","courses":[{"classroomId":"...","name":"课程名","teachers":["老师"],"taskCount":5}]}'
+        '**返回示例**：[{"classroomId":"...","name":"课程名","sign":"...","teachers":["老师"],"status":1,"totalSchedule":10,"score":90,"taskCount":5}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('xuetangx', 'courseList', {}, 120000);
-        if (String(value?.loginState || '') === 'offline') return { ok: false, code: 'LOGIN_REQUIRED', message: '学堂在线未登录，请先调用 xuetangx.login 完成登录后再获取课程列表' };
-        return value;
+        if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('学堂在线未登录，请先调用 xuetangx.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
+        return Array.isArray(value?.courses) ? value.courses : [];
       }
     },
     {
@@ -2016,12 +2184,25 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：{"classroomId":"xxx","name":"课程名","homework":[{"id":"...","title":"任务名","typeLabel":"视频","done":false,"deadline":1234567890000}]}'
+        '**返回示例**：[{"id":"...","title":"任务名","type":"视频","startTime":1760000000000,"deadline":1767225600000,"progress":0.5,"status":"pending","userScore":0,"totalScore":100,"locked":false,"action":"https://..."}]'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
         if (!classroomId) throw new Error('缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID');
-        return pageInvoke('xuetangx', 'homework_of_', { classroomId }, 120000);
+        const value = throwOperationFailure(await pageInvoke('xuetangx', 'homework_of_', { classroomId }, 120000), '学堂在线任务获取失败');
+        return (Array.isArray(value?.homework) ? value.homework : []).map((item) => ({
+          id: String(item?.id ?? ''),
+          title: String(item?.title || ''),
+          type: String(item?.typeLabel || ''),
+          startTime: parseDeadline(item?.startTime),
+          deadline: parseDeadline(item?.deadline),
+          progress: Number(item?.schedule ?? item?.progress ?? 0) || 0,
+          status: computeAssignmentStatus(item?.done === true, item?.overdue === true),
+          userScore: Number(item?.userScore || 0),
+          totalScore: Number(item?.totalScore || 0),
+          locked: item?.locked === true,
+          action: String(item?.action || item?.link || '')
+        }));
       }
     },
     {
@@ -2089,10 +2270,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.status()`',
         '',
-        '**返回示例**：{"loginState":"online","loggedIn":true}'
+        '**返回示例**：{"loggedIn":true,"loaded":true}'
       ].join('\n'),
       async run() {
-        return pageInvoke('xuetangx', 'status', {}, 60000);
+        return compactPlatformStatus(await pageInvoke('xuetangx', 'status', {}, 60000));
       }
     },
     {
