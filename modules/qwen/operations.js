@@ -2037,31 +2037,45 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'qwen',
-      name: 'qwen.setThemeMode',
-      label: '设置外观颜色模式',
-      summary: '查询或切换扩展外观颜色模式（light/dark/system）',
+      module: 'theme',
+      name: 'theme.get',
+      label: '获取外观颜色模式',
+      summary: '获取扩展当前外观颜色模式（light/dark/system）',
       doc: [
-        '## qwen.setThemeMode —— 设置外观颜色模式',
+        '## theme.get —— 获取外观颜色模式',
         '',
-        '查询或切换扩展的外观颜色模式，所有扩展页面会立即应用。省略 mode 时仅返回当前模式。',
+        '获取扩展当前的外观颜色模式。未设置时为 system（跟随系统）。',
         '',
-        '**参数**：{"mode":"可选，light（亮色）/ dark（暗色）/ system（跟随系统）；省略时返回当前模式"}',
+        '**调用示例**：`theme.get()`',
         '',
-        '**调用示例**：`qwen.setThemeMode()`；`qwen.setThemeMode({mode: "dark"})`；`qwen.setThemeMode({mode: "system"})`',
+        '**返回示例**：{"ok":true,"mode":"system"}'
+      ].join('\n'),
+      async run() {
+        const stored = await chrome.storage.local.get(['themeMode']).catch(() => ({}));
+        const mode = ['light', 'dark'].includes(String(stored?.themeMode))
+          ? String(stored.themeMode)
+          : 'system';
+        return { ok: true, mode };
+      }
+    },
+    {
+      module: 'theme',
+      name: 'theme.set',
+      label: '设置外观颜色模式',
+      summary: '设置扩展外观颜色模式，所有扩展页面立即应用',
+      doc: [
+        '## theme.set —— 设置外观颜色模式',
+        '',
+        '设置扩展的外观颜色模式，所有扩展页面会立即应用。',
+        '',
+        '**参数**：{"mode":"必填，light（亮色）/ dark（暗色）/ system（跟随系统）"}',
+        '',
+        '**调用示例**：`theme.set({mode: "dark"})`；`theme.set({mode: "system"})`',
         '',
         '**返回示例**：{"ok":true,"mode":"dark"}'
       ].join('\n'),
       async run(args) {
-        const raw = args?.mode;
-        if (raw === undefined || String(raw).trim() === '') {
-          const stored = await chrome.storage.local.get(['themeMode']).catch(() => ({}));
-          const current = ['light', 'dark'].includes(String(stored?.themeMode))
-            ? String(stored.themeMode)
-            : 'system';
-          return { ok: true, mode: current, unchanged: true };
-        }
-        const key = String(raw).trim();
+        const key = String(args?.mode ?? '').trim();
         const aliases = {
           light: 'light', 亮色: 'light', 浅色: 'light',
           dark: 'dark', 暗色: 'dark', 深色: 'dark',
@@ -2156,6 +2170,7 @@ name: 've.teachers_of_',
     { id: 'xuetangx', label: '学堂在线', operations: OPERATIONS.filter((op) => op.module === 'xuetangx') },
     { id: 'campusnet', label: '校园网重连', operations: OPERATIONS.filter((op) => op.module === 'campusnet') },
     { id: 'captcha', label: '本地验证码识别', operations: OPERATIONS.filter((op) => op.module === 'captcha') },
+    { id: 'theme', label: '外观颜色模式', operations: OPERATIONS.filter((op) => op.module === 'theme') },
     { id: 'qwen', label: '通义千问元操作', operations: OPERATIONS.filter((op) => op.module === 'qwen') }
   ];
 
