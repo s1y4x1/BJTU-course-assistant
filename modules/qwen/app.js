@@ -274,13 +274,29 @@
     return button;
   }
 
+  // 独立页面（chat.html）没有 app 页的全局 formatSize/applyEmphasisStyle，本地回退。
+  function formatQwenBytes(bytes) {
+    const value = Math.max(0, Number(bytes) || 0);
+    if (!value) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.min(sizes.length - 1, Math.floor(Math.log(value) / Math.log(k)));
+    return `${parseFloat((value / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  }
+
   function createOperationResultSize(text) {
     const bytes = new TextEncoder().encode(String(text || '')).byteLength;
     const size = document.createElement('span');
     size.className = 'qwen-chat-op-size file-size-emphasis';
     size.dataset.fileSizeBytes = String(bytes);
-    size.textContent = global.formatSize(bytes);
-    global.applyEmphasisStyle(size, global.buildFileSizeEmphasisStyle(bytes));
+    size.textContent = typeof global.formatSize === 'function'
+      ? global.formatSize(bytes)
+      : formatQwenBytes(bytes);
+    if (typeof global.applyEmphasisStyle === 'function') {
+      global.applyEmphasisStyle(size, global.buildFileSizeEmphasisStyle(bytes));
+    } else if (typeof global.buildFileSizeEmphasisStyle === 'function') {
+      size.style.cssText = global.buildFileSizeEmphasisStyle(bytes);
+    }
     return size;
   }
 
@@ -2110,14 +2126,21 @@
 
     if (fab instanceof HTMLButtonElement) {
       fab.addEventListener('click', () => {
-        // 面板已改为独立页面（可从浏览器边栏或新标签页打开）。
-        const chatUrl = global.chrome?.runtime?.getURL?.('modules/qwen/chat.html');
-        if (!chatUrl) return;
-        if (global.chrome?.tabs?.create) {
-          void global.chrome.tabs.create({ url: chatUrl });
-          return;
+        // app 页面上仍以内嵌窗口形式打开；独立页面请从边栏或选项页进入。
+        if (panel instanceof HTMLElement) {
+          panel.hidden = !panel.hidden;
+          if (!panel.hidden) {
+            fab.style.display = 'none';
+            void activateQwenPanel();
+            if (historyNeedsInitialScroll) {
+              scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
+              historyNeedsInitialScroll = false;
+            }
+            if (input instanceof HTMLTextAreaElement) input.focus();
+          } else {
+            fab.style.display = '';
+          }
         }
-        global.open(chatUrl, '_blank');
       });
     }
     const modelSelect = el(MODEL_ID);
