@@ -1575,73 +1575,140 @@
     return context;
   }
 
-  async function loadSchedule() {
-    element('academicScheduleLoading').style.display = 'flex';
-    element('academicScheduleEmpty').style.display = 'none';
-    element('academicScheduleTableWrap').style.display = 'none';
-    element('academicScheduleStatus').style.display = 'none';
-    element('academicScheduleStatus').textContent = '';
-    const type = element('academicScheduleType')?.value === 'selection' ? 'selection' : 'semester';
+  // ===== 课表 / 成绩 缓存 =====
+  // 打开选项页时一次性加载本学期与选课课表、本学期与全部成绩并缓存；
+  // 之后切换类型/周次/学期仅从缓存渲染，不再重新请求。
+  const scheduleCache = { semester: null, selection: null };
+  let scoresCache = null;
+
+  function invalidateAcademicCaches() {
+    scheduleCache.semester = null;
+    scheduleCache.selection = null;
+    scoresCache = null;
+  }
+
+  async function fetchScheduleByType(type) {
     const result = await sendAcademicLoadWithRetry(
       'ACADEMIC_LOAD_SCHEDULE',
       { scheduleType: type },
       '课表服务'
     );
     if (!result?.ok) {
-      element('academicScheduleLoading').style.display = 'none';
-      element('academicScheduleEmpty').style.display = 'block';
-      element('academicScheduleStatus').style.display = 'block';
-      element('academicScheduleStatus').textContent = result?.code === 'not-logged-in'
-        ? '教务系统未登录'
-        : `课表读取失败：${result?.message || '未知错误'}`;
-      return result;
+      throw Object.assign(new Error(result?.message || '课表读取失败'), { code: String(result?.code || '') });
     }
+    return result;
+  }
+
+  async function ensureScheduleData(type, { force = false } = {}) {
+    if (!force && scheduleCache[type]) return scheduleCache[type];
+    const result = await fetchScheduleByType(type);
+    scheduleCache[type] = result;
+    return result;
+  }
+
+  function applyScheduleView(result) {
     scheduleData = result;
     if (result.weekSource === 'bksy') {
       element('academicScheduleStatus').style.display = 'block';
       element('academicScheduleStatus').textContent = '智慧课程平台周次接口未登录，当前周数使用本科生院教学服务平台';
     }
-    const stored = await chrome.storage.local.get(['academicScheduleWeek']);
-    renderScheduleWeekOptions(result, element('academicScheduleWeek')?.value || stored.academicScheduleWeek || 'all');
+    renderScheduleWeekOptions(result, element('academicScheduleWeek')?.value || 'all');
     renderSchedule();
-    return result;
   }
 
-  async function loadScores() {
+  async function loadSchedule({ force = false } = {}) {
+    element('academicScheduleLoading').style.display = 'flex';
+    element('academicScheduleEmpty').style.display = 'none';
+    element('academicScheduleTableWrap').style.display = 'none';
+    element('academicScheduleStatus').style.display = 'none';
+    element('academicScheduleStatus').textContent = '';
+    const type = element('academicScheduleType')?.value === 'selection' ? 'selection' : 'semester';
+    try {
+      const result = await ensureScheduleData(type, { force });
+      applyScheduleView(result, type);
+      return result;
+    } catch (error) {
+      element('academicScheduleLoading').style.display = 'none';
+      element('academicScheduleEmpty').style.display = 'block';
+      element('academicScheduleStatus').style.display = 'block';
+      element('academicScheduleStatus').textContent = error?.code === 'not-logged-in'
+        ? '教务系统未登录'
+        : `课表读取失败：${error?.message || '未知错误'}`;
+      return { ok: false, code: error?.code || '', message: error?.message };
+    }
+  }
+
+  async function ensureScoreSemesterOptions() {
+    if (scoreSemestersLoaded) return scoreSemesterOptions;
+    const preferred = String(scoreSemesterPreference || '');
+    const semesterResult = await sendAcademicLoadWithRetry('ACADEMIC_SCORE_SEMESTERS', undefined, '成绩学期服务');
+    if (!semesterResult?.ok) {
+      throw Object.assign(new Error(semesterResult?.message || '成绩学期列表读取失败'), { code: String(semesterResult?.code || '') });
+    }
+    scoreSemesterOptions = Array.isArray(semesterResult.semesters) ? semesterResult.semesters : [];
+    scoreCurrentZxjxjhh = String(semesterResult.currentZxjxjhh || '').trim();
+    scoreSemestersLoaded = true;
+    renderScoreSemesterOptions(scoreSemesterOptions, scoreCurrentZxjxjhh, preferred);
+    return scoreSemesterOptions;
+  }
+
+  async function ensureAllScores() {
+    if (scoresCache) return scoresCache;
+    const semesters = await ensureScoreSemesterOptions();
+    const allZxjxjhh = semesters.map((item) => String(item?.zxjxjhh || '').trim()).filter(Boolean);
+    const [currentRes, historyRes] = await Promise.all([
+      sendAcademicLoadWithRetry('ACADEMIC_LOAD_SCORES', undefined, '成绩服务'),
+      allZxjxjhh.length
+        ? sendAcademicLoadWithRetry('ACADEMIC_LOAD_SCORES', { semesters: allZxjxjhh }, '成绩服务')
+        : Promise.resolve(null)
+    ]);
+    if (!currentRes?.ok) {
+      throw Object.assign(new Error(currentRes?.message || '成绩读取失败'), { code: String(currentRes?.code || '') });
+    }
+    // 合并本学期与全部历史成绩，按 key 去重（本学期优先）。
+    const seen = new Map();
+    for (const row of [...(currentRes.rows || []), ...(historyRes?.rows || [])]) {
+      const key = String(row?.key || `${row?.academicYear}|${row?.course}` || '');
+      if (!key || seen.has(key)) continue;
+      seen.set(key, row);
+    }
+    scoresCache = {
+      rows: [...seen.values()],
+      checkedAt: Math.max(Number(currentRes.checkedAt || 0), Number(historyRes?.checkedAt || 0)) || Date.now()
+    };
+    return scoresCache;
+  }
+
+  function filterCachedScoreRows(selected) {
+    const rows = scoresCache?.rows || [];
+    const value = String(selected || '');
+    if (!value || value === '__all__') return rows;
+    const semester = (scoreSemesterOptions || []).find((item) => item.zxjxjhh === value);
+    if (!semester) return rows;
+    const label = String(semester.label || '').trim();
+    return rows.filter((row) => String(row?.academicYear || '').trim() === label);
+  }
+
+  async function loadScores({ force = false } = {}) {
     element('academicScoreLoading').style.display = 'flex';
     element('academicScoreTableWrap').style.display = 'none';
     element('academicSystemStatus').style.display = 'none';
-    const select = element('academicScoreSemester');
-    if (!scoreSemestersLoaded) {
-      const preferred = String(scoreSemesterPreference || '');
-      const semesterResult = await sendAcademicLoadWithRetry('ACADEMIC_SCORE_SEMESTERS', undefined, '成绩学期服务');
-      if (semesterResult?.ok) {
-        renderScoreSemesterOptions(semesterResult.semesters, semesterResult.currentZxjxjhh, preferred);
-        scoreSemestersLoaded = true;
-      }
-    }
-    const selected = String(select?.value || '');
-    const isCurrent = !scoreSemestersLoaded || selected === scoreCurrentZxjxjhh;
-    const semesters = selected === '__all__'
-      ? scoreSemesterOptions.map((item) => String(item?.zxjxjhh || '').trim()).filter(Boolean)
-      : [selected].filter(Boolean);
-    const result = await sendAcademicLoadWithRetry(
-      'ACADEMIC_LOAD_SCORES',
-      isCurrent ? undefined : { semesters },
-      '成绩服务'
-    );
-    if (!result?.ok) {
+    try {
+      if (force && scoresCache) scoresCache = null;
+      await ensureAllScores();
+      const selected = String(element('academicScoreSemester')?.value || '__all__');
+      renderScores(filterCachedScoreRows(selected));
+      renderCheckedAt(element('academicScoreCheckedAt'), scoresCache.checkedAt);
+      await refreshContext();
+      return { ok: true, rows: filterCachedScoreRows(selected), checkedAt: scoresCache.checkedAt };
+    } catch (error) {
       element('academicScoreLoading').style.display = 'none';
       element('academicSystemStatus').style.display = 'block';
-      element('academicSystemStatus').textContent = result?.code === 'not-logged-in'
+      element('academicSystemStatus').textContent = error?.code === 'not-logged-in'
         ? '教务系统未登录，请输入账号密码或通过 MIS 登录'
-        : `成绩读取失败：${result?.message || '未知错误'}`;
-      return result;
+        : `成绩读取失败：${error?.message || '未知错误'}`;
+      return { ok: false, code: error?.code || '', message: error?.message };
     }
-    renderScores(result.rows);
-    renderCheckedAt(element('academicScoreCheckedAt'), result.checkedAt);
-    await refreshContext();
-    return result;
   }
 
   async function loadExams() {
@@ -1665,7 +1732,13 @@
   }
 
   function loadAll() {
-    return Promise.allSettled([loadSchedule(), loadExams(), loadScores()]);
+    return Promise.allSettled([
+      loadSchedule(),
+      // 预取另一类型的课表，切换类型时无需重新加载
+      ensureScheduleData(element('academicScheduleType')?.value === 'selection' ? 'semester' : 'selection').catch(() => {}),
+      loadExams(),
+      loadScores()
+    ]);
   }
 
   function bindEvents() {
@@ -1705,6 +1778,7 @@
         const result = await send('ACADEMIC_LOGIN_WITH_PASSWORD', { studentId, password });
         if (!result?.ok) throw new Error(result?.message || '登录失败');
         element('academicPassword').value = '';
+        invalidateAcademicCaches();
         await refreshContext();
         await loadAll();
         setMessage(`教务系统账号 ${studentId} 登录成功`);
@@ -1737,6 +1811,7 @@
           await refreshContext();
           return;
         }
+        invalidateAcademicCaches();
         await refreshContext();
         setMessage(`已切换至教务系统账号 ${studentId}`);
         void loadAll();
@@ -1810,6 +1885,15 @@
       if (message?.type === 'ACADEMIC_DATA_UPDATED') {
         const payload = message.payload || {};
         if (payload.kind === 'score' || payload.kind === 'scores') {
+          // 合并进缓存，避免下次切换学期时使用过期数据
+          if (scoresCache && Array.isArray(payload.rows)) {
+            const map = new Map(scoresCache.rows.map((row) => [String(row?.key || ''), row]));
+            for (const row of payload.rows) {
+              const key = String(row?.key || `${row?.academicYear}|${row?.course}` || '');
+              if (key) map.set(key, row);
+            }
+            scoresCache.rows = [...map.values()];
+          }
           if (element('academicScoreSemester')?.value === scoreCurrentZxjxjhh) {
             renderScores(payload.rows);
             renderCheckedAt(element('academicScoreCheckedAt'), payload.checkedAt);
@@ -1822,12 +1906,16 @@
         const status = message.payload || {};
         if (status.status === 'mis-login-done') {
           element('bindAcademicSystemBtn').disabled = false;
+          invalidateAcademicCaches();
           refreshContext().then(loadAll);
           setMessage(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`);
         } else if (status.status === 'mis-login-cancelled') {
           element('bindAcademicSystemBtn').disabled = false;
           setMessage('已取消通过 MIS 登录教务系统', false);
         } else {
+          if (status.status === 'login-done' || status.status === 'credentials-saved') {
+            invalidateAcademicCaches();
+          }
           refreshContext();
         }
       }
