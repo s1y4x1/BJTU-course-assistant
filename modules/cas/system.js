@@ -311,6 +311,7 @@
   function needsManualCaptcha(error) {
     const code = String(error?.code || '').toLowerCase();
     return code === 'captcha-module-missing'
+      || code === 'mis-captcha-disabled'
       || code.includes('captcha-resources-missing')
       || code.includes('captcha-module-missing');
   }
