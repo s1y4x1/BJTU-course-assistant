@@ -441,7 +441,7 @@
   }
 
   function hideHistoryExecuteButton() {
-    el(MESSAGES_ID)?.querySelector('.qwen-chat-execute-btn')?.remove();
+    el(MESSAGES_ID)?.querySelectorAll('.qwen-chat-execute-btn').forEach((btn) => btn.remove());
   }
 
   // 历史最后一条为操作调用消息时，提供一键重新执行的按钮。
@@ -473,6 +473,34 @@
     maybeAutoScrollMessages(messages);
   }
 
+  // 历史最后一条为函数调用操作时，追加「执行」按钮（重新发送上一条用户消息以触发同样的操作）。
+  function appendHistoryFunctionCallButton() {
+    const messages = el(MESSAGES_ID);
+    if (!(messages instanceof HTMLElement)) return;
+    hideHistoryExecuteButton();
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn qwen-chat-execute-btn';
+    button.textContent = '执行';
+    button.addEventListener('click', async () => {
+      hideHistoryExecuteButton();
+      // 查找最后一条用户消息并重新发送
+      const userMessages = Array.from(messages.querySelectorAll('.qwen-chat-msg-user'));
+      const lastUserMsg = userMessages.length ? userMessages[userMessages.length - 1] : null;
+      const text = lastUserMsg?.querySelector('.qwen-chat-msg-text')?.textContent?.trim() || '';
+      if (!text) return;
+      const input = el('qwen-chat-input');
+      if (input instanceof HTMLTextAreaElement) {
+        input.value = text;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const form = el('qwen-chat-input-form');
+      if (form instanceof HTMLFormElement) form.requestSubmit();
+    });
+    messages.appendChild(button);
+    maybeAutoScrollMessages(messages);
+  }
+
   function renderHistory(messages) {
     const messagesEl = el(MESSAGES_ID);
     if (!(messagesEl instanceof HTMLElement)) return;
@@ -481,6 +509,7 @@
     let lastAssistantResponseId = '';
     let suggestionCandidate = null;
     let lastResBlocks = null;
+    let lastHasFunctionCalls = false;
     for (const message of list) {
       const role = String(message?.role || '');
       if (role === 'user') {
@@ -489,6 +518,7 @@
         if (content.includes('你是「BJTU 课程助手」的智能代理')) continue;
         const blocks = resBlocksFromText(content);
         lastResBlocks = blocks.length ? blocks : null;
+        lastHasFunctionCalls = false;
         if (blocks.length) {
           for (const block of blocks) appendResCard(block);
         } else {
@@ -498,14 +528,22 @@
         suggestionCandidate = renderAssistantHistoryMessage(message);
         const blocks = resBlocksFromText(String(message?.content || ''));
         lastResBlocks = blocks.length ? blocks : null;
+        const contentList = Array.isArray(message?.content_list) ? message.content_list : [];
+        lastHasFunctionCalls = contentList.some((item) => {
+          const fc = item?.function_call;
+          return String(item?.role || '') === 'function' || (fc && typeof fc === 'object');
+        });
         lastAssistantResponseId = String(message?.response_id || message?.id || lastAssistantResponseId);
       }
     }
     if (suggestionCandidate) {
       renderSuggestedReplies(suggestionCandidate.bubble, suggestionCandidate.suggestions);
     }
-    // 最后一条消息是操作调用时，在下方追加「执行」按钮。
-    if (lastResBlocks) appendHistoryExecuteButton(lastResBlocks);
+    if (lastResBlocks) {
+      appendHistoryExecuteButton(lastResBlocks);
+    } else if (lastHasFunctionCalls) {
+      appendHistoryFunctionCallButton();
+    }
     sessionParentId = lastAssistantResponseId;
     scrollMessagesToBottom(messagesEl, { force: true });
   }

@@ -759,25 +759,38 @@ html[data-color-scheme="dark"] .qwen-chat-input {
   color: #e2e8f0;
 }
 
-.qwen-chat-send {
+.qwen-chat-panel .qwen-chat-send {
   flex: 0 0 auto;
   height: 30px;
   padding: 0 12px;
   font-size: 13px;
   align-self: flex-end;
+  background-color: #4caf50;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
-.qwen-chat-stop {
+.qwen-chat-panel .qwen-chat-send:hover {
+  background-color: #45a049;
+}
+
+.qwen-chat-panel .qwen-chat-stop {
   flex: 0 0 auto;
   height: 30px;
   padding: 0 12px;
   font-size: 13px;
   align-self: flex-end;
-  background: #dc2626;
+  background-color: #dc2626;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
-.qwen-chat-stop:hover {
-  background: #b91c1c;
+.qwen-chat-panel .qwen-chat-stop:hover {
+  background-color: #b91c1c;
 }
 
 .qwen-chat-thinking {
@@ -1056,15 +1069,24 @@ html[data-color-scheme="dark"] .qwen-chat-ask-count {
   color: #e2e8f0;
 }
 
-.qwen-chat-ask-btn {
+.qwen-chat-panel .qwen-chat-ask-btn {
   font-size: 12px;
   padding: 4px 10px;
+  background-color: #4caf50;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
-.qwen-chat-ask-stop {
-  background: #dc2626;
+.qwen-chat-panel .qwen-chat-ask-btn:hover {
+  background-color: #45a049;
 }
 
-.qwen-chat-ask-stop:hover {
-  background: #b91c1c;
+.qwen-chat-panel .qwen-chat-ask-stop {
+  background-color: #dc2626;
+}
+
+.qwen-chat-panel .qwen-chat-ask-stop:hover {
+  background-color: #b91c1c;
 }
