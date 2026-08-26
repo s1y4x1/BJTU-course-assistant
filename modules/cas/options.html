@@ -32,7 +32,19 @@
   <div class="cas-login-actions">
     <button id="casLoginBtn" type="button">登录统一身份认证中心</button>
   </div>
-  <div class="tip">登录时会先读取 CAS 登录页以更新 CSRF Token，再自动识别验证码提交账号密码；账号密码会在登录成功后按账号保存在扩展本地存储中。在 CAS 页面自行登录时，扩展同样会捕获并保存账密。</div>
+  <div class="tip">登录时会先读取 CAS 登录页以更新 CSRF Token，再自动识别验证码提交账号密码；未安装验证码识别模块或资源时会显示验证码供手工输入。账号密码会在登录成功后按账号保存在扩展本地存储中。在 CAS 页面自行登录时，扩展同样会捕获并保存账密。</div>
+  <div id="casCaptchaModal" class="cas-captcha-modal" hidden>
+    <div class="cas-captcha-dialog" role="dialog" aria-modal="true" aria-labelledby="casCaptchaTitle">
+      <div id="casCaptchaTitle" class="cas-captcha-title">输入 CAS 验证码</div>
+      <div id="casCaptchaMessage" class="cas-captcha-message">请输入图片中的验证码</div>
+      <img id="casCaptchaImage" class="cas-captcha-image" alt="CAS 登录验证码">
+      <input id="casCaptchaAnswer" type="text" inputmode="text" autocomplete="off" aria-label="CAS 验证码">
+      <div class="cas-captcha-actions">
+        <button id="casCaptchaCancel" type="button" class="cas-captcha-cancel">取消</button>
+        <button id="casCaptchaSubmit" type="button">继续登录</button>
+      </div>
+    </div>
+  </div>
 </section>
 <div id="msg"></div>
 <script src="options.js"></script>

@@ -1356,14 +1356,17 @@ name: 've.teachers_of_',
       doc: [
         '## mail.status —— 邮件监控状态',
         '',
-        '获取 BJTU 邮件系统监控的启用状态、检查间隔、加载条数设置与最近一次检查结果（含收件箱总数与未读数）。casLoginName 为当前关联的 CAS 账号。',
+        '获取 BJTU 邮件系统监控的启用状态、检查间隔与最近一次检查结果（含收件箱总数与未读数）。',
         '',
         '**调用示例**：`mail.status()`',
         '',
-        '**返回示例**：{"enabled":true,"intervalMinutes":10,"listLimit":10,"status":{"status":"ok","total":363,"unreadCount":7,"checkedAt":1723456789012},"casLoginName":"24281271"}'
+        '**返回示例**：{"enabled":true,"intervalMinutes":10,"status":{"status":"ok","total":363,"unreadCount":7,"checkedAt":1723456789012}}'
       ].join('\n'),
       async run() {
-        return mailInvoke('status');
+        const result = await mailInvoke('status');
+        if (!result || typeof result !== 'object') return result;
+        const { listLimit: _listLimit, casLoginName: _casLoginName, ...status } = result;
+        return status;
       }
     },
     {
@@ -1376,17 +1379,19 @@ name: 've.teachers_of_',
         '',
         '立即触发一次邮件检测（忽略监控开关），返回最近邮件列表、收件箱总数与未读数。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱；若没有已保存的 CAS 账号密码则报错。',
         '',
-        '**参数**：{"limit":"可选，加载条数；0 原样传递给接口；留空/省略时使用选项页「加载条数」设置（该设置为空则返回全部邮件）"}',
+        '**参数**：{"limit":"可选；省略时固定返回最近 10 条；传入 0、空字符串或 null 时返回全部邮件；正整数表示返回最近指定条数"}',
         '',
         '**调用示例**：`mail.inbox()`；`mail.inbox({limit: 20})`；`mail.inbox({limit: 0})`',
         '',
         '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true}],"total":363,"unreadCount":7,"count":10,"changes":0,"checkedAt":1723456789012}'
       ].join('\n'),
       async run(args) {
-        const payload = {};
-        if (args?.limit !== undefined && args?.limit !== null && String(args.limit).trim() !== '') {
-          payload.limit = args.limit;
-        }
+        const hasLimit = !!args && Object.prototype.hasOwnProperty.call(args, 'limit');
+        const requestedLimit = hasLimit ? args.limit : 10;
+        const returnAll = requestedLimit === null
+          || String(requestedLimit).trim() === ''
+          || Number(requestedLimit) === 0;
+        const payload = { limit: returnAll ? null : requestedLimit };
         const result = await mailInvoke('inbox', payload);
         if (result?.ok === false) {
           throw Object.assign(

@@ -12,6 +12,73 @@
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
 
+  function promptCaptcha(result) {
+    const modal = element('casCaptchaModal');
+    const image = element('casCaptchaImage');
+    const input = element('casCaptchaAnswer');
+    const message = element('casCaptchaMessage');
+    const submit = element('casCaptchaSubmit');
+    const cancel = element('casCaptchaCancel');
+    if (!(modal instanceof HTMLElement)
+        || !(image instanceof HTMLImageElement)
+        || !(input instanceof HTMLInputElement)
+        || !(submit instanceof HTMLButtonElement)
+        || !(cancel instanceof HTMLButtonElement)) {
+      return Promise.resolve(null);
+    }
+    image.src = String(result?.captchaImage || '');
+    input.value = '';
+    if (message instanceof HTMLElement) {
+      message.textContent = String(result?.message || '请输入图片中的验证码');
+    }
+    modal.hidden = false;
+    return new Promise((resolve) => {
+      const finish = (value) => {
+        submit.removeEventListener('click', onSubmit);
+        cancel.removeEventListener('click', onCancel);
+        input.removeEventListener('keydown', onKeydown);
+        modal.hidden = true;
+        resolve(value);
+      };
+      const onSubmit = () => {
+        const answer = input.value.trim();
+        if (!answer) {
+          input.focus();
+          return;
+        }
+        finish(answer);
+      };
+      const onCancel = () => finish(null);
+      const onKeydown = (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          onSubmit();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          onCancel();
+        }
+      };
+      submit.addEventListener('click', onSubmit);
+      cancel.addEventListener('click', onCancel);
+      input.addEventListener('keydown', onKeydown);
+      setTimeout(() => input.focus(), 0);
+    });
+  }
+
+  async function completeCaptchaChallenge(initialResult) {
+    let result = initialResult;
+    while (result?.code === 'CAPTCHA_INPUT_REQUIRED') {
+      const challengeId = String(result?.challengeId || '');
+      const answer = await promptCaptcha(result);
+      if (answer === null) {
+        await send('CAS_CANCEL_CAPTCHA', { challengeId });
+        throw new Error('已取消输入验证码');
+      }
+      result = await send('CAS_SUBMIT_CAPTCHA', { challengeId, captchaAnswer: answer });
+    }
+    return result;
+  }
+
   function renderAccounts(value) {
     const select = element('casAccountSelect');
     if (!(select instanceof HTMLSelectElement)) return;
@@ -55,7 +122,11 @@
       button.disabled = true;
       try {
         setMessage(`正在登录 CAS（${loginName}），正在识别验证码…`);
-        const result = await send('CAS_LOGIN_WITH_PASSWORD', { loginName, password });
+        const result = await completeCaptchaChallenge(await send('CAS_LOGIN_WITH_PASSWORD', {
+          loginName,
+          password,
+          allowManualCaptcha: true
+        }));
         if (!result?.ok) throw new Error(result?.message || '登录失败');
         element('casPassword').value = '';
         await refreshContext();
@@ -90,7 +161,10 @@
       element('casLoginName').value = loginName;
       setMessage(`正在切换至 CAS 账号 ${loginName}…`);
       try {
-        const result = await send('CAS_SWITCH_ACCOUNT', { loginName });
+        const result = await completeCaptchaChallenge(await send('CAS_SWITCH_ACCOUNT', {
+          loginName,
+          allowManualCaptcha: true
+        }));
         if (!result?.ok) {
           setMessage(`切换 CAS 账号失败：${result?.message || '未知错误'}`, false);
           await refreshContext();
@@ -136,12 +210,21 @@
   }
 
   async function autoLoginIfPossible() {
-    const result = await send('CAS_AUTO_LOGIN');
-    if (result?.ok && result.loginName) {
-      await refreshContext();
-      setMessage(`已使用保存的账号 ${result.loginName} 自动登录统一身份认证`);
-    } else if (result?.ok === false && result.code !== 'no-saved-account') {
-      setMessage(`统一身份认证自动登录失败：${result?.message || '未知错误'}`, false);
+    try {
+      const result = await completeCaptchaChallenge(await send('CAS_AUTO_LOGIN', {
+        allowManualCaptcha: true
+      }));
+      if (result?.ok) {
+        await refreshContext();
+        const loginName = String(result.loginName || context?.loginName || '');
+        setMessage(loginName
+          ? `已使用保存的账号 ${loginName} 自动登录统一身份认证`
+          : '已使用保存的账号自动登录统一身份认证');
+      } else if (result?.ok === false && result.code !== 'no-saved-account') {
+        setMessage(`统一身份认证自动登录失败：${result?.message || '未知错误'}`, false);
+      }
+    } catch (error) {
+      setMessage(`统一身份认证自动登录失败：${String(error?.message || error)}`, false);
     }
   }
 

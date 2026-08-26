@@ -416,6 +416,25 @@
     return blocks;
   }
 
+  function executionBlocksFromText(text) {
+    const blocks = [];
+    const regex = /```(sandbox|app|background)[ \t]*\r?\n([\s\S]*?)```/gi;
+    const source = String(text || '');
+    let match;
+    while ((match = regex.exec(source))) blocks.push(match[0]);
+    return blocks;
+  }
+
+  function assistantHistoryText(message) {
+    const content = String(message?.content || '');
+    if (executionBlocksFromText(content).length) return content;
+    const answer = (Array.isArray(message?.content_list) ? message.content_list : [])
+      .filter((item) => String(item?.phase || '') === 'answer')
+      .map((item) => String(item?.content || ''))
+      .join('');
+    return answer || content;
+  }
+
   function appendResCard(text) {
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return;
@@ -435,8 +454,8 @@
     maybeAutoScrollMessages(messages);
   }
 
-  function parseResBlock(block) {
-    const match = /^```res: (sandbox|app|background)\n([\s\S]*?)```$/.exec(String(block || '').trim());
+  function parseExecutionBlock(block) {
+    const match = /^```(sandbox|app|background)[ \t]*\r?\n([\s\S]*?)```$/i.exec(String(block || '').trim());
     return match ? { mode: match[1], code: String(match[2] || '').trim() } : null;
   }
 
@@ -444,7 +463,7 @@
     el(MESSAGES_ID)?.querySelectorAll('.qwen-chat-execute-btn').forEach((btn) => btn.remove());
   }
 
-  // 历史最后一条为操作调用消息时，提供一键重新执行的按钮。
+  // 历史最后一条为操作调用消息时，执行该代码并把结果作为下一条请求发回千问。
   function appendHistoryExecuteButton(blocks) {
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement) || !Array.isArray(blocks) || !blocks.length) return;
@@ -454,20 +473,31 @@
     button.className = 'btn qwen-chat-execute-btn';
     button.textContent = '执行';
     button.addEventListener('click', async () => {
+      if (busy) return;
       hideHistoryExecuteButton();
-      for (const block of blocks) {
-        const parsed = parseResBlock(block);
-        if (!parsed?.code) continue;
-        try {
-          const value = await executeJsInSandbox(parsed.code, parsed.mode);
-          const resultText = typeof value === 'string'
-            ? value
-            : JSON.stringify(value ?? null, null, 2);
-          appendResCard(`\`\`\`res: ${parsed.mode}\n${resultText}\n\`\`\``);
-        } catch (error) {
-          appendMessage('error', `${parsed.mode} 执行失败：${String(error?.message || error)}`);
-        }
+      const parsed = parseExecutionBlock(blocks[0]);
+      if (!parsed?.code) return;
+      setBusy(true);
+      setStatus('操作中…');
+      const card = appendOperationCard({ name: `code.${parsed.mode}`, mode: parsed.mode });
+      let outcome;
+      try {
+        const value = await executeJsInSandbox(parsed.code, parsed.mode);
+        outcome = { ok: true, name: `code.${parsed.mode}`, result: value };
+      } catch (error) {
+        outcome = {
+          ok: false,
+          name: `code.${parsed.mode}`,
+          code: String(error?.code || 'CODE_EXECUTION_FAILED'),
+          error: String(error?.message || error)
+        };
       }
+      updateOperationResult(card, outcome);
+      const resultText = formatOutcomeText(outcome);
+      startStream({
+        text: `\`\`\`res: ${parsed.mode}\n${resultText}\n\`\`\``,
+        showUserBubble: false
+      });
     });
     messages.appendChild(button);
     maybeAutoScrollMessages(messages);
@@ -508,7 +538,7 @@
     const list = Array.isArray(messages) ? messages : [];
     let lastAssistantResponseId = '';
     let suggestionCandidate = null;
-    let lastResBlocks = null;
+    let lastExecutionBlocks = null;
     let lastHasFunctionCalls = false;
     for (const message of list) {
       const role = String(message?.role || '');
@@ -517,7 +547,7 @@
         const content = String(message?.content || '');
         if (content.includes('你是「BJTU 课程助手」的智能代理')) continue;
         const blocks = resBlocksFromText(content);
-        lastResBlocks = blocks.length ? blocks : null;
+        lastExecutionBlocks = null;
         lastHasFunctionCalls = false;
         if (blocks.length) {
           for (const block of blocks) appendResCard(block);
@@ -526,8 +556,8 @@
         }
       } else if (role === 'assistant') {
         suggestionCandidate = renderAssistantHistoryMessage(message);
-        const blocks = resBlocksFromText(String(message?.content || ''));
-        lastResBlocks = blocks.length ? blocks : null;
+        const blocks = executionBlocksFromText(assistantHistoryText(message));
+        lastExecutionBlocks = blocks.length ? blocks : null;
         const contentList = Array.isArray(message?.content_list) ? message.content_list : [];
         lastHasFunctionCalls = contentList.some((item) => {
           const fc = item?.function_call;
@@ -539,8 +569,8 @@
     if (suggestionCandidate) {
       renderSuggestedReplies(suggestionCandidate.bubble, suggestionCandidate.suggestions);
     }
-    if (lastResBlocks) {
-      appendHistoryExecuteButton(lastResBlocks);
+    if (lastExecutionBlocks) {
+      appendHistoryExecuteButton(lastExecutionBlocks);
     } else if (lastHasFunctionCalls) {
       appendHistoryFunctionCallButton();
     }

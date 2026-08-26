@@ -8,8 +8,11 @@
   const LOGIN_NAME_KEY = 'casLoginName';
   const SWITCH_MIS_LOGOUT_KEY = 'casSwitchMisLogoutEnabled';
   const STATUS_TYPE = 'CAS_SYSTEM_STATUS';
+  const MANUAL_CAPTCHA_TTL_MS = 5 * 60 * 1000;
+  const MANUAL_CAPTCHA_SESSION_PREFIX = 'casManualCaptcha:';
 
   const pendingCredentialsByTab = new Map();
+  const pendingManualCaptchas = new Map();
   let accountWritePromise = Promise.resolve();
 
   function wait(ms) {
@@ -200,11 +203,28 @@
         if (!captchaInput?.value || !captchaImage?.getAttribute('src')) {
           return { ok: false, message: 'CAS 登录页中未找到验证码' };
         }
+        let captchaImageDataUrl = '';
+        const captchaImageUrl = new URL(captchaImage.getAttribute('src'), response.url || location.href).href;
+        try {
+          const imageResponse = await fetch(captchaImageUrl, { credentials: 'include', cache: 'no-store' });
+          if (imageResponse.ok) {
+            const blob = await imageResponse.blob();
+            captchaImageDataUrl = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ''));
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(blob);
+            });
+          }
+        } catch {
+          // 仍返回原始图片地址，由选项页尝试直接显示。
+        }
         return {
           ok: true,
           csrf,
           captchaKey: String(captchaInput.value),
-          captchaImageUrl: new URL(captchaImage.getAttribute('src'), response.url || location.href).href
+          captchaImageUrl,
+          captchaImageDataUrl
         };
       },
       args: [LOGIN_URL]
@@ -214,7 +234,7 @@
 
   async function recognizeCasCaptcha(imageUrl) {
     if (!global.BjtuCaptchaRecognizer?.recognizeMisCaptcha) {
-      throw new Error('本地验证码识别模块尚未就绪');
+      throw Object.assign(new Error('本地验证码识别模块尚未就绪'), { code: 'captcha-module-missing' });
     }
     try {
       const response = await fetch(String(imageUrl || ''), { cache: 'no-store' });
@@ -225,7 +245,10 @@
       if (!Number.isFinite(answer)) throw new Error('识别结果为空');
       return answer;
     } catch (error) {
-      throw new Error(`CAS 验证码识别失败：${String(error?.message || error)}`);
+      throw Object.assign(
+        new Error(`CAS 验证码识别失败：${String(error?.message || error)}`),
+        { code: String(error?.code || '') }
+      );
     }
   }
 
@@ -285,7 +308,148 @@
     }
   }
 
-  async function loginWithPassword(loginName, password) {
+  function needsManualCaptcha(error) {
+    const code = String(error?.code || '').toLowerCase();
+    return code === 'captcha-module-missing'
+      || code.includes('captcha-resources-missing')
+      || code.includes('captcha-module-missing');
+  }
+
+  async function recordCasLoginResult(loginName, password, result) {
+    const id = String(loginName || '').trim();
+    if (result?.ok) {
+      const profile = await fetchCasProfile().catch(() => null);
+      await saveCasAccount(id, {
+        password: String(password ?? ''),
+        lastLoginAt: Date.now(),
+        ...(profile?.userName ? { userName: profile.userName } : {})
+      });
+      await broadcastStatus({
+        status: 'login-done',
+        loginName: id,
+        userName: profile?.userName || ''
+      });
+    } else {
+      await broadcastStatus({ status: 'login-error', loginName: id, error: result?.message });
+    }
+    return result;
+  }
+
+  function manualCaptchaResponse(challenge, message = '') {
+    return {
+      ok: false,
+      code: 'CAPTCHA_INPUT_REQUIRED',
+      message: message || '请查看验证码图片并输入结果',
+      challengeId: challenge.id,
+      captchaImage: String(challenge.page?.captchaImageDataUrl || challenge.page?.captchaImageUrl || '')
+    };
+  }
+
+  function manualCaptchaStorageKey(challengeId) {
+    return `${MANUAL_CAPTCHA_SESSION_PREFIX}${String(challengeId || '')}`;
+  }
+
+  function scheduleManualCaptchaExpiry(challenge) {
+    clearTimeout(challenge.timer);
+    const remaining = Math.max(0, Number(challenge.expiresAt || 0) - Date.now());
+    challenge.timer = setTimeout(() => { void discardManualCaptcha(challenge.id); }, remaining);
+    return challenge;
+  }
+
+  async function persistManualCaptcha(challenge) {
+    const { timer: _timer, ...stored } = challenge;
+    await chrome.storage.session.set({ [manualCaptchaStorageKey(challenge.id)]: stored });
+  }
+
+  async function getManualCaptcha(challengeId) {
+    const id = String(challengeId || '');
+    const current = pendingManualCaptchas.get(id);
+    if (current) return current;
+    const key = manualCaptchaStorageKey(id);
+    const stored = await chrome.storage.session.get([key]).catch(() => ({}));
+    const challenge = stored?.[key];
+    if (!challenge || String(challenge.id || '') !== id) return null;
+    if (Number(challenge.expiresAt || 0) <= Date.now()) {
+      await chrome.storage.session.remove(key).catch(() => {});
+      if (challenge.temporary && challenge.tabId) await chrome.tabs.remove(challenge.tabId).catch(() => {});
+      return null;
+    }
+    challenge.timer = null;
+    pendingManualCaptchas.set(id, scheduleManualCaptchaExpiry(challenge));
+    return challenge;
+  }
+
+  async function discardManualCaptcha(challengeId) {
+    const id = String(challengeId || '');
+    const key = manualCaptchaStorageKey(id);
+    let challenge = pendingManualCaptchas.get(id);
+    if (!challenge) {
+      const stored = await chrome.storage.session.get([key]).catch(() => ({}));
+      challenge = stored?.[key] || null;
+    }
+    await chrome.storage.session.remove(key).catch(() => {});
+    if (!challenge) return false;
+    pendingManualCaptchas.delete(id);
+    clearTimeout(challenge.timer);
+    if (challenge.temporary && challenge.tabId) {
+      await chrome.tabs.remove(challenge.tabId).catch(() => {});
+    }
+    return true;
+  }
+
+  async function keepManualCaptcha({ tab, temporary, page, loginName, password }, message) {
+    const id = crypto.randomUUID();
+    const challenge = {
+      id,
+      tabId: tab.id,
+      temporary,
+      page,
+      loginName,
+      password,
+      expiresAt: Date.now() + MANUAL_CAPTCHA_TTL_MS,
+      timer: null
+    };
+    pendingManualCaptchas.set(id, scheduleManualCaptchaExpiry(challenge));
+    await persistManualCaptcha(challenge);
+    return manualCaptchaResponse(challenge, message);
+  }
+
+  async function submitManualCaptcha(challengeId, captchaAnswer) {
+    const id = String(challengeId || '');
+    const challenge = await getManualCaptcha(id);
+    if (!challenge) {
+      return { ok: false, code: 'CAPTCHA_CHALLENGE_EXPIRED', message: '验证码已过期，请重新登录' };
+    }
+    const answer = String(captchaAnswer ?? '').trim();
+    if (!answer) return manualCaptchaResponse(challenge, '请输入验证码');
+    let result;
+    try {
+      result = await submitCasLogin(challenge.tabId, {
+        csrf: challenge.page.csrf,
+        captchaKey: challenge.page.captchaKey,
+        captchaAnswer: answer,
+        loginName: challenge.loginName,
+        password: challenge.password
+      });
+      if (!result.ok && /认证码/.test(String(result.message || ''))) {
+        const page = await readLoginPage(challenge.tabId);
+        if (!page.ok) {
+          await discardManualCaptcha(id);
+          return page;
+        }
+        challenge.page = page;
+        await persistManualCaptcha(challenge);
+        return manualCaptchaResponse(challenge, result.message || '验证码错误，请重新输入');
+      }
+      await discardManualCaptcha(id);
+      return recordCasLoginResult(challenge.loginName, challenge.password, result);
+    } catch (error) {
+      await discardManualCaptcha(id);
+      throw error;
+    }
+  }
+
+  async function loginWithPassword(loginName, password, { allowManualCaptcha = false } = {}) {
     const id = String(loginName || '').trim();
     const secret = String(password ?? '');
     if (!id) throw new Error('请输入账号（学号）');
@@ -293,6 +457,7 @@
     await clearCasCookies();
     await logoutMisIfEnabled();
     const { tab, temporary } = await ensureCasOriginTab();
+    let keepTab = false;
     try {
       let lastResult = { ok: false, message: 'CAS 未返回登录结果' };
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -302,6 +467,10 @@
         try {
           captchaAnswer = await recognizeCasCaptcha(page.captchaImageUrl);
         } catch (error) {
+          if (allowManualCaptcha && needsManualCaptcha(error)) {
+            keepTab = true;
+            return keepManualCaptcha({ tab, temporary, page, loginName: id, password: secret }, String(error?.message || error));
+          }
           return { ok: false, message: String(error?.message || error) };
         }
         lastResult = await submitCasLogin(tab.id, {
@@ -314,38 +483,23 @@
         if (lastResult.ok || !/认证码/.test(String(lastResult.message || ''))) break;
         await wait(300);
       }
-      if (lastResult.ok) {
-        const profile = await fetchCasProfile().catch(() => null);
-        await saveCasAccount(id, {
-          password: secret,
-          lastLoginAt: Date.now(),
-          ...(profile?.userName ? { userName: profile.userName } : {})
-        });
-        await broadcastStatus({
-          status: 'login-done',
-          loginName: id,
-          userName: profile?.userName || ''
-        });
-      } else {
-        await broadcastStatus({ status: 'login-error', loginName: id, error: lastResult.message });
-      }
-      return lastResult;
+      return recordCasLoginResult(id, secret, lastResult);
     } finally {
-      if (temporary && tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
+      if (!keepTab && temporary && tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
     }
   }
 
-  async function loginSavedCasAccount(loginName) {
+  async function loginSavedCasAccount(loginName, options = {}) {
     const id = String(loginName || '').trim();
     const account = (await getCasAccounts())[id];
     if (!account) throw new Error('未保存此 CAS 账号');
     if (!account.password) throw new Error('此账号没有已保存的密码');
-    return loginWithPassword(id, account.password);
+    return loginWithPassword(id, account.password, options);
   }
 
   // 打开选项页时若尚未登录且存在已保存密码的账号，
   // 使用其中最近一次登录的账号自动登录。
-  async function autoLoginSavedCasAccount() {
+  async function autoLoginSavedCasAccount(options = {}) {
     const profile = await fetchCasProfile().catch(() => null);
     if (profile) return { ok: true, skipped: true };
     const accounts = await getCasAccounts();
@@ -354,7 +508,7 @@
       .sort((a, b) => Number(b.lastLoginAt || b.updatedAt || 0) - Number(a.lastLoginAt || a.updatedAt || 0));
     const target = candidates[0];
     if (!target) return { ok: false, code: 'no-saved-account', message: '没有已保存密码的账号' };
-    const result = await loginWithPassword(target.loginName, target.password);
+    const result = await loginWithPassword(target.loginName, target.password, options);
     return result.ok ? { ok: true, loginName: target.loginName, auto: true } : result;
   }
 
@@ -400,19 +554,37 @@
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'CAS_LOGIN_WITH_PASSWORD') {
-        loginWithPassword(message?.payload?.loginName, message?.payload?.password)
+        loginWithPassword(message?.payload?.loginName, message?.payload?.password, {
+          allowManualCaptcha: message?.payload?.allowManualCaptcha === true
+        })
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
       if (message?.type === 'CAS_SWITCH_ACCOUNT') {
-        loginSavedCasAccount(message?.payload?.loginName)
+        loginSavedCasAccount(message?.payload?.loginName, {
+          allowManualCaptcha: message?.payload?.allowManualCaptcha === true
+        })
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
+      if (message?.type === 'CAS_SUBMIT_CAPTCHA') {
+        submitManualCaptcha(message?.payload?.challengeId, message?.payload?.captchaAnswer)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+        return true;
+      }
+      if (message?.type === 'CAS_CANCEL_CAPTCHA') {
+        discardManualCaptcha(message?.payload?.challengeId)
+          .then(() => sendResponse({ ok: true }))
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+        return true;
+      }
       if (message?.type === 'CAS_AUTO_LOGIN') {
-        autoLoginSavedCasAccount()
+        autoLoginSavedCasAccount({
+          allowManualCaptcha: message?.payload?.allowManualCaptcha === true
+        })
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
