@@ -478,9 +478,19 @@ function clearPlatformData(platform) {
 
 // Open options button in top inline controls
 const openOptionsBtn = document.getElementById('open-options-btn');
+const sidePanelView = new URLSearchParams(window.location.search).get('view') === 'sidepanel';
 if (openOptionsBtn) {
+  if (sidePanelView) {
+    // 边栏中变为切换按钮：切回千问助手（由外层 popup.html 响应换页）。
+    openOptionsBtn.textContent = '🔄';
+    openOptionsBtn.title = '切换到千问助手';
+  }
   openOptionsBtn.addEventListener('click', () => {
     if (typeof popupMode !== 'undefined' && popupMode) {
+      if (sidePanelView) {
+        try { window.parent?.postMessage({ type: 'BJTU_SIDE_PANEL_TOGGLE' }, '*'); } catch { }
+        return;
+      }
       // Navigate inside popup iframe instead of opening a new tab.
       try { window.location.href = '../options/options.html?popup=1'; return; } catch { }
     }

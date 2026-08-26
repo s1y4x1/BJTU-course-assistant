@@ -80,7 +80,7 @@
   },
   "options_page": "options/options.html",
   "side_panel": {
-    "default_path": "modules/qwen/chat.html"
+    "default_path": "modules/qwen/chat.html?view=sidepanel"
   },
   "background": {
     "service_worker": "app/background.js"

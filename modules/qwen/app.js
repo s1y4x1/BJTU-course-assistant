@@ -17,6 +17,8 @@
 
   // 独立页面模式（modules/qwen/chat.html）：面板直接展开铺满窗口。
   const STANDALONE_CHAT = /\/modules\/qwen\/chat\.html$/i.test(global.location?.pathname || '');
+  // 边栏视图：关闭按钮变为与课程助手（popup.html）互相切换的按钮。
+  const SIDE_PANEL_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'sidepanel';
 
   let port = null;
   let historyNeedsInitialScroll = false;
@@ -2156,8 +2158,21 @@
       });
     }
     if (closeBtn instanceof HTMLButtonElement) {
+      if (STANDALONE_CHAT && SIDE_PANEL_VIEW) {
+        // 边栏中变为切换按钮：在千问助手与课程助手之间来回。
+        closeBtn.textContent = '🔄';
+        closeBtn.title = '切换到课程助手';
+        closeBtn.setAttribute('aria-label', '切换到课程助手');
+      }
       closeBtn.addEventListener('click', () => {
         if (STANDALONE_CHAT) {
+          if (SIDE_PANEL_VIEW) {
+            const popupUrl = global.chrome?.runtime?.getURL?.('popup/popup.html?view=sidepanel');
+            if (popupUrl) {
+              global.location.href = popupUrl;
+              return;
+            }
+          }
           global.close();
           return;
         }

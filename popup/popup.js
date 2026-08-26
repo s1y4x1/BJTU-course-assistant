@@ -24,23 +24,41 @@ function applyPopupSize(size = {}) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const frame = document.getElementById('popup-frame');
+  const sidePanelView = new URLSearchParams(location.search).get('view') === 'sidepanel';
   try {
-    const size = await chrome.storage.local.get(['popupWidthPx', 'popupHeightPx']);
-    applyPopupSize(size);
+    if (!sidePanelView) {
+      const size = await chrome.storage.local.get(['popupWidthPx', 'popupHeightPx']);
+      applyPopupSize(size);
+    } else {
+      // 边栏宽度由浏览器决定，铺满即可。
+      document.documentElement.style.setProperty('--popup-width', '100%');
+      document.documentElement.style.setProperty('--popup-height', '100vh');
+    }
   } catch {
     applyPopupSize();
   }
 
   // keep iframe pinned to popup-mode app page
   try {
-    frame.src = chrome.runtime.getURL('app/app.html?popup=1');
+    frame.src = chrome.runtime.getURL('app/app.html?popup=1' + (sidePanelView ? '&view=sidepanel' : ''));
   } catch (e) {
     // ignore
   }
 
+  // 边栏切换：千问助手页（chat.html）通过该消息请求切回课程助手。
+  window.addEventListener('message', (event) => {
+    if (event?.data?.type !== 'BJTU_SIDE_PANEL_TOGGLE') return;
+    try {
+      location.href = chrome.runtime.getURL('modules/qwen/chat.html?view=sidepanel');
+    } catch {
+      // ignore
+    }
+  });
+
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if (sidePanelView) return;
       if (!changes.popupWidthPx && !changes.popupHeightPx) return;
       applyPopupSize({
         popupWidthPx: changes.popupWidthPx ? changes.popupWidthPx.newValue : currentPopupSize.popupWidthPx,
