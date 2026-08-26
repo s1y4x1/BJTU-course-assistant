@@ -190,6 +190,33 @@
     return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
   }
 
+  // ===== 作业截止提醒（reminder.*）辅助 =====
+  function normalizeReminderMinutes(value, fallback = [120]) {
+    const source = Array.isArray(value) ? value : fallback;
+    if (!Array.isArray(source)) return [];
+    return [...new Set(source.map(Number)
+      .filter((minutes) => Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600)
+      .map((minutes) => Math.round(minutes)))]
+      .sort((a, b) => b - a);
+  }
+
+  async function loadReminderPoints() {
+    const stored = await chrome.storage.local.get(['homeworkReminderMinutes']).catch(() => ({}));
+    return normalizeReminderMinutes(stored?.homeworkReminderMinutes, [120]);
+  }
+
+  function requireReminderMinutes(args) {
+    const raw = args?.minutes;
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      throw new Error('缺少参数 minutes（提前的分钟数）');
+    }
+    const minutes = Math.round(Number(raw));
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 525600) {
+      throw new Error('minutes 必须是 1~525600 之间的数字');
+    }
+    return minutes;
+  }
+
   // 轮询等待登录完成；超时返回 null。
   async function waitForLoginPoll(check, { timeoutMs = 180000, intervalMs = 3000 } = {}) {
     const deadline = Date.now() + timeoutMs;
@@ -2088,72 +2115,135 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'qwen',
-      name: 'qwen.reminder',
-      label: '作业截止提醒设置',
-      summary: '查询/切换后台作业监控开关，添加或删除提前提醒时间点',
+      module: 'reminder',
+      name: 'reminder.get',
+      label: '获取提醒时间点',
+      summary: '获取作业截止提醒的全部提前时间点（分钟）',
       doc: [
-        '## qwen.reminder —— 作业截止提醒设置',
+        '## reminder.get —— 获取提醒时间点',
         '',
-        '控制「后台监控未交作业并发送系统通知」开关，以及提前提醒时间点的增删。时间点以提前分钟数表示（1~525600），保存后自动去重并按分钟数降序排列。',
+        '获取作业截止提醒的全部提前时间点（分钟），按分钟数降序排列。',
         '',
-        '**参数**：{"action":"get（默认，仅查询）/ setEnabled / addPoint / removePoint","enabled":"action=setEnabled 时必填，true/false","minutes":"action=addPoint/removePoint 时必填，提前的分钟数"}',
+        '**调用示例**：`reminder.get()`',
         '',
-        '**调用示例**：`qwen.reminder()`；`qwen.reminder({action: "setEnabled", enabled: true})`；`qwen.reminder({action: "addPoint", minutes: 30})`；`qwen.reminder({action: "removePoint", minutes: 120})`',
+        '**返回示例**：{"ok":true,"points":[1440,120,30]}'
+      ].join('\n'),
+      async run() {
+        return { ok: true, points: await loadReminderPoints() };
+      }
+    },
+    {
+      module: 'reminder',
+      name: 'reminder.set',
+      label: '设置提醒时间点',
+      summary: '整体替换作业截止提醒的提前时间点列表',
+      doc: [
+        '## reminder.set —— 设置提醒时间点',
         '',
-        '**返回示例**：{"ok":true,"enabled":true,"points":[1440,120,30]}；action=addPoint 额外返回 {"added":true}；action=removePoint 额外返回 {"removed":true}'
+        '整体替换作业截止提醒的提前时间点。minutes 为提前分钟数组，取值 1~525600，保存时自动去重、取整并按降序排列。',
+        '',
+        '**参数**：{"minutes":"提前分钟数组，必填，如 [1440, 120, 30]"}',
+        '',
+        '**调用示例**：`reminder.set({minutes: [1440, 30]})`',
+        '',
+        '**返回示例**：{"ok":true,"points":[1440,30]}'
       ].join('\n'),
       async run(args) {
-        const normalizeMinutesList = (value, fallback) => {
-          const source = Array.isArray(value) ? value : fallback;
-          return [...new Set(source.map(Number)
-            .filter((minutes) => Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600)
-            .map((minutes) => Math.round(minutes)))]
-            .sort((a, b) => b - a);
-        };
-        const action = String(args?.action || 'get').trim().toLowerCase() || 'get';
-        const stored = await chrome.storage.local.get([
-          'homeworkReminderEnabled', 'homeworkReminderMinutes'
-        ]).catch(() => ({}));
-        const enabledFallback = stored?.homeworkReminderEnabled !== false;
-        let enabled = stored?.homeworkReminderEnabled !== false;
-        let points = normalizeMinutesList(stored?.homeworkReminderMinutes, [120]);
-        const result = { ok: true, enabled, points };
-        if (['get', 'status', '查询', ''].includes(action)) return result;
-        if (['setenabled', 'enabled', 'set', '设置开关'].includes(action)) {
-          const raw = args?.enabled;
-          if (typeof raw !== 'boolean' && !['true', 'false'].includes(String(raw).trim().toLowerCase())) {
-            throw new Error('action=setEnabled 时必须传入布尔值 enabled');
+        const raw = args?.minutes;
+        if (!Array.isArray(raw)) throw new Error('缺少参数 minutes（提前分钟数组）');
+        if (!raw.length) throw new Error('minutes 不能为空；如需删除全部请改用各时间点的 removePoint');
+        const points = normalizeReminderMinutes(raw, null);
+        if (!points.length) throw new Error('minutes 中没有合法值（需为 1~525600 的数字）');
+        await chrome.storage.local.set({ homeworkReminderMinutes: points });
+        return { ok: true, points };
+      }
+    },
+    {
+      module: 'reminder',
+      name: 'reminder.add',
+      label: '添加提醒时间点',
+      summary: '新增一个作业截止提醒的提前时间点',
+      doc: [
+        '## reminder.add —— 添加提醒时间点',
+        '',
+        '新增一个提前提醒时间点（分钟）。已存在时报 added:false。',
+        '',
+        '**参数**：{"minutes":"提前分钟数，必填，1~525600"}',
+        '',
+        '**调用示例**：`reminder.add({minutes: 30})`',
+        '',
+        '**返回示例**：{"ok":true,"points":[1440,120,30],"added":true}'
+      ].join('\n'),
+      async run(args) {
+        const minutes = requireReminderMinutes(args);
+        const points = await loadReminderPoints();
+        if (points.includes(minutes)) {
+          return { ok: true, points, added: false, message: `提前 ${minutes} 分钟的时间点已存在` };
+        }
+        const next = normalizeReminderMinutes([...points, minutes], points);
+        await chrome.storage.local.set({ homeworkReminderMinutes: next });
+        return { ok: true, points: next, added: true };
+      }
+    },
+    {
+      module: 'reminder',
+      name: 'reminder.del',
+      label: '删除提醒时间点',
+      summary: '删除一个作业截止提醒的提前时间点',
+      doc: [
+        '## reminder.del —— 删除提醒时间点',
+        '',
+        '删除一个提前提醒时间点（分钟）。不存在时报 removed:false。',
+        '',
+        '**参数**：{"minutes":"提前分钟数，必填"}',
+        '',
+        '**调用示例**：`reminder.del({minutes: 120})`',
+        '',
+        '**返回示例**：{"ok":true,"points":[1440,30],"removed":true}'
+      ].join('\n'),
+      async run(args) {
+        const minutes = requireReminderMinutes(args);
+        const points = await loadReminderPoints();
+        if (!points.includes(minutes)) {
+          return { ok: true, points, removed: false, message: `提前 ${minutes} 分钟的时间点不存在` };
+        }
+        const next = points.filter((item) => item !== minutes);
+        await chrome.storage.local.set({ homeworkReminderMinutes: next });
+        return { ok: true, points: next, removed: true };
+      }
+    },
+    {
+      module: 'reminder',
+      name: 'reminder.enabled',
+      label: '后台作业监控开关',
+      summary: '读取或切换「后台监控未交作业并发送系统通知」开关',
+      doc: [
+        '## reminder.enabled —— 后台作业监控开关',
+        '',
+        '无参调用返回「后台监控未交作业并发送系统通知」当前开关状态；传入 true/false 直接切换。',
+        '',
+        '**参数**：{"enabled":"可选，true 开启 / false 关闭；省略时仅读取"}',
+        '',
+        '**调用示例**：`reminder.enabled()`；`reminder.enabled({enabled: false})`；`reminder.enabled(false)` 也接受直接传布尔值',
+        '',
+        '**返回示例**：{"ok":true,"enabled":false}'
+      ].join('\n'),
+      async run(args) {
+        let raw = typeof args === 'boolean'
+          ? args
+          : (args && Object.prototype.hasOwnProperty.call(args, 'enabled') ? args.enabled : undefined);
+        if (raw === undefined || raw === null || String(raw).trim() === '') {
+          const stored = await chrome.storage.local.get(['homeworkReminderEnabled']).catch(() => ({}));
+          return { ok: true, enabled: stored?.homeworkReminderEnabled !== false };
+        }
+        if (typeof raw !== 'boolean') {
+          if (!['true', 'false'].includes(String(raw).trim().toLowerCase())) {
+            throw new Error('enabled 仅支持布尔值 true / false');
           }
-          enabled = typeof raw === 'boolean' ? raw : String(raw).trim().toLowerCase() === 'true';
-          await chrome.storage.local.set({ homeworkReminderEnabled: enabled });
-          return { ...result, enabled };
+          raw = String(raw).trim().toLowerCase() === 'true';
         }
-        const minutesRaw = args?.minutes;
-        if (minutesRaw === undefined || minutesRaw === null || String(minutesRaw).trim() === '') {
-          throw new Error(`${action} 需要传入 minutes（提前的分钟数）`);
-        }
-        const minutes = Math.round(Number(minutesRaw));
-        if (!Number.isFinite(minutes) || minutes < 1 || minutes > 525600) {
-          throw new Error('minutes 必须是 1~525600 之间的整数');
-        }
-        if (['addpoint', 'add', '增加', '添加'].includes(action)) {
-          if (points.includes(minutes)) {
-            return { ...result, added: false, message: `提前 ${minutes} 分钟的时间点已存在` };
-          }
-          points = normalizeMinutesList([...points, minutes], points);
-          await chrome.storage.local.set({ homeworkReminderMinutes: points });
-          return { ...result, points, added: true };
-        }
-        if (['removepoint', 'remove', 'delete', '删除', '移除'].includes(action)) {
-          if (!points.includes(minutes)) {
-            return { ...result, removed: false, message: `提前 ${minutes} 分钟的时间点不存在` };
-          }
-          points = points.filter((item) => item !== minutes);
-          await chrome.storage.local.set({ homeworkReminderMinutes: points });
-          return { ...result, points, removed: true };
-        }
-        throw new Error('action 仅支持 get / setEnabled / addPoint / removePoint');
+        await chrome.storage.local.set({ homeworkReminderEnabled: raw });
+        return { ok: true, enabled: raw };
       }
     }
   ];
@@ -2171,6 +2261,7 @@ name: 've.teachers_of_',
     { id: 'campusnet', label: '校园网重连', operations: OPERATIONS.filter((op) => op.module === 'campusnet') },
     { id: 'captcha', label: '本地验证码识别', operations: OPERATIONS.filter((op) => op.module === 'captcha') },
     { id: 'theme', label: '外观颜色模式', operations: OPERATIONS.filter((op) => op.module === 'theme') },
+    { id: 'reminder', label: '作业截止提醒', operations: OPERATIONS.filter((op) => op.module === 'reminder') },
     { id: 'qwen', label: '通义千问元操作', operations: OPERATIONS.filter((op) => op.module === 'qwen') }
   ];
 
