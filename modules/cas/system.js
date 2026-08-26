@@ -10,6 +10,7 @@
   const STATUS_TYPE = 'CAS_SYSTEM_STATUS';
   const MANUAL_CAPTCHA_TTL_MS = 5 * 60 * 1000;
   const MANUAL_CAPTCHA_SESSION_PREFIX = 'casManualCaptcha:';
+  const LOGIN_HEADER_RULE_ID = 914303;
 
   const pendingCredentialsByTab = new Map();
   const pendingManualCaptchas = new Map();
@@ -156,80 +157,99 @@
     return profile.userName ? profile : null;
   }
 
-  async function ensureCasOriginTab() {
-    const tabs = await chrome.tabs.query({ url: ['https://cas.bjtu.edu.cn/*'] }).catch(() => []);
-    const reusable = tabs.find((tab) => tab?.id && tab.status === 'complete');
-    if (reusable) return { tab: reusable, temporary: false };
-    const tab = await globalThis.BjtuTabs.create({ url: LOGIN_URL, active: false });
-    if (!tab?.id) throw new Error('无法打开 CAS 登录页');
-    const loaded = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => finish(null, new Error('CAS 登录页加载超时')), 20000);
-      const finish = (result, error) => {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-        if (error) reject(error); else resolve(result);
-      };
-      const onUpdated = (updatedId, changeInfo, updatedTab) => {
-        if (updatedId === tab.id && changeInfo.status === 'complete') finish(updatedTab);
-      };
-      chrome.tabs.onUpdated.addListener(onUpdated);
+  function htmlAttribute(tag, name) {
+    const escaped = String(name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = new RegExp(`\\b${escaped}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
+      .exec(String(tag || ''));
+    return decodeHtmlEntities(match?.[1] ?? match?.[2] ?? match?.[3] ?? '');
+  }
+
+  function inputValueFromHtml(html, name) {
+    for (const match of String(html || '').matchAll(/<input\b[^>]*>/gi)) {
+      if (htmlAttribute(match[0], 'name') === name) return htmlAttribute(match[0], 'value');
+    }
+    return '';
+  }
+
+  function captchaImageSrcFromHtml(html) {
+    const source = String(html || '');
+    const container = /<[^>]+class\s*=\s*["'][^"']*\byzm\b[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/i.exec(source)?.[0] || '';
+    const imageTag = /<img\b[^>]*>/i.exec(container)?.[0]
+      || [...source.matchAll(/<img\b[^>]*>/gi)]
+        .map((match) => match[0])
+        .find((tag) => htmlAttribute(tag, 'alt').toLowerCase() === 'captcha')
+      || '';
+    return htmlAttribute(imageTag, 'src');
+  }
+
+  async function blobToDataUrl(blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return `data:${blob.type || 'image/jpeg'};base64,${btoa(binary)}`;
+  }
+
+  async function installLoginHeaderRule() {
+    if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [LOGIN_HEADER_RULE_ID],
+      addRules: [{
+        id: LOGIN_HEADER_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Origin', operation: 'set', value: 'https://cas.bjtu.edu.cn' },
+            { header: 'Referer', operation: 'set', value: LOGIN_URL }
+          ]
+        },
+        condition: {
+          regexFilter: '^https://cas\\.bjtu\\.edu\\.cn/auth/login/?(?:\\?.*)?$',
+          resourceTypes: ['xmlhttprequest'],
+          requestMethods: ['post']
+        }
+      }]
     });
-    return { tab: loaded || tab, temporary: true };
+  }
+
+  async function removeLoginHeaderRule() {
+    if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [LOGIN_HEADER_RULE_ID]
+    }).catch(() => {});
   }
 
   // 第一步：GET 登录页，响应标头中的 Set-Cookie 会更新 csrftoken，
   // 页面中的 csrfmiddlewaretoken 与 captcha_0 / 验证码图片随之刷新。
-  async function readLoginPage(tabId) {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: async (loginUrl) => {
-        const response = await fetch(loginUrl, { credentials: 'include', cache: 'no-store' });
-        if (!response.ok) return { ok: false, message: `CAS 登录页 HTTP ${response.status}` };
-        const html = await response.text();
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        let csrf = doc.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
-        if (!csrf) {
-          const cookie = document.cookie.split(';').map((item) => item.trim())
-            .find((item) => item.startsWith('csrftoken='));
-          if (cookie) {
-            csrf = cookie.slice('csrftoken='.length);
-            try { csrf = decodeURIComponent(csrf); } catch { /* keep raw value */ }
-          }
-        }
-        const captchaInput = doc.querySelector('input[name="captcha_0"]');
-        const captchaImage = doc.querySelector('.yzm img') || doc.querySelector('img[alt="captcha"]');
-        if (!csrf) return { ok: false, message: 'CAS 登录页中未找到 CSRF Token' };
-        if (!captchaInput?.value || !captchaImage?.getAttribute('src')) {
-          return { ok: false, message: 'CAS 登录页中未找到验证码' };
-        }
-        let captchaImageDataUrl = '';
-        const captchaImageUrl = new URL(captchaImage.getAttribute('src'), response.url || location.href).href;
-        try {
-          const imageResponse = await fetch(captchaImageUrl, { credentials: 'include', cache: 'no-store' });
-          if (imageResponse.ok) {
-            const blob = await imageResponse.blob();
-            captchaImageDataUrl = await new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(String(reader.result || ''));
-              reader.onerror = () => resolve('');
-              reader.readAsDataURL(blob);
-            });
-          }
-        } catch {
-          // 仍返回原始图片地址，由选项页尝试直接显示。
-        }
-        return {
-          ok: true,
-          csrf,
-          captchaKey: String(captchaInput.value),
-          captchaImageUrl,
-          captchaImageDataUrl
-        };
-      },
-      args: [LOGIN_URL]
+  async function readLoginPage() {
+    const response = await fetch(LOGIN_URL, {
+      credentials: 'include', cache: 'no-store', redirect: 'follow'
     });
-    return results?.[0]?.result || { ok: false, message: '无法读取 CAS 登录页' };
+    if (!response.ok) return { ok: false, message: `CAS 登录页 HTTP ${response.status}` };
+    const html = await response.text();
+    let csrf = inputValueFromHtml(html, 'csrfmiddlewaretoken');
+    if (!csrf) {
+      const cookie = await chrome.cookies.get({ url: LOGIN_URL, name: 'csrftoken' }).catch(() => null);
+      csrf = String(cookie?.value || '');
+      try { csrf = decodeURIComponent(csrf); } catch { /* keep raw value */ }
+    }
+    const captchaKey = inputValueFromHtml(html, 'captcha_0');
+    const captchaImageSrc = captchaImageSrcFromHtml(html);
+    if (!csrf) return { ok: false, message: 'CAS 登录页中未找到 CSRF Token' };
+    if (!captchaKey || !captchaImageSrc) return { ok: false, message: 'CAS 登录页中未找到验证码' };
+    const captchaImageUrl = new URL(captchaImageSrc, response.url || LOGIN_URL).href;
+    let captchaImageDataUrl = '';
+    try {
+      const imageResponse = await fetch(captchaImageUrl, {
+        credentials: 'include', cache: 'no-store'
+      });
+      if (imageResponse.ok) captchaImageDataUrl = await blobToDataUrl(await imageResponse.blob());
+    } catch {
+      // 仍返回原始图片地址，由选项页尝试直接显示。
+    }
+    return { ok: true, csrf, captchaKey, captchaImageUrl, captchaImageDataUrl };
   }
 
   async function recognizeCasCaptcha(imageUrl) {
@@ -237,7 +257,9 @@
       throw Object.assign(new Error('本地验证码识别模块尚未就绪'), { code: 'captcha-module-missing' });
     }
     try {
-      const response = await fetch(String(imageUrl || ''), { cache: 'no-store' });
+      const response = await fetch(String(imageUrl || ''), {
+        credentials: 'include', cache: 'no-store'
+      });
       if (!response.ok) throw new Error(`验证码图片 HTTP ${response.status}`);
       const blob = await response.blob();
       const result = await global.BjtuCaptchaRecognizer.recognizeMisCaptcha(blob);
@@ -254,44 +276,41 @@
 
   // 第二步：POST urlencoded 表单。302（fetch 跟随重定向）即登录成功；
   // 返回 200 且页面包含 p.tishi（用户密码不正确 / 认证码错误）即登录失败。
-  async function submitCasLogin(tabId, payload) {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: async (loginUrl, data) => {
-        const body = new URLSearchParams({
-          csrfmiddlewaretoken: data.csrf,
-          loginname: data.loginName,
-          password: data.password,
-          captcha_0: data.captchaKey,
-          captcha_1: String(data.captchaAnswer)
-        });
-        const response = await fetch(loginUrl, {
-          method: 'POST',
-          body,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-          credentials: 'include',
-          cache: 'no-store',
-          redirect: 'follow'
-        });
-        const html = await response.text();
-        let redirected = response.redirected === true;
-        try {
-          redirected = redirected
-            || !/^\/auth\/login\/?(?:[?#]|$)/i.test(new URL(response.url, loginUrl).pathname);
-        } catch {
-          // Keep the Response.redirected verdict.
-        }
-        if (redirected) return { ok: true };
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        const tishi = [...doc.querySelectorAll('p.tishi')]
-          .map((element) => String(element.textContent || '').replace(/\s+/g, ' ').trim())
-          .filter(Boolean).join(' ');
-        return { ok: false, message: tishi || `CAS 登录失败（HTTP ${response.status}）` };
-      },
-      args: [LOGIN_URL, payload]
+  async function submitCasLogin(payload) {
+    const body = new URLSearchParams({
+      csrfmiddlewaretoken: payload.csrf,
+      loginname: payload.loginName,
+      password: payload.password,
+      captcha_0: payload.captchaKey,
+      captcha_1: String(payload.captchaAnswer)
     });
-    return results?.[0]?.result || { ok: false, message: 'CAS 未返回登录结果' };
+    await installLoginHeaderRule();
+    let response;
+    try {
+      response = await fetch(LOGIN_URL, {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        credentials: 'include',
+        cache: 'no-store',
+        redirect: 'follow'
+      });
+    } finally {
+      await removeLoginHeaderRule();
+    }
+    const html = await response.text();
+    let redirected = response.redirected === true;
+    try {
+      redirected = redirected
+        || !/^\/auth\/login\/?(?:[?#]|$)/i.test(new URL(response.url, LOGIN_URL).pathname);
+    } catch {
+      // Keep the Response.redirected verdict.
+    }
+    if (redirected) return { ok: true };
+    const tishi = [...html.matchAll(/<p\b[^>]*class\s*=\s*["'][^"']*\btishi\b[^"']*["'][^>]*>([\s\S]*?)<\/p>/gi)]
+      .map((match) => textFromHtml(match[1]))
+      .filter(Boolean).join(' ');
+    return { ok: false, message: tishi || `CAS 登录失败（HTTP ${response.status}）` };
   }
 
   // 勾选「切换 CAS 账号时同时切换 MIS」时，登录 CAS 前 GET slogout 退出 MIS，
@@ -372,7 +391,6 @@
     if (!challenge || String(challenge.id || '') !== id) return null;
     if (Number(challenge.expiresAt || 0) <= Date.now()) {
       await chrome.storage.session.remove(key).catch(() => {});
-      if (challenge.temporary && challenge.tabId) await chrome.tabs.remove(challenge.tabId).catch(() => {});
       return null;
     }
     challenge.timer = null;
@@ -392,18 +410,13 @@
     if (!challenge) return false;
     pendingManualCaptchas.delete(id);
     clearTimeout(challenge.timer);
-    if (challenge.temporary && challenge.tabId) {
-      await chrome.tabs.remove(challenge.tabId).catch(() => {});
-    }
     return true;
   }
 
-  async function keepManualCaptcha({ tab, temporary, page, loginName, password }, message) {
+  async function keepManualCaptcha({ page, loginName, password }, message) {
     const id = crypto.randomUUID();
     const challenge = {
       id,
-      tabId: tab.id,
-      temporary,
       page,
       loginName,
       password,
@@ -425,7 +438,7 @@
     if (!answer) return manualCaptchaResponse(challenge, '请输入验证码');
     let result;
     try {
-      result = await submitCasLogin(challenge.tabId, {
+      result = await submitCasLogin({
         csrf: challenge.page.csrf,
         captchaKey: challenge.page.captchaKey,
         captchaAnswer: answer,
@@ -433,7 +446,7 @@
         password: challenge.password
       });
       if (!result.ok && /认证码/.test(String(result.message || ''))) {
-        const page = await readLoginPage(challenge.tabId);
+        const page = await readLoginPage();
         if (!page.ok) {
           await discardManualCaptcha(id);
           return page;
@@ -457,37 +470,30 @@
     if (!secret) throw new Error('请输入密码');
     await clearCasCookies();
     await logoutMisIfEnabled();
-    const { tab, temporary } = await ensureCasOriginTab();
-    let keepTab = false;
-    try {
-      let lastResult = { ok: false, message: 'CAS 未返回登录结果' };
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const page = await readLoginPage(tab.id);
-        if (!page.ok) return page;
-        let captchaAnswer;
-        try {
-          captchaAnswer = await recognizeCasCaptcha(page.captchaImageUrl);
-        } catch (error) {
-          if (allowManualCaptcha && needsManualCaptcha(error)) {
-            keepTab = true;
-            return keepManualCaptcha({ tab, temporary, page, loginName: id, password: secret }, String(error?.message || error));
-          }
-          return { ok: false, message: String(error?.message || error) };
+    let lastResult = { ok: false, message: 'CAS 未返回登录结果' };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const page = await readLoginPage();
+      if (!page.ok) return page;
+      let captchaAnswer;
+      try {
+        captchaAnswer = await recognizeCasCaptcha(page.captchaImageUrl);
+      } catch (error) {
+        if (allowManualCaptcha && needsManualCaptcha(error)) {
+          return keepManualCaptcha({ page, loginName: id, password: secret }, String(error?.message || error));
         }
-        lastResult = await submitCasLogin(tab.id, {
-          csrf: page.csrf,
-          captchaKey: page.captchaKey,
-          captchaAnswer,
-          loginName: id,
-          password: secret
-        });
-        if (lastResult.ok || !/认证码/.test(String(lastResult.message || ''))) break;
-        await wait(300);
+        return { ok: false, message: String(error?.message || error) };
       }
-      return recordCasLoginResult(id, secret, lastResult);
-    } finally {
-      if (!keepTab && temporary && tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
+      lastResult = await submitCasLogin({
+        csrf: page.csrf,
+        captchaKey: page.captchaKey,
+        captchaAnswer,
+        loginName: id,
+        password: secret
+      });
+      if (lastResult.ok || !/认证码/.test(String(lastResult.message || ''))) break;
+      await wait(300);
     }
+    return recordCasLoginResult(id, secret, lastResult);
   }
 
   async function loginSavedCasAccount(loginName, options = {}) {
