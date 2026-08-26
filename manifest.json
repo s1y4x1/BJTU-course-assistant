@@ -22,7 +22,8 @@
     "alarms",
     "unlimitedStorage",
     "notifications",
-    "offscreen"
+    "offscreen",
+    "sidePanel"
   ],
   "host_permissions": [
     "http://123.121.147.7:88/*",
@@ -78,6 +79,9 @@
     }
   },
   "options_page": "options/options.html",
+  "side_panel": {
+    "default_path": "modules/qwen/chat.html"
+  },
   "background": {
     "service_worker": "app/background.js"
   },

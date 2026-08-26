@@ -2110,20 +2110,14 @@
 
     if (fab instanceof HTMLButtonElement) {
       fab.addEventListener('click', () => {
-        if (panel instanceof HTMLElement) {
-          panel.hidden = !panel.hidden;
-          if (!panel.hidden) {
-            fab.style.display = 'none';
-            void activateQwenPanel();
-            if (historyNeedsInitialScroll) {
-              scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
-              historyNeedsInitialScroll = false;
-            }
-            if (input instanceof HTMLTextAreaElement) input.focus();
-          } else {
-            fab.style.display = '';
-          }
+        // 面板已改为独立页面（可从浏览器边栏或新标签页打开）。
+        const chatUrl = global.chrome?.runtime?.getURL?.('modules/qwen/chat.html');
+        if (!chatUrl) return;
+        if (global.chrome?.tabs?.create) {
+          void global.chrome.tabs.create({ url: chatUrl });
+          return;
         }
+        global.open(chatUrl, '_blank');
       });
     }
     const modelSelect = el(MODEL_ID);
