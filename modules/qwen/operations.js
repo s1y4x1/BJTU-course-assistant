@@ -2260,7 +2260,7 @@ name: 've.teachers_of_',
     { id: 'xuetangx', label: '学堂在线', operations: OPERATIONS.filter((op) => op.module === 'xuetangx') },
     { id: 'campusnet', label: '校园网重连', operations: OPERATIONS.filter((op) => op.module === 'campusnet') },
     { id: 'captcha', label: '本地验证码识别', operations: OPERATIONS.filter((op) => op.module === 'captcha') },
-    { id: 'theme', label: '外观颜色模式', operations: OPERATIONS.filter((op) => op.module === 'theme') },
+    { id: 'theme', label: '外观', operations: OPERATIONS.filter((op) => op.module === 'theme') },
     { id: 'reminder', label: '作业截止提醒', operations: OPERATIONS.filter((op) => op.module === 'reminder') },
     { id: 'qwen', label: '通义千问元操作', operations: OPERATIONS.filter((op) => op.module === 'qwen') }
   ];
@@ -2325,8 +2325,15 @@ name: 've.teachers_of_',
 
   const PLATFORM_GROUP_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
 
+  // 非模块区块与操作分组的对应关系：「外观」即外观颜色模式，「作业截止提醒」即提醒设置。
+  const SECTION_GROUP_IDS = {
+    appearance: 'theme',
+    reminders: 'reminder'
+  };
+
   // 分组顺序遵循选项页「排序」编辑器（ui-order-groups）：
   // 先按「扩展选项模块」的区块顺序，遇到「平台显示与加载」（platforms）时按「平台」顺序展开其中的课程平台分组，
+  // 「外观」（appearance）、「作业截止提醒」（reminders）分别对应 theme、reminder 分组，
   // 其余（未出现在两块中的）分组按默认顺序追加到末尾。
   async function orderedGroups() {
     const stored = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']).catch(() => ({}));
@@ -2348,6 +2355,8 @@ name: 've.teachers_of_',
         PLATFORM_GROUP_IDS.forEach(push);
       } else if (sectionId.startsWith('module:')) {
         push(sectionId.slice('module:'.length));
+      } else if (SECTION_GROUP_IDS[sectionId]) {
+        push(SECTION_GROUP_IDS[sectionId]);
       }
     }
     OPERATION_GROUPS.forEach((group) => push(group.id));
