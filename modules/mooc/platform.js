@@ -751,6 +751,79 @@ let moocLoginAssistPopupTabId = null;
     if (Number(activeRequestTabId) === Number(tabId)) activeRequestTabId = null;
   });
 
+  function assertCachedPlatformReady() {
+    if (!isPlatformEnabled('mooc')) {
+      throw Object.assign(new Error('中国大学MOOC未启用，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
+    }
+    if (String(window.platformLoginState?.mooc || '') !== 'online') {
+      throw Object.assign(new Error('中国大学MOOC未登录，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
+    }
+  }
+
+  function cachedCourse(course) {
+    return {
+      id: String(course?.id || ''),
+      name: String(course?.name || ''),
+      schoolName: String(course?.schoolName || ''),
+      url: String(course?.url || ''),
+      teachers: (Array.isArray(course?.teachers) ? course.teachers : []).map((teacher) => ({
+        name: String(typeof teacher === 'string' ? teacher : (teacher?.name || '')).trim(),
+        url: (() => {
+          try { return typeof teacher !== 'string' && teacher?.href ? new URL(String(teacher.href), 'https://www.icourse163.org/').href : ''; } catch { return ''; }
+        })()
+      })).filter((teacher) => teacher.name),
+      taskCount: Array.isArray(course?.tasks) ? course.tasks.length : 0,
+      loaded: course?.detailLoaded === true
+    };
+  }
+
+  function cachedAssignment(course, task, includeDetail = false) {
+    const item = {
+      id: String(task?.id || ''),
+      title: String(task?.title || ''),
+      type: typeText(task?.type),
+      chapterName: String(task?.chapterName || ''),
+      startTime: Number(task?.startTime || 0),
+      deadline: Number(task?.deadline || 0),
+      status: task?.done ? 'submitted' : (task?.overdue ? 'overdue' : 'pending'),
+      userScore: task?.userScore ?? null,
+      totalScore: task?.totalScore ?? null,
+      actionUrl: taskUrl(course, task) || ''
+    };
+    if (includeDetail) item.detail = task?.detail || null;
+    return item;
+  }
+
+  function findCachedCourse(courseId) {
+    const key = String(courseId || '').trim();
+    if (!key) throw new Error('缺少参数 courseId，请先调用 mooc.courseList 获取课程ID');
+    const course = courses.find((item) => String(item?.id || '') === key) || null;
+    if (!course) throw new Error(`课程ID无效：${key} 不在中国大学MOOC缓存课程列表中，请先调用 mooc.courseList 获取有效ID`);
+    return course;
+  }
+
+  function cachedAssignments(args = {}, requestedCourseId = '', includeDetail = false) {
+    assertCachedPlatformReady();
+    const statusFilter = String(args?.status || 'all').trim().toLowerCase();
+    const typeFilter = String(args?.type || 'all').trim();
+    const sourceCourses = requestedCourseId ? [findCachedCourse(requestedCourseId)] : courses.slice(0, 60);
+    const items = [];
+    for (const course of sourceCourses) {
+      for (const task of (Array.isArray(course?.tasks) ? course.tasks : [])) {
+        const item = cachedAssignment(course, task, includeDetail);
+        if (typeFilter !== 'all' && item.type !== typeFilter) continue;
+        if (statusFilter !== 'all' && item.status !== statusFilter) continue;
+        items.push(requestedCourseId ? item : {
+          key: `mooc:${course.id}:${task.id}`,
+          platform: '中国大学MOOC',
+          courseName: String(course.name || ''),
+          ...item
+        });
+      }
+    }
+    return requestedCourseId ? items : { total: items.length, items: items.slice(0, 300) };
+  }
+
   window.BjtuMoocPlatform = {
     init(options) {
       env = options;
@@ -770,46 +843,30 @@ let moocLoginAssistPopupTabId = null;
     },
     render,
     getCourses: () => courses,
+    courseList() {
+      assertCachedPlatformReady();
+      return courses.map(cachedCourse);
+    },
+    assignmentsOf(args = {}) {
+      return cachedAssignments(args, String(args?.courseId || ''));
+    },
+    teachersOf(args = {}) {
+      assertCachedPlatformReady();
+      return cachedCourse(findCachedCourse(args?.courseId)).teachers;
+    },
+    quizPapersOf(args = {}) {
+      const contentType = Number(args?.contentType || 0);
+      const type = ({ 1: '单元测试', 2: '单元测试', 3: '考试', 4: '单元测试', 5: '单元作业' })[contentType] || 'all';
+      return cachedAssignments({ type }, String(args?.courseId || ''), true)
+        .filter((item) => item.type !== '单元作业' || contentType === 5);
+    },
     restore(value) {
       courses = Array.isArray(value) ? value : [];
       courses.forEach((course) => (course.tasks || []).forEach((task) => {
         if (task?.detail && task?.id) taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
       }));
     },
-    assignments: async (args = {}) => {
-      if (!isPlatformEnabled('mooc')) {
-        throw Object.assign(new Error('中国大学MOOC未启用，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
-      }
-      if (String(window.platformLoginState?.mooc || '') !== 'online') {
-        throw Object.assign(new Error('中国大学MOOC未登录，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
-      }
-      if (typeof window.waitForPlatformDataReady === 'function') {
-        const ready = await window.waitForPlatformDataReady('mooc', 120000);
-        if (!ready) throw Object.assign(new Error('中国大学MOOC数据尚未加载完毕，请先调用 mooc.login()'), { code: 'LOGIN_REQUIRED' });
-      }
-      const statusFilter = String(args?.status || 'all').trim().toLowerCase();
-      const typeFilter = String(args?.type || 'all').trim();
-      const items = [];
-      for (const course of courses.slice(0, 60)) {
-        for (const task of (Array.isArray(course?.tasks) ? course.tasks : [])) {
-          const type = typeText(task.type);
-          if (typeFilter !== 'all' && type !== typeFilter) continue;
-          const st = task?.done ? 'submitted' : (task?.overdue ? 'overdue' : 'pending');
-          if (statusFilter !== 'all' && st !== statusFilter) continue;
-          items.push({
-            key: `mooc:${course.id}:${task.id}`,
-            platform: '中国大学MOOC',
-            courseName: String(course.name || ''),
-            title: String(task?.title || ''),
-            type,
-            status: st,
-            deadline: Number(task?.deadline || 0),
-            actionUrl: taskUrl(course, task) || ''
-          });
-        }
-      }
-      return { total: items.length, items: items.slice(0, 300) };
-    }
+    assignments: (args = {}) => cachedAssignments(args)
   };
 })();
 
@@ -934,7 +991,16 @@ async function moocPageLogin(args = {}) {
 
 globalThis.BjtuMoocPageApi = Object.freeze({
   login: (args) => moocPageLogin(args),
-  assignments: (args) => window.BjtuMoocPlatform.assignments(args)
+  status: () => ({
+    loginState: String(window.platformLoginState?.mooc || 'checking'),
+    loggedIn: String(window.platformLoginState?.mooc || '') === 'online',
+    loaded: window.platformLoadedOnce?.mooc === true
+  }),
+  courseList: () => window.BjtuMoocPlatform.courseList(),
+  assignments: (args) => window.BjtuMoocPlatform.assignments(args),
+  assignments_of_: (args) => window.BjtuMoocPlatform.assignmentsOf(args),
+  teachers_of_: (args) => window.BjtuMoocPlatform.teachersOf(args),
+  quizPapers_of_: (args) => window.BjtuMoocPlatform.quizPapersOf(args)
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

@@ -230,13 +230,25 @@
     return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
   }
 
-  async function loadAcademicScoreStatistics(args) {
-    const semesters = Array.isArray(args) ? args : args?.semesters;
-    const value = throwOperationFailure(await academicInvoke(
+  function academicScoreSemesters(args) {
+    const semesters = Array.isArray(args) ? args : (args?.semesters ?? args?.zxjxjhh);
+    if (semesters !== undefined && !Array.isArray(semesters)) {
+      throw new TypeError('semesters 必须是学期列表');
+    }
+    return semesters;
+  }
+
+  async function loadAcademicScoreRows(args) {
+    const semesters = academicScoreSemesters(args);
+    return throwOperationFailure(await academicInvoke(
       'scores',
-      semesters === undefined ? {} : { semesters },
+      semesters === undefined ? {} : semesters,
       120000
     ), '成绩获取失败');
+  }
+
+  async function loadAcademicScoreStatistics(args) {
+    const value = await loadAcademicScoreRows(args);
     const statistics = requireGlobal('BjtuAcademicScoreStatistics').calculate(value?.rows);
     if (!statistics) throw new Error('所选学期没有可参与计算的课程成绩');
     return statistics;
@@ -409,20 +421,6 @@
     if (!sid) throw new Error('等待邮箱登录超时，请在打开的标签页中完成 CAS 登录后重试');
     if (tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
     return { ok: true, service: 'mail', sid };
-  }
-
-  async function moocInvoke(args, timeoutMs = 120000) {
-    const bg = typeof requireGlobal === 'function' ? requireGlobal('BjtuMoocBackground') : null;
-    const fn = bg?.handleRequest;
-    if (typeof fn === 'function') {
-      try {
-        const data = await fn(args);
-        return data;
-      } catch (error) {
-        return { ok: false, code: String(error?.code || ''), message: String(error?.message || error || '中国大学MOOC请求失败') };
-      }
-    }
-    return sendRuntimeMessage({ type: 'MOOC_REQUEST', payload: args }, timeoutMs);
   }
 
   // ===== app 页面依赖（pageInvoke）守卫 =====
@@ -623,14 +621,6 @@
     if (module === 've') {
       const found = await findVeCourseById(value);
       if (!found?.course) throw new Error(`课程ID无效：${value} 不在当前学期课程列表中，请先调用 ve.courseList 获取有效ID`);
-    } else if (module === 'mooc') {
-      try {
-        const data = await moocInvoke({ action: 'course-list' }, 120000);
-        const known = (Array.isArray(data?.data) ? data.data : []).map((c) => String(c?.id ?? c?.courseId ?? '').trim()).filter(Boolean);
-        if (known.length && !known.includes(value)) throw new Error(`课程ID无效：${value} 不在中国大学MOOC课程列表中，请先调用 mooc.courseList 获取有效ID`);
-      } catch (error) {
-        if (error?.message && String(error?.message).startsWith('课程ID无效')) throw error;
-      }
     } else if (module === 'ykt') {
       try {
         const data = await pageInvoke('ykt', 'courseList', {}, 120000);
@@ -1334,8 +1324,7 @@ name: 've.teachers_of_',
         '**返回示例**：`[{"academicYear":"2024-2025-2","courseCode":"MATH1001","courseName":"高等数学","credit":"4","score":"95","bonusScore":"","teacher":"张老师","details":""}]`'
       ].join('\n'),
       async run(args) {
-        const semesters = Array.isArray(args) ? args : args?.semesters;
-        const value = throwOperationFailure(await academicInvoke('scores', semesters === undefined ? {} : { semesters }, 120000), '成绩获取失败');
+        const value = await loadAcademicScoreRows(args);
         return (Array.isArray(value?.rows) ? value.rows : []).map(compactAcademicScore);
       }
     },
@@ -1663,38 +1652,14 @@ name: 've.teachers_of_',
       doc: [
         '## mooc.courseList —— MOOC 课程列表',
         '',
-        '获取中国大学MOOC（中国大学MOOC）当前账号的课程列表。需要已在 icourse163.org 登录。',
+        '直接读取 app.html 已加载的中国大学MOOC课程缓存，不会打开或请求 MOOC 页面。平台未启用或未登录时，请先调用 mooc.login()。',
         '',
         '**调用示例**：`mooc.courseList()`',
         '',
-        '**返回示例**：{"courses":[{"courseId":"...","courseName":"..."}]}'
+        '**返回示例**：`[{"id":"...","name":"课程名","schoolName":"学校","url":"https://...","teachers":[{"name":"老师","url":"https://..."}],"taskCount":3,"loaded":true}]`'
       ].join('\n'),
       async run() {
-        const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
-        if (!String(cookie?.value || '').trim()) return { ok: false, code: 'LOGIN_REQUIRED', message: '中国大学MOOC未登录，请先调用 mooc.login 完成登录后再获取课程列表' };
-        return moocInvoke({ action: 'course-list' }, 120000);
-      }
-    },
-    {
-      module: 'mooc',
-      name: 'mooc.detail_of_',
-      label: 'MOOC 课程详情',
-      summary: '获取中国大学MOOC课程详情',
-      doc: [
-        '## mooc.detail_of_ —— MOOC 课程详情',
-        '',
-        '获取中国大学MOOC课程详情（含章节列表）。courseId 可先调用 mooc.courseList 获取。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填"}',
-        '',
-        '**调用示例**：`mooc.detail_of_({courseId: "xxx"})`',
-        '',
-        '**返回示例**：{"detail":{...}}'
-      ].join('\n'),
-      async run(args) {
-        const courseId = String(args?.courseId || '').trim();
-        await assertCourseIdOf('mooc', courseId);
-        return moocInvoke({ action: 'course-detail', courseId }, 120000);
+        return pageInvoke('mooc', 'courseList', {}, 120000);
       }
     },
     {
@@ -1705,18 +1670,21 @@ name: 've.teachers_of_',
       doc: [
         '## mooc.quizPaper_of_ —— MOOC 测验试卷',
         '',
-        '获取中国大学MOOC测验试卷。courseId 可先调用 mooc.courseList 获取。',
+        '直接读取 app.html 中指定课程已缓存的测验、考试或作业详情，不会打开或请求 MOOC 页面。courseId 可先调用 mooc.courseList 获取。',
         '',
         '**参数**：{"courseId":"课程ID，必填","contentType":1,"可选测验类型，1=随堂测 2=测验 3=考试 4=练习 5=作业"}',
         '',
         '**调用示例**：`mooc.quizPaper_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：{"papers":[...]}'
+        '**返回示例**：`[{"id":"...","title":"单元测试","type":"单元测试","status":"pending","detail":{"questions":[]}}]`'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
-        await assertCourseIdOf('mooc', courseId);
-        return moocInvoke({ action: 'quiz-paper', courseId, contentType: Number(args?.contentType) || undefined }, 120000);
+        if (!courseId) throw new Error('缺少参数 courseId，请先调用 mooc.courseList 获取课程ID');
+        return pageInvoke('mooc', 'quizPapers_of_', {
+          courseId,
+          contentType: Number(args?.contentType) || undefined
+        }, 120000);
       }
     },
     {
@@ -1734,9 +1702,55 @@ name: 've.teachers_of_',
         '**返回示例**：{"loggedIn":true,"loaded":true}'
       ].join('\n'),
       async run() {
-        const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
-        const loggedIn = !!String(cookie?.value || '').trim();
-        return { loggedIn, loaded: loggedIn };
+        return compactPlatformStatus(await pageInvoke('mooc', 'status', {}, 60000));
+      }
+    },
+    {
+      module: 'mooc',
+      name: 'mooc.assignments_of_',
+      label: 'MOOC 课程作业',
+      summary: '从缓存读取指定中国大学MOOC课程的作业',
+      doc: [
+        '## mooc.assignments_of_ —— MOOC 课程作业',
+        '',
+        '直接筛选 app.html 已加载的指定课程作业缓存，不会打开或请求 MOOC 页面。平台未启用或未登录时，请先调用 mooc.login()。',
+        '',
+        '**参数**：`{"courseId":"课程ID，必填","status":"all|pending|submitted|overdue，默认 all","type":"all|单元作业|单元测试|考试，默认 all"}`',
+        '',
+        '**调用示例**：`mooc.assignments_of_({courseId: "xxx", status: "pending"})`',
+        '',
+        '**返回示例**：`[{"id":"...","title":"作业名","type":"单元作业","startTime":0,"deadline":1234567890000,"status":"pending","actionUrl":"https://..."}]`'
+      ].join('\n'),
+      async run(args) {
+        const courseId = String(args?.courseId || '').trim();
+        if (!courseId) throw new Error('缺少参数 courseId，请先调用 mooc.courseList 获取课程ID');
+        return pageInvoke('mooc', 'assignments_of_', {
+          courseId,
+          status: String(args?.status || 'all'),
+          type: String(args?.type || 'all')
+        }, 120000);
+      }
+    },
+    {
+      module: 'mooc',
+      name: 'mooc.teachers_of_',
+      label: 'MOOC 课程教师',
+      summary: '从缓存读取指定中国大学MOOC课程的教师列表',
+      doc: [
+        '## mooc.teachers_of_ —— MOOC 课程教师',
+        '',
+        '直接读取 app.html 已加载的指定课程教师缓存，不会打开或请求 MOOC 页面。courseId 可先调用 mooc.courseList 获取。',
+        '',
+        '**参数**：`{"courseId":"课程ID，必填"}`',
+        '',
+        '**调用示例**：`mooc.teachers_of_({courseId: "xxx"})`',
+        '',
+        '**返回示例**：`[{"name":"老师","url":"https://www.icourse163.org/u/..."}]`'
+      ].join('\n'),
+      async run(args) {
+        const courseId = String(args?.courseId || '').trim();
+        if (!courseId) throw new Error('缺少参数 courseId，请先调用 mooc.courseList 获取课程ID');
+        return pageInvoke('mooc', 'teachers_of_', { courseId }, 120000);
       }
     },
     {
@@ -1756,10 +1770,6 @@ name: 've.teachers_of_',
         '**返回示例**：{"total":1,"items":[{"key":"mooc:...:...","platform":"中国大学MOOC","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
-        const cookie = await chrome.cookies.get({ url: 'https://www.icourse163.org/', name: 'STUDY_SESS' }).catch(() => null);
-        if (!String(cookie?.value || '').trim()) {
-          return { ok: false, code: 'LOGIN_REQUIRED', message: '中国大学MOOC未登录，请先调用 mooc.login 完成登录后再查询作业' };
-        }
         const value = await pageInvoke('mooc', 'assignments', { status: String(args?.status || 'all'), type: String(args?.type || 'all') }, 240000);
         return { ...value };
       }
@@ -2316,6 +2326,37 @@ name: 've.teachers_of_',
           }
         }
         return { total: items.length, items: items.slice(0, 300) };
+      }
+    },
+    {
+      module: 'xuetangx',
+      name: 'xuetangx.teachers_of_',
+      label: '学堂在线课程教师',
+      summary: '从缓存读取指定学堂在线课程的教师列表',
+      doc: [
+        '## xuetangx.teachers_of_ —— 学堂在线课程教师',
+        '',
+        '直接读取 app.html 已加载的指定课程教师缓存。classroomId 可先调用 xuetangx.courseList 获取。',
+        '',
+        '**参数**：`{"classroomId":"教室ID，必填"}`',
+        '',
+        '**调用示例**：`xuetangx.teachers_of_({classroomId: "xxx"})`',
+        '',
+        '**返回示例**：`[{"name":"老师"}]`'
+      ].join('\n'),
+      async run(args) {
+        const classroomId = String(args?.classroomId || '').trim();
+        if (!classroomId) throw new Error('缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID');
+        const value = await pageInvoke('xuetangx', 'courseList', {}, 120000);
+        if (String(value?.loginState || '') !== 'online') {
+          throw Object.assign(new Error('学堂在线未登录，请先调用 xuetangx.login 完成登录后再获取教师'), { code: 'LOGIN_REQUIRED' });
+        }
+        const course = (Array.isArray(value?.courses) ? value.courses : [])
+          .find((item) => String(item?.classroomId || '') === classroomId);
+        if (!course) throw new Error(`教室ID无效：${classroomId} 不在学堂在线缓存课程列表中，请先调用 xuetangx.courseList 获取有效ID`);
+        return (Array.isArray(course?.teachers) ? course.teachers : [])
+          .map((name) => ({ name: String(name || '').trim() }))
+          .filter((teacher) => teacher.name);
       }
     },
     {
