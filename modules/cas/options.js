@@ -216,10 +216,6 @@
       }));
       if (result?.ok) {
         await refreshContext();
-        const loginName = String(result.loginName || context?.loginName || '');
-        setMessage(loginName
-          ? `已使用保存的账号 ${loginName} 自动登录统一身份认证`
-          : '已使用保存的账号自动登录统一身份认证');
       } else if (result?.ok === false && result.code !== 'no-saved-account') {
         setMessage(`统一身份认证自动登录失败：${result?.message || '未知错误'}`, false);
       }
