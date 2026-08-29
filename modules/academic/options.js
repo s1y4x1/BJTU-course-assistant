@@ -141,35 +141,11 @@
   }
 
   function formatExternalScriptBytes(value) {
-    const bytes = Math.max(0, Number(value) || 0);
-    if (bytes < 1024) return `${bytes} B`;
-    return `${parseFloat((bytes / 1024).toFixed(2))} KB`;
+    return global.BjtuFileSizeEmphasis.formatBytes(value);
   }
 
   function buildFileSizeEmphasisStyle(bytes) {
-    const mb = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
-    if (!(mb > 0)) return 'font-size:10px; font-weight:500; color:#94a3b8; text-shadow:none;';
-    const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
-    const fontPx = (10 + ratio * 6).toFixed(2);
-    const weight = Math.round(500 + ratio * 320);
-    const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
-    const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35);
-    if (document.documentElement.dataset.colorScheme === 'dark') {
-      const r = Math.round(182 + ratio * 73);
-      const g = Math.round(194 + ratio * 61);
-      const b = Math.round(209 + ratio * 46);
-      const shadow = shadowBlur === '0.00'
-        ? 'none'
-        : `0 1px ${shadowBlur}px rgba(255,255,255,${Math.min(1, shadowAlpha * 1.2).toFixed(2)})`;
-      return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${r},${g},${b}); text-shadow:${shadow};`;
-    }
-    const colorLight = Math.round(148 - ratio * 118);
-    const g = Math.max(18, colorLight + 8);
-    const b = Math.max(28, colorLight + 20);
-    const shadow = shadowBlur === '0.00'
-      ? 'none'
-      : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha.toFixed(2)})`;
-    return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${colorLight},${g},${b}); text-shadow:${shadow};`;
+    return global.BjtuFileSizeEmphasis.buildBytesStyle(bytes);
   }
 
   function setAssessmentScriptProgress({ visible = true, loaded = 0, total = 0, label = '正在下载…' } = {}) {

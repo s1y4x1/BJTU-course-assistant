@@ -426,11 +426,7 @@ function setupUiOrderEditor(rawSectionOrder, rawPlatformOrder) {
 }
 
 function formatModuleBytes(bytes) {
-  const value = Math.max(0, Number(bytes) || 0);
-  if (!value) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
-  return `${parseFloat((value / (1024 ** index)).toFixed(2))} ${units[index]}`;
+  return globalThis.BjtuFileSizeEmphasis.formatBytes(bytes);
 }
 
 function escapeOptionsHtml(value) {
@@ -441,9 +437,7 @@ function escapeOptionsHtml(value) {
 
 function renderInstalledModuleFileSize(bytes) {
   const safeBytes = Math.max(0, Number(bytes) || 0);
-  const style = typeof globalThis.buildVersionDownloadEmphasisStyle === 'function'
-    ? globalThis.buildVersionDownloadEmphasisStyle(safeBytes)
-    : 'font-size:12px;font-weight:500;color:#1976d2;';
+  const style = globalThis.BjtuFileSizeEmphasis.buildBytesStyle(safeBytes);
   const text = typeof globalThis.formatDownloadBytes === 'function'
     ? globalThis.formatDownloadBytes(safeBytes)
     : formatModuleBytes(safeBytes);

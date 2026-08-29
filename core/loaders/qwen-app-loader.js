@@ -3,6 +3,8 @@
   global.__bjtuQwenAppReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
     if (!available.qwen) return false;
+    await global.BjtuModuleRegistry.loadStyle('UI/file-size-emphasis.css');
+    await global.BjtuModuleRegistry.loadScript('UI/file-size-emphasis.js');
     await global.BjtuModuleRegistry.loadStyle('modules/qwen/app.css');
     await global.BjtuModuleRegistry.loadStyle('modules/qwen/operations-ui.css');
     const markupResponse = await fetch(chrome.runtime.getURL('modules/qwen/app.html'), {

@@ -913,26 +913,7 @@ function formatDownloadBytes(value) {
 }
 
 function buildVersionDownloadEmphasisStyle(bytes) {
-  const mb = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
-  if (mb <= 0) return 'font-size:10px;font-weight:500;color:#94a3b8;text-shadow:none;';
-  const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
-  const fontSize = (10 + ratio * 6).toFixed(2);
-  const fontWeight = Math.round(500 + ratio * 320);
-  const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
-  const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35);
-  if (document.documentElement.dataset.colorScheme === 'dark') {
-    const red = Math.round(182 + ratio * 73);
-    const green = Math.round(194 + ratio * 61);
-    const blue = Math.round(209 + ratio * 46);
-    const glowAlpha = Math.min(1, shadowAlpha * 1.2).toFixed(2);
-    const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(255,255,255,${glowAlpha})`;
-    return `font-size:${fontSize}px;font-weight:${fontWeight};color:rgb(${red},${green},${blue});text-shadow:${shadow};`;
-  }
-  const red = Math.round(148 - ratio * 118);
-  const green = Math.max(18, red + 8);
-  const blue = Math.max(28, red + 20);
-  const shadow = shadowBlur === '0.00' ? 'none' : `0 1px ${shadowBlur}px rgba(15,23,42,${shadowAlpha.toFixed(2)})`;
-  return `font-size:${fontSize}px;font-weight:${fontWeight};color:rgb(${red},${green},${blue});text-shadow:${shadow};`;
+  return globalThis.BjtuFileSizeEmphasis.buildBytesStyle(bytes);
 }
 
 function formatVersionDownloadEta(seconds) {
@@ -1534,25 +1515,7 @@ function getArchiveModuleSize(files, moduleId) {
 }
 
 function buildModuleSizeStyle(bytes) {
-  if (typeof globalThis.buildFileSizeEmphasisStyle === 'function') {
-    try {
-      const style = globalThis.buildFileSizeEmphasisStyle(bytes);
-      if (style) return style;
-    } catch {
-      // The VE size helper may not have loaded yet; use the local fallback below.
-    }
-  }
-  const mb = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
-  if (mb <= 0) return 'font-size:10px;font-weight:500;color:#94a3b8;text-shadow:none;';
-  const ratio = Math.max(0, Math.min(1, Math.log10(mb + 1) / Math.log10(1024 + 1)));
-  const fontSize = (10 + ratio * 6).toFixed(2);
-  const fontWeight = Math.round(500 + ratio * 320);
-  const dark = document.documentElement.dataset.colorScheme === 'dark';
-  const channel = dark ? Math.round(182 + ratio * 73) : Math.round(148 - ratio * 118);
-  const color = dark
-    ? `rgb(${channel},${Math.round(194 + ratio * 61)},${Math.round(209 + ratio * 46)})`
-    : `rgb(${channel},${Math.max(18, channel + 8)},${Math.max(28, channel + 20)})`;
-  return `font-size:${fontSize}px;font-weight:${fontWeight};color:${color};`;
+  return globalThis.BjtuFileSizeEmphasis.buildBytesStyle(bytes);
 }
 
 function appendUpdateModuleChoice(list, { id, name, moduleSize, checked, disabled }) {

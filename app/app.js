@@ -1957,16 +1957,11 @@ function hideBackgroundPortalLoginPendingToast() {
 }
 
 function formatSize(bytes) {
-  if (!bytes) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  return globalThis.BjtuFileSizeEmphasis.formatBytes(bytes);
 }
 
 function buildFileSizeEmphasisStyle(bytes) {
-  const n = Math.max(0, Number(bytes) || 0);
-  return buildResourceSizeEmphasisStyle(n / (1024 * 1024));
+  return globalThis.BjtuFileSizeEmphasis.buildBytesStyle(bytes);
 }
 
 function setSpeedDisplay(element, bytesPerSecond, text = null) {
@@ -2000,22 +1995,10 @@ window.addEventListener('bjtu-theme-change', () => {
       setSpeedDisplay(element, Number(element.dataset.speedBytes || 0), element.textContent || '');
     }
   });
-  document.querySelectorAll('[data-file-size-bytes], [data-file-size-mb]').forEach((element) => {
-    if (!(element instanceof HTMLElement)) return;
-    const style = element.dataset.fileSizeBytes !== undefined
-      ? buildFileSizeEmphasisStyle(Number(element.dataset.fileSizeBytes || 0))
-      : buildResourceSizeEmphasisStyle(Number(element.dataset.fileSizeMb || 0));
-    applyEmphasisStyle(element, style);
-  });
 });
 
 function applyEmphasisStyle(element, styleText) {
-  if (!(element instanceof HTMLElement)) return;
-  ['font-size', 'font-weight', 'color', 'text-shadow'].forEach((property) => {
-    const pattern = new RegExp(`${property}:([^;]+)`);
-    const value = String(styleText || '').match(pattern)?.[1]?.trim();
-    if (value) element.style.setProperty(property, value);
-  });
+  globalThis.BjtuFileSizeEmphasis.applyStyle(element, styleText);
 }
 
 function renderFileSizeText(bytes, text = '') {

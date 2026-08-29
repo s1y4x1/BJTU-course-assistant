@@ -220,11 +220,6 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
 .success { color: green; }
 .error { color: red; }
 .url-link { word-break: break-all; }
-.file-size-emphasis {
-    display: inline-block;
-    vertical-align: baseline;
-    white-space: nowrap;
-}
 .file-size-separator,
 .file-size-placeholder {
     font-size: 12px;

@@ -333,12 +333,6 @@ html[data-color-scheme="dark"] .mis-captcha-status-right #casCaptchaDelete:not(:
   white-space: nowrap;
 }
 
-.file-size-emphasis {
-  display: inline-block;
-  vertical-align: baseline;
-  white-space: nowrap;
-}
-
 .file-size-separator {
   margin: 0 2px;
   color: #64748b;

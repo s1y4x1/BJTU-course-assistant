@@ -3,6 +3,8 @@
   global.__bjtuUpdaterReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
     if (!available.updater) return false;
+    await global.BjtuModuleRegistry.loadStyle('UI/file-size-emphasis.css');
+    await global.BjtuModuleRegistry.loadScript('UI/file-size-emphasis.js');
     await global.BjtuModuleRegistry.loadStyle('modules/updater/app.css');
     const markupResponse = await fetch(chrome.runtime.getURL('modules/updater/app.html'), {
       cache: 'no-store'
