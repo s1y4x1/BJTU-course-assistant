@@ -36,6 +36,7 @@
   const LOGIN_HEADER_RULE_ID = 914304;
   const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   const ACADEMIC_SCORE_SOURCE_CACHE_KEY = 'academicScoreSourceCache';
+  const ACADEMIC_CURRENT_EXAM_CACHE_KEY = 'academicCurrentExamCache';
   // Can be changed from the extension service worker console through
   // BjtuAcademicSystemInternals.notifyInitialScoreRows.
   let notifyInitialScoreRows = true;
@@ -79,6 +80,8 @@
   let academicSessionAccount = null;
   let academicScoreSourceCache = null;
   let academicScoreSourcePromise = null;
+  let academicCurrentExamCache = null;
+  let academicCurrentExamPromise = null;
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
@@ -552,9 +555,12 @@
   async function clearAcademicCookies() {
     academicScoreSourceCache = null;
     academicScoreSourcePromise = null;
+    academicCurrentExamCache = null;
+    academicCurrentExamPromise = null;
     await chrome.storage.session.remove([
       ACADEMIC_DATA_CACHE_KEY,
-      ACADEMIC_SCORE_SOURCE_CACHE_KEY
+      ACADEMIC_SCORE_SOURCE_CACHE_KEY,
+      ACADEMIC_CURRENT_EXAM_CACHE_KEY
     ]).catch(() => {});
     const cookies = await chrome.cookies.getAll({ domain: 'aa.bjtu.edu.cn' }).catch(() => []);
     for (const cookie of (cookies || [])) {
@@ -817,6 +823,38 @@
 
   function fetchExamPage(zxjxjhh = '') {
     return fetchAcademicPage(academicPageUrl(EXAM_URL, 'zxjxjhh', zxjxjhh), '考试信息');
+  }
+
+  async function loadCurrentExamSource({ fresh = false } = {}) {
+    if (!fresh && academicCurrentExamCache) return academicCurrentExamCache;
+    if (academicCurrentExamPromise) return academicCurrentExamPromise;
+    academicCurrentExamPromise = (async () => {
+      const local = await chrome.storage.local.get([STUDENT_ID_KEY]);
+      const expectedStudentId = String(local?.[STUDENT_ID_KEY] || '').trim();
+      if (!fresh) {
+        const stored = await chrome.storage.session.get(ACADEMIC_CURRENT_EXAM_CACHE_KEY);
+        const cached = stored?.[ACADEMIC_CURRENT_EXAM_CACHE_KEY];
+        if (cached && expectedStudentId && String(cached.studentId || '') === expectedStudentId) {
+          return cached;
+        }
+      }
+      const page = await fetchExamPage();
+      const parsed = parseExamPage(page.html);
+      if (!parsed.hasExamTable) throw new Error('考试信息页面中未找到考试表格');
+      const source = {
+        rows: parsed.rows,
+        studentId: String(page.account?.studentId || expectedStudentId),
+        checkedAt: Date.now()
+      };
+      await chrome.storage.session.set({ [ACADEMIC_CURRENT_EXAM_CACHE_KEY]: source });
+      return source;
+    })();
+    try {
+      academicCurrentExamCache = await academicCurrentExamPromise;
+      return academicCurrentExamCache;
+    } finally {
+      academicCurrentExamPromise = null;
+    }
   }
 
   async function fetchSchedulePage(type = 'semester', xnxq = '') {
@@ -1289,10 +1327,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       if (!force && settings?.[EXAM_MONITOR_KEY] !== true) return { skipped: true };
       try {
         await flushPendingExamNotifications();
-        const page = await fetchExamPage();
-        const parsed = parseExamPage(page.html);
-        if (!parsed.hasExamTable) throw new Error('考试信息页面中未找到考试表格');
-        return await processExamRows(parsed.rows, page.account.studentId, source);
+        const current = await loadCurrentExamSource({ fresh: true });
+        return await processExamRows(current.rows, current.studentId, source);
       } catch (error) {
         await chrome.storage.local.set({
           [EXAM_STATUS_KEY]: {
@@ -1578,12 +1614,14 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     }
     const context = await resolveAcademicTerms(args, 'zxjxjhh');
     const results = await mapAcademicTerms(context.selected, async (semester) => {
-      const page = await fetchExamPage(semester.zxjxjhh);
-      const parsed = parseExamPage(page.html);
+      const isCurrent = semester.zxjxjhh === context.currentZxjxjhh;
+      const parsed = isCurrent
+        ? await loadCurrentExamSource()
+        : parseExamPage((await fetchExamPage(semester.zxjxjhh)).html);
       return {
         label: String(semester.label || ''),
         zxjxjhh: String(semester.zxjxjhh || ''),
-        rows: parsed.hasExamTable ? parsed.rows : []
+        rows: isCurrent || parsed.hasExamTable ? parsed.rows : []
       };
     });
     return { ok: true, currentZxjxjhh: context.currentZxjxjhh, results, checkedAt: Date.now() };
