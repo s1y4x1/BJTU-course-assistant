@@ -1844,7 +1844,10 @@
     const scheduleSelected = renderDataSemesterOptions(
       'academicScheduleSemester',
       'academicScheduleCurrentSemesterBtn',
-      availableSchedules.map((item) => ({ label: item.label, value: item.xnxq })),
+      availableSchedules.map((item) => ({
+        label: `${item.label}${item.type === 'selection' && item.xnxq !== scheduleCache?.currentXnxq ? '(选课)' : ''}`,
+        value: item.xnxq
+      })),
       scheduleCache?.currentXnxq,
       scheduleSemesterPreference
     );
@@ -1855,7 +1858,15 @@
       scheduleSemesterPreference = scheduleSelected === String(scheduleCache?.currentXnxq || '') ? '' : scheduleSelected;
     }
     const schedule = cachedByTerm.get(scheduleSelected);
-    if (schedule) applyScheduleView(schedule);
+    const isInvalidCurrentSelection = scheduleSelected === String(scheduleCache?.currentXnxq || '')
+      && schedule?.type === 'selection';
+    if (isInvalidCurrentSelection) {
+      if (element('academicScheduleLoading')) element('academicScheduleLoading').style.display = 'flex';
+      if (element('academicScheduleTableWrap')) element('academicScheduleTableWrap').style.display = 'none';
+      if (element('academicScheduleEmpty')) element('academicScheduleEmpty').style.display = 'none';
+    } else if (schedule) {
+      applyScheduleView(schedule);
+    }
   }
 
   function renderCachedAcademicData() {
@@ -1977,7 +1988,9 @@
     const terms = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
     const waiting = new Set();
     const missing = terms.filter((term) => {
-      if (loadedScheduleTerms.has(term)) return false;
+      const cached = (scheduleCache?.results || []).find((item) => item.xnxq === term);
+      const requiresSemesterSource = term === String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || '');
+      if (loadedScheduleTerms.has(term) && (!requiresSemesterSource || cached?.type === 'semester')) return false;
       const pending = scheduleTermsInFlight.get(term);
       if (pending) waiting.add(pending);
       return !pending;
@@ -1996,14 +2009,20 @@
 
   async function prefetchScheduleTerms(values) {
     const pending = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+    const isScheduleTermReady = (term) => {
+      if (!loadedScheduleTerms.has(term)) return false;
+      const currentTerm = String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || '');
+      if (term !== currentTerm) return true;
+      return (scheduleCache?.results || []).some((item) => item.xnxq === term && item.type === 'semester');
+    };
     while (pending.length) {
       const selected = String(element('academicScheduleSemester')?.value || '');
-      if (selected && !loadedScheduleTerms.has(selected)) {
+      if (selected && !isScheduleTermReady(selected)) {
         await ensureScheduleTerms([selected]);
         renderCachedScheduleData();
       }
       const term = pending.shift();
-      if (term && !loadedScheduleTerms.has(term)) {
+      if (term && !isScheduleTermReady(term)) {
         await ensureScheduleTerms([term]);
         renderCachedScheduleData();
       }

@@ -1546,7 +1546,15 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         cached.scheduleCache?.selectionProbed === true
         && cached.scheduleCache?.selectionSemester?.xnxq
       );
-      if (terms.length && terms.every((term) => loaded.has(term)) && selectionReady) {
+      const currentTerm = String(cached.scoreCurrentZxjxjhh || '');
+      const cachedByTerm = new Map(
+        (cached.scheduleCache?.results || []).map((item) => [String(item?.xnxq || ''), item])
+      );
+      const termsReady = terms.every((term) => (
+        loaded.has(term)
+        && (term !== currentTerm || cachedByTerm.get(term)?.type === 'semester')
+      ));
+      if (terms.length && termsReady && selectionReady) {
         const requested = new Set(terms);
         const results = (cached.scheduleCache?.results || []).filter((item) => (
           requested.has(item.xnxq) || (includeSelection && item.type === 'selection')
