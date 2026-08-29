@@ -1432,7 +1432,7 @@ name: 've.teachers_of_',
         '',
         '登录教务系统。studentId 可省略，此时优先使用当前账号，其次使用最近保存的账号。传入 password 时使用该密码；省略 password 时自动读取所选账号已保存的密码，如果没有可用账号或密码则报错。',
         '',
-        '**参数**：{"studentId":"学号，可选；省略时使用当前或最近保存的账号","password":"身份证后六位，可选；省略时使用已保存密码"}',
+        '**参数**：{"studentId":"学号，可选；省略时使用当前或最近保存的账号","password":"身份证号后六位，可选；省略时使用已保存密码"}',
         '',
         '**调用示例**：`academic.login()`；`academic.login({studentId: "xxx"})`；`academic.login({studentId: "xxx", password: "123456"})`',
         '',
@@ -1634,7 +1634,7 @@ name: 've.teachers_of_',
       module: 'mail',
       name: 'mail.user',
       label: '邮箱用户信息',
-      summary: '获取邮箱地址与姓名（user:getAttrs）',
+      summary: '获取邮箱地址与姓名',
       doc: [
         '## mail.user —— 邮箱用户信息',
         '',
@@ -2388,24 +2388,62 @@ name: 've.teachers_of_',
       module: 'qwen',
       name: 'qwen.getDoc',
       label: '查询操作说明',
-      summary: '查询指定操作的使用说明（Markdown）',
+      summary: '按模块名和操作名批量查询操作说明（Markdown）',
       doc: [
         '## qwen.getDoc —— 查询操作说明',
         '',
-        '查询指定操作的详细使用说明（Markdown）。在执行任何操作前，应先调用本操作查询其说明。',
+        '按模块名和操作名查询详细使用说明（Markdown）。module 和 name 均可传单个字符串、字符串列表或省略；多份说明使用分隔线连接。在执行任何操作前，应先调用本操作查询其说明。',
         '',
-        '**参数**：{"name":"操作名，必填，如 ve.courseList"}',
+        '**参数**：`{"module":"模块名或模块名列表","name":"不含模块前缀的操作名或操作名列表"}`。两个参数都不传时返回本操作自己的说明；只传 module 时返回这些模块的所有操作；只传 name 时返回所有模块中与这些名称匹配的操作；两者都传时按 module × name 两两匹配并跳过不存在的操作。',
         '',
-        '**调用示例**：`qwen.getDoc({name: "ve.courseList"})`',
+        '**调用示例**：`qwen.getDoc()`；`qwen.getDoc({module: "ve"})`；`qwen.getDoc({name: "login"})`；`qwen.getDoc({module: ["ve","ykt","academic"], name: ["login","assignments"]})`',
         '',
-        '**返回示例**："## ve.courseList —— 课程列表\n……"'
+        '**返回示例**：`"## ve.login —— 智慧课程平台登录\\n……\\n\\n---\\n\\n## ve.assignments —— 作业查询\\n……"`'
       ].join('\n'),
       async run(args) {
-        const name = String(args?.name || '').trim();
-        if (!name) throw new Error('缺少参数 name');
-        const op = OPERATIONS.find((item) => item.name === name);
-        if (!op) throw new Error(`未找到操作：${name}`);
-        return op.doc;
+        const normalizeSelectors = (value, label) => {
+          if (value === undefined || value === null || value === '') return [];
+          const source = Array.isArray(value) ? value : [value];
+          const selectors = [];
+          const seen = new Set();
+          for (const item of source) {
+            if (typeof item !== 'string') throw new Error(`${label} 必须是字符串或字符串列表`);
+            const selector = item.trim();
+            if (!selector || seen.has(selector)) continue;
+            seen.add(selector);
+            selectors.push(selector);
+          }
+          return selectors;
+        };
+
+        let modules = normalizeSelectors(args?.module, 'module');
+        let names = normalizeSelectors(args?.name, 'name');
+        if (!modules.length && !names.length) {
+          modules = ['qwen'];
+          names = ['getDoc'];
+        }
+
+        let matches;
+        if (modules.length && names.length) {
+          matches = modules.flatMap((module) => names.map((name) => (
+            OPERATIONS.find((item) => item.name === `${module}.${name}`)
+          )).filter(Boolean));
+        } else if (modules.length) {
+          matches = modules.flatMap((module) => (
+            OPERATIONS.filter((item) => String(item.module || '') === module)
+          ));
+        } else {
+          matches = names.flatMap((name) => OPERATIONS.filter((item) => (
+            String(item.name || '').split('.').slice(1).join('.') === name
+          )));
+        }
+
+        if (!matches.length) {
+          const moduleText = modules.length ? `module=${modules.join(',')}` : '';
+          const nameText = names.length ? `name=${names.join(',')}` : '';
+          throw new Error(`未找到匹配的操作：${[moduleText, nameText].filter(Boolean).join('，')}`);
+        }
+        return matches.map((operation) => operation.doc).join('\n\n---\n\n');
       }
     },
     {
