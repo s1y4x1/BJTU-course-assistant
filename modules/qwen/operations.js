@@ -230,6 +230,18 @@
     return sendRuntimeMessage({ type: direct?.type, payload: args }, timeoutMs);
   }
 
+  async function loadAcademicScoreStatistics(args) {
+    const semesters = Array.isArray(args) ? args : args?.semesters;
+    const value = throwOperationFailure(await academicInvoke(
+      'scores',
+      semesters === undefined ? {} : { semesters },
+      120000
+    ), '成绩获取失败');
+    const statistics = requireGlobal('BjtuAcademicScoreStatistics').calculate(value?.rows);
+    if (!statistics) throw new Error('所选学期没有可参与计算的课程成绩');
+    return statistics;
+  }
+
   const CAS_DIRECT = {
     currentAccount: { fn: 'getContext', type: 'CAS_GET_CONTEXT' },
     login: { fn: 'loginWithPassword', type: 'CAS_LOGIN_WITH_PASSWORD' },
@@ -1287,6 +1299,26 @@ name: 've.teachers_of_',
     },
     {
       module: 'academic',
+      name: 'academic.GPA',
+      label: '平均学分绩点',
+      summary: '按一个或多个学期计算平均学分绩点',
+      doc: [
+        '## academic.GPA —— 平均学分绩点',
+        '',
+        '按学分加权计算一个或多个学期的平均学分绩点。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。百分制和五级制成绩按北京交通大学现行换算规则计算，二级制成绩不参与。',
+        '',
+        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: [...]}`。',
+        '',
+        '**调用示例**：`academic.GPA()`；`academic.GPA(["2024-2025-2-2","2023-2024-1-2"])`',
+        '',
+        '**返回示例**：`3.72`'
+      ].join('\n'),
+      async run(args) {
+        return (await loadAcademicScoreStatistics(args)).averageGpa;
+      }
+    },
+    {
+      module: 'academic',
       name: 'academic.scores',
       label: '成绩查询',
       summary: '按一个或多个学期获取教务系统成绩',
@@ -1305,6 +1337,26 @@ name: 've.teachers_of_',
         const semesters = Array.isArray(args) ? args : args?.semesters;
         const value = throwOperationFailure(await academicInvoke('scores', semesters === undefined ? {} : { semesters }, 120000), '成绩获取失败');
         return (Array.isArray(value?.rows) ? value.rows : []).map(compactAcademicScore);
+      }
+    },
+    {
+      module: 'academic',
+      name: 'academic.weightedAverageScore',
+      label: '加权平均成绩',
+      summary: '按一个或多个学期计算加权平均成绩',
+      doc: [
+        '## academic.weightedAverageScore —— 加权平均成绩',
+        '',
+        '按学分加权计算一个或多个学期的平均成绩。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。五级制成绩按北京交通大学现行规则换算为百分制，二级制成绩不参与。',
+        '',
+        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: [...]}`。',
+        '',
+        '**调用示例**：`academic.weightedAverageScore()`；`academic.weightedAverageScore(["2024-2025-2-2","2023-2024-1-2"])`',
+        '',
+        '**返回示例**：`88.6`'
+      ].join('\n'),
+      async run(args) {
+        return (await loadAcademicScoreStatistics(args)).weightedAverageScore;
       }
     },
     {

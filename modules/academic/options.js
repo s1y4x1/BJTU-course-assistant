@@ -1426,64 +1426,6 @@
     renderEmptyDataStatus(element('academicSystemStatus'), 'academicScoreTableBody', 'academicScoreLoading', '暂无成绩数据');
   }
 
-  const FIVE_LEVEL_GRADE_VALUES = Object.freeze({
-    A: { point: 4.0, score: 95 },
-    'A-': { point: 3.7, score: 87 },
-    'B+': { point: 3.3, score: 83 },
-    B: { point: 3.0, score: 79 },
-    'B-': { point: 2.7, score: 76 },
-    'C+': { point: 2.3, score: 73 },
-    C: { point: 2.0, score: 69 },
-    'C-': { point: 1.7, score: 66 },
-    'D+': { point: 1.3, score: 63 },
-    D: { point: 1.0, score: 60 },
-    F: { point: 0, score: 30 }
-  });
-
-  function percentageGradePoint(score) {
-    if (score >= 90) return 4.0;
-    if (score >= 85) return 3.7;
-    if (score >= 81) return 3.3;
-    if (score >= 78) return 3.0;
-    if (score >= 75) return 2.7;
-    if (score >= 71) return 2.3;
-    if (score >= 68) return 2.0;
-    if (score >= 65) return 1.7;
-    if (score >= 61) return 1.3;
-    if (score >= 60) return 1.0;
-    return 0;
-  }
-
-  function academicGradeValues(value) {
-    const grade = String(value ?? '').trim().toUpperCase();
-    if (Object.prototype.hasOwnProperty.call(FIVE_LEVEL_GRADE_VALUES, grade)) {
-      return FIVE_LEVEL_GRADE_VALUES[grade];
-    }
-    if (!/^(?:100(?:\.0+)?|\d{1,2}(?:\.\d+)?)$/.test(grade)) return null;
-    const score = Number(grade);
-    if (!Number.isFinite(score) || score < 0 || score > 100) return null;
-    return { point: percentageGradePoint(score), score };
-  }
-
-  function calculateAcademicScoreStatistics(rows) {
-    let credits = 0;
-    let weightedPoints = 0;
-    let weightedScores = 0;
-    for (const row of (Array.isArray(rows) ? rows : [])) {
-      const credit = Number.parseFloat(String(row?.credit ?? '').trim());
-      const grade = academicGradeValues(row?.score);
-      if (!Number.isFinite(credit) || credit <= 0 || !grade) continue;
-      credits += credit;
-      weightedPoints += grade.point * credit;
-      weightedScores += grade.score * credit;
-    }
-    if (credits <= 0) return null;
-    return {
-      averageGpa: (weightedPoints / credits).toFixed(2),
-      weightedAverageScore: (weightedScores / credits).toFixed(1)
-    };
-  }
-
   function renderAcademicScoreStatistics(rows) {
     const container = element('academicScoreStatistics');
     if (!(container instanceof HTMLElement)) return;
@@ -1491,11 +1433,11 @@
       renderAcademicScoreStatisticsLoading();
       return;
     }
-    const result = calculateAcademicScoreStatistics(rows);
+    const result = global.BjtuAcademicScoreStatistics?.calculate(rows) || null;
     container.style.display = result ? 'flex' : 'none';
     if (!result) return;
-    element('academicAverageGpa').textContent = result.averageGpa;
-    element('academicWeightedAverageScore').textContent = result.weightedAverageScore;
+    element('academicAverageGpa').textContent = result.averageGpaText;
+    element('academicWeightedAverageScore').textContent = result.weightedAverageScoreText;
   }
 
   function renderAcademicScoreStatisticsLoading() {

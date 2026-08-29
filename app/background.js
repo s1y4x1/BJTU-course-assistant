@@ -219,7 +219,7 @@ tryImportModuleScripts('../core/captcha-assets.js');
 tryImportModuleScripts('../modules/captcha/mis-assets.js');
 tryImportModuleScripts('../modules/captcha/recognizer.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/login-service.js');
-tryImportModuleScripts('../modules/academic/system.js');
+tryImportModuleScripts('../modules/academic/score-statistics.js', '../modules/academic/system.js');
 tryImportModuleScripts('../modules/cas/system.js');
 tryImportModuleScripts('../modules/mail/system.js');
 tryImportModuleScripts('../modules/campusnet/background.js');

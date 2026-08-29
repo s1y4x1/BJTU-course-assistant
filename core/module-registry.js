@@ -36,8 +36,14 @@
     academic: {
       label: '教务系统',
       styles: ['options.css'],
-      files: ['system.js', 'options.html', 'options.js'],
-      options: { fragment: 'options.html', style: 'options.css', script: 'options.js', wide: true }
+      files: ['system.js', 'score-statistics.js', 'options.html', 'options.js'],
+      options: {
+        fragment: 'options.html',
+        style: 'options.css',
+        script: 'options.js',
+        scripts: ['score-statistics.js'],
+        wide: true
+      }
     },
     cas: {
       label: '统一身份认证',
