@@ -33,6 +33,7 @@
   const NOTIFICATION_PREFIX = 'bjtu-academic-score:';
   const EXAM_NOTIFICATION_PREFIX = 'bjtu-academic-exam:';
   const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
+  const LOGIN_HEADER_RULE_ID = 914304;
   // Can be changed from the extension service worker console through
   // BjtuAcademicSystemInternals.notifyInitialScoreRows.
   let notifyInitialScoreRows = true;
@@ -505,25 +506,55 @@
     }));
   }
 
-  async function ensureAcademicOriginTab() {
-    const tabs = await chrome.tabs.query({ url: ['https://aa.bjtu.edu.cn/*'] }).catch(() => []);
-    const reusable = tabs.find((tab) => tab?.id && tab.status === 'complete');
-    if (reusable) return { tab: reusable, temporary: false };
-    const tab = await globalThis.BjtuTabs.create({ url: LOGIN_URL, active: false });
-    if (!tab?.id) throw new Error('无法打开教务系统登录页');
-    const loaded = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => finish(null, new Error('教务系统登录页加载超时')), 20000);
-      const finish = (result, error) => {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-        if (error) reject(error); else resolve(result);
-      };
-      const onUpdated = (updatedId, changeInfo, updatedTab) => {
-        if (updatedId === tab.id && changeInfo.status === 'complete') finish(updatedTab);
-      };
-      chrome.tabs.onUpdated.addListener(onUpdated);
+  async function installAcademicLoginHeaderRule() {
+    if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [LOGIN_HEADER_RULE_ID],
+      addRules: [{
+        id: LOGIN_HEADER_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Origin', operation: 'set', value: 'https://aa.bjtu.edu.cn' },
+            { header: 'Referer', operation: 'set', value: LOGIN_URL }
+          ]
+        },
+        condition: {
+          regexFilter: '^https://aa\\.bjtu\\.edu\\.cn/client/login/?(?:\\?.*)?$',
+          resourceTypes: ['xmlhttprequest'],
+          requestMethods: ['post']
+        }
+      }]
     });
-    return { tab: loaded || tab, temporary: true };
+  }
+
+  async function removeAcademicLoginHeaderRule() {
+    if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [LOGIN_HEADER_RULE_ID]
+    }).catch(() => {});
+  }
+
+  function academicLoginCsrfToken(html) {
+    for (const match of String(html || '').matchAll(/<input\b[^>]*>/gi)) {
+      const tag = match[0];
+      if (attributeFromHtml(tag, 'name') === 'csrfmiddlewaretoken') {
+        return attributeFromHtml(tag, 'value');
+      }
+    }
+    return '';
+  }
+
+  function academicLoginErrorMessage(html) {
+    const source = String(html || '');
+    for (const match of source.matchAll(/<([a-z][\w:-]*)\b([^>]*)>([\s\S]*?)<\/\1>/gi)) {
+      const className = attributeFromHtml(match[2], 'class');
+      if (!/(?:^|\s)(?:alert|error|help-block)(?:\s|$)/i.test(className)) continue;
+      const message = textFromHtml(match[3]);
+      if (message) return message;
+    }
+    return source.includes('密码错误，登录失败') ? '账号或密码错误' : '教务系统登录失败';
   }
 
   async function loginWithPassword(studentId, password) {
@@ -535,57 +566,51 @@
     academicAccountCache = null;
     academicSessionAccount = null;
     await clearAcademicCookies();
-    const { tab, temporary } = await ensureAcademicOriginTab();
+    await installAcademicLoginHeaderRule();
     try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        world: 'MAIN',
-        func: async (loginUrl, indexUrl, loginName, loginPassword) => {
-          const fetchWith503Retry = async (url, options) => {
-            while (true) {
-              const response = await fetch(url, options);
-              if (response.status !== 503) return response;
-              response.body?.cancel?.().catch?.(() => {});
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-            }
-          };
-          const readCookie = (name) => document.cookie.split(';')
-            .map((item) => item.trim())
-            .find((item) => item.startsWith(`${name}=`))
-            ?.slice(name.length + 1) || '';
-          for (let attempt = 0; attempt < 2; attempt += 1) {
-            const page = await fetchWith503Retry(loginUrl, { credentials: 'include', cache: 'no-store' });
-            if (!page.ok) return { ok: false, message: `登录页 HTTP ${page.status}` };
-            const pageHtml = await page.text();
-            const doc = new DOMParser().parseFromString(pageHtml, 'text/html');
-            const csrf = doc.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
-            if (!csrf) return { ok: false, message: '登录页中未找到 CSRF Token' };
-            const body = new URLSearchParams({
-              csrfmiddlewaretoken: csrf,
-              loginname: loginName,
-              password: loginPassword
-            });
-            const headers = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
-            const csrfCookie = decodeURIComponent(readCookie('csrftoken'));
-            if (csrfCookie) headers['X-CSRFToken'] = csrfCookie;
-            const response = await fetchWith503Retry(loginUrl, {
-              method: 'POST', body, headers, credentials: 'include', cache: 'no-store', redirect: 'follow'
-            });
-            const html = await response.text();
-            const success = response.url.startsWith(indexUrl) || html.includes('欢迎您，');
-            if (success) return { ok: true, url: response.url };
-            if (response.status === 403 && attempt === 0) continue;
-            const resultDoc = new DOMParser().parseFromString(html, 'text/html');
-            const message = [...resultDoc.querySelectorAll('.alert,.error,.help-block')]
-              .map((element) => String(element.textContent || '').trim())
-              .find(Boolean) || (html.includes('密码错误，登录失败') ? '账号或密码错误' : '教务系统登录失败');
-            return { ok: false, message };
+      let result = { ok: false, message: 'CSRF Token 已失效，请重试' };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const page = await fetchAcademicWith503Retry(LOGIN_URL, {
+          credentials: 'include', cache: 'no-store', redirect: 'follow'
+        });
+        if (!page.ok) {
+          result = { ok: false, message: `登录页 HTTP ${page.status}` };
+          break;
+        }
+        const pageHtml = await page.text();
+        const csrf = academicLoginCsrfToken(pageHtml);
+        if (!csrf) {
+          result = { ok: false, message: '登录页中未找到 CSRF Token' };
+          break;
+        }
+        const body = new URLSearchParams({
+          csrfmiddlewaretoken: csrf,
+          loginname: id,
+          password: secret
+        });
+        const headers = {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+        };
+        const csrfCookie = await chrome.cookies.get({ url: LOGIN_URL, name: 'csrftoken' }).catch(() => null);
+        if (csrfCookie?.value) {
+          try {
+            headers['X-CSRFToken'] = decodeURIComponent(csrfCookie.value);
+          } catch {
+            headers['X-CSRFToken'] = String(csrfCookie.value);
           }
-          return { ok: false, message: 'CSRF Token 已失效，请重试' };
-        },
-        args: [LOGIN_URL, INDEX_URL, id, secret]
-      });
-      const result = results?.[0]?.result || { ok: false, message: '教务系统未返回登录结果' };
+        }
+        const response = await fetchAcademicWith503Retry(LOGIN_URL, {
+          method: 'POST', body, headers, credentials: 'include', cache: 'no-store', redirect: 'follow'
+        });
+        const html = await response.text();
+        if (response.url.startsWith(INDEX_URL) || html.includes('欢迎您，')) {
+          result = { ok: true, url: response.url };
+          break;
+        }
+        if (response.status === 403 && attempt === 0) continue;
+        result = { ok: false, message: academicLoginErrorMessage(html) };
+        break;
+      }
       if (result.ok) {
         await saveAcademicAccount(id, { password: secret, lastLoginAt: Date.now() });
         await broadcastStatus({ status: 'login-done', studentId: id });
@@ -595,7 +620,7 @@
       }
       return result;
     } finally {
-      if (temporary && tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
+      await removeAcademicLoginHeaderRule();
     }
   }
 
@@ -770,7 +795,10 @@ async function fetchVeWeekContext() {
       ? global.BjtuVeHomeworkCore.parseJson(text)
       : JSON.parse(String(text || '').trim());
     const week = Number(data?.weekCode || 0);
-    if (!week) throw new Error('智慧课程平台周次接口未返回周数');
+    if (!week) throw Object.assign(
+      new Error('智慧课程平台周次接口未返回周数'),
+      { code: 've-week-empty' }
+    );
     let termName = '';
     if (global.BjtuVeHomeworkCore?.fetchTerms) {
       const terms = await global.BjtuVeHomeworkCore.fetchTerms().catch(() => []);
@@ -805,12 +833,18 @@ async function fetchVeWeekContext() {
 
 async function fetchCurrentWeekContext(scheduleWeeks = []) {
     let preferred = null;
+    let warning = '';
     try {
       preferred = await fetchVeWeekContext();
-    } catch (error) {
-      const canFallback = ['ve-week-redirect', 've-week-http'].includes(String(error?.code || ''));
-      if (!canFallback) throw error;
-      preferred = await fetchBksyWeekContext();
+    } catch (veError) {
+      warning = String(veError?.message || veError || '智慧课程平台周次获取失败');
+      try {
+        preferred = await fetchBksyWeekContext();
+      } catch (bksyError) {
+        const fallbackMessage = String(bksyError?.message || bksyError || '本科生院周次获取失败');
+        warning = `${warning}；${fallbackMessage}。当前显示全部课表`;
+        preferred = { week: 0, weeks: [], weekLabels: {}, termName: '', source: 'schedule' };
+      }
     }
     const weeks = new Set([
       ...(Array.isArray(scheduleWeeks) ? scheduleWeeks : []),
@@ -822,7 +856,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       weeks: [...weeks].filter((week) => week > 0).sort((a, b) => a - b),
       weekLabels: preferred?.weekLabels || {},
       termName: String(preferred?.termName || ''),
-      source: String(preferred?.source || '')
+      source: String(preferred?.source || ''),
+      warning
     };
   }
 
@@ -1351,7 +1386,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       currentWeek: weekContext.week,
       weekLabels: weekContext.weekLabels,
       termName: weekContext.termName,
-      weekSource: weekContext.source
+      weekSource: weekContext.source,
+      weekWarning: weekContext.warning
     };
   }
 

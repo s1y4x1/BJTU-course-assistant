@@ -1608,9 +1608,11 @@
 
   function applyScheduleView(result) {
     scheduleData = result;
-    if (result.weekSource === 'bksy') {
+    if (result.weekWarning) {
       element('academicScheduleStatus').style.display = 'block';
-      element('academicScheduleStatus').textContent = '智慧课程平台周次接口未登录，当前周数使用本科生院教学服务平台';
+      element('academicScheduleStatus').textContent = result.weekSource === 'bksy'
+        ? `${result.weekWarning}，当前周数使用本科生院教学服务平台`
+        : result.weekWarning;
     }
     renderScheduleWeekOptions(result, element('academicScheduleWeek')?.value || 'all');
     renderSchedule();
