@@ -1487,11 +1487,29 @@
   function renderAcademicScoreStatistics(rows) {
     const container = element('academicScoreStatistics');
     if (!(container instanceof HTMLElement)) return;
+    if (sharedAllLoading) {
+      renderAcademicScoreStatisticsLoading();
+      return;
+    }
     const result = calculateAcademicScoreStatistics(rows);
     container.style.display = result ? 'flex' : 'none';
     if (!result) return;
     element('academicAverageGpa').textContent = result.averageGpa;
     element('academicWeightedAverageScore').textContent = result.weightedAverageScore;
+  }
+
+  function renderAcademicScoreStatisticsLoading() {
+    const container = element('academicScoreStatistics');
+    if (!(container instanceof HTMLElement)) return;
+    container.style.display = 'flex';
+    for (const id of ['academicAverageGpa', 'academicWeightedAverageScore']) {
+      const value = element(id);
+      if (!(value instanceof HTMLElement)) continue;
+      const spinner = document.createElement('span');
+      spinner.className = 'options-page-spinner academic-score-statistics-spinner';
+      spinner.setAttribute('aria-label', '正在计算');
+      value.replaceChildren(spinner);
+    }
   }
 
   function renderScoreSemesterOptions(semesters, currentZxjxjhh = '', preferredValue = '') {
@@ -1851,6 +1869,7 @@
 
   function showSharedLoading() {
     sharedAllLoading = false;
+    renderAcademicScoreStatisticsLoading();
     for (const id of ['academicScoreLoading', 'academicExamLoading']) {
       if (element(id)) element(id).style.display = 'flex';
     }
@@ -1868,6 +1887,7 @@
       if (element(id)) element(id).style.display = sharedAllLoading ? 'flex' : 'none';
     }
     if (sharedAllLoading) {
+      renderAcademicScoreStatisticsLoading();
       for (const id of ['academicSystemStatus', 'academicExamStatus']) {
         if (element(id)) element(id).style.display = 'none';
       }
@@ -2170,6 +2190,7 @@
 
   async function loadAll({ preserveRendered = false } = {}) {
     if (!preserveRendered) {
+      renderAcademicScoreStatisticsLoading();
       for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
         if (element(id)) element(id).style.display = 'flex';
       }
@@ -2187,6 +2208,8 @@
       if (selected === '__all__') {
         renderCachedSharedData();
         setSharedAllLoading(allTerms.some((term) => !loadedSharedTerms.has(term)));
+      } else if (!loadedSharedTerms.has(sharedPriority)) {
+        renderAcademicScoreStatisticsLoading();
       }
 
       await ensureScheduleTerms([currentScheduleTerm]);
@@ -2232,6 +2255,8 @@
       }
       return { ok: true };
     } catch (error) {
+      sharedAllLoading = false;
+      renderAcademicScoreStatistics(filterCachedScoreRows(element('academicScoreSemester')?.value));
       for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
         if (element(id)) element(id).style.display = 'none';
       }
