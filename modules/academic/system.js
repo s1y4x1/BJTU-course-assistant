@@ -34,6 +34,7 @@
   const EXAM_NOTIFICATION_PREFIX = 'bjtu-academic-exam:';
   const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
   const LOGIN_HEADER_RULE_ID = 914304;
+  const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   // Can be changed from the extension service worker console through
   // BjtuAcademicSystemInternals.notifyInitialScoreRows.
   let notifyInitialScoreRows = true;
@@ -314,6 +315,15 @@
 
   function parseSchedulePage(html) {
     const source = String(html || '');
+    const headingTermLabel = textFromHtml(
+      [...source.matchAll(/<span\b([^>]*)>([\s\S]*?)<\/span>/gi)]
+        .find((match) => /\binline\b/i.test(attributeFromHtml(match[1], 'class'))
+          && /\bdropdown-hover\b/i.test(attributeFromHtml(match[1], 'class')))?.[2] || ''
+    ).match(/(\d{4}-\d{4}-[123])\s*学期/u)?.[1] || '';
+    const termLabel = headingTermLabel
+      || textFromHtml(source).match(/(\d{4}-\d{4}-[123])\s*学期\s*选课课表/u)?.[1]
+      || source.match(/(\d{4}-\d{4}-[123])(?:\s|&nbsp;|&emsp;)*学期(?:\s|&nbsp;|&emsp;)*选课课表/u)?.[1]
+      || '';
     const tables = [...source.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)];
     const weekHeaderPattern = /(?:星期|周)[一二三四五六日]/u;
     const hasFullWeek = (text) => /(?:星期|周)一/u.test(text) && /(?:星期|周)日/u.test(text);
@@ -347,7 +357,8 @@
     return {
       hasScheduleTable: !!table,
       rows,
-      weeks: [...allWeeks].sort((a, b) => a - b)
+      weeks: [...allWeeks].sort((a, b) => a - b),
+      termLabel
     };
   }
 
@@ -494,16 +505,17 @@
     return write;
   }
   async function clearAcademicCookies() {
+    await chrome.storage.session.remove(ACADEMIC_DATA_CACHE_KEY).catch(() => {});
     const cookies = await chrome.cookies.getAll({ domain: 'aa.bjtu.edu.cn' }).catch(() => []);
-    await Promise.all((cookies || []).map((cookie) => {
+    for (const cookie of (cookies || [])) {
       const host = String(cookie.domain || 'aa.bjtu.edu.cn').replace(/^\./, '');
       const path = String(cookie.path || '/');
-      return chrome.cookies.remove({
+      await chrome.cookies.remove({
         url: `https://${host}${path}`,
         name: cookie.name,
         storeId: cookie.storeId
       }).catch(() => null);
-    }));
+    }
   }
 
   async function installAcademicLoginHeaderRule() {
@@ -746,15 +758,27 @@
     return fetchAcademicPage(scorePageUrl(options), '成绩');
   }
 
-  function fetchExamPage() {
-    return fetchAcademicPage(EXAM_URL, '考试信息');
+  function academicPageUrl(baseUrl, parameter, value = '') {
+    const url = new URL(baseUrl);
+    const normalized = String(value || '').trim();
+    if (normalized) url.searchParams.set(parameter, normalized);
+    return url.href;
   }
 
-  async function fetchSchedulePage(type = 'semester') {
+  function fetchExamPage(zxjxjhh = '') {
+    return fetchAcademicPage(academicPageUrl(EXAM_URL, 'zxjxjhh', zxjxjhh), '考试信息');
+  }
+
+  async function fetchSchedulePage(type = 'semester', xnxq = '') {
     const normalizedType = type === 'selection' ? 'selection' : 'semester';
-    const page = await fetchAcademicPage(SCHEDULE_URLS[normalizedType], '课表');
+    const page = await fetchAcademicPage(
+      academicPageUrl(SCHEDULE_URLS[normalizedType], 'xnxq', xnxq),
+      '课表'
+    );
     const parsed = parseSchedulePage(page.html);
-    if (!parsed.hasScheduleTable) throw new Error('课表页面中未找到课表');
+    if (!parsed.hasScheduleTable && normalizedType === 'semester' && !String(xnxq || '').trim()) {
+      throw new Error('课表页面中未找到课表');
+    }
     return { ...parsed, account: page.account, type: normalizedType };
   }
 
@@ -1375,34 +1399,211 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     };
   }
 
-  async function loadAcademicSchedule(args) {
-    const schedule = await fetchSchedulePage(args?.scheduleType);
-    const weekContext = await fetchCurrentWeekContext(schedule.weeks);
-    return {
-      ok: true,
-      type: schedule.type,
-      rows: schedule.rows,
-      weeks: weekContext.weeks,
-      currentWeek: weekContext.week,
-      weekLabels: weekContext.weekLabels,
-      termName: weekContext.termName,
-      weekSource: weekContext.source,
-      weekWarning: weekContext.warning
-    };
-  }
-
-  async function loadAcademicScoreSemesters() {
+  async function loadAcademicSemesters() {
+    const cached = await readAcademicDataCache();
+    if (cached?.academicSemesterOptions?.length) {
+      return {
+        ok: true,
+        currentZxjxjhh: String(cached.scoreCurrentZxjxjhh || ''),
+        semesters: cached.academicSemesterOptions
+      };
+    }
     const currentPage = await fetchScorePage();
     const currentParsed = parseScorePage(currentPage.html);
     if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
     const historyPage = await fetchScorePage({ history: true });
     const semesters = parseScoreSemesters(historyPage.html);
     if (!semesters.length) throw new Error('历年成绩页面中未找到学期列表');
-    const currentZxjxjhh = String(matchCurrentScoreSemester(currentParsed.rows, semesters)?.zxjxjhh || '');
+    let currentSemester = matchCurrentScoreSemester(currentParsed.rows, semesters);
+    if (!currentSemester) {
+      const currentContext = await fetchBksyWeekContext().catch(() => null);
+      const year = String(currentContext?.termName || '').match(/\d{4}-\d{4}/)?.[0] || '';
+      const semesterText = String(currentContext?.termName || '').match(/第([一二三123])学期/u)?.[1] || '';
+      const semesterNumber = ({ 一: '1', 二: '2', 三: '3' })[semesterText] || semesterText;
+      currentSemester = semesters.find((item) => item.label === `${year}-${semesterNumber}`) || null;
+    }
+    const currentZxjxjhh = String(currentSemester?.zxjxjhh || '');
     return {
       ok: true,
       currentZxjxjhh,
       semesters
+    };
+  }
+
+  async function readAcademicDataCache() {
+    const local = await chrome.storage.local.get([STUDENT_ID_KEY]);
+    const session = await chrome.storage.session.get(ACADEMIC_DATA_CACHE_KEY);
+    const cache = session?.[ACADEMIC_DATA_CACHE_KEY];
+    const studentId = String(local?.[STUDENT_ID_KEY] || '').trim();
+    return cache && studentId && String(cache.studentId || '') === studentId ? cache : null;
+  }
+
+  function cachedRequestedTerms(cache, args, parameter) {
+    const requested = requestedAcademicTerms(args, parameter);
+    const current = String(cache?.scoreCurrentZxjxjhh || '');
+    return requested === null ? (current ? [current] : []) : requested;
+  }
+
+  function requestedAcademicTerms(args, parameter) {
+    const provided = Array.isArray(args) ? args : args?.[parameter];
+    if (provided !== undefined && !Array.isArray(provided)) {
+      throw new TypeError(`${parameter} 必须是学期列表`);
+    }
+    if (provided === undefined) return null;
+    const values = provided.map((item) => String(item || '').trim()).filter(Boolean);
+    if (!values.length) throw new Error(`${parameter} 不能为空`);
+    return [...new Set(values)];
+  }
+
+  async function resolveAcademicTerms(args, parameter) {
+    const context = await loadAcademicSemesters();
+    const requested = requestedAcademicTerms(args, parameter);
+    const selectedValues = requested === null
+      ? (context.currentZxjxjhh ? [context.currentZxjxjhh] : [])
+      : requested;
+    const byValue = new Map(context.semesters.map((item) => [String(item?.zxjxjhh || ''), item]));
+    const selected = selectedValues.map((value) => byValue.get(value)).filter(Boolean);
+    if (selected.length !== selectedValues.length) {
+      const unknown = selectedValues.filter((value) => !byValue.has(value));
+      throw new Error(`不可用的学期：${unknown.join('、')}`);
+    }
+    return { ...context, selected };
+  }
+
+  async function mapAcademicTerms(semesters, mapper) {
+    const source = Array.isArray(semesters) ? semesters : [];
+    const results = [];
+    for (let index = 0; index < source.length; index += 1) {
+      results.push(await mapper(source[index], index));
+    }
+    return results;
+  }
+
+  async function loadAcademicExams(args = {}) {
+    const cached = await readAcademicDataCache();
+    if (cached) {
+      const terms = cachedRequestedTerms(cached, args, 'zxjxjhh');
+      const loaded = new Set(Array.isArray(cached.loadedSharedTerms) ? cached.loadedSharedTerms : []);
+      const results = (cached.examsCache?.results || []).filter((item) => terms.includes(item.zxjxjhh));
+      if (terms.length && terms.every((term) => loaded.has(term)) && results.length === terms.length) {
+        return {
+          ok: true,
+          currentZxjxjhh: String(cached.scoreCurrentZxjxjhh || ''),
+          results,
+          checkedAt: Number(cached.examsCache?.checkedAt || cached.updatedAt || Date.now())
+        };
+      }
+    }
+    const context = await resolveAcademicTerms(args, 'zxjxjhh');
+    const results = await mapAcademicTerms(context.selected, async (semester) => {
+      const page = await fetchExamPage(semester.zxjxjhh);
+      const parsed = parseExamPage(page.html);
+      return {
+        label: String(semester.label || ''),
+        zxjxjhh: String(semester.zxjxjhh || ''),
+        rows: parsed.hasExamTable ? parsed.rows : []
+      };
+    });
+    return { ok: true, currentZxjxjhh: context.currentZxjxjhh, results, checkedAt: Date.now() };
+  }
+
+  async function loadAcademicSelectionSchedule(contextOverride = null) {
+    const context = contextOverride || await loadAcademicSemesters();
+    const selection = await fetchSchedulePage('selection');
+    const selectionLabel = String(selection?.termLabel || '').trim();
+    if (!selectionLabel) throw new Error('选课课表页面未返回所属学期');
+    const selectionSemester = context.semesters.find((item) => String(item?.label || '') === selectionLabel)
+      || { label: selectionLabel, zxjxjhh: `${selectionLabel}-2` };
+    const isCurrent = selectionSemester.zxjxjhh === context.currentZxjxjhh;
+    return {
+      ok: true,
+      currentXnxq: context.currentZxjxjhh,
+      selectionSemester: { label: selectionSemester.label, xnxq: selectionSemester.zxjxjhh },
+      selectionProbed: true,
+      results: isCurrent ? [] : [{
+        label: selectionLabel,
+        xnxq: String(selectionSemester.zxjxjhh || ''),
+        type: 'selection',
+        rows: selection.rows,
+        weeks: selection.weeks,
+        currentWeek: 0,
+        weekLabels: {},
+        termName: selectionLabel,
+        weekSource: 'selection',
+        weekWarning: ''
+      }],
+      checkedAt: Date.now()
+    };
+  }
+
+  async function loadAcademicSchedule(args = {}) {
+    const cached = await readAcademicDataCache();
+    if (cached) {
+      const terms = cachedRequestedTerms(cached, args, 'xnxq');
+      const loaded = new Set(Array.isArray(cached.loadedScheduleTerms) ? cached.loadedScheduleTerms : []);
+      const includeSelection = args?.includeSelection === true;
+      const selectionReady = !includeSelection || (
+        cached.scheduleCache?.selectionProbed === true
+        && cached.scheduleCache?.selectionSemester?.xnxq
+      );
+      if (terms.length && terms.every((term) => loaded.has(term)) && selectionReady) {
+        const requested = new Set(terms);
+        const results = (cached.scheduleCache?.results || []).filter((item) => (
+          requested.has(item.xnxq) || (includeSelection && item.type === 'selection')
+        ));
+        return {
+          ok: true,
+          currentXnxq: String(cached.scoreCurrentZxjxjhh || ''),
+          selectionSemester: cached.scheduleCache?.selectionSemester || null,
+          selectionProbed: cached.scheduleCache?.selectionProbed === true,
+          results,
+          checkedAt: Number(cached.scheduleCache?.checkedAt || cached.updatedAt || Date.now())
+        };
+      }
+    }
+    const context = await resolveAcademicTerms(args, 'xnxq');
+    const results = await mapAcademicTerms(context.selected, async (semester) => {
+      const schedule = await fetchSchedulePage('semester', semester.zxjxjhh);
+      const isCurrent = semester.zxjxjhh === context.currentZxjxjhh;
+      const weekContext = isCurrent
+        ? await fetchCurrentWeekContext(schedule.weeks)
+        : {
+            week: 0,
+            weeks: schedule.weeks,
+            weekLabels: {},
+            termName: String(semester.label || ''),
+            source: 'semester',
+            warning: ''
+          };
+      return {
+        label: String(semester.label || ''),
+        xnxq: String(semester.zxjxjhh || ''),
+        type: schedule.type,
+        rows: schedule.rows,
+        weeks: weekContext.weeks,
+        currentWeek: weekContext.week,
+        weekLabels: weekContext.weekLabels,
+        termName: weekContext.termName || String(semester.label || ''),
+        weekSource: weekContext.source,
+        weekWarning: weekContext.warning
+      };
+    });
+    const shouldProbeSelection = args?.includeSelection === true;
+    const selectionResult = shouldProbeSelection
+      ? await loadAcademicSelectionSchedule(context)
+      : null;
+    for (const selection of (selectionResult?.results || [])) {
+      const existingIndex = results.findIndex((item) => item.xnxq === selection.xnxq);
+      if (existingIndex >= 0) results[existingIndex] = selection;
+      else results.push(selection);
+    }
+    return {
+      ok: true,
+      currentXnxq: context.currentZxjxjhh,
+      selectionSemester: selectionResult?.selectionSemester || null,
+      selectionProbed: shouldProbeSelection,
+      results,
+      checkedAt: Date.now()
     };
   }
 
@@ -1421,6 +1622,31 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
 
   async function loadAcademicScores(args = {}) {
     const requested = requestedScoreSemesters(args);
+    const cached = await readAcademicDataCache();
+    if (cached) {
+      const semesters = Array.isArray(cached.academicSemesterOptions) ? cached.academicSemesterOptions : [];
+      const byValue = new Map(semesters.map((item) => [String(item?.zxjxjhh || ''), item]));
+      const byLabel = new Map(semesters.map((item) => [String(item?.label || ''), item]));
+      const selectedValues = requested === null
+        ? [String(cached.scoreCurrentZxjxjhh || '')].filter(Boolean)
+        : requested;
+      const selected = selectedValues.map((item) => byValue.get(item) || byLabel.get(item)).filter(Boolean);
+      const loaded = new Set(Array.isArray(cached.loadedSharedTerms) ? cached.loadedSharedTerms : []);
+      if (selected.length === selectedValues.length && selected.every((item) => loaded.has(item.zxjxjhh))) {
+        const labels = new Set(selected.map((item) => String(item.label || '')));
+        const rows = (cached.scoresCache?.rows || []).filter((row) => labels.has(String(row?.academicYear || '')));
+        return {
+          ok: true,
+          rows,
+          count: rows.length,
+          studentId: String(cached.studentId || ''),
+          checkedAt: Number(cached.scoresCache?.checkedAt || cached.updatedAt || Date.now()),
+          currentZxjxjhh: String(cached.scoreCurrentZxjxjhh || ''),
+          selectedSemesters: selected,
+          availableSemesters: semesters
+        };
+      }
+    }
     const currentPage = await fetchScorePage();
     const currentParsed = parseScorePage(currentPage.html);
     if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
@@ -1494,8 +1720,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
           }));
         return true;
       }
-      if (message?.type === 'ACADEMIC_SCORE_SEMESTERS') {
-        loadAcademicScoreSemesters()
+      if (message?.type === 'ACADEMIC_SEMESTERS') {
+        loadAcademicSemesters()
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
@@ -1523,8 +1749,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_LOAD_EXAMS') {
-        checkExams('options', { force: true })
-          .then((result) => sendResponse({ ok: true, ...result }))
+        loadAcademicExams(message?.payload)
+          .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
             code: String(error?.code || ''),
@@ -1532,8 +1758,18 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
           }));
         return true;
       }
-if (message?.type === 'ACADEMIC_LOAD_SCHEDULE') {
+      if (message?.type === 'ACADEMIC_LOAD_SCHEDULE') {
         loadAcademicSchedule(message?.payload)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({
+            ok: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
+        return true;
+      }
+      if (message?.type === 'ACADEMIC_LOAD_SELECTION_SCHEDULE') {
+        loadAcademicSelectionSchedule()
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
@@ -1675,9 +1911,10 @@ if (message?.type === 'ACADEMIC_GET_CONTEXT') {
     getContext: () => buildAcademicContext(),
     probeLoginState: () => probeAcademicLoginState(),
     loadScores: (args) => loadAcademicScores(args),
-    loadScoreSemesters: () => loadAcademicScoreSemesters(),
-    loadExams: () => checkExams('options', { force: true }),
+    loadSemesters: () => loadAcademicSemesters(),
+    loadExams: (args) => loadAcademicExams(args),
     loadSchedule: (args) => loadAcademicSchedule(args),
+    loadSelectionSchedule: () => loadAcademicSelectionSchedule(),
     loginWithPassword: (args) => loginWithPassword(args?.studentId, args?.password),
     loginSavedAccount: (args) => loginSavedAcademicAccount(args?.studentId),
     extractLoginCredentials,

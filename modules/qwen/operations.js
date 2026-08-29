@@ -215,7 +215,7 @@
   const ACADEMIC_DIRECT = {
     currentAccount: { fn: 'getContext', type: 'ACADEMIC_GET_CONTEXT' },
     scores: { fn: 'loadScores', type: 'ACADEMIC_LOAD_SCORES' },
-    scoreSemesters: { fn: 'loadScoreSemesters', type: 'ACADEMIC_SCORE_SEMESTERS' },
+    semesters: { fn: 'loadSemesters', type: 'ACADEMIC_SEMESTERS' },
     exams: { fn: 'loadExams', type: 'ACADEMIC_LOAD_EXAMS' },
     schedule: { fn: 'loadSchedule', type: 'ACADEMIC_LOAD_SCHEDULE' },
     login: { fn: 'loginWithPassword', type: 'ACADEMIC_LOGIN_WITH_PASSWORD' },
@@ -1262,20 +1262,20 @@ name: 've.teachers_of_',
     },
     {
       module: 'academic',
-      name: 'academic.scoreSemesters',
-      label: '成绩学期列表',
-      summary: '获取教务系统成绩页面实际提供的学期及 zxjxjhh 参数',
+      name: 'academic.semesters',
+      label: '教务学期列表',
+      summary: '获取教务系统实际提供的学期及查询参数',
       doc: [
-        '## academic.scoreSemesters —— 成绩学期列表',
+        '## academic.semesters —— 教务学期列表',
         '',
-        '读取教务系统历年成绩页面上的 #zxjxjhh 下拉框，返回当前页面实际提供的学期，而不是使用固定学期列表。需要教务系统已登录。',
+        '读取教务系统页面实际提供的学期列表，而不是使用固定学期。返回的 zxjxjhh 可用于 academic.scores 和 academic.exams；课表查询时 academic.schedule 会把相同值作为 xnxq 发送。需要教务系统已登录。',
         '',
-        '**调用示例**：`academic.scoreSemesters()`',
+        '**调用示例**：`academic.semesters()`',
         '',
-        '**返回示例**：`{"currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"},{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2"}]}`。currentZxjxjhh 通过本学期成绩任意一行的“学年”匹配页面 option 得出；academic.scores 可直接接收这些 zxjxjhh。'
+        '**返回示例**：`{"currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"},{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2"}]}`。currentZxjxjhh 优先通过当前成绩的“学年”匹配，当前没有成绩时使用本科生院当前学期；academic.scores 和 academic.exams 可直接接收这些 zxjxjhh。'
       ].join('\n'),
       async run() {
-        const value = throwOperationFailure(await academicInvoke('scoreSemesters', undefined, 120000), '成绩学期列表获取失败');
+        const value = throwOperationFailure(await academicInvoke('semesters', undefined, 120000), '教务学期列表获取失败');
         return {
           currentZxjxjhh: String(value?.currentZxjxjhh || ''),
           semesters: (Array.isArray(value?.semesters) ? value.semesters : []).map((item) => ({
@@ -1293,11 +1293,11 @@ name: 've.teachers_of_',
       doc: [
         '## academic.scores —— 成绩查询',
         '',
-        '按学期查询教务系统成绩。需要教务系统已登录。不传参数时获取当前学期成绩；传入多学期前可先调用 academic.scoreSemesters 获取页面当前实际提供的 zxjxjhh。',
+        '按学期查询教务系统成绩。需要教务系统已登录。不传参数时获取当前学期成绩；传入多学期前可先调用 academic.semesters 获取页面当前实际提供的 zxjxjhh。',
         '',
-        '**参数**：zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也接受 academic.scoreSemesters 返回的 label，但不接受虚拟的当前学期字符串。列表中包含 currentZxjxjhh 时先获取当前学期成绩；包含其他学期时只获取一次完整历年成绩表，再按表格“学年”列筛选。某学期没有成绩时会正常返回空结果。',
+        '**参数**：zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也接受 academic.semesters 返回的 label，但不接受虚拟的当前学期字符串。列表中包含 currentZxjxjhh 时先获取当前学期成绩；包含其他学期时只获取一次完整历年成绩表，再按表格“学年”列筛选。某学期没有成绩时会正常返回空结果。',
         '',
-        '**调用示例**：`academic.scores()`；`academic.scores(["2024-2025-2-2","2023-2024-1-2"])`；`academic.scoreSemesters().then(({semesters}) => academic.scores(semesters.map(item => item.zxjxjhh)))`',
+        '**调用示例**：`academic.scores()`；`academic.scores(["2024-2025-2-2","2023-2024-1-2"])`；`academic.semesters().then(({semesters}) => academic.scores(semesters.map(item => item.zxjxjhh)))`',
         '',
         '**返回示例**：`[{"academicYear":"2024-2025-2","courseCode":"MATH1001","courseName":"高等数学","credit":"4","score":"95","bonusScore":"","teacher":"张老师","details":""}]`'
       ].join('\n'),
@@ -1311,19 +1311,28 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.exams',
       label: '考试查询',
-      summary: '获取教务系统最新考试安排',
+      summary: '按一个或多个学期获取教务系统考试安排',
       doc: [
         '## academic.exams —— 考试查询',
         '',
-        '查询教务系统最新考试安排。需要教务系统已登录。',
+        '按学期查询教务系统考试安排。需要教务系统已登录。不传参数时查询当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。',
         '',
-        '**调用示例**：`academic.exams()`',
+        '**参数**：zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。',
+        '',
+        '**调用示例**：`academic.exams()`；`academic.exams(["2024-2025-2-2"])`',
         '',
         '**返回示例**：[{"exam":"期末考试","course":"MATH1001 高等数学","courseCode":"MATH1001","startAt":1768006800000,"timeLocation":"2026-01-10 09:00 教室","method":"闭卷","remarks":"","registration":"已报名","status":"正常"}]'
       ].join('\n'),
-      async run() {
-        const value = throwOperationFailure(await academicInvoke('exams', undefined, 120000), '考试安排获取失败');
-        return (Array.isArray(value?.rows) ? value.rows : []).map(compactAcademicExam);
+      async run(args) {
+        const zxjxjhh = Array.isArray(args) ? args : args?.zxjxjhh;
+        const value = throwOperationFailure(await academicInvoke('exams', zxjxjhh === undefined ? {} : { zxjxjhh }, 120000), '考试安排获取失败');
+        return (Array.isArray(value?.results) ? value.results : []).flatMap((result) => (
+          (Array.isArray(result?.rows) ? result.rows : []).map((row) => ({
+            ...compactAcademicExam(row),
+            semester: String(result?.label || ''),
+            zxjxjhh: String(result?.zxjxjhh || '')
+          }))
+        ));
       }
     },
     {
@@ -1334,32 +1343,31 @@ name: 've.teachers_of_',
       doc: [
         '## academic.schedule —— 课表查询',
         '',
-        '查询教务系统课表。支持“本学期课表”和“选课课表”，需要教务系统已登录。',
+        '按学期查询教务系统课表，需要教务系统已登录。不传 xnxq 时优先查询当前学期，并同时合并选课课表页面声明的学期；可传入 academic.semesters 返回的多个 zxjxjhh 值作为 xnxq。扩展会自动识别选课课表所属学期，同一学期同时存在两种课表时以本学期课表为准。',
         '',
-        '**参数**：{"scheduleType":"可选，semester（本学期课表，默认）或 selection（选课课表）"}',
+        '**参数**：{"xnxq":["2025-2026-2-2"]}',
         '',
-        '**调用示例**：`academic.schedule({scheduleType: "selection"})`',
+        '**调用示例**：`academic.schedule()`；`academic.schedule({xnxq: ["2024-2025-2-2"]})`',
         '',
-        '**返回示例**：{"rows":[{"courseName":"高等数学","weekDay":1,"startSection":1}],"currentWeek":1}'
+        '**返回示例**：`[{"semester":"2025-2026-2","xnxq":"2025-2026-2-2","rows":[],"weeks":[1,2],"currentWeek":1,"weekLabels":{},"termName":"2025-2026-2"}]`'
       ].join('\n'),
       async run(args) {
-        const sourceType = String(args?.scheduleType || 'semester').trim();
-        const aliases = new Map([
-          ['semester', 'semester'],
-          ['本学期课表', 'semester'],
-          ['selection', 'selection'],
-          ['选课课表', 'selection']
-        ]);
-        const scheduleType = aliases.get(sourceType);
-        if (!scheduleType) throw new Error('scheduleType 仅支持 semester（本学期课表）或 selection（选课课表）');
-        const value = throwOperationFailure(await academicInvoke('schedule', { scheduleType }, 120000), '课表获取失败');
-        return {
-          rows: Array.isArray(value?.rows) ? value.rows : [],
-          weeks: Array.isArray(value?.weeks) ? value.weeks : [],
-          currentWeek: Number(value?.currentWeek || 0),
-          weekLabels: Array.isArray(value?.weekLabels) ? value.weekLabels : [],
-          termName: String(value?.termName || '')
-        };
+        const xnxq = args?.xnxq;
+        if (xnxq !== undefined && !Array.isArray(xnxq)) throw new Error('xnxq 必须是学期列表');
+        const value = throwOperationFailure(await academicInvoke('schedule', {
+          ...(xnxq === undefined ? {} : { xnxq }),
+          includeSelection: xnxq === undefined
+        }, 120000), '课表获取失败');
+        return (Array.isArray(value?.results) ? value.results : []).map((result) => ({
+          semester: String(result?.label || ''),
+          xnxq: String(result?.xnxq || ''),
+          source: result?.type === 'selection' ? 'selection' : 'semester',
+          rows: Array.isArray(result?.rows) ? result.rows : [],
+          weeks: Array.isArray(result?.weeks) ? result.weeks : [],
+          currentWeek: Number(result?.currentWeek || 0),
+          weekLabels: result?.weekLabels && typeof result.weekLabels === 'object' ? result.weekLabels : {},
+          termName: String(result?.termName || '')
+        }));
       }
     },
     {

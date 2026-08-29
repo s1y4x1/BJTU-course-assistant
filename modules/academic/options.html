@@ -114,10 +114,9 @@
   <div class="academic-score-header academic-schedule-header">
     <strong>课表</strong>
     <span class="academic-schedule-controls">
-      <select id="academicScheduleType" aria-label="课表类型">
-        <option value="semester" selected>本学期课表</option>
-        <option value="selection">选课课表</option>
-      </select>
+      <label for="academicScheduleSemester">学期</label>
+      <select id="academicScheduleSemester" aria-label="课表学期"></select>
+      <button id="academicScheduleCurrentSemesterBtn" type="button" disabled>本学期</button>
       <label for="academicScheduleWeek">周数</label>
       <select id="academicScheduleWeek" aria-label="课表周数">
         <option value="all" selected>全部</option>
@@ -140,20 +139,24 @@
   </div>
   <div id="academicScheduleStatus" class="option-status academic-schedule-status"></div>
 
-  <div class="academic-score-header">
-    <strong>考务考试信息</strong>
-    <span class="academic-score-header-meta">
-      <time id="academicExamCheckedAt"></time>
-      <span id="academicExamCount" class="academic-score-count"></span>
+  <div class="academic-score-header academic-schedule-header">
+    <strong>考务考试信息与成绩</strong>
+    <span class="academic-schedule-controls">
+      <label for="academicScoreSemester">学期</label>
+      <select id="academicScoreSemester" aria-label="成绩与考试学期">
+        <option value="__all__" selected>全部</option>
+      </select>
+      <button id="academicScoreCurrentSemesterBtn" type="button" disabled>本学期</button>
     </span>
   </div>
+
   <div id="academicExamLoading" class="academic-score-loading">
     <span class="options-page-spinner"></span><span>正在读取考试信息…</span>
   </div>
   <div id="academicExamTableWrap" class="academic-score-table-wrap academic-data-table">
     <table class="academic-score-table academic-exam-table">
       <thead><tr>
-        <th>序号</th><th>考试</th><th>课程</th><th>时间地点</th><th>考试方式</th>
+        <th>学期</th><th>考试</th><th>课程</th><th>时间地点</th><th>考试方式</th>
         <th>备注</th><th>报名信息</th><th>考试状态</th><th>操作</th>
       </tr></thead>
       <tbody id="academicExamTableBody"></tbody>
@@ -161,27 +164,13 @@
   </div>
   <div id="academicExamStatus" class="option-status academic-exam-status"></div>
 
-  <div class="academic-score-header academic-schedule-header">
-    <strong>成绩</strong>
-    <span class="academic-schedule-controls">
-      <label for="academicScoreSemester">学期</label>
-      <select id="academicScoreSemester" aria-label="成绩学期">
-        <option value="__all__" selected>全部</option>
-      </select>
-      <button id="academicScoreCurrentSemesterBtn" type="button" disabled>本学期</button>
-      <span class="academic-score-header-meta">
-        <time id="academicScoreCheckedAt"></time>
-        <span id="academicScoreCount" class="academic-score-count"></span>
-      </span>
-    </span>
-  </div>
   <div id="academicScoreLoading" class="academic-score-loading">
     <span class="options-page-spinner"></span><span>正在读取成绩…</span>
   </div>
   <div id="academicScoreTableWrap" class="academic-score-table-wrap academic-data-table">
     <table class="academic-score-table">
       <thead><tr>
-        <th>序号</th><th>学年</th><th>课程</th><th>学分</th>
+        <th>学期</th><th>课程</th><th>学分</th>
         <th>成绩</th><th>加分成绩</th><th>上课教师</th><th>详细信息</th>
       </tr></thead>
       <tbody id="academicScoreTableBody"></tbody>

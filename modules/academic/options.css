@@ -48,13 +48,13 @@
 .academic-score-table { width:100%; min-width:760px; border-collapse:collapse; font-size:12px; }
 .academic-score-table th, .academic-score-table td { padding:7px 8px; border:1px solid #e5e7eb; text-align:left; vertical-align:top; }
 .academic-score-table th { background:#f1f5f9; white-space:nowrap; }
-.academic-score-table td:nth-child(1), .academic-score-table td:nth-child(2),
+.academic-score-table td:nth-child(1), .academic-score-table td:nth-child(3),
 .academic-score-table td:nth-child(4), .academic-score-table td:nth-child(5),
-.academic-score-table td:nth-child(6), .academic-score-table td:nth-child(7) { white-space:nowrap; }
+.academic-score-table td:nth-child(6) { white-space:nowrap; }
 .academic-score-details summary { cursor:pointer; color:#2563eb; white-space:nowrap; }
 .academic-score-details div { margin-top:5px; white-space:pre-line; line-height:1.5; }
 .academic-exam-table { min-width:1080px; }
-.academic-exam-table td:nth-child(1), .academic-exam-table td:nth-child(6) { white-space:normal; }
+.academic-exam-table td:nth-child(6) { white-space:normal; }
 .academic-exam-table td:nth-child(4) { white-space:pre-line; }
 .academic-exam-group-cell { vertical-align:middle !important; font-weight:600; }
 .academic-exam-time-line { display:flex; flex-wrap:wrap; align-items:center; gap:0; }
