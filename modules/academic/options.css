@@ -44,6 +44,9 @@
 .academic-data-empty, .academic-data-table, .academic-exam-status { display:none; }
 .academic-exam-status { margin:0 0 7px; }
 .academic-score-status { display:none; margin:0 0 7px; }
+.academic-score-statistics { display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; margin:7px 0; color:#475569; font-size:13px; }
+.academic-score-statistics span { display:inline-flex; align-items:baseline; gap:5px; }
+.academic-score-statistics strong { color:#0f172a; font-size:15px; font-variant-numeric:tabular-nums; }
 .academic-score-table-wrap { overflow:auto; border:1px solid #d1d5db; }
 .academic-score-table { width:100%; min-width:760px; border-collapse:collapse; font-size:12px; }
 .academic-score-table th, .academic-score-table td { padding:7px 8px; border:1px solid #e5e7eb; text-align:left; vertical-align:top; }
@@ -84,10 +87,12 @@ html[data-color-scheme="dark"] .academic-external-script-progress-label { color:
 html[data-color-scheme="dark"] .academic-external-script-progress-track { background:#1e3a5f; }
 html[data-color-scheme="dark"] .academic-external-script-progress-bar { background:#60a5fa; }
 html[data-color-scheme="dark"] .academic-score-header-meta,
+html[data-color-scheme="dark"] .academic-score-statistics,
 html[data-color-scheme="dark"] .academic-schedule-controls label,
 html[data-color-scheme="dark"] .academic-schedule-period span,
 html[data-color-scheme="dark"] .academic-schedule-course-detail,
 html[data-color-scheme="dark"] .academic-schedule-course-location { color:#cbd5e1; }
+html[data-color-scheme="dark"] .academic-score-statistics strong { color:#f8fafc; }
 html[data-color-scheme="dark"] .academic-score-table-wrap { border-color:#475569; }
 html[data-color-scheme="dark"] .academic-score-table th { background:#1e293b; }
 html[data-color-scheme="dark"] .academic-score-table th,
