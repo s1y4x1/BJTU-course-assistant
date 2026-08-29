@@ -463,6 +463,9 @@ html[data-color-scheme="dark"] .qwen-chat-op {
 }
 
 .qwen-chat-op-size {
+  display: inline-block;
+  vertical-align: baseline;
+  white-space: nowrap;
   line-height: 1.4;
 }
 
