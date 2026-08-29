@@ -35,6 +35,7 @@
   const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
   const LOGIN_HEADER_RULE_ID = 914304;
   const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
+  const ACADEMIC_SCORE_SOURCE_CACHE_KEY = 'academicScoreSourceCache';
   // Can be changed from the extension service worker console through
   // BjtuAcademicSystemInternals.notifyInitialScoreRows.
   let notifyInitialScoreRows = true;
@@ -76,9 +77,53 @@
   let academicSessionPromise = null;
   let academicAccountCache = null;
   let academicSessionAccount = null;
+  let academicScoreSourceCache = null;
+  let academicScoreSourcePromise = null;
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
+  const ACADEMIC_REQUEST_PRIORITY = Object.freeze({
+    LOGIN: 300,
+    SCHEDULE: 200,
+    SHARED: 100
+  });
+  const academicRequestJobs = [];
+  let academicRequestJobSequence = 0;
+  let academicRequestWorkerRunning = false;
+
+  function enqueueAcademicRequest(priority, task) {
+    return new Promise((resolve, reject) => {
+      academicRequestJobs.push({
+        priority: Number(priority) || 0,
+        sequence: academicRequestJobSequence += 1,
+        task,
+        resolve,
+        reject
+      });
+      void runAcademicRequestWorker();
+    });
+  }
+
+  async function runAcademicRequestWorker() {
+    if (academicRequestWorkerRunning) return;
+    academicRequestWorkerRunning = true;
+    try {
+      while (academicRequestJobs.length) {
+        academicRequestJobs.sort((left, right) => (
+          right.priority - left.priority || left.sequence - right.sequence
+        ));
+        const job = academicRequestJobs.shift();
+        try {
+          job.resolve(await job.task());
+        } catch (error) {
+          job.reject(error);
+        }
+      }
+    } finally {
+      academicRequestWorkerRunning = false;
+      if (academicRequestJobs.length) void runAcademicRequestWorker();
+    }
+  }
 
   function decodeHtmlEntities(value) {
     const named = {
@@ -505,7 +550,12 @@
     return write;
   }
   async function clearAcademicCookies() {
-    await chrome.storage.session.remove(ACADEMIC_DATA_CACHE_KEY).catch(() => {});
+    academicScoreSourceCache = null;
+    academicScoreSourcePromise = null;
+    await chrome.storage.session.remove([
+      ACADEMIC_DATA_CACHE_KEY,
+      ACADEMIC_SCORE_SOURCE_CACHE_KEY
+    ]).catch(() => {});
     const cookies = await chrome.cookies.getAll({ domain: 'aa.bjtu.edu.cn' }).catch(() => []);
     for (const cookie of (cookies || [])) {
       const host = String(cookie.domain || 'aa.bjtu.edu.cn').replace(/^\./, '');
@@ -1408,26 +1458,58 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         semesters: cached.academicSemesterOptions
       };
     }
-    const currentPage = await fetchScorePage();
-    const currentParsed = parseScorePage(currentPage.html);
-    if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
-    const historyPage = await fetchScorePage({ history: true });
-    const semesters = parseScoreSemesters(historyPage.html);
-    if (!semesters.length) throw new Error('历年成绩页面中未找到学期列表');
-    let currentSemester = matchCurrentScoreSemester(currentParsed.rows, semesters);
-    if (!currentSemester) {
-      const currentContext = await fetchBksyWeekContext().catch(() => null);
-      const year = String(currentContext?.termName || '').match(/\d{4}-\d{4}/)?.[0] || '';
-      const semesterText = String(currentContext?.termName || '').match(/第([一二三123])学期/u)?.[1] || '';
-      const semesterNumber = ({ 一: '1', 二: '2', 三: '3' })[semesterText] || semesterText;
-      currentSemester = semesters.find((item) => item.label === `${year}-${semesterNumber}`) || null;
-    }
-    const currentZxjxjhh = String(currentSemester?.zxjxjhh || '');
+    const source = await loadAcademicScoreSource();
     return {
       ok: true,
-      currentZxjxjhh,
-      semesters
+      currentZxjxjhh: source.currentZxjxjhh,
+      semesters: source.availableSemesters
     };
+  }
+
+  async function loadAcademicScoreSource() {
+    if (academicScoreSourceCache) return academicScoreSourceCache;
+    if (academicScoreSourcePromise) return academicScoreSourcePromise;
+    academicScoreSourcePromise = (async () => {
+      const local = await chrome.storage.local.get([STUDENT_ID_KEY]);
+      const expectedStudentId = String(local?.[STUDENT_ID_KEY] || '').trim();
+      const stored = await chrome.storage.session.get(ACADEMIC_SCORE_SOURCE_CACHE_KEY);
+      const cached = stored?.[ACADEMIC_SCORE_SOURCE_CACHE_KEY];
+      if (cached && expectedStudentId && String(cached.studentId || '') === expectedStudentId) {
+        return cached;
+      }
+      const currentPage = await fetchScorePage();
+      const currentParsed = parseScorePage(currentPage.html);
+      if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
+      const historyPage = await fetchScorePage({ history: true });
+      const historyParsed = parseScorePage(historyPage.html);
+      if (!historyParsed.hasScoreTable) throw new Error('历年成绩页面中未找到成绩表格');
+      const availableSemesters = parseScoreSemesters(historyPage.html);
+      if (!availableSemesters.length) throw new Error('历年成绩页面中未找到学期列表');
+      let currentSemester = matchCurrentScoreSemester(currentParsed.rows, availableSemesters);
+      if (!currentSemester) {
+        const currentContext = await fetchBksyWeekContext().catch(() => null);
+        const year = String(currentContext?.termName || '').match(/\d{4}-\d{4}/)?.[0] || '';
+        const semesterText = String(currentContext?.termName || '').match(/第([一二三123])学期/u)?.[1] || '';
+        const semesterNumber = ({ 一: '1', 二: '2', 三: '3' })[semesterText] || semesterText;
+        currentSemester = availableSemesters.find((item) => item.label === `${year}-${semesterNumber}`) || null;
+      }
+      const source = {
+        currentRows: currentParsed.rows,
+        historyRows: historyParsed.rows,
+        availableSemesters,
+        currentZxjxjhh: String(currentSemester?.zxjxjhh || ''),
+        studentId: String(currentPage.account?.studentId || historyPage.account?.studentId || ''),
+        checkedAt: Date.now()
+      };
+      await chrome.storage.session.set({ [ACADEMIC_SCORE_SOURCE_CACHE_KEY]: source });
+      return source;
+    })();
+    try {
+      academicScoreSourceCache = await academicScoreSourcePromise;
+      return academicScoreSourceCache;
+    } finally {
+      academicScoreSourcePromise = null;
+    }
   }
 
   async function readAcademicDataCache() {
@@ -1655,14 +1737,9 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         };
       }
     }
-    const currentPage = await fetchScorePage();
-    const currentParsed = parseScorePage(currentPage.html);
-    if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
-    const historyPage = await fetchScorePage({ history: true });
-    const historyParsed = parseScorePage(historyPage.html);
-    if (!historyParsed.hasScoreTable) throw new Error('历年成绩页面中未找到成绩表格');
-    const availableSemesters = parseScoreSemesters(historyPage.html);
-    const currentZxjxjhh = String(matchCurrentScoreSemester(currentParsed.rows, availableSemesters)?.zxjxjhh || '');
+    const source = await loadAcademicScoreSource();
+    const availableSemesters = source.availableSemesters;
+    const currentZxjxjhh = source.currentZxjxjhh;
     const selectedValues = requested === null
       ? (currentZxjxjhh ? [currentZxjxjhh] : [])
       : requested;
@@ -1677,16 +1754,16 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     const historical = selected.filter((item) => item.zxjxjhh !== currentZxjxjhh);
     const academicYears = new Set(historical.map((item) => item.label));
     const rows = [
-      ...(wantsCurrent ? currentParsed.rows : []),
-      ...historyParsed.rows.filter((row) => academicYears.has(String(row?.academicYear || '').trim()))
+      ...(wantsCurrent ? source.currentRows : []),
+      ...source.historyRows.filter((row) => academicYears.has(String(row?.academicYear || '').trim()))
     ];
 
     return {
       ok: true,
       rows,
       count: rows.length,
-      studentId: String(currentPage.account?.studentId || historyPage.account?.studentId || ''),
-      checkedAt: Date.now(),
+      studentId: source.studentId,
+      checkedAt: source.checkedAt,
       currentZxjxjhh,
       selectedSemesters: selected.map(({ label, zxjxjhh }) => ({ label, zxjxjhh })),
       availableSemesters
@@ -1696,7 +1773,9 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'ACADEMIC_LOGIN_WITH_PASSWORD') {
-        loginWithPassword(message?.payload?.studentId, message?.payload?.password)
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, () => (
+          loginWithPassword(message?.payload?.studentId, message?.payload?.password)
+        ))
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
@@ -1719,7 +1798,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_LOAD_SCORES') {
-        loadAcademicScores(message?.payload)
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.SHARED, () => loadAcademicScores(message?.payload))
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
@@ -1729,7 +1808,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_SEMESTERS') {
-        loadAcademicSemesters()
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.SCHEDULE, () => loadAcademicSemesters())
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
@@ -1757,7 +1836,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_LOAD_EXAMS') {
-        loadAcademicExams(message?.payload)
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.SHARED, () => loadAcademicExams(message?.payload))
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
@@ -1767,7 +1846,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_LOAD_SCHEDULE') {
-        loadAcademicSchedule(message?.payload)
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.SCHEDULE, () => loadAcademicSchedule(message?.payload))
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
@@ -1777,7 +1856,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_LOAD_SELECTION_SCHEDULE') {
-        loadAcademicSelectionSchedule()
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.SCHEDULE, () => loadAcademicSelectionSchedule())
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
@@ -1787,12 +1866,14 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_SWITCH_ACCOUNT') {
-        loginSavedAcademicAccount(message?.payload?.studentId)
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, () => (
+          loginSavedAcademicAccount(message?.payload?.studentId)
+        ))
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
-if (message?.type === 'ACADEMIC_GET_CONTEXT') {
+      if (message?.type === 'ACADEMIC_GET_CONTEXT') {
         buildAcademicContext()
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
@@ -1918,13 +1999,34 @@ if (message?.type === 'ACADEMIC_GET_CONTEXT') {
   global.BjtuAcademicSystemInternals = {
     getContext: () => buildAcademicContext(),
     probeLoginState: () => probeAcademicLoginState(),
-    loadScores: (args) => loadAcademicScores(args),
-    loadSemesters: () => loadAcademicSemesters(),
-    loadExams: (args) => loadAcademicExams(args),
-    loadSchedule: (args) => loadAcademicSchedule(args),
-    loadSelectionSchedule: () => loadAcademicSelectionSchedule(),
-    loginWithPassword: (args) => loginWithPassword(args?.studentId, args?.password),
-    loginSavedAccount: (args) => loginSavedAcademicAccount(args?.studentId),
+    loadScores: (args) => enqueueAcademicRequest(
+      ACADEMIC_REQUEST_PRIORITY.SHARED,
+      () => loadAcademicScores(args)
+    ),
+    loadSemesters: () => enqueueAcademicRequest(
+      ACADEMIC_REQUEST_PRIORITY.SCHEDULE,
+      () => loadAcademicSemesters()
+    ),
+    loadExams: (args) => enqueueAcademicRequest(
+      ACADEMIC_REQUEST_PRIORITY.SHARED,
+      () => loadAcademicExams(args)
+    ),
+    loadSchedule: (args) => enqueueAcademicRequest(
+      ACADEMIC_REQUEST_PRIORITY.SCHEDULE,
+      () => loadAcademicSchedule(args)
+    ),
+    loadSelectionSchedule: () => enqueueAcademicRequest(
+      ACADEMIC_REQUEST_PRIORITY.SCHEDULE,
+      () => loadAcademicSelectionSchedule()
+    ),
+    loginWithPassword: (args) => enqueueAcademicRequest(
+      ACADEMIC_REQUEST_PRIORITY.LOGIN,
+      () => loginWithPassword(args?.studentId, args?.password)
+    ),
+    loginSavedAccount: (args) => enqueueAcademicRequest(
+      ACADEMIC_REQUEST_PRIORITY.LOGIN,
+      () => loginSavedAcademicAccount(args?.studentId)
+    ),
     extractLoginCredentials,
     parseCurrentAccountPage,
     normalizeScoreRow,

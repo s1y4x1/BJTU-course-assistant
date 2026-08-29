@@ -44,10 +44,13 @@
   let scheduleSemesterPreference = '';
   const loadedSharedTerms = new Set();
   const sharedTermsInFlight = new Map();
+  let sharedTermWorkerRunning = false;
   const loadedScheduleTerms = new Set();
   const scheduleTermsInFlight = new Map();
+  let scheduleTermWorkerRunning = false;
+  let selectionSchedulePromise = null;
   let academicDataCacheWritePromise = Promise.resolve();
-  let academicRequestQueue = Promise.resolve();
+  let sharedAllLoading = false;
   let setMessage = () => {};
   let assessmentScriptInstalled = false;
   let assessmentScriptEnabled = false;
@@ -1266,16 +1269,12 @@
   }
 
   async function sendAcademicLoadWithRetry(type, payload, label, notify = false) {
-    const request = academicRequestQueue.catch(() => {}).then(async () => {
-      while (true) {
-        const result = await send(type, payload);
-        if (!isRetryableAcademicLoadFailure(result)) return result;
-        if (notify) setMessage(`${label}暂时不可用，1 秒后自动重试…`);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    });
-    academicRequestQueue = request.catch(() => {});
-    return request;
+    while (true) {
+      const result = await send(type, payload);
+      if (!isRetryableAcademicLoadFailure(result)) return result;
+      if (notify) setMessage(`${label}暂时不可用，1 秒后自动重试…`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
   }
 
   function normalizeMinutes(value, fallback) {
@@ -1406,7 +1405,7 @@
     const list = Array.isArray(rows) ? rows : [];
     const body = element('academicScoreTableBody');
     if (body instanceof HTMLElement) body.replaceChildren();
-    element('academicScoreLoading').style.display = 'none';
+    element('academicScoreLoading').style.display = sharedAllLoading ? 'flex' : 'none';
     element('academicScoreTableWrap').style.display = list.length ? 'block' : 'none';
     const semesterSizes = new Map();
     list.forEach((row) => {
@@ -1506,7 +1505,7 @@
     const list = Array.isArray(rows) ? rows : [];
     const body = element('academicExamTableBody');
     if (body instanceof HTMLElement) body.replaceChildren();
-    element('academicExamLoading').style.display = 'none';
+    element('academicExamLoading').style.display = sharedAllLoading ? 'flex' : 'none';
     element('academicExamTableWrap').style.display = list.length ? 'block' : 'none';
     const groupSizes = new Map();
     const semesterSizes = new Map();
@@ -1705,6 +1704,7 @@
     sharedTermsInFlight.clear();
     loadedScheduleTerms.clear();
     scheduleTermsInFlight.clear();
+    selectionSchedulePromise = null;
   }
 
   function scheduleHasCourses(result) {
@@ -1805,6 +1805,7 @@
   }
 
   function showSharedLoading() {
+    sharedAllLoading = false;
     for (const id of ['academicScoreLoading', 'academicExamLoading']) {
       if (element(id)) element(id).style.display = 'flex';
     }
@@ -1813,6 +1814,18 @@
     }
     for (const id of ['academicSystemStatus', 'academicExamStatus']) {
       if (element(id)) element(id).style.display = 'none';
+    }
+  }
+
+  function setSharedAllLoading(active) {
+    sharedAllLoading = active === true;
+    for (const id of ['academicScoreLoading', 'academicExamLoading']) {
+      if (element(id)) element(id).style.display = sharedAllLoading ? 'flex' : 'none';
+    }
+    if (sharedAllLoading) {
+      for (const id of ['academicSystemStatus', 'academicExamStatus']) {
+        if (element(id)) element(id).style.display = 'none';
+      }
     }
   }
 
@@ -1889,6 +1902,7 @@
 
   async function requestSharedTerms(values) {
     const terms = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+    if (terms.length !== 1) throw new Error('成绩与考务每次只能加载一个学期');
     const shouldRender = () => {
       const selected = String(element('academicScoreSemester')?.value || '');
       return selected === '__all__' || terms.includes(selected);
@@ -1907,23 +1921,50 @@
 
   async function ensureSharedTerms(values) {
     const terms = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
-    const waiting = new Set();
-    const missing = terms.filter((term) => {
-      if (loadedSharedTerms.has(term)) return false;
-      const pending = sharedTermsInFlight.get(term);
-      if (pending) waiting.add(pending);
-      return !pending;
-    });
-    if (missing.length) {
-      const request = requestSharedTerms(missing).finally(() => {
-        missing.forEach((term) => {
-          if (sharedTermsInFlight.get(term) === request) sharedTermsInFlight.delete(term);
-        });
-      });
-      missing.forEach((term) => sharedTermsInFlight.set(term, request));
-      waiting.add(request);
+    for (const term of terms) {
+      if (!loadedSharedTerms.has(term)) await enqueueSharedTerm(term);
     }
-    for (const request of waiting) await request;
+  }
+
+  function enqueueSharedTerm(term) {
+    if (loadedSharedTerms.has(term)) return Promise.resolve();
+    const existing = sharedTermsInFlight.get(term);
+    if (existing) return existing.promise;
+    let resolveJob;
+    let rejectJob;
+    const promise = new Promise((resolve, reject) => {
+      resolveJob = resolve;
+      rejectJob = reject;
+    });
+    sharedTermsInFlight.set(term, { promise, resolve: resolveJob, reject: rejectJob });
+    void runSharedTermWorker();
+    return promise;
+  }
+
+  async function runSharedTermWorker() {
+    if (sharedTermWorkerRunning) return;
+    sharedTermWorkerRunning = true;
+    try {
+      while (sharedTermsInFlight.size) {
+        const selected = String(element('academicScoreSemester')?.value || '');
+        const priority = selected && selected !== '__all__' && sharedTermsInFlight.has(selected)
+          ? selected
+          : sharedTermsInFlight.keys().next().value;
+        const job = sharedTermsInFlight.get(priority);
+        if (!job) continue;
+        try {
+          await requestSharedTerms([priority]);
+          job.resolve();
+        } catch (error) {
+          job.reject(error);
+        } finally {
+          if (sharedTermsInFlight.get(priority) === job) sharedTermsInFlight.delete(priority);
+        }
+      }
+    } finally {
+      sharedTermWorkerRunning = false;
+      if (sharedTermsInFlight.size) void runSharedTermWorker();
+    }
   }
 
   async function prefetchSharedTerms(values) {
@@ -1957,6 +1998,7 @@
 
   async function requestScheduleTerms(values, { includeSelection = false } = {}) {
     const terms = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+    if (terms.length !== 1) throw new Error('课表每次只能加载一个学期');
     const schedule = await sendAcademicLoadWithRetry(
       'ACADEMIC_LOAD_SCHEDULE',
       { xnxq: terms, includeSelection },
@@ -1971,50 +2013,90 @@
 
   async function requestSelectionSchedule() {
     if (scheduleCache?.selectionProbed === true && scheduleCache?.selectionSemester?.xnxq) return;
-    const selection = await sendAcademicLoadWithRetry(
-      'ACADEMIC_LOAD_SELECTION_SCHEDULE',
-      undefined,
-      '选课课表服务'
-    );
-    if (!selection?.ok) {
-      throw Object.assign(new Error(selection?.message || '选课课表读取失败'), { code: selection?.code });
-    }
-    mergeScheduleResult(selection);
-    for (const result of (selection.results || [])) loadedScheduleTerms.add(String(result?.xnxq || ''));
-    void persistAcademicDataCache();
+    if (selectionSchedulePromise) return selectionSchedulePromise;
+    selectionSchedulePromise = (async () => {
+      const selection = await sendAcademicLoadWithRetry(
+        'ACADEMIC_LOAD_SELECTION_SCHEDULE',
+        undefined,
+        '选课课表服务'
+      );
+      if (!selection?.ok) {
+        throw Object.assign(new Error(selection?.message || '选课课表读取失败'), { code: selection?.code });
+      }
+      mergeScheduleResult(selection);
+      for (const result of (selection.results || [])) loadedScheduleTerms.add(String(result?.xnxq || ''));
+      void persistAcademicDataCache();
+    })().finally(() => {
+      selectionSchedulePromise = null;
+    });
+    return selectionSchedulePromise;
   }
 
   async function ensureScheduleTerms(values, { includeSelection = false } = {}) {
     const terms = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
-    const waiting = new Set();
-    const missing = terms.filter((term) => {
-      const cached = (scheduleCache?.results || []).find((item) => item.xnxq === term);
-      const requiresSemesterSource = term === String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || '');
-      if (loadedScheduleTerms.has(term) && (!requiresSemesterSource || cached?.type === 'semester')) return false;
-      const pending = scheduleTermsInFlight.get(term);
-      if (pending) waiting.add(pending);
-      return !pending;
-    });
-    if (missing.length) {
-      const request = requestScheduleTerms(missing, { includeSelection }).finally(() => {
-        missing.forEach((term) => {
-          if (scheduleTermsInFlight.get(term) === request) scheduleTermsInFlight.delete(term);
-        });
-      });
-      missing.forEach((term) => scheduleTermsInFlight.set(term, request));
-      waiting.add(request);
+    for (const term of terms) {
+      if (!isScheduleTermReady(term)) await enqueueScheduleTerm(term, includeSelection);
     }
-    for (const request of waiting) await request;
+  }
+
+  function isScheduleTermReady(term) {
+    if (!loadedScheduleTerms.has(term)) return false;
+    const currentTerm = String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || '');
+    if (term !== currentTerm) return true;
+    return (scheduleCache?.results || []).some((item) => item.xnxq === term && item.type === 'semester');
+  }
+
+  function enqueueScheduleTerm(term, includeSelection = false) {
+    if (isScheduleTermReady(term)) return Promise.resolve();
+    const existing = scheduleTermsInFlight.get(term);
+    if (existing) {
+      existing.includeSelection ||= includeSelection;
+      return existing.promise;
+    }
+    let resolveJob;
+    let rejectJob;
+    const promise = new Promise((resolve, reject) => {
+      resolveJob = resolve;
+      rejectJob = reject;
+    });
+    scheduleTermsInFlight.set(term, {
+      promise,
+      resolve: resolveJob,
+      reject: rejectJob,
+      includeSelection
+    });
+    void runScheduleTermWorker();
+    return promise;
+  }
+
+  async function runScheduleTermWorker() {
+    if (scheduleTermWorkerRunning) return;
+    scheduleTermWorkerRunning = true;
+    try {
+      while (scheduleTermsInFlight.size) {
+        const selected = String(element('academicScheduleSemester')?.value || '');
+        const priority = selected && scheduleTermsInFlight.has(selected)
+          ? selected
+          : scheduleTermsInFlight.keys().next().value;
+        const job = scheduleTermsInFlight.get(priority);
+        if (!job) continue;
+        try {
+          await requestScheduleTerms([priority], { includeSelection: job.includeSelection });
+          job.resolve();
+        } catch (error) {
+          job.reject(error);
+        } finally {
+          if (scheduleTermsInFlight.get(priority) === job) scheduleTermsInFlight.delete(priority);
+        }
+      }
+    } finally {
+      scheduleTermWorkerRunning = false;
+      if (scheduleTermsInFlight.size) void runScheduleTermWorker();
+    }
   }
 
   async function prefetchScheduleTerms(values) {
     const pending = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
-    const isScheduleTermReady = (term) => {
-      if (!loadedScheduleTerms.has(term)) return false;
-      const currentTerm = String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || '');
-      if (term !== currentTerm) return true;
-      return (scheduleCache?.results || []).some((item) => item.xnxq === term && item.type === 'semester');
-    };
     while (pending.length) {
       const selected = String(element('academicScheduleSemester')?.value || '');
       if (selected && !isScheduleTermReady(selected)) {
@@ -2045,6 +2127,10 @@
       const sharedPriority = selected === '__all__' ? (scoreCurrentZxjxjhh || allTerms[0]) : selected;
       const currentScheduleTerm = scoreCurrentZxjxjhh || allTerms[0];
       if (!sharedPriority || !currentScheduleTerm) throw new Error('没有可查询的学期');
+      if (selected === '__all__') {
+        renderCachedSharedData();
+        setSharedAllLoading(allTerms.some((term) => !loadedSharedTerms.has(term)));
+      }
 
       await ensureScheduleTerms([currentScheduleTerm]);
       renderCachedScheduleData();
@@ -2063,18 +2149,28 @@
       renderCachedScheduleData();
       await refreshContext();
 
-      const sharedRemaining = allTerms.filter((term) => term !== sharedPriority);
+      const sharedRemaining = selected === '__all__'
+        ? allTerms.filter((term) => term !== sharedPriority)
+        : [];
       const scheduleRemaining = allTerms.filter((term) => (
         term !== schedulePriority && term !== currentScheduleTerm
       ));
       if (sharedRemaining.length || scheduleRemaining.length) {
         void (async () => {
-          if (sharedRemaining.length) await prefetchSharedTerms(sharedRemaining);
+          try {
+            if (sharedRemaining.length) await prefetchSharedTerms(sharedRemaining);
+          } finally {
+            if (String(element('academicScoreSemester')?.value || '') === '__all__') {
+              setSharedAllLoading(false);
+              renderCachedSharedData();
+            }
+          }
           if (scheduleRemaining.length) await prefetchScheduleTerms(scheduleRemaining);
           renderAvailableSharedSemesters();
           renderCachedAcademicData();
         })().catch((error) => setMessage(`其他学期数据读取失败：${error?.message || error}`, false));
       } else {
+        setSharedAllLoading(false);
         renderAvailableSharedSemesters();
       }
       return { ok: true };
@@ -2238,17 +2334,26 @@
       scoreSemesterPreference = selected === scoreCurrentZxjxjhh ? '' : selected;
       const button = element('academicScoreCurrentSemesterBtn');
       if (button instanceof HTMLButtonElement) button.textContent = selected === scoreCurrentZxjxjhh ? '全部' : '本学期';
-      await chrome.storage.local.set({ academicScoreSemester: scoreSemesterPreference });
       const terms = selected === '__all__'
         ? academicSemesterOptions.map((item) => item.zxjxjhh)
         : [selected];
       const needsLoad = terms.some((term) => !loadedSharedTerms.has(String(term || '')));
-      if (needsLoad) showSharedLoading();
+      if (selected === '__all__') {
+        renderCachedSharedData();
+        setSharedAllLoading(needsLoad);
+      } else if (needsLoad) {
+        showSharedLoading();
+      } else {
+        setSharedAllLoading(false);
+      }
+      void chrome.storage.local.set({ academicScoreSemester: scoreSemesterPreference }).catch(() => {});
       try {
-        if (needsLoad) await ensureSharedTerms(terms);
+        if (needsLoad) await prefetchSharedTerms(terms);
+        setSharedAllLoading(false);
         renderAvailableSharedSemesters();
         renderCachedSharedData();
       } catch (error) {
+        setSharedAllLoading(false);
         renderCachedSharedData();
         setMessage(`所选学期数据读取失败：${error?.message || error}`, false);
       }
