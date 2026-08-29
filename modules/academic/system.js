@@ -529,9 +529,9 @@
   async function loginWithPassword(studentId, password) {
     const id = String(studentId || '').trim();
     const secret = String(password || '').trim();
-    if (!id) throw new Error('请输入学号');
-    if (!secret) throw new Error('请输入身份证后六位');
-    if (secret.length !== 6) throw new Error('身份证后六位必须为 6 个字符');
+    if (!id) throw new Error('请输入用户名（学号）');
+    if (!secret) throw new Error('请输入密码（身份证号后 6 位）');
+    if (secret.length !== 6) throw new Error('密码必须为 6 个字符');
     academicAccountCache = null;
     academicSessionAccount = null;
     await clearAcademicCookies();

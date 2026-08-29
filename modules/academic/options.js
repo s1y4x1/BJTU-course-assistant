@@ -1772,7 +1772,7 @@
       const button = element('academicLoginBtn');
       const studentId = String(element('academicStudentId')?.value || '').trim();
       const password = String(element('academicPassword')?.value || '').trim();
-      if (!studentId || !password) return setMessage('请输入学号和身份证号后六位', false);
+      if (!studentId || !password) return setMessage('请输入用户名（学号）和密码（身份证号后六位）', false);
       button.disabled = true;
       try {
         const result = await send('ACADEMIC_LOGIN_WITH_PASSWORD', { studentId, password });
