@@ -1864,6 +1864,7 @@
       scheduleCache?.currentXnxq,
       scheduleSemesterPreference
     );
+    updateScheduleSemesterToggle(scheduleSelected);
     const preferenceIsStillUnknown = requestedPreference
       && !availableSchedules.some((item) => item.xnxq === requestedPreference)
       && !loadedScheduleTerms.has(requestedPreference);
@@ -1880,6 +1881,17 @@
     } else if (schedule) {
       applyScheduleView(schedule);
     }
+  }
+
+  function updateScheduleSemesterToggle(selectedValue = '') {
+    const button = element('academicScheduleCurrentSemesterBtn');
+    if (!(button instanceof HTMLButtonElement)) return;
+    const current = String(scheduleCache?.currentXnxq || '').trim();
+    const selection = String(scheduleCache?.selectionSemester?.xnxq || '').trim();
+    const canToggle = !!current && !!selection && current !== selection;
+    button.style.display = canToggle ? '' : 'none';
+    button.disabled = !canToggle;
+    button.textContent = String(selectedValue || '') === current ? '选课' : '本学期';
   }
 
   function renderCachedAcademicData() {
@@ -2291,6 +2303,7 @@
     element('academicScheduleSemester')?.addEventListener('change', async (event) => {
       const selected = String(event.currentTarget.value || '');
       const current = String(scheduleCache?.currentXnxq || '');
+      updateScheduleSemesterToggle(selected);
       scheduleSemesterPreference = selected === current ? '' : selected;
       await chrome.storage.local.set({ academicScheduleSemester: scheduleSemesterPreference });
       const cached = (scheduleCache?.results || []).find((item) => item.xnxq === selected);
@@ -2312,8 +2325,9 @@
     element('academicScheduleCurrentSemesterBtn')?.addEventListener('click', () => {
       const select = element('academicScheduleSemester');
       const current = String(scheduleCache?.currentXnxq || '');
-      if (!(select instanceof HTMLSelectElement) || !current) return;
-      select.value = current;
+      const selection = String(scheduleCache?.selectionSemester?.xnxq || '');
+      if (!(select instanceof HTMLSelectElement) || !current || !selection || current === selection) return;
+      select.value = select.value === current ? selection : current;
       select.dispatchEvent(new Event('change'));
     });
     element('academicScheduleWeek')?.addEventListener('change', (event) => {
@@ -2375,31 +2389,45 @@
       if (message?.type === 'ACADEMIC_DATA_UPDATED') {
         const payload = message.payload || {};
         if (payload.kind === 'score' || payload.kind === 'scores') {
-          // 合并进缓存，避免下次切换学期时使用过期数据
-          if (scoresCache && Array.isArray(payload.rows)) {
-            const map = new Map(scoresCache.rows.map((row) => [String(row?.key || ''), row]));
-            for (const row of payload.rows) {
-              const key = String(row?.key || `${row?.academicYear}|${row?.course}` || '');
-              if (key) map.set(key, row);
-            }
-            scoresCache.rows = [...map.values()];
+          if (Array.isArray(payload.rows)) {
+            const currentLabel = String((scoreSemesterOptions || [])
+              .find((item) => item.zxjxjhh === scoreCurrentZxjxjhh)?.label
+              || payload.rows[0]?.academicYear
+              || '');
+            const preserved = currentLabel
+              ? (scoresCache?.rows || []).filter((row) => String(row?.academicYear || '').trim() !== currentLabel)
+              : (scoresCache?.rows || []);
+            scoresCache = {
+              rows: [...preserved, ...payload.rows],
+              checkedAt: Number(payload.checkedAt || Date.now())
+            };
             void persistAcademicDataCache();
           }
           if ([scoreCurrentZxjxjhh, '__all__'].includes(element('academicScoreSemester')?.value)) {
-            renderScores(payload.rows);
+            renderScores(filterCachedScoreRows(element('academicScoreSemester')?.value));
           }
         } else if (payload.kind === 'exam' || payload.kind === 'exams') {
-          const currentExam = (examsCache?.results || [])
-            .find((item) => item.zxjxjhh === examsCache?.currentZxjxjhh);
-          if (currentExam && Array.isArray(payload.rows)) {
-            currentExam.rows = payload.rows;
-            examsCache.checkedAt = Number(payload.checkedAt || Date.now());
+          const current = String(examsCache?.currentZxjxjhh || scoreCurrentZxjxjhh || '');
+          if (current && Array.isArray(payload.rows)) {
+            const currentLabel = String((academicSemesterOptions || [])
+              .find((item) => item.zxjxjhh === current)?.label || '');
+            const byTerm = new Map((examsCache?.results || []).map((item) => [item.zxjxjhh, item]));
+            byTerm.set(current, {
+              ...(byTerm.get(current) || {}),
+              label: byTerm.get(current)?.label || currentLabel,
+              zxjxjhh: current,
+              rows: payload.rows
+            });
+            examsCache = {
+              ...(examsCache || {}),
+              currentZxjxjhh: current,
+              results: [...byTerm.values()],
+              checkedAt: Number(payload.checkedAt || Date.now())
+            };
             void persistAcademicDataCache();
           }
-          if ([String(examsCache?.currentZxjxjhh || ''), '__all__'].includes(element('academicScoreSemester')?.value)) {
-            const currentLabel = String((examsCache?.results || [])
-              .find((item) => item.zxjxjhh === examsCache?.currentZxjxjhh)?.label || '');
-            renderExams((Array.isArray(payload.rows) ? payload.rows : []).map((row) => ({ ...row, semester: currentLabel })));
+          if ([current, '__all__'].includes(element('academicScoreSemester')?.value)) {
+            renderExams(filterCachedExamRows(element('academicScoreSemester')?.value));
           }
         }
       } else if (message?.type === 'ACADEMIC_SYSTEM_STATUS') {

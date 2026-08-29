@@ -54,8 +54,8 @@
 .academic-score-details summary { cursor:pointer; color:#2563eb; white-space:nowrap; }
 .academic-score-details div { margin-top:5px; white-space:pre-line; line-height:1.5; }
 .academic-exam-table { min-width:1080px; }
-.academic-exam-table td:nth-child(6) { white-space:normal; }
-.academic-exam-table td:nth-child(4) { white-space:pre-line; }
+.academic-score-table.academic-exam-table td { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+.academic-score-table.academic-exam-table td:nth-child(4) { white-space:pre-line; }
 .academic-exam-group-cell { vertical-align:middle !important; font-weight:600; }
 .academic-exam-time-line { display:flex; flex-wrap:wrap; align-items:center; gap:0; }
 .academic-exam-countdown { font-size:12px; }
