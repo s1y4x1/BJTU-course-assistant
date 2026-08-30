@@ -46,7 +46,7 @@
 .academic-score-status { display:none; margin:0 0 7px; }
 .academic-score-statistics { display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; margin:7px 0; color:#475569; font-size:13px; }
 .academic-score-statistics span { display:inline-flex; align-items:baseline; gap:5px; }
-.academic-score-statistics strong { color:#0f172a; font-size:15px; font-variant-numeric:tabular-nums; }
+.academic-score-statistics strong { display:inline-flex; align-items:center; gap:5px; color:#0f172a; font-size:15px; font-variant-numeric:tabular-nums; }
 .academic-score-statistics-spinner { width:14px; height:14px; border-width:2px; vertical-align:middle; }
 .academic-score-table-wrap { overflow:auto; border:1px solid #d1d5db; }
 .academic-score-table { width:100%; min-width:760px; border-collapse:collapse; font-size:12px; }

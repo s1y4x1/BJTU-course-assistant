@@ -18,6 +18,7 @@
   const BB_REFRESH_DELAY_KEY = 'academicBbRefreshDelayMs';
   const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
   const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
+  const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const DEFAULTS = Object.freeze({
     academicOptionsWideEnabled: true,
     academicScoreMonitorEnabled: false,
@@ -51,6 +52,10 @@
   let selectionSchedulePromise = null;
   let academicDataCacheWritePromise = Promise.resolve();
   let sharedAllLoading = false;
+  let sharedLoadingTerm = '';
+  let academicRequestBusyDepth = 0;
+  let academicRequestIdleTimer = 0;
+  const academicRequestPort = chrome.runtime.connect({ name: ACADEMIC_OPTIONS_REQUEST_PORT });
   let setMessage = () => {};
   let assessmentScriptInstalled = false;
   let assessmentScriptEnabled = false;
@@ -68,8 +73,35 @@
   let bbScriptReloadRequired = false;
 
   const element = (id) => document.getElementById(id);
-  const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
-    .catch((error) => ({ ok: false, message: String(error?.message || error) }));
+
+  function beginAcademicOptionsRequest() {
+    if (academicRequestIdleTimer) {
+      clearTimeout(academicRequestIdleTimer);
+      academicRequestIdleTimer = 0;
+    }
+    academicRequestBusyDepth += 1;
+    if (academicRequestBusyDepth === 1) academicRequestPort.postMessage({ type: 'busy', value: true });
+  }
+
+  function endAcademicOptionsRequest() {
+    academicRequestBusyDepth = Math.max(0, academicRequestBusyDepth - 1);
+    if (academicRequestBusyDepth > 0) return;
+    academicRequestIdleTimer = setTimeout(() => {
+      academicRequestIdleTimer = 0;
+      if (academicRequestBusyDepth === 0) academicRequestPort.postMessage({ type: 'busy', value: false });
+    }, 100);
+  }
+
+  const send = async (type, payload) => {
+    beginAcademicOptionsRequest();
+    try {
+      return await chrome.runtime.sendMessage({ type, payload });
+    } catch (error) {
+      return { ok: false, message: String(error?.message || error) };
+    } finally {
+      endAcademicOptionsRequest();
+    }
+  };
 
   function persistAcademicDataCache() {
     academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {}).then(async () => {
@@ -1245,11 +1277,16 @@
   }
 
   async function sendAcademicLoadWithRetry(type, payload, label, notify = false) {
-    while (true) {
-      const result = await send(type, payload);
-      if (!isRetryableAcademicLoadFailure(result)) return result;
-      if (notify) setMessage(`${label}暂时不可用，1 秒后自动重试…`);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    beginAcademicOptionsRequest();
+    try {
+      while (true) {
+        const result = await send(type, payload);
+        if (!isRetryableAcademicLoadFailure(result)) return result;
+        if (notify) setMessage(`${label}暂时不可用，1 秒后自动重试…`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    } finally {
+      endAcademicOptionsRequest();
     }
   }
 
@@ -1426,32 +1463,31 @@
     renderEmptyDataStatus(element('academicSystemStatus'), 'academicScoreTableBody', 'academicScoreLoading', '暂无成绩数据');
   }
 
-  function renderAcademicScoreStatistics(rows) {
+  function renderAcademicScoreStatistics(rows, loading = sharedAllLoading) {
     const container = element('academicScoreStatistics');
     if (!(container instanceof HTMLElement)) return;
-    if (sharedAllLoading) {
-      renderAcademicScoreStatisticsLoading();
-      return;
-    }
     const result = global.BjtuAcademicScoreStatistics?.calculate(rows) || null;
-    container.style.display = result ? 'flex' : 'none';
-    if (!result) return;
-    element('academicAverageGpa').textContent = result.averageGpaText;
-    element('academicWeightedAverageScore').textContent = result.weightedAverageScoreText;
+    container.style.display = result || loading ? 'flex' : 'none';
+    if (!result && !loading) return;
+    const values = {
+      academicAverageGpa: result?.averageGpaText || '-',
+      academicWeightedAverageScore: result?.weightedAverageScoreText || '-'
+    };
+    for (const [id, text] of Object.entries(values)) {
+      const value = element(id);
+      if (!(value instanceof HTMLElement)) continue;
+      value.replaceChildren(document.createTextNode(text));
+      if (loading) {
+        const spinner = document.createElement('span');
+        spinner.className = 'options-page-spinner academic-score-statistics-spinner';
+        spinner.setAttribute('aria-label', '仍在加载其他学期成绩');
+        value.appendChild(spinner);
+      }
+    }
   }
 
   function renderAcademicScoreStatisticsLoading() {
-    const container = element('academicScoreStatistics');
-    if (!(container instanceof HTMLElement)) return;
-    container.style.display = 'flex';
-    for (const id of ['academicAverageGpa', 'academicWeightedAverageScore']) {
-      const value = element(id);
-      if (!(value instanceof HTMLElement)) continue;
-      const spinner = document.createElement('span');
-      spinner.className = 'options-page-spinner academic-score-statistics-spinner';
-      spinner.setAttribute('aria-label', '正在计算');
-      value.replaceChildren(spinner);
-    }
+    renderAcademicScoreStatistics(filterCachedScoreRows(element('academicScoreSemester')?.value), true);
   }
 
   function renderScoreSemesterOptions(semesters, currentZxjxjhh = '', preferredValue = '') {
@@ -1811,7 +1847,8 @@
 
   function showSharedLoading() {
     sharedAllLoading = false;
-    renderAcademicScoreStatisticsLoading();
+    updateSharedLoadingText();
+    renderAcademicScoreStatistics([], true);
     for (const id of ['academicScoreLoading', 'academicExamLoading']) {
       if (element(id)) element(id).style.display = 'flex';
     }
@@ -1825,6 +1862,7 @@
 
   function setSharedAllLoading(active) {
     sharedAllLoading = active === true;
+    updateSharedLoadingText();
     for (const id of ['academicScoreLoading', 'academicExamLoading']) {
       if (element(id)) element(id).style.display = sharedAllLoading ? 'flex' : 'none';
     }
@@ -1834,6 +1872,24 @@
         if (element(id)) element(id).style.display = 'none';
       }
     }
+  }
+
+  function academicSemesterLabel(term) {
+    return String(academicSemesterOptions.find((item) => String(item?.zxjxjhh || '') === String(term || ''))?.label || term || '').trim();
+  }
+
+  function updateSharedLoadingText() {
+    const label = academicSemesterLabel(sharedLoadingTerm);
+    const suffix = label ? `（${label}）` : '';
+    const scoreText = element('academicScoreLoadingText');
+    const examText = element('academicExamLoadingText');
+    if (scoreText) scoreText.textContent = `正在读取成绩${suffix}…`;
+    if (examText) examText.textContent = `正在读取考试信息${suffix}…`;
+  }
+
+  function setSharedLoadingTerm(term) {
+    sharedLoadingTerm = String(term || '');
+    updateSharedLoadingText();
   }
 
   function renderCachedSharedData() {
@@ -1963,6 +2019,7 @@
   async function runSharedTermWorker() {
     if (sharedTermWorkerRunning) return;
     sharedTermWorkerRunning = true;
+    beginAcademicOptionsRequest();
     try {
       while (sharedTermsInFlight.size) {
         const selected = String(element('academicScoreSemester')?.value || '');
@@ -1971,6 +2028,7 @@
           : sharedTermsInFlight.keys().next().value;
         const job = sharedTermsInFlight.get(priority);
         if (!job) continue;
+        setSharedLoadingTerm(priority);
         try {
           await requestSharedTerms([priority]);
           job.resolve();
@@ -1978,41 +2036,48 @@
           job.reject(error);
         } finally {
           if (sharedTermsInFlight.get(priority) === job) sharedTermsInFlight.delete(priority);
+          if (sharedLoadingTerm === priority) setSharedLoadingTerm('');
         }
       }
     } finally {
       sharedTermWorkerRunning = false;
+      endAcademicOptionsRequest();
       if (sharedTermsInFlight.size) void runSharedTermWorker();
     }
   }
 
   async function prefetchSharedTerms(values) {
+    beginAcademicOptionsRequest();
     const pending = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
     let firstError = null;
-    while (pending.length) {
-      const selected = String(element('academicScoreSemester')?.value || '');
-      if (selected && selected !== '__all__' && !loadedSharedTerms.has(selected)) {
-        try {
-          await ensureSharedTerms([selected]);
-        } catch (error) {
-          throw error;
+    try {
+      while (pending.length) {
+        const selected = String(element('academicScoreSemester')?.value || '');
+        if (selected && selected !== '__all__' && !loadedSharedTerms.has(selected)) {
+          try {
+            await ensureSharedTerms([selected]);
+          } catch (error) {
+            throw error;
+          }
+          renderAvailableSharedSemesters();
+          if (loadedSharedTerms.has(selected)) renderCachedSharedData();
         }
-        renderAvailableSharedSemesters();
-        if (loadedSharedTerms.has(selected)) renderCachedSharedData();
-      }
-      const term = pending.shift();
-      if (term && !loadedSharedTerms.has(term)) {
-        try {
-          await ensureSharedTerms([term]);
-        } catch (error) {
-          firstError ||= error;
+        const term = pending.shift();
+        if (term && !loadedSharedTerms.has(term)) {
+          try {
+            await ensureSharedTerms([term]);
+          } catch (error) {
+            firstError ||= error;
+          }
+          renderAvailableSharedSemesters();
+          const activeSelection = String(element('academicScoreSemester')?.value || '');
+          if (activeSelection === '__all__' || loadedSharedTerms.has(activeSelection)) renderCachedSharedData();
         }
-        renderAvailableSharedSemesters();
-        const activeSelection = String(element('academicScoreSemester')?.value || '');
-        if (activeSelection === '__all__' || loadedSharedTerms.has(activeSelection)) renderCachedSharedData();
       }
+      if (firstError) throw firstError;
+    } finally {
+      endAcademicOptionsRequest();
     }
-    if (firstError) throw firstError;
   }
 
   async function requestScheduleTerms(values, { includeSelection = false } = {}) {
@@ -2091,6 +2156,7 @@
   async function runScheduleTermWorker() {
     if (scheduleTermWorkerRunning) return;
     scheduleTermWorkerRunning = true;
+    beginAcademicOptionsRequest();
     try {
       while (scheduleTermsInFlight.size) {
         const selected = String(element('academicScheduleSemester')?.value || '');
@@ -2110,27 +2176,35 @@
       }
     } finally {
       scheduleTermWorkerRunning = false;
+      endAcademicOptionsRequest();
       if (scheduleTermsInFlight.size) void runScheduleTermWorker();
     }
   }
 
   async function prefetchScheduleTerms(values) {
+    beginAcademicOptionsRequest();
     const pending = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
-    while (pending.length) {
-      const selected = String(element('academicScheduleSemester')?.value || '');
-      if (selected && !isScheduleTermReady(selected)) {
-        await ensureScheduleTerms([selected]);
-        renderCachedScheduleData();
+    try {
+      while (pending.length) {
+        const selected = String(element('academicScheduleSemester')?.value || '');
+        if (selected && !isScheduleTermReady(selected)) {
+          await ensureScheduleTerms([selected]);
+          renderCachedScheduleData();
+        }
+        const term = pending.shift();
+        if (term && !isScheduleTermReady(term)) {
+          await ensureScheduleTerms([term]);
+          renderCachedScheduleData();
+        }
       }
-      const term = pending.shift();
-      if (term && !isScheduleTermReady(term)) {
-        await ensureScheduleTerms([term]);
-        renderCachedScheduleData();
-      }
+    } finally {
+      endAcademicOptionsRequest();
     }
   }
 
   async function loadAll({ preserveRendered = false } = {}) {
+    beginAcademicOptionsRequest();
+    try {
     if (!preserveRendered) {
       renderAcademicScoreStatisticsLoading();
       for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
@@ -2207,6 +2281,9 @@
         ? '教务系统未登录，请输入账号密码或通过 MIS 登录'
         : `教务数据读取失败：${error?.message || '未知错误'}`;
       return { ok: false, code: error?.code || '', message: error?.message };
+    }
+    } finally {
+      endAcademicOptionsRequest();
     }
   }
 

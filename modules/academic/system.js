@@ -85,14 +85,25 @@
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
+  const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_REQUEST_PRIORITY = Object.freeze({
     LOGIN: 300,
     SCHEDULE: 200,
-    SHARED: 100
+    SHARED: 100,
+    MONITOR: 0
   });
   const academicRequestJobs = [];
+  const academicOptionsRequestPorts = new Map();
   let academicRequestJobSequence = 0;
   let academicRequestWorkerRunning = false;
+
+  function hasBusyAcademicOptionsRequests() {
+    return [...academicOptionsRequestPorts.values()].some(Boolean);
+  }
+
+  function canRunAcademicRequest(job) {
+    return job?.priority !== ACADEMIC_REQUEST_PRIORITY.MONITOR || !hasBusyAcademicOptionsRequests();
+  }
 
   function enqueueAcademicRequest(priority, task) {
     return new Promise((resolve, reject) => {
@@ -115,7 +126,9 @@
         academicRequestJobs.sort((left, right) => (
           right.priority - left.priority || left.sequence - right.sequence
         ));
-        const job = academicRequestJobs.shift();
+        const jobIndex = academicRequestJobs.findIndex(canRunAcademicRequest);
+        if (jobIndex < 0) break;
+        const [job] = academicRequestJobs.splice(jobIndex, 1);
         try {
           job.resolve(await job.task());
         } catch (error) {
@@ -124,7 +137,7 @@
       }
     } finally {
       academicRequestWorkerRunning = false;
-      if (academicRequestJobs.length) void runAcademicRequestWorker();
+      if (academicRequestJobs.some(canRunAcademicRequest)) void runAcademicRequestWorker();
     }
   }
 
@@ -1296,9 +1309,12 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     return run;
   }
 
-  async function checkScores(source = 'poll', { force = false } = {}) {
+  async function checkScores(source = 'poll', {
+    force = false,
+    priority = ACADEMIC_REQUEST_PRIORITY.MONITOR
+  } = {}) {
     if (scoreCheckPromise) return scoreCheckPromise;
-    scoreCheckPromise = (async () => {
+    scoreCheckPromise = enqueueAcademicRequest(priority, async () => {
       const settings = await chrome.storage.local.get([MONITOR_KEY]);
       if (!force && settings?.[MONITOR_KEY] !== true) return { skipped: true };
       try {
@@ -1316,13 +1332,16 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         }).catch(() => {});
         throw error;
       }
-    })().finally(() => { scoreCheckPromise = null; });
+    }).finally(() => { scoreCheckPromise = null; });
     return scoreCheckPromise;
   }
 
-  async function checkExams(source = 'poll', { force = false } = {}) {
+  async function checkExams(source = 'poll', {
+    force = false,
+    priority = ACADEMIC_REQUEST_PRIORITY.MONITOR
+  } = {}) {
     if (examCheckPromise) return examCheckPromise;
-    examCheckPromise = (async () => {
+    examCheckPromise = enqueueAcademicRequest(priority, async () => {
       const settings = await chrome.storage.local.get([EXAM_MONITOR_KEY]);
       if (!force && settings?.[EXAM_MONITOR_KEY] !== true) return { skipped: true };
       try {
@@ -1338,7 +1357,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         }).catch(() => {});
         throw error;
       }
-    })().finally(() => { examCheckPromise = null; });
+    }).finally(() => { examCheckPromise = null; });
     return examCheckPromise;
   }
 
@@ -1809,6 +1828,20 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
+    chrome.runtime.onConnect.addListener((port) => {
+      if (port?.name !== ACADEMIC_OPTIONS_REQUEST_PORT) return;
+      academicOptionsRequestPorts.set(port, false);
+      port.onMessage.addListener((message) => {
+        if (message?.type !== 'busy') return;
+        academicOptionsRequestPorts.set(port, message.value === true);
+        if (message.value !== true) void runAcademicRequestWorker();
+      });
+      port.onDisconnect.addListener(() => {
+        academicOptionsRequestPorts.delete(port);
+        void runAcademicRequestWorker();
+      });
+    });
+
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'ACADEMIC_LOGIN_WITH_PASSWORD') {
         enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, () => (
@@ -1830,7 +1863,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_CHECK_SCORES') {
-        checkScores('manual')
+        checkScores('manual', { priority: ACADEMIC_REQUEST_PRIORITY.SHARED })
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
