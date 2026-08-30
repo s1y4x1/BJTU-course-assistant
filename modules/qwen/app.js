@@ -2016,13 +2016,19 @@
     }
 
     if (!STANDALONE_CHAT) {
-      void chrome.storage.local.get(['qwenEnabled']).then((data) => {
-        if (data?.qwenEnabled === false) {
-          const fab = el(FAB_ID);
+      const applyEnabled = (enabled) => {
+        const fab = el(FAB_ID);
+        const panel = el(PANEL_ID);
+        if (enabled === false) {
           if (fab instanceof HTMLElement) fab.style.display = 'none';
-          const panel = el(PANEL_ID);
           if (panel instanceof HTMLElement) panel.hidden = true;
+        } else if (fab instanceof HTMLElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
+          fab.style.display = '';
         }
+      };
+      void chrome.storage.local.get(['qwenEnabled']).then((data) => applyEnabled(data?.qwenEnabled !== false));
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.qwenEnabled) applyEnabled(changes.qwenEnabled.newValue !== false);
       });
     }
 

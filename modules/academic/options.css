@@ -78,6 +78,34 @@
 .academic-schedule-course-name { margin-top:2px; font-weight:600; }
 .academic-schedule-course-detail, .academic-schedule-course-location { margin-top:2px; color:#64748b; font-size:11px; }
 .academic-schedule-selection-status { display:inline-block; margin-top:3px; color:#16a34a; font-weight:700; }
+.academic-course-hover-target { cursor:help; }
+.academic-course-hover-card {
+  box-sizing:border-box;
+  position:fixed;
+  z-index:10050;
+  width:min(420px,calc(100vw - 16px));
+  max-height:calc(100vh - 16px);
+  padding:10px 12px;
+  overflow:auto;
+  border:1px solid rgba(148,163,184,.75);
+  border-radius:9px;
+  background:rgba(255,255,255,.75);
+  box-shadow:0 12px 30px rgba(15,23,42,.22);
+  backdrop-filter:blur(8px);
+  color:#0f172a;
+  font-size:12px;
+  line-height:1.5;
+  pointer-events:none;
+}
+.academic-course-hover-card[hidden] { display:none !important; }
+.academic-course-hover-title { margin-bottom:7px; font-size:13px; font-weight:700; }
+.academic-course-hover-section + .academic-course-hover-section { margin-top:9px; padding-top:8px; border-top:1px solid rgba(148,163,184,.65); }
+.academic-course-hover-heading { display:block; margin-bottom:4px; color:#1d4ed8; }
+.academic-course-hover-record + .academic-course-hover-record { margin-top:6px; padding-top:6px; border-top:1px dashed rgba(148,163,184,.65); }
+.academic-course-hover-field { display:flex; align-items:flex-start; }
+.academic-course-hover-label { flex:0 0 auto; color:#475569; font-weight:600; }
+.academic-course-hover-value { min-width:0; overflow-wrap:anywhere; }
+.academic-course-hover-field.is-multiline .academic-course-hover-value { white-space:pre-line; }
 html[data-color-scheme="dark"] .academic-options-card { border-color:#334155; background:#0f172a; }
 html[data-color-scheme="dark"] .academic-account-row select { border-color:#475569; background:#111827; color:#f8fafc; }
 html[data-color-scheme="dark"] .academic-external-script-list { border-color:#475569; background:#111827; }
@@ -100,6 +128,9 @@ html[data-color-scheme="dark"] .academic-score-table th,
 html[data-color-scheme="dark"] .academic-score-table td { border-color:#334155; }
 html[data-color-scheme="dark"] .academic-schedule-course + .academic-schedule-course { border-top-color:#475569; }
 html[data-color-scheme="dark"] .academic-schedule-course-code { color:#60a5fa; }
+html[data-color-scheme="dark"] .academic-course-hover-card { border-color:rgba(100,116,139,.75); background:rgba(15,23,42,.75); color:#f8fafc; }
+html[data-color-scheme="dark"] .academic-course-hover-heading { color:#93c5fd; }
+html[data-color-scheme="dark"] .academic-course-hover-label { color:#cbd5e1; }
 
 @media (max-width:760px) {
   .academic-external-script-item { grid-template-columns:minmax(0,1fr) auto; }

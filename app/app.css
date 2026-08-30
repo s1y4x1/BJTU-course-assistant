@@ -1773,3 +1773,38 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 .saved-uploads-list .file-item { margin-bottom: 8px; }
 .saved-uploads-list .file-item:last-child { margin-bottom: 0; }
 .save-uploads-toggle input[type="checkbox"] { cursor: pointer; }
+
+.fullscreen-module-buttons {
+    position: fixed;
+    left: 20px;
+    bottom: 20px;
+    z-index: 10003;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: left .15s ease;
+}
+body.qwen-fullscreen-button-visible .fullscreen-module-buttons { left: 80px; }
+.fullscreen-module-buttons[hidden],
+.fullscreen-module-button[hidden] { display: none !important; }
+.fullscreen-module-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #334155;
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .25);
+    cursor: pointer;
+}
+.mail-fullscreen-button { background:#2563eb; box-shadow:0 4px 14px rgba(37,99,235,.35); }
+.mail-fullscreen-button:hover { background:#1d4ed8; }
+.academic-fullscreen-button { background:#16a34a; box-shadow:0 4px 14px rgba(22,163,74,.35); }
+.academic-fullscreen-button:hover { background:#15803d; }
+html[data-color-scheme="dark"] .fullscreen-module-button { background: #e2e8f0; color: #0f172a; }
+html[data-color-scheme="dark"] .fullscreen-module-button:hover { background: #f8fafc; }

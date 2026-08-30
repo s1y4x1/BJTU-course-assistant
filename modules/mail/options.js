@@ -7,6 +7,7 @@
   const ENABLED_KEY = 'mailMonitorEnabled';
   const INTERVAL_KEY = 'mailMonitorIntervalMinutes';
   const LIST_LIMIT_KEY = 'mailListLimit';
+  const FULLSCREEN_BUTTON_KEY = 'mailFullscreenButtonEnabled';
   const LIST_LIMIT_INPUT_ID = 'mailListLimit';
   const STATUS_KEY = 'mailMonitorStatus';
 
@@ -170,7 +171,14 @@
   }
 
   async function refreshContext() {
-    const context = await send('MAIL_GET_CONTEXT');
+    const [context, buttonSettings] = await Promise.all([
+      send('MAIL_GET_CONTEXT'),
+      chrome.storage.local.get(FULLSCREEN_BUTTON_KEY)
+    ]);
+    const fullscreenButton = element(FULLSCREEN_BUTTON_KEY);
+    if (fullscreenButton instanceof HTMLInputElement) {
+      fullscreenButton.checked = buttonSettings?.[FULLSCREEN_BUTTON_KEY] !== false;
+    }
     if (!context?.ok) return null;
     element(ENABLED_KEY).checked = context.enabled === true;
     setIntervalEditor(context.intervalMinutes, DEFAULT_INTERVAL_MINUTES);
@@ -236,6 +244,11 @@
   }
 
   function bindEvents() {
+    element(FULLSCREEN_BUTTON_KEY)?.addEventListener('change', async (event) => {
+      const enabled = event.currentTarget.checked === true;
+      await chrome.storage.local.set({ [FULLSCREEN_BUTTON_KEY]: enabled });
+      setMessage(enabled ? '已显示 BJTU 邮件系统按钮' : '已隐藏 BJTU 邮件系统按钮');
+    });
     element(ENABLED_KEY)?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
       await chrome.storage.local.set({ [ENABLED_KEY]: enabled });
@@ -283,6 +296,9 @@
         setIntervalEditor(changes[INTERVAL_KEY].newValue, DEFAULT_INTERVAL_MINUTES);
       }
       if (changes[STATUS_KEY]) renderStatus(changes[STATUS_KEY].newValue);
+      if (changes[FULLSCREEN_BUTTON_KEY] && element(FULLSCREEN_BUTTON_KEY)) {
+        element(FULLSCREEN_BUTTON_KEY).checked = changes[FULLSCREEN_BUTTON_KEY].newValue !== false;
+      }
     });
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'MAIL_DATA_UPDATED') return;
@@ -311,11 +327,13 @@
     await chrome.storage.local.set({
       [ENABLED_KEY]: true,
       [INTERVAL_KEY]: DEFAULT_INTERVAL_MINUTES,
-      [LIST_LIMIT_KEY]: DEFAULT_LIST_LIMIT
+      [LIST_LIMIT_KEY]: DEFAULT_LIST_LIMIT,
+      [FULLSCREEN_BUTTON_KEY]: true
     });
     await chrome.storage.local.remove([STATUS_KEY]);
     if (!initialized) return;
     element(ENABLED_KEY).checked = true;
+    element(FULLSCREEN_BUTTON_KEY).checked = true;
     setIntervalEditor(DEFAULT_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES);
     const limitInput = element(LIST_LIMIT_INPUT_ID);
     if (limitInput instanceof HTMLInputElement) limitInput.value = String(DEFAULT_LIST_LIMIT);

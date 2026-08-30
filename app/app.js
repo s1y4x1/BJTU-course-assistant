@@ -125,6 +125,62 @@ if (popupMode) {
   globalThis.showPopupCacheLoadingFrame?.();
 }
 
+const FULLSCREEN_MODULE_BUTTONS = Object.freeze({
+  mail: {
+    id: 'mail-fullscreen-button',
+    key: 'mailFullscreenButtonEnabled',
+    path: 'modules/mail/options.html'
+  },
+  academic: {
+    id: 'academic-fullscreen-button',
+    key: 'academicFullscreenButtonEnabled',
+    path: 'modules/academic/options.html'
+  }
+});
+
+async function initFullscreenModuleButtons() {
+  const container = document.getElementById('fullscreen-module-buttons');
+  if (!(container instanceof HTMLElement)) return;
+  const fullscreen = !popupMode && appSearchParams.get('view') !== 'sidepanel';
+  if (!fullscreen) {
+    container.hidden = true;
+    return;
+  }
+  const available = await globalThis.BjtuModuleRegistry.ready;
+  const keys = ['qwenEnabled', ...Object.values(FULLSCREEN_MODULE_BUTTONS).map((item) => item.key)];
+  const stored = await chrome.storage.local.get(keys);
+  const apply = (values) => {
+    document.body.classList.toggle(
+      'qwen-fullscreen-button-visible',
+      available.qwen === true && values.qwenEnabled !== false
+    );
+    let visible = false;
+    for (const [moduleId, config] of Object.entries(FULLSCREEN_MODULE_BUTTONS)) {
+      const button = document.getElementById(config.id);
+      if (!(button instanceof HTMLButtonElement)) continue;
+      button.hidden = available[moduleId] !== true || values[config.key] === false;
+      visible ||= !button.hidden;
+      if (button.dataset.bound !== '1') {
+        button.dataset.bound = '1';
+        button.addEventListener('click', () => {
+          location.href = chrome.runtime.getURL(config.path);
+        });
+      }
+    }
+    container.hidden = !visible;
+  };
+  apply(stored);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !keys.some((key) => changes[key])) return;
+    for (const key of keys) {
+      if (changes[key]) stored[key] = changes[key].newValue;
+    }
+    apply(stored);
+  });
+}
+
+void initFullscreenModuleButtons();
+
 if (usernameInput) {
   usernameInput.addEventListener('input', () => {
     const value = String(usernameInput.value || '').trim();

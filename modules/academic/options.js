@@ -19,7 +19,9 @@
   const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
   const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
+  const ACADEMIC_FULLSCREEN_BUTTON_KEY = 'academicFullscreenButtonEnabled';
   const DEFAULTS = Object.freeze({
+    [ACADEMIC_FULLSCREEN_BUTTON_KEY]: true,
     academicOptionsWideEnabled: true,
     academicScoreMonitorEnabled: false,
     academicExamMonitorEnabled: false,
@@ -1542,6 +1544,130 @@
     return select.value;
   }
 
+  function normalizedAcademicCourseCode(value) {
+    return String(value || '').trim().toUpperCase().match(/^([A-Z]\d{6}[A-Z])(?:\b|\s|$)/)?.[1] || '';
+  }
+
+  function academicScoreRowsForCourse(semester, courseCode) {
+    const normalizedSemester = String(semester || '').trim();
+    const normalizedCode = normalizedAcademicCourseCode(courseCode);
+    if (!normalizedSemester || !normalizedCode) return [];
+    return (scoresCache?.rows || []).filter((row) => (
+      String(row?.academicYear || '').trim() === normalizedSemester
+      && normalizedAcademicCourseCode(row?.courseCode || row?.course) === normalizedCode
+    ));
+  }
+
+  function academicExamRowsForCourse(semester, courseCode) {
+    const normalizedSemester = String(semester || '').trim();
+    const normalizedCode = normalizedAcademicCourseCode(courseCode);
+    if (!normalizedSemester || !normalizedCode) return [];
+    return (examsCache?.results || [])
+      .filter((item) => String(item?.label || '').trim() === normalizedSemester)
+      .flatMap((item) => item?.rows || [])
+      .filter((row) => normalizedAcademicCourseCode(row?.courseCode || row?.course) === normalizedCode);
+  }
+
+  function appendAcademicHoverField(parent, label, value, multiline = false) {
+    const text = String(value ?? '').trim();
+    if (!text) return;
+    const row = document.createElement('div');
+    row.className = `academic-course-hover-field${multiline ? ' is-multiline' : ''}`;
+    const name = document.createElement('span');
+    name.className = 'academic-course-hover-label';
+    name.textContent = `${label}：`;
+    const content = document.createElement('span');
+    content.className = 'academic-course-hover-value';
+    content.textContent = text;
+    row.append(name, content);
+    parent.appendChild(row);
+  }
+
+  function appendAcademicHoverSection(parent, title, rows, type) {
+    if (!rows.length) return;
+    const section = document.createElement('section');
+    section.className = 'academic-course-hover-section';
+    const heading = document.createElement('strong');
+    heading.className = 'academic-course-hover-heading';
+    heading.textContent = title;
+    section.appendChild(heading);
+    rows.forEach((row) => {
+      const record = document.createElement('div');
+      record.className = 'academic-course-hover-record';
+      if (type === 'score') {
+        appendAcademicHoverField(record, '课程', row.course);
+        appendAcademicHoverField(record, '学分', row.credit);
+        appendAcademicHoverField(record, '成绩', row.score);
+        appendAcademicHoverField(record, '加分成绩', row.bonusScore);
+        appendAcademicHoverField(record, '上课教师', row.teacher);
+        appendAcademicHoverField(record, '详细信息', row.details, true);
+      } else {
+        appendAcademicHoverField(record, '考试', row.exam);
+        appendAcademicHoverField(record, '课程', row.course);
+        appendAcademicHoverField(record, '时间地点', row.timeLocation, true);
+        appendAcademicHoverField(record, '考试方式', row.method);
+        appendAcademicHoverField(record, '备注', row.remarks);
+        appendAcademicHoverField(record, '报名信息', row.registration);
+        appendAcademicHoverField(record, '考试状态', row.status);
+        appendAcademicHoverField(record, '操作', row.operation);
+      }
+      section.appendChild(record);
+    });
+    parent.appendChild(section);
+  }
+
+  function academicCourseHoverCard() {
+    let card = element('academicCourseHoverCard');
+    if (card instanceof HTMLElement) return card;
+    card = document.createElement('div');
+    card.id = 'academicCourseHoverCard';
+    card.className = 'academic-course-hover-card';
+    card.hidden = true;
+    document.body.appendChild(card);
+    return card;
+  }
+
+  function positionAcademicCourseHoverCard(event) {
+    const card = academicCourseHoverCard();
+    if (card.hidden) return;
+    const gap = 14;
+    const margin = 8;
+    const rect = card.getBoundingClientRect();
+    let left = Number(event?.clientX || 0) + gap;
+    let top = Number(event?.clientY || 0) + gap;
+    if (left + rect.width > window.innerWidth - margin) left = Number(event?.clientX || 0) - rect.width - gap;
+    if (top + rect.height > window.innerHeight - margin) top = Number(event?.clientY || 0) - rect.height - gap;
+    card.style.left = `${Math.max(margin, left)}px`;
+    card.style.top = `${Math.max(margin, top)}px`;
+  }
+
+  function showAcademicCourseHoverCard(event, data) {
+    const scores = Array.isArray(data?.scores) ? data.scores : [];
+    const exams = Array.isArray(data?.exams) ? data.exams : [];
+    const card = academicCourseHoverCard();
+    card.replaceChildren();
+    if (!scores.length && !exams.length) {
+      card.hidden = true;
+      return;
+    }
+    const title = document.createElement('div');
+    title.className = 'academic-course-hover-title';
+    title.textContent = [data?.courseCode, data?.semester].filter(Boolean).join(' · ');
+    card.appendChild(title);
+    appendAcademicHoverSection(card, '考务考试信息', exams, 'exam');
+    appendAcademicHoverSection(card, '成绩', scores, 'score');
+    card.hidden = false;
+    positionAcademicCourseHoverCard(event);
+  }
+
+  function bindAcademicCourseHover(target, resolveData) {
+    if (!(target instanceof HTMLElement)) return;
+    target.classList.add('academic-course-hover-target');
+    target.addEventListener('mouseenter', (event) => showAcademicCourseHoverCard(event, resolveData()));
+    target.addEventListener('mousemove', positionAcademicCourseHoverCard);
+    target.addEventListener('mouseleave', () => { academicCourseHoverCard().hidden = true; });
+  }
+
   function renderExams(rows) {
     const list = Array.isArray(rows) ? rows : [];
     const body = element('academicExamTableBody');
@@ -1580,6 +1706,12 @@
       }
       const course = document.createElement('td');
       course.textContent = String(row.course || '-');
+      const courseCode = normalizedAcademicCourseCode(row.courseCode || row.course);
+      bindAcademicCourseHover(course, () => ({
+        courseCode,
+        semester,
+        scores: academicScoreRowsForCourse(semester, courseCode)
+      }));
       tr.appendChild(course);
       const timeLocation = document.createElement('td');
       const lines = String(row.timeLocation || '-').split(/\n+/).filter(Boolean);
@@ -1666,6 +1798,14 @@
       status.textContent = String(course.selectionStatus);
       item.appendChild(status);
     }
+    const semester = String(scheduleData?.label || '').trim();
+    const courseCode = normalizedAcademicCourseCode(course?.courseCode);
+    bindAcademicCourseHover(item, () => ({
+      courseCode,
+      semester,
+      exams: academicExamRowsForCourse(semester, courseCode),
+      scores: academicScoreRowsForCourse(semester, courseCode)
+    }));
     cell.appendChild(item);
   }
 
@@ -2288,6 +2428,11 @@
   }
 
   function bindEvents() {
+    element(ACADEMIC_FULLSCREEN_BUTTON_KEY)?.addEventListener('change', async (event) => {
+      const enabled = event.currentTarget.checked === true;
+      await chrome.storage.local.set({ [ACADEMIC_FULLSCREEN_BUTTON_KEY]: enabled });
+      setMessage(enabled ? '已显示教务系统按钮' : '已隐藏教务系统按钮');
+    });
     element('academicOptionsWideEnabled')?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
       applyWideOption(enabled);
@@ -2558,6 +2703,9 @@
         element('academicOptionsWideEnabled').checked = enabled;
         applyWideOption(enabled);
       }
+      if (changes[ACADEMIC_FULLSCREEN_BUTTON_KEY] && element(ACADEMIC_FULLSCREEN_BUTTON_KEY)) {
+        element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = changes[ACADEMIC_FULLSCREEN_BUTTON_KEY].newValue !== false;
+      }
       if (changes.academicScoreMonitorStatus) renderMonitorStatus(changes.academicScoreMonitorStatus.newValue);
       if (changes.academicExamMonitorStatus) renderExamStatus(changes.academicExamMonitorStatus.newValue);
       EXTERNAL_SCRIPTS.forEach((script) => {
@@ -2603,6 +2751,7 @@
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
     await chrome.storage.local.remove(['academicScheduleType', 'academicExamSemester']);
     const stored = await chrome.storage.local.get(Object.keys(DEFAULTS));
+    element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = stored[ACADEMIC_FULLSCREEN_BUTTON_KEY] !== false;
     element('academicOptionsWideEnabled').checked = stored.academicOptionsWideEnabled !== false;
     applyWideOption(stored.academicOptionsWideEnabled !== false);
     element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled === true;
@@ -2633,6 +2782,7 @@
     if (!initialized) return;
     invalidateAcademicCaches();
     element('academicScoreMonitorEnabled').checked = false;
+    element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = true;
     element('academicOptionsWideEnabled').checked = true;
     applyWideOption(true);
     element('academicExamMonitorEnabled').checked = false;
