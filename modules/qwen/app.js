@@ -697,7 +697,12 @@
       pendingWafRetryAction = null;
     }
     wafAutoRetryInProgress = false;
-    void send('QWEN_WAF_RETRY_RESULT', { flowId, success: success === true });
+    void send('QWEN_WAF_RETRY_RESULT', { flowId, success: success === true }).then((response) => {
+      if (response?.completed === true && activeWafFlowId === flowId) {
+        activeWafFlowId = '';
+        pendingWafRetryAction = null;
+      }
+    });
   }
 
   function openWafVerificationPage() {
@@ -1400,7 +1405,7 @@
   }
 
   async function refreshStatus({ openLoginIfNeeded = false, allowOpening = true } = {}) {
-    const status = await send('QWEN_GET_STATUS', { ensureLogin: false });
+    const status = await send('QWEN_GET_STATUS', { ensureLogin: openLoginIfNeeded === true });
     lastKnownLoggedIn = status?.loggedIn === true;
     lastKnownEnabled = status?.enabled !== false;
     if (status?.loggedIn) {
@@ -1409,10 +1414,6 @@
     } else {
       setStatus('未登录', 'error');
       showLoginHint(true);
-      const panel = el(PANEL_ID);
-      if (openLoginIfNeeded && panel instanceof HTMLElement && !panel.hidden) {
-        void send('QWEN_OPEN_LOGIN', { auth: true });
-      }
     }
     const thinking = el(THINKING_ID);
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
@@ -2097,8 +2098,7 @@
         historyReloadAfterLogin = true;
         if (panelActivated) {
           showLoginHint(false);
-          const currentActivation = panelActivationPromise;
-          void Promise.resolve(currentActivation).catch(() => {}).then(() => activateQwenPanel());
+          if (!panelActivationPromise) void activateQwenPanel();
         }
         return false;
       }

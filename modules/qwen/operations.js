@@ -1422,20 +1422,20 @@ name: 've.teachers_of_',
       doc: [
         '## academic.schedule —— 课表查询',
         '',
-        '按学期查询教务系统课表，需要教务系统已登录。不传 xnxq 时优先查询当前学期，并同时合并选课课表页面声明的学期；可传入 academic.semesters 返回的多个 zxjxjhh 值作为 xnxq。扩展会自动识别选课课表所属学期，同一学期同时存在两种课表时以本学期课表为准。',
+        '按学期查询教务系统课表，需要教务系统已登录。不传 semesters 时优先查询当前学期，并同时合并选课课表页面声明的学期；显式传入 academic.semesters 返回的多个 zxjxjhh 后，只返回指定学期，不附加选课课表。',
         '',
-        '**参数**：{"xnxq":["2025-2026-2-2"]}',
+        '**参数**：{"semesters":["2025-2026-2-2"]}',
         '',
-        '**调用示例**：`academic.schedule()`；`academic.schedule({xnxq: ["2024-2025-2-2"]})`',
+        '**调用示例**：`academic.schedule()`；`academic.schedule({semesters: ["2024-2025-2-2"]})`',
         '',
         '**返回示例**：`[{"semester":"2025-2026-2","xnxq":"2025-2026-2-2","rows":[],"weeks":[1,2],"currentWeek":1,"weekLabels":{},"termName":"2025-2026-2"}]`'
       ].join('\n'),
       async run(args) {
-        const xnxq = args?.xnxq;
-        if (xnxq !== undefined && !Array.isArray(xnxq)) throw new Error('xnxq 必须是学期列表');
+        const semesters = args?.semesters;
+        if (semesters !== undefined && !Array.isArray(semesters)) throw new Error('semesters 必须是学期列表');
         const value = throwOperationFailure(await academicInvoke('schedule', {
-          ...(xnxq === undefined ? {} : { xnxq }),
-          includeSelection: xnxq === undefined
+          ...(semesters === undefined ? {} : { semesters }),
+          includeSelection: semesters === undefined
         }, 120000), '课表获取失败');
         return (Array.isArray(value?.results) ? value.results : []).map((result) => ({
           semester: String(result?.label || ''),

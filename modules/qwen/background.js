@@ -75,6 +75,16 @@
       || value.startsWith(chrome.runtime.getURL('modules/qwen/chat.html'));
   }
 
+  function isQwenSidePanelUrl(url) {
+    try {
+      const parsed = new URL(String(url || ''));
+      return parsed.href.startsWith(chrome.runtime.getURL('modules/qwen/chat.html'))
+        && parsed.searchParams.get('view') === 'sidepanel';
+    } catch {
+      return false;
+    }
+  }
+
   async function findOpenQwenReturnTab(excludeTabId = null) {
     const tabs = await chrome.tabs.query({}).catch(() => []);
     return tabs
@@ -142,14 +152,18 @@
     if (!Number.isInteger(qwenTabId)) throw new Error('无法打开通义千问风控校验页面');
     const senderTab = sender?.tab;
     const senderUrl = String(sender?.url || senderTab?.url || senderTab?.pendingUrl || '');
-    const returnTab = Number.isInteger(Number(senderTab?.id)) && isQwenReturnPageUrl(senderUrl)
+    const sidePanel = isQwenSidePanelUrl(senderUrl);
+    const returnTab = sidePanel
       ? senderTab
-      : await findOpenQwenReturnTab(qwenTabId);
+      : (Number.isInteger(Number(senderTab?.id)) && isQwenReturnPageUrl(senderUrl)
+          ? senderTab
+          : await findOpenQwenReturnTab(qwenTabId));
     const state = {
       flowId: globalThis.crypto?.randomUUID?.() || `waf-${Date.now()}`,
       qwenTabId,
       returnTabId: Number.isInteger(Number(returnTab?.id)) ? Number(returnTab.id) : null,
       returnUrl: isQwenReturnPageUrl(senderUrl) ? senderUrl : String(returnTab?.url || ''),
+      returnMode: sidePanel ? 'sidepanel' : 'tab',
       createdQwenTab: openResult?.created === true,
       phase: 'waiting-auto-refresh',
       startedAt: Date.now()
@@ -180,26 +194,36 @@
     }
     if (state.phase !== 'waiting-user-refresh') return { ok: true, waiting: true };
 
-    let returnTab = await chrome.tabs.get(Number(state.returnTabId)).catch(() => null);
-    if (!returnTab) {
-      returnTab = await findOpenQwenReturnTab(qwenTabId);
-    }
-    if (!returnTab && isQwenReturnPageUrl(state.returnUrl)) {
-      returnTab = await global.BjtuTabs.create({ url: state.returnUrl, active: true }).catch(() => null);
-    } else if (returnTab) {
-      returnTab = await focusTab(returnTab.id);
+    const sidePanel = state.returnMode === 'sidepanel';
+    let returnTab = null;
+    if (sidePanel) {
+      await chrome.tabs.remove(qwenTabId).catch(() => {});
+    } else {
+      returnTab = await chrome.tabs.get(Number(state.returnTabId)).catch(() => null);
+      if (!returnTab) returnTab = await findOpenQwenReturnTab(qwenTabId);
+      if (!returnTab && isQwenReturnPageUrl(state.returnUrl)) {
+        returnTab = await global.BjtuTabs.create({ url: state.returnUrl, active: true }).catch(() => null);
+      } else if (returnTab) {
+        returnTab = await focusTab(returnTab.id);
+      }
     }
     const retryingState = {
       ...state,
       returnTabId: Number.isInteger(Number(returnTab?.id)) ? Number(returnTab.id) : state.returnTabId,
+      qwenTabClosed: sidePanel,
       phase: 'retrying',
       retryStartedAt: Date.now()
     };
     await writeWafFlowState(retryingState);
     const retryStarted = await broadcastWafRetry(retryingState);
     if (!retryStarted) {
-      const waitingState = await focusOrReopenWafTab({ ...retryingState, phase: 'waiting-user-refresh' });
-      await writeWafFlowState(waitingState);
+      if (sidePanel) {
+        await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
+        await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
+      } else {
+        const waitingState = await focusOrReopenWafTab({ ...retryingState, phase: 'waiting-user-refresh' });
+        await writeWafFlowState(waitingState);
+      }
     }
     return { ok: true, returnedToExtension: !!returnTab, retryStarted };
   }
@@ -214,6 +238,11 @@
       if (state.createdQwenTab === true) {
         await chrome.tabs.remove(Number(state.qwenTabId)).catch(() => {});
       }
+      return { ok: true, completed: true };
+    }
+    if (state.returnMode === 'sidepanel') {
+      await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
+      await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
       return { ok: true, completed: true };
     }
     const waitingState = await focusOrReopenWafTab({
@@ -659,12 +688,21 @@
           const settings = await getSettings();
           const client = global.BjtuQwenClient;
           let loggedIn = false;
+          let checkError = '';
           try {
-            loggedIn = client ? await (message?.payload?.ensureLogin ? client.tryRefreshLogin() : client.isLoggedIn()) : false;
-          } catch { loggedIn = false; }
+            if (client && message?.payload?.ensureLogin) {
+              loggedIn = await client.tryRefreshLogin();
+              if (!loggedIn) await client.openLoginPage({ auth: true });
+            } else {
+              loggedIn = client ? await client.isLoggedIn() : false;
+            }
+          } catch (error) {
+            loggedIn = false;
+            checkError = String(error?.message || error);
+          }
           let modelName = '';
           if (settings.modelId) modelName = settings.modelId;
-          sendResponse({ ok: true, ...settings, loggedIn, modelId: settings.modelId, modelName });
+          sendResponse({ ok: true, ...settings, loggedIn, modelId: settings.modelId, modelName, checkError });
         })();
         return true;
       }

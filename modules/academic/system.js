@@ -1730,11 +1730,20 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   async function loadAcademicSchedule(args = {}) {
+    const providedSemesters = Array.isArray(args)
+      ? args
+      : (args?.semesters !== undefined ? args.semesters : args?.xnxq);
+    if (providedSemesters !== undefined && !Array.isArray(providedSemesters)) {
+      throw new TypeError('semesters 必须是学期列表');
+    }
+    const effectiveArgs = providedSemesters === undefined
+      ? args
+      : { ...(Array.isArray(args) ? {} : args), xnxq: providedSemesters };
     const cached = await readAcademicDataCache();
     if (cached) {
-      const terms = cachedRequestedTerms(cached, args, 'xnxq');
+      const terms = cachedRequestedTerms(cached, effectiveArgs, 'xnxq');
       const loaded = new Set(Array.isArray(cached.loadedScheduleTerms) ? cached.loadedScheduleTerms : []);
-      const includeSelection = args?.includeSelection === true;
+      const includeSelection = effectiveArgs?.includeSelection === true;
       const selectionReady = !includeSelection || (
         cached.scheduleCache?.selectionProbed === true
         && cached.scheduleCache?.selectionSemester?.xnxq
@@ -1762,7 +1771,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         };
       }
     }
-    const context = await resolveAcademicTerms(args, 'xnxq');
+    const context = await resolveAcademicTerms(effectiveArgs, 'xnxq');
     const results = await mapAcademicTerms(context.selected, async (semester) => {
       const schedule = await fetchSchedulePage('semester', semester.zxjxjhh);
       const isCurrent = semester.zxjxjhh === context.currentZxjxjhh;
@@ -1789,7 +1798,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         weekWarning: weekContext.warning
       };
     });
-    const shouldProbeSelection = args?.includeSelection === true;
+    const shouldProbeSelection = effectiveArgs?.includeSelection === true;
     const selectionResult = shouldProbeSelection
       ? await loadAcademicSelectionSchedule(context)
       : null;

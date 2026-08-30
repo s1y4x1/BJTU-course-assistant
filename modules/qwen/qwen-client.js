@@ -8,6 +8,7 @@
   const DIRECT_REQUEST_HEADER_RULE_ID = 914305;
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   let openLoginPagePromise = null;
+  let loginCheckPromise = null;
   let directRequestHeadersPromise = null;
   let qwenPageOperationQueue = Promise.resolve();
 
@@ -190,19 +191,50 @@
     }
   }
 
-  // 初次检查时允许刷新已经存在的登录页面以重新同步 token，但不会为检查而新建普通聊天页。
+  // 登录检查直接由扩展后台请求 /api/v1/auths/，不创建临时网页。
   async function tryRefreshLogin() {
-    if (await isLoggedIn()) return true;
-    const tab = await findChatTab();
-    if (tab) {
-      await keepChatTabResident(tab.id);
-      await chrome.tabs.reload(tab.id).catch(() => null);
-      for (let i = 0; i < 12; i += 1) {
-        if (await isLoggedIn()) return true;
-        await sleep(500);
+    if (loginCheckPromise) return loginCheckPromise;
+    loginCheckPromise = (async () => {
+      await ensureDirectRequestHeaders();
+      const token = await getStoredToken();
+      let response;
+      try {
+        response = await fetch(`${CHAT_BASE}/api/v1/auths/`, {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json, text/plain, */*',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(await buildBrowserHeadersWithAntiBot())
+          },
+          credentials: 'include'
+        });
+      } catch (error) {
+        throw Object.assign(new Error(`通义千问登录状态检查失败：${String(error?.message || error)}`), {
+          code: 'LOGIN_CHECK_FAILED'
+        });
       }
-    }
-    return await isLoggedIn();
+      let data = null;
+      try {
+        data = JSON.parse(await response.text());
+      } catch {
+        throw Object.assign(new Error('通义千问登录状态接口返回了无法解析的内容'), {
+          code: 'LOGIN_CHECK_FAILED'
+        });
+      }
+      if (response.status === 401 || String(data?.detail || '') === '401 Unauthorized') {
+        await chrome.storage.session.remove('qwenToken').catch(() => {});
+        return false;
+      }
+      const authenticated = response.ok && !!String(data?.id || '').trim() && !!String(data?.token || '').trim();
+      if (authenticated) await captureToken(data.token);
+      if (authenticated) return true;
+      throw Object.assign(new Error(`通义千问登录状态检查失败：HTTP ${response.status}`), {
+        code: 'LOGIN_CHECK_FAILED'
+      });
+    })().finally(() => {
+      loginCheckPromise = null;
+    });
+    return loginCheckPromise;
   }
 
   async function keepChatTabResident(tabId) {
