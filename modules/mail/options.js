@@ -125,9 +125,19 @@
       const tr = document.createElement('tr');
       tr.className = unread ? 'mail-row mail-row-unread' : 'mail-row';
       const subjectCell = document.createElement('td');
-      const subjectLine = document.createElement('div');
+      const subjectLine = document.createElement('a');
       subjectLine.className = 'mail-subject';
+      subjectLine.href = String(row.readUrl || 'https://mail.bjtu.edu.cn/');
+      subjectLine.target = '_blank';
+      subjectLine.rel = 'noopener noreferrer';
+      subjectLine.title = '在邮箱网站中打开这封邮件';
       subjectLine.textContent = `${unread ? '[未读] ' : ''}${row.subject || '(无主题)'}`;
+      subjectLine.addEventListener('click', (event) => {
+        event.preventDefault();
+        void send('MAIL_OPEN_MESSAGE', { mid: row.id, fid: row.fid }).then((result) => {
+          if (!result?.ok) setMessage(`打开邮件失败：${result?.message || '未知错误'}`, false);
+        });
+      });
       if (row.attached) {
         const attach = document.createElement('span');
         attach.className = 'mail-attachment';

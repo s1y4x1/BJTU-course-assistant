@@ -336,6 +336,13 @@
     return `https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=${sid}#mail.read|${payload}`;
   }
 
+  function mailRowsForUi(rows, sid) {
+    return (Array.isArray(rows) ? rows : []).map((row) => ({
+      ...row,
+      readUrl: buildMailReadUrl({ sid, fid: row?.fid, mid: row?.id })
+    }));
+  }
+
   async function rememberNotificationTarget(notificationId, target) {
     if (!target?.sid || !target?.mid) return;
     const stored = await chrome.storage.local.get([NOTIFICATION_TARGETS_KEY]).catch(() => ({}));
@@ -441,7 +448,7 @@
       }
     });
     broadcastData('threads', {
-      rows: normalizedRows, total, unreadCount, checkedAt
+      rows: mailRowsForUi(normalizedRows, sid), total, unreadCount, checkedAt
     });
     const remainingPending = await flushPendingNotifications(pending);
     return {
@@ -567,12 +574,31 @@
             ? payload.limit
             : undefined
         })
-          .then((result) => sendResponse({ ok: true, ...result }))
+          .then((result) => sendResponse({
+            ok: true,
+            ...result,
+            rows: mailRowsForUi(result?.rows, cachedSid)
+          }))
           .catch((error) => sendResponse({
             ok: false,
             code: String(error?.code || ''),
             message: String(error?.message || error)
           }));
+        return true;
+      }
+      if (message?.type === 'MAIL_OPEN_MESSAGE') {
+        const mid = String(message?.payload?.mid || '').trim();
+        const fid = Number(message?.payload?.fid) || INBOX_FID;
+        if (!mid) {
+          sendResponse({ ok: false, message: '缺少邮件 ID' });
+          return false;
+        }
+        void getMailSid().then((sid) => globalThis.BjtuTabs.create({
+          url: buildMailReadUrl({ sid, fid, mid }),
+          active: true
+        })).then(() => sendResponse({ ok: true })).catch((error) => {
+          sendResponse({ ok: false, message: String(error?.message || error) });
+        });
         return true;
       }
       if (message?.type === 'MAIL_GET_USER_INFO') {
