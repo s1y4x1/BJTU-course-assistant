@@ -199,7 +199,7 @@
       enabled: stored.qwenEnabled !== false,
       fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.qwenFabColorMode)
         ? stored.qwenFabColorMode
-        : 'dark',
+        : 'extension',
       modelId: String(stored.qwenModelId || ''),
       enabledOperations: Array.isArray(stored.qwenEnabledOperations)
         ? stored.qwenEnabledOperations
@@ -217,7 +217,7 @@
     if (patch?.fabColorMode !== undefined) {
       next.qwenFabColorMode = ['dark', 'light', 'system', 'extension'].includes(patch.fabColorMode)
         ? patch.fabColorMode
-        : 'dark';
+        : 'extension';
     }
     if (patch?.modelId !== undefined) next.qwenModelId = String(patch.modelId || '');
     if (patch?.enabledOperations !== undefined) {
