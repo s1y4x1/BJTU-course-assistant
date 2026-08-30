@@ -23,6 +23,7 @@
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
   const MODULE_SELECTION_KEY = 'updateModuleSelection';
   const MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
+  const MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
   const REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
   const ROOT_COMPONENT_DIRECTORY_NAMES = Object.freeze({
     _locales: '_locales',
@@ -527,10 +528,14 @@
       const entries = parseZipEntries(archive);
       const archiveFiles = normalizeZipFiles(entries);
       const packagedModuleIds = getArchiveModuleIds(archiveFiles);
-      const storedKnownModules = await chrome.storage.local.get(MODULE_KNOWN_IDS_KEY).catch(() => ({}));
+      const storedKnownModules = await chrome.storage.local.get([
+        MODULE_KNOWN_IDS_KEY,
+        MODULE_KNOWN_IDS_INITIALIZED_KEY
+      ]).catch(() => ({}));
       const previousKnown = storedKnownModules?.[MODULE_KNOWN_IDS_KEY];
+      const knownIdsInitialized = storedKnownModules?.[MODULE_KNOWN_IDS_INITIALIZED_KEY] === true;
       const installedModuleIds = await getInstalledOptionalModuleIds(root);
-      const knownModules = new Set(Array.isArray(previousKnown) ? previousKnown : []);
+      const knownModules = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : packagedModuleIds);
       installedModuleIds.forEach((id) => knownModules.add(id));
       const newModules = packagedModuleIds.filter((id) => !knownModules.has(id));
       const selectedModules = new Set(installedModuleIds);
@@ -561,7 +566,8 @@
       packagedModuleIds.forEach((id) => knownModules.add(id));
       await chrome.storage.local.set({
         [MODULE_SELECTION_KEY]: [...selectedModules].filter((id) => !REQUIRED_MODULE_IDS.has(id)),
-        [MODULE_KNOWN_IDS_KEY]: [...knownModules]
+        [MODULE_KNOWN_IDS_KEY]: [...knownModules],
+        [MODULE_KNOWN_IDS_INITIALIZED_KEY]: true
       });
       return files.length;
     });
@@ -572,7 +578,7 @@
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
-        DETECTED_NOTIFICATION_VERSION_KEY, MODULE_KNOWN_IDS_KEY
+        DETECTED_NOTIFICATION_VERSION_KEY, MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY
       ]);
       const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
       if (!forceCheck && !updaterEnabled) return { skipped: true };
@@ -623,8 +629,12 @@
       const localModuleIds = await getInstalledOptionalModuleIds(root);
       const selectedModules = new Set(localModuleIds);
       const storedKnownModuleIds = stored?.[MODULE_KNOWN_IDS_KEY];
-      const knownModules = new Set(Array.isArray(storedKnownModuleIds) ? storedKnownModuleIds : []);
+      const knownIdsInitialized = stored?.[MODULE_KNOWN_IDS_INITIALIZED_KEY] === true;
+      const knownModules = new Set(knownIdsInitialized && Array.isArray(storedKnownModuleIds) ? storedKnownModuleIds : []);
       localModuleIds.forEach((id) => knownModules.add(id));
+      if (!knownIdsInitialized) {
+        for (const id of normalizeUpdateScopes(release.update) || []) knownModules.add(id);
+      }
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       if (!releaseAppliesToSelection(release.update, selectedModules, knownModules)) {
         const record = {

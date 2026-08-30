@@ -72,6 +72,7 @@ const VERSION_FS_DB_STORE = 'handles';
 const VERSION_FS_DIRECTORY_KEY = 'update-directory';
 const VERSION_MODULE_SELECTION_KEY = 'updateModuleSelection';
 const VERSION_MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
+const VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
 const VERSION_REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
 const VERSION_ROOT_COMPONENT_DIRECTORY_NAMES = Object.freeze({
   _locales: '_locales',
@@ -1458,13 +1459,17 @@ function getArchiveModuleIds(files) {
   }).filter((id) => id && id !== 've'))];
 }
 
-async function getLocalOptionalModuleIds(root = null) {
+async function getLocalOptionalModuleIds(root = null, { strict = false } = {}) {
   const directory = root || versionUpdateDirectoryHandle || await readVersionUpdateDirectoryHandle();
-  if (!directory) return [];
+  if (!directory) {
+    if (strict) throw new Error('无法读取扩展安装目录中的 modules 目录');
+    return [];
+  }
   let modulesDirectory;
   try {
     modulesDirectory = await directory.getDirectoryHandle('modules');
-  } catch {
+  } catch (error) {
+    if (strict) throw new Error(`无法读取扩展安装目录中的 modules 目录：${String(error?.message || error)}`);
     return [];
   }
   const ids = [];
@@ -1473,7 +1478,8 @@ async function getLocalOptionalModuleIds(root = null) {
       const id = String(name || '').toLowerCase();
       if (handle?.kind === 'directory' && id && !VERSION_REQUIRED_MODULE_IDS.has(id)) ids.push(id);
     }
-  } catch {
+  } catch (error) {
+    if (strict) throw new Error(`无法枚举扩展安装目录中的模块：${String(error?.message || error)}`);
     return [];
   }
   return ids;
@@ -1520,8 +1526,11 @@ function buildModuleSizeStyle(bytes) {
   return globalThis.BjtuFileSizeEmphasis.buildBytesStyle(bytes);
 }
 
-async function rememberUpdateModuleIds(moduleIds) {
-  const stored = await chrome.storage.local.get(VERSION_MODULE_KNOWN_IDS_KEY).catch(() => ({}));
+async function rememberUpdateModuleIds(moduleIds, { markInitialized = false } = {}) {
+  const stored = await chrome.storage.local.get([
+    VERSION_MODULE_KNOWN_IDS_KEY,
+    VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY
+  ]).catch(() => ({}));
   const previous = stored?.[VERSION_MODULE_KNOWN_IDS_KEY];
   const known = new Set(Array.isArray(previous) ? previous : []);
   for (const id of await getLocalOptionalModuleIds()) known.add(id);
@@ -1529,7 +1538,11 @@ async function rememberUpdateModuleIds(moduleIds) {
     const normalized = String(id || '').toLowerCase();
     if (normalized && !VERSION_REQUIRED_MODULE_IDS.has(normalized)) known.add(normalized);
   }
-  await chrome.storage.local.set({ [VERSION_MODULE_KNOWN_IDS_KEY]: [...known] });
+  await chrome.storage.local.set({
+    [VERSION_MODULE_KNOWN_IDS_KEY]: [...known],
+    [VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY]: markInitialized
+      || stored?.[VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY] === true
+  });
 }
 
 function appendUpdateModuleChoice(list, { id, name, moduleSize, checked, disabled }) {
@@ -1556,16 +1569,20 @@ function appendUpdateModuleChoice(list, { id, name, moduleSize, checked, disable
 async function chooseUpdateModules(archiveFiles) {
   const packaged = getArchiveModuleIds(archiveFiles);
   const archiveLabels = await getArchiveModuleLabels(archiveFiles);
-  const localIds = await getLocalOptionalModuleIds();
+  const localIds = await getLocalOptionalModuleIds(versionUpdateDirectoryHandle, { strict: true });
   const localIdSet = new Set(localIds);
   const candidates = [...new Set([
     ...localIds,
     ...packaged
   ].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id)))];
   if (!candidates.length) return new Set();
-  const stored = await chrome.storage.local.get(VERSION_MODULE_KNOWN_IDS_KEY).catch(() => ({}));
+  const stored = await chrome.storage.local.get([
+    VERSION_MODULE_KNOWN_IDS_KEY,
+    VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY
+  ]).catch(() => ({}));
   const previousKnown = stored?.[VERSION_MODULE_KNOWN_IDS_KEY];
-  const locallyKnownIds = new Set(Array.isArray(previousKnown) ? previousKnown : []);
+  const knownIdsInitialized = stored?.[VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY] === true;
+  const locallyKnownIds = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : packaged);
   localIds.forEach((id) => locallyKnownIds.add(id));
   const archiveNewModuleIds = new Set(packaged.filter((id) => !locallyKnownIds.has(id)));
   const initial = new Set(candidates.filter((id) => (
@@ -1995,7 +2012,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   if (!selectedArchiveFiles.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
   const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
   if (!files.length) {
-    await rememberUpdateModuleIds(packagedModuleIds);
+    await rememberUpdateModuleIds(packagedModuleIds, { markInitialized: true });
     return 0;
   }
 
@@ -2086,7 +2103,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   }));
   const failedResult = results.find((result) => result.status === 'rejected');
   if (failedResult) throw failedResult.reason;
-  await rememberUpdateModuleIds(packagedModuleIds);
+  await rememberUpdateModuleIds(packagedModuleIds, { markInitialized: true });
   return files.length;
 }
 
@@ -2482,10 +2499,17 @@ async function loadVersionInfoInternal(releaseOverride = null) {
     if (cmp > 0) {
       const localModuleIds = await getLocalOptionalModuleIds();
       const selectedModules = new Set(localModuleIds);
-      const storedKnownModules = await chrome.storage.local.get(VERSION_MODULE_KNOWN_IDS_KEY).catch(() => ({}));
+      const storedKnownModules = await chrome.storage.local.get([
+        VERSION_MODULE_KNOWN_IDS_KEY,
+        VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY
+      ]).catch(() => ({}));
       const previousKnown = storedKnownModules?.[VERSION_MODULE_KNOWN_IDS_KEY];
-      const knownModules = new Set(Array.isArray(previousKnown) ? previousKnown : []);
+      const knownIdsInitialized = storedKnownModules?.[VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY] === true;
+      const knownModules = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : []);
       localModuleIds.forEach((id) => knownModules.add(id));
+      if (!knownIdsInitialized) {
+        for (const id of normalizeVersionUpdateScopes(latestUpdate) || []) knownModules.add(id);
+      }
       VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       if (!versionUpdateAppliesToSelection(latestUpdate, selectedModules, knownModules)) {
         const skippedRecord = {
