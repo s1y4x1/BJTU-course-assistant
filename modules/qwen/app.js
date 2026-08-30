@@ -44,7 +44,8 @@
   let historyLoadPromise = null;
   let historyReloadAfterLogin = false;
   let pendingWafRetryAction = null;
-  let wafRecoveryActive = false;
+  let activeWafFlowId = '';
+  let wafAutoRetryInProgress = false;
   let chatStateLoadPromise = null;
   let panelActivationPromise = null;
   let panelActivated = false;
@@ -685,6 +686,25 @@
         const error = chrome?.runtime?.lastError;
         resolve(error ? { ok: false, message: String(error.message || '通信失败') } : (response || {}));
       });
+    });
+  }
+
+  function reportWafRetryResult(success) {
+    const flowId = String(activeWafFlowId || '');
+    if (!flowId) return;
+    if (success) {
+      activeWafFlowId = '';
+      pendingWafRetryAction = null;
+    }
+    wafAutoRetryInProgress = false;
+    void send('QWEN_WAF_RETRY_RESULT', { flowId, success: success === true });
+  }
+
+  function openWafVerificationPage() {
+    void send('QWEN_OPEN_LOGIN', { auth: false }).then((response) => {
+      if (response?.ok === true && response?.flowId) {
+        activeWafFlowId = String(response.flowId);
+      }
     });
   }
 
@@ -1670,8 +1690,7 @@
           const messages = el(MESSAGES_ID);
           maybeAutoScrollMessages(messages);
         } else if (message?.type === 'done') {
-          pendingWafRetryAction = null;
-          wafRecoveryActive = false;
+          reportWafRetryResult(true);
           sessionChatId = String(message.chatId || sessionChatId);
           sessionParentId = String(message.responseId || sessionParentId);
           if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
@@ -1702,8 +1721,7 @@
           chatPort.disconnect();
           if (port === chatPort) port = null;
         } else if (message?.type === 'historyReload') {
-          pendingWafRetryAction = null;
-          wafRecoveryActive = false;
+          reportWafRetryResult(true);
           hideAsk();
           sessionChatId = String(message?.chatId || sessionChatId || '');
           if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
@@ -1724,8 +1742,7 @@
           if (port === chatPort) port = null;
           void loadHistoryOnce();
         } else if (message?.type === 'stopped') {
-          pendingWafRetryAction = null;
-          wafRecoveryActive = false;
+          if (wafAutoRetryInProgress) reportWafRetryResult(false);
           hideAsk();
           const stoppedChatId = String(message?.chatId || '');
           if (stoppedChatId) {
@@ -1770,6 +1787,7 @@
         } else if (message?.type === 'askResolved') {
           if (!message?.id || String(message.id) === pendingAskId) hideAsk();
         } else if (message?.type === 'retryRequest') {
+          if (wafAutoRetryInProgress) reportWafRetryResult(false);
           const retryChatId = String(message?.chatId || sessionChatId || '');
           const retryId = String(message?.retryId || '');
           if (retryChatId) {
@@ -1803,10 +1821,8 @@
           placeMessageAfter(bubble, retryVisibleAnchor);
           const isWafError = message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE';
           if (isWafError) {
-            wafRecoveryActive = true;
             historyReloadAfterLogin = false;
             setStatus('风控校验', 'error');
-            void send('QWEN_OPEN_LOGIN');
           }
           const btn = document.createElement('button');
           btn.type = 'button';
@@ -1831,7 +1847,7 @@
           });
           bubble.appendChild(btn);
           retryPrompt = { id: retryId, bubble, button: btn, retriedBubble };
-          if (isWafError) {
+          if (isWafError || activeWafFlowId) {
             pendingWafRetryAction = () => {
               if (retryPrompt?.id !== retryId || btn.disabled || !btn.isConnected) return false;
               btn.click();
@@ -1840,6 +1856,7 @@
           } else {
             pendingWafRetryAction = null;
           }
+          if (isWafError && !activeWafFlowId) openWafVerificationPage();
           const messages = el(MESSAGES_ID);
           maybeAutoScrollMessages(messages);
         } else if (message?.type === 'retryAccepted') {
@@ -1855,10 +1872,12 @@
           maybeAutoScrollMessages(el(MESSAGES_ID));
         } else if (message?.type === 'retryRejected') {
           if (!retryPrompt || (message?.retryId && String(message.retryId) !== retryPrompt.id)) return;
+          if (wafAutoRetryInProgress) reportWafRetryResult(false);
           retryPrompt.button.disabled = false;
           retryPrompt.button.textContent = '重试';
           retryPrompt.button.title = '重试连接已失效，请重新发送消息';
         } else if (message?.type === 'error') {
+          if (wafAutoRetryInProgress) reportWafRetryResult(false);
           hideAsk();
           if (message?.parentId) sessionParentId = String(message.parentId);
           if (inThinking) {
@@ -1874,14 +1893,11 @@
           }
           if (openingStarted) openingStarted = false;
           if (message.code === 'NOT_LOGGED_IN') {
-            pendingWafRetryAction = null;
-            wafRecoveryActive = false;
             setStatus('未登录', 'error');
             showLoginHint(true);
             removeMessageBubble(activeBubble);
             activeBubble = null;
           } else if (message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE') {
-            wafRecoveryActive = true;
             historyReloadAfterLogin = false;
             let visibleAnchor = retryVisibleAnchor;
             if (activeBubble instanceof HTMLElement) {
@@ -1897,7 +1913,6 @@
             const errorBubble = appendMessage('error', message.message || '请求失败');
             placeMessageAfter(errorBubble, visibleAnchor);
             setStatus('风控校验', 'error');
-            void send('QWEN_OPEN_LOGIN');
             pendingWafRetryAction = () => {
               if (busy) return false;
               removeMessageBubble(errorBubble);
@@ -1910,13 +1925,24 @@
               });
               return true;
             };
+            if (!activeWafFlowId) openWafVerificationPage();
           } else {
-            pendingWafRetryAction = null;
-            wafRecoveryActive = false;
             removeCursor(activeBubble);
             if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) removeMessageBubble(activeBubble);
             activeBubble = null;
-            appendMessage('error', message.message || '请求失败');
+            const errorBubble = appendMessage('error', message.message || '请求失败');
+            pendingWafRetryAction = activeWafFlowId ? () => {
+              if (busy) return false;
+              removeMessageBubble(errorBubble);
+              if (wasOpeningStream) openingStarted = true;
+              startStream({
+                text,
+                editParent: requestParentId,
+                isEditSend: true,
+                showUserBubble: false
+              });
+              return true;
+            } : null;
           }
           setBusy(false);
           chatPort.disconnect();
@@ -1924,7 +1950,6 @@
         }
       });
       chatPort.onDisconnect.addListener(() => {
-        if (!wafRecoveryActive) pendingWafRetryAction = null;
         hideAsk();
         if (activeBubble) {
           activeBubble = null;
@@ -2011,10 +2036,7 @@
       if (status?.loggedIn !== true) return;
       await refreshModels();
 
-      if (wafRecoveryActive) {
-        historyReloadAfterLogin = false;
-        return;
-      } else if (historyReloadAfterLogin) {
+      if (historyReloadAfterLogin) {
         await restoreHistoryAfterLogin();
         panelHistoryInitialized = true;
       } else if (sessionChatId && !panelHistoryInitialized) {
@@ -2072,11 +2094,6 @@
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
         lastKnownLoggedIn = true;
-        if (wafRecoveryActive || message?.reason === 'waf') {
-          historyReloadAfterLogin = false;
-          showLoginHint(false);
-          return false;
-        }
         historyReloadAfterLogin = true;
         if (panelActivated) {
           showLoginHint(false);
@@ -2086,17 +2103,15 @@
         return false;
       }
       if (message?.type === 'QWEN_WAF_VERIFIED_BROADCAST') {
-        wafRecoveryActive = true;
-        historyReloadAfterLogin = false;
-        lastKnownLoggedIn = true;
-        showLoginHint(false);
+        const flowId = String(message?.flowId || '');
+        if (!flowId || (activeWafFlowId && activeWafFlowId !== flowId)) return false;
         const retry = pendingWafRetryAction;
-        const retryStarted = typeof retry === 'function' && retry() === true;
-        sendResponse({
-          ok: true,
-          retryPending: typeof retry === 'function',
-          retryStarted
-        });
+        if (typeof retry !== 'function') return false;
+        activeWafFlowId = flowId;
+        wafAutoRetryInProgress = true;
+        const retryStarted = retry() === true;
+        if (!retryStarted) wafAutoRetryInProgress = false;
+        sendResponse({ ok: true, retryStarted });
         return false;
       }
       if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'qwen') return false;
@@ -2150,7 +2165,7 @@
     }
 
     // app.html 被扩展重载流程恢复时，始终从收起状态开始；
-    // 仅在用户主动展开面板后，才检查登录并访问 chat.qwen.ai。
+    // 仅在用户主动展开面板后检查登录；普通 API 请求由扩展后台直接发送。
     // 独立页面模式下面板常驻展开，并跳过悬浮/拖拽/视口高度逻辑。
     if (STANDALONE_CHAT) {
       if (panel instanceof HTMLElement) panel.hidden = false;

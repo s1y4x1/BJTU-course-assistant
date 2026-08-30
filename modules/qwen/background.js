@@ -6,7 +6,7 @@
   const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
-  const WAF_TAB_STATE_KEY = 'qwenWafTabState';
+  const WAF_FLOW_STATE_KEY = 'qwenWafFlowState';
   const CHAT_PERMISSION_SESSIONS_KEY = 'qwenChatPermissionSessions';
   const ASK_NOTIFICATION_PREFIX = 'bjtu-qwen-ask-limit:';
   const pendingAskNotifications = new Map();
@@ -55,35 +55,6 @@
     await chrome.storage.session.set({ [CHAT_PERMISSION_SESSIONS_KEY]: sessions }).catch(() => {});
   }
 
-  async function broadcastWafVerified() {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      try {
-        const response = await chrome.runtime.sendMessage({ type: 'QWEN_WAF_VERIFIED_BROADCAST' });
-        if (response?.ok === true && response?.retryStarted === true) {
-          await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
-          return true;
-        }
-      } catch {
-        // app.html 可能仍在加载，稍后重试。
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    return false;
-  }
-
-  async function beginWafRefreshFlow(tab) {
-    const tabId = Number(tab?.id);
-    if (!Number.isInteger(tabId)) return;
-    await chrome.storage.session.set({
-      [WAF_TAB_STATE_KEY]: {
-        tabId,
-        phase: 'waiting-auto-refresh',
-        startedAt: Date.now()
-      }
-    }).catch(() => {});
-    await chrome.tabs.reload(tabId).catch(() => {});
-  }
-
   async function findOpenQwenAppTab(excludeTabId = null) {
     const appUrl = chrome.runtime.getURL('app/app.html');
     const tabs = await chrome.tabs.query({}).catch(() => []);
@@ -98,46 +69,160 @@
         || Number(right?.lastAccessed || 0) - Number(left?.lastAccessed || 0))[0] || null;
   }
 
+  function isQwenReturnPageUrl(url) {
+    const value = String(url || '');
+    return value.startsWith(chrome.runtime.getURL('app/app.html'))
+      || value.startsWith(chrome.runtime.getURL('modules/qwen/chat.html'));
+  }
+
+  async function findOpenQwenReturnTab(excludeTabId = null) {
+    const tabs = await chrome.tabs.query({}).catch(() => []);
+    return tabs
+      .filter((tab) => Number(tab?.id) !== Number(excludeTabId)
+        && isQwenReturnPageUrl(tab?.url || tab?.pendingUrl))
+      .sort((left, right) => Number(right?.active === true) - Number(left?.active === true)
+        || Number(right?.lastAccessed || 0) - Number(left?.lastAccessed || 0))[0] || null;
+  }
+
+  async function focusTab(tabId) {
+    const id = Number(tabId);
+    if (!Number.isInteger(id)) return null;
+    const tab = await chrome.tabs.update(id, { active: true, autoDiscardable: false }).catch(() => null);
+    if (Number.isInteger(tab?.windowId)) {
+      await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
+    }
+    return tab;
+  }
+
+  async function readWafFlowState() {
+    const stored = await chrome.storage.session.get(WAF_FLOW_STATE_KEY).catch(() => ({}));
+    const state = stored?.[WAF_FLOW_STATE_KEY];
+    return state && typeof state === 'object' ? state : null;
+  }
+
+  async function writeWafFlowState(state) {
+    await chrome.storage.session.set({ [WAF_FLOW_STATE_KEY]: state }).catch(() => {});
+  }
+
+  async function focusOrReopenWafTab(state) {
+    const existing = await chrome.tabs.get(Number(state?.qwenTabId)).catch(() => null);
+    if (existing && String(existing.url || existing.pendingUrl || '').startsWith('https://chat.qwen.ai/')) {
+      await focusTab(existing.id);
+      return state;
+    }
+    const openResult = await global.BjtuQwenClient?.openLoginPage?.({ auth: false });
+    const tabId = Number(openResult?.tab?.id);
+    if (!Number.isInteger(tabId)) return state;
+    return {
+      ...state,
+      qwenTabId: tabId,
+      createdQwenTab: openResult?.created === true
+    };
+  }
+
+  async function broadcastWafRetry(state) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'QWEN_WAF_VERIFIED_BROADCAST',
+          flowId: String(state?.flowId || '')
+        });
+        if (response?.ok === true && response?.retryStarted === true) return true;
+      } catch {
+        // 原扩展页面可能仍在恢复前台，稍后重试。
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return false;
+  }
+
+  async function beginWafRefreshFlow(openResult, sender) {
+    const qwenTab = openResult?.tab;
+    const qwenTabId = Number(qwenTab?.id);
+    if (!Number.isInteger(qwenTabId)) throw new Error('无法打开通义千问风控校验页面');
+    const senderTab = sender?.tab;
+    const senderUrl = String(sender?.url || senderTab?.url || senderTab?.pendingUrl || '');
+    const returnTab = Number.isInteger(Number(senderTab?.id)) && isQwenReturnPageUrl(senderUrl)
+      ? senderTab
+      : await findOpenQwenReturnTab(qwenTabId);
+    const state = {
+      flowId: globalThis.crypto?.randomUUID?.() || `waf-${Date.now()}`,
+      qwenTabId,
+      returnTabId: Number.isInteger(Number(returnTab?.id)) ? Number(returnTab.id) : null,
+      returnUrl: isQwenReturnPageUrl(senderUrl) ? senderUrl : String(returnTab?.url || ''),
+      createdQwenTab: openResult?.created === true,
+      phase: 'waiting-auto-refresh',
+      startedAt: Date.now()
+    };
+    await writeWafFlowState(state);
+    if (typeof global.BjtuSystemNotifications?.create === 'function') {
+      await global.BjtuSystemNotifications.create(WAF_NOTIFICATION_ID, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: '通义千问触发风控校验',
+        message: '请在页面上完成验证并刷新。扩展将返回原对话自动重试；成功后会关闭本次打开的校验页。',
+        priority: 2,
+        requireInteraction: true
+      }, 'qwen-waf-verification', true).catch(() => {});
+    }
+    await chrome.tabs.reload(qwenTabId).catch(() => {});
+    return state;
+  }
+
   async function handleWafPageLoaded(sender, payload) {
-    const tabId = Number(sender?.tab?.id);
-    if (!Number.isInteger(tabId)) return { ok: false };
-    const stored = await chrome.storage.session.get(WAF_TAB_STATE_KEY).catch(() => ({}));
-    const state = stored?.[WAF_TAB_STATE_KEY];
-    if (Number(state?.tabId) !== tabId) return { ok: false };
-    const navigationType = String(payload?.navigationType || '');
-    if (navigationType !== 'reload') return { ok: true, waiting: true };
-    if (state?.phase === 'waiting-auto-refresh') {
-      await chrome.storage.session.set({
-        [WAF_TAB_STATE_KEY]: { ...state, phase: 'waiting-user-refresh', autoRefreshedAt: Date.now() }
-      }).catch(() => {});
+    const qwenTabId = Number(sender?.tab?.id);
+    const state = await readWafFlowState();
+    if (!state || Number(state.qwenTabId) !== qwenTabId) return { ok: false };
+    if (String(payload?.navigationType || '') !== 'reload') return { ok: true, waiting: true };
+    if (state.phase === 'waiting-auto-refresh') {
+      await writeWafFlowState({ ...state, phase: 'waiting-user-refresh', autoRefreshedAt: Date.now() });
       return { ok: true, autoRefreshObserved: true };
     }
-    if (state?.phase === 'waiting-user-refresh') {
-      await chrome.storage.session.remove(WAF_TAB_STATE_KEY).catch(() => {});
-      const appUrl = chrome.runtime.getURL('app/app.html');
-      const existingAppTab = await findOpenQwenAppTab(tabId);
-      let reused = false;
-      let appTab = existingAppTab
-        ? await chrome.tabs.update(existingAppTab.id, {
-          active: true,
-          autoDiscardable: false
-        }).catch(() => null)
-        : null;
-      if (appTab) reused = true;
-      else {
-        appTab = await chrome.tabs.update(tabId, {
-          url: appUrl,
-          active: true,
-          autoDiscardable: false
-        }).catch(() => null);
-      }
-      if (Number.isInteger(appTab?.windowId)) {
-        await chrome.windows.update(appTab.windowId, { focused: true }).catch(() => null);
-      }
-      void broadcastWafVerified();
-      return { ok: true, returnedToApp: true, reused };
+    if (state.phase !== 'waiting-user-refresh') return { ok: true, waiting: true };
+
+    let returnTab = await chrome.tabs.get(Number(state.returnTabId)).catch(() => null);
+    if (!returnTab) {
+      returnTab = await findOpenQwenReturnTab(qwenTabId);
     }
-    return { ok: true };
+    if (!returnTab && isQwenReturnPageUrl(state.returnUrl)) {
+      returnTab = await global.BjtuTabs.create({ url: state.returnUrl, active: true }).catch(() => null);
+    } else if (returnTab) {
+      returnTab = await focusTab(returnTab.id);
+    }
+    const retryingState = {
+      ...state,
+      returnTabId: Number.isInteger(Number(returnTab?.id)) ? Number(returnTab.id) : state.returnTabId,
+      phase: 'retrying',
+      retryStartedAt: Date.now()
+    };
+    await writeWafFlowState(retryingState);
+    const retryStarted = await broadcastWafRetry(retryingState);
+    if (!retryStarted) {
+      const waitingState = await focusOrReopenWafTab({ ...retryingState, phase: 'waiting-user-refresh' });
+      await writeWafFlowState(waitingState);
+    }
+    return { ok: true, returnedToExtension: !!returnTab, retryStarted };
+  }
+
+  async function handleWafRetryResult(payload) {
+    const state = await readWafFlowState();
+    const flowId = String(payload?.flowId || '');
+    if (!state || !flowId || String(state.flowId || '') !== flowId) return { ok: false, stale: true };
+    if (payload?.success === true) {
+      await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
+      await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
+      if (state.createdQwenTab === true) {
+        await chrome.tabs.remove(Number(state.qwenTabId)).catch(() => {});
+      }
+      return { ok: true, completed: true };
+    }
+    const waitingState = await focusOrReopenWafTab({
+      ...state,
+      phase: 'waiting-user-refresh',
+      lastRetryFailedAt: Date.now()
+    });
+    await writeWafFlowState(waitingState);
+    return { ok: true, completed: false };
   }
 
   if (typeof chrome === 'object' && chrome?.notifications?.onButtonClicked) {
@@ -174,10 +259,8 @@
     qwenLoginCompletionPromise = (async () => {
       const tokenState = await chrome.storage.session.get('qwenToken').catch(() => ({}));
       const tokenChanged = String(tokenState?.qwenToken || '') !== value;
-      const wafState = await chrome.storage.session.get(WAF_TAB_STATE_KEY).catch(() => ({}));
-      const tokenCaptureReason = wafState?.[WAF_TAB_STATE_KEY] ? 'waf' : 'login';
       await global.BjtuQwenClient?.captureToken?.(value);
-      if (tokenChanged) await broadcastTokenCaptured(tokenCaptureReason);
+      if (tokenChanged) await broadcastTokenCaptured('login');
       const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
       const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
       if (!Number.isInteger(loginTabId)) return;
@@ -571,12 +654,6 @@
         });
         return true;
       }
-      if (type === 'QWEN_WAF_PAGE_LOADED') {
-        void handleWafPageLoaded(sender, message?.payload).then(sendResponse).catch((error) => {
-          sendResponse({ ok: false, message: String(error?.message || error) });
-        });
-        return true;
-      }
       if (type === 'QWEN_GET_STATUS') {
         void (async () => {
           const settings = await getSettings();
@@ -635,26 +712,31 @@
         void chrome.storage.session.remove('qwenToken').catch(() => {});
         return false;
       }
+      if (type === 'QWEN_WAF_PAGE_LOADED') {
+        void handleWafPageLoaded(sender, message?.payload).then(sendResponse).catch((error) => {
+          sendResponse({ ok: false, message: String(error?.message || error) });
+        });
+        return true;
+      }
+      if (type === 'QWEN_WAF_RETRY_RESULT') {
+        void handleWafRetryResult(message?.payload).then(sendResponse).catch((error) => {
+          sendResponse({ ok: false, message: String(error?.message || error) });
+        });
+        return true;
+      }
       if (type === 'QWEN_OPEN_LOGIN') {
         void (async () => {
           try {
             const client = global.BjtuQwenClient;
             if (!client) throw new Error('通义千问客户端未就绪');
             const auth = message?.payload?.auth === true;
-            let notificationPromise = Promise.resolve();
-            if (!auth && typeof global.BjtuSystemNotifications?.create === 'function') {
-              notificationPromise = global.BjtuSystemNotifications.create(WAF_NOTIFICATION_ID, {
-                type: 'basic',
-                iconUrl: 'icons/128.png',
-                title: '通义千问触发风控校验',
-                message: '请在页面上完成验证。扩展会先自动刷新一次；验证完成后将自动返回对话并重试原请求。',
-                priority: 2,
-                requireInteraction: true
-              }, 'qwen-waf-verification', true).catch(() => {});
+            const openResult = await client.openLoginPage({ auth });
+            if (auth) {
+              sendResponse({ ok: true });
+              return;
             }
-            const [tab] = await Promise.all([client.openLoginPage({ auth }), notificationPromise]);
-            if (!auth) await beginWafRefreshFlow(tab);
-            sendResponse({ ok: true });
+            const state = await beginWafRefreshFlow(openResult, sender);
+            sendResponse({ ok: true, flowId: state.flowId });
           } catch (error) {
             sendResponse({ ok: false, message: String(error?.message || error) });
           }

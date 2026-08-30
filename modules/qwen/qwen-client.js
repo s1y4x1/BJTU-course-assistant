@@ -1,14 +1,14 @@
-/* 通义千问聊天客户端：读取登录令牌、查询模型、新建会话、流式生成回复。
- * API 优先经 chat.qwen.ai 页面（内容脚本同源请求）执行，规避阿里 baxia WAF 的
- * JS 挑战；页面不可用/未注入时回退为 Service Worker 直接请求（附带反爬标头）。 */
+/* 通义千问聊天客户端：读取登录令牌，并由扩展后台直接发送 API 与流式请求。
+ * chat.qwen.ai 页面只用于登录及登录状态同步，不再承担普通 API 请求。 */
 (function initBjtuQwenClient(global) {
   'use strict';
 
   const CHAT_BASE = 'https://chat.qwen.ai';
   const AUTH_URL = `${CHAT_BASE}/auth`;
+  const DIRECT_REQUEST_HEADER_RULE_ID = 914305;
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
-  let ensureChatTabPromise = null;
   let openLoginPagePromise = null;
+  let directRequestHeadersPromise = null;
   let qwenPageOperationQueue = Promise.resolve();
 
   function queueQwenPageOperation(operation) {
@@ -35,7 +35,7 @@
 
   function networkError(responseId = '') {
     return Object.assign(
-      new Error('与 chat.qwen.ai 的生成连接已中断，正在等待页面恢复'),
+      new Error('与 chat.qwen.ai 的生成连接已中断，正在由扩展后台恢复请求'),
       { code: 'NETWORK_ERROR', responseId: String(responseId || '') }
     );
   }
@@ -85,10 +85,15 @@
   }
 
   async function getStoredToken() {
-    if (typeof chrome !== 'object' || !chrome?.storage?.session) return '';
+    if (typeof chrome !== 'object') return '';
     try {
-      const data = await chrome.storage.session.get('qwenToken');
-      return String(data?.qwenToken || '');
+      const data = await chrome?.storage?.session?.get?.('qwenToken') || {};
+      const stored = String(data?.qwenToken || '').trim();
+      if (stored) return stored;
+      const tokenCookie = (await getCookies()).find((cookie) => String(cookie?.name || '') === 'token');
+      const cookieToken = String(tokenCookie?.value || '').trim();
+      if (cookieToken) await chrome?.storage?.session?.set?.({ qwenToken: cookieToken });
+      return cookieToken;
     } catch {
       return '';
     }
@@ -106,15 +111,27 @@
   }
 
   async function isLoggedIn() {
-    if (await getStoredToken()) return true;
-    const cookies = await getCookies();
-    return cookies.some((cookie) => String(cookie.name || '') === 'token' && !!cookie.value);
+    return !!await getStoredToken();
   }
 
   async function openLoginPage(options = {}) {
     if (openLoginPagePromise) return openLoginPagePromise;
     openLoginPagePromise = queueQwenPageOperation(async () => {
       const auth = options?.auth === true;
+      if (!auth) {
+        const existing = await findChatTab();
+        if (existing) {
+          await keepChatTabResident(existing.id);
+          const tab = await chrome.tabs.update(existing.id, { active: true }).catch(() => existing);
+          if (Number.isInteger(existing.windowId)) {
+            await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
+          }
+          return { tab, created: false };
+        }
+        const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
+        await keepChatTabResident(tab?.id);
+        return { tab, created: true };
+      }
       if (auth) {
         const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
         const storedTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
@@ -130,7 +147,7 @@
           if (Number.isInteger(existingLoginTab.windowId)) {
             await chrome.windows.update(existingLoginTab.windowId, { focused: true }).catch(() => null);
           }
-          return loginTab;
+          return { tab: loginTab, created: false };
         }
         await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
         const reusable = await findChatTab();
@@ -142,34 +159,21 @@
             autoDiscardable: false
           }).catch(() => reusable);
           if (Number.isInteger(reusable.windowId)) await chrome.windows.update(reusable.windowId, { focused: true }).catch(() => null);
-          return loginTab;
-        }
-      } else {
-        const existing = await findChatTab();
-        if (existing) {
-          await keepChatTabResident(existing.id);
-          await chrome.tabs.update(existing.id, { active: true }).catch(() => null);
-          if (Number.isInteger(existing.windowId)) await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
-          return existing;
+          return { tab: loginTab, created: false };
         }
       }
 
-      let tab;
-      if (auth) {
-        tab = await global.BjtuTabs.create({ url: 'about:blank', active: true });
-        if (Number.isInteger(tab?.id)) {
-          await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: tab.id }).catch(() => {});
-          tab = await chrome.tabs.update(tab.id, {
-            url: AUTH_URL,
-            active: true,
-            autoDiscardable: false
-          }).catch(() => tab);
-        }
-      } else {
-        tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
+      let tab = await global.BjtuTabs.create({ url: 'about:blank', active: true });
+      if (Number.isInteger(tab?.id)) {
+        await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: tab.id }).catch(() => {});
+        tab = await chrome.tabs.update(tab.id, {
+          url: AUTH_URL,
+          active: true,
+          autoDiscardable: false
+        }).catch(() => tab);
       }
       await keepChatTabResident(tab?.id);
-      return tab;
+      return { tab, created: true };
     }).finally(() => {
       openLoginPagePromise = null;
     });
@@ -186,59 +190,19 @@
     }
   }
 
-  // 无可用页面时静默打开 chat.qwen.ai 标签页，等待其内容脚本就绪（确保请求走同源路径）
-  async function ensureChatTab() {
-    if (ensureChatTabPromise) return ensureChatTabPromise;
-    ensureChatTabPromise = queueQwenPageOperation(async () => {
-      if (typeof chrome !== 'object' || !chrome?.tabs?.create) return null;
-      try {
-        const existing = await findChatTab();
-        if (existing) {
-          await keepChatTabResident(existing.id);
-          return existing;
-        }
-        const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: false });
-        await keepChatTabResident(tab?.id);
-        for (let i = 0; i < 24; i += 1) {
-          await sleep(500);
-          const ping = await sendToTab(tab.id, { type: 'QWEN_PING' });
-          if (ping?.ready) return tab;
-        }
-        return tab;
-      } catch {
-        return null;
-      }
-    }).finally(() => {
-      ensureChatTabPromise = null;
-    });
-    return ensureChatTabPromise;
-  }
-
-  // 复用已有 chat.qwen.ai 页面或后台新开一个，等待内容脚本重新上报登录令牌后复查登录状态。
-  // 若旧页面内容脚本未就绪（例如扩展刚重载、session 令牌已清空且页面未刷新），则重载该页以
-  // 重新注入内容脚本；仍无法复用则自动打开新页面。
+  // 初次检查时允许刷新已经存在的登录页面以重新同步 token，但不会为检查而新建普通聊天页。
   async function tryRefreshLogin() {
     if (await isLoggedIn()) return true;
-    let tab = await findChatTab();
+    const tab = await findChatTab();
     if (tab) {
-      tab = await ensureChatTabReady(tab);
-      for (let i = 0; tab && i < 12; i += 1) {
+      await keepChatTabResident(tab.id);
+      await chrome.tabs.reload(tab.id).catch(() => null);
+      for (let i = 0; i < 12; i += 1) {
         if (await isLoggedIn()) return true;
         await sleep(500);
       }
     }
-    if (!await isLoggedIn()) {
-      tab = await ensureChatTab();
-    }
     return await isLoggedIn();
-  }
-
-  async function pingChatTab(tabId) {
-    const ping = await Promise.race([
-      sendToTab(tabId, { type: 'QWEN_PING' }),
-      sleep(1500).then(() => null)
-    ]);
-    return ping?.ready === true;
   }
 
   async function keepChatTabResident(tabId) {
@@ -247,64 +211,6 @@
     return chrome.tabs.update(id, { autoDiscardable: false }).catch(() => null);
   }
 
-  async function waitForChatTabReady(tabId, attempts = 24) {
-    for (let i = 0; i < attempts; i += 1) {
-      if (await pingChatTab(tabId)) return true;
-      await sleep(500);
-    }
-    return false;
-  }
-
-  // frozen/discarded 标签只能通过激活解除休眠。这里短暂激活 Qwen 页，
-  // 等内容脚本恢复后立即切回原标签，并通过 autoDiscardable=false 避免再次被自动丢弃。
-  async function ensureChatTabReady(tab) {
-    if (!tab) return null;
-    let current = tab;
-    try {
-      const fresh = await chrome.tabs.get(tab.id);
-      if (fresh) current = fresh;
-    } catch {
-      // 页面可能已关闭，沿用原引用
-    }
-    await keepChatTabResident(current.id);
-    const sleeping = current.discarded === true || current.frozen === true || current.status === 'unloaded';
-    if (!sleeping && await pingChatTab(current.id)) return current;
-
-    const activeTabs = Number.isInteger(current.windowId)
-      ? await chrome.tabs.query({ windowId: current.windowId, active: true }).catch(() => [])
-      : [];
-    const restoreTabId = activeTabs.find((item) => item?.id !== current.id)?.id;
-    let ready = false;
-    try {
-      await chrome.tabs.update(current.id, { active: true, autoDiscardable: false });
-      ready = await waitForChatTabReady(current.id, sleeping ? 24 : 8);
-      if (!ready) {
-        await chrome.tabs.reload(current.id);
-        ready = await waitForChatTabReady(current.id, 24);
-      }
-    } catch {
-      ready = false;
-    } finally {
-      if (Number.isInteger(restoreTabId)) {
-        await chrome.tabs.update(restoreTabId, { active: true }).catch(() => null);
-      }
-    }
-    if (!ready) return null;
-    return await chrome.tabs.get(current.id).catch(() => current);
-  }
-
-  function sendToTab(tabId, message) {
-    return new Promise((resolve) => {
-      try {
-        chrome.tabs.sendMessage(tabId, message, (response) => {
-          const error = chrome?.runtime?.lastError;
-          resolve(error ? null : (response || null));
-        });
-      } catch {
-        resolve(null);
-      }
-    });
-  }
 
   function buildBrowserHeaders() {
     return {
@@ -312,10 +218,38 @@
       Version: '0.2.86',
       'X-Request-Id': (globalThis.crypto?.randomUUID?.() || `req-${Date.now()}`),
       source: 'web',
-      'bx-v': '2.5.37',
-      Origin: CHAT_BASE,
-      Referer: `${CHAT_BASE}/c/new-chat`
+      'bx-v': '2.5.37'
     };
+  }
+
+  function ensureDirectRequestHeaders() {
+    if (directRequestHeadersPromise) return directRequestHeadersPromise;
+    directRequestHeadersPromise = (async () => {
+      if (!chrome?.declarativeNetRequest?.updateSessionRules) return;
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [DIRECT_REQUEST_HEADER_RULE_ID],
+        addRules: [{
+          id: DIRECT_REQUEST_HEADER_RULE_ID,
+          priority: 1,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [
+              { header: 'Origin', operation: 'set', value: CHAT_BASE },
+              { header: 'Referer', operation: 'set', value: `${CHAT_BASE}/c/new-chat` }
+            ]
+          },
+          condition: {
+            urlFilter: '||chat.qwen.ai/api/',
+            initiatorDomains: [chrome.runtime.id],
+            resourceTypes: ['xmlhttprequest']
+          }
+        }]
+      });
+    })().catch((error) => {
+      directRequestHeadersPromise = null;
+      throw error;
+    });
+    return directRequestHeadersPromise;
   }
 
   async function buildBrowserHeadersWithAntiBot() {
@@ -392,6 +326,7 @@
   }
 
   async function requestJsonDirect(url, options = {}) {
+    await ensureDirectRequestHeaders();
     const token = await getStoredToken();
     const response = await fetch(url, {
       method: options.method || 'GET',
@@ -419,62 +354,11 @@
   }
 
   async function requestJson(url, options = {}) {
-    let tab = await findChatTab();
-    if (!tab && !options.noEnsureTab) tab = await ensureChatTab();
-    if (tab) {
-      const staleTab = tab;
-      tab = await ensureChatTabReady(tab);
-      if (!tab && !options.noEnsureTab) {
-        await chrome.tabs.remove(staleTab.id).catch(() => null);
-        tab = await ensureChatTab();
-      }
-      let punished = false;
-      for (let attempt = 0; tab && attempt < 2; attempt += 1) {
-        if (attempt > 0) {
-          await sleep(2500);
-          const ready = await ensureChatTabReady(tab);
-          if (ready) tab = ready;
-        }
-        const result = await sendToTab(tab.id, {
-          type: 'QWEN_API_REQUEST',
-          payload: {
-            id: `req-${Date.now()}-${attempt}`,
-            method: options.method || 'GET',
-            url,
-            body: options.body,
-            headers: options.headers || {}
-          }
-        });
-        if (!result?.ok) continue;
-        if (result.status === 401 || result.status === 403) throw notLoggedInError();
-        if (result.status < 200 || result.status >= 300) {
-          const raw = String(result.text || '');
-          const errKind = detectApiErrorText(raw);
-          if (errKind === 'RATE_LIMITED') {
-            throw rateLimitError(extractRateLimitNum(raw), rateLimitMessage(extractRateLimitNum(raw)));
-          }
-          if (errKind === 'NOT_LOGGED_IN') throw notLoggedInError();
-          if (errKind === 'API_ERROR') throw new Error(extractApiDetails(raw) || `通义千问 API 请求失败：HTTP ${result.status}`);
-          throw new Error(`通义千问 API 请求失败：HTTP ${result.status}`);
-        }
-        try {
-          return parseJsonOrThrow(String(result.text || ''));
-        } catch (error) {
-          if (error?.code === 'WAF_PUNISH' && attempt === 0) {
-            punished = true;
-            continue;
-          }
-          throw error;
-        }
-      }
-      if (punished) throw wafPunishError();
-    }
     return requestJsonDirect(url, options);
   }
 
   async function fetchModels() {
-    // 直接从扩展自身页面（Service Worker）请求模型列表，不依赖 chat.qwen.ai 标签页
-    // （标签页可能闲置/未激活，导致选项页的模型下拉框等不到结果）。
+    // 从扩展 Service Worker 直接请求模型列表。
     const data = await requestJsonDirect(`${CHAT_BASE}/api/v2/models/`);
     const list = Array.isArray(data?.data?.data) ? data.data.data : [];
     return list.map((item) => ({
@@ -569,204 +453,53 @@
     };
   }
 
-  const pendingStreams = new Map();
-
-  function rejectPendingStreamsForTab(tabId) {
-    for (const [id, pending] of pendingStreams) {
-      if (Number(pending?.tabId) !== Number(tabId)) continue;
-      pendingStreams.delete(id);
-      pending.reject(networkError(pending.responseId));
-    }
-  }
-
-  if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
-    chrome.runtime.onMessage.addListener((message) => {
-      if (message?.type !== 'QWEN_STREAM_DATA') return false;
-      const data = message.payload || {};
-      const pending = pendingStreams.get(String(data.id || ''));
-      if (!pending) return false;
-      if (data.error) {
-        pendingStreams.delete(data.id);
-        const code = String(data.error || '');
-        if (code === 'WAF_PUNISH') pending.reject(wafPunishError());
-        else if (code === 'WAF_BUSY') pending.reject(wafBusyError());
-        else if (code === 'WAF_CHALLENGE') pending.reject(unparsableError());
-        else if (code === 'RATE_LIMITED') pending.reject(rateLimitError(0, String(data.message || '')));
-        else if (code === 'STREAM_ERROR') pending.reject(new Error(String(data.message || '通义千问返回了错误')));
-        else if (code === 'NOT_LOGGED_IN') pending.reject(notLoggedInError());
-        else if (code === 'API_ERROR') pending.reject(new Error(String(data.message || '通义千问返回了错误')));
-        else if (code === 'NETWORK_ERROR') pending.reject(networkError(data.responseId || pending.responseId));
-        else if (code === 'REQUEST_ENDED') pending.reject(requestEndedError(
-          data.responseId || pending.responseId,
-          data.message
-        ));
-        else pending.reject(new Error(code));
-      } else if (data.end) {
-        pendingStreams.delete(data.id);
-        pending.resolve({
-          text: String(data.text || ''),
-          responseId: String(data.responseId || ''),
-          responseParentId: String(data.responseParentId || '')
-        });
-      } else {
-        if (data.responseId) pending.responseId = String(data.responseId);
-        pending.onEvent?.(data);
-      }
-      return false;
-    });
-    chrome.tabs?.onRemoved?.addListener?.((tabId) => rejectPendingStreamsForTab(tabId));
-    chrome.tabs?.onUpdated?.addListener?.((tabId, changeInfo) => {
-      if (changeInfo?.status === 'loading' || changeInfo?.discarded === true) rejectPendingStreamsForTab(tabId);
-    });
-  }
-
-  function streamViaContentScript(tab, { chatId, modelId, messages, onEvent, signal, parentId, resumeResponseId = '' }) {
-    const id = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const parent = String(parentId || '');
-    const resumeId = String(resumeResponseId || '');
-    const body = {
-      stream: true,
-      version: '2.1',
-      incremental_output: true,
-      chatId,
-      parentId: parent,
-      chat_id: chatId,
-      chat_mode: 'normal',
-      model: String(modelId || ''),
-      parent_id: parent || null,
-      messages,
-      timestamp: Date.now()
-    };
-    return new Promise((resolve, reject) => {
-      const pending = { onEvent, resolve, reject, tabId: tab.id, responseId: resumeId };
-      pendingStreams.set(id, pending);
-
-      const abort = () => {
-        pendingStreams.delete(id);
-        reject(new DOMException('生成中止', 'AbortError'));
-        try {
-          chrome.tabs.sendMessage(tab.id, { type: 'QWEN_ABORT_STREAM', payload: { id } }, () => {
-            void chrome?.runtime?.lastError;
-          });
-        } catch {
-          // 忽略
-        }
-      };
-
-      if (signal) {
-        if (signal.aborted) {
-          abort();
-          return;
-        }
-        signal.addEventListener('abort', abort, { once: true });
-      }
-
-      sendToTab(tab.id, {
-        type: 'QWEN_API_REQUEST',
-        payload: {
-          id,
-          method: resumeId ? 'GET' : 'POST',
-          url: `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}${resumeId ? `&response_id=${encodeURIComponent(resumeId)}` : ''}`,
-          ...(resumeId ? {} : { body }),
-          stream: true,
-          headers: resumeId ? {} : { 'Content-Type': 'application/json' }
-        }
-      }).then((response) => {
-        if (!response?.ok) {
-          pendingStreams.delete(id);
-          reject(new Error('chat.qwen.ai 页面未就绪，请稍后重试'));
-        }
-      });
-    });
-  }
-
-  async function resumeInterruptedCompletion(options, responseId) {
-    const targetResponseId = String(responseId || '');
-    if (!targetResponseId) throw networkError();
-    while (!options.signal?.aborted) {
-      let tab = await findChatTab();
-      if (!tab) tab = await ensureChatTab();
-      if (tab) tab = await ensureChatTabReady(tab);
-      if (!tab) {
-        await sleep(1000);
-        continue;
-      }
-      try {
-        options.onEvent?.({ streamRestart: true, responseId: targetResponseId });
-        return await streamViaContentScript(tab, { ...options, resumeResponseId: targetResponseId });
-      } catch (error) {
-        if (error?.name === 'AbortError' || options.signal?.aborted) throw error;
-        if (error?.code === 'REQUEST_ENDED') throw error;
-        if (error?.code !== 'NETWORK_ERROR' && !String(error?.message || '').includes('页面未就绪')) throw error;
-        await sleep(1000);
-      }
-    }
-    throw options.signal?.reason || new DOMException('生成中止', 'AbortError');
-  }
-
-  async function retryInterruptedCompletion(options, { resetRendered = false } = {}) {
-    let shouldReset = resetRendered === true;
-    while (!options.signal?.aborted) {
-      let tab = await findChatTab();
-      if (!tab) tab = await ensureChatTab();
-      if (tab) tab = await ensureChatTabReady(tab);
-      if (!tab) {
-        await sleep(1000);
-        continue;
-      }
-      try {
-        if (shouldReset) {
-          options.onEvent?.({ streamRestart: true, responseId: '' });
-          shouldReset = false;
-        }
-        return await streamViaContentScript(tab, options);
-      } catch (error) {
-        if (error?.name === 'AbortError' || options.signal?.aborted) throw error;
-        if (error?.code === 'NETWORK_ERROR' && error?.responseId) {
-          return resumeInterruptedCompletion(options, error.responseId);
-        }
-        if (error?.code !== 'NETWORK_ERROR' && !String(error?.message || '').includes('页面未就绪')) throw error;
-        await sleep(1000);
-      }
-    }
-    throw options.signal?.reason || new DOMException('生成中止', 'AbortError');
-  }
-
-  async function streamCompletionsDirect({ chatId, modelId, messages, onEvent, signal, parentId }) {
+  async function streamCompletionsDirect({ chatId, modelId, messages, onEvent, signal, parentId, resumeResponseId = '' }) {
     if (!await isLoggedIn()) throw notLoggedInError();
-    const url = `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}`;
+    await ensureDirectRequestHeaders();
+    const resumeId = String(resumeResponseId || '');
+    const url = `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}${resumeId ? `&response_id=${encodeURIComponent(resumeId)}` : ''}`;
     const token = await getStoredToken();
     const parent = String(parentId || '');
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Accept: 'text/event-stream',
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(await buildBrowserHeadersWithAntiBot())
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        stream: true,
-        version: '2.1',
-        incremental_output: true,
-        chatId,
-        parentId: parent,
-        chat_id: chatId,
-        chat_mode: 'normal',
-        model: String(modelId || ''),
-        parent_id: parent || null,
-        messages,
-        timestamp: Date.now()
-      }),
-      signal
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        method: resumeId ? 'GET' : 'POST',
+        headers: {
+          Accept: 'text/event-stream',
+          ...(resumeId ? {} : { 'Content-Type': 'application/json' }),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(await buildBrowserHeadersWithAntiBot())
+        },
+        credentials: 'include',
+        body: resumeId ? undefined : JSON.stringify({
+          stream: true,
+          version: '2.1',
+          incremental_output: true,
+          chatId,
+          parentId: parent,
+          chat_id: chatId,
+          chat_mode: 'normal',
+          model: String(modelId || ''),
+          parent_id: parent || null,
+          messages,
+          timestamp: Date.now()
+        }),
+        signal
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted) throw error;
+      throw networkError(resumeId);
+    }
     if (response.status === 401 || response.status === 403) throw notLoggedInError();
     if (!response.ok) {
       const text = await response.text();
       const errKind = detectApiErrorText(text);
       if (errKind === 'NOT_LOGGED_IN') throw notLoggedInError();
+      if (errKind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
       if (errKind === 'API_ERROR') throw new Error(extractApiDetails(text) || `通义千问 API 请求失败：HTTP ${response.status}`);
+      if (errKind === 'WAF_BUSY') throw wafBusyError();
+      if (errKind === 'WAF_PUNISH') throw wafPunishError();
+      if (errKind === 'WAF_CHALLENGE') throw unparsableError();
       throw new Error(`通义千问 API 请求失败：HTTP ${response.status}`);
     }
     const contentType = String(response.headers.get('content-type') || '');
@@ -902,20 +635,26 @@
       }
     };
 
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      rawText += chunk;
-      buffer += chunk;
-      let newlineIndex;
-      while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, newlineIndex).trim();
-        buffer = buffer.slice(newlineIndex + 1);
-        if (line) handleLine(line);
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        rawText += chunk;
+        buffer += chunk;
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (line) handleLine(line);
+        }
       }
+      if (buffer.trim()) handleLine(buffer.trim());
+    } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted || error?.code === 'REQUEST_ENDED') throw error;
+      if (error?.code) throw error;
+      throw networkError(responseId || resumeId);
     }
-    if (buffer.trim()) handleLine(buffer.trim());
     if (!sawDataLine && rawText.trim()) {
       const kind = detectApiErrorText(rawText);
       if (kind === 'WAF_BUSY') throw wafBusyError();
@@ -923,6 +662,43 @@
       if (kind) throw unparsableError();
     }
     return { text: fullText, responseId, responseParentId };
+  }
+
+  async function resumeInterruptedCompletion(options, responseId) {
+    const targetResponseId = String(responseId || '');
+    if (!targetResponseId) throw networkError();
+    options.onEvent?.({ streamRestart: true, responseId: targetResponseId });
+    while (!options.signal?.aborted) {
+      try {
+        return await streamCompletionsDirect({ ...options, resumeResponseId: targetResponseId });
+      } catch (error) {
+        if (error?.name === 'AbortError' || options.signal?.aborted || error?.code === 'REQUEST_ENDED') throw error;
+        if (error?.code !== 'NETWORK_ERROR') throw error;
+        await sleep(1000);
+      }
+    }
+    throw options.signal?.reason || new DOMException('生成中止', 'AbortError');
+  }
+
+  async function retryInterruptedCompletion(options, { resetRendered = false } = {}) {
+    let shouldReset = resetRendered === true;
+    while (!options.signal?.aborted) {
+      try {
+        if (shouldReset) {
+          options.onEvent?.({ streamRestart: true, responseId: '' });
+          shouldReset = false;
+        }
+        return await streamCompletionsDirect(options);
+      } catch (error) {
+        if (error?.name === 'AbortError' || options.signal?.aborted) throw error;
+        if (error?.code === 'NETWORK_ERROR' && error?.responseId) {
+          return resumeInterruptedCompletion(options, error.responseId);
+        }
+        if (error?.code !== 'NETWORK_ERROR') throw error;
+        await sleep(1000);
+      }
+    }
+    throw options.signal?.reason || new DOMException('生成中止', 'AbortError');
   }
 
   async function streamCompletions(options) {
@@ -936,73 +712,15 @@
         options.onEvent?.(event);
       }
     };
-    let tab = await findChatTab();
-    if (!tab) tab = await ensureChatTab();
-    if (tab) {
-      const staleTab = tab;
-      tab = await ensureChatTabReady(tab);
-      if (!tab) {
-        await chrome.tabs.remove(staleTab.id).catch(() => null);
-        tab = await ensureChatTab();
-      }
-    }
-    if (tab) {
-      let lastError = null;
-      let replaced = false;
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        if (attempt > 0) {
-          if (receivedAny) break;
-          await sleep(3000 * attempt);
-        }
-        try {
-          return await streamViaContentScript(tab, wrappedOptions);
-        } catch (error) {
-          if (error?.name === 'AbortError') throw error;
-          if (error?.code === 'NETWORK_ERROR') {
-            const interruptedResponseId = String(error?.responseId || responseId || '');
-            return interruptedResponseId
-              ? resumeInterruptedCompletion(wrappedOptions, interruptedResponseId)
-              : retryInterruptedCompletion(wrappedOptions, { resetRendered: receivedAny });
-          }
-          lastError = error;
-          if (error?.code === 'WAF_PUNISH' && attempt < 2 && !receivedAny) continue;
-          const notReady = String(error?.message || '').includes('页面未就绪');
-          if (notReady) {
-            const ready = await ensureChatTabReady(tab);
-            if (ready) {
-              tab = ready;
-              continue;
-            }
-          }
-          if (notReady && !replaced) {
-            replaced = true;
-            try {
-              await chrome.tabs.remove(tab.id);
-            } catch {
-              // 旧页面无法关闭（如无权限），继续尝试新页面
-            }
-            tab = await ensureChatTab();
-            if (tab) {
-              tab = await ensureChatTabReady(tab);
-              if (tab) continue;
-            }
-          }
-          break;
-        }
-      }
-      // 页面路径彻底失败时回退为扩展自身页面直接请求
-      if (lastError && !String(lastError?.message || '').includes('页面未就绪')) throw lastError;
-    }
     try {
       return await streamCompletionsDirect(wrappedOptions);
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
-      if (error?.code === 'NETWORK_ERROR' || error instanceof TypeError) {
-        return responseId
-          ? resumeInterruptedCompletion(wrappedOptions, responseId)
-          : retryInterruptedCompletion(wrappedOptions, { resetRendered: receivedAny });
-      }
-      throw error;
+      if (error?.code !== 'NETWORK_ERROR') throw error;
+      const interruptedResponseId = String(error?.responseId || responseId || '');
+      return interruptedResponseId
+        ? resumeInterruptedCompletion(wrappedOptions, interruptedResponseId)
+        : retryInterruptedCompletion(wrappedOptions, { resetRendered: receivedAny });
     }
   }
 
