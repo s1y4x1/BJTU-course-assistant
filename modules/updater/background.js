@@ -22,8 +22,7 @@
   const PENDING_RELOAD_KEY = 'pendingUpdateReload';
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
   const MODULE_SELECTION_KEY = 'updateModuleSelection';
-  const OPTIONAL_MODULE_IDS = ['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'academic', 'cas', 'mail', 'campusnet', 'captcha', 'updater'];
-  const MODULE_SCOPE_IDS = ['ve', ...OPTIONAL_MODULE_IDS];
+  const MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
   const REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
   const ROOT_COMPONENT_DIRECTORY_NAMES = Object.freeze({
     _locales: '_locales',
@@ -343,12 +342,15 @@
     return scopes.size ? scopes : null;
   }
 
-  function releaseAppliesToSelection(updateRule, selectedModules) {
+  function releaseAppliesToSelection(updateRule, selectedModules, knownModules) {
     const scopes = normalizeUpdateScopes(updateRule);
     if (!scopes || scopes.has('main') || [...REQUIRED_MODULE_IDS].some((id) => scopes.has(id))) return true;
     if ([...scopes].some((id) => ROOT_COMPONENT_IDS.has(id))) return true;
     for (const id of selectedModules || []) {
       if (scopes.has(String(id || '').toLowerCase())) return true;
+    }
+    for (const id of scopes) {
+      if (!knownModules?.has(id)) return true;
     }
     return false;
   }
@@ -398,6 +400,28 @@
     });
   }
 
+  function getArchiveModuleIds(files) {
+    return [...new Set((files || []).map(({ path }) => {
+      const match = String(path || '').match(/^modules\/([^/]+)\//i);
+      return String(match?.[1] || '').toLowerCase();
+    }).filter((id) => id && !REQUIRED_MODULE_IDS.has(id)))];
+  }
+
+  async function getInstalledOptionalModuleIds(root) {
+    const installed = [];
+    let modulesDirectory;
+    try {
+      modulesDirectory = await root.getDirectoryHandle('modules');
+    } catch {
+      return installed;
+    }
+    for await (const [name, handle] of modulesDirectory.entries()) {
+      const id = String(name || '').toLowerCase();
+      if (handle?.kind === 'directory' && id && !REQUIRED_MODULE_IDS.has(id)) installed.push(id);
+    }
+    return installed;
+  }
+
   function filterFilesByModules(files, selectedModules) {
     return files.filter(({ path }) => {
       const match = String(path || '').match(/^modules\/([^/]+)\//i);
@@ -414,7 +438,7 @@
     } catch {
       return;
     }
-    for (const id of OPTIONAL_MODULE_IDS) {
+    for (const id of await getInstalledOptionalModuleIds(root)) {
       if (selectedModules.has(id)) continue;
       await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
         if (error?.name !== 'NotFoundError') throw error;
@@ -455,7 +479,7 @@
       modulesDirectory = null;
     }
     if (!modulesDirectory) return;
-    for (const id of MODULE_SCOPE_IDS) {
+    for (const id of scopes) {
       if (!scopes.has(id)) continue;
       if (!REQUIRED_MODULE_IDS.has(id) && !selectedModules.has(id)) continue;
       await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
@@ -501,10 +525,16 @@
     const archive = await retryNetworkOperation(() => downloadArchive(release.url), 2);
     return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
       const entries = parseZipEntries(archive);
-      const storedSelection = await chrome.storage.local.get(MODULE_SELECTION_KEY).catch(() => ({}));
-      const selectedModules = new Set(Array.isArray(storedSelection?.[MODULE_SELECTION_KEY])
-        ? storedSelection[MODULE_SELECTION_KEY]
-        : OPTIONAL_MODULE_IDS);
+      const archiveFiles = normalizeZipFiles(entries);
+      const packagedModuleIds = getArchiveModuleIds(archiveFiles);
+      const storedKnownModules = await chrome.storage.local.get(MODULE_KNOWN_IDS_KEY).catch(() => ({}));
+      const previousKnown = storedKnownModules?.[MODULE_KNOWN_IDS_KEY];
+      const installedModuleIds = await getInstalledOptionalModuleIds(root);
+      const knownModules = new Set(Array.isArray(previousKnown) ? previousKnown : []);
+      installedModuleIds.forEach((id) => knownModules.add(id));
+      const newModules = packagedModuleIds.filter((id) => !knownModules.has(id));
+      const selectedModules = new Set(installedModuleIds);
+      newModules.forEach((id) => selectedModules.add(id));
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       const selectedArchiveFiles = selectFiles(entries, release.update);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
@@ -528,6 +558,11 @@
           });
         }));
       }
+      packagedModuleIds.forEach((id) => knownModules.add(id));
+      await chrome.storage.local.set({
+        [MODULE_SELECTION_KEY]: [...selectedModules].filter((id) => !REQUIRED_MODULE_IDS.has(id)),
+        [MODULE_KNOWN_IDS_KEY]: [...knownModules]
+      });
       return files.length;
     });
   }
@@ -537,7 +572,7 @@
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
-        DETECTED_NOTIFICATION_VERSION_KEY
+        DETECTED_NOTIFICATION_VERSION_KEY, MODULE_KNOWN_IDS_KEY
       ]);
       const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
       if (!forceCheck && !updaterEnabled) return { skipped: true };
@@ -567,12 +602,31 @@
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
         === normalizeVersion(release.version);
       const installOptionalUpdate = stored?.[INSTALL_OPTIONAL_KEY] === true || retryingStaleInstallation;
-      const storedSelection = await chrome.storage.local.get(MODULE_SELECTION_KEY).catch(() => ({}));
-      const selectedModules = new Set(Array.isArray(storedSelection?.[MODULE_SELECTION_KEY])
-        ? storedSelection[MODULE_SELECTION_KEY]
-        : OPTIONAL_MODULE_IDS);
+      const directoryHandle = await readDirectoryHandle();
+      const root = await validateDirectory(directoryHandle);
+      if (!root) {
+        await notifyUpdateIssue(
+          'permission',
+          directoryHandle
+            ? '扩展安装目录没有写入权限，请在全屏页面重新选择并授权目录。'
+            : '尚未授权扩展安装目录，请先在全屏页面手动更新一次并选择目录。',
+          release.version
+        );
+        await setStatus('directory-required', {
+          localVersion,
+          version: release.version,
+          name: release.name,
+          force: release.force
+        });
+        return { updated: false, directoryRequired: true, release };
+      }
+      const localModuleIds = await getInstalledOptionalModuleIds(root);
+      const selectedModules = new Set(localModuleIds);
+      const storedKnownModuleIds = stored?.[MODULE_KNOWN_IDS_KEY];
+      const knownModules = new Set(Array.isArray(storedKnownModuleIds) ? storedKnownModuleIds : []);
+      localModuleIds.forEach((id) => knownModules.add(id));
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-      if (!releaseAppliesToSelection(release.update, selectedModules)) {
+      if (!releaseAppliesToSelection(release.update, selectedModules, knownModules)) {
         const record = {
           ver: release.version,
           name: release.name,
@@ -599,24 +653,6 @@
           force: false
         });
         return { updated: false, optionalUpdateAvailable: true, release };
-      }
-      const directoryHandle = await readDirectoryHandle();
-      const root = await validateDirectory(directoryHandle);
-      if (!root) {
-        await notifyUpdateIssue(
-          'permission',
-          directoryHandle
-            ? '扩展安装目录没有写入权限，请在全屏页面重新选择并授权目录。'
-            : '尚未授权扩展安装目录，请先在全屏页面手动更新一次并选择目录。',
-          release.version
-        );
-        await setStatus('directory-required', {
-          localVersion,
-          version: release.version,
-          name: release.name,
-          force: release.force
-        });
-        return { updated: false, directoryRequired: true, release };
       }
       await clearUpdateIssueNotificationState('permission');
       await setStatus('downloading', {
