@@ -350,7 +350,6 @@
       .split(/<br\s*\/?\s*>/i)
       .map((item) => textFromHtml(item))
       .filter(Boolean);
-    const courseCode = headingLines[0] || '';
     const nameMatch = source.match(/<span\b[^>]*style\s*=\s*["'][^"']*color\s*:\s*#?000[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
     const weekMatch = source.match(/<div\b[^>]*style\s*=\s*["'][^"']*max-width\s*:\s*120px[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
     const weekHtml = weekMatch?.[1] || '';
@@ -362,6 +361,10 @@
       source.match(/<span\b[^>]*class\s*=\s*["'][^"']*\bgreen\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || ''
     );
     const name = textFromHtml(nameMatch?.[1] || '') || headingLines[1] || '';
+    const visibleText = textFromHtml(source, true);
+    const courseCode = visibleText.match(/\b[A-Z]\d{6}[A-Z]\b/i)?.[0]
+      || headingLines.find((line) => line !== name && /^(?=.*\d)[A-Z0-9-]{6,}$/i.test(line))
+      || '';
     if (!courseCode && !name) return null;
     return {
       courseCode,
