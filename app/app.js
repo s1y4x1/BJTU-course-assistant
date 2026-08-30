@@ -129,12 +129,13 @@ const FULLSCREEN_MODULE_BUTTONS = Object.freeze({
   mail: {
     id: 'mail-fullscreen-button',
     key: 'mailFullscreenButtonEnabled',
-    path: 'modules/mail/options.html'
+    label: 'BJTU 邮件系统'
   },
   academic: {
     id: 'academic-fullscreen-button',
     key: 'academicFullscreenButtonEnabled',
-    path: 'modules/academic/options.html'
+    iconKey: 'academicFullscreenButtonIcon',
+    label: '教务系统'
   }
 });
 
@@ -147,28 +148,236 @@ async function initFullscreenModuleButtons() {
     return;
   }
   const available = await globalThis.BjtuModuleRegistry.ready;
-  const keys = ['qwenEnabled', ...Object.values(FULLSCREEN_MODULE_BUTTONS).map((item) => item.key)];
+  const keys = ['qwenEnabled', ...Object.values(FULLSCREEN_MODULE_BUTTONS)
+    .flatMap((item) => [item.key, item.iconKey].filter(Boolean))];
   const stored = await chrome.storage.local.get(keys);
+  const moduleViewPromises = new Map();
+  const moduleWindows = new Map();
+  let topWindowZIndex = 10004;
+
+  const showPanelMessage = (text, ok = true) => {
+    showToast(String(text || ''), ok ? 'success' : 'error');
+  };
+
+  const refreshButtonContainer = () => {
+    container.hidden = !Object.entries(FULLSCREEN_MODULE_BUTTONS).some(([moduleId, config]) => {
+      const button = document.getElementById(config.id);
+      return button instanceof HTMLButtonElement
+        && available[moduleId] === true
+        && stored[config.key] !== false
+        && !moduleWindows.has(moduleId);
+    });
+  };
+
+  const bringToFront = (view) => {
+    topWindowZIndex += 1;
+    view.style.zIndex = String(topWindowZIndex);
+  };
+
+  const clampWindow = (view, edgeGap = 12) => {
+    if (!(view instanceof HTMLElement) || view.hidden) return;
+    const availableWidth = Math.max(240, window.innerWidth - edgeGap * 2);
+    const availableHeight = Math.max(200, window.innerHeight - edgeGap * 2);
+    const rect = view.getBoundingClientRect();
+    if (rect.width > availableWidth) view.style.width = `${availableWidth}px`;
+    if (rect.height > availableHeight) view.style.height = `${availableHeight}px`;
+    const resized = view.getBoundingClientRect();
+    const left = Math.min(Math.max(edgeGap, resized.left), Math.max(edgeGap, window.innerWidth - resized.width - edgeGap));
+    const top = Math.min(Math.max(edgeGap, resized.top), Math.max(edgeGap, window.innerHeight - resized.height - edgeGap));
+    view.style.left = `${left}px`;
+    view.style.top = `${top}px`;
+    view.style.right = 'auto';
+    view.style.bottom = 'auto';
+  };
+
+  const closeModuleWindow = (moduleId) => {
+    const view = moduleWindows.get(moduleId);
+    if (!(view instanceof HTMLElement)) return;
+    view.hidden = true;
+    moduleWindows.delete(moduleId);
+    const config = FULLSCREEN_MODULE_BUTTONS[moduleId];
+    const button = config && document.getElementById(config.id);
+    if (button instanceof HTMLButtonElement) {
+      button.hidden = available[moduleId] !== true || stored[config.key] === false;
+    }
+    refreshButtonContainer();
+  };
+
+  const prepareWindowInteractions = (view, moduleId) => {
+    const header = view.querySelector(':scope > .section-title');
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'fullscreen-module-window-close';
+    close.textContent = '×';
+    close.title = '关闭';
+    close.setAttribute('aria-label', '关闭');
+    header?.appendChild(close);
+    close.addEventListener('click', () => closeModuleWindow(moduleId));
+
+    let drag = null;
+    let resizing = false;
+    let preservedScroll = null;
+    view.addEventListener('pointerdown', () => bringToFront(view), true);
+    header?.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || event.target.closest('button, input, select, textarea, a')) return;
+      const rect = view.getBoundingClientRect();
+      drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+      view.style.left = `${rect.left}px`;
+      view.style.top = `${rect.top}px`;
+      view.style.right = 'auto';
+      view.style.bottom = 'auto';
+      event.preventDefault();
+    });
+    window.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      const rect = view.getBoundingClientRect();
+      view.style.left = `${Math.min(Math.max(12, drag.left + event.clientX - drag.x), Math.max(12, window.innerWidth - rect.width - 12))}px`;
+      view.style.top = `${Math.min(Math.max(12, drag.top + event.clientY - drag.y), Math.max(12, window.innerHeight - rect.height - 12))}px`;
+    });
+    window.addEventListener('pointerup', () => { drag = null; });
+    view.addEventListener('pointerdown', (event) => {
+      const rect = view.getBoundingClientRect();
+      resizing = event.clientX >= rect.right - 20 && event.clientY >= rect.bottom - 20;
+      if (!resizing) return;
+      view.style.left = `${rect.left}px`;
+      view.style.top = `${rect.top}px`;
+      view.style.right = 'auto';
+      view.style.bottom = 'auto';
+      view.style.width = `${rect.width}px`;
+      view.style.height = `${rect.height}px`;
+      preservedScroll = { left: view.scrollLeft, top: view.scrollTop, windowX: window.scrollX, windowY: window.scrollY };
+    }, true);
+    const restoreScroll = () => {
+      if (!preservedScroll) return;
+      view.scrollLeft = preservedScroll.left;
+      view.scrollTop = preservedScroll.top;
+      window.scrollTo(preservedScroll.windowX, preservedScroll.windowY);
+    };
+    const resizeObserver = new ResizeObserver(() => {
+      if (resizing) {
+        clampWindow(view);
+        requestAnimationFrame(restoreScroll);
+      }
+    });
+    resizeObserver.observe(view);
+    window.addEventListener('pointerup', () => {
+      if (!resizing) return;
+      clampWindow(view);
+      restoreScroll();
+      requestAnimationFrame(() => {
+        restoreScroll();
+        resizing = false;
+        preservedScroll = null;
+      });
+    });
+  };
+
+  const loadModuleView = (moduleId) => {
+    if (moduleViewPromises.has(moduleId)) return moduleViewPromises.get(moduleId);
+    const promise = (async () => {
+      const definition = globalThis.BjtuModuleRegistry.definitions[moduleId];
+      const options = definition?.options;
+      if (!options?.fragment || !options?.script) throw new Error(`模块 ${moduleId} 没有可加载的选项片段`);
+      const stylePaths = [options.style, ...(options.styles || [])].filter(Boolean);
+      for (const style of stylePaths) {
+        await globalThis.BjtuModuleRegistry.loadStyle(`modules/${moduleId}/${style}`);
+      }
+      const response = await fetch(chrome.runtime.getURL(`modules/${moduleId}/${options.fragment}`), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`模块界面加载失败：HTTP ${response.status}`);
+      const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const fragment = parsed.querySelector('[data-options-fragment]');
+      if (!(fragment instanceof HTMLElement)) throw new Error('模块界面中缺少选项片段');
+      const view = document.importNode(fragment, true);
+      view.classList.add('fullscreen-module-window');
+      view.dataset.module = moduleId;
+      view.hidden = true;
+      view.querySelectorAll('.module-options-page-link').forEach((link) => {
+        const title = document.createElement('span');
+        title.textContent = link.textContent;
+        link.replaceWith(title);
+      });
+      document.body.appendChild(view);
+      prepareWindowInteractions(view, moduleId);
+      for (const script of [...(options.scripts || []), options.script]) {
+        await globalThis.BjtuModuleRegistry.loadScript(`modules/${moduleId}/${script}`);
+      }
+      const controller = moduleId === 'mail' ? globalThis.BjtuMailOptions : globalThis.BjtuAcademicOptions;
+      if (!controller?.init) throw new Error('模块选项控制器未加载');
+      await controller.init({ setMessage: showPanelMessage });
+      globalThis.BjtuOptionTips?.setup?.();
+      return view;
+    })().catch((error) => {
+      moduleViewPromises.delete(moduleId);
+      throw error;
+    });
+    moduleViewPromises.set(moduleId, promise);
+    return promise;
+  };
+
+  const openModulePanel = async (moduleId, config) => {
+    const button = document.getElementById(config.id);
+    if (moduleWindows.has(moduleId)) {
+      const current = moduleWindows.get(moduleId);
+      if (current instanceof HTMLElement) bringToFront(current);
+      return;
+    }
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = true;
+      button.classList.add('is-loading');
+    }
+    try {
+      const view = await loadModuleView(moduleId);
+      moduleWindows.set(moduleId, view);
+      if (!view.dataset.positioned) {
+        view.dataset.positioned = '1';
+        view.style.width = `${Math.round(window.innerWidth * 0.75)}px`;
+        view.style.height = `${Math.round(window.innerHeight * 0.75)}px`;
+        view.style.left = `${Math.round(window.innerWidth * 0.125)}px`;
+        view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
+      }
+      view.hidden = false;
+      clampWindow(view);
+      bringToFront(view);
+      if (button instanceof HTMLButtonElement) button.hidden = true;
+      refreshButtonContainer();
+    } catch (error) {
+      showPanelMessage(`模块加载失败：${String(error?.message || error)}`, false);
+    } finally {
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = false;
+        button.classList.remove('is-loading');
+      }
+    }
+  };
+
   const apply = (values) => {
     document.body.classList.toggle(
       'qwen-fullscreen-button-visible',
       available.qwen === true && values.qwenEnabled !== false
     );
-    let visible = false;
+    const academicButton = document.getElementById(FULLSCREEN_MODULE_BUTTONS.academic.id);
+    if (academicButton instanceof HTMLButtonElement) {
+      const useSystemIcon = values.academicFullscreenButtonIcon === 'system';
+      const graduationIcon = academicButton.querySelector('.academic-fullscreen-button-icon-graduation');
+      const systemIcon = academicButton.querySelector('.academic-fullscreen-button-icon-system');
+      if (graduationIcon instanceof Element) graduationIcon.toggleAttribute('hidden', useSystemIcon);
+      if (systemIcon instanceof Element) systemIcon.toggleAttribute('hidden', !useSystemIcon);
+    }
     for (const [moduleId, config] of Object.entries(FULLSCREEN_MODULE_BUTTONS)) {
       const button = document.getElementById(config.id);
       if (!(button instanceof HTMLButtonElement)) continue;
-      button.hidden = available[moduleId] !== true || values[config.key] === false;
-      visible ||= !button.hidden;
+      button.hidden = available[moduleId] !== true || values[config.key] === false || moduleWindows.has(moduleId);
+      if (values[config.key] === false && moduleWindows.has(moduleId)) closeModuleWindow(moduleId);
       if (button.dataset.bound !== '1') {
         button.dataset.bound = '1';
         button.addEventListener('click', () => {
-          location.href = chrome.runtime.getURL(config.path);
+          void openModulePanel(moduleId, config);
         });
       }
     }
-    container.hidden = !visible;
+    refreshButtonContainer();
   };
+  window.addEventListener('resize', () => moduleWindows.forEach((view) => clampWindow(view)));
   apply(stored);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !keys.some((key) => changes[key])) return;

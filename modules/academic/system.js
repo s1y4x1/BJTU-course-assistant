@@ -34,7 +34,8 @@
   const EXAM_NOTIFICATION_PREFIX = 'bjtu-academic-exam:';
   const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
   const LOGIN_HEADER_RULE_ID = 914304;
-  const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
+  const ACADEMIC_DATA_CACHE_KEY_PREFIX = 'academicDataCache:';
+  const LEGACY_ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   const ACADEMIC_SCORE_SOURCE_CACHE_KEY = 'academicScoreSourceCache';
   const ACADEMIC_CURRENT_EXAM_CACHE_KEY = 'academicCurrentExamCache';
   // Can be changed from the extension service worker console through
@@ -84,6 +85,7 @@
   let academicCurrentExamPromise = null;
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
+  let academicDataCacheUpdatePromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_REQUEST_PRIORITY = Object.freeze({
@@ -574,7 +576,7 @@
     academicCurrentExamCache = null;
     academicCurrentExamPromise = null;
     await chrome.storage.session.remove([
-      ACADEMIC_DATA_CACHE_KEY,
+      LEGACY_ACADEMIC_DATA_CACHE_KEY,
       ACADEMIC_SCORE_SOURCE_CACHE_KEY,
       ACADEMIC_CURRENT_EXAM_CACHE_KEY
     ]).catch(() => {});
@@ -1152,6 +1154,52 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     return pending;
   }
 
+  function updateAcademicDataCacheFromMonitor(kind, rows, studentId, checkedAt) {
+    const id = String(studentId || '').trim();
+    if (!id) return Promise.resolve();
+    academicDataCacheUpdatePromise = academicDataCacheUpdatePromise.catch(() => {}).then(async () => {
+      const key = `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${id}`;
+      const stored = await chrome.storage.session.get(key);
+      const cache = stored?.[key];
+      if (!cache || typeof cache !== 'object') return;
+      const current = String(cache.scoreCurrentZxjxjhh || '').trim();
+      const currentOption = (Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [])
+        .find((item) => String(item?.zxjxjhh || '') === current);
+      const currentLabel = String(currentOption?.label || rows?.[0]?.academicYear || '').trim();
+      if (kind === 'scores') {
+        const preserved = currentLabel
+          ? (Array.isArray(cache.scoresCache?.rows) ? cache.scoresCache.rows : [])
+            .filter((row) => String(row?.academicYear || '').trim() !== currentLabel)
+          : [];
+        cache.scoresCache = { rows: [...preserved, ...rows], checkedAt };
+      } else if (kind === 'exams' && current) {
+        const byTerm = new Map((Array.isArray(cache.examsCache?.results) ? cache.examsCache.results : [])
+          .map((item) => [String(item?.zxjxjhh || ''), item]));
+        byTerm.set(current, {
+          ...(byTerm.get(current) || {}),
+          label: String(byTerm.get(current)?.label || currentLabel),
+          zxjxjhh: current,
+          rows
+        });
+        cache.examsCache = {
+          ...(cache.examsCache || {}),
+          currentZxjxjhh: current,
+          results: [...byTerm.values()],
+          checkedAt
+        };
+      }
+      if (current) {
+        cache.loadedSharedTerms = [...new Set([
+          ...(Array.isArray(cache.loadedSharedTerms) ? cache.loadedSharedTerms : []),
+          current
+        ])];
+      }
+      cache.updatedAt = checkedAt;
+      await chrome.storage.session.set({ [key]: cache });
+    });
+    return academicDataCacheUpdatePromise;
+  }
+
   async function processScoreRowsInternal(rows, studentId = '', source = 'poll') {
     const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeScoreRow)
       .filter((row) => row.academicYear && row.course);
@@ -1194,6 +1242,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       [STUDENT_ID_KEY]: id,
       [STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt }
     });
+    await updateAcademicDataCacheFromMonitor('scores', normalizedRows, id, checkedAt);
     broadcastAcademicData('scores', normalizedRows, id, checkedAt);
     const remainingPending = await flushPendingScoreNotifications(pending);
     return {
@@ -1293,6 +1342,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       [STUDENT_ID_KEY]: id,
       [EXAM_STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt }
     });
+    await updateAcademicDataCacheFromMonitor('exams', normalizedRows, id, checkedAt);
     broadcastAcademicData('exams', normalizedRows, id, checkedAt);
     const remainingPending = await flushPendingExamNotifications(pending);
     return {
@@ -1572,10 +1622,11 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
 
   async function readAcademicDataCache() {
     const local = await chrome.storage.local.get([STUDENT_ID_KEY]);
-    const session = await chrome.storage.session.get(ACADEMIC_DATA_CACHE_KEY);
-    const cache = session?.[ACADEMIC_DATA_CACHE_KEY];
     const studentId = String(local?.[STUDENT_ID_KEY] || '').trim();
-    return cache && studentId && String(cache.studentId || '') === studentId ? cache : null;
+    if (!studentId) return null;
+    const key = `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${studentId}`;
+    const session = await chrome.storage.session.get(key);
+    return session?.[key] || null;
   }
 
   function cachedRequestedTerms(cache, args, parameter) {

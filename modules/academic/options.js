@@ -17,11 +17,13 @@
   const BB_WISH_LIST_KEY = 'academicBbWishListCourses';
   const BB_REFRESH_DELAY_KEY = 'academicBbRefreshDelayMs';
   const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
-  const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
+  const ACADEMIC_DATA_CACHE_KEY_PREFIX = 'academicDataCache:';
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_FULLSCREEN_BUTTON_KEY = 'academicFullscreenButtonEnabled';
+  const ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY = 'academicFullscreenButtonIcon';
   const DEFAULTS = Object.freeze({
     [ACADEMIC_FULLSCREEN_BUTTON_KEY]: true,
+    [ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY]: 'graduation',
     academicOptionsWideEnabled: true,
     academicScoreMonitorEnabled: false,
     academicExamMonitorEnabled: false,
@@ -75,6 +77,7 @@
   let bbScriptReloadRequired = false;
 
   const element = (id) => document.getElementById(id);
+  const academicDataCacheKey = (studentId) => `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${String(studentId || '').trim()}`;
 
   function beginAcademicOptionsRequest() {
     if (academicRequestIdleTimer) {
@@ -110,7 +113,7 @@
       const studentId = String(context?.studentId || '').trim();
       if (!studentId || !academicSemestersLoaded) return;
       await chrome.storage.session.set({
-        [ACADEMIC_DATA_CACHE_KEY]: {
+        [academicDataCacheKey(studentId)]: {
           studentId,
           academicSemesterOptions,
           scoreCurrentZxjxjhh,
@@ -126,12 +129,13 @@
     return academicDataCacheWritePromise;
   }
 
-  async function restoreAcademicDataCache() {
-    const studentId = String(context?.studentId || '').trim();
+  async function restoreAcademicDataCache(studentIdOverride = '') {
+    const studentId = String(studentIdOverride || context?.studentId || '').trim();
     if (!studentId) return false;
-    const stored = await chrome.storage.session.get(ACADEMIC_DATA_CACHE_KEY);
-    const cache = stored?.[ACADEMIC_DATA_CACHE_KEY];
-    if (!cache || String(cache.studentId || '') !== studentId) return false;
+    const key = academicDataCacheKey(studentId);
+    const stored = await chrome.storage.session.get(key);
+    const cache = stored?.[key];
+    if (!cache) return false;
     academicSemesterOptions = Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [];
     scoreCurrentZxjxjhh = String(cache.scoreCurrentZxjxjhh || '');
     scheduleCache = cache.scheduleCache && typeof cache.scheduleCache === 'object' ? cache.scheduleCache : null;
@@ -1333,6 +1337,11 @@
   }
 
   function updateDisabledState() {
+    const fullscreenButtonEnabled = element(ACADEMIC_FULLSCREEN_BUTTON_KEY)?.checked === true;
+    const fullscreenButtonIconOption = element('academicFullscreenButtonIconOption');
+    fullscreenButtonIconOption?.classList.toggle('is-disabled', !fullscreenButtonEnabled);
+    const fullscreenButtonIcon = element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY);
+    if (fullscreenButtonIcon instanceof HTMLSelectElement) fullscreenButtonIcon.disabled = !fullscreenButtonEnabled;
     const monitorEnabled = ['academicScoreMonitorEnabled', 'academicExamMonitorEnabled', 'academicClassReminderEnabled']
       .some((id) => element(id)?.checked);
     const monitorEditor = element('academicScoreMonitorIntervalEditor');
@@ -1417,7 +1426,15 @@
   }
 
   function renderScores(rows) {
-    const list = Array.isArray(rows) ? rows : [];
+    const currentLabel = String((scoreSemesterOptions || [])
+      .find((item) => String(item?.zxjxjhh || '') === scoreCurrentZxjxjhh)?.label || '').trim();
+    const list = (Array.isArray(rows) ? [...rows] : []).sort((left, right) => {
+      const leftSemester = String(left?.academicYear || '').trim();
+      const rightSemester = String(right?.academicYear || '').trim();
+      if (leftSemester === currentLabel && rightSemester !== currentLabel) return -1;
+      if (rightSemester === currentLabel && leftSemester !== currentLabel) return 1;
+      return rightSemester.localeCompare(leftSemester, 'zh-CN', { numeric: true });
+    });
     const body = element('academicScoreTableBody');
     if (body instanceof HTMLElement) body.replaceChildren();
     element('academicScoreLoading').style.display = sharedAllLoading ? 'flex' : 'none';
@@ -1869,9 +1886,12 @@
   let examsCache = null;
   let scoresCache = null;
 
-  function invalidateAcademicCaches() {
-    academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
-      .then(() => chrome.storage.session.remove(ACADEMIC_DATA_CACHE_KEY));
+  function invalidateAcademicCaches({ removeStored = false } = {}) {
+    const studentId = String(context?.studentId || '').trim();
+    if (removeStored && studentId) {
+      academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
+        .then(() => chrome.storage.session.remove(academicDataCacheKey(studentId)));
+    }
     scheduleCache = null;
     scheduleData = null;
     examsCache = null;
@@ -2342,9 +2362,17 @@
     }
   }
 
-  async function loadAll({ preserveRendered = false } = {}) {
+  async function loadAll({ preserveRendered = false, refreshCached = false } = {}) {
     beginAcademicOptionsRequest();
     try {
+    if (refreshCached) {
+      loadedSharedTerms.clear();
+      loadedScheduleTerms.clear();
+      sharedTermsInFlight.clear();
+      scheduleTermsInFlight.clear();
+      selectionSchedulePromise = null;
+      if (scheduleCache) scheduleCache.selectionProbed = false;
+    }
     if (!preserveRendered) {
       renderAcademicScoreStatisticsLoading();
       for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
@@ -2385,9 +2413,7 @@
       renderCachedScheduleData();
       await refreshContext();
 
-      const sharedRemaining = selected === '__all__'
-        ? allTerms.filter((term) => term !== sharedPriority)
-        : [];
+      const sharedRemaining = allTerms.filter((term) => term !== sharedPriority);
       const scheduleRemaining = allTerms.filter((term) => (
         term !== schedulePriority && term !== currentScheduleTerm
       ));
@@ -2430,8 +2456,14 @@
   function bindEvents() {
     element(ACADEMIC_FULLSCREEN_BUTTON_KEY)?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
+      updateDisabledState();
       await chrome.storage.local.set({ [ACADEMIC_FULLSCREEN_BUTTON_KEY]: enabled });
       setMessage(enabled ? '已显示教务系统按钮' : '已隐藏教务系统按钮');
+    });
+    element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY)?.addEventListener('change', async (event) => {
+      const value = event.currentTarget.value === 'system' ? 'system' : 'graduation';
+      await chrome.storage.local.set({ [ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY]: value });
+      setMessage(value === 'system' ? '已使用教务系统图标' : '已使用毕业帽图标');
     });
     element('academicOptionsWideEnabled')?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
@@ -2469,9 +2501,11 @@
         const result = await send('ACADEMIC_LOGIN_WITH_PASSWORD', { studentId, password });
         if (!result?.ok) throw new Error(result?.message || '登录失败');
         element('academicPassword').value = '';
+        await persistAcademicDataCache();
         invalidateAcademicCaches();
         await refreshContext();
-        await loadAll();
+        const restored = await restoreAcademicDataCache().catch(() => false);
+        await loadAll({ preserveRendered: restored, refreshCached: restored });
         setMessage(`教务系统账号 ${studentId} 登录成功`);
       } catch (error) {
         setMessage(`教务系统登录失败：${String(error?.message || error)}`, false);
@@ -2492,23 +2526,30 @@
       const select = event.currentTarget;
       const studentId = String(event.currentTarget.value || '').trim();
       if (!studentId) return;
+      const previousStudentId = String(context?.studentId || '').trim();
       select.disabled = true;
       element('academicStudentId').value = studentId;
       setMessage(`正在切换至教务系统账号 ${studentId}…`);
       try {
+        await persistAcademicDataCache();
+        invalidateAcademicCaches();
+        const restored = await restoreAcademicDataCache(studentId).catch(() => false);
         const result = await send('ACADEMIC_SWITCH_ACCOUNT', { studentId });
         if (!result?.ok) {
           setMessage(`切换教务系统账号失败：${result?.message || '未知错误'}`, false);
+          invalidateAcademicCaches();
           await refreshContext();
+          await restoreAcademicDataCache(previousStudentId).catch(() => false);
           return;
         }
-        invalidateAcademicCaches();
         await refreshContext();
         setMessage(`已切换至教务系统账号 ${studentId}`);
-        void loadAll();
+        void loadAll({ preserveRendered: restored, refreshCached: restored });
       } catch (error) {
         setMessage(`切换教务系统账号失败：${String(error?.message || error)}`, false);
+        invalidateAcademicCaches();
         await refreshContext();
+        await restoreAcademicDataCache(previousStudentId).catch(() => false);
       } finally {
         select.disabled = false;
       }
@@ -2622,6 +2663,8 @@
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type === 'ACADEMIC_DATA_UPDATED') {
         const payload = message.payload || {};
+        const payloadStudentId = String(payload.studentId || '').trim();
+        if (payloadStudentId && payloadStudentId !== String(context?.studentId || '').trim()) return;
         if (payload.kind === 'score' || payload.kind === 'scores') {
           if (Array.isArray(payload.rows)) {
             const currentLabel = String((scoreSemesterOptions || [])
@@ -2669,15 +2712,15 @@
         if (status.status === 'mis-login-done') {
           element('bindAcademicSystemBtn').disabled = false;
           invalidateAcademicCaches();
-          refreshContext().then(loadAll);
+          void refreshContext().then(async () => {
+            const restored = await restoreAcademicDataCache().catch(() => false);
+            return loadAll({ preserveRendered: restored, refreshCached: restored });
+          });
           setMessage(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`);
         } else if (status.status === 'mis-login-cancelled') {
           element('bindAcademicSystemBtn').disabled = false;
           setMessage('已取消通过 MIS 登录教务系统', false);
         } else {
-          if (status.status === 'login-done' || status.status === 'credentials-saved') {
-            invalidateAcademicCaches();
-          }
           refreshContext();
         }
       }
@@ -2752,6 +2795,9 @@
     await chrome.storage.local.remove(['academicScheduleType', 'academicExamSemester']);
     const stored = await chrome.storage.local.get(Object.keys(DEFAULTS));
     element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = stored[ACADEMIC_FULLSCREEN_BUTTON_KEY] !== false;
+    element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = stored[ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY] === 'system'
+      ? 'system'
+      : 'graduation';
     element('academicOptionsWideEnabled').checked = stored.academicOptionsWideEnabled !== false;
     applyWideOption(stored.academicOptionsWideEnabled !== false);
     element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled === true;
@@ -2772,7 +2818,7 @@
     void autoLoginIfPossible().finally(async () => {
       await refreshContext();
       const restored = await restoreAcademicDataCache().catch(() => false);
-      await loadAll({ preserveRendered: restored });
+      await loadAll({ preserveRendered: restored, refreshCached: restored });
     });
     return true;
   }
@@ -2780,9 +2826,10 @@
   async function reset() {
     await chrome.storage.local.set(DEFAULTS);
     if (!initialized) return;
-    invalidateAcademicCaches();
+    invalidateAcademicCaches({ removeStored: true });
     element('academicScoreMonitorEnabled').checked = false;
     element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = true;
+    element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = 'graduation';
     element('academicOptionsWideEnabled').checked = true;
     applyWideOption(true);
     element('academicExamMonitorEnabled').checked = false;

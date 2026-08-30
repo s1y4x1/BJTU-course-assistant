@@ -33,6 +33,10 @@
 .academic-option-check { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .academic-option-check:first-of-type { margin-top:12px; }
 .academic-option-check input { width:auto; }
+.academic-fullscreen-button-icon-option { display:grid; grid-template-columns:auto minmax(120px,220px); align-items:center; gap:8px; margin:4px 0 8px 22px; }
+.academic-fullscreen-button-icon-option > label { margin:0; color:#475569; font-size:13px; }
+.academic-fullscreen-button-icon-option.is-disabled { opacity:.5; }
+.academic-fullscreen-button-icon-select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 #academicScoreMonitorIntervalEditor { padding-left:0; }
 .academic-score-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; }
 .academic-score-header > strong { font-size:15px; }
@@ -107,6 +111,8 @@
 .academic-course-hover-value { min-width:0; overflow-wrap:anywhere; }
 .academic-course-hover-field.is-multiline .academic-course-hover-value { white-space:pre-line; }
 html[data-color-scheme="dark"] .academic-options-card { border-color:#334155; background:#0f172a; }
+html[data-color-scheme="dark"] .academic-fullscreen-button-icon-option > label { color:#cbd5e1; }
+html[data-color-scheme="dark"] .academic-fullscreen-button-icon-select { border-color:#475569; background:#1e293b; color:#f8fafc; }
 html[data-color-scheme="dark"] .academic-account-row select { border-color:#475569; background:#111827; color:#f8fafc; }
 html[data-color-scheme="dark"] .academic-external-script-list { border-color:#475569; background:#111827; }
 html[data-color-scheme="dark"] .academic-external-script-item + .academic-external-script-item { border-top-color:#334155; }

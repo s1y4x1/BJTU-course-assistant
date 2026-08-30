@@ -51,6 +51,10 @@
     return document.getElementById(id);
   }
 
+  function syncEmbeddedPanelOpenState(open) {
+    if (!STANDALONE_CHAT) document.body.classList.toggle('qwen-chat-panel-open', open === true);
+  }
+
   function escapeHtmlQwen(value) {
     return String(value).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;',
@@ -977,6 +981,7 @@
           input.value = str;
           const panel = el(PANEL_ID);
           if (panel instanceof HTMLElement) panel.hidden = false;
+          syncEmbeddedPanelOpenState(true);
           const fab = el(FAB_ID);
           if (fab instanceof HTMLElement) fab.style.display = 'none';
           input.focus();
@@ -2022,6 +2027,7 @@
         if (enabled === false) {
           if (fab instanceof HTMLElement) fab.style.display = 'none';
           if (panel instanceof HTMLElement) panel.hidden = true;
+          syncEmbeddedPanelOpenState(false);
         } else if (fab instanceof HTMLElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
           fab.style.display = '';
         }
@@ -2120,6 +2126,7 @@
     } else {
       if (panel instanceof HTMLElement) panel.hidden = true;
       if (fab instanceof HTMLButtonElement) fab.style.display = '';
+      syncEmbeddedPanelOpenState(false);
     }
 
     if (messagesScroller instanceof HTMLElement) {
@@ -2238,6 +2245,7 @@
           panel.hidden = !panel.hidden;
           if (!panel.hidden) {
             fab.style.display = 'none';
+            syncEmbeddedPanelOpenState(true);
             void activateQwenPanel();
             if (historyNeedsInitialScroll) {
               scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
@@ -2246,6 +2254,7 @@
             if (input instanceof HTMLTextAreaElement) input.focus();
           } else {
             fab.style.display = '';
+            syncEmbeddedPanelOpenState(false);
           }
         }
       });
@@ -2283,6 +2292,7 @@
         }
         if (panel instanceof HTMLElement) panel.hidden = true;
         if (fab instanceof HTMLButtonElement) fab.style.display = '';
+        syncEmbeddedPanelOpenState(false);
       });
     }
     const newChatBtn = el('qwen-chat-new');

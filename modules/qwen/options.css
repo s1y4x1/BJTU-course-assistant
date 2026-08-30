@@ -19,13 +19,7 @@ html[data-color-scheme="dark"] .qwen-options-card {
 
 .qwen-sub-options {
   margin-top: 2px;
-  padding-left: 18px;
-}
-
-.qwen-sub-options .qwen-toggle-label,
-.qwen-sub-options .qwen-setting-label {
-  font-weight: 400;
-  font-size: 12px;
+  padding-left: 0;
 }
 
 .qwen-sub-options .qwen-model-select[disabled] {
@@ -47,7 +41,7 @@ html[data-color-scheme="dark"] .qwen-options-card {
 }
 
 .qwen-toggle-label {
-  font-weight: 600;
+  font-weight: 400;
   font-size: 14px;
   color: #1e293b;
   white-space: normal;
@@ -66,8 +60,8 @@ html[data-color-scheme="dark"] .qwen-toggle-label {
 
 .qwen-setting-label {
   flex: 0 0 auto;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 400;
   color: #1e293b;
 }
 
