@@ -21,6 +21,9 @@ html[data-color-scheme="dark"] .qwen-options-card {
   margin-top: 2px;
   padding-left: 0;
 }
+.qwen-fab-color-option { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:-4px 0 12px 22px; }
+.qwen-fab-color-modes { display:inline-flex; flex-wrap:wrap; }
+.qwen-fab-color-option.is-disabled { opacity:.5; }
 
 .qwen-sub-options .qwen-model-select[disabled] {
   cursor: not-allowed;

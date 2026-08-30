@@ -8,6 +8,7 @@
   const INTERVAL_KEY = 'mailMonitorIntervalMinutes';
   const LIST_LIMIT_KEY = 'mailListLimit';
   const FULLSCREEN_BUTTON_KEY = 'mailFullscreenButtonEnabled';
+  const FULLSCREEN_BUTTON_ICON_KEY = 'mailFullscreenButtonIcon';
   const LIST_LIMIT_INPUT_ID = 'mailListLimit';
   const STATUS_KEY = 'mailMonitorStatus';
 
@@ -48,6 +49,11 @@
   }
 
   function updateDisabledState() {
+    const fullscreenButtonEnabled = element(FULLSCREEN_BUTTON_KEY)?.checked === true;
+    const fullscreenButtonIconOption = element('mailFullscreenButtonIconOption');
+    fullscreenButtonIconOption?.classList.toggle('is-disabled', !fullscreenButtonEnabled);
+    const fullscreenButtonIcon = element(FULLSCREEN_BUTTON_ICON_KEY);
+    if (fullscreenButtonIcon instanceof HTMLSelectElement) fullscreenButtonIcon.disabled = !fullscreenButtonEnabled;
     const enabled = element(ENABLED_KEY)?.checked === true;
     const editor = element('mailMonitorIntervalEditor');
     editor?.classList.toggle('is-disabled', !enabled);
@@ -173,12 +179,17 @@
   async function refreshContext() {
     const [context, buttonSettings] = await Promise.all([
       send('MAIL_GET_CONTEXT'),
-      chrome.storage.local.get(FULLSCREEN_BUTTON_KEY)
+      chrome.storage.local.get([FULLSCREEN_BUTTON_KEY, FULLSCREEN_BUTTON_ICON_KEY])
     ]);
     const fullscreenButton = element(FULLSCREEN_BUTTON_KEY);
     if (fullscreenButton instanceof HTMLInputElement) {
       fullscreenButton.checked = buttonSettings?.[FULLSCREEN_BUTTON_KEY] !== false;
     }
+    const fullscreenButtonIcon = element(FULLSCREEN_BUTTON_ICON_KEY);
+    if (fullscreenButtonIcon instanceof HTMLSelectElement) {
+      fullscreenButtonIcon.value = buttonSettings?.[FULLSCREEN_BUTTON_ICON_KEY] === 'system' ? 'system' : 'envelope';
+    }
+    updateDisabledState();
     if (!context?.ok) return null;
     element(ENABLED_KEY).checked = context.enabled === true;
     setIntervalEditor(context.intervalMinutes, DEFAULT_INTERVAL_MINUTES);
@@ -246,8 +257,14 @@
   function bindEvents() {
     element(FULLSCREEN_BUTTON_KEY)?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
+      updateDisabledState();
       await chrome.storage.local.set({ [FULLSCREEN_BUTTON_KEY]: enabled });
       setMessage(enabled ? '已显示 BJTU 邮件系统按钮' : '已隐藏 BJTU 邮件系统按钮');
+    });
+    element(FULLSCREEN_BUTTON_ICON_KEY)?.addEventListener('change', async (event) => {
+      const value = event.currentTarget.value === 'system' ? 'system' : 'envelope';
+      await chrome.storage.local.set({ [FULLSCREEN_BUTTON_ICON_KEY]: value });
+      setMessage(value === 'system' ? '已使用邮箱网站图标' : '已使用信封图标');
     });
     element(ENABLED_KEY)?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
@@ -298,6 +315,12 @@
       if (changes[STATUS_KEY]) renderStatus(changes[STATUS_KEY].newValue);
       if (changes[FULLSCREEN_BUTTON_KEY] && element(FULLSCREEN_BUTTON_KEY)) {
         element(FULLSCREEN_BUTTON_KEY).checked = changes[FULLSCREEN_BUTTON_KEY].newValue !== false;
+        updateDisabledState();
+      }
+      if (changes[FULLSCREEN_BUTTON_ICON_KEY] && element(FULLSCREEN_BUTTON_ICON_KEY)) {
+        element(FULLSCREEN_BUTTON_ICON_KEY).value = changes[FULLSCREEN_BUTTON_ICON_KEY].newValue === 'system'
+          ? 'system'
+          : 'envelope';
       }
     });
     chrome.runtime.onMessage.addListener((message) => {
@@ -328,12 +351,14 @@
       [ENABLED_KEY]: true,
       [INTERVAL_KEY]: DEFAULT_INTERVAL_MINUTES,
       [LIST_LIMIT_KEY]: DEFAULT_LIST_LIMIT,
-      [FULLSCREEN_BUTTON_KEY]: true
+      [FULLSCREEN_BUTTON_KEY]: true,
+      [FULLSCREEN_BUTTON_ICON_KEY]: 'envelope'
     });
     await chrome.storage.local.remove([STATUS_KEY]);
     if (!initialized) return;
     element(ENABLED_KEY).checked = true;
     element(FULLSCREEN_BUTTON_KEY).checked = true;
+    element(FULLSCREEN_BUTTON_ICON_KEY).value = 'envelope';
     setIntervalEditor(DEFAULT_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES);
     const limitInput = element(LIST_LIMIT_INPUT_ID);
     if (limitInput instanceof HTMLInputElement) limitInput.value = String(DEFAULT_LIST_LIMIT);

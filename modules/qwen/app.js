@@ -46,6 +46,7 @@
   let panelActivationPromise = null;
   let panelActivated = false;
   let panelHistoryInitialized = false;
+  let fabColorMode = 'dark';
 
   function el(id) {
     return document.getElementById(id);
@@ -53,6 +54,20 @@
 
   function syncEmbeddedPanelOpenState(open) {
     if (!STANDALONE_CHAT) document.body.classList.toggle('qwen-chat-panel-open', open === true);
+  }
+
+  function applyFabColorMode(value = fabColorMode) {
+    fabColorMode = ['dark', 'light', 'system', 'extension'].includes(value) ? value : 'dark';
+    const systemDark = global.matchMedia?.('(prefers-color-scheme: dark)')?.matches === true;
+    const extensionDark = document.documentElement.dataset.colorScheme === 'dark';
+    const resolved = fabColorMode === 'system'
+      ? (systemDark ? 'dark' : 'light')
+      : (fabColorMode === 'extension' ? (extensionDark ? 'dark' : 'light') : fabColorMode);
+    const fab = el(FAB_ID);
+    if (fab instanceof HTMLElement) {
+      fab.dataset.colorMode = fabColorMode;
+      fab.dataset.colorScheme = resolved;
+    }
   }
 
   function escapeHtmlQwen(value) {
@@ -982,6 +997,7 @@
           const panel = el(PANEL_ID);
           if (panel instanceof HTMLElement) panel.hidden = false;
           syncEmbeddedPanelOpenState(true);
+          if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
           const fab = el(FAB_ID);
           if (fab instanceof HTMLElement) fab.style.display = 'none';
           input.focus();
@@ -2027,14 +2043,26 @@
         if (enabled === false) {
           if (fab instanceof HTMLElement) fab.style.display = 'none';
           if (panel instanceof HTMLElement) panel.hidden = true;
+          if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.remove?.(panel);
           syncEmbeddedPanelOpenState(false);
         } else if (fab instanceof HTMLElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
           fab.style.display = '';
         }
       };
-      void chrome.storage.local.get(['qwenEnabled']).then((data) => applyEnabled(data?.qwenEnabled !== false));
+      void chrome.storage.local.get(['qwenEnabled', 'qwenFabColorMode']).then((data) => {
+        applyEnabled(data?.qwenEnabled !== false);
+        applyFabColorMode(data?.qwenFabColorMode);
+      });
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes.qwenEnabled) applyEnabled(changes.qwenEnabled.newValue !== false);
+        if (area === 'local' && changes.qwenFabColorMode) applyFabColorMode(changes.qwenFabColorMode.newValue);
+      });
+      const systemTheme = global.matchMedia?.('(prefers-color-scheme: dark)');
+      systemTheme?.addEventListener?.('change', () => {
+        if (fabColorMode === 'system') applyFabColorMode();
+      });
+      global.addEventListener('bjtu-theme-change', () => {
+        if (fabColorMode === 'extension') applyFabColorMode();
       });
     }
 
@@ -2152,6 +2180,9 @@
     }
 
     if (!STANDALONE_CHAT && panel instanceof HTMLElement) {
+      panel.addEventListener('pointerdown', () => {
+        global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
+      }, { capture: true });
       const panelEdgeGap = 20;
       const syncPanelViewportHeight = () => {
         const availableHeight = Math.max(1, window.innerHeight - panelEdgeGap * 2);
@@ -2246,6 +2277,7 @@
           if (!panel.hidden) {
             fab.style.display = 'none';
             syncEmbeddedPanelOpenState(true);
+            global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
             void activateQwenPanel();
             if (historyNeedsInitialScroll) {
               scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
@@ -2255,6 +2287,7 @@
           } else {
             fab.style.display = '';
             syncEmbeddedPanelOpenState(false);
+            global.BjtuFullscreenWindowLayers?.remove?.(panel);
           }
         }
       });
@@ -2291,6 +2324,7 @@
           return;
         }
         if (panel instanceof HTMLElement) panel.hidden = true;
+        global.BjtuFullscreenWindowLayers?.remove?.(panel);
         if (fab instanceof HTMLButtonElement) fab.style.display = '';
         syncEmbeddedPanelOpenState(false);
       });

@@ -16,7 +16,7 @@ body {
 
 /* Toast Notifications */
 #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 2147483647; }
-.platform-qr-login-mask { z-index: 10006 !important; }
+.platform-qr-login-mask { z-index: 10010 !important; }
 .toast { min-width: 250px; padding: 12px 20px; margin-bottom: 10px; border-radius: 8px; background-color: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; animation: toastEnter 0.25s ease-out; font-size: 14px; color: #333; opacity: 1; cursor: copy; }
 .toast.success { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
 .toast.error { background-color: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }
@@ -1802,12 +1802,20 @@ body.qwen-fullscreen-button-visible:not(.qwen-chat-panel-open) .fullscreen-modul
     color: #fff;
     box-shadow: 0 4px 14px rgba(15, 23, 42, .25);
     cursor: pointer;
+    transition:transform .18s ease, opacity .18s ease, box-shadow .18s ease, background-color .18s ease;
 }
+.fullscreen-module-button.is-appearing { animation:fullscreenFabAppear .18s ease both; }
+.fullscreen-module-button.is-disappearing { animation:fullscreenFabDisappear .16s ease both; pointer-events:none; }
+@keyframes fullscreenFabAppear { from { opacity:0; transform:scale(.55); } to { opacity:1; transform:scale(1); } }
+@keyframes fullscreenFabDisappear { from { opacity:1; transform:scale(1); } to { opacity:0; transform:scale(.55); } }
 .mail-fullscreen-button { background:#2563eb; box-shadow:0 4px 14px rgba(37,99,235,.35); }
 .mail-fullscreen-button:hover { background:#1d4ed8; }
 .mail-fullscreen-button img { display:block; width:24px; height:24px; }
+.mail-fullscreen-button-icon[hidden] { display:none !important; }
 .academic-fullscreen-button { background:#438EB9; box-shadow:0 4px 14px rgba(67,142,185,.35); }
 .academic-fullscreen-button:hover { background:#36799e; }
+.academic-fullscreen-button.use-system-icon { background:#EE4036; box-shadow:0 4px 14px rgba(238,64,54,.35); }
+.academic-fullscreen-button.use-system-icon:hover { background:#d9362d; }
 .academic-fullscreen-button img { display:block; width:26px; height:26px; object-fit:contain; }
 .academic-fullscreen-button-icon[hidden] { display:none !important; }
 .fullscreen-module-button.is-loading::after {

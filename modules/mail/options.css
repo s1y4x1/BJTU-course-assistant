@@ -2,11 +2,17 @@
 .mail-option-check { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .mail-option-check:first-of-type { margin-top:12px; }
 .mail-option-check input { width:auto; }
+.mail-fullscreen-button-icon-option { display:grid; grid-template-columns:auto minmax(120px,220px); align-items:center; gap:8px; margin:4px 0 8px 22px; }
+.mail-fullscreen-button-icon-option > label { margin:0; color:#475569; font-size:13px; }
+.mail-fullscreen-button-icon-option.is-disabled { opacity:.5; }
+.mail-fullscreen-button-icon-select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 #mailMonitorIntervalEditor { padding-left:0; }
 .mail-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 2px; }
 #bindMailSystemBtn { background:#16a34a; }
 .mail-user-info { color:#64748b; font-size:12px; overflow-wrap:anywhere; }
 html[data-color-scheme="dark"] .mail-user-info { color:#cbd5e1; }
+html[data-color-scheme="dark"] .mail-fullscreen-button-icon-option > label { color:#cbd5e1; }
+html[data-color-scheme="dark"] .mail-fullscreen-button-icon-select { border-color:#475569; background:#1e293b; color:#f8fafc; }
 .mail-schedule-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; flex-wrap:wrap; }
 .mail-schedule-header > strong { font-size:15px; }
 .mail-schedule-controls { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:6px; }

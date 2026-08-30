@@ -26,10 +26,25 @@
     if (maxIterations instanceof HTMLInputElement) maxIterations.disabled = value === true;
   }
 
+  function applyFabColorMode(value) {
+    const mode = ['dark', 'light', 'system', 'extension'].includes(value) ? value : 'dark';
+    document.querySelectorAll('#qwenFabColorMode [data-value]').forEach((button) => {
+      button.classList.toggle('theme-mode-btn--active', button.dataset.value === mode);
+    });
+  }
+
+  function applyEnabledState(enabled) {
+    const option = document.getElementById('qwenFabColorOption');
+    option?.classList.toggle('is-disabled', !enabled);
+    option?.querySelectorAll('button').forEach((button) => { button.disabled = !enabled; });
+  }
+
   async function refresh() {
     const status = await send('QWEN_GET_STATUS');
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
+    applyEnabledState(status.enabled !== false);
+    applyFabColorMode(status.fabColorMode);
     const thinking = document.getElementById('qwenThinkingEnabled');
     if (thinking instanceof HTMLInputElement) thinking.checked = status.thinkingEnabled === true;
     const maxIterations = document.getElementById('qwenMaxIterations');
@@ -75,11 +90,23 @@
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) {
       toggle.addEventListener('change', () => {
+        applyEnabledState(toggle.checked === true);
         void send('QWEN_SETTINGS_SET', { enabled: toggle.checked === true }).then((response) => {
           setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
         });
       });
     }
+
+    document.getElementById('qwenFabColorMode')?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-value]');
+      if (!(button instanceof HTMLButtonElement)) return;
+      const value = button.dataset.value;
+      if (!['dark', 'light', 'system', 'extension'].includes(value)) return;
+      applyFabColorMode(value);
+      void send('QWEN_SETTINGS_SET', { fabColorMode: value }).then((response) => {
+        setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
+      });
+    });
 
     const standaloneLink = document.getElementById('qwenOpenChatStandalone');
     if (standaloneLink instanceof HTMLAnchorElement) {
@@ -125,7 +152,7 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
+    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'dark', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
     void refresh();
     void refreshOperations();
   }

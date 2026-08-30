@@ -2,7 +2,7 @@
 (function initBjtuQwenBackground(global) {
   'use strict';
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
   const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
@@ -197,6 +197,9 @@
     const stored = await chrome.storage.local.get(SETTINGS_KEYS).catch(() => ({}));
     return {
       enabled: stored.qwenEnabled !== false,
+      fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.qwenFabColorMode)
+        ? stored.qwenFabColorMode
+        : 'dark',
       modelId: String(stored.qwenModelId || ''),
       enabledOperations: Array.isArray(stored.qwenEnabledOperations)
         ? stored.qwenEnabledOperations
@@ -211,6 +214,11 @@
   async function saveSettings(patch) {
     const next = {};
     if (typeof patch?.enabled === 'boolean') next.qwenEnabled = patch.enabled;
+    if (patch?.fabColorMode !== undefined) {
+      next.qwenFabColorMode = ['dark', 'light', 'system', 'extension'].includes(patch.fabColorMode)
+        ? patch.fabColorMode
+        : 'dark';
+    }
     if (patch?.modelId !== undefined) next.qwenModelId = String(patch.modelId || '');
     if (patch?.enabledOperations !== undefined) {
       next.qwenEnabledOperations = Array.isArray(patch.enabledOperations)
