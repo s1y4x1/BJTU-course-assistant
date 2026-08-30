@@ -766,19 +766,22 @@ let moocLoginAssistPopupTabId = null;
       name: String(course?.name || ''),
       schoolName: String(course?.schoolName || ''),
       url: String(course?.url || ''),
-      teachers: (Array.isArray(course?.teachers) ? course.teachers : []).map((teacher) => ({
-        name: String(typeof teacher === 'string' ? teacher : (teacher?.name || '')).trim(),
-        url: (() => {
-          try { return typeof teacher !== 'string' && teacher?.href ? new URL(String(teacher.href), 'https://www.icourse163.org/').href : ''; } catch { return ''; }
-        })()
-      })).filter((teacher) => teacher.name),
       taskCount: Array.isArray(course?.tasks) ? course.tasks.length : 0,
       loaded: course?.detailLoaded === true
     };
   }
 
-  function cachedAssignment(course, task, includeDetail = false) {
-    const item = {
+  function cachedTeachers(course) {
+    return (Array.isArray(course?.teachers) ? course.teachers : []).map((teacher) => ({
+        name: String(typeof teacher === 'string' ? teacher : (teacher?.name || '')).trim(),
+        url: (() => {
+          try { return typeof teacher !== 'string' && teacher?.href ? new URL(String(teacher.href), 'https://www.icourse163.org/').href : ''; } catch { return ''; }
+        })()
+      })).filter((teacher) => teacher.name);
+  }
+
+  function cachedAssignment(course, task) {
+    return {
       id: String(task?.id || ''),
       title: String(task?.title || ''),
       type: typeText(task?.type),
@@ -790,8 +793,6 @@ let moocLoginAssistPopupTabId = null;
       totalScore: task?.totalScore ?? null,
       actionUrl: taskUrl(course, task) || ''
     };
-    if (includeDetail) item.detail = task?.detail || null;
-    return item;
   }
 
   function findCachedCourse(courseId) {
@@ -802,7 +803,7 @@ let moocLoginAssistPopupTabId = null;
     return course;
   }
 
-  function cachedAssignments(args = {}, requestedCourseId = '', includeDetail = false) {
+  function cachedAssignments(args = {}, requestedCourseId = '') {
     assertCachedPlatformReady();
     const statusFilter = String(args?.status || 'all').trim().toLowerCase();
     const typeFilter = String(args?.type || 'all').trim();
@@ -810,12 +811,11 @@ let moocLoginAssistPopupTabId = null;
     const items = [];
     for (const course of sourceCourses) {
       for (const task of (Array.isArray(course?.tasks) ? course.tasks : [])) {
-        const item = cachedAssignment(course, task, includeDetail);
+        const item = cachedAssignment(course, task);
         if (typeFilter !== 'all' && item.type !== typeFilter) continue;
         if (statusFilter !== 'all' && item.status !== statusFilter) continue;
         items.push(requestedCourseId ? item : {
           key: `mooc:${course.id}:${task.id}`,
-          platform: '中国大学MOOC',
           courseName: String(course.name || ''),
           ...item
         });
@@ -852,13 +852,7 @@ let moocLoginAssistPopupTabId = null;
     },
     teachersOf(args = {}) {
       assertCachedPlatformReady();
-      return cachedCourse(findCachedCourse(args?.courseId)).teachers;
-    },
-    quizPapersOf(args = {}) {
-      const contentType = Number(args?.contentType || 0);
-      const type = ({ 1: '单元测试', 2: '单元测试', 3: '考试', 4: '单元测试', 5: '单元作业' })[contentType] || 'all';
-      return cachedAssignments({ type }, String(args?.courseId || ''), true)
-        .filter((item) => item.type !== '单元作业' || contentType === 5);
+      return cachedTeachers(findCachedCourse(args?.courseId));
     },
     restore(value) {
       courses = Array.isArray(value) ? value : [];
@@ -999,8 +993,7 @@ globalThis.BjtuMoocPageApi = Object.freeze({
   courseList: () => window.BjtuMoocPlatform.courseList(),
   assignments: (args) => window.BjtuMoocPlatform.assignments(args),
   assignments_of_: (args) => window.BjtuMoocPlatform.assignmentsOf(args),
-  teachers_of_: (args) => window.BjtuMoocPlatform.teachersOf(args),
-  quizPapers_of_: (args) => window.BjtuMoocPlatform.quizPapersOf(args)
+  teachers_of_: (args) => window.BjtuMoocPlatform.teachersOf(args)
 });
 
 if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {

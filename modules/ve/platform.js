@@ -2336,6 +2336,11 @@ async function fetchCourseArchiveItems(courseId) {
   });
   if (isLikelyLoginPageHtml(text, res?.url)) return { loginRequired: true, items: [] };
   const data = parseVeJson(text);
+  if (String(data?.STATUS ?? '') === '3') {
+    const message = String(data?.message ?? '');
+    if (message) showToast(message, 'error', 3000);
+    return { loginRequired: false, accessDenied: true, message, items: [] };
+  }
   const rawItems = Array.isArray(data?.result?.[0]?.resList) ? data.result[0].resList : [];
   const items = rawItems.map((raw, index) => ({
     id: `archive-${cid}-${String(raw?.id ?? index)}`,

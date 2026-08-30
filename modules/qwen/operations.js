@@ -535,17 +535,17 @@
     return 'pending';
   }
 
-  function buildAssignmentItem(key, platform, courseName, title, type, status, deadline, actionUrl) {
-    return {
+  function buildAssignmentItem(key, courseName, title, type, status, deadline, actionUrl) {
+    const item = {
       key: String(key || ''),
-      platform: String(platform || ''),
       courseName: String(courseName || ''),
       title: String(title || ''),
-      type: String(type || 'all'),
       status: String(status || 'pending'),
       deadline: Number(deadline) || 0,
       actionUrl: String(actionUrl || '')
     };
+    if (type && type !== 'all') item.type = String(type);
+    return item;
   }
 
   const VE_SUBTYPE_LABELS = { 0: '作业', 1: '课程报告', 2: '实验' };
@@ -739,7 +739,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.courseList()`',
         '',
-        '**返回示例**：[{"id":"...","name":"高等数学","teacherName":"..."}]',
+        '**返回示例**：[{"id":"...","name":"高等数学"}]',
         '返回的每一项至少包含 id（课程ID）、name（课程名）。'
       ].join('\n'),
       async run(args) {
@@ -752,8 +752,7 @@ name: 've.accounts',
         const courses = await core.fetchCourses(xqCode);
         return (Array.isArray(courses) ? courses : []).map((course) => ({
           id: core.getCourseId(course),
-          name: core.getCourseName(course),
-          teacherName: String(course?.teacher_name || course?.teacherName || course?.fzr || '')
+          name: core.getCourseName(course)
         }));
       }
     },
@@ -927,7 +926,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"...","platform":"智慧课程平台","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"...","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -952,7 +951,7 @@ name: 've.accounts',
             const title = String(hw?.title || hw?.workTitle || hw?.courseNoteTitle || '未命名作业').trim();
             items.push(buildAssignmentItem(
               `ve:${courseId}:${hw?.id ?? hw?.noteId ?? hw?.upId ?? title}`,
-              '智慧课程平台', core.getCourseName(course), title, type, st, deadline,
+              core.getCourseName(course), title, type, st, deadline,
               veAssignmentActionUrl(course, courseId, hw?.subType ?? hw?.sub_type)
             ));
           }
@@ -1188,7 +1187,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments({status: "pending", type: "试卷"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"ykt:...:...","platform":"雨课堂","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"ykt:...:...","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1213,7 +1212,7 @@ name: 've.teachers_of_',
             const st = computeAssignmentStatus(done, overdue);
             if (status !== 'all' && st !== status) continue;
             items.push(buildAssignmentItem(
-              `ykt:${cid}:${h?.id}`, '雨课堂', String(course?.courseName || ''),
+              `ykt:${cid}:${h?.id}`, String(course?.courseName || ''),
               String(h?.title || ''), type, st, deadline, String(h?.link || '')
             ));
           }
@@ -1258,7 +1257,11 @@ name: 've.teachers_of_',
         const { ok: _ok, accounts, ...rest } = value && typeof value === 'object' ? value : {};
         return {
           ...rest,
-          accounts: (Array.isArray(accounts) ? accounts : []).map(({ updatedAt: _updatedAt, ...account }) => account)
+          accounts: (Array.isArray(accounts) ? accounts : []).map(({
+            updatedAt: _updatedAt,
+            lastLoginAt: _lastLoginAt,
+            ...account
+          }) => account)
         };
       }
     },
@@ -1457,7 +1460,17 @@ name: 've.teachers_of_',
         '**返回示例**：{"loginName":"24281271","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}'
       ].join('\n'),
       async run() {
-        return casInvoke('currentAccount');
+        const value = await casInvoke('currentAccount');
+        if (!value || typeof value !== 'object') return value;
+        const { ok: _ok, accounts, ...rest } = value;
+        return {
+          ...rest,
+          accounts: (Array.isArray(accounts) ? accounts : []).map(({
+            updatedAt: _updatedAt,
+            lastLoginAt: _lastLoginAt,
+            ...account
+          }) => account)
+        };
       }
     },
     {
@@ -1631,7 +1644,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mail.user()`',
         '',
-        '**返回示例**：{"ok":true,"email":"24281271@bjtu.edu.cn","trueName":"苏义新","ou":"student"}'
+        '**返回示例**：{"email":"24281271@bjtu.edu.cn","trueName":"苏义新","ou":"student"}'
       ].join('\n'),
       async run() {
         const result = await mailInvoke('user');
@@ -1656,35 +1669,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.courseList()`',
         '',
-        '**返回示例**：`[{"id":"...","name":"课程名","schoolName":"学校","url":"https://...","teachers":[{"name":"老师","url":"https://..."}],"taskCount":3,"loaded":true}]`'
+        '**返回示例**：`[{"id":"...","name":"课程名","schoolName":"学校","url":"https://...","taskCount":3,"loaded":true}]`'
       ].join('\n'),
       async run() {
         return pageInvoke('mooc', 'courseList', {}, 120000);
-      }
-    },
-    {
-      module: 'mooc',
-      name: 'mooc.quizPaper_of_',
-      label: 'MOOC 测验试卷',
-      summary: '获取中国大学MOOC测验试卷',
-      doc: [
-        '## mooc.quizPaper_of_ —— MOOC 测验试卷',
-        '',
-        '直接读取 app.html 中指定课程已缓存的测验、考试或作业详情，不会打开或请求 MOOC 页面。courseId 可先调用 mooc.courseList 获取。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填","contentType":1,"可选测验类型，1=随堂测 2=测验 3=考试 4=练习 5=作业"}',
-        '',
-        '**调用示例**：`mooc.quizPaper_of_({courseId: "xxx"})`',
-        '',
-        '**返回示例**：`[{"id":"...","title":"单元测试","type":"单元测试","status":"pending","detail":{"questions":[]}}]`'
-      ].join('\n'),
-      async run(args) {
-        const courseId = String(args?.courseId || '').trim();
-        if (!courseId) throw new Error('缺少参数 courseId，请先调用 mooc.courseList 获取课程ID');
-        return pageInvoke('mooc', 'quizPapers_of_', {
-          courseId,
-          contentType: Number(args?.contentType) || undefined
-        }, 120000);
       }
     },
     {
@@ -1767,7 +1755,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.assignments({status: "pending", type: "单元作业"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"mooc:...:...","platform":"中国大学MOOC","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"mooc:...:...","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const value = await pageInvoke('mooc', 'assignments', { status: String(args?.status || 'all'), type: String(args?.type || 'all') }, 240000);
@@ -1988,7 +1976,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.assignments({status: "pending"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"mrjzy:...:...","platform":"每日交作业","courseName":"课程名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"mrjzy:...:...","courseName":"课程名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -2013,8 +2001,8 @@ name: 've.teachers_of_',
               const st = computeAssignmentStatus(done, overdue);
               if (status !== 'all' && st !== status) continue;
               items.push(buildAssignmentItem(
-                `mrjzy:${classNum}:${h?.workId}`, '每日交作业', String(course?.divClass || ''),
-                String(h?.title || ''), 'all', st, deadline, String(h?.link || '')
+                `mrjzy:${classNum}:${h?.workId}`, String(course?.divClass || ''),
+                String(h?.title || ''), '', st, deadline, String(h?.link || '')
               ));
             }
           } catch (error) {
@@ -2129,7 +2117,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.assignments({status: "pending"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"jlgj:...:...","platform":"接龙管家","courseName":"群组名","title":"作业名","type":"all","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"jlgj:...:...","courseName":"群组名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -2154,8 +2142,8 @@ name: 've.teachers_of_',
               const st = computeAssignmentStatus(done, overdue);
               if (status !== 'all' && st !== status) continue;
               items.push(buildAssignmentItem(
-                `jlgj:${groupId}:${h?.threadId}`, '接龙管家', String(course?.name || ''),
-                String(h?.title || ''), 'all', st, deadline, String(h?.link || '')
+                `jlgj:${groupId}:${h?.threadId}`, String(course?.name || ''),
+                String(h?.title || ''), '', st, deadline, String(h?.link || '')
               ));
             }
           } catch (error) {
@@ -2232,12 +2220,20 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.courseList()`',
         '',
-        '**返回示例**：[{"classroomId":"...","name":"课程名","sign":"...","teachers":["老师"],"status":1,"totalSchedule":10,"score":90,"taskCount":5}]'
+        '**返回示例**：[{"classroomId":"...","name":"课程名","sign":"...","status":1,"totalSchedule":10,"score":90,"taskCount":5}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('xuetangx', 'courseList', {}, 120000);
         if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('学堂在线未登录，请先调用 xuetangx.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
-        return Array.isArray(value?.courses) ? value.courses : [];
+        return (Array.isArray(value?.courses) ? value.courses : []).map((course) => ({
+          classroomId: String(course?.classroomId || ''),
+          name: String(course?.name || ''),
+          sign: String(course?.sign || ''),
+          status: Number(course?.status || 0),
+          totalSchedule: Number(course?.totalSchedule || 0),
+          score: Number(course?.score || 0),
+          taskCount: Number(course?.taskCount || 0)
+        }));
       }
     },
     {
@@ -2289,7 +2285,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"xuetangx:...:...","platform":"学堂在线","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"xuetangx:...:...","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -2316,7 +2312,7 @@ name: 've.teachers_of_',
               const st = computeAssignmentStatus(done, overdue);
               if (status !== 'all' && st !== status) continue;
               items.push(buildAssignmentItem(
-                `xuetangx:${classroomId}:${h?.id}`, '学堂在线', String(course?.name || ''),
+                `xuetangx:${classroomId}:${h?.id}`, String(course?.name || ''),
                 String(h?.title || ''), type, st, deadline, String(h?.link || '')
               ));
             }
@@ -2342,7 +2338,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.teachers_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：`[{"name":"老师"}]`'
+        '**返回示例**：`["老师"]`'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -2355,8 +2351,8 @@ name: 've.teachers_of_',
           .find((item) => String(item?.classroomId || '') === classroomId);
         if (!course) throw new Error(`教室ID无效：${classroomId} 不在学堂在线缓存课程列表中，请先调用 xuetangx.courseList 获取有效ID`);
         return (Array.isArray(course?.teachers) ? course.teachers : [])
-          .map((name) => ({ name: String(name || '').trim() }))
-          .filter((teacher) => teacher.name);
+          .map((name) => String(name || '').trim())
+          .filter(Boolean);
       }
     },
     {
@@ -2499,14 +2495,14 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`theme.get()`',
         '',
-        '**返回示例**：{"ok":true,"mode":"system"}'
+        '**返回示例**：{"mode":"system"}'
       ].join('\n'),
       async run() {
         const stored = await chrome.storage.local.get(['themeMode']).catch(() => ({}));
         const mode = ['light', 'dark'].includes(String(stored?.themeMode))
           ? String(stored.themeMode)
           : 'system';
-        return { ok: true, mode };
+        return { mode };
       }
     },
     {
@@ -2523,7 +2519,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`theme.set({mode: "dark"})`；`theme.set({mode: "system"})`',
         '',
-        '**返回示例**：{"ok":true,"mode":"dark"}'
+        '**返回示例**：{"mode":"dark"}'
       ].join('\n'),
       async run(args) {
         const key = String(args?.mode ?? '').trim();
@@ -2535,7 +2531,7 @@ name: 've.teachers_of_',
         const mode = aliases[key] || aliases[key.toLowerCase()];
         if (!mode) throw new Error('mode 仅支持 light / dark / system');
         await chrome.storage.local.set({ themeMode: mode });
-        return { ok: true, mode };
+        return { mode };
       }
     },
     {
@@ -2599,10 +2595,10 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`reminder.get()`',
         '',
-        '**返回示例**：{"ok":true,"points":[1440,120,30]}'
+        '**返回示例**：{"points":[1440,120,30]}'
       ].join('\n'),
       async run() {
-        return { ok: true, points: await loadReminderPoints() };
+        return { points: await loadReminderPoints() };
       }
     },
     {
@@ -2619,7 +2615,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`reminder.set({minutes: [1440, 30]})`',
         '',
-        '**返回示例**：{"ok":true,"points":[1440,30]}'
+        '**返回示例**：{"points":[1440,30]}'
       ].join('\n'),
       async run(args) {
         const raw = args?.minutes;
@@ -2628,7 +2624,7 @@ name: 've.teachers_of_',
         const points = normalizeReminderMinutes(raw, null);
         if (!points.length) throw new Error('minutes 中没有合法值（需为 1~525600 的数字）');
         await chrome.storage.local.set({ homeworkReminderMinutes: points });
-        return { ok: true, points };
+        return { points };
       }
     },
     {
@@ -2645,7 +2641,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`reminder.add({minutes: 30})`；`reminder.add({minutes: [1440, 30]})`',
         '',
-        '**返回示例**：{"ok":true,"points":[1440,120,30],"added":[1440,30],"unchanged":[]}'
+        '**返回示例**：{"points":[1440,120,30],"added":[1440,30],"unchanged":[]}'
       ].join('\n'),
       async run(args) {
         const minutes = requireReminderMinutes(args);
@@ -2654,7 +2650,7 @@ name: 've.teachers_of_',
         const unchanged = minutes.filter((value) => points.includes(value));
         const next = normalizeReminderMinutes([...points, ...added], points);
         if (added.length) await chrome.storage.local.set({ homeworkReminderMinutes: next });
-        return { ok: true, points: next, added, unchanged };
+        return { points: next, added, unchanged };
       }
     },
     {
@@ -2671,7 +2667,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`reminder.del({minutes: 120})`；`reminder.del({minutes: [120, 30]})`',
         '',
-        '**返回示例**：{"ok":true,"points":[1440],"removed":[120,30],"missing":[]}'
+        '**返回示例**：{"points":[1440],"removed":[120,30],"missing":[]}'
       ].join('\n'),
       async run(args) {
         const minutes = requireReminderMinutes(args);
@@ -2681,7 +2677,7 @@ name: 've.teachers_of_',
         const targets = new Set(removed);
         const next = points.filter((item) => !targets.has(item));
         if (removed.length) await chrome.storage.local.set({ homeworkReminderMinutes: next });
-        return { ok: true, points: next, removed, missing };
+        return { points: next, removed, missing };
       }
     },
     {
@@ -2698,7 +2694,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`reminder.enabled()`；`reminder.enabled({enabled: false})`；`reminder.enabled(false)` 也接受直接传布尔值',
         '',
-        '**返回示例**：{"ok":true,"enabled":false}'
+        '**返回示例**：{"enabled":false}'
       ].join('\n'),
       async run(args) {
         let raw = typeof args === 'boolean'
@@ -2706,7 +2702,7 @@ name: 've.teachers_of_',
           : (args && Object.prototype.hasOwnProperty.call(args, 'enabled') ? args.enabled : undefined);
         if (raw === undefined || raw === null || String(raw).trim() === '') {
           const stored = await chrome.storage.local.get(['homeworkReminderEnabled']).catch(() => ({}));
-          return { ok: true, enabled: stored?.homeworkReminderEnabled !== false };
+          return { enabled: stored?.homeworkReminderEnabled !== false };
         }
         if (typeof raw !== 'boolean') {
           if (!['true', 'false'].includes(String(raw).trim().toLowerCase())) {
@@ -2715,7 +2711,7 @@ name: 've.teachers_of_',
           raw = String(raw).trim().toLowerCase() === 'true';
         }
         await chrome.storage.local.set({ homeworkReminderEnabled: raw });
-        return { ok: true, enabled: raw };
+        return { enabled: raw };
       }
     }
   ];
