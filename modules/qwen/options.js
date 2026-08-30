@@ -2,6 +2,9 @@
   'use strict';
 
   let initialized = false;
+  let selectedFabColorMode = 'extension';
+  let extensionThemeMode = 'system';
+  const systemThemeMedia = global.matchMedia?.('(prefers-color-scheme: dark)');
   let setMessage = (text, ok = true) => {
     const message = document.getElementById('msg');
     if (message instanceof HTMLElement) {
@@ -27,10 +30,30 @@
   }
 
   function applyFabColorMode(value) {
-    const mode = ['dark', 'light', 'system', 'extension'].includes(value) ? value : 'dark';
-    document.querySelectorAll('#qwenFabColorMode [data-value]').forEach((button) => {
-      button.classList.toggle('theme-mode-btn--active', button.dataset.value === mode);
-    });
+    selectedFabColorMode = ['dark', 'light', 'system', 'extension'].includes(value) ? value : 'extension';
+    const buttons = [...document.querySelectorAll('#qwenFabColorMode [data-value]')];
+    const buttonFor = (mode) => buttons.find((button) => button.dataset.value === mode);
+    buttons.forEach((button) => button.classList.remove(
+      'theme-mode-btn--active',
+      'theme-mode-btn--system-active',
+      'qwen-fab-color-chain-70',
+      'qwen-fab-color-resolved-70',
+      'qwen-fab-color-resolved-40'
+    ));
+    buttonFor(selectedFabColorMode)?.classList.add('theme-mode-btn--active');
+    const systemResolved = systemThemeMedia?.matches ? 'dark' : 'light';
+    if (selectedFabColorMode === 'system') {
+      // 与扩展「外观」一致：系统是主选项，当前解析出的深/浅色用内框标记。
+      buttonFor(systemResolved)?.classList.add('theme-mode-btn--system-active');
+    } else if (selectedFabColorMode === 'extension') {
+      const extensionResolved = extensionThemeMode === 'system' ? systemResolved : extensionThemeMode;
+      if (extensionThemeMode === 'system') {
+        buttonFor('system')?.classList.add('qwen-fab-color-chain-70');
+        buttonFor(extensionResolved)?.classList.add('qwen-fab-color-resolved-40');
+      } else {
+        buttonFor(extensionResolved)?.classList.add('qwen-fab-color-resolved-70');
+      }
+    }
   }
 
   function applyEnabledState(enabled) {
@@ -40,7 +63,11 @@
   }
 
   async function refresh() {
-    const status = await send('QWEN_GET_STATUS');
+    const [status, themeSettings] = await Promise.all([
+      send('QWEN_GET_STATUS'),
+      chrome.storage.local.get('themeMode').catch(() => ({}))
+    ]);
+    extensionThemeMode = global.BjtuTheme?.normalizeMode(themeSettings?.themeMode) || 'system';
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
     applyEnabledState(status.enabled !== false);
@@ -152,15 +179,21 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'dark', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
+    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
     void refresh();
     void refreshOperations();
   }
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local' || !changes.qwenAlwaysAllow) return;
-    applyAlwaysAllowState(changes.qwenAlwaysAllow.newValue === true);
+    if (areaName !== 'local') return;
+    if (changes.qwenAlwaysAllow) applyAlwaysAllowState(changes.qwenAlwaysAllow.newValue === true);
+    if (changes.qwenFabColorMode) applyFabColorMode(changes.qwenFabColorMode.newValue);
+    if (changes.themeMode) {
+      extensionThemeMode = global.BjtuTheme?.normalizeMode(changes.themeMode.newValue) || 'system';
+      applyFabColorMode(selectedFabColorMode);
+    }
   });
+  systemThemeMedia?.addEventListener?.('change', () => applyFabColorMode(selectedFabColorMode));
 
   global.BjtuQwenOptions = { init, reset };
   global.BjtuOptionsModules?.register('qwen', global.BjtuQwenOptions);

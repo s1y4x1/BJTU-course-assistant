@@ -46,7 +46,7 @@
   let panelActivationPromise = null;
   let panelActivated = false;
   let panelHistoryInitialized = false;
-  let fabColorMode = 'dark';
+  let fabColorMode = 'extension';
 
   function el(id) {
     return document.getElementById(id);
@@ -57,7 +57,7 @@
   }
 
   function applyFabColorMode(value = fabColorMode) {
-    fabColorMode = ['dark', 'light', 'system', 'extension'].includes(value) ? value : 'dark';
+    fabColorMode = ['dark', 'light', 'system', 'extension'].includes(value) ? value : 'extension';
     const systemDark = global.matchMedia?.('(prefers-color-scheme: dark)')?.matches === true;
     const extensionDark = document.documentElement.dataset.colorScheme === 'dark';
     const resolved = fabColorMode === 'system'

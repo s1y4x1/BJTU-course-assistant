@@ -22,8 +22,29 @@ html[data-color-scheme="dark"] .qwen-options-card {
   padding-left: 0;
 }
 .qwen-fab-color-option { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:-4px 0 12px 22px; }
+.qwen-fab-color-option > .qwen-setting-label { font-size:12px; }
 .qwen-fab-color-modes { display:inline-flex; flex-wrap:wrap; }
 .qwen-fab-color-option.is-disabled { opacity:.5; }
+.qwen-fab-color-modes .qwen-fab-color-chain-70 {
+  border-color:rgba(37,99,235,.7);
+  box-shadow:0 0 0 1px rgba(37,99,235,.7);
+}
+.qwen-fab-color-modes .qwen-fab-color-resolved-70 {
+  box-shadow:inset 0 0 0 2px rgba(37,99,235,.7);
+}
+.qwen-fab-color-modes .qwen-fab-color-resolved-40 {
+  box-shadow:inset 0 0 0 2px rgba(37,99,235,.4);
+}
+html[data-color-scheme="dark"] .qwen-fab-color-modes .qwen-fab-color-chain-70 {
+  border-color:rgba(59,130,246,.7);
+  box-shadow:0 0 0 1px rgba(59,130,246,.7);
+}
+html[data-color-scheme="dark"] .qwen-fab-color-modes .qwen-fab-color-resolved-70 {
+  box-shadow:inset 0 0 0 2px rgba(59,130,246,.7);
+}
+html[data-color-scheme="dark"] .qwen-fab-color-modes .qwen-fab-color-resolved-40 {
+  box-shadow:inset 0 0 0 2px rgba(59,130,246,.4);
+}
 
 .qwen-sub-options .qwen-model-select[disabled] {
   cursor: not-allowed;
