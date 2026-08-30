@@ -249,9 +249,20 @@
 
   async function loadAcademicScoreStatistics(args) {
     const value = await loadAcademicScoreRows(args);
-    const statistics = requireGlobal('BjtuAcademicScoreStatistics').calculate(value?.rows);
-    if (!statistics) throw new Error('所选学期没有可参与计算的课程成绩');
-    return statistics;
+    const calculator = requireGlobal('BjtuAcademicScoreStatistics');
+    const rows = Array.isArray(value?.rows) ? value.rows : [];
+    const overall = calculator.calculate(rows);
+    if (!overall) throw new Error('所选学期没有可参与计算的课程成绩');
+    const selectedSemesters = Array.isArray(value?.selectedSemesters) ? value.selectedSemesters : [];
+    const semesters = selectedSemesters.map((semester) => {
+      const label = String(semester?.label || '').trim();
+      return {
+        label,
+        zxjxjhh: String(semester?.zxjxjhh || ''),
+        statistics: calculator.calculate(rows.filter((row) => String(row?.academicYear || '').trim() === label))
+      };
+    });
+    return { overall, semesters };
   }
 
   const CAS_DIRECT = {
@@ -300,7 +311,9 @@
   }
 
   function requireReminderMinutes(args) {
-    const raw = args?.minutes;
+    const raw = Array.isArray(args) || typeof args === 'number' || typeof args === 'string'
+      ? args
+      : args?.minutes;
     if (raw === undefined || raw === null || (!Array.isArray(raw) && String(raw).trim() === '')) {
       throw new Error('缺少参数 minutes（提前的分钟数或数组）');
     }
@@ -1304,10 +1317,21 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.GPA()`；`academic.GPA(["2024-2025-2-2","2023-2024-1-2"])`',
         '',
-        '**返回示例**：`3.72`'
+        '**返回值**：单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallGPA。',
+        '',
+        '**多学期返回示例**：`{"semesters":[{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2","GPA":3.72}],"overallGPA":3.68}`'
       ].join('\n'),
       async run(args) {
-        return (await loadAcademicScoreStatistics(args)).averageGpa;
+        const result = await loadAcademicScoreStatistics(args);
+        if (result.semesters.length <= 1) return result.overall.averageGpa;
+        return {
+          semesters: result.semesters.map((item) => ({
+            label: item.label,
+            zxjxjhh: item.zxjxjhh,
+            GPA: item.statistics?.averageGpa ?? null
+          })),
+          overallGPA: result.overall.averageGpa
+        };
       }
     },
     {
@@ -1345,10 +1369,21 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.weightedAverageScore()`；`academic.weightedAverageScore(["2024-2025-2-2","2023-2024-1-2"])`',
         '',
-        '**返回示例**：`88.6`'
+        '**返回值**：单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallWeightedAverageScore。',
+        '',
+        '**多学期返回示例**：`{"semesters":[{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2","weightedAverageScore":88.6}],"overallWeightedAverageScore":87.9}`'
       ].join('\n'),
       async run(args) {
-        return (await loadAcademicScoreStatistics(args)).weightedAverageScore;
+        const result = await loadAcademicScoreStatistics(args);
+        if (result.semesters.length <= 1) return result.overall.weightedAverageScore;
+        return {
+          semesters: result.semesters.map((item) => ({
+            label: item.label,
+            zxjxjhh: item.zxjxjhh,
+            weightedAverageScore: item.statistics?.weightedAverageScore ?? null
+          })),
+          overallWeightedAverageScore: result.overall.weightedAverageScore
+        };
       }
     },
     {
@@ -2637,17 +2672,18 @@ name: 've.teachers_of_',
         '',
         '新增一个或多个提前提醒时间点（分钟），自动去重；已存在的时间点列入 unchanged。',
         '',
-        '**参数**：{"minutes":"提前分钟数或数组，必填，每项为 1~525600"}',
+        '**参数**：可直接传提前分钟数组，也可传 `{"minutes": 数字或数组}`；每项为 1~525600。',
         '',
-        '**调用示例**：`reminder.add({minutes: 30})`；`reminder.add({minutes: [1440, 30]})`',
+        '**调用示例**：`reminder.add({minutes: 30})`；`reminder.add([1440, 30])`',
         '',
         '**返回示例**：{"points":[1440,120,30],"added":[1440,30],"unchanged":[]}'
       ].join('\n'),
       async run(args) {
         const minutes = requireReminderMinutes(args);
         const points = await loadReminderPoints();
-        const added = minutes.filter((value) => !points.includes(value));
-        const unchanged = minutes.filter((value) => points.includes(value));
+        const existing = new Set(points);
+        const added = normalizeReminderMinutes(minutes.filter((value) => !existing.has(value)), []);
+        const unchanged = normalizeReminderMinutes(minutes.filter((value) => existing.has(value)), []);
         const next = normalizeReminderMinutes([...points, ...added], points);
         if (added.length) await chrome.storage.local.set({ homeworkReminderMinutes: next });
         return { points: next, added, unchanged };
@@ -2663,9 +2699,9 @@ name: 've.teachers_of_',
         '',
         '删除一个或多个提前提醒时间点（分钟），自动去重；不存在的时间点列入 missing。',
         '',
-        '**参数**：{"minutes":"提前分钟数或数组，必填"}',
+        '**参数**：可直接传提前分钟数组，也可传 `{"minutes": 数字或数组}`。',
         '',
-        '**调用示例**：`reminder.del({minutes: 120})`；`reminder.del({minutes: [120, 30]})`',
+        '**调用示例**：`reminder.del({minutes: 120})`；`reminder.del([120, 30])`',
         '',
         '**返回示例**：{"points":[1440],"removed":[120,30],"missing":[]}'
       ].join('\n'),

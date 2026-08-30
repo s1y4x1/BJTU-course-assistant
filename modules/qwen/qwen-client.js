@@ -484,11 +484,35 @@
     })).filter((item) => item.id);
   }
 
-  async function fetchChatHistory(chatId) {
+  async function fetchChatHistoryData(chatId) {
     const effectiveChatId = String(chatId || '');
     if (!effectiveChatId) return [];
     const data = await requestJson(`${CHAT_BASE}/api/v2/chats/${encodeURIComponent(effectiveChatId)}`);
     return Array.isArray(data?.data?.chat?.messages) ? data.data.chat.messages : [];
+  }
+
+  async function fetchChatHistory(chatId) {
+    const effectiveChatId = String(chatId || '');
+    let messages = await fetchChatHistoryData(effectiveChatId);
+    const lastMessage = messages[messages.length - 1];
+    const responseId = String(lastMessage?.id || '');
+    if (String(lastMessage?.role || '') !== 'assistant' || lastMessage?.content_list !== null || !responseId) {
+      return messages;
+    }
+    try {
+      await resumeInterruptedCompletion({
+        chatId: effectiveChatId,
+        modelId: '',
+        messages: [],
+        parentId: '',
+        onEvent: null,
+        signal: null
+      }, responseId);
+    } catch (error) {
+      if (error?.code !== 'REQUEST_ENDED') throw error;
+    }
+    messages = await fetchChatHistoryData(effectiveChatId);
+    return messages;
   }
 
   async function deleteChat(chatId) {
@@ -641,7 +665,7 @@
         type: 'QWEN_API_REQUEST',
         payload: {
           id,
-          method: 'POST',
+          method: resumeId ? 'GET' : 'POST',
           url: `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}${resumeId ? `&response_id=${encodeURIComponent(resumeId)}` : ''}`,
           ...(resumeId ? {} : { body }),
           stream: true,

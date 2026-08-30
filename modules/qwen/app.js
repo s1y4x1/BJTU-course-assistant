@@ -19,6 +19,9 @@
   const STANDALONE_CHAT = /\/modules\/qwen\/chat\.html$/i.test(global.location?.pathname || '');
   // 边栏视图：关闭按钮变为与课程助手（popup.html）互相切换的按钮。
   const SIDE_PANEL_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'sidepanel';
+  const sidePanelViewRecordPromise = SIDE_PANEL_VIEW
+    ? Promise.resolve(global.chrome?.storage?.local?.set?.({ sidePanelLastView: 'qwen' })).catch(() => {})
+    : Promise.resolve();
 
   let port = null;
   let historyNeedsInitialScroll = false;
@@ -2316,7 +2319,9 @@
           if (SIDE_PANEL_VIEW) {
             const popupUrl = global.chrome?.runtime?.getURL?.('popup/popup.html?view=sidepanel');
             if (popupUrl) {
-              global.location.href = popupUrl;
+              void sidePanelViewRecordPromise
+                .then(() => global.chrome?.storage?.local?.set?.({ sidePanelLastView: 'course' }))
+                .finally(() => { global.location.href = popupUrl; });
               return;
             }
           }

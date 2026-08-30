@@ -840,15 +840,19 @@ function clearPlatformData(platform) {
 // Open options button in top inline controls
 const openOptionsBtn = document.getElementById('open-options-btn');
 const sidePanelView = new URLSearchParams(window.location.search).get('view') === 'sidepanel';
+let sidePanelQwenAvailable = false;
 if (openOptionsBtn) {
   if (sidePanelView) {
-    // 边栏中变为切换按钮：切回千问助手（由外层 popup.html 响应换页）。
-    openOptionsBtn.textContent = '🔄';
-    openOptionsBtn.title = '切换到千问助手';
+    void fetch(chrome.runtime.getURL('modules/qwen/module.json'), { cache: 'no-store' }).then((response) => {
+      if (!response.ok) return;
+      sidePanelQwenAvailable = true;
+      openOptionsBtn.textContent = '🔄';
+      openOptionsBtn.title = '切换到千问助手';
+    }).catch(() => {});
   }
   openOptionsBtn.addEventListener('click', () => {
     if (typeof popupMode !== 'undefined' && popupMode) {
-      if (sidePanelView) {
+      if (sidePanelView && sidePanelQwenAvailable) {
         try { window.parent?.postMessage({ type: 'BJTU_SIDE_PANEL_TOGGLE' }, '*'); } catch { }
         return;
       }
