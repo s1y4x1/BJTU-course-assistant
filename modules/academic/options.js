@@ -18,6 +18,7 @@
   const BB_REFRESH_DELAY_KEY = 'academicBbRefreshDelayMs';
   const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
   const ACADEMIC_DATA_CACHE_KEY_PREFIX = 'academicDataCache:';
+  const ACADEMIC_STUDENT_ID_KEY = 'academicSystemStudentId';
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_FULLSCREEN_BUTTON_KEY = 'academicFullscreenButtonEnabled';
   const ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY = 'academicFullscreenButtonIcon';
@@ -55,8 +56,11 @@
   let scheduleTermWorkerRunning = false;
   let selectionSchedulePromise = null;
   let academicDataCacheWritePromise = Promise.resolve();
+  const localAcademicCacheWriteTokens = new Set();
+  let renderedAcademicCacheStudentId = '';
   let sharedAllLoading = false;
   let sharedLoadingTerm = '';
+  let academicBackgroundRefreshActive = false;
   let academicRequestBusyDepth = 0;
   let academicRequestIdleTimer = 0;
   const academicRequestPort = chrome.runtime.connect({ name: ACADEMIC_OPTIONS_REQUEST_PORT });
@@ -109,33 +113,33 @@
   };
 
   function persistAcademicDataCache() {
-    academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {}).then(async () => {
-      const studentId = String(context?.studentId || '').trim();
-      if (!studentId || !academicSemestersLoaded) return;
-      await chrome.storage.session.set({
-        [academicDataCacheKey(studentId)]: {
-          studentId,
-          academicSemesterOptions,
-          scoreCurrentZxjxjhh,
-          scheduleCache,
-          examsCache,
-          scoresCache,
-          loadedSharedTerms: [...loadedSharedTerms],
-          loadedScheduleTerms: [...loadedScheduleTerms],
-          updatedAt: Date.now()
-        }
-      });
+    const studentId = String(context?.studentId || renderedAcademicCacheStudentId || '').trim();
+    if (!studentId || !academicSemestersLoaded) return academicDataCacheWritePromise;
+    const writeToken = crypto.randomUUID();
+    const snapshot = structuredClone({
+      studentId,
+      academicSemesterOptions,
+      scoreCurrentZxjxjhh,
+      scheduleCache,
+      examsCache,
+      scoresCache,
+      loadedSharedTerms: [...loadedSharedTerms],
+      loadedScheduleTerms: [...loadedScheduleTerms],
+      updatedAt: Date.now(),
+      writeToken
     });
+    localAcademicCacheWriteTokens.add(writeToken);
+    academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
+      .then(() => chrome.storage.local.set({ [academicDataCacheKey(studentId)]: snapshot }))
+      .catch((error) => {
+        localAcademicCacheWriteTokens.delete(writeToken);
+        throw error;
+      });
     return academicDataCacheWritePromise;
   }
 
-  async function restoreAcademicDataCache(studentIdOverride = '') {
-    const studentId = String(studentIdOverride || context?.studentId || '').trim();
-    if (!studentId) return false;
-    const key = academicDataCacheKey(studentId);
-    const stored = await chrome.storage.session.get(key);
-    const cache = stored?.[key];
-    if (!cache) return false;
+  function applyAcademicDataCache(cache, studentId = '') {
+    if (!cache || typeof cache !== 'object') return false;
     academicSemesterOptions = Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [];
     scoreCurrentZxjxjhh = String(cache.scoreCurrentZxjxjhh || '');
     scheduleCache = cache.scheduleCache && typeof cache.scheduleCache === 'object' ? cache.scheduleCache : null;
@@ -147,10 +151,29 @@
     (Array.isArray(cache.loadedScheduleTerms) ? cache.loadedScheduleTerms : []).forEach((term) => loadedScheduleTerms.add(String(term)));
     academicSemestersLoaded = academicSemesterOptions.length > 0;
     if (!academicSemestersLoaded) return false;
+    renderedAcademicCacheStudentId = String(studentId || cache.studentId || '').trim();
     renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
     renderAvailableSharedSemesters();
     renderCachedAcademicData();
     return true;
+  }
+
+  async function restoreAcademicDataCache(studentIdOverride = '') {
+    const studentId = String(studentIdOverride || context?.studentId || '').trim();
+    if (!studentId) return false;
+    const key = academicDataCacheKey(studentId);
+    const stored = await chrome.storage.local.get(key);
+    let cache = stored?.[key];
+    if (!cache) {
+      const legacy = await chrome.storage.session.get(key);
+      cache = legacy?.[key];
+      if (cache) {
+        await chrome.storage.local.set({ [key]: cache });
+        await chrome.storage.session.remove(key);
+      }
+    }
+    if (!cache) return false;
+    return applyAcademicDataCache(cache, studentId);
   }
 
   function applyWideOption(enabled) {
@@ -1437,7 +1460,7 @@
     });
     const body = element('academicScoreTableBody');
     if (body instanceof HTMLElement) body.replaceChildren();
-    element('academicScoreLoading').style.display = sharedAllLoading ? 'flex' : 'none';
+    element('academicScoreLoading').style.display = sharedAllLoading || !!sharedLoadingTerm ? 'flex' : 'none';
     element('academicScoreTableWrap').style.display = list.length ? 'block' : 'none';
     const semesterSizes = new Map();
     list.forEach((row) => {
@@ -1482,7 +1505,18 @@
     renderEmptyDataStatus(element('academicSystemStatus'), 'academicScoreTableBody', 'academicScoreLoading', '暂无成绩数据');
   }
 
-  function renderAcademicScoreStatistics(rows, loading = sharedAllLoading) {
+  function isSelectedScoreStatisticsLoading() {
+    const selected = String(element('academicScoreSemester')?.value || '');
+    if (!selected || selected === '__all__') {
+      const hasUnloadedTerm = academicSemesterOptions.some((item) => (
+        !loadedSharedTerms.has(String(item?.zxjxjhh || ''))
+      ));
+      return !!sharedLoadingTerm || (sharedAllLoading && hasUnloadedTerm);
+    }
+    return sharedLoadingTerm === selected || sharedTermsInFlight.has(selected);
+  }
+
+  function renderAcademicScoreStatistics(rows, loading = isSelectedScoreStatisticsLoading()) {
     const container = element('academicScoreStatistics');
     if (!(container instanceof HTMLElement)) return;
     const result = global.BjtuAcademicScoreStatistics?.calculate(rows) || null;
@@ -1495,13 +1529,22 @@
     for (const [id, text] of Object.entries(values)) {
       const value = element(id);
       if (!(value instanceof HTMLElement)) continue;
-      value.replaceChildren(document.createTextNode(text));
-      if (loading) {
-        const spinner = document.createElement('span');
+      let textNode = value.querySelector(':scope > .academic-score-statistics-value');
+      let spinner = value.querySelector(':scope > .academic-score-statistics-spinner');
+      if (!(textNode instanceof HTMLElement)) {
+        textNode = document.createElement('span');
+        textNode.className = 'academic-score-statistics-value';
+      }
+      if (!(spinner instanceof HTMLElement)) {
+        spinner = document.createElement('span');
         spinner.className = 'options-page-spinner academic-score-statistics-spinner';
         spinner.setAttribute('aria-label', '仍在加载其他学期成绩');
-        value.appendChild(spinner);
       }
+      if (textNode.parentElement !== value || spinner.parentElement !== value) {
+        value.replaceChildren(textNode, spinner);
+      }
+      textNode.textContent = text;
+      spinner.hidden = !loading;
     }
   }
 
@@ -1689,7 +1732,7 @@
     const list = Array.isArray(rows) ? rows : [];
     const body = element('academicExamTableBody');
     if (body instanceof HTMLElement) body.replaceChildren();
-    element('academicExamLoading').style.display = sharedAllLoading ? 'flex' : 'none';
+    element('academicExamLoading').style.display = sharedAllLoading || !!sharedLoadingTerm ? 'flex' : 'none';
     element('academicExamTableWrap').style.display = list.length ? 'block' : 'none';
     const groupSizes = new Map();
     const semesterSizes = new Map();
@@ -1890,7 +1933,7 @@
     const studentId = String(context?.studentId || '').trim();
     if (removeStored && studentId) {
       academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
-        .then(() => chrome.storage.session.remove(academicDataCacheKey(studentId)));
+        .then(() => chrome.storage.local.remove(academicDataCacheKey(studentId)));
     }
     scheduleCache = null;
     scheduleData = null;
@@ -1906,6 +1949,7 @@
     loadedScheduleTerms.clear();
     scheduleTermsInFlight.clear();
     selectionSchedulePromise = null;
+    renderedAcademicCacheStudentId = '';
   }
 
   function scheduleHasCourses(result) {
@@ -1926,11 +1970,11 @@
     renderSchedule();
   }
 
-  async function ensureAcademicSemesterOptions() {
+  async function ensureAcademicSemesterOptions({ fresh = false } = {}) {
     if (academicSemestersLoaded) return academicSemesterOptions;
     if (!academicSemestersPromise) {
-      academicSemestersPromise = sendAcademicLoadWithRetry('ACADEMIC_SEMESTERS', undefined, '教务学期服务')
-        .then((semesterResult) => {
+      academicSemestersPromise = sendAcademicLoadWithRetry('ACADEMIC_SEMESTERS', { fresh }, '教务学期服务')
+        .then(async (semesterResult) => {
           if (!semesterResult?.ok) {
             throw Object.assign(new Error(semesterResult?.message || '学期列表读取失败'), { code: String(semesterResult?.code || '') });
           }
@@ -1938,6 +1982,7 @@
           scoreCurrentZxjxjhh = String(semesterResult.currentZxjxjhh || '').trim();
           academicSemestersLoaded = true;
           renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
+          await persistAcademicDataCache();
           return academicSemesterOptions;
         })
         .finally(() => { academicSemestersPromise = null; });
@@ -1947,10 +1992,14 @@
 
   function mergeScoreResult(result) {
     if (!result?.ok) return;
-    const seen = new Map((scoresCache?.rows || []).map((row) => [String(row?.key || ''), row]));
+    const refreshedLabels = new Set((result.selectedSemesters || []).map((item) => String(item?.label || '').trim()).filter(Boolean));
+    const preserved = refreshedLabels.size
+      ? (scoresCache?.rows || []).filter((row) => !refreshedLabels.has(String(row?.academicYear || '').trim()))
+      : (scoresCache?.rows || []);
+    const seen = new Map(preserved.map((row) => [String(row?.key || ''), row]));
     for (const row of (result.rows || [])) {
       const key = String(row?.key || `${row?.academicYear}|${row?.course}` || '');
-      if (!key || seen.has(key)) continue;
+      if (!key) continue;
       seen.set(key, row);
     }
     scoresCache = {
@@ -2023,11 +2072,15 @@
   function setSharedAllLoading(active) {
     sharedAllLoading = active === true;
     updateSharedLoadingText();
+    const loading = sharedAllLoading || !!sharedLoadingTerm;
     for (const id of ['academicScoreLoading', 'academicExamLoading']) {
-      if (element(id)) element(id).style.display = sharedAllLoading ? 'flex' : 'none';
+      if (element(id)) element(id).style.display = loading ? 'flex' : 'none';
     }
-    if (sharedAllLoading) {
-      renderAcademicScoreStatisticsLoading();
+    renderAcademicScoreStatistics(
+      filterCachedScoreRows(element('academicScoreSemester')?.value),
+      isSelectedScoreStatisticsLoading()
+    );
+    if (loading) {
       for (const id of ['academicSystemStatus', 'academicExamStatus']) {
         if (element(id)) element(id).style.display = 'none';
       }
@@ -2050,6 +2103,14 @@
   function setSharedLoadingTerm(term) {
     sharedLoadingTerm = String(term || '');
     updateSharedLoadingText();
+    const loading = sharedAllLoading || !!sharedLoadingTerm;
+    for (const id of ['academicScoreLoading', 'academicExamLoading']) {
+      if (element(id)) element(id).style.display = loading ? 'flex' : 'none';
+    }
+    renderAcademicScoreStatistics(
+      filterCachedScoreRows(element('academicScoreSemester')?.value),
+      isSelectedScoreStatisticsLoading()
+    );
   }
 
   function renderCachedSharedData() {
@@ -2142,16 +2203,25 @@
       const selected = String(element('academicScoreSemester')?.value || '');
       return selected === '__all__' || terms.includes(selected);
     };
-    const scores = await sendAcademicLoadWithRetry('ACADEMIC_LOAD_SCORES', { semesters: terms }, '成绩服务');
+    const scores = await sendAcademicLoadWithRetry(
+      'ACADEMIC_LOAD_SCORES',
+      { semesters: terms, fresh: academicBackgroundRefreshActive },
+      '成绩服务'
+    );
     if (!scores?.ok) throw Object.assign(new Error(scores?.message || '成绩读取失败'), { code: scores?.code });
     mergeScoreResult(scores);
+    await persistAcademicDataCache();
     if (shouldRender()) renderScores(filterCachedScoreRows(element('academicScoreSemester')?.value));
-    const exams = await sendAcademicLoadWithRetry('ACADEMIC_LOAD_EXAMS', { zxjxjhh: terms }, '考试信息服务', false);
+    const exams = await sendAcademicLoadWithRetry(
+      'ACADEMIC_LOAD_EXAMS',
+      { zxjxjhh: terms, fresh: academicBackgroundRefreshActive },
+      '考试信息服务',
+      false
+    );
     if (!exams?.ok) throw Object.assign(new Error(exams?.message || '考试信息读取失败'), { code: exams?.code });
     mergeExamResult(exams);
-    if (shouldRender()) renderExams(filterCachedExamRows(element('academicScoreSemester')?.value));
     terms.forEach((term) => loadedSharedTerms.add(term));
-    void persistAcademicDataCache();
+    await persistAcademicDataCache();
   }
 
   async function ensureSharedTerms(values) {
@@ -2176,16 +2246,20 @@
     return promise;
   }
 
+  function nextSharedTermPriority() {
+    const selected = String(element('academicScoreSemester')?.value || '');
+    return selected && selected !== '__all__' && sharedTermsInFlight.has(selected)
+      ? selected
+      : sharedTermsInFlight.keys().next().value;
+  }
+
   async function runSharedTermWorker() {
     if (sharedTermWorkerRunning) return;
     sharedTermWorkerRunning = true;
     beginAcademicOptionsRequest();
     try {
       while (sharedTermsInFlight.size) {
-        const selected = String(element('academicScoreSemester')?.value || '');
-        const priority = selected && selected !== '__all__' && sharedTermsInFlight.has(selected)
-          ? selected
-          : sharedTermsInFlight.keys().next().value;
+        const priority = nextSharedTermPriority();
         const job = sharedTermsInFlight.get(priority);
         if (!job) continue;
         setSharedLoadingTerm(priority);
@@ -2196,7 +2270,9 @@
           job.reject(error);
         } finally {
           if (sharedTermsInFlight.get(priority) === job) sharedTermsInFlight.delete(priority);
-          if (sharedLoadingTerm === priority) setSharedLoadingTerm('');
+          setSharedLoadingTerm(nextSharedTermPriority() || '');
+          renderAvailableSharedSemesters();
+          renderCachedSharedData();
         }
       }
     } finally {
@@ -2208,30 +2284,16 @@
 
   async function prefetchSharedTerms(values) {
     beginAcademicOptionsRequest();
-    const pending = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+    const pending = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))]
+      .filter((term) => !loadedSharedTerms.has(term));
     let firstError = null;
     try {
-      while (pending.length) {
-        const selected = String(element('academicScoreSemester')?.value || '');
-        if (selected && selected !== '__all__' && !loadedSharedTerms.has(selected)) {
-          try {
-            await ensureSharedTerms([selected]);
-          } catch (error) {
-            throw error;
-          }
-          renderAvailableSharedSemesters();
-          if (loadedSharedTerms.has(selected)) renderCachedSharedData();
-        }
-        const term = pending.shift();
-        if (term && !loadedSharedTerms.has(term)) {
-          try {
-            await ensureSharedTerms([term]);
-          } catch (error) {
-            firstError ||= error;
-          }
-          renderAvailableSharedSemesters();
-          const activeSelection = String(element('academicScoreSemester')?.value || '');
-          if (activeSelection === '__all__' || loadedSharedTerms.has(activeSelection)) renderCachedSharedData();
+      const jobs = pending.map((term) => ({ term, promise: enqueueSharedTerm(term) }));
+      for (const job of jobs) {
+        try {
+          await job.promise;
+        } catch (error) {
+          firstError ||= error;
         }
       }
       if (firstError) throw firstError;
@@ -2245,14 +2307,14 @@
     if (terms.length !== 1) throw new Error('课表每次只能加载一个学期');
     const schedule = await sendAcademicLoadWithRetry(
       'ACADEMIC_LOAD_SCHEDULE',
-      { xnxq: terms, includeSelection },
+      { xnxq: terms, includeSelection, fresh: academicBackgroundRefreshActive },
       '课表服务'
     );
     if (!schedule?.ok) throw Object.assign(new Error(schedule?.message || '课表读取失败'), { code: schedule?.code });
     mergeScheduleResult(schedule);
     terms.forEach((term) => loadedScheduleTerms.add(term));
     for (const result of (schedule.results || [])) loadedScheduleTerms.add(String(result?.xnxq || ''));
-    void persistAcademicDataCache();
+    await persistAcademicDataCache();
   }
 
   async function requestSelectionSchedule() {
@@ -2269,7 +2331,7 @@
       }
       mergeScheduleResult(selection);
       for (const result of (selection.results || [])) loadedScheduleTerms.add(String(result?.xnxq || ''));
-      void persistAcademicDataCache();
+      await persistAcademicDataCache();
     })().finally(() => {
       selectionSchedulePromise = null;
     });
@@ -2366,12 +2428,15 @@
     beginAcademicOptionsRequest();
     try {
     if (refreshCached) {
+      academicBackgroundRefreshActive = true;
       loadedSharedTerms.clear();
       loadedScheduleTerms.clear();
       sharedTermsInFlight.clear();
       scheduleTermsInFlight.clear();
       selectionSchedulePromise = null;
       if (scheduleCache) scheduleCache.selectionProbed = false;
+      academicSemestersLoaded = false;
+      academicSemestersPromise = null;
     }
     if (!preserveRendered) {
       renderAcademicScoreStatisticsLoading();
@@ -2383,7 +2448,7 @@
       }
     }
     try {
-      const semesters = await ensureAcademicSemesterOptions();
+      const semesters = await ensureAcademicSemesterOptions({ fresh: refreshCached });
       const allTerms = semesters.map((item) => String(item?.zxjxjhh || '')).filter(Boolean);
       const selected = String(element('academicScoreSemester')?.value || scoreCurrentZxjxjhh || allTerms[0] || '');
       const sharedPriority = selected === '__all__' ? (scoreCurrentZxjxjhh || allTerms[0]) : selected;
@@ -2420,23 +2485,29 @@
       if (sharedRemaining.length || scheduleRemaining.length) {
         void (async () => {
           try {
-            if (sharedRemaining.length) await prefetchSharedTerms(sharedRemaining);
-          } finally {
-            if (String(element('academicScoreSemester')?.value || '') === '__all__') {
-              setSharedAllLoading(false);
-              renderCachedSharedData();
+            try {
+              if (sharedRemaining.length) await prefetchSharedTerms(sharedRemaining);
+            } finally {
+              if (String(element('academicScoreSemester')?.value || '') === '__all__') {
+                setSharedAllLoading(false);
+                renderCachedSharedData();
+              }
             }
+            if (scheduleRemaining.length) await prefetchScheduleTerms(scheduleRemaining);
+            renderAvailableSharedSemesters();
+            renderCachedAcademicData();
+          } finally {
+            academicBackgroundRefreshActive = false;
           }
-          if (scheduleRemaining.length) await prefetchScheduleTerms(scheduleRemaining);
-          renderAvailableSharedSemesters();
-          renderCachedAcademicData();
         })().catch((error) => setMessage(`其他学期数据读取失败：${error?.message || error}`, false));
       } else {
+        academicBackgroundRefreshActive = false;
         setSharedAllLoading(false);
         renderAvailableSharedSemesters();
       }
       return { ok: true };
     } catch (error) {
+      academicBackgroundRefreshActive = false;
       sharedAllLoading = false;
       renderAcademicScoreStatistics(filterCachedScoreRows(element('academicScoreSemester')?.value));
       for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
@@ -2727,6 +2798,17 @@
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      const activeStudentId = String(context?.studentId || renderedAcademicCacheStudentId || '').trim();
+      const activeCacheKey = activeStudentId ? academicDataCacheKey(activeStudentId) : '';
+      if (activeCacheKey && changes[activeCacheKey]?.newValue) {
+        const updatedCache = changes[activeCacheKey].newValue;
+        const writeToken = String(updatedCache?.writeToken || '');
+        if (writeToken && localAcademicCacheWriteTokens.has(writeToken)) {
+          localAcademicCacheWriteTokens.delete(writeToken);
+        } else {
+          applyAcademicDataCache(updatedCache, activeStudentId);
+        }
+      }
       for (const key of ['academicScoreMonitorEnabled', 'academicExamMonitorEnabled', 'academicClassReminderEnabled']) {
         if (changes[key] && element(key)) element(key).checked = changes[key].newValue === true;
       }
@@ -2793,7 +2875,7 @@
     initialized = true;
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
     await chrome.storage.local.remove(['academicScheduleType', 'academicExamSemester']);
-    const stored = await chrome.storage.local.get(Object.keys(DEFAULTS));
+    const stored = await chrome.storage.local.get([...Object.keys(DEFAULTS), ACADEMIC_STUDENT_ID_KEY]);
     element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = stored[ACADEMIC_FULLSCREEN_BUTTON_KEY] !== false;
     element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = stored[ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY] === 'system'
       ? 'system'
@@ -2814,12 +2896,22 @@
     bindMessages();
     updateDisabledState();
     EXTERNAL_SCRIPTS.forEach((script) => { void refreshExternalScriptState(script); });
-    await refreshContext();
-    void autoLoginIfPossible().finally(async () => {
+    const cachedStudentId = String(stored[ACADEMIC_STUDENT_ID_KEY] || '').trim();
+    if (cachedStudentId) {
+      context = { studentId: cachedStudentId };
+      if (element('academicStudentId')) element('academicStudentId').value = cachedStudentId;
+      await restoreAcademicDataCache(cachedStudentId).catch(() => false);
+    }
+    void (async () => {
       await refreshContext();
-      const restored = await restoreAcademicDataCache().catch(() => false);
+      await autoLoginIfPossible();
+      await refreshContext();
+      const activeStudentId = String(context?.studentId || '').trim();
+      const restored = activeStudentId === renderedAcademicCacheStudentId
+        ? !!renderedAcademicCacheStudentId
+        : await restoreAcademicDataCache(activeStudentId).catch(() => false);
       await loadAll({ preserveRendered: restored, refreshCached: restored });
-    });
+    })().catch((error) => setMessage(`教务数据后台刷新失败：${String(error?.message || error)}`, false));
     return true;
   }
 

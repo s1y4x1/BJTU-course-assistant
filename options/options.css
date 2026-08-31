@@ -293,6 +293,7 @@ html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5f
 #account-init-student-progress-bar { background:#16a34a; }
 #options-loading-placeholder { display:none; min-height:160px; align-items:center; justify-content:center; }
 .options-page-spinner { width:22px; height:22px; box-sizing:border-box; border:3px solid #cbd5e1; border-top-color:#1976d2; border-radius:50%; animation:optionsSpin .75s linear infinite; }
+.options-page-spinner[hidden] { display:none !important; }
 @keyframes optionsSpin { to { transform:rotate(360deg); } }
 html.options-loading #options-controlled-content { display:none; }
 html.options-loading #options-loading-placeholder { display:flex; }

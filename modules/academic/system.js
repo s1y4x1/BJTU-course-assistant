@@ -1159,7 +1159,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     if (!id) return Promise.resolve();
     academicDataCacheUpdatePromise = academicDataCacheUpdatePromise.catch(() => {}).then(async () => {
       const key = `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${id}`;
-      const stored = await chrome.storage.session.get(key);
+      const stored = await chrome.storage.local.get(key);
       const cache = stored?.[key];
       if (!cache || typeof cache !== 'object') return;
       const current = String(cache.scoreCurrentZxjxjhh || '').trim();
@@ -1195,7 +1195,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         ])];
       }
       cache.updatedAt = checkedAt;
-      await chrome.storage.session.set({ [key]: cache });
+      delete cache.writeToken;
+      await chrome.storage.local.set({ [key]: cache });
     });
     return academicDataCacheUpdatePromise;
   }
@@ -1557,8 +1558,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     };
   }
 
-  async function loadAcademicSemesters() {
-    const cached = await readAcademicDataCache();
+  async function loadAcademicSemesters({ fresh = false } = {}) {
+    const cached = fresh ? null : await readAcademicDataCache();
     if (cached?.academicSemesterOptions?.length) {
       return {
         ok: true,
@@ -1566,7 +1567,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         semesters: cached.academicSemesterOptions
       };
     }
-    const source = await loadAcademicScoreSource();
+    const source = await loadAcademicScoreSource({ fresh });
     return {
       ok: true,
       currentZxjxjhh: source.currentZxjxjhh,
@@ -1574,7 +1575,12 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     };
   }
 
-  async function loadAcademicScoreSource() {
+  async function loadAcademicScoreSource({ fresh = false } = {}) {
+    if (fresh) {
+      if (academicScoreSourcePromise) await academicScoreSourcePromise.catch(() => {});
+      academicScoreSourceCache = null;
+      await chrome.storage.session.remove(ACADEMIC_SCORE_SOURCE_CACHE_KEY).catch(() => {});
+    }
     if (academicScoreSourceCache) return academicScoreSourceCache;
     if (academicScoreSourcePromise) return academicScoreSourcePromise;
     academicScoreSourcePromise = (async () => {
@@ -1625,8 +1631,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     const studentId = String(local?.[STUDENT_ID_KEY] || '').trim();
     if (!studentId) return null;
     const key = `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${studentId}`;
-    const session = await chrome.storage.session.get(key);
-    return session?.[key] || null;
+    const localCache = await chrome.storage.local.get(key);
+    return localCache?.[key] || null;
   }
 
   function cachedRequestedTerms(cache, args, parameter) {
@@ -1671,7 +1677,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   async function loadAcademicExams(args = {}) {
-    const cached = await readAcademicDataCache();
+    const fresh = !Array.isArray(args) && args?.fresh === true;
+    const cached = fresh ? null : await readAcademicDataCache();
     if (cached) {
       const terms = cachedRequestedTerms(cached, args, 'zxjxjhh');
       const loaded = new Set(Array.isArray(cached.loadedSharedTerms) ? cached.loadedSharedTerms : []);
@@ -1689,7 +1696,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     const results = await mapAcademicTerms(context.selected, async (semester) => {
       const isCurrent = semester.zxjxjhh === context.currentZxjxjhh;
       const parsed = isCurrent
-        ? await loadCurrentExamSource()
+        ? await loadCurrentExamSource({ fresh })
         : parseExamPage((await fetchExamPage(semester.zxjxjhh)).html);
       return {
         label: String(semester.label || ''),
@@ -1739,7 +1746,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     const effectiveArgs = providedSemesters === undefined
       ? args
       : { ...(Array.isArray(args) ? {} : args), xnxq: providedSemesters };
-    const cached = await readAcademicDataCache();
+    const fresh = !Array.isArray(args) && args?.fresh === true;
+    const cached = fresh ? null : await readAcademicDataCache();
     if (cached) {
       const terms = cachedRequestedTerms(cached, effectiveArgs, 'xnxq');
       const loaded = new Set(Array.isArray(cached.loadedScheduleTerms) ? cached.loadedScheduleTerms : []);
@@ -1832,7 +1840,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
 
   async function loadAcademicScores(args = {}) {
     const requested = requestedScoreSemesters(args);
-    const cached = await readAcademicDataCache();
+    const fresh = !Array.isArray(args) && args?.fresh === true;
+    const cached = fresh ? null : await readAcademicDataCache();
     if (cached) {
       const semesters = Array.isArray(cached.academicSemesterOptions) ? cached.academicSemesterOptions : [];
       const byValue = new Map(semesters.map((item) => [String(item?.zxjxjhh || ''), item]));
@@ -1942,7 +1951,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'ACADEMIC_SEMESTERS') {
-        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.SCHEDULE, () => loadAcademicSemesters())
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.SCHEDULE, () => loadAcademicSemesters(message?.payload))
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({
             ok: false,
