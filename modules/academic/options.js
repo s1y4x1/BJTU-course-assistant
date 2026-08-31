@@ -2627,12 +2627,17 @@
     });
     element('bindAcademicSystemBtn')?.addEventListener('click', async (event) => {
       event.currentTarget.disabled = true;
+      setMessage('正在后台通过 MIS 登录教务系统…');
       const result = await send('START_ACADEMIC_MIS_LOGIN');
       if (!result?.ok) {
         event.currentTarget.disabled = false;
-        setMessage(`打开 MIS 失败：${result?.message || '未知错误'}`, false);
+        setMessage(`通过 MIS 登录教务系统失败：${result?.message || '未知错误'}`, false);
       } else {
-        setMessage('已打开 MIS，请完成教务系统登录');
+        event.currentTarget.disabled = false;
+        invalidateAcademicCaches();
+        const restored = await refreshContext().then(() => restoreAcademicDataCache()).catch(() => false);
+        void loadAll({ preserveRendered: restored, refreshCached: restored });
+        setMessage(`已通过 MIS 登录教务系统：${result.studentId || ''}${result.userName ? ` ${result.userName}` : ''}`);
       }
     });
     for (const [id, key, enabledText, disabledText] of [
@@ -2780,20 +2785,7 @@
         }
       } else if (message?.type === 'ACADEMIC_SYSTEM_STATUS') {
         const status = message.payload || {};
-        if (status.status === 'mis-login-done') {
-          element('bindAcademicSystemBtn').disabled = false;
-          invalidateAcademicCaches();
-          void refreshContext().then(async () => {
-            const restored = await restoreAcademicDataCache().catch(() => false);
-            return loadAll({ preserveRendered: restored, refreshCached: restored });
-          });
-          setMessage(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`);
-        } else if (status.status === 'mis-login-cancelled') {
-          element('bindAcademicSystemBtn').disabled = false;
-          setMessage('已取消通过 MIS 登录教务系统', false);
-        } else {
-          refreshContext();
-        }
+        if (status.status !== 'mis-login-done' && status.status !== 'mis-login-cancelled') refreshContext();
       }
     });
     chrome.storage.onChanged.addListener((changes, area) => {

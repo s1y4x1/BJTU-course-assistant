@@ -70,8 +70,6 @@
       await wait(1000);
     }
   }
-  const misLoginTabs = new Set();
-  const misLoginVerifyingTabs = new Set();
   const pendingCredentialsByTab = new Map();
   let scoreCheckPromise = null;
   let examCheckPromise = null;
@@ -509,26 +507,7 @@
   }
 
   async function showAcademicPageToast(tabId, message) {
-    if (!tabId) return;
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: (content) => {
-        const id = '__bjtu_academic_login_toast__';
-        document.getElementById(id)?.remove();
-        const toast = document.createElement('div');
-        toast.id = id;
-        toast.textContent = content;
-        toast.style.cssText = [
-          'position:fixed', 'left:50%', 'top:18px', 'transform:translateX(-50%)',
-          'z-index:2147483647', 'background:#16a34a', 'color:#fff',
-          'font:600 14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif',
-          'padding:10px 14px', 'border-radius:8px', 'box-shadow:0 10px 30px rgba(0,0,0,.22)'
-        ].join(';');
-        document.documentElement.appendChild(toast);
-        setTimeout(() => toast.remove(), 3600);
-      },
-      args: [String(message || '')]
-    }).catch(() => {});
+    await global.BjtuPageToast?.show(tabId, message, 'success').catch(() => {});
   }
 
   async function getAcademicAccounts() {
@@ -708,6 +687,56 @@
     } finally {
       await removeAcademicLoginHeaderRule();
     }
+  }
+
+  async function loginAcademicViaMis() {
+    await clearAcademicCookies();
+    academicAccountCache = null;
+    academicSessionAccount = null;
+    const response = await fetchAcademicWith503Retry(MIS_MODULE_URL, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+    });
+    const html = await response.text();
+    if (!response.ok) throw new Error(`MIS 教务系统入口 HTTP ${response.status}`);
+    const redirectForm = [...html.matchAll(/<form\b([^>]*)>[\s\S]*?<\/form>/gi)]
+      .find((match) => attributeFromHtml(match[1], 'id').toLowerCase() === 'redirect');
+    const redirectAction = attributeFromHtml(redirectForm?.[1] || '', 'action');
+    let redirectUrl = '';
+    if (redirectAction) {
+      try {
+        const parsed = new URL(redirectAction, response.url || MIS_MODULE_URL);
+        if (parsed.protocol === 'https:'
+            && parsed.hostname === 'aa.bjtu.edu.cn'
+            && /^\/client\/login\/[^/]+\/[^/]+\/[^/]+\/?$/i.test(parsed.pathname)) {
+          redirectUrl = parsed.href;
+        }
+      } catch {
+        // The malformed action is handled as a missing redirect below.
+      }
+    }
+    if (redirectUrl) {
+      const redirectResponse = await fetchAcademicWith503Retry(redirectUrl, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        redirect: 'follow',
+        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+      });
+      await redirectResponse.text();
+      if (!redirectResponse.ok) throw new Error(`教务系统 MIS 跳转入口 HTTP ${redirectResponse.status}`);
+    } else if (/mis\.bjtu\.edu\.cn\/(?:login|auth)|cas\.bjtu\.edu\.cn\/login/i.test(String(response.url || ''))
+        || /统一身份认证|用户登录/u.test(html) && /password|loginname/i.test(html)) {
+      throw new Error('MIS 尚未登录，请先登录 MIS 后重试');
+    }
+    const account = await fetchCurrentAcademicAccount();
+    if (!account?.studentId) throw new Error('MIS 未能登录教务系统');
+    checkScores('mis-login', { force: true }).catch(() => {});
+    checkExams('mis-login', { force: true }).catch(() => {});
+    return { ok: true, studentId: account.studentId, userName: account.userName };
   }
 
   async function loginSavedAcademicAccount(studentId) {
@@ -1924,14 +1953,9 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'START_ACADEMIC_MIS_LOGIN') {
-        (async () => {
-          await clearAcademicCookies();
-          const tab = await globalThis.BjtuTabs.create({ url: 'about:blank', active: true });
-          if (!tab?.id) throw new Error('无法打开 MIS 登录页');
-          misLoginTabs.add(tab.id);
-          await chrome.tabs.update(tab.id, { url: MIS_MODULE_URL });
-          sendResponse({ ok: true, tabId: tab.id });
-        })().catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, loginAcademicViaMis)
+          .then((result) => sendResponse(result))
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
       if (message?.type === 'ACADEMIC_CHECK_SCORES') {
@@ -2037,38 +2061,20 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
             pendingCredentialsByTab.delete(tabId);
             void (async () => {
               const accounts = await getAcademicAccounts();
-              const wasSaved = !!accounts[pending.studentId];
+              const previous = accounts[pending.studentId];
+              const credentialsChanged = !previous || previous.password !== pending.password;
               await saveAcademicAccount(pending.studentId, {
                 password: pending.password,
                 lastLoginAt: Date.now()
               });
               await fetchCurrentAcademicAccount().catch(() => null);
               await broadcastStatus({ status: 'credentials-saved', studentId: pending.studentId, silent: true });
-              if (!wasSaved) {
+              if (credentialsChanged) {
                 await showAcademicPageToast(tabId, `已保存教务系统账号 ${pending.studentId} 的登录密码`);
               }
             })().catch(() => {});
           } else if (pending && onLoginPage) {
             pendingCredentialsByTab.delete(tabId);
-          }
-          if (misLoginTabs.has(tabId) && !onLoginPage && !misLoginVerifyingTabs.has(tabId)) {
-            misLoginVerifyingTabs.add(tabId);
-            void (async () => {
-              try {
-                const account = await fetchCurrentAcademicAccount();
-                if (!account || !misLoginTabs.delete(tabId)) return;
-                await broadcastStatus({
-                  status: 'mis-login-done', tabId,
-                  studentId: account.studentId, userName: account.userName
-                });
-                await chrome.tabs.remove(tabId).catch(() => {});
-                checkScores('mis-login', { force: true }).catch(() => {});
-                checkExams('mis-login', { force: true }).catch(() => {});
-              } finally {
-                misLoginVerifyingTabs.delete(tabId);
-              }
-            })().catch(() => {});
-            return;
           }
         }
       }
@@ -2085,10 +2091,6 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
 
     chrome.tabs.onRemoved.addListener((tabId) => {
       pendingCredentialsByTab.delete(tabId);
-      misLoginVerifyingTabs.delete(tabId);
-      if (misLoginTabs.delete(tabId)) {
-        broadcastStatus({ status: 'mis-login-cancelled', tabId }).catch(() => {});
-      }
     });
     chrome.webRequest.onBeforeRequest.addListener(
       (details) => {

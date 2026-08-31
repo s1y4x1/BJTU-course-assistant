@@ -408,18 +408,6 @@ html[data-color-scheme="dark"] .courseware-select-all-btn:hover {
   color: #000 !important;
 }
 
-html[data-color-scheme="dark"] .toast {
-  background: #1e293b;
-  color: #f8fafc;
-  border-color: #475569;
-  box-shadow: 0 8px 24px rgba(0,0,0,.4);
-}
-
-html[data-color-scheme="dark"] .toast.success { background:#123524; color:#86efac; border-color:#166534; }
-html[data-color-scheme="dark"] .toast.error { background:#3b171b; color:#fca5a5; border-color:#991b1b; }
-html[data-color-scheme="dark"] .toast.warning { background:#3a2b0c; color:#fde68a; border-color:#a16207; }
-html[data-color-scheme="dark"] .toast.info { background:#102a43; color:#93c5fd; border-color:#1d4ed8; }
-
 html[data-color-scheme="dark"] .platform-qr-login-status,
 html[data-color-scheme="dark"] .platform-qr-login-tip {
   color:#b6c2d1 !important;

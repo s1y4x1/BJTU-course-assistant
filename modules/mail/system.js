@@ -301,8 +301,16 @@
   async function getCurrentMailUser({ forceNewSid = false } = {}) {
     // 强制重新经 osys_sso_email 换取新 sid（缓存失效后自动回退到已保存 CAS 凭据登录）。
     if (forceNewSid) invalidateSid();
-    const sid = await getMailSid();
-    return fetchMailUser(sid);
+    while (true) {
+      const sid = await getMailSid();
+      try {
+        return await fetchMailUser(sid);
+      } catch (error) {
+        if (!/\bFA_SECURITY\b/i.test(String(error?.message || error))) throw error;
+        invalidateSid();
+        await wait(1000);
+      }
+    }
   }
 
   async function currentAccountKey() {

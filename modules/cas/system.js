@@ -49,26 +49,7 @@
   }
 
   async function showCasPageToast(tabId, message) {
-    if (!tabId) return;
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: (content) => {
-        const id = '__bjtu_cas_login_toast__';
-        document.getElementById(id)?.remove();
-        const toast = document.createElement('div');
-        toast.id = id;
-        toast.textContent = content;
-        toast.style.cssText = [
-          'position:fixed', 'left:50%', 'top:18px', 'transform:translateX(-50%)',
-          'z-index:2147483647', 'background:#16a34a', 'color:#fff',
-          'font:600 14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif',
-          'padding:10px 14px', 'border-radius:8px', 'box-shadow:0 10px 30px rgba(0,0,0,.22)'
-        ].join(';');
-        document.documentElement.appendChild(toast);
-        setTimeout(() => toast.remove(), 3600);
-      },
-      args: [String(message || '')]
-    }).catch(() => {});
+    await global.BjtuPageToast?.show(tabId, message, 'success').catch(() => {});
   }
 
   async function getCasAccounts() {

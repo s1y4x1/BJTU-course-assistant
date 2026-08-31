@@ -146,6 +146,116 @@
     return false;
   }
 
+  function normalizeWafValidationUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      if (url.protocol !== 'https:' || url.hostname !== 'chat.qwen.ai') return '';
+      return url.href;
+    } catch {
+      return '';
+    }
+  }
+
+  function isWafPunishUrl(value) {
+    try {
+      return new URL(String(value || '')).pathname.includes('/_____tmd_____/punish');
+    } catch {
+      return false;
+    }
+  }
+
+  async function beginWafPopupFlow(validationUrl, sender) {
+    const url = normalizeWafValidationUrl(validationUrl);
+    if (!url) throw new Error('风控响应未提供有效的验证地址');
+    const existingState = await readWafFlowState();
+    if (existingState?.phase === 'waiting-validation') {
+      const existingWindow = await chrome.windows.get(Number(existingState.validationWindowId)).catch(() => null);
+      if (existingWindow) {
+        await chrome.windows.update(existingWindow.id, { focused: true }).catch(() => null);
+        return existingState;
+      }
+    }
+
+    const currentWindow = await chrome.windows.getLastFocused().catch(() => null);
+    const width = 480;
+    const height = 640;
+    const left = Number.isFinite(currentWindow?.left) && Number.isFinite(currentWindow?.width)
+      ? Math.round(currentWindow.left + Math.max(0, (currentWindow.width - width) / 2))
+      : undefined;
+    const top = Number.isFinite(currentWindow?.top) && Number.isFinite(currentWindow?.height)
+      ? Math.round(currentWindow.top + Math.max(0, (currentWindow.height - height) / 2))
+      : undefined;
+    const validationWindow = await chrome.windows.create({
+      url,
+      type: 'popup',
+      focused: true,
+      width,
+      height,
+      ...(left === undefined ? {} : { left }),
+      ...(top === undefined ? {} : { top })
+    });
+    const validationTabId = Number(validationWindow?.tabs?.[0]?.id);
+    if (!Number.isInteger(validationTabId)) {
+      if (Number.isInteger(validationWindow?.id)) await chrome.windows.remove(validationWindow.id).catch(() => {});
+      throw new Error('无法打开通义千问风控校验窗口');
+    }
+    const senderUrl = String(sender?.url || sender?.tab?.url || sender?.tab?.pendingUrl || '');
+    const state = {
+      flowId: globalThis.crypto?.randomUUID?.() || `waf-${Date.now()}`,
+      validationUrl: url,
+      validationTabId,
+      validationWindowId: Number(validationWindow.id),
+      returnMode: isQwenSidePanelUrl(senderUrl) ? 'sidepanel' : 'tab',
+      phase: 'waiting-validation',
+      startedAt: Date.now()
+    };
+    await writeWafFlowState(state);
+    if (typeof global.BjtuSystemNotifications?.create === 'function') {
+      await global.BjtuSystemNotifications.create(WAF_NOTIFICATION_ID, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: '通义千问触发风控校验',
+        message: '请在弹出的小窗口中完成验证。验证页跳转后将自动关闭并重试；直接关闭窗口不会重试。',
+        priority: 2,
+        requireInteraction: true
+      }, 'qwen-waf-verification', true).catch(() => {});
+    }
+    return state;
+  }
+
+  async function finishWafPopupValidation(tabId, nextUrl) {
+    const state = await readWafFlowState();
+    if (!state || state.phase !== 'waiting-validation' || Number(state.validationTabId) !== Number(tabId)) return;
+    const url = String(nextUrl || '');
+    if (!url || isWafPunishUrl(url)) return;
+    const retryingState = { ...state, phase: 'retrying', verifiedAt: Date.now() };
+    await writeWafFlowState(retryingState);
+    await chrome.windows.remove(Number(state.validationWindowId)).catch(() => {});
+    const retryStarted = await broadcastWafRetry(retryingState);
+    if (!retryStarted) {
+      await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
+      await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
+    }
+  }
+
+  async function cancelWafPopupValidation(tabId) {
+    const state = await readWafFlowState();
+    if (!state || state.phase !== 'waiting-validation' || Number(state.validationTabId) !== Number(tabId)) return;
+    await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
+    await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
+    await chrome.runtime.sendMessage({
+      type: 'QWEN_WAF_CANCELLED_BROADCAST',
+      flowId: String(state.flowId || '')
+    }).catch(() => {});
+  }
+
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo?.url) void finishWafPopupValidation(tabId, changeInfo.url);
+  });
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    void cancelWafPopupValidation(tabId);
+  });
+
   async function beginWafRefreshFlow(openResult, sender) {
     const qwenTab = openResult?.tab;
     const qwenTabId = Number(qwenTab?.id);
@@ -232,6 +342,11 @@
     const state = await readWafFlowState();
     const flowId = String(payload?.flowId || '');
     if (!state || !flowId || String(state.flowId || '') !== flowId) return { ok: false, stale: true };
+    if (state.validationWindowId != null) {
+      await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
+      await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
+      return { ok: true, completed: true };
+    }
     if (payload?.success === true) {
       await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
       await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
@@ -590,6 +705,7 @@
               type: 'error',
               message: String(error?.message || error),
               code: String(error?.code || ''),
+              validationUrl: String(error?.validationUrl || ''),
               chatId: String(turnRef?.chatId || ''),
               parentId: String(turnRef?.lastMessageId || '')
             });
@@ -718,7 +834,12 @@
             const messages = await client.fetchChatHistory(chatId);
             sendResponse({ ok: true, messages });
           } catch (error) {
-            sendResponse({ ok: false, code: error?.code || '', message: String(error?.message || error) });
+            sendResponse({
+              ok: false,
+              code: error?.code || '',
+              validationUrl: String(error?.validationUrl || ''),
+              message: String(error?.message || error)
+            });
           }
         })();
         return true;
@@ -768,6 +889,12 @@
             const client = global.BjtuQwenClient;
             if (!client) throw new Error('通义千问客户端未就绪');
             const auth = message?.payload?.auth === true;
+            const validationUrl = String(message?.payload?.validationUrl || '');
+            if (!auth && validationUrl) {
+              const state = await beginWafPopupFlow(validationUrl, sender);
+              sendResponse({ ok: true, flowId: state.flowId });
+              return;
+            }
             const openResult = await client.openLoginPage({ auth });
             if (auth) {
               sendResponse({ ok: true });

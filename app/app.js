@@ -1373,17 +1373,6 @@ function setupPortalUsernameBindMessageListener() {
   });
 }
 
-let academicSystemMessageListenerReady = false;
-function setupAcademicSystemMessageListener() {
-  if (academicSystemMessageListenerReady || !chrome?.runtime?.onMessage) return;
-  academicSystemMessageListenerReady = true;
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type !== 'ACADEMIC_SYSTEM_STATUS') return;
-    const status = message.payload || {};
-    if (status.status === 'mis-login-done') showToast(`已通过 MIS 登录教务系统：${status.studentId || ''}${status.userName ? ` ${status.userName}` : ''}`, 'success', 2400);
-  });
-}
-
 function refreshUploadSelectVisibility() {
   const wraps = document.querySelectorAll('.upload-select-wrap');
   wraps.forEach((wrap) => {
@@ -5846,7 +5835,6 @@ jsessionidInput.addEventListener('change', async () => {
   document.documentElement.classList.remove('app-options-loading');
   if (showAutoLoadResourcesDisabledNotice) showAutoLoadCourseResourcesDisabledNotice();
   setupPortalUsernameBindMessageListener();
-  setupAcademicSystemMessageListener();
   if (!popupMode && !forceAccountPasswordMigration
     && await globalThis.BjtuAccountStore?.needsPasswordFieldMigration?.()) {
     const migrationUrl = new URL(location.href);

@@ -26,12 +26,18 @@
     return Object.assign(new Error('通义千问 API 返回了无法解析的内容（可能被 WAF 拦截），请刷新 chat.qwen.ai 页面后重试'), { code: 'WAF_CHALLENGE' });
   }
 
-  function wafPunishError() {
-    return Object.assign(new Error('通义千问触发风控校验（可能要求完成验证码或被限流），请到 chat.qwen.ai 页面完成验证后重试'), { code: 'WAF_PUNISH' });
+  function wafPunishError(validationUrl = '') {
+    return Object.assign(new Error('通义千问触发风控校验，请在弹出的小窗口中完成验证'), {
+      code: 'WAF_PUNISH',
+      validationUrl: String(validationUrl || '')
+    });
   }
 
-  function wafBusyError() {
-    return Object.assign(new Error('通义千问触发风控校验（可能要求完成验证码或被限流），请到 chat.qwen.ai 页面完成验证后重试'), { code: 'WAF_BUSY' });
+  function wafBusyError(validationUrl = '') {
+    return Object.assign(new Error('通义千问触发风控校验，请在弹出的小窗口中完成验证'), {
+      code: 'WAF_BUSY',
+      validationUrl: String(validationUrl || '')
+    });
   }
 
   function networkError(responseId = '') {
@@ -331,6 +337,16 @@
     }
   }
 
+  function extractWafValidationUrl(text) {
+    try {
+      const value = String(JSON.parse(String(text || ''))?.data?.url || '').trim();
+      const parsed = new URL(value);
+      return parsed.protocol === 'https:' && parsed.hostname === 'chat.qwen.ai' ? parsed.href : '';
+    } catch {
+      return '';
+    }
+  }
+
   function extractApiDetails(text) {
     try {
       const obj = JSON.parse(String(text || ''));
@@ -347,8 +363,8 @@
     if (kind === 'NOT_LOGGED_IN') throw notLoggedInError();
     if (kind === 'CHAT_NOT_FOUND') throw Object.assign(new Error(extractApiDetails(text) || '会话不存在或已被删除'), { code: 'CHAT_NOT_FOUND' });
     if (kind === 'API_ERROR') throw new Error(extractApiDetails(text) || '通义千问返回了错误');
-    if (kind === 'WAF_BUSY') throw wafBusyError();
-    if (kind === 'WAF_PUNISH') throw wafPunishError();
+    if (kind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(text));
+    if (kind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(text));
     if (kind === 'WAF_CHALLENGE') throw unparsableError();
     try {
       return JSON.parse(text);
@@ -529,8 +545,8 @@
       if (errKind === 'NOT_LOGGED_IN') throw notLoggedInError();
       if (errKind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
       if (errKind === 'API_ERROR') throw new Error(extractApiDetails(text) || `通义千问 API 请求失败：HTTP ${response.status}`);
-      if (errKind === 'WAF_BUSY') throw wafBusyError();
-      if (errKind === 'WAF_PUNISH') throw wafPunishError();
+      if (errKind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(text));
+      if (errKind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(text));
       if (errKind === 'WAF_CHALLENGE') throw unparsableError();
       throw new Error(`通义千问 API 请求失败：HTTP ${response.status}`);
     }
@@ -540,8 +556,8 @@
       const kind = detectApiErrorText(text);
       if (kind === 'NOT_LOGGED_IN') throw notLoggedInError();
       if (kind === 'API_ERROR') throw new Error(extractApiDetails(text) || '通义千问返回了错误');
-      if (kind === 'WAF_BUSY') throw wafBusyError();
-      if (kind === 'WAF_PUNISH') throw wafPunishError();
+      if (kind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(text));
+      if (kind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(text));
       if (kind || text.trim()) throw unparsableError();
       return { text: '', responseId: '', responseParentId: '' };
     }
@@ -689,8 +705,8 @@
     }
     if (!sawDataLine && rawText.trim()) {
       const kind = detectApiErrorText(rawText);
-      if (kind === 'WAF_BUSY') throw wafBusyError();
-      if (kind === 'WAF_PUNISH') throw wafPunishError();
+      if (kind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(rawText));
+      if (kind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(rawText));
       if (kind) throw unparsableError();
     }
     return { text: fullText, responseId, responseParentId };

@@ -216,6 +216,7 @@ const veBackgroundReady = tryImportModuleScripts(
   '../modules/ve/homework-core.js'
 );
 tryImportModuleScripts('../core/captcha-assets.js');
+tryImportModuleScripts('../core/page-toast.js');
 tryImportModuleScripts('../modules/captcha/mis-assets.js');
 tryImportModuleScripts('../modules/captcha/recognizer.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/login-service.js');
@@ -1469,74 +1470,8 @@ async function showPortalPageToast(tabId, message, tone = 'success') {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
-  const inject = async () => {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'ISOLATED',
-      func: (message, toneClass) => {
-        const styleId = '__bjtu_page_toast_style__';
-        const containerId = '__bjtu_page_toast_container__';
-        const toastId = '__bjtu_page_toast__';
-        if (!document.getElementById(styleId)) {
-          const style = document.createElement('style');
-          style.id = styleId;
-          style.textContent = [
-            '#' + containerId + '{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;flex-direction:column;align-items:center;pointer-events:none;}',
-            '#' + toastId + '{pointer-events:auto;min-width:250px;max-width:min(80vw,520px);box-sizing:border-box;padding:12px 20px;margin-bottom:10px;border-radius:8px;background-color:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);display:flex;align-items:center;justify-content:center;font-size:14px;color:#333;cursor:copy;animation:bjtuPageToastEnter .25s ease-out;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
-            '#' + toastId + '.toast.success{background-color:#E8F5E9;color:#2E7D32;border:1px solid #C8E6C9;}',
-            '#' + toastId + '.toast.error{background-color:#FFEBEE;color:#C62828;border:1px solid #FFCDD2;}',
-            '#' + toastId + '.toast.warning{background-color:#FFF8E1;color:#F57F17;border:1px solid #FFECB3;}',
-            '@keyframes bjtuPageToastEnter{from{transform:translateY(-12px);opacity:0;}to{transform:translateY(0);opacity:1;}}'
-          ].join('');
-          document.documentElement.appendChild(style);
-        }
-        let container = document.getElementById(containerId);
-        if (!(container instanceof HTMLElement)) {
-          container = document.createElement('div');
-          container.id = containerId;
-          document.documentElement.appendChild(container);
-        } else {
-          const old = container.querySelector('#' + toastId);
-          if (old) old.remove();
-        }
-        const toast = document.createElement('div');
-        toast.id = toastId;
-        toast.className = 'toast ' + toneClass;
-        toast.textContent = message;
-        toast.title = '点击复制通知内容并关闭';
-        const copyTextToClipboard = (text) => {
-          const fallbackCopy = () => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            textarea.setAttribute('readonly', '');
-            textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
-            (document.body || document.documentElement).appendChild(textarea);
-            textarea.select();
-            try { document.execCommand('copy'); } catch (e) {}
-            textarea.remove();
-          };
-          try {
-            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-              navigator.clipboard.writeText(text).catch(fallbackCopy);
-              return;
-            }
-          } catch (e) {
-            // fall through to the fallback below
-          }
-          fallbackCopy();
-        };
-        toast.addEventListener('click', () => {
-          copyTextToClipboard(message);
-          toast.remove();
-        });
-        container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3600);
-      },
-      args: [String(message || ''), toneClass]
-    });
-  };
   try {
-    await inject();
+    await globalThis.BjtuPageToast?.show(tabId, message, toneClass);
   } catch {
     // The tab may be mid-navigation; ignore.
   }
@@ -1563,6 +1498,9 @@ async function finalizePortalQuickUsernameBind(tabId, quickUsername) {
     });
     if (record && bindState) {
       portalUsernameBindByTab.delete(tabId);
+      portalQuickUsernameToastByTab.set(tabId, quickUsername);
+      await showPortalQuickUsernameBoundToast(tabId);
+      await new Promise((resolve) => setTimeout(resolve, 1200));
       try { await chrome.tabs.remove(tabId); } catch {}
       return;
     }

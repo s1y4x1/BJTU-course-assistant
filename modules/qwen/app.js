@@ -705,8 +705,8 @@
     });
   }
 
-  function openWafVerificationPage() {
-    void send('QWEN_OPEN_LOGIN', { auth: false }).then((response) => {
+  function openWafVerificationPage(validationUrl = '') {
+    void send('QWEN_OPEN_LOGIN', { auth: false, validationUrl: String(validationUrl || '') }).then((response) => {
       if (response?.ok === true && response?.flowId) {
         activeWafFlowId = String(response.flowId);
       }
@@ -1857,7 +1857,7 @@
           } else {
             pendingWafRetryAction = null;
           }
-          if (isWafError && !activeWafFlowId) openWafVerificationPage();
+          if (isWafError && !activeWafFlowId) openWafVerificationPage(message.validationUrl);
           const messages = el(MESSAGES_ID);
           maybeAutoScrollMessages(messages);
         } else if (message?.type === 'retryAccepted') {
@@ -1926,7 +1926,7 @@
               });
               return true;
             };
-            if (!activeWafFlowId) openWafVerificationPage();
+            if (!activeWafFlowId) openWafVerificationPage(message.validationUrl);
           } else {
             removeCursor(activeBubble);
             if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) removeMessageBubble(activeBubble);
@@ -2112,6 +2112,15 @@
         const retryStarted = retry() === true;
         if (!retryStarted) wafAutoRetryInProgress = false;
         sendResponse({ ok: true, retryStarted });
+        return false;
+      }
+      if (message?.type === 'QWEN_WAF_CANCELLED_BROADCAST') {
+        const flowId = String(message?.flowId || '');
+        if (flowId && activeWafFlowId === flowId) {
+          activeWafFlowId = '';
+          pendingWafRetryAction = null;
+          wafAutoRetryInProgress = false;
+        }
         return false;
       }
       if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'qwen') return false;
