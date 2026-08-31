@@ -2,7 +2,41 @@
 const VE_UPLOAD_BASE = 'http://123.121.147.7:88';
 const VE_TEACHER_UPLOAD_URL = `${VE_UPLOAD_BASE}/ve/back/rp/common/rpUpload.shtml`;
 const VE_STUDENT_UPLOAD_URL = `${VE_UPLOAD_BASE}/ve/back/rp/common/homeworkUpload.shtml?noteId=1`;
+const VE_SUPPORTED_UPLOAD_EXTENSIONS = Object.freeze([
+  'ppt', 'pptx', 'doc', 'docx', 'pdf', 'txt', 'xls', 'xlsx',
+  'jpg', 'jpeg', 'png', 'bmp', 'gif',
+  'mp3', 'mp4', 'avi', 'wmv', 'mov', 'rmvb', 'flv', 'f4v',
+  'rar', 'zip'
+]);
+const VE_SUPPORTED_UPLOAD_EXTENSION_SET = new Set(VE_SUPPORTED_UPLOAD_EXTENSIONS);
+const VE_SUPPORTED_UPLOAD_ACCEPT = VE_SUPPORTED_UPLOAD_EXTENSIONS.map((extension) => `.${extension}`).join(',');
 let veUploadSessionCheckPromise = null;
+
+function veUploadFileExtension(file) {
+  const name = String(file?.name || '').replace(/\\/g, '/').split('/').pop() || '';
+  const index = name.lastIndexOf('.');
+  return index > 0 && index < name.length - 1 ? name.slice(index + 1).toLowerCase() : '';
+}
+
+function isVeUploadFileExtensionSupported(file) {
+  return VE_SUPPORTED_UPLOAD_EXTENSION_SET.has(veUploadFileExtension(file));
+}
+
+function confirmUnsupportedVeUploadFiles(files) {
+  const unsupported = (Array.isArray(files) ? files : []).filter((file) => !isVeUploadFileExtensionSupported(file));
+  if (!unsupported.length) return true;
+  const shownNames = unsupported.slice(0, 12).map((file) => `• ${String(file?.name || '(未命名文件)')}`);
+  if (unsupported.length > shownNames.length) shownNames.push(`• 以及另外 ${unsupported.length - shownNames.length} 个文件`);
+  return globalThis.confirm([
+    '以下文件的后缀不在智慧课程平台支持范围内：',
+    '',
+    ...shownNames,
+    '',
+    `支持的后缀：${VE_SUPPORTED_UPLOAD_EXTENSIONS.join('、')}`,
+    '',
+    '平台可能拒绝或无法正常使用这些文件，是否仍继续上传？'
+  ].join('\n'));
+}
 
 function applyVeUploadAccountInfo(userInfo) {
   const info = userInfo && typeof userInfo === 'object' ? userInfo : null;
@@ -944,8 +978,20 @@ fileList.addEventListener('click', (e) => {
 
 async function processFilesForUpload(files, { waitForCompletion = false } = {}) {
   if (!files || !files.length) return;
-  const filesList = Array.from(files).filter(Boolean);
+  let filesList = Array.from(files).filter(Boolean);
   if (!filesList.length) return;
+
+  const unsupportedFiles = filesList.filter((file) => !isVeUploadFileExtensionSupported(file));
+  if (unsupportedFiles.length && !confirmUnsupportedVeUploadFiles(unsupportedFiles)) {
+    const unsupportedSet = new Set(unsupportedFiles);
+    filesList = filesList.filter((file) => !unsupportedSet.has(file));
+    if (!filesList.length) {
+      if (waitForCompletion) {
+        throw Object.assign(new Error('用户取消上传不受支持的文件'), { code: 'USER_CANCELLED' });
+      }
+      return [];
+    }
+  }
 
   try {
     await ensureVeUploadSession();
@@ -1069,14 +1115,14 @@ async function buildApiUploadFile(args = {}) {
   return new File([blob], fileName, { type: requestedMimeType || blob.type || 'application/octet-stream', lastModified: Date.now() });
 }
 
-function selectLocalFilesForApi({ accept = '' } = {}) {
+function selectLocalFilesForApi({ accept = VE_SUPPORTED_UPLOAD_ACCEPT } = {}) {
   return new Promise((resolve, reject) => {
     if (!(fileInput instanceof HTMLInputElement)) {
       reject(new Error('页面文件选择器不存在'));
       return;
     }
     const previousAccept = fileInput.accept;
-    fileInput.accept = String(accept || '').trim();
+    fileInput.accept = String(accept || VE_SUPPORTED_UPLOAD_ACCEPT).trim();
     fileInput.value = '';
     let settled = false;
     let focusTimer = 0;
