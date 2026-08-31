@@ -61,7 +61,7 @@
       label: 'MJ',
       activationKey: 'mjModuleActivated',
       styles: ['options.css'],
-      files: ['options.html', 'options.js', 'media-replacer.js', 'assets/effect1.webm', 'assets/effect2.webm'],
+      files: ['options.html', 'options.js', 'media-replacer.js'],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     },
     updater: {

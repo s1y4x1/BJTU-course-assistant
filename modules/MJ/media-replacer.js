@@ -2,18 +2,16 @@
   'use strict';
 
   const ENABLED_KEY = 'mjSoundVideoEnabled';
-  const VIDEO_PATHS = Object.freeze([
-    'modules/MJ/assets/effect1.webm',
-    'modules/MJ/assets/effect2.webm'
-  ]);
+  const AVAILABLE_PATHS_KEY = 'mjSoundVideoAvailablePaths';
   let enabled = true;
+  let videoPaths = [];
 
   function replaceImage(image) {
-    if (!enabled || !(image instanceof HTMLImageElement) || image.dataset.mjVideoReplaced === '1') return;
+    if (!enabled || !videoPaths.length || !(image instanceof HTMLImageElement) || image.dataset.mjVideoReplaced === '1') return;
     image.dataset.mjVideoReplaced = '1';
     const video = document.createElement('video');
     video.className = image.className;
-    video.src = chrome.runtime.getURL(VIDEO_PATHS[Math.floor(Math.random() * VIDEO_PATHS.length)]);
+    video.src = chrome.runtime.getURL(videoPaths[Math.floor(Math.random() * videoPaths.length)]);
     video.autoplay = true;
     video.playsInline = true;
     video.preload = 'auto';
@@ -33,12 +31,21 @@
     node.querySelectorAll('img.tm-mj-spiderman-image').forEach(replaceImage);
   }
 
-  chrome.storage.local.get([ENABLED_KEY]).then((stored) => {
+  chrome.storage.local.get([ENABLED_KEY, AVAILABLE_PATHS_KEY]).then((stored) => {
     enabled = stored[ENABLED_KEY] !== false;
+    videoPaths = Array.isArray(stored[AVAILABLE_PATHS_KEY])
+      ? stored[AVAILABLE_PATHS_KEY].filter((path) => typeof path === 'string' && path.startsWith('modules/MJ/assets/'))
+      : [];
+    inspect(document.documentElement);
   }).catch(() => {});
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[ENABLED_KEY]) {
       enabled = changes[ENABLED_KEY].newValue !== false;
+    }
+    if (area === 'local' && changes[AVAILABLE_PATHS_KEY]) {
+      videoPaths = Array.isArray(changes[AVAILABLE_PATHS_KEY].newValue)
+        ? changes[AVAILABLE_PATHS_KEY].newValue.filter((path) => typeof path === 'string' && path.startsWith('modules/MJ/assets/'))
+        : [];
     }
   });
 

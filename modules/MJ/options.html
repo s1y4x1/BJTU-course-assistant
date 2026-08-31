@@ -41,11 +41,28 @@
         <input id="mjSoundVideoEnabled" type="checkbox" checked disabled>
         <span>替换素材为有声视频（实验）</span>
       </label>
+      <div id="mjVideoAssets" class="mj-video-assets" aria-label="有声视频素材">
+        <div class="mj-video-asset" data-video-asset="effect1.webm">
+          <span class="mj-video-asset-name">effect1.webm</span>
+          <span class="mj-video-asset-size file-size-emphasis">—</span>
+          <span class="mj-video-asset-status">正在检查…</span>
+          <button class="mj-external-script-action mj-video-asset-download" type="button" disabled>下载</button>
+          <button class="mj-external-script-action mj-external-script-delete mj-video-asset-delete" type="button" disabled>删除</button>
+        </div>
+        <div class="mj-video-asset" data-video-asset="effect2.webm">
+          <span class="mj-video-asset-name">effect2.webm</span>
+          <span class="mj-video-asset-size file-size-emphasis">—</span>
+          <span class="mj-video-asset-status">正在检查…</span>
+          <button class="mj-external-script-action mj-video-asset-download" type="button" disabled>下载</button>
+          <button class="mj-external-script-action mj-external-script-delete mj-video-asset-delete" type="button" disabled>删除</button>
+        </div>
+      </div>
     </div>
   </section>
   <div id="msg"></div>
   <script src="../../core/module-registry.js"></script>
   <script src="../../core/loaders/updater-loader.js"></script>
+  <script src="../../core/option-tips.js"></script>
   <script src="options.js"></script>
   <script src="../../core/loaders/module-options-standalone.js"></script>
 </body>
