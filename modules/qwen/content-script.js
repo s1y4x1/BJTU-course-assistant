@@ -1,4 +1,4 @@
-/* 通义千问页面桥接：同步登录令牌，并上报风控校验页的刷新事件。 */
+/* 通义千问页面桥接：同步登录令牌。 */
 (function initQwenLoginTokenBridge() {
   'use strict';
 
@@ -36,16 +36,7 @@
     sendToken(readToken());
   }
 
-  function reportWafPageLoad() {
-    const navigationEntry = performance.getEntriesByType?.('navigation')?.[0];
-    sendToBackground({
-      type: 'QWEN_WAF_PAGE_LOADED',
-      payload: { navigationType: String(navigationEntry?.type || '') }
-    });
-  }
-
   check();
-  reportWafPageLoad();
   window.addEventListener('pageshow', check);
   window.addEventListener('storage', check);
   setInterval(check, location.pathname.startsWith('/auth') ? 500 : 8000);

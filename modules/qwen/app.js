@@ -44,7 +44,9 @@
   let historyLoadPromise = null;
   let historyReloadAfterLogin = false;
   let pendingWafRetryAction = null;
+  let pendingWafRetryButton = null;
   let activeWafFlowId = '';
+  const cancelledWafFlowIds = new Set();
   let wafAutoRetryInProgress = false;
   let chatStateLoadPromise = null;
   let panelActivationPromise = null;
@@ -692,15 +694,17 @@
   function reportWafRetryResult(success) {
     const flowId = String(activeWafFlowId || '');
     if (!flowId) return;
+    const reportedRetryAction = pendingWafRetryAction;
+    activeWafFlowId = '';
     if (success) {
-      activeWafFlowId = '';
       pendingWafRetryAction = null;
+      pendingWafRetryButton = null;
     }
     wafAutoRetryInProgress = false;
     void send('QWEN_WAF_RETRY_RESULT', { flowId, success: success === true }).then((response) => {
-      if (response?.completed === true && activeWafFlowId === flowId) {
-        activeWafFlowId = '';
-        pendingWafRetryAction = null;
+      if (response?.completed === true) {
+        if (activeWafFlowId === flowId) activeWafFlowId = '';
+        if (pendingWafRetryAction === reportedRetryAction) pendingWafRetryAction = null;
       }
     });
   }
@@ -708,7 +712,12 @@
   function openWafVerificationPage(validationUrl = '') {
     void send('QWEN_OPEN_LOGIN', { auth: false, validationUrl: String(validationUrl || '') }).then((response) => {
       if (response?.ok === true && response?.flowId) {
-        activeWafFlowId = String(response.flowId);
+        const flowId = String(response.flowId);
+        if (cancelledWafFlowIds.delete(flowId)) return;
+        activeWafFlowId = flowId;
+      } else if (pendingWafRetryButton instanceof HTMLButtonElement) {
+        pendingWafRetryButton.disabled = false;
+        pendingWafRetryButton.title = '无法打开校验窗口，可手动重试';
       }
     });
   }
@@ -1821,15 +1830,22 @@
           const bubble = appendMessage('error', message.message || '请求失败');
           placeMessageAfter(bubble, retryVisibleAnchor);
           const isWafError = message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE';
+          const waitsForWafWindow = isWafError && !!String(message.validationUrl || '');
           if (isWafError) {
             historyReloadAfterLogin = false;
             setStatus('风控校验', 'error');
+            setBusy(false);
           }
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'qwen-chat-retry-btn';
           btn.textContent = '重试';
           btn.title = '重新发送刚才的请求';
+          if (waitsForWafWindow) {
+            btn.disabled = true;
+            btn.title = '请先在校验窗口中完成验证或关闭窗口';
+            pendingWafRetryButton = btn;
+          }
           btn.addEventListener('click', () => {
             btn.disabled = true;
             btn.textContent = '正在重试…';
@@ -1850,14 +1866,16 @@
           retryPrompt = { id: retryId, bubble, button: btn, retriedBubble };
           if (isWafError || activeWafFlowId) {
             pendingWafRetryAction = () => {
-              if (retryPrompt?.id !== retryId || btn.disabled || !btn.isConnected) return false;
+              if (retryPrompt?.id !== retryId || !btn.isConnected) return false;
+              btn.disabled = false;
+              btn.title = '重新发送刚才的请求';
               btn.click();
               return true;
             };
           } else {
             pendingWafRetryAction = null;
           }
-          if (isWafError && !activeWafFlowId) openWafVerificationPage(message.validationUrl);
+          if (waitsForWafWindow && !activeWafFlowId) openWafVerificationPage(message.validationUrl);
           const messages = el(MESSAGES_ID);
           maybeAutoScrollMessages(messages);
         } else if (message?.type === 'retryAccepted') {
@@ -1865,6 +1883,7 @@
           retryPrompt.bubble.remove();
           retryPrompt = null;
           pendingWafRetryAction = null;
+          pendingWafRetryButton = null;
           activeBubble = null;
           const fresh = ensureAssistantBubble();
           placeCursor(fresh, false);
@@ -1914,8 +1933,20 @@
             const errorBubble = appendMessage('error', message.message || '请求失败');
             placeMessageAfter(errorBubble, visibleAnchor);
             setStatus('风控校验', 'error');
-            pendingWafRetryAction = () => {
-              if (busy) return false;
+            const retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'qwen-chat-retry-btn';
+            retryBtn.textContent = '重试';
+            retryBtn.title = '重新发送刚才的请求';
+            const waitsForWafWindow = !!String(message.validationUrl || '');
+            if (waitsForWafWindow) {
+              retryBtn.disabled = true;
+              retryBtn.title = '请先在校验窗口中完成验证或关闭窗口';
+              pendingWafRetryButton = retryBtn;
+            }
+            retryBtn.addEventListener('click', () => {
+              if (busy) return;
+              retryBtn.disabled = true;
               removeMessageBubble(errorBubble);
               if (wasOpeningStream) openingStarted = true;
               startStream({
@@ -1924,9 +1955,16 @@
                 isEditSend: true,
                 showUserBubble: false
               });
+            });
+            errorBubble.appendChild(retryBtn);
+            pendingWafRetryAction = () => {
+              if (busy || !retryBtn.isConnected) return false;
+              retryBtn.disabled = false;
+              retryBtn.title = '重新发送刚才的请求';
+              retryBtn.click();
               return true;
             };
-            if (!activeWafFlowId) openWafVerificationPage(message.validationUrl);
+            if (waitsForWafWindow && !activeWafFlowId) openWafVerificationPage(message.validationUrl);
           } else {
             removeCursor(activeBubble);
             if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble)) removeMessageBubble(activeBubble);
@@ -2116,8 +2154,14 @@
       }
       if (message?.type === 'QWEN_WAF_CANCELLED_BROADCAST') {
         const flowId = String(message?.flowId || '');
-        if (flowId && activeWafFlowId === flowId) {
-          activeWafFlowId = '';
+        if (flowId) {
+          if (activeWafFlowId === flowId) activeWafFlowId = '';
+          else if (!activeWafFlowId) cancelledWafFlowIds.add(flowId);
+          if (pendingWafRetryButton instanceof HTMLButtonElement && pendingWafRetryButton.isConnected) {
+            pendingWafRetryButton.disabled = false;
+            pendingWafRetryButton.title = '重新发送刚才的请求';
+          }
+          pendingWafRetryButton = null;
           pendingWafRetryAction = null;
           wafAutoRetryInProgress = false;
         }

@@ -17,12 +17,19 @@
 
   global.__bjtuOptionsModulesReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
+    const activationKeys = Object.values(global.BjtuModuleRegistry.definitions)
+      .map((definition) => String(definition?.activationKey || ''))
+      .filter(Boolean);
+    const activationState = activationKeys.length
+      ? await chrome.storage.local.get(activationKeys)
+      : {};
     const host = document.getElementById('options-module-slots');
     if (!(host instanceof HTMLElement)) return [];
     const loaded = [];
     for (const [id, definition] of Object.entries(global.BjtuModuleRegistry.definitions)) {
       const options = definition?.options;
       if (!available[id] || !options) continue;
+      if (definition.activationKey && activationState[definition.activationKey] !== true) continue;
       const response = await fetch(chrome.runtime.getURL(`modules/${id}/${options.fragment}`), {
         cache: 'no-store'
       });

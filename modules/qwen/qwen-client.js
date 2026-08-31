@@ -121,53 +121,36 @@
     return !!await getStoredToken();
   }
 
-  async function openLoginPage(options = {}) {
+  async function openLoginPage() {
     if (openLoginPagePromise) return openLoginPagePromise;
     openLoginPagePromise = queueQwenPageOperation(async () => {
-      const auth = options?.auth === true;
-      if (!auth) {
-        const existing = await findChatTab();
-        if (existing) {
-          await keepChatTabResident(existing.id);
-          const tab = await chrome.tabs.update(existing.id, { active: true }).catch(() => existing);
-          if (Number.isInteger(existing.windowId)) {
-            await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
-          }
-          return { tab, created: false };
+      const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
+      const storedTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
+      const existingLoginTab = Number.isInteger(storedTabId)
+        ? await chrome.tabs.get(storedTabId).catch(() => null)
+        : null;
+      if (existingLoginTab && String(existingLoginTab.url || existingLoginTab.pendingUrl || '').startsWith(CHAT_BASE)) {
+        const loginTab = await chrome.tabs.update(existingLoginTab.id, {
+          url: AUTH_URL,
+          active: true,
+          autoDiscardable: false
+        }).catch(() => existingLoginTab);
+        if (Number.isInteger(existingLoginTab.windowId)) {
+          await chrome.windows.update(existingLoginTab.windowId, { focused: true }).catch(() => null);
         }
-        const tab = await global.BjtuTabs.create({ url: CHAT_BASE, active: true });
-        await keepChatTabResident(tab?.id);
-        return { tab, created: true };
+        return { tab: loginTab, created: false };
       }
-      if (auth) {
-        const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
-        const storedTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
-        const existingLoginTab = Number.isInteger(storedTabId)
-          ? await chrome.tabs.get(storedTabId).catch(() => null)
-          : null;
-        if (existingLoginTab && String(existingLoginTab.url || existingLoginTab.pendingUrl || '').startsWith(CHAT_BASE)) {
-          const loginTab = await chrome.tabs.update(existingLoginTab.id, {
-            url: AUTH_URL,
-            active: true,
-            autoDiscardable: false
-          }).catch(() => existingLoginTab);
-          if (Number.isInteger(existingLoginTab.windowId)) {
-            await chrome.windows.update(existingLoginTab.windowId, { focused: true }).catch(() => null);
-          }
-          return { tab: loginTab, created: false };
-        }
-        await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
-        const reusable = await findChatTab();
-        if (reusable) {
-          await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: reusable.id }).catch(() => {});
-          const loginTab = await chrome.tabs.update(reusable.id, {
-            url: AUTH_URL,
-            active: true,
-            autoDiscardable: false
-          }).catch(() => reusable);
-          if (Number.isInteger(reusable.windowId)) await chrome.windows.update(reusable.windowId, { focused: true }).catch(() => null);
-          return { tab: loginTab, created: false };
-        }
+      await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
+      const reusable = await findChatTab();
+      if (reusable) {
+        await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: reusable.id }).catch(() => {});
+        const loginTab = await chrome.tabs.update(reusable.id, {
+          url: AUTH_URL,
+          active: true,
+          autoDiscardable: false
+        }).catch(() => reusable);
+        if (Number.isInteger(reusable.windowId)) await chrome.windows.update(reusable.windowId, { focused: true }).catch(() => null);
+        return { tab: loginTab, created: false };
       }
 
       let tab = await global.BjtuTabs.create({ url: 'about:blank', active: true });
@@ -581,6 +564,14 @@
           payload = JSON.parse(line.slice(5).trim());
         } catch {
           return;
+        }
+        const payloadText = JSON.stringify(payload);
+        const payloadErrorKind = detectApiErrorText(payloadText);
+        if (payloadErrorKind === 'WAF_BUSY') {
+          throw wafBusyError(extractWafValidationUrl(payloadText));
+        }
+        if (payloadErrorKind === 'WAF_PUNISH') {
+          throw wafPunishError(extractWafValidationUrl(payloadText));
         }
         const incomingResponseId = String(payload?.response_id || payload?.['response.created']?.response_id || '');
         if (incomingResponseId && incomingResponseId !== responseId) {

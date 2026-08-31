@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MJ 选项</title>
+  <script src="../../UI/theme.js"></script>
+  <script src="../../UI/file-size-emphasis.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="../../UI/file-size-emphasis.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="MJ">
+  <section class="mj-options-card" data-options-fragment>
+    <div class="section-title">
+      <a class="module-options-page-link" data-module-options-link="MJ" href="options.html"
+        title="在当前页面打开 MJ 选项">MJ</a>
+    </div>
+    <div class="mj-external-script-header">
+      <strong>外部脚本</strong>
+      <span class="tip">从 GreasyFork 下载；首次激活 MJ 时会自动下载并启用。</span>
+    </div>
+    <div class="mj-external-script-item">
+      <label class="mj-external-script-choice">
+        <input id="mjExternalScriptEnabled" type="checkbox" disabled>
+        <span class="mj-external-script-name">MJ 蜘蛛侠网页彩蛋</span>
+        <span id="mjExternalScriptSize" class="mj-external-script-size file-size-emphasis"></span>
+      </label>
+      <span id="mjExternalScriptStatus" class="mj-external-script-status">正在检查…</span>
+      <button id="mjExternalScriptDownload" class="mj-external-script-action" type="button" disabled>下载</button>
+      <button id="mjExternalScriptCheckUpdate" class="mj-external-script-action" type="button" hidden disabled>检查更新</button>
+      <button id="mjExternalScriptDelete" class="mj-external-script-action mj-external-script-delete" type="button" hidden disabled>删除</button>
+      <div id="mjExternalScriptProgress" class="mj-external-script-progress" hidden>
+        <div id="mjExternalScriptProgressLabel" class="mj-external-script-progress-label">正在下载…</div>
+        <div class="mj-external-script-progress-track">
+          <div id="mjExternalScriptProgressBar" class="mj-external-script-progress-bar"></div>
+        </div>
+      </div>
+      <label class="mj-external-script-suboption">
+        <input id="mjSoundVideoEnabled" type="checkbox" checked disabled>
+        <span>替换素材为有声视频（实验）</span>
+      </label>
+    </div>
+  </section>
+  <div id="msg"></div>
+  <script src="../../core/module-registry.js"></script>
+  <script src="../../core/loaders/updater-loader.js"></script>
+  <script src="options.js"></script>
+  <script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>

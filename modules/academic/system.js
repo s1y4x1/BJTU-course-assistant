@@ -719,15 +719,30 @@
       }
     }
     if (redirectUrl) {
-      const redirectResponse = await fetchAcademicWith503Retry(redirectUrl, {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
-        redirect: 'follow',
-        headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
-      });
-      await redirectResponse.text();
-      if (!redirectResponse.ok) throw new Error(`教务系统 MIS 跳转入口 HTTP ${redirectResponse.status}`);
+      while (true) {
+        try {
+          const redirectResponse = await fetchAcademicWith503Retry(redirectUrl, {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store',
+            redirect: 'follow',
+            headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+          });
+          await redirectResponse.text();
+          let reachedNoticePage = false;
+          try {
+            const finalUrl = new URL(redirectResponse.url || '', redirectUrl);
+            reachedNoticePage = finalUrl.hostname === 'aa.bjtu.edu.cn'
+              && /^\/notice\/item\/?$/i.test(finalUrl.pathname);
+          } catch {
+            reachedNoticePage = false;
+          }
+          if (redirectResponse.ok && reachedNoticePage) break;
+        } catch {
+          // Token login may temporarily return 503 or another transient error.
+        }
+        await wait(1000);
+      }
     } else if (/mis\.bjtu\.edu\.cn\/(?:login|auth)|cas\.bjtu\.edu\.cn\/login/i.test(String(response.url || ''))
         || /统一身份认证|用户登录/u.test(html) && /password|loginname/i.test(html)) {
       throw new Error('MIS 尚未登录，请先登录 MIS 后重试');

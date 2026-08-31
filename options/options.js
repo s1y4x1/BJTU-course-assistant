@@ -538,6 +538,12 @@ async function setupInstalledModuleOptions() {
 
   const definitions = globalThis.BjtuModuleRegistry?.definitions || {};
   const available = await globalThis.BjtuModuleRegistry.ready;
+  const activationKeys = Object.values(definitions)
+    .map((definition) => String(definition?.activationKey || ''))
+    .filter(Boolean);
+  const activationState = activationKeys.length
+    ? await chrome.storage.local.get(activationKeys)
+    : {};
   const updaterReady = await globalThis.__bjtuUpdaterReady;
   if (updaterReady && globalThis.BjtuUpdaterModuleManager?.prepare) {
     await globalThis.BjtuUpdaterModuleManager.prepare().catch(() => null);
@@ -548,6 +554,7 @@ async function setupInstalledModuleOptions() {
   orderedIds.forEach((id) => {
     const definition = definitions[id];
     if (!definition) return;
+    if (definition.activationKey && activationState[definition.activationKey] !== true) return;
     const label = document.createElement('label');
     label.className = 'installed-module-item';
     label.dataset.moduleId = id;

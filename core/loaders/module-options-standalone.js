@@ -32,6 +32,7 @@
       captcha: global.BjtuCaptchaOptions,
       cas: global.BjtuCasOptions,
       mail: global.BjtuMailOptions,
+      MJ: global.BjtuMjOptions,
       qwen: global.BjtuQwenOptions
     };
     const controller = controllers[id];

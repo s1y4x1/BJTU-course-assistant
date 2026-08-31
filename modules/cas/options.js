@@ -203,7 +203,7 @@
       if (changes[SWITCH_MIS_LOGOUT_KEY]) {
         const checkbox = element(SWITCH_MIS_LOGOUT_KEY);
         if (checkbox instanceof HTMLInputElement) {
-          checkbox.checked = changes[SWITCH_MIS_LOGOUT_KEY].newValue === true;
+          checkbox.checked = changes[SWITCH_MIS_LOGOUT_KEY].newValue !== false;
         }
       }
     });
@@ -231,7 +231,7 @@
     const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY]);
     const misCheckbox = element(SWITCH_MIS_LOGOUT_KEY);
     if (misCheckbox instanceof HTMLInputElement) {
-      misCheckbox.checked = stored[SWITCH_MIS_LOGOUT_KEY] === true;
+      misCheckbox.checked = stored[SWITCH_MIS_LOGOUT_KEY] !== false;
     }
     bindEvents();
     bindMessages();

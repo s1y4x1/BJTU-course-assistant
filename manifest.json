@@ -27,6 +27,7 @@
     "sidePanel"
   ],
   "host_permissions": [
+    "<all_urls>",
     "http://123.121.147.7:88/*",
     "http://123.121.147.7:8081/*",
     "https://www.yuketang.cn/*",
@@ -94,6 +95,15 @@
       ],
       "matches": [
         "http://123.121.147.7:88/*"
+      ]
+    },
+    {
+      "resources": [
+        "modules/MJ/assets/effect1.webm",
+        "modules/MJ/assets/effect2.webm"
+      ],
+      "matches": [
+        "<all_urls>"
       ]
     }
   ]

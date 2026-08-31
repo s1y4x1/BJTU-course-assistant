@@ -299,7 +299,7 @@
   async function logoutMisIfEnabled() {
     try {
       const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY]);
-      if (stored?.[SWITCH_MIS_LOGOUT_KEY] !== true) return;
+      if (stored?.[SWITCH_MIS_LOGOUT_KEY] === false) return;
       await fetch(MIS_SLOGOUT_URL, {
         credentials: 'include', cache: 'no-store', redirect: 'follow'
       });

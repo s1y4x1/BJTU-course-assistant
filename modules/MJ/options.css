@@ -1,0 +1,164 @@
+.mj-options-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.mj-external-script-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.mj-external-script-header .tip {
+  margin: 0;
+}
+
+.mj-external-script-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.mj-external-script-choice {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  margin: 0;
+}
+
+.mj-external-script-choice input,
+.mj-external-script-suboption input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.mj-external-script-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mj-external-script-size {
+  flex: 0 0 auto;
+}
+
+.mj-external-script-status {
+  color: var(--muted-text, #64748b);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mj-external-script-status.error {
+  color: #dc2626;
+}
+
+.mj-external-script-action {
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.mj-external-script-delete {
+  background: #dc2626;
+}
+
+.mj-external-script-delete.is-locked {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.mj-external-script-suboption {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 1px 0 0 22px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.mj-external-script-suboption:has(input:disabled) {
+  opacity: .5;
+}
+
+.mj-external-script-progress {
+  grid-column: 1 / -1;
+}
+
+.mj-external-script-progress-label {
+  margin-bottom: 5px;
+  color: var(--muted-text, #64748b);
+  font-size: 12px;
+}
+
+.mj-external-script-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, .2);
+}
+
+.mj-external-script-progress-bar {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  transition: width .16s ease;
+}
+
+.mj-external-script-progress.is-indeterminate .mj-external-script-progress-bar {
+  width: 38%;
+  animation: mj-progress-indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes mj-progress-indeterminate {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(275%); }
+}
+
+html[data-color-scheme="dark"] .mj-options-card {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+html[data-color-scheme="dark"] .mj-external-script-item {
+  border-color: #475569;
+  background: #111827;
+}
+
+html[data-color-scheme="dark"] .mj-external-script-status,
+html[data-color-scheme="dark"] .mj-external-script-progress-label,
+html[data-color-scheme="dark"] .mj-external-script-suboption,
+html[data-color-scheme="dark"] .mj-external-script-header .tip {
+  color: #cbd5e1;
+}
+
+html[data-color-scheme="dark"] .mj-external-script-status.error {
+  color: #f87171;
+}
+
+html[data-color-scheme="dark"] .mj-external-script-progress-track {
+  background: #334155;
+}
+
+@media (max-width: 720px) {
+  .mj-external-script-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mj-external-script-status {
+    grid-column: 1 / -1;
+  }
+}

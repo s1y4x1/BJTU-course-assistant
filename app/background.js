@@ -297,6 +297,17 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     matches: ['https://chat.qwen.ai/*'],
     js: ['modules/qwen/content-script.js'],
     runAt: 'document_idle'
+  },
+  {
+    id: 'bjtu-mj-spider-man-easter-egg',
+    module: 'MJ',
+    enabledStorageKey: 'mjExternalScriptEnabled',
+    matches: ['<all_urls>'],
+    js: [
+      'modules/MJ/media-replacer.js',
+      'modules/MJ/external/MJ 蜘蛛侠网页彩蛋.user.js'
+    ],
+    runAt: 'document_end'
   }
 ];
 
@@ -396,7 +407,11 @@ const APP_URL = chrome.runtime.getURL('app/app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 const EXTENSION_RELOAD_RESTORE_ALARM = 'bjtu-extension-reload-restore';
-const RELOAD_REOPEN_PATHS = new Set(['options/options.html', 'modules/academic/options.html']);
+const RELOAD_REOPEN_PATHS = new Set([
+  'options/options.html',
+  'modules/academic/options.html',
+  'modules/MJ/options.html'
+]);
 
 function reloadTargetUrl(payload = {}) {
   const targetPath = String(payload?.targetPath || '').replace(/^\/+/, '');
@@ -914,7 +929,43 @@ chrome.runtime.onStartup.addListener(() => {
 
 refreshActionPopupFromStorage().catch(() => {});
 
+async function activateMjModuleAndOpenOptions() {
+  await chrome.storage.local.set({
+    mjModuleActivated: true,
+    mjAutoInstallPending: true
+  });
+  const mjOptionsUrl = chrome.runtime.getURL('modules/MJ/options.html');
+  const allTabs = await chrome.tabs.query({}).catch(() => []);
+  const existing = allTabs.find((tab) => String(tab?.url || tab?.pendingUrl || '').startsWith(mjOptionsUrl));
+  if (existing) {
+    await chrome.tabs.reload(existing.id).catch(() => null);
+    await chrome.tabs.update(existing.id, { active: true }).catch(() => null);
+    if (Number.isInteger(existing.windowId)) {
+      await chrome.windows.update(existing.windowId, { focused: true }).catch(() => null);
+    }
+  } else {
+    await chrome.windows.create({
+      url: mjOptionsUrl,
+      type: 'popup',
+      focused: true,
+      width: 720,
+      height: 600
+    });
+  }
+  const mainOptionsUrl = chrome.runtime.getURL('options/options.html');
+  const mainOptionsTabs = allTabs.filter((tab) => String(tab?.url || tab?.pendingUrl || '').startsWith(mainOptionsUrl));
+  await Promise.all(mainOptionsTabs.map((tab) => chrome.tabs.reload(tab.id).catch(() => null)));
+  return { ok: true };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'ACTIVATE_MJ_MODULE') {
+    activateMjModuleAndOpenOptions()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
   if (message?.type === 'PORTAL_LOGIN_CONTEXT') {
     (async () => {
       const stored = await chrome.storage.local.get(['username']);

@@ -487,8 +487,24 @@ async function initFullscreenModuleButtons() {
 void initFullscreenModuleButtons();
 
 if (usernameInput) {
+  let mjActivationRequested = false;
   usernameInput.addEventListener('input', () => {
     const value = String(usernameInput.value || '').trim();
+    const activateMj = value.toLowerCase() === 'mj';
+    if (activateMj && !mjActivationRequested) {
+      mjActivationRequested = true;
+      chrome.runtime.sendMessage({ type: 'ACTIVATE_MJ_MODULE' }).then((result) => {
+        if (!result?.ok) {
+          mjActivationRequested = false;
+          showToast?.(`无法激活 MJ：${result?.message || '未知错误'}`, 'error');
+        }
+      }).catch((error) => {
+        mjActivationRequested = false;
+        showToast?.(`无法激活 MJ：${String(error?.message || error)}`, 'error');
+      });
+    } else if (!activateMj) {
+      mjActivationRequested = false;
+    }
     const current = String(lastValidUsername || '').trim();
     if (value && value !== current) {
       beginAccountSwitchInterruption();

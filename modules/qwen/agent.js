@@ -252,6 +252,7 @@
           ? await onRetryRequest({
             message: String(error?.message || error),
             code,
+            validationUrl: String(error?.validationUrl || ''),
             chatId: effectiveChatId,
             afterOperationResult: hasPendingOperationResult,
             operationResult: hasPendingOperationResult ? pendingOperationResult : undefined

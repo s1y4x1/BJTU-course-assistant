@@ -57,6 +57,13 @@
       files: ['system.js', 'options.html', 'options.js'],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     },
+    MJ: {
+      label: 'MJ',
+      activationKey: 'mjModuleActivated',
+      styles: ['options.css'],
+      files: ['options.html', 'options.js', 'media-replacer.js', 'assets/effect1.webm', 'assets/effect2.webm'],
+      options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
+    },
     updater: {
       label: '更新组件',
       styles: ['app.css'],
