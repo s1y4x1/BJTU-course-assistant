@@ -2,8 +2,8 @@
   'use strict';
 
   const BASE = 'https://www.xuetangx.com';
-  const LOGIN_PAGE_URL = `${BASE}/`;
   const COURSE_LIST_URL = `${BASE}/api/v1/lms/user/user-courses`;
+  const LOGIN_HEADER_RULE_IDS = Object.freeze([914309, 914310]);
   const COURSE_STATUS_LABELS = Object.freeze({
     1: '正在上课',
     2: '即将开课',
@@ -28,15 +28,13 @@
     6: 11
   });
   const THEME_COLOR = '#1769fe';
-  const loginHelperTabIds = new Set();
   const expandedGroups = new Map();
   let env = null;
   let courses = [];
-  let activeLoginTabId = null;
-  let loginTabPromise = null;
   let loadSerial = 0;
   let qrLoginCancelled = false;
-  let qrLoginTabId = null;
+  let qrLoginSocket = null;
+  let qrLoginState = null;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const escape = (value) => env?.escape?.(String(value ?? '')) ?? String(value ?? '');
@@ -82,78 +80,42 @@
     return new Set(source.map(Number).filter((item) => ACTIVITY_TYPES[item]));
   }
 
-  async function waitForTabComplete(tabId, timeoutMs = 20000) {
-    const existing = await chrome.tabs.get(tabId).catch(() => null);
-    if (existing?.status === 'complete') return existing;
-    return new Promise((resolve, reject) => {
-      const cleanup = () => {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-        chrome.tabs.onRemoved.removeListener(onRemoved);
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(Object.assign(new Error('学堂在线页面加载超时'), { code: 'tab-timeout' }));
-      }, timeoutMs);
-      const onUpdated = (updatedId, changeInfo, tab) => {
-        if (updatedId !== tabId || changeInfo.status !== 'complete') return;
-        cleanup();
-        resolve(tab);
-      };
-      const onRemoved = (removedId) => {
-        if (removedId !== tabId) return;
-        cleanup();
-        reject(Object.assign(new Error('学堂在线后台页面已关闭'), { code: 'tab-closed' }));
-      };
-      chrome.tabs.onUpdated.addListener(onUpdated);
-      chrome.tabs.onRemoved.addListener(onRemoved);
+  async function ensureDirectLoginHeaders() {
+    if (!chrome?.declarativeNetRequest?.updateSessionRules) return;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [...LOGIN_HEADER_RULE_IDS],
+      addRules: [
+        {
+          id: LOGIN_HEADER_RULE_IDS[0],
+          priority: 1,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [{ header: 'Origin', operation: 'set', value: BASE }]
+          },
+          condition: {
+            regexFilter: '^wss://www\\.xuetangx\\.com/wsapp/(?:[?#].*)?$',
+            initiatorDomains: [chrome.runtime.id],
+            resourceTypes: ['websocket']
+          }
+        },
+        {
+          id: LOGIN_HEADER_RULE_IDS[1],
+          priority: 1,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [
+              { header: 'Origin', operation: 'set', value: BASE },
+              { header: 'Referer', operation: 'set', value: `${BASE}/` }
+            ]
+          },
+          condition: {
+            urlFilter: '||www.xuetangx.com/api/v1/u/login/wx/',
+            initiatorDomains: [chrome.runtime.id],
+            resourceTypes: ['xmlhttprequest']
+          }
+        }
+      ]
     });
-  }
-
-  async function ensureLoginTabOnce(serial) {
-    if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
-    if (activeLoginTabId) {
-      const tab = await chrome.tabs.get(Number(activeLoginTabId)).catch(() => null);
-      if (tab?.id && String(tab.url || '').startsWith(`${BASE}/`)) {
-        return tab.status === 'complete' ? tab : waitForTabComplete(tab.id);
-      }
-      activeLoginTabId = null;
-    }
-    const reusableTabs = await chrome.tabs.query({ url: [`${BASE}/*`] }).catch(() => []);
-    const reusable = reusableTabs.find((tab) => tab?.id && tab.status === 'complete');
-    if (reusable?.id) {
-      activeLoginTabId = reusable.id;
-      return reusable;
-    }
-    if (!loginTabPromise) {
-      loginTabPromise = chrome.tabs.create({ url: LOGIN_PAGE_URL, active: false }).then(async (tab) => {
-        if (!tab?.id) throw new Error('无法创建学堂在线登录页面');
-        void groupBjtuOpenedTab(tab.id);
-        loginHelperTabIds.add(tab.id);
-        activeLoginTabId = tab.id;
-        return waitForTabComplete(tab.id);
-      }).finally(() => {
-        loginTabPromise = null;
-      });
-    }
-    return loginTabPromise;
-  }
-
-  async function ensureLoginTab(serial) {
-    let lastError = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
-      try {
-        return await ensureLoginTabOnce(serial);
-      } catch (error) {
-        lastError = error;
-        activeLoginTabId = null;
-        loginTabPromise = null;
-        if (!['tab-closed', 'tab-timeout'].includes(String(error?.code || '')) || attempt >= 2) throw error;
-        await sleep(350 * (attempt + 1));
-      }
-    }
-    throw lastError || new Error('无法打开学堂在线登录页面');
   }
 
   async function getXuetangxCsrfToken() {
@@ -211,20 +173,11 @@
     return result.data;
   }
 
-  function closeCreatedLoginHelperTabs() {
-    for (const tabId of [...loginHelperTabIds]) {
-      loginHelperTabIds.delete(tabId);
-      if (Number(activeLoginTabId) === Number(tabId)) activeLoginTabId = null;
-      chrome.tabs.remove(tabId).catch(() => {});
-    }
-  }
-
   function cancelQrLogin() {
     qrLoginCancelled = true;
     loadSerial += 1;
     hideQrLoginModal();
     void stopQrLoginSocket();
-    closeCreatedLoginHelperTabs();
     env?.setState?.('offline');
   }
 
@@ -280,174 +233,130 @@
     document.getElementById('xuetangx-login-modal')?.classList.remove('show');
   }
 
-  async function startQrLoginSocket(tabId) {
-    qrLoginTabId = Number(tabId) || null;
-    const result = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: () => {
-        const stateKey = '__bjtuXuetangxQrLoginState__';
-        const socketKey = '__bjtuXuetangxQrLoginSocket__';
-        try { globalThis[socketKey]?.close(); } catch {}
-        const state = { status: 'connecting', ticket: '', loginid: null, expiresAt: 0, error: '' };
-        globalThis[stateKey] = state;
-        try {
-          const socket = new WebSocket('wss://www.xuetangx.com/wsapp/');
-          globalThis[socketKey] = socket;
-          socket.addEventListener('open', () => {
-            state.status = 'requesting';
-            socket.send(JSON.stringify({ op: 'requestlogin', role: 'web', version: '1.4', purpose: 'login', xtbz: 'xt', 'x-client': 'web' }));
-          });
-          socket.addEventListener('message', (event) => {
-            let message = null;
-            try { message = JSON.parse(String(event.data || '')); } catch { return; }
-            if (message?.op === 'requestlogin' && message.ticket) {
-              state.status = 'waiting';
-              state.ticket = String(message.ticket);
-              state.loginid = message.loginid ?? null;
-              state.expiresAt = Date.now() + Math.max(1, Number(message.expire_seconds) || 60) * 1000;
-            } else if (message?.op === 'loginsuccess') {
-              state.status = 'success';
-              state.token = String(message.token || '');
-              state.userId = message.u_id ?? message.UserID ?? null;
-            }
-          });
-          socket.addEventListener('error', () => {
-            if (state.status !== 'success') {
-              state.status = 'error';
-              state.error = '登录连接失败';
-            }
-          });
-          socket.addEventListener('close', () => {
-            if (state.status !== 'success') state.status = 'closed';
-          });
-          return true;
-        } catch (error) {
-          state.status = 'error';
-          state.error = String(error?.message || error);
-          return false;
+  async function startQrLoginSocket() {
+    await ensureDirectLoginHeaders();
+    await stopQrLoginSocket();
+    const state = { status: 'connecting', ticket: '', loginid: null, expiresAt: 0, error: '' };
+    qrLoginState = state;
+    try {
+      const socket = new WebSocket('wss://www.xuetangx.com/wsapp/');
+      qrLoginSocket = socket;
+      socket.addEventListener('open', () => {
+        if (qrLoginState !== state) return;
+        state.status = 'requesting';
+        socket.send(JSON.stringify({ op: 'requestlogin', role: 'web', version: '1.4', purpose: 'login', xtbz: 'xt', 'x-client': 'web' }));
+      });
+      socket.addEventListener('message', (event) => {
+        if (qrLoginState !== state) return;
+        let message = null;
+        try { message = JSON.parse(String(event.data || '')); } catch { return; }
+        if (message?.op === 'requestlogin' && message.ticket) {
+          state.status = 'waiting';
+          state.ticket = String(message.ticket);
+          state.loginid = message.loginid ?? null;
+          state.expiresAt = Date.now() + Math.max(1, Number(message.expire_seconds) || 60) * 1000;
+        } else if (message?.op === 'loginsuccess') {
+          state.status = 'success';
+          state.token = String(message.token || '');
+          state.userId = message.u_id ?? message.UserID ?? null;
         }
-      }
-    });
-    return result?.[0]?.result === true;
+      });
+      socket.addEventListener('error', () => {
+        if (qrLoginState === state && state.status !== 'success') {
+          state.status = 'error';
+          state.error = '登录连接失败';
+        }
+      });
+      socket.addEventListener('close', () => {
+        if (qrLoginState === state && state.status !== 'success') state.status = 'closed';
+      });
+      return true;
+    } catch (error) {
+      state.status = 'error';
+      state.error = String(error?.message || error);
+      return false;
+    }
   }
 
-  async function readQrLoginState(tabId) {
-    const result = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: () => {
-        const state = globalThis.__bjtuXuetangxQrLoginState__;
-        return state ? { ...state } : null;
-      }
-    });
-    return result?.[0]?.result || null;
+  function readQrLoginState() {
+    return qrLoginState ? { ...qrLoginState } : null;
   }
 
   async function stopQrLoginSocket() {
-    const tabId = Number(qrLoginTabId || activeLoginTabId || 0);
-    qrLoginTabId = null;
-    if (!tabId) return;
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: () => {
-        try { globalThis.__bjtuXuetangxQrLoginSocket__?.close(); } catch {}
-        delete globalThis.__bjtuXuetangxQrLoginSocket__;
-        delete globalThis.__bjtuXuetangxQrLoginState__;
-      }
-    }).catch(() => {});
+    const socket = qrLoginSocket;
+    qrLoginSocket = null;
+    try { socket?.close(); } catch {}
+    qrLoginState = null;
   }
 
-  async function completeWechatLogin(tabId, token) {
+  async function getXuetangxDistinctId() {
+    const cookies = await chrome.cookies.getAll({ url: `${BASE}/` }).catch(() => []);
+    const raw = String(cookies.find((cookie) => cookie?.name === 'sensorsdata2015jssdkcross')?.value || '');
+    if (!raw) return '';
+    let value = raw;
+    try { value = decodeURIComponent(value); } catch {}
+    try {
+      const parsed = JSON.parse(value);
+      return String(parsed?.distinct_id ?? parsed?.distinctId ?? parsed?.props?.distinct_id ?? '');
+    } catch {}
+    return String(value.match(/(?:distinct_id|distinctId)["'=:\s]+([^"'&,}\s]+)/i)?.[1] || '');
+  }
+
+  async function completeWechatLogin(token) {
     const sessionToken = String(token || '').trim();
     if (!sessionToken) throw new Error('学堂在线扫码登录未返回 token');
-    const execution = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      args: [sessionToken],
-      func: async (s_s) => {
-        const cookieMap = Object.fromEntries(document.cookie.split(';').map((part) => {
-          const index = part.indexOf('=');
-          if (index < 0) return [part.trim(), ''];
-          const key = part.slice(0, index).trim();
-          const raw = part.slice(index + 1);
-          try { return [key, decodeURIComponent(raw)]; } catch { return [key, raw]; }
-        }));
-        const csrf = cookieMap.csrftoken || cookieMap.CSRF_TOKEN || cookieMap.x_csrftoken || '';
-        const readDistinctId = () => {
-          const candidates = [cookieMap.sensorsdata2015jssdkcross];
-          try {
-            for (let index = 0; index < localStorage.length; index += 1) {
-              const key = localStorage.key(index);
-              if (/sensor|distinct/i.test(String(key || ''))) candidates.push(localStorage.getItem(key));
-            }
-          } catch {}
-          for (const candidate of candidates) {
-            if (!candidate) continue;
-            let value = candidate;
-            try { value = decodeURIComponent(value); } catch {}
-            try {
-              const parsed = JSON.parse(value);
-              const found = parsed?.distinct_id ?? parsed?.distinctId ?? parsed?.props?.distinct_id;
-              if (found) return String(found);
-            } catch {}
-            const matched = String(value).match(/(?:distinct_id|distinctId)["'=:\s]+([^"'&,}\s]+)/i);
-            if (matched?.[1]) return matched[1];
-          }
-          return '';
-        };
-        const payload = {
-          s_s,
-          preset_properties: {
-            '$timezone_offset': new Date().getTimezoneOffset(),
-            '$screen_height': Number(globalThis.screen?.height || 0),
-            '$screen_width': Number(globalThis.screen?.width || 0),
-            '$lib': 'js',
-            '$lib_version': '1.19.14',
-            '$latest_traffic_source_type': '直接流量',
-            '$latest_search_keyword': '未取到值_直接打开',
-            '$latest_referrer': '',
-            '$is_first_day': false,
-            '$referrer': `${location.origin}/`,
-            '$referrer_host': location.host,
-            '$url': `${location.origin}/`,
-            '$url_path': '/',
-            '$title': document.title || '学堂在线 - 精品在线课程学习平台',
-            '_distinct_id': readDistinctId()
-          },
-          page_name: '首页'
-        };
-        const headers = {
-          accept: 'application/json, text/plain, */*',
-          'content-type': 'application/json;charset=UTF-8',
-          'x-client': 'web',
-          xtbz: 'xt'
-        };
-        if (csrf) headers['x-csrftoken'] = csrf;
-        try {
-          const response = await fetch('https://www.xuetangx.com/api/v1/u/login/wx/', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload),
-            credentials: 'include',
-            cache: 'no-store'
-          });
-          const text = await response.text();
-          let data = null;
-          try { data = JSON.parse(text); } catch {}
-          return {
-            ok: response.ok && data?.success !== false,
-            status: response.status,
-            data,
-            message: data?.msg || data?.message || (data ? '' : text.slice(0, 300))
-          };
-        } catch (error) {
-          return { ok: false, status: 0, message: String(error?.message || error) };
-        }
-      }
-    });
-    const result = execution?.[0]?.result;
+    await ensureDirectLoginHeaders();
+    const csrf = await getXuetangxCsrfToken();
+    const distinctId = await getXuetangxDistinctId();
+    const payload = {
+      s_s: sessionToken,
+      preset_properties: {
+        '$timezone_offset': new Date().getTimezoneOffset(),
+        '$screen_height': Number(globalThis.screen?.height || 0),
+        '$screen_width': Number(globalThis.screen?.width || 0),
+        '$lib': 'js',
+        '$lib_version': '1.19.14',
+        '$latest_traffic_source_type': '直接流量',
+        '$latest_search_keyword': '未取到值_直接打开',
+        '$latest_referrer': '',
+        '$is_first_day': false,
+        '$referrer': `${BASE}/`,
+        '$referrer_host': 'www.xuetangx.com',
+        '$url': `${BASE}/`,
+        '$url_path': '/',
+        '$title': '学堂在线 - 精品在线课程学习平台',
+        '_distinct_id': distinctId
+      },
+      page_name: '首页'
+    };
+    const headers = {
+      accept: 'application/json, text/plain, */*',
+      'content-type': 'application/json;charset=UTF-8',
+      'x-client': 'web',
+      xtbz: 'xt'
+    };
+    if (csrf) headers['x-csrftoken'] = csrf;
+    let result;
+    try {
+      const response = await fetch(`${BASE}/api/v1/u/login/wx/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      const text = await response.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch {}
+      result = {
+        ok: response.ok && data?.success !== false,
+        status: response.status,
+        data,
+        message: data?.msg || data?.message || (data ? '' : text.slice(0, 300))
+      };
+    } catch (error) {
+      result = { ok: false, status: 0, message: String(error?.message || error) };
+    }
     if (!result?.ok) {
       throw new Error(`学堂在线微信登录失败${result?.status ? `（HTTP ${result.status}）` : ''}${result?.message ? `：${result.message}` : ''}`);
     }
@@ -458,21 +367,18 @@
     qrLoginCancelled = false;
     showQrLoginModal();
     while (serial === loadSerial && !qrLoginCancelled) {
-      const tab = await ensureLoginTab(serial);
       showQrLoginModal();
-      await startQrLoginSocket(tab.id);
+      await startQrLoginSocket();
       while (serial === loadSerial && !qrLoginCancelled) {
-        const state = await readQrLoginState(tab.id).catch(() => null);
+        const state = readQrLoginState();
         if (!state) break;
         if (state.ticket) showQrLoginModal(state.ticket);
         if (state.status === 'success') {
           const status = document.querySelector('#xuetangx-login-modal .xuetangx-login-status');
           if (status) status.innerHTML = '<span class="spinner xuetangx-inline-spinner"></span> 正在完成登录…';
-          await completeWechatLogin(tab.id, state.token);
+          await completeWechatLogin(state.token);
           hideQrLoginModal();
           await stopQrLoginSocket();
-          await chrome.tabs.reload(tab.id).catch(() => {});
-          await waitForTabComplete(tab.id).catch(() => {});
           env?.toast?.('学堂在线登录成功', 'success');
           return true;
         }
@@ -945,7 +851,6 @@
       env?.setLoaded?.(true);
       env?.setState?.('online');
       render();
-      closeCreatedLoginHelperTabs();
     } catch (error) {
       if (serial !== loadSerial || error?.code === 'cancelled') return;
       courses = [];
@@ -960,7 +865,6 @@
           if (loginError?.code !== 'cancelled' && serial === loadSerial) {
             hideQrLoginModal();
             await stopQrLoginSocket();
-            closeCreatedLoginHelperTabs();
             env?.toast?.(`学堂在线扫码登录失败：${loginError?.message || loginError}`, 'error');
             env?.setState?.('offline');
           }
@@ -1005,11 +909,6 @@
     setTimeout(() => { delete button.dataset.animating; }, 240);
   }
 
-  chrome.tabs?.onRemoved?.addListener?.((tabId) => {
-    loginHelperTabIds.delete(tabId);
-    if (Number(activeLoginTabId) === Number(tabId)) activeLoginTabId = null;
-  });
-
   global.BjtuXuetangxPlatform = {
     init(options) {
       env = options;
@@ -1026,9 +925,6 @@
       env?.setProgress?.(0, 0);
       hideQrLoginModal();
       void stopQrLoginSocket();
-      closeCreatedLoginHelperTabs();
-      activeLoginTabId = null;
-      loginTabPromise = null;
     },
     getCourses: () => courses,
     restore(value) {

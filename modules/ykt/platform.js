@@ -2,6 +2,7 @@ const YKT_BASE = 'https://www.yuketang.cn';
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
 const YKT_COURSE_LIST_API = `${YKT_BASE}/v2/api/web/courses/list?identity=2`;
 const YKT_HEADER_RULE_ID = 914308;
+const YKT_EXAM_HEADER_RULE_ID = 914311;
 const YKT_HEADERS = {
   'uv-id': '0',
   'xt-agent': 'web',
@@ -358,23 +359,41 @@ async function ensureYktDirectRequestHeaders() {
   if (yktHeaderRuleReady) return true;
   if (yktHeaderRulePromise) return yktHeaderRulePromise;
   yktHeaderRulePromise = chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [YKT_HEADER_RULE_ID],
-    addRules: [{
-      id: YKT_HEADER_RULE_ID,
-      priority: 1,
-      action: {
-        type: 'modifyHeaders',
-        requestHeaders: [
-          { header: 'Origin', operation: 'set', value: YKT_BASE },
-          { header: 'Referer', operation: 'set', value: `${YKT_BASE}/v2/web/index` }
-        ]
+    removeRuleIds: [YKT_HEADER_RULE_ID, YKT_EXAM_HEADER_RULE_ID],
+    addRules: [
+      {
+        id: YKT_HEADER_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Origin', operation: 'set', value: YKT_BASE },
+            { header: 'Referer', operation: 'set', value: `${YKT_BASE}/v2/web/index` }
+          ]
+        },
+        condition: {
+          regexFilter: '^https://www\\.yuketang\\.cn/mooc-api/v1/lms/learn/course/pub_new_pro(?:[?#]|$)',
+          initiatorDomains: [chrome.runtime.id],
+          resourceTypes: ['xmlhttprequest']
+        }
       },
-      condition: {
-        regexFilter: '^https://www\\.yuketang\\.cn/mooc-api/v1/lms/learn/course/pub_new_pro(?:[?#]|$)',
-        initiatorDomains: [chrome.runtime.id],
-        resourceTypes: ['xmlhttprequest']
+      {
+        id: YKT_EXAM_HEADER_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Origin', operation: 'set', value: YKT_BASE },
+            { header: 'Referer', operation: 'set', value: `${YKT_BASE}/v2/web/` }
+          ]
+        },
+        condition: {
+          regexFilter: '^https://www\\.yuketang\\.cn/v/exam/gen_token(?:[?#]|$)',
+          initiatorDomains: [chrome.runtime.id],
+          resourceTypes: ['xmlhttprequest']
+        }
       }
-    }]
+    ]
   }).then(() => {
     yktHeaderRuleReady = true;
     return true;
@@ -478,30 +497,62 @@ async function fetchYktExamPaper(courseId, examId) {
 
   const LOCK_MSG_RE = /同一时间只允许打开一份试卷|如需打开新的试卷，请在封面处跳转/;
   const MAX_ATTEMPTS = 4;
+  let examRequestBase = YKT_EXAM_BASE;
 
-  const visitTransAndWaitRedirect = async () => {
-    if (!cid) return false;
-    const transUrl = `${YKT_BASE}/v2/web/trans/${encodeURIComponent(cid)}/${encodeURIComponent(eid)}`;
-    try {
-      const response = await fetch(transUrl, {
-        method: 'GET',
-        credentials: 'include',
-        redirect: 'follow',
-        cache: 'no-store',
-        headers: YKT_HEADERS
-      });
-      return response.ok || String(response.url || '').includes('examination.xuetangx.com/');
-    } catch {
-      return false;
-    }
+  const establishExamSession = async () => {
+    if (!cid) return '';
+    await ensureYktDirectRequestHeaders();
+    const csrfToken = await getYktCsrfToken();
+    const tokenHeaders = {
+      ...YKT_HEADERS,
+      'university-id': '0',
+      'Content-Type': 'application/json;charset=UTF-8'
+    };
+    if (csrfToken) tokenHeaders['x-csrftoken'] = csrfToken;
+
+    // /v2/web/trans/:cid/:eid 本身只是 SPA 外壳。真正的页面逻辑先调用
+    // /v/exam/gen_token，再访问考试域名的 /login 写入考试会话。
+    const tokenResponse = await fetch(`${YKT_BASE}/v/exam/gen_token`, {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: tokenHeaders,
+      body: JSON.stringify({ exam_id: eid, classroom_id: cid })
+    });
+    const tokenText = await tokenResponse.text();
+    let tokenData = null;
+    try { tokenData = JSON.parse(tokenText); } catch {}
+    if (!tokenResponse.ok || tokenData?.errcode || tokenData?.success !== true) return '';
+
+    const grant = tokenData?.data || {};
+    const crypt = String(grant?.token || '').trim();
+    const userId = String(grant?.user_id || '').trim();
+    if (!crypt || !userId) return '';
+    let examBase = String(grant?.exam_host || YKT_EXAM_BASE).trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(examBase)) examBase = `https://${examBase.replace(/^\/+/, '')}`;
+    const next = `${examBase}/result/${encodeURIComponent(eid)}?isFrom=2`;
+    const loginUrl = new URL(`${examBase}/login`);
+    loginUrl.searchParams.set('exam_id', eid);
+    loginUrl.searchParams.set('user_id', userId);
+    loginUrl.searchParams.set('crypt', crypt);
+    loginUrl.searchParams.set('next', next);
+    loginUrl.searchParams.set('language', 'zh');
+    const loginResponse = await fetch(loginUrl.href, {
+      method: 'GET',
+      credentials: 'include',
+      redirect: 'follow',
+      cache: 'no-store',
+      headers: { Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8' }
+    });
+    return loginResponse.ok ? examBase : '';
   };
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    // Navigation establishes the exam session; request immediately after the redirect is observed.
-    await visitTransAndWaitRedirect();
+    const establishedBase = await establishExamSession().catch(() => '');
+    if (establishedBase) examRequestBase = establishedBase;
 
     try {
-      const res = await fetch(`${YKT_EXAM_BASE}/exam_room/show_paper?exam_id=${encodeURIComponent(eid)}`, {
+      const res = await fetch(`${examRequestBase}/exam_room/show_paper?exam_id=${encodeURIComponent(eid)}`, {
         method: 'GET',
         credentials: 'include',
         headers: { Accept: 'application/json, text/plain, */*' },

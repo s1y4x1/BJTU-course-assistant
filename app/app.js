@@ -5886,16 +5886,6 @@ jsessionidInput.addEventListener('change', async () => {
     }
   }
   const restoredPopupCache = await restorePopupFullscreenCacheIfNeeded();
-  if (popupMode && !restoredPopupCache) {
-    window.platformEnabled = {
-      jlgj: false,
-      mooc: false,
-      mrjzy: false,
-      ve: globalThis.BjtuModuleRegistry?.has('ve') === true,
-      ykt: false,
-      xuetangx: false
-    };
-  }
   refreshPlatformLoginTip();
 
   if (restoredPopupCache) {

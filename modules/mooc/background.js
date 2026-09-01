@@ -52,6 +52,16 @@
     return String(cookie?.value || '').trim();
   }
 
+  async function waitForCookie(name, timeoutMs = 5000) {
+    const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+    do {
+      const value = await getCookie(name);
+      if (value) return value;
+      if (Date.now() >= deadline) return '';
+      await sleep(200);
+    } while (true);
+  }
+
   function normalizeGinsAnswer(data) {
     if (Number(data?.status) === 500 && /系统异常/.test(String(data?.msg || ''))) {
       return { ok: false, code: 'gins-system-error', message: 'GinsMooc系统异常' };
@@ -256,7 +266,9 @@
 
     const loggedIn = await getCookie('STUDY_SESS');
     if (!loggedIn) throw Object.assign(new Error('未登录中国大学MOOC'), { code: 'not-logged-in' });
-    const csrfKey = await getCookie('NTESSTUDYSI');
+    // 登录窗口完成跳转时 STUDY_SESS 往往先于 NTESSTUDYSI 可见。等待后者，
+    // 避免先报一次“加载失败”，随后重试却正常加载的竞态提示。
+    const csrfKey = await waitForCookie('NTESSTUDYSI');
     if (!csrfKey) throw Object.assign(new Error('无法读取中国大学MOOC的 NTESSTUDYSI Cookie'), { code: 'missing-csrf' });
 
     let result;

@@ -403,6 +403,15 @@ let moocLoginAssistPopupTabId = null;
       if (error?.code === 'not-logged-in') {
         env.loginRequired?.();
         env.setState('offline');
+      } else if (error?.code === 'missing-csrf') {
+        // 登录成功后两个 Cookie 的写入存在短暂先后顺序；这是可恢复状态，
+        // 保持加载中并静默重试，不能向用户报告一次伪失败。
+        env.setState('checking');
+        if (isPlatformEnabled('mooc')) {
+          setTimeout(() => {
+            if (isPlatformEnabled('mooc') && serial === loadSerial) void load();
+          }, 400);
+        }
       } else {
         env.setLoaded(false);
         env.setState('checking');
