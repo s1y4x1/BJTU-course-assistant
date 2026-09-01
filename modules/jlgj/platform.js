@@ -554,12 +554,23 @@ function jlgjPageSnapshot() {
 }
 
 async function jlgjPageCourseList() {
+  const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled('jlgj') : true;
+  if (!enabled) {
+    return {
+      enabled: false,
+      loaded: false,
+      loginState: 'disabled',
+      loggedIn: false,
+      courses: []
+    };
+  }
   if (window.__jlgjLoadSerialPromise && typeof window.__jlgjLoadSerialPromise.then === 'function') {
     await window.__jlgjLoadSerialPromise.catch(() => {});
   }
   const snap = jlgjPageSnapshot();
   const loginState = String(window.platformLoginState?.jlgj || 'checking');
   return {
+    enabled: true,
     loaded: snap.length > 0,
     loginState,
     loggedIn: loginState === 'online',
@@ -599,8 +610,10 @@ async function jlgjPageHomeworkOf(groupId) {
 }
 
 async function jlgjPageLoginStatus() {
+  const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled('jlgj') : true;
+  if (!enabled) return { enabled: false, loginState: 'disabled', loggedIn: false, snapshotLoaded: false };
   const state = String(window.platformLoginState?.jlgj || 'checking');
-  return { loginState: state, loggedIn: state === 'online', snapshotLoaded: jlgjPageSnapshot().length > 0 };
+  return { enabled: true, loginState: state, loggedIn: state === 'online', snapshotLoaded: jlgjPageSnapshot().length > 0 };
 }
 
 async function jlgjPageLogin(args = {}) {

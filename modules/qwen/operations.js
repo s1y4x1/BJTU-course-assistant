@@ -2795,10 +2795,12 @@ name: 've.teachers_of_',
     xuetangx: '学堂在线'
   });
 
-  async function assertAssignmentsPlatformEnabled(op) {
+  async function assertPlatformEnabledForOperation(op) {
     const platform = String(op?.module || '');
     const shortName = String(op?.name || '').split('.').slice(1).join('.');
-    if (shortName !== 'assignments' || !Object.hasOwn(PLATFORM_ENABLED_DEFAULTS, platform)) return;
+    const requiresEnabledPlatform = shortName === 'assignments'
+      || (platform === 'jlgj' && shortName === 'courseList');
+    if (!requiresEnabledPlatform || !Object.hasOwn(PLATFORM_ENABLED_DEFAULTS, platform)) return;
     const stored = await chrome.storage.local.get(['platformEnabled']).catch(() => ({}));
     const configured = stored?.platformEnabled?.[platform];
     const enabled = typeof configured === 'boolean' ? configured : PLATFORM_ENABLED_DEFAULTS[platform];
@@ -2877,7 +2879,7 @@ name: 've.teachers_of_',
       }
     }
     try {
-      await assertAssignmentsPlatformEnabled(op);
+      await assertPlatformEnabledForOperation(op);
       if (op.requiresAuthorization === true) {
         if (typeof options?.authorize !== 'function') {
           throw Object.assign(new Error(`操作「${op.name}」需要用户授权`), { code: 'AUTHORIZATION_REQUIRED' });

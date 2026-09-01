@@ -1550,9 +1550,11 @@
     const requestParentId = wasOpeningStream ? '' : (editParent || sessionParentId);
     lastSendText = text;
     let retryVisibleAnchor = null;
+    let requestUserAnchor = null;
     if (showUserBubble) {
       const userBubble = appendMessage('user', text, editParent || sessionParentId);
-      retryVisibleAnchor = messageDisplayNode(userBubble);
+      requestUserAnchor = messageDisplayNode(userBubble);
+      retryVisibleAnchor = requestUserAnchor;
       const input = el(INPUT_ID);
       if (input instanceof HTMLTextAreaElement) input.value = '';
     } else {
@@ -1570,12 +1572,23 @@
     let retryPrompt = null;
     let streamStartAnchor = retryVisibleAnchor;
 
+    const ensureRequestUserMessageVisible = () => {
+      if (!showUserBubble) return requestUserAnchor;
+      if (requestUserAnchor instanceof HTMLElement && requestUserAnchor.isConnected) return requestUserAnchor;
+      requestUserAnchor = messageDisplayNode(appendMessage('user', text, editParent || sessionParentId));
+      retryVisibleAnchor = requestUserAnchor;
+      return requestUserAnchor;
+    };
+
     const resetCurrentStreamRendering = () => {
       const messages = el(MESSAGES_ID);
       if (!(messages instanceof HTMLElement)) return;
-      let node = streamStartAnchor instanceof HTMLElement && streamStartAnchor.isConnected
-        ? streamStartAnchor.nextSibling
-        : messages.firstChild;
+      const preservedAnchor = streamStartAnchor instanceof HTMLElement && streamStartAnchor.isConnected
+        ? streamStartAnchor
+        : ensureRequestUserMessageVisible();
+      // An absent anchor must never turn a stream retry into "delete all history".
+      if (!(preservedAnchor instanceof HTMLElement) || !preservedAnchor.isConnected) return;
+      let node = preservedAnchor.nextSibling;
       while (node) {
         const next = node.nextSibling;
         node.remove();
@@ -1828,6 +1841,7 @@
           }
           activeBubble = null;
           const bubble = appendMessage('error', message.message || '请求失败');
+          ensureRequestUserMessageVisible();
           placeMessageAfter(bubble, retryVisibleAnchor);
           const isWafError = message.code === 'WAF_PUNISH' || message.code === 'WAF_BUSY' || message.code === 'WAF_CHALLENGE';
           const waitsForWafWindow = isWafError && !!String(message.validationUrl || '');
@@ -1912,6 +1926,7 @@
             void chrome.storage.local.set(patch);
           }
           if (openingStarted) openingStarted = false;
+          ensureRequestUserMessageVisible();
           if (message.code === 'NOT_LOGGED_IN') {
             setStatus('未登录', 'error');
             showLoginHint(true);
@@ -2132,11 +2147,15 @@
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
+        const wasLoggedIn = lastKnownLoggedIn;
         lastKnownLoggedIn = true;
-        historyReloadAfterLogin = true;
+        // WAF verification pages carry the same token. Seeing it again is not a
+        // new login and must not replace the in-flight/error UI with history.
+        if (!wasLoggedIn) historyReloadAfterLogin = true;
         if (panelActivated) {
           showLoginHint(false);
-          if (!panelActivationPromise) void activateQwenPanel();
+          if (!wasLoggedIn && !busy && !pendingWafRetryAction && !activeWafFlowId
+            && !panelActivationPromise) void activateQwenPanel();
         }
         return false;
       }
