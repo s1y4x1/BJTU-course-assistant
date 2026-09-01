@@ -2,7 +2,7 @@
   'use strict';
 
   const BASE = 'https://www.xuetangx.com';
-  const REQUEST_PAGE_URL = `${BASE}/`;
+  const LOGIN_PAGE_URL = `${BASE}/`;
   const COURSE_LIST_URL = `${BASE}/api/v1/lms/user/user-courses`;
   const COURSE_STATUS_LABELS = Object.freeze({
     1: '正在上课',
@@ -28,12 +28,12 @@
     6: 11
   });
   const THEME_COLOR = '#1769fe';
-  const helperTabIds = new Set();
+  const loginHelperTabIds = new Set();
   const expandedGroups = new Map();
   let env = null;
   let courses = [];
-  let activeRequestTabId = null;
-  let originTabPromise = null;
+  let activeLoginTabId = null;
+  let loginTabPromise = null;
   let loadSerial = 0;
   let qrLoginCancelled = false;
   let qrLoginTabId = null;
@@ -110,113 +110,94 @@
     });
   }
 
-  async function ensureOriginTabOnce(serial) {
+  async function ensureLoginTabOnce(serial) {
     if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
-    if (activeRequestTabId) {
-      const tab = await chrome.tabs.get(Number(activeRequestTabId)).catch(() => null);
+    if (activeLoginTabId) {
+      const tab = await chrome.tabs.get(Number(activeLoginTabId)).catch(() => null);
       if (tab?.id && String(tab.url || '').startsWith(`${BASE}/`)) {
         return tab.status === 'complete' ? tab : waitForTabComplete(tab.id);
       }
-      activeRequestTabId = null;
+      activeLoginTabId = null;
     }
     const reusableTabs = await chrome.tabs.query({ url: [`${BASE}/*`] }).catch(() => []);
     const reusable = reusableTabs.find((tab) => tab?.id && tab.status === 'complete');
     if (reusable?.id) {
-      activeRequestTabId = reusable.id;
+      activeLoginTabId = reusable.id;
       return reusable;
     }
-    if (!originTabPromise) {
-      originTabPromise = chrome.tabs.create({ url: REQUEST_PAGE_URL, active: false }).then(async (tab) => {
-        if (!tab?.id) throw new Error('无法创建学堂在线请求页面');
+    if (!loginTabPromise) {
+      loginTabPromise = chrome.tabs.create({ url: LOGIN_PAGE_URL, active: false }).then(async (tab) => {
+        if (!tab?.id) throw new Error('无法创建学堂在线登录页面');
         void groupBjtuOpenedTab(tab.id);
-        helperTabIds.add(tab.id);
-        activeRequestTabId = tab.id;
+        loginHelperTabIds.add(tab.id);
+        activeLoginTabId = tab.id;
         return waitForTabComplete(tab.id);
       }).finally(() => {
-        originTabPromise = null;
+        loginTabPromise = null;
       });
     }
-    return originTabPromise;
+    return loginTabPromise;
   }
 
-  async function ensureOriginTab(serial) {
+  async function ensureLoginTab(serial) {
     let lastError = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
       try {
-        return await ensureOriginTabOnce(serial);
+        return await ensureLoginTabOnce(serial);
       } catch (error) {
         lastError = error;
-        activeRequestTabId = null;
-        originTabPromise = null;
+        activeLoginTabId = null;
+        loginTabPromise = null;
         if (!['tab-closed', 'tab-timeout'].includes(String(error?.code || '')) || attempt >= 2) throw error;
         await sleep(350 * (attempt + 1));
       }
     }
-    throw lastError || new Error('无法打开学堂在线请求页面');
+    throw lastError || new Error('无法打开学堂在线登录页面');
   }
 
-  async function requestJson(url, serial, tabRetry = 0) {
-    const tab = await ensureOriginTab(serial);
-    let execution;
-    try {
-      execution = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        world: 'MAIN',
-        args: [{ url: String(url) }],
-        func: async ({ url: requestUrl }) => {
-          const cookieMap = Object.fromEntries(document.cookie.split(';').map((part) => {
-            const index = part.indexOf('=');
-            if (index < 0) return [part.trim(), ''];
-            return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))];
-          }));
-          const csrf = cookieMap.csrftoken || cookieMap.CSRF_TOKEN || cookieMap.x_csrftoken || '';
-          const headers = {
-            accept: 'application/json, text/plain, */*',
-            'x-client': 'web',
-            xtbz: 'xt'
-          };
-          if (csrf) headers['x-csrftoken'] = csrf;
-          let lastResult = null;
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            try {
-              const response = await fetch(requestUrl, {
-                method: 'GET',
-                headers,
-                credentials: 'include',
-                cache: 'no-store'
-              });
-              const text = await response.text();
-              let data = null;
-              try { data = JSON.parse(text); } catch {}
-              lastResult = {
-                ok: response.ok,
-                status: response.status,
-                responseUrl: response.url,
-                data,
-                text: data ? '' : text.slice(0, 500)
-              };
-              if (response.status !== 429 && response.status < 500) return lastResult;
-            } catch (error) {
-              lastResult = { ok: false, status: 0, error: String(error?.message || error) };
-            }
-            if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
-          }
-          return lastResult;
-        }
-      });
-    } catch (error) {
-      if (!await chrome.tabs.get(tab.id).catch(() => null)) {
-        activeRequestTabId = null;
-        if (tabRetry < 2 && serial === loadSerial) {
-          await sleep(350 * (tabRetry + 1));
-          return requestJson(url, serial, tabRetry + 1);
-        }
-        throw Object.assign(new Error('学堂在线后台页面已关闭'), { code: 'tab-closed' });
+  async function getXuetangxCsrfToken() {
+    const cookies = await chrome.cookies.getAll({ url: `${BASE}/` }).catch(() => []);
+    const csrfCookie = cookies.find((cookie) => ['csrftoken', 'csrf_token', 'x_csrftoken'].includes(String(cookie?.name || '').toLowerCase()));
+    if (!csrfCookie?.value) return '';
+    try { return decodeURIComponent(csrfCookie.value); } catch { return String(csrfCookie.value); }
+  }
+
+  async function requestJson(url, serial) {
+    if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
+    const csrf = await getXuetangxCsrfToken();
+    const headers = {
+      accept: 'application/json, text/plain, */*',
+      'x-client': 'web',
+      xtbz: 'xt'
+    };
+    if (csrf) headers['x-csrftoken'] = csrf;
+    let result = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
+      try {
+        const response = await fetch(String(url), {
+          method: 'GET',
+          headers,
+          credentials: 'include',
+          cache: 'no-store'
+        });
+        const text = await response.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch {}
+        result = {
+          ok: response.ok,
+          status: response.status,
+          responseUrl: response.url,
+          data,
+          text: data ? '' : text.slice(0, 500)
+        };
+        if (response.status !== 429 && response.status < 500) break;
+      } catch (error) {
+        result = { ok: false, status: 0, error: String(error?.message || error) };
       }
-      throw error;
+      if (attempt < 2) await sleep(400 * (attempt + 1));
     }
-    const result = execution?.[0]?.result;
     const hasStructuredApiError = !!result?.data && result.data.success === false;
     if ((!result?.ok && !hasStructuredApiError) || !result?.data) {
       const loginLike = [401, 403].includes(Number(result?.status))
@@ -230,10 +211,10 @@
     return result.data;
   }
 
-  function closeCreatedHelperTabs() {
-    for (const tabId of [...helperTabIds]) {
-      helperTabIds.delete(tabId);
-      if (Number(activeRequestTabId) === Number(tabId)) activeRequestTabId = null;
+  function closeCreatedLoginHelperTabs() {
+    for (const tabId of [...loginHelperTabIds]) {
+      loginHelperTabIds.delete(tabId);
+      if (Number(activeLoginTabId) === Number(tabId)) activeLoginTabId = null;
       chrome.tabs.remove(tabId).catch(() => {});
     }
   }
@@ -243,7 +224,7 @@
     loadSerial += 1;
     hideQrLoginModal();
     void stopQrLoginSocket();
-    closeCreatedHelperTabs();
+    closeCreatedLoginHelperTabs();
     env?.setState?.('offline');
   }
 
@@ -364,7 +345,7 @@
   }
 
   async function stopQrLoginSocket() {
-    const tabId = Number(qrLoginTabId || activeRequestTabId || 0);
+    const tabId = Number(qrLoginTabId || activeLoginTabId || 0);
     qrLoginTabId = null;
     if (!tabId) return;
     await chrome.scripting.executeScript({
@@ -477,7 +458,7 @@
     qrLoginCancelled = false;
     showQrLoginModal();
     while (serial === loadSerial && !qrLoginCancelled) {
-      const tab = await ensureOriginTab(serial);
+      const tab = await ensureLoginTab(serial);
       showQrLoginModal();
       await startQrLoginSocket(tab.id);
       while (serial === loadSerial && !qrLoginCancelled) {
@@ -964,7 +945,7 @@
       env?.setLoaded?.(true);
       env?.setState?.('online');
       render();
-      closeCreatedHelperTabs();
+      closeCreatedLoginHelperTabs();
     } catch (error) {
       if (serial !== loadSerial || error?.code === 'cancelled') return;
       courses = [];
@@ -979,7 +960,7 @@
           if (loginError?.code !== 'cancelled' && serial === loadSerial) {
             hideQrLoginModal();
             await stopQrLoginSocket();
-            closeCreatedHelperTabs();
+            closeCreatedLoginHelperTabs();
             env?.toast?.(`学堂在线扫码登录失败：${loginError?.message || loginError}`, 'error');
             env?.setState?.('offline');
           }
@@ -1025,8 +1006,8 @@
   }
 
   chrome.tabs?.onRemoved?.addListener?.((tabId) => {
-    helperTabIds.delete(tabId);
-    if (Number(activeRequestTabId) === Number(tabId)) activeRequestTabId = null;
+    loginHelperTabIds.delete(tabId);
+    if (Number(activeLoginTabId) === Number(tabId)) activeLoginTabId = null;
   });
 
   global.BjtuXuetangxPlatform = {
@@ -1045,9 +1026,9 @@
       env?.setProgress?.(0, 0);
       hideQrLoginModal();
       void stopQrLoginSocket();
-      closeCreatedHelperTabs();
-      activeRequestTabId = null;
-      originTabPromise = null;
+      closeCreatedLoginHelperTabs();
+      activeLoginTabId = null;
+      loginTabPromise = null;
     },
     getCourses: () => courses,
     restore(value) {

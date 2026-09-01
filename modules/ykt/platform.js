@@ -1,7 +1,7 @@
 const YKT_BASE = 'https://www.yuketang.cn';
-const YKT_REQUEST_PAGE_URL = `${YKT_BASE}/v2/web/index`;
 const YKT_EXAM_BASE = 'https://examination.xuetangx.com';
 const YKT_COURSE_LIST_API = `${YKT_BASE}/v2/api/web/courses/list?identity=2`;
+const YKT_HEADER_RULE_ID = 914308;
 const YKT_HEADERS = {
   'uv-id': '0',
   'xt-agent': 'web',
@@ -21,6 +21,8 @@ let yktLoginAssistPopupWindowId = null;
 let yktLoginAssistPopupTabId = null;
 let yktLoginAssistCompleting = false;
 let yktLoginAssistChecking = false;
+let yktHeaderRulePromise = null;
+let yktHeaderRuleReady = false;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
@@ -351,6 +353,40 @@ async function fetchYktJson(url) {
   }
 }
 
+async function ensureYktDirectRequestHeaders() {
+  if (!chrome?.declarativeNetRequest?.updateSessionRules) return false;
+  if (yktHeaderRuleReady) return true;
+  if (yktHeaderRulePromise) return yktHeaderRulePromise;
+  yktHeaderRulePromise = chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [YKT_HEADER_RULE_ID],
+    addRules: [{
+      id: YKT_HEADER_RULE_ID,
+      priority: 1,
+      action: {
+        type: 'modifyHeaders',
+        requestHeaders: [
+          { header: 'Origin', operation: 'set', value: YKT_BASE },
+          { header: 'Referer', operation: 'set', value: `${YKT_BASE}/v2/web/index` }
+        ]
+      },
+      condition: {
+        regexFilter: '^https://www\\.yuketang\\.cn/mooc-api/v1/lms/learn/course/pub_new_pro(?:[?#]|$)',
+        initiatorDomains: [chrome.runtime.id],
+        resourceTypes: ['xmlhttprequest']
+      }
+    }]
+  }).then(() => {
+    yktHeaderRuleReady = true;
+    return true;
+  }).catch((error) => {
+    console.warn('[bjtu] ykt request header rule failed:', String(error?.message || error));
+    return false;
+  }).finally(() => {
+    yktHeaderRulePromise = null;
+  });
+  return yktHeaderRulePromise;
+}
+
 async function getYktCsrfToken() {
   if (!chrome?.cookies?.getAll) return '';
   const cookies = await chrome.cookies.getAll({ url: `${YKT_BASE}/` }).catch(() => []);
@@ -358,7 +394,8 @@ async function getYktCsrfToken() {
     const name = String(cookie?.name || '').toLowerCase();
     return name === 'csrftoken' || name === 'csrf_token';
   });
-  return String(csrfCookie?.value || '').trim();
+  const value = String(csrfCookie?.value || '').trim();
+  try { return decodeURIComponent(value); } catch { return value; }
 }
 
 function pickYktUniversityId(...sources) {
@@ -374,126 +411,44 @@ function pickYktUniversityId(...sources) {
   return '';
 }
 
-async function getYktUniversityIdFromOpenTabs() {
-  const tabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
-  for (const tab of tabs || []) {
-    try {
-      const value = new URL(String(tab?.url || '')).searchParams.get('university_id');
-      if (value && String(value).trim()) return String(value).trim();
-    } catch { /* ignore malformed tab URL */ }
-  }
-  return '';
-}
-
-async function waitYktTabReady(tabId, timeoutMs = 12000) {
-  const id = Number(tabId || 0);
-  if (!Number.isFinite(id) || id <= 0) return false;
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const tab = await chrome.tabs.get(id).catch(() => null);
-    if (!tab?.id) return false;
-    if (tab.status === 'complete' && String(tab.url || '').startsWith(YKT_BASE)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 160));
-  }
-  return false;
-}
-
-async function fetchYktCoursewareProgress(cid, coursewareIds, requestTabId, universityId, platformId = '3') {
+async function fetchYktCoursewareProgress(cid, coursewareIds, universityId) {
   const courseId = String(cid || '').trim();
   const schoolId = String(universityId || '').trim();
-  const actualPlatformId = String(platformId || '3').trim() || '3';
   const ids = [...new Set((Array.isArray(coursewareIds) ? coursewareIds : [])
     .map((id) => String(id || '').trim())
     .filter(Boolean))];
   if (!courseId || !ids.length) return {};
-  const tabId = Number(requestTabId || 0);
-  if (!Number.isFinite(tabId) || tabId <= 0 || !(await waitYktTabReady(tabId))) {
-    throw new Error('雨课堂请求页面未就绪');
-  }
+  await ensureYktDirectRequestHeaders();
   const csrfToken = await getYktCsrfToken();
-  const [execution] = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: 'MAIN',
-    func: async (actualCid, newIds, suppliedUniversityId, suppliedPlatformId, suppliedCsrfToken) => {
-      const pickUniversityId = (source, depth = 0) => {
-        if (!source || typeof source !== 'object' || depth > 5) return '';
-        const direct = source.university_id ?? source.universityId;
-        if (direct !== null && direct !== undefined && String(direct).trim()) return String(direct).trim();
-        for (const value of Object.values(source)) {
-          const found = pickUniversityId(value, depth + 1);
-          if (found) return found;
-        }
-        return '';
-      };
-      const urlParams = new URL(location.href).searchParams;
-      let actualUniversityId = String(suppliedUniversityId || urlParams.get('university_id') || '').trim();
-      let actualPlatformIdArg = String(suppliedPlatformId || urlParams.get('platform_id') || '3').trim() || '3';
-      let actualCsrfToken = String(suppliedCsrfToken || '').trim();
-      if (!actualCsrfToken) {
-        const csrfMatch = document.cookie.match(/(?:^|;\s*)(?:csrftoken|csrf_token)=([^;]*)/i);
-        actualCsrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : '';
-      }
-      if (!actualUniversityId) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3000);
-          const courseResponse = await fetch(`${location.origin}/v2/api/web/courses/list?identity=2`, {
-            credentials: 'include',
-            cache: 'no-store',
-            signal: controller.signal,
-            headers: {
-              accept: 'application/json, text/plain, */*',
-              'xt-agent': 'web',
-              xtbz: 'ykt'
-            }
-          });
-          clearTimeout(timeoutId);
-          const courseJson = await courseResponse.json();
-          const courseList = Array.isArray(courseJson?.data?.list) ? courseJson.data.list : [];
-          const matchedCourse = courseList.find((item) => String(item?.classroom_id || '') === String(actualCid));
-          actualUniversityId = pickUniversityId(matchedCourse) || pickUniversityId(courseJson?.data);
-          if (!actualPlatformIdArg || actualPlatformIdArg === '3') {
-            actualPlatformIdArg = String((matchedCourse?.platform_id ?? matchedCourse?.platformId ?? actualPlatformIdArg) || '3');
-          }
-        } catch { /* send the progress request below so its response exposes the missing requirement */ }
-      }
-      const numericCid = /^\d+$/.test(actualCid) ? Number(actualCid) : actualCid;
-      const referrer = `${location.origin}/v2/web/studentLog/${encodeURIComponent(actualCid)}?university_id=${encodeURIComponent(actualUniversityId)}&platform_id=${encodeURIComponent(actualPlatformIdArg)}&classroom_id=${encodeURIComponent(actualCid)}&content_url=`;
-      const requestHeaders = {
-        accept: 'application/json, text/plain, */*',
-        'cache-control': 'no-cache',
-        'classroom-id': actualCid,
-        'content-type': 'application/json;charset=UTF-8',
-        pragma: 'no-cache',
-        'x-client': 'web',
-        'xt-agent': 'web',
-        xtbz: 'ykt'
-      };
-      if (actualUniversityId) {
-        requestHeaders['university-id'] = actualUniversityId;
-        requestHeaders['uv-id'] = actualUniversityId;
-      }
-      if (actualCsrfToken) requestHeaders['x-csrftoken'] = actualCsrfToken;
-      const response = await fetch(`${location.origin}/mooc-api/v1/lms/learn/course/pub_new_pro`, {
-        headers: requestHeaders,
-        referrer,
-        body: JSON.stringify({ cid: numericCid, new_id: newIds }),
-        method: 'POST',
-        mode: 'cors',
-        credentials: 'include',
-        cache: 'no-store',
-        priority: 'high'
-      });
-      const text = await response.text();
-      try {
-        return JSON.parse(text);
-      } catch {
-        return { success: false, error_code: response.status, msg: text || `HTTP ${response.status}`, data: {} };
-      }
-    },
-    args: [courseId, ids, schoolId, actualPlatformId, csrfToken]
+  const requestHeaders = {
+    Accept: 'application/json, text/plain, */*',
+    'Cache-Control': 'no-cache',
+    'classroom-id': courseId,
+    'Content-Type': 'application/json;charset=UTF-8',
+    Pragma: 'no-cache',
+    'x-client': 'web',
+    'xt-agent': 'web',
+    xtbz: 'ykt'
+  };
+  if (schoolId) {
+    requestHeaders['university-id'] = schoolId;
+    requestHeaders['uv-id'] = schoolId;
+  }
+  if (csrfToken) requestHeaders['x-csrftoken'] = csrfToken;
+  const response = await fetch(`${YKT_BASE}/mooc-api/v1/lms/learn/course/pub_new_pro`, {
+    headers: requestHeaders,
+    body: JSON.stringify({ cid: /^\d+$/.test(courseId) ? Number(courseId) : courseId, new_id: ids }),
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store'
   });
-  const data = execution?.result || {};
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { success: false, error_code: response.status, msg: text || `HTTP ${response.status}`, data: {} };
+  }
   if (data?.success !== true) {
     throw new Error(String(data?.detail || data?.msg || data?.errmsg || `HTTP ${data?.error_code || '请求失败'}`));
   }
@@ -516,7 +471,7 @@ function normalizeYktVideoProgress(progressRecord, leafId) {
   return { totalDone, ratio };
 }
 
-async function fetchYktExamPaper(courseId, examId, sharedTabId = null) {
+async function fetchYktExamPaper(courseId, examId) {
   const cid = String(courseId || '').trim();
   const eid = String(examId || '').trim();
   if (!eid) return null;
@@ -525,19 +480,17 @@ async function fetchYktExamPaper(courseId, examId, sharedTabId = null) {
   const MAX_ATTEMPTS = 4;
 
   const visitTransAndWaitRedirect = async () => {
-    if (!cid || !Number.isFinite(Number(sharedTabId)) || Number(sharedTabId) <= 0) return false;
+    if (!cid) return false;
     const transUrl = `${YKT_BASE}/v2/web/trans/${encodeURIComponent(cid)}/${encodeURIComponent(eid)}`;
     try {
-      await chrome.tabs.update(Number(sharedTabId), { url: transUrl });
-      const start = Date.now();
-      while (Date.now() - start < 8000) {
-        await new Promise((resolve) => setTimeout(resolve, 180));
-        const tab = await chrome.tabs.get(Number(sharedTabId));
-        const currentUrl = String(tab?.url || '');
-        if (currentUrl.includes('examination.xuetangx.com/')) return true;
-        if (tab?.status === 'complete' && currentUrl.includes('/v2/web/trans/')) return false;
-      }
-      return false;
+      const response = await fetch(transUrl, {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'follow',
+        cache: 'no-store',
+        headers: YKT_HEADERS
+      });
+      return response.ok || String(response.url || '').includes('examination.xuetangx.com/');
     } catch {
       return false;
     }
@@ -631,34 +584,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
     rerenderAllHomeworkAreas();
     renderYktStandaloneCourses();
 
-    let requestTabId = null;
-    let requestTabCreated = false;
-    const ensureRequestTab = async () => {
-      if (isCancelled()) return null;
-      if (requestTabId) {
-        const current = await chrome.tabs.get(requestTabId).catch(() => null);
-        if (current?.id) return requestTabId;
-        requestTabId = null;
-        requestTabCreated = false;
-      }
-      const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
-      if (isCancelled()) return null;
-      let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
-      if (!tab) {
-        tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
-        void groupBjtuOpenedTab(tab?.id);
-        requestTabCreated = true;
-      }
-      if (isCancelled()) {
-        if (requestTabCreated && tab?.id) await chrome.tabs.remove(tab.id).catch(() => {});
-        return null;
-      }
-      requestTabId = Number(tab?.id || 0) || null;
-      return requestTabId;
-    };
-
-    try {
-      for (const hw of targets) {
+    for (const hw of targets) {
         if (isCancelled()) return;
         hw.exam_detail_state = 'loading';
         rerenderAllHomeworkAreas();
@@ -666,15 +592,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
         const detailKey = String(hw?.detail_cache_key || '').trim();
         try {
           if (Number(hw?.__actype) === 5) {
-            const tabId = await ensureRequestTab();
-            if (isCancelled()) return;
-            let paper = tabId ? await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '', tabId) : null;
-            if (!isCancelled() && !paper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
-              requestTabId = null;
-              const retryTabId = await ensureRequestTab();
-              if (isCancelled()) return;
-              paper = retryTabId ? await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '', retryTabId) : null;
-            }
+            const paper = await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '');
             if (paper?.title) hw.title = paper.title;
             hw.exam_problems = Array.isArray(paper?.problems) ? paper.problems : [];
           }
@@ -692,11 +610,6 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
         }
         rerenderAllHomeworkAreas();
         renderYktStandaloneCourses();
-      }
-    } finally {
-      if (requestTabCreated && requestTabId) {
-        try { await chrome.tabs.remove(requestTabId); } catch { /* ignore */ }
-      }
     }
   })().finally(() => { delete window.yktDeferredDetailLoadPromises[promiseKey]; });
   window.yktDeferredDetailLoadPromises[promiseKey] = run;
@@ -932,7 +845,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     5,
     ...(window.showYktAnnouncements ? [9] : [])
   ];
-  const openTabUniversityId = await getYktUniversityIdFromOpenTabs();
   const entries = [];
   const boundCourseIds = new Set();
 
@@ -948,8 +860,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const entry = {
       item,
       classroomId: String(classroomId),
-      universityId: pickYktUniversityId(item, listResp?.data) || openTabUniversityId,
-      platformId: String(item?.platform_id ?? item?.platformId ?? '3'),
+      universityId: pickYktUniversityId(item, listResp?.data),
       boundCourseId,
       name,
       courseName,
@@ -993,38 +904,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   let completedCourseLoads = 0;
   setPlatformContentLoadProgress('ykt', 0, entries.length);
   const detailQueue = [];
-  let yktExamSharedTabId = null;
-  let yktExamSharedTabCreated = false;
-  let yktExamSharedTabPromise = null;
-  const ensureYktExamSharedTab = async () => {
-    if (isStale() || !isPlatformEnabled('ykt')) return null;
-    if (yktExamSharedTabPromise) return yktExamSharedTabPromise;
-    yktExamSharedTabPromise = (async () => {
-      if (isStale() || !isPlatformEnabled('ykt')) return null;
-      if (yktExamSharedTabId) {
-        const current = await chrome.tabs.get(yktExamSharedTabId).catch(() => null);
-        if (current?.id) return yktExamSharedTabId;
-        yktExamSharedTabId = null;
-        yktExamSharedTabCreated = false;
-      }
-      const existingTabs = await chrome.tabs.query({ url: [`${YKT_BASE}/*`] }).catch(() => []);
-      if (isStale() || !isPlatformEnabled('ykt')) return null;
-      let tab = (existingTabs || []).find((item) => item?.id && item.status === 'complete' && item.active === false);
-      yktExamSharedTabCreated = false;
-      if (!tab) {
-        tab = await chrome.tabs.create({ url: YKT_REQUEST_PAGE_URL, active: false });
-        void groupBjtuOpenedTab(tab?.id);
-        yktExamSharedTabCreated = true;
-      }
-      if (isStale() || !isPlatformEnabled('ykt')) {
-        if (yktExamSharedTabCreated && tab?.id) await chrome.tabs.remove(tab.id).catch(() => {});
-        return null;
-      }
-      yktExamSharedTabId = Number(tab?.id || 0) || null;
-      return yktExamSharedTabId;
-    })().finally(() => { yktExamSharedTabPromise = null; });
-    return yktExamSharedTabPromise;
-  };
 
   const getCurrentBoundCourseId = (entry) => String(entry?.boundCourseId || '');
 
@@ -1079,34 +958,12 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const progressCid = String(entry.classroomId || '').trim();
     const coursewareProgressPromise = actype15CoursewareIds.length ? (async () => {
       try {
-        let requestTabId = await ensureYktExamSharedTab();
         if (isStale() || !isPlatformEnabled('ykt')) return {};
-        try {
-          return await fetchYktCoursewareProgress(
-            progressCid,
-            actype15CoursewareIds,
-            requestTabId,
-            entry.universityId,
-            entry.platformId
-          );
-        } catch (error) {
-          const requestTab = requestTabId ? await chrome.tabs.get(requestTabId).catch(() => null) : null;
-          if (!requestTab?.id) {
-            if (isStale() || !isPlatformEnabled('ykt')) return {};
-            yktExamSharedTabId = null;
-            requestTabId = await ensureYktExamSharedTab();
-            if (isStale() || !isPlatformEnabled('ykt')) return {};
-            return await fetchYktCoursewareProgress(
-              progressCid,
-              actype15CoursewareIds,
-              requestTabId,
-              entry.universityId,
-              entry.platformId
-            );
-          } else {
-            throw error;
-          }
-        }
+        return await fetchYktCoursewareProgress(
+          progressCid,
+          actype15CoursewareIds,
+          entry.universityId
+        );
       } catch (error) {
         console.warn('[bjtu] ykt pub_new_pro failed:', String(error?.message || error));
         return {};
@@ -1175,13 +1032,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   if (detailQueue.length) await new Promise((resolve) => setTimeout(resolve, 80));
 
   for (const task of detailQueue) {
-    if (isStale()) {
-      if (yktExamSharedTabCreated && yktExamSharedTabId) {
-        try { await chrome.tabs.remove(yktExamSharedTabId); } catch { /* ignore */ }
-        yktExamSharedTabId = null;
-      }
-      return;
-    }
+    if (isStale()) return;
     const { entry, hw } = task;
     const actype = Number(hw?.__actype);
     const detailKey = String(hw?.detail_cache_key || '').trim();
@@ -1219,19 +1070,10 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         };
       }
 
-      const tabId = await ensureYktExamSharedTab();
       if (isStale() || !isPlatformEnabled('ykt')) return;
-      let p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', tabId);
+      const p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '');
       if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
-      let examPaper = await p;
-      if (!isStale() && isPlatformEnabled('ykt') && !examPaper && tabId && !(await chrome.tabs.get(tabId).catch(() => null))) {
-        yktExamSharedTabId = null;
-        const retryTabId = await ensureYktExamSharedTab();
-        if (isStale() || !isPlatformEnabled('ykt')) return;
-        p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '', retryTabId);
-        if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
-        examPaper = await p;
-      }
+      const examPaper = await p;
       if (examPaper?.title) hw.title = examPaper.title;
       hw.exam_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
 
@@ -1257,10 +1099,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     }
 
     rerenderEntryCard(entry);
-  }
-
-  if (yktExamSharedTabCreated && yktExamSharedTabId) {
-    try { await chrome.tabs.remove(yktExamSharedTabId); } catch { /* ignore */ }
   }
 }
 
@@ -1416,13 +1254,10 @@ async function yktPageCourseHomework(classroomId) {
       const listResp = await fetchYktJson(YKT_COURSE_LIST_API);
       const courses = Array.isArray(listResp?.data?.list) ? listResp.data.list : [];
       const course = courses.find((item) => String(item?.classroom_id || '') === cid);
-      const requestTabId = await ensureYktExamSharedTab();
       const progressMap = await fetchYktCoursewareProgress(
         cid,
         videoCoursewareIds,
-        requestTabId,
-        pickYktUniversityId(course, listResp?.data),
-        String(course?.platform_id ?? course?.platformId ?? '3')
+        pickYktUniversityId(course, listResp?.data)
       );
       homework.forEach((item) => {
         if (Number(item?.__actype) !== 15) return;
