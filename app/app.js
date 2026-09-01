@@ -3855,6 +3855,9 @@ function setPlatformLoginState(platform, state) {
   const prev = String(window.platformLoginState?.[p] || '').trim();
   const s = (state === 'online' || state === 'offline') ? state : 'checking';
   window.platformLoginState[p] = s;
+  window.dispatchEvent(new CustomEvent('bjtu-platform-login-state-change', {
+    detail: { platform: p, state: s, previousState: prev }
+  }));
   if (s !== 'online') delete window.platformContentLoadProgress[p];
   if (p === 'ykt' && s === 'online') {
     window.platformInteractiveLoginPending.ykt = false;
@@ -3949,6 +3952,23 @@ window.getEnabledPlatformLoginResult = getEnabledPlatformLoginResult;
 async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {
   const p = normalizePlatformId(platform);
   const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 120000);
+  const waitForStateChange = (waitMs) => new Promise((resolve) => {
+    let timer = 0;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('bjtu-platform-login-state-change', onStateChange);
+    };
+    const onStateChange = (event) => {
+      if (String(event?.detail?.platform || '') !== p) return;
+      cleanup();
+      resolve();
+    };
+    window.addEventListener('bjtu-platform-login-state-change', onStateChange);
+    timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, Math.max(1, Number(waitMs) || 1));
+  });
   while (Date.now() < deadline) {
     const state = String(window.platformLoginState?.[p] || 'checking');
     if (state === 'online') {
@@ -3963,7 +3983,7 @@ async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {
     if (state === 'offline' && !window.platformInteractiveLoginPending?.[p]) {
       return { ok: false, loggedIn: false, ready: false, loginState: state, message: '登录失败或尚未登录' };
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await waitForStateChange(Math.min(1500, deadline - Date.now()));
   }
   const finalState = String(window.platformLoginState?.[p] || 'checking');
   return {

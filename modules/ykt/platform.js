@@ -134,6 +134,32 @@ function isYktLoginSuccessUrl(url) {
   }
 }
 
+function failYktLoginAssistAfterUserClose({ windowId = null, tabId = null } = {}) {
+  const matchesWindow = windowId != null
+    && Number(windowId) === Number(yktLoginAssistPopupWindowId);
+  const matchesTab = tabId != null
+    && Number(tabId) === Number(yktLoginAssistPopupTabId);
+  if ((!matchesWindow && !matchesTab) || yktLoginAssistCompleting) return;
+  yktLoginAssistPopupWindowId = null;
+  yktLoginAssistPopupTabId = null;
+  stopYktLoginAssistWatcher();
+  if (!window.platformInteractiveLoginPending?.ykt) return;
+  window.platformInteractiveLoginPending.ykt = false;
+  setPlatformLoginState('ykt', 'offline');
+}
+
+if (chrome?.windows?.onRemoved) {
+  chrome.windows.onRemoved.addListener((windowId) => {
+    failYktLoginAssistAfterUserClose({ windowId });
+  });
+}
+
+if (chrome?.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    failYktLoginAssistAfterUserClose({ tabId });
+  });
+}
+
 function isYktSiteUrl(url) {
   try {
     return new URL(String(url || '').trim()).origin === YKT_BASE;
