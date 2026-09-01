@@ -10,7 +10,7 @@
   });
   const AUTO_INSTALL_PENDING_KEY = 'mjAutoInstallPending';
   const SOUND_VIDEO_ENABLED_KEY = 'mjSoundVideoEnabled';
-  const VIDEO_ASSETS_INITIALIZED_KEY = 'mjSoundVideoAssetsInitialized';
+  const SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY = 'mjSoundVideoAutoEnablePending';
   const VIDEO_AVAILABLE_PATHS_KEY = 'mjSoundVideoAvailablePaths';
   const VIDEO_ASSETS = Object.freeze([
     Object.freeze({
@@ -31,13 +31,15 @@
     installed: false,
     enabled: false,
     busy: false,
+    videoBusy: false,
     ready: false,
     runtimeReady: false,
     localSize: 0,
     remoteSize: 0,
     prefetchedSource: '',
-    soundVideoEnabled: true,
-    videoAssetsInitialized: false,
+    soundVideoEnabled: false,
+    soundVideoRequested: true,
+    soundVideoAutoEnablePending: false,
     videoAssets: Object.fromEntries(VIDEO_ASSETS.map((asset) => [asset.name, {
       installed: false,
       size: 0,
@@ -155,7 +157,7 @@
 
   function renderVideoAssets() {
     const wrap = element('mjVideoAssets');
-    wrap?.classList.toggle('is-disabled', !state.enabled || !state.soundVideoEnabled);
+    wrap?.classList.toggle('is-disabled', !state.enabled);
     const installedCount = installedVideoAssets().length;
     for (const asset of VIDEO_ASSETS) {
       const assetState = state.videoAssets[asset.name];
@@ -177,14 +179,45 @@
       }
       if (downloadButton instanceof HTMLButtonElement) {
         downloadButton.hidden = assetState.installed;
-        downloadButton.disabled = state.busy || assetState.busy || !state.enabled || !state.soundVideoEnabled;
+        downloadButton.disabled = state.busy || state.videoBusy || assetState.busy || !state.enabled;
       }
       if (deleteButton instanceof HTMLButtonElement) {
         deleteButton.hidden = !assetState.installed;
-        deleteButton.disabled = state.busy || assetState.busy || installedCount <= 1;
-        deleteButton.classList.toggle('is-locked', installedCount <= 1);
-        deleteButton.title = installedCount <= 1 ? '至少保留一个有声视频素材' : '';
+        const locked = state.soundVideoEnabled && installedCount <= 1;
+        deleteButton.disabled = state.busy || state.videoBusy || assetState.busy;
+        deleteButton.setAttribute('aria-disabled', locked ? 'true' : 'false');
+        deleteButton.classList.toggle('is-locked', locked);
+        deleteButton.title = locked
+          ? '请先取消勾选「替换素材为有声视频（实验）」，再删除'
+          : '';
       }
+    }
+  }
+
+  function setVideoAssetProgress(asset, visible, loaded = 0, total = 0) {
+    const row = document.querySelector(`[data-video-asset="${CSS.escape(asset.name)}"]`);
+    const container = row?.querySelector('.mj-video-asset-progress');
+    const bar = row?.querySelector('.mj-video-asset-progress-bar');
+    const assetStatus = row?.querySelector('.mj-video-asset-status');
+    if (!(container instanceof HTMLElement)) return;
+    container.hidden = !visible;
+    const loadedBytes = Math.max(0, Number(loaded) || 0);
+    const totalBytes = Math.max(0, Number(total) || 0);
+    if (bar instanceof HTMLElement) {
+      const ratio = totalBytes > 0
+        ? Math.max(0, Math.min(100, loadedBytes / totalBytes * 100))
+        : 0;
+      bar.style.width = `${ratio}%`;
+    }
+    if (visible && assetStatus instanceof HTMLElement) {
+      if (totalBytes > 0) {
+        const ratio = Math.round(loadedBytes / totalBytes * 100);
+        const size = (bytes) => `<span class="file-size-emphasis" style="${fileSizeStyle(bytes)}">${formatBytes(bytes)}</span>`;
+        assetStatus.innerHTML = `${size(loadedBytes)} <span class="file-size-separator">/</span> ${size(totalBytes)} ${ratio}%`;
+      } else {
+        assetStatus.textContent = '正在准备…';
+      }
+      assetStatus.classList.remove('error');
     }
   }
 
@@ -283,7 +316,7 @@
     const stored = await chrome.storage.local.get([
       SCRIPT.storageKey,
       SOUND_VIDEO_ENABLED_KEY,
-      VIDEO_ASSETS_INITIALIZED_KEY
+      SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY
     ]);
     let managedExists = false;
     let managedSize = 0;
@@ -299,8 +332,6 @@
     state.runtimeReady = runtime.exists;
     state.localSize = managedSize || runtime.size;
     state.enabled = state.installed && stored[SCRIPT.storageKey] === true;
-    state.soundVideoEnabled = stored[SOUND_VIDEO_ENABLED_KEY] !== false;
-    state.videoAssetsInitialized = stored[VIDEO_ASSETS_INITIALIZED_KEY] === true;
     try {
       const manager = await updaterManager();
       for (const asset of VIDEO_ASSETS) {
@@ -320,6 +351,11 @@
       }
     }
     await persistAvailableVideoPaths();
+    const installedAssetCount = installedVideoAssets().length;
+    state.soundVideoRequested = stored[SOUND_VIDEO_ENABLED_KEY] !== false
+      || stored[SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY] === true;
+    state.soundVideoAutoEnablePending = state.soundVideoRequested && installedAssetCount < VIDEO_ASSETS.length;
+    state.soundVideoEnabled = state.soundVideoRequested && !state.soundVideoAutoEnablePending;
     state.ready = true;
     if (!state.installed && stored[SCRIPT.storageKey] === true) {
       state.enabled = false;
@@ -342,76 +378,163 @@
     if (!assetState || assetState.busy || assetState.installed) return true;
     assetState.busy = true;
     assetState.error = '';
-    if (standalone) state.busy = true;
+    if (standalone) state.videoBusy = true;
     render();
+    setVideoAssetProgress(asset, true);
     try {
       const manager = await updaterManager();
       const directory = root || await manager.requestDirectory();
-      const bytes = await fetchBinary(asset, ({ loaded, total }) => progress({
-        visible: true,
-        loaded,
-        total,
-        label: `正在下载 ${asset.name}：${total ? `${Math.round(loaded / total * 100)}% · ` : ''}${formatBytes(loaded)}${total ? ` / ${formatBytes(total)}` : ''}`
-      }));
+      const bytes = await fetchBinary(asset, ({ loaded, total }) => {
+        setVideoAssetProgress(asset, true, loaded, total);
+      });
       await manager.writeManagedFile(directory, asset.path, bytes);
       assetState.installed = true;
       assetState.size = bytes.byteLength;
       assetState.busy = false;
-      if (standalone) state.busy = false;
-      state.videoAssetsInitialized = true;
-      await chrome.storage.local.set({ [VIDEO_ASSETS_INITIALIZED_KEY]: true });
+      if (standalone) state.videoBusy = false;
       await persistAvailableVideoPaths();
-      if (standalone) progress({ visible: false });
+      if (state.enabled && state.soundVideoAutoEnablePending
+          && installedVideoAssets().length === VIDEO_ASSETS.length) {
+        state.soundVideoRequested = true;
+        state.soundVideoAutoEnablePending = false;
+        state.soundVideoEnabled = true;
+        await chrome.storage.local.set({
+          [SOUND_VIDEO_ENABLED_KEY]: true,
+          [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: false
+        });
+      }
+      setVideoAssetProgress(asset, false);
       render();
       if (standalone) setMessage(`已下载有声视频素材「${asset.name}」`);
       return true;
     } catch (error) {
       assetState.busy = false;
       assetState.error = String(error?.message || error);
-      if (standalone) state.busy = false;
-      if (standalone) progress({ visible: false });
+      if (standalone) state.videoBusy = false;
+      setVideoAssetProgress(asset, false);
       render();
       if (standalone) setMessage(assetState.error, false);
       return false;
     }
   }
 
-  async function ensureVideoAssets() {
-    if (!state.enabled || !state.soundVideoEnabled) return;
+  async function ensureVideoAssets({ enableAfterAll = false } = {}) {
+    if (!state.enabled) return false;
+    if (state.videoBusy) return false;
     const missing = VIDEO_ASSETS.filter((asset) => !state.videoAssets[asset.name]?.installed);
     if (!missing.length) {
-      state.videoAssetsInitialized = true;
-      await chrome.storage.local.set({ [VIDEO_ASSETS_INITIALIZED_KEY]: true });
-      return;
+      if (enableAfterAll) {
+        state.soundVideoRequested = true;
+        state.soundVideoAutoEnablePending = false;
+        state.soundVideoEnabled = true;
+        await chrome.storage.local.set({
+          [SOUND_VIDEO_ENABLED_KEY]: true,
+          [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: false
+        });
+        render();
+      }
+      return true;
     }
-    state.busy = true;
+    state.videoBusy = true;
     render();
     let root;
     try {
       const manager = await updaterManager();
       root = await manager.requestDirectory();
     } catch (error) {
-      state.busy = false;
-      progress({ visible: false });
+      state.videoBusy = false;
       render();
       setMessage(`有声视频素材下载失败：${String(error?.message || error)}`, false);
-      return;
+      return false;
     }
     let succeeded = 0;
     for (const asset of missing) {
       if (await downloadVideoAsset(asset, root)) succeeded += 1;
     }
-    state.busy = false;
-    state.videoAssetsInitialized = installedVideoAssets().length > 0;
-    await chrome.storage.local.set({ [VIDEO_ASSETS_INITIALIZED_KEY]: state.videoAssetsInitialized });
-    progress({ visible: false });
+    state.videoBusy = false;
+    const complete = installedVideoAssets().length === VIDEO_ASSETS.length;
+    if (enableAfterAll && complete && state.enabled && state.soundVideoAutoEnablePending) {
+      state.soundVideoRequested = true;
+      state.soundVideoAutoEnablePending = false;
+      state.soundVideoEnabled = true;
+      await chrome.storage.local.set({
+        [SOUND_VIDEO_ENABLED_KEY]: true,
+        [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: false
+      });
+    }
     render();
     if (succeeded) setMessage(`已下载 ${succeeded} 个有声视频素材`);
+    return complete;
+  }
+
+  async function requestSoundVideoEnabled(enabled) {
+    if (!enabled) {
+      state.soundVideoRequested = false;
+      state.soundVideoAutoEnablePending = false;
+      state.soundVideoEnabled = false;
+      await chrome.storage.local.set({
+        [SOUND_VIDEO_ENABLED_KEY]: false,
+        [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: false
+      });
+      render();
+      setMessage('已恢复原 GIF 素材');
+      return;
+    }
+    state.soundVideoRequested = true;
+    const installedCount = installedVideoAssets().length;
+    if (installedCount === 0) {
+      state.soundVideoEnabled = false;
+      state.soundVideoAutoEnablePending = true;
+      await chrome.storage.local.set({
+        [SOUND_VIDEO_ENABLED_KEY]: false,
+        [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: true
+      });
+      render();
+      const complete = await ensureVideoAssets({ enableAfterAll: true });
+      if (complete) setMessage('两个有声视频素材已下载并启用');
+      return;
+    }
+    state.soundVideoEnabled = true;
+    state.soundVideoAutoEnablePending = false;
+    await chrome.storage.local.set({
+      [SOUND_VIDEO_ENABLED_KEY]: true,
+      [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: false
+    });
+    render();
+    setMessage('已启用有声视频素材');
+    if (installedCount < VIDEO_ASSETS.length) await ensureVideoAssets();
+  }
+
+  async function resumeAutomaticSoundVideoEnable() {
+    if (!state.enabled || !state.soundVideoRequested) return;
+    const installedCount = installedVideoAssets().length;
+    if (installedCount === VIDEO_ASSETS.length) {
+      state.soundVideoEnabled = true;
+      state.soundVideoAutoEnablePending = false;
+      await chrome.storage.local.set({
+        [SOUND_VIDEO_ENABLED_KEY]: true,
+        [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: false
+      });
+      render();
+      return;
+    }
+    state.soundVideoEnabled = false;
+    state.soundVideoAutoEnablePending = true;
+    await chrome.storage.local.set({
+      [SOUND_VIDEO_ENABLED_KEY]: false,
+      [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: true
+    });
+    render();
+    await ensureVideoAssets({ enableAfterAll: true });
   }
 
   async function removeVideoAsset(asset) {
     const assetState = state.videoAssets[asset.name];
-    if (!assetState?.installed || assetState.busy || installedVideoAssets().length <= 1) return;
+    if (state.busy || state.videoBusy || !assetState?.installed || assetState.busy) return;
+    if (state.soundVideoEnabled && installedVideoAssets().length <= 1) {
+      setMessage('请先取消勾选「替换素材为有声视频（实验）」，再删除', false);
+      return;
+    }
     assetState.busy = true;
     assetState.error = '';
     renderVideoAssets();
@@ -422,8 +545,6 @@
       assetState.installed = false;
       assetState.size = 0;
       assetState.busy = false;
-      state.videoAssetsInitialized = true;
-      await chrome.storage.local.set({ [VIDEO_ASSETS_INITIALIZED_KEY]: true });
       await persistAvailableVideoPaths();
       renderVideoAssets();
       setMessage(`已删除有声视频素材「${asset.name}」`);
@@ -457,6 +578,7 @@
         return;
       }
       state.runtimeReady = true;
+      await resumeAutomaticSoundVideoEnable();
       setMessage(`已启用「${SCRIPT.name}」`);
     } catch (error) {
       state.busy = false;
@@ -592,21 +714,14 @@
     element('mjExternalScriptCheckUpdate')?.addEventListener('click', () => void checkUpdate());
     element('mjExternalScriptDelete')?.addEventListener('click', () => void remove());
     element('mjSoundVideoEnabled')?.addEventListener('change', async (event) => {
-      state.soundVideoEnabled = event.currentTarget.checked === true;
-      await chrome.storage.local.set({ [SOUND_VIDEO_ENABLED_KEY]: state.soundVideoEnabled });
-      render();
-      if (state.soundVideoEnabled) {
-        await ensureVideoAssets();
-        setMessage('已启用有声视频素材');
-      } else {
-        setMessage('已恢复原 GIF 素材');
-      }
+      await requestSoundVideoEnabled(event.currentTarget.checked === true);
     });
     document.querySelectorAll('[data-video-asset]').forEach((row) => {
       const asset = VIDEO_ASSETS.find((item) => item.name === row.dataset.videoAsset);
       if (!asset) return;
       row.querySelector('.mj-video-asset-download')?.addEventListener('click', () => void downloadVideoAsset(asset));
-      row.querySelector('.mj-video-asset-delete')?.addEventListener('click', () => void removeVideoAsset(asset));
+      const deleteButton = row.querySelector('.mj-video-asset-delete');
+      deleteButton?.addEventListener('click', () => void removeVideoAsset(asset));
     });
   }
 
@@ -625,9 +740,7 @@
         if (!state.enabled) await setEnabled(true);
       }
     }
-    if (state.enabled && state.soundVideoEnabled && !state.videoAssetsInitialized) {
-      await ensureVideoAssets();
-    }
+    await resumeAutomaticSoundVideoEnable();
     return true;
   }
 
@@ -635,8 +748,8 @@
     await chrome.storage.local.set({
       [SCRIPT.storageKey]: false,
       [AUTO_INSTALL_PENDING_KEY]: false,
-      [SOUND_VIDEO_ENABLED_KEY]: true,
-      [VIDEO_ASSETS_INITIALIZED_KEY]: false,
+      [SOUND_VIDEO_ENABLED_KEY]: false,
+      [SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]: true,
       [VIDEO_AVAILABLE_PATHS_KEY]: []
     });
     if (initialized) await refresh();

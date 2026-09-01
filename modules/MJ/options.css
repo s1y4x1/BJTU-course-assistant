@@ -21,13 +21,21 @@
 
 .mj-external-script-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
   border: 1px solid #d1d5db;
   border-radius: 10px;
   background: #fff;
+}
+
+.mj-external-script-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+  white-space: nowrap;
 }
 
 .mj-external-script-choice {
@@ -107,7 +115,7 @@
 
 .mj-video-asset {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -117,6 +125,13 @@
   background: #f8fafc;
 }
 
+.mj-video-asset-file {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+}
+
 .mj-video-asset-name {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -124,6 +139,7 @@
 }
 
 .mj-video-asset-status {
+  justify-self: end;
   color: var(--muted-text, #64748b);
   font-size: 12px;
   white-space: nowrap;
@@ -131,6 +147,27 @@
 
 .mj-video-asset-status.error {
   color: #dc2626;
+}
+
+.mj-video-asset-progress {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.mj-video-asset-progress-track {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #dbeafe;
+}
+
+.mj-video-asset-progress-bar {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width .15s ease;
 }
 
 .mj-external-script-progress {
@@ -199,13 +236,16 @@ html[data-color-scheme="dark"] .mj-external-script-progress-track {
   background: #334155;
 }
 
-@media (max-width: 720px) {
-  .mj-external-script-item {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
+html[data-color-scheme="dark"] .mj-video-asset-progress-track {
+  background: #1e3a5f;
+}
 
+html[data-color-scheme="dark"] .mj-video-asset-progress-bar {
+  background: #60a5fa;
+}
+
+@media (max-width: 720px) {
   .mj-external-script-status {
-    grid-column: auto;
     align-self: center;
   }
 

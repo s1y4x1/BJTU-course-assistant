@@ -27,10 +27,12 @@
         <span class="mj-external-script-name">MJ 蜘蛛侠网页彩蛋</span>
         <span id="mjExternalScriptSize" class="mj-external-script-size file-size-emphasis"></span>
       </label>
-      <span id="mjExternalScriptStatus" class="mj-external-script-status">正在检查…</span>
-      <button id="mjExternalScriptDownload" class="mj-external-script-action" type="button" disabled>下载</button>
-      <button id="mjExternalScriptCheckUpdate" class="mj-external-script-action" type="button" hidden disabled>检查更新</button>
-      <button id="mjExternalScriptDelete" class="mj-external-script-action mj-external-script-delete" type="button" hidden disabled>删除</button>
+      <span class="mj-external-script-controls">
+        <span id="mjExternalScriptStatus" class="mj-external-script-status">正在检查…</span>
+        <button id="mjExternalScriptDownload" class="mj-external-script-action" type="button" disabled>下载</button>
+        <button id="mjExternalScriptCheckUpdate" class="mj-external-script-action" type="button" hidden disabled>检查更新</button>
+        <button id="mjExternalScriptDelete" class="mj-external-script-action mj-external-script-delete" type="button" hidden disabled>删除</button>
+      </span>
       <div id="mjExternalScriptProgress" class="mj-external-script-progress" hidden>
         <div id="mjExternalScriptProgressLabel" class="mj-external-script-progress-label">正在下载…</div>
         <div class="mj-external-script-progress-track">
@@ -38,23 +40,37 @@
         </div>
       </div>
       <label class="mj-external-script-suboption">
-        <input id="mjSoundVideoEnabled" type="checkbox" checked disabled>
+        <input id="mjSoundVideoEnabled" type="checkbox" disabled>
         <span>替换素材为有声视频（实验）</span>
       </label>
       <div id="mjVideoAssets" class="mj-video-assets" aria-label="有声视频素材">
         <div class="mj-video-asset" data-video-asset="effect1.webm">
-          <span class="mj-video-asset-name">effect1.webm</span>
-          <span class="mj-video-asset-size file-size-emphasis">—</span>
+          <span class="mj-video-asset-file">
+            <span class="mj-video-asset-name">effect1.webm</span>
+            <span class="mj-video-asset-size file-size-emphasis">—</span>
+          </span>
           <span class="mj-video-asset-status">正在检查…</span>
           <button class="mj-external-script-action mj-video-asset-download" type="button" disabled>下载</button>
           <button class="mj-external-script-action mj-external-script-delete mj-video-asset-delete" type="button" disabled>删除</button>
+          <div class="mj-video-asset-progress" hidden>
+            <div class="mj-video-asset-progress-track">
+              <div class="mj-video-asset-progress-bar"></div>
+            </div>
+          </div>
         </div>
         <div class="mj-video-asset" data-video-asset="effect2.webm">
-          <span class="mj-video-asset-name">effect2.webm</span>
-          <span class="mj-video-asset-size file-size-emphasis">—</span>
+          <span class="mj-video-asset-file">
+            <span class="mj-video-asset-name">effect2.webm</span>
+            <span class="mj-video-asset-size file-size-emphasis">—</span>
+          </span>
           <span class="mj-video-asset-status">正在检查…</span>
           <button class="mj-external-script-action mj-video-asset-download" type="button" disabled>下载</button>
           <button class="mj-external-script-action mj-external-script-delete mj-video-asset-delete" type="button" disabled>删除</button>
+          <div class="mj-video-asset-progress" hidden>
+            <div class="mj-video-asset-progress-track">
+              <div class="mj-video-asset-progress-bar"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
