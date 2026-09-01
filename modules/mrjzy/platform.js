@@ -5,38 +5,50 @@ const MRJZY_WORK_DETAIL_API = `${MRJZY_API_BASE}/mrzy/mrzypc/getWorkDetail`;
 const MRJZY_QR_GEN_API = 'https://api-prod.lulufind.com/api/v1/auth/genQrCode';
 const MRJZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCode';
 const MRJZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
+const MRJZY_HEADER_RULE_ID = 914306;
 let mrjzyLoginAssistPollTimer = null;
 let mrjzyLoginAssistRetryTimer = null;
 let mrjzyLoginAssistPolling = false;
 let mrjzyLoginAssistCurrentCode = '';
 let mrjzyLoginAssistCodeSerial = 0;
 let mrjzyActiveRuntimeCtx = null;
+let mrjzyHeaderRulePromise = null;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
-
-async function closeMrjzyOwnedRuntimeTab(runtimeCtx) {
-  if (!runtimeCtx) return;
-  if (runtimeCtx.closePromise) return runtimeCtx.closePromise;
-  runtimeCtx.closePromise = (async () => {
-    if (runtimeCtx.creatingTabPromise) {
-      try { await runtimeCtx.creatingTabPromise; } catch { /* ignore */ }
-    }
-    if (runtimeCtx.createdTab && runtimeCtx.tabId) {
-      try { await chrome.tabs.remove(Number(runtimeCtx.tabId)); } catch { /* ignore */ }
-    }
-    runtimeCtx.tabId = null;
-    runtimeCtx.createdTab = false;
-  })().finally(() => {
-    runtimeCtx.closePromise = null;
-  });
-  return runtimeCtx.closePromise;
-}
 
 function cancelMrjzyActiveLoad() {
   const runtimeCtx = mrjzyActiveRuntimeCtx;
   if (!runtimeCtx) return Promise.resolve();
   runtimeCtx.cancelled = true;
-  return closeMrjzyOwnedRuntimeTab(runtimeCtx);
+  return Promise.resolve();
+}
+
+function ensureMrjzyRequestHeaderRule() {
+  if (mrjzyHeaderRulePromise) return mrjzyHeaderRulePromise;
+  if (!chrome.declarativeNetRequest?.updateSessionRules) return Promise.resolve(false);
+  mrjzyHeaderRulePromise = chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [MRJZY_HEADER_RULE_ID],
+    addRules: [{
+      id: MRJZY_HEADER_RULE_ID,
+      priority: 1,
+      action: {
+        type: 'modifyHeaders',
+        requestHeaders: [
+          { header: 'Origin', operation: 'set', value: MRJZY_WEB_BASE },
+          { header: 'Referer', operation: 'set', value: `${MRJZY_WEB_BASE}/` }
+        ]
+      },
+      condition: {
+        regexFilter: '^https://lulu\\.lulufind\\.com/mrzy/mrzypc/(?:findWorkNewVersion|getWorkDetail)(?:\\?.*)?$',
+        resourceTypes: ['xmlhttprequest'],
+        requestMethods: ['post']
+      }
+    }]
+  }).then(() => true).catch((error) => {
+    mrjzyHeaderRulePromise = null;
+    throw error;
+  });
+  return mrjzyHeaderRulePromise;
 }
 
 function formatMrjzyDateTime(dt) {
@@ -378,20 +390,7 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
     }
   };
   throwIfCancelled();
-
-  const waitTabReady = async (tabId, timeoutMs = 12000) => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      try {
-        const t = await chrome.tabs.get(tabId);
-        if (t?.status === 'complete') return true;
-      } catch {
-        return false;
-      }
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    return false;
-  };
+  await ensureMrjzyRequestHeaderRule();
 
   const normalizeMrjzyParams = (obj) => {
     const out = {};
@@ -422,160 +421,6 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
     return md5(`${toBase64Utf8(payload)}${MRJZY_SIGN_SALT}`);
   };
 
-  const postFromZuoyePageContext = async (bodyRaw, extSign, extToken, ctx = null) => {
-    let tab = null;
-    let created = false;
-    try {
-      if (ctx?.tabId) {
-        try {
-          const existingTab = await chrome.tabs.get(Number(ctx.tabId));
-          if (existingTab?.id) tab = existingTab;
-        } catch {
-          ctx.tabId = null;
-        }
-      }
-
-      if (!tab) {
-        if (ctx) {
-          // Ensure only one concurrent creator opens a tab for this ctx.
-          if (ctx.creatingTabPromise) {
-            try { await ctx.creatingTabPromise; } catch { /* ignore */ }
-            try {
-              const existingTab = ctx.tabId ? await chrome.tabs.get(Number(ctx.tabId)) : null;
-              if (existingTab?.id) tab = existingTab;
-            } catch {
-              tab = null;
-            }
-          }
-
-          if (!tab) {
-            // create and record on ctx so subsequent callers reuse the same tab
-            ctx.creatingTabPromise = (async () => {
-              const existingTabs = await chrome.tabs.query({ url: ['https://zuoye.lulufind.com/*'] }).catch(() => []);
-              const reusableTab = (existingTabs || []).find((item) => item?.id && item.status === 'complete');
-              if (reusableTab?.id) {
-                ctx.tabId = Number(reusableTab.id);
-                ctx.createdTab = false;
-                return ctx.tabId;
-              }
-const t = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
-              void groupBjtuOpenedTab(t?.id);
-              ctx.tabId = Number(t?.id || 0) || null;
-              ctx.createdTab = true;
-              if (ctx.cancelled) {
-                if (ctx.tabId) {
-                  try { await chrome.tabs.remove(Number(ctx.tabId)); } catch { /* ignore */ }
-                }
-                ctx.tabId = null;
-                ctx.createdTab = false;
-                throw Object.assign(new Error('每日交作业加载已取消'), { code: 'cancelled' });
-              }
-              return ctx.tabId;
-            })();
-            try {
-              const newTabId = await ctx.creatingTabPromise;
-              if (newTabId) {
-                try { tab = await chrome.tabs.get(Number(newTabId)); } catch { tab = null; }
-              }
-            } finally {
-              ctx.creatingTabPromise = null;
-            }
-            created = !!tab?.id;
-          }
-        } else {
-          const exists = await chrome.tabs.query({ url: ['https://zuoye.lulufind.com/*'] });
-          if (exists && exists.length > 0) {
-            tab = exists[0];
-          } else {
-            tab = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active: false });
-            void groupBjtuOpenedTab(tab?.id);
-            created = true;
-          }
-        }
-      }
-      if (!tab?.id) throw new Error('NO_TAB');
-      throwIfCancelled();
-      await waitTabReady(tab.id, 15000);
-      throwIfCancelled();
-
-      const injected = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: async (reqUrl, bodyText, signFromExt, tokenFromExt) => {
-          const readCookie = (name) => {
-            const n = String(name || '').toLowerCase();
-            const parts = String(document.cookie || '').split(';').map((x) => x.trim()).filter(Boolean);
-            for (const p of parts) {
-              const idx = p.indexOf('=');
-              if (idx <= 0) continue;
-              const k = p.slice(0, idx).trim().toLowerCase();
-              if (k === n) return decodeURIComponent(p.slice(idx + 1));
-            }
-            return '';
-          };
-
-          const readStorage = (k) => {
-            try {
-              return String(localStorage.getItem(k) || sessionStorage.getItem(k) || '').trim();
-            } catch {
-              return '';
-            }
-          };
-
-          const sign = String(
-            signFromExt
-            || readCookie('Sign')
-            || readStorage('Sign')
-            || ''
-          ).trim();
-          const token = String(
-            tokenFromExt
-            || readCookie('Teacher-Token')
-            || readCookie('Token')
-            || readStorage('Teacher-Token')
-            || readStorage('Token')
-            || readStorage('token')
-            || ''
-          ).trim();
-
-          const headers = {
-            Accept: 'application/json, text/plain, */*',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Pragma: 'no-cache'
-          };
-          if (sign) headers.sign = sign;
-          if (token) headers.token = token;
-
-          const res = await fetch(reqUrl, {
-            method: 'POST',
-            credentials: 'include',
-            cache: 'no-store',
-            headers,
-            body: String(bodyText || '')
-          });
-          const text = await res.text();
-          let data = null;
-          try { data = JSON.parse(text); } catch { data = null; }
-          return { status: res.status, text, data, signPresent: !!sign, tokenPresent: !!token };
-        },
-        args: [url, bodyRaw, extSign || '', extToken || '']
-      });
-
-      const result = injected?.[0]?.result || null;
-      if (!result) throw new Error('INJECT_EMPTY');
-      return {
-        res: { status: Number(result.status || 0) },
-        data: result.data,
-        text: result.text
-      };
-    } finally {
-      if (!ctx && created && tab?.id) {
-        try { await chrome.tabs.remove(tab.id); } catch { /* ignore */ }
-      }
-    }
-  };
-
   const getCookieValueLoose = async (domain, names) => {
     try {
       const all = await chrome.cookies.getAll({ domain });
@@ -600,29 +445,16 @@ const t = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active:
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     'Cache-Control': 'no-cache',
     'Content-Type': 'application/x-www-form-urlencoded',
-    Origin: 'https://zuoye.lulufind.com',
-    Pragma: 'no-cache',
-    Referer: 'https://zuoye.lulufind.com/'
+    Pragma: 'no-cache'
   };
   if (sign) headers.sign = sign;
   if (token) headers.token = token;
-
-  if (runtimeCtx?.preferPageContext) {
-    try {
-      return await postFromZuoyePageContext(bodyRaw, sign, token, runtimeCtx);
-    } catch (error) {
-      if (runtimeCtx?.cancelled || error?.code === 'cancelled') throw error;
-      // fallback to direct fetch below
-    }
-  }
 
   throwIfCancelled();
   const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
-    referrer: 'https://zuoye.lulufind.com/',
-    referrerPolicy: 'strict-origin-when-cross-origin',
     headers,
     body: bodyRaw
   });
@@ -630,25 +462,12 @@ const t = await chrome.tabs.create({ url: 'https://zuoye.lulufind.com/', active:
   let data = null;
   try { data = JSON.parse(text); } catch { data = null; }
 
-  if (Number(res.status) === 401 || Number(res.status) === 403) {
-    try {
-      return await postFromZuoyePageContext(bodyRaw, sign, token, runtimeCtx);
-    } catch (error) {
-      if (runtimeCtx?.cancelled || error?.code === 'cancelled') throw error;
-      // fallback to direct response below
-    }
-  }
   return { res, data, text };
 }
 
 async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   const mrjzyRuntimeCtx = {
-    tabId: null,
-    createdTab: false,
-    creatingTabPromise: null,
-    closePromise: null,
-    cancelled: false,
-    preferPageContext: true
+    cancelled: false
   };
   mrjzyActiveRuntimeCtx = mrjzyRuntimeCtx;
   const shouldAbort = () => mrjzyRuntimeCtx.cancelled
@@ -664,8 +483,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     return;
   }
   setPlatformLoginState('mrjzy', 'checking');
-  const closeMrjzyRuntimeTab = async () => {
-    await closeMrjzyOwnedRuntimeTab(mrjzyRuntimeCtx);
+  const finishMrjzyRuntime = async () => {
     if (mrjzyActiveRuntimeCtx === mrjzyRuntimeCtx) mrjzyActiveRuntimeCtx = null;
   };
 
@@ -687,19 +505,19 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     limit: 1
   }, mrjzyRuntimeCtx);
   if (shouldAbort()) {
-    await closeMrjzyRuntimeTab();
+    await finishMrjzyRuntime();
     return;
   }
 
   if (listResp.res.status === 401 || listResp.res.status === 403) {
     window.platformLoadedOnce.mrjzy = true;
-    await closeMrjzyRuntimeTab();
+    await finishMrjzyRuntime();
     renderMrjzyNeedLoginMessage();
     return;
   }
   if (!listResp.data || Number(listResp.data.code) !== 200) {
     window.platformLoadedOnce.mrjzy = true;
-    await closeMrjzyRuntimeTab();
+    await finishMrjzyRuntime();
     renderMrjzyNeedLoginMessage();
     return;
   }
@@ -712,7 +530,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   window.platformLoadedOnce.mrjzy = true;
   const works = Array.isArray(listResp.data.data) ? listResp.data.data : [];
   if (!works.length) {
-    await closeMrjzyRuntimeTab();
+    await finishMrjzyRuntime();
     renderMrjzyStandaloneCourses();
     return;
   }
@@ -782,7 +600,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     setPlatformContentLoadProgress('mrjzy', completedDetailLoads, works.length);
   })));
   if (shouldAbort()) {
-    await closeMrjzyRuntimeTab();
+    await finishMrjzyRuntime();
     return;
   }
   const teacherByWorkId = new Map();
@@ -847,7 +665,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   });
   renderMrjzyStandaloneCourses();
 
-  await closeMrjzyRuntimeTab();
+  await finishMrjzyRuntime();
 }
 
 function scheduleMrjzyLoad(courses, loadVersion = 0) {
