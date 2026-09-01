@@ -14,7 +14,7 @@
     },
     ykt: { label: '雨课堂', files: ['platform.js'] },
     mrjzy: { label: '每日交作业', styles: ['platform.css'], files: ['platform.js'] },
-    jlgj: { label: '接龙管家', files: ['platform.js', 'background.js', 'capture.js', 'theme.js'] },
+    jlgj: { label: '接龙管家', files: ['platform.js', 'background.js', 'theme.js'] },
     mooc: { label: '中国大学MOOC', styles: ['platform.css'], files: ['platform.js', 'background.js', 'inject.js'] },
     xuetangx: { label: '学堂在线', styles: ['platform.css'], files: ['platform.js'] },
     campusnet: {

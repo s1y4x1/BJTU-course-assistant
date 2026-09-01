@@ -2626,18 +2626,27 @@
       }
     });
     element('bindAcademicSystemBtn')?.addEventListener('click', async (event) => {
-      event.currentTarget.disabled = true;
+      const button = event.currentTarget;
+      button.disabled = true;
       setMessage('正在后台通过 MIS 登录教务系统…');
-      const result = await send('START_ACADEMIC_MIS_LOGIN');
-      if (!result?.ok) {
-        event.currentTarget.disabled = false;
-        setMessage(`通过 MIS 登录教务系统失败：${result?.message || '未知错误'}`, false);
-      } else {
-        event.currentTarget.disabled = false;
+      try {
+        const result = await send('START_ACADEMIC_MIS_LOGIN');
+        if (!result?.ok) {
+          setMessage(`通过 MIS 登录教务系统失败：${result?.message || '未知错误'}`, false);
+          return;
+        }
+        const studentId = String(result.studentId || '').trim();
+        setMessage(`已通过 MIS 登录教务系统：${studentId}${result.userName ? ` ${result.userName}` : ''}`);
         invalidateAcademicCaches();
-        const restored = await refreshContext().then(() => restoreAcademicDataCache()).catch(() => false);
-        void loadAll({ preserveRendered: restored, refreshCached: restored });
-        setMessage(`已通过 MIS 登录教务系统：${result.studentId || ''}${result.userName ? ` ${result.userName}` : ''}`);
+        context = { ...(context || {}), studentId };
+        const restored = await restoreAcademicDataCache(studentId).catch(() => false);
+        void refreshContext()
+          .then(() => loadAll({ preserveRendered: restored, refreshCached: restored }))
+          .catch((error) => setMessage(`教务数据后台刷新失败：${String(error?.message || error)}`, false));
+      } catch (error) {
+        setMessage(`通过 MIS 登录教务系统失败：${String(error?.message || error)}`, false);
+      } finally {
+        button.disabled = false;
       }
     });
     for (const [id, key, enabledText, disabledText] of [

@@ -545,7 +545,6 @@ window.mrjzyCourseGroupsSnapshot = []; // [{token,divClass,classNum,teacherName,
 window.jlgjMatchedHomeworkByCourseId = {}; // {courseId: JlgjHomework[]}
 window.jlgjStandaloneCourses = []; // JlgjCourse[]
 window.jlgjCourseGroupsSnapshot = []; // [{token,name,groupId,homeworks}]
-window.jlgjRequestHeaders = {}; // {authorization,xApiRequestPayload}
 window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomeworkCount,hasReplay}}
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.veReplayScheduleByCourseId = {}; // {courseId: {list,promise,loaded,error}}

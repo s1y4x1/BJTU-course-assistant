@@ -689,7 +689,62 @@
     }
   }
 
-  async function loginAcademicViaMis() {
+  function isAcademicNoticeUrl(value) {
+    try {
+      const url = new URL(String(value || ''), MIS_MODULE_URL);
+      return url.hostname === 'aa.bjtu.edu.cn' && /^\/notice\/item\/?$/i.test(url.pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  function academicStudentIdFromClientLoginUrl(value) {
+    try {
+      const url = new URL(String(value || ''), MIS_MODULE_URL);
+      if (url.hostname !== 'aa.bjtu.edu.cn') return '';
+      const match = url.pathname.match(/^\/client\/login\/([^/]+)\/[^/]+\/[^/]+\/?$/i);
+      return match ? decodeURIComponent(match[1]).trim() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function isMisOrCasAuthenticationUrl(value) {
+    try {
+      const url = new URL(String(value || ''), MIS_MODULE_URL);
+      if (url.hostname === 'mis.bjtu.edu.cn') {
+        return /^\/auth\/sso\/?$/i.test(url.pathname);
+      }
+      if (url.hostname === 'cas.bjtu.edu.cn') {
+        return /^\/o\/authorize\/?$/i.test(url.pathname)
+          || /^\/auth\/login\/?$/i.test(url.pathname);
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  function misAuthenticationError(message) {
+    return Object.assign(new Error(String(message || 'MIS/CAS 登录失败')), { code: 'mis-auth-failed' });
+  }
+
+  async function loginCasForMisFallback(casFallbackAttempted) {
+    if (casFallbackAttempted) throw misAuthenticationError('CAS 登录后仍未能登录 MIS');
+    const cas = global.BjtuCasSystemInternals;
+    if (!cas?.autoLoginSavedAccount) {
+      throw misAuthenticationError('MIS 尚未登录，且未安装 CAS 模块');
+    }
+    const result = await cas.autoLoginSavedAccount().catch((error) => ({
+      ok: false,
+      message: String(error?.message || error)
+    }));
+    if (!result?.ok) {
+      throw misAuthenticationError(`MIS 尚未登录，CAS 自动登录失败：${result?.message || '没有可用的已保存账号'}`);
+    }
+  }
+
+  async function loginAcademicViaMis({ casFallbackAttempted = false } = {}) {
     await clearAcademicCookies();
     academicAccountCache = null;
     academicSessionAccount = null;
@@ -701,11 +756,16 @@
       headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
     });
     const html = await response.text();
+    if (isMisOrCasAuthenticationUrl(response.url)) {
+      await loginCasForMisFallback(casFallbackAttempted);
+      return loginAcademicViaMis({ casFallbackAttempted: true });
+    }
     if (!response.ok) throw new Error(`MIS 教务系统入口 HTTP ${response.status}`);
     const redirectForm = [...html.matchAll(/<form\b([^>]*)>[\s\S]*?<\/form>/gi)]
       .find((match) => attributeFromHtml(match[1], 'id').toLowerCase() === 'redirect');
     const redirectAction = attributeFromHtml(redirectForm?.[1] || '', 'action');
     let redirectUrl = '';
+    let redirectStudentId = '';
     if (redirectAction) {
       try {
         const parsed = new URL(redirectAction, response.url || MIS_MODULE_URL);
@@ -713,6 +773,7 @@
             && parsed.hostname === 'aa.bjtu.edu.cn'
             && /^\/client\/login\/[^/]+\/[^/]+\/[^/]+\/?$/i.test(parsed.pathname)) {
           redirectUrl = parsed.href;
+          redirectStudentId = academicStudentIdFromClientLoginUrl(parsed.href);
         }
       } catch {
         // The malformed action is handled as a missing redirect below.
@@ -729,26 +790,42 @@
             headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
           });
           await redirectResponse.text();
-          let reachedNoticePage = false;
-          try {
-            const finalUrl = new URL(redirectResponse.url || '', redirectUrl);
-            reachedNoticePage = finalUrl.hostname === 'aa.bjtu.edu.cn'
-              && /^\/notice\/item\/?$/i.test(finalUrl.pathname);
-          } catch {
-            reachedNoticePage = false;
+          if (isMisOrCasAuthenticationUrl(redirectResponse.url)) {
+            await loginCasForMisFallback(casFallbackAttempted);
+            return loginAcademicViaMis({ casFallbackAttempted: true });
           }
-          if (redirectResponse.ok && reachedNoticePage) break;
-        } catch {
+          if (redirectResponse.ok && isAcademicNoticeUrl(redirectResponse.url)) break;
+        } catch (error) {
+          if (error?.code === 'mis-auth-failed') throw error;
           // Token login may temporarily return 503 or another transient error.
         }
         await wait(1000);
       }
-    } else if (/mis\.bjtu\.edu\.cn\/(?:login|auth)|cas\.bjtu\.edu\.cn\/login/i.test(String(response.url || ''))
-        || /统一身份认证|用户登录/u.test(html) && /password|loginname/i.test(html)) {
+    } else if (!isAcademicNoticeUrl(response.url)
+        && /统一身份认证|用户登录/u.test(html) && /password|loginname/i.test(html)) {
       throw new Error('MIS 尚未登录，请先登录 MIS 后重试');
     }
-    const account = await fetchCurrentAcademicAccount();
-    if (!account?.studentId) throw new Error('MIS 未能登录教务系统');
+    // A successful token login is complete as soon as AA returns its notice page.
+    // Do not keep the caller (and its disabled button) waiting for another page
+    // which may independently enter the site's transient-error retry loop.
+    let account = null;
+    if (redirectStudentId) {
+      const accounts = await getAcademicAccounts();
+      const saved = accounts[redirectStudentId];
+      account = {
+        studentId: redirectStudentId,
+        userName: String(saved?.userName || '')
+      };
+      await saveAcademicAccount(account.studentId, {
+        userName: account.userName,
+        lastLoginAt: Date.now()
+      });
+      academicSessionAccount = account;
+    } else {
+      account = await fetchCurrentAcademicAccount();
+      if (!account?.studentId) throw new Error('MIS 未能登录教务系统');
+      academicSessionAccount = account;
+    }
     checkScores('mis-login', { force: true }).catch(() => {});
     checkExams('mis-login', { force: true }).catch(() => {});
     return { ok: true, studentId: account.studentId, userName: account.userName };
@@ -1968,7 +2045,9 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         return true;
       }
       if (message?.type === 'START_ACADEMIC_MIS_LOGIN') {
-        enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, loginAcademicViaMis)
+        // This is an explicit user action. It must not sit behind an already
+        // running schedule/score request that is retrying a transient response.
+        loginAcademicViaMis()
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;

@@ -41,29 +41,4 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }).catch(() => {});
 });
 
-chrome.webRequest.onBeforeSendHeaders.addListener(
-  async (details) => {
-    try {
-      const headers = details?.requestHeaders || [];
-      const authorization = findHeaderValue(headers, 'authorization');
-      const xApiRequestPayload = findHeaderValue(headers, 'x-api-request-payload');
-      const xApiRequestMode = findHeaderValue(headers, 'x-api-request-mode') || 'cors';
-      if (!authorization || !xApiRequestPayload) return;
-      await chrome.storage.local.set({
-        jlgjRequestHeaders: {
-          authorization,
-          xApiRequestPayload,
-          xApiRequestMode,
-          ts: Date.now(),
-          url: details?.url || ''
-        }
-      });
-    } catch {
-      // ignore
-    }
-  },
-  { urls: ['https://i-api.jielong.com/*'] },
-  ['requestHeaders', 'extraHeaders']
-);
-
 })();

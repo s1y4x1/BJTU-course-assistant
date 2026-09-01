@@ -267,7 +267,6 @@ const OPTIONAL_CONTENT_SCRIPTS = [
   },
   { id: 'bjtu-mooc-inject', module: 'mooc', matches: ['https://www.icourse163.org/*'], js: ['modules/mooc/inject.js'], runAt: 'document_idle' },
   { id: 'bjtu-jlgj-theme', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/theme.js'], runAt: 'document_start' },
-  { id: 'bjtu-jlgj-capture', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/capture.js'], runAt: 'document_start', world: 'MAIN' },
   {
     id: 'bjtu-academic-assessment-satisfied',
     module: 'academic',
@@ -310,6 +309,9 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     runAt: 'document_end'
   }
 ];
+const LEGACY_OPTIONAL_CONTENT_SCRIPT_IDS = new Set([
+  'bjtu-jlgj-capture'
+]);
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'MIS_CAPTCHA_RECOGNIZE') return false;
@@ -348,7 +350,10 @@ async function doSyncOptionalContentScripts() {
     if (await extensionFileExists(`modules/${script.module}/module.json`)
         && scriptFilesExist) wanted.push(script);
   }
-  const managed = new Set(OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id));
+  const managed = new Set([
+    ...OPTIONAL_CONTENT_SCRIPTS.map((script) => script.id),
+    ...LEGACY_OPTIONAL_CONTENT_SCRIPT_IDS
+  ]);
   const registered = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
   const registeredManagedIds = registered
     .map((script) => String(script?.id || ''))
