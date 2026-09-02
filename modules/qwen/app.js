@@ -674,20 +674,7 @@
       placeCursor(bubble, false);
       maybeAutoScrollMessages(messages);
     };
-    const closeAnswerAtToolCall = () => {
-      clearSuggestedReplies();
-      if (inThinking) {
-        collapseThinking(activeBubble);
-        inThinking = false;
-      }
-      removeCursor(activeBubble);
-      if (activeBubble instanceof HTMLElement
-        && !mdRawText(activeBubble)
-        && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
-        removeMessageBubble(activeBubble);
-      }
-      activeBubble = null;
-    };
+    const renderStreamEvent = createCompletionStreamRenderer({ resetRendering, functionCallCards });
 
     setBusy(true);
     setStatus('回复中…');
@@ -726,54 +713,8 @@
       resumePort = chrome.runtime.connect({ name: 'bjtu-qwen-history-resume' });
       port = resumePort;
       resumePort.onMessage.addListener((message) => {
-        if (message?.type === 'streamRestart') {
-          resetRendering();
-        } else if (message?.type === 'delta') {
-          setStatus('回复中…');
-          const bubble = ensureAssistantBubble();
-          if (bubble) appendAssistantText(bubble, message.text);
-          if (inThinking) {
-            collapseThinking(bubble);
-            inThinking = false;
-          }
-          placeCursor(bubble, false);
-          maybeAutoScrollMessages(messages);
-        } else if (message?.type === 'thinking') {
-          setStatus('思考中…');
-          const bubble = ensureAssistantBubble();
-          const existingDetails = bubble?.querySelector(':scope > .qwen-chat-thinking');
-          const body = ensureThinkingBlock(bubble);
-          if (body) appendAssistantText(body, message.text);
-          const details = bubble?.querySelector(':scope > .qwen-chat-thinking');
-          if (!(existingDetails instanceof HTMLDetailsElement) && details instanceof HTMLDetailsElement) details.open = true;
-          inThinking = true;
-          placeCursor(bubble, true);
-          if (body instanceof HTMLElement) body.scrollTop = body.scrollHeight;
-          maybeAutoScrollMessages(messages);
-        } else if (message?.type === 'functionCall') {
-          setStatus('操作中…');
-          const call = message.functionCall || {};
-          const key = String(call.id || call.name || 'function_call');
-          let card = functionCallCards.get(key);
-          if (!(card instanceof HTMLElement) || !card.isConnected) {
-            closeAnswerAtToolCall();
-            card = appendFunctionCallCard(call);
-            if (card instanceof HTMLElement) functionCallCards.set(key, card);
-          } else {
-            updateFunctionCallCard(card, call);
-          }
-        } else if (message?.type === 'functionResult') {
-          setStatus('操作中…');
-          const result = message.functionResult || {};
-          const key = String(result.id || result.name || 'function_call');
-          let card = functionCallCards.get(key);
-          if (!(card instanceof HTMLElement) || !card.isConnected) {
-            closeAnswerAtToolCall();
-            card = appendFunctionCallCard({ id: result.id, name: result.name, arguments: '' });
-            if (card instanceof HTMLElement) functionCallCards.set(key, card);
-          }
-          finishFunctionCallCard(card, result);
-        } else if (message?.type === 'historyResumeDone') {
+        if (renderStreamEvent(message)) return;
+        if (message?.type === 'historyResumeDone') {
           finish({ response: message });
         } else if (message?.type === 'historyResumeStopped') {
           finish({ stopped: true });
@@ -1706,6 +1647,82 @@
     }
   }
 
+  // GET 历史恢复与 POST 新回复使用完全相同的 EventStream 展示规则。
+  // 两条链路只各自负责启动、重试与结束，正文/思考/内置工具均在这里渲染。
+  function createCompletionStreamRenderer({ resetRendering, functionCallCards }) {
+    const closeAnswerAtToolCall = () => {
+      clearSuggestedReplies();
+      if (inThinking) {
+        collapseThinking(activeBubble);
+        inThinking = false;
+      }
+      removeCursor(activeBubble);
+      if (activeBubble instanceof HTMLElement
+        && !mdRawText(activeBubble)
+        && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+        removeMessageBubble(activeBubble);
+      }
+      activeBubble = null;
+    };
+
+    return (message) => {
+      const type = String(message?.type || '');
+      if (type === 'streamRestart') {
+        resetRendering();
+      } else if (type === 'delta') {
+        setStatus('回复中…');
+        const bubble = ensureAssistantBubble();
+        if (bubble) appendAssistantText(bubble, message.text);
+        if (inThinking) {
+          collapseThinking(bubble);
+          inThinking = false;
+        }
+        placeCursor(bubble, false);
+        maybeAutoScrollMessages(el(MESSAGES_ID));
+      } else if (type === 'thinking') {
+        setStatus('思考中…');
+        const bubble = ensureAssistantBubble();
+        if (bubble) {
+          const existingDetails = bubble.querySelector(':scope > .qwen-chat-thinking');
+          const body = ensureThinkingBlock(bubble);
+          if (body) appendAssistantText(body, message.text);
+          const details = bubble.querySelector(':scope > .qwen-chat-thinking');
+          if (!(existingDetails instanceof HTMLDetailsElement) && details instanceof HTMLDetailsElement) details.open = true;
+          inThinking = true;
+          placeCursor(bubble, true);
+          if (body instanceof HTMLElement) body.scrollTop = body.scrollHeight;
+          maybeAutoScrollMessages(el(MESSAGES_ID));
+        }
+      } else if (type === 'functionCall') {
+        setStatus('操作中…');
+        const call = message.functionCall || {};
+        const key = String(call.id || call.name || 'function_call');
+        let card = functionCallCards.get(key);
+        if (!(card instanceof HTMLElement) || !card.isConnected) {
+          closeAnswerAtToolCall();
+          card = appendFunctionCallCard(call);
+          if (card instanceof HTMLElement) functionCallCards.set(key, card);
+        } else {
+          updateFunctionCallCard(card, call);
+        }
+      } else if (type === 'functionResult') {
+        setStatus('操作中…');
+        const result = message.functionResult || {};
+        const key = String(result.id || result.name || 'function_call');
+        let card = functionCallCards.get(key);
+        if (!(card instanceof HTMLElement) || !card.isConnected) {
+          closeAnswerAtToolCall();
+          card = appendFunctionCallCard({ id: result.id, name: result.name, arguments: '' });
+          if (card instanceof HTMLElement) functionCallCards.set(key, card);
+        }
+        finishFunctionCallCard(card, result);
+      } else {
+        return false;
+      }
+      return true;
+    };
+  }
+
   function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true }) {
     clearSuggestedReplies();
     const wasOpeningStream = openingStarted;
@@ -1768,77 +1785,17 @@
       maybeAutoScrollMessages(messages);
     };
 
-    const closeActiveAnswerAtToolCall = () => {
-      clearSuggestedReplies();
-      if (inThinking) {
-        collapseThinking(activeBubble);
-        inThinking = false;
-      }
-      removeCursor(activeBubble);
-      if (activeBubble instanceof HTMLElement
-        && !mdRawText(activeBubble)
-        && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
-        removeMessageBubble(activeBubble);
-      }
-      activeBubble = null;
-    };
+    const renderStreamEvent = createCompletionStreamRenderer({
+      resetRendering: resetCurrentStreamRendering,
+      functionCallCards
+    });
 
     const connectPort = () => {
       const chatPort = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
       port = chatPort;
       chatPort.onMessage.addListener((message) => {
-        if (message?.type === 'streamRestart') {
-          resetCurrentStreamRendering();
-        } else if (message?.type === 'delta') {
-          setStatus('回复中…');
-          const bubble = ensureAssistantBubble();
-          if (bubble) appendAssistantText(bubble, message.text);
-          if (inThinking) {
-            collapseThinking(bubble);
-            inThinking = false;
-          }
-          placeCursor(bubble, false);
-          const messages = el(MESSAGES_ID);
-          maybeAutoScrollMessages(messages);
-        } else if (message?.type === 'thinking') {
-          setStatus('思考中…');
-          const bubble = ensureAssistantBubble();
-          if (bubble) {
-            const existingDetails = bubble.querySelector(':scope > .qwen-chat-thinking');
-            const body = ensureThinkingBlock(bubble);
-            if (body) appendAssistantText(body, message.text);
-            const details = bubble.querySelector(':scope > .qwen-chat-thinking');
-            if (!(existingDetails instanceof HTMLDetailsElement) && details instanceof HTMLDetailsElement) details.open = true;
-            inThinking = true;
-            placeCursor(bubble, true);
-            if (body instanceof HTMLElement) body.scrollTop = body.scrollHeight;
-            const messages = el(MESSAGES_ID);
-            maybeAutoScrollMessages(messages);
-          }
-        } else if (message?.type === 'functionCall') {
-          setStatus('操作中…');
-          const call = message.functionCall || {};
-          const key = String(call.id || call.name || 'function_call');
-          let card = functionCallCards.get(key);
-          if (!(card instanceof HTMLElement) || !card.isConnected) {
-            closeActiveAnswerAtToolCall();
-            card = appendFunctionCallCard(call);
-            if (card instanceof HTMLElement) functionCallCards.set(key, card);
-          } else {
-            updateFunctionCallCard(card, call);
-          }
-        } else if (message?.type === 'functionResult') {
-          setStatus('操作中…');
-          const result = message.functionResult || {};
-          const key = String(result.id || result.name || 'function_call');
-          let card = functionCallCards.get(key);
-          if (!(card instanceof HTMLElement) || !card.isConnected) {
-            closeActiveAnswerAtToolCall();
-            card = appendFunctionCallCard({ id: result.id, name: result.name, arguments: '' });
-            if (card instanceof HTMLElement) functionCallCards.set(key, card);
-          }
-          finishFunctionCallCard(card, result);
-        } else if (message?.type === 'operation') {
+        if (renderStreamEvent(message)) return;
+        if (message?.type === 'operation') {
           setStatus('操作中…');
           if (inThinking) {
             collapseThinking(activeBubble);
