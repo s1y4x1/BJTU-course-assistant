@@ -187,6 +187,7 @@
     const retryingState = { ...state, phase: 'retrying', verifiedAt: Date.now() };
     await writeWafFlowState(retryingState);
     await chrome.windows.remove(Number(state.validationWindowId)).catch(() => {});
+    await chrome.notifications.clear(WAF_NOTIFICATION_ID).catch(() => false);
     const retryStarted = await broadcastWafRetry(retryingState);
     if (!retryStarted) {
       await chrome.storage.session.remove(WAF_FLOW_STATE_KEY).catch(() => {});
