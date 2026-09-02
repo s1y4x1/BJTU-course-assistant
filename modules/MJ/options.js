@@ -447,10 +447,10 @@
       setMessage(`有声视频素材下载失败：${String(error?.message || error)}`, false);
       return false;
     }
-    let succeeded = 0;
-    for (const asset of missing) {
-      if (await downloadVideoAsset(asset, root)) succeeded += 1;
-    }
+    const results = missing.length === VIDEO_ASSETS.length
+      ? await Promise.all(missing.map((asset) => downloadVideoAsset(asset, root)))
+      : [await downloadVideoAsset(missing[0], root)];
+    const succeeded = results.filter(Boolean).length;
     state.videoBusy = false;
     const complete = installedVideoAssets().length === VIDEO_ASSETS.length;
     if (enableAfterAll && complete && state.enabled && state.soundVideoAutoEnablePending) {
