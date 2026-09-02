@@ -77,6 +77,10 @@
     const maxIterations = document.getElementById('qwenMaxIterations');
     if (maxIterations instanceof HTMLInputElement) maxIterations.value = String(Math.max(1, Number(status.maxIterations) || 6));
     applyAlwaysAllowState(status.alwaysAllow === true);
+    const approvalNotification = document.getElementById('qwenApprovalNotificationEnabled');
+    if (approvalNotification instanceof HTMLInputElement) {
+      approvalNotification.checked = status.approvalNotificationEnabled !== false;
+    }
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
     const select = document.getElementById('qwenModelSelect');
@@ -162,6 +166,17 @@
       });
     }
 
+    const approvalNotification = document.getElementById('qwenApprovalNotificationEnabled');
+    if (approvalNotification instanceof HTMLInputElement) {
+      approvalNotification.addEventListener('change', () => {
+        void send('QWEN_SETTINGS_SET', {
+          approvalNotificationEnabled: approvalNotification.checked === true
+        }).then((response) => {
+          setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
+        });
+      });
+    }
+
     const select = document.getElementById('qwenModelSelect');
     if (select instanceof HTMLSelectElement) {
       select.addEventListener('change', () => {
@@ -179,7 +194,7 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false });
+    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationEnabled: true });
     void refresh();
     void refreshOperations();
   }
@@ -187,6 +202,12 @@
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
     if (changes.qwenAlwaysAllow) applyAlwaysAllowState(changes.qwenAlwaysAllow.newValue === true);
+    if (changes.qwenApprovalNotificationEnabled) {
+      const approvalNotification = document.getElementById('qwenApprovalNotificationEnabled');
+      if (approvalNotification instanceof HTMLInputElement) {
+        approvalNotification.checked = changes.qwenApprovalNotificationEnabled.newValue !== false;
+      }
+    }
     if (changes.qwenFabColorMode) applyFabColorMode(changes.qwenFabColorMode.newValue);
     if (changes.themeMode) {
       extensionThemeMode = global.BjtuTheme?.normalizeMode(changes.themeMode.newValue) || 'system';

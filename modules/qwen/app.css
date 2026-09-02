@@ -482,6 +482,14 @@ html[data-color-scheme="dark"] .qwen-chat-op {
   line-height: 1.4;
 }
 
+.qwen-chat-msg.assistant.qwen-chat-empty-reply {
+  color: #94a3b8;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-msg.assistant.qwen-chat-empty-reply {
+  color: #64748b;
+}
+
 .qwen-chat-copy-btn {
   flex: 0 0 auto;
   margin: 0;

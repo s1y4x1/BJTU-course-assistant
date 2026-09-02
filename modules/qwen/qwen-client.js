@@ -408,26 +408,28 @@
 
   async function fetchChatHistory(chatId) {
     const effectiveChatId = String(chatId || '');
-    let messages = await fetchChatHistoryData(effectiveChatId);
-    const lastMessage = messages[messages.length - 1];
-    const responseId = String(lastMessage?.id || '');
-    if (String(lastMessage?.role || '') !== 'assistant' || lastMessage?.content_list !== null || !responseId) {
-      return messages;
-    }
+    return fetchChatHistoryData(effectiveChatId);
+  }
+
+  async function resumeChatHistory(chatId, responseId, { onEvent = null, signal = null } = {}) {
+    const effectiveChatId = String(chatId || '');
+    const effectiveResponseId = String(responseId || '');
+    if (!effectiveChatId || !effectiveResponseId) return { ended: true, messages: [] };
+    let ended = false;
     try {
       await resumeInterruptedCompletion({
         chatId: effectiveChatId,
         modelId: '',
         messages: [],
         parentId: '',
-        onEvent: null,
-        signal: null
-      }, responseId);
+        onEvent,
+        signal
+      }, effectiveResponseId);
     } catch (error) {
       if (error?.code !== 'REQUEST_ENDED') throw error;
+      ended = true;
     }
-    messages = await fetchChatHistoryData(effectiveChatId);
-    return messages;
+    return { ended, messages: await fetchChatHistoryData(effectiveChatId) };
   }
 
   async function deleteChat(chatId) {
@@ -789,6 +791,7 @@
     fetchModels,
     newChat,
     fetchChatHistory,
+    resumeChatHistory,
     deleteChat,
     buildUserMessage,
     streamCompletions,

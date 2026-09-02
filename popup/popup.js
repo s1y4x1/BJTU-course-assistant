@@ -26,6 +26,27 @@ function applyPopupSize(size = {}) {
 document.addEventListener('DOMContentLoaded', async () => {
   const frame = document.getElementById('popup-frame');
   const sidePanelView = new URLSearchParams(location.search).get('view') === 'sidepanel';
+  let qwenFrame = null;
+  let qwenAvailable = false;
+  const ensureQwenFrame = () => {
+    if (qwenFrame instanceof HTMLIFrameElement) return qwenFrame;
+    qwenFrame = document.createElement('iframe');
+    qwenFrame.id = 'qwen-side-panel-frame';
+    qwenFrame.className = 'side-panel-frame';
+    qwenFrame.title = '千问助手';
+    qwenFrame.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups allow-downloads');
+    qwenFrame.src = chrome.runtime.getURL('modules/qwen/chat.html?view=sidepanel');
+    qwenFrame.hidden = true;
+    frame.after(qwenFrame);
+    return qwenFrame;
+  };
+  const showSidePanelView = async (view) => {
+    const showQwen = sidePanelView && view === 'qwen' && qwenAvailable;
+    frame.hidden = showQwen;
+    if (showQwen) ensureQwenFrame().hidden = false;
+    else if (qwenFrame instanceof HTMLIFrameElement) qwenFrame.hidden = true;
+    if (sidePanelView) await chrome.storage.local.set({ [SIDE_PANEL_LAST_VIEW_KEY]: showQwen ? 'qwen' : 'course' });
+  };
   try {
     if (!sidePanelView) {
       const size = await chrome.storage.local.get(['popupWidthPx', 'popupHeightPx']);
@@ -34,13 +55,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 边栏宽度由浏览器决定，铺满即可。
       document.documentElement.style.setProperty('--popup-width', '100%');
       document.documentElement.style.setProperty('--popup-height', '100vh');
-      const stored = await chrome.storage.local.get(SIDE_PANEL_LAST_VIEW_KEY);
-      const qwenResponse = await fetch(chrome.runtime.getURL('modules/qwen/module.json'), { cache: 'no-store' }).catch(() => null);
-      if (stored?.[SIDE_PANEL_LAST_VIEW_KEY] === 'qwen' && qwenResponse?.ok) {
-        location.replace(chrome.runtime.getURL('modules/qwen/chat.html?view=sidepanel'));
-        return;
-      }
-      await chrome.storage.local.set({ [SIDE_PANEL_LAST_VIEW_KEY]: 'course' });
+      const [stored, qwenResponse] = await Promise.all([
+        chrome.storage.local.get(SIDE_PANEL_LAST_VIEW_KEY),
+        fetch(chrome.runtime.getURL('modules/qwen/module.json'), { cache: 'no-store' }).catch(() => null)
+      ]);
+      qwenAvailable = qwenResponse?.ok === true;
+      await showSidePanelView(stored?.[SIDE_PANEL_LAST_VIEW_KEY] === 'qwen' ? 'qwen' : 'course');
     }
   } catch {
     applyPopupSize();
@@ -53,17 +73,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ignore
   }
 
-  // 边栏切换：千问助手页（chat.html）通过该消息请求切回课程助手。
+  // 两个页面始终保留在各自 iframe 中；切换只改变可见性，不销毁千问会话页面。
   window.addEventListener('message', (event) => {
     if (event?.data?.type !== 'BJTU_SIDE_PANEL_TOGGLE') return;
     void (async () => {
       try {
-        const response = await fetch(chrome.runtime.getURL('modules/qwen/module.json'), { cache: 'no-store' });
-        if (!response.ok) return;
-        await chrome.storage.local.set({ [SIDE_PANEL_LAST_VIEW_KEY]: 'qwen' });
-        location.href = chrome.runtime.getURL('modules/qwen/chat.html?view=sidepanel');
+        const target = event?.data?.target === 'course' ? 'course' : 'qwen';
+        if (target === 'qwen' && !qwenAvailable) return;
+        await showSidePanelView(target);
       } catch {
-        // qwen 已卸载时保持课程助手边栏。
+        // 保持当前边栏页面。
       }
     })();
   });

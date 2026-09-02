@@ -42,6 +42,8 @@
   let autoScrollEnabled = true;
   let lastMessagesScrollTop = 0;
   let historyLoadPromise = null;
+  let historyResumePromise = null;
+  let historyResumeResponseId = '';
   let historyReloadAfterLogin = false;
   let pendingWafRetryAction = null;
   let pendingWafRetryButton = null;
@@ -540,7 +542,7 @@
     maybeAutoScrollMessages(messages);
   }
 
-  function renderHistory(messages) {
+  function renderHistory(messages, { pendingResponseId = '' } = {}) {
     const messagesEl = el(MESSAGES_ID);
     if (!(messagesEl instanceof HTMLElement)) return;
     messagesEl.replaceChildren();
@@ -564,6 +566,14 @@
           appendMessage('user', extractUserQuestion(content), String(message?.parentId || message?.parent_id || lastAssistantResponseId));
         }
       } else if (role === 'assistant') {
+        const assistantResponseId = String(message?.response_id || message?.id || '');
+        if (assistantResponseId === String(pendingResponseId || '') && message?.content_list === null) {
+          suggestionCandidate = null;
+          lastExecutionBlocks = null;
+          lastHasFunctionCalls = false;
+          lastAssistantResponseId = assistantResponseId || lastAssistantResponseId;
+          continue;
+        }
         suggestionCandidate = renderAssistantHistoryMessage(message);
         const historyText = assistantHistoryText(message);
         const parsedSuggestions = splitSuggestedReplies(historyText);
@@ -636,6 +646,154 @@
 
   const HISTORY_LOADING_ID = 'qwen-chat-history-loading';
 
+  function resumePendingHistory(responseId) {
+    const targetResponseId = String(responseId || '');
+    const targetChatId = String(sessionChatId || '');
+    if (!targetResponseId || !targetChatId) return Promise.resolve();
+    if (historyResumePromise && historyResumeResponseId === targetResponseId) return historyResumePromise;
+    historyResumeResponseId = targetResponseId;
+    const messages = el(MESSAGES_ID);
+    const resumeAnchor = messages instanceof HTMLElement ? messages.lastElementChild : null;
+    const functionCallCards = new Map();
+    let resumePort = null;
+    let settled = false;
+
+    const resetRendering = () => {
+      if (messages instanceof HTMLElement && resumeAnchor instanceof HTMLElement && resumeAnchor.isConnected) {
+        let node = resumeAnchor.nextSibling;
+        while (node) {
+          const next = node.nextSibling;
+          node.remove();
+          node = next;
+        }
+      }
+      functionCallCards.clear();
+      activeBubble = null;
+      inThinking = false;
+      const bubble = ensureAssistantBubble();
+      placeCursor(bubble, false);
+      maybeAutoScrollMessages(messages);
+    };
+    const closeAnswerAtToolCall = () => {
+      clearSuggestedReplies();
+      if (inThinking) {
+        collapseThinking(activeBubble);
+        inThinking = false;
+      }
+      removeCursor(activeBubble);
+      if (activeBubble instanceof HTMLElement
+        && !mdRawText(activeBubble)
+        && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+        removeMessageBubble(activeBubble);
+      }
+      activeBubble = null;
+    };
+
+    setBusy(true);
+    setStatus('回复中…');
+    resetRendering();
+    historyResumePromise = new Promise((resolve) => {
+      const finish = ({ response = null, error = '', stopped = false } = {}) => {
+        if (settled) return;
+        settled = true;
+        if (sessionChatId === targetChatId && historyResumeResponseId === targetResponseId) {
+          if (response?.ended === true && Array.isArray(response.messages)) {
+            renderHistory(response.messages);
+          } else {
+            if (inThinking) {
+              collapseThinking(activeBubble);
+              inThinking = false;
+            }
+            if (!error && !stopped && activeBubble instanceof HTMLElement && !mdRawText(activeBubble)
+              && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+              appendAssistantText(activeBubble, '（无回复）');
+            }
+            removeCursor(activeBubble);
+            finalizeAssistantSuggestions(activeBubble);
+            if (error) appendMessage('error', `历史回复恢复失败：${error}`);
+            if (stopped) appendMessage('error', '生成中止');
+          }
+          activeBubble = null;
+          sessionParentId = targetResponseId;
+          setBusy(false);
+          setStatus(error || stopped ? '已登录' : '已生成完毕', 'ok');
+        }
+        try { resumePort?.disconnect(); } catch {}
+        if (port === resumePort) port = null;
+        resolve();
+      };
+
+      resumePort = chrome.runtime.connect({ name: 'bjtu-qwen-history-resume' });
+      port = resumePort;
+      resumePort.onMessage.addListener((message) => {
+        if (message?.type === 'streamRestart') {
+          resetRendering();
+        } else if (message?.type === 'delta') {
+          setStatus('回复中…');
+          const bubble = ensureAssistantBubble();
+          if (bubble) appendAssistantText(bubble, message.text);
+          if (inThinking) {
+            collapseThinking(bubble);
+            inThinking = false;
+          }
+          placeCursor(bubble, false);
+          maybeAutoScrollMessages(messages);
+        } else if (message?.type === 'thinking') {
+          setStatus('思考中…');
+          const bubble = ensureAssistantBubble();
+          const existingDetails = bubble?.querySelector(':scope > .qwen-chat-thinking');
+          const body = ensureThinkingBlock(bubble);
+          if (body) appendAssistantText(body, message.text);
+          const details = bubble?.querySelector(':scope > .qwen-chat-thinking');
+          if (!(existingDetails instanceof HTMLDetailsElement) && details instanceof HTMLDetailsElement) details.open = true;
+          inThinking = true;
+          placeCursor(bubble, true);
+          if (body instanceof HTMLElement) body.scrollTop = body.scrollHeight;
+          maybeAutoScrollMessages(messages);
+        } else if (message?.type === 'functionCall') {
+          setStatus('操作中…');
+          const call = message.functionCall || {};
+          const key = String(call.id || call.name || 'function_call');
+          let card = functionCallCards.get(key);
+          if (!(card instanceof HTMLElement) || !card.isConnected) {
+            closeAnswerAtToolCall();
+            card = appendFunctionCallCard(call);
+            if (card instanceof HTMLElement) functionCallCards.set(key, card);
+          } else {
+            updateFunctionCallCard(card, call);
+          }
+        } else if (message?.type === 'functionResult') {
+          setStatus('操作中…');
+          const result = message.functionResult || {};
+          const key = String(result.id || result.name || 'function_call');
+          let card = functionCallCards.get(key);
+          if (!(card instanceof HTMLElement) || !card.isConnected) {
+            closeAnswerAtToolCall();
+            card = appendFunctionCallCard({ id: result.id, name: result.name, arguments: '' });
+            if (card instanceof HTMLElement) functionCallCards.set(key, card);
+          }
+          finishFunctionCallCard(card, result);
+        } else if (message?.type === 'historyResumeDone') {
+          finish({ response: message });
+        } else if (message?.type === 'historyResumeStopped') {
+          finish({ stopped: true });
+        } else if (message?.type === 'historyResumeError') {
+          finish({ error: String(message?.message || '未知错误') });
+        }
+      });
+      resumePort.onDisconnect.addListener(() => {
+        if (!settled) finish({ error: String(chrome.runtime.lastError?.message || '恢复连接已断开') });
+      });
+      resumePort.postMessage({ type: 'resume', chatId: targetChatId, responseId: targetResponseId });
+    }).finally(() => {
+      if (historyResumeResponseId === targetResponseId) {
+        historyResumeResponseId = '';
+        historyResumePromise = null;
+      }
+    });
+    return historyResumePromise;
+  }
+
   async function loadHistoryOnce() {
     if (!sessionChatId) return;
     const loadingEl = el(HISTORY_LOADING_ID);
@@ -644,7 +802,9 @@
       const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: sessionChatId });
       if (response?.ok && Array.isArray(response.messages)) {
         historyNeedsInitialScroll = true;
-        renderHistory(response.messages);
+        const pendingResponseId = String(response?.pendingResponseId || '');
+        renderHistory(response.messages, { pendingResponseId });
+        if (pendingResponseId) void resumePendingHistory(pendingResponseId);
       } else if (response?.code === 'CHAT_NOT_FOUND') {
         // 原会话已被用户删除：清空会话并重新触发开场，
         // 由 maybeSendOpening/sendOpening 自动新建会话并发送系统提示词。
@@ -1065,6 +1225,7 @@
       container.innerHTML = renderQwenMarkdown(str);
       enhanceOperationResultControls(container);
     }
+    bubble.classList.toggle('qwen-chat-empty-reply', role === 'assistant' && str.trim() === '（无回复）');
     messages.appendChild(anchor);
     maybeAutoScrollMessages(messages);
     return bubble;
@@ -1444,6 +1605,7 @@
     container._mdText = String(container._mdText || '') + String(text);
     const parsed = splitSuggestedReplies(container._mdText, { allowIncomplete: true });
     container.innerHTML = renderQwenMarkdown(parsed.text);
+    bubble?.classList?.toggle('qwen-chat-empty-reply', String(parsed.text || '').trim() === '（无回复）');
     enhanceOperationResultControls(container);
     if (parsed.found) renderSuggestedReplies(bubble, parsed.suggestions);
   }
@@ -2088,15 +2250,16 @@
       await loadChatStateFromStorage();
       const status = await refreshStatus({ openLoginIfNeeded: true, allowOpening: false });
       if (status?.loggedIn !== true) return;
-      await refreshModels();
-
+      const modelsPromise = refreshModels();
+      let historyPromise = Promise.resolve();
       if (historyReloadAfterLogin) {
-        await restoreHistoryAfterLogin();
+        historyPromise = restoreHistoryAfterLogin();
         panelHistoryInitialized = true;
       } else if (sessionChatId && !panelHistoryInitialized) {
-        await loadHistory();
+        historyPromise = loadHistory();
         panelHistoryInitialized = true;
       }
+      await Promise.allSettled([modelsPromise, historyPromise]);
       maybeSendOpening();
     })().catch((error) => {
       setStatus(`初始化失败：${String(error?.message || error)}`, 'error');
@@ -2404,13 +2567,10 @@
       closeBtn.addEventListener('click', () => {
         if (STANDALONE_CHAT) {
           if (SIDE_PANEL_VIEW) {
-            const popupUrl = global.chrome?.runtime?.getURL?.('popup/popup.html?view=sidepanel');
-            if (popupUrl) {
-              void sidePanelViewRecordPromise
-                .then(() => global.chrome?.storage?.local?.set?.({ sidePanelLastView: 'course' }))
-                .finally(() => { global.location.href = popupUrl; });
-              return;
-            }
+            void sidePanelViewRecordPromise.finally(() => {
+              try { global.parent?.postMessage({ type: 'BJTU_SIDE_PANEL_TOGGLE', target: 'course' }, '*'); } catch {}
+            });
+            return;
           }
           global.close();
           return;

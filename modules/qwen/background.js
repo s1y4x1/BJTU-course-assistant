@@ -2,7 +2,7 @@
 (function initBjtuQwenBackground(global) {
   'use strict';
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationEnabled'];
   const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
@@ -312,7 +312,8 @@
       alwaysAllowedOperations: withAlwaysAllowedMetaOperations(stored.qwenAlwaysAllowedOperations),
       thinkingEnabled: stored.qwenThinkingEnabled === true,
       maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
-      alwaysAllow: stored.qwenAlwaysAllow === true
+      alwaysAllow: stored.qwenAlwaysAllow === true,
+      approvalNotificationEnabled: stored.qwenApprovalNotificationEnabled !== false
     };
   }
 
@@ -347,14 +348,68 @@
       next.qwenMaxIterations = Math.max(1, Math.floor(Number(patch.maxIterations) || 6));
     }
     if (typeof patch?.alwaysAllow === 'boolean') next.qwenAlwaysAllow = patch.alwaysAllow;
+    if (typeof patch?.approvalNotificationEnabled === 'boolean') {
+      next.qwenApprovalNotificationEnabled = patch.approvalNotificationEnabled;
+    }
     if (Object.keys(next).length) await chrome.storage.local.set(next);
     return getSettings();
   }
 
   const activeChatPorts = new Set();
 
+  function postCompletionStreamEvent(port, event) {
+    if (event?.streamRestart) port.postMessage({ type: 'streamRestart' });
+    if (event?.text) port.postMessage({ type: 'delta', text: event.text });
+    if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
+    if (event?.functionCall) port.postMessage({ type: 'functionCall', functionCall: event.functionCall });
+    if (event?.functionResult) port.postMessage({ type: 'functionResult', functionResult: event.functionResult });
+  }
+
   if (typeof chrome === 'object' && chrome?.runtime?.onConnect) {
     chrome.runtime.onConnect.addListener((port) => {
+      if (String(port.name || '') === 'bjtu-qwen-history-resume') {
+        const resumeAbortController = new AbortController();
+        let started = false;
+        let resumeChatId = '';
+        let resumeResponseId = '';
+        let disconnected = false;
+        port.onDisconnect.addListener(() => {
+          disconnected = true;
+          resumeAbortController.abort();
+        });
+        port.onMessage.addListener((message) => {
+          if (message?.type === 'stop') {
+            if (resumeChatId && resumeResponseId) {
+              void global.BjtuQwenClient?.stopGeneration?.({
+                chatId: resumeChatId,
+                responseId: resumeResponseId
+              });
+            }
+            resumeAbortController.abort(new DOMException('生成中止', 'AbortError'));
+            return;
+          }
+          if (message?.type !== 'resume' || started) return;
+          started = true;
+          resumeChatId = String(message?.chatId || '');
+          resumeResponseId = String(message?.responseId || '');
+          void global.BjtuQwenClient.resumeChatHistory(resumeChatId, resumeResponseId, {
+            signal: resumeAbortController.signal,
+            onEvent: (event) => {
+              if (!disconnected) postCompletionStreamEvent(port, event);
+            }
+          }).then((result) => {
+            if (!disconnected) port.postMessage({ type: 'historyResumeDone', ...result });
+          }).catch((error) => {
+            if (disconnected) return;
+            port.postMessage({
+              type: error?.name === 'AbortError' ? 'historyResumeStopped' : 'historyResumeError',
+              code: String(error?.code || ''),
+              message: String(error?.message || error)
+            });
+          });
+        });
+        return;
+      }
       if (String(port.name || '') !== 'bjtu-qwen-chat') return;
       activeChatPorts.add(port);
       const abortController = new AbortController();
@@ -500,11 +555,15 @@
                 const operationNames = Array.isArray(payload?.operationNames)
                   ? payload.operationNames.map(String).filter(Boolean)
                   : [];
-                const notificationId = `${ASK_NOTIFICATION_PREFIX}${id}`;
+                const notificationId = settings.approvalNotificationEnabled
+                  ? `${ASK_NOTIFICATION_PREFIX}${id}`
+                  : '';
                 pendingAsk = { id, resolve, count, mode, executionMode, operationNames, notificationId };
-                pendingAskNotifications.set(notificationId, (action) => {
-                  settlePendingAsk(action, count, true);
-                });
+                if (notificationId) {
+                  pendingAskNotifications.set(notificationId, (action) => {
+                    settlePendingAsk(action, count, true);
+                  });
+                }
                 abortController.signal.addEventListener('abort', resolveAskOnAbort, { once: true });
                 const safeMessage = String(payload?.message || '操作调用次数过多，是否继续？');
                 port.postMessage({
@@ -517,7 +576,7 @@
                   operationNames
                 });
                 try {
-                  if (chrome?.notifications?.create) {
+                  if (notificationId && chrome?.notifications?.create) {
                     chrome.notifications.create(notificationId, {
                       type: 'basic',
                       iconUrl: chrome.runtime.getURL('icons/128.png'),
@@ -541,12 +600,9 @@
               },
               onEvent: (event) => {
                 if (port.disconnected) return;
-                if (event?.streamRestart) port.postMessage({ type: 'streamRestart' });
+                postCompletionStreamEvent(port, event);
                 if (event?.operation) port.postMessage({ type: 'operation', operation: event.operation });
                 if (event?.operationResult) port.postMessage({ type: 'operationResult', result: event.operationResult });
-                if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
-                if (event?.functionCall) port.postMessage({ type: 'functionCall', functionCall: event.functionCall });
-                if (event?.functionResult) port.postMessage({ type: 'functionResult', functionResult: event.functionResult });
                 if (event?.firstMessage) port.postMessage({ type: 'firstMessage' });
               }
             });
@@ -711,7 +767,12 @@
           }
           try {
             const messages = await client.fetchChatHistory(chatId);
-            sendResponse({ ok: true, messages });
+            const lastMessage = messages[messages.length - 1];
+            const pendingResponseId = String(lastMessage?.role || '') === 'assistant'
+              && lastMessage?.content_list === null
+              ? String(lastMessage?.id || '')
+              : '';
+            sendResponse({ ok: true, messages, pendingResponseId });
           } catch (error) {
             sendResponse({
               ok: false,

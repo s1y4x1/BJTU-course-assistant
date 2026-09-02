@@ -2254,6 +2254,7 @@ name: 've.teachers_of_',
       async run() {
         const value = await pageInvoke('xuetangx', 'courseList', {}, 120000);
         if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('学堂在线未登录，请先调用 xuetangx.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
+        if (value?.ready !== true) throw new Error('学堂在线课程与作业尚未加载完毕，请稍后重试');
         return (Array.isArray(value?.courses) ? value.courses : []).map((course) => ({
           classroomId: String(course?.classroomId || ''),
           name: String(course?.name || ''),
@@ -2322,6 +2323,12 @@ name: 've.teachers_of_',
         const courseList = await pageInvoke('xuetangx', 'courseList', {}, 120000);
         if (String(courseList?.loginState || '') === 'offline') {
           return { ok: false, code: 'LOGIN_REQUIRED', message: '学堂在线未登录，请先调用 xuetangx.login 完成登录后再查询作业' };
+        }
+        if (String(courseList?.loginState || '') !== 'online') {
+          return { ok: false, message: '学堂在线仍在检查登录状态，请稍后重试' };
+        }
+        if (courseList?.ready !== true) {
+          return { ok: false, message: '学堂在线课程与作业尚未加载完毕，请稍后重试' };
         }
         const courses = Array.isArray(courseList?.courses) ? courseList.courses : [];
         const items = [];

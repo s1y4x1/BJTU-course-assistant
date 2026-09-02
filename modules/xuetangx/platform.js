@@ -982,9 +982,17 @@
 
   /* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
 
-  function xuetangxPageCourseList() {
+  async function waitForXuetangxPageReady(timeoutMs = 120000) {
+    if (typeof globalThis.waitForPlatformDataReady !== 'function') return false;
+    return globalThis.waitForPlatformDataReady('xuetangx', timeoutMs);
+  }
+
+  async function xuetangxPageCourseList() {
+    const state = String(globalThis.platformLoginState?.xuetangx || 'checking');
+    const ready = state !== 'offline' && await waitForXuetangxPageReady();
     const loginState = String(globalThis.platformLoginState?.xuetangx || 'checking');
     return {
+      ready,
       loaded: Array.isArray(courses) && courses.length > 0,
       loginState,
       loggedIn: loginState === 'online',
@@ -1006,6 +1014,8 @@
     if (!key) return { ok: false, message: '缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID' };
     const loginState = String(globalThis.platformLoginState?.xuetangx || 'checking');
     if (loginState !== 'online') return { ok: false, code: 'LOGIN_REQUIRED', loggedIn: false, message: '学堂在线未登录，请先调用 xuetangx.login' };
+    const ready = await waitForXuetangxPageReady();
+    if (!ready) return { ok: false, message: '学堂在线课程与作业尚未加载完毕' };
     const course = (Array.isArray(courses) ? courses : []).find((c) => String(c?.classroomId || c?.id || '') === key) || null;
     if (!course) return { ok: false, message: `教室ID无效：${key} 不在学堂在线课程列表中，请先调用 xuetangx.courseList 获取有效ID` };
     return {
@@ -1043,7 +1053,9 @@
     const platform = 'xuetangx';
     const enabled = typeof globalThis.isPlatformEnabled === 'function' ? globalThis.isPlatformEnabled(platform) : true;
     if (enabled) {
-      return globalThis.getEnabledPlatformLoginResult(platform);
+      const current = globalThis.getEnabledPlatformLoginResult(platform);
+      if (current?.ready === true) return current;
+      return globalThis.waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
     } else if (typeof globalThis.togglePlatformSelection === 'function') {
       try { globalThis.togglePlatformSelection(platform, { interactive: true }); } catch {}
     }
