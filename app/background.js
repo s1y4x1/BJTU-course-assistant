@@ -938,6 +938,9 @@ chrome.runtime.onStartup.addListener(() => {
 refreshActionPopupFromStorage().catch(() => {});
 
 async function activateMjModuleAndOpenOptions() {
+  if (!await extensionFileExists('modules/MJ/module.json')) {
+    return { ok: false, code: 'MODULE_NOT_INSTALLED', message: 'MJ 模块未安装' };
+  }
   await chrome.storage.local.set({
     mjModuleActivated: true,
     mjAutoInstallPending: true
