@@ -33,6 +33,7 @@ const DEFAULT_OPEN_MODE = 'popup';
 const DEFAULT_POPUP_WIDTH_PX = 500;
 const DEFAULT_POPUP_HEIGHT_PX = 600;
 const DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE = true;
+const DEFAULT_GROUP_EXTENSION_TABS_ENABLED = false;
 const DEFAULT_COURSE_HELPER_EXPANDED = false;
 const DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION = false;
 const DEFAULT_DEADLINE_COUNTDOWN_STYLE = 'seven-seg';
@@ -724,8 +725,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled'
   ]);
   const { yktActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'yktActivityTypes',
@@ -808,6 +809,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('preferExistingFullscreenPage').checked = preferExistingFullscreenPage === undefined
     ? DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE
     : preferExistingFullscreenPage === true;
+  document.getElementById('groupExtensionTabsEnabled').checked = groupExtensionTabsEnabled === true;
   document.getElementById('popupWidthPx').value = String(normalizePopupDimension(
     popupWidthPx,
     DEFAULT_POPUP_WIDTH_PX,
@@ -1225,6 +1227,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.preferExistingFullscreenPage) {
         applyBooleanUi('preferExistingFullscreenPage', changes.preferExistingFullscreenPage.newValue, DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE);
       }
+      if (changes.groupExtensionTabsEnabled) {
+        applyBooleanUi('groupExtensionTabsEnabled', changes.groupExtensionTabsEnabled.newValue, DEFAULT_GROUP_EXTENSION_TABS_ENABLED);
+      }
       if (changes.popupWidthPx || changes.popupHeightPx) {
         applyPopupSizeUi(changes.popupWidthPx?.newValue, changes.popupHeightPx?.newValue);
       }
@@ -1357,6 +1362,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
   document.getElementById('preferExistingFullscreenPage').addEventListener('change', async (event) => {
     await chrome.storage.local.set({ preferExistingFullscreenPage: event.currentTarget.checked });
+    setMsg('已应用更改');
+  });
+  document.getElementById('groupExtensionTabsEnabled').addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ groupExtensionTabsEnabled: event.currentTarget.checked });
     setMsg('已应用更改');
   });
   document.querySelectorAll('.xuetangx-course-status').forEach((input) => {
@@ -1820,6 +1829,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       popupWidthPx: DEFAULT_POPUP_WIDTH_PX,
       popupHeightPx: DEFAULT_POPUP_HEIGHT_PX,
       preferExistingFullscreenPage: DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE,
+      groupExtensionTabsEnabled: DEFAULT_GROUP_EXTENSION_TABS_ENABLED,
       courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
       showCourseListDuringLayoutTransition: DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION,
       deadlineCountdownStyle: DEFAULT_DEADLINE_COUNTDOWN_STYLE,
@@ -1878,6 +1888,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
     document.getElementById('preferExistingFullscreenPage').checked = DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE;
+    document.getElementById('groupExtensionTabsEnabled').checked = DEFAULT_GROUP_EXTENSION_TABS_ENABLED;
     document.getElementById('popupWidthPx').value = String(DEFAULT_POPUP_WIDTH_PX);
     document.getElementById('popupHeightPx').value = String(DEFAULT_POPUP_HEIGHT_PX);
     document.getElementById('courseHelperExpandedByDefault').checked = DEFAULT_COURSE_HELPER_EXPANDED;

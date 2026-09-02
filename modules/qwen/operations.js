@@ -431,7 +431,8 @@
   }
 
   // ===== app 页面依赖（pageInvoke）守卫 =====
-  // 仅边栏/独立页打开而未打开课程助手页面时，先发系统通知询问用户是否打开。
+  // 优先使用现有 app 页面上下文（包括边栏中隐藏的课程助手 iframe）；
+  // 确实没有可用监听器时，才询问用户是否打开全屏课程助手页面。
   const APP_PAGE_ASK_KEY = 'appPageOpenAsk';
   const APP_PAGE_ASK_ID = 'bjtu-open-app-page';
 
@@ -439,7 +440,12 @@
     try {
       const url = chrome.runtime.getURL('app/app.html');
       const tabs = await chrome.tabs.query({ url: `${url}*` }).catch(() => []);
-      return tabs.length > 0;
+      if (tabs.length > 0) return true;
+      if (typeof chrome.runtime.getContexts === 'function') {
+        const contexts = await chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] }).catch(() => []);
+        if (contexts.length > 0) return true;
+      }
+      return false;
     } catch {
       return true; // 无法查询时不阻塞操作
     }
@@ -508,11 +514,35 @@
     });
   }
 
+  async function tryPageInvoke(module, fn, args) {
+    return sendRuntimeMessage({ type: 'PAGE_API', payload: { module, fn, args: args || {} } });
+  }
+
+  async function waitForPageApiListener(module, fn, args, timeoutMs) {
+    const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+    let lastError = null;
+    do {
+      try {
+        return await tryPageInvoke(module, fn, args);
+      } catch (error) {
+        lastError = error;
+      }
+      if (Date.now() >= deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } while (Date.now() < deadline);
+    throw lastError || new Error('课程助手页面接口尚未就绪');
+  }
+
   // 经扩展 app 页面的消息桥调用平台页面级接口（学生列表/课件/回放/归档/雨课堂等）。
-  // 注意：这些功能依赖页面上下文；未打开课程助手页面时会先询问用户是否打开。
   async function pageInvoke(module, fn, args, timeoutMs = 90000) {
-    await ensureAppPageReadyForPageApi();
-    const response = await sendRuntimeMessage({ type: 'PAGE_API', payload: { module, fn, args: args || {} } }, timeoutMs);
+    let response;
+    try {
+      // 边栏初次打开时，给常驻 app iframe 一小段加载模块脚本的时间。
+      response = await waitForPageApiListener(module, fn, args, 3000);
+    } catch {
+      await ensureAppPageReadyForPageApi();
+      response = await waitForPageApiListener(module, fn, args, Math.min(20000, Math.max(3000, Number(timeoutMs) || 90000)));
+    }
     if (!response?.ok) {
       throw Object.assign(new Error(String(response?.error || `${module}.${fn} 调用失败`)), { code: response?.code || '' });
     }

@@ -3,6 +3,7 @@ const SYSTEM_NOTIFICATION_TEST_ID = 'bjtu-system-notification-test';
 const ACADEMIC_BB_NOTIFICATION_PREFIX = 'bjtu-academic-bb-availability:';
 const BJTU_TAB_GROUP_TITLE = 'BJTU 课程助手';
 const BJTU_TAB_GROUP_COLOR = 'blue';
+const GROUP_EXTENSION_TABS_ENABLED_KEY = 'groupExtensionTabsEnabled';
 
 let bjtuTabGroupingQueue = Promise.resolve();
 
@@ -10,6 +11,8 @@ async function groupBjtuExtensionOpenedTabNow(tabId) {
   const id = Number(tabId);
   if (!Number.isInteger(id) || id <= 0 || !chrome?.tabs?.group || !chrome?.tabGroups?.query) return null;
   try {
+    const setting = await chrome.storage.local.get(GROUP_EXTENSION_TABS_ENABLED_KEY).catch(() => ({}));
+    if (setting?.[GROUP_EXTENSION_TABS_ENABLED_KEY] !== true) return null;
     const tab = await chrome.tabs.get(id).catch(() => null);
     if (!tab || !Number.isInteger(tab.windowId)) return null;
 
