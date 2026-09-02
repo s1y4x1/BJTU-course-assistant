@@ -120,21 +120,33 @@ body.popup-mode #course-list {
 }
 
 .popup-cache-loading {
-    min-height: 160px;
-    display: flex;
+    min-height: 0;
+    height: 18px;
+    box-sizing: content-box;
+    display: flex !important;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
-    color: #64748b;
+    color: #2563eb;
     font-size: 13px;
+    line-height: 18px !important;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 .popup-cache-loading .spinner {
     width: 16px;
     height: 16px;
     border-width: 2px;
+    border-color: #bfdbfe;
+    border-top-color: #2563eb;
 }
 
 html[data-color-scheme="dark"] .popup-cache-loading {
-    color: #cbd5e1;
+    color: #60a5fa;
+}
+
+html[data-color-scheme="dark"] .popup-cache-loading .spinner {
+    border-color: #1e3a8a;
+    border-top-color: #60a5fa;
 }

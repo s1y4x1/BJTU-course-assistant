@@ -136,10 +136,14 @@
             style="width:auto;" checked />雨课堂</label></div>
       <div id="yktPlatformDetail" class="platform-option-detail" data-module="ykt" hidden>
         <label><input type="checkbox" id="enableYkt" style="width:auto;" />启用</label>
-        <label><input type="checkbox" id="autoLoadAllHomeworkDetails" style="width:auto;" />自动加载所有作业详情</label>
-        <div class="tip">关闭时仅自动加载未交作业详情，已交和逾期作业在展开时加载。</div>
-        <label><input type="checkbox" id="showYktClassroomActivities" style="width:auto;" />显示课堂（测试）</label>
-        <label><input type="checkbox" id="showYktAnnouncements" style="width:auto;" />显示公告（测试）</label>
+        <div class="platform-option-divider" role="separator"></div>
+        <div class="platform-option-subtitle">要显示的作业类型</div>
+        <div class="platform-activity-type-options">
+          <label><input type="checkbox" class="ykt-activity-type" value="14" style="width:auto;" checked />课堂</label>
+          <label><input type="checkbox" class="ykt-activity-type" value="15" style="width:auto;" checked />线上学习</label>
+          <label><input type="checkbox" class="ykt-activity-type" value="5" style="width:auto;" checked />试卷</label>
+          <label><input type="checkbox" class="ykt-activity-type" value="9" style="width:auto;" checked />公告</label>
+        </div>
       </div>
       <div class="platform-option" data-module="mrjzy" hidden><label><input type="checkbox" id="showMrjzy"
             style="width:auto;" checked />每日交作业</label></div>
@@ -177,7 +181,7 @@
         <label><input type="checkbox" class="xuetangx-course-status" value="4" style="width:auto;" />已退课</label>
         <div class="platform-option-divider" role="separator"></div>
         <div class="platform-option-subtitle">要显示的作业类型</div>
-        <div class="xuetangx-activity-type-options">
+        <div class="platform-activity-type-options">
           <label><input type="checkbox" class="xuetangx-activity-type" value="6" style="width:auto;" checked />视频</label>
           <label><input type="checkbox" class="xuetangx-activity-type" value="7" style="width:auto;" checked />图文</label>
           <label><input type="checkbox" class="xuetangx-activity-type" value="8" style="width:auto;" checked />直播</label>
@@ -217,7 +221,7 @@
           <input type="checkbox" id="popupUseFullscreenCacheEnabled" style="width:auto;" checked />
           <span>弹出窗口使用上次全屏页面缓存</span>
         </label>
-        <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。<br>关闭时，只启用智慧课程平台，其他平台需每次手动启用（设计如此）。</div>
+        <div class="tip">开启后，弹出窗口默认显示上次全屏页面缓存，如需更新，请重启平台或全屏打开。</div>
       </div>
       <label style="display:flex; align-items:center; gap:8px; margin:10px 0 6px;">
         <input type="checkbox" id="preferExistingFullscreenPage" style="width:auto;" checked />

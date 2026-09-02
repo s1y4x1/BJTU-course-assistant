@@ -386,11 +386,6 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
         renderHomeworkList(courseId);
       });
       renderJlgjStandaloneCourses();
-      const currentGroups = Array.isArray(window.jlgjCourseGroupsSnapshot)
-        ? window.jlgjCourseGroupsSnapshot
-        : [];
-      const completedGroups = currentGroups.filter((group) => !group?.loadingMeta).length;
-      setPlatformContentLoadProgress('jlgj', completedGroups, currentGroups.length);
     };
 
     if (placeholderGroups.length) {
@@ -416,6 +411,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       window.jlgjCourseGroupsSnapshot = [];
     }
 
+    const detailGroups = [];
     for (const group of groups) {
       if (isStale()) return;
       const groupId = String(group?.Id || '').trim();
@@ -476,65 +472,78 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       courseGroup.homeworks = homeworks;
       rebuildJlgjRender();
 
+      detailGroups.push({ courseGroup, threads, homeworks, teacherSet });
+    }
+
+    const totalDetailLoads = detailGroups.reduce((total, item) => total + item.threads.length, 0);
+    let completedDetailLoads = 0;
+    const updateDetailProgress = () => {
+      setPlatformContentLoadProgress('jlgj', completedDetailLoads, totalDetailLoads);
+    };
+    updateDetailProgress();
+
+    for (const { courseGroup, threads, homeworks, teacherSet } of detailGroups) {
       for (let i = 0; i < threads.length; i++) {
         if (isStale()) return;
         const t = threads[i];
         const threadId = String(t?.ThreadStrId || '').trim();
-        if (!threadId) {
-          if (homeworks[i]) homeworks[i].loadingMeta = false;
+        try {
+          if (!threadId) {
+            if (homeworks[i]) homeworks[i].loadingMeta = false;
+            continue;
+          }
+
+          let detail = null;
+          const detailUrl = `${JLGJ_API_BASE}/api/Homework/HomeworkDetail?threadId=${encodeURIComponent(threadId)}`;
+          const detailResp = await fetchJlgjJson(detailUrl);
+          if (isStale()) return;
+          if (detailResp?.unauthorized) {
+            renderJlgjNeedLoginMessage();
+            return;
+          }
+          if (detailResp?.ok) {
+            const detailPayload = detailResp.data;
+            detail = detailPayload?.Data?.Data || detailPayload?.Data || null;
+          }
+          if (!detail) {
+            if (homeworks[i]) homeworks[i].loadingMeta = false;
+            continue;
+          }
+
+          const homework = detail?.Homework || {};
+          const threadData = detail?.Thread || {};
+          const body = Array.isArray(threadData?.ThreadBody) ? threadData.ThreadBody : [];
+          const content = body
+            .map((item) => String(item?.Text?.Content || '').trim())
+            .filter(Boolean)
+            .join('\n');
+          const teacherName = String(t?.Author || '').trim();
+          if (teacherName) teacherSet.add(teacherName);
+          const isAttend = t?.IsAttend;
+          const done = isAttend === true || isAttend === 1 || isAttend === '1' || String(isAttend || '').toLowerCase() === 'true';
+
+          homeworks[i] = {
+            threadId,
+            title: String(t?.Subject || t?.GroupName || '接龙作业').trim(),
+            end: homework?.EndTime || '',
+            start: homework?.StartTime || threadData?.CreateTime || t?.CreateTime || '',
+            content,
+            done,
+            link: `https://i.jielong.com/h/${threadId}`,
+            loadingMeta: false
+          };
+          courseGroup.teacherName = Array.from(teacherSet).join(' / ');
+        } finally {
+          completedDetailLoads += 1;
+          updateDetailProgress();
           rebuildJlgjRender();
-          continue;
         }
-
-        let detail = null;
-        const detailUrl = `${JLGJ_API_BASE}/api/Homework/HomeworkDetail?threadId=${encodeURIComponent(threadId)}`;
-        const detailResp = await fetchJlgjJson(detailUrl);
-        if (isStale()) return;
-        if (detailResp?.unauthorized) {
-          renderJlgjNeedLoginMessage();
-          return;
-        }
-        if (detailResp?.ok) {
-          const detailPayload = detailResp.data;
-          detail = detailPayload?.Data?.Data || detailPayload?.Data || null;
-        }
-        if (!detail) {
-          if (homeworks[i]) homeworks[i].loadingMeta = false;
-          rebuildJlgjRender();
-          continue;
-        }
-
-        const homework = detail?.Homework || {};
-        const threadData = detail?.Thread || {};
-        
-        const body = Array.isArray(threadData?.ThreadBody) ? threadData.ThreadBody : [];
-        const content = body
-          .map((item) => String(item?.Text?.Content || '').trim())
-          .filter(Boolean)
-          .join('\n');
-          
-        const teacherName = String(t?.Author || '').trim();
-        if (teacherName) teacherSet.add(teacherName);
-        const isAttend = t?.IsAttend;
-        const done = isAttend === true || isAttend === 1 || isAttend === '1' || String(isAttend || '').toLowerCase() === 'true';
-
-        homeworks[i] = {
-          threadId,
-          title: String(t?.Subject || t?.GroupName || '接龙作业').trim(),
-          end: homework?.EndTime || '',
-          start: homework?.StartTime || threadData?.CreateTime || t?.CreateTime || '',
-          content,
-          done,
-          link: `https://i.jielong.com/h/${threadId}`,
-          loadingMeta: false
-        };
-        courseGroup.teacherName = Array.from(teacherSet).join(' / ');
-        rebuildJlgjRender();
       }
 
       courseGroup.loadingMeta = false;
       rebuildJlgjRender();
-  }
+    }
+    setPlatformContentLoadProgress('jlgj', totalDetailLoads, totalDetailLoads);
 }
 
 function scheduleJlgjLoad(courses, loadVersion = 0) {

@@ -627,7 +627,7 @@
     return `<div class="xuetangx-task-detail" style="border-top-color:${palette.border};">${expandable}</div>`;
   }
 
-  async function loadExerciseDetails(course, serial) {
+  async function loadExerciseDetails(course, serial, progress) {
     const tasks = course.tasks.filter((task) => task.typeId === 11 && task.chapterLeafId);
     let cursor = 0;
     const workers = Array.from({ length: Math.min(3, tasks.length) }, async () => {
@@ -663,6 +663,7 @@
           task.exerciseDetailError = `作业详情获取失败：${error?.message || error}`;
         } finally {
           task.exerciseDetailLoading = false;
+          progress?.completeItem?.(course, 11);
         }
       }
     });
@@ -768,7 +769,7 @@
     setTimeout(() => env.updateCountdowns?.(), 0);
   }
 
-  async function loadCourseDetails(course, serial, visibleActivityTypes) {
+  async function loadCourseDetails(course, serial, visibleActivityTypes, progress) {
     const query = `cid=${encodeURIComponent(course.classroomId)}&sign=${encodeURIComponent(course.sign)}`;
     const [basic, chapter, schedule, evaluation] = await Promise.all([
       requestJson(`${BASE}/api/v1/lms/product/get_product_basic_info/?sign=${encodeURIComponent(course.sign)}`, serial),
@@ -793,7 +794,8 @@
     );
     course.pendingTypeLabels = [];
     render();
-    await loadExerciseDetails(course, serial);
+    progress?.defineCourse?.(course);
+    await loadExerciseDetails(course, serial, progress);
   }
 
   async function load() {
@@ -821,16 +823,62 @@
       courses.forEach((course) => { course.pendingTypeLabels = [...visibleTypeLabels]; });
       env?.setLoaded?.(true);
       env?.setState?.('online');
-      env?.setProgress?.(0, courses.length);
+      const visibleTypeIds = [...visibleActivityTypes];
+      const progressByCourse = new Map(courses.map((course) => [course.id, new Map()]));
+      const updateDetailProgress = () => {
+        if (serial !== loadSerial) return;
+        if (!courses.length || !visibleTypeIds.length) {
+          env?.setProgress?.(0, 0);
+          return;
+        }
+        const completed = courses.reduce((courseSum, course) => {
+          const typeStates = progressByCourse.get(course.id);
+          const courseProgress = visibleTypeIds.reduce((typeSum, typeId) => {
+            const state = typeStates?.get(typeId);
+            if (!state) return typeSum;
+            return typeSum + (state.total ? Math.min(state.completed / state.total, 1) : 1);
+          }, 0) / visibleTypeIds.length;
+          return courseSum + courseProgress;
+        }, 0);
+        env?.setProgress?.(completed, courses.length);
+      };
+      const detailProgress = {
+        defineCourse(course) {
+          const typeStates = progressByCourse.get(course.id);
+          if (!typeStates) return;
+          visibleTypeIds.forEach((typeId) => {
+            const items = course.tasks.filter((task) => task.typeId === typeId);
+            typeStates.set(typeId, {
+              total: items.length,
+              completed: typeId === 11
+                ? items.filter((task) => !task.chapterLeafId).length
+                : items.length
+            });
+          });
+          updateDetailProgress();
+        },
+        completeItem(course, typeId) {
+          const state = progressByCourse.get(course.id)?.get(typeId);
+          if (!state) return;
+          state.completed = Math.min(state.total, state.completed + 1);
+          updateDetailProgress();
+        },
+        completeCourse(course) {
+          const typeStates = progressByCourse.get(course.id);
+          if (!typeStates) return;
+          visibleTypeIds.forEach((typeId) => typeStates.set(typeId, { total: 0, completed: 0 }));
+          updateDetailProgress();
+        }
+      };
+      updateDetailProgress();
       render();
 
-      let completed = 0;
       let cursor = 0;
       const workers = Array.from({ length: Math.min(4, courses.length) }, async () => {
         while (cursor < courses.length && serial === loadSerial) {
           const index = cursor++;
           try {
-            await loadCourseDetails(courses[index], serial, visibleActivityTypes);
+            await loadCourseDetails(courses[index], serial, visibleActivityTypes, detailProgress);
           } catch (error) {
             if (error?.code === 'not-logged-in' || error?.code === 'cancelled') throw error;
             courses[index].detailLoaded = true;
@@ -838,8 +886,7 @@
             courses[index].pendingTypeLabels = [];
           } finally {
             if (serial === loadSerial) {
-              completed += 1;
-              env?.setProgress?.(completed, courses.length);
+              if (!progressByCourse.get(courses[index].id)?.size) detailProgress.completeCourse(courses[index]);
               render();
             }
           }

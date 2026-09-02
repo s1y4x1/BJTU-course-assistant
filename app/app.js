@@ -122,7 +122,6 @@ const forceAccountListInitialization = appSearchParams.get('accountInit') === '1
 const forceAccountPasswordMigration = appSearchParams.get('accountInit') === '2';
 if (popupMode) {
   document.body.classList.add('popup-mode');
-  globalThis.showPopupCacheLoadingFrame?.();
 }
 
 const fullscreenWindowLayers = globalThis.BjtuFullscreenWindowLayers || (() => {
@@ -572,9 +571,7 @@ window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSiz
 window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}]
 window.saveUploadedFilesEnabled = true;
 window.autoLoadCourseResourcesEnabled = false;
-window.autoLoadAllHomeworkDetails = false;
-window.showYktClassroomActivities = false;
-window.showYktAnnouncements = false;
+window.yktActivityTypes = [14, 15, 5, 9];
 window.homeworkDetailCollapsedLines = 3;
 window.replayDetailCollapsedLines = 3;
 window.jlgjDarkModeEnabled = true;
@@ -719,9 +716,7 @@ function disablePlatformAfterLoginFailure(platform) {
 }
 
 const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
-const AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY = 'autoLoadAllHomeworkDetails';
-const SHOW_YKT_CLASSROOM_ACTIVITIES_KEY = 'showYktClassroomActivities';
-const SHOW_YKT_ANNOUNCEMENTS_KEY = 'showYktAnnouncements';
+const YKT_ACTIVITY_TYPES_KEY = 'yktActivityTypes';
 const HOMEWORK_DETAIL_COLLAPSED_LINES_KEY = 'homeworkDetailCollapsedLines';
 const REPLAY_DETAIL_COLLAPSED_LINES_KEY = 'replayDetailCollapsedLines';
 const JLGJ_DARK_MODE_KEY = 'jlgjDarkModeEnabled';
@@ -986,25 +981,21 @@ async function loadPlatformDetailSettings() {
   try {
     const data = await chrome.storage.local.get([
       PARALLEL_LIMIT_KEY,
-      AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY,
-      SHOW_YKT_CLASSROOM_ACTIVITIES_KEY,
-      SHOW_YKT_ANNOUNCEMENTS_KEY,
+      YKT_ACTIVITY_TYPES_KEY,
       HOMEWORK_DETAIL_COLLAPSED_LINES_KEY,
       REPLAY_DETAIL_COLLAPSED_LINES_KEY,
       JLGJ_DARK_MODE_KEY
     ]);
     maxParallelUploads = normalizeParallelLimit(data[PARALLEL_LIMIT_KEY], 3);
-    window.autoLoadAllHomeworkDetails = data[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY] === true;
-    window.showYktClassroomActivities = data[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY] === true;
-    window.showYktAnnouncements = data[SHOW_YKT_ANNOUNCEMENTS_KEY] === true;
+    window.yktActivityTypes = Array.isArray(data[YKT_ACTIVITY_TYPES_KEY])
+      ? data[YKT_ACTIVITY_TYPES_KEY].map(Number).filter((type) => [14, 15, 5, 9].includes(type))
+      : [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(data[REPLAY_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
   } catch {
     maxParallelUploads = 3;
-    window.autoLoadAllHomeworkDetails = false;
-    window.showYktClassroomActivities = false;
-    window.showYktAnnouncements = false;
+    window.yktActivityTypes = [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = 3;
     window.replayDetailCollapsedLines = 3;
     window.jlgjDarkModeEnabled = true;
@@ -1334,32 +1325,17 @@ function setupOptionsStorageLiveSync() {
       if (typeof processQueue === 'function') processQueue();
       if (typeof processResourceDownloadQueue === 'function') processResourceDownloadQueue();
     }
-    if (changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY]) {
-      window.autoLoadAllHomeworkDetails = changes[AUTO_LOAD_ALL_HOMEWORK_DETAILS_KEY].newValue === true;
-      if (window.autoLoadAllHomeworkDetails && isPlatformEnabled('ykt')) {
+    if (changes[YKT_ACTIVITY_TYPES_KEY]) {
+      window.yktActivityTypes = Array.isArray(changes[YKT_ACTIVITY_TYPES_KEY].newValue)
+        ? changes[YKT_ACTIVITY_TYPES_KEY].newValue.map(Number).filter((type) => [14, 15, 5, 9].includes(type))
+        : [14, 15, 5, 9];
+      if (isPlatformEnabled('ykt')) {
         scheduleYktLoad([]).then(() => {
           rematchExternalByVeCourses('ykt');
           rerenderAllHomeworkAreas();
           renderYktStandaloneCourses();
         }).catch(() => { });
       }
-    }
-    const yktActivityVisibilityChanged = !!(
-      changes[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY]
-      || changes[SHOW_YKT_ANNOUNCEMENTS_KEY]
-    );
-    if (changes[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY]) {
-      window.showYktClassroomActivities = changes[SHOW_YKT_CLASSROOM_ACTIVITIES_KEY].newValue === true;
-    }
-    if (changes[SHOW_YKT_ANNOUNCEMENTS_KEY]) {
-      window.showYktAnnouncements = changes[SHOW_YKT_ANNOUNCEMENTS_KEY].newValue === true;
-    }
-    if (yktActivityVisibilityChanged && isPlatformEnabled('ykt')) {
-      scheduleYktLoad([]).then(() => {
-        rematchExternalByVeCourses('ykt');
-        rerenderAllHomeworkAreas();
-        renderYktStandaloneCourses();
-      }).catch(() => { });
     }
     if (changes[JLGJ_DARK_MODE_KEY]) {
       window.jlgjDarkModeEnabled = changes[JLGJ_DARK_MODE_KEY].newValue !== false;
@@ -4040,17 +4016,19 @@ function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
     const progress = !treatAsUnselected && state === 'online'
       ? window.platformContentLoadProgress?.[platform]
       : null;
+    const progressPercent = progress?.total > 0
+      ? Math.max(0, Math.min(100, progress.completed / progress.total * 100))
+      : 0;
     if (progress?.total > 0 && progress.completed < progress.total) {
-      const percent = Math.max(0, Math.min(100, progress.completed / progress.total * 100));
       btn.classList.add('content-loading');
-      btn.style.setProperty('--platform-load-progress', `${percent}%`);
+      btn.style.setProperty('--platform-load-progress', `${progressPercent}%`);
     } else {
       btn.style.removeProperty('--platform-load-progress');
     }
     const stateText = treatAsUnselected
       ? '未启用'
       : (progress?.total > 0 && progress.completed < progress.total
-        ? `已登录，正在加载作业 ${progress.completed}/${progress.total}`
+        ? `已登录，正在加载作业 ${Math.floor(progressPercent)}%`
         : (state === 'online' ? '已登录' : (state === 'offline' ? '未登录' : '登录检查中')));
     btn.title = `${label}${stateText}`;
   };

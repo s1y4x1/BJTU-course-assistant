@@ -185,7 +185,11 @@
         if (error?.loginRequired || error?.message === 'LOGIN_REQUIRED') throw error;
       } finally {
         if (typeof onTypeLoaded === 'function') {
-          await onTypeLoaded({ subType, list: [...merged] });
+          await onTypeLoaded({
+            subType,
+            typeList: merged.filter((homework) => Number(homework?.subType ?? homework?.sub_type) === subType),
+            list: [...merged]
+          });
         }
       }
     }

@@ -260,8 +260,8 @@ html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5f
 .mooc-peer-review-count-editor { display:grid; grid-template-columns:auto 84px auto; align-items:center; justify-content:start; gap:8px; margin:6px 0 4px 22px; }
 .mooc-peer-review-count-editor label { margin:0; }
 .mooc-peer-review-count-editor input { box-sizing:border-box; width:84px; height:32px; padding:5px 7px; border:1px solid #ccc; border-radius:6px; background:#fff; }
-.xuetangx-activity-type-options { display:flex; flex-wrap:wrap; gap:0 14px; }
-.xuetangx-activity-type-options label { white-space:nowrap; }
+.platform-activity-type-options { display:flex; flex-wrap:wrap; gap:0 14px; }
+.platform-activity-type-options label { white-space:nowrap; }
 .account-progress-mask { position:fixed; inset:0; z-index:10001; background:rgba(15,23,42,.45); align-items:center; justify-content:center; }
 .account-progress-card { width:min(420px,calc(100vw - 32px)); box-sizing:border-box; padding:18px; border-radius:8px; background:#fff; box-shadow:0 18px 42px rgba(0,0,0,.25); }
 .account-progress-title { font-size:16px; font-weight:600; color:#111827; }

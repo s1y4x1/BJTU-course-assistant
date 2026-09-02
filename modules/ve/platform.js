@@ -2001,7 +2001,47 @@ function renderCourseList(courses, {
   const homeworkLoadPromises = [];
   const allowNetworkLoad = !cachedOnly;
   const progressVersion = window.courseListLoadVersion;
-  let completedHomeworkLoads = 0;
+  const progressCourseIds = allowNetworkLoad && Array.isArray(courses)
+    ? courses.map((course) => String(course?.id || course?.cId || course?.courseId || course?.course_id || '')).filter(Boolean)
+    : [];
+  const progressByCourse = new Map(progressCourseIds.map((courseId) => [courseId, [null, null, null]]));
+  const updateHomeworkLoadProgress = () => {
+    if (progressVersion !== window.courseListLoadVersion) return;
+    if (!progressCourseIds.length) {
+      setPlatformContentLoadProgress('ve', 0, 0);
+      return;
+    }
+    const completed = progressCourseIds.reduce((courseSum, courseId) => {
+      const typeStates = progressByCourse.get(courseId) || [];
+      const courseProgress = typeStates.reduce((typeSum, state) => {
+        if (!state) return typeSum;
+        return typeSum + (state.total ? Math.min(state.completed / state.total, 1) : 1);
+      }, 0) / 3;
+      return courseSum + courseProgress;
+    }, 0);
+    setPlatformContentLoadProgress('ve', completed, progressCourseIds.length);
+  };
+  const homeworkDetailProgress = {
+    defineType(courseId, subType, count) {
+      const states = progressByCourse.get(String(courseId || ''));
+      const type = Number(subType);
+      if (!states || ![0, 1, 2].includes(type)) return;
+      states[type] = { completed: 0, total: Math.max(0, Number(count) || 0) };
+      updateHomeworkLoadProgress();
+    },
+    completeItem(courseId, subType) {
+      const state = progressByCourse.get(String(courseId || ''))?.[Number(subType)];
+      if (!state) return;
+      state.completed = Math.min(state.total, state.completed + 1);
+      updateHomeworkLoadProgress();
+    },
+    completeCourse(courseId) {
+      const states = progressByCourse.get(String(courseId || ''));
+      if (!states) return;
+      for (let type = 0; type < 3; type += 1) states[type] = { completed: 0, total: 0 };
+      updateHomeworkLoadProgress();
+    }
+  };
   if (!courses || !courses.length) {
     if (!append) setPlatformContentLoadProgress('ve', 0, 0);
     window.veHomeworkLoadPromise = Promise.resolve([]);
@@ -2009,7 +2049,7 @@ function renderCourseList(courses, {
     updateCourseListEmptyPlaceholder();
     return;
   }
-  if (!append) setPlatformContentLoadProgress('ve', 0, allowNetworkLoad ? courses.length : 0);
+  if (!append) updateHomeworkLoadProgress();
 
   courses.forEach((course, courseIndex) => {
     const courseId = course.id || course.cId || course.courseId || course.course_id;
@@ -2118,7 +2158,7 @@ function renderCourseList(courses, {
     // Prioritize homework fetching before replay link prefetch.
     if (!deferExternal) updateCourseListEmptyPlaceholder();
     const hwPromise = allowNetworkLoad
-      ? checkHomework(courseId)
+      ? checkHomework(courseId, homeworkDetailProgress)
       : Promise.resolve().then(() => {
         renderHomeworkList(courseId);
         recomputeCourseHomeworkState(courseId);
@@ -2126,12 +2166,10 @@ function renderCourseList(courses, {
       });
     homeworkLoadPromises.push(hwPromise);
     if (allowNetworkLoad) {
-      const markHomeworkLoaded = () => {
-        if (progressVersion !== window.courseListLoadVersion) return;
-        completedHomeworkLoads += 1;
-        setPlatformContentLoadProgress('ve', completedHomeworkLoads, courses.length);
+      const markHomeworkFailed = () => {
+        homeworkDetailProgress.completeCourse(courseId);
       };
-      hwPromise.then(markHomeworkLoaded, markHomeworkLoaded);
+      hwPromise.catch(markHomeworkFailed);
     }
     if (btnCourseware) {
       hwPromise.finally(() => {
@@ -2499,7 +2537,7 @@ function downloadCourseArchive(courseId) {
   }
 }
 
-async function prefetchHomeworkAttachments(courseId, list) {
+async function prefetchHomeworkAttachments(courseId, list, onItemComplete) {
   const items = Array.isArray(list) ? list : [];
   if (!items.length) {
     window.homeworkAttachmentPendingByCourse[courseId] = false;
@@ -2508,50 +2546,58 @@ async function prefetchHomeworkAttachments(courseId, list) {
 
   window.homeworkAttachmentPendingByCourse[courseId] = true;
   renderHomeworkList(courseId);
+  let itemLoadingStarted = false;
+  const markItemComplete = (homework) => onItemComplete?.(homework);
   try {
     const teacherId = await ensureHomeworkTeacherId(courseId);
     if (!teacherId) return;
+    itemLoadingStarted = true;
 
     await Promise.all(items.map(async (hw) => {
-      const noteId = String(hw?.id ?? hw?.noteId ?? hw?.courseNoteId ?? '').trim();
-      const noteCourseId = String(hw?.course_id ?? hw?.courseId ?? hw?.cId ?? courseId).trim();
-      const noteTeacherId = String(hw?.teacher_id ?? hw?.teacherId ?? teacherId).trim();
-      if (!noteId || !noteCourseId || !noteTeacherId) return;
-
-      const key = buildHomeworkAttachmentKey(noteId, noteCourseId, noteTeacherId);
-      hw.__attachmentKey = key;
-
-      const cached = window.homeworkNoteAttachmentCacheByKey[key];
-      if (cached?.loading || cached?.loaded) return;
-      window.homeworkNoteAttachmentCacheByKey[key] = { loading: true, loaded: false, picList: [] };
-
-      const detailUrl = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=queryStudentCourseNote&id=${encodeURIComponent(noteId)}&courseId=${encodeURIComponent(noteCourseId)}&teacherId=${encodeURIComponent(noteTeacherId)}`;
       try {
-        const { text } = await fetchText(detailUrl, {
-          headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-        });
-        let detailData = null;
-        try { detailData = JSON.parse(String(text || '{}')); } catch { detailData = null; }
-        const picListRaw = Array.isArray(detailData?.picList) ? detailData.picList : [];
-        const picList = picListRaw.map((it) => {
-          const fileNameRaw = String(it?.file_name || it?.name || '').trim();
-          const fileNameNoExt = stripFileExtension(fileNameRaw) || fileNameRaw || '附件';
-          const sizeBytes = Math.max(0, Number(it?.pic_size || 0) || 0);
-          const url = normalizeHomeworkAttachmentUrl(it?.url || '');
-          return { fileName: fileNameRaw || fileNameNoExt, fileNameNoExt, sizeBytes, url };
-        }).filter((it) => !!it.url);
-        window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList };
-      } catch {
-        window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList: [] };
+        const noteId = String(hw?.id ?? hw?.noteId ?? hw?.courseNoteId ?? '').trim();
+        const noteCourseId = String(hw?.course_id ?? hw?.courseId ?? hw?.cId ?? courseId).trim();
+        const noteTeacherId = String(hw?.teacher_id ?? hw?.teacherId ?? teacherId).trim();
+        if (!noteId || !noteCourseId || !noteTeacherId) return;
+
+        const key = buildHomeworkAttachmentKey(noteId, noteCourseId, noteTeacherId);
+        hw.__attachmentKey = key;
+
+        const cached = window.homeworkNoteAttachmentCacheByKey[key];
+        if (cached?.loading || cached?.loaded) return;
+        window.homeworkNoteAttachmentCacheByKey[key] = { loading: true, loaded: false, picList: [] };
+
+        const detailUrl = `${BASE_VE}back/coursePlatform/homeWork.shtml?method=queryStudentCourseNote&id=${encodeURIComponent(noteId)}&courseId=${encodeURIComponent(noteCourseId)}&teacherId=${encodeURIComponent(noteTeacherId)}`;
+        try {
+          const { text } = await fetchText(detailUrl, {
+            headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
+          });
+          let detailData = null;
+          try { detailData = JSON.parse(String(text || '{}')); } catch { detailData = null; }
+          const picListRaw = Array.isArray(detailData?.picList) ? detailData.picList : [];
+          const picList = picListRaw.map((it) => {
+            const fileNameRaw = String(it?.file_name || it?.name || '').trim();
+            const fileNameNoExt = stripFileExtension(fileNameRaw) || fileNameRaw || '附件';
+            const sizeBytes = Math.max(0, Number(it?.pic_size || 0) || 0);
+            const url = normalizeHomeworkAttachmentUrl(it?.url || '');
+            return { fileName: fileNameRaw || fileNameNoExt, fileNameNoExt, sizeBytes, url };
+          }).filter((it) => !!it.url);
+          window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList };
+        } catch {
+          window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList: [] };
+        }
+      } finally {
+        markItemComplete(hw);
       }
     }));
   } finally {
+    if (!itemLoadingStarted) items.forEach((homework) => markItemComplete(homework));
     window.homeworkAttachmentPendingByCourse[courseId] = false;
     renderHomeworkList(courseId);
   }
 }
 
-async function checkHomework(courseId) {
+async function checkHomework(courseId, progress) {
   const area = document.getElementById(`homework-area-${courseId}`);
   if (!area) return false;
   const typeLabels = ['作业', '课程报告', '实验'];
@@ -2562,8 +2608,9 @@ async function checkHomework(courseId) {
     const list = await globalThis.BjtuVeHomeworkCore.fetchCourseHomework(courseId, {
       previousList,
       signal: window.globalVeAbortController?.signal,
-      onTypeLoaded: ({ subType, list: partialList }) => {
+      onTypeLoaded: ({ subType, typeList, list: partialList }) => {
         window.courseHomeworkData[courseId] = { list: partialList, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
+        progress?.defineType?.(courseId, subType, typeList.length);
         window.veHomeworkPendingTypesByCourse[courseId] = (window.veHomeworkPendingTypesByCourse[courseId] || [])
           .filter((label) => label !== typeLabels[Number(subType)]);
         renderHomeworkList(courseId);
@@ -2572,9 +2619,10 @@ async function checkHomework(courseId) {
     delete window.veHomeworkPendingTypesByCourse[courseId];
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
-    // Concurrently fetch attachments; homework score lookup uses returned list fields only.
-    const attachmentPrefetchPromise = prefetchHomeworkAttachments(courseId, list);
-    attachmentPrefetchPromise.finally(() => {
+    const attachmentPrefetchPromise = prefetchHomeworkAttachments(courseId, list, (homework) => {
+      progress?.completeItem?.(courseId, Number(homework?.subType ?? homework?.sub_type));
+    });
+    await attachmentPrefetchPromise.finally(() => {
       recomputeCourseHomeworkState(courseId);
     }).catch(() => {});
     return true;

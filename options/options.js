@@ -49,6 +49,7 @@ const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
 const DEFAULT_PARALLEL_LIMIT = 3;
 const DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES = 3;
 const DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES = 3;
+const DEFAULT_YKT_ACTIVITY_TYPES = Object.freeze([14, 15, 5, 9]);
 const DEFAULT_XUETANGX_ACTIVITY_TYPES = Object.freeze([6, 7, 8, 10, 11, 12]);
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
@@ -723,10 +724,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, autoLoadAllHomeworkDetails, showYktClassroomActivities, showYktAnnouncements, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled'
   ]);
-  const { xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
+  const { yktActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
+    'yktActivityTypes',
     'xuetangxCourseStatuses',
     'xuetangxActivityTypes'
   ]);
@@ -762,6 +764,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.querySelectorAll('.xuetangx-course-status').forEach((input) => {
     input.checked = visibleXuetangxStatuses.has(Number(input.value));
   });
+  const visibleYktActivityTypes = new Set(
+    Array.isArray(yktActivityTypes) ? yktActivityTypes.map(Number) : DEFAULT_YKT_ACTIVITY_TYPES
+  );
+  document.querySelectorAll('.ykt-activity-type').forEach((input) => {
+    input.checked = visibleYktActivityTypes.has(Number(input.value));
+  });
   const visibleXuetangxActivityTypes = new Set(
     Array.isArray(xuetangxActivityTypes) ? xuetangxActivityTypes.map(Number) : DEFAULT_XUETANGX_ACTIVITY_TYPES
   );
@@ -781,9 +789,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   updateMoocPeerReviewState();
   document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
   document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
-  document.getElementById('autoLoadAllHomeworkDetails').checked = autoLoadAllHomeworkDetails === true;
-  document.getElementById('showYktClassroomActivities').checked = showYktClassroomActivities === true;
-  document.getElementById('showYktAnnouncements').checked = showYktAnnouncements === true;
   document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
     homeworkDetailCollapsedLines,
     DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
@@ -1028,14 +1033,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.disabled = !visibleState.ve;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.ve);
     });
-    [
-      ['autoLoadAllHomeworkDetails', 'ykt'],
-      ['showYktClassroomActivities', 'ykt'],
-      ['showYktAnnouncements', 'ykt']
-    ].forEach(([id, platform]) => {
-      const input = document.getElementById(id);
-      input.disabled = !visibleState[platform];
-      input.closest('label')?.classList.toggle('is-disabled', !visibleState[platform]);
+    document.querySelectorAll('.ykt-activity-type').forEach((input) => {
+      input.disabled = !visibleState.ykt;
+      input.closest('label')?.classList.toggle('is-disabled', !visibleState.ykt);
     });
     document.querySelectorAll('.xuetangx-course-status, .xuetangx-activity-type').forEach((input) => {
       input.disabled = !visibleState.xuetangx;
@@ -1168,6 +1168,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           input.checked = values.has(Number(input.value));
         });
       }
+      if (changes.yktActivityTypes) {
+        const values = new Set(
+          Array.isArray(changes.yktActivityTypes.newValue)
+            ? changes.yktActivityTypes.newValue.map(Number)
+            : DEFAULT_YKT_ACTIVITY_TYPES
+        );
+        document.querySelectorAll('.ykt-activity-type').forEach((input) => {
+          input.checked = values.has(Number(input.value));
+        });
+      }
       if (changes.xuetangxActivityTypes) {
         const values = new Set(
           Array.isArray(changes.xuetangxActivityTypes.newValue)
@@ -1196,9 +1206,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         applyBooleanUi('jlgjAlwaysDarkModeEnabled', changes.jlgjAlwaysDarkModeEnabled.newValue, false);
         void enforceJlgjDarkThemeAvailability();
       }
-      if (changes.autoLoadAllHomeworkDetails) applyBooleanUi('autoLoadAllHomeworkDetails', changes.autoLoadAllHomeworkDetails.newValue, false);
-      if (changes.showYktClassroomActivities) applyBooleanUi('showYktClassroomActivities', changes.showYktClassroomActivities.newValue, false);
-      if (changes.showYktAnnouncements) applyBooleanUi('showYktAnnouncements', changes.showYktAnnouncements.newValue, false);
       if (changes.homeworkDetailCollapsedLines) {
         document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
           changes.homeworkDetailCollapsedLines.newValue,
@@ -1331,11 +1338,19 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ moocPeerReviewCount: count });
     setMsg('已应用更改');
   });
-  ['jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'autoLoadAllHomeworkDetails', 'showYktClassroomActivities', 'showYktAnnouncements'].forEach((id) => {
+  ['jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled'].forEach((id) => {
     document.getElementById(id).addEventListener('change', async () => {
       await chrome.storage.local.set({ [id]: !!document.getElementById(id).checked });
       setMsg('已应用更改');
       if (id === 'jlgjDarkModeEnabled') updatePlatformDetailDisabled();
+    });
+  });
+  document.querySelectorAll('.ykt-activity-type').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const selected = [...document.querySelectorAll('.ykt-activity-type:checked')]
+        .map((item) => Number(item.value));
+      await chrome.storage.local.set({ yktActivityTypes: selected });
+      setMsg('已应用更改');
     });
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
@@ -1786,9 +1801,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       moocPeerReviewCount: DEFAULT_MOOC_PEER_REVIEW_COUNT,
       jlgjDarkModeEnabled: true,
       jlgjAlwaysDarkModeEnabled: false,
-      autoLoadAllHomeworkDetails: false,
-      showYktClassroomActivities: false,
-      showYktAnnouncements: false,
+      yktActivityTypes: [...DEFAULT_YKT_ACTIVITY_TYPES],
       xuetangxCourseStatuses: [1],
       xuetangxActivityTypes: [...DEFAULT_XUETANGX_ACTIVITY_TYPES],
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
@@ -1825,6 +1838,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.querySelectorAll('.xuetangx-course-status').forEach((input) => {
       input.checked = Number(input.value) === 1;
     });
+    document.querySelectorAll('.ykt-activity-type').forEach((input) => {
+      input.checked = DEFAULT_YKT_ACTIVITY_TYPES.includes(Number(input.value));
+    });
     document.querySelectorAll('.xuetangx-activity-type').forEach((input) => {
       input.checked = DEFAULT_XUETANGX_ACTIVITY_TYPES.includes(Number(input.value));
     });
@@ -1835,9 +1851,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setupUiOrderEditor(FALLBACK_OPTIONS_SECTION_ORDER, FALLBACK_PLATFORM_ORDER);
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
-    document.getElementById('autoLoadAllHomeworkDetails').checked = false;
-    document.getElementById('showYktClassroomActivities').checked = false;
-    document.getElementById('showYktAnnouncements').checked = false;
     document.getElementById('homeworkDetailCollapsedLines').value = String(DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES);
     document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);
     document.getElementById('parallelLimit').value = String(DEFAULT_PARALLEL_LIMIT);

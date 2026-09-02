@@ -668,11 +668,10 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
 }
 
 function renderYktHomeworkItems(courseId, items) {
+  const visibleTypes = new Set(Array.isArray(window.yktActivityTypes) ? window.yktActivityTypes.map(Number) : [14, 15, 5, 9]);
   const list = (items || []).filter((item) => {
     const actype = Number(item?.__actype);
-    if (actype === 14) return window.showYktClassroomActivities === true;
-    if (actype === 9) return window.showYktAnnouncements === true;
-    return true;
+    return visibleTypes.has(actype);
   });
   if (!list.length) return '';
   return list.map((it, idx) => {
@@ -890,12 +889,11 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   removeYktLoginSection();
 
   const yktCourses = listResp?.data?.list || [];
-  const requestedActypes = [
-    ...(window.showYktClassroomActivities ? [14] : []),
-    15,
-    5,
-    ...(window.showYktAnnouncements ? [9] : [])
-  ];
+  const requestedActypes = [...new Set(
+    (Array.isArray(window.yktActivityTypes) ? window.yktActivityTypes : [14, 15, 5, 9])
+      .map(Number)
+      .filter((actype) => YKT_ACTIVITY_TYPE_LABELS[actype])
+  )];
   const entries = [];
   const boundCourseIds = new Set();
 
@@ -952,8 +950,8 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
 
   boundCourseIds.forEach((cid) => renderHomeworkList(cid));
   renderYktStandaloneCourses();
-  let completedCourseLoads = 0;
-  setPlatformContentLoadProgress('ykt', 0, entries.length);
+  // 作业列表尚在发现阶段，先保留加载态；发现完成后立即切换为逐份作业详情进度。
+  setPlatformContentLoadProgress('ykt', 0, 1);
   const detailQueue = [];
 
   const getCurrentBoundCourseId = (entry) => String(entry?.boundCourseId || '');
@@ -1002,25 +1000,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     }));
     if (isStale()) return;
 
-    const actype15CoursewareIds = acts
-      .filter((a) => Number(a?.__actype) === 15)
-      .map((a) => a?.courseware_id)
-      .filter((id) => String(id || '').trim());
-    const progressCid = String(entry.classroomId || '').trim();
-    const coursewareProgressPromise = actype15CoursewareIds.length ? (async () => {
-      try {
-        if (isStale() || !isPlatformEnabled('ykt')) return {};
-        return await fetchYktCoursewareProgress(
-          progressCid,
-          actype15CoursewareIds,
-          entry.universityId
-        );
-      } catch (error) {
-        console.warn('[bjtu] ykt pub_new_pro failed:', String(error?.message || error));
-        return {};
-      }
-    })() : Promise.resolve({});
-
     const homeworks = buildYktEntryHomeworks(entry, acts);
 
     entry.homeworks = homeworks;
@@ -1036,35 +1015,10 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     rerenderAllHomeworkAreas();
     renderYktStandaloneCourses();
 
-    const coursewareProgress = await coursewareProgressPromise;
-    homeworks.forEach((hw) => {
-      if (Number(hw?.__actype) !== 15) return;
-      const videoProgress = normalizeYktVideoProgress(
-        coursewareProgress?.[String(hw?.courseware_id || '')],
-        hw?.leaf_id
-      );
-      hw.video_progress_loading = false;
-      hw.video_total_done = videoProgress ? videoProgress.totalDone : undefined;
-      hw.video_progress_ratio = videoProgress ? videoProgress.ratio : undefined;
-    });
-    if (actype15CoursewareIds.length && !isStale()) {
-      rematchExternalByVeCourses('ykt');
-      rerenderAllHomeworkAreas();
-      renderYktStandaloneCourses();
-    }
-
     let queuedChanged = false;
     homeworks.forEach((hw) => {
       const actype = Number(hw?.__actype);
       if (actype !== 5 || !String(hw?.exam_id || '').trim()) return;
-      const displayCourseId = getCurrentBoundCourseId(entry) || entry.boundCourseId || `ykt-${entry.classroomId}`;
-      const detailGroupAlreadyOpen = isYktHomeworkDone(hw)
-        ? !!window.courseShowDoneById?.[displayCourseId]
-        : (isYktHomeworkOverdue(hw) ? !!window.courseShowOverdueById?.[displayCourseId] : false);
-      if (!window.autoLoadAllHomeworkDetails && !isYktHomeworkPending(hw) && !detailGroupAlreadyOpen) {
-        if (!hw.exam_detail_state) hw.exam_detail_state = 'deferred';
-        return;
-      }
       if (!hw.exam_detail_state) {
         hw.exam_detail_state = 'queued';
         queuedChanged = true;
@@ -1074,12 +1028,75 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     if (queuedChanged) rerenderEntryCard(entry);
   });
 
-  const trackedCourseTasks = courseTasks.map((task) => task.finally(() => {
+  await Promise.allSettled(courseTasks);
+  if (isStale()) return;
+
+  const progressByCourse = entries.map((entry) => {
+    const typeStates = new Map();
+    requestedActypes.forEach((actype) => {
+      const items = entry.homeworks.filter((homework) => Number(homework?.__actype) === actype);
+      const immediatelyComplete = actype === 14 || actype === 9
+        ? items.length
+        : (actype === 5 ? items.filter((homework) => !String(homework?.exam_id || '').trim()).length : 0);
+      typeStates.set(actype, { total: items.length, completed: immediatelyComplete });
+    });
+    return typeStates;
+  });
+  const updateDetailProgress = () => {
     if (isStale()) return;
-    completedCourseLoads += 1;
-    setPlatformContentLoadProgress('ykt', completedCourseLoads, entries.length);
-  }));
-  await Promise.allSettled(trackedCourseTasks);
+    if (!entries.length || !requestedActypes.length) {
+      setPlatformContentLoadProgress('ykt', 0, 0);
+      return;
+    }
+    const completed = progressByCourse.reduce((courseSum, typeStates) => {
+      const courseProgress = requestedActypes.reduce((typeSum, actype) => {
+        const state = typeStates.get(actype);
+        return typeSum + (state?.total ? Math.min(state.completed / state.total, 1) : 1);
+      }, 0) / requestedActypes.length;
+      return courseSum + courseProgress;
+    }, 0);
+    setPlatformContentLoadProgress('ykt', completed, entries.length);
+  };
+  const markHomeworkDetailLoaded = (entry, homework) => {
+    const courseIndex = entries.indexOf(entry);
+    const state = progressByCourse[courseIndex]?.get(Number(homework?.__actype));
+    if (!state) return;
+    state.completed = Math.min(state.total, state.completed + 1);
+    updateDetailProgress();
+  };
+  updateDetailProgress();
+
+  for (const entry of entries) {
+    if (isStale()) return;
+    const videos = entry.homeworks.filter((hw) => Number(hw?.__actype) === 15);
+    if (!videos.length) continue;
+    const coursewareIds = videos.map((hw) => hw?.courseware_id).filter((id) => String(id || '').trim());
+    let coursewareProgress = {};
+    if (coursewareIds.length) {
+      try {
+        coursewareProgress = await fetchYktCoursewareProgress(
+          String(entry.classroomId || '').trim(),
+          coursewareIds,
+          entry.universityId
+        );
+      } catch (error) {
+        console.warn('[bjtu] ykt pub_new_pro failed:', String(error?.message || error));
+      }
+    }
+    videos.forEach((hw) => {
+      const videoProgress = normalizeYktVideoProgress(
+        coursewareProgress?.[String(hw?.courseware_id || '')],
+        hw?.leaf_id
+      );
+      hw.video_progress_loading = false;
+      hw.video_total_done = videoProgress ? videoProgress.totalDone : undefined;
+      hw.video_progress_ratio = videoProgress ? videoProgress.ratio : undefined;
+      markHomeworkDetailLoaded(entry, hw);
+    });
+    rematchExternalByVeCourses('ykt');
+    rerenderAllHomeworkAreas();
+    renderYktStandaloneCourses();
+  }
   if (detailQueue.length) await new Promise((resolve) => setTimeout(resolve, 80));
 
   for (const task of detailQueue) {
@@ -1094,6 +1111,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       hw.exam_problems = Array.isArray(cache.exam_problems) ? cache.exam_problems : [];
       hw.exam_detail_state = 'done';
       rerenderEntryCard(entry);
+      markHomeworkDetailLoaded(entry, hw);
       continue;
     }
 
@@ -1105,6 +1123,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       hw.exam_problems = Array.isArray(latest.exam_problems) ? latest.exam_problems : [];
       hw.exam_detail_state = latest.state === 'done' ? 'done' : 'failed';
       rerenderEntryCard(entry);
+      markHomeworkDetailLoaded(entry, hw);
       continue;
     }
 
@@ -1150,7 +1169,9 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     }
 
     rerenderEntryCard(entry);
+    markHomeworkDetailLoaded(entry, hw);
   }
+  setPlatformContentLoadProgress('ykt', entries.length, entries.length);
 }
 
 function scheduleYktLoad(courses, loadVersion = 0) {

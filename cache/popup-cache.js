@@ -170,6 +170,7 @@ function showPopupCacheNotice(cache) {
     else if (host?.firstChild) host.insertBefore(el, host.firstChild);
     else host?.appendChild(el);
   }
+  el.classList.remove('popup-cache-loading');
   const savedAt = getPopupCacheTimestampText(cache?.savedAt);
   el.textContent = `于 ${savedAt} 缓存。如需更新，请重启平台或全屏打开。`;
 }
@@ -185,11 +186,16 @@ function waitForPopupCachePaint() {
 }
 
 function showPopupCacheLoadingFrame() {
-  if (!popupMode || !courseListDiv) return;
-  courseListDiv.innerHTML = `<div class="popup-cache-loading" role="status">
+  if (!popupMode) return;
+  showPopupCacheNotice(null);
+  const notice = document.getElementById('popup-cache-notice');
+  if (!notice) return;
+  notice.classList.add('popup-cache-loading');
+  notice.setAttribute('role', 'status');
+  notice.innerHTML = `
     <span class="spinner" aria-hidden="true"></span>
     <span>正在读取缓存…</span>
-  </div>`;
+  `;
 }
 
 async function renderPopupCachedCoursesProgressively({

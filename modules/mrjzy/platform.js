@@ -530,6 +530,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   window.platformLoadedOnce.mrjzy = true;
   const works = Array.isArray(listResp.data.data) ? listResp.data.data : [];
   if (!works.length) {
+    setPlatformContentLoadProgress('mrjzy', 0, 0);
     await finishMrjzyRuntime();
     renderMrjzyStandaloneCourses();
     return;
