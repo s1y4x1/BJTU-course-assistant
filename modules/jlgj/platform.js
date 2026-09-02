@@ -480,17 +480,21 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     const updateDetailProgress = () => {
       setPlatformContentLoadProgress('jlgj', completedDetailLoads, totalDetailLoads);
     };
+    // GroupThreads 已全部完成：课程级“正在获取作业”到此结束，
+    // 后续只由每项作业自己的 loadingMeta 表示详情仍在加载。
+    detailGroups.forEach(({ courseGroup }) => { courseGroup.loadingMeta = false; });
+    rebuildJlgjRender();
     updateDetailProgress();
 
-    for (const { courseGroup, threads, homeworks, teacherSet } of detailGroups) {
-      for (let i = 0; i < threads.length; i++) {
+    let detailUnauthorized = false;
+    const detailTasks = detailGroups.flatMap(({ courseGroup, threads, homeworks, teacherSet }) => (
+      threads.map(async (t, i) => {
         if (isStale()) return;
-        const t = threads[i];
         const threadId = String(t?.ThreadStrId || '').trim();
         try {
           if (!threadId) {
             if (homeworks[i]) homeworks[i].loadingMeta = false;
-            continue;
+            return;
           }
 
           let detail = null;
@@ -498,6 +502,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
           const detailResp = await fetchJlgjJson(detailUrl);
           if (isStale()) return;
           if (detailResp?.unauthorized) {
+            detailUnauthorized = true;
             renderJlgjNeedLoginMessage();
             return;
           }
@@ -507,7 +512,7 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
           }
           if (!detail) {
             if (homeworks[i]) homeworks[i].loadingMeta = false;
-            continue;
+            return;
           }
 
           const homework = detail?.Homework || {};
@@ -538,11 +543,10 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
           updateDetailProgress();
           rebuildJlgjRender();
         }
-      }
-
-      courseGroup.loadingMeta = false;
-      rebuildJlgjRender();
-    }
+      })
+    ));
+    await Promise.allSettled(detailTasks);
+    if (isStale() || detailUnauthorized) return;
     setPlatformContentLoadProgress('jlgj', totalDetailLoads, totalDetailLoads);
 }
 
