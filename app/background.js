@@ -1232,6 +1232,19 @@ function decodePortalRequestBody(raw) {
   }
 }
 
+function decodePortalLoginName(value) {
+  const raw = String(value || '').trim();
+  if (!/^[0-9a-f]+$/i.test(raw) || raw.length % 16 !== 0) return raw;
+  try {
+    const decoded = typeof globalThis.strDec === 'function'
+      ? String(globalThis.strDec(raw) || '').trim()
+      : '';
+    return decoded && decoded.length <= 128 && /^[\p{L}\p{N}_.@-]+$/u.test(decoded) ? decoded : raw;
+  } catch {
+    return raw;
+  }
+}
+
 function extractPortalPostLogin(details) {
   if (String(details?.method || '').toUpperCase() !== 'POST') return null;
   let url;
@@ -1258,7 +1271,7 @@ function extractPortalPostLogin(details) {
     }
   }
   if (!loginName || !encryptedPassword) return null;
-  return { loginName, encryptedPassword, method: 'POST', ts: Date.now() };
+  return { loginName: decodePortalLoginName(loginName), encryptedPassword, method: 'POST', ts: Date.now() };
 }
 
 function extractPortalQuickUsername(url) {
@@ -1280,7 +1293,7 @@ function extractPortalPasswordLogin(url) {
     if (!/123\.121\.147\.7:88$/i.test(u.host)) return null;
     if (!/\/ve\/s\.shtml$/i.test(u.pathname)) return null;
     if (u.searchParams.get('login') !== 'main_2' || u.searchParams.get('loginType') === '2') return null;
-    const loginName = String(u.searchParams.get('username') || '').trim();
+    const loginName = decodePortalLoginName(u.searchParams.get('username'));
     const encryptedPassword = String(u.searchParams.get('password') || '').trim();
     if (!loginName || !encryptedPassword) return null;
     return { loginName, encryptedPassword, ts: Date.now() };
@@ -1422,6 +1435,7 @@ async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
             cache: 'no-store',
             headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
           });
+          if (!res.ok) return null;
           const buffer = await res.arrayBuffer();
           const utf8 = new TextDecoder('utf-8').decode(buffer);
           const source = String(utf8.includes('\uFFFD') ? new TextDecoder('gbk').decode(buffer) : utf8).trim();

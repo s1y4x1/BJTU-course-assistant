@@ -349,19 +349,13 @@
     return null;
   }
 
-  const VE_GET_USER_INFO_URL = 'http://123.121.147.7:88/ve/back/coursePlatform/coursePlatform.shtml?method=getUserInfo';
-
   // 智慧课程平台会话检测：getUserInfo 返回 loginName 即视为已登录。
   async function vePortalAccount() {
     const core = requireGlobal('BjtuVeHomeworkCore');
-    const { text } = await core.requestText(VE_GET_USER_INFO_URL, {
-      method: 'GET', timeoutMs: 8000,
-      headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
-    });
-    const data = JSON.parse(String(text || '').trim());
-    const loginName = String(data?.result?.loginName || '').trim();
+    const user = await core.fetchCurrentUserInfo({ method: 'GET', timeoutMs: 8000 });
+    const loginName = String(user?.loginName || '').trim();
     if (!loginName) return null;
-    return { loginName, userName: String(data?.result?.userName || '') };
+    return { loginName, userName: String(user?.userName || '') };
   }
 
   async function casLoginServiceVe() {

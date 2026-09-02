@@ -88,6 +88,7 @@
       `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo`,
       { ...options, headers: { Accept: 'application/json, text/javascript, */*; q=0.01', ...(options.headers || {}) } }
     );
+    if (Number(response?.status || 0) >= 500) return null;
     if (isLoginResponse(text, response)) return null;
     const data = parseJson(text);
     return String(data?.STATUS) === '0' && data?.result ? data.result : null;
@@ -131,6 +132,7 @@
       ...options,
       headers: { Accept: 'application/json, text/javascript, */*; q=0.01', ...(options.headers || {}) }
     });
+    if (Number(response?.status || 0) >= 500) throw loginError();
     if (isLoginResponse(text, response)) throw loginError();
     let data;
     try { data = parseJson(text); } catch { throw loginError(); }
