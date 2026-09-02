@@ -495,6 +495,7 @@ if (usernameInput) {
       chrome.runtime.sendMessage({ type: 'ACTIVATE_MJ_MODULE' }).then((result) => {
         if (!result?.ok) {
           mjActivationRequested = false;
+          if (result?.code === 'MODULE_NOT_INSTALLED') return;
           showToast?.(`无法激活 MJ：${result?.message || '未知错误'}`, 'error');
         }
       }).catch((error) => {
