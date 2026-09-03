@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     qwenFrame.id = 'qwen-side-panel-frame';
     qwenFrame.className = 'side-panel-frame';
     qwenFrame.title = '千问助手';
-    qwenFrame.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups allow-downloads');
+    qwenFrame.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups allow-downloads allow-modals');
     qwenFrame.src = chrome.runtime.getURL('modules/qwen/chat.html?view=sidepanel');
     qwenFrame.hidden = true;
     frame.after(qwenFrame);
