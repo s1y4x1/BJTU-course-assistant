@@ -356,6 +356,31 @@
   }
 
   const activeChatPorts = new Set();
+  let sharedChatCreationPromise = null;
+  let sharedOpeningInFlight = null;
+
+  async function resolveSharedChatId(client, modelId) {
+    const stored = await chrome.storage.local.get('qwenLastChatId').catch(() => ({}));
+    const existing = String(stored?.qwenLastChatId || '');
+    if (existing) return existing;
+    if (!sharedChatCreationPromise) {
+      sharedChatCreationPromise = client.newChat(modelId).then(async (chatId) => {
+        const id = String(chatId || '');
+        if (!id) throw new Error('新建共享会话失败：未返回会话 ID');
+        await chrome.storage.local.set({ qwenLastChatId: id });
+        return id;
+      }).finally(() => {
+        sharedChatCreationPromise = null;
+      });
+    }
+    return sharedChatCreationPromise;
+  }
+
+  function broadcastSharedChatUpdated(chatId) {
+    const id = String(chatId || '');
+    if (!id) return;
+    void chrome.runtime.sendMessage({ type: 'QWEN_SHARED_CHAT_UPDATED', chatId: id }).catch(() => {});
+  }
 
   function postCompletionStreamEvent(port, event) {
     if (event?.streamRestart) port.postMessage({ type: 'streamRestart' });
@@ -504,6 +529,7 @@
         if (message?.type !== 'send') return;
         if (!String(message.text || '').trim() && String(message.chatId || '')) return;
         void (async () => {
+          let releaseOpeningLock = null;
           try {
             const settings = await getSettings();
             const client = global.BjtuQwenClient;
@@ -511,14 +537,33 @@
             if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
             const modelId = settings.modelId || await resolveDefaultModel(client);
             const groups = await operations.groups();
-            const requestedChatId = String(message.chatId || '');
+            const sourceChatId = String(message.chatId || '');
+            const requestedChatId = await resolveSharedChatId(client, modelId);
+            const keepSourceParent = !sourceChatId || sourceChatId === requestedChatId;
+            if (message?.isOpening === true) {
+              if (sharedOpeningInFlight?.chatId === requestedChatId) {
+                await sharedOpeningInFlight.promise.catch(() => {});
+                if (!port.disconnected) {
+                  port.postMessage({ type: 'historyReload', chatId: requestedChatId, responseId: '' });
+                }
+                return;
+              }
+              let release;
+              const promise = new Promise((resolve) => { release = resolve; });
+              const lock = { chatId: requestedChatId, promise };
+              sharedOpeningInFlight = lock;
+              releaseOpeningLock = () => {
+                release();
+                if (sharedOpeningInFlight === lock) sharedOpeningInFlight = null;
+              };
+            }
             loopSession = requestedChatId ? await loadChatPermissionSession(requestedChatId) : {};
             const result = await global.BjtuQwenAgent.runTurn({
               modelId,
               userText: String(message.text).trim(),
-              chatId: String(message.chatId || ''),
-              parentId: String(message.parentId || ''),
-              parentIdExplicit: message.editParentGiven === true,
+              chatId: requestedChatId,
+              parentId: keepSourceParent ? String(message.parentId || '') : '',
+              parentIdExplicit: keepSourceParent && message.editParentGiven === true,
               enabledOps: settings.enabledOperations,
               groups,
               signal: abortController.signal,
@@ -607,6 +652,12 @@
               }
             });
             if (result.chatId) await saveChatPermissionSession(result.chatId, loopSession);
+            if (result.chatId) {
+              const shared = await chrome.storage.local.get('qwenLastChatId').catch(() => ({}));
+              if (String(shared?.qwenLastChatId || '') === String(result.chatId)) {
+                broadcastSharedChatUpdated(result.chatId);
+              }
+            }
             if (port.disconnected) return;
             if (result.historyReloadRequired === true) {
               port.postMessage({
@@ -644,6 +695,8 @@
               chatId: String(turnRef?.chatId || ''),
               parentId: String(turnRef?.lastMessageId || '')
             });
+          } finally {
+            releaseOpeningLock?.();
           }
         })();
       });

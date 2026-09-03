@@ -126,7 +126,7 @@
         // 拉取失败：保守按已有会话处理
       }
     }
-    if (!effectiveChatId) effectiveChatId = await client.newChat(modelId);
+    if (!effectiveChatId) throw new Error('未提供共享会话 ID');
     if (turnRef) turnRef.chatId = effectiveChatId;
 
     let parentId = String(previousParentId || '');

@@ -55,6 +55,7 @@
   let panelActivated = false;
   let panelHistoryInitialized = false;
   let fabColorMode = 'extension';
+  let pendingSharedChatUpdate = null;
 
   function el(id) {
     return document.getElementById(id);
@@ -737,10 +738,12 @@
 
   async function loadHistoryOnce() {
     if (!sessionChatId) return;
+    const targetChatId = String(sessionChatId);
     const loadingEl = el(HISTORY_LOADING_ID);
     if (loadingEl instanceof HTMLElement) loadingEl.hidden = false;
     try {
-      const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: sessionChatId });
+      const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: targetChatId });
+      if (sessionChatId !== targetChatId) return;
       if (response?.ok && Array.isArray(response.messages)) {
         historyNeedsInitialScroll = true;
         const pendingResponseId = String(response?.pendingResponseId || '');
@@ -756,7 +759,10 @@
         pendingEdit = false;
         openingStarted = false;
         openingCompleted = false;
-        void chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']).catch(() => { });
+        const stored = await chrome.storage.local.get(['qwenLastChatId']).catch(() => ({}));
+        if (String(stored?.qwenLastChatId || '') === targetChatId) {
+          await chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']).catch(() => { });
+        }
       }
     } finally {
       if (loadingEl instanceof HTMLElement) loadingEl.hidden = true;
@@ -1104,6 +1110,11 @@
       messages.querySelectorAll('.qwen-chat-suggestion-btn').forEach((button) => {
         if (button instanceof HTMLButtonElement) button.disabled = busy;
       });
+    }
+    if (!busy && pendingSharedChatUpdate) {
+      const pending = pendingSharedChatUpdate;
+      pendingSharedChatUpdate = null;
+      queueMicrotask(() => adoptSharedChatId(pending.chatId, { reload: pending.reload }));
     }
   }
 
@@ -1835,7 +1846,6 @@
           reportWafRetryResult(true);
           sessionChatId = String(message.chatId || sessionChatId);
           sessionParentId = String(message.responseId || sessionParentId);
-          if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
           if (openingStarted) {
             openingStarted = false;
             openingCompleted = true;
@@ -1866,7 +1876,6 @@
           reportWafRetryResult(true);
           hideAsk();
           sessionChatId = String(message?.chatId || sessionChatId || '');
-          if (sessionChatId) void chrome.storage.local.set({ qwenLastChatId: sessionChatId });
           if (openingStarted) {
             openingStarted = false;
             openingCompleted = true;
@@ -1889,9 +1898,7 @@
           const stoppedChatId = String(message?.chatId || '');
           if (stoppedChatId) {
             sessionChatId = stoppedChatId;
-            const patch = { qwenLastChatId: stoppedChatId };
-            if (openingStarted) patch.qwenOpeningPendingChatId = stoppedChatId;
-            void chrome.storage.local.set(patch);
+            if (openingStarted) void chrome.storage.local.set({ qwenOpeningPendingChatId: stoppedChatId });
           }
           if (openingStarted) openingStarted = false;
           sessionParentId = String(message?.retryParentId || requestParentId || '');
@@ -1934,9 +1941,7 @@
           const retryId = String(message?.retryId || '');
           if (retryChatId) {
             sessionChatId = retryChatId;
-            const patch = { qwenLastChatId: retryChatId };
-            if (openingStarted) patch.qwenOpeningPendingChatId = retryChatId;
-            void chrome.storage.local.set(patch);
+            if (openingStarted) void chrome.storage.local.set({ qwenOpeningPendingChatId: retryChatId });
           }
           if (inThinking) {
             collapseThinking(activeBubble);
@@ -2040,9 +2045,7 @@
           const errorChatId = String(message.chatId || '');
           if (errorChatId) {
             sessionChatId = errorChatId;
-            const patch = { qwenLastChatId: errorChatId };
-            if (openingStarted) patch.qwenOpeningPendingChatId = errorChatId;
-            void chrome.storage.local.set(patch);
+            if (openingStarted) void chrome.storage.local.set({ qwenOpeningPendingChatId: errorChatId });
           }
           if (openingStarted) openingStarted = false;
           ensureRequestUserMessageVisible();
@@ -2134,6 +2137,7 @@
       chatPort.postMessage({
         type: 'send',
         text,
+        isOpening: wasOpeningStream,
         thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked,
         chatId: sessionChatId,
         parentId: requestParentId,
@@ -2198,6 +2202,41 @@
       chatStateLoadPromise = null;
     });
     return chatStateLoadPromise;
+  }
+
+  function adoptSharedChatId(chatId, { reload = false } = {}) {
+    const nextChatId = String(chatId || '');
+    if (!chatStateLoaded) return;
+    if (busy) {
+      pendingSharedChatUpdate = {
+        chatId: nextChatId,
+        reload: reload === true || (pendingSharedChatUpdate?.reload === true && pendingSharedChatUpdate.chatId === nextChatId)
+      };
+      return;
+    }
+    const changed = nextChatId !== sessionChatId;
+    if (!changed && !reload) return;
+    if (changed) {
+      sessionChatId = nextChatId;
+      sessionParentId = '';
+      nextReplyFresh = false;
+      pendingEditParentId = '';
+      pendingEdit = false;
+      openingStarted = false;
+      openingCompleted = !!nextChatId;
+      panelHistoryInitialized = false;
+      const messages = el(MESSAGES_ID);
+      if (messages instanceof HTMLElement) messages.replaceChildren();
+    }
+    if (!nextChatId || !panelActivated) return;
+    panelHistoryInitialized = true;
+    if (historyLoadPromise) {
+      void historyLoadPromise.finally(() => {
+        if (!busy && sessionChatId === nextChatId) void loadHistory();
+      });
+    } else {
+      void loadHistory();
+    }
   }
 
   function activateQwenPanel() {
@@ -2265,7 +2304,16 @@
       });
     }
 
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.qwenLastChatId) return;
+      adoptSharedChatId(changes.qwenLastChatId.newValue);
+    });
+
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'QWEN_SHARED_CHAT_UPDATED') {
+        adoptSharedChatId(message?.chatId, { reload: true });
+        return false;
+      }
       if (message?.type === 'QWEN_TOKEN_CAPTURED_BROADCAST') {
         const wasLoggedIn = lastKnownLoggedIn;
         lastKnownLoggedIn = true;
@@ -2542,7 +2590,8 @@
     if (newChatBtn instanceof HTMLButtonElement) {
       newChatBtn.addEventListener('click', () => {
         const currentId = sessionChatId;
-        const doNew = () => {
+        const doNew = async () => {
+          await chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']);
           sessionChatId = '';
           sessionParentId = '';
           nextReplyFresh = false;
@@ -2553,17 +2602,13 @@
           hideAsk();
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.replaceChildren();
-          void chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']);
           sendOpening();
         };
-        if (!currentId) {
-          doNew();
-          return;
-        }
-        if (global.confirm('是否删除当前会话？')) {
-          void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(() => doNew()).catch(() => doNew());
+        const deleteCurrent = global.confirm('是否删除当前会话？');
+        if (deleteCurrent && currentId) {
+          void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(doNew).catch(doNew);
         } else {
-          doNew();
+          void doNew();
         }
       });
     }
