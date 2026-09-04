@@ -67,7 +67,7 @@
     updater: {
       label: '更新组件',
       styles: ['app.css'],
-      files: ['app.html', 'checker.js', 'background.js', 'filesystem.js', 'vendor/marked.umd.js']
+      files: ['app.html', 'checker.js', 'background.js', 'filesystem.js']
     },
     qwen: {
       label: '通义千问',
@@ -118,14 +118,20 @@
     return global.__bjtuAvailableModules?.[id] === true;
   }
 
+  const scriptLoads = new Map();
   function loadScript(path) {
-    return new Promise((resolve, reject) => {
+    const url = chrome.runtime.getURL(path);
+    if (scriptLoads.has(url)) return scriptLoads.get(url);
+    const promise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = chrome.runtime.getURL(path);
+      script.src = url;
       script.onload = () => resolve(path);
       script.onerror = () => reject(new Error(`无法加载模块脚本：${path}`));
       document.head.appendChild(script);
     });
+    scriptLoads.set(url, promise);
+    promise.catch(() => scriptLoads.delete(url));
+    return promise;
   }
 
   function loadStyle(path) {

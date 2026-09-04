@@ -14,7 +14,7 @@
     holder.innerHTML = await markupResponse.text();
     document.body.appendChild(holder.content.cloneNode(true));
     await global.BjtuModuleRegistry.loadScript('modules/updater/filesystem.js');
-    await global.BjtuModuleRegistry.loadScript('modules/updater/vendor/marked.umd.js');
+    await global.BjtuModuleRegistry.loadScript('core/vendor/marked.umd.js');
     await global.BjtuModuleRegistry.loadScript('modules/updater/checker.js');
     return true;
   })().catch((error) => {
