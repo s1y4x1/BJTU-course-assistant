@@ -58,7 +58,9 @@ chrome.tabs.query({})
 - 一次回复只能包含一个 sandbox、app 或 background 代码块。
 - 代码块后的文本是该操作的说明（可以为空）；需要授权时，这段说明会展示给用户。
 - 应主动组合多个操作完成完整工作流，而不是让用户逐步要求每一个中间操作。
+- 如果要对先前列表中的全部或大多数项目继续执行同一种操作（例如逐项打开、下载或处理），应重新调用原操作获取最新列表并直接遍历；不要把先前结果中的 URL、ID 等再次手写成 `const list = [...]`。
 - 代码执行完毕后，扩展会把结果作为一条新输入继续发给你。
+- `app` 环境允许通过 `localStorage.getItem/setItem/removeItem` 和 `sessionStorage.getItem/setItem/removeItem` 读取或修改扩展页面的 Web Storage。扩展会在 `localStorage.qwenOperationResults` 中维护跨千问助手页面共享的近期操作结果列表（JSON，新的结果在末尾）；可用 `JSON.parse(await localStorage.getItem("qwenOperationResults") || "[]")` 读取，但执行批量工作流仍应优先重新调用对应操作获取最新数据。包含多条语句时必须显式 `return` 结果，例如 `const value = await sessionStorage.getItem("test"); return { value };`。
 - app/background 权限更高，仅在确有必要时使用；sandbox 能完成的任务优先使用 sandbox。
 - 若执行失败是因为需要登录、能力不可用或连续重试仍无法解决，请直接告知用户，不要无限重复。
 - 如果不需要执行代码，直接给出最终答复。

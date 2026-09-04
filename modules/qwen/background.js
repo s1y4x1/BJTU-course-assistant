@@ -681,6 +681,7 @@
               port.postMessage({
                 type: 'stopped',
                 chatId: String(turnRef?.chatId || ''),
+                responseId: String(turnRef?.responseId || ''),
                 parentId: String(turnRef?.retryParentId || ''),
                 retryText: String(turnRef?.retryText || ''),
                 retryParentId: String(turnRef?.retryParentId || '')

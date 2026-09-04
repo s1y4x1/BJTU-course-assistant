@@ -3,7 +3,9 @@
 
   const CHANNEL = 'bjtu-qwen-js-sandbox';
   const pendingBridgeCalls = new Map();
+  const bridgeCallbacks = new Map();
   const deferredValues = new WeakMap();
+  let activeCallbackLastError = null;
   const LOCAL_LANGUAGE_ROOTS = new Set([
     'undefined', 'NaN', 'Infinity',
     'Object', 'Function', 'Boolean', 'Symbol', 'Number', 'BigInt', 'Math', 'Date',
@@ -40,6 +42,30 @@
     return output;
   }
 
+  function deserializeBridgeValue(value) {
+    if (value && typeof value === 'object' && value.__type === 'undefined') return undefined;
+    if (Array.isArray(value)) return value.map(deserializeBridgeValue);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, deserializeBridgeValue(child)]));
+  }
+
+  function encodeBridgeValue(value, executionId, seen = new WeakSet()) {
+    if (value === undefined) return { __type: 'undefined' };
+    if (typeof value === 'function') {
+      const callbackId = `callback-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      bridgeCallbacks.set(callbackId, { executionId, callback: value });
+      return { __type: 'bridge-callback', callbackId };
+    }
+    if (typeof value === 'bigint') return `${value}n`;
+    if (typeof value === 'symbol') return String(value);
+    if (value === null || typeof value !== 'object') return value;
+    if (seen.has(value)) return '[循环引用]';
+    seen.add(value);
+    if (Array.isArray(value)) return value.map((item) => encodeBridgeValue(item, executionId, seen));
+    return Object.fromEntries(Object.entries(value)
+      .map(([key, child]) => [key, encodeBridgeValue(child, executionId, seen)]));
+  }
+
   function callBridge(executionId, action, payload) {
     const requestId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     return new Promise((resolve, reject) => {
@@ -50,7 +76,7 @@
         executionId,
         requestId,
         action,
-        payload: serializable(payload)
+        payload: encodeBridgeValue(payload, executionId)
       }, '*');
     });
   }
@@ -105,7 +131,13 @@
           return (resolve, reject) => callBridge(executionId, 'get', { path }).then(resolve, reject);
         }
         if (typeof property === 'symbol') return undefined;
-        return remotePathProxy(executionId, `${path}.${String(property)}`);
+        const childPath = `${path}.${String(property)}`;
+        if (childPath === 'chrome.runtime.lastError') return activeCallbackLastError;
+        if (/(?:^|\.)(?:localStorage|sessionStorage)$/.test(path)
+          && !['getItem', 'setItem', 'removeItem', 'clear', 'key'].includes(String(property))) {
+          return deferredValueProxy(callBridge(executionId, 'get', { path: childPath }));
+        }
+        return remotePathProxy(executionId, childPath);
       },
       apply(_target, _thisArg, args) {
         return deferredValueProxy(resolveDeferredDeep(args)
@@ -147,7 +179,13 @@
     } catch {
       fn = new AsyncFunction('scope', `with (scope) { return (async () => {\n${code}\n})(); }`);
     }
-    return serializable(await fn(scope));
+    try {
+      return serializable(await resolveDeferredDeep(await fn(scope)));
+    } finally {
+      for (const [callbackId, entry] of bridgeCallbacks) {
+        if (entry.executionId === executionId) bridgeCallbacks.delete(callbackId);
+      }
+    }
   }
 
   window.addEventListener('message', (event) => {
@@ -157,8 +195,23 @@
       const pending = pendingBridgeCalls.get(String(data.requestId || ''));
       if (!pending) return;
       pendingBridgeCalls.delete(String(data.requestId || ''));
-      if (data.ok === true) pending.resolve(data.result);
+      if (data.ok === true) pending.resolve(deserializeBridgeValue(data.result));
       else pending.reject(new Error(String(data.error || '上下文桥接调用失败')));
+      return;
+    }
+    if (data?.type === 'bridge-callback') {
+      const callbackId = String(data.callbackId || '');
+      const entry = bridgeCallbacks.get(callbackId);
+      if (!entry || entry.executionId !== String(data.executionId || '')) return;
+      bridgeCallbacks.delete(callbackId);
+      activeCallbackLastError = data.lastError && typeof data.lastError === 'object'
+        ? data.lastError
+        : null;
+      try {
+        entry.callback(...deserializeBridgeValue(Array.isArray(data.args) ? data.args : []));
+      } finally {
+        activeCallbackLastError = null;
+      }
       return;
     }
     if (data?.type !== 'execute') return;

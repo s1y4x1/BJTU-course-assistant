@@ -9,6 +9,18 @@
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  function abortable(promise, signal) {
+    if (!signal) return Promise.resolve(promise);
+    if (signal.aborted) return Promise.reject(signal.reason || new DOMException('生成中止', 'AbortError'));
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(signal.reason || new DOMException('生成中止', 'AbortError'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      Promise.resolve(promise).then(resolve, reject).finally(() => {
+        signal.removeEventListener('abort', onAbort);
+      });
+    });
+  }
+
   function formatOutcomeError(outcome) {
     const parts = [];
     if (outcome?.code) parts.push(`错误代码：${outcome.code}`);
@@ -342,10 +354,10 @@
             }
           }
           outcome = allowed
-            ? await operations.executeCode(execution.mode, execution.code)
+            ? await abortable(operations.executeCode(execution.mode, execution.code), signal)
             : { ok: false, name: execution.name, code: 'USER_DENIED', error: `用户拒绝在 ${execution.mode} 环境执行 JavaScript` };
         } else {
-          outcome = await operations.executeCode(execution.mode, execution.code);
+          outcome = await abortable(operations.executeCode(execution.mode, execution.code), signal);
         }
         outcomes.push({ execution, outcome });
         onEvent?.({ operationResult: outcome, iteration });

@@ -14,6 +14,8 @@
   const SCROLL_BOTTOM_ID = 'qwen-chat-scroll-bottom';
   const MODEL_ID = 'qwen-chat-model';
   const THINKING_ID = 'qwen-chat-thinking';
+  const OPERATION_RESULTS_STORAGE_KEY = 'qwenOperationResults';
+  const OPERATION_RESULTS_LIMIT = 20;
 
   // 独立页面模式（modules/qwen/chat.html）：面板直接展开铺满窗口。
   const STANDALONE_CHAT = /\/modules\/qwen\/chat\.html$/i.test(global.location?.pathname || '');
@@ -907,6 +909,32 @@
     return output;
   }
 
+  function reviveJsBridgeCallbacks(value, executionId, frame, seen = new WeakMap()) {
+    if (!value || typeof value !== 'object') return value;
+    if (value.__type === 'undefined') return undefined;
+    if (value.__type === 'bridge-callback' && value.callbackId) {
+      const callbackId = String(value.callbackId);
+      return (...args) => {
+        const runtimeError = chrome?.runtime?.lastError;
+        frame.contentWindow?.postMessage({
+          channel: JS_SANDBOX_CHANNEL,
+          type: 'bridge-callback',
+          executionId,
+          callbackId,
+          args: jsBridgeSerializable(args),
+          lastError: runtimeError ? { message: String(runtimeError.message || runtimeError) } : null
+        }, '*');
+      };
+    }
+    if (seen.has(value)) return seen.get(value);
+    const output = Array.isArray(value) ? [] : {};
+    seen.set(value, output);
+    for (const [key, child] of Object.entries(value)) {
+      output[key] = reviveJsBridgeCallbacks(child, executionId, frame, seen);
+    }
+    return output;
+  }
+
   function requireJsBridgeElement(selector) {
     const element = document.querySelector(String(selector || ''));
     if (!(element instanceof Element)) throw new Error(`未找到元素：${String(selector || '')}`);
@@ -978,7 +1006,10 @@
         const data = event?.data;
         if (event.source !== frame.contentWindow || data?.channel !== JS_SANDBOX_CHANNEL) return;
         if (data?.type === 'bridge-call' && String(data.executionId || '') === id) {
-          void handleJsBridge(mode, String(data.action || ''), data.payload).then((result) => {
+          const bridgePayload = normalizedMode === 'app'
+            ? reviveJsBridgeCallbacks(data.payload, id, frame)
+            : data.payload;
+          void handleJsBridge(mode, String(data.action || ''), bridgePayload).then((result) => {
             frame.contentWindow?.postMessage({
               channel: JS_SANDBOX_CHANNEL,
               type: 'bridge-result',
@@ -1483,7 +1514,21 @@
     return formatResult(outcome);
   }
 
-  function updateOperationResult(card, result) {
+  function rememberOperationResult(result) {
+    try {
+      const normalized = jsBridgeSerializable(result);
+      const previous = JSON.parse(localStorage.getItem(OPERATION_RESULTS_STORAGE_KEY) || '[]');
+      const list = Array.isArray(previous) ? previous : [];
+      const last = list.at(-1);
+      if (last && JSON.stringify(last.outcome) === JSON.stringify(normalized)) return;
+      list.push({ recordedAt: Date.now(), outcome: normalized });
+      localStorage.setItem(OPERATION_RESULTS_STORAGE_KEY, JSON.stringify(list.slice(-OPERATION_RESULTS_LIMIT)));
+    } catch {
+      // 操作结果历史仅用于后续工作流复用，写入失败不影响当前操作。
+    }
+  }
+
+  function updateOperationResult(card, result, { remember = true } = {}) {
     if (!(card instanceof HTMLElement)) return;
     const existing = card.querySelector(':scope > .qwen-chat-op-result');
     if (existing instanceof HTMLElement) existing.remove();
@@ -1492,6 +1537,7 @@
     content.textContent = formatOutcomeText(result);
     card.appendChild(content);
     completeOperationCard(card);
+    if (remember) rememberOperationResult(result);
     const messages = el(MESSAGES_ID);
     maybeAutoScrollMessages(messages);
   }
@@ -1901,13 +1947,22 @@
             if (openingStarted) void chrome.storage.local.set({ qwenOpeningPendingChatId: stoppedChatId });
           }
           if (openingStarted) openingStarted = false;
-          sessionParentId = String(message?.retryParentId || requestParentId || '');
+          sessionParentId = String(message?.responseId || message?.retryParentId || requestParentId || '');
           if (inThinking) {
             collapseThinking(activeBubble);
             inThinking = false;
           }
           removeCursor(activeBubble);
           activeBubble = null;
+          if (lastOperationCard.card instanceof HTMLElement
+            && lastOperationCard.card.querySelector('.qwen-chat-op-result-loading')) {
+            updateOperationResult(lastOperationCard.card, {
+              ok: false,
+              name: 'code',
+              code: 'ABORTED',
+              error: '生成中止'
+            });
+          }
           setBusy(false);
           setStatus('已登录', 'ok');
           chatPort.disconnect();
