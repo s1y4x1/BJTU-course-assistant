@@ -40,6 +40,11 @@
   const ROOT_COMPONENT_IDS = new Set(Object.keys(ROOT_COMPONENT_DIRECTORY_NAMES));
   const IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
+  const FOREGROUND_PAGE_PATHS = new Set([
+    'app/app.html',
+    'popup/popup.html',
+    'options/options.html'
+  ]);
   let runningPromise = null;
 
   function normalizeIntervalMinutes(value) {
@@ -62,6 +67,25 @@
       if (diff) return diff > 0 ? 1 : -1;
     }
     return 0;
+  }
+
+  function isForegroundExtensionUrl(rawUrl) {
+    try {
+      const url = new URL(String(rawUrl || ''));
+      if (url.origin !== new URL(chrome.runtime.getURL('/')).origin) return false;
+      return FOREGROUND_PAGE_PATHS.has(url.pathname.replace(/^\/+/, ''));
+    } catch {
+      return false;
+    }
+  }
+
+  async function hasOpenForegroundPage() {
+    if (typeof chrome.runtime.getContexts === 'function') {
+      const contexts = await chrome.runtime.getContexts({}).catch(() => []);
+      if (contexts.some((context) => isForegroundExtensionUrl(context?.documentUrl))) return true;
+    }
+    const tabs = await chrome.tabs.query({}).catch(() => []);
+    return tabs.some((tab) => isForegroundExtensionUrl(tab?.url));
   }
 
   async function setStatus(status, extra = {}) {
@@ -447,48 +471,6 @@
     }
   }
 
-  async function cleanUpdateScopes(root, updateRule, selectedModules) {
-    const scopes = normalizeUpdateScopes(updateRule);
-    if (!scopes) {
-      await clearDirectory(root);
-      return;
-    }
-    if (scopes.has('main')) {
-      const names = [];
-      for await (const [name] of root.entries()) {
-        if (name !== 'modules' && name !== 'manifest.json') names.push(name);
-      }
-      for (const name of names) {
-        await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true }).catch((error) => {
-          if (error?.name !== 'NotFoundError') throw error;
-        });
-      }
-    }
-    for (const id of scopes) {
-      if (!ROOT_COMPONENT_IDS.has(id)) continue;
-      const directoryName = ROOT_COMPONENT_DIRECTORY_NAMES[id] || id;
-      for (const candidate of new Set([directoryName, id])) {
-        await globalThis.BjtuUpdateFileSystem.removeEntry(root, candidate, { recursive: true }).catch((error) => {
-          if (error?.name !== 'NotFoundError') throw error;
-        });
-      }
-    }
-    let modulesDirectory = null;
-    try {
-      modulesDirectory = await root.getDirectoryHandle('modules');
-    } catch {
-      modulesDirectory = null;
-    }
-    if (!modulesDirectory) return;
-    for (const id of scopes) {
-      if (!scopes.has(id)) continue;
-      if (!REQUIRED_MODULE_IDS.has(id) && !selectedModules.has(id)) continue;
-      await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
-        if (error?.name !== 'NotFoundError') throw error;
-      });
-    }
-  }
-
   async function clearDirectory(root) {
     const names = [];
     for await (const [name] of root.entries()) names.push(name);
@@ -541,11 +523,11 @@
       const selectedModules = new Set(installedModuleIds);
       newModules.forEach((id) => selectedModules.add(id));
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-      const selectedArchiveFiles = selectFiles(entries, release.update);
+      const selectedArchiveFiles = selectFiles(entries, release.clean ? null : release.update);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
       if (release.clean) {
-        await cleanUpdateScopes(root, release.update, selectedModules);
+        await clearDirectory(root);
       } else {
         await removeUnselectedModules(root, selectedModules);
       }
@@ -585,6 +567,10 @@
       const manifestVersion = String(chrome.runtime.getManifest().version || '0');
       const appliedVersion = String(stored?.[APPLIED_WITHOUT_RELOAD_KEY]?.ver || '');
       const localVersion = compareVersions(appliedVersion, manifestVersion) > 0 ? appliedVersion : manifestVersion;
+      if (await hasOpenForegroundPage()) {
+        await setStatus('foreground-active', { localVersion });
+        return { updated: false, foregroundActive: true };
+      }
       const pendingReloadVersion = String(stored?.[PENDING_RELOAD_KEY]?.ver || '');
       const lastReloadRequestAt = Number(stored?.[PENDING_RELOAD_KEY]?.autoReloadRequestedAt || 0);
       const staleReloadRecentlyRequested = pendingReloadVersion
@@ -604,6 +590,15 @@
       if (compareVersions(release.version, localVersion) <= 0) {
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
+      }
+      if (await hasOpenForegroundPage()) {
+        await setStatus('foreground-active', {
+          localVersion,
+          version: release.version,
+          name: release.name,
+          force: release.force
+        });
+        return { updated: false, foregroundActive: true, release };
       }
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
         === normalizeVersion(release.version);
@@ -636,7 +631,7 @@
         for (const id of normalizeUpdateScopes(release.update) || []) knownModules.add(id);
       }
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-      if (!releaseAppliesToSelection(release.update, selectedModules, knownModules)) {
+      if (!release.clean && !releaseAppliesToSelection(release.update, selectedModules, knownModules)) {
         const record = {
           ver: release.version,
           name: release.name,
@@ -679,6 +674,7 @@
         fileCount,
         force: release.force,
         reload: reloadRequired,
+        clean: release.clean,
         appliedAt: Date.now(),
         background: true
       };

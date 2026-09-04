@@ -245,6 +245,42 @@ html[data-color-scheme="dark"] .version-module-selection-secondary:hover {
     overflow: auto;
     padding-right: 2px;
 }
+.version-install-options {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+    flex: 0 0 auto;
+}
+.version-install-option {
+    display: block;
+    color: #334155;
+    font-size: 13px;
+    line-height: 1.45;
+    cursor: pointer;
+}
+.version-install-option-line {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 600;
+}
+.version-install-option-line input {
+    width: auto;
+    margin: 0;
+    flex: 0 0 auto;
+}
+.version-install-option-description {
+    display: block;
+    margin: 3px 0 0 22px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 400;
+}
+html[data-color-scheme="dark"] .version-install-options { border-top-color: #334155; }
+html[data-color-scheme="dark"] .version-install-option { color: #e2e8f0; }
+html[data-color-scheme="dark"] .version-install-option-description { color: #94a3b8; }
 .version-notice-footer {
     margin-top: 12px;
     padding-top: 10px;

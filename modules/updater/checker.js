@@ -91,6 +91,10 @@ const VERSION_IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github
 let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
 let versionRefreshCountdownAction = null;
+let versionNoticeForceCountdownTimer = null;
+let versionNoticeForceCountdownAt = 0;
+let versionDownloadClean = false;
+let versionDownloadReload = true;
 let versionUpdateFileTreeRows = new Map();
 
 const VERSION_UPDATE_FILE_STATE = Object.freeze({
@@ -263,6 +267,13 @@ function getVersionDownloadButtonLabel(mode, source) {
 function syncVersionNoticeDownloadButton(buttonText) {
   const btn = document.getElementById('version-notice-download');
   if (!(btn instanceof HTMLButtonElement)) return;
+  if (versionNoticeForceCountdownTimer) {
+    const sourceSelect = document.getElementById('version-source-select');
+    const source = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
+    const seconds = Math.max(1, Math.ceil((versionNoticeForceCountdownAt - Date.now()) / 1000));
+    btn.textContent = `${getVersionDownloadButtonLabel(versionButtonMode, source)}（${seconds} 秒）`;
+    return;
+  }
   const downloading = isVersionDownloadingNow();
   if (downloading) {
     btn.textContent = '后台下载中...';
@@ -275,6 +286,73 @@ function syncVersionNoticeDownloadButton(buttonText) {
   }
 }
 
+function syncVersionNoticeInstallOptions() {
+  const clean = document.getElementById('version-install-clean');
+  const reload = document.getElementById('version-install-reload');
+  if (clean instanceof HTMLInputElement) clean.checked = versionButtonLatestClean === true;
+  if (reload instanceof HTMLInputElement) reload.checked = versionButtonLatestReload !== false;
+}
+
+function readVersionNoticeInstallOptions() {
+  const clean = document.getElementById('version-install-clean');
+  const reload = document.getElementById('version-install-reload');
+  return {
+    clean: clean instanceof HTMLInputElement ? clean.checked : versionButtonLatestClean === true,
+    reload: reload instanceof HTMLInputElement ? reload.checked : versionButtonLatestReload !== false
+  };
+}
+
+function cancelVersionNoticeForceCountdown() {
+  if (versionNoticeForceCountdownTimer) clearInterval(versionNoticeForceCountdownTimer);
+  versionNoticeForceCountdownTimer = null;
+  versionNoticeForceCountdownAt = 0;
+  const button = document.getElementById('version-notice-download');
+  if (button instanceof HTMLButtonElement) button.disabled = false;
+}
+
+async function beginVersionNoticeDownload(modal, sourceSelect) {
+  cancelVersionNoticeForceCountdown();
+  if (modal instanceof HTMLElement) modal.style.display = 'none';
+  const selectedSource = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
+  const selectedUrl = selectedSource === 'zipball' && versionButtonLatestZipballUrl
+    ? versionButtonLatestZipballUrl : VERSION_DOWNLOAD_URL;
+  const fullExtraction = versionButtonMode === 'latest' && selectedSource === 'zipball';
+  const installOptions = readVersionNoticeInstallOptions();
+  if (typeof popupMode !== 'undefined' && popupMode) {
+    await handoffUpdateToFullscreen(selectedUrl, selectedSource, fullExtraction, installOptions);
+    return;
+  }
+  if (isVersionDownloadingNow()) {
+    openVersionDownloadProgressModal();
+    return;
+  }
+  await startVersionDownloadWithFallback(selectedUrl, selectedSource, fullExtraction, installOptions);
+}
+
+function startVersionNoticeForceCountdown(modal, sourceSelect) {
+  cancelVersionNoticeForceCountdown();
+  const button = document.getElementById('version-notice-download');
+  if (!(button instanceof HTMLButtonElement)) return;
+  versionNoticeForceCountdownAt = Date.now() + 2000;
+  button.disabled = true;
+  const update = () => {
+    const remaining = versionNoticeForceCountdownAt - Date.now();
+    if (remaining > 0) {
+      const source = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
+      button.textContent = `${getVersionDownloadButtonLabel(versionButtonMode, source)}（${Math.ceil(remaining / 1000)} 秒）`;
+      return;
+    }
+    cancelVersionNoticeForceCountdown();
+    void beginVersionNoticeDownload(modal, sourceSelect).catch(() => {
+      versionDownloadInProgress = false;
+      syncVersionNoticeDownloadButton();
+      showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
+    });
+  };
+  update();
+  versionNoticeForceCountdownTimer = setInterval(update, 100);
+}
+
 function openVersionDownloadProgressModal() {
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
@@ -282,11 +360,13 @@ function openVersionDownloadProgressModal() {
   modal.style.display = 'flex';
 }
 
-async function handoffUpdateToFullscreen(url, source, fullExtraction = false) {
+async function handoffUpdateToFullscreen(url, source, fullExtraction = false, installOptions = null) {
   await setLocal(VERSION_FULLSCREEN_REQUEST_KEY, {
     url: String(url || '').trim(),
     source: String(source || 'zipball').trim(),
     fullExtraction: fullExtraction === true,
+    clean: installOptions?.clean === true,
+    reload: installOptions?.reload !== false,
     requestedAt: Date.now()
   });
   const channel = String(source || '').trim() === 'main' ? 2 : 1;
@@ -404,6 +484,7 @@ function ensureVersionNoticeModal() {
   const closeBtn = modal.querySelector('#version-notice-close');
   if (closeBtn instanceof HTMLButtonElement) {
     closeBtn.addEventListener('click', () => {
+      cancelVersionNoticeForceCountdown();
       modal.style.display = 'none';
     });
   }
@@ -412,6 +493,7 @@ function ensureVersionNoticeModal() {
   });
   modal.addEventListener('mouseup', (e) => {
     if (e.target === modal && modal.dataset.mdownMask === '1') {
+      cancelVersionNoticeForceCountdown();
       modal.style.display = 'none';
     }
     delete modal.dataset.mdownMask;
@@ -424,21 +506,7 @@ function ensureVersionNoticeModal() {
   const downloadBtn = modal.querySelector('#version-notice-download');
   if (downloadBtn instanceof HTMLButtonElement) {
     downloadBtn.addEventListener('click', () => {
-      modal.style.display = 'none';
-      const selectedSource = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
-      const selectedUrl = selectedSource === 'zipball' && versionButtonLatestZipballUrl
-        ? versionButtonLatestZipballUrl : VERSION_DOWNLOAD_URL;
-      const fullExtraction = versionButtonMode === 'latest' && selectedSource === 'zipball';
-      if (typeof popupMode !== 'undefined' && popupMode) {
-        handoffUpdateToFullscreen(selectedUrl, selectedSource, fullExtraction)
-          .catch(() => showToast('无法打开全屏更新页面', 'error', 2600));
-        return;
-      }
-      if (isVersionDownloadingNow()) {
-        openVersionDownloadProgressModal();
-        return;
-      }
-      startVersionDownloadWithFallback(selectedUrl, selectedSource, fullExtraction).catch(() => {
+      void beginVersionNoticeDownload(modal, sourceSelect).catch(() => {
         versionDownloadInProgress = false;
         syncVersionNoticeDownloadButton();
         showToast('请检查网络连接后重试或联系开发者获取最新版本', 'error', 3200);
@@ -450,7 +518,9 @@ function ensureVersionNoticeModal() {
   if (ignoreBtn instanceof HTMLButtonElement) {
     ignoreBtn.addEventListener('click', async () => {
       if (versionButtonLatestForce) {
-        ignoreBtn.style.display = 'none';
+        cancelVersionNoticeForceCountdown();
+        modal.style.display = 'none';
+        showToast('将在关闭扩展页面后的例行检查中更新', 'info', 2200);
         return;
       }
       const tag = String(versionButtonLatestVersion || '').trim();
@@ -477,6 +547,8 @@ function openVersionNoticeModal(overrideMode) {
   const bodyEl = modal.querySelector('#version-notice-body');
   const downloadBtn = modal.querySelector('#version-notice-download');
   const ignoreBtn = modal.querySelector('#version-notice-ignore');
+  cancelVersionNoticeForceCountdown();
+  syncVersionNoticeInstallOptions();
   if (titleEl instanceof HTMLElement) {
     const versionLabel = escapeHtml(String(versionButtonLatestDisplayVersion || versionButtonLatestVersion || '').trim() || '--');
     const publishedText = escapeHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
@@ -512,7 +584,12 @@ function openVersionNoticeModal(overrideMode) {
     sourceSelect.value = 'zipball';
   }
   if (ignoreBtn instanceof HTMLButtonElement) {
-    if (mode === 'outdated' && !versionButtonLatestForce) {
+    const ignoreLabel = ignoreBtn.querySelector('.version-ignore-main');
+    if (mode === 'outdated' && versionButtonLatestForce) {
+      if (ignoreLabel instanceof HTMLElement) ignoreLabel.textContent = '关闭页面后更新';
+      ignoreBtn.style.display = 'flex';
+    } else if (mode === 'outdated') {
+      if (ignoreLabel instanceof HTMLElement) ignoreLabel.textContent = '忽略本次更新';
       const ignored = String(versionIgnoredTag || '').trim();
       const latest = String(versionButtonLatestVersion || '').trim();
       if (ignored && latest && ignored === latest) {
@@ -526,9 +603,13 @@ function openVersionNoticeModal(overrideMode) {
   }
   modal.style.display = 'flex';
   syncVersionNoticeDownloadButton();
+  if (mode === 'outdated' && versionButtonLatestForce) {
+    startVersionNoticeForceCountdown(modal, sourceSelect);
+  }
 }
 
 function suppressVersionNoticeForDownload() {
+  cancelVersionNoticeForceCountdown();
   versionNoticeSuppressedByDownload = true;
   const modal = document.getElementById('version-notice-modal');
   if (modal instanceof HTMLElement) modal.style.display = 'none';
@@ -1939,48 +2020,6 @@ async function removeUnselectedModuleDirectories(selectedModules) {
   }
 }
 
-async function cleanVersionUpdateScopes(updateRule, selectedModules) {
-  const root = versionUpdateDirectoryHandle;
-  const scopes = normalizeVersionUpdateScopes(updateRule);
-  if (!scopes) {
-    await clearVersionUpdateDirectory();
-    return;
-  }
-  if (scopes.has('main')) {
-    const names = [];
-    for await (const [name] of root.entries()) {
-      if (name !== 'modules' && name !== 'manifest.json') names.push(name);
-    }
-    for (const name of names) {
-      await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true }).catch((error) => {
-        if (error?.name !== 'NotFoundError') throw error;
-      });
-    }
-  }
-  for (const id of scopes) {
-    if (!VERSION_ROOT_COMPONENT_IDS.has(id)) continue;
-    const directoryName = VERSION_ROOT_COMPONENT_DIRECTORY_NAMES[id] || id;
-    for (const candidate of new Set([directoryName, id])) {
-      await globalThis.BjtuUpdateFileSystem.removeEntry(root, candidate, { recursive: true }).catch((error) => {
-        if (error?.name !== 'NotFoundError') throw error;
-      });
-    }
-  }
-  let modulesDirectory;
-  try {
-    modulesDirectory = await root.getDirectoryHandle('modules');
-  } catch {
-    return;
-  }
-  for (const id of scopes) {
-    if (!scopes.has(id)) continue;
-    if (!VERSION_REQUIRED_MODULE_IDS.has(id) && !selectedModules.has(id)) continue;
-    await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
-      if (error?.name !== 'NotFoundError') throw error;
-    });
-  }
-}
-
 async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, cleanUpdate = false) {
   setVersionDownloadBar({ visible: true, percent: 0 });
   setVersionDownloadProgressUi({
@@ -2006,7 +2045,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   const packagedModuleIds = getArchiveModuleIds(archiveFiles);
   const selectedModules = await chooseUpdateModules(archiveFiles);
   VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-  if (cleanUpdate) await cleanVersionUpdateScopes(updateRule, selectedModules);
+  if (cleanUpdate) await clearVersionUpdateDirectory();
   else await removeUnselectedModuleDirectories(selectedModules);
   const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
   if (!selectedArchiveFiles.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
@@ -2114,19 +2153,20 @@ async function downloadVersionByUrlWithProgress(url) {
 
   versionSupplementalReloadRequired = false;
   const archiveBytes = await fetchUpdateArchiveWithProgress(finalUrl);
-  const updateRule = versionDownloadFullExtraction
+  const updateRule = versionDownloadFullExtraction || versionDownloadClean
     ? null
     : versionButtonLatestUpdate;
   const fileCount = await globalThis.BjtuUpdateFileSystem.withInstallLock(() => (
-    extractUpdateArchiveToDirectory(archiveBytes, updateRule, !versionDownloadFullExtraction && versionButtonLatestClean)
+    extractUpdateArchiveToDirectory(archiveBytes, updateRule, versionDownloadClean)
   ));
-  const reloadRequired = versionButtonLatestReload || versionSupplementalReloadRequired;
+  const reloadRequired = versionDownloadReload || versionSupplementalReloadRequired;
   const forcedUpdate = versionButtonLatestForce;
   const appliedRecord = {
     ver: versionButtonLatestVersion,
     name: versionButtonLatestDisplayVersion,
     reload: reloadRequired,
     force: forcedUpdate,
+    clean: versionDownloadClean,
     fileCount,
     appliedAt: Date.now(),
     autoReloadRequestedAt: reloadRequired ? Date.now() : 0
@@ -2153,18 +2193,22 @@ async function downloadVersionByUrlWithProgress(url) {
       reload: false,
       force: forcedUpdate,
       update: versionButtonLatestUpdate,
-      clean: versionButtonLatestClean
+      clean: versionDownloadClean
     });
   }
   setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion: versionButtonLatestDisplayVersion });
   suppressVersionNoticeForDownload();
 }
 
-async function startVersionDownloadWithFallback(downloadUrl, source = '', fullExtraction = false) {
+async function startVersionDownloadWithFallback(downloadUrl, source = '', fullExtraction = false, installOptions = null) {
   suppressVersionNoticeForDownload();
   if (versionDownloadInProgress) {
     openVersionDownloadProgressModal();
     return;
+  }
+  if (installOptions && typeof installOptions === 'object') {
+    versionDownloadClean = installOptions.clean === true;
+    versionDownloadReload = installOptions.reload !== false;
   }
   setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
   const writableDirectory = await getWritableVersionUpdateDirectory();
@@ -2236,6 +2280,10 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
   versionButtonLatestForce = force === true;
   versionButtonLatestUpdate = Array.isArray(update) ? [...update] : null;
   versionButtonLatestClean = clean === true;
+  if (!versionDownloadInProgress) {
+    versionDownloadClean = versionButtonLatestClean;
+    versionDownloadReload = versionButtonLatestReload;
+  }
 
   versionBtn.className = `version-btn ${versionButtonMode}`;
   versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated' || versionButtonMode === 'latest' || versionButtonMode === 'ahead');
@@ -2491,7 +2539,11 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         await startVersionDownloadWithFallback(
           String(fullscreenUpdateRequest?.url || '').trim() || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
           String(fullscreenUpdateRequest?.source || '').trim() || (autoUpdateChannel === 2 ? 'main' : 'zipball'),
-          fullscreenUpdateRequest?.fullExtraction === true
+          fullscreenUpdateRequest?.fullExtraction === true,
+          {
+            clean: fullscreenUpdateRequest?.clean === true,
+            reload: fullscreenUpdateRequest?.reload !== false
+          }
         );
       }
       return;
@@ -2511,7 +2563,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         for (const id of normalizeVersionUpdateScopes(latestUpdate) || []) knownModules.add(id);
       }
       VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-      if (!versionUpdateAppliesToSelection(latestUpdate, selectedModules, knownModules)) {
+      if (!latestClean && !versionUpdateAppliesToSelection(latestUpdate, selectedModules, knownModules)) {
         const skippedRecord = {
           ver: latestTag,
           name: latestDisplayVersion,
@@ -2586,20 +2638,22 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         return;
       }
       if (latestForce) {
-        if (isPopupPage) {
-          await handoffUpdateToFullscreen(pickReleaseDownloadUrl(latestRelease), 'zipball');
-          return;
-        }
         versionNoticeShownVersion = latestTag;
         const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
         const requestIsFresh = autoUpdateRequested && requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
-        const requestedUrl = requestIsFresh ? String(fullscreenUpdateRequest?.url || '').trim() : '';
-        const requestedSource = requestIsFresh ? String(fullscreenUpdateRequest?.source || '').trim() : '';
-        await startVersionDownloadWithFallback(
-          requestedUrl || pickReleaseDownloadUrl(latestRelease),
-          requestedSource || 'zipball',
-          requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
-        );
+        if (requestIsFresh) {
+          await startVersionDownloadWithFallback(
+            String(fullscreenUpdateRequest?.url || '').trim() || pickReleaseDownloadUrl(latestRelease),
+            String(fullscreenUpdateRequest?.source || '').trim() || 'zipball',
+            fullscreenUpdateRequest?.fullExtraction === true,
+            {
+              clean: fullscreenUpdateRequest?.clean === true,
+              reload: fullscreenUpdateRequest?.reload !== false
+            }
+          );
+        } else if (!versionNoticeSuppressedByDownload) {
+          openVersionNoticeModal();
+        }
         return;
       }
       if (autoUpdateRequested) {
@@ -2610,7 +2664,11 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         await startVersionDownloadWithFallback(
           requestedUrl || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
           requestedSource || (autoUpdateChannel === 2 ? 'main' : 'zipball'),
-          requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
+          requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true,
+          requestIsFresh ? {
+            clean: fullscreenUpdateRequest?.clean === true,
+            reload: fullscreenUpdateRequest?.reload !== false
+          } : null
         );
         return;
       }
@@ -2633,7 +2691,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
     versionButtonLocalReleaseVersion = localRelease ? getReleaseDisplayVersion(localRelease) : localVersion;
     versionButtonLocalPublishedAt = localRelease?.published_at || '';
     const aheadBody = buildAllReleaseNotes(releases, latestTag);
-    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '', zipballUrl: latestRelease?.zipball_url || '', body: aheadBody, reload: latestReload, force: latestForce, update: latestUpdate });
+    setVersionButtonState('ahead', { localVersion, latestVersion: latestTag, latestDisplayVersion, latestPublishedAt: latestRelease?.published_at || '', zipballUrl: latestRelease?.zipball_url || '', body: aheadBody, reload: latestReload, force: latestForce, update: latestUpdate, clean: latestClean });
     if (autoUpdateRequested) {
       const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
       const requestIsFresh = requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
@@ -2642,7 +2700,11 @@ async function loadVersionInfoInternal(releaseOverride = null) {
       await startVersionDownloadWithFallback(
         requestedUrl || (autoUpdateChannel === 2 ? VERSION_DOWNLOAD_URL : pickReleaseDownloadUrl(latestRelease)),
         requestedSource || (autoUpdateChannel === 2 ? 'main' : 'zipball'),
-        requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true
+        requestIsFresh && fullscreenUpdateRequest?.fullExtraction === true,
+        requestIsFresh ? {
+          clean: fullscreenUpdateRequest?.clean === true,
+          reload: fullscreenUpdateRequest?.reload !== false
+        } : null
       );
       return;
     }

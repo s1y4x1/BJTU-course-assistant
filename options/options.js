@@ -886,6 +886,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const versionName = String(status?.name || status?.version || status?.ver || '').trim();
     const messages = {
       checking: '正在后台检查更新…',
+      'foreground-active': `扩展前台页面仍在使用，后台更新将在页面关闭后的例行检查中继续${versionName ? `（已检测到 ${versionName}）` : ''}。`,
       latest: `已是最新版本${versionName ? `：${versionName}` : ''}。`,
       'directory-required': `检测到${versionName ? ` ${versionName}` : '新版本'}，请先在全屏页面手动更新一次并授权扩展安装目录。`,
       'optional-update-available': `检测到非强制更新${versionName ? `：${versionName}` : ''}，已按设置保留为手动更新。`,
