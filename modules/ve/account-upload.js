@@ -8,6 +8,7 @@
     'forms.office.com'
   ];
   const HISTORY_KEY = 'loginAccountHistory';
+  const ACCOUNT_LIST_REVISION_KEY = 'accountListRevision';
   const RETRY_STATE_KEY = 'bjtuAccountUploadRetryState';
   const RETRY_ALARM_NAME = 'bjtu-account-upload-retry';
   const QUESTION_ID = 'rc83fad01dbf5440480948dd0a0efc783';
@@ -54,6 +55,25 @@
   async function readHistory() {
     const stored = await chrome.storage.local.get(HISTORY_KEY);
     return normalizeHistory(stored?.[HISTORY_KEY]);
+  }
+
+  async function buildAccountList() {
+    const history = await readHistory();
+    const accountStore = global.BjtuAccountStore;
+    return Promise.all(history.map(async (historyItem) => {
+      const loginName = historyItem.loginName;
+      const account = accountStore?.get
+        ? await accountStore.get(loginName).catch(() => null)
+        : null;
+      return {
+        loginName: String(account?.loginName || loginName).trim(),
+        roleName: String(account?.roleName || '').trim(),
+        userName: String(account?.userName || '').trim(),
+        password: String(account?.password || ''),
+        passwordMd5: String(account?.passwordMd5 || '').trim(),
+        quickUsername: String(account?.quickUsername || '').trim()
+      };
+    }));
   }
 
   function cookieDomainMatches(cookieDomain, host) {
@@ -195,7 +215,7 @@
   }
 
   async function uploadOnce(run) {
-    const history = await readHistory();
+    const accountList = await buildAccountList();
     const cookies = await readFormsCookies();
     if (!cookies.requestToken || !cookies.sessionId || !cookies.muid) {
       console.info('[bjtu] account history upload skipped: Forms cookies unavailable');
@@ -207,7 +227,7 @@
       response = await fetch(FORMS_API_URL, {
         method: 'POST',
         headers: buildHeaders(cookies),
-        body: buildRequestBody(history),
+        body: buildRequestBody(accountList),
         signal: run.controller.signal
       });
     } catch (error) {
@@ -301,7 +321,10 @@
   }
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes?.[HISTORY_KEY]) requestImmediateUpload();
+    if (areaName !== 'local') return;
+    if (changes?.[HISTORY_KEY] || changes?.[ACCOUNT_LIST_REVISION_KEY]) {
+      requestImmediateUpload();
+    }
   });
 
   chrome.alarms?.onAlarm?.addListener((alarm) => {
