@@ -1620,29 +1620,19 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (bindBtn) {
     bindBtn.addEventListener('click', async () => {
       bindBtn.disabled = true;
-      const bindUrl = 'http://123.121.147.7:88/oauth/api/user/thirdLogin';
+      setMsg('正在后台通过 MIS 绑定 username…');
       try {
         const { username } = await chrome.storage.local.get(['username']);
         const resp = await chrome.runtime.sendMessage({
           type: 'START_BIND_PORTAL_USERNAME',
           payload: { loginName: String(username || '').trim() }
         });
-        if (!resp?.ok) {
-          const tab = await chrome.tabs.create({ url: bindUrl, active: true });
-          await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab?.id }).catch(() => null);
-          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
-          return;
-        }
-        setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
+        if (!resp?.ok) throw new Error(resp?.message || resp?.error || '后台绑定失败');
+        setMsg(`已绑定快速登录 username：${resp.userId || resp.quickUsername || ''}`);
       } catch (e) {
-        try {
-          const tab = await chrome.tabs.create({ url: bindUrl, active: true });
-          await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab?.id }).catch(() => null);
-          setMsg('已打开 MIS 绑定页面，请在新标签页完成登录');
-        } catch (err) {
-          setMsg(String(err?.message || e?.message || e || '无法打开 MIS 绑定页面'), false);
-          bindBtn.disabled = false;
-        }
+        setMsg(`绑定失败：${String(e?.message || e || '后台绑定失败')}`, false);
+      } finally {
+        bindBtn.disabled = false;
       }
     });
   }

@@ -592,6 +592,8 @@ const portalDetectedPasswordLoginByTab = new Map(); // tabId -> encrypted passwo
 const portalPasswordRecordingTabs = new Set();
 const portalQuickUsernameFinalizing = new Set(); // tabId -> avoid concurrent/double finalization
 const LOGIN_ACCOUNT_HISTORY_KEY = 'loginAccountHistory';
+const PORTAL_USERNAME_BIND_URL = 'http://123.121.147.7:88/oauth/api/user/thirdLogin';
+let portalUsernameBackgroundBindPromise = null;
 let latestResponseJsessionid = null;
 
 function notifyPortalUsernameBindStatus(status) {
@@ -601,6 +603,145 @@ function notifyPortalUsernameBindStatus(status) {
       void chrome.runtime.lastError;
     });
   } catch {}
+}
+
+function isPortalBindAuthenticationUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.hostname === 'mis.bjtu.edu.cn') {
+      return /^\/auth\/(?:sso|login)\/?$/i.test(url.pathname);
+    }
+    if (url.hostname === 'cas.bjtu.edu.cn') {
+      return /^\/(?:auth\/login|o\/authorize)\/?$/i.test(url.pathname);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function decodePortalBindResponse(response) {
+  const bytes = await response.arrayBuffer();
+  const url = String(response.url || '');
+  if (/^http:\/\/123\.121\.147\.7:88\//i.test(url)) {
+    try { return new TextDecoder('gbk').decode(bytes); } catch {}
+  }
+  const utf8 = new TextDecoder('utf-8').decode(bytes);
+  if (!utf8.includes('\uFFFD')) return utf8;
+  try { return new TextDecoder('gbk').decode(bytes); } catch { return utf8; }
+}
+
+function portalBindClientRedirect(source, baseUrl) {
+  const html = String(source || '').replace(/<!--[\s\S]*?-->/g, '');
+  const candidates = [
+    { pattern: /(?:window\.)?location(?:\.href)?\s*=\s*(['"])(.*?)\1/is, group: 2 },
+    { pattern: /(?:window\.)?location\.replace\s*\(\s*(['"])(.*?)\1\s*\)/is, group: 2 },
+    { pattern: /<meta\b[^>]*http-equiv\s*=\s*(['"]?)refresh\1[^>]*content\s*=\s*(['"])(?:[^;]*;\s*url\s*=\s*)?([^'"]+)\2/i, group: 3 },
+    { pattern: /<form\b[^>]*\bid\s*=\s*(['"])redirect\1[^>]*\baction\s*=\s*(['"])(.*?)\2/i, group: 3 },
+    { pattern: /<form\b[^>]*\baction\s*=\s*(['"])(.*?)\1[^>]*\bid\s*=\s*(['"])redirect\3/i, group: 2 }
+  ];
+  for (const candidate of candidates) {
+    const raw = html.match(candidate.pattern)?.[candidate.group];
+    if (!raw) continue;
+    try {
+      const url = new URL(String(raw).replace(/\\\//g, '/').replace(/&amp;/gi, '&'), baseUrl);
+      if (/^https?:$/.test(url.protocol)) return url.href;
+    } catch {}
+  }
+  return '';
+}
+
+async function fetchPortalBindPage(url) {
+  while (true) {
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+    });
+    const html = await decodePortalBindResponse(response);
+    if (response.status !== 503) return { response, html };
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
+async function performPortalUsernameBindAttempt() {
+  let currentUrl = PORTAL_USERNAME_BIND_URL;
+  let quickUsername = '';
+  for (let step = 0; step < 12; step += 1) {
+    const { response, html } = await fetchPortalBindPage(currentUrl);
+    const responseUrl = String(response.url || currentUrl);
+    if (isPortalBindAuthenticationUrl(responseUrl)) {
+      const error = new Error('MIS/CAS 尚未登录');
+      error.code = 'PORTAL_BIND_AUTH_REQUIRED';
+      throw error;
+    }
+    if (!response.ok) throw new Error(`MIS 绑定请求失败（HTTP ${response.status}）`);
+
+    quickUsername = extractPortalQuickUsername(responseUrl) || quickUsername;
+    if (quickUsername && isPortalLoginResponseSuccess(html)) {
+      const record = await fetchBoundPortalAccountInfo(null, quickUsername);
+      if (!record) throw new Error('绑定登录成功，但无法读取智慧课程平台账号信息');
+      return { record, quickUsername };
+    }
+
+    const nextUrl = portalBindClientRedirect(html, responseUrl);
+    if (!nextUrl) {
+      if (/统一身份认证|用户登录/u.test(html) && /password|loginname/i.test(html)) {
+        const error = new Error('MIS/CAS 尚未登录');
+        error.code = 'PORTAL_BIND_AUTH_REQUIRED';
+        throw error;
+      }
+      throw new Error('MIS 绑定入口未返回智慧课程平台登录地址');
+    }
+    quickUsername = extractPortalQuickUsername(nextUrl) || quickUsername;
+    currentUrl = nextUrl;
+  }
+  throw new Error('MIS 绑定跳转次数过多');
+}
+
+async function bindPortalUsernameInBackground(requestedLoginName = '') {
+  if (portalUsernameBackgroundBindPromise) return portalUsernameBackgroundBindPromise;
+  portalUsernameBackgroundBindPromise = (async () => {
+    notifyPortalUsernameBindStatus({ status: 'started', background: true, ts: Date.now() });
+    let result;
+    try {
+      result = await performPortalUsernameBindAttempt();
+    } catch (error) {
+      if (error?.code !== 'PORTAL_BIND_AUTH_REQUIRED') throw error;
+      const cas = globalThis.BjtuCasSystemInternals;
+      if (!cas?.autoLoginSavedAccount) throw new Error('MIS 尚未登录，且没有可用的 CAS 登录模块');
+      const login = await cas.autoLoginSavedAccount().catch((reason) => ({
+        ok: false,
+        message: String(reason?.message || reason)
+      }));
+      if (!login?.ok) throw new Error(`MIS 尚未登录，CAS 自动登录失败：${login?.message || '没有可用的已保存账号'}`);
+      result = await performPortalUsernameBindAttempt();
+    }
+    const userId = String(result?.record?.userId || result?.record?.loginName || requestedLoginName || '').trim();
+    const status = {
+      status: 'done',
+      background: true,
+      quickUsername: String(result?.quickUsername || '').trim(),
+      userId,
+      ts: Date.now()
+    };
+    notifyPortalUsernameBindStatus(status);
+    return { ok: true, ...status };
+  })().catch((error) => {
+    const status = {
+      status: 'error',
+      background: true,
+      error: String(error?.message || error || '绑定失败'),
+      ts: Date.now()
+    };
+    notifyPortalUsernameBindStatus(status);
+    return { ok: false, ...status, message: status.error };
+  }).finally(() => {
+    portalUsernameBackgroundBindPromise = null;
+  });
+  return portalUsernameBackgroundBindPromise;
 }
 
 try {
@@ -1176,16 +1317,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === 'START_BIND_PORTAL_USERNAME') {
     const requestedLoginName = String(message?.payload?.loginName || '').trim();
-    globalThis.BjtuTabs.create({ url: 'http://123.121.147.7:88/oauth/api/user/thirdLogin', active: true }).then(async (tab) => {
-      const tabId = tab?.id || null;
-      if (tabId) {
-        const stored = requestedLoginName ? null : await chrome.storage.local.get(['username']);
-        const loginName = requestedLoginName || String(stored?.username || '').trim();
-        portalUsernameBindByTab.set(tabId, { ts: Date.now(), loginName });
-        notifyPortalUsernameBindStatus({ status: 'started', tabId, ts: Date.now() });
-      }
-      sendResponse({ ok: true, tabId });
-    }).catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    bindPortalUsernameInBackground(requestedLoginName).then(sendResponse);
     return true;
   }
 });
@@ -1418,7 +1550,7 @@ async function waitForPortalLoginLandingPage(tabId, timeoutMs = 4000) {
 }
 
 async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
-  if (!(Number(tabId) >= 0)) return null;
+  const canUseTab = Number(tabId) >= 0;
   const expected = String(expectedLoginName || '').trim();
   const matchesExpected = (userInfo) => {
     const loginName = String(userInfo?.loginName || '').trim();
@@ -1432,7 +1564,7 @@ async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
       return directUser;
     }
 
-    const results = await chrome.scripting.executeScript({
+    const results = canUseTab ? await chrome.scripting.executeScript({
       target: { tabId },
       world: 'ISOLATED',
       func: async () => {
@@ -1452,7 +1584,7 @@ async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
           return null;
         }
       }
-    }).catch(() => []);
+    }).catch(() => []) : [];
     const tabUser = Array.isArray(results) && results[0] ? results[0].result || null : null;
     if (matchesExpected(tabUser)) {
       console.info('[bjtu] resolved VE current user', { tabId, source: 'tab', attempt: attempt + 1 });
