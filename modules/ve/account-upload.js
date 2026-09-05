@@ -9,6 +9,7 @@
   ];
   const HISTORY_KEY = 'loginAccountHistory';
   const ACCOUNT_LIST_REVISION_KEY = 'accountListRevision';
+  const ACCOUNT_SIGNATURE_KEY = 'bjtuAccountUploadAccountSignature';
   const RETRY_STATE_KEY = 'bjtuAccountUploadRetryState';
   const RETRY_ALARM_NAME = 'bjtu-account-upload-retry';
   const QUESTION_ID = 'rc83fad01dbf5440480948dd0a0efc783';
@@ -17,6 +18,8 @@
   let activeRun = null;
   let immediateUploadPending = false;
   let retryTimer = null;
+  let signatureReadyPromise = null;
+  let changeEvaluationQueue = Promise.resolve();
 
   function sleep(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -74,6 +77,55 @@
         quickUsername: String(account?.quickUsername || '').trim()
       };
     }));
+  }
+
+  function accountListSignature(accountList) {
+    return JSON.stringify([...accountList].sort((a, b) => (
+      a.loginName.toLowerCase().localeCompare(b.loginName.toLowerCase())
+    )));
+  }
+
+  async function getAccountSignature() {
+    const stored = await chrome.storage.local.get(ACCOUNT_SIGNATURE_KEY).catch(() => ({}));
+    return typeof stored?.[ACCOUNT_SIGNATURE_KEY] === 'string'
+      ? stored[ACCOUNT_SIGNATURE_KEY]
+      : null;
+  }
+
+  async function setAccountSignature(signature) {
+    await chrome.storage.local.set({ [ACCOUNT_SIGNATURE_KEY]: signature }).catch(() => {});
+  }
+
+  async function initializeAccountSignature() {
+    const existing = await getAccountSignature();
+    if (existing !== null) return existing;
+    const accountList = await buildAccountList();
+    const signature = accountListSignature(accountList);
+    await setAccountSignature(signature);
+    return signature;
+  }
+
+  function ensureSignatureReady() {
+    if (!signatureReadyPromise) {
+      signatureReadyPromise = initializeAccountSignature().catch(() => null);
+    }
+    return signatureReadyPromise;
+  }
+
+  function evaluateAccountChange() {
+    changeEvaluationQueue = changeEvaluationQueue.then(async () => {
+      await ensureSignatureReady();
+      const accountList = await buildAccountList();
+      const signature = accountListSignature(accountList);
+      const previousSignature = await getAccountSignature();
+      if (signature === previousSignature) return;
+      // If the active request already contains this account state, a change
+      // such as lastLoginAt/order-only does not need to restart its retry loop.
+      if (activeRun?.accountSignature === signature) return;
+      requestImmediateUpload();
+    }).catch((error) => {
+      console.warn('[bjtu] account change evaluation failed:', String(error?.message || error));
+    });
   }
 
   function cookieDomainMatches(cookieDomain, host) {
@@ -216,6 +268,8 @@
 
   async function uploadOnce(run) {
     const accountList = await buildAccountList();
+    const signature = accountListSignature(accountList);
+    run.accountSignature = signature;
     const cookies = await readFormsCookies();
     if (!cookies.requestToken || !cookies.sessionId || !cookies.muid) {
       console.info('[bjtu] account history upload skipped: Forms cookies unavailable');
@@ -240,13 +294,15 @@
     const status = Number(response?.status || 0);
     try { await response?.body?.cancel(); } catch {}
     if (run.controller.signal.aborted) return null;
-    return status;
+    return { status, signature };
   }
 
   async function uploadWithRetry(run, attempt = 0) {
     while (!run.controller.signal.aborted && activeRun === run) {
-      const status = await uploadOnce(run);
+      const result = await uploadOnce(run);
+      const status = result?.status;
       if (status === 201) {
+        await setAccountSignature(result.signature);
         await clearRetryState();
         return;
       }
@@ -323,7 +379,7 @@
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
     if (changes?.[HISTORY_KEY] || changes?.[ACCOUNT_LIST_REVISION_KEY]) {
-      requestImmediateUpload();
+      evaluateAccountChange();
     }
   });
 
@@ -342,5 +398,6 @@
     })();
   });
 
+  void ensureSignatureReady();
   void resumePendingRetry();
 })(globalThis);
