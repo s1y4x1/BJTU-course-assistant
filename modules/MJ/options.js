@@ -740,7 +740,9 @@
         if (!state.enabled) await setEnabled(true);
       }
     }
-    await resumeAutomaticSoundVideoEnable();
+    void resumeAutomaticSoundVideoEnable().catch((error) => {
+      setMessage(`有声视频素材自动下载失败：${String(error?.message || error)}`, false);
+    });
     return true;
   }
 
