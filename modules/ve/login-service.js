@@ -168,10 +168,21 @@
     const quick = String(quickUsername || '').trim();
     if (!quick) return { ok: false, reason: 'needs-password', message: '未找到可用极速登录名' };
     const result = await requestLogin(global.BjtuVeLoginUtils.buildQuickLoginUrl(quick));
-    const quickUsernameDead = result?.reason === 'credential'
-      || (result?.httpStatus === 500 && result?.reason === 'server-error');
-    if (quickUsernameDead && await clearStoredCredential(options.loginName, 'quickUsername')) {
-      return withCredentialEvents(result, [{ type: 'quickUsername-cleared', loginName: String(options.loginName || '').trim() }]);
+    const quickUsernameDead = result?.reason === 'credential' || Number(result?.httpStatus) === 500;
+    if (quickUsernameDead) {
+      const failedResult = Number(result?.httpStatus) === 500
+        ? { ...result, ok: false, reason: 'credential', message: '极速登录 username 已失效' }
+        : result;
+      let loginName = String(options.loginName || '').trim();
+      if (!loginName) {
+        await global.BjtuAccountStore.migrateLegacy();
+        const account = await global.BjtuAccountStore.getByQuickUsername(quick);
+        loginName = String(account?.loginName || '').trim();
+      }
+      if (await clearStoredCredential(loginName, 'quickUsername')) {
+        return withCredentialEvents(failedResult, [{ type: 'quickUsername-cleared', loginName }]);
+      }
+      return failedResult;
     }
     return completeSuccessfulLogin(result, options.loginName, options);
   }
