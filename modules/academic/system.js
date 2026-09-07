@@ -1877,7 +1877,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         cached.scheduleCache?.selectionProbed === true
         && cached.scheduleCache?.selectionSemester?.xnxq
       );
-      const currentTerm = String(cached.scoreCurrentZxjxjhh || '');
+      const currentTerm = String(cached.scheduleCache?.currentXnxq || cached.scoreCurrentZxjxjhh || '');
       const cachedByTerm = new Map(
         (cached.scheduleCache?.results || []).map((item) => [String(item?.xnxq || ''), item])
       );
@@ -1892,7 +1892,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         ));
         return {
           ok: true,
-          currentXnxq: String(cached.scoreCurrentZxjxjhh || ''),
+          currentXnxq: String(cached.scheduleCache?.currentXnxq || cached.scoreCurrentZxjxjhh || ''),
           selectionSemester: cached.scheduleCache?.selectionSemester || null,
           selectionProbed: cached.scheduleCache?.selectionProbed === true,
           results,
@@ -1933,8 +1933,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       : null;
     for (const selection of (selectionResult?.results || [])) {
       const existingIndex = results.findIndex((item) => item.xnxq === selection.xnxq);
-      if (existingIndex >= 0) results[existingIndex] = selection;
-      else results.push(selection);
+      if (existingIndex < 0) results.push(selection);
+      else if (results[existingIndex]?.type !== 'semester') results[existingIndex] = selection;
     }
     return {
       ok: true,

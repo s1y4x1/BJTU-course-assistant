@@ -5,6 +5,7 @@
   const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationEnabled'];
   const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
+  const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
   const WAF_FLOW_STATE_KEY = 'qwenWafFlowState';
   const CHAT_PERMISSION_SESSIONS_KEY = 'qwenChatPermissionSessions';
@@ -274,6 +275,26 @@
     if (Number.isInteger(tab?.windowId)) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => null);
   }
 
+  function qwenLoginOpenedFromSidePanel(sender) {
+    try {
+      const senderUrl = new URL(String(sender?.url || ''));
+      return senderUrl.protocol === 'chrome-extension:'
+        && senderUrl.host === chrome.runtime.id
+        && senderUrl.searchParams.get('view') === 'sidepanel';
+    } catch {
+      return false;
+    }
+  }
+
+  async function rememberQwenLoginOrigin(sender) {
+    await chrome.storage.session.set({
+      [LOGIN_ORIGIN_KEY]: {
+        sidePanel: qwenLoginOpenedFromSidePanel(sender),
+        openedAt: Date.now()
+      }
+    }).catch(() => {});
+  }
+
   async function completeQwenLogin(token) {
     const value = String(token || '').trim();
     if (!value) return;
@@ -283,14 +304,16 @@
       const tokenChanged = String(tokenState?.qwenToken || '') !== value;
       await global.BjtuQwenClient?.captureToken?.(value);
       if (tokenChanged) await broadcastTokenCaptured('login');
-      const stored = await chrome.storage.session.get(LOGIN_TAB_ID_KEY).catch(() => ({}));
+      const stored = await chrome.storage.session.get([LOGIN_TAB_ID_KEY, LOGIN_ORIGIN_KEY]).catch(() => ({}));
       const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
       if (!Number.isInteger(loginTabId)) return;
       const loginTab = await chrome.tabs.get(loginTabId).catch(() => null);
-      await chrome.storage.session.remove(LOGIN_TAB_ID_KEY).catch(() => {});
+      const openedFromSidePanel = stored?.[LOGIN_ORIGIN_KEY]?.sidePanel === true;
+      await chrome.storage.session.remove([LOGIN_TAB_ID_KEY, LOGIN_ORIGIN_KEY]).catch(() => {});
       if (loginTab && String(loginTab.url || loginTab.pendingUrl || '').startsWith('https://chat.qwen.ai/')) {
-        await chrome.tabs.update(loginTabId, { autoDiscardable: false }).catch(() => null);
+        await chrome.tabs.remove(loginTabId).catch(() => {});
       }
+      if (openedFromSidePanel) return;
       await focusQwenAppPage();
     })().finally(() => {
       qwenLoginCompletionPromise = null;
@@ -797,7 +820,10 @@
           try {
             if (client && message?.payload?.ensureLogin) {
               loggedIn = await client.tryRefreshLogin();
-              if (!loggedIn) await client.openLoginPage();
+              if (!loggedIn) {
+                await rememberQwenLoginOrigin(sender);
+                await client.openLoginPage();
+              }
             } else {
               loggedIn = client ? await client.isLoggedIn() : false;
             }
@@ -884,6 +910,7 @@
               sendResponse({ ok: true, flowId: state.flowId });
               return;
             }
+            await rememberQwenLoginOrigin(sender);
             const openResult = await client.openLoginPage();
             sendResponse({ ok: true, tabId: Number(openResult?.tab?.id) || null });
           } catch (error) {
