@@ -240,9 +240,10 @@
     const actionClasses = actionsClass || 'homework-card-actions';
     return `<div class="${classes}" data-homework-done="${done ? '1' : '0'}" ${attributes} style="background:${background};border:1px solid ${border};border-radius:6px;padding:8px;margin-top:8px;">
       <div class="${headClasses}" style="${headStyle}">
-        <div class="${mainClasses}">${titleHtml}${metaHtml}</div>
+        <div class="${mainClasses}">${titleHtml}</div>
         ${actionsHtml ? `<div class="${actionClasses}" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">${actionsHtml}</div>` : ''}
       </div>
+      ${metaHtml ? `<div class="homework-card-meta">${metaHtml}</div>` : ''}
       ${detailHtml}
     </div>`;
   }

@@ -52,6 +52,7 @@
   const sharedTermsInFlight = new Map();
   let sharedTermWorkerRunning = false;
   const loadedScheduleTerms = new Set();
+  const verifiedScheduleTerms = new Set();
   const scheduleTermsInFlight = new Map();
   let scheduleTermWorkerRunning = false;
   let selectionSchedulePromise = null;
@@ -1957,6 +1958,7 @@
     sharedTermsInFlight.clear();
     loadedScheduleTerms.clear();
     scheduleTermsInFlight.clear();
+    verifiedScheduleTerms.clear();
     selectionSchedulePromise = null;
     renderedAcademicCacheStudentId = '';
   }
@@ -1992,7 +1994,8 @@
       const term = String(item?.xnxq || '').trim();
       if (!term) continue;
       const existing = byTerm.get(term);
-      if (existing?.type === 'semester' && item?.type === 'selection') continue;
+      if (existing?.type === 'semester' && item?.type === 'selection' && scheduleHasCourses(existing)) continue;
+      if (existing?.type === 'selection' && item?.type === 'semester' && !scheduleHasCourses(item)) continue;
       byTerm.set(term, item);
     }
     const results = [...byTerm.values()];
@@ -2093,7 +2096,8 @@
     const byTerm = new Map((scheduleCache?.results || []).map((item) => [item.xnxq, item]));
     for (const item of (result.results || [])) {
       const existing = byTerm.get(item.xnxq);
-      if (existing?.type === 'semester' && item.type === 'selection') continue;
+      if (existing?.type === 'semester' && item.type === 'selection' && scheduleHasCourses(existing)) continue;
+      if (existing?.type === 'selection' && item.type === 'semester' && !scheduleHasCourses(item)) continue;
       byTerm.set(item.xnxq, item);
     }
     scheduleCache = normalizedScheduleCache({
@@ -2185,7 +2189,7 @@
     const availableSchedules = academicSemesterOptions
       .filter((semester) => {
         const value = String(semester?.zxjxjhh || '');
-        return !loadedScheduleTerms.has(value) || scheduleHasCourses(cachedByTerm.get(value));
+        return !verifiedScheduleTerms.has(value) || scheduleHasCourses(cachedByTerm.get(value));
       })
       .map((semester) => ({
         label: semester.label,
@@ -2216,9 +2220,12 @@
       scheduleSemesterPreference = scheduleSelected === String(scheduleCache?.currentXnxq || '') ? '' : scheduleSelected;
     }
     const schedule = cachedByTerm.get(scheduleSelected);
+    const isUnverifiedEmptyCache = schedule?.type === 'semester'
+      && !scheduleHasCourses(schedule)
+      && !verifiedScheduleTerms.has(scheduleSelected);
     const isInvalidCurrentSelection = scheduleSelected === String(scheduleCache?.currentXnxq || '')
       && schedule?.type === 'selection';
-    if (isInvalidCurrentSelection) {
+    if (isInvalidCurrentSelection || isUnverifiedEmptyCache) {
       if (element('academicScheduleLoading')) element('academicScheduleLoading').style.display = 'flex';
       if (element('academicScheduleTableWrap')) element('academicScheduleTableWrap').style.display = 'none';
       if (element('academicScheduleEmpty')) element('academicScheduleEmpty').style.display = 'none';
@@ -2373,6 +2380,7 @@
     if (!schedule?.ok) throw Object.assign(new Error(schedule?.message || '课表读取失败'), { code: schedule?.code });
     mergeScheduleResult(schedule);
     terms.forEach((term) => loadedScheduleTerms.add(term));
+    terms.forEach((term) => verifiedScheduleTerms.add(term));
     for (const result of (schedule.results || [])) loadedScheduleTerms.add(String(result?.xnxq || ''));
     await persistAcademicDataCache();
   }
@@ -2406,6 +2414,10 @@
 
   function isScheduleTermReady(term) {
     if (!loadedScheduleTerms.has(term)) return false;
+    const semesterResult = (scheduleCache?.results || []).find((item) => (
+      item?.xnxq === term && item?.type === 'semester'
+    ));
+    if (!scheduleHasCourses(semesterResult) && !verifiedScheduleTerms.has(term)) return false;
     const currentTerm = String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || '');
     if (term !== currentTerm) return true;
     return (scheduleCache?.results || []).some((item) => item.xnxq === term && item.type === 'semester');
@@ -2490,6 +2502,7 @@
       academicBackgroundRefreshActive = true;
       loadedSharedTerms.clear();
       loadedScheduleTerms.clear();
+      verifiedScheduleTerms.clear();
       sharedTermsInFlight.clear();
       scheduleTermsInFlight.clear();
       selectionSchedulePromise = null;
@@ -2517,6 +2530,15 @@
         setSharedAllLoading(allTerms.some((term) => !loadedSharedTerms.has(term)));
       } else if (!loadedSharedTerms.has(sharedPriority)) {
         renderAcademicScoreStatisticsLoading();
+      }
+
+      const selectedScheduleTerm = String(element('academicScheduleSemester')?.value || scheduleSemesterPreference || '');
+      const selectedCachedSchedule = (scheduleCache?.results || []).find((item) => (
+        item?.xnxq === selectedScheduleTerm && item?.type === 'semester'
+      ));
+      if (selectedScheduleTerm && selectedCachedSchedule && !scheduleHasCourses(selectedCachedSchedule)) {
+        await ensureScheduleTerms([selectedScheduleTerm]);
+        renderCachedScheduleData();
       }
 
       const currentScheduleTerm = await ensureLatestCurrentScheduleTerm(allTerms);
@@ -2724,7 +2746,12 @@
       scheduleSemesterPreference = selected === current ? '' : selected;
       await chrome.storage.local.set({ academicScheduleSemester: scheduleSemesterPreference });
       const cached = (scheduleCache?.results || []).find((item) => item.xnxq === selected);
-      if (cached) applyScheduleView(cached);
+      const cachedIsReady = cached && (
+        cached.type !== 'semester'
+        || scheduleHasCourses(cached)
+        || verifiedScheduleTerms.has(selected)
+      );
+      if (cachedIsReady) applyScheduleView(cached);
       else if (selected) {
         element('academicScheduleLoading').style.display = 'flex';
         element('academicScheduleTableWrap').style.display = 'none';

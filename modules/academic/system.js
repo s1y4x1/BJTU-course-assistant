@@ -1857,6 +1857,12 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     };
   }
 
+  function academicScheduleHasCourses(result) {
+    return (Array.isArray(result?.rows) ? result.rows : []).some((row) => (
+      (Array.isArray(row?.days) ? row.days : []).some((courses) => Array.isArray(courses) && courses.length > 0)
+    ));
+  }
+
   async function loadAcademicSchedule(args = {}) {
     const providedSemesters = Array.isArray(args)
       ? args
@@ -1934,7 +1940,9 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     for (const selection of (selectionResult?.results || [])) {
       const existingIndex = results.findIndex((item) => item.xnxq === selection.xnxq);
       if (existingIndex < 0) results.push(selection);
-      else if (results[existingIndex]?.type !== 'semester') results[existingIndex] = selection;
+      else if (results[existingIndex]?.type !== 'semester' || !academicScheduleHasCourses(results[existingIndex])) {
+        results[existingIndex] = selection;
+      }
     }
     return {
       ok: true,
