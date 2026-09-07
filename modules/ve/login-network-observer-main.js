@@ -15,7 +15,7 @@
     }
   }
 
-  function report(url, html) {
+  function report(url, html, method) {
     let activeSuccessScript = false;
     try {
       const document = new DOMParser().parseFromString(String(html || ''), 'text/html');
@@ -28,7 +28,12 @@
     }
     window.postMessage({
       type: MESSAGE_TYPE,
-      payload: { url: String(url || ''), html: String(html || ''), activeSuccessScript }
+      payload: {
+        url: String(url || ''),
+        method: String(method || 'GET').toUpperCase(),
+        html: String(html || ''),
+        activeSuccessScript
+      }
     }, location.origin);
   }
 
@@ -44,7 +49,7 @@
       const method = String(init?.method || input?.method || 'GET').toUpperCase();
       const response = await originalFetch.apply(this, arguments);
       if (isLoginRequest(requestUrl, method)) {
-        decodeGbkResponse(response.clone()).then((html) => report(response.url || requestUrl, html)).catch(() => {});
+        decodeGbkResponse(response.clone()).then((html) => report(response.url || requestUrl, html, method)).catch(() => {});
       }
       return response;
     };
@@ -62,7 +67,7 @@
       this.addEventListener('loadend', () => {
         try {
           if (this.responseType && this.responseType !== 'text') return;
-          report(this.responseURL || request.url, this.responseText);
+          report(this.responseURL || request.url, this.responseText, request.method);
         } catch {
           // Ignore unreadable response bodies.
         }

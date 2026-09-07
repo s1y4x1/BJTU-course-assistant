@@ -302,9 +302,17 @@
     const localTime = (() => {
       try { return now.toLocaleString(); } catch { return ''; }
     })();
+    const uploadTimeWithOffset = (() => {
+      const offsetMinutes = -now.getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? '+' : '-';
+      const absoluteMinutes = Math.abs(offsetMinutes);
+      const offset = `${sign}${String(Math.floor(absoluteMinutes / 60)).padStart(2, '0')}:${String(absoluteMinutes % 60).padStart(2, '0')}`;
+      return `${now.toISOString().slice(0, -1)}${offset}`;
+    })();
     return {
       uploadTime: localTime,
       uploadTimeISO: now.toISOString(),
+      uploadTimeWithOffset,
       timeZone,
       timeZoneOffsetMinutes: -now.getTimezoneOffset(),
       userIP: ip,

@@ -37,6 +37,7 @@
     report({
       html: String(event.data?.payload?.html || ''),
       url: String(event.data?.payload?.url || ''),
+      method: String(event.data?.payload?.method || 'GET').toUpperCase(),
       activeSuccessScript: event.data?.payload?.activeSuccessScript === true
     });
   });
@@ -54,15 +55,20 @@
       /location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i
         .test(String(script.textContent || ''))
     ));
-    const hasSuccessMarker = activeSuccessScript || (html.includes('史家跳转首页')
-      && /location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(html));
+    const hasSuccessMarker = html.includes('史家跳转首页') && (activeSuccessScript
+      || /location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(html));
     const hasFailureMarker = /账号或密码错误|错误次数过多|请输入正确的验证码|默认密码|系统发生了未处理的异常|alert\s*\(/i.test(html);
     if (!hasSuccessMarker && !hasFailureMarker && document.readyState === 'loading') return;
 
     sent = true;
     if (timer) clearInterval(timer);
     observer?.disconnect();
-    report({ html, url: location.href, activeSuccessScript });
+    report({
+      html,
+      url: location.href,
+      method: /(?:^|[?&])loginType=2(?:&|$)/i.test(location.search) ? 'GET' : 'POST',
+      activeSuccessScript
+    });
   };
 
   observer = new MutationObserver(sendResponse);

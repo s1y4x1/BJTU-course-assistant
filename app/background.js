@@ -1339,8 +1339,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 function isPortalLoginResponseSuccess(source, activeSuccessScript = false) {
   const html = String(source || '');
   const executableHtml = html.replace(/<!--[\s\S]*?-->/g, '');
-  return activeSuccessScript === true
-    || /location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(executableHtml);
+  return html.includes('史家跳转首页')
+    && (activeSuccessScript === true
+      || /location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(executableHtml));
 }
 
 function getPortalRequestBodyValue(requestBody, name) {
@@ -1481,17 +1482,9 @@ chrome.webRequest.onBeforeRequest.addListener(
   ['requestBody']
 );
 
-// Fallback: the in-page response detector may occasionally miss a login navigation
-// (the tab can be mid-redirect, scripts paused, etc.), which previously left the bind
-// stuck at "已检测到新 username" and never closed the page. webRequest.onCompleted
-// runs for the same GET quick-login request regardless of page script timing, so we
-// finalize the binding directly using the username captured from the URL.
-//
-// webRequest cannot read the response body, so instead of trusting the response
-// blindly we confirm the login actually succeeded by waiting for the tab to reach
-// the authenticated platform page. The failure page (e.g. GBK encoded
-// alert('账号或密码错误!') based script redirecting to /ve) never navigates to an
-// authenticated page, so a failed quick login is never recorded.
+// webRequest cannot expose the response body. Give the GBK-aware page detector time
+// to report this exact request; if it cannot, replay the same quick-login GET in the
+// background and validate that replay's own response before binding the username.
 chrome.webRequest.onCompleted.addListener(
   (details) => {
     try {
@@ -1504,31 +1497,15 @@ chrome.webRequest.onCompleted.addListener(
       if (!quickState) return;
       if (String(quickState.quickUsername || '').trim() !== quickUsername) return;
       if (Date.now() - Number(quickState.ts || 0) > 30000) return;
-      // A 500 GET login response means the quick login failed (e.g. invalid /
-      // stale quick username). Never record it — otherwise the fallback would
-      // bind a dead username and bind the wrong account.
-      if (Number(quickState.statusCode || 0) === 500) return;
-      portalDetectedQuickUsernameByTab.delete(tabId);
-      void waitForPortalLoginLandingPage(tabId)
-        .then((outcome) => {
-          if (outcome === 'authenticated') {
-            return finalizePortalQuickUsernameBind(tabId, quickUsername);
-          }
-          console.warn('[bjtu] skipped VE quickUsername fallback recording because the login did not succeed', { tabId, outcome });
-          // Do not leave a bind in the "已检测到新 username，正在匹配账号信息" state
-          // forever: report the failure so the options page re-enables the bind button.
-          if (portalUsernameBindByTab.has(tabId)) {
-            notifyPortalUsernameBindStatus({
-              status: 'error',
-              tabId,
-              quickUsername: String(quickUsername || '').trim(),
-              error: '绑定失败：登录未成功，请重新尝试',
-              ts: Date.now()
-            });
-          }
-          return undefined;
-        })
-        .catch(() => {});
+      const requestId = String(quickState.requestId || '');
+      if (Number(details?.statusCode || quickState.statusCode || 0) >= 500) {
+        portalDetectedQuickUsernameByTab.delete(tabId);
+        reportPortalQuickUsernameVerificationFailure(tabId, quickUsername);
+        return;
+      }
+      setTimeout(() => {
+        void verifyMissedPortalQuickLoginResponse(tabId, requestId, quickUsername);
+      }, 1800);
     } catch {
       // ignore
     }
@@ -1537,21 +1514,35 @@ chrome.webRequest.onCompleted.addListener(
   []
 );
 
-async function waitForPortalLoginLandingPage(tabId, timeoutMs = 4000) {
-  const startAt = Date.now();
-  while (Date.now() - startAt < Number(timeoutMs || 0)) {
-    let url = '';
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      url = String(tab?.url || '');
-    } catch {
-      return 'unknown';
-    }
-    if (isPortalAuthenticatedPageUrl(url)) return 'authenticated';
-    if (isPortalLoginFailurePageUrl(url)) return 'failed';
-    await new Promise((resolve) => setTimeout(resolve, 200));
+function reportPortalQuickUsernameVerificationFailure(tabId, quickUsername) {
+  console.warn('[bjtu] discarded unverified VE quickUsername', { tabId });
+  if (portalUsernameBindByTab.has(tabId)) {
+    notifyPortalUsernameBindStatus({
+      status: 'error',
+      tabId,
+      quickUsername: String(quickUsername || '').trim(),
+      error: '绑定失败：极速登录响应未确认成功，请重新尝试',
+      ts: Date.now()
+    });
   }
-  return 'unknown';
+}
+
+async function verifyMissedPortalQuickLoginResponse(tabId, requestId, quickUsername) {
+  const state = portalDetectedQuickUsernameByTab.get(tabId);
+  if (!state
+      || String(state.requestId || '') !== String(requestId || '')
+      || String(state.quickUsername || '').trim() !== String(quickUsername || '').trim()
+      || Date.now() - Number(state.ts || 0) > 30000) return;
+
+  const result = await globalThis.BjtuVeLoginService.verifyQuickUsername(quickUsername).catch(() => null);
+  const latest = portalDetectedQuickUsernameByTab.get(tabId);
+  if (!latest || String(latest.requestId || '') !== String(requestId || '')) return;
+  portalDetectedQuickUsernameByTab.delete(tabId);
+  if (!result?.ok) {
+    reportPortalQuickUsernameVerificationFailure(tabId, quickUsername);
+    return;
+  }
+  await finalizePortalQuickUsernameBind(tabId, quickUsername);
 }
 
 async function getPortalCurrentUserInfoFromTab(tabId, expectedLoginName = '') {
@@ -1807,14 +1798,23 @@ async function processPortalLoginResponse(tabId, responsePayload) {
     ? responsePayload
     : String(responsePayload?.html || '');
   const activeSuccessScript = responsePayload?.activeSuccessScript === true;
+  const responseUrl = String(responsePayload?.url || '');
+  const responseMethod = String(responsePayload?.method || '').toUpperCase();
+  const responseQuickUsername = extractPortalQuickUsername(responseUrl);
   const quickState = portalDetectedQuickUsernameByTab.get(tabId) || null;
   const passwordState = portalDetectedPasswordLoginByTab.get(tabId) || null;
-  const quickUsername = quickState && Date.now() - Number(quickState.ts || 0) <= 30000
+  let quickUsername = quickState && Date.now() - Number(quickState.ts || 0) <= 30000
     ? String(quickState.quickUsername || '').trim()
     : '';
-  const passwordLogin = passwordState && Date.now() - Number(passwordState.ts || 0) <= 30000
+  let passwordLogin = passwordState && Date.now() - Number(passwordState.ts || 0) <= 30000
     ? passwordState
     : null;
+  if (responseQuickUsername) {
+    if (responseQuickUsername !== quickUsername) quickUsername = '';
+    passwordLogin = null;
+  } else if (responseMethod === 'POST') {
+    quickUsername = '';
+  }
   if (quickState && Date.now() - Number(quickState.ts || 0) > 30000) {
     portalDetectedQuickUsernameByTab.delete(tabId);
   }

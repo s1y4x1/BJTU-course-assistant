@@ -70,7 +70,8 @@
       return { ok: false, reason: 'password-reset', message: '需要重置密码后重新登录' };
     }
     const executableSource = source.replace(/<!--[\s\S]*?-->/g, '');
-    if (/location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(executableSource)) {
+    if (source.includes('史家跳转首页')
+        && /location\.href\s*=\s*['"]http:\/\/123\.121\.147\.7:88\/ve\/back\/core\/main\/index\.shtml\?method=index&type=qxkt['"]/i.test(executableSource)) {
       return { ok: true };
     }
     return { ok: false, reason: 'other', message: message || '登录失败' };
@@ -185,6 +186,12 @@
       return failedResult;
     }
     return completeSuccessfulLogin(result, options.loginName, options);
+  }
+
+  async function verifyQuickUsername(quickUsername) {
+    const quick = String(quickUsername || '').trim();
+    if (!quick) return { ok: false, reason: 'empty', message: '极速登录 username 为空' };
+    return requestLogin(global.BjtuVeLoginUtils.buildQuickLoginUrl(quick));
   }
 
   async function loginWithPassword(loginName, password, { passcode = '', recordHistory = true, passwordPlain = '' } = {}) {
@@ -331,6 +338,7 @@
     login,
     loginWithPassword,
     loginWithQuickUsername,
+    verifyQuickUsername,
     getCaptchaDataUrl,
     recognizeCaptchaDataUrl,
     parseLoginResponse
