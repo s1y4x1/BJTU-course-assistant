@@ -34,8 +34,7 @@
   const EXAM_NOTIFICATION_PREFIX = 'bjtu-academic-exam:';
   const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
   const LOGIN_HEADER_RULE_ID = 914304;
-  const ACADEMIC_DATA_CACHE_KEY_PREFIX = 'academicDataCache:';
-  const LEGACY_ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
+  const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   const ACADEMIC_SCORE_SOURCE_CACHE_KEY = 'academicScoreSourceCache';
   const ACADEMIC_CURRENT_EXAM_CACHE_KEY = 'academicCurrentExamCache';
   // Can be changed from the extension service worker console through
@@ -555,7 +554,7 @@
     academicCurrentExamCache = null;
     academicCurrentExamPromise = null;
     await chrome.storage.session.remove([
-      LEGACY_ACADEMIC_DATA_CACHE_KEY,
+      ACADEMIC_DATA_CACHE_KEY,
       ACADEMIC_SCORE_SOURCE_CACHE_KEY,
       ACADEMIC_CURRENT_EXAM_CACHE_KEY
     ]).catch(() => {});
@@ -1279,45 +1278,44 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     const id = String(studentId || '').trim();
     if (!id) return Promise.resolve();
     academicDataCacheUpdatePromise = academicDataCacheUpdatePromise.catch(() => {}).then(async () => {
-      const key = `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${id}`;
-      const stored = await chrome.storage.local.get(key);
-      const cache = stored?.[key];
-      if (!cache || typeof cache !== 'object') return;
-      const current = String(cache.scoreCurrentZxjxjhh || '').trim();
-      const currentOption = (Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [])
-        .find((item) => String(item?.zxjxjhh || '') === current);
-      const currentLabel = String(currentOption?.label || rows?.[0]?.academicYear || '').trim();
-      if (kind === 'scores') {
-        const preserved = currentLabel
-          ? (Array.isArray(cache.scoresCache?.rows) ? cache.scoresCache.rows : [])
-            .filter((row) => String(row?.academicYear || '').trim() !== currentLabel)
-          : [];
-        cache.scoresCache = { rows: [...preserved, ...rows], checkedAt };
-      } else if (kind === 'exams' && current) {
-        const byTerm = new Map((Array.isArray(cache.examsCache?.results) ? cache.examsCache.results : [])
-          .map((item) => [String(item?.zxjxjhh || ''), item]));
-        byTerm.set(current, {
-          ...(byTerm.get(current) || {}),
-          label: String(byTerm.get(current)?.label || currentLabel),
-          zxjxjhh: current,
-          rows
-        });
-        cache.examsCache = {
-          ...(cache.examsCache || {}),
-          currentZxjxjhh: current,
-          results: [...byTerm.values()],
-          checkedAt
-        };
-      }
-      if (current) {
-        cache.loadedSharedTerms = [...new Set([
-          ...(Array.isArray(cache.loadedSharedTerms) ? cache.loadedSharedTerms : []),
-          current
-        ])];
-      }
-      cache.updatedAt = checkedAt;
-      delete cache.writeToken;
-      await chrome.storage.local.set({ [key]: cache });
+      await global.BjtuAcademicCacheStore.update(id, async (cache) => {
+        if (!cache || typeof cache !== 'object') return undefined;
+        const current = String(cache.scoreCurrentZxjxjhh || '').trim();
+        const currentOption = (Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [])
+          .find((item) => String(item?.zxjxjhh || '') === current);
+        const currentLabel = String(currentOption?.label || rows?.[0]?.academicYear || '').trim();
+        if (kind === 'scores') {
+          const preserved = currentLabel
+            ? (Array.isArray(cache.scoresCache?.rows) ? cache.scoresCache.rows : [])
+              .filter((row) => String(row?.academicYear || '').trim() !== currentLabel)
+            : [];
+          cache.scoresCache = { rows: [...preserved, ...rows], checkedAt };
+        } else if (kind === 'exams' && current) {
+          const byTerm = new Map((Array.isArray(cache.examsCache?.results) ? cache.examsCache.results : [])
+            .map((item) => [String(item?.zxjxjhh || ''), item]));
+          byTerm.set(current, {
+            ...(byTerm.get(current) || {}),
+            label: String(byTerm.get(current)?.label || currentLabel),
+            zxjxjhh: current,
+            rows
+          });
+          cache.examsCache = {
+            ...(cache.examsCache || {}),
+            currentZxjxjhh: current,
+            results: [...byTerm.values()],
+            checkedAt
+          };
+        }
+        if (current) {
+          cache.loadedSharedTerms = [...new Set([
+            ...(Array.isArray(cache.loadedSharedTerms) ? cache.loadedSharedTerms : []),
+            current
+          ])];
+        }
+        cache.updatedAt = checkedAt;
+        delete cache.writeToken;
+        return cache;
+      });
     });
     return academicDataCacheUpdatePromise;
   }
@@ -1751,9 +1749,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     const local = await chrome.storage.local.get([STUDENT_ID_KEY]);
     const studentId = String(local?.[STUDENT_ID_KEY] || '').trim();
     if (!studentId) return null;
-    const key = `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${studentId}`;
-    const localCache = await chrome.storage.local.get(key);
-    return localCache?.[key] || null;
+    return global.BjtuAcademicCacheStore.get(studentId);
   }
 
   function cachedRequestedTerms(cache, args, parameter) {

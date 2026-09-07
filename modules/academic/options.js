@@ -17,7 +17,7 @@
   const BB_WISH_LIST_KEY = 'academicBbWishListCourses';
   const BB_REFRESH_DELAY_KEY = 'academicBbRefreshDelayMs';
   const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
-  const ACADEMIC_DATA_CACHE_KEY_PREFIX = 'academicDataCache:';
+  const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   const ACADEMIC_STUDENT_ID_KEY = 'academicSystemStudentId';
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_FULLSCREEN_BUTTON_KEY = 'academicFullscreenButtonEnabled';
@@ -82,7 +82,7 @@
   let bbScriptReloadRequired = false;
 
   const element = (id) => document.getElementById(id);
-  const academicDataCacheKey = (studentId) => `${ACADEMIC_DATA_CACHE_KEY_PREFIX}${String(studentId || '').trim()}`;
+  const academicCacheStore = global.BjtuAcademicCacheStore;
 
   function beginAcademicOptionsRequest() {
     if (academicRequestIdleTimer) {
@@ -131,7 +131,7 @@
     });
     localAcademicCacheWriteTokens.add(writeToken);
     academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
-      .then(() => chrome.storage.local.set({ [academicDataCacheKey(studentId)]: snapshot }))
+      .then(() => academicCacheStore.set(studentId, snapshot))
       .catch((error) => {
         localAcademicCacheWriteTokens.delete(writeToken);
         throw error;
@@ -171,17 +171,7 @@
   async function restoreAcademicDataCache(studentIdOverride = '') {
     const studentId = String(studentIdOverride || context?.studentId || '').trim();
     if (!studentId) return false;
-    const key = academicDataCacheKey(studentId);
-    const stored = await chrome.storage.local.get(key);
-    let cache = stored?.[key];
-    if (!cache) {
-      const legacy = await chrome.storage.session.get(key);
-      cache = legacy?.[key];
-      if (cache) {
-        await chrome.storage.local.set({ [key]: cache });
-        await chrome.storage.session.remove(key);
-      }
-    }
+    const cache = await academicCacheStore.get(studentId);
     if (!cache) return false;
     return applyAcademicDataCache(cache, studentId);
   }
@@ -1827,12 +1817,21 @@
   function renderScheduleWeekOptions(data, preferredValue = 'all') {
     const select = element('academicScheduleWeek');
     if (!(select instanceof HTMLSelectElement)) return;
-    const currentWeek = Number(data?.currentWeek || 0);
+    const isCurrentSemester = String(data?.xnxq || '') === String(scheduleCache?.currentXnxq || '');
+    const fallbackCurrentWeek = isCurrentSemester
+      ? Number((scheduleCache?.results || []).find((item) => Number(item?.currentWeek || 0) > 0)?.currentWeek || 0)
+      : 0;
+    const currentWeek = Number(data?.currentWeek || fallbackCurrentWeek || 0);
+    if (currentWeek > 0 && Number(data?.currentWeek || 0) <= 0) data.currentWeek = currentWeek;
     const labels = data?.weekLabels && typeof data.weekLabels === 'object' ? data.weekLabels : {};
     const occupied = occupiedScheduleWeeks(data?.rows);
     const selection = data?.type === 'selection';
     select.replaceChildren(new Option('全部', 'all'));
-    for (const week of Array.isArray(data?.weeks) ? data.weeks : []) {
+    const weeks = [...new Set([
+      ...(Array.isArray(data?.weeks) ? data.weeks : []),
+      currentWeek
+    ].map(Number).filter((week) => week > 0))].sort((left, right) => left - right);
+    for (const week of weeks) {
       const status = selection
         ? (occupied.has(Number(week)) ? '(有课)' : '')
         : String(labels[week] || '').replaceAll('（', '(').replaceAll('）', ')');
@@ -1943,7 +1942,7 @@
     const studentId = String(context?.studentId || '').trim();
     if (removeStored && studentId) {
       academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
-        .then(() => chrome.storage.local.remove(academicDataCacheKey(studentId)));
+        .then(() => academicCacheStore.remove(studentId));
     }
     scheduleCache = null;
     scheduleData = null;
@@ -2884,9 +2883,10 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       const activeStudentId = String(context?.studentId || renderedAcademicCacheStudentId || '').trim();
-      const activeCacheKey = activeStudentId ? academicDataCacheKey(activeStudentId) : '';
-      if (activeCacheKey && changes[activeCacheKey]?.newValue) {
-        const updatedCache = changes[activeCacheKey].newValue;
+      const updatedCache = activeStudentId
+        ? changes[ACADEMIC_DATA_CACHE_KEY]?.newValue?.[activeStudentId]
+        : null;
+      if (updatedCache) {
         const writeToken = String(updatedCache?.writeToken || '');
         if (writeToken && localAcademicCacheWriteTokens.has(writeToken)) {
           localAcademicCacheWriteTokens.delete(writeToken);

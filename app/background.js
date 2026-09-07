@@ -223,7 +223,12 @@ tryImportModuleScripts('../core/page-toast.js');
 tryImportModuleScripts('../modules/captcha/mis-assets.js');
 tryImportModuleScripts('../modules/captcha/recognizer.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/login-service.js');
-tryImportModuleScripts('../modules/academic/score-statistics.js', '../modules/academic/system.js');
+const academicBackgroundReady = tryImportModuleScripts(
+  '../modules/academic/score-statistics.js',
+  '../modules/academic/cache-store.js',
+  '../modules/academic/system.js'
+);
+if (academicBackgroundReady) void globalThis.BjtuAcademicCacheStore.readAll().catch(() => {});
 tryImportModuleScripts('../modules/cas/system.js');
 tryImportModuleScripts('../modules/mail/system.js');
 tryImportModuleScripts('../modules/campusnet/background.js');

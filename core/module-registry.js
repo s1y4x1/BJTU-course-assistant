@@ -36,12 +36,12 @@
     academic: {
       label: '教务系统',
       styles: ['options.css'],
-      files: ['system.js', 'score-statistics.js', 'options.html', 'options.js'],
+      files: ['system.js', 'cache-store.js', 'score-statistics.js', 'options.html', 'options.js'],
       options: {
         fragment: 'options.html',
         style: 'options.css',
         script: 'options.js',
-        scripts: ['score-statistics.js'],
+        scripts: ['cache-store.js', 'score-statistics.js'],
         wide: true
       }
     },
