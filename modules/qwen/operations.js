@@ -1657,7 +1657,9 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mail.inbox()`；`mail.inbox({limit: 20})`；`mail.inbox({limit: 0})`',
         '',
-        '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","to":"...","summary":"...","sentDate":"...","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true,"threadMessageCount":1}],"total":363,"unreadCount":7}'
+        '**邮件页面链接**：每条邮件的 `readUrl` 已由扩展使用当前邮箱会话的 `sid` 拼接完成，可直接打开。其格式为 `https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=<当前 sid>#mail.read|${JSON.stringify({fid: 1, mid: row.id, mboxa: ""})}`；其中收件箱的 `fid` 为 `1`，`mid` 使用该邮件的 `id`。由于 `sid` 可能过期，应优先使用本次调用返回的 `readUrl`。',
+        '',
+        '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","to":"...","summary":"...","sentDate":"...","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true,"threadMessageCount":1,"readUrl":"https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=...#mail.read|{...}"}],"total":363,"unreadCount":7}'
       ].join('\n'),
       async run(args) {
         const hasLimit = !!args && Object.prototype.hasOwnProperty.call(args, 'limit');
@@ -1684,7 +1686,8 @@ name: 've.teachers_of_',
             receivedDate: String(row?.receivedDate || ''),
             read: row?.read === true,
             attached: row?.attached === true,
-            threadMessageCount: Number(row?.threadMessageCount || 0)
+            threadMessageCount: Number(row?.threadMessageCount || 0),
+            readUrl: String(row?.readUrl || '')
           })),
           total: Math.max(0, Number(result?.total || 0) || 0),
           unreadCount: Math.max(0, Number(result?.unreadCount || 0) || 0)
