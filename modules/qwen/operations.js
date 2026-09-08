@@ -1310,15 +1310,16 @@ name: 've.teachers_of_',
       doc: [
         '## academic.semesters —— 教务学期列表',
         '',
-        '读取教务系统页面实际提供的学期列表，而不是使用固定学期。返回的 zxjxjhh 可用于 academic.scores 和 academic.exams；课表查询时 academic.schedule 会把相同值作为 xnxq 发送。需要教务系统已登录。',
+        '读取教务系统页面实际提供的学期列表，而不是使用固定学期。currentXnxq 来自无参数的本学期课表页，可用于 academic.schedule；currentZxjxjhh 是当前可查询成绩与考试的学期，新学期尚无成绩时可能仍是上一学期。需要教务系统已登录。',
         '',
         '**调用示例**：`academic.semesters()`',
         '',
-        '**返回示例**：`{"currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"},{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2"}]}`。currentZxjxjhh 优先通过当前成绩的“学年”匹配，当前没有成绩时使用本科生院当前学期；academic.scores 和 academic.exams 可直接接收这些 zxjxjhh。'
+        '**返回示例**：`{"currentXnxq":"2026-2027-1-2","currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2026-2027-1","zxjxjhh":"2026-2027-1-2"},{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"}]}`。academic.schedule 默认使用 currentXnxq；academic.scores 和 academic.exams 默认使用 currentZxjxjhh。'
       ].join('\n'),
       async run() {
         const value = throwOperationFailure(await academicInvoke('semesters', undefined, 120000), '教务学期列表获取失败');
         return {
+          currentXnxq: String(value?.currentXnxq || ''),
           currentZxjxjhh: String(value?.currentZxjxjhh || ''),
           semesters: (Array.isArray(value?.semesters) ? value.semesters : []).map((item) => ({
             label: String(item?.label || ''),
@@ -1446,7 +1447,7 @@ name: 've.teachers_of_',
       doc: [
         '## academic.schedule —— 课表查询',
         '',
-        '按学期查询教务系统课表，需要教务系统已登录。不传 semesters 时优先查询当前学期，并同时合并选课课表页面声明的学期；显式传入 academic.semesters 返回的多个 zxjxjhh 后，只返回指定学期，不附加选课课表。',
+        '按学期查询教务系统课表，需要教务系统已登录。不传 semesters 时查询无参数课表页声明的本学期；显式传入 academic.semesters 返回的多个 zxjxjhh 后，只返回指定学期。',
         '',
         '**参数**：{"semesters":["2025-2026-2-2"]}',
         '',
@@ -1458,8 +1459,7 @@ name: 've.teachers_of_',
         const semesters = args?.semesters;
         if (semesters !== undefined && !Array.isArray(semesters)) throw new Error('semesters 必须是学期列表');
         const value = throwOperationFailure(await academicInvoke('schedule', {
-          ...(semesters === undefined ? {} : { semesters }),
-          includeSelection: semesters === undefined
+          ...(semesters === undefined ? {} : { semesters })
         }, 120000), '课表获取失败');
         return (Array.isArray(value?.results) ? value.results : []).map((result) => ({
           semester: String(result?.label || ''),

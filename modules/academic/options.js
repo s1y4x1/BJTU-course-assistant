@@ -44,6 +44,7 @@
   let academicSemestersLoaded = false;
   let scoreSemesterPreference = '';
   let scoreCurrentZxjxjhh = '';
+  let scheduleCurrentXnxq = '';
   let scoreSemesterOptions = [];
   let academicSemesterOptions = [];
   let academicSemestersPromise = null;
@@ -121,6 +122,7 @@
       studentId,
       academicSemesterOptions,
       scoreCurrentZxjxjhh,
+      scheduleCurrentXnxq,
       scheduleCache,
       examsCache,
       scoresCache,
@@ -143,6 +145,7 @@
     if (!cache || typeof cache !== 'object') return false;
     academicSemesterOptions = Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [];
     scoreCurrentZxjxjhh = String(cache.scoreCurrentZxjxjhh || '');
+    scheduleCurrentXnxq = String(cache.scheduleCurrentXnxq || cache.scheduleCache?.currentXnxq || '');
     scheduleCache = cache.scheduleCache && typeof cache.scheduleCache === 'object'
       ? normalizedScheduleCache(cache.scheduleCache)
       : null;
@@ -1953,6 +1956,7 @@
     academicSemesterOptions = [];
     scoreSemesterOptions = [];
     scoreCurrentZxjxjhh = '';
+    scheduleCurrentXnxq = '';
     loadedSharedTerms.clear();
     sharedTermsInFlight.clear();
     loadedScheduleTerms.clear();
@@ -1968,24 +1972,6 @@
     ));
   }
 
-  function compareAcademicTerms(left, right) {
-    const parse = (value) => {
-      const matched = String(value || '').trim().match(/^(\d{4})-(\d{4})-(\d+)(?:-(\d+))?$/);
-      return matched
-        ? [Number(matched[1]), Number(matched[2]), Number(matched[3]), Number(matched[4] || 0)]
-        : null;
-    };
-    const leftParts = parse(left);
-    const rightParts = parse(right);
-    if (leftParts && rightParts) {
-      for (let index = 0; index < leftParts.length; index += 1) {
-        if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index];
-      }
-      return 0;
-    }
-    return String(left || '').localeCompare(String(right || ''), 'zh-CN', { numeric: true });
-  }
-
   function normalizedScheduleCache(value) {
     if (!value || typeof value !== 'object') return value;
     const byTerm = new Map();
@@ -1998,25 +1984,17 @@
       byTerm.set(term, item);
     }
     const results = [...byTerm.values()];
-    const currentXnxq = results
-      .filter((item) => item?.type === 'semester' && scheduleHasCourses(item))
-      .sort((left, right) => compareAcademicTerms(right.xnxq, left.xnxq))[0]?.xnxq
-      || String(value.currentXnxq || scoreCurrentZxjxjhh || '').trim();
+    const currentXnxq = String(scheduleCurrentXnxq || value.currentXnxq || '').trim();
     return { ...value, currentXnxq, results };
   }
 
-  async function ensureLatestCurrentScheduleTerm(values) {
-    const terms = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))]
-      .sort((left, right) => compareAcademicTerms(right, left));
-    for (const term of terms) {
-      await ensureScheduleTerms([term]);
-      renderCachedScheduleData();
-      const result = (scheduleCache?.results || []).find((item) => (
-        item?.type === 'semester' && item?.xnxq === term
-      ));
-      if (scheduleHasCourses(result)) return term;
-    }
-    return String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || terms[0] || '');
+  async function ensureCurrentScheduleTerm(values) {
+    const terms = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+    const current = String(scheduleCurrentXnxq || scheduleCache?.currentXnxq || terms[0] || '').trim();
+    if (!current) return '';
+    await ensureScheduleTerms([current]);
+    renderCachedScheduleData();
+    return current;
   }
 
   function applyScheduleView(result) {
@@ -2041,6 +2019,14 @@
           }
           academicSemesterOptions = Array.isArray(semesterResult.semesters) ? semesterResult.semesters : [];
           scoreCurrentZxjxjhh = String(semesterResult.currentZxjxjhh || '').trim();
+          scheduleCurrentXnxq = String(semesterResult.currentXnxq || '').trim();
+          if (scheduleCurrentXnxq) {
+            scheduleCache = normalizedScheduleCache({
+              ...(scheduleCache || {}),
+              currentXnxq: scheduleCurrentXnxq,
+              results: scheduleCache?.results || []
+            });
+          }
           academicSemestersLoaded = true;
           renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
           await persistAcademicDataCache();
@@ -2101,7 +2087,7 @@
     }
     scheduleCache = normalizedScheduleCache({
       ...result,
-      currentXnxq: result.currentXnxq || scheduleCache?.currentXnxq || scoreCurrentZxjxjhh,
+      currentXnxq: result.currentXnxq || scheduleCurrentXnxq || scheduleCache?.currentXnxq || '',
       selectionSemester: result.selectionSemester || scheduleCache?.selectionSemester || null,
       selectionProbed: result.selectionProbed === true || scheduleCache?.selectionProbed === true,
       results: [...byTerm.values()]
@@ -2417,7 +2403,7 @@
       item?.xnxq === term && item?.type === 'semester'
     ));
     if (!scheduleHasCourses(semesterResult) && !verifiedScheduleTerms.has(term)) return false;
-    const currentTerm = String(scheduleCache?.currentXnxq || scoreCurrentZxjxjhh || '');
+    const currentTerm = String(scheduleCache?.currentXnxq || scheduleCurrentXnxq || '');
     if (term !== currentTerm) return true;
     return (scheduleCache?.results || []).some((item) => item.xnxq === term && item.type === 'semester');
   }
@@ -2540,7 +2526,7 @@
         renderCachedScheduleData();
       }
 
-      const currentScheduleTerm = await ensureLatestCurrentScheduleTerm(allTerms);
+      const currentScheduleTerm = await ensureCurrentScheduleTerm(allTerms);
 
       const schedulePriority = String(element('academicScheduleSemester')?.value || currentScheduleTerm);
       if (!loadedScheduleTerms.has(schedulePriority)) {

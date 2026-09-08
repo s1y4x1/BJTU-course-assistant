@@ -378,11 +378,16 @@
 
   function parseSchedulePage(html) {
     const source = String(html || '');
-    const headingTermLabel = textFromHtml(
-      [...source.matchAll(/<span\b([^>]*)>([\s\S]*?)<\/span>/gi)]
-        .find((match) => /\binline\b/i.test(attributeFromHtml(match[1], 'class'))
-          && /\bdropdown-hover\b/i.test(attributeFromHtml(match[1], 'class')))?.[2] || ''
-    ).match(/(\d{4}-\d{4}-[123])\s*学期/u)?.[1] || '';
+    const dropdown = source.match(/<(?:div|span)\b([^>]*)\bclass\s*=\s*["'][^"']*\binline\b[^"']*\bdropdown-hover\b[^"']*["'][^>]*>[\s\S]*?<button\b[^>]*>([\s\S]*?)<\/button>/i);
+    const headingTermLabel = textFromHtml(dropdown?.[2] || '')
+      .match(/(\d{4}-\d{4}-[123])\s*学期/u)?.[1] || '';
+    const semesterOptions = [...source.matchAll(/<a\b[^>]*href\s*=\s*["'][^"']*[?&]xnxq=([^&"']+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi)]
+      .map((match) => ({
+        label: textFromHtml(match[2]).match(/(\d{4}-\d{4}-[123])\s*学期/u)?.[1] || '',
+        xnxq: decodeURIComponent(String(match[1] || '').trim())
+      }))
+      .filter((item) => item.label && item.xnxq);
+    const currentXnxq = String(semesterOptions.find((item) => item.label === headingTermLabel)?.xnxq || '');
     const termLabel = headingTermLabel
       || textFromHtml(source).match(/(\d{4}-\d{4}-[123])\s*学期\s*选课课表/u)?.[1]
       || source.match(/(\d{4}-\d{4}-[123])(?:\s|&nbsp;|&emsp;)*学期(?:\s|&nbsp;|&emsp;)*选课课表/u)?.[1]
@@ -421,7 +426,9 @@
       hasScheduleTable: !!table,
       rows,
       weeks: [...allWeeks].sort((a, b) => a - b),
-      termLabel
+      termLabel,
+      currentXnxq,
+      semesterOptions
     };
   }
 
@@ -1002,9 +1009,6 @@
       '课表'
     );
     const parsed = parseSchedulePage(page.html);
-    if (!parsed.hasScheduleTable && normalizedType === 'semester' && !String(xnxq || '').trim()) {
-      throw new Error('课表页面中未找到课表');
-    }
     return { ...parsed, account: page.account, type: normalizedType };
   }
 
@@ -1677,7 +1681,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     };
   }
 
-  async function loadAcademicSemesters({ fresh = false } = {}) {
+  async function loadAcademicScoreSemesters({ fresh = false } = {}) {
     const cached = fresh ? null : await readAcademicDataCache();
     if (cached?.academicSemesterOptions?.length) {
       return {
@@ -1691,6 +1695,34 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       ok: true,
       currentZxjxjhh: source.currentZxjxjhh,
       semesters: source.availableSemesters
+    };
+  }
+
+  async function loadAcademicSemesters({ fresh = false } = {}) {
+    const currentSchedule = await fetchSchedulePage('semester');
+    const currentLabel = String(currentSchedule?.termLabel || '').trim();
+    const currentXnxq = String(currentSchedule?.currentXnxq || '').trim();
+    if (!currentLabel || !currentXnxq) throw new Error('本学期课表页面未返回当前学期及 xnxq');
+    const scoreContext = await loadAcademicScoreSemesters({ fresh });
+
+    const byValue = new Map();
+    for (const item of [
+      ...(Array.isArray(currentSchedule?.semesterOptions) ? currentSchedule.semesterOptions.map((semester) => ({
+        label: String(semester?.label || '').trim(),
+        zxjxjhh: String(semester?.xnxq || '').trim()
+      })) : []),
+      ...(Array.isArray(scoreContext?.semesters) ? scoreContext.semesters : [])
+    ]) {
+      const value = String(item?.zxjxjhh || '').trim();
+      const label = String(item?.label || '').trim();
+      if (value && label && !byValue.has(value)) byValue.set(value, { label, zxjxjhh: value });
+    }
+    return {
+      ok: true,
+      currentZxjxjhh: String(scoreContext.currentZxjxjhh || ''),
+      currentXnxq,
+      semesters: [...byValue.values()],
+      currentSchedule
     };
   }
 
@@ -1718,14 +1750,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       if (!historyParsed.hasScoreTable) throw new Error('历年成绩页面中未找到成绩表格');
       const availableSemesters = parseScoreSemesters(historyPage.html);
       if (!availableSemesters.length) throw new Error('历年成绩页面中未找到学期列表');
-      let currentSemester = matchCurrentScoreSemester(currentParsed.rows, availableSemesters);
-      if (!currentSemester) {
-        const currentContext = await fetchBksyWeekContext().catch(() => null);
-        const year = String(currentContext?.termName || '').match(/\d{4}-\d{4}/)?.[0] || '';
-        const semesterText = String(currentContext?.termName || '').match(/第([一二三123])学期/u)?.[1] || '';
-        const semesterNumber = ({ 一: '1', 二: '2', 三: '3' })[semesterText] || semesterText;
-        currentSemester = availableSemesters.find((item) => item.label === `${year}-${semesterNumber}`) || null;
-      }
+      const currentSemester = matchCurrentScoreSemester(currentParsed.rows, availableSemesters);
       const source = {
         currentRows: currentParsed.rows,
         historyRows: historyParsed.rows,
@@ -1770,10 +1795,15 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   async function resolveAcademicTerms(args, parameter) {
-    const context = await loadAcademicSemesters();
+    const context = parameter === 'xnxq'
+      ? await loadAcademicSemesters()
+      : await loadAcademicScoreSemesters();
     const requested = requestedAcademicTerms(args, parameter);
+    const currentValue = parameter === 'xnxq'
+      ? String(context.currentXnxq || '')
+      : String(context.currentZxjxjhh || '');
     const selectedValues = requested === null
-      ? (context.currentZxjxjhh ? [context.currentZxjxjhh] : [])
+      ? (currentValue ? [currentValue] : [])
       : requested;
     const byValue = new Map(context.semesters.map((item) => [String(item?.zxjxjhh || ''), item]));
     const selected = selectedValues.map((value) => byValue.get(value)).filter(Boolean);
@@ -1831,10 +1861,10 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     if (!selectionLabel) throw new Error('选课课表页面未返回所属学期');
     const selectionSemester = context.semesters.find((item) => String(item?.label || '') === selectionLabel)
       || { label: selectionLabel, zxjxjhh: `${selectionLabel}-2` };
-    const isCurrent = selectionSemester.zxjxjhh === context.currentZxjxjhh;
+    const isCurrent = selectionSemester.zxjxjhh === context.currentXnxq;
     return {
       ok: true,
-      currentXnxq: context.currentZxjxjhh,
+      currentXnxq: context.currentXnxq,
       selectionSemester: { label: selectionSemester.label, xnxq: selectionSemester.zxjxjhh },
       selectionProbed: true,
       results: isCurrent ? [] : [{
@@ -1870,16 +1900,17 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       ? args
       : { ...(Array.isArray(args) ? {} : args), xnxq: providedSemesters };
     const fresh = !Array.isArray(args) && args?.fresh === true;
-    const cached = fresh ? null : await readAcademicDataCache();
+    const context = await resolveAcademicTerms(effectiveArgs, 'xnxq');
+    const cached = fresh || providedSemesters === undefined ? null : await readAcademicDataCache();
     if (cached) {
-      const terms = cachedRequestedTerms(cached, effectiveArgs, 'xnxq');
+      const terms = context.selected.map((semester) => String(semester?.zxjxjhh || '')).filter(Boolean);
       const loaded = new Set(Array.isArray(cached.loadedScheduleTerms) ? cached.loadedScheduleTerms : []);
       const includeSelection = effectiveArgs?.includeSelection === true;
       const selectionReady = !includeSelection || (
         cached.scheduleCache?.selectionProbed === true
         && cached.scheduleCache?.selectionSemester?.xnxq
       );
-      const currentTerm = String(cached.scheduleCache?.currentXnxq || cached.scoreCurrentZxjxjhh || '');
+      const currentTerm = String(context.currentXnxq || '');
       const cachedByTerm = new Map(
         (cached.scheduleCache?.results || []).map((item) => [String(item?.xnxq || ''), item])
       );
@@ -1894,7 +1925,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         ));
         return {
           ok: true,
-          currentXnxq: String(cached.scheduleCache?.currentXnxq || cached.scoreCurrentZxjxjhh || ''),
+          currentXnxq: String(context.currentXnxq || ''),
           selectionSemester: cached.scheduleCache?.selectionSemester || null,
           selectionProbed: cached.scheduleCache?.selectionProbed === true,
           results,
@@ -1902,10 +1933,11 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         };
       }
     }
-    const context = await resolveAcademicTerms(effectiveArgs, 'xnxq');
     const results = await mapAcademicTerms(context.selected, async (semester) => {
-      const schedule = await fetchSchedulePage('semester', semester.zxjxjhh);
-      const isCurrent = semester.zxjxjhh === context.currentZxjxjhh;
+      const isCurrent = semester.zxjxjhh === context.currentXnxq;
+      const schedule = isCurrent && context.currentSchedule
+        ? context.currentSchedule
+        : await fetchSchedulePage('semester', semester.zxjxjhh);
       const weekContext = isCurrent
         ? await fetchCurrentWeekContext(schedule.weeks)
         : {
@@ -1942,7 +1974,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     }
     return {
       ok: true,
-      currentXnxq: context.currentZxjxjhh,
+      currentXnxq: context.currentXnxq,
       selectionSemester: selectionResult?.selectionSemester || null,
       selectionProbed: shouldProbeSelection,
       results,
@@ -2246,9 +2278,9 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       ACADEMIC_REQUEST_PRIORITY.SHARED,
       () => loadAcademicScores(args)
     ),
-    loadSemesters: () => enqueueAcademicRequest(
+    loadSemesters: (args) => enqueueAcademicRequest(
       ACADEMIC_REQUEST_PRIORITY.SCHEDULE,
-      () => loadAcademicSemesters()
+      () => loadAcademicSemesters(args)
     ),
     loadExams: (args) => enqueueAcademicRequest(
       ACADEMIC_REQUEST_PRIORITY.SHARED,
