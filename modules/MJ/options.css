@@ -75,8 +75,10 @@
 }
 
 .mj-external-script-action {
+  flex: 0 0 auto;
   padding: 5px 9px;
   white-space: nowrap;
+  word-break: keep-all;
 }
 
 .mj-external-script-delete {
@@ -251,10 +253,6 @@ html[data-color-scheme="dark"] .mj-video-asset-progress-bar {
 
   .mj-video-assets {
     margin-left: 0;
-  }
-
-  .mj-video-asset {
-    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .mj-video-asset-status {

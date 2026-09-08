@@ -615,7 +615,12 @@
           if (isRequestFinishedMessage(message)) {
             throw requestEndedError(payload?.response_id || responseId, message);
           }
-          throw new Error(message);
+          throw Object.assign(new Error(message), {
+            code: typeof payload.error === 'object'
+              ? String(payload.error.code || 'API_ERROR')
+              : 'API_ERROR',
+            responseId: String(payload?.response_id || responseId || '')
+          });
         }
       const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
       if (choice?.response_id && String(choice.response_id) !== responseId) {

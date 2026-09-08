@@ -566,6 +566,20 @@
     };
   }
 
+  async function checkMailForUi(args = {}) {
+    const options = args && typeof args === 'object' ? args : {};
+    const result = await checkMail('manual', {
+      force: true,
+      listLimit: Object.prototype.hasOwnProperty.call(options, 'limit')
+        ? options.limit
+        : undefined
+    });
+    return {
+      ...result,
+      rows: mailRowsForUi(result?.rows, cachedSid)
+    };
+  }
+
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'MAIL_GET_CONTEXT') {
@@ -575,18 +589,8 @@
         return true;
       }
       if (message?.type === 'MAIL_LOAD_THREADS') {
-        const payload = message?.payload || {};
-        checkMail('manual', {
-          force: true,
-          listLimit: Object.prototype.hasOwnProperty.call(payload, 'limit')
-            ? payload.limit
-            : undefined
-        })
-          .then((result) => sendResponse({
-            ok: true,
-            ...result,
-            rows: mailRowsForUi(result?.rows, cachedSid)
-          }))
+        checkMailForUi(message?.payload || {})
+          .then((result) => sendResponse({ ok: true, ...result }))
           .catch((error) => sendResponse({
             ok: false,
             code: String(error?.code || ''),
@@ -677,12 +681,7 @@
 
   global.BjtuMailSystemInternals = {
     getContext: () => buildMailContext(),
-    checkNow: (args) => checkMail('manual', {
-      force: true,
-      listLimit: args && Object.prototype.hasOwnProperty.call(args, 'limit')
-        ? args.limit
-        : undefined
-    }),
+    checkNow: (args) => checkMailForUi(args),
     getUserInfo: (args) => getCurrentMailUser(args),
     resolveMailSid,
     getMailSid,
