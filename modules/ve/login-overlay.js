@@ -50,6 +50,7 @@
   const resultCount = mask.querySelector('#__bjtu_portal_result_count__');
   const historyList = mask.querySelector('#__bjtu_portal_history__');
   const recoveryMask = mask.querySelector('#__bjtu_portal_recovery_mask__');
+  const recoveryTitle = mask.querySelector('.__bjtu_portal_recovery_title');
   const recoveryMessage = mask.querySelector('#__bjtu_portal_recovery_message__');
   const recoveryChoice = mask.querySelector('#__bjtu_portal_recovery_choice__');
   const recoveryManual = mask.querySelector('#__bjtu_portal_recovery_manual__');
@@ -292,6 +293,9 @@
     }
     const startManualWithCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';
     if (startManualWithCaptcha || response?.reason === 'credential' || response?.reason === 'account-not-found' || response?.reason === 'needs-password') {
+      if (recoveryTitle instanceof HTMLElement) {
+        recoveryTitle.textContent = response?.captchaRejected === true ? '验证码错误' : '账号或密码错误';
+      }
       const recovery = await requestRecovery(loginName, response?.message || '账号或密码错误', { startManual: startManualWithCaptcha });
       if (recovery?.action === 'password' && recovery.password) {
         void submit(loginName, {

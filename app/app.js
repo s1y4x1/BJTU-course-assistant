@@ -149,8 +149,26 @@ const fullscreenWindowLayers = globalThis.BjtuFullscreenWindowLayers || (() => {
 globalThis.BjtuFullscreenWindowLayers = fullscreenWindowLayers;
 
 const floatingWindowAnimations = globalThis.BjtuFloatingWindowAnimations || Object.freeze({
+  measureVisibleButtonRect(button) {
+    if (!(button instanceof HTMLButtonElement)) return null;
+    const container = button.closest('.fullscreen-module-buttons');
+    const containerWasHidden = container instanceof HTMLElement && container.hidden;
+    const buttonWasHidden = button.hidden;
+    if (container instanceof HTMLElement) container.hidden = false;
+    button.hidden = false;
+    button.classList.add('is-measuring-visible');
+    const rect = button.getBoundingClientRect();
+    button.classList.remove('is-measuring-visible');
+    button.hidden = buttonWasHidden;
+    if (container instanceof HTMLElement) container.hidden = containerWasHidden;
+    return rect;
+  },
   animateButton(button, showing) {
     if (!(button instanceof HTMLButtonElement)) return Promise.resolve();
+    const container = button.closest('.fullscreen-module-buttons');
+    if (showing && container instanceof HTMLElement) container.hidden = false;
+    const animationToken = String((Number(button.dataset.floatingAnimationToken || 0) + 1) % 1000000);
+    button.dataset.floatingAnimationToken = animationToken;
     button.classList.remove('is-appearing', 'is-disappearing');
     if (showing) button.hidden = false;
     void button.offsetWidth;
@@ -163,8 +181,14 @@ const floatingWindowAnimations = globalThis.BjtuFloatingWindowAnimations || Obje
         settled = true;
         clearTimeout(timer);
         button.removeEventListener('animationend', finish);
+        if (button.dataset.floatingAnimationToken !== animationToken) {
+          resolve();
+          return;
+        }
+        delete button.dataset.floatingAnimationToken;
         button.classList.remove('is-appearing', 'is-disappearing');
         if (!showing) button.hidden = true;
+        globalThis.BjtuSyncFloatingLauncherContainer?.();
         resolve();
       };
       button.addEventListener('animationend', finish, { once: true });
@@ -191,6 +215,16 @@ const floatingWindowAnimations = globalThis.BjtuFloatingWindowAnimations || Obje
   }
 });
 globalThis.BjtuFloatingWindowAnimations = floatingWindowAnimations;
+
+const syncFloatingLauncherContainer = () => {
+  const container = document.getElementById('fullscreen-module-buttons');
+  if (!(container instanceof HTMLElement)) return;
+  const buttons = [...container.querySelectorAll(':scope > .floating-launcher-button')];
+  container.hidden = !buttons.some((button) => (
+    !button.hidden || button.classList.contains('is-appearing') || button.classList.contains('is-disappearing')
+  ));
+};
+globalThis.BjtuSyncFloatingLauncherContainer = syncFloatingLauncherContainer;
 
 const FULLSCREEN_MODULE_BUTTONS = Object.freeze({
   mail: {
@@ -227,14 +261,7 @@ async function initFullscreenModuleButtons() {
   };
 
   const refreshButtonContainer = () => {
-    const animatingOut = container.querySelector('.fullscreen-module-button.is-disappearing');
-    container.hidden = !animatingOut && !Object.entries(FULLSCREEN_MODULE_BUTTONS).some(([moduleId, config]) => {
-      const button = document.getElementById(config.id);
-      return button instanceof HTMLButtonElement
-        && available[moduleId] === true
-        && stored[config.key] !== false
-        && !moduleWindows.has(moduleId);
-    });
+    syncFloatingLauncherContainer();
   };
 
   const bringToFront = (view) => {
@@ -275,23 +302,18 @@ async function initFullscreenModuleButtons() {
     const shouldShowButton = button instanceof HTMLButtonElement
       && available[moduleId] === true
       && stored[config.key] !== false;
-    let targetRect = null;
-    if (shouldShowButton) {
-      button.hidden = false;
-      button.style.visibility = 'hidden';
-      container.hidden = false;
-      targetRect = button.getBoundingClientRect();
-    }
-    await animateWindowFromButton(view, targetRect, false);
+    const targetRect = shouldShowButton
+      ? floatingWindowAnimations.measureVisibleButtonRect(button)
+      : null;
+    await Promise.all([
+      animateWindowFromButton(view, targetRect, false),
+      shouldShowButton ? animateButton(button, true) : Promise.resolve()
+    ]);
     view.hidden = true;
     delete view.dataset.closing;
     fullscreenWindowLayers.remove(view);
     moduleWindows.delete(moduleId);
-    if (shouldShowButton) {
-      button.style.visibility = '';
-      void animateButton(button, true);
-    }
-    else if (button instanceof HTMLButtonElement) button.hidden = true;
+    if (!shouldShowButton && button instanceof HTMLButtonElement) button.hidden = true;
     refreshButtonContainer();
   };
 
@@ -445,10 +467,6 @@ async function initFullscreenModuleButtons() {
   };
 
   const apply = (values) => {
-    document.body.classList.toggle(
-      'qwen-fullscreen-button-visible',
-      available.qwen === true && values.qwenEnabled !== false
-    );
     const mailButton = document.getElementById(FULLSCREEN_MODULE_BUTTONS.mail.id);
     if (mailButton instanceof HTMLButtonElement) {
       const useSystemIcon = values.mailFullscreenButtonIcon === 'system';
@@ -3506,6 +3524,10 @@ async function runLoginFlow() {
       }
       const fallbackPassword = submittedPassword
         || (account?.password && typeof strEnc === 'function' ? strEnc(account.password) : '');
+      const recoveryTitle = document.getElementById('account-recovery-title');
+      if (recoveryTitle instanceof HTMLElement) {
+        recoveryTitle.textContent = result?.captchaRejected === true ? '验证码错误' : '账号或密码错误';
+      }
       const recovery = await globalThis.BjtuAccountLogin.requestRecovery(username, recoveryMessage, {
         requireCaptcha: true,
         startManual: startManualWithCaptcha,

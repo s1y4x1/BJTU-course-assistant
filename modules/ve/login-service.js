@@ -201,6 +201,7 @@
 
     let code = global.BjtuVeLoginUtils.normalizePasscode(passcode);
     let captchaErrorCount = 0;
+    let captchaRecognitionErrorCount = 0;
 
     while (true) {
       if (!code) {
@@ -210,6 +211,13 @@
           code = await recognizeCaptchaDataUrl(await getCaptchaDataUrl());
         } catch (error) {
           const errorCode = String(error?.code || '').trim();
+          if (!['captcha-module-missing', 'captcha-resources-missing'].includes(errorCode)) {
+            captchaRecognitionErrorCount += 1;
+            if (captchaRecognitionErrorCount < 3) {
+              code = '';
+              continue;
+            }
+          }
           return {
             ok: false,
             reason: errorCode === 'captcha-module-missing'
@@ -241,6 +249,7 @@
         return {
           ok: false,
           reason: 'captcha-required',
+          captchaRejected: true,
           message: '连续 3 次验证码错误，请手动输入验证码后继续登录。'
         };
       }

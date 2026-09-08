@@ -419,13 +419,20 @@ body.course-helper-focus .column-collapse-toggle {
     animation: floatingLauncherDisappear .18s cubic-bezier(.4,0,1,1) both;
     pointer-events: none;
 }
+.floating-launcher-button.is-measuring-visible {
+    width:48px !important;
+    flex-basis:48px !important;
+    margin-right:8px !important;
+    opacity:0 !important;
+    animation:none !important;
+}
 @keyframes floatingLauncherAppear {
-    from { opacity: 0; transform: scale(.55); }
-    to { opacity: 1; transform: scale(1); }
+    from { width:0; flex-basis:0; margin-right:0; opacity:0; transform:scale(.55); }
+    to { width:48px; flex-basis:48px; margin-right:8px; opacity:1; transform:scale(1); }
 }
 @keyframes floatingLauncherDisappear {
-    from { opacity: 1; transform: scale(1); }
-    to { opacity: 0; transform: scale(.55); }
+    from { width:48px; flex-basis:48px; margin-right:8px; opacity:1; transform:scale(1); }
+    to { width:0; flex-basis:0; margin-right:0; opacity:0; transform:scale(.55); }
 }
 .course-list-stage {
     position: relative;
@@ -1794,10 +1801,17 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     z-index: 10003;
     display: flex;
     align-items: center;
-    gap: 8px;
-    transition: left .15s ease;
+    gap: 0;
 }
-body.qwen-fullscreen-button-visible:not(.qwen-chat-panel-open) .fullscreen-module-buttons { left: 80px; }
+.fullscreen-module-buttons > .floating-launcher-button {
+    position:relative;
+    left:auto;
+    bottom:auto;
+    z-index:auto;
+    flex:0 0 48px;
+    margin-right:8px;
+    overflow:hidden;
+}
 .fullscreen-module-buttons[hidden],
 .fullscreen-module-button[hidden] { display: none !important; }
 .fullscreen-module-button {

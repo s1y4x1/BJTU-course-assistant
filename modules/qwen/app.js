@@ -63,10 +63,6 @@
     return document.getElementById(id);
   }
 
-  function syncEmbeddedPanelOpenState(open) {
-    if (!STANDALONE_CHAT) document.body.classList.toggle('qwen-chat-panel-open', open === true);
-  }
-
   function applyFabColorMode(value = fabColorMode) {
     fabColorMode = ['dark', 'light', 'system', 'extension'].includes(value) ? value : 'extension';
     const systemDark = global.matchMedia?.('(prefers-color-scheme: dark)')?.matches === true;
@@ -101,7 +97,6 @@
         fab.style.removeProperty('display');
         const sourceRect = fab.getBoundingClientRect();
         panel.hidden = false;
-        syncEmbeddedPanelOpenState(true);
         global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
         await Promise.all([
           animations?.animateWindowFromButton?.(panel, sourceRect, true),
@@ -118,19 +113,16 @@
       }
       if (panel.hidden) {
         fab.hidden = false;
-        syncEmbeddedPanelOpenState(false);
         return;
       }
-      fab.hidden = false;
       fab.style.removeProperty('display');
-      fab.style.visibility = 'hidden';
-      syncEmbeddedPanelOpenState(false);
-      const targetRect = fab.getBoundingClientRect();
-      await animations?.animateWindowFromButton?.(panel, targetRect, false);
+      const targetRect = animations?.measureVisibleButtonRect?.(fab) || fab.getBoundingClientRect();
+      await Promise.all([
+        animations?.animateWindowFromButton?.(panel, targetRect, false),
+        animateButton(true)
+      ]);
       panel.hidden = true;
       global.BjtuFullscreenWindowLayers?.remove?.(panel);
-      fab.style.visibility = '';
-      await animateButton(true);
     } finally {
       delete panel.dataset.transitioning;
     }
@@ -2379,6 +2371,12 @@
     }
 
     if (!STANDALONE_CHAT) {
+      const launcherContainer = document.getElementById('fullscreen-module-buttons');
+      const launcherButton = el(FAB_ID);
+      if (launcherContainer instanceof HTMLElement && launcherButton instanceof HTMLButtonElement) {
+        launcherContainer.prepend(launcherButton);
+        global.BjtuSyncFloatingLauncherContainer?.();
+      }
       const applyEnabled = (enabled) => {
         const fab = el(FAB_ID);
         const panel = el(PANEL_ID);
@@ -2389,7 +2387,6 @@
           }
           if (panel instanceof HTMLElement) panel.hidden = true;
           if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.remove?.(panel);
-          syncEmbeddedPanelOpenState(false);
         } else if (fab instanceof HTMLButtonElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
           fab.style.removeProperty('display');
           if (fab.hidden) {
@@ -2525,7 +2522,6 @@
       if (fab instanceof HTMLButtonElement) {
         fab.style.removeProperty('display');
       }
-      syncEmbeddedPanelOpenState(false);
     }
 
     if (messagesScroller instanceof HTMLElement) {
