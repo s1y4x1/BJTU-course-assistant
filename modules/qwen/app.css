@@ -17,6 +17,8 @@
   transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease;
 }
 
+.qwen-chat-fab[hidden] { display: none !important; }
+
 .qwen-chat-fab:hover {
   background: #0624cc;
 }

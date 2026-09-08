@@ -411,6 +411,22 @@ body.course-helper-focus .column-collapse-toggle {
     align-items: stretch;
     min-width: 100%;
 }
+
+.floating-launcher-button.is-appearing {
+    animation: floatingLauncherAppear .18s cubic-bezier(.2,.8,.2,1) both;
+}
+.floating-launcher-button.is-disappearing {
+    animation: floatingLauncherDisappear .18s cubic-bezier(.4,0,1,1) both;
+    pointer-events: none;
+}
+@keyframes floatingLauncherAppear {
+    from { opacity: 0; transform: scale(.55); }
+    to { opacity: 1; transform: scale(1); }
+}
+@keyframes floatingLauncherDisappear {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(.55); }
+}
 .course-list-stage {
     position: relative;
     min-width: 0;
@@ -530,6 +546,11 @@ body.platform-column-resizing {
         min-width: 0;
         max-width: 100%;
         box-sizing: border-box;
+    }
+    #course-list.platform-split-grid {
+        overflow-x: auto;
+        overflow-y: visible;
+        scrollbar-width: thin;
     }
     .left-column {
         flex: 0 0 var(--course-helper-portrait-split-basis, 45%);
@@ -1796,10 +1817,6 @@ body.qwen-fullscreen-button-visible:not(.qwen-chat-panel-open) .fullscreen-modul
     cursor: pointer;
     transition:transform .18s ease, opacity .18s ease, box-shadow .18s ease, background-color .18s ease;
 }
-.fullscreen-module-button.is-appearing { animation:fullscreenFabAppear .18s ease both; }
-.fullscreen-module-button.is-disappearing { animation:fullscreenFabDisappear .16s ease both; pointer-events:none; }
-@keyframes fullscreenFabAppear { from { opacity:0; transform:scale(.55); } to { opacity:1; transform:scale(1); } }
-@keyframes fullscreenFabDisappear { from { opacity:1; transform:scale(1); } to { opacity:0; transform:scale(.55); } }
 .mail-fullscreen-button { background:#2563eb; box-shadow:0 4px 14px rgba(37,99,235,.35); }
 .mail-fullscreen-button:hover { background:#1d4ed8; }
 .mail-fullscreen-button img { display:block; width:24px; height:24px; }

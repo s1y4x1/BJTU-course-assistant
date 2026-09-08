@@ -148,6 +148,50 @@ const fullscreenWindowLayers = globalThis.BjtuFullscreenWindowLayers || (() => {
 })();
 globalThis.BjtuFullscreenWindowLayers = fullscreenWindowLayers;
 
+const floatingWindowAnimations = globalThis.BjtuFloatingWindowAnimations || Object.freeze({
+  animateButton(button, showing) {
+    if (!(button instanceof HTMLButtonElement)) return Promise.resolve();
+    button.classList.remove('is-appearing', 'is-disappearing');
+    if (showing) button.hidden = false;
+    void button.offsetWidth;
+    button.classList.add(showing ? 'is-appearing' : 'is-disappearing');
+    return new Promise((resolve) => {
+      let settled = false;
+      let timer = 0;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        button.removeEventListener('animationend', finish);
+        button.classList.remove('is-appearing', 'is-disappearing');
+        if (!showing) button.hidden = true;
+        resolve();
+      };
+      button.addEventListener('animationend', finish, { once: true });
+      timer = setTimeout(finish, 240);
+    });
+  },
+  async animateWindowFromButton(view, buttonRect, opening) {
+    if (!(view instanceof HTMLElement) || !buttonRect || typeof view.animate !== 'function') return;
+    const rect = view.getBoundingClientRect();
+    const scale = 0.06;
+    const collapsed = {
+      opacity: 0,
+      transformOrigin: '0 0',
+      transform: `translate(${buttonRect.left + buttonRect.width / 2 - rect.left - rect.width * scale / 2}px, ${buttonRect.top + buttonRect.height / 2 - rect.top - rect.height * scale / 2}px) scale(${scale})`
+    };
+    const expanded = { opacity: 1, transformOrigin: '0 0', transform: 'translate(0, 0) scale(1)' };
+    const animation = view.animate(opening ? [collapsed, expanded] : [expanded, collapsed], {
+      duration: opening ? 220 : 180,
+      easing: opening ? 'cubic-bezier(.2,.8,.2,1)' : 'cubic-bezier(.4,0,1,1)',
+      fill: 'both'
+    });
+    await animation.finished.catch(() => {});
+    animation.cancel();
+  }
+});
+globalThis.BjtuFloatingWindowAnimations = floatingWindowAnimations;
+
 const FULLSCREEN_MODULE_BUTTONS = Object.freeze({
   mail: {
     id: 'mail-fullscreen-button',
@@ -198,47 +242,13 @@ async function initFullscreenModuleButtons() {
   };
 
   const animateButton = (button, showing) => {
-    if (!(button instanceof HTMLButtonElement)) return Promise.resolve();
-    button.classList.remove('is-appearing', 'is-disappearing');
-    if (showing) button.hidden = false;
-    void button.offsetWidth;
-    button.classList.add(showing ? 'is-appearing' : 'is-disappearing');
-    return new Promise((resolve) => {
-      let settled = false;
-      let timer = 0;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        button.removeEventListener('animationend', finish);
-        button.classList.remove('is-appearing', 'is-disappearing');
-        if (!showing) button.hidden = true;
-        refreshButtonContainer();
-        resolve();
-      };
-      button.addEventListener('animationend', finish, { once: true });
-      timer = setTimeout(finish, 240);
-    });
+    return floatingWindowAnimations.animateButton(button, showing)
+      .finally(refreshButtonContainer);
   };
 
-  const animateWindowFromButton = async (view, buttonRect, opening) => {
-    if (!(view instanceof HTMLElement) || !buttonRect || typeof view.animate !== 'function') return;
-    const rect = view.getBoundingClientRect();
-    const scale = 0.06;
-    const collapsed = {
-      opacity: 0,
-      transformOrigin: '0 0',
-      transform: `translate(${buttonRect.left + buttonRect.width / 2 - rect.left - rect.width * scale / 2}px, ${buttonRect.top + buttonRect.height / 2 - rect.top - rect.height * scale / 2}px) scale(${scale})`
-    };
-    const expanded = { opacity: 1, transformOrigin: '0 0', transform: 'translate(0, 0) scale(1)' };
-    const animation = view.animate(opening ? [collapsed, expanded] : [expanded, collapsed], {
-      duration: opening ? 220 : 180,
-      easing: opening ? 'cubic-bezier(.2,.8,.2,1)' : 'cubic-bezier(.4,0,1,1)',
-      fill: 'both'
-    });
-    await animation.finished.catch(() => {});
-    animation.cancel();
-  };
+  const animateWindowFromButton = (view, buttonRect, opening) => (
+    floatingWindowAnimations.animateWindowFromButton(view, buttonRect, opening)
+  );
 
   const clampWindow = (view, edgeGap = 12) => {
     if (!(view instanceof HTMLElement) || view.hidden) return;
@@ -370,7 +380,7 @@ async function initFullscreenModuleButtons() {
       const fragment = parsed.querySelector('[data-options-fragment]');
       if (!(fragment instanceof HTMLElement)) throw new Error('模块界面中缺少选项片段');
       const view = document.importNode(fragment, true);
-      view.classList.add('fullscreen-module-window');
+      view.classList.add('fullscreen-module-window', 'floating-launcher-window');
       view.dataset.module = moduleId;
       view.hidden = true;
       view.querySelectorAll('.module-options-page-link').forEach((link) => {
@@ -1037,7 +1047,7 @@ function detailVisibleMaxHeight(lines) {
 function rematchExternalByVeCourses(platform = '') {
   const veCourses = Array.isArray(window.currentVeCourseList) ? window.currentVeCourseList : [];
   const shouldRematch = (id) => !platform || platform === id;
-  const keepPlatformsSeparate = window.courseHelperPlatformSplitMode === true;
+  const keepPlatformsSeparate = shouldUseCoursePlatformColumns();
 
   if (shouldRematch('ykt') && isPlatformEnabled('ykt') && Array.isArray(window.yktCourseGroupsSnapshot) && window.yktCourseGroupsSnapshot.length) {
     const yktStrictMap = collectVeFzIdTail10Map(veCourses);
@@ -1429,11 +1439,18 @@ function isCourseHelperAdaptiveLayout() {
   return window.matchMedia('(max-width: 900px), (orientation: portrait)').matches;
 }
 
+function shouldUseCoursePlatformColumns() {
+  if (popupMode) return false;
+  return isCourseHelperAdaptiveLayout()
+    ? window.courseHelperPlatformSplitMode !== true
+    : window.courseHelperPlatformSplitMode === true;
+}
+
 function syncCourseHelperCollapseTogglePresentation() {
   if (!(columnCollapseToggle instanceof HTMLButtonElement)) return;
   const focused = window.courseHelperPlatformSplitMode === true;
   const adaptive = isCourseHelperAdaptiveLayout();
-  const action = focused ? (adaptive ? '展开上方' : '展开左栏') : (adaptive ? '折叠上方' : '折叠左栏');
+  const action = focused ? (adaptive ? '展开上方' : '折叠右栏') : (adaptive ? '折叠上方' : '展开右栏');
   columnCollapseToggle.textContent = focused ? (adaptive ? '▼' : '▶') : (adaptive ? '▲' : '◀');
   columnCollapseToggle.title = action;
   columnCollapseToggle.setAttribute('aria-label', action);
@@ -1517,7 +1534,7 @@ function syncCourseHelperEvenWidthsButton() {
   const uneven = activeWeights.length > 1
     && Math.max(...activeWeights) - Math.min(...activeWeights) > 0.01;
   courseHelperEvenWidthsButton.hidden = popupMode
-    || window.courseHelperPlatformSplitMode !== true
+    || !shouldUseCoursePlatformColumns()
     || !uneven;
 }
 
@@ -1553,7 +1570,7 @@ function bindPlatformColumnResizer(resizer) {
   if (!(resizer instanceof HTMLElement) || resizer.dataset.bound === '1') return;
   resizer.dataset.bound = '1';
   resizer.addEventListener('mousedown', (event) => {
-    if (event.button !== 0 || popupMode || !window.courseHelperPlatformSplitMode) return;
+    if (event.button !== 0 || popupMode || !shouldUseCoursePlatformColumns()) return;
     const leftPlatform = String(resizer.dataset.leftPlatform || '');
     const rightPlatform = String(resizer.dataset.rightPlatform || '');
     const leftColumn = courseListDiv.querySelector(`:scope > .platform-course-column[data-platform="${leftPlatform}"]`);
@@ -1609,13 +1626,7 @@ function organizeCourseCardsByPlatform() {
     const cards = [...courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]')];
     const cardPlatforms = new Set(cards.map(getCourseCardPlatform).filter(Boolean));
     const desired = getOrderedCoursePlatformColumns().filter(({ id }) => isPlatformEnabled(id) || cardPlatforms.has(id));
-    const weights = normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights);
-    const availableWidth = Math.max(0, Number(courseListDiv.clientWidth || 0) - Math.max(0, desired.length - 1) * 12);
-    const totalWeight = desired.reduce((sum, { id }) => sum + Number(weights[id] || 1), 0) || 1;
-    const adaptiveColumnsFit = !isCourseHelperAdaptiveLayout() || desired.every(({ id }) => (
-      availableWidth * Number(weights[id] || 1) / totalWeight >= COURSE_HELPER_PLATFORM_COLUMN_MIN_WIDTH
-    ));
-    if (!window.courseHelperPlatformSplitMode || !adaptiveColumnsFit) {
+    if (!shouldUseCoursePlatformColumns()) {
       unwrapCoursePlatformColumns();
       return;
     }
@@ -1773,7 +1784,7 @@ function setCourseHelperFocusMode(enabled) {
     // late visible reflow. When it is masked, defer all merging work until the
     // left-column animation has completed.
     if (!deferMergedCourseList) {
-      unwrapCoursePlatformColumns();
+      if (!shouldUseCoursePlatformColumns()) unwrapCoursePlatformColumns();
       refreshCourseHelperLayoutMode();
     }
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1786,7 +1797,7 @@ function setCourseHelperFocusMode(enabled) {
         if (window.courseHelperPlatformSplitMode) return;
         if (deferMergedCourseList) {
           courseHelperLayoutTransitioning = false;
-          unwrapCoursePlatformColumns();
+          if (!shouldUseCoursePlatformColumns()) unwrapCoursePlatformColumns();
           refreshCourseHelperLayoutMode();
           sortCourseCardsWithGuard();
         } else {
@@ -2043,6 +2054,7 @@ function setupRightColumnResizer() {
     });
   }
 
+  let previousAdaptiveLayout = isAdaptiveLayout();
   window.addEventListener('resize', () => {
     if (dragging && isAdaptiveLayout()) {
       onUp();
@@ -2050,7 +2062,13 @@ function setupRightColumnResizer() {
     syncCourseHelperCollapseTogglePresentation();
     applyResponsiveWidth();
     scheduleResizerSync();
-    scheduleCourseCardsByPlatform();
+    const adaptiveLayout = isAdaptiveLayout();
+    if (adaptiveLayout !== previousAdaptiveLayout) {
+      previousAdaptiveLayout = adaptiveLayout;
+      refreshCourseHelperLayoutMode();
+    } else {
+      scheduleCourseCardsByPlatform();
+    }
   });
 
   window.addEventListener('scroll', scheduleResizerSync, true);
@@ -2069,7 +2087,7 @@ function setupRightColumnResizer() {
         return;
       }
       scheduleResizerSync();
-      if (courseListChanged && window.courseHelperPlatformSplitMode) scheduleCourseCardsByPlatform();
+      if (courseListChanged && shouldUseCoursePlatformColumns()) scheduleCourseCardsByPlatform();
     });
     if (courseListDiv) {
       mo.observe(courseListDiv, { childList: true, subtree: true });
@@ -3747,7 +3765,7 @@ function sortCourseCards() {
     return;
   }
   let changed = false;
-  if (window.courseHelperPlatformSplitMode) {
+  if (shouldUseCoursePlatformColumns()) {
     courseListDiv.querySelectorAll('.platform-course-column-body').forEach((body) => {
       const cards = Array.from(body.querySelectorAll(':scope > .file-item[data-course-rankable="1"]'));
       changed = sortCourseCardsInContainer(body, cards) || changed;
@@ -4041,7 +4059,7 @@ function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
   apply(moocStatusBtn, window.platformLoginState?.mooc || 'checking', '中国大学MOOC');
   apply(xuetangxStatusBtn, window.platformLoginState?.xuetangx || 'checking', '学堂在线');
   applyPlatformVisibility();
-  if (scheduleLayout && window.courseHelperPlatformSplitMode) scheduleCourseCardsByPlatform();
+  if (scheduleLayout && shouldUseCoursePlatformColumns()) scheduleCourseCardsByPlatform();
 
   // Login warnings are shown on offline-transition only (one platform at a time).
 }

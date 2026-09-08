@@ -81,6 +81,61 @@
     }
   }
 
+  async function setEmbeddedPanelOpen(open, { activate = true, focusInput = true } = {}) {
+    if (STANDALONE_CHAT) return;
+    const fab = el(FAB_ID);
+    const panel = el(PANEL_ID);
+    if (!(fab instanceof HTMLButtonElement) || !(panel instanceof HTMLElement)) return;
+    if (panel.dataset.transitioning === '1') return;
+    const animations = global.BjtuFloatingWindowAnimations;
+    const animateButton = (showing) => animations?.animateButton
+      ? animations.animateButton(fab, showing)
+      : Promise.resolve().then(() => { fab.hidden = !showing; });
+    panel.dataset.transitioning = '1';
+    try {
+      if (open) {
+        if (!panel.hidden) {
+          global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
+          return;
+        }
+        fab.style.removeProperty('display');
+        const sourceRect = fab.getBoundingClientRect();
+        panel.hidden = false;
+        syncEmbeddedPanelOpenState(true);
+        global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
+        await Promise.all([
+          animations?.animateWindowFromButton?.(panel, sourceRect, true),
+          animateButton(false)
+        ]);
+        if (activate) void activateQwenPanel();
+        if (historyNeedsInitialScroll) {
+          scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
+          historyNeedsInitialScroll = false;
+        }
+        const input = el(INPUT_ID);
+        if (focusInput && input instanceof HTMLTextAreaElement) input.focus();
+        return;
+      }
+      if (panel.hidden) {
+        fab.hidden = false;
+        syncEmbeddedPanelOpenState(false);
+        return;
+      }
+      fab.hidden = false;
+      fab.style.removeProperty('display');
+      fab.style.visibility = 'hidden';
+      syncEmbeddedPanelOpenState(false);
+      const targetRect = fab.getBoundingClientRect();
+      await animations?.animateWindowFromButton?.(panel, targetRect, false);
+      panel.hidden = true;
+      global.BjtuFullscreenWindowLayers?.remove?.(panel);
+      fab.style.visibility = '';
+      await animateButton(true);
+    } finally {
+      delete panel.dataset.transitioning;
+    }
+  }
+
   function escapeHtmlQwen(value) {
     return String(value).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;',
@@ -1174,13 +1229,7 @@
         const input = el(INPUT_ID);
         if (input instanceof HTMLTextAreaElement) {
           input.value = str;
-          const panel = el(PANEL_ID);
-          if (panel instanceof HTMLElement) panel.hidden = false;
-          syncEmbeddedPanelOpenState(true);
-          if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
-          const fab = el(FAB_ID);
-          if (fab instanceof HTMLElement) fab.style.display = 'none';
-          input.focus();
+          void setEmbeddedPanelOpen(true, { focusInput: true });
         }
       });
       row.appendChild(editBtn);
@@ -2334,12 +2383,19 @@
         const fab = el(FAB_ID);
         const panel = el(PANEL_ID);
         if (enabled === false) {
-          if (fab instanceof HTMLElement) fab.style.display = 'none';
+          if (fab instanceof HTMLButtonElement) {
+            fab.style.removeProperty('display');
+            if (!fab.hidden) void global.BjtuFloatingWindowAnimations?.animateButton?.(fab, false);
+          }
           if (panel instanceof HTMLElement) panel.hidden = true;
           if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.remove?.(panel);
           syncEmbeddedPanelOpenState(false);
-        } else if (fab instanceof HTMLElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
-          fab.style.display = '';
+        } else if (fab instanceof HTMLButtonElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
+          fab.style.removeProperty('display');
+          if (fab.hidden) {
+            const animation = global.BjtuFloatingWindowAnimations?.animateButton?.(fab, true);
+            if (!animation) fab.hidden = false;
+          }
         }
       };
       void chrome.storage.local.get(['qwenEnabled', 'qwenFabColorMode']).then((data) => {
@@ -2466,7 +2522,9 @@
       if (panel instanceof HTMLElement) panel.hidden = false;
     } else {
       if (panel instanceof HTMLElement) panel.hidden = true;
-      if (fab instanceof HTMLButtonElement) fab.style.display = '';
+      if (fab instanceof HTMLButtonElement) {
+        fab.style.removeProperty('display');
+      }
       syncEmbeddedPanelOpenState(false);
     }
 
@@ -2584,25 +2642,7 @@
 
     if (fab instanceof HTMLButtonElement) {
       fab.addEventListener('click', () => {
-        // app 页面上仍以内嵌窗口形式打开；独立页面请从边栏或选项页进入。
-        if (panel instanceof HTMLElement) {
-          panel.hidden = !panel.hidden;
-          if (!panel.hidden) {
-            fab.style.display = 'none';
-            syncEmbeddedPanelOpenState(true);
-            global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
-            void activateQwenPanel();
-            if (historyNeedsInitialScroll) {
-              scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
-              historyNeedsInitialScroll = false;
-            }
-            if (input instanceof HTMLTextAreaElement) input.focus();
-          } else {
-            fab.style.display = '';
-            syncEmbeddedPanelOpenState(false);
-            global.BjtuFullscreenWindowLayers?.remove?.(panel);
-          }
-        }
+        void setEmbeddedPanelOpen(true);
       });
     }
     const modelSelect = el(MODEL_ID);
@@ -2635,10 +2675,7 @@
           global.close();
           return;
         }
-        if (panel instanceof HTMLElement) panel.hidden = true;
-        global.BjtuFullscreenWindowLayers?.remove?.(panel);
-        if (fab instanceof HTMLButtonElement) fab.style.display = '';
-        syncEmbeddedPanelOpenState(false);
+        void setEmbeddedPanelOpen(false);
       });
     }
     const newChatBtn = el('qwen-chat-new');
