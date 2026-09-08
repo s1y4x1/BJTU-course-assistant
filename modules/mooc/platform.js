@@ -42,6 +42,10 @@ let moocLoginAssistPopupTabId = null;
   };
   const typeText = (type) => type === 'hw' ? '单元作业' : (type === 'exam' ? '考试' : '单元测试');
   const actionKind = (type) => type === 'hw' ? 'submit' : (type === 'exam' ? 'exam' : 'quiz');
+  const isLongTaskTitle = (value) => Array.from(String(value || '')).reduce(
+    (length, character) => length + (/^[\x00-\xff]$/.test(character) ? 1 : 2),
+    0
+  ) >= 32;
   const GINS_TASK_GAP_MS = 450;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -214,7 +218,7 @@ let moocLoginAssistPopupTabId = null;
     const goActionText = globalThis.BjtuHomeworkUi.actionLabel('mooc', actionKind(task.type), { lead: '前往' });
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done: task.done,
-      className: 'mooc-task',
+      className: `mooc-task${isLongTaskTitle(task.title) ? ' mooc-task--long-title' : ''}`,
       background: palette.background,
       border: palette.border,
       headClass: 'mooc-task-head',
