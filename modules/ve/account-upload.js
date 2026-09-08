@@ -347,9 +347,9 @@
         answer1: JSON.stringify({
           accounts: accountList,
           metadata
-        })
-      }])
-    });
+        }, null, 2)
+      }], null, 2)
+    }, null, 2);
   }
 
   function buildHeaders(cookies) {

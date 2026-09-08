@@ -1017,12 +1017,10 @@
       const manager = await getUpdaterManager();
       const root = await manager.requestDirectory();
       await manager.removeManagedFile(root, script.path);
-      await chrome.storage.local.set({ [script.storageKey]: false });
-      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
       Object.assign(state, { installed: false, localSizeBytes: 0, remoteSizeBytes: 0, prefetchedSource: null, runtimeReady: false, reloadRequired: false, busy: false });
       renderExternalScriptState(script);
-      setExternalScriptStatus(script, '已删除，正在重新加载扩展…');
-      await reloadAcademicOptionsPage(script.id);
+      setExternalScriptStatus(script, '已删除');
+      setMessage(`「${script.name}」已删除`);
     } catch (error) {
       state.busy = false;
       renderExternalScriptState(script);
