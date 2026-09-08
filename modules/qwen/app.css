@@ -537,6 +537,46 @@ html[data-color-scheme="dark"] .qwen-chat-copy-btn {
   overflow: hidden;
 }
 
+.qwen-chat-operation-history {
+  align-self: stretch;
+  min-width: 0;
+}
+
+.qwen-chat-operation-history > summary {
+  width: fit-content;
+  color: #615ced;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+}
+
+.qwen-chat-operation-history-expanded-label,
+.qwen-chat-operation-history[open] .qwen-chat-operation-history-collapsed-label {
+  display: none;
+}
+
+.qwen-chat-operation-history[open] .qwen-chat-operation-history-expanded-label {
+  display: inline;
+}
+
+.qwen-chat-operation-history-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 8px;
+}
+
+.qwen-chat-operation-history-content > .qwen-chat-msg-row.assistant {
+  align-self: flex-start;
+}
+
+html[data-color-scheme="dark"] .qwen-chat-operation-history > summary {
+  color: #a5b4fc;
+}
+
 .qwen-chat-op-spinner {
   display: inline-block;
   box-sizing: border-box;

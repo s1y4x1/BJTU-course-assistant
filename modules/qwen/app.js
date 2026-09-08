@@ -498,7 +498,7 @@
 
   function appendResCard(text) {
     const messages = el(MESSAGES_ID);
-    if (!(messages instanceof HTMLElement)) return;
+    if (!(messages instanceof HTMLElement)) return null;
     const card = document.createElement('div');
     card.className = 'qwen-chat-op';
     const name = document.createElement('div');
@@ -513,6 +513,7 @@
     completeOperationCard(card);
     messages.appendChild(card);
     maybeAutoScrollMessages(messages);
+    return card;
   }
 
   function parseExecutionBlock(block) {
@@ -592,6 +593,59 @@
     maybeAutoScrollMessages(messages);
   }
 
+  function isOperationCallMessage(node) {
+    if (!(node instanceof HTMLElement)) return false;
+    if (node.matches('.qwen-chat-op')) return true;
+    if (!node.matches('.qwen-chat-msg-row.assistant')) return false;
+    return [...node.querySelectorAll('.qwen-md-codeblock-wrap[data-language]')].some((block) =>
+      ['app', 'background', 'sandbox'].includes(String(block.dataset.language || '').toLowerCase())
+    );
+  }
+
+  function createOperationHistory(nodes) {
+    if (!Array.isArray(nodes) || !nodes.length) return null;
+    const details = document.createElement('details');
+    details.className = 'qwen-chat-operation-history';
+    const summary = document.createElement('summary');
+    const collapsedLabel = document.createElement('span');
+    collapsedLabel.className = 'qwen-chat-operation-history-collapsed-label';
+    collapsedLabel.textContent = '展开操作调用与结果';
+    const expandedLabel = document.createElement('span');
+    expandedLabel.className = 'qwen-chat-operation-history-expanded-label';
+    expandedLabel.textContent = '收起操作调用与结果';
+    summary.append(collapsedLabel, expandedLabel);
+    const content = document.createElement('div');
+    content.className = 'qwen-chat-operation-history-content';
+    content.append(...nodes);
+    details.append(summary, content);
+    return details;
+  }
+
+  function collapseOperationSegment(nodes) {
+    const finalReply = [...nodes].reverse().find((node) => node.matches?.('.qwen-chat-msg-row.assistant'));
+    if (!(finalReply instanceof HTMLElement) || isOperationCallMessage(finalReply)) return;
+    const beforeFinalReply = nodes.slice(0, nodes.indexOf(finalReply));
+    if (!beforeFinalReply.some(isOperationCallMessage)) return;
+    const collapsible = beforeFinalReply.filter((node) =>
+      node.matches?.('.qwen-chat-op, .qwen-chat-msg-row.assistant')
+    );
+    if (!collapsible.length) return;
+    const details = createOperationHistory(collapsible);
+    if (details) finalReply.before(details);
+  }
+
+  function collapseRenderedOperationTurns(messages = el(MESSAGES_ID)) {
+    if (!(messages instanceof HTMLElement)) return;
+    const children = [...messages.children];
+    let segmentStart = 0;
+    for (let index = 0; index <= children.length; index += 1) {
+      const atBoundary = index === children.length || children[index]?.matches?.('.qwen-chat-msg-row.user');
+      if (!atBoundary) continue;
+      if (index > segmentStart) collapseOperationSegment(children.slice(segmentStart, index));
+      segmentStart = index;
+    }
+  }
+
   function renderHistory(messages, { pendingResponseId = '' } = {}) {
     const messagesEl = el(MESSAGES_ID);
     if (!(messagesEl instanceof HTMLElement)) return;
@@ -645,6 +699,7 @@
     } else if (lastHasFunctionCalls) {
       appendHistoryFunctionCallButton();
     }
+    collapseRenderedOperationTurns(messagesEl);
     sessionParentId = lastAssistantResponseId;
     scrollMessagesToBottom(messagesEl, { force: true });
   }
@@ -1955,6 +2010,7 @@
           removeCursor(activeBubble);
           finalizeAssistantSuggestions(activeBubble);
           activeBubble = null;
+          collapseRenderedOperationTurns();
           setBusy(false);
           setStatus('已登录', 'ok');
           chatPort.disconnect();
