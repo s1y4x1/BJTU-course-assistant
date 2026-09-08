@@ -121,6 +121,24 @@
     return !!await getStoredToken();
   }
 
+  function isAuthPage(tab) {
+    try {
+      const url = new URL(String(tab?.url || tab?.pendingUrl || ''));
+      return url.origin === CHAT_BASE && url.pathname.replace(/\/+$/, '') === '/auth';
+    } catch {
+      return false;
+    }
+  }
+
+  async function activateLoginTab(tab) {
+    if (!Number.isInteger(tab?.id)) return tab;
+    return chrome.tabs.update(tab.id, {
+      ...(isAuthPage(tab) ? {} : { url: AUTH_URL }),
+      active: true,
+      autoDiscardable: false
+    }).catch(() => tab);
+  }
+
   async function openLoginPage() {
     if (openLoginPagePromise) return openLoginPagePromise;
     openLoginPagePromise = queueQwenPageOperation(async () => {
@@ -130,11 +148,7 @@
         ? await chrome.tabs.get(storedTabId).catch(() => null)
         : null;
       if (existingLoginTab && String(existingLoginTab.url || existingLoginTab.pendingUrl || '').startsWith(CHAT_BASE)) {
-        const loginTab = await chrome.tabs.update(existingLoginTab.id, {
-          url: AUTH_URL,
-          active: true,
-          autoDiscardable: false
-        }).catch(() => existingLoginTab);
+        const loginTab = await activateLoginTab(existingLoginTab);
         if (Number.isInteger(existingLoginTab.windowId)) {
           await chrome.windows.update(existingLoginTab.windowId, { focused: true }).catch(() => null);
         }
@@ -144,11 +158,7 @@
       const reusable = await findChatTab();
       if (reusable) {
         await chrome.storage.session.set({ [LOGIN_TAB_ID_KEY]: reusable.id }).catch(() => {});
-        const loginTab = await chrome.tabs.update(reusable.id, {
-          url: AUTH_URL,
-          active: true,
-          autoDiscardable: false
-        }).catch(() => reusable);
+        const loginTab = await activateLoginTab(reusable);
         if (Number.isInteger(reusable.windowId)) await chrome.windows.update(reusable.windowId, { focused: true }).catch(() => null);
         return { tab: loginTab, created: false };
       }
