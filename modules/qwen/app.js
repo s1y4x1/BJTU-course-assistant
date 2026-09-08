@@ -424,13 +424,25 @@
 
     let rendered = false;
     let answer = '';
+    let thinking = '';
     let suggestionCandidate = null;
-    const flushAnswer = () => {
-      if (!answer) return;
+    const flushAssistant = ({ final = false } = {}) => {
+      if (!answer && !thinking) return;
       const parsed = splitSuggestedReplies(answer);
-      const bubble = appendMessage('assistant', parsed.text || '（无回复）');
-      suggestionCandidate = parsed.suggestions.length ? { bubble, suggestions: parsed.suggestions } : null;
+      const bubble = appendMessage('assistant', parsed.text || (final ? '（无回复）' : ''));
+      if (thinking && bubble instanceof HTMLElement) {
+        const body = ensureThinkingBlock(bubble);
+        if (body instanceof HTMLElement) {
+          const container = mdContainer(body);
+          container._mdText = thinking;
+          container.innerHTML = renderQwenMarkdown(thinking);
+          enhanceOperationResultControls(container);
+        }
+        collapseThinking(bubble);
+      }
+      suggestionCandidate = final && parsed.suggestions.length ? { bubble, suggestions: parsed.suggestions } : null;
       answer = '';
+      thinking = '';
       rendered = true;
     };
 
@@ -439,7 +451,7 @@
       const isFunction = String(item?.role || '') === 'function'
         || (functionCall && typeof functionCall === 'object');
       if (isFunction) {
-        flushAnswer();
+        flushAssistant();
         const call = {
           id: normalizeFunctionId(item?.function_id || item?.extra?.function_id),
           name: String(functionCall?.name || item?.name || item?.phase || 'function_call'),
@@ -450,11 +462,13 @@
         if (result.found) finishFunctionCallCard(card, { result: result.value });
         suggestionCandidate = null;
         rendered = true;
+      } else if (String(item?.phase || '') === 'think' && item?.content) {
+        thinking += String(item.content);
       } else if (String(item?.phase || '') === 'answer' && item?.content) {
         answer += String(item.content);
       }
     }
-    flushAnswer();
+    flushAssistant({ final: true });
     if (!rendered) {
       const parsed = splitSuggestedReplies(String(message?.content || ''));
       const bubble = appendMessage('assistant', parsed.text || '（无回复）');
