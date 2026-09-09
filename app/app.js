@@ -1055,7 +1055,7 @@ function applyDetailCollapsedLineSettings() {
 }
 
 function detailCollapsedMaxHeight(lines) {
-  return `calc(${(normalizeDetailCollapsedLines(lines, 3) + 1) * 1.5}em + 2px)`;
+  return `calc(${normalizeDetailCollapsedLines(lines, 3) * 1.5}em + 2px)`;
 }
 
 function detailVisibleMaxHeight(lines) {
