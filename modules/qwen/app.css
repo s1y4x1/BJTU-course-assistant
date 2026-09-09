@@ -120,22 +120,30 @@ html[data-color-scheme="dark"] .qwen-chat-model {
 }
 
 .qwen-chat-close {
-  border: none;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 !important;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
-  font-size: 18px;
   color: #64748b;
+  font-size: 22px;
   cursor: pointer;
   line-height: 1;
-  padding: 0 2px;
 }
 
 .qwen-chat-close:hover {
+  background: #e2e8f0;
   color: #0f172a;
 }
 
-html[data-color-scheme="dark"] .qwen-chat-close:hover {
-  color: #e2e8f0;
-}
+html[data-color-scheme="dark"] .qwen-chat-close { color: #cbd5e1; }
+html[data-color-scheme="dark"] .qwen-chat-close:hover { background: #1e293b; color: #fff; }
 
 .qwen-chat-new {
   border: 1px solid rgba(97, 92, 237, 0.4);
