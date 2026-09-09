@@ -14,14 +14,14 @@ html[data-color-scheme="dark"] .qwen-options-card {
 }
 
 .qwen-toggle-row {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .qwen-sub-options {
   margin-top: 2px;
   padding-left: 0;
 }
-.qwen-fab-color-option { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:-4px 0 12px 22px; }
+.qwen-fab-color-option { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:4px 0 4px 22px; }
 .qwen-fab-color-option > .qwen-setting-label { font-size:12px; }
 .qwen-fab-color-modes { display:inline-flex; flex-wrap:wrap; }
 .qwen-fab-color-option.is-disabled { opacity:.5; }
@@ -79,7 +79,7 @@ html[data-color-scheme="dark"] .qwen-toggle-label {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 
 .qwen-setting-label {
