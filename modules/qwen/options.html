@@ -67,18 +67,24 @@
       </label>
     </div>
 
-    <div class="qwen-toggle-row">
-      <label class="qwen-toggle">
-        <input type="checkbox" id="qwenApprovalNotificationEnabled" checked>
-        <span class="qwen-toggle-label">需要批准时发送系统通知</span>
-      </label>
+    <div class="qwen-setting-row">
+      <label class="qwen-setting-label" for="qwenApprovalNotificationMode">操作需要批准时</label>
+      <select id="qwenApprovalNotificationMode" class="qwen-model-select qwen-notification-mode">
+        <option value="always">总是</option>
+        <option value="background" selected>若处于后台</option>
+        <option value="never">不再</option>
+      </select>
+      <span class="qwen-setting-label">发送系统通知</span>
     </div>
 
-    <div class="qwen-toggle-row">
-      <label class="qwen-toggle">
-        <input type="checkbox" id="qwenBackgroundCompletionNotificationEnabled" checked>
-        <span class="qwen-toggle-label">后台回复生成完毕后通知</span>
-      </label>
+    <div class="qwen-setting-row">
+      <label class="qwen-setting-label" for="qwenCompletionNotificationMode">回复生成完毕后</label>
+      <select id="qwenCompletionNotificationMode" class="qwen-model-select qwen-notification-mode">
+        <option value="always">总是</option>
+        <option value="background" selected>若处于后台</option>
+        <option value="never">不再</option>
+      </select>
+      <span class="qwen-setting-label">发送系统通知</span>
     </div>
 
     <div data-operation-ui-mount></div>

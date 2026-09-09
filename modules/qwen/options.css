@@ -103,6 +103,8 @@ html[data-color-scheme="dark"] .qwen-setting-label {
   max-width: 340px;
 }
 
+.qwen-notification-mode { width: auto; }
+
 .qwen-model-select[disabled] {
   opacity: .45;
   cursor: not-allowed;

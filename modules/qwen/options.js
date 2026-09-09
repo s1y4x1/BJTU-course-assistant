@@ -77,13 +77,13 @@
     const maxIterations = document.getElementById('qwenMaxIterations');
     if (maxIterations instanceof HTMLInputElement) maxIterations.value = String(Math.max(1, Number(status.maxIterations) || 6));
     applyAlwaysAllowState(status.alwaysAllow === true);
-    const approvalNotification = document.getElementById('qwenApprovalNotificationEnabled');
-    if (approvalNotification instanceof HTMLInputElement) {
-      approvalNotification.checked = status.approvalNotificationEnabled !== false;
+    const approvalNotification = document.getElementById('qwenApprovalNotificationMode');
+    if (approvalNotification instanceof HTMLSelectElement) {
+      approvalNotification.value = status.approvalNotificationMode || 'background';
     }
-    const completionNotification = document.getElementById('qwenBackgroundCompletionNotificationEnabled');
-    if (completionNotification instanceof HTMLInputElement) {
-      completionNotification.checked = status.backgroundCompletionNotificationEnabled !== false;
+    const completionNotification = document.getElementById('qwenCompletionNotificationMode');
+    if (completionNotification instanceof HTMLSelectElement) {
+      completionNotification.value = status.completionNotificationMode || 'background';
     }
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
@@ -170,22 +170,22 @@
       });
     }
 
-    const approvalNotification = document.getElementById('qwenApprovalNotificationEnabled');
-    if (approvalNotification instanceof HTMLInputElement) {
+    const approvalNotification = document.getElementById('qwenApprovalNotificationMode');
+    if (approvalNotification instanceof HTMLSelectElement) {
       approvalNotification.addEventListener('change', () => {
         void send('QWEN_SETTINGS_SET', {
-          approvalNotificationEnabled: approvalNotification.checked === true
+          approvalNotificationMode: approvalNotification.value
         }).then((response) => {
           setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
         });
       });
     }
 
-    const completionNotification = document.getElementById('qwenBackgroundCompletionNotificationEnabled');
-    if (completionNotification instanceof HTMLInputElement) {
+    const completionNotification = document.getElementById('qwenCompletionNotificationMode');
+    if (completionNotification instanceof HTMLSelectElement) {
       completionNotification.addEventListener('change', () => {
         void send('QWEN_SETTINGS_SET', {
-          backgroundCompletionNotificationEnabled: completionNotification.checked === true
+          completionNotificationMode: completionNotification.value
         }).then((response) => {
           setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
         });
@@ -209,7 +209,7 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationEnabled: true, backgroundCompletionNotificationEnabled: true });
+    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
     void refresh();
     void refreshOperations();
   }
@@ -217,16 +217,16 @@
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
     if (changes.qwenAlwaysAllow) applyAlwaysAllowState(changes.qwenAlwaysAllow.newValue === true);
-    if (changes.qwenApprovalNotificationEnabled) {
-      const approvalNotification = document.getElementById('qwenApprovalNotificationEnabled');
-      if (approvalNotification instanceof HTMLInputElement) {
-        approvalNotification.checked = changes.qwenApprovalNotificationEnabled.newValue !== false;
+    if (changes.qwenApprovalNotificationMode) {
+      const approvalNotification = document.getElementById('qwenApprovalNotificationMode');
+      if (approvalNotification instanceof HTMLSelectElement) {
+        approvalNotification.value = changes.qwenApprovalNotificationMode.newValue || 'background';
       }
     }
-    if (changes.qwenBackgroundCompletionNotificationEnabled) {
-      const completionNotification = document.getElementById('qwenBackgroundCompletionNotificationEnabled');
-      if (completionNotification instanceof HTMLInputElement) {
-        completionNotification.checked = changes.qwenBackgroundCompletionNotificationEnabled.newValue !== false;
+    if (changes.qwenCompletionNotificationMode) {
+      const completionNotification = document.getElementById('qwenCompletionNotificationMode');
+      if (completionNotification instanceof HTMLSelectElement) {
+        completionNotification.value = changes.qwenCompletionNotificationMode.newValue || 'background';
       }
     }
     if (changes.qwenFabColorMode) applyFabColorMode(changes.qwenFabColorMode.newValue);

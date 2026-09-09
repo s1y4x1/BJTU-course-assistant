@@ -2,7 +2,7 @@
 (function initBjtuQwenBackground(global) {
   'use strict';
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationEnabled', 'qwenBackgroundCompletionNotificationEnabled'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode'];
   const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
@@ -337,8 +337,12 @@
       thinkingEnabled: stored.qwenThinkingEnabled === true,
       maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
       alwaysAllow: stored.qwenAlwaysAllow === true,
-      approvalNotificationEnabled: stored.qwenApprovalNotificationEnabled !== false,
-      backgroundCompletionNotificationEnabled: stored.qwenBackgroundCompletionNotificationEnabled !== false
+      approvalNotificationMode: ['always', 'background', 'never'].includes(stored.qwenApprovalNotificationMode)
+        ? stored.qwenApprovalNotificationMode
+        : 'background',
+      completionNotificationMode: ['always', 'background', 'never'].includes(stored.qwenCompletionNotificationMode)
+        ? stored.qwenCompletionNotificationMode
+        : 'background'
     };
   }
 
@@ -373,11 +377,15 @@
       next.qwenMaxIterations = Math.max(1, Math.floor(Number(patch.maxIterations) || 6));
     }
     if (typeof patch?.alwaysAllow === 'boolean') next.qwenAlwaysAllow = patch.alwaysAllow;
-    if (typeof patch?.approvalNotificationEnabled === 'boolean') {
-      next.qwenApprovalNotificationEnabled = patch.approvalNotificationEnabled;
+    if (patch?.approvalNotificationMode !== undefined) {
+      next.qwenApprovalNotificationMode = ['always', 'background', 'never'].includes(patch.approvalNotificationMode)
+        ? patch.approvalNotificationMode
+        : 'background';
     }
-    if (typeof patch?.backgroundCompletionNotificationEnabled === 'boolean') {
-      next.qwenBackgroundCompletionNotificationEnabled = patch.backgroundCompletionNotificationEnabled;
+    if (patch?.completionNotificationMode !== undefined) {
+      next.qwenCompletionNotificationMode = ['always', 'background', 'never'].includes(patch.completionNotificationMode)
+        ? patch.completionNotificationMode
+        : 'background';
     }
     if (Object.keys(next).length) await chrome.storage.local.set(next);
     return getSettings();
@@ -438,8 +446,9 @@
 
   async function notifyQwenBackgroundCompletion(port, uiState, result) {
     const settings = await getSettings();
-    if (settings.backgroundCompletionNotificationEnabled === false) return;
-    if (!await qwenViewIsInBackground(port, uiState)) return;
+    if (settings.completionNotificationMode === 'never') return;
+    if (settings.completionNotificationMode === 'background'
+      && !await qwenViewIsInBackground(port, uiState)) return;
     const responseId = String(result?.responseId || Date.now());
     const tabId = Number(port?.sender?.tab?.id);
     const windowId = Number(port?.sender?.tab?.windowId);
@@ -747,7 +756,13 @@
                   operationResult: info?.afterOperationResult === true ? info.operationResult : undefined
                 });
               }),
-              askUser: (payload) => new Promise((resolve) => {
+              askUser: async (payload) => {
+                const notificationSettings = await getSettings();
+                const approvalNotificationMode = notificationSettings.approvalNotificationMode;
+                const shouldNotify = approvalNotificationMode === 'always'
+                  || (approvalNotificationMode === 'background'
+                    && await qwenViewIsInBackground(port, activeUiState));
+                return new Promise((resolve) => {
                 const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 const count = Number(payload?.count) || 3;
                 const mode = String(payload?.mode || 'iterate');
@@ -755,7 +770,7 @@
                 const operationNames = Array.isArray(payload?.operationNames)
                   ? payload.operationNames.map(String).filter(Boolean)
                   : [];
-                const notificationId = settings.approvalNotificationEnabled
+                const notificationId = shouldNotify
                   ? `${ASK_NOTIFICATION_PREFIX}${id}`
                   : '';
                 pendingAsk = { id, resolve, count, mode, executionMode, operationNames, notificationId };
@@ -793,7 +808,8 @@
                 } catch {
                   // 通知失败不影响主流程
                 }
-              }),
+                });
+              },
               onDelta: (text) => {
                 if (port.disconnected) return;
                 port.postMessage({ type: 'delta', text });
