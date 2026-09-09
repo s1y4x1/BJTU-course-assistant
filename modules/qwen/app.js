@@ -2654,6 +2654,17 @@
         const currentHeight = panel.getBoundingClientRect().height;
         if (currentHeight > availableHeight) panel.style.height = `${availableHeight}px`;
       };
+      const syncPanelResizeBounds = () => {
+        if (panel.hidden || panel.dataset.transitioning === '1') return;
+        const rect = panel.getBoundingClientRect();
+        const availableWidth = Math.max(280, window.innerWidth - rect.left - panelEdgeGap);
+        const availableHeight = Math.max(1, window.innerHeight - rect.top - panelEdgeGap);
+        panel.style.maxWidth = `${availableWidth}px`;
+        panel.style.maxHeight = `${availableHeight}px`;
+        panel.style.minHeight = `${Math.min(320, availableHeight)}px`;
+        if (rect.width > availableWidth) panel.style.width = `${availableWidth}px`;
+        if (rect.height > availableHeight) panel.style.height = `${availableHeight}px`;
+      };
       syncPanelViewportHeight();
       panel.addEventListener('pointerdown', (event) => {
         if (event.button !== 0) return;
@@ -2669,6 +2680,7 @@
         panel.style.bottom = 'auto';
         panel.style.width = `${rect.width}px`;
         panel.style.height = `${rect.height}px`;
+        syncPanelResizeBounds();
       }, { capture: true });
       const header = panel.querySelector('.qwen-chat-header');
       if (header instanceof HTMLElement) {
@@ -2708,6 +2720,7 @@
       const clampPanel = () => {
         syncPanelViewportHeight();
         if (panel.hidden) return;
+        syncPanelResizeBounds();
         const rect = panel.getBoundingClientRect();
         const edgeGap = panelEdgeGap;
         const inBounds =
