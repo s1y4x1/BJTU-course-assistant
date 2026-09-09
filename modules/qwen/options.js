@@ -81,6 +81,10 @@
     if (approvalNotification instanceof HTMLInputElement) {
       approvalNotification.checked = status.approvalNotificationEnabled !== false;
     }
+    const completionNotification = document.getElementById('qwenBackgroundCompletionNotificationEnabled');
+    if (completionNotification instanceof HTMLInputElement) {
+      completionNotification.checked = status.backgroundCompletionNotificationEnabled !== false;
+    }
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
     const select = document.getElementById('qwenModelSelect');
@@ -177,6 +181,17 @@
       });
     }
 
+    const completionNotification = document.getElementById('qwenBackgroundCompletionNotificationEnabled');
+    if (completionNotification instanceof HTMLInputElement) {
+      completionNotification.addEventListener('change', () => {
+        void send('QWEN_SETTINGS_SET', {
+          backgroundCompletionNotificationEnabled: completionNotification.checked === true
+        }).then((response) => {
+          setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.message || ''}`, response?.ok !== false);
+        });
+      });
+    }
+
     const select = document.getElementById('qwenModelSelect');
     if (select instanceof HTMLSelectElement) {
       select.addEventListener('change', () => {
@@ -194,7 +209,7 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationEnabled: true });
+    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationEnabled: true, backgroundCompletionNotificationEnabled: true });
     void refresh();
     void refreshOperations();
   }
@@ -206,6 +221,12 @@
       const approvalNotification = document.getElementById('qwenApprovalNotificationEnabled');
       if (approvalNotification instanceof HTMLInputElement) {
         approvalNotification.checked = changes.qwenApprovalNotificationEnabled.newValue !== false;
+      }
+    }
+    if (changes.qwenBackgroundCompletionNotificationEnabled) {
+      const completionNotification = document.getElementById('qwenBackgroundCompletionNotificationEnabled');
+      if (completionNotification instanceof HTMLInputElement) {
+        completionNotification.checked = changes.qwenBackgroundCompletionNotificationEnabled.newValue !== false;
       }
     }
     if (changes.qwenFabColorMode) applyFabColorMode(changes.qwenFabColorMode.newValue);

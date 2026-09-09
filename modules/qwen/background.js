@@ -2,7 +2,7 @@
 (function initBjtuQwenBackground(global) {
   'use strict';
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationEnabled'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationEnabled', 'qwenBackgroundCompletionNotificationEnabled'];
   const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
@@ -10,6 +10,7 @@
   const WAF_FLOW_STATE_KEY = 'qwenWafFlowState';
   const CHAT_PERMISSION_SESSIONS_KEY = 'qwenChatPermissionSessions';
   const ASK_NOTIFICATION_PREFIX = 'bjtu-qwen-ask-limit:';
+  const COMPLETION_NOTIFICATION_PREFIX = 'bjtu-qwen-complete:';
   const pendingAskNotifications = new Map();
   const chatPermissionSessions = new Map();
   let qwenLoginCompletionPromise = null;
@@ -336,7 +337,8 @@
       thinkingEnabled: stored.qwenThinkingEnabled === true,
       maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
       alwaysAllow: stored.qwenAlwaysAllow === true,
-      approvalNotificationEnabled: stored.qwenApprovalNotificationEnabled !== false
+      approvalNotificationEnabled: stored.qwenApprovalNotificationEnabled !== false,
+      backgroundCompletionNotificationEnabled: stored.qwenBackgroundCompletionNotificationEnabled !== false
     };
   }
 
@@ -373,6 +375,9 @@
     if (typeof patch?.alwaysAllow === 'boolean') next.qwenAlwaysAllow = patch.alwaysAllow;
     if (typeof patch?.approvalNotificationEnabled === 'boolean') {
       next.qwenApprovalNotificationEnabled = patch.approvalNotificationEnabled;
+    }
+    if (typeof patch?.backgroundCompletionNotificationEnabled === 'boolean') {
+      next.qwenBackgroundCompletionNotificationEnabled = patch.backgroundCompletionNotificationEnabled;
     }
     if (Object.keys(next).length) await chrome.storage.local.set(next);
     return getSettings();
@@ -411,6 +416,110 @@
     if (event?.thinking) port.postMessage({ type: 'thinking', text: event.thinking });
     if (event?.functionCall) port.postMessage({ type: 'functionCall', functionCall: event.functionCall });
     if (event?.functionResult) port.postMessage({ type: 'functionResult', functionResult: event.functionResult });
+  }
+
+  async function qwenViewIsInBackground(port, uiState) {
+    if (uiState?.visible !== true) return true;
+    const senderTab = port?.sender?.tab;
+    const windowId = Number(senderTab?.windowId);
+    if (Number.isInteger(windowId)) {
+      const browserWindow = await chrome.windows.get(windowId).catch(() => null);
+      if (browserWindow?.state === 'minimized') return true;
+    } else {
+      const browserWindow = await chrome.windows.getLastFocused().catch(() => null);
+      if (browserWindow?.state === 'minimized') return true;
+    }
+    if (String(uiState?.context || '') === 'sidepanel') return false;
+    const tabId = Number(senderTab?.id);
+    if (!Number.isInteger(tabId)) return false;
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    return tab?.active !== true;
+  }
+
+  async function notifyQwenBackgroundCompletion(port, uiState, result) {
+    const settings = await getSettings();
+    if (settings.backgroundCompletionNotificationEnabled === false) return;
+    if (!await qwenViewIsInBackground(port, uiState)) return;
+    const responseId = String(result?.responseId || Date.now());
+    const tabId = Number(port?.sender?.tab?.id);
+    const windowId = Number(port?.sender?.tab?.windowId);
+    const context = ['app', 'standalone', 'sidepanel'].includes(String(uiState?.context || ''))
+      ? String(uiState.context)
+      : 'standalone';
+    const notificationId = [
+      COMPLETION_NOTIFICATION_PREFIX.slice(0, -1),
+      context,
+      Number.isInteger(tabId) ? tabId : 0,
+      Number.isInteger(windowId) ? windowId : 0,
+      encodeURIComponent(String(uiState?.viewId || '')),
+      encodeURIComponent(responseId)
+    ].join(':');
+    const summary = String(result?.final || result?.text || '')
+      .replace(/```[\s\S]*?```/g, ' [代码] ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    await new Promise((resolve) => {
+      chrome.notifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/128.png'),
+        title: '千问助手回复生成完毕',
+        message: summary ? summary.slice(0, 180) : '回复已生成完毕，请返回千问助手查看。'
+      }, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    });
+  }
+
+  async function focusQwenCompletionTarget(notificationId) {
+    const id = String(notificationId || '');
+    if (!id.startsWith(COMPLETION_NOTIFICATION_PREFIX)) return;
+    const parts = id.slice(COMPLETION_NOTIFICATION_PREFIX.length).split(':');
+    const context = String(parts[0] || 'standalone');
+    const tabId = Number(parts[1]);
+    const windowId = Number(parts[2]);
+    const viewId = decodeURIComponent(parts[3] || '');
+    let tab = Number.isInteger(tabId) && tabId > 0
+      ? await chrome.tabs.get(tabId).catch(() => null)
+      : null;
+    const targetWindowId = Number(tab?.windowId || windowId);
+    if (Number.isInteger(targetWindowId) && targetWindowId >= 0) {
+      const browserWindow = await chrome.windows.get(targetWindowId).catch(() => null);
+      if (browserWindow?.state === 'minimized') {
+        await chrome.windows.update(targetWindowId, { state: 'normal', focused: true }).catch(() => null);
+      } else {
+        await chrome.windows.update(targetWindowId, { focused: true }).catch(() => null);
+      }
+    }
+    if (tab?.id) tab = await chrome.tabs.update(tab.id, { active: true }).catch(() => tab);
+    if (context === 'app' && tab?.id) {
+      await chrome.runtime.sendMessage({ type: 'QWEN_OPEN_CHAT_PANEL', viewId }).catch(() => null);
+      return;
+    }
+    if (context === 'sidepanel') {
+      await chrome.storage.local.set({ sidePanelLastView: 'qwen' }).catch(() => {});
+      if (tab?.id) {
+        await chrome.sidePanel.open({ tabId: tab.id }).catch(async () => {
+          if (Number.isInteger(targetWindowId)) await chrome.sidePanel.open({ windowId: targetWindowId }).catch(() => null);
+        });
+      } else if (Number.isInteger(targetWindowId)) {
+        await chrome.sidePanel.open({ windowId: targetWindowId }).catch(() => null);
+      }
+      await chrome.runtime.sendMessage({ type: 'QWEN_SHOW_SIDE_PANEL_CHAT' }).catch(() => null);
+      return;
+    }
+    if (!tab) {
+      await chrome.tabs.create({ url: chrome.runtime.getURL('modules/qwen/chat.html'), active: true }).catch(() => null);
+    }
+  }
+
+  if (typeof chrome === 'object' && chrome?.notifications?.onClicked) {
+    chrome.notifications.onClicked.addListener((notificationId) => {
+      if (!String(notificationId || '').startsWith(COMPLETION_NOTIFICATION_PREFIX)) return;
+      void focusQwenCompletionTarget(notificationId).finally(() => {
+        chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
+      });
+    });
   }
 
   if (typeof chrome === 'object' && chrome?.runtime?.onConnect) {
@@ -466,6 +575,8 @@
       let pendingRetry = null;
       let stopRequested = false;
       let loopSession = {};
+      let activeThinkingEnabled = null;
+      let activeUiState = { context: '', visible: true };
       const settlePendingAsk = (action = 'stop', count = 0, notifyPage = false) => {
         if (!pendingAsk) return;
         const current = pendingAsk;
@@ -499,6 +610,18 @@
         abortController.abort();
       });
       port.onMessage.addListener((message) => {
+        if (message?.type === 'uiState') {
+          activeUiState = {
+            context: String(message.context || activeUiState.context || ''),
+            viewId: String(message.viewId || activeUiState.viewId || ''),
+            visible: message.visible === true
+          };
+          return;
+        }
+        if (message?.type === 'thinkingChanged') {
+          activeThinkingEnabled = message.enabled === true;
+          return;
+        }
         if (message?.type === 'retryDecision') {
           const retryId = String(message?.retryId || '');
           if (!pendingRetry || (retryId && retryId !== pendingRetry.id)) {
@@ -555,6 +678,14 @@
           let releaseOpeningLock = null;
           try {
             const settings = await getSettings();
+            activeThinkingEnabled = typeof message.thinking === 'boolean'
+              ? message.thinking
+              : settings.thinkingEnabled === true;
+            activeUiState = {
+              context: String(message?.uiState?.context || ''),
+              viewId: String(message?.uiState?.viewId || ''),
+              visible: message?.uiState?.visible === true
+            };
             const client = global.BjtuQwenClient;
             const operations = global.BjtuQwenOperations;
             if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
@@ -591,7 +722,8 @@
               groups,
               signal: abortController.signal,
               turnRef,
-              thinking: settings.thinkingEnabled === true,
+              thinking: activeThinkingEnabled,
+              getThinking: () => activeThinkingEnabled === true,
               maxIterations: settings.maxIterations,
               alwaysAllow: settings.alwaysAllow === true,
               alwaysAllowedOperations: settings.alwaysAllowedOperations,
@@ -680,6 +812,9 @@
               if (String(shared?.qwenLastChatId || '') === String(result.chatId)) {
                 broadcastSharedChatUpdated(result.chatId);
               }
+            }
+            if (result.stoppedByLimit !== true) {
+              await notifyQwenBackgroundCompletion(port, activeUiState, result);
             }
             if (port.disconnected) return;
             if (result.historyReloadRequired === true) {

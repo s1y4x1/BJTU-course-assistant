@@ -16,11 +16,13 @@
   const THINKING_ID = 'qwen-chat-thinking';
   const OPERATION_RESULTS_STORAGE_KEY = 'qwenOperationResults';
   const OPERATION_RESULTS_LIMIT = 20;
+  const QWEN_VIEW_ID = global.crypto?.randomUUID?.() || `qwen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // 独立页面模式（modules/qwen/chat.html）：面板直接展开铺满窗口。
   const STANDALONE_CHAT = /\/modules\/qwen\/chat\.html$/i.test(global.location?.pathname || '');
   // 边栏视图：关闭按钮变为与课程助手（popup.html）互相切换的按钮。
   const SIDE_PANEL_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'sidepanel';
+  if (SIDE_PANEL_VIEW) document.documentElement.classList.add('qwen-side-panel-view');
   const sidePanelViewRecordPromise = SIDE_PANEL_VIEW
     ? Promise.resolve(global.chrome?.storage?.local?.set?.({ sidePanelLastView: 'qwen' })).catch(() => {})
     : Promise.resolve();
@@ -77,6 +79,20 @@
     }
   }
 
+  function currentQwenViewState() {
+    const panel = el(PANEL_ID);
+    return {
+      context: SIDE_PANEL_VIEW ? 'sidepanel' : (STANDALONE_CHAT ? 'standalone' : 'app'),
+      viewId: QWEN_VIEW_ID,
+      visible: document.visibilityState === 'visible'
+        && (STANDALONE_CHAT || (panel instanceof HTMLElement && !panel.hidden))
+    };
+  }
+
+  function reportQwenViewState() {
+    try { port?.postMessage({ type: 'uiState', ...currentQwenViewState() }); } catch {}
+  }
+
   async function setEmbeddedPanelOpen(open, { activate = true, focusInput = true } = {}) {
     if (STANDALONE_CHAT) return;
     const fab = el(FAB_ID);
@@ -92,6 +108,7 @@
       if (open) {
         if (!panel.hidden) {
           global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
+          reportQwenViewState();
           return;
         }
         fab.style.removeProperty('display');
@@ -109,10 +126,12 @@
         }
         const input = el(INPUT_ID);
         if (focusInput && input instanceof HTMLTextAreaElement) input.focus();
+        reportQwenViewState();
         return;
       }
       if (panel.hidden) {
         fab.hidden = false;
+        reportQwenViewState();
         return;
       }
       fab.style.removeProperty('display');
@@ -123,6 +142,7 @@
       ]);
       panel.hidden = true;
       global.BjtuFullscreenWindowLayers?.remove?.(panel);
+      reportQwenViewState();
     } finally {
       delete panel.dataset.transitioning;
     }
@@ -2305,6 +2325,7 @@
         text,
         isOpening: wasOpeningStream,
         thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked,
+        uiState: currentQwenViewState(),
         chatId: sessionChatId,
         parentId: requestParentId,
         editParentGiven: isEditSend || wasOpeningStream
@@ -2457,6 +2478,7 @@
           }
           if (panel instanceof HTMLElement) panel.hidden = true;
           if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.remove?.(panel);
+          reportQwenViewState();
         } else if (fab instanceof HTMLButtonElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
           fab.style.removeProperty('display');
           if (fab.hidden) {
@@ -2486,8 +2508,12 @@
       if (area !== 'local' || !changes.qwenLastChatId) return;
       adoptSharedChatId(changes.qwenLastChatId.newValue);
     });
-
+    document.addEventListener('visibilitychange', reportQwenViewState);
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'QWEN_OPEN_CHAT_PANEL' && String(message?.viewId || '') === QWEN_VIEW_ID) {
+        void setEmbeddedPanelOpen(true).then(() => sendResponse({ ok: true }));
+        return true;
+      }
       if (message?.type === 'QWEN_SHARED_CHAT_UPDATED') {
         adoptSharedChatId(message?.chatId, { reload: true });
         return false;
@@ -2720,7 +2746,9 @@
     const thinkingToggle = el(THINKING_ID);
     if (thinkingToggle instanceof HTMLInputElement) {
       thinkingToggle.addEventListener('change', () => {
-        void send('QWEN_SETTINGS_SET', { thinkingEnabled: thinkingToggle.checked === true });
+        const thinkingEnabled = thinkingToggle.checked === true;
+        try { port?.postMessage({ type: 'thinkingChanged', enabled: thinkingEnabled }); } catch {}
+        void send('QWEN_SETTINGS_SET', { thinkingEnabled });
       });
     }
     if (closeBtn instanceof HTMLButtonElement) {
