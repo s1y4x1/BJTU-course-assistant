@@ -115,6 +115,7 @@
       turnRef,
       maxIterations = 6,
       thinking = false,
+      getThinking,
       askUser,
       onRetryRequest,
       sessionRef,
@@ -205,7 +206,10 @@
         turnRef.retryText = content;
         turnRef.retryParentId = parentId;
       }
-      const message = client.buildUserMessage({ modelId, content, thinking });
+      const requestThinking = typeof getThinking === 'function'
+        ? (await getThinking()) === true
+        : thinking === true;
+      const message = client.buildUserMessage({ modelId, content, thinking: requestThinking });
       message.parent_id = parentId || null;
       message.parentId = parentId || null;
 
@@ -292,7 +296,7 @@
         models: [String(modelId || '')],
         model: String(modelId || ''),
         chat_type: 't2t',
-        feature_config: { thinking_enabled: thinking === true, output_schema: 'phase', research_mode: 'normal', auto_thinking: false, thinking_mode: 'Auto', auto_search: false },
+        feature_config: { thinking_enabled: requestThinking, output_schema: 'phase', research_mode: 'normal', auto_thinking: false, thinking_mode: 'Auto', auto_search: false },
         extra: { meta: { subChatType: 't2t' } },
         sub_chat_type: 't2t',
         parent_id: null,

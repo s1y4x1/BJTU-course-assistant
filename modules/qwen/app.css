@@ -79,6 +79,8 @@ html[data-color-scheme="dark"] .qwen-chat-panel {
   user-select: none;
 }
 
+html.qwen-side-panel-view .qwen-chat-header { cursor: default; }
+
 .qwen-chat-title {
   font-weight: 600;
   font-size: 18px;

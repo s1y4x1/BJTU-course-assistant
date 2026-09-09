@@ -87,6 +87,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     })();
   });
 
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!sidePanelView || message?.type !== 'QWEN_SHOW_SIDE_PANEL_CHAT') return false;
+    void showSidePanelView('qwen').then(() => sendResponse({ ok: true }));
+    return true;
+  });
+
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
