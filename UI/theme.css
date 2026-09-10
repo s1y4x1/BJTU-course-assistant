@@ -59,22 +59,13 @@ html[data-color-scheme="dark"] #course-list > .file-item,
 html[data-color-scheme="dark"] #course-list > .platform-course-column > .platform-course-column-body > .file-item,
 html[data-color-scheme="dark"] #file-list > .file-item,
 html[data-color-scheme="dark"] .resource-space-list > .file-item,
-html[data-color-scheme="dark"] .saved-uploads-list > .file-item {
+html[data-color-scheme="dark"] #saved-uploads-section > .file-item {
   background: #111827 !important;
   border-color: #334155 !important;
   color: #e5e7eb;
 }
 
-html[data-color-scheme="dark"] .saved-uploads-list {
-  background: #0f172a;
-  border-color: #334155;
-}
-
-html[data-color-scheme="dark"] #saved-uploads-section .saved-uploads-list.homework-group.homework-group-animating {
-  background: #0f172a !important;
-  border-color: #334155 !important;
-  color: #e5e7eb !important;
-}
+html[data-color-scheme="dark"] .saved-uploads-divider { border-top-color:#334155; }
 
 html[data-color-scheme="dark"] .result-area > [data-rp-id]:not(.file-item) {
   background: #f3e5f5 !important;

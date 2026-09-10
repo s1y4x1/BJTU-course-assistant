@@ -171,7 +171,7 @@ function renderSavedUploadsSection() {
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
       </button>
     </div>
-    <div class="saved-uploads-list homework-group ${expanded ? '' : 'is-hidden'} homework-group-animating">${cardsHtml}</div>
+    ${expanded ? `${cardsHtml}<div class="saved-uploads-divider" aria-hidden="true"></div>` : ''}
   `;
   if (typeof refreshUploadSelectVisibility === 'function') {
     refreshUploadSelectVisibility();
@@ -191,7 +191,7 @@ function setupSavedUploadsUi() {
   if (invertBtn) {
     invertBtn.addEventListener('click', () => {
       document.querySelectorAll('#file-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
-      document.querySelectorAll('.saved-uploads-list:not(.is-hidden) .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
+      document.querySelectorAll('#saved-uploads-section[data-expanded="1"] > .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
     });
   }
   const section = document.getElementById('saved-uploads-section');
@@ -206,19 +206,8 @@ function setupSavedUploadsUi() {
         const action = String(actionEl.dataset.action || '').trim();
         if (action === 'toggle-saved-uploads') {
           const expanded = section.dataset.expanded === '1';
-          const nextExpanded = expanded ? '0' : '1';
-          section.dataset.expanded = nextExpanded;
-          const list = section.querySelector('.saved-uploads-list');
-          if (list) {
-            if (nextExpanded === '1') list.classList.remove('is-hidden');
-            else list.classList.add('is-hidden');
-          }
-          const btn = actionEl;
-          const isExpanded = nextExpanded === '1';
-          btn.classList.toggle('is-expanded', isExpanded);
-          btn.classList.toggle('homework-toggle-btn--up', isExpanded);
-          btn.classList.toggle('homework-toggle-btn--down', !isExpanded);
-          btn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+          section.dataset.expanded = expanded ? '0' : '1';
+          renderSavedUploadsSection();
           return;
         }
         if (action === 'delete-saved-upload') {

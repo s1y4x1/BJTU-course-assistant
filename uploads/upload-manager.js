@@ -1240,8 +1240,8 @@ copyAllBtn.addEventListener('click', () => {
     });
   };
   appendChecked(document.querySelector('#file-list'));
-  const savedList = document.querySelector('.saved-uploads-list');
-  if (savedList) appendChecked(savedList);
+  const savedSection = document.querySelector('#saved-uploads-section[data-expanded="1"]');
+  if (savedSection) appendChecked(savedSection);
   textToCopy = textToCopy.trim();
   if (!textToCopy) {
     showToast('请先选择文件', 'warning', 1200);
