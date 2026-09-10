@@ -64,7 +64,7 @@ async function ensureVeUploadSession() {
       throw Object.assign(new Error('请先登录智慧课程平台后再上传文件'), { code: 'LOGIN_REQUIRED' });
     }
 
-    const result = typeof doLoginFlow === 'function' ? await doLoginFlow() : null;
+    const result = typeof doLoginFlow === 'function' ? await doLoginFlow({ reloadPlatform: false }) : null;
     if (result?.ok !== true) {
       throw Object.assign(new Error(String(result?.message || '智慧课程平台登录失败或已取消')), { code: 'LOGIN_REQUIRED' });
     }
@@ -399,6 +399,7 @@ function uploadFile(file, fileId) {
   let cancelRequested = false;
   let xhrRef = null;
   let autoRetryQueuedByLogin = false;
+  let authRetryCount = 0;
 
   const showRetry = () => {
     cancelBtn.style.display = 'none';
@@ -603,6 +604,27 @@ function uploadFile(file, fileId) {
         if (etaDisplay) etaDisplay.textContent = '';
         delete window.activeSpeeds[speedId];
         updateTotalSpeed();
+        if (globalThis.isVeSessionInvalidResponse?.(xhr.responseText, xhr.responseURL)) {
+          if (authRetryCount < 1) {
+            authRetryCount += 1;
+            setInlineStatus('登录状态已失效，正在重新登录…', 'warning');
+            progressBar.style.width = '0%';
+            sizeProgressDisplay.innerHTML = `(${renderFileSizePair(0, file.size)})`;
+            const recovered = await globalThis.reauthenticateVeSessionOnly?.().catch(() => false);
+            if (recovered && !cancelRequested) {
+              setInlineStatus('登录已恢复，正在重新上传…', 'warning');
+              uploadQueue.unshift(performUpload);
+              resolve();
+              return;
+            }
+          }
+          setInlineStatus('上传失败：登录已失效', 'error');
+          progressBar.style.backgroundColor = '#f44336';
+          showRetry();
+          failUpload('智慧课程平台重新登录失败或已取消', 'LOGIN_REQUIRED');
+          resolve();
+          return;
+        }
         if (xhr.status !== 200) {
           setInlineStatus(`上传失败 HTTP ${xhr.status}`, 'error');
           progressBar.style.backgroundColor = '#f44336';

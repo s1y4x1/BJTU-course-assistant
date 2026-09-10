@@ -3091,7 +3091,13 @@ async function rememberLoggedInAccount(userId, info = null) {
 
 // -------------------- Network helpers --------------------
 async function fetchText(url, options = {}) {
-  const { signal: externalSignal, ...restOptions } = options || {};
+  const {
+    signal: externalSignal,
+    omitSessionId = false,
+    skipVeAuthRecovery = false,
+    _veAuthRetried = false,
+    ...restOptions
+  } = options || {};
   const controller = new AbortController();
   const externalAbortHandler = () => {
     try { controller.abort(); } catch { /* ignore */ }
@@ -3104,7 +3110,6 @@ async function fetchText(url, options = {}) {
     }
   }
 
-  const omitSessionId = !!options.omitSessionId;
   const sid = omitSessionId ? '' : await getPlatformSessionId();
   const headers = {
     'Upgrade-Insecure-Requests': '1',
@@ -3149,6 +3154,14 @@ async function fetchText(url, options = {}) {
     text = new TextDecoder('utf-8').decode(buf);
   }
 
+  if (!skipVeAuthRecovery
+    && !_veAuthRetried
+    && isVeRequestUrl(url)
+    && isVeSessionInvalidResponse(text, res?.url)) {
+    const recovered = await reauthenticateVeSessionOnly();
+    if (recovered) return fetchText(url, { ...options, _veAuthRetried: true });
+  }
+
   return { res, text };
 }
 
@@ -3169,6 +3182,64 @@ function isLikelyLoginPageHtml(html, resUrl = '') {
   if (u.includes('/ve/s.shtml') || u.includes('/ve/Login_2.jsp') || u.includes('/ve/Timeout.jsp') || isSessionEndedHtml(t)) return true;
   return false;
 }
+
+function isVeRequestUrl(url) {
+  try {
+    const parsed = new URL(String(url || ''), location.href);
+    return parsed.hostname === '123.121.147.7' && parsed.port === '88' && parsed.pathname.startsWith('/ve/');
+  } catch {
+    return false;
+  }
+}
+
+function isVeSessionInvalidResponse(text, resUrl = '') {
+  if (isLikelyLoginPageHtml(text, resUrl)) return true;
+  const source = String(text || '');
+  if (/["'](?:ERRMSG|message)["']\s*:\s*["'][^"']*(?:登录失效|登录超时|重新登录|会话失效|会话超时|不合法)[^"']*["']/i.test(source)) return true;
+  if (/alert\s*\([^)]*(?:登录|会话|不合法)[^)]*\)/i.test(source)) return true;
+  return /\/ve\/back\/resourceSpace\.shtml/i.test(String(resUrl || ''))
+    && /["']flag["']\s*:\s*false/i.test(source);
+}
+
+let veRequestReauthenticationPromise = null;
+let veLastRequestReauthenticationAt = 0;
+let veLastRequestReauthenticationResult = false;
+async function reauthenticateVeSessionOnly() {
+  if (veRequestReauthenticationPromise) return veRequestReauthenticationPromise;
+  if (Date.now() - veLastRequestReauthenticationAt < 1500) return veLastRequestReauthenticationResult;
+  veRequestReauthenticationPromise = (async () => {
+    const account = String(window.currentAccountLoginName || usernameInput?.value || lastValidUsername || '').trim();
+    if (!account || typeof doLoginFlow !== 'function') {
+      veLastRequestReauthenticationResult = false;
+      return false;
+    }
+    if (usernameInput instanceof HTMLInputElement) usernameInput.value = account;
+    const result = await doLoginFlow({ reloadPlatform: false });
+    const ok = result?.ok === true;
+    veLastRequestReauthenticationResult = ok;
+    return ok;
+  })().finally(() => {
+    veLastRequestReauthenticationAt = Date.now();
+    veRequestReauthenticationPromise = null;
+  });
+  return veRequestReauthenticationPromise;
+}
+
+async function fetchVeWithAuthRetry(url, options = {}, retried = false) {
+  const response = await fetch(url, options);
+  if (retried || !isVeRequestUrl(url)) return response;
+  let invalid = isLikelyLoginPageHtml('', response.url);
+  if (!invalid && /(?:text\/html|application\/xhtml\+xml)/i.test(String(response.headers.get('content-type') || ''))) {
+    const text = await response.clone().text().catch(() => '');
+    invalid = isVeSessionInvalidResponse(text, response.url);
+  }
+  if (!invalid || !await reauthenticateVeSessionOnly()) return response;
+  return fetchVeWithAuthRetry(url, options, true);
+}
+
+globalThis.isVeSessionInvalidResponse = isVeSessionInvalidResponse;
+globalThis.reauthenticateVeSessionOnly = reauthenticateVeSessionOnly;
+globalThis.fetchVeWithAuthRetry = fetchVeWithAuthRetry;
 
 async function loadSaveUploadsEnabledSetting() {
   try {
@@ -3348,13 +3419,15 @@ if (loginModalClose instanceof HTMLButtonElement) {
   loginModalClose.addEventListener('click', () => dismissLoginModal());
 }
 
-async function handleLoginSuccess(username) {
-  if (!isPlatformEnabled('ve')) {
+async function handleLoginSuccess(username, { reloadPlatform = true } = {}) {
+  if (reloadPlatform && !isPlatformEnabled('ve')) {
     window.platformEnabled.ve = true;
     savePlatformEnabledToStorage().catch(() => { });
   }
-  window.platformLoadedOnce.ve = false;
-  setPlatformLoginState('ve', 'checking');
+  if (reloadPlatform) {
+    window.platformLoadedOnce.ve = false;
+    setPlatformLoginState('ve', 'checking');
+  }
   isLoginSessionValid = true;
   loginCancelRequested = false;
   hideLoginModal();
@@ -3362,17 +3435,23 @@ async function handleLoginSuccess(username) {
 
   let finalUser = String(username || '').trim();
   usernameInput.value = finalUser;
+  window.currentAccountLoginName = finalUser;
   suppressedUsernameChangeValue = finalUser;
   updateJsessionidState();
 
-  runPendingLoginCallbacks();
+  if (reloadPlatform) runPendingLoginCallbacks();
   showToast('登录成功', 'success');
 
-  await loadAutoLoadCourseResourcesSetting().catch(() => { });
-  await reloadVePlatformFromSession({
-    reloadCourses: true,
-    reloadResourceSpace: true
-  }).catch(() => { });
+  if (reloadPlatform) {
+    await loadAutoLoadCourseResourcesSetting().catch(() => { });
+    await reloadVePlatformFromSession({
+      reloadCourses: true,
+      reloadResourceSpace: true
+    }).catch(() => { });
+  } else {
+    if (isPlatformEnabled('ve')) setPlatformLoginState('ve', 'online');
+    await syncJsessionidToUi().catch(() => { });
+  }
 }
 
 async function captchaModuleManifestExists() {
@@ -3399,15 +3478,15 @@ async function openCaptchaOptionsFromApp() {
   return true;
 }
 
-function doLoginFlow() {
+function doLoginFlow(options = {}) {
   if (activeLoginFlowPromise) return activeLoginFlowPromise;
-  activeLoginFlowPromise = runLoginFlow().finally(() => {
+  activeLoginFlowPromise = runLoginFlow(options).finally(() => {
     activeLoginFlowPromise = null;
   });
   return activeLoginFlowPromise;
 }
 
-async function runLoginFlow() {
+async function runLoginFlow({ reloadPlatform = true } = {}) {
   if (isLoginInProgress) return { ok: false, reason: 'busy', message: '已有登录流程正在进行' };
   const username = String(usernameInput.value || '').trim();
   if (!username) {
@@ -3418,7 +3497,7 @@ async function runLoginFlow() {
   loginFlowUsernameSet = true;
   usernameChangeVersion += 1;
   try { usernameChangeAbortController?.abort(); } catch { }
-  prioritizeAccountSwitch();
+  if (reloadPlatform) prioritizeAccountSwitch();
   const wasSwitchingAccount = !!pendingUsernameChange;
   let restoredAfterFailure = false;
   const restoreAfterFailure = async () => {
@@ -3491,7 +3570,7 @@ async function runLoginFlow() {
           showToast(mismatchResult.message, 'error', 3500);
           return mismatchResult;
         }
-        await handleLoginSuccess(username);
+        await handleLoginSuccess(username, { reloadPlatform });
         return { ...result, account: username };
       }
       if (result?.reason === 'captcha') {

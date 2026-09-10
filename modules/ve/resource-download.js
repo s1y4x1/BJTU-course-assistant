@@ -604,8 +604,8 @@ async function downloadResourceItemWithProgress(item) {
     rawUrl = String(result?.url || '').trim();
     if (rawUrl) item.url = rawUrl;
     else if (result?.loginExpired) {
-      await restartVePlatformForLoginExpired('资源下载链接获取失败，正在重启智慧课程平台…');
-      throw new Error('登录已失效，正在重启智慧课程平台');
+      await restartVePlatformForLoginExpired('资源下载链接获取失败，正在重新登录并重试…');
+      throw new Error('登录已失效，已尝试重新登录并重试');
     }
   }
   if (!rawUrl) throw new Error('资源链接无效');
@@ -814,7 +814,8 @@ async function downloadResourceItemWithProgress(item) {
 
   try {
     task.abortController = new AbortController();
-    const res = await fetch(url, {
+    const request = globalThis.fetchVeWithAuthRetry || fetch;
+    const res = await request(url, {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',

@@ -1792,7 +1792,8 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 /* Saved uploads list (in 本地保存本次上传过的文件) — 与下方新上传列表保持一致 */
 #saved-uploads-section { margin-top: 8px; }
 #saved-uploads-section > .file-item { margin-bottom: 8px; }
-.saved-uploads-divider { height:0; margin:12px 0; border-top:1px solid #e5e7eb; }
+.saved-uploads-divider { display:none; height:0; margin:12px 0; border-top:1px solid #e5e7eb; }
+#saved-uploads-section:has(+ #file-list > .file-item) > .saved-uploads-divider { display:block; }
 .save-uploads-toggle input[type="checkbox"] { cursor: pointer; }
 
 .fullscreen-module-buttons {

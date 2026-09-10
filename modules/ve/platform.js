@@ -117,29 +117,13 @@ function startVeStartupAccountInfoLoad() {
   }).catch(() => null);
 }
 
-async function restartVePlatformForLoginExpired(reason = '登录已失效，正在重启智慧课程平台…') {
+async function restartVePlatformForLoginExpired(reason = '登录状态已失效，正在重新登录…') {
   if (window.veLoginExpiredRestartPromise) return window.veLoginExpiredRestartPromise;
   showToast(reason, 'info', 2200);
   window.veLoginExpiredRestartPromise = (async () => {
     try {
-      abortAllCoursewareReplayFetches();
-      window.platformEnabled.ve = false;
-      window.platformLoadedOnce.ve = false;
-      window.currentVeCourseList = [];
-      setPlatformLoginState('ve', 'offline');
-      refreshPlatformLoginTip();
-      renderCourseList([]);
-      rematchExternalByVeCourses();
-      rerenderAllHomeworkAreas();
-      renderEnabledExternalStandaloneCourses();
-
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      window.platformEnabled.ve = true;
-      window.platformLoadedOnce.ve = false;
-      setPlatformLoginState('ve', 'checking');
-      refreshPlatformLoginTip();
-      await loadAutoLoadCourseResourcesSetting();
-      await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
+      const recovered = await globalThis.reauthenticateVeSessionOnly?.();
+      return recovered === true;
     } finally {
       setTimeout(() => { window.veLoginExpiredRestartPromise = null; }, 600);
     }
