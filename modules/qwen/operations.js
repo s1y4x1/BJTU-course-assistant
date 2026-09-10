@@ -123,6 +123,7 @@
     return {
       id: String(source.rpId || '').trim(),
       name,
+      category: String(source.resourceCategory || '').trim(),
       size: source.sizeMb ?? source.size ?? '',
       url: String(source.url || '').trim()
     };
@@ -1070,18 +1071,18 @@ name: 've.teachers_of_',
     {
       module: 've',
       name: 've.courseware_of_',
-      label: '课件列表',
-      summary: '获取智慧课程平台指定课程的课件列表',
+      label: '课程资源列表',
+      summary: '获取智慧课程平台指定课程的五类资源列表',
       doc: [
-        '## ve.courseware_of_ —— 课件列表',
+        '## ve.courseware_of_ —— 课程资源列表',
         '',
-        '获取指定课程的课件列表，每个课件均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
+        '并行获取指定课程的电子课件、教案设计、实验、教材教辅、MOOC资源，每项均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
         '**调用示例**：`ve.courseware_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"原始rpId","name":"课件名.pdf","size":"2.30MB","url":"https://..."}]'
+        '**返回示例**：[{"id":"原始rpId","name":"文件名.pdf","category":"电子课件","size":"2.30MB","url":"https://..."}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -1089,10 +1090,10 @@ name: 've.teachers_of_',
         const { core, course } = await findVeCourseById(courseId);
         const courseNum = String(course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || courseId).trim();
         const fzId = String(course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '').trim();
-        if (!courseNum || !fzId) throw new Error(`课程ID无效：${courseId} 缺少课件所需参数（课程号/课序号）`);
+        if (!courseNum || !fzId) throw new Error(`课程ID无效：${courseId} 缺少课程资源所需参数（课程号/课序号）`);
         const payload = await pageInvoke('ve', 'coursewareItems', { courseNum, xkhId: fzId }, 120000);
         if (payload?.loginRequired === true) throw loginRequiredError();
-        if (payload?.aborted === true) throw new Error('课件获取已取消');
+        if (payload?.aborted === true) throw new Error('课程资源获取已取消');
         return (Array.isArray(payload?.items) ? payload.items : []).map(compactVeResource);
       }
     },

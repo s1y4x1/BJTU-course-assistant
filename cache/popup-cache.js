@@ -103,7 +103,7 @@ function collapseRestoredCoursePanelsForPopup(root) {
     if (panel instanceof HTMLElement) panel.style.display = 'none';
   });
   root.querySelectorAll('button[data-action="courseware"]').forEach((btn) => {
-    resetCachedPanelButton(btn, '课件下载', 'courseware-link-progress', '--courseware-progress');
+    resetCachedPanelButton(btn, '资源下载', 'courseware-link-progress', '--courseware-progress');
   });
   root.querySelectorAll('button[data-action="videos"]').forEach((btn) => {
     resetCachedPanelButton(btn, '回放下载', 'replay-link-progress', '--replay-progress');

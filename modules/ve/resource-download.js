@@ -604,7 +604,7 @@ async function downloadResourceItemWithProgress(item) {
     rawUrl = String(result?.url || '').trim();
     if (rawUrl) item.url = rawUrl;
     else if (result?.loginExpired) {
-      await restartVePlatformForLoginExpired('课件下载链接获取失败，正在重启智慧课程平台…');
+      await restartVePlatformForLoginExpired('资源下载链接获取失败，正在重启智慧课程平台…');
       throw new Error('登录已失效，正在重启智慧课程平台');
     }
   }

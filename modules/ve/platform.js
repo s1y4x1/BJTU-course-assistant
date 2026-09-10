@@ -1090,10 +1090,20 @@ async function switchToTeacherAccount(teacherId) {
   await doLoginFlow();
 }
 
-async function fetchCoursewareItems(courseNum, fzId, externalAbortController = null) {
+const VE_COURSE_RESOURCE_TYPES = Object.freeze([
+  { docType: '1', resourceCategory: '电子课件' },
+  { docType: '5', resourceCategory: '教案设计' },
+  { docType: '10', resourceCategory: '实验' },
+  { docType: '12', resourceCategory: '教材教辅' },
+  { docType: '13', resourceCategory: 'MOOC资源' }
+]);
+
+async function fetchCoursewareItems(courseNum, fzId, externalAbortController = null, resourceType = VE_COURSE_RESOURCE_TYPES[0]) {
   const courseIdPart = String(courseNum || '').trim();
   const xkhIdPart = String(fzId || '').trim();
   if (!courseIdPart || !xkhIdPart) return { loginRequired: false, items: [] };
+  const docType = String(resourceType?.docType || '1').trim();
+  const resourceCategory = String(resourceType?.resourceCategory || '').trim();
 
   // 注册 AbortController 以便账号/学期切换时中止
   if (externalAbortController instanceof AbortController) {
@@ -1102,11 +1112,11 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
   // 合并全局 VE 中止信号
   const globalSignal = window.globalVeAbortController?.signal;
   const localSignal = externalAbortController instanceof AbortController ? externalAbortController.signal : undefined;
-  const signal = globalSignal || localSignal;
+  const signal = getCombinedAbortSignal(globalSignal, localSignal);
 
   const buildCoursewareUrl = (useQuestionMark = true) => {
     const sep = useQuestionMark ? '?' : '&';
-    return `${BASE_VE}back/coursePlatform/courseResource.shtml${sep}method=stuQueryUploadResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&cId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&docType=1`;
+    return `${BASE_VE}back/coursePlatform/courseResource.shtml${sep}method=stuQueryUploadResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&cId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&docType=${encodeURIComponent(docType)}`;
   };
 
   let text = '';
@@ -1156,7 +1166,7 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
   const list = Array.isArray(response?.resList) ? response.resList : [];
 
   const items = list.map((item, index) => {
-    const rpName = String(item?.rpName || `课件-${index + 1}`).trim();
+    const rpName = String(item?.rpName || `${resourceCategory || '资源'}-${index + 1}`).trim();
     const extName = normalizeResourceExt(String(item?.extName || '').trim());
     const urlRaw = String(item?.res_url || item?.resUrl || '').trim();
     const urlNorm = normalizeResourceUrl(urlRaw);
@@ -1164,9 +1174,11 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
     const name = extName && !/\.[a-zA-Z0-9_-]{1,16}$/.test(rpName) ? `${rpName}.${extName}` : rpName;
     const rpId = String(item?.rpId || '').trim();
     return {
-      id: `cw-${rpId || `${courseIdPart}-${xkhIdPart}-${index}`}`,
+      id: `cw-${docType}-${rpId || `${courseIdPart}-${xkhIdPart}-${index}`}`,
       name,
       extName,
+      docType,
+      resourceCategory,
       url: urlNorm,
       rpId,
       courseId: String(courseIdPart || '').trim(),
@@ -1176,6 +1188,46 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
   });
 
   return { loginRequired: false, items };
+}
+
+function calculateCourseResourceProgress(typeProgress) {
+  const progress = VE_COURSE_RESOURCE_TYPES.reduce((sum, type) => {
+    const state = typeProgress?.[type.docType];
+    if (!state?.listDone) return sum;
+    if (!state.linkTotal) return sum + 1;
+    return sum + 0.5 + (0.5 * Math.min(state.linkDone || 0, state.linkTotal) / state.linkTotal);
+  }, 0);
+  return Math.max(0, Math.min(100, Math.round((progress / VE_COURSE_RESOURCE_TYPES.length) * 100)));
+}
+
+async function fetchAllCoursewareItems(courseNum, fzId, externalAbortController = null, onProgress = null) {
+  const typeProgress = Object.fromEntries(VE_COURSE_RESOURCE_TYPES.map((type) => [type.docType, {
+    listDone: false,
+    linkTotal: 0,
+    linkDone: 0
+  }]));
+  const results = await Promise.all(VE_COURSE_RESOURCE_TYPES.map(async (type) => {
+    const payload = await fetchCoursewareItems(courseNum, fzId, externalAbortController, type);
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const state = typeProgress[type.docType];
+    state.listDone = true;
+    state.linkTotal = items.filter((item) => !item?.url && item?.rpId).length;
+    if (typeof onProgress === 'function') onProgress(calculateCourseResourceProgress(typeProgress), typeProgress);
+    return payload;
+  }));
+
+  return {
+    loginRequired: results.some((payload) => payload?.loginRequired === true),
+    aborted: results.some((payload) => payload?.aborted === true),
+    items: results.flatMap((payload) => Array.isArray(payload?.items) ? payload.items : []),
+    typeProgress
+  };
+}
+
+function updateCourseResourceButtonProgress(btn, percent) {
+  if (!(btn instanceof HTMLButtonElement)) return;
+  btn.classList.add('courseware-link-progress');
+  btn.style.setProperty('--courseware-progress', `${Math.max(0, Math.min(100, Number(percent) || 0))}%`);
 }
 
 async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
@@ -1190,13 +1242,15 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
   setCourseCoursewareLoading(courseIdInt, true);
   toggleResultAreaAnimated(resultArea, true);
   card.dataset.resultView = 'courseware';
-  resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取课件…</span>';
+  resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取资源…</span>';
   syncCourseActionButtonText(card, 'courseware');
 
   const cwAbortController = new AbortController();
 
   try {
-    const payload = await fetchCoursewareItems(courseNum, fzId, cwAbortController);
+    const payload = await fetchAllCoursewareItems(courseNum, fzId, cwAbortController, (percent) => {
+      updateCourseResourceButtonProgress(btn, percent);
+    });
     if (isStale() || payload.aborted) {
       setCourseCoursewareLoading(courseIdInt, false);
       delete window.activeCoursewareAbortControllers[courseNum];
@@ -1215,7 +1269,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
       if (shouldRender()) {
         resultArea.innerHTML = '<span class="error" style="color:#f44336;">[登录已失效，正在重启]</span>';
       }
-      await restartVePlatformForLoginExpired('课件列表登录已失效，正在重启智慧课程平台…');
+      await restartVePlatformForLoginExpired('资源列表登录已失效，正在重启智慧课程平台…');
       return;
     }
 
@@ -1224,6 +1278,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
     window.coursewareCacheByCourseId[courseIdInt] = {
       html,
       items: payload.items,
+      typeProgress: payload.typeProgress,
       loaded: true
     };
     if (!payload.items.length) {
@@ -1245,7 +1300,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
   } catch (e) {
     setCourseCoursewareLoading(courseIdInt, false);
     if (e?.name !== 'AbortError' && shouldRender()) {
-      resultArea.innerHTML = `<span class="error">课件加载失败：${escapeHtml(String(e?.message || e))}</span>`;
+      resultArea.innerHTML = `<span class="error">资源加载失败：${escapeHtml(String(e?.message || e))}</span>`;
     }
   } finally {
     if (window.activeCoursewareAbortControllers[courseNum] === cwAbortController) {
@@ -1266,7 +1321,9 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
   setCourseCoursewareLoading(courseIdInt, true);
 
   try {
-    const payload = await fetchCoursewareItems(courseNum, fzId);
+    const payload = await fetchAllCoursewareItems(courseNum, fzId, null, (percent) => {
+      updateCourseResourceButtonProgress(btn, percent);
+    });
     if (isStale()) {
       setCourseCoursewareLoading(courseIdInt, false);
       return;
@@ -1281,7 +1338,7 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
         } catch { /* ignore */ }
         return;
       }
-      await restartVePlatformForLoginExpired('课件列表登录已失效，正在重启智慧课程平台…');
+      await restartVePlatformForLoginExpired('资源列表登录已失效，正在重启智慧课程平台…');
       return;
     }
 
@@ -1290,6 +1347,7 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
     window.coursewareCacheByCourseId[courseIdInt] = {
       html,
       items: payload.items,
+      typeProgress: payload.typeProgress,
       loaded: true
     };
 
@@ -1434,22 +1492,23 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
   cache.rpLinksFetching = true;
 
   const activeView = String(card.dataset.resultView || '').trim();
-  const baseText = activeView === 'courseware' ? '收起' : '课件下载';
+  const baseText = activeView === 'courseware' ? '收起' : '资源下载';
   btn.classList.add('courseware-link-progress');
-  btn.style.setProperty('--courseware-progress', '0%');
+  btn.dataset.coursewareLinkFetching = '1';
   btn.innerHTML = `${baseText} <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
   const batchAbortController = new AbortController();
 
-  const totalLinks = rpItems.length;
-  let doneLinks = 0;
-  const onOneLinkDone = () => {
-    doneLinks += 1;
-    const p = Math.max(0, Math.min(100, Math.round((doneLinks / totalLinks) * 100)));
-    btn.style.setProperty('--courseware-progress', `${p}%`);
-    if (doneLinks >= totalLinks) {
-      btn.classList.remove('courseware-link-progress');
-      btn.style.removeProperty('--courseware-progress');
-    }
+  const typeProgress = cache.typeProgress || Object.fromEntries(VE_COURSE_RESOURCE_TYPES.map((type) => [type.docType, {
+    listDone: true,
+    linkTotal: items.filter((item) => String(item?.docType || '') === type.docType && !item?.url && item?.rpId).length,
+    linkDone: 0
+  }]));
+  cache.typeProgress = typeProgress;
+  updateCourseResourceButtonProgress(btn, calculateCourseResourceProgress(typeProgress));
+  const onOneLinkDone = (item) => {
+    const state = typeProgress[String(item?.docType || '')];
+    if (state) state.linkDone = Math.min(state.linkTotal, (state.linkDone || 0) + 1);
+    updateCourseResourceButtonProgress(btn, calculateCourseResourceProgress(typeProgress));
   };
 
   let loginHandled = false;
@@ -1463,7 +1522,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
         loginExpiredSeen = true;
         try { batchAbortController.abort(); } catch { /* ignore */ }
       }
-    }).finally(onOneLinkDone);
+    }).finally(() => onOneLinkDone(item));
     if (isStale()) return;
     const rpUrl = String(result?.url || '').trim();
     if (rpUrl) {
@@ -1496,7 +1555,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
       }
       if (!loginHandled) {
         loginHandled = true;
-        await restartVePlatformForLoginExpired('课件下载链接登录已失效，正在重启智慧课程平台…');
+        await restartVePlatformForLoginExpired('资源下载链接登录已失效，正在重启智慧课程平台…');
       }
     }
   }));
@@ -1504,6 +1563,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
   if (loginExpiredSeen) {
     cache.rpLinksFetched = false;
     cache.rpLinksFetching = false;
+    delete btn.dataset.coursewareLinkFetching;
     btn.classList.remove('courseware-link-progress');
     btn.style.removeProperty('--courseware-progress');
     syncCourseActionButtonText(card, String(card.dataset.resultView || '').trim());
@@ -1512,6 +1572,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
 
   cache.rpLinksFetched = true;
   cache.rpLinksFetching = false;
+  delete btn.dataset.coursewareLinkFetching;
   const currentView = String(card.dataset.resultView || '').trim();
   if (currentView === 'courseware') {
     const newHtml = buildCoursewareListHtml(courseIdInt, items);
@@ -2085,7 +2146,7 @@ function renderCourseList(courses, {
             </span>
           </div>`,
       actionsHtml: `
-          <button class="btn" style="background:#1e3a8a;" data-action="courseware">课件下载</button>
+          <button class="btn" style="background:#1e3a8a;" data-action="courseware">资源下载</button>
           <button class="btn" style="background:#9C27B0;" data-action="videos">回放下载</button>
           <button class="btn" style="background:#0f766e; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="assessment" data-course-id="${escapeHtml(String(courseId || ''))}">课程考核记录表下载</button>
           <button class="btn" style="background:#0369a1; max-width:220px; white-space:normal; line-height:1.25; padding:6px 8px; display:none;" data-action="archive" data-course-id="${escapeHtml(String(courseId || ''))}">归档下载</button>
@@ -2840,7 +2901,7 @@ async function prefetchCourseScores(courseId) {
 
 // 供 qwen 模块（service worker）经 app 页面消息桥调用的平台页面级接口
 async function veCoursewareItemsWithLinks(courseNum, xkhId) {
-  const payload = await fetchCoursewareItems(String(courseNum || '').trim(), String(xkhId || '').trim());
+  const payload = await fetchAllCoursewareItems(String(courseNum || '').trim(), String(xkhId || '').trim());
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const resolved = await Promise.all(items.map(async (item) => {
     if (!item?.rpId) return item;

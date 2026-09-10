@@ -4203,8 +4203,9 @@ function setCoursewareButtonLoading(btn, isLoading) {
     btn.disabled = true;
     btn.style.opacity = '1';
     btn.style.pointerEvents = 'none';
-    btn.classList.add('courseware-list-loading');
-    btn.innerHTML = `课件下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
+    btn.classList.add('courseware-list-loading', 'courseware-link-progress');
+    btn.style.setProperty('--courseware-progress', '0%');
+    btn.innerHTML = `资源下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
     return;
   }
 
@@ -4213,6 +4214,10 @@ function setCoursewareButtonLoading(btn, isLoading) {
   btn.disabled = false;
   btn.style.pointerEvents = 'auto';
   btn.classList.remove('courseware-list-loading');
+  if (btn.dataset.coursewareLinkFetching !== '1') {
+    btn.classList.remove('courseware-link-progress');
+    btn.style.removeProperty('--courseware-progress');
+  }
   flushPendingCourseCardSortIfIdle();
 }
 
@@ -4338,7 +4343,7 @@ function syncCourseActionButtonText(card, activeView = '') {
     setLabel(replayBtn, activeView === 'replay' ? '收起' : '回放下载', 'replay-link-progress');
   }
   if (coursewareBtn && !coursewareBtn.classList.contains('courseware-list-loading')) {
-    setLabel(coursewareBtn, activeView === 'courseware' ? '收起' : '课件下载', 'courseware-link-progress');
+    setLabel(coursewareBtn, activeView === 'courseware' ? '收起' : '资源下载', 'courseware-link-progress');
   }
   if (archiveBtn && !archiveBtn.classList.contains('archive-list-loading')) {
     setLabel(archiveBtn, activeView === 'archive' ? '收起' : '归档下载', 'archive-link-progress');
@@ -4427,7 +4432,7 @@ function toggleCoursewareSelectionForCard(card) {
 function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
   const list = Array.isArray(items) ? items : [];
   if (!list.length) {
-    return '<div style="font-size:12px; color:#999;">暂无课件资源</div>';
+    return '<div style="font-size:12px; color:#999;">暂无课程资源</div>';
   }
 
   const currentCourseId = String(courseId || '').trim();
@@ -4436,8 +4441,12 @@ function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
     : '';
 
   const rowsHtml = list.map((item, index) => {
-    const name = String(item?.name || `课件-${index + 1}`).trim();
+    const name = String(item?.name || `资源-${index + 1}`).trim();
     const fileName = ensureResourceDownloadFileName(item, item?.url || '');
+    const resourceCategory = String(item?.resourceCategory || '').trim();
+    const resourceCategoryHtml = resourceCategory
+      ? `<span class="homework-type-badge">${escapeHtml(resourceCategory)}</span>`
+      : '';
     const url = String(item?.url || '').trim();
     const id = String(item?.id || '').trim();
     const rpId = String(item?.rpId || '').trim();
@@ -4452,7 +4461,7 @@ function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
       <div class="file-item course-resource-file-item" data-resource-id="${escapeHtml(id)}" data-rp-id="${escapeHtml(rpId)}" style="margin-bottom:10px; padding:5px; border-left:3px solid #1e3a8a; background:#e8efff; border-radius:4px;">
         <div class="resource-row-title" style="margin-bottom:4px;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin:0 4px 0 0;">
-          <span class="resource-name">${escapeHtml(fileName || name)}</span>
+          <span class="resource-name">${resourceCategoryHtml}${escapeHtml(fileName || name)}</span>
           ${sizeMb ? `<span class="resource-time-inline file-size-emphasis" data-file-size-mb="${escapeHtml(String(Number(item?.sizeMbRaw ?? item?.rpSize) || 0))}" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>` : ''}
         </div>
         <div class="resource-link-row">
@@ -5596,7 +5605,7 @@ if (resourceSpaceList) {
           if (rpUrl) {
             item.url = rpUrl;
           } else if (result?.loginExpired) {
-            await restartVePlatformForLoginExpired('课件下载链接获取失败，正在重启智慧课程平台…');
+            await restartVePlatformForLoginExpired('资源下载链接获取失败，正在重启智慧课程平台…');
             showToast('获取下载链接失败', 'error', 1800);
             return;
           } else {
