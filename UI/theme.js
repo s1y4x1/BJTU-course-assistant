@@ -6,12 +6,12 @@
   const ANIMATION_SPEED_STORAGE_KEY = 'animationSpeed';
   const FONT_SIZE_STORAGE_KEY = 'fontSizeSettings';
   const FONT_SIZE_DEFAULTS = Object.freeze({
-    11: 11,
-    12: 12,
-    14: 14,
-    18: 18,
-    22: 22,
-    24: 24
+    zeroTitle: 24,
+    icon: 22,
+    primaryTitle: 18,
+    secondaryTitle: 15,
+    body: 13,
+    auxiliary: 11
   });
   const DEFAULT_ANIMATION_MODE = 'system';
   const DEFAULT_ANIMATION_SPEED = 1;
@@ -92,15 +92,28 @@
   }
 
   const rewrittenStyleSheets = new WeakSet();
-  const fontSizeCategoryByValue = new Map(Object.keys(FONT_SIZE_DEFAULTS).map((key) => [`${key}px`, key]));
-  fontSizeCategoryByValue.set('1.5rem', '24');
+  const fontSizeCategoryByValue = new Map([
+    ['24px', 'zeroTitle'],
+    ['1.5rem', 'zeroTitle'],
+    ['22px', 'icon'],
+    ['18px', 'primaryTitle'],
+    ['15px', 'secondaryTitle'],
+    ['14px', 'secondaryTitle'],
+    ['13px', 'body'],
+    ['12px', 'body'],
+    ['11px', 'auxiliary']
+  ]);
 
   function rewriteFontSizeDeclaration(style) {
     const raw = String(style?.getPropertyValue?.('font-size') || '').trim().toLowerCase();
     const category = fontSizeCategoryByValue.get(raw);
     if (!category) return;
     const priority = style.getPropertyPriority('font-size');
-    style.setProperty('font-size', `var(--bjtu-font-size-${category}, ${category}px)`, priority);
+    style.setProperty(
+      'font-size',
+      `var(--bjtu-font-size-${category}, ${FONT_SIZE_DEFAULTS[category]}px)`,
+      priority
+    );
   }
 
   function rewriteCssRules(rules) {

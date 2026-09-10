@@ -411,7 +411,7 @@ html[data-color-scheme="dark"] .platform-qr-login-tip {
 :where(#options-controlled-content, [data-options-fragment]) :is(label, .qwen-setting-row, .qwen-toggle-row) {
   margin-top:4px !important;
   margin-bottom:4px !important;
-  font-size:var(--bjtu-font-size-12, 12px) !important;
+  font-size:var(--bjtu-font-size-body, 13px) !important;
 }
 :where(#options-controlled-content, [data-options-fragment]) :is(.qwen-setting-row, .qwen-toggle-row) > label {
   margin-top:0 !important;

@@ -58,12 +58,12 @@ const DEFAULT_THEME_MODE = 'system';
 const DEFAULT_ANIMATION_MODE = 'system';
 const DEFAULT_ANIMATION_SPEED = 1;
 const DEFAULT_FONT_SIZE_SETTINGS = Object.freeze({
-  11: 11,
-  12: 12,
-  14: 14,
-  18: 18,
-  22: 22,
-  24: 24
+  zeroTitle: 24,
+  icon: 22,
+  primaryTitle: 18,
+  secondaryTitle: 15,
+  body: 13,
+  auxiliary: 11
 });
 const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = true;
 const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
@@ -1157,7 +1157,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   function updateFontSizeUi() {
     document.querySelectorAll('[data-font-size-category]').forEach((input) => {
       const category = String(input.dataset.fontSizeCategory || '');
-      input.value = String(currentFontSizeSettings[category] ?? DEFAULT_FONT_SIZE_SETTINGS[category] ?? 12);
+      input.value = String(currentFontSizeSettings[category] ?? DEFAULT_FONT_SIZE_SETTINGS[category] ?? 13);
     });
   }
 
