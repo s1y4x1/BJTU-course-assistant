@@ -4,12 +4,22 @@
   const media = window.matchMedia?.('(prefers-color-scheme: dark)');
   const ANIMATION_STORAGE_KEY = 'animationMode';
   const ANIMATION_SPEED_STORAGE_KEY = 'animationSpeed';
+  const FONT_SIZE_STORAGE_KEY = 'fontSizeSettings';
+  const FONT_SIZE_DEFAULTS = Object.freeze({
+    11: 11,
+    12: 12,
+    14: 14,
+    18: 18,
+    22: 22,
+    24: 24
+  });
   const DEFAULT_ANIMATION_MODE = 'system';
   const DEFAULT_ANIMATION_SPEED = 1;
   const reducedMotionMedia = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   let mode = DEFAULT_MODE;
   let animationMode = DEFAULT_ANIMATION_MODE;
   let animationSpeed = DEFAULT_ANIMATION_SPEED;
+  let fontSizeSettings = { ...FONT_SIZE_DEFAULTS };
 
   function normalizeMode(value) {
     return value === 'light' || value === 'dark' ? value : DEFAULT_MODE;
@@ -32,7 +42,7 @@
 
   function normalizeAnimationSpeed(value) {
     const speed = Number(value);
-    return Number.isFinite(speed) && speed >= 0.25 && speed <= 2 ? speed : DEFAULT_ANIMATION_SPEED;
+    return Number.isFinite(speed) && speed > 0 ? speed : DEFAULT_ANIMATION_SPEED;
   }
 
   function applyPlaybackRate() {
@@ -63,12 +73,88 @@
     } catch {}
   }
 
+  function normalizeFontSizeSettings(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return Object.fromEntries(Object.entries(FONT_SIZE_DEFAULTS).map(([key, fallback]) => {
+      const size = Number(source[key]);
+      return [key, Number.isFinite(size) && size > 0 ? size : fallback];
+    }));
+  }
+
+  function applyFontSizeSettings(value = fontSizeSettings) {
+    fontSizeSettings = normalizeFontSizeSettings(value);
+    Object.entries(fontSizeSettings).forEach(([key, size]) => {
+      document.documentElement.style.setProperty(`--bjtu-font-size-${key}`, `${size}px`);
+    });
+    try {
+      window.dispatchEvent(new CustomEvent('bjtu-font-size-change', { detail: { ...fontSizeSettings } }));
+    } catch {}
+  }
+
+  const rewrittenStyleSheets = new WeakSet();
+  const fontSizeCategoryByValue = new Map(Object.keys(FONT_SIZE_DEFAULTS).map((key) => [`${key}px`, key]));
+  fontSizeCategoryByValue.set('1.5rem', '24');
+
+  function rewriteFontSizeDeclaration(style) {
+    const raw = String(style?.getPropertyValue?.('font-size') || '').trim().toLowerCase();
+    const category = fontSizeCategoryByValue.get(raw);
+    if (!category) return;
+    const priority = style.getPropertyPriority('font-size');
+    style.setProperty('font-size', `var(--bjtu-font-size-${category}, ${category}px)`, priority);
+  }
+
+  function rewriteCssRules(rules) {
+    Array.from(rules || []).forEach((rule) => {
+      if (rule.style) rewriteFontSizeDeclaration(rule.style);
+      if (rule.cssRules) rewriteCssRules(rule.cssRules);
+    });
+  }
+
+  function rewriteStyleSheet(sheet) {
+    if (!sheet || rewrittenStyleSheets.has(sheet)) return;
+    try {
+      rewriteCssRules(sheet.cssRules);
+      rewrittenStyleSheets.add(sheet);
+    } catch {}
+  }
+
+  function rewriteInlineFontSizes(root) {
+    if (!(root instanceof Element) && root !== document) return;
+    if (root instanceof HTMLElement && root.hasAttribute('style')) rewriteFontSizeDeclaration(root.style);
+    root.querySelectorAll?.('[style]').forEach((element) => rewriteFontSizeDeclaration(element.style));
+  }
+
+  function installFontSizeCategories() {
+    Array.from(document.styleSheets).forEach(rewriteStyleSheet);
+    rewriteInlineFontSizes(document);
+    new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'attributes') {
+          rewriteFontSizeDeclaration(mutation.target.style);
+          return;
+        }
+        mutation.addedNodes.forEach((node) => {
+          if (!(node instanceof Element)) return;
+          rewriteInlineFontSizes(node);
+          if (node.matches('link[rel="stylesheet"], style')) {
+            if (node.sheet) rewriteStyleSheet(node.sheet);
+            node.addEventListener('load', () => rewriteStyleSheet(node.sheet), { once: true });
+          }
+          node.querySelectorAll?.('link[rel="stylesheet"], style').forEach((styleNode) => {
+            if (styleNode.sheet) rewriteStyleSheet(styleNode.sheet);
+            styleNode.addEventListener('load', () => rewriteStyleSheet(styleNode.sheet), { once: true });
+          });
+        });
+      });
+    }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
+  }
+
   const motionPolicy = document.createElement('style');
   motionPolicy.id = 'bjtu-animation-policy';
   motionPolicy.textContent = `
-    html[data-animation-enabled="false"] *,
-    html[data-animation-enabled="false"] *::before,
-    html[data-animation-enabled="false"] *::after {
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading)),
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading))::before,
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading))::after {
       animation-delay: 0s !important;
       animation-duration: 0.001ms !important;
       animation-iteration-count: 1 !important;
@@ -81,11 +167,13 @@
 
   applyTheme();
   applyAnimation();
+  applyFontSizeSettings();
 
   try {
-    chrome.storage.local.get([STORAGE_KEY, ANIMATION_STORAGE_KEY, ANIMATION_SPEED_STORAGE_KEY]).then((data) => {
+    chrome.storage.local.get([STORAGE_KEY, ANIMATION_STORAGE_KEY, ANIMATION_SPEED_STORAGE_KEY, FONT_SIZE_STORAGE_KEY]).then((data) => {
       applyTheme(data?.[STORAGE_KEY]);
       applyAnimation(data?.[ANIMATION_STORAGE_KEY], data?.[ANIMATION_SPEED_STORAGE_KEY]);
+      applyFontSizeSettings(data?.[FONT_SIZE_STORAGE_KEY]);
     }).catch(() => {});
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
@@ -96,6 +184,7 @@
           changes[ANIMATION_SPEED_STORAGE_KEY]?.newValue ?? animationSpeed
         );
       }
+      if (changes[FONT_SIZE_STORAGE_KEY]) applyFontSizeSettings(changes[FONT_SIZE_STORAGE_KEY].newValue);
     });
   } catch {}
 
@@ -114,6 +203,9 @@
   ['animationstart', 'transitionrun'].forEach((eventName) => {
     document.addEventListener(eventName, () => requestAnimationFrame(applyPlaybackRate), true);
   });
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installFontSizeCategories, { once: true });
+  else installFontSizeCategories();
 
   globalThis.BjtuTheme = Object.freeze({
     storageKey: STORAGE_KEY,
@@ -135,5 +227,13 @@
     getSpeed: () => animationSpeed,
     isEnabled: isAnimationEnabled,
     duration: (milliseconds) => isAnimationEnabled() ? Number(milliseconds) / animationSpeed : 0
+  });
+
+  globalThis.BjtuTypography = Object.freeze({
+    storageKey: FONT_SIZE_STORAGE_KEY,
+    defaults: FONT_SIZE_DEFAULTS,
+    normalizeSettings: normalizeFontSizeSettings,
+    apply: applyFontSizeSettings,
+    getSettings: () => ({ ...fontSizeSettings })
   });
 })();

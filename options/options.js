@@ -57,6 +57,14 @@ const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 const DEFAULT_THEME_MODE = 'system';
 const DEFAULT_ANIMATION_MODE = 'system';
 const DEFAULT_ANIMATION_SPEED = 1;
+const DEFAULT_FONT_SIZE_SETTINGS = Object.freeze({
+  11: 11,
+  12: 12,
+  14: 14,
+  18: 18,
+  22: 22,
+  24: 24
+});
 const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = true;
 const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
 const DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES = 30;
@@ -727,8 +735,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass'
   ]);
   const { yktActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'yktActivityTypes',
@@ -856,6 +864,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
   updateThemeModeUi(themeMode);
   updateAnimationUi(animationMode, animationSpeed);
+  let currentFontSizeSettings = globalThis.BjtuTypography?.normalizeSettings(fontSizeSettings)
+    || { ...DEFAULT_FONT_SIZE_SETTINGS };
+  let animationSpeedDragging = false;
+  updateFontSizeUi();
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccount || '').trim();
   let currentMrjzyAutoLoginAccount = String(mrjzyAutoLoginAccount || '').trim();
@@ -1115,8 +1127,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
   }
 
-  function formatAnimationSpeed(value) {
-    return `${Number(value).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}×`;
+  function formatAnimationSpeedValue(value) {
+    return String(Number(value));
   }
 
   function updateAnimationUi(modeValue, speedValue) {
@@ -1136,8 +1148,17 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const speedOption = document.getElementById('animationSpeedOption');
     const speedInput = document.getElementById('animationSpeed');
     speedOption.hidden = !enabled;
+    speedInput.min = String(Math.min(0.25, speed));
+    speedInput.max = String(Math.max(2, speed));
     speedInput.value = String(speed);
-    document.getElementById('animationSpeedValue').value = formatAnimationSpeed(speed);
+    document.getElementById('animationSpeedValue').value = formatAnimationSpeedValue(speed);
+  }
+
+  function updateFontSizeUi() {
+    document.querySelectorAll('[data-font-size-category]').forEach((input) => {
+      const category = String(input.dataset.fontSizeCategory || '');
+      input.value = String(currentFontSizeSettings[category] ?? DEFAULT_FONT_SIZE_SETTINGS[category] ?? 12);
+    });
   }
 
   const updatePlatformDetailDisabled = () => {
@@ -1430,10 +1451,17 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         void renderMrjzyAutoLoginAccounts();
       }
       if (changes.animationMode || changes.animationSpeed) {
-        updateAnimationUi(
-          changes.animationMode?.newValue ?? globalThis.BjtuMotion?.getMode(),
-          changes.animationSpeed?.newValue ?? globalThis.BjtuMotion?.getSpeed()
-        );
+        if (!animationSpeedDragging) {
+          updateAnimationUi(
+            changes.animationMode?.newValue ?? globalThis.BjtuMotion?.getMode(),
+            changes.animationSpeed?.newValue ?? globalThis.BjtuMotion?.getSpeed()
+          );
+        }
+      }
+      if (changes.fontSizeSettings) {
+        currentFontSizeSettings = globalThis.BjtuTypography?.normalizeSettings(changes.fontSizeSettings.newValue)
+          || { ...DEFAULT_FONT_SIZE_SETTINGS };
+        updateFontSizeUi();
       }
       if (changes.mrjzyAutoLoginClass) {
         currentMrjzyAutoLoginClass = String(changes.mrjzyAutoLoginClass.newValue || '').trim();
@@ -1586,12 +1614,59 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setMsg('已应用更改');
   });
 
-  document.getElementById('animationSpeed').addEventListener('input', async (event) => {
-    const value = globalThis.BjtuMotion?.normalizeSpeed(event.currentTarget.value) || DEFAULT_ANIMATION_SPEED;
-    document.getElementById('animationSpeedValue').value = formatAnimationSpeed(value);
+  const applyAnimationSpeed = async (rawValue) => {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) return false;
+    const value = globalThis.BjtuMotion?.normalizeSpeed(parsed) || DEFAULT_ANIMATION_SPEED;
+    if (animationSpeedDragging) {
+      document.getElementById('animationSpeedValue').value = formatAnimationSpeedValue(value);
+      globalThis.BjtuMotion?.apply?.(globalThis.BjtuMotion.getMode(), value);
+      return true;
+    } else {
+      updateAnimationUi(globalThis.BjtuMotion?.getMode(), value);
+    }
     await chrome.storage.local.set({ animationSpeed: value });
+    return true;
+  };
+  const animationSpeedInput = document.getElementById('animationSpeed');
+  animationSpeedInput.addEventListener('pointerdown', (event) => {
+    animationSpeedDragging = true;
+    try { animationSpeedInput.setPointerCapture(event.pointerId); } catch {}
   });
-  document.getElementById('animationSpeed').addEventListener('change', () => setMsg('已应用更改'));
+  const finishAnimationSpeedDrag = async () => {
+    if (!animationSpeedDragging) return;
+    const value = animationSpeedInput.value;
+    animationSpeedDragging = false;
+    await applyAnimationSpeed(value);
+  };
+  animationSpeedInput.addEventListener('pointerup', () => { void finishAnimationSpeedDrag(); });
+  animationSpeedInput.addEventListener('pointercancel', () => { void finishAnimationSpeedDrag(); });
+  animationSpeedInput.addEventListener('lostpointercapture', () => { void finishAnimationSpeedDrag(); });
+  animationSpeedInput.addEventListener('input', (event) => {
+    void applyAnimationSpeed(event.currentTarget.value);
+  });
+  animationSpeedInput.addEventListener('change', () => setMsg('已应用更改'));
+  document.getElementById('animationSpeedValue').addEventListener('change', async (event) => {
+    if (!await applyAnimationSpeed(event.currentTarget.value)) {
+      updateAnimationUi(globalThis.BjtuMotion?.getMode(), globalThis.BjtuMotion?.getSpeed());
+      return;
+    }
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('fontSizeEditor').addEventListener('change', async (event) => {
+    const input = event.target.closest('[data-font-size-category]');
+    if (!(input instanceof HTMLInputElement)) return;
+    const size = Number(input.value);
+    const category = String(input.dataset.fontSizeCategory || '');
+    if (!Number.isFinite(size) || size <= 0) {
+      updateFontSizeUi();
+      return;
+    }
+    currentFontSizeSettings = { ...currentFontSizeSettings, [category]: size };
+    await chrome.storage.local.set({ fontSizeSettings: currentFontSizeSettings });
+    setMsg('已应用更改');
+  });
 
   const themeModeContainer = document.getElementById('themeMode');
   const systemMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -2024,7 +2099,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       deadlineCountdownStyle: DEFAULT_DEADLINE_COUNTDOWN_STYLE,
       themeMode: DEFAULT_THEME_MODE,
       animationMode: DEFAULT_ANIMATION_MODE,
-      animationSpeed: DEFAULT_ANIMATION_SPEED
+      animationSpeed: DEFAULT_ANIMATION_SPEED,
+      fontSizeSettings: { ...DEFAULT_FONT_SIZE_SETTINGS }
     });
     await chrome.storage.sync.remove(['platformEnabled']);
     document.getElementById('enableVe').checked = true;
@@ -2076,6 +2152,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     renderBackgroundAutoUpdateStatus(null);
     updateThemeModeUi(DEFAULT_THEME_MODE);
     updateAnimationUi(DEFAULT_ANIMATION_MODE, DEFAULT_ANIMATION_SPEED);
+    currentFontSizeSettings = { ...DEFAULT_FONT_SIZE_SETTINGS };
+    updateFontSizeUi();
     currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];
     renderHomeworkReminderNodes();
     updateHomeworkReminderDisabled();

@@ -16,7 +16,7 @@ html[data-color-scheme="dark"] .mail-fullscreen-button-icon-select { border-colo
 .mail-schedule-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; flex-wrap:wrap; }
 .mail-schedule-header > strong { font-size:15px; }
 .mail-schedule-controls { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
-.mail-limit-label { margin:0 !important; color:#64748b; font-size:12px; white-space:nowrap; }
+.mail-limit-label { color:#64748b; font-size:12px; white-space:nowrap; }
 #mailListLimit { width:88px; min-width:0; height:32px; margin:0; padding:4px 7px; box-sizing:border-box; }
 .mail-score-header-meta { display:inline-flex; align-items:center; gap:8px; color:#64748b; font-size:12px; white-space:nowrap; }
 .mail-score-header-meta time { font-variant-numeric:tabular-nums; }

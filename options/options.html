@@ -42,7 +42,10 @@
       <label class="animation-speed-option" id="animationSpeedOption">
         <span>动画速度</span>
         <input type="range" id="animationSpeed" min="0.25" max="2" step="0.05" value="1" />
-        <output id="animationSpeedValue" for="animationSpeed">1×</output>
+        <span class="animation-speed-value-wrap">
+          <input type="number" id="animationSpeedValue" step="any" value="1" aria-label="动画速度倍率" />
+          <span>×</span>
+        </span>
       </label>
       <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
         <input type="checkbox" id="courseHelperExpandedByDefault" style="width:auto;" />
@@ -66,6 +69,17 @@
         <span>作业详情默认显示行数</span>
         <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
       </label>
+      <details class="ui-order-editor font-size-editor" id="fontSizeEditor">
+        <summary><span class="ui-order-summary-label">字号</span><span class="tip">相同默认字号的文字由同一分类统一控制。</span></summary>
+        <div class="font-size-grid">
+          <label class="font-size-item"><span>〇级标题</span><input type="number" step="any" value="24" data-font-size-category="24" /><span>px</span><span class="font-size-default">默认 24px</span></label>
+          <label class="font-size-item"><span>图标</span><input type="number" step="any" value="22" data-font-size-category="22" /><span>px</span><span class="font-size-default">默认 22px</span></label>
+          <label class="font-size-item"><span>一级标题</span><input type="number" step="any" value="18" data-font-size-category="18" /><span>px</span><span class="font-size-default">默认 18px</span></label>
+          <label class="font-size-item"><span>二级标题</span><input type="number" step="any" value="14" data-font-size-category="14" /><span>px</span><span class="font-size-default">默认 14px</span></label>
+          <label class="font-size-item"><span>正文</span><input type="number" step="any" value="12" data-font-size-category="12" /><span>px</span><span class="font-size-default">默认 12px</span></label>
+          <label class="font-size-item"><span>辅助文字</span><input type="number" step="any" value="11" data-font-size-category="11" /><span>px</span><span class="font-size-default">默认 11px</span></label>
+        </div>
+      </details>
       <details class="ui-order-editor" id="uiOrderEditor">
         <summary><span class="ui-order-summary-label">排序</span><span class="tip">拖动项目或使用箭头调整顺序；更改会立即应用。</span></summary>
         <div class="ui-order-groups">
