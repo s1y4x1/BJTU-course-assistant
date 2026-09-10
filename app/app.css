@@ -820,6 +820,9 @@ body.platform-column-resizing {
 .course-card-title {
     font-size: var(--bjtu-font-size-primaryTitle, 18px);
 }
+.course-card-title > strong {
+    font-size: inherit;
+}
 .resource-time-inline {
     font-size: 11px;
     color: #6b7280;
@@ -950,6 +953,9 @@ body.platform-column-resizing {
 .upload-link-row .url-link { color: #4CAF50; text-decoration: none; font-weight: bold; font-size: 14px; flex: 1; }
 .upload-link-row .url-link:hover { text-decoration: underline; }
 .file-item strong { font-size: 15px; }
+.file-item .course-card-title > strong {
+    font-size: inherit !important;
+}
 
 .page-top-config {
     position: relative;
