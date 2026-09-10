@@ -420,6 +420,9 @@ html[data-color-scheme="dark"] .platform-qr-login-tip {
 :where(#options-controlled-content, [data-options-fragment]) :is(.qwen-setting-row, .qwen-toggle-row) :is(.qwen-setting-label, .qwen-toggle-label) {
   font-size:inherit !important;
 }
+:where(#options-controlled-content, [data-options-fragment]) :is(.open-mode-row > div, .schedule-interval-editor > span, .campusnet-interval-editor > span, .mail-monitor-interval-editor > span) {
+  font-size:var(--bjtu-font-size-body, 13px) !important;
+}
 
 /* options.html */
 html[data-color-scheme="dark"] .theme-mode-btn,
