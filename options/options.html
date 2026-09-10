@@ -31,6 +31,19 @@
           <button class="theme-mode-btn" data-value="dark" title="深色">🌙</button>
         </span>
       </label>
+      <label class="animation-mode-option">
+        <span>动画</span>
+        <span class="animation-mode-btns" id="animationMode">
+          <button type="button" class="animation-mode-btn animation-mode-btn--text" data-value="system" title="跟随系统">跟随系统</button>
+          <button type="button" class="animation-mode-btn" data-value="on" title="开启动画" aria-label="开启动画">▶️</button>
+          <button type="button" class="animation-mode-btn" data-value="off" title="关闭动画" aria-label="关闭动画">⏸️</button>
+        </span>
+      </label>
+      <label class="animation-speed-option" id="animationSpeedOption">
+        <span>动画速度</span>
+        <input type="range" id="animationSpeed" min="0.25" max="2" step="0.05" value="1" />
+        <output id="animationSpeedValue" for="animationSpeed">1×</output>
+      </label>
       <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
         <input type="checkbox" id="courseHelperExpandedByDefault" style="width:auto;" />
         <span>默认展开右栏课程助手</span>

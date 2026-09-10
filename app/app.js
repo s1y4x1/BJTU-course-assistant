@@ -168,6 +168,12 @@ const floatingWindowAnimations = globalThis.BjtuFloatingWindowAnimations || Obje
     if (!(button instanceof HTMLButtonElement)) return Promise.resolve();
     const container = button.closest('.fullscreen-module-buttons');
     if (showing && container instanceof HTMLElement) container.hidden = false;
+    if (globalThis.BjtuMotion?.isEnabled?.() === false) {
+      button.classList.remove('is-appearing', 'is-disappearing');
+      button.hidden = !showing;
+      globalThis.BjtuSyncFloatingLauncherContainer?.();
+      return Promise.resolve();
+    }
     const animationToken = String((Number(button.dataset.floatingAnimationToken || 0) + 1) % 1000000);
     button.dataset.floatingAnimationToken = animationToken;
     button.classList.remove('is-appearing', 'is-disappearing');
@@ -193,11 +199,12 @@ const floatingWindowAnimations = globalThis.BjtuFloatingWindowAnimations || Obje
         resolve();
       };
       button.addEventListener('animationend', finish, { once: true });
-      timer = setTimeout(finish, 240);
+      timer = setTimeout(finish, globalThis.BjtuMotion?.duration?.(240) ?? 240);
     });
   },
   async animateWindowFromButton(view, buttonRect, opening) {
-    if (!(view instanceof HTMLElement) || !buttonRect || typeof view.animate !== 'function') return;
+    if (!(view instanceof HTMLElement) || !buttonRect || typeof view.animate !== 'function'
+      || globalThis.BjtuMotion?.isEnabled?.() === false) return;
     const rect = view.getBoundingClientRect();
     const scale = 0.06;
     const collapsed = {
@@ -211,6 +218,7 @@ const floatingWindowAnimations = globalThis.BjtuFloatingWindowAnimations || Obje
       easing: opening ? 'cubic-bezier(.2,.8,.2,1)' : 'cubic-bezier(.4,0,1,1)',
       fill: 'both'
     });
+    try { animation.updatePlaybackRate(globalThis.BjtuMotion?.getSpeed?.() || 1); } catch {}
     await animation.finished.catch(() => {});
     animation.cancel();
   }
@@ -4725,6 +4733,15 @@ function animateHomeworkGroupVisibility(group, expanded) {
     Number(group.dataset.visibilityAnimationGeneration || 0) === generation
     && group.dataset.expanded === (expanded ? '1' : '0')
   );
+  if (globalThis.BjtuMotion?.isEnabled?.() === false) {
+    group.classList.toggle('is-hidden', !expanded);
+    group.classList.remove('homework-group-animating');
+    group.style.maxHeight = '';
+    group.style.opacity = '';
+    group.style.transform = '';
+    group.style.overflow = '';
+    return;
+  }
   const currentHeight = Math.max(0, group.getBoundingClientRect().height);
   group.classList.remove('homework-group-animating');
   group.style.overflow = 'hidden';
@@ -4751,7 +4768,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
       group.style.opacity = '';
       group.style.transform = '';
       group.style.overflow = '';
-    }, 230);
+    }, globalThis.BjtuMotion?.duration?.(230) ?? 230);
     return;
   }
 
@@ -4776,7 +4793,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
     group.style.opacity = '';
     group.style.transform = '';
     group.style.overflow = '';
-  }, 230);
+  }, globalThis.BjtuMotion?.duration?.(230) ?? 230);
 }
 
 window.toggleOverdueView = function (courseId) {

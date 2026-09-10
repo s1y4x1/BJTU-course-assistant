@@ -55,6 +55,8 @@ const DEFAULT_XUETANGX_ACTIVITY_TYPES = Object.freeze([6, 7, 8, 10, 11, 12]);
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [120];
 const DEFAULT_THEME_MODE = 'system';
+const DEFAULT_ANIMATION_MODE = 'system';
+const DEFAULT_ANIMATION_SPEED = 1;
 const DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED = true;
 const DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED = false;
 const DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES = 30;
@@ -725,8 +727,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass'
   ]);
   const { yktActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'yktActivityTypes',
@@ -853,6 +855,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
   setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
   updateThemeModeUi(themeMode);
+  updateAnimationUi(animationMode, animationSpeed);
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccount || '').trim();
   let currentMrjzyAutoLoginAccount = String(mrjzyAutoLoginAccount || '').trim();
@@ -1110,6 +1113,31 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       const systemBtn = container.querySelector(`.theme-mode-btn[data-value="${systemValue}"]`);
       if (systemBtn) systemBtn.classList.add('theme-mode-btn--system-active');
     }
+  }
+
+  function formatAnimationSpeed(value) {
+    return `${Number(value).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}×`;
+  }
+
+  function updateAnimationUi(modeValue, speedValue) {
+    const mode = globalThis.BjtuMotion?.normalizeMode(modeValue) || DEFAULT_ANIMATION_MODE;
+    const speed = globalThis.BjtuMotion?.normalizeSpeed(speedValue) || DEFAULT_ANIMATION_SPEED;
+    const container = document.getElementById('animationMode');
+    container.querySelectorAll('.animation-mode-btn').forEach((btn) => {
+      btn.classList.toggle('animation-mode-btn--active', btn.dataset.value === mode);
+      btn.classList.remove('animation-mode-btn--system-active');
+    });
+    const systemReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+    if (mode === 'system') {
+      container.querySelector(`.animation-mode-btn[data-value="${systemReduced ? 'off' : 'on'}"]`)
+        ?.classList.add('animation-mode-btn--system-active');
+    }
+    const enabled = mode === 'on' || (mode === 'system' && !systemReduced);
+    const speedOption = document.getElementById('animationSpeedOption');
+    const speedInput = document.getElementById('animationSpeed');
+    speedOption.hidden = !enabled;
+    speedInput.value = String(speed);
+    document.getElementById('animationSpeedValue').value = formatAnimationSpeed(speed);
   }
 
   const updatePlatformDetailDisabled = () => {
@@ -1401,6 +1429,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         currentMrjzyAutoLoginAccount = String(changes.mrjzyAutoLoginAccount.newValue || '').trim();
         void renderMrjzyAutoLoginAccounts();
       }
+      if (changes.animationMode || changes.animationSpeed) {
+        updateAnimationUi(
+          changes.animationMode?.newValue ?? globalThis.BjtuMotion?.getMode(),
+          changes.animationSpeed?.newValue ?? globalThis.BjtuMotion?.getSpeed()
+        );
+      }
       if (changes.mrjzyAutoLoginClass) {
         currentMrjzyAutoLoginClass = String(changes.mrjzyAutoLoginClass.newValue || '').trim();
         void renderMrjzyAutoLoginClasses();
@@ -1543,6 +1577,22 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setMsg('已应用更改');
   });
 
+  document.getElementById('animationMode').addEventListener('click', async (event) => {
+    const btn = event.target.closest('.animation-mode-btn');
+    if (!btn) return;
+    const value = globalThis.BjtuMotion?.normalizeMode(btn.dataset.value) || DEFAULT_ANIMATION_MODE;
+    await chrome.storage.local.set({ animationMode: value });
+    updateAnimationUi(value, globalThis.BjtuMotion?.getSpeed());
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('animationSpeed').addEventListener('input', async (event) => {
+    const value = globalThis.BjtuMotion?.normalizeSpeed(event.currentTarget.value) || DEFAULT_ANIMATION_SPEED;
+    document.getElementById('animationSpeedValue').value = formatAnimationSpeed(value);
+    await chrome.storage.local.set({ animationSpeed: value });
+  });
+  document.getElementById('animationSpeed').addEventListener('change', () => setMsg('已应用更改'));
+
   const themeModeContainer = document.getElementById('themeMode');
   const systemMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
   const onSystemThemeChange = () => {
@@ -1555,6 +1605,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
   };
   if (typeof systemMedia?.addEventListener === 'function') systemMedia.addEventListener('change', onSystemThemeChange);
+
+  const systemMotionMedia = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const onSystemMotionChange = () => {
+    updateAnimationUi(globalThis.BjtuMotion?.getMode(), globalThis.BjtuMotion?.getSpeed());
+  };
+  if (typeof systemMotionMedia?.addEventListener === 'function') systemMotionMedia.addEventListener('change', onSystemMotionChange);
 
   document.getElementById('autoLoadCourseResourcesEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
@@ -1966,7 +2022,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
       showCourseListDuringLayoutTransition: DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION,
       deadlineCountdownStyle: DEFAULT_DEADLINE_COUNTDOWN_STYLE,
-      themeMode: DEFAULT_THEME_MODE
+      themeMode: DEFAULT_THEME_MODE,
+      animationMode: DEFAULT_ANIMATION_MODE,
+      animationSpeed: DEFAULT_ANIMATION_SPEED
     });
     await chrome.storage.sync.remove(['platformEnabled']);
     document.getElementById('enableVe').checked = true;
@@ -2017,6 +2075,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     updateBackgroundAutoInstallOptionalDisabled();
     renderBackgroundAutoUpdateStatus(null);
     updateThemeModeUi(DEFAULT_THEME_MODE);
+    updateAnimationUi(DEFAULT_ANIMATION_MODE, DEFAULT_ANIMATION_SPEED);
     currentHomeworkReminderMinutes = [...DEFAULT_HOMEWORK_REMINDER_MINUTES];
     renderHomeworkReminderNodes();
     updateHomeworkReminderDisabled();

@@ -83,6 +83,53 @@ function formatSavedUploadSize(bytes) {
   return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+let savedUploadsToggleAnimationSerial = 0;
+
+function getSavedUploadAnimatedItems(section) {
+  return Array.from(section?.children || []).filter((element) => (
+    element instanceof HTMLElement
+    && (element.matches('.file-item[data-saved-upload-id]') || element.matches('.saved-uploads-divider'))
+    && element.getClientRects().length > 0
+  ));
+}
+
+function updateSavedUploadsToggleButton(section, expanded) {
+  const button = section?.querySelector('[data-action="toggle-saved-uploads"]');
+  if (!(button instanceof HTMLButtonElement)) return;
+  const count = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles.length : 0;
+  const text = expanded ? button.dataset.expandedText : button.dataset.collapsedText;
+  button.classList.toggle('is-expanded', expanded);
+  button.classList.toggle('homework-toggle-btn--up', expanded);
+  button.classList.toggle('homework-toggle-btn--down', !expanded);
+  button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  const label = button.querySelector('.homework-toggle-label');
+  if (label instanceof HTMLElement) label.textContent = `${text || ''} (${count})`;
+}
+
+function animateSavedUploadsItems(section, expanding) {
+  if (globalThis.BjtuMotion?.isEnabled?.() === false
+    || (!globalThis.BjtuMotion && matchMedia('(prefers-reduced-motion: reduce)').matches)) return Promise.resolve();
+  const items = getSavedUploadAnimatedItems(section);
+  const frames = expanding
+    ? [
+        { opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' },
+        { opacity: 1, transform: 'translateY(0) scaleY(1)', transformOrigin: 'top center' }
+      ]
+    : [
+        { opacity: 1, transform: 'translateY(0) scaleY(1)', transformOrigin: 'top center' },
+        { opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' }
+      ];
+  return Promise.all(items.map((item) => {
+    const animation = item.animate(frames, {
+      duration: expanding ? 220 : 180,
+      easing: expanding ? 'cubic-bezier(0.2, 0.8, 0.2, 1)' : 'ease-in',
+      fill: 'both'
+    });
+    try { animation.updatePlaybackRate(globalThis.BjtuMotion?.getSpeed?.() || 1); } catch {}
+    return animation.finished.catch(() => {});
+  })).then(() => {});
+}
+
 function renderSavedUploadsSection() {
   const section = document.getElementById('saved-uploads-section');
   if (!(section instanceof HTMLElement)) return;
@@ -206,8 +253,19 @@ function setupSavedUploadsUi() {
         const action = String(actionEl.dataset.action || '').trim();
         if (action === 'toggle-saved-uploads') {
           const expanded = section.dataset.expanded === '1';
-          section.dataset.expanded = expanded ? '0' : '1';
-          renderSavedUploadsSection();
+          const serial = ++savedUploadsToggleAnimationSerial;
+          if (!expanded) {
+            section.dataset.expanded = '1';
+            renderSavedUploadsSection();
+            void animateSavedUploadsItems(section, true);
+            return;
+          }
+          section.dataset.expanded = '0';
+          updateSavedUploadsToggleButton(section, false);
+          await animateSavedUploadsItems(section, false);
+          if (serial === savedUploadsToggleAnimationSerial && section.dataset.expanded === '0') {
+            renderSavedUploadsSection();
+          }
           return;
         }
         if (action === 'delete-saved-upload') {
