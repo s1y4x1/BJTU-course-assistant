@@ -22,6 +22,7 @@ let mrjzyActiveRuntimeCtx = null;
 let mrjzyHeaderRulePromise = null;
 let mrjzyAutoLoginPromise = null;
 let mrjzyAutoLoginAttempted = false;
+let mrjzyConfiguredClassSwitchSerial = 0;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
@@ -260,8 +261,7 @@ async function tryMrjzyConfiguredAutoLogin() {
     const configuredClass = String(settings.mrjzyAutoLoginClass || '').split('\u001f');
     const preferredOpenId = String(configuredClass[0] || response?.account?.selectedOpenId || '').trim();
     const preferredClassId = String(configuredClass[1] || response?.account?.selectedClassId || '').trim();
-    const user = users.find((item) => preferredOpenId && String(item?.openId || '').trim() === preferredOpenId)
-      || users.find((item) => String(item?.openId || '').trim());
+    const user = users.find((item) => preferredOpenId && String(item?.openId || '').trim() === preferredOpenId);
     if (!user) return false;
     const switched = await requestMrjzyAccountApi(MRJZY_SWITCH_USER_API, {
       method: 'POST', token, body: { openId: String(user.openId).trim() }
@@ -276,6 +276,28 @@ async function tryMrjzyConfiguredAutoLogin() {
   })().finally(() => { mrjzyAutoLoginPromise = null; });
   return mrjzyAutoLoginPromise;
 }
+
+async function switchMrjzyConfiguredAutoLoginClass(expectedClass = '') {
+  const serial = ++mrjzyConfiguredClassSwitchSerial;
+  if (mrjzyActiveRuntimeCtx) {
+    mrjzyActiveRuntimeCtx.cancelled = true;
+    mrjzyActiveRuntimeCtx.controller?.abort();
+  }
+  if (mrjzyAutoLoginPromise) await mrjzyAutoLoginPromise.catch(() => false);
+  if (serial !== mrjzyConfiguredClassSwitchSerial) return { ok: false, stale: true };
+  const settings = await chrome.storage.local.get(['mrjzyAutoLoginEnabled', 'mrjzyAutoLoginClass']);
+  if (settings.mrjzyAutoLoginEnabled !== true
+    || String(settings.mrjzyAutoLoginClass || '') !== String(expectedClass || '')) {
+    return { ok: false, stale: true };
+  }
+  mrjzyAutoLoginAttempted = false;
+  const ok = await tryMrjzyConfiguredAutoLogin();
+  if (serial !== mrjzyConfiguredClassSwitchSerial) return { ok: false, stale: true };
+  if (ok) mrjzyAutoLoginAttempted = true;
+  return { ok: !!ok, stale: false };
+}
+
+globalThis.BjtuMrjzySwitchConfiguredClass = switchMrjzyConfiguredAutoLoginClass;
 
 function setMrjzyPasswordLoginBusy(mask, busy, status = '') {
   mrjzyPasswordLoginBusy = !!busy;
@@ -729,7 +751,8 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
     credentials: 'include',
     cache: 'no-store',
     headers,
-    body: bodyRaw
+    body: bodyRaw,
+    signal: runtimeCtx?.controller?.signal
   });
   const text = await res.text();
   let data = null;
@@ -740,7 +763,8 @@ async function postMrjzyForm(url, paramsObj, runtimeCtx = null) {
 
 async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   const mrjzyRuntimeCtx = {
-    cancelled: false
+    cancelled: false,
+    controller: new AbortController()
   };
   mrjzyActiveRuntimeCtx = mrjzyRuntimeCtx;
   const shouldAbort = () => mrjzyRuntimeCtx.cancelled

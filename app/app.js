@@ -1304,6 +1304,23 @@ function setupOptionsStorageLiveSync() {
       window.platformLoadedOnce.xuetangx = false;
       triggerExternalPlatformLoad('xuetangx', true);
     }
+    if (changes.mrjzyAutoLoginClass
+      && changes.mrjzyAutoLoginClass.oldValue !== changes.mrjzyAutoLoginClass.newValue
+      && isPlatformEnabled('mrjzy')) {
+      const selectedClass = String(changes.mrjzyAutoLoginClass.newValue || '');
+      void Promise.resolve(globalThis.BjtuMrjzySwitchConfiguredClass?.(selectedClass)).then((result) => {
+        if (result?.stale) return;
+        if (!result?.ok) {
+          showToast('每日交作业班级切换失败，请重新登录', 'error', 3000);
+          return;
+        }
+        clearPlatformData('mrjzy');
+        window.platformLoadedOnce.mrjzy = false;
+        triggerExternalPlatformLoad('mrjzy', true);
+      }).catch((error) => {
+        showToast(`每日交作业班级切换失败：${String(error?.message || error)}`, 'error', 3200);
+      });
+    }
     if (!popupMode && changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY]) {
       setCourseHelperFocusMode(changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY].newValue === true);
     }

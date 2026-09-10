@@ -905,7 +905,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       const classes = Array.isArray(identity?.classes) && identity.classes.length ? identity.classes : [null];
       return classes.map((classInfo) => ({
         value: `${String(identity?.openId || '').trim()}\u001f${String(classInfo?.classId || '').trim()}`,
-        label: [classInfo?.name, identity?.schoolName, identity?.userName].filter(Boolean).join(' · ')
+        label: [classInfo?.name, identity?.schoolName].filter(Boolean).join(' · ')
       })).filter((choice) => !choice.value.startsWith('\u001f'));
     });
     const previous = currentMrjzyAutoLoginClass;

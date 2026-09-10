@@ -3,10 +3,12 @@
 
   const LOGIN_URL = 'https://api-prod.lulufind.com/api/v1/auth/smslogin';
   const ALL_USERS_URL = 'https://api-prod.lulufind.com/mrzy/v1/user/alluser';
+  const SWITCH_USER_URL = 'https://api-prod.lulufind.com/mrzy/v1/user/switch_user';
   const ACCOUNTS_KEY = 'mrjzyAccounts';
   const ACCOUNT_REVISION_KEY = 'mrjzyAccountRevision';
   const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
   const pending = new Map();
+  const pendingSelections = new Map();
   let accountWritePromise = Promise.resolve();
 
   function normalizeIdentities(value) {
@@ -91,15 +93,26 @@
       const accounts = await getAccounts();
       const previous = accounts[id];
       if (!previous?.password) return false;
+      const classId = String(selectedClassId || '').trim();
+      const autoLoginClass = `${openId}\u001f${classId}`;
+      const settings = await chrome.storage.local.get(['mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass']);
+      const selectionPatch = {};
+      if (String(settings.mrjzyAutoLoginAccount || '') !== id) selectionPatch.mrjzyAutoLoginAccount = id;
+      if (String(settings.mrjzyAutoLoginClass || '') !== autoLoginClass) selectionPatch.mrjzyAutoLoginClass = autoLoginClass;
+      if (previous.selectedOpenId === openId && previous.selectedClassId === classId) {
+        if (Object.keys(selectionPatch).length) await chrome.storage.local.set(selectionPatch);
+        return true;
+      }
       accounts[id] = normalizeAccount(id, {
         ...previous,
         selectedOpenId: openId,
-        selectedClassId: String(selectedClassId || '').trim(),
+        selectedClassId: classId,
         updatedAt: Date.now()
       });
       await chrome.storage.local.set({
         [ACCOUNTS_KEY]: accounts,
-        [ACCOUNT_REVISION_KEY]: Date.now()
+        [ACCOUNT_REVISION_KEY]: Date.now(),
+        ...selectionPatch
       });
       return true;
     });
@@ -107,7 +120,7 @@
     return write;
   }
 
-  function decodeRequestBody(requestBody) {
+  function decodeJsonRequestBody(requestBody) {
     const raw = requestBody?.raw;
     if (!Array.isArray(raw) || !raw.length) return null;
     try {
@@ -119,13 +132,38 @@
         bytes.set(chunk, offset);
         offset += chunk.byteLength;
       });
-      const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
-      const phone = String(data?.phone || data?.mobile || '').trim();
-      const password = String(data?.password || '');
-      return phone && password ? { phone, password, capturedAt: Date.now() } : null;
+      return JSON.parse(new TextDecoder('utf-8').decode(bytes));
     } catch {
       return null;
     }
+  }
+
+  function decodeLoginRequestBody(requestBody) {
+    const data = decodeJsonRequestBody(requestBody);
+    const phone = String(data?.phone || data?.mobile || '').trim();
+    const password = String(data?.password || '');
+    return phone && password ? { phone, password, capturedAt: Date.now() } : null;
+  }
+
+  async function syncSelectionByOpenId(openId, attempt = 0) {
+    const selectedOpenId = String(openId || '').trim();
+    if (!selectedOpenId) return false;
+    const accounts = await getAccounts();
+    const account = Object.values(accounts).find((item) => (
+      Array.isArray(item.identities)
+      && item.identities.some((identity) => identity.openId === selectedOpenId)
+    ));
+    if (!account) {
+      if (attempt >= 2) return false;
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 300 : 900));
+      return syncSelectionByOpenId(selectedOpenId, attempt + 1);
+    }
+    const identity = account.identities.find((item) => item.openId === selectedOpenId);
+    const classes = Array.isArray(identity?.classes) ? identity.classes : [];
+    const selectedClassId = classes.some((item) => item.classId === account.selectedClassId)
+      ? account.selectedClassId
+      : String(classes[0]?.classId || '').trim();
+    return saveSelectedIdentity(account.phone, selectedOpenId, selectedClassId);
   }
 
   function remember(details, credentials) {
@@ -186,7 +224,7 @@
       if (String(details?.method || '').toUpperCase() !== 'POST') return;
       if (Number(details?.tabId ?? -1) < 0) return;
       if (String(details?.initiator || '') === EXTENSION_ORIGIN) return;
-      remember(details, decodeRequestBody(details.requestBody));
+      remember(details, decodeLoginRequestBody(details.requestBody));
     }, { urls: [`${LOGIN_URL}*`] }, ['requestBody']);
   }
 
@@ -204,6 +242,35 @@
     chrome.webRequest.onErrorOccurred.addListener((details) => {
       pending.delete(String(details?.requestId || ''));
     }, { urls: [`${LOGIN_URL}*`] });
+  }
+
+  if (chrome.webRequest?.onBeforeRequest) {
+    chrome.webRequest.onBeforeRequest.addListener((details) => {
+      if (String(details?.method || '').toUpperCase() !== 'POST') return;
+      if (Number(details?.tabId ?? -1) < 0) return;
+      if (String(details?.initiator || '') === EXTENSION_ORIGIN) return;
+      const openId = String(decodeJsonRequestBody(details.requestBody)?.openId || '').trim();
+      const requestId = String(details?.requestId || '');
+      if (!openId || !requestId) return;
+      pendingSelections.set(requestId, openId);
+      setTimeout(() => pendingSelections.delete(requestId), 120000);
+    }, { urls: [`${SWITCH_USER_URL}*`] }, ['requestBody']);
+  }
+
+  if (chrome.webRequest?.onCompleted) {
+    chrome.webRequest.onCompleted.addListener((details) => {
+      const requestId = String(details?.requestId || '');
+      const openId = pendingSelections.get(requestId);
+      pendingSelections.delete(requestId);
+      if (!openId || Number(details?.statusCode || 0) < 200 || Number(details?.statusCode || 0) >= 300) return;
+      void syncSelectionByOpenId(openId).catch(() => {});
+    }, { urls: [`${SWITCH_USER_URL}*`] });
+  }
+
+  if (chrome.webRequest?.onErrorOccurred) {
+    chrome.webRequest.onErrorOccurred.addListener((details) => {
+      pendingSelections.delete(String(details?.requestId || ''));
+    }, { urls: [`${SWITCH_USER_URL}*`] });
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
