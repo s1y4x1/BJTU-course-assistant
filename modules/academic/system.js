@@ -1339,7 +1339,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       : null;
     const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, row]));
     const changes = [];
-    const notificationsEnabled = stored?.[MONITOR_KEY] === true;
+    const notificationsEnabled = stored?.[MONITOR_KEY] !== false;
     if (previous && notificationsEnabled) {
       for (const row of normalizedRows) {
         if (!previous[row.key]) changes.push({ kind: 'new', row });
@@ -1437,7 +1437,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       : null;
     const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, row]));
     const changes = [];
-    const notificationsEnabled = stored?.[EXAM_MONITOR_KEY] === true;
+    const notificationsEnabled = stored?.[EXAM_MONITOR_KEY] !== false;
     if (previous && notificationsEnabled) {
       for (const row of normalizedRows) {
         if (!previous[row.key]) changes.push({ kind: 'new', row });
@@ -1493,7 +1493,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     if (scoreCheckPromise) return scoreCheckPromise;
     scoreCheckPromise = enqueueAcademicRequest(priority, async () => {
       const settings = await chrome.storage.local.get([MONITOR_KEY]);
-      if (!force && settings?.[MONITOR_KEY] !== true) return { skipped: true };
+      if (!force && settings?.[MONITOR_KEY] === false) return { skipped: true };
       try {
         await flushPendingScoreNotifications();
         const page = await fetchScorePage();
@@ -1520,7 +1520,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     if (examCheckPromise) return examCheckPromise;
     examCheckPromise = enqueueAcademicRequest(priority, async () => {
       const settings = await chrome.storage.local.get([EXAM_MONITOR_KEY]);
-      if (!force && settings?.[EXAM_MONITOR_KEY] !== true) return { skipped: true };
+      if (!force && settings?.[EXAM_MONITOR_KEY] === false) return { skipped: true };
       try {
         await flushPendingExamNotifications();
         const current = await loadCurrentExamSource({ fresh: true });
@@ -1545,7 +1545,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   async function captureScoreTab(tabId) {
-    const enabled = (await chrome.storage.local.get([MONITOR_KEY]))?.[MONITOR_KEY] === true;
+    const enabled = (await chrome.storage.local.get([MONITOR_KEY]))?.[MONITOR_KEY] !== false;
     if (!enabled || !tabId) return;
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -1671,8 +1671,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     return {
       ok: true, studentId,
       accounts: summaries,
-      monitorEnabled: stored?.[MONITOR_KEY] === true,
-      examMonitorEnabled: stored?.[EXAM_MONITOR_KEY] === true,
+      monitorEnabled: stored?.[MONITOR_KEY] !== false,
+      examMonitorEnabled: stored?.[EXAM_MONITOR_KEY] !== false,
       classReminderEnabled: stored?.[CLASS_REMINDER_KEY] === true,
       classReminderLeadMinutes: normalizeClassReminderLeadMinutes(stored?.[CLASS_REMINDER_LEAD_KEY]),
       monitorIntervalMinutes: normalizeMonitorIntervalMinutes(stored?.[MONITOR_INTERVAL_KEY]),
@@ -2214,7 +2214,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       if (changeInfo.status === 'complete'
         && /^https:\/\/aa\.bjtu\.edu\.cn\/examine\/examplanstudent\/stulist(?:[?#]|$)/i.test(url)) {
         chrome.storage.local.get([EXAM_MONITOR_KEY]).then((stored) => {
-          if (stored?.[EXAM_MONITOR_KEY] === true) checkExams('page').catch(() => {});
+          if (stored?.[EXAM_MONITOR_KEY] !== false) checkExams('page').catch(() => {});
         }).catch(() => {});
       }
     });

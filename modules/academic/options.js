@@ -26,8 +26,8 @@
     [ACADEMIC_FULLSCREEN_BUTTON_KEY]: true,
     [ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY]: 'graduation',
     academicOptionsWideEnabled: true,
-    academicScoreMonitorEnabled: false,
-    academicExamMonitorEnabled: false,
+    academicScoreMonitorEnabled: true,
+    academicExamMonitorEnabled: true,
     academicClassReminderEnabled: false,
     academicClassReminderLeadMinutes: DEFAULT_CLASS_REMINDER_LEAD_MINUTES,
     academicScoreMonitorIntervalMinutes: DEFAULT_MONITOR_INTERVAL_MINUTES,
@@ -1924,8 +1924,8 @@
     if (studentId instanceof HTMLInputElement && document.activeElement !== studentId) {
       studentId.value = String(context?.studentId || '');
     }
-    element('academicScoreMonitorEnabled').checked = context?.monitorEnabled === true;
-    element('academicExamMonitorEnabled').checked = context?.examMonitorEnabled === true;
+    element('academicScoreMonitorEnabled').checked = context?.monitorEnabled !== false;
+    element('academicExamMonitorEnabled').checked = context?.examMonitorEnabled !== false;
     element('academicClassReminderEnabled').checked = context?.classReminderEnabled === true;
     renderAccounts(context);
     renderMonitorStatus(context?.monitorStatus);
@@ -2952,8 +2952,8 @@
       : 'graduation';
     element('academicOptionsWideEnabled').checked = stored.academicOptionsWideEnabled !== false;
     applyWideOption(stored.academicOptionsWideEnabled !== false);
-    element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled === true;
-    element('academicExamMonitorEnabled').checked = stored.academicExamMonitorEnabled === true;
+    element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled !== false;
+    element('academicExamMonitorEnabled').checked = stored.academicExamMonitorEnabled !== false;
     element('academicClassReminderEnabled').checked = stored.academicClassReminderEnabled === true;
     renderBbSettings(stored);
     scheduleSemesterPreference = String(stored.academicScheduleSemester || '');
@@ -2989,12 +2989,12 @@
     await chrome.storage.local.set(DEFAULTS);
     if (!initialized) return;
     invalidateAcademicCaches({ removeStored: true });
-    element('academicScoreMonitorEnabled').checked = false;
+    element('academicScoreMonitorEnabled').checked = true;
     element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = true;
     element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = 'graduation';
     element('academicOptionsWideEnabled').checked = true;
     applyWideOption(true);
-    element('academicExamMonitorEnabled').checked = false;
+    element('academicExamMonitorEnabled').checked = true;
     element('academicClassReminderEnabled').checked = false;
     renderBbSettings(DEFAULTS);
     element('academicScheduleWeek').value = 'all';
