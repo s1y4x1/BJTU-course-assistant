@@ -1,10 +1,43 @@
 .mrjzy-login-assist-mask.platform-qr-login-mask { --platform-qr-login-theme:#29a9fc; z-index:10006; padding:16px; box-sizing:border-box; }
 .mrjzy-login-assist-mask.platform-qr-login-mask.show { display:flex; }
-.mrjzy-login-assist-mask .platform-qr-login-card { width:min(360px,calc(100vw - 32px)); box-sizing:border-box; }
+.mrjzy-login-assist-mask .platform-qr-login-card { width:min(420px,calc(100vw - 32px)); max-height:calc(100vh - 32px); box-sizing:border-box; }
 .mrjzy-login-assist-mask .platform-qr-login-title { color:var(--platform-qr-login-theme); font-size:18px; font-weight:700; }
-.mrjzy-login-assist-mask .platform-qr-login-body { display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:8px; }
+.mrjzy-login-assist-mask .platform-qr-login-body { display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:8px; overflow:auto; }
 .mrjzy-login-assist-mask .platform-qr-login-status { display:flex; align-items:center; justify-content:center; gap:6px; min-height:20px; color:#475569; font-size:13px; text-align:center; }
 .mrjzy-login-assist-mask .platform-qr-login-image { display:block; width:min(260px,70vw); height:auto; aspect-ratio:1; object-fit:contain; background:#fff; cursor:pointer; }
 .mrjzy-login-assist-mask .platform-qr-login-image[hidden] { display:none; }
 .mrjzy-login-assist-mask .platform-qr-login-tip { color:#64748b; font-size:12px; text-align:center; }
 .mrjzy-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#29a9fc; border-top-color:transparent; }
+.mrjzy-login-methods { display:flex; flex-direction:column; align-items:stretch; gap:10px; width:100%; }
+.mrjzy-login-methods[hidden], .mrjzy-account-picker[hidden] { display:none; }
+.mrjzy-qr-login-section { display:flex; flex-direction:column; align-items:center; gap:10px; }
+.mrjzy-login-divider { display:flex; align-items:center; gap:8px; color:#94a3b8; font-size:12px; }
+.mrjzy-login-divider::before, .mrjzy-login-divider::after { content:""; flex:1; height:1px; background:#dbe3ee; }
+.mrjzy-password-login-form { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; align-items:center; gap:7px; width:100%; }
+.mrjzy-login-input { min-width:0; width:100%; height:34px; padding:6px 8px; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:5px; background:#fff; color:#111827; font:inherit; }
+.mrjzy-password-login-btn { height:34px; padding:6px 13px; background:#29a9fc; white-space:nowrap; }
+.mrjzy-password-login-btn:hover { background:#168ed8; }
+.mrjzy-password-login-status { grid-column:1 / -1; min-height:18px; color:#dc2626; font-size:12px; line-height:1.45; text-align:left; }
+.mrjzy-account-picker { width:100%; }
+.mrjzy-account-picker-title { margin-bottom:9px; color:#334155; font-size:14px; font-weight:700; }
+.mrjzy-account-list { display:flex; flex-direction:column; gap:8px; max-height:min(390px,55vh); overflow:auto; }
+.mrjzy-account-choice { display:grid; grid-template-columns:auto minmax(0,1fr); gap:3px 8px; width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:7px; background:#f8fafc; color:#334155; cursor:pointer; text-align:left; }
+.mrjzy-account-choice:hover { border-color:#29a9fc; background:#eff9ff; }
+.mrjzy-account-choice-name { color:#0f172a; font-size:14px; font-weight:700; }
+.mrjzy-account-choice-school { min-width:0; overflow-wrap:anywhere; color:#475569; font-size:12px; text-align:right; }
+.mrjzy-account-choice-groups { grid-column:1 / -1; color:#64748b; font-size:12px; overflow-wrap:anywhere; }
+.mrjzy-account-choice-loading { grid-column:1 / -1; display:flex; align-items:center; gap:5px; color:#29a9fc; font-size:12px; }
+.mrjzy-account-picker-back { margin-top:10px; padding:6px 12px; background:#64748b; }
+html[data-color-scheme="dark"] .mrjzy-login-divider::before,
+html[data-color-scheme="dark"] .mrjzy-login-divider::after { background:#334155; }
+html[data-color-scheme="dark"] .mrjzy-login-input { border-color:#475569; background:#0f172a; color:#f8fafc; }
+html[data-color-scheme="dark"] .mrjzy-account-picker-title,
+html[data-color-scheme="dark"] .mrjzy-account-choice-name { color:#f8fafc; }
+html[data-color-scheme="dark"] .mrjzy-account-choice { border-color:#475569; background:#1e293b; color:#e2e8f0; }
+html[data-color-scheme="dark"] .mrjzy-account-choice:hover { border-color:#38bdf8; background:#172554; }
+html[data-color-scheme="dark"] .mrjzy-account-choice-school,
+html[data-color-scheme="dark"] .mrjzy-account-choice-groups { color:#cbd5e1; }
+@media (max-width:520px) {
+  .mrjzy-password-login-form { grid-template-columns:minmax(0,1fr) auto; }
+  .mrjzy-password-login-form #mrjzy-login-phone { grid-column:1 / -1; }
+}

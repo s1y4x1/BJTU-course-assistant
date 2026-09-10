@@ -772,8 +772,8 @@ function openMoocLoginAssistPopup(force = false) {
     return;
   }
   const openPopup = async () => {
-    const popupWidth = 420;
-    const popupHeight = 600;
+    const popupWidth = PLATFORM_LOGIN_ASSIST_POPUP_SIZE.width;
+    const popupHeight = PLATFORM_LOGIN_ASSIST_POPUP_SIZE.height;
     let left;
     let top;
     try {

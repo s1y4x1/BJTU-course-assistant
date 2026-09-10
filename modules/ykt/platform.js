@@ -281,8 +281,8 @@ function openYktLoginAssistPopup(force = false) {
     return;
   }
   const openPopup = async () => {
-    const popupWidth = 360;
-    const popupHeight = 520;
+    const popupWidth = PLATFORM_LOGIN_ASSIST_POPUP_SIZE.width;
+    const popupHeight = PLATFORM_LOGIN_ASSIST_POPUP_SIZE.height;
     let left;
     let top;
     try {

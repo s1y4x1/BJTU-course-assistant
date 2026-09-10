@@ -1,6 +1,7 @@
 const FILE_BASE = 'http://123.121.147.7:8081';
 
 const PLATFORM_LOGIN_ASSIST_POLL_INTERVAL_MS = 1000;
+const PLATFORM_LOGIN_ASSIST_POPUP_SIZE = Object.freeze({ width: 420, height: 600 });
 const DEFAULT_PLATFORM_SESSION_ID = 'D571D57D255EA0BECF299C45D4C0468A';
 
 // Platform header `sessionId` is maintained at runtime (NOT saved in settings).

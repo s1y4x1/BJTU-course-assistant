@@ -4,6 +4,9 @@ const MRJZY_WORK_LIST_API = `${MRJZY_API_BASE}/mrzy/mrzypc/findWorkNewVersion`;
 const MRJZY_WORK_DETAIL_API = `${MRJZY_API_BASE}/mrzy/mrzypc/getWorkDetail`;
 const MRJZY_QR_GEN_API = 'https://api-prod.lulufind.com/api/v1/auth/genQrCode';
 const MRJZY_QR_CHECK_API = 'https://api-prod.lulufind.com/api/v1/auth/checkQrCode';
+const MRJZY_PASSWORD_LOGIN_API = 'https://api-prod.lulufind.com/api/v1/auth/smslogin';
+const MRJZY_ALL_USERS_API = 'https://api-prod.lulufind.com/mrzy/v1/user/alluser';
+const MRJZY_SWITCH_USER_API = 'https://api-prod.lulufind.com/mrzy/v1/user/switch_user';
 const MRJZY_QR_SCAN_LINK_BASE = 'https://f.mrzuoye.com/pcscan/';
 const MRJZY_HEADER_RULE_ID = 914306;
 let mrjzyLoginAssistPollTimer = null;
@@ -11,6 +14,9 @@ let mrjzyLoginAssistRetryTimer = null;
 let mrjzyLoginAssistPolling = false;
 let mrjzyLoginAssistCurrentCode = '';
 let mrjzyLoginAssistCodeSerial = 0;
+let mrjzyPasswordLoginToken = '';
+let mrjzyPasswordLoginBusy = false;
+let mrjzyPasswordLoginSerial = 0;
 let mrjzyActiveRuntimeCtx = null;
 let mrjzyHeaderRulePromise = null;
 
@@ -93,6 +99,9 @@ function closeMrjzyLoginAssistPopup(cancelPending = false) {
     mask.classList.remove('show');
   }
   stopMrjzyLoginAssistPolling();
+  mrjzyPasswordLoginSerial += 1;
+  mrjzyPasswordLoginToken = '';
+  mrjzyPasswordLoginBusy = false;
   if (cancelPending) {
     window.platformInteractiveLoginPending.mrjzy = false;
     if (String(window.platformLoginState?.mrjzy || '') === 'checking') {
@@ -115,11 +124,27 @@ function ensureMrjzyLoginAssistPopup() {
         <button type="button" data-action="close-mrjzy-login-assist" class="btn version-close-btn" aria-label="关闭" title="关闭">×</button>
       </div>
       <div class="platform-qr-login-body mrjzy-login-assist-body">
-        <div id="mrjzy-login-assist-status" class="platform-qr-login-status">
-          <span class="spinner mrjzy-inline-spinner"></span> 正在获取登录二维码…
+        <div id="mrjzy-login-methods" class="mrjzy-login-methods">
+          <div class="mrjzy-qr-login-section">
+            <div id="mrjzy-login-assist-status" class="platform-qr-login-status">
+              <span class="spinner mrjzy-inline-spinner"></span> 正在获取登录二维码…
+            </div>
+            <img id="mrjzy-login-assist-qr" class="platform-qr-login-image" alt="每日交作业微信登录二维码" title="点击刷新二维码" hidden />
+            <div class="platform-qr-login-tip mrjzy-login-assist-hint">请使用微信扫码登录</div>
+          </div>
+          <div class="mrjzy-login-divider"><span>或使用账密登录</span></div>
+          <form id="mrjzy-password-login-form" class="mrjzy-password-login-form">
+            <input id="mrjzy-login-phone" class="mrjzy-login-input" type="tel" inputmode="tel" autocomplete="username" placeholder="手机号" required />
+            <input id="mrjzy-login-password" class="mrjzy-login-input" type="password" autocomplete="current-password" placeholder="密码" required />
+            <button id="mrjzy-password-login-btn" class="btn mrjzy-password-login-btn" type="submit">登录</button>
+            <div id="mrjzy-password-login-status" class="mrjzy-password-login-status" aria-live="polite"></div>
+          </form>
         </div>
-        <img id="mrjzy-login-assist-qr" class="platform-qr-login-image" alt="每日交作业微信登录二维码" title="点击刷新二维码" hidden />
-        <div class="platform-qr-login-tip mrjzy-login-assist-hint">请使用微信扫码登录</div>
+        <div id="mrjzy-account-picker" class="mrjzy-account-picker" hidden>
+          <div class="mrjzy-account-picker-title">请选择要登录的身份</div>
+          <div id="mrjzy-account-list" class="mrjzy-account-list"></div>
+          <button type="button" class="btn mrjzy-account-picker-back" data-action="mrjzy-account-picker-back">返回</button>
+        </div>
       </div>
     </div>
   `;
@@ -146,7 +171,170 @@ function ensureMrjzyLoginAssistPopup() {
     });
   }
 
+  const passwordForm = mask.querySelector('#mrjzy-password-login-form');
+  if (passwordForm instanceof HTMLFormElement) {
+    passwordForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void submitMrjzyPasswordLogin(mask);
+    });
+  }
+  mask.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('[data-action]') : null;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.dataset.action === 'mrjzy-switch-account') {
+      void switchMrjzyPasswordAccount(mask, String(target.dataset.openId || '').trim(), target);
+    } else if (target.dataset.action === 'mrjzy-account-picker-back') {
+      showMrjzyLoginMethods(mask);
+    }
+  });
+
   return mask;
+}
+
+async function requestMrjzyAccountApi(url, { method = 'GET', body = null, token = '' } = {}) {
+  const headers = { Accept: 'application/json, text/plain, */*' };
+  const tokenText = String(token || '').trim();
+  if (body !== null) headers['Content-Type'] = 'application/json';
+  if (tokenText) {
+    headers.token = tokenText;
+    headers.Authorization = `Bearer ${tokenText}`;
+  }
+  const res = await fetch(url, {
+    method,
+    credentials: 'include',
+    cache: 'no-store',
+    headers,
+    ...(body !== null ? { body: JSON.stringify(body) } : {})
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { data = null; }
+  if (!res.ok) throw new Error(String(data?.desc || data?.message || `HTTP ${res.status}`));
+  if (Number(data?.code) !== 200) {
+    throw new Error(String(data?.desc || data?.message || `登录失败（${String(data?.code || '未知错误')}）`));
+  }
+  return data;
+}
+
+function setMrjzyPasswordLoginBusy(mask, busy, status = '') {
+  mrjzyPasswordLoginBusy = !!busy;
+  const submit = mask?.querySelector('#mrjzy-password-login-btn');
+  const phone = mask?.querySelector('#mrjzy-login-phone');
+  const password = mask?.querySelector('#mrjzy-login-password');
+  const statusEl = mask?.querySelector('#mrjzy-password-login-status');
+  if (submit instanceof HTMLButtonElement) {
+    submit.disabled = !!busy;
+    submit.innerHTML = busy ? '<span class="spinner mrjzy-inline-spinner"></span> 登录中…' : '登录';
+  }
+  if (phone instanceof HTMLInputElement) phone.disabled = !!busy;
+  if (password instanceof HTMLInputElement) password.disabled = !!busy;
+  if (statusEl instanceof HTMLElement) statusEl.textContent = String(status || '');
+}
+
+function showMrjzyLoginMethods(mask) {
+  const methods = mask?.querySelector('#mrjzy-login-methods');
+  const picker = mask?.querySelector('#mrjzy-account-picker');
+  if (methods instanceof HTMLElement) methods.hidden = false;
+  if (picker instanceof HTMLElement) picker.hidden = true;
+  mrjzyPasswordLoginToken = '';
+  setMrjzyPasswordLoginBusy(mask, false, '');
+  if (mrjzyLoginAssistCurrentCode) startMrjzyLoginAssistPolling();
+}
+
+function renderMrjzyAccountPicker(mask, users) {
+  const methods = mask?.querySelector('#mrjzy-login-methods');
+  const picker = mask?.querySelector('#mrjzy-account-picker');
+  const list = mask?.querySelector('#mrjzy-account-list');
+  if (!(picker instanceof HTMLElement) || !(list instanceof HTMLElement)) return;
+  if (methods instanceof HTMLElement) methods.hidden = true;
+  picker.hidden = false;
+  list.innerHTML = users.map((user) => {
+    const openId = String(user?.openId || '').trim();
+    const realName = String(user?.userRealName || '未命名用户').trim();
+    const schoolName = String(user?.school?.schoolName || '未设置学校').trim();
+    const groups = (Array.isArray(user?.groups) ? user.groups : [])
+      .map((group) => String(group?.divClass || '').trim())
+      .filter(Boolean)
+      .join('、');
+    return `<button type="button" class="mrjzy-account-choice" data-action="mrjzy-switch-account" data-open-id="${escapeHtml(openId)}">
+      <span class="mrjzy-account-choice-name">${escapeHtml(realName)}</span>
+      <span class="mrjzy-account-choice-school">${escapeHtml(schoolName)}</span>
+      ${groups ? `<span class="mrjzy-account-choice-groups">${escapeHtml(groups)}</span>` : ''}
+    </button>`;
+  }).join('');
+}
+
+async function submitMrjzyPasswordLogin(mask) {
+  if (mrjzyPasswordLoginBusy) return;
+  const phoneInput = mask?.querySelector('#mrjzy-login-phone');
+  const passwordInput = mask?.querySelector('#mrjzy-login-password');
+  if (!(phoneInput instanceof HTMLInputElement) || !(passwordInput instanceof HTMLInputElement)) return;
+  const phone = phoneInput.value.trim();
+  const password = passwordInput.value;
+  if (!phone || !password) {
+    setMrjzyPasswordLoginBusy(mask, false, '请输入手机号和密码');
+    return;
+  }
+
+  stopMrjzyLoginAssistPolling();
+  const serial = ++mrjzyPasswordLoginSerial;
+  setMrjzyPasswordLoginBusy(mask, true, '正在验证账号…');
+  try {
+    const loginData = await requestMrjzyAccountApi(MRJZY_PASSWORD_LOGIN_API, {
+      method: 'POST',
+      body: { phone, password }
+    });
+    if (serial !== mrjzyPasswordLoginSerial) return;
+    const accounts = Array.isArray(loginData?.data?.accounts) ? loginData.data.accounts : [];
+    const token = String(accounts.find((account) => String(account?.token || '').trim())?.token || '').trim();
+    if (!token) throw new Error('登录成功，但未返回账号 Token');
+    const usersData = await requestMrjzyAccountApi(MRJZY_ALL_USERS_API, { token });
+    if (serial !== mrjzyPasswordLoginSerial) return;
+    const users = Array.isArray(usersData?.data?.users) ? usersData.data.users.filter((user) => String(user?.openId || '').trim()) : [];
+    if (!users.length) throw new Error('未获取到可登录的身份');
+    mrjzyPasswordLoginToken = token;
+    passwordInput.value = '';
+    setMrjzyPasswordLoginBusy(mask, false, '');
+    renderMrjzyAccountPicker(mask, users);
+  } catch (error) {
+    if (serial !== mrjzyPasswordLoginSerial) return;
+    setMrjzyPasswordLoginBusy(mask, false, String(error?.message || error || '登录失败'));
+    if (mrjzyLoginAssistCurrentCode) startMrjzyLoginAssistPolling();
+  }
+}
+
+async function switchMrjzyPasswordAccount(mask, openId, target) {
+  if (mrjzyPasswordLoginBusy || !openId || !mrjzyPasswordLoginToken) return;
+  mrjzyPasswordLoginBusy = true;
+  const serial = ++mrjzyPasswordLoginSerial;
+  const buttons = mask?.querySelectorAll('.mrjzy-account-choice, .mrjzy-account-picker-back') || [];
+  buttons.forEach((button) => { if (button instanceof HTMLButtonElement) button.disabled = true; });
+  const originalHtml = target instanceof HTMLButtonElement ? target.innerHTML : '';
+  if (target instanceof HTMLButtonElement) {
+    target.innerHTML = `${originalHtml}<span class="mrjzy-account-choice-loading"><span class="spinner mrjzy-inline-spinner"></span> 正在切换…</span>`;
+  }
+  try {
+    const data = await requestMrjzyAccountApi(MRJZY_SWITCH_USER_API, {
+      method: 'POST',
+      token: mrjzyPasswordLoginToken,
+      body: { openId }
+    });
+    if (serial !== mrjzyPasswordLoginSerial) return;
+    const token = String(data?.data?.token || '').trim();
+    if (!token) throw new Error('切换身份成功，但未返回账号 Token');
+    if (!await persistMrjzyTeacherTokenCookie(token)) throw new Error('保存登录凭据失败');
+    mrjzyPasswordLoginToken = '';
+    mrjzyPasswordLoginBusy = false;
+    showToast('每日交作业登录成功', 'success', 1800);
+    closeMrjzyLoginAssistPopup(false);
+    scheduleMrjzyLoginAssistRecheck(350);
+  } catch (error) {
+    if (serial !== mrjzyPasswordLoginSerial) return;
+    mrjzyPasswordLoginBusy = false;
+    buttons.forEach((button) => { if (button instanceof HTMLButtonElement) button.disabled = false; });
+    if (target instanceof HTMLButtonElement) target.innerHTML = originalHtml;
+    showToast(`每日交作业登录失败：${String(error?.message || error)}`, 'error', 2600);
+  }
 }
 
 async function requestMrjzyLoginAssistQrCode() {
@@ -269,6 +457,7 @@ function openMrjzyLoginAssistPopup(force = false) {
   if (!force && !isPlatformEnabled('mrjzy')) return;
   window.platformInteractiveLoginPending.mrjzy = true;
   const mask = ensureMrjzyLoginAssistPopup();
+  showMrjzyLoginMethods(mask);
   mask.classList.add('show');
   mrjzyLoginAssistCurrentCode = '';
   void refreshMrjzyLoginAssistQrCode(false);
