@@ -147,8 +147,18 @@
       </div>
       <div class="platform-option" data-module="mrjzy" hidden><label><input type="checkbox" id="showMrjzy"
             style="width:auto;" checked />每日交作业</label></div>
-      <div id="mrjzyPlatformDetail" class="platform-option-detail" data-module="mrjzy" hidden><label><input
-            type="checkbox" id="enableMrjzy" style="width:auto;" />启用</label></div>
+      <div id="mrjzyPlatformDetail" class="platform-option-detail" data-module="mrjzy" hidden>
+        <label><input type="checkbox" id="enableMrjzy" style="width:auto;" />启用</label>
+        <div class="mrjzy-auto-login-row">
+          <label><input type="checkbox" id="mrjzyAutoLoginEnabled" style="width:auto;" />自动登录</label>
+          <select id="mrjzyAutoLoginAccount" aria-label="每日交作业自动登录账号" disabled>
+            <option value="">暂无已保存密码的账号</option>
+          </select>
+          <select id="mrjzyAutoLoginClass" aria-label="每日交作业自动登录班级" disabled>
+            <option value="">暂无已保存班级</option>
+          </select>
+        </div>
+      </div>
       <div class="platform-option" data-module="jlgj" hidden><label><input type="checkbox" id="showJlgj"
             style="width:auto;" checked />接龙管家</label></div>
       <div id="jlgjPlatformDetail" class="platform-option-detail" data-module="jlgj" hidden>

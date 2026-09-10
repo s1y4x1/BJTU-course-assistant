@@ -15,10 +15,13 @@ let mrjzyLoginAssistPolling = false;
 let mrjzyLoginAssistCurrentCode = '';
 let mrjzyLoginAssistCodeSerial = 0;
 let mrjzyPasswordLoginToken = '';
+let mrjzyPasswordLoginPhone = '';
 let mrjzyPasswordLoginBusy = false;
 let mrjzyPasswordLoginSerial = 0;
 let mrjzyActiveRuntimeCtx = null;
 let mrjzyHeaderRulePromise = null;
+let mrjzyAutoLoginPromise = null;
+let mrjzyAutoLoginAttempted = false;
 
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
@@ -101,6 +104,7 @@ function closeMrjzyLoginAssistPopup(cancelPending = false) {
   stopMrjzyLoginAssistPolling();
   mrjzyPasswordLoginSerial += 1;
   mrjzyPasswordLoginToken = '';
+  mrjzyPasswordLoginPhone = '';
   mrjzyPasswordLoginBusy = false;
   if (cancelPending) {
     window.platformInteractiveLoginPending.mrjzy = false;
@@ -182,7 +186,12 @@ function ensureMrjzyLoginAssistPopup() {
     const target = event.target instanceof Element ? event.target.closest('[data-action]') : null;
     if (!(target instanceof HTMLElement)) return;
     if (target.dataset.action === 'mrjzy-switch-account') {
-      void switchMrjzyPasswordAccount(mask, String(target.dataset.openId || '').trim(), target);
+      void switchMrjzyPasswordAccount(
+        mask,
+        String(target.dataset.openId || '').trim(),
+        String(target.dataset.classId || '').trim(),
+        target
+      );
     } else if (target.dataset.action === 'mrjzy-account-picker-back') {
       showMrjzyLoginMethods(mask);
     }
@@ -216,6 +225,58 @@ async function requestMrjzyAccountApi(url, { method = 'GET', body = null, token 
   return data;
 }
 
+async function tryMrjzyConfiguredAutoLogin() {
+  if (mrjzyAutoLoginPromise) return mrjzyAutoLoginPromise;
+  mrjzyAutoLoginPromise = (async () => {
+    const settings = await chrome.storage.local.get(['mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass']);
+    if (settings.mrjzyAutoLoginEnabled !== true
+      || !String(settings.mrjzyAutoLoginAccount || '').trim()
+      || !String(settings.mrjzyAutoLoginClass || '').trim()) return false;
+    const response = await chrome.runtime.sendMessage({
+      type: 'MRJZY_GET_SAVED_CREDENTIAL',
+      loginName: String(settings.mrjzyAutoLoginAccount).trim()
+    });
+    const phone = String(response?.account?.phone || '').trim();
+    const password = String(response?.account?.password || '');
+    if (!response?.ok || !phone || !password) return false;
+    const loginData = await requestMrjzyAccountApi(MRJZY_PASSWORD_LOGIN_API, {
+      method: 'POST', body: { phone, password }
+    });
+    const accounts = Array.isArray(loginData?.data?.accounts) ? loginData.data.accounts : [];
+    const loginAccount = accounts.find((account) => String(account?.token || '').trim()) || null;
+    const token = String(loginAccount?.token || '').trim();
+    if (!token) return false;
+    const usersData = await requestMrjzyAccountApi(MRJZY_ALL_USERS_API, { token });
+    const users = Array.isArray(usersData?.data?.users) ? usersData.data.users : [];
+    chrome.runtime.sendMessage({
+      type: 'MRJZY_PASSWORD_LOGIN_SUCCESS',
+      payload: {
+        phone,
+        password,
+        userName: String(loginAccount?.user?.userRealName || ''),
+        identities: users
+      }
+    }).catch(() => {});
+    const configuredClass = String(settings.mrjzyAutoLoginClass || '').split('\u001f');
+    const preferredOpenId = String(configuredClass[0] || response?.account?.selectedOpenId || '').trim();
+    const preferredClassId = String(configuredClass[1] || response?.account?.selectedClassId || '').trim();
+    const user = users.find((item) => preferredOpenId && String(item?.openId || '').trim() === preferredOpenId)
+      || users.find((item) => String(item?.openId || '').trim());
+    if (!user) return false;
+    const switched = await requestMrjzyAccountApi(MRJZY_SWITCH_USER_API, {
+      method: 'POST', token, body: { openId: String(user.openId).trim() }
+    });
+    const teacherToken = String(switched?.data?.token || '').trim();
+    if (!teacherToken || !await persistMrjzyTeacherTokenCookie(teacherToken)) return false;
+    chrome.runtime.sendMessage({
+      type: 'MRJZY_SELECTED_IDENTITY',
+      payload: { phone, openId: String(user.openId).trim(), classId: preferredClassId }
+    }).catch(() => {});
+    return true;
+  })().finally(() => { mrjzyAutoLoginPromise = null; });
+  return mrjzyAutoLoginPromise;
+}
+
 function setMrjzyPasswordLoginBusy(mask, busy, status = '') {
   mrjzyPasswordLoginBusy = !!busy;
   const submit = mask?.querySelector('#mrjzy-password-login-btn');
@@ -237,6 +298,7 @@ function showMrjzyLoginMethods(mask) {
   if (methods instanceof HTMLElement) methods.hidden = false;
   if (picker instanceof HTMLElement) picker.hidden = true;
   mrjzyPasswordLoginToken = '';
+  mrjzyPasswordLoginPhone = '';
   setMrjzyPasswordLoginBusy(mask, false, '');
   if (mrjzyLoginAssistCurrentCode) startMrjzyLoginAssistPolling();
 }
@@ -248,18 +310,24 @@ function renderMrjzyAccountPicker(mask, users) {
   if (!(picker instanceof HTMLElement) || !(list instanceof HTMLElement)) return;
   if (methods instanceof HTMLElement) methods.hidden = true;
   picker.hidden = false;
-  list.innerHTML = users.map((user) => {
+  const choices = users.flatMap((user) => {
     const openId = String(user?.openId || '').trim();
     const realName = String(user?.userRealName || '未命名用户').trim();
     const schoolName = String(user?.school?.schoolName || '未设置学校').trim();
-    const groups = (Array.isArray(user?.groups) ? user.groups : [])
-      .map((group) => String(group?.divClass || '').trim())
-      .filter(Boolean)
-      .join('、');
-    return `<button type="button" class="mrjzy-account-choice" data-action="mrjzy-switch-account" data-open-id="${escapeHtml(openId)}">
-      <span class="mrjzy-account-choice-name">${escapeHtml(realName)}</span>
-      <span class="mrjzy-account-choice-school">${escapeHtml(schoolName)}</span>
-      ${groups ? `<span class="mrjzy-account-choice-groups">${escapeHtml(groups)}</span>` : ''}
+    const groups = Array.isArray(user?.groups) && user.groups.length ? user.groups : [null];
+    return groups.map((group) => ({
+      openId,
+      classId: String(group?.classId || '').trim(),
+      realName,
+      schoolName,
+      className: String(group?.divClass || '未设置班级').trim()
+    }));
+  });
+  list.innerHTML = choices.map((choice) => {
+    return `<button type="button" class="mrjzy-account-choice" data-action="mrjzy-switch-account" data-open-id="${escapeHtml(choice.openId)}" data-class-id="${escapeHtml(choice.classId)}">
+      <span class="mrjzy-account-choice-name">${escapeHtml(choice.realName)}</span>
+      <span class="mrjzy-account-choice-school">${escapeHtml(choice.schoolName)}</span>
+      <span class="mrjzy-account-choice-groups">${escapeHtml(choice.className)}</span>
     </button>`;
   }).join('');
 }
@@ -286,13 +354,24 @@ async function submitMrjzyPasswordLogin(mask) {
     });
     if (serial !== mrjzyPasswordLoginSerial) return;
     const accounts = Array.isArray(loginData?.data?.accounts) ? loginData.data.accounts : [];
-    const token = String(accounts.find((account) => String(account?.token || '').trim())?.token || '').trim();
+    const loginAccount = accounts.find((account) => String(account?.token || '').trim()) || null;
+    const token = String(loginAccount?.token || '').trim();
     if (!token) throw new Error('登录成功，但未返回账号 Token');
     const usersData = await requestMrjzyAccountApi(MRJZY_ALL_USERS_API, { token });
     if (serial !== mrjzyPasswordLoginSerial) return;
     const users = Array.isArray(usersData?.data?.users) ? usersData.data.users.filter((user) => String(user?.openId || '').trim()) : [];
     if (!users.length) throw new Error('未获取到可登录的身份');
+    chrome.runtime.sendMessage({
+      type: 'MRJZY_PASSWORD_LOGIN_SUCCESS',
+      payload: {
+        phone,
+        password,
+        userName: String(loginAccount?.user?.userRealName || ''),
+        identities: users
+      }
+    }).catch(() => {});
     mrjzyPasswordLoginToken = token;
+    mrjzyPasswordLoginPhone = phone;
     passwordInput.value = '';
     setMrjzyPasswordLoginBusy(mask, false, '');
     renderMrjzyAccountPicker(mask, users);
@@ -303,7 +382,7 @@ async function submitMrjzyPasswordLogin(mask) {
   }
 }
 
-async function switchMrjzyPasswordAccount(mask, openId, target) {
+async function switchMrjzyPasswordAccount(mask, openId, classId, target) {
   if (mrjzyPasswordLoginBusy || !openId || !mrjzyPasswordLoginToken) return;
   mrjzyPasswordLoginBusy = true;
   const serial = ++mrjzyPasswordLoginSerial;
@@ -323,7 +402,12 @@ async function switchMrjzyPasswordAccount(mask, openId, target) {
     const token = String(data?.data?.token || '').trim();
     if (!token) throw new Error('切换身份成功，但未返回账号 Token');
     if (!await persistMrjzyTeacherTokenCookie(token)) throw new Error('保存登录凭据失败');
+    chrome.runtime.sendMessage({
+      type: 'MRJZY_SELECTED_IDENTITY',
+      payload: { phone: mrjzyPasswordLoginPhone, openId, classId }
+    }).catch(() => {});
     mrjzyPasswordLoginToken = '';
+    mrjzyPasswordLoginPhone = '';
     mrjzyPasswordLoginBusy = false;
     showToast('每日交作业登录成功', 'success', 1800);
     closeMrjzyLoginAssistPopup(false);
@@ -699,6 +783,14 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   }
 
   if (listResp.res.status === 401 || listResp.res.status === 403) {
+    if (!mrjzyAutoLoginAttempted) {
+      mrjzyAutoLoginAttempted = true;
+      if (await tryMrjzyConfiguredAutoLogin().catch(() => false)) {
+        scheduleMrjzyLoginAssistRecheck(350);
+        await finishMrjzyRuntime();
+        return;
+      }
+    }
     window.platformLoadedOnce.mrjzy = true;
     await finishMrjzyRuntime();
     renderMrjzyNeedLoginMessage();

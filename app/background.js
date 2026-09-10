@@ -235,6 +235,7 @@ tryImportModuleScripts('../modules/campusnet/background.js');
 tryImportModuleScripts('../modules/updater/filesystem.js', '../modules/updater/background.js');
 tryImportModuleScripts('../modules/jlgj/background.js');
 tryImportModuleScripts('../modules/mooc/background.js');
+tryImportModuleScripts('../modules/mrjzy/background.js');
 tryImportModuleScripts('../core/module-registry.js');
 tryImportModuleScripts(
   '../modules/qwen/operations.js',
