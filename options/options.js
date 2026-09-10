@@ -1621,6 +1621,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (animationSpeedDragging) {
       document.getElementById('animationSpeedValue').value = formatAnimationSpeedValue(value);
       globalThis.BjtuMotion?.apply?.(globalThis.BjtuMotion.getMode(), value);
+      // 拖动时只锁定当前页面的 UI；共享设置仍需立即写入，其他页面才能实时同步。
+      await chrome.storage.local.set({ animationSpeed: value });
       return true;
     } else {
       updateAnimationUi(globalThis.BjtuMotion?.getMode(), value);
