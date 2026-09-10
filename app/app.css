@@ -685,8 +685,13 @@ body.platform-column-resizing {
     flex-wrap: wrap;
 }
 .resource-space-title {
-    font-size: 24px;
+    font-size: var(--bjtu-font-size-zeroTitle, 24px);
     font-weight: 700;
+    line-height: 1.2;
+}
+.upload-section-header > h1.zero-title,
+.course-header > span:first-child {
+    font-size: var(--bjtu-font-size-zeroTitle, 24px);
     line-height: 1.2;
 }
 .resource-space-count {
@@ -1594,7 +1599,7 @@ a.homework-type-badge { text-decoration:none; }
     border-bottom: 2px solid #ddd;
     padding-bottom: 10px;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
     flex-wrap: nowrap;
@@ -1624,6 +1629,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 .course-header .platform-options-slot {
     flex: 1 1 auto;
     min-width: 0;
+    align-self: center;
 }
 .platform-status-actions {
     display: flex;
@@ -1631,6 +1637,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     width: 100%;
     min-width: 0;
     align-items: center;
+    align-self: center;
     gap: 4px;
     flex-wrap: wrap;
     white-space: normal;
