@@ -5,6 +5,7 @@
   const MAIL_HOME_URL = 'https://mail.bjtu.edu.cn/';
   const FOLDERS_URL = 'https://mail.bjtu.edu.cn/coremail/XT/jsp/mail.jsp';
   const LIST_THREADS_URL = 'https://mail.bjtu.edu.cn/coremail/s/json';
+  const READ_MESSAGE_URL = 'https://mail.bjtu.edu.cn/coremail/XT/jsp/readMessage.jsp';
 
   const ENABLED_KEY = 'mailMonitorEnabled';
   const INTERVAL_KEY = 'mailMonitorIntervalMinutes';
@@ -25,6 +26,7 @@
   let cachedInboxTotal = 0;
   let mailCheckPromise = null;
   let mailProcessPromise = Promise.resolve();
+  const mailContentCache = new Map();
 
   function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
@@ -235,6 +237,62 @@
     const total = Number(data?.total ?? rows.length);
     cachedInboxTotal = Number.isFinite(total) ? total : cachedInboxTotal;
     return { rows, total };
+  }
+
+  async function fetchMailContent(mid, { allowSessionRetry = true } = {}) {
+    const messageId = String(mid || '').trim();
+    if (!messageId) throw new Error('缺少邮件 ID');
+    const sid = await getMailSid();
+    const cacheKey = `${sid}|${messageId}`;
+    if (mailContentCache.has(cacheKey)) return mailContentCache.get(cacheKey);
+    const data = await requestJson(READ_MESSAGE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        Accept: 'application/json, text/javascript, */*; q=0.01'
+      },
+      body: new URLSearchParams({ mid: messageId }).toString()
+    });
+    if (data?.code !== 'S_OK') {
+      const message = `${data?.code || '无响应码'}${data?.message ? ` ${data.message}` : ''}`;
+      if (allowSessionRetry && /\bFA_SECURITY\b/i.test(message)) {
+        invalidateSid();
+        return fetchMailContent(messageId, { allowSessionRetry: false });
+      }
+      throw new Error(`读取邮件正文失败：${message}`);
+    }
+    const mail = data?.var?.mail;
+    const content = mail?.mainPartData?.content;
+    if (typeof content !== 'string') throw new Error('邮件正文响应中没有 var.mail.mainPartData.content');
+    const attachments = (Array.isArray(mail?.attachments) ? mail.attachments : [])
+      .map((attachment) => ({
+        id: String(attachment?.id || '').trim(),
+        filename: String(attachment?.filename || '').trim() || '未命名附件',
+        contentType: String(attachment?.contentType || '').trim(),
+        contentLength: Math.max(0, Number(attachment?.contentLength) || 0),
+        estimateSize: Math.max(0, Number(attachment?.estimateSize) || 0)
+      }))
+      .filter((attachment) => attachment.id);
+    const result = { content, attachments, mid: messageId };
+    mailContentCache.set(cacheKey, result);
+    if (mailContentCache.size > 100) mailContentCache.delete(mailContentCache.keys().next().value);
+    return result;
+  }
+
+  async function downloadAuthenticatedMailUrl(rawUrl) {
+    const url = new URL(String(rawUrl || ''));
+    if (url.protocol !== 'https:' || url.hostname !== 'mail.bjtu.edu.cn' || !url.pathname.startsWith('/coremail/')) {
+      throw new Error('只允许下载 BJTU 邮件系统附件');
+    }
+    await getMailSid();
+    const downloadId = await new Promise((resolve, reject) => {
+      chrome.downloads.download({ url: url.href, saveAs: false }, (id) => {
+        const error = chrome.runtime.lastError;
+        if (error) reject(new Error(error.message || '附件下载失败'));
+        else resolve(id);
+      });
+    });
+    return { downloadId };
   }
 
   function normalizeListLimit(value) {
@@ -611,6 +669,22 @@
         })).then(() => sendResponse({ ok: true })).catch((error) => {
           sendResponse({ ok: false, message: String(error?.message || error) });
         });
+        return true;
+      }
+      if (message?.type === 'MAIL_GET_MESSAGE_CONTENT') {
+        fetchMailContent(message?.payload?.mid)
+          .then((result) => sendResponse({ ok: true, ...result }))
+          .catch((error) => sendResponse({
+            ok: false,
+            code: String(error?.code || ''),
+            message: String(error?.message || error)
+          }));
+        return true;
+      }
+      if (message?.type === 'MAIL_DOWNLOAD_AUTHENTICATED_URL') {
+        downloadAuthenticatedMailUrl(message?.payload?.url)
+          .then((result) => sendResponse({ ok: true, ...result }))
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
       }
       if (message?.type === 'MAIL_GET_USER_INFO') {
