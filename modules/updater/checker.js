@@ -335,7 +335,7 @@ function startVersionNoticeForceCountdown(modal, sourceSelect) {
   const button = document.getElementById('version-notice-download');
   if (!(button instanceof HTMLButtonElement)) return;
   versionNoticeForceCountdownAt = Date.now() + 2000;
-  button.disabled = true;
+  button.disabled = false;
   const update = () => {
     const remaining = versionNoticeForceCountdownAt - Date.now();
     if (remaining > 0) {
