@@ -674,7 +674,7 @@ async function setupInstalledModuleOptions() {
   });
 }
 
-function goBackToApp() {
+async function goBackToApp() {
   // options.html is opened either as a top-level options page, or embedded inside the
   // popup iframe by app.html's ⚙️ button. Detect which one and route accordingly.
   const inPopup = new URLSearchParams(String(location.search || '')).get('popup') === '1';
@@ -683,14 +683,22 @@ function goBackToApp() {
   }
   const appUrl = chrome.runtime.getURL('app/app.html');
   try {
-    chrome.runtime.sendMessage({ type: 'OPEN_APP' }, (result) => {
-      if (chrome.runtime.lastError) {
-        try { window.location.href = appUrl; } catch {}
-        return;
-      }
-      if (result?.ok) try { window.close(); } catch {}
-      else try { window.location.href = appUrl; } catch {}
-    });
+    const [tabs, currentTab] = await Promise.all([
+      chrome.tabs.query({}),
+      chrome.tabs.getCurrent().catch(() => null)
+    ]);
+    const existing = tabs.find((tab) => (
+      tab.id !== currentTab?.id && String(tab.url || '').startsWith(appUrl)
+    ));
+    if (!existing?.id) {
+      window.location.href = appUrl;
+      return;
+    }
+    await chrome.tabs.update(existing.id, { active: true });
+    if (Number.isInteger(existing.windowId)) {
+      await chrome.windows.update(existing.windowId, { focused: true }).catch(() => {});
+    }
+    if (Number.isInteger(currentTab?.id)) await chrome.tabs.remove(currentTab.id).catch(() => {});
   } catch {
     try { window.location.href = appUrl; } catch {}
   }
