@@ -394,9 +394,36 @@ function positionVeHoverPopover(wrap) {
   if (!(wrap instanceof HTMLElement)) return;
   const pop = wrap.querySelector(':scope > .ve-teacher-pop, :scope > .ve-course-teacher-pop, :scope > .ve-student-pop');
   if (!(pop instanceof HTMLElement)) return;
-  pop.classList.remove('ve-pop-open-left');
-  const rect = pop.getBoundingClientRect();
-  if (rect.right > window.innerWidth - 8) pop.classList.add('ve-pop-open-left');
+  const viewportGap = 8;
+  pop.classList.remove('ve-pop-open-left', 've-pop-centered');
+  pop.style.right = 'auto';
+  pop.style.left = '0px';
+  pop.style.top = '0px';
+
+  const wrapRect = wrap.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  const width = popRect.width;
+  const rightLeft = wrapRect.left;
+  const leftLeft = wrapRect.right - width;
+  let left;
+  if (rightLeft + width <= window.innerWidth - viewportGap) {
+    left = rightLeft;
+  } else if (leftLeft >= viewportGap) {
+    left = leftLeft;
+    pop.classList.add('ve-pop-open-left');
+  } else {
+    left = Math.max(viewportGap, (window.innerWidth - width) / 2);
+    pop.classList.add('ve-pop-centered');
+  }
+
+  let top = wrapRect.bottom + 6;
+  if (top + popRect.height > window.innerHeight - viewportGap) {
+    const above = wrapRect.top - popRect.height - 6;
+    if (above >= viewportGap) top = above;
+    else top = viewportGap;
+  }
+  pop.style.left = `${Math.round(left)}px`;
+  pop.style.top = `${Math.round(top)}px`;
 }
 
 function scheduleVeHoverPopoverPosition(pop) {

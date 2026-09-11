@@ -23,9 +23,10 @@
 .ve-teacher-pop,
 .ve-student-pop,
 .ve-course-teacher-pop {
-  position:absolute;
+  box-sizing:border-box;
+  position:fixed;
   left:0;
-  top:calc(100% + 6px);
+  top:0;
   min-width:0;
   width:max-content;
   max-width:calc(100vw - 16px);
@@ -37,15 +38,9 @@
   padding:8px;
   box-shadow:0 12px 30px rgba(15,23,42,.22);
   backdrop-filter:blur(8px);
-  z-index:16;
+  z-index:10050;
   display:none;
   color:#111827;
-}
-.ve-teacher-pop.ve-pop-open-left,
-.ve-student-pop.ve-pop-open-left,
-.ve-course-teacher-pop.ve-pop-open-left {
-  right:0;
-  left:auto;
 }
 .ve-teacher-wrap:hover .ve-teacher-pop,
 .ve-student-wrap:hover .ve-student-pop,
