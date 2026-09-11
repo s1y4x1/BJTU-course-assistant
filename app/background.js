@@ -797,6 +797,28 @@ const HOMEWORK_REMINDER_ALARM = 'bjtu-homework-reminder-check';
 const HOMEWORK_REMINDER_SNAPSHOT_KEY = 'homeworkReminderSnapshot';
 const HOMEWORK_REMINDER_NOTIFIED_KEY = 'homeworkReminderNotified';
 const HOMEWORK_REMINDER_OBSERVED_KEY = 'homeworkReminderObserved';
+const HOMEWORK_REMINDER_DEFAULTS_VERSION_KEY = 'homeworkReminderDefaultsVersion';
+const HOMEWORK_REMINDER_DEFAULTS_VERSION = 1;
+const DEFAULT_HOMEWORK_REMINDER_MINUTES = Object.freeze([15, 30, 60, 120, 240, 480, 960, 1440, 2880]);
+
+async function migrateHomeworkReminderDefaults() {
+  const stored = await chrome.storage.local.get([HOMEWORK_REMINDER_DEFAULTS_VERSION_KEY]).catch(() => ({}));
+  if (Number(stored?.[HOMEWORK_REMINDER_DEFAULTS_VERSION_KEY] || 0) >= HOMEWORK_REMINDER_DEFAULTS_VERSION) return;
+  await chrome.storage.local.set({
+    homeworkReminderMinutes: [...DEFAULT_HOMEWORK_REMINDER_MINUTES],
+    [HOMEWORK_REMINDER_DEFAULTS_VERSION_KEY]: HOMEWORK_REMINDER_DEFAULTS_VERSION
+  });
+}
+
+let homeworkReminderDefaultsMigrationPromise = null;
+function ensureHomeworkReminderDefaultsMigrated() {
+  if (!homeworkReminderDefaultsMigrationPromise) {
+    homeworkReminderDefaultsMigrationPromise = migrateHomeworkReminderDefaults()
+      .finally(() => { homeworkReminderDefaultsMigrationPromise = null; });
+  }
+  return homeworkReminderDefaultsMigrationPromise;
+}
+void ensureHomeworkReminderDefaultsMigrated();
 
 async function focusExistingAppTabOrOpen() {
   const tabs = (await chrome.tabs.query({}).catch(() => []))
@@ -820,7 +842,7 @@ async function focusExistingAppTabOrOpen() {
 }
 
 function normalizeHomeworkReminderMinutes(value) {
-  const source = Array.isArray(value) ? value : [15, 30, 60, 120, 240, 480, 960, 1440, 2880];
+  const source = Array.isArray(value) ? value : DEFAULT_HOMEWORK_REMINDER_MINUTES;
   return [...new Set(source.map(Number)
     .filter((minutes) => Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600)
     .map((minutes) => Math.round(minutes)))]
@@ -950,7 +972,8 @@ function ensureHomeworkReminderAlarm() {
 let homeworkReminderCheckPromise = null;
 function scheduleHomeworkReminderCheck() {
   if (homeworkReminderCheckPromise) return homeworkReminderCheckPromise;
-  homeworkReminderCheckPromise = checkHomeworkDeadlineReminders()
+  homeworkReminderCheckPromise = ensureHomeworkReminderDefaultsMigrated()
+    .then(() => checkHomeworkDeadlineReminders())
     .catch((error) => console.warn('[bjtu] homework reminder check failed:', error))
     .finally(() => { homeworkReminderCheckPromise = null; });
   return homeworkReminderCheckPromise;

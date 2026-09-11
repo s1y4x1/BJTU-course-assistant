@@ -107,9 +107,9 @@ function normalizeHomeworkReminderMinutes(value) {
 }
 
 function formatHomeworkReminderMinutes(minutes) {
-  if (minutes % 1440 === 0) return `提前 ${minutes / 1440} 天`;
-  if (minutes % 60 === 0) return `提前 ${minutes / 60} 小时`;
-  return `提前 ${minutes} 分钟`;
+  if (minutes % 1440 === 0) return `${minutes / 1440} 天`;
+  if (minutes % 60 === 0) return `${minutes / 60} 小时`;
+  return `${minutes} 分钟`;
 }
 
 function formatShanghaiDateForFile(date = new Date()) {

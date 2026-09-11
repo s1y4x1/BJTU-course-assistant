@@ -299,7 +299,7 @@ html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5f
 @keyframes optionsSpin { to { transform:rotate(360deg); } }
 html.options-loading #options-controlled-content { display:none; }
 html.options-loading #options-loading-placeholder { display:flex; }
-.reminder-editor { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; margin-top:8px; }
+.reminder-editor { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:8px; align-items:center; margin-top:8px; }
 .reminder-editor input, .reminder-editor select { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .reminder-editor button { margin:0; height:34px; }
 .schedule-interval-editor { display:grid; grid-template-columns:auto minmax(72px,1fr) auto; gap:8px; align-items:center; margin:8px 0; padding-left:22px; }
@@ -312,7 +312,7 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .system-notification-test-row .option-status { min-width:180px; margin:0; }
 .reminder-node-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
 .reminder-node { display:inline-flex; align-items:center; gap:6px; padding:4px 5px 4px 9px; border:1px solid #bfdbfe; border-radius:6px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
-.reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; line-height:22px; }
+.reminder-node button { width:22px; height:22px; margin:0; padding:0; border-radius:4px; background:#dc2626; font-size:var(--bjtu-font-size-icon, 22px); line-height:22px; }
 .reset-confirm-card { position:relative; }
 .export-bind-data-card { position:relative; }
 .export-bind-data-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; }
