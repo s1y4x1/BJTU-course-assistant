@@ -1656,7 +1656,27 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setMsg('已应用更改');
   });
 
-  document.getElementById('fontSizeEditor').addEventListener('change', async (event) => {
+  const fontSizeEditor = document.getElementById('fontSizeEditor');
+  fontSizeEditor.addEventListener('click', async (event) => {
+    const resetButton = event.target.closest('.font-size-default');
+    if (!(resetButton instanceof HTMLButtonElement)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const item = resetButton.closest('.font-size-item');
+    const input = item?.querySelector('[data-font-size-category]');
+    if (!(input instanceof HTMLInputElement)) return;
+    const category = String(input.dataset.fontSizeCategory || '');
+    const defaultSize = DEFAULT_FONT_SIZE_SETTINGS[category];
+    if (!Number.isFinite(defaultSize) || defaultSize <= 0) return;
+    currentFontSizeSettings = { ...currentFontSizeSettings, [category]: defaultSize };
+    updateFontSizeUi();
+    globalThis.BjtuTypography?.apply?.(currentFontSizeSettings);
+    await chrome.storage.local.set({ fontSizeSettings: currentFontSizeSettings });
+    const label = item.querySelector(':scope > span')?.textContent?.trim() || '该项';
+    setMsg(`已将${label}恢复为默认字号`);
+  });
+
+  fontSizeEditor.addEventListener('change', async (event) => {
     const input = event.target.closest('[data-font-size-category]');
     if (!(input instanceof HTMLInputElement)) return;
     const size = Number(input.value);
