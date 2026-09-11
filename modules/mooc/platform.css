@@ -42,5 +42,6 @@
   .mooc-task-actions { width:100%; flex-basis:auto; align-items:stretch; }
   .mooc-task-button-row { width:100%; align-self:stretch; align-items:stretch; }
   .mooc-task-button-row .btn { flex:1 1 160px; }
+  .mooc-task--long-title .mooc-task-button-row .btn { flex:0 0 auto; }
   .mooc-complete-all-btn { width:100%; }
 }
