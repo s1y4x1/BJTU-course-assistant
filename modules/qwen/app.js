@@ -2582,6 +2582,13 @@
     const messagesScroller = getMessagesScrollContainer(messages);
     const scrollBottomBtn = el(SCROLL_BOTTOM_ID);
 
+    if (!STANDALONE_CHAT && panel instanceof HTMLElement) {
+      global.addEventListener('bjtu-close-floating-windows', (event) => {
+        const keep = event instanceof CustomEvent ? event.detail?.keep : null;
+        if (keep !== panel && !panel.hidden) void setEmbeddedPanelOpen(false);
+      });
+    }
+
     if (messages instanceof HTMLElement) {
       const copyMarkdownCode = (target, event) => {
         const inline = target.closest('.qwen-md-inline-code');

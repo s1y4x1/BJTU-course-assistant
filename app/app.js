@@ -326,6 +326,13 @@ async function initFullscreenModuleButtons() {
     refreshButtonContainer();
   };
 
+  window.addEventListener('bjtu-close-floating-windows', (event) => {
+    const keep = event instanceof CustomEvent ? event.detail?.keep : null;
+    for (const [moduleId, view] of moduleWindows) {
+      if (view !== keep) void closeModuleWindow(moduleId);
+    }
+  });
+
   const prepareWindowInteractions = (view, moduleId) => {
     const header = view.querySelector(':scope > .section-title');
     const close = document.createElement('button');
@@ -521,6 +528,43 @@ async function initFullscreenModuleButtons() {
 }
 
 void initFullscreenModuleButtons();
+
+if (!popupMode) {
+  const isBlankDoubleClickTarget = (target, floatingWindow) => {
+    if (!(target instanceof Element)) return false;
+    if (floatingWindow instanceof HTMLElement) {
+      if (target === floatingWindow || target.classList.contains('section-title')) return true;
+      if (floatingWindow.id !== 'qwen-chat-panel') return false;
+      return target.matches([
+        '.qwen-chat-header',
+        '.qwen-chat-messages-wrap',
+        '.qwen-chat-messages-scroll',
+        '.qwen-chat-messages',
+        '.qwen-chat-input-row'
+      ].join(','));
+    }
+    return target === document.body
+      || target === document.documentElement
+      || target.matches([
+        '.layout-container',
+        '.left-column',
+        '.right-column',
+        '#course-list',
+        '.platform-course-columns',
+        '.platform-course-column-body'
+      ].join(','));
+  };
+
+  document.addEventListener('dblclick', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const floatingWindow = target.closest('.floating-launcher-window:not([hidden])');
+    if (!isBlankDoubleClickTarget(target, floatingWindow)) return;
+    window.dispatchEvent(new CustomEvent('bjtu-close-floating-windows', {
+      detail: { keep: floatingWindow instanceof HTMLElement ? floatingWindow : null }
+    }));
+  });
+}
 
 if (usernameInput) {
   let mjActivationRequested = false;
