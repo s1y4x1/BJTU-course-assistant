@@ -1157,7 +1157,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   function updateFontSizeUi() {
     document.querySelectorAll('[data-font-size-category]').forEach((input) => {
       const category = String(input.dataset.fontSizeCategory || '');
-      input.value = String(currentFontSizeSettings[category] ?? DEFAULT_FONT_SIZE_SETTINGS[category] ?? 13);
+      const defaultSize = DEFAULT_FONT_SIZE_SETTINGS[category] ?? 13;
+      const currentSize = currentFontSizeSettings[category] ?? defaultSize;
+      input.value = String(currentSize);
+      const resetButton = input.closest('.font-size-item')?.querySelector('.font-size-default');
+      if (resetButton instanceof HTMLButtonElement) resetButton.hidden = Number(currentSize) === Number(defaultSize);
     });
   }
 
@@ -1686,6 +1690,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       return;
     }
     currentFontSizeSettings = { ...currentFontSizeSettings, [category]: size };
+    updateFontSizeUi();
     await chrome.storage.local.set({ fontSizeSettings: currentFontSizeSettings });
     setMsg('已应用更改');
   });
