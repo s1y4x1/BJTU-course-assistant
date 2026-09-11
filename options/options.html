@@ -43,7 +43,7 @@
         <span>动画速度</span>
         <input type="range" id="animationSpeed" min="0.25" max="2" step="0.05" value="1" />
         <span class="animation-speed-value-wrap">
-          <input type="number" id="animationSpeedValue" step="any" value="1" aria-label="动画速度倍率" />
+          <input type="number" id="animationSpeedValue" step="0.05" value="1" aria-label="动画速度倍率" />
           <span>×</span>
         </span>
       </label>
@@ -284,7 +284,7 @@
         后台监控未交作业并发送系统通知
       </label>
       <div id="homeworkReminderEditor" class="reminder-editor">
-        <input type="number" id="homeworkReminderValue" min="1" step="1" value="2" aria-label="提醒时间" />
+        <input type="number" id="homeworkReminderValue" min="1" step="1" value="12" aria-label="提醒时间" />
         <select id="homeworkReminderUnit" aria-label="提醒时间单位">
           <option value="1">分钟</option>
           <option value="60" selected>小时</option>

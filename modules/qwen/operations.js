@@ -297,7 +297,7 @@
   }
 
   // ===== 作业截止提醒（reminder.*）辅助 =====
-  function normalizeReminderMinutes(value, fallback = [120]) {
+  function normalizeReminderMinutes(value, fallback = [15, 30, 60, 120, 240, 480, 960, 1440, 2880]) {
     const source = Array.isArray(value) ? value : fallback;
     if (!Array.isArray(source)) return [];
     return [...new Set(source.map(Number)
@@ -308,7 +308,7 @@
 
   async function loadReminderPoints() {
     const stored = await chrome.storage.local.get(['homeworkReminderMinutes']).catch(() => ({}));
-    return normalizeReminderMinutes(stored?.homeworkReminderMinutes, [120]);
+    return normalizeReminderMinutes(stored?.homeworkReminderMinutes, [15, 30, 60, 120, 240, 480, 960, 1440, 2880]);
   }
 
   function requireReminderMinutes(args) {

@@ -13,6 +13,16 @@
   top:100%;
   height:8px;
 }
+.ve-teacher-wrap.ve-pop-opens-up::before,
+.ve-student-wrap.ve-pop-opens-up::before,
+.ve-course-num-wrap.ve-pop-opens-up::before {
+  content:'';
+  position:absolute;
+  bottom:100%;
+  left:var(--ve-pop-bridge-left, 0px);
+  width:var(--ve-pop-bridge-width, 100%);
+  height:8px;
+}
 .ve-teacher-name,
 .ve-student-count-text,
 .ve-course-num-text {

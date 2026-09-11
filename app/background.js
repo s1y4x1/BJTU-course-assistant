@@ -820,7 +820,7 @@ async function focusExistingAppTabOrOpen() {
 }
 
 function normalizeHomeworkReminderMinutes(value) {
-  const source = Array.isArray(value) ? value : [120];
+  const source = Array.isArray(value) ? value : [15, 30, 60, 120, 240, 480, 960, 1440, 2880];
   return [...new Set(source.map(Number)
     .filter((minutes) => Number.isFinite(minutes) && minutes >= 1 && minutes <= 525600)
     .map((minutes) => Math.round(minutes)))]

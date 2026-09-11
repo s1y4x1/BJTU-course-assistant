@@ -395,6 +395,7 @@ function positionVeHoverPopover(wrap) {
   const pop = wrap.querySelector(':scope > .ve-teacher-pop, :scope > .ve-course-teacher-pop, :scope > .ve-student-pop');
   if (!(pop instanceof HTMLElement)) return;
   const viewportGap = 8;
+  wrap.classList.remove('ve-pop-opens-up');
   pop.classList.remove('ve-pop-open-left', 've-pop-centered');
   pop.style.right = 'auto';
   pop.style.left = '0px';
@@ -419,9 +420,17 @@ function positionVeHoverPopover(wrap) {
   let top = wrapRect.bottom + 6;
   if (top + popRect.height > window.innerHeight - viewportGap) {
     const above = wrapRect.top - popRect.height - 6;
-    if (above >= viewportGap) top = above;
-    else top = viewportGap;
+    if (above >= viewportGap) {
+      top = above;
+      wrap.classList.add('ve-pop-opens-up');
+    } else {
+      top = viewportGap;
+    }
   }
+  const bridgeLeft = Math.min(0, left - wrapRect.left);
+  const bridgeRight = Math.max(wrapRect.width, left + width - wrapRect.left);
+  wrap.style.setProperty('--ve-pop-bridge-left', `${Math.round(bridgeLeft)}px`);
+  wrap.style.setProperty('--ve-pop-bridge-width', `${Math.round(bridgeRight - bridgeLeft)}px`);
   pop.style.left = `${Math.round(left)}px`;
   pop.style.top = `${Math.round(top)}px`;
 }
