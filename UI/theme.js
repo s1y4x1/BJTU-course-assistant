@@ -51,12 +51,12 @@
     return target?.element instanceof Element ? target.element : null;
   }
 
-  function isLoadingSpinnerAnimation(animation) {
+  function isPersistentStatusAnimation(animation) {
     if (/spin/i.test(String(animation?.animationName || ''))) return true;
     const target = animationTargetElement(animation);
     return !!target && (
-      target.matches('[class*="spinner"], .checking .dot, .content-loading .dot, .is-loading')
-      || !!target.closest('[class*="spinner"], .checking, .content-loading, .is-loading')
+      target.matches('[class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], .is-indeterminate')
+      || !!target.closest('[class*="spinner"], .checking, .content-loading, .is-loading, [role="progressbar"], .is-indeterminate')
     );
   }
 
@@ -64,7 +64,7 @@
     if (!document.getAnimations) return;
     const rate = isAnimationEnabled() ? animationSpeed : 1;
     document.getAnimations().forEach((animation) => {
-      try { animation.updatePlaybackRate(isLoadingSpinnerAnimation(animation) ? 1 : rate); } catch {}
+      try { animation.updatePlaybackRate(isPersistentStatusAnimation(animation) ? 1 : rate); } catch {}
     });
   }
 
@@ -180,9 +180,9 @@
   const motionPolicy = document.createElement('style');
   motionPolicy.id = 'bjtu-animation-policy';
   motionPolicy.textContent = `
-    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading)),
-    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading))::before,
-    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading))::after {
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *)),
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *))::before,
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *))::after {
       animation-delay: 0s !important;
       animation-duration: 0.001ms !important;
       animation-iteration-count: 1 !important;
