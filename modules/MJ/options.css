@@ -85,6 +85,10 @@
   background: #dc2626;
 }
 
+.mj-video-asset-download.is-cancel {
+  background: #dc2626;
+}
+
 .mj-external-script-delete.is-locked {
   opacity: .55;
   cursor: not-allowed;
@@ -172,39 +176,50 @@
   transition: width .15s ease;
 }
 
+.mj-video-asset-progress.is-indeterminate .mj-video-asset-progress-bar {
+  width: 35%;
+  animation: mj-progress-indeterminate 1s ease-in-out infinite;
+}
+
 .mj-external-script-progress {
   grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .mj-external-script-progress-label {
-  margin-bottom: 5px;
-  color: var(--muted-text, #64748b);
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: #475569;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mj-external-script-progress-track {
-  height: 6px;
+  width: 100%;
+  height: 4px;
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(100, 116, 139, .2);
+  border-radius: 2px;
+  background: #dbeafe;
 }
 
 .mj-external-script-progress-bar {
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2563eb, #38bdf8);
-  transition: width .16s ease;
+  background: #2563eb;
+  transition: width .15s ease;
 }
 
 .mj-external-script-progress.is-indeterminate .mj-external-script-progress-bar {
-  width: 38%;
-  animation: mj-progress-indeterminate 1.1s ease-in-out infinite;
+  width: 35%;
+  animation: mj-progress-indeterminate 1s ease-in-out infinite;
 }
 
 @keyframes mj-progress-indeterminate {
   from { transform: translateX(-110%); }
-  to { transform: translateX(275%); }
+  to { transform: translateX(300%); }
 }
 
 html[data-color-scheme="dark"] .mj-options-card {
@@ -235,14 +250,15 @@ html[data-color-scheme="dark"] .mj-external-script-status.error {
 }
 
 html[data-color-scheme="dark"] .mj-external-script-progress-track {
-  background: #334155;
+  background: #1e3a5f;
 }
 
 html[data-color-scheme="dark"] .mj-video-asset-progress-track {
   background: #1e3a5f;
 }
 
-html[data-color-scheme="dark"] .mj-video-asset-progress-bar {
+html[data-color-scheme="dark"] .mj-video-asset-progress-bar,
+html[data-color-scheme="dark"] .mj-external-script-progress-bar {
   background: #60a5fa;
 }
 

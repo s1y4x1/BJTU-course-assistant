@@ -44,6 +44,8 @@
       installed: false,
       size: 0,
       busy: false,
+      canceling: false,
+      controller: null,
       error: ''
     }]))
   };
@@ -51,7 +53,7 @@
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let videoDirectoryRequest = null;
 
   async function updaterManager() {
     const ready = await global.__bjtuUpdaterReady;
@@ -172,14 +174,18 @@
         size.style.cssText = fileSizeStyle(assetState.size);
       }
       if (assetStatus instanceof HTMLElement) {
-        assetStatus.textContent = assetState.busy
-          ? '正在下载…'
-          : (assetState.error || (assetState.installed ? '已下载' : '未下载'));
+        assetStatus.textContent = assetState.canceling
+          ? '正在取消…'
+          : (assetState.busy
+            ? '正在下载…'
+            : (assetState.error || (assetState.installed ? '已下载' : '未下载')));
         assetStatus.classList.toggle('error', Boolean(assetState.error));
       }
       if (downloadButton instanceof HTMLButtonElement) {
         downloadButton.hidden = assetState.installed;
-        downloadButton.disabled = state.busy || state.videoBusy || assetState.busy || !state.enabled;
+        downloadButton.textContent = assetState.canceling ? '取消中…' : (assetState.busy ? '取消' : '下载');
+        downloadButton.classList.toggle('is-cancel', assetState.busy);
+        downloadButton.disabled = state.busy || assetState.canceling || !state.enabled;
       }
       if (deleteButton instanceof HTMLButtonElement) {
         deleteButton.hidden = !assetState.installed;
@@ -203,11 +209,12 @@
     container.hidden = !visible;
     const loadedBytes = Math.max(0, Number(loaded) || 0);
     const totalBytes = Math.max(0, Number(total) || 0);
+    container.classList.toggle('is-indeterminate', visible && totalBytes <= 0);
     if (bar instanceof HTMLElement) {
       const ratio = totalBytes > 0
         ? Math.max(0, Math.min(100, loadedBytes / totalBytes * 100))
         : 0;
-      bar.style.width = `${ratio}%`;
+      bar.style.width = totalBytes > 0 ? `${ratio}%` : '';
     }
     if (visible && assetStatus instanceof HTMLElement) {
       if (totalBytes > 0) {
@@ -241,8 +248,8 @@
     }
   }
 
-  async function fetchBinary(asset, onProgress) {
-    const response = await fetch(asset.url, { cache: 'no-store', redirect: 'follow' });
+  async function fetchBinary(asset, onProgress, signal) {
+    const response = await fetch(asset.url, { cache: 'no-store', redirect: 'follow', signal });
     if (!response.ok) throw new Error(`${asset.name} 下载失败：HTTP ${response.status}`);
     const total = Math.max(0, Number(response.headers.get('content-length') || 0));
     const reader = response.body?.getReader?.();
@@ -269,6 +276,14 @@
     }
     if (!bytes.byteLength) throw new Error(`${asset.name} 下载内容为空`);
     return bytes;
+  }
+
+  function requestVideoDirectory(manager) {
+    if (!videoDirectoryRequest) {
+      videoDirectoryRequest = manager.requestDirectory()
+        .finally(() => { videoDirectoryRequest = null; });
+    }
+    return videoDirectoryRequest;
   }
 
   async function fetchSource(onProgress) {
@@ -377,21 +392,26 @@
     const assetState = state.videoAssets[asset.name];
     if (!assetState || assetState.busy || assetState.installed) return true;
     assetState.busy = true;
+    assetState.canceling = false;
+    assetState.controller = new AbortController();
     assetState.error = '';
     if (standalone) state.videoBusy = true;
     render();
     setVideoAssetProgress(asset, true);
     try {
       const manager = await updaterManager();
-      const directory = root || await manager.requestDirectory();
+      const directory = root || await requestVideoDirectory(manager);
       const bytes = await fetchBinary(asset, ({ loaded, total }) => {
         setVideoAssetProgress(asset, true, loaded, total);
-      });
+      }, assetState.controller.signal);
+      if (assetState.controller.signal.aborted) throw assetState.controller.signal.reason;
       await manager.writeManagedFile(directory, asset.path, bytes);
       assetState.installed = true;
       assetState.size = bytes.byteLength;
       assetState.busy = false;
-      if (standalone) state.videoBusy = false;
+      assetState.canceling = false;
+      assetState.controller = null;
+      if (standalone) state.videoBusy = VIDEO_ASSETS.some((item) => state.videoAssets[item.name]?.busy);
       await persistAvailableVideoPaths();
       if (state.enabled && state.soundVideoAutoEnablePending
           && installedVideoAssets().length === VIDEO_ASSETS.length) {
@@ -408,14 +428,25 @@
       if (standalone) setMessage(`已下载有声视频素材「${asset.name}」`);
       return true;
     } catch (error) {
+      const canceled = assetState.controller?.signal.aborted || error?.name === 'AbortError';
       assetState.busy = false;
-      assetState.error = String(error?.message || error);
-      if (standalone) state.videoBusy = false;
+      assetState.canceling = false;
+      assetState.controller = null;
+      assetState.error = canceled ? '' : String(error?.message || error);
+      if (standalone) state.videoBusy = VIDEO_ASSETS.some((item) => state.videoAssets[item.name]?.busy);
       setVideoAssetProgress(asset, false);
       render();
-      if (standalone) setMessage(assetState.error, false);
+      if (standalone) setMessage(canceled ? `已取消下载「${asset.name}」` : assetState.error, canceled);
       return false;
     }
+  }
+
+  function cancelVideoAssetDownload(asset) {
+    const assetState = state.videoAssets[asset.name];
+    if (!assetState?.busy || assetState.canceling || !assetState.controller) return;
+    assetState.canceling = true;
+    assetState.controller.abort(new DOMException('下载已取消', 'AbortError'));
+    renderVideoAssets();
   }
 
   async function ensureVideoAssets({ enableAfterAll = false } = {}) {
@@ -642,6 +673,7 @@
 
   async function remove() {
     if (state.busy || !state.installed || state.enabled) return;
+    const knownSize = state.localSize || state.remoteSize;
     state.busy = true;
     render();
     status('正在删除…');
@@ -650,10 +682,20 @@
       const root = await manager.requestDirectory();
       await manager.removeManagedFile(root, SCRIPT.path);
       await chrome.storage.local.set({ [SCRIPT.storageKey]: false, [AUTO_INSTALL_PENDING_KEY]: false });
-      await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
-      status('已删除，正在重新加载扩展…');
-      await sleep(100);
-      await reloadOptions();
+      const syncResult = await send('SYNC_OPTIONAL_CONTENT_SCRIPTS');
+      if (!syncResult?.ok) throw new Error(syncResult?.message || '动态脚本同步失败');
+      Object.assign(state, {
+        installed: false,
+        enabled: false,
+        busy: false,
+        runtimeReady: false,
+        localSize: 0,
+        remoteSize: knownSize,
+        prefetchedSource: ''
+      });
+      render();
+      status('未下载');
+      setMessage(`已删除「${SCRIPT.name}」`);
     } catch (error) {
       state.busy = false;
       render();
@@ -719,7 +761,10 @@
     document.querySelectorAll('[data-video-asset]').forEach((row) => {
       const asset = VIDEO_ASSETS.find((item) => item.name === row.dataset.videoAsset);
       if (!asset) return;
-      row.querySelector('.mj-video-asset-download')?.addEventListener('click', () => void downloadVideoAsset(asset));
+      row.querySelector('.mj-video-asset-download')?.addEventListener('click', () => {
+        if (state.videoAssets[asset.name]?.busy) cancelVideoAssetDownload(asset);
+        else void downloadVideoAsset(asset);
+      });
       const deleteButton = row.querySelector('.mj-video-asset-delete');
       deleteButton?.addEventListener('click', () => void removeVideoAsset(asset));
     });
