@@ -664,7 +664,7 @@ function renderMrjzyStandaloneCourses() {
       className: 'mrjzy-standalone-card',
       order: baseOrder + idx,
       titleHtml,
-      metaHtml: `<div style="font-size:13px;color:#666;line-height:1.35;">${teacherHtml}</div>`,
+      metaHtml: `<div class="mrjzy-course-meta" style="font-size:13px;color:#666;line-height:1.35;">${teacherHtml}</div>`,
       actionsHtml: '<button class="btn" style="background:#9C27B0;display:none;" data-action="videos">回放下载</button>'
     });
     courseListDiv.appendChild(card);

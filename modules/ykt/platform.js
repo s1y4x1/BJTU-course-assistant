@@ -772,7 +772,7 @@ function renderYktStandaloneCourses() {
       className: 'ykt-standalone-card',
       order: baseOrder + idx,
       titleHtml: `<a href="${courseLink}" target="_blank" rel="noopener noreferrer" style="color:#5096f5;text-decoration:none;line-height:1.3;">${escapeHtml(c.course_name || c.name || '雨课堂课程')}</a>`,
-      metaHtml: `<div style="font-size:12px;color:#666;line-height:1.35;">${escapeHtml(subText)}</div>`,
+      metaHtml: `<div class="ykt-course-meta" style="font-size:12px;color:#666;line-height:1.35;">${escapeHtml(subText)}</div>`,
       actionsHtml: '<button class="btn" style="background:#9C27B0;display:none;" data-action="videos">回放下载</button>'
     });
     courseListDiv.appendChild(card);

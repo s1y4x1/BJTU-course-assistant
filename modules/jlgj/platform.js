@@ -299,7 +299,7 @@ function renderJlgjStandaloneCourses() {
       className: 'jlgj-standalone-card',
       order: baseOrder + idx,
       titleHtml: `<a href="${JLGJ_WEB_BASE}" target="_blank" rel="noopener noreferrer" style="color:#ffd243;text-decoration:none;line-height:1.3;">${titleHtml}</a>`,
-      metaHtml: `<div style="font-size:12px;color:#666;line-height:1.35;">${teacherHtml}</div>`,
+      metaHtml: `<div class="jlgj-course-meta" style="font-size:12px;color:#666;line-height:1.35;">${teacherHtml}</div>`,
       actionsHtml: '<button class="btn" style="background:#9C27B0;display:none;" data-action="videos">回放下载</button>',
       contentHtml: loadingMeta && !(c.homeworks || []).length
         ? `<div class="spinner" style="border-color:#2196F3;border-top-color:transparent;display:inline-block;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></div> 正在获取作业…`
