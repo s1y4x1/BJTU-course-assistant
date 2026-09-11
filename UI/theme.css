@@ -184,6 +184,13 @@ html[data-color-scheme="dark"] .ve-course-teacher-pop {
   color: #e5e7eb !important;
 }
 
+html[data-color-scheme="dark"] .ve-teacher-pop,
+html[data-color-scheme="dark"] .ve-student-pop,
+html[data-color-scheme="dark"] .ve-course-teacher-pop {
+  background:rgba(15,23,42,.75) !important;
+  backdrop-filter:blur(8px);
+}
+
 html[data-color-scheme="dark"] .version-notice-title,
 html[data-color-scheme="dark"] .version-download-title,
 html[data-color-scheme="dark"] #login-modal .login-panel h3,

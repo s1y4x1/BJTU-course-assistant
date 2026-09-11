@@ -273,6 +273,7 @@ function updateVeTeacherMetaUi(courseId) {
     if (!(pop instanceof HTMLElement)) return;
     if (String(pop.dataset.courseId || '').trim() !== cid) return;
     pop.innerHTML = renderVeTeacherMetaPopHtml(meta, teachers);
+    scheduleVeHoverPopoverPosition(pop);
   });
 }
 
@@ -387,6 +388,32 @@ async function fetchVeReplaySchedule(courseId, { forceReload = false } = {}) {
   })();
   window.veReplayScheduleByCourseId[cid] = { list: [], loaded: false, error: false, promise: task };
   return task;
+}
+
+function positionVeHoverPopover(wrap) {
+  if (!(wrap instanceof HTMLElement)) return;
+  const pop = wrap.querySelector(':scope > .ve-teacher-pop, :scope > .ve-course-teacher-pop, :scope > .ve-student-pop');
+  if (!(pop instanceof HTMLElement)) return;
+  pop.classList.remove('ve-pop-open-left');
+  const rect = pop.getBoundingClientRect();
+  if (rect.right > window.innerWidth - 8) pop.classList.add('ve-pop-open-left');
+}
+
+function scheduleVeHoverPopoverPosition(pop) {
+  if (!(pop instanceof HTMLElement)) return;
+  requestAnimationFrame(() => {
+    const wrap = pop.parentElement;
+    if (wrap instanceof HTMLElement && wrap.matches(':hover')) positionVeHoverPopover(wrap);
+  });
+}
+
+function bindVeHoverPopoverPositioning(card) {
+  if (!(card instanceof HTMLElement)) return;
+  card.querySelectorAll('.ve-teacher-wrap, .ve-course-num-wrap, .ve-student-wrap').forEach((wrap) => {
+    wrap.addEventListener('mouseenter', () => {
+      requestAnimationFrame(() => positionVeHoverPopover(wrap));
+    });
+  });
 }
 
 const VE_REPLAY_VIEWS = Object.freeze(['student', 'teacher', 'courseware']);
@@ -745,6 +772,7 @@ function updateVeCourseTeachersPopUi(courseId) {
   document.querySelectorAll('.ve-course-teacher-pop').forEach((el) => {
     if (!(el instanceof HTMLElement)) return;
     if (String(el.dataset.courseId || '').trim() !== cid) return;
+    scheduleVeHoverPopoverPosition(el);
 
     let tableWrap = el.querySelector('.ve-course-teacher-table-wrap');
     let statusLine = el.querySelector('.ve-course-teacher-status-line');
@@ -933,7 +961,10 @@ function updateVeStudentsMetaUi(courseId) {
       text.textContent = total > 0 ? `${total}学生` : '学生';
     }
     const pop = wrap.querySelector('.ve-student-pop');
-    if (pop instanceof HTMLElement) pop.innerHTML = renderVeStudentsPopHtml(meta);
+    if (pop instanceof HTMLElement) {
+      pop.innerHTML = renderVeStudentsPopHtml(meta);
+      scheduleVeHoverPopoverPosition(pop);
+    }
   });
 }
 
@@ -2137,6 +2168,7 @@ function renderCourseList(courses, {
         `
     });
     courseListDiv.appendChild(card);
+    bindVeHoverPopoverPositioning(card);
 
     // bind actions
     const btnCourseware = card.querySelector('button[data-action="courseware"]');

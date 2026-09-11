@@ -1446,7 +1446,11 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         }
       }
     } else if (!previous && notificationsEnabled && notifyInitialExamRows) {
-      for (const row of normalizedRows) changes.push({ kind: 'new', row });
+      const now = Date.now();
+      for (const row of normalizedRows) {
+        if (row.startAt > 0 && row.startAt < now) continue;
+        changes.push({ kind: 'new', row });
+      }
     }
     const pending = normalizePendingExamNotifications(stored?.[EXAM_PENDING_NOTIFICATIONS_KEY]);
     for (const change of changes) {

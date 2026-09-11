@@ -28,14 +28,24 @@
   top:calc(100% + 6px);
   min-width:0;
   width:max-content;
-  background:#fff;
+  max-width:calc(100vw - 16px);
+  max-height:calc(100vh - 16px);
+  overflow:auto;
+  background:rgba(255,255,255,.75);
   border:1px solid #d1d5db;
   border-radius:8px;
   padding:8px;
-  box-shadow:0 6px 18px rgba(0,0,0,0.12);
+  box-shadow:0 12px 30px rgba(15,23,42,.22);
+  backdrop-filter:blur(8px);
   z-index:16;
   display:none;
   color:#111827;
+}
+.ve-teacher-pop.ve-pop-open-left,
+.ve-student-pop.ve-pop-open-left,
+.ve-course-teacher-pop.ve-pop-open-left {
+  right:0;
+  left:auto;
 }
 .ve-teacher-wrap:hover .ve-teacher-pop,
 .ve-student-wrap:hover .ve-student-pop,
