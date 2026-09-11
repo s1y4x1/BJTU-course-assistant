@@ -4,7 +4,7 @@
   const LOGIN_URL = 'https://aa.bjtu.edu.cn/client/login/';
   const INDEX_URL = 'https://aa.bjtu.edu.cn/client/index/';
   const SCORE_URL = 'https://aa.bjtu.edu.cn/score/scores/stu/view/';
-  const EXAM_URL = 'https://aa.bjtu.edu.cn/examine/examplanstudent/stulist';
+  const EXAM_URL = 'https://aa.bjtu.edu.cn/examine/examplanstudent/stulist/';
   const SCHEDULE_URLS = Object.freeze({
     semester: 'https://aa.bjtu.edu.cn/course_selection/courseselect/stuschedule/',
     selection: 'https://aa.bjtu.edu.cn/course_selection/courseselecttask/schedule/'
@@ -276,14 +276,28 @@
 
   function parseExamStartAt(value) {
     const match = String(value || '').match(
-      /(\d{4})[/-](\d{1,2})[/-](\d{1,2})\s+(\d{1,2}):(\d{2})/
+      /^\s*(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})\s*$/m
     );
     if (!match) return 0;
-    const timestamp = new Date(
-      Number(match[1]), Number(match[2]) - 1, Number(match[3]),
-      Number(match[4]), Number(match[5]), 0, 0
-    ).getTime();
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+    const endHour = Number(match[6]);
+    const endMinute = Number(match[7]);
+    if (month < 1 || month > 12 || day < 1 || day > 31
+        || hour < 0 || hour > 23 || minute < 0 || minute > 59
+        || endHour < 0 || endHour > 23 || endMinute < 0 || endMinute > 59) return 0;
+    const date = new Date(Number(match[1]), month - 1, day, hour, minute, 0, 0);
+    if (date.getFullYear() !== Number(match[1]) || date.getMonth() !== month - 1
+        || date.getDate() !== day || date.getHours() !== hour || date.getMinutes() !== minute) return 0;
+    const timestamp = date.getTime();
     return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function isPastExam(row, now = Date.now()) {
+    const startAt = Number(row?.startAt || parseExamStartAt(row?.timeLocation));
+    return startAt > 0 && startAt <= now;
   }
 
   function parseExamPage(html) {
@@ -1407,7 +1421,13 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       pendingOverride || stored?.[EXAM_PENDING_NOTIFICATIONS_KEY]
     );
     let changed = false;
+    const now = Date.now();
     for (const [key, item] of Object.entries(pending)) {
+      if (isPastExam(item.row, now)) {
+        delete pending[key];
+        changed = true;
+        continue;
+      }
       try {
         await notifyExamChange(item.row, item.kind, item.studentId);
         delete pending[key];
@@ -1438,17 +1458,18 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, row]));
     const changes = [];
     const notificationsEnabled = stored?.[EXAM_MONITOR_KEY] !== false;
+    const now = Date.now();
     if (previous && notificationsEnabled) {
       for (const row of normalizedRows) {
+        if (isPastExam(row, now)) continue;
         if (!previous[row.key]) changes.push({ kind: 'new', row });
         else if (examFingerprint(previous[row.key]) !== examFingerprint(row)) {
           changes.push({ kind: 'updated', row });
         }
       }
     } else if (!previous && notificationsEnabled && notifyInitialExamRows) {
-      const now = Date.now();
       for (const row of normalizedRows) {
-        if (row.startAt > 0 && row.startAt < now) continue;
+        if (isPastExam(row, now)) continue;
         changes.push({ kind: 'new', row });
       }
     }
