@@ -198,8 +198,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-// 卸载后打开讨论页
-chrome.runtime.setUninstallURL('https://github.com/s1y4x1/BJTU-course-assistant/discussions/3').catch(() => {});
+// 卸载后打开反馈表单
+chrome.runtime.setUninstallURL('https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAN__ho_aVhUQUM0RkwwWlRCTFlTODg4QzMxQURPTElYWS4u').catch(() => {});
 
 function tryImportModuleScripts(...paths) {
   try {

@@ -96,6 +96,7 @@ let versionNoticeForceCountdownAt = 0;
 let versionDownloadClean = false;
 let versionDownloadReload = true;
 let versionUpdateFileTreeRows = new Map();
+let versionUninstallCountdownTimer = null;
 
 const VERSION_UPDATE_FILE_STATE = Object.freeze({
   pending: { symbol: '○', label: '等待覆盖' },
@@ -535,7 +536,78 @@ function ensureVersionNoticeModal() {
     });
   }
 
+  const uninstallBtn = modal.querySelector('#version-uninstall-open');
+  if (uninstallBtn instanceof HTMLButtonElement) {
+    uninstallBtn.addEventListener('click', openVersionUninstallModal);
+  }
+
   return modal;
+}
+
+function closeVersionUninstallModal() {
+  if (versionUninstallCountdownTimer) clearInterval(versionUninstallCountdownTimer);
+  versionUninstallCountdownTimer = null;
+  const modal = document.getElementById('version-uninstall-modal');
+  if (modal instanceof HTMLElement) modal.style.display = 'none';
+}
+
+function openVersionUninstallModal() {
+  const modal = document.getElementById('version-uninstall-modal');
+  const confirmBtn = document.getElementById('version-uninstall-confirm');
+  if (!(modal instanceof HTMLElement) || !(confirmBtn instanceof HTMLButtonElement)) return;
+  if (modal.dataset.bound !== '1') {
+    modal.dataset.bound = '1';
+    document.getElementById('version-uninstall-close')?.addEventListener('click', closeVersionUninstallModal);
+    document.getElementById('version-uninstall-cancel')?.addEventListener('click', closeVersionUninstallModal);
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) closeVersionUninstallModal();
+    });
+    confirmBtn.addEventListener('click', () => {
+      void uninstallExtensionFiles(confirmBtn).catch((error) => {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '卸载';
+        showToast(`卸载失败：${String(error?.message || error || '未知错误')}`, 'error', 4000);
+      });
+    });
+  }
+  if (versionUninstallCountdownTimer) clearInterval(versionUninstallCountdownTimer);
+  modal.style.display = 'flex';
+  confirmBtn.disabled = true;
+  const readyAt = Date.now() + 2000;
+  const updateCountdown = () => {
+    const remaining = Math.max(0, readyAt - Date.now());
+    if (remaining <= 0) {
+      clearInterval(versionUninstallCountdownTimer);
+      versionUninstallCountdownTimer = null;
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '卸载';
+      confirmBtn.focus();
+      return;
+    }
+    confirmBtn.textContent = `卸载（${Math.ceil(remaining / 1000)} 秒）`;
+  };
+  updateCountdown();
+  versionUninstallCountdownTimer = setInterval(updateCountdown, 100);
+}
+
+async function openExtensionManagementAfterUninstall() {
+  const url = `about://extensions/?id=${encodeURIComponent(chrome.runtime.id)}`;
+  const currentTab = await chrome.tabs.getCurrent().catch(() => null);
+  if (Number.isInteger(currentTab?.id)) {
+    await chrome.tabs.update(currentTab.id, { url });
+    return;
+  }
+  await chrome.tabs.create({ url });
+}
+
+async function uninstallExtensionFiles(confirmBtn) {
+  if (confirmBtn instanceof HTMLButtonElement) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '正在卸载…';
+  }
+  const root = await requestModuleManagementDirectory();
+  await removeAllVersionDirectoryEntries(root);
+  await openExtensionManagementAfterUninstall();
 }
 
 function openVersionNoticeModal(overrideMode) {
@@ -1459,24 +1531,26 @@ async function clearVersionUpdateDirectory() {
     body: `正在删除 ${getVersionUpdateDirectoryDisplayName()} 目录中的旧文件。`,
     phase: 'extracting'
   });
-  const names = [];
   try {
-    for await (const [name] of root.entries()) names.push(name);
-    for (const name of names) {
-      try {
-        await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true });
-      } catch (error) {
-        throw new Error(`无法删除更新目录中的“${name}”：${String(error?.message || error)}`);
-      }
-    }
-    const remaining = [];
-    for await (const [name] of root.entries()) remaining.push(name);
-    if (remaining.length) {
-      throw new Error(`更新目录未完全清空，仍有：${remaining.join('、')}`);
-    }
+    return await removeAllVersionDirectoryEntries(root);
   } catch (error) {
     throw markVersionUpdateError(error, 'directory');
   }
+}
+
+async function removeAllVersionDirectoryEntries(root) {
+  const names = [];
+  for await (const [name] of root.entries()) names.push(name);
+  for (const name of names) {
+    try {
+      await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true });
+    } catch (error) {
+      throw new Error(`无法删除扩展目录中的“${name}”：${String(error?.message || error)}`);
+    }
+  }
+  const remaining = [];
+  for await (const [name] of root.entries()) remaining.push(name);
+  if (remaining.length) throw new Error(`扩展目录未完全清空，仍有：${remaining.join('、')}`);
   return names.length;
 }
 

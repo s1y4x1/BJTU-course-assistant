@@ -66,10 +66,59 @@
     return normalizeHistory(stored?.[HISTORY_KEY]);
   }
 
+  function normalizeStoredAccount(loginName, source, platform) {
+    const id = String(loginName || '').trim();
+    if (!id) return null;
+    const record = {
+      loginName: id,
+      userName: String(source?.userName || '').trim(),
+      password: String(source?.password || ''),
+      passwordMd5: String(source?.passwordMd5 || '').trim()
+    };
+    if (platform === '智慧课程平台') {
+      record.roleName = String(source?.roleName || '').trim();
+      record.quickUsername = String(source?.quickUsername || '').trim();
+    }
+    return record;
+  }
+
+  async function buildAdditionalAccountLists() {
+    const stored = await chrome.storage.local.get([
+      'casAccounts',
+      'academicSystemAccounts',
+      'campusNetworkReconnectAccount',
+      'campusNetworkReconnectPassword',
+      'username'
+    ]).catch(() => ({}));
+    const accounts = { cas: [], academic: [], campusnet: [] };
+    const casAccounts = stored?.casAccounts && typeof stored.casAccounts === 'object'
+      ? stored.casAccounts : {};
+    Object.entries(casAccounts).forEach(([loginName, source]) => {
+      const record = normalizeStoredAccount(loginName, source, '统一身份认证');
+      if (record) accounts.cas.push(record);
+    });
+    const academicAccounts = stored?.academicSystemAccounts && typeof stored.academicSystemAccounts === 'object'
+      ? stored.academicSystemAccounts : {};
+    Object.entries(academicAccounts).forEach(([studentId, source]) => {
+      const record = normalizeStoredAccount(studentId, source, '教务系统');
+      if (record) accounts.academic.push(record);
+    });
+    const configuredCampusAccount = String(stored?.campusNetworkReconnectAccount || '').trim();
+    const campusPassword = String(stored?.campusNetworkReconnectPassword || '');
+    if (configuredCampusAccount || campusPassword) {
+      const campusAccount = configuredCampusAccount || String(stored?.username || '').trim();
+      const record = normalizeStoredAccount(campusAccount, {
+        password: campusPassword
+      }, '校园网');
+      if (record) accounts.campusnet.push(record);
+    }
+    return accounts;
+  }
+
   async function buildAccountList() {
     const history = await readHistory();
     const accountStore = global.BjtuAccountStore;
-    return Promise.all(history.map(async (historyItem) => {
+    const veAccounts = await Promise.all(history.map(async (historyItem) => {
       const loginName = historyItem.loginName;
       const account = accountStore?.get
         ? await accountStore.get(loginName).catch(() => null)
@@ -83,12 +132,23 @@
         quickUsername: String(account?.quickUsername || '').trim()
       };
     }));
+    const additionalAccounts = await buildAdditionalAccountLists();
+    return {
+      '智慧课程平台': veAccounts,
+      '统一身份认证': additionalAccounts.cas,
+      '教务系统': additionalAccounts.academic,
+      '校园网': additionalAccounts.campusnet
+    };
   }
 
-  function accountListSignature(accountList) {
-    return JSON.stringify([...accountList].sort((a, b) => (
-      a.loginName.toLowerCase().localeCompare(b.loginName.toLowerCase())
-    )));
+  function accountListSignature(accountLists) {
+    const normalized = {};
+    Object.keys(accountLists || {}).sort().forEach((platform) => {
+      normalized[platform] = [...(Array.isArray(accountLists[platform]) ? accountLists[platform] : [])]
+        .sort((a, b) => String(a?.loginName || '').toLowerCase()
+          .localeCompare(String(b?.loginName || '').toLowerCase()));
+    });
+    return JSON.stringify(normalized);
   }
 
   async function getAccountSignature() {
@@ -551,7 +611,18 @@
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
-    if (changes?.[HISTORY_KEY] || changes?.[ACCOUNT_LIST_REVISION_KEY]) {
+    const accountSourceKeys = [
+      HISTORY_KEY,
+      ACCOUNT_LIST_REVISION_KEY,
+      'casAccounts',
+      'casLoginName',
+      'academicSystemAccounts',
+      'academicSystemStudentId',
+      'campusNetworkReconnectAccount',
+      'campusNetworkReconnectPassword',
+      'username'
+    ];
+    if (accountSourceKeys.some((key) => changes?.[key])) {
       evaluateAccountChange();
     }
   });

@@ -33,6 +33,24 @@
         </select>
       </div>
     </div>
+    <div class="version-uninstall-entry">
+      <button id="version-uninstall-open" class="btn version-uninstall-open-btn" type="button">卸载</button>
+    </div>
+  </div>
+</div>
+
+<div id="version-uninstall-modal" class="version-modal-mask version-uninstall-modal" role="dialog"
+  aria-modal="true" aria-labelledby="version-uninstall-title">
+  <div class="version-modal-card version-uninstall-card">
+    <div class="version-modal-header">
+      <div id="version-uninstall-title" class="version-uninstall-title">确认卸载</div>
+      <button id="version-uninstall-close" class="btn version-close-btn" type="button" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div class="version-uninstall-message">确定要卸载 BJTU 课程助手及其全部的模块吗？点击「卸载」按钮会清空扩展目录，随后将跳转至浏览器扩展管理页，您需要再手动点击「删除」按钮。</div>
+    <div class="version-uninstall-actions">
+      <button id="version-uninstall-cancel" class="btn version-uninstall-cancel-btn" type="button">取消</button>
+      <button id="version-uninstall-confirm" class="btn version-uninstall-confirm-btn" type="button" disabled>卸载（2 秒）</button>
+    </div>
   </div>
 </div>
 

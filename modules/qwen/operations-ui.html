@@ -1,7 +1,10 @@
 <div class="qwen-operation-panel" data-operation-ui-root>
   <div class="qwen-operation-header">
     <span class="qwen-operation-header-title">允许 AI 调用以下操作</span>
-    <button type="button" class="qwen-operation-toggle-all" data-operation-toggle-all>反选</button>
+    <span class="qwen-operation-toggle-actions">
+      <button type="button" class="qwen-operation-toggle-all" data-operation-toggle-all="enabled">反选启用</button>
+      <button type="button" class="qwen-operation-toggle-all" data-operation-toggle-all="always">反选始终允许</button>
+    </span>
   </div>
   <div class="qwen-operation-tip">每项第一个开关控制是否允许调用，第二个开关控制是否在所有会话中始终允许该操作。</div>
   <div class="qwen-operation-list" data-operation-list role="group" aria-label="可调用的操作"></div>

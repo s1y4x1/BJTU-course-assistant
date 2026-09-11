@@ -137,9 +137,10 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
 .countdown-style-option select { width:auto; min-width:150px; height:34px; padding:5px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .page-header h1 { min-width: 0; flex: 1 1 auto; }
+.page-header-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:0 0 auto; }
+.page-header-actions button { margin:0; white-space:nowrap; }
 .page-header #resetBtn {
   flex:0 0 auto;
-  white-space:nowrap;
   font-size:var(--bjtu-font-size-secondaryTitle, 15px);
 }
 .section-title { font-weight: 600; margin-bottom: 8px; font-size: 18px; }
@@ -324,6 +325,29 @@ html[data-color-scheme="dark"] .export-bind-data-actions a:hover { background:#3
 .reset-confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .reset-confirm-actions button { width:100%; margin:0; }
 .reset-confirm-close { position:absolute; top:10px; right:10px; width:28px; height:28px; margin:0; padding:0; border-radius:50%; background:#64748b; font-size:18px; line-height:28px; }
+.settings-import-card { width:min(620px,calc(100vw - 32px)); }
+.settings-import-description { margin:12px 0 8px; color:#475569; font-size:13px; line-height:1.5; }
+.settings-import-input {
+  display:block;
+  width:100%;
+  min-height:240px;
+  max-height:55vh;
+  box-sizing:border-box;
+  margin:0 0 14px;
+  padding:10px;
+  resize:vertical;
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  background:#fff;
+  color:#0f172a;
+  font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+}
+html[data-color-scheme="dark"] .settings-import-description { color:#cbd5e1; }
+html[data-color-scheme="dark"] .settings-import-input { background:#0f172a; border-color:#475569; color:#e2e8f0; }
+@media (max-width:640px) {
+  .page-header { align-items:flex-start; }
+  .page-header-actions { flex-wrap:wrap; }
+}
 .deadline-countdown { display:inline-flex; align-items:center; gap:4px; margin-left:4px; vertical-align:middle; }
 .deadline-countdown--normal { display:inline-block; margin-left:4px !important; vertical-align:baseline; font-family:inherit; font-size:inherit; font-style:normal; line-height:normal; letter-spacing:0; }
 .deadline-countdown-normal { display:inline-block; position:static; font-family:inherit; font-size:inherit; font-weight:700; font-variant-numeric:tabular-nums; line-height:inherit; white-space:nowrap; color:#000; }

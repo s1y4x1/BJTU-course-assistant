@@ -89,6 +89,7 @@
 }
 .version-download-modal { z-index: 10021; }
 .version-notice-modal { z-index: 10022; }
+.version-uninstall-modal { z-index: 10031; }
 .version-notice-modal .version-modal-card {
     max-height: min(78vh, 740px);
     display: flex;
@@ -289,6 +290,63 @@ html[data-color-scheme="dark"] .version-install-option-description { color: #94a
     flex: 0 0 auto;
     background: #fff;
 }
+.version-uninstall-entry {
+    flex: 0 0 auto;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #fee2e2;
+}
+.version-uninstall-open-btn,
+.version-uninstall-confirm-btn {
+    width: 100%;
+    margin: 0;
+    background: #dc2626;
+    color: #fff;
+    border: 1px solid #dc2626;
+}
+.version-uninstall-open-btn {
+    height: 34px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1.2;
+}
+.version-uninstall-open-btn:hover,
+.version-uninstall-confirm-btn:not(:disabled):hover { background: #b91c1c; }
+.version-uninstall-card { width: min(480px, calc(100vw - 32px)); }
+.version-uninstall-title {
+    color: #991b1b;
+    font-size: 18px;
+    font-weight: 800;
+}
+.version-uninstall-message {
+    margin: 10px 0 16px;
+    color: #475569;
+    font-size: 14px;
+    line-height: 1.65;
+}
+.version-uninstall-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.version-uninstall-actions > .btn { margin: 0; }
+.version-uninstall-cancel-btn {
+    background: #64748b;
+    color: #fff;
+    border: 1px solid #64748b;
+}
+.version-uninstall-cancel-btn:hover { background: #475569; }
+.version-uninstall-confirm-btn:disabled {
+    background: #fca5a5;
+    border-color: #fca5a5;
+    cursor: not-allowed;
+}
+html[data-color-scheme="dark"] .version-uninstall-entry { border-top-color: #7f1d1d; }
+html[data-color-scheme="dark"] .version-uninstall-title { color: #fca5a5; }
+html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
 .version-source-row {
     display: flex;
     align-items: center;

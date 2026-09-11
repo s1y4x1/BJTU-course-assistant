@@ -24,22 +24,36 @@ html[data-color-scheme="dark"] .qwen-operation-header-title {
 
 .qwen-operation-toggle-all {
   margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
+  padding: 4px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
   color: #1976d2;
   font-size: 12px;
+  line-height: 1.2;
   cursor: pointer;
   user-select: none;
 }
 
+.qwen-operation-toggle-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
 html[data-color-scheme="dark"] .qwen-operation-toggle-all {
   color: #60a5fa;
+  border-color: #1e40af;
+  background: rgba(30, 64, 175, 0.22);
 }
 
 .qwen-operation-toggle-all:hover {
-  text-decoration: underline;
+  border-color: #60a5fa;
+  background: #dbeafe;
 }
+html[data-color-scheme="dark"] .qwen-operation-toggle-all:hover { background:rgba(30,64,175,.38); }
 
 .qwen-operation-tip {
   margin: 4px 0 8px;

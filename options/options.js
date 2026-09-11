@@ -2214,6 +2214,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   };
 
   const resetConfirmModal = document.getElementById('reset-confirm-modal');
+  const settingsImportModal = document.getElementById('settings-import-modal');
+  const settingsImportInput = document.getElementById('settings-import-input');
   const closeResetConfirmModal = () => {
     if (resetConfirmModal instanceof HTMLElement) resetConfirmModal.style.display = 'none';
   };
@@ -2231,8 +2233,55 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   resetConfirmModal?.addEventListener('click', (event) => {
     if (event.target === resetConfirmModal) closeResetConfirmModal();
   });
+
+  const closeSettingsImportModal = () => {
+    if (settingsImportModal instanceof HTMLElement) settingsImportModal.style.display = 'none';
+  };
+  document.getElementById('exportSettingsBtn')?.addEventListener('click', async () => {
+    try {
+      const settings = await chrome.storage.local.get(null);
+      await navigator.clipboard.writeText(JSON.stringify(settings, null, 2));
+      setMsg('已将全部扩展设置复制到剪贴板');
+    } catch (error) {
+      setMsg(`导出设置失败：${String(error?.message || error)}`, false);
+    }
+  });
+  document.getElementById('importSettingsBtn')?.addEventListener('click', async () => {
+    if (!(settingsImportModal instanceof HTMLElement) || !(settingsImportInput instanceof HTMLTextAreaElement)) return;
+    settingsImportInput.value = '';
+    settingsImportModal.style.display = 'flex';
+    settingsImportInput.focus();
+    try {
+      settingsImportInput.value = await navigator.clipboard.readText();
+      settingsImportInput.select();
+    } catch {
+      setMsg('无法自动读取剪贴板，请手动粘贴设置内容', false);
+    }
+  });
+  document.getElementById('settings-import-close')?.addEventListener('click', closeSettingsImportModal);
+  document.getElementById('settings-import-cancel')?.addEventListener('click', closeSettingsImportModal);
+  document.getElementById('settings-import-submit')?.addEventListener('click', async () => {
+    if (!(settingsImportInput instanceof HTMLTextAreaElement)) return;
+    try {
+      const imported = JSON.parse(settingsImportInput.value);
+      if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
+        throw new Error('设置内容必须是 JSON 对象');
+      }
+      await chrome.storage.local.clear();
+      await chrome.storage.local.set(imported);
+      closeSettingsImportModal();
+      setMsg('设置导入成功，正在重新加载');
+      setTimeout(() => location.reload(), 500);
+    } catch (error) {
+      setMsg(`导入设置失败：${String(error?.message || error)}`, false);
+    }
+  });
+  settingsImportModal?.addEventListener('click', (event) => {
+    if (event.target === settingsImportModal) closeSettingsImportModal();
+  });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && resetConfirmModal?.style.display === 'flex') closeResetConfirmModal();
+    if (event.key === 'Escape' && settingsImportModal?.style.display === 'flex') closeSettingsImportModal();
   });
   document.documentElement.classList.remove('options-loading');
 })();

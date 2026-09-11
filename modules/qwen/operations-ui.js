@@ -138,7 +138,7 @@
 
   function wire(root) {
     const list = root.querySelector('[data-operation-list]');
-    const toggle = root.querySelector('[data-operation-toggle-all]');
+    const toggles = root.querySelectorAll('[data-operation-toggle-all]');
     if (!(list instanceof HTMLElement)) return;
     list.addEventListener('change', (event) => {
       if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox') {
@@ -163,20 +163,27 @@
         void persistAll(list);
       }
     });
-    if (toggle instanceof HTMLButtonElement) {
+    toggles.forEach((toggle) => {
+      if (!(toggle instanceof HTMLButtonElement)) return;
       toggle.addEventListener('click', () => {
-        list.querySelectorAll('input[data-operation-setting="enabled"]:not(:disabled)').forEach((checkbox) => {
+        const setting = toggle.dataset.operationToggleAll === 'always' ? 'always' : 'enabled';
+        list.querySelectorAll(`input[data-operation-setting="${setting}"]:not(:disabled)`).forEach((checkbox) => {
           checkbox.checked = !checkbox.checked;
-          if (!checkbox.checked) {
+          if (setting === 'enabled' && !checkbox.checked) {
             const name = String(checkbox.dataset.operationName || '');
             const always = [...list.querySelectorAll('input[data-operation-setting="always"]')]
               .find((input) => String(input.dataset.operationName || '') === name);
             if (always instanceof HTMLInputElement) always.checked = false;
+          } else if (setting === 'always' && checkbox.checked) {
+            const name = String(checkbox.dataset.operationName || '');
+            const enabled = [...list.querySelectorAll('input[data-operation-setting="enabled"]')]
+              .find((input) => String(input.dataset.operationName || '') === name);
+            if (enabled instanceof HTMLInputElement) enabled.checked = true;
           }
         });
         void persistAll(list);
       });
-    }
+    });
   }
 
   let markupPromise = null;
