@@ -45,11 +45,26 @@
     return Number.isFinite(speed) && speed > 0 ? speed : DEFAULT_ANIMATION_SPEED;
   }
 
+  function animationTargetElement(animation) {
+    const target = animation?.effect?.target;
+    if (target instanceof Element) return target;
+    return target?.element instanceof Element ? target.element : null;
+  }
+
+  function isLoadingSpinnerAnimation(animation) {
+    if (/spin/i.test(String(animation?.animationName || ''))) return true;
+    const target = animationTargetElement(animation);
+    return !!target && (
+      target.matches('[class*="spinner"], .checking .dot, .content-loading .dot, .is-loading')
+      || !!target.closest('[class*="spinner"], .checking, .content-loading, .is-loading')
+    );
+  }
+
   function applyPlaybackRate() {
     if (!document.getAnimations) return;
     const rate = isAnimationEnabled() ? animationSpeed : 1;
     document.getAnimations().forEach((animation) => {
-      try { animation.updatePlaybackRate(rate); } catch {}
+      try { animation.updatePlaybackRate(isLoadingSpinnerAnimation(animation) ? 1 : rate); } catch {}
     });
   }
 
