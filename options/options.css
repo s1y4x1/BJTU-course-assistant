@@ -138,11 +138,16 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .page-header h1 { min-width: 0; flex: 1 1 auto; }
 .page-header-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:0 0 auto; }
-.page-header-actions button { margin:0; white-space:nowrap; }
-.page-header #resetBtn {
-  flex:0 0 auto;
+.page-header-actions button {
+  margin:0;
+  white-space:nowrap;
   font-size:var(--bjtu-font-size-secondaryTitle, 15px);
 }
+.page-header #resetBtn {
+  flex:0 0 auto;
+  background:#dc2626;
+}
+.page-header #resetBtn:hover { background:#b91c1c; }
 .section-title { font-weight: 600; margin-bottom: 8px; font-size: 18px; }
 #options-controlled-content {
   margin-top: 14px;

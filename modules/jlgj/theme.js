@@ -128,13 +128,21 @@
     return !!media?.matches;
   }
 
+  function isLoginPage() {
+    return /^\/login(?:\/|$)/i.test(String(location.pathname || ''));
+  }
+
+  function shouldApplyDark() {
+    return resolvedDark() && loginDarkEnabled && (alwaysDarkEnabled || isLoginPage());
+  }
+
   function sync() {
     if (!resolvedDark()) {
       apply(false);
       chrome.runtime.sendMessage({ type: 'JLGJ_CLEAR_LOGIN_DARK' }).catch(() => {});
       return;
     }
-    apply(loginDarkEnabled && alwaysDarkEnabled);
+    apply(shouldApplyDark());
   }
 
   chrome.storage.local.get(['themeMode', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled']).then((data) => {
@@ -144,8 +152,8 @@
     sync();
   }).catch(() => apply(false));
 
-  document.addEventListener('DOMContentLoaded', () => { if (resolvedDark() && loginDarkEnabled && alwaysDarkEnabled) classifyTree(document.documentElement); }, { once: true });
-  window.addEventListener('load', () => { if (resolvedDark() && loginDarkEnabled && alwaysDarkEnabled) classifyTree(document.documentElement); }, { once: true });
+  document.addEventListener('DOMContentLoaded', () => { if (shouldApplyDark()) classifyTree(document.documentElement); }, { once: true });
+  window.addEventListener('load', () => { if (shouldApplyDark()) classifyTree(document.documentElement); }, { once: true });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
@@ -162,6 +170,6 @@
   if (typeof media?.addEventListener === 'function') media.addEventListener('change', onSystemThemeChange);
   else if (typeof media?.addListener === 'function') media.addListener(onSystemThemeChange);
 
-  window.addEventListener('popstate', () => scheduleFullReconcile(150));
-  window.addEventListener('hashchange', () => scheduleFullReconcile(150));
+  window.addEventListener('popstate', () => { sync(); scheduleFullReconcile(150); });
+  window.addEventListener('hashchange', () => { sync(); scheduleFullReconcile(150); });
 })();
