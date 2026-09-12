@@ -2468,13 +2468,16 @@
         launcherContainer.prepend(launcherButton);
         global.BjtuSyncFloatingLauncherContainer?.();
       }
-      const applyEnabled = (enabled) => {
+      const applyEnabled = (enabled, { animate = true } = {}) => {
         const fab = el(FAB_ID);
         const panel = el(PANEL_ID);
         if (enabled === false) {
           if (fab instanceof HTMLButtonElement) {
             fab.style.removeProperty('display');
-            if (!fab.hidden) void global.BjtuFloatingWindowAnimations?.animateButton?.(fab, false);
+            if (!fab.hidden) {
+              if (animate) void global.BjtuFloatingWindowAnimations?.animateButton?.(fab, false);
+              else fab.hidden = true;
+            }
           }
           if (panel instanceof HTMLElement) panel.hidden = true;
           if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.remove?.(panel);
@@ -2482,14 +2485,19 @@
         } else if (fab instanceof HTMLButtonElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
           fab.style.removeProperty('display');
           if (fab.hidden) {
-            const animation = global.BjtuFloatingWindowAnimations?.animateButton?.(fab, true);
-            if (!animation) fab.hidden = false;
+            if (animate) {
+              const animation = global.BjtuFloatingWindowAnimations?.animateButton?.(fab, true);
+              if (!animation) fab.hidden = false;
+            } else {
+              fab.hidden = false;
+              global.BjtuSyncFloatingLauncherContainer?.();
+            }
           }
         }
       };
       void chrome.storage.local.get(['qwenEnabled', 'qwenFabColorMode']).then((data) => {
-        applyEnabled(data?.qwenEnabled !== false);
         applyFabColorMode(data?.qwenFabColorMode);
+        applyEnabled(data?.qwenEnabled !== false, { animate: false });
       });
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes.qwenEnabled) applyEnabled(changes.qwenEnabled.newValue !== false);
