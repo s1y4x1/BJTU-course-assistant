@@ -2172,7 +2172,7 @@ function renderCourseList(courses, {
     const courseName = course.name || course.NAME || course.courseName || course.title || '未知课程';
     const teacherName = course.teacher_name || course.teacherName || '';
     const teacherLabel = String(teacherName || '').trim() || '教师';
-    const coursePlatformUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=10460&courseId=${encodeURIComponent(courseNumRaw || '')}&cId=${encodeURIComponent(courseId || '')}&xknId=${encodeURIComponent(fzId || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || getCurrentXqCode())}`;
+    const coursePlatformUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseId=${encodeURIComponent(courseNumRaw || '')}&cId=${encodeURIComponent(courseId || '')}&xknId=${encodeURIComponent(fzId || '')}&xkhId=${encodeURIComponent(fzId || '')}&xqCode=${encodeURIComponent(xqCode || getCurrentXqCode())}`;
 
     const card = globalThis.BjtuCourseCardUi.createCourseCard({
       courseId,
