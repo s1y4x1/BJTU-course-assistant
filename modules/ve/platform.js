@@ -994,7 +994,7 @@ function updateVeStudentsMetaUi(courseId) {
     const text = wrap.querySelector('.ve-student-count-text');
     if (text instanceof HTMLElement) {
       const total = Number(meta.total || 0) || 0;
-      text.textContent = total > 0 ? `${total}学生` : '学生';
+      text.textContent = total > 0 ? `${total} 学生` : '学生';
     }
     const pop = wrap.querySelector('.ve-student-pop');
     if (pop instanceof HTMLElement) {
