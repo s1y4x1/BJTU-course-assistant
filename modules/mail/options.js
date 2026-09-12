@@ -254,7 +254,7 @@
     globalThis.BjtuFileSizeEmphasis?.refresh?.(container);
   }
 
-  async function showMailPreview(cell, row) {
+  async function showMailPreview(cell, row, { showAttachments = false, showContent = true } = {}) {
     if (!(cell instanceof HTMLElement)) return;
     if (mailPreviewHideTimer) clearTimeout(mailPreviewHideTimer);
     mailPreviewHideTimer = null;
@@ -262,10 +262,14 @@
     const requestId = ++mailPreviewRequestId;
     const card = ensureMailPreviewCard();
     const loading = card.querySelector('.mail-message-preview-loading');
+    const loadingText = loading?.querySelector('span:last-child');
     const error = card.querySelector('.mail-message-preview-error');
     const frame = card.querySelector('.mail-message-preview-frame');
     renderMailPreviewAttachments(card, '', []);
     if (loading instanceof HTMLElement) loading.hidden = false;
+    if (loadingText instanceof HTMLElement) {
+      loadingText.textContent = showContent ? '正在读取邮件正文…' : '正在读取邮件附件…';
+    }
     if (error instanceof HTMLElement) {
       error.hidden = true;
       error.textContent = '';
@@ -282,24 +286,32 @@
     if (loading instanceof HTMLElement) loading.hidden = true;
     if (!result?.ok) {
       if (error instanceof HTMLElement) {
-        error.textContent = `邮件正文读取失败：${result?.message || '未知错误'}`;
+        error.textContent = `邮件${showContent ? '正文' : '附件'}读取失败：${result?.message || '未知错误'}`;
         error.hidden = false;
       }
-    } else if (frame instanceof HTMLIFrameElement) {
-      renderMailPreviewAttachments(card, result.mid || row.id, result.attachments);
-      frame.srcdoc = buildMailPreviewDocument(result.content);
-      frame.hidden = false;
+    } else {
+      if (showAttachments) {
+        renderMailPreviewAttachments(card, result.mid || row.id, result.attachments);
+      }
+      if (showContent && frame instanceof HTMLIFrameElement) {
+        frame.srcdoc = buildMailPreviewDocument(result.content);
+        frame.hidden = false;
+      }
     }
     positionMailPreview(cell);
   }
 
-  function bindMailSummaryPreview(cell, row) {
+  function bindMailPreview(cell, row, { showAttachments = false, showContent = true } = {}) {
     if (!(cell instanceof HTMLElement)) return;
     cell.classList.add('mail-summary-preview-target');
     cell.tabIndex = 0;
-    cell.addEventListener('mouseenter', () => { void showMailPreview(cell, row); });
+    cell.addEventListener('mouseenter', () => {
+      void showMailPreview(cell, row, { showAttachments, showContent });
+    });
     cell.addEventListener('mouseleave', scheduleHideMailPreview);
-    cell.addEventListener('focus', () => { void showMailPreview(cell, row); });
+    cell.addEventListener('focus', () => {
+      void showMailPreview(cell, row, { showAttachments, showContent });
+    });
     cell.addEventListener('blur', scheduleHideMailPreview);
   }
 
@@ -331,6 +343,7 @@
         attach.className = 'mail-attachment';
         attach.textContent = '📎';
         subjectLine.appendChild(attach);
+        bindMailPreview(subjectLine, row, { showAttachments: true, showContent: false });
       }
       subjectCell.appendChild(subjectLine);
       tr.appendChild(subjectCell);
@@ -344,11 +357,10 @@
       } else {
         summaryCell.textContent = '-';
       }
-      bindMailSummaryPreview(summaryCell, row);
+      bindMailPreview(summaryCell, row);
       tr.appendChild(summaryCell);
       appendCell(tr, 'mail-from', row.from || row.sender || '-');
       appendCell(tr, '', row.receivedDate || row.sentDate || '-');
-      appendCell(tr, '', Number(row.threadMessageCount) > 0 ? Number(row.threadMessageCount) : '-');
       body?.appendChild(tr);
     });
     element('mailLoading').style.display = 'none';
@@ -496,7 +508,7 @@
       }
       setMessage(saved === null
         ? '收件箱将加载全部邮件'
-        : (saved === 0 ? '收件箱将原样传递 limit=0' : `收件箱将加载最近 ${saved} 封邮件`));
+        : `收件箱将加载最近 ${saved} 封邮件`);
       void loadThreads();
     });
     element('bindMailSystemBtn')?.addEventListener('click', (event) => {

@@ -38,6 +38,7 @@ html[data-color-scheme="dark"] .mail-fullscreen-button-icon-select { border-colo
 .mail-attachment { display:inline-block; margin-left:4px; color:#64748b; }
 .mail-summary-line, .mail-from { color:#64748b; font-size:11px; overflow-wrap:anywhere; }
 .mail-summary-preview-target { cursor:help; }
+.mail-subject.mail-summary-preview-target { cursor:pointer; }
 .mail-message-preview-card {
   position:fixed;
   z-index:10060;
@@ -73,7 +74,6 @@ html[data-color-scheme="dark"] .mail-fullscreen-button-icon-select { border-colo
 .mail-message-preview-attachments {
   flex:0 1 auto;
   max-height:30vh;
-  margin-bottom:8px;
   padding:7px 8px;
   border:1px solid rgba(148,163,184,.55);
   border-radius:6px;
@@ -91,17 +91,18 @@ html[data-color-scheme="dark"] .mail-fullscreen-button-icon-select { border-colo
 }
 .mail-message-preview-attachment + .mail-message-preview-attachment { margin-top:4px; }
 .mail-message-preview-attachment-download {
+  flex:1 1 auto;
   min-width:0;
   margin:0;
   padding:0;
-  overflow:hidden;
   border:0;
   background:transparent;
   color:#2563eb;
+  cursor:pointer;
   font-size:12px;
   text-align:left;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+  overflow-wrap:anywhere;
+  white-space:normal;
 }
 .mail-message-preview-attachment-download:hover { text-decoration:underline; }
 .mail-message-preview-attachment-size { flex:0 0 auto; }
