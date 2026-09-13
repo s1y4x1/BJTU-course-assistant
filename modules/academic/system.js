@@ -1079,7 +1079,7 @@ async function fetchVeWeekContext() {
     return {
       week,
       weeks: [week],
-      weekLabels: { [week]: '本周' },
+      weekLabels: {},
       termName,
       source: 've'
     };

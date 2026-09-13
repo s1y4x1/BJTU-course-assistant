@@ -1834,9 +1834,12 @@
       currentWeek
     ].map(Number).filter((week) => week > 0))].sort((left, right) => left - right);
     for (const week of weeks) {
-      const status = selection
+      const rawStatus = selection
         ? (occupied.has(Number(week)) ? '(有课)' : '')
         : String(labels[week] || '').replaceAll('（', '(').replaceAll('）', ')');
+      const status = Number(week) === currentWeek
+        ? rawStatus.replace(/\(?本周\)?/gu, '').trim()
+        : rawStatus;
       select.append(new Option(`第${week}周${status}${Number(week) === currentWeek ? '(本周)' : ''}`, String(week)));
     }
     select.value = [...select.options].some((option) => option.value === String(preferredValue))
