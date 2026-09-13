@@ -2170,6 +2170,18 @@
     scheduleCache = normalizedScheduleCache(scheduleCache);
     const cachedResults = scheduleCache?.results || [];
     const cachedByTerm = new Map(cachedResults.map((item) => [item.xnxq, item]));
+    const currentTerm = String(scheduleCache?.currentXnxq || '').trim();
+    const requestedPreference = scheduleSemesterPreference;
+    const requestedSchedule = cachedByTerm.get(requestedPreference);
+    const currentSchedule = cachedByTerm.get(currentTerm);
+    const latestCachedTerm = cachedResults
+      .filter((item) => scheduleHasCourses(item))
+      .map((item) => String(item?.xnxq || '').trim())
+      .filter(Boolean)
+      .sort((left, right) => right.localeCompare(left, 'zh-CN', { numeric: true }))[0] || '';
+    const preferredSchedule = requestedPreference ? requestedSchedule : currentSchedule;
+    const useCachedFallback = !scheduleHasCourses(preferredSchedule) && !!latestCachedTerm;
+    const renderedPreference = useCachedFallback ? latestCachedTerm : requestedPreference;
     const availableSchedules = academicSemesterOptions
       .filter((semester) => {
         const value = String(semester?.zxjxjhh || '');
@@ -2185,7 +2197,6 @@
       if (result?.type !== 'selection' && !scheduleHasCourses(result)) continue;
       availableSchedules.push(result);
     }
-    const requestedPreference = scheduleSemesterPreference;
     const scheduleSelected = renderDataSemesterOptions(
       'academicScheduleSemester',
       'academicScheduleCurrentSemesterBtn',
@@ -2194,13 +2205,13 @@
         value: item.xnxq
       })),
       scheduleCache?.currentXnxq,
-      scheduleSemesterPreference
+      renderedPreference
     );
     updateScheduleSemesterToggle(scheduleSelected);
     const preferenceIsStillUnknown = requestedPreference
       && !availableSchedules.some((item) => item.xnxq === requestedPreference)
       && !loadedScheduleTerms.has(requestedPreference);
-    if (!preferenceIsStillUnknown) {
+    if (!useCachedFallback && !preferenceIsStillUnknown) {
       scheduleSemesterPreference = scheduleSelected === String(scheduleCache?.currentXnxq || '') ? '' : scheduleSelected;
     }
     const schedule = cachedByTerm.get(scheduleSelected);
@@ -2516,7 +2527,7 @@
         renderAcademicScoreStatisticsLoading();
       }
 
-      const selectedScheduleTerm = String(element('academicScheduleSemester')?.value || scheduleSemesterPreference || '');
+      const selectedScheduleTerm = String(scheduleSemesterPreference || element('academicScheduleSemester')?.value || '');
       const selectedCachedSchedule = (scheduleCache?.results || []).find((item) => (
         item?.xnxq === selectedScheduleTerm && item?.type === 'semester'
       ));
@@ -2527,7 +2538,7 @@
 
       const currentScheduleTerm = await ensureCurrentScheduleTerm(allTerms);
 
-      const schedulePriority = String(element('academicScheduleSemester')?.value || currentScheduleTerm);
+      const schedulePriority = String(scheduleSemesterPreference || element('academicScheduleSemester')?.value || currentScheduleTerm);
       if (!loadedScheduleTerms.has(schedulePriority)) {
         await ensureScheduleTerms([schedulePriority]);
         renderCachedScheduleData();
