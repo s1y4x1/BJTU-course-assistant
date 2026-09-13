@@ -21,6 +21,7 @@
   const CLASS_REMINDER_KEY = 'academicClassReminderEnabled';
   const CLASS_REMINDER_LEAD_KEY = 'academicClassReminderLeadMinutes';
   const CLASS_REMINDER_NOTIFIED_KEY = 'academicClassReminderNotified';
+  const CLASS_REMINDER_EVENTS_KEY = 'academicClassReminderEvents';
   const MONITOR_INTERVAL_KEY = 'academicScoreMonitorIntervalMinutes';
   const DEFAULT_MONITOR_INTERVAL_MINUTES = 1;
   const SNAPSHOTS_KEY = 'academicScoreSnapshots';
@@ -33,6 +34,7 @@
   const NOTIFICATION_PREFIX = 'bjtu-academic-score:';
   const EXAM_NOTIFICATION_PREFIX = 'bjtu-academic-exam:';
   const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
+  const CLASS_ALARM_PREFIX = 'bjtu-academic-class-event:';
   const LOGIN_HEADER_RULE_ID = 914304;
   const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   const ACADEMIC_SCORE_SOURCE_CACHE_KEY = 'academicScoreSourceCache';
@@ -72,7 +74,9 @@
   const pendingCredentialsByTab = new Map();
   let scoreCheckPromise = null;
   let examCheckPromise = null;
-  let classReminderCheckPromise = null;
+  let classReminderSchedulePromise = null;
+  let classReminderSchedulePending = false;
+  let classReminderAlarmQueue = Promise.resolve();
   let academicSessionPromise = null;
   let academicAccountCache = null;
   let academicSessionAccount = null;
@@ -1214,46 +1218,143 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     return notificationId;
   }
 
-  async function checkUpcomingClasses() {
-    if (classReminderCheckPromise) return classReminderCheckPromise;
-    classReminderCheckPromise = (async () => {
-      const stored = await chrome.storage.local.get([
-        CLASS_REMINDER_KEY, CLASS_REMINDER_LEAD_KEY, CLASS_REMINDER_NOTIFIED_KEY
-      ]);
-      if (stored?.[CLASS_REMINDER_KEY] !== true) return { skipped: true };
-      const schedule = await fetchSchedulePage('semester');
-      const weekContext = await fetchCurrentWeekContext(schedule.weeks);
-      const currentWeek = Number(weekContext.week || 0);
-      const now = new Date();
-      const dayIndex = now.getDay() - 1;
-      if (currentWeek <= 0 || dayIndex < 0 || dayIndex > 6) return { skipped: true };
-      const leadMs = normalizeClassReminderLeadMinutes(stored?.[CLASS_REMINDER_LEAD_KEY]) * 60000;
-      const today = localDateText(now);
-      const notified = stored?.[CLASS_REMINDER_NOTIFIED_KEY]
-        && typeof stored[CLASS_REMINDER_NOTIFIED_KEY] === 'object'
-        ? stored[CLASS_REMINDER_NOTIFIED_KEY]
-        : {};
-      const nextNotified = Object.fromEntries(Object.entries(notified).filter(([key]) => key.startsWith(`${today}|`)));
-      for (const row of schedule.rows) {
-        const startText = String(row?.time || '').split('-')[0]?.trim();
-        const match = startText.match(/^(\d{1,2}):(\d{2})$/);
-        if (!match) continue;
-        const startAt = new Date(now);
-        startAt.setHours(Number(match[1]), Number(match[2]), 0, 0);
-        if (now.getTime() < startAt.getTime() - leadMs || now.getTime() >= startAt.getTime()) continue;
-        const courses = Array.isArray(row?.days?.[dayIndex]) ? row.days[dayIndex] : [];
-        for (const course of courses) {
-          if (!Array.isArray(course?.weeks) || !course.weeks.includes(currentWeek)) continue;
-          const key = `${today}|${row?.period || ''}|${course?.courseCode || ''}|${course?.name || ''}`;
-          if (nextNotified[key]) continue;
-          await notifyUpcomingClass(course, row, startAt, schedule.account?.studentId || '');
-          nextNotified[key] = Date.now();
+  function currentScheduleFromCache(cache) {
+    const scheduleCache = cache?.scheduleCache;
+    const currentXnxq = String(cache?.scheduleCurrentXnxq || scheduleCache?.currentXnxq || '').trim();
+    if (!currentXnxq) return null;
+    return (Array.isArray(scheduleCache?.results) ? scheduleCache.results : []).find((item) => (
+      String(item?.xnxq || '') === currentXnxq && item?.type === 'semester'
+    )) || null;
+  }
+
+  function currentScheduleFingerprint(cache) {
+    const schedule = currentScheduleFromCache(cache);
+    if (!schedule) return '';
+    return JSON.stringify({
+      studentId: String(cache?.studentId || ''),
+      xnxq: String(schedule?.xnxq || ''),
+      currentWeek: Number(schedule?.currentWeek || 0),
+      weekCheckedAt: Number(schedule?.weekCheckedAt || cache?.scheduleCache?.checkedAt || cache?.updatedAt || 0),
+      rows: schedule?.rows || []
+    });
+  }
+
+  function accountCacheFromCollection(value, studentId) {
+    const id = String(studentId || '').trim();
+    if (!id || !value || typeof value !== 'object') return null;
+    if (String(value?.studentId || '').trim() === id) return value;
+    return value[id] && typeof value[id] === 'object' ? value[id] : null;
+  }
+
+  async function clearClassReminderAlarms() {
+    const alarms = await chrome.alarms.getAll().catch(() => []);
+    await Promise.all((Array.isArray(alarms) ? alarms : [])
+      .filter((alarm) => String(alarm?.name || '').startsWith(CLASS_ALARM_PREFIX))
+      .map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false)));
+    await chrome.storage.local.remove([CLASS_REMINDER_EVENTS_KEY, CLASS_REMINDER_NOTIFIED_KEY]).catch(() => {});
+  }
+
+  function buildClassReminderEvents(cache, studentId, leadMinutes) {
+    const schedule = currentScheduleFromCache(cache);
+    const currentWeek = Number(schedule?.currentWeek || 0);
+    const checkedAt = Number(schedule?.weekCheckedAt || cache?.scheduleCache?.checkedAt || cache?.updatedAt || 0);
+    if (!schedule || currentWeek <= 0 || !checkedAt) return [];
+
+    const checkedDate = new Date(checkedAt);
+    checkedDate.setHours(0, 0, 0, 0);
+    const checkedDayIndex = (checkedDate.getDay() + 6) % 7;
+    const anchorMonday = new Date(checkedDate);
+    anchorMonday.setDate(anchorMonday.getDate() - checkedDayIndex);
+    const now = Date.now();
+    const leadMs = normalizeClassReminderLeadMinutes(leadMinutes) * 60000;
+    const events = [];
+    const seen = new Set();
+
+    for (const row of (Array.isArray(schedule.rows) ? schedule.rows : [])) {
+      const startText = String(row?.time || '').split('-')[0]?.trim();
+      const match = startText.match(/^(\d{1,2}):(\d{2})$/);
+      if (!match) continue;
+      for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+        for (const course of (Array.isArray(row?.days?.[dayIndex]) ? row.days[dayIndex] : [])) {
+          for (const week of (Array.isArray(course?.weeks) ? course.weeks : [])) {
+            const weekNumber = Number(week || 0);
+            if (weekNumber <= 0) continue;
+            const startAt = new Date(anchorMonday);
+            startAt.setDate(startAt.getDate() + ((weekNumber - currentWeek) * 7) + dayIndex);
+            startAt.setHours(Number(match[1]), Number(match[2]), 0, 0);
+            if (startAt.getTime() <= now) continue;
+            const key = [studentId, localDateText(startAt), row?.period, course?.courseCode, course?.name].join('|');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            events.push({
+              key,
+              studentId,
+              startAt: startAt.getTime(),
+              notifyAt: Math.max(startAt.getTime() - leadMs, now + 250),
+              row: { period: String(row?.period || ''), time: String(row?.time || '') },
+              course: {
+                courseCode: String(course?.courseCode || ''),
+                name: String(course?.name || ''),
+                teacher: String(course?.teacher || ''),
+                location: String(course?.location || '')
+              }
+            });
+          }
         }
       }
-      await chrome.storage.local.set({ [CLASS_REMINDER_NOTIFIED_KEY]: nextNotified });
-      return { checked: true };
-    })().finally(() => { classReminderCheckPromise = null; });
-    return classReminderCheckPromise;
+    }
+    return events.sort((left, right) => left.notifyAt - right.notifyAt);
+  }
+
+  async function scheduleClassRemindersFromCache() {
+    if (classReminderSchedulePromise) {
+      classReminderSchedulePending = true;
+      return classReminderSchedulePromise;
+    }
+    classReminderSchedulePromise = (async () => {
+      const stored = await chrome.storage.local.get([
+        CLASS_REMINDER_KEY, CLASS_REMINDER_LEAD_KEY, STUDENT_ID_KEY, ACADEMIC_DATA_CACHE_KEY
+      ]);
+      await clearClassReminderAlarms();
+      if (stored?.[CLASS_REMINDER_KEY] !== true) return { skipped: true, scheduled: 0 };
+      const studentId = String(stored?.[STUDENT_ID_KEY] || '').trim();
+      const cache = accountCacheFromCollection(stored?.[ACADEMIC_DATA_CACHE_KEY], studentId);
+      const events = buildClassReminderEvents(cache, studentId, stored?.[CLASS_REMINDER_LEAD_KEY]);
+      const eventMap = {};
+      events.forEach((event, index) => {
+        const alarmName = `${CLASS_ALARM_PREFIX}${shortHash(`${event.key}|${event.startAt}`)}:${index}`;
+        eventMap[alarmName] = event;
+      });
+      await chrome.storage.local.set({ [CLASS_REMINDER_EVENTS_KEY]: eventMap });
+      Object.entries(eventMap).forEach(([alarmName, event]) => {
+        chrome.alarms.create(alarmName, { when: event.notifyAt });
+      });
+      return { scheduled: events.length, studentId };
+    })().finally(() => {
+      classReminderSchedulePromise = null;
+      if (classReminderSchedulePending) {
+        classReminderSchedulePending = false;
+        scheduleClassRemindersFromCache().catch(() => {});
+      }
+    });
+    return classReminderSchedulePromise;
+  }
+
+  async function handleClassReminderAlarm(alarmName) {
+    const stored = await chrome.storage.local.get([
+      CLASS_REMINDER_KEY, CLASS_REMINDER_EVENTS_KEY, STUDENT_ID_KEY
+    ]);
+    const events = stored?.[CLASS_REMINDER_EVENTS_KEY]
+      && typeof stored[CLASS_REMINDER_EVENTS_KEY] === 'object'
+      ? { ...stored[CLASS_REMINDER_EVENTS_KEY] }
+      : {};
+    const event = events[alarmName];
+    delete events[alarmName];
+    await chrome.storage.local.set({ [CLASS_REMINDER_EVENTS_KEY]: events });
+    if (!event || stored?.[CLASS_REMINDER_KEY] !== true) return;
+    if (String(event.studentId || '') !== String(stored?.[STUDENT_ID_KEY] || '')) return;
+    if (Date.now() >= Number(event.startAt || 0)) return;
+    await notifyUpcomingClass(event.course, event.row, new Date(event.startAt), event.studentId);
   }
 
   function normalizePendingScoreNotifications(value) {
@@ -1566,7 +1667,6 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   function scheduleAcademicChecks() {
     checkScores('scheduled').catch(() => {});
     checkExams('scheduled').catch(() => {});
-    checkUpcomingClasses().catch(() => {});
   }
 
   async function captureScoreTab(tabId) {
@@ -1973,6 +2073,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
             source: 'semester',
             warning: ''
           };
+      const weekCheckedAt = Date.now();
       return {
         label: String(semester.label || ''),
         xnxq: String(semester.zxjxjhh || ''),
@@ -1980,6 +2081,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         rows: schedule.rows,
         weeks: weekContext.weeks,
         currentWeek: weekContext.week,
+        weekCheckedAt,
         weekLabels: weekContext.weekLabels,
         termName: weekContext.termName || String(semester.label || ''),
         weekSource: weekContext.source,
@@ -2258,15 +2360,33 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       ['requestBody']
     );
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm?.name === ALARM_NAME) scheduleAcademicChecks();
+      const name = String(alarm?.name || '');
+      if (name === ALARM_NAME) scheduleAcademicChecks();
+      else if (name.startsWith(CLASS_ALARM_PREFIX)) {
+        classReminderAlarmQueue = classReminderAlarmQueue.catch(() => {})
+          .then(() => handleClassReminderAlarm(name));
+      }
     });
-    chrome.runtime.onInstalled.addListener(() => { void ensureAlarm(); scheduleAcademicChecks(); });
-    chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); scheduleAcademicChecks(); });
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local'
-        || (!changes[MONITOR_KEY] && !changes[EXAM_MONITOR_KEY] && !changes[CLASS_REMINDER_KEY]
-          && !changes[CLASS_REMINDER_LEAD_KEY] && !changes[MONITOR_INTERVAL_KEY])) return;
+    chrome.runtime.onInstalled.addListener(() => {
       void ensureAlarm();
+      scheduleAcademicChecks();
+      scheduleClassRemindersFromCache().catch(() => {});
+    });
+    chrome.runtime.onStartup.addListener(() => {
+      void ensureAlarm();
+      scheduleAcademicChecks();
+      scheduleClassRemindersFromCache().catch(() => {});
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      const monitorSettingsChanged = !!(
+        changes[MONITOR_KEY] || changes[EXAM_MONITOR_KEY] || changes[MONITOR_INTERVAL_KEY]
+      );
+      const classSettingsChanged = !!(
+        changes[CLASS_REMINDER_KEY] || changes[CLASS_REMINDER_LEAD_KEY] || changes[STUDENT_ID_KEY]
+      );
+      if (!monitorSettingsChanged && !classSettingsChanged && !changes[ACADEMIC_DATA_CACHE_KEY]) return;
+      if (monitorSettingsChanged) void ensureAlarm();
       if (changes[MONITOR_KEY]) {
         if (changes[MONITOR_KEY].newValue === true) checkScores('enabled').catch(() => {});
         else chrome.storage.local.remove([PENDING_NOTIFICATIONS_KEY]).catch(() => {});
@@ -2276,10 +2396,20 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         else chrome.storage.local.remove([EXAM_PENDING_NOTIFICATIONS_KEY]).catch(() => {});
       }
       if (changes[CLASS_REMINDER_KEY]) {
-        if (changes[CLASS_REMINDER_KEY].newValue === true) checkUpcomingClasses().catch(() => {});
-        else chrome.storage.local.remove([CLASS_REMINDER_NOTIFIED_KEY]).catch(() => {});
-      } else if (changes[CLASS_REMINDER_LEAD_KEY]) {
-        checkUpcomingClasses().catch(() => {});
+        if (changes[CLASS_REMINDER_KEY].newValue === true) scheduleClassRemindersFromCache().catch(() => {});
+        else clearClassReminderAlarms().catch(() => {});
+      } else if (classSettingsChanged) {
+        scheduleClassRemindersFromCache().catch(() => {});
+      }
+      if (changes[ACADEMIC_DATA_CACHE_KEY]) {
+        void chrome.storage.local.get([STUDENT_ID_KEY]).then((stored) => {
+          const studentId = String(stored?.[STUDENT_ID_KEY] || '').trim();
+          const oldCache = accountCacheFromCollection(changes[ACADEMIC_DATA_CACHE_KEY].oldValue, studentId);
+          const newCache = accountCacheFromCollection(changes[ACADEMIC_DATA_CACHE_KEY].newValue, studentId);
+          if (currentScheduleFingerprint(oldCache) !== currentScheduleFingerprint(newCache)) {
+            scheduleClassRemindersFromCache().catch(() => {});
+          }
+        });
       }
     });
     chrome.notifications.onClicked.addListener((notificationId) => {

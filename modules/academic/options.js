@@ -1367,7 +1367,7 @@
     fullscreenButtonIconOption?.classList.toggle('is-disabled', !fullscreenButtonEnabled);
     const fullscreenButtonIcon = element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY);
     if (fullscreenButtonIcon instanceof HTMLSelectElement) fullscreenButtonIcon.disabled = !fullscreenButtonEnabled;
-    const monitorEnabled = ['academicScoreMonitorEnabled', 'academicExamMonitorEnabled', 'academicClassReminderEnabled']
+    const monitorEnabled = ['academicScoreMonitorEnabled', 'academicExamMonitorEnabled']
       .some((id) => element(id)?.checked);
     const monitorEditor = element('academicScoreMonitorIntervalEditor');
     monitorEditor?.classList.toggle('is-disabled', !monitorEnabled);
