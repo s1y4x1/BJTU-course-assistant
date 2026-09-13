@@ -46,6 +46,7 @@ const MAX_POPUP_HEIGHT_PX = 600;
 
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
+const DEFAULT_SIDE_PANEL_CACHE_ENABLED = true;
 const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
 const DEFAULT_PARALLEL_LIMIT = 3;
 const DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES = 3;
@@ -756,7 +757,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
   const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
-  const { popupUseFullscreenCacheEnabled } = await chrome.storage.local.get(['popupUseFullscreenCacheEnabled']);
+  const { popupUseFullscreenCacheEnabled, sidePanelUseFullscreenCacheEnabled } = await chrome.storage.local.get([
+    'popupUseFullscreenCacheEnabled',
+    'sidePanelUseFullscreenCacheEnabled'
+  ]);
   const {
     injectPortalLoginOnLoginPage,
     injectPortalLoginOnTimeoutPage
@@ -856,6 +860,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     ? DEFAULT_POPUP_CACHE_ENABLED
     : !!popupUseFullscreenCacheEnabled;
   document.getElementById('popupUseFullscreenCacheEnabled').checked = popupCacheVal;
+  document.getElementById('sidePanelUseFullscreenCacheEnabled').checked = sidePanelUseFullscreenCacheEnabled === undefined
+    ? DEFAULT_SIDE_PANEL_CACHE_ENABLED
+    : !!sidePanelUseFullscreenCacheEnabled;
   document.getElementById('injectPortalLoginOnLoginPage').checked = injectPortalLoginOnLoginPage !== false;
   document.getElementById('injectPortalLoginOnTimeoutPage').checked = injectPortalLoginOnTimeoutPage !== false;
   document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
@@ -1413,6 +1420,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.popupUseFullscreenCacheEnabled) {
         applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
       }
+      if (changes.sidePanelUseFullscreenCacheEnabled) {
+        applyBooleanUi('sidePanelUseFullscreenCacheEnabled', changes.sidePanelUseFullscreenCacheEnabled.newValue, DEFAULT_SIDE_PANEL_CACHE_ENABLED);
+      }
       if (changes.homeworkReminderEnabled) {
         applyBooleanUi('homeworkReminderEnabled', changes.homeworkReminderEnabled.newValue, DEFAULT_HOMEWORK_REMINDER_ENABLED);
         updateHomeworkReminderDisabled();
@@ -1765,6 +1775,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('popupUseFullscreenCacheEnabled').addEventListener('change', async () => {
     await chrome.storage.local.set({
       popupUseFullscreenCacheEnabled: !!document.getElementById('popupUseFullscreenCacheEnabled').checked
+    });
+    setMsg('已应用更改');
+  });
+
+  document.getElementById('sidePanelUseFullscreenCacheEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      sidePanelUseFullscreenCacheEnabled: !!document.getElementById('sidePanelUseFullscreenCacheEnabled').checked
     });
     setMsg('已应用更改');
   });
@@ -2206,6 +2223,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('headerQrEnabled').disabled = true;
     document.getElementById('linkQrEnabled').checked = true;
     document.getElementById('popupUseFullscreenCacheEnabled').checked = true;
+    document.getElementById('sidePanelUseFullscreenCacheEnabled').checked = DEFAULT_SIDE_PANEL_CACHE_ENABLED;
     document.getElementById('injectPortalLoginOnLoginPage').checked = true;
     document.getElementById('injectPortalLoginOnTimeoutPage').checked = true;
     updatePopupCacheDisabled();
@@ -2214,6 +2232,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
     await chrome.storage.local.set({ linkQrEnabled: true });
     await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
+    await chrome.storage.local.set({ sidePanelUseFullscreenCacheEnabled: DEFAULT_SIDE_PANEL_CACHE_ENABLED });
     await chrome.storage.local.set({
       injectPortalLoginOnLoginPage: true,
       injectPortalLoginOnTimeoutPage: true

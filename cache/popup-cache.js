@@ -1,20 +1,40 @@
 var POPUP_CACHE_ENABLED_KEY = window.POPUP_CACHE_ENABLED_KEY = 'popupUseFullscreenCacheEnabled';
+var SIDE_PANEL_CACHE_ENABLED_KEY = window.SIDE_PANEL_CACHE_ENABLED_KEY = 'sidePanelUseFullscreenCacheEnabled';
 var POPUP_FULLSCREEN_CACHE_KEY = window.POPUP_FULLSCREEN_CACHE_KEY = 'popupFullscreenCourseCache';
 var HOMEWORK_REMINDER_SNAPSHOT_KEY = 'homeworkReminderSnapshot';
 
 window.popupUseFullscreenCacheEnabled = true;
+window.sidePanelUseFullscreenCacheEnabled = true;
 window.__popupUsingFullscreenCache = false;
+
+function isSidePanelCacheView() {
+  return new URLSearchParams(String(location.search || '')).get('view') === 'sidepanel';
+}
+
+function useFullscreenCacheForCurrentCompactView() {
+  return isSidePanelCacheView()
+    ? window.sidePanelUseFullscreenCacheEnabled
+    : window.popupUseFullscreenCacheEnabled;
+}
+
+function shouldSaveFullscreenCourseCache() {
+  return window.popupUseFullscreenCacheEnabled || window.sidePanelUseFullscreenCacheEnabled;
+}
 
 async function loadPopupCacheEnabledSetting() {
   try {
-    const data = await chrome.storage.local.get([POPUP_CACHE_ENABLED_KEY]);
+    const data = await chrome.storage.local.get([POPUP_CACHE_ENABLED_KEY, SIDE_PANEL_CACHE_ENABLED_KEY]);
     window.popupUseFullscreenCacheEnabled = data[POPUP_CACHE_ENABLED_KEY] === undefined
       ? true
       : !!data[POPUP_CACHE_ENABLED_KEY];
+    window.sidePanelUseFullscreenCacheEnabled = data[SIDE_PANEL_CACHE_ENABLED_KEY] === undefined
+      ? true
+      : !!data[SIDE_PANEL_CACHE_ENABLED_KEY];
   } catch {
     window.popupUseFullscreenCacheEnabled = true;
+    window.sidePanelUseFullscreenCacheEnabled = true;
   }
-  return window.popupUseFullscreenCacheEnabled;
+  return useFullscreenCacheForCurrentCompactView();
 }
 
 function safeStorageClone(value, fallback) {
@@ -158,6 +178,10 @@ function getPopupCacheTimestampText(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function compactCacheViewLabel() {
+  return isSidePanelCacheView() ? '边栏' : '弹出窗口';
+}
+
 function showPopupCacheNotice(cache) {
   let el = document.getElementById('popup-cache-notice');
   if (!el) {
@@ -286,7 +310,7 @@ function restoreFullscreenCacheStateForBackground(cache) {
 }
 
 async function saveFullscreenCourseCache({ force = false } = {}) {
-  if (popupMode || (!force && !window.popupUseFullscreenCacheEnabled) || !courseListDiv) return;
+  if (popupMode || (!force && !shouldSaveFullscreenCourseCache()) || !courseListDiv) return;
   const cache = {
     version: 1,
     structuredCourseCache: true,
@@ -407,7 +431,7 @@ function scheduleHomeworkReminderSnapshotSave(delayMs = 500) {
 let popupCourseCacheSaveTimer = null;
 function scheduleFullscreenCourseCacheSave(delayMs = 900) {
   if (!popupMode) scheduleHomeworkReminderSnapshotSave(Math.min(500, Number(delayMs) || 500));
-  if (popupMode || !window.popupUseFullscreenCacheEnabled) return;
+  if (popupMode || !shouldSaveFullscreenCourseCache()) return;
   if (popupCourseCacheSaveTimer) clearTimeout(popupCourseCacheSaveTimer);
   popupCourseCacheSaveTimer = setTimeout(() => {
     popupCourseCacheSaveTimer = null;
@@ -426,7 +450,7 @@ function setupFullscreenCourseCacheObserver() {
       if (relevant) scheduleFullscreenCourseCacheSave();
     });
     mo.observe(courseListDiv, { childList: true, subtree: true, attributes: true, characterData: true });
-    if (window.popupUseFullscreenCacheEnabled && resourceSpaceList) mo.observe(resourceSpaceList, { childList: true, subtree: true, attributes: true, characterData: true });
+    if (resourceSpaceList) mo.observe(resourceSpaceList, { childList: true, subtree: true, attributes: true, characterData: true });
   } catch {
     // ignore
   }
@@ -445,7 +469,7 @@ function restorePopupPlatformStates(cache) {
 }
 
 async function restorePopupFullscreenCacheIfNeeded() {
-  if (!popupMode || !window.popupUseFullscreenCacheEnabled) return false;
+  if (!popupMode || !useFullscreenCacheForCurrentCompactView()) return false;
   window.__popupUsingFullscreenCache = true;
   showPopupCacheLoadingFrame();
   await waitForPopupCachePaint();
@@ -482,7 +506,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
     if (courseListDiv) {
       courseListDiv.innerHTML = '<div style="color:#666;padding:6px 0;">暂无全屏缓存内容，请全屏打开后加载一次。</div>';
     }
-    if (resourceSpaceStatus) setResourceSpaceStatus('弹出窗口使用缓存；暂无资源空间缓存', 'warning');
+    if (resourceSpaceStatus) setResourceSpaceStatus(`${compactCacheViewLabel()}使用缓存；暂无资源空间缓存`, 'warning');
     return true;
   }
 
@@ -540,7 +564,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
     collapseRestoredCoursePanelsForPopup(courseListDiv);
   }
   if (resourceSpaceList) resourceSpaceList.innerHTML = String(cache.resourceSpaceHtml || '');
-  if (resourceSpaceStatus) setResourceSpaceStatus(cache.resourceSpaceStatusText || '弹出窗口使用缓存', 'warning');
+  if (resourceSpaceStatus) setResourceSpaceStatus(cache.resourceSpaceStatusText || `${compactCacheViewLabel()}使用缓存`, 'warning');
   if (resourceSpaceCount && cache.resourceSpaceCountText) resourceSpaceCount.textContent = String(cache.resourceSpaceCountText);
   if (xqSelect && cache.xqSelectHtml) {
     xqSelect.innerHTML = String(cache.xqSelectHtml || '');

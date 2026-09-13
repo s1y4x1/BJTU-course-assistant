@@ -1392,7 +1392,17 @@ function setupOptionsStorageLiveSync() {
       window.popupUseFullscreenCacheEnabled = changes.popupUseFullscreenCacheEnabled.newValue === undefined
         ? true
         : !!changes.popupUseFullscreenCacheEnabled.newValue;
-      if (window.popupUseFullscreenCacheEnabled) scheduleFullscreenCourseCacheSave(200);
+      if (window.popupUseFullscreenCacheEnabled || window.sidePanelUseFullscreenCacheEnabled) {
+        scheduleFullscreenCourseCacheSave(200);
+      }
+    }
+    if (changes.sidePanelUseFullscreenCacheEnabled) {
+      window.sidePanelUseFullscreenCacheEnabled = changes.sidePanelUseFullscreenCacheEnabled.newValue === undefined
+        ? true
+        : !!changes.sidePanelUseFullscreenCacheEnabled.newValue;
+      if (window.popupUseFullscreenCacheEnabled || window.sidePanelUseFullscreenCacheEnabled) {
+        scheduleFullscreenCourseCacheSave(200);
+      }
     }
 
     if (changes[AUTO_LOAD_COURSE_RESOURCES_KEY]) {
