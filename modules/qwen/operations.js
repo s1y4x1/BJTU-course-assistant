@@ -808,12 +808,13 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments_of_({courseId: "xxx"})`；也可直接按课程名组合调用：`ve.assignments_of_({ courseId: ve.courseList().find(item => item.name === "高等数学").id })`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业标题","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]'
+        '**返回示例**：[{"id":"...","title":"作业标题","content":"作业要求","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]。content 为作业正文，attachments 为详情接口返回的附件。'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
-        await assertCourseIdOf('ve', courseId);
-        const core = await veHomework();
+        if (!courseId) throw new Error('缺少参数 courseId，请先调用 ve.courseList 获取有效ID');
+        const { core, course } = await findVeCourseById(courseId);
+        if (!course) throw new Error(`课程ID无效：${courseId} 不在当前学期课程列表中，请先调用 ve.courseList 获取有效ID`);
         let list = await core.fetchCourseHomework(courseId);
         const unpublishedIds = typeof core.getUnpublishedDoneScoreHomeworkIds === 'function'
           ? core.getUnpublishedDoneScoreHomeworkIds(list)
@@ -840,15 +841,22 @@ name: 've.accounts',
           if (primaryError) throw primaryError;
           if (closeError) throw new Error(`取消公布作业成绩失败：${String(closeError?.message || closeError)}`);
         }
+        const attachmentCache = typeof core.fetchHomeworkAttachments === 'function'
+          ? await core.fetchHomeworkAttachments(course, list)
+          : {};
         const now = Date.now();
         return (Array.isArray(list) ? list : []).map((homework) => {
           const done = core.isHomeworkDone(homework);
           const deadline = core.parseDeadline(homework?.end_time ?? homework?.endTime ?? '');
           const overdue = !done && deadline > 0 && deadline < now;
-          const attachments = homework?.attachments ?? homework?.attachmentList ?? homework?.files ?? [];
+          const detailAttachments = attachmentCache?.[String(homework?.__attachmentKey || '')]?.picList;
+          const attachments = Array.isArray(detailAttachments)
+            ? detailAttachments
+            : (homework?.attachments ?? homework?.attachmentList ?? homework?.files ?? []);
           return {
             id: String(core.homeworkKey(homework) || ''),
             title: String(homework?.title || homework?.workTitle || homework?.courseNoteTitle || '未命名作业').trim(),
+            content: String(homework?.content ?? homework?.content_clean ?? homework?.workContent ?? ''),
             type: veSubTypeLabel(homework?.subType ?? homework?.sub_type),
             status: computeAssignmentStatus(done, overdue),
             startTime: core.parseDeadline(homework?.open_date ?? homework?.openDate ?? homework?.start_time ?? homework?.startTime ?? ''),
@@ -1188,7 +1196,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"link":"https://..."}]。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
+        '**返回示例**：[{"id":"...","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://..."}]。details 包含活动正文和已加载的试卷题目；线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -1207,6 +1215,10 @@ name: 've.teachers_of_',
           progress: Number(item?.progress ?? 0) || 0,
           score: item?.score ?? '',
           totalScore: item?.total_score ?? item?.totalScore ?? '',
+          details: serialize({
+            content: item?.detail_content ?? null,
+            problems: Array.isArray(item?.exam_problems) ? item.exam_problems : []
+          }),
           link: String(item?.link || '')
         }));
       }
@@ -1770,7 +1782,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.assignments_of_({courseId: "xxx", status: "pending"})`',
         '',
-        '**返回示例**：`[{"id":"...","title":"作业名","type":"单元作业","startTime":0,"deadline":1234567890000,"status":"pending","actionUrl":"https://..."}]`'
+        '**返回示例**：`[{"id":"...","title":"作业名","type":"单元作业","startTime":0,"deadline":1234567890000,"status":"pending","details":{"questions":[]},"actionUrl":"https://..."}]`。details 为已加载的试卷或作业题目详情。'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -2005,7 +2017,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.assignments_of_({classNum: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业名","startTime":0,"deadline":1767225600000,"status":"pending","link":"https://..."}]'
+        '**返回示例**：[{"id":"...","title":"作业名","startTime":0,"deadline":1767225600000,"status":"pending","details":{},"link":"https://..."}]。details 为每日交作业详情接口返回的数据。'
       ].join('\n'),
       async run(args) {
         const classNum = String(args?.classNum || '').trim();
@@ -2020,6 +2032,7 @@ name: 've.teachers_of_',
             startTime: parseDeadline(item?.workTime ?? item?.startTime),
             deadline,
             status: computeAssignmentStatus(item?.done === true, item?.done !== true && deadline > 0 && deadline < now),
+            details: serialize(item?.details ?? null),
             link: String(item?.link || '')
           };
         });
@@ -2314,7 +2327,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","title":"任务名","type":"视频","startTime":1760000000000,"deadline":1767225600000,"progress":0.5,"status":"pending","userScore":0,"totalScore":100,"locked":false,"action":"https://..."}]'
+        '**返回示例**：[{"id":"...","title":"任务名","type":"作业","startTime":1760000000000,"deadline":1767225600000,"progress":0.5,"status":"pending","userScore":0,"totalScore":100,"locked":false,"details":{"problems":[]},"action":"https://..."}]。details 包含已加载的作业题目；无详情的任务该字段为 null。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -2331,6 +2344,7 @@ name: 've.teachers_of_',
           userScore: Number(item?.userScore || 0),
           totalScore: Number(item?.totalScore || 0),
           locked: item?.locked === true,
+          details: serialize(item?.details ?? null),
           action: String(item?.action || item?.link || '')
         }));
       }

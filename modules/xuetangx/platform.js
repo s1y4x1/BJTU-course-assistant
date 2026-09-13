@@ -1039,6 +1039,9 @@
         userScore: Number(task?.userScore || 0),
         totalScore: Number(task?.totalScore || 0),
         locked: !!task?.locked,
+        details: Array.isArray(task?.exerciseProblems)
+          ? { problems: task.exerciseProblems }
+          : null,
         action: task?.action
       }))
     };

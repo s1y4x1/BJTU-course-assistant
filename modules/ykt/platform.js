@@ -829,6 +829,7 @@ function buildYktEntryHomeworks(entry, acts) {
       exam_id: examId,
       __actype: a?.__actype,
       exam_problems: Array.isArray(cache?.exam_problems) ? cache.exam_problems : [],
+      detail_content: a?.content ?? null,
       exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
       detail_cache_key: detailKey,
       course_id: a?.course_id || entry.classroomId,

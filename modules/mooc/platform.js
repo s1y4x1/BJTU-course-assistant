@@ -642,6 +642,7 @@ let moocLoginAssistPopupTabId = null;
       status: task?.done ? 'submitted' : (task?.overdue ? 'overdue' : 'pending'),
       userScore: task?.userScore ?? null,
       totalScore: task?.totalScore ?? null,
+      details: task?.detail || null,
       actionUrl: taskUrl(course, task) || ''
     };
   }

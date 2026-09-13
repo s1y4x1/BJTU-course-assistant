@@ -898,7 +898,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   const detailTasks = works.map(async (w) => {
     const dr = await postMrjzyForm(MRJZY_WORK_DETAIL_API, { workId: w.workId }, mrjzyRuntimeCtx);
     const teacherName = dr?.data?.data?.teacher?.userRealName || '';
-    return { workId: w.workId, teacherName };
+    return { workId: w.workId, teacherName, details: dr?.data?.data ?? null };
   });
   const detailSettled = await Promise.allSettled(detailTasks.map((task) => task.finally(() => {
     if (shouldAbort()) return;
@@ -910,8 +910,12 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     return;
   }
   const teacherByWorkId = new Map();
+  const detailsByWorkId = new Map();
   detailSettled.forEach((r) => {
-    if (r.status === 'fulfilled') teacherByWorkId.set(r.value.workId, r.value.teacherName || '');
+    if (r.status === 'fulfilled') {
+      teacherByWorkId.set(r.value.workId, r.value.teacherName || '');
+      detailsByWorkId.set(r.value.workId, r.value.details ?? null);
+    }
   });
 
   const grouped = new Map();
@@ -936,6 +940,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
       submit: Number(w.submit || 0),
       isSubmit: Number(w.isSubmit || 0),
       done: Number(w.submit || 0) > 0,
+      details: detailsByWorkId.get(w.workId) ?? null,
       loadingMeta: false,
       link: `${MRJZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(w.workId || ''))}`
     });
@@ -1032,9 +1037,11 @@ async function mrjzyPageHomeworkOf(classNum) {
       workId: hw?.workId,
       title: hw?.title,
       end: hw?.end,
+      workTime: hw?.start,
       submit: Number(hw?.submit || 0),
       isSubmit: Number(hw?.isSubmit || 0),
       done: !!hw?.done,
+      details: hw?.details ?? null,
       link: hw?.link
     }))
   };
