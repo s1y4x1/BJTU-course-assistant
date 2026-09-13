@@ -23,9 +23,6 @@
   // 边栏视图：关闭按钮变为与课程助手（popup.html）互相切换的按钮。
   const SIDE_PANEL_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'sidepanel';
   if (SIDE_PANEL_VIEW) document.documentElement.classList.add('qwen-side-panel-view');
-  const sidePanelViewRecordPromise = SIDE_PANEL_VIEW
-    ? Promise.resolve(global.chrome?.storage?.local?.set?.({ sidePanelLastView: 'qwen' })).catch(() => {})
-    : Promise.resolve();
 
   let port = null;
   let historyNeedsInitialScroll = false;
@@ -2789,9 +2786,7 @@
       closeBtn.addEventListener('click', () => {
         if (STANDALONE_CHAT) {
           if (SIDE_PANEL_VIEW) {
-            void sidePanelViewRecordPromise.finally(() => {
-              try { global.parent?.postMessage({ type: 'BJTU_SIDE_PANEL_TOGGLE', target: 'course' }, '*'); } catch {}
-            });
+            try { global.parent?.postMessage({ type: 'BJTU_SIDE_PANEL_TOGGLE', target: 'course' }, '*'); } catch {}
             return;
           }
           global.close();

@@ -826,9 +826,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     ? DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED
     : !!autoLoadCourseResourcesEnabled;
   document.getElementById('autoLoadCourseResourcesEnabled').checked = autoLoadResourcesVal;
-  const mode = String(openMode || DEFAULT_OPEN_MODE);
+  const storedOpenMode = String(openMode || DEFAULT_OPEN_MODE);
+  const mode = ['popup', 'page', 'sidepanel'].includes(storedOpenMode) ? storedOpenMode : DEFAULT_OPEN_MODE;
   document.getElementById('openModePopup').checked = mode === 'popup';
   document.getElementById('openModePage').checked = mode === 'page';
+  document.getElementById('openModeSidePanel').checked = mode === 'sidepanel';
   document.getElementById('preferExistingFullscreenPage').checked = preferExistingFullscreenPage === undefined
     ? DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE
     : preferExistingFullscreenPage === true;
@@ -1236,7 +1238,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   window.addEventListener('bjtu-theme-change', () => { void enforceJlgjDarkThemeAvailability(); });
 
   const applyOpenMode = async () => {
-    const v = document.getElementById('openModePage').checked ? 'page' : 'popup';
+    const v = document.getElementById('openModeSidePanel').checked
+      ? 'sidepanel'
+      : (document.getElementById('openModePage').checked ? 'page' : 'popup');
     await chrome.storage.local.set({ openMode: v });
     updatePopupCacheDisabled();
     setMsg('已应用更改');
@@ -1253,7 +1257,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   };
 
   function updatePopupCacheDisabled() {
-    const disabled = document.getElementById('openModePage').checked;
+    const disabled = !document.getElementById('openModePopup').checked;
     const container = document.getElementById('popupCacheContainer');
     const checkbox = document.getElementById('popupUseFullscreenCacheEnabled');
     container.classList.toggle('is-disabled', disabled);
@@ -1285,8 +1289,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   function applyOpenModeUi(raw) {
     const mode = String(raw || DEFAULT_OPEN_MODE);
-    setChecked('openModePopup', mode !== 'page');
+    setChecked('openModePopup', mode !== 'page' && mode !== 'sidepanel');
     setChecked('openModePage', mode === 'page');
+    setChecked('openModeSidePanel', mode === 'sidepanel');
     updatePopupCacheDisabled();
   }
 
@@ -1584,6 +1589,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
+  document.getElementById('openModeSidePanel').addEventListener('change', applyOpenMode);
   document.getElementById('preferExistingFullscreenPage').addEventListener('change', async (event) => {
     await chrome.storage.local.set({ preferExistingFullscreenPage: event.currentTarget.checked });
     setMsg('已应用更改');
@@ -2213,6 +2219,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('autoLoadCourseResourcesEnabled').checked = DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED;
     document.getElementById('openModePopup').checked = true;
     document.getElementById('openModePage').checked = false;
+    document.getElementById('openModeSidePanel').checked = false;
     document.getElementById('preferExistingFullscreenPage').checked = DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE;
     document.getElementById('groupExtensionTabsEnabled').checked = DEFAULT_GROUP_EXTENSION_TABS_ENABLED;
     document.getElementById('popupWidthPx').value = String(DEFAULT_POPUP_WIDTH_PX);

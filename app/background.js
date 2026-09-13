@@ -1071,14 +1071,15 @@ async function savePortalLoginAccountRecord(userId, patch = {}) {
   return record;
 }
 
-// Manage action popup according to openMode ('popup' or 'page')
+// Manage action popup according to openMode ('popup', 'page', or 'sidepanel').
 let currentOpenMode = '';
 async function refreshActionPopupFromStorage() {
   try {
     const r = await chrome.storage.local.get('openMode');
-    const mode = String(r.openMode || 'popup');
+    const storedMode = String(r.openMode || 'popup');
+    const mode = ['popup', 'page', 'sidepanel'].includes(storedMode) ? storedMode : 'popup';
     currentOpenMode = mode;
-    if (mode === 'page') {
+    if (mode === 'page' || mode === 'sidepanel') {
       try { await chrome.action.setPopup({ popup: '' }); } catch (e) {}
     } else {
       try { await chrome.action.setPopup({ popup: 'popup/popup.html' }); } catch (e) {}
@@ -1939,7 +1940,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-chrome.action.onClicked.addListener(async () => {
+chrome.action.onClicked.addListener(async (clickedTab) => {
   try {
     const mode = currentOpenMode || (await chrome.storage.local.get('openMode')).openMode || 'popup';
     if (mode === 'page') {
@@ -1955,6 +1956,20 @@ chrome.action.onClicked.addListener(async () => {
         }
       } catch (e) {}
       globalThis.BjtuTabs.create({ url: APP_URL }).catch(() => {});
+      return;
+    }
+    if (mode === 'sidepanel') {
+      let tab = clickedTab;
+      if (!Number.isInteger(tab?.id)) {
+        [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+      }
+      if (Number.isInteger(tab?.id)) {
+        await chrome.sidePanel.open({ tabId: tab.id });
+      } else if (Number.isInteger(tab?.windowId)) {
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+      } else {
+        throw new Error('无法确定要打开边栏的浏览器窗口');
+      }
       return;
     }
     // In popup mode if popup is unset, fall back to opening the app page
