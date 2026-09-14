@@ -39,6 +39,7 @@
   });
   const ROOT_COMPONENT_IDS = new Set(Object.keys(ROOT_COMPONENT_DIRECTORY_NAMES));
   const IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
+  const EXTRACTION_CONCURRENCY = 4;
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   const FOREGROUND_PAGE_PATHS = new Set([
     'app/app.html',
@@ -303,9 +304,9 @@
     throw new Error('更新压缩包结构无效');
   }
 
-  function parseZipEntries(arrayBuffer) {
-    const bytes = new Uint8Array(arrayBuffer);
-    const view = new DataView(arrayBuffer);
+  function parseZipEntries(source) {
+    const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const end = findZipEnd(bytes);
     const count = view.getUint16(end + 10, true);
     const centralOffset = view.getUint32(end + 16, true);
@@ -339,7 +340,7 @@
         name,
         method,
         uncompressedSize,
-        compressed: bytes.slice(dataOffset, dataOffset + compressedSize),
+        compressed: bytes.subarray(dataOffset, dataOffset + compressedSize),
         directory: name.endsWith('/')
       });
       offset = nameStart + nameLength + extraLength + commentLength;
@@ -532,18 +533,21 @@
         await removeUnselectedModules(root, selectedModules);
       }
       let completed = 0;
-      for (const batch of Array.from({ length: Math.ceil(files.length / 8) }, (_, index) => files.slice(index * 8, index * 8 + 8))) {
+      for (const batch of Array.from(
+        { length: Math.ceil(files.length / EXTRACTION_CONCURRENCY) },
+        (_, index) => files.slice(index * EXTRACTION_CONCURRENCY, index * EXTRACTION_CONCURRENCY + EXTRACTION_CONCURRENCY)
+      )) {
         await Promise.all(batch.map(async ({ entry, path }) => {
           await writeFile(root, path, await inflateEntry(entry));
           completed += 1;
-          await setStatus('installing', {
-            version: release.version,
-            name: release.name,
-            completed,
-            total: files.length,
-            directoryName: root.name
-          });
         }));
+        await setStatus('installing', {
+          version: release.version,
+          name: release.name,
+          completed,
+          total: files.length,
+          directoryName: root.name
+        });
       }
       packagedModuleIds.forEach((id) => knownModules.add(id));
       await chrome.storage.local.set({

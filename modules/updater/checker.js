@@ -88,6 +88,8 @@ const VERSION_ROOT_COMPONENT_DIRECTORY_NAMES = Object.freeze({
 });
 const VERSION_ROOT_COMPONENT_IDS = new Set(Object.keys(VERSION_ROOT_COMPONENT_DIRECTORY_NAMES));
 const VERSION_IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
+const VERSION_EXTRACTION_CONCURRENCY = 4;
+const VERSION_EXTRACTION_PROGRESS_INTERVAL_MS = 80;
 let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
 let versionRefreshCountdownAction = null;
@@ -1325,9 +1327,9 @@ function findZipEndOfCentralDirectory(bytes) {
   throw new Error('更新压缩包结构无效');
 }
 
-function parseZipEntries(arrayBuffer) {
-  const bytes = new Uint8Array(arrayBuffer);
-  const view = new DataView(arrayBuffer);
+function parseZipEntries(source) {
+  const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const eocdOffset = findZipEndOfCentralDirectory(bytes);
   const entryCount = view.getUint16(eocdOffset + 10, true);
   const centralOffset = view.getUint32(eocdOffset + 16, true);
@@ -1365,7 +1367,9 @@ function parseZipEntries(arrayBuffer) {
       method,
       compressedSize,
       uncompressedSize,
-      compressed: bytes.slice(dataOffset, dataOffset + compressedSize),
+      // Keep a view into the downloaded archive. Copying every compressed entry
+      // retains another archive-sized allocation until extraction finishes.
+      compressed: bytes.subarray(dataOffset, dataOffset + compressedSize),
       directory: name.endsWith('/')
     });
     offset = nameStart + nameLength + extraLength + commentLength;
@@ -2104,10 +2108,9 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
     phase: 'extracting'
   });
   const bytes = archiveBytes instanceof Uint8Array ? archiveBytes : new Uint8Array(archiveBytes || 0);
-  const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   let entries;
   try {
-    entries = parseZipEntries(arrayBuffer);
+    entries = parseZipEntries(bytes);
   } catch (error) {
     throw markVersionUpdateError(error, 'archive');
   }
@@ -2138,20 +2141,42 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   const writeStartedAt = performance.now();
   setVersionDownloadProgressUi({
     visible: true,
-    status: '正在准备覆盖文件…',
+    status: '正在覆盖更新文件…',
     title: '正在覆盖解压',
     body: `正在将更新文件直接覆盖到 ${getVersionUpdateDirectoryDisplayName()} 目录。`,
     phase: 'extracting'
   });
   setVersionDownloadTransferStatus({ loaded: 0, total: totalBytes, speed: 0, eta: null, percent: 0 });
-  const results = await Promise.allSettled(files.map(async (item) => {
-    setVersionUpdateFileState(item.path, 'extracting');
+  let nextFileIndex = 0;
+  let extractionError = null;
+  let lastProgressRenderAt = 0;
+  let latestCompletedPath = '';
+  const renderExtractionProgress = (force = false) => {
+    const now = performance.now();
+    if (!force && now - lastProgressRenderAt < VERSION_EXTRACTION_PROGRESS_INTERVAL_MS) return;
+    lastProgressRenderAt = now;
+    const elapsedSeconds = Math.max(0.001, (now - writeStartedAt) / 1000);
+    const speed = completedBytes / elapsedSeconds;
+    const exactPercent = (completedCount / files.length) * 100;
+    setVersionDownloadBar({ visible: true, percent: exactPercent });
+    setVersionDownloadTransferStatus({
+      loaded: completedBytes,
+      total: totalBytes,
+      speed,
+      eta: completedCount < files.length && completedCount > 0
+        ? elapsedSeconds * (files.length - completedCount) / completedCount
+        : 0,
+      percent: exactPercent
+    });
     setVersionUpdateFileSummary({
       completed: completedCount,
       total: files.length,
-      path: item.path,
-      state: 'extracting'
+      path: latestCompletedPath,
+      state: completedCount ? 'done' : 'extracting'
     });
+  };
+  const processFile = async (item) => {
+    setVersionUpdateFileState(item.path, 'extracting');
     let inflated;
     try {
       inflated = await inflateZipEntry(item.entry);
@@ -2166,12 +2191,6 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
       throw markVersionUpdateError(error, 'archive');
     }
     setVersionUpdateFileState(item.path, 'writing');
-    setVersionUpdateFileSummary({
-      completed: completedCount,
-      total: files.length,
-      path: item.path,
-      state: 'writing'
-    });
     try {
       await writeBytesToVersionUpdateDirectory(inflated, item.path);
     } catch (error) {
@@ -2186,36 +2205,29 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
     }
     completedCount += 1;
     completedBytes += inflated.byteLength;
+    latestCompletedPath = item.path;
     setVersionUpdateFileState(item.path, 'done');
-    const elapsedSeconds = Math.max(0.001, (performance.now() - writeStartedAt) / 1000);
-    const speed = completedBytes / elapsedSeconds;
-    const exactPercent = (completedCount / files.length) * 100;
-    setVersionDownloadBar({ visible: true, percent: exactPercent });
-    setVersionDownloadProgressUi({
-      visible: true,
-      status: '正在覆盖更新文件…',
-      title: '正在覆盖解压',
-      body: `正在将更新文件直接覆盖到 ${getVersionUpdateDirectoryDisplayName()} 目录。`,
-      phase: 'extracting'
-    });
-    setVersionDownloadTransferStatus({
-      loaded: completedBytes,
-      total: totalBytes,
-      speed,
-      eta: completedCount < files.length
-        ? elapsedSeconds * (files.length - completedCount) / completedCount
-        : 0,
-      percent: exactPercent
-    });
-    setVersionUpdateFileSummary({
-      completed: completedCount,
-      total: files.length,
-      path: item.path,
-      state: 'done'
-    });
-  }));
+    renderExtractionProgress();
+  };
+  const workers = Array.from(
+    { length: Math.min(VERSION_EXTRACTION_CONCURRENCY, files.length) },
+    async () => {
+      while (!extractionError && nextFileIndex < files.length) {
+        const item = files[nextFileIndex];
+        nextFileIndex += 1;
+        try {
+          await processFile(item);
+        } catch (error) {
+          extractionError ||= error;
+          throw error;
+        }
+      }
+    }
+  );
+  const results = await Promise.allSettled(workers);
   const failedResult = results.find((result) => result.status === 'rejected');
   if (failedResult) throw failedResult.reason;
+  renderExtractionProgress(true);
   await rememberUpdateModuleIds(packagedModuleIds, { markInitialized: true });
   return files.length;
 }
