@@ -106,7 +106,10 @@ function runPendingLoginCallbacks() {
 
 function handleLoginRequired(retryCallback, cancelCallback, message) {
   if (globalThis.shouldAutoLoginAfterExpiry?.('ve') !== true) {
-    showToast(message || globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve'), 'warning', 3500, true);
+    const hasUsername = !!String(usernameInput?.value || '').trim();
+    if (!hasUsername) {
+      showToast(message || globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve'), 'warning', 3500, true);
+    }
     return;
   }
   if (retryCallback) {
