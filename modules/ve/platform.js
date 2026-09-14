@@ -1044,7 +1044,7 @@ async function hydrateVeStudentsMeta(courseId) {
         students: [],
         total: 0,
         loading: false,
-        loaded: true,
+        loaded: false,
         error: true,
         promise: null
       };
