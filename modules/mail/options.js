@@ -445,7 +445,7 @@
     if (!(button instanceof HTMLButtonElement)) return;
     button.disabled = true;
     try {
-      setMessage('正在通过 MIS 登录邮箱…');
+      setMessage('正在通过 MIS 登录邮箱…', true, { type: 'info', loading: true, persistent: true });
       const result = await send('MAIL_GET_USER_INFO', { forceNewSid: true });
       if (!result?.ok) throw Object.assign(new Error(result?.message || '未知错误'), { code: String(result?.code || '') });
       setMessage('已通过 MIS 登录邮箱');

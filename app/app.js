@@ -265,8 +265,9 @@ async function initFullscreenModuleButtons() {
   const moduleViewPromises = new Map();
   const moduleWindows = new Map();
 
-  const showPanelMessage = (text, ok = true) => {
-    showToast(String(text || ''), ok ? 'success' : 'error');
+  const showPanelMessage = (text, ok = true, options = {}) => {
+    const type = options?.type === 'info' ? 'info' : (ok ? 'success' : 'error');
+    showToast(String(text || ''), type, options?.persistent ? 0 : 3000);
   };
 
   const refreshButtonContainer = () => {

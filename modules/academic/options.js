@@ -2705,7 +2705,7 @@
     element('bindAcademicSystemBtn')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
-      setMessage('正在后台通过 MIS 登录教务系统…');
+      setMessage('正在后台通过 MIS 登录教务系统…', true, { type: 'info', loading: true, persistent: true });
       try {
         const result = await send('START_ACADEMIC_MIS_LOGIN');
         if (!result?.ok) {

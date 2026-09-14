@@ -171,11 +171,33 @@ function isYktSiteUrl(url) {
   }
 }
 
-function completeYktLoginAssist() {
+async function completeYktLoginAssist() {
   if (yktLoginAssistCompleting) return;
   yktLoginAssistCompleting = true;
-  closeYktLoginAssistPopup(false);
+  await closeYktLoginAssistPopup(false);
   completeExternalLoginAssist('ykt', true);
+}
+
+async function getYktLoginAssistPopupTabs() {
+  const tabs = [];
+  const knownTabId = Number(yktLoginAssistPopupTabId || 0);
+  if (knownTabId) {
+    const knownTab = await chrome.tabs.get(knownTabId).catch(() => null);
+    if (knownTab) tabs.push(knownTab);
+  }
+  const knownWindowId = Number(yktLoginAssistPopupWindowId || 0);
+  if (knownWindowId) {
+    const windowTabs = await chrome.tabs.query({ windowId: knownWindowId }).catch(() => []);
+    for (const tab of windowTabs) {
+      if (!tabs.some((item) => Number(item?.id) === Number(tab?.id))) tabs.push(tab);
+    }
+  }
+  const current = tabs.find((tab) => isYktLoginSuccessUrl(tab?.url))
+    || tabs.find((tab) => isYktSiteUrl(tab?.url))
+    || tabs[0]
+    || null;
+  if (current?.id) yktLoginAssistPopupTabId = Number(current.id);
+  return tabs;
 }
 
 async function verifyYktLoginAfterPopupClosed() {
@@ -184,7 +206,7 @@ async function verifyYktLoginAfterPopupClosed() {
     try {
       const response = await fetchYktJson(YKT_COURSE_LIST_API);
       if (Number(response?.errcode) === 0) {
-        completeYktLoginAssist();
+        await completeYktLoginAssist();
         return true;
       }
     } catch {
@@ -198,21 +220,20 @@ async function verifyYktLoginAfterPopupClosed() {
 async function checkYktLoginAssistPopupUrl() {
   if (yktLoginAssistChecking || yktLoginAssistCompleting) return false;
   if (!window.platformInteractiveLoginPending?.ykt) return false;
-  if (!yktLoginAssistPopupTabId) return false;
+  if (!yktLoginAssistPopupTabId && !yktLoginAssistPopupWindowId) return false;
   yktLoginAssistChecking = true;
   try {
-    const tab = await chrome.tabs.get(Number(yktLoginAssistPopupTabId));
-    const currentUrl = String(tab?.url || '').trim();
-    if (isYktLoginSuccessUrl(currentUrl)) {
-      completeYktLoginAssist();
+    const tabs = await getYktLoginAssistPopupTabs();
+    if (tabs.some((tab) => isYktLoginSuccessUrl(tab?.url))) {
+      await completeYktLoginAssist();
       return true;
     }
-    if (isYktSiteUrl(currentUrl)) {
-      const response = await fetchYktJson(YKT_COURSE_LIST_API).catch(() => null);
-      if (Number(response?.errcode) === 0) {
-        completeYktLoginAssist();
-        return true;
-      }
+    // The OAuth callback may replace/close its tab before the final YKT URL is
+    // observable. The authenticated API is the authoritative completion signal.
+    const response = await fetchYktJson(YKT_COURSE_LIST_API).catch(() => null);
+    if (Number(response?.errcode) === 0) {
+      await completeYktLoginAssist();
+      return true;
     }
   } catch {
     // Keep the known IDs until verification finishes. A transient tabs.get failure can
@@ -248,7 +269,7 @@ function startYktLoginAssistWatcher() {
   void checkYktLoginAssistPopupUrl();
 }
 
-function closeYktLoginAssistPopup(cancelPending = false) {
+async function closeYktLoginAssistPopup(cancelPending = false) {
   const knownWindowId = Number(yktLoginAssistPopupWindowId || 0);
   const knownTabId = Number(yktLoginAssistPopupTabId || 0);
   yktLoginAssistPopupWindowId = null;
@@ -257,18 +278,16 @@ function closeYktLoginAssistPopup(cancelPending = false) {
   if (cancelPending) {
     window.platformInteractiveLoginPending.ykt = false;
   }
-  void (async () => {
-    let windowId = knownWindowId;
-    if (!windowId && knownTabId) {
-      const tab = await chrome.tabs.get(knownTabId).catch(() => null);
-      windowId = Number(tab?.windowId || 0);
-    }
-    if (windowId) {
-      const removed = await chrome.windows.remove(windowId).then(() => true).catch(() => false);
-      if (removed) return;
-    }
-    if (knownTabId) await chrome.tabs.remove(knownTabId).catch(() => {});
-  })();
+  let windowId = knownWindowId;
+  if (!windowId && knownTabId) {
+    const tab = await chrome.tabs.get(knownTabId).catch(() => null);
+    windowId = Number(tab?.windowId || 0);
+  }
+  if (windowId) {
+    const removed = await chrome.windows.remove(windowId).then(() => true).catch(() => false);
+    if (removed) return;
+  }
+  if (knownTabId) await chrome.tabs.remove(knownTabId).catch(() => {});
 }
 
 function openYktLoginAssistPopup(force = false) {
