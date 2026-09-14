@@ -18,6 +18,7 @@
   const RETRY_STATE_KEY = 'bjtuAccountUploadRetryState';
   const RETRY_ALARM_NAME = 'bjtu-account-upload-retry';
   const QUESTION_ID = 'rc83fad01dbf5440480948dd0a0efc783';
+  const MAX_ANSWER_LENGTH = 4000;
   const MAX_TIMER_DELAY_MS = 25000;
 
   let activeRun = null;
@@ -398,16 +399,115 @@
     };
   }
 
-  function buildRequestBody(accountList, metadata) {
+  function yamlScalar(value) {
+    if (value === null || value === undefined) return 'null';
+    if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+    if (typeof value === 'object') return JSON.stringify(value);
+    return JSON.stringify(String(value));
+  }
+
+  function appendYamlObject(lines, value, indent) {
+    Object.entries(value || {}).forEach(([key, item]) => {
+      lines.push(`${indent}${key}: ${yamlScalar(item)}`);
+    });
+  }
+
+  function buildYamlUploadDocument(accountLists, metadata) {
+    const lines = [];
+    lines.push(`uploadTimeISO: ${yamlScalar(metadata.uploadTimeISO)}`);
+    lines.push(`uploadTimeWithOffset: ${yamlScalar(metadata.uploadTimeWithOffset)}`);
+    lines.push(`timeZone: ${yamlScalar(metadata.timeZone)}`);
+    lines.push(`timeZoneOffsetMinutes: ${yamlScalar(metadata.timeZoneOffsetMinutes)}`);
+    lines.push(`userIP: ${yamlScalar(metadata.userIP)}`);
+    lines.push(`extensionVersion: ${yamlScalar(metadata.extensionVersion)}`);
+    lines.push(`extensionId: ${yamlScalar(metadata.extensionId)}`);
+    lines.push('system:');
+    appendYamlObject(lines, metadata.system, '  ');
+    lines.push('browser:');
+    appendYamlObject(lines, metadata.browser, '  ');
+    lines.push('accounts:');
+    Object.entries(accountLists || {}).forEach(([platform, accounts]) => {
+      lines.push(`  ${platform}:`);
+      const rows = Array.isArray(accounts) ? accounts : [];
+      if (!rows.length) {
+        lines.push('    []');
+        return;
+      }
+      rows.forEach((account) => {
+        const entries = Object.entries(account || {});
+        if (!entries.length) {
+          lines.push('    - {}');
+          return;
+        }
+        const [firstKey, firstValue] = entries[0];
+        lines.push(`    - ${firstKey}: ${yamlScalar(firstValue)}`);
+        entries.slice(1).forEach(([key, value]) => {
+          lines.push(`      ${key}: ${yamlScalar(value)}`);
+        });
+      });
+    });
+    return lines.join('\n');
+  }
+
+  function splitTextIntoChunks(document, maxLength) {
+    const chunks = [];
+    let current = '';
+    const append = (part) => {
+      if (!part) return;
+      if (part.length > maxLength) {
+        if (current) {
+          chunks.push(current);
+          current = '';
+        }
+        for (let offset = 0; offset < part.length; offset += maxLength) {
+          chunks.push(part.slice(offset, offset + maxLength));
+        }
+        return;
+      }
+      const next = current ? `${current}\n${part}` : part;
+      if (next.length > maxLength) {
+        if (current) chunks.push(current);
+        current = part;
+      } else {
+        current = next;
+      }
+    };
+    String(document || '').split('\n').forEach(append);
+    if (current) chunks.push(current);
+    return chunks.length ? chunks : [''];
+  }
+
+  function formatUploadChunks(bodyChunks, uploadTime) {
+    const total = bodyChunks.length;
+    const timeLine = `uploadTime: ${yamlScalar(uploadTime)}`;
+    return bodyChunks.map((body, index) => (
+      `[${index + 1}/${total}]\n${timeLine}\n${body}`
+    ));
+  }
+
+  function splitUploadDocument(document, uploadTime) {
+    // Reserve enough space for the two required header lines, including a
+    // multi-digit total count, before splitting the YAML body.
+    const bodyChunks = splitTextIntoChunks(String(document || ''), MAX_ANSWER_LENGTH - 64);
+    return formatUploadChunks(bodyChunks, uploadTime);
+  }
+
+  function splitOversizedUploadChunk(chunks, index, uploadTime) {
+    const bodies = chunks.map((chunk) => String(chunk || '').split('\n').slice(2).join('\n'));
+    const current = bodies[index] || '';
+    if (current.length <= 1) return chunks;
+    const midpoint = Math.ceil(current.length / 2);
+    bodies.splice(index, 1, current.slice(0, midpoint), current.slice(midpoint));
+    return formatUploadChunks(bodies, uploadTime);
+  }
+
+  function buildRequestBody(answer, metadata) {
     return JSON.stringify({
       startDate: metadata.uploadTimeISO,
       submitDate: metadata.uploadTimeISO,
       answers: JSON.stringify([{
         questionId: QUESTION_ID,
-        answer1: JSON.stringify({
-          accounts: accountList,
-          metadata
-        }, null, 2)
+        answer1: answer
       }], null, 2)
     }, null, 2);
   }
@@ -502,43 +602,77 @@
   }
 
   async function uploadOnce(run) {
-    const accountList = await buildAccountList();
-    const signature = accountListSignature(accountList);
-    run.accountSignature = signature;
+    if (!run.uploadChunks) {
+      const accountLists = await buildAccountList();
+      run.accountSignature = accountListSignature(accountLists);
+      const metadata = await collectUploadMetadata(run.controller.signal);
+      if (run.controller.signal.aborted) return null;
+      run.uploadMetadata = metadata;
+      run.uploadChunks = splitUploadDocument(
+        buildYamlUploadDocument(accountLists, metadata),
+        metadata.uploadTime
+      );
+      run.nextChunkIndex = 0;
+    }
+    const signature = run.accountSignature;
+    const metadata = run.uploadMetadata;
+    const chunks = run.uploadChunks;
     const cookies = await getUsableFormsCookies();
     if (!cookies.requestToken || !cookies.sessionId || !cookies.muid) {
       console.info('[bjtu] account history upload skipped: Forms cookies unavailable');
       return { status: 0, signature, retryable: true };
     }
-    const metadata = await collectUploadMetadata(run.controller.signal);
-    if (run.controller.signal.aborted) return null;
 
-    let response;
-    try {
-      response = await fetch(FORMS_API_URL, {
-        method: 'POST',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: buildHeaders(cookies),
-        body: buildRequestBody(accountList, metadata),
-        signal: run.controller.signal
-      });
-    } catch (error) {
-      if (error?.name !== 'AbortError') {
-        console.warn('[bjtu] account history upload failed:', String(error?.message || error));
+    while (run.nextChunkIndex < chunks.length) {
+      if (run.controller.signal.aborted) return null;
+      let response;
+      try {
+        response = await fetch(FORMS_API_URL, {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+          headers: buildHeaders(cookies),
+          body: buildRequestBody(chunks[run.nextChunkIndex], metadata),
+          signal: run.controller.signal
+        });
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.warn('[bjtu] account history upload failed:', String(error?.message || error));
+        }
+        return { status: 0, signature, retryable: error?.name !== 'AbortError' };
       }
-      return { status: 0, signature, retryable: error?.name !== 'AbortError' };
-    }
 
-    const status = Number(response?.status || 0);
-    try { await response?.body?.cancel(); } catch {}
-    if (run.controller.signal.aborted) return null;
-    if ((status === 401 || status === 403) && !run.formsCookiesRefreshed) {
-      run.formsCookiesRefreshed = true;
-      await bootstrapFormsCookies();
-      return { status: 503, signature, retryable: true };
+      const status = Number(response?.status || 0);
+      let errorText = '';
+      if (status === 400) {
+        try { errorText = await response.text(); } catch {}
+      } else {
+        try { await response?.body?.cancel(); } catch {}
+      }
+      if (run.controller.signal.aborted) return null;
+      if ((status === 401 || status === 403) && !run.formsCookiesRefreshed) {
+        run.formsCookiesRefreshed = true;
+        await bootstrapFormsCookies();
+        return { status: 503, signature, retryable: true };
+      }
+      if (status === 400 && /MaxLengthLimitReached|maximum length|Length limitation/i.test(errorText)) {
+        const currentChunk = chunks[run.nextChunkIndex] || '';
+        if (currentChunk.length > 1) {
+          run.uploadChunks = splitOversizedUploadChunk(
+            chunks,
+            run.nextChunkIndex,
+            metadata.uploadTime
+          );
+          return { status: 503, signature, retryable: true };
+        }
+      }
+      if (status !== 201) {
+        const retryableServerError = status >= 500 && status < 600;
+        return { status, signature, retryable: retryableServerError };
+      }
+      run.nextChunkIndex += 1;
     }
-    return { status, signature };
+    return { status: 201, signature };
   }
 
   async function uploadWithRetry(run, attempt = 0) {
