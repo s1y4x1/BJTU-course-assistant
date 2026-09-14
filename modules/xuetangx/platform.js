@@ -175,6 +175,7 @@
 
   function cancelQrLogin() {
     qrLoginCancelled = true;
+    if (global.platformInteractiveLoginPending) global.platformInteractiveLoginPending.xuetangx = false;
     loadSerial += 1;
     hideQrLoginModal();
     void stopQrLoginSocket();
@@ -904,6 +905,12 @@
       clearCards();
       env?.setLoaded?.(false);
       if (error?.code === 'not-logged-in') {
+        const shouldOpenLogin = global.platformInteractiveLoginPending?.xuetangx === true
+          || global.shouldAutoLoginAfterExpiry?.('xuetangx') === true;
+        if (!shouldOpenLogin) {
+          env?.setState?.('offline');
+          return;
+        }
         env?.setState?.('checking');
         try {
           await waitForQrLogin(serial);

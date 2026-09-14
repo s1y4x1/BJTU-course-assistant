@@ -230,7 +230,7 @@ async function tryMrjzyConfiguredAutoLogin() {
   if (mrjzyAutoLoginPromise) return mrjzyAutoLoginPromise;
   mrjzyAutoLoginPromise = (async () => {
     const settings = await chrome.storage.local.get(['mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass']);
-    if (settings.mrjzyAutoLoginEnabled !== true
+    if (settings.mrjzyAutoLoginEnabled === false
       || !String(settings.mrjzyAutoLoginAccount || '').trim()
       || !String(settings.mrjzyAutoLoginClass || '').trim()) return false;
     const response = await chrome.runtime.sendMessage({
@@ -286,7 +286,7 @@ async function switchMrjzyConfiguredAutoLoginClass(expectedClass = '') {
   if (mrjzyAutoLoginPromise) await mrjzyAutoLoginPromise.catch(() => false);
   if (serial !== mrjzyConfiguredClassSwitchSerial) return { ok: false, stale: true };
   const settings = await chrome.storage.local.get(['mrjzyAutoLoginEnabled', 'mrjzyAutoLoginClass']);
-  if (settings.mrjzyAutoLoginEnabled !== true
+  if (settings.mrjzyAutoLoginEnabled === false
     || String(settings.mrjzyAutoLoginClass || '') !== String(expectedClass || '')) {
     return { ok: false, stale: true };
   }
@@ -821,11 +821,22 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     return;
   }
   if (!listResp.data || Number(listResp.data.code) !== 200) {
+    if (!mrjzyAutoLoginAttempted) {
+      mrjzyAutoLoginAttempted = true;
+      if (await tryMrjzyConfiguredAutoLogin().catch(() => false)) {
+        scheduleMrjzyLoginAssistRecheck(350);
+        await finishMrjzyRuntime();
+        return;
+      }
+    }
     window.platformLoadedOnce.mrjzy = true;
     await finishMrjzyRuntime();
     renderMrjzyNeedLoginMessage();
     return;
   }
+
+  // A later session expiry must be allowed to use the configured credentials again.
+  mrjzyAutoLoginAttempted = false;
 
   window.mrjzyMatchedHomeworkByCourseId = {};
   window.mrjzyStandaloneCourses = [];

@@ -639,8 +639,25 @@ window.platformLoginChecked = Object.fromEntries(PLATFORM_IDS.map((id) => [id, f
 window.platformInteractiveLoginPending = { ykt: false, mrjzy: false, jlgj: false, mooc: false, xuetangx: false };
 const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
 const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true };
+const PLATFORM_AUTO_LOGIN_STORAGE_KEYS = Object.freeze({
+  ve: 'veAutoLoginOnExpiry',
+  ykt: 'yktAutoLoginOnExpiry',
+  mrjzy: 'mrjzyAutoLoginEnabled',
+  jlgj: 'jlgjAutoLoginOnExpiry',
+  mooc: 'moocAutoLoginOnExpiry',
+  xuetangx: 'xuetangxAutoLoginOnExpiry'
+});
+const DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY = Object.freeze({
+  ve: true,
+  ykt: true,
+  mrjzy: true,
+  jlgj: true,
+  mooc: true,
+  xuetangx: true
+});
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
 window.platformVisible = { ...DEFAULT_PLATFORM_VISIBLE };
+window.platformAutoLoginOnExpiry = { ...DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY };
 window.platformLoadedOnce = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
 window.platformLoadVersion = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 0]));
 window.platformContentLoadProgress = {};
@@ -709,6 +726,12 @@ function isPlatformEnabled(platform) {
   const p = normalizePlatformId(platform);
   return window.platformEnabled?.[p] === true;
 }
+
+function shouldAutoLoginAfterExpiry(platform) {
+  const p = normalizePlatformId(platform);
+  return window.platformAutoLoginOnExpiry?.[p] === true;
+}
+globalThis.shouldAutoLoginAfterExpiry = shouldAutoLoginAfterExpiry;
 
 function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
   const src = (raw && typeof raw === 'object') ? raw : null;
@@ -1112,6 +1135,20 @@ function detailCollapsedMaxHeight(lines) {
   return `calc(${normalizeDetailCollapsedLines(lines, 3) * 1.5}em + 2px)`;
 }
 
+async function loadPlatformAutoLoginSettings() {
+  try {
+    const stored = await chrome.storage.local.get(Object.values(PLATFORM_AUTO_LOGIN_STORAGE_KEYS));
+    window.platformAutoLoginOnExpiry = Object.fromEntries(PLATFORM_IDS.map((platform) => {
+      const key = PLATFORM_AUTO_LOGIN_STORAGE_KEYS[platform];
+      return [platform, stored[key] === undefined
+        ? DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY[platform]
+        : stored[key] === true];
+    }));
+  } catch {
+    window.platformAutoLoginOnExpiry = { ...DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY };
+  }
+}
+
 function detailVisibleMaxHeight(lines) {
   return `calc(${normalizeDetailCollapsedLines(lines, 3) * 1.5}em + 2px)`;
 }
@@ -1315,7 +1352,7 @@ function togglePlatformSelection(platform, options = {}) {
     return;
   }
 
-  if (platform === 'ykt' || platform === 'mrjzy' || platform === 'jlgj') {
+  if (platform === 'ykt' || platform === 'mrjzy' || platform === 'jlgj' || platform === 'mooc' || platform === 'xuetangx') {
     window.platformInteractiveLoginPending[platform] = !!interactive;
   }
 
@@ -1347,6 +1384,9 @@ function setupOptionsStorageLiveSync() {
       window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
       applyPlatformVisibility();
     }
+    Object.entries(PLATFORM_AUTO_LOGIN_STORAGE_KEYS).forEach(([platform, key]) => {
+      if (changes[key]) window.platformAutoLoginOnExpiry[platform] = changes[key].newValue === true;
+    });
     if (changes.platformOrder) {
       window.platformOrder = normalizePlatformOrderForApp(changes.platformOrder.newValue);
       applyPlatformOrderInApp();
@@ -3268,6 +3308,7 @@ let veRequestReauthenticationPromise = null;
 let veLastRequestReauthenticationAt = 0;
 let veLastRequestReauthenticationResult = false;
 async function reauthenticateVeSessionOnly() {
+  if (globalThis.shouldAutoLoginAfterExpiry?.('ve') !== true) return false;
   if (veRequestReauthenticationPromise) return veRequestReauthenticationPromise;
   if (Date.now() - veLastRequestReauthenticationAt < 1500) return veLastRequestReauthenticationResult;
   veRequestReauthenticationPromise = (async () => {
@@ -4051,6 +4092,9 @@ function setPlatformLoginState(platform, state) {
   if (p === 'mooc' && s === 'online') {
     window.platformInteractiveLoginPending.mooc = false;
     closeMoocLoginAssistPopup(false);
+  }
+  if (p === 'xuetangx' && s === 'online') {
+    window.platformInteractiveLoginPending.xuetangx = false;
   }
   if (s === 'online' || s === 'offline') {
     window.platformLoginChecked[p] = true;
@@ -6022,6 +6066,7 @@ jsessionidInput.addEventListener('change', async () => {
   } else {
     await loadPlatformEnabledFromStorage();
     await loadPlatformVisibleFromStorage();
+    await loadPlatformAutoLoginSettings();
   }
   await loadPlatformOrderFromStorage();
   window.BjtuMoocPlatform?.init({
@@ -6040,7 +6085,11 @@ jsessionidInput.addEventListener('change', async () => {
     updateCountdowns: updateAllCountdowns,
     animateHomeworkGroupVisibility,
     sortCourseCards: () => sortCourseCardsWithGuard(),
-    loginRequired: () => openMoocLoginAssistPopup(true)
+    loginRequired: () => {
+      if (window.platformInteractiveLoginPending.mooc || shouldAutoLoginAfterExpiry('mooc')) {
+        openMoocLoginAssistPopup(true);
+      }
+    }
   });
   window.BjtuXuetangxPlatform?.init({
     courseList: courseListDiv,

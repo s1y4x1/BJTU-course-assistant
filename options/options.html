@@ -106,6 +106,7 @@
       </div>
       <div id="vePlatformDetail" class="platform-option-detail" data-module="ve" hidden>
         <label><input type="checkbox" id="enableVe" style="width:auto;" checked />启用</label>
+        <label><input type="checkbox" id="veAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
         <label style="display:flex; align-items:center; gap:8px; margin:0;">
           <input type="checkbox" id="autoLoadCourseResourcesEnabled" style="width:auto;" />
           自动获取课件/回放/归档列表
@@ -167,6 +168,7 @@
             style="width:auto;" checked />雨课堂</label></div>
       <div id="yktPlatformDetail" class="platform-option-detail" data-module="ykt" hidden>
         <label><input type="checkbox" id="enableYkt" style="width:auto;" />启用</label>
+        <label><input type="checkbox" id="yktAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
         <div class="platform-option-divider" role="separator"></div>
         <div class="platform-option-subtitle">要显示的作业类型</div>
         <div class="platform-activity-type-options">
@@ -181,7 +183,7 @@
       <div id="mrjzyPlatformDetail" class="platform-option-detail" data-module="mrjzy" hidden>
         <label><input type="checkbox" id="enableMrjzy" style="width:auto;" />启用</label>
         <div class="mrjzy-auto-login-row">
-          <label><input type="checkbox" id="mrjzyAutoLoginEnabled" style="width:auto;" />自动登录</label>
+          <label><input type="checkbox" id="mrjzyAutoLoginEnabled" style="width:auto;" checked />登录失效后自动登录</label>
           <select id="mrjzyAutoLoginAccount" aria-label="每日交作业自动登录账号" disabled>
             <option value="">暂无已保存密码的账号</option>
           </select>
@@ -194,6 +196,7 @@
             style="width:auto;" checked />接龙管家</label></div>
       <div id="jlgjPlatformDetail" class="platform-option-detail" data-module="jlgj" hidden>
         <label><input type="checkbox" id="enableJlgj" style="width:auto;" />启用</label>
+        <label><input type="checkbox" id="jlgjAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
         <label><input type="checkbox" id="jlgjDarkModeEnabled" style="width:auto;" checked />登录时使用深色模式</label>
         <label style="padding-left:22px;"><input type="checkbox" id="jlgjAlwaysDarkModeEnabled"
             style="width:auto;" />总使用深色模式（测试）</label>
@@ -202,6 +205,7 @@
             style="width:auto;" checked />中国大学MOOC</label></div>
       <div id="moocPlatformDetail" class="platform-option-detail" data-module="mooc" hidden>
         <label><input type="checkbox" id="enableMooc" style="width:auto;" />启用</label>
+        <label><input type="checkbox" id="moocAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
         <label><input type="checkbox" id="injectMoocHelperEnabled" style="width:auto;" checked />注入用 GinsMooc 完成按钮</label>
         <label><input type="checkbox" id="injectMoocPeerReviewEnabled" style="width:auto;" />注入自动互评按钮</label>
         <div class="mooc-peer-review-count-editor" id="moocPeerReviewCountEditor">
@@ -214,6 +218,7 @@
             style="width:auto;" checked />学堂在线</label></div>
       <div id="xuetangxPlatformDetail" class="platform-option-detail" data-module="xuetangx" hidden>
         <label><input type="checkbox" id="enableXuetangx" style="width:auto;" />启用</label>
+        <label><input type="checkbox" id="xuetangxAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
         <div class="platform-option-divider" role="separator"></div>
         <div class="platform-option-subtitle">要显示的课程状态</div>
         <label><input type="checkbox" class="xuetangx-course-status" value="1" style="width:auto;" checked />正在上课</label>

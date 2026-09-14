@@ -131,7 +131,8 @@ function clearJlgjStandaloneCards() {
 }
 
 function renderJlgjNeedLoginMessage() {
-  const shouldOpenAssist = !!window.platformInteractiveLoginPending?.jlgj;
+  const shouldOpenAssist = !!window.platformInteractiveLoginPending?.jlgj
+    || globalThis.shouldAutoLoginAfterExpiry?.('jlgj') === true;
   window.platformLoadedOnce.jlgj = false;
   clearPlatformData('jlgj');
   rerenderAllHomeworkAreas();

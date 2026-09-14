@@ -339,7 +339,8 @@ function ensureYktSection() {
 }
 
 function renderYktNeedLoginMessage() {
-  const shouldOpenAssist = !!window.platformInteractiveLoginPending?.ykt;
+  const shouldOpenAssist = !!window.platformInteractiveLoginPending?.ykt
+    || globalThis.shouldAutoLoginAfterExpiry?.('ykt') === true;
   removeYktLoginSection();
   window.platformLoadedOnce.ykt = false;
   clearPlatformData('ykt');

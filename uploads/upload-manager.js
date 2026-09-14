@@ -105,6 +105,10 @@ function runPendingLoginCallbacks() {
 }
 
 function handleLoginRequired(retryCallback, cancelCallback, message) {
+  if (globalThis.shouldAutoLoginAfterExpiry?.('ve') !== true) {
+    showToast(message || globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve'), 'warning', 3500, true);
+    return;
+  }
   if (retryCallback) {
     pendingLoginCallbacks.push(retryCallback);
   }

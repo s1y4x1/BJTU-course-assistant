@@ -35,6 +35,20 @@ function setMsg(text, ok = true, options = {}) {
 
 const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
 const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true };
+const PLATFORM_AUTO_LOGIN_OPTION_IDS = Object.freeze({
+  ve: 'veAutoLoginOnExpiry',
+  ykt: 'yktAutoLoginOnExpiry',
+  jlgj: 'jlgjAutoLoginOnExpiry',
+  mooc: 'moocAutoLoginOnExpiry',
+  xuetangx: 'xuetangxAutoLoginOnExpiry'
+});
+const DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY = Object.freeze({
+  ve: true,
+  ykt: true,
+  jlgj: true,
+  mooc: true,
+  xuetangx: true
+});
 
 const DEFAULT_OPEN_MODE = 'popup';
 const DEFAULT_POPUP_WIDTH_PX = 500;
@@ -751,8 +765,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass'
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
   ]);
   const { yktActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'yktActivityTypes',
@@ -785,10 +799,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('enableVe').checked = !!effectiveEnabled.ve;
   document.getElementById('enableYkt').checked = !!effectiveEnabled.ykt;
   document.getElementById('enableMrjzy').checked = !!effectiveEnabled.mrjzy;
-  document.getElementById('mrjzyAutoLoginEnabled').checked = mrjzyAutoLoginEnabled === true;
+  document.getElementById('mrjzyAutoLoginEnabled').checked = mrjzyAutoLoginEnabled !== false;
   document.getElementById('enableJlgj').checked = !!effectiveEnabled.jlgj;
   document.getElementById('enableMooc').checked = !!effectiveEnabled.mooc;
   document.getElementById('enableXuetangx').checked = !!effectiveEnabled.xuetangx;
+  const platformAutoLoginValues = { veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry };
+  Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
+    document.getElementById(id).checked = platformAutoLoginValues[id] === undefined
+      ? DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY[platform]
+      : platformAutoLoginValues[id] === true;
+  });
   const visibleXuetangxStatuses = Array.isArray(xuetangxCourseStatuses) && xuetangxCourseStatuses.length
     ? new Set(xuetangxCourseStatuses.map(Number))
     : new Set([1]);
@@ -960,6 +980,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         : choices.some((choice) => choice.value === savedIdentityValue) ? savedIdentityValue : choices[0].value;
       mrjzyAutoLoginClassSelect.value = currentMrjzyAutoLoginClass;
     }
+    mrjzyAutoLoginClassSelect.title = mrjzyAutoLoginClassSelect.selectedOptions[0]?.textContent || '';
     if (currentMrjzyAutoLoginClass !== previous) {
       await chrome.storage.local.set({ mrjzyAutoLoginClass: currentMrjzyAutoLoginClass });
       await saveMrjzySelectedClass();
@@ -984,6 +1005,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         ? selected : saved[0].phone;
       mrjzyAutoLoginAccountSelect.value = currentMrjzyAutoLoginAccount;
     }
+    mrjzyAutoLoginAccountSelect.title = mrjzyAutoLoginAccountSelect.selectedOptions[0]?.textContent || '';
     if (currentMrjzyAutoLoginAccount !== selected) {
       await chrome.storage.local.set({ mrjzyAutoLoginAccount: currentMrjzyAutoLoginAccount });
     }
@@ -1204,6 +1226,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       const input = document.getElementById(id);
       input.disabled = !visibleState.ve;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.ve);
+    });
+    Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
+      const input = document.getElementById(id);
+      input.disabled = !visibleState[platform];
+      input.closest('label')?.classList.toggle('is-disabled', !visibleState[platform]);
     });
     updateMrjzyAutoLoginDisabled();
     document.querySelectorAll('.ykt-activity-type').forEach((input) => {
@@ -1477,9 +1504,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         void renderMrjzyAutoLoginAccounts();
       }
       if (changes.mrjzyAutoLoginEnabled) {
-        applyBooleanUi('mrjzyAutoLoginEnabled', changes.mrjzyAutoLoginEnabled.newValue, false);
+        applyBooleanUi('mrjzyAutoLoginEnabled', changes.mrjzyAutoLoginEnabled.newValue, true);
         updateMrjzyAutoLoginDisabled();
       }
+      Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
+        if (changes[id]) applyBooleanUi(id, changes[id].newValue, DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY[platform]);
+      });
       if (changes.mrjzyAutoLoginAccount) {
         currentMrjzyAutoLoginAccount = String(changes.mrjzyAutoLoginAccount.newValue || '').trim();
         void renderMrjzyAutoLoginAccounts();
@@ -1540,7 +1570,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       mrjzyAutoLoginClass: currentMrjzyAutoLoginClass
     });
     updateMrjzyAutoLoginDisabled();
-    setMsg(enabled ? '已启用每日交作业自动登录' : '已关闭每日交作业自动登录');
+    setMsg(enabled ? '已启用每日交作业登录失效后自动登录' : '已关闭每日交作业登录失效后自动登录');
   });
   mrjzyAutoLoginAccountSelect?.addEventListener('change', async () => {
     currentMrjzyAutoLoginAccount = String(mrjzyAutoLoginAccountSelect.value || '').trim();
@@ -1550,17 +1580,27 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       mrjzyAutoLoginAccount: currentMrjzyAutoLoginAccount,
       mrjzyAutoLoginClass: currentMrjzyAutoLoginClass
     });
-    setMsg('已更改每日交作业自动登录账号');
+    mrjzyAutoLoginAccountSelect.title = mrjzyAutoLoginAccountSelect.selectedOptions[0]?.textContent || '';
+    setMsg('已更改每日交作业登录账号');
   });
   mrjzyAutoLoginClassSelect?.addEventListener('change', async () => {
     currentMrjzyAutoLoginClass = String(mrjzyAutoLoginClassSelect.value || '').trim();
     await chrome.storage.local.set({ mrjzyAutoLoginClass: currentMrjzyAutoLoginClass });
     await saveMrjzySelectedClass();
-    setMsg('已更改每日交作业自动登录班级');
+    mrjzyAutoLoginClassSelect.title = mrjzyAutoLoginClassSelect.selectedOptions[0]?.textContent || '';
+    setMsg('已更改每日交作业登录班级');
   });
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
   document.getElementById('enableMooc').addEventListener('change', applyPlatform);
   document.getElementById('enableXuetangx').addEventListener('change', applyPlatform);
+  Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
+    document.getElementById(id).addEventListener('change', async (event) => {
+      await chrome.storage.local.set({ [id]: event.currentTarget.checked });
+      setMsg(event.currentTarget.checked
+        ? `已启用${PLATFORM_ORDER_LABELS[platform]}登录失效后自动登录`
+        : `已关闭${PLATFORM_ORDER_LABELS[platform]}登录失效后自动登录`);
+    });
+  });
   ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc', 'showXuetangx'].forEach((id) => {
     document.getElementById(id).addEventListener('change', applyPlatformVisible);
   });
@@ -2147,9 +2187,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       toolbarPinReminderEnabled: true,
       homeworkBackgroundRefreshEnabled: false,
       homeworkBackgroundRefreshAccount: '',
-      mrjzyAutoLoginEnabled: false,
+      mrjzyAutoLoginEnabled: true,
       mrjzyAutoLoginAccount: '',
       mrjzyAutoLoginClass: '',
+      ...Object.fromEntries(Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).map(([platform, id]) => [id, DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY[platform]])),
       homeworkBackgroundRefreshIntervalMinutes: DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES,
       homeworkNewAssignmentNotificationEnabled: false,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
@@ -2171,7 +2212,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('enableVe').checked = true;
     document.getElementById('enableYkt').checked = false;
     document.getElementById('enableMrjzy').checked = false;
-    document.getElementById('mrjzyAutoLoginEnabled').checked = false;
+    document.getElementById('mrjzyAutoLoginEnabled').checked = true;
+    Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
+      document.getElementById(id).checked = DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY[platform];
+    });
     currentMrjzyAutoLoginAccount = '';
     currentMrjzyAutoLoginClass = '';
     await renderMrjzyAutoLoginAccounts();
