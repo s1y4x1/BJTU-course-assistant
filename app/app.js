@@ -1346,7 +1346,12 @@ function togglePlatformSelection(platform, options = {}) {
     if (isPlatformEnabled('ve')) {
       void (async () => {
         await loadAutoLoadCourseResourcesSetting();
-        await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
+        const username = String(usernameInput?.value || '').trim();
+        if (interactive && username && typeof doLoginFlow === 'function') {
+          await doLoginFlow();
+        } else {
+          await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
+        }
       })();
     }
     return;
