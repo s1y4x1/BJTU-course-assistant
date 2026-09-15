@@ -258,6 +258,13 @@
     return /判断|正误|对错/.test(typeText);
   }
 
+  function problemIsSubjective(problem) {
+    const content = problem?.content || {};
+    const type = String(content.Type || problem?.Type || problem?.type || '').trim();
+    const typeText = String(content.TypeText || content.type_text || problem?.TypeText || problem?.type_text || '').trim();
+    return /^ShortAnswer$/i.test(type) || /主观题/.test(typeText);
+  }
+
   function normalizeFillAnswers(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     return Object.fromEntries(Object.entries(value).map(([key, answer]) => {
@@ -335,6 +342,25 @@
     return payload;
   }
 
+  function rateLimitWaitSeconds(response, data) {
+    const detail = String(data?.detail || '');
+    const match = detail.match(/Expected\s+available\s+in\s+([\d.]+)\s+seconds?/i);
+    if (match) {
+      const seconds = Number(match[1]);
+      if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+    }
+    return Number(response?.status) === 429 ? 1 : null;
+  }
+
+  async function waitForProblemApplyRateLimit(response, data, serial) {
+    const seconds = rateLimitWaitSeconds(response, data);
+    if (seconds === null) return false;
+    if (serial !== loadSerial) throw Object.assign(new Error('学堂在线操作已取消'), { code: 'cancelled' });
+    await sleep(Math.max(100, Math.ceil(seconds * 1000)));
+    if (serial !== loadSerial) throw Object.assign(new Error('学堂在线操作已取消'), { code: 'cancelled' });
+    return true;
+  }
+
   async function postProblemApply(payload, csrfOverride, serial, cookieOverride = '') {
     if (serial !== loadSerial) throw Object.assign(new Error('学堂在线操作已取消'), { code: 'cancelled' });
     const explicitCsrf = normalizeCsrfToken(csrfOverride);
@@ -348,29 +374,33 @@
     };
     if (csrf) headers['x-csrftoken'] = csrf;
     if (explicitCsrf) headers.cookie = cookieHeader || `csrftoken=${encodeURIComponent(csrf)}`;
-    let response;
+    let response = null;
     let data = null;
-    try {
-      const requestOptions = {
-        method: 'POST',
-        headers,
-        cache: 'no-store',
-        body: JSON.stringify(payload)
-      };
-      response = explicitCsrf
-        ? await fetchWithSecondCsrfCookie(`${BASE}/api/v1/lms/exercise/problem_apply/`, requestOptions, cookieHeader)
-        : await fetch(`${BASE}/api/v1/lms/exercise/problem_apply/`, {
-          ...requestOptions,
-          credentials: 'include'
-        });
-      const text = await response.text();
-      try { data = JSON.parse(text); } catch {}
-      if (!data) throw new Error(text.slice(0, 300) || `HTTP ${response.status}`);
-    } catch (error) {
-      if (error?.code === 'cancelled') throw error;
-      const wrapped = new Error(`学堂在线提交请求失败${response?.status ? `（HTTP ${response.status}）` : ''}：${error?.message || error}`);
-      wrapped.code = 'request-failed';
-      throw wrapped;
+    while (true) {
+      try {
+        const requestOptions = {
+          method: 'POST',
+          headers,
+          cache: 'no-store',
+          body: JSON.stringify(payload)
+        };
+        response = explicitCsrf
+          ? await fetchWithSecondCsrfCookie(`${BASE}/api/v1/lms/exercise/problem_apply/`, requestOptions, cookieHeader)
+          : await fetch(`${BASE}/api/v1/lms/exercise/problem_apply/`, {
+            ...requestOptions,
+            credentials: 'include'
+          });
+        const text = await response.text();
+        data = null;
+        try { data = JSON.parse(text); } catch {}
+        if (!data) throw new Error(text.slice(0, 300) || `HTTP ${response.status}`);
+      } catch (error) {
+        if (error?.code === 'cancelled') throw error;
+        const wrapped = new Error(`学堂在线提交请求失败${response?.status ? `（HTTP ${response.status}）` : ''}：${error?.message || error}`);
+        wrapped.code = 'request-failed';
+        throw wrapped;
+      }
+      if (!await waitForProblemApplyRateLimit(response, data, serial)) break;
     }
     if (!response.ok || data?.success !== true) {
       const error = new Error(String(data?.msg || `学堂在线提交失败（HTTP ${response.status}）`));
@@ -431,6 +461,10 @@
       for (let index = 0; index < secondProblems.length; index += 1) {
         const secondProblem = secondProblems[index];
         const primaryProblem = primaryById.get(problemIdOf(secondProblem));
+        if (problemIsSubjective(secondProblem) || problemIsSubjective(primaryProblem)) {
+          skipped += 1;
+          continue;
+        }
         const maxCount = Number(primaryProblem?.user?.count ?? secondProblem?.user?.count ?? 0);
         const myCount = Number(primaryProblem?.user?.my_count ?? 0);
         if (maxCount > 0 && myCount >= maxCount) {
