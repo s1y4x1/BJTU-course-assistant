@@ -480,9 +480,9 @@
   function formatUploadChunks(bodyChunks, uploadTime) {
     const total = bodyChunks.length;
     const timeLine = `uploadTime: ${yamlScalar(uploadTime)}`;
-    return bodyChunks.map((body, index) => (
-      `[${index + 1}/${total}]\n${timeLine}\n${body}`
-    ));
+    return bodyChunks.map((body, index) => total === 1
+      ? `${timeLine}\n${body}`
+      : `[${index + 1}/${total}]\n${timeLine}\n${body}`);
   }
 
   function splitUploadDocument(document, uploadTime) {
@@ -493,7 +493,9 @@
   }
 
   function splitOversizedUploadChunk(chunks, index, uploadTime) {
-    const bodies = chunks.map((chunk) => String(chunk || '').split('\n').slice(2).join('\n'));
+    const isSingleChunk = chunks.length === 1;
+    const headerLines = isSingleChunk ? 1 : 2;
+    const bodies = chunks.map((chunk) => String(chunk || '').split('\n').slice(headerLines).join('\n'));
     const current = bodies[index] || '';
     if (current.length <= 1) return chunks;
     const midpoint = Math.ceil(current.length / 2);
