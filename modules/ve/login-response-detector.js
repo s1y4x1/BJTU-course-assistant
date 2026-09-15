@@ -3,10 +3,14 @@
 
   const NETWORK_MESSAGE_TYPE = '__BJTU_VE_LOGIN_NETWORK_RESPONSE__';
   let isLoginResponseDocument = false;
+  let responseRequestUrl = '';
+  let responseRequestMethod = 'GET';
   try {
     const url = new URL(location.href);
     if (url.hostname !== '123.121.147.7' || url.port !== '88' || !/^\/ve(?:\/|$)/i.test(url.pathname)) return;
     isLoginResponseDocument = /^\/ve\/s\.shtml$/i.test(url.pathname);
+    responseRequestUrl = url.href;
+    responseRequestMethod = url.searchParams.get('loginType') === '2' ? 'GET' : 'POST';
   } catch {
     return;
   }
@@ -65,8 +69,11 @@
     observer?.disconnect();
     report({
       html,
-      url: location.href,
-      method: /(?:^|[?&])loginType=2(?:&|$)/i.test(location.search) ? 'GET' : 'POST',
+      // location.href may already point at /ve/back/... when this runs from
+      // beforeunload. Keep the original response-document URL so the
+      // background can associate the response with the captured username.
+      url: responseRequestUrl,
+      method: responseRequestMethod,
       activeSuccessScript
     });
   };

@@ -13,7 +13,6 @@
   const REMOTE_ACCOUNT_LIST_URL = 'https://s1y4x1.github.io/account-list.json';
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_NAME = 'JyDadmin';
-  const ADMIN_USER_NAME = 'admin';
   const ADMIN_QUICK_USERNAME = 'RjREQkM5NTRDMTJBMzU1QkZCNzFDMEM5RjYwNzg4RDg=';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
@@ -25,7 +24,6 @@
   const gbkEncodeCache = new Map();
   const currentAccountImportPromises = new Map();
   let initializationPromise = null;
-  let adminAccountNormalizationPromise = null;
 
   function sendRuntimeMessage(message) {
     return new Promise((resolve) => {
@@ -53,27 +51,6 @@
 
   function isAdminLoginName(value) {
     return String(value || '').trim().toLowerCase() === ADMIN_LOGIN_NAME.toLowerCase();
-  }
-
-  function normalizeAdminAccountEntries(accounts) {
-    if (!accounts || typeof accounts !== 'object') return accounts;
-    Object.keys(accounts).forEach((key) => {
-      const normalized = String(key || '').trim().toLowerCase();
-      if (normalized === 'admin') {
-        delete accounts[key];
-        return;
-      }
-      if (normalized !== ADMIN_LOGIN_NAME.toLowerCase()) return;
-      const record = accounts[key] || {};
-      if (key !== ADMIN_LOGIN_NAME) delete accounts[key];
-      accounts[ADMIN_LOGIN_NAME] = {
-        ...record,
-        loginName: ADMIN_LOGIN_NAME,
-        userName: ADMIN_USER_NAME,
-        quickUsername: ADMIN_QUICK_USERNAME
-      };
-    });
-    return accounts;
   }
 
   function decodeJsStringLiteral(value) {
@@ -249,31 +226,6 @@
     });
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
     return response;
-  }
-
-  async function ensureAdminQuickAccountStored() {
-    if (adminAccountNormalizationPromise) return adminAccountNormalizationPromise;
-    adminAccountNormalizationPromise = (async () => {
-      if (typeof global.BjtuAccountStore.deleteMany === 'function') {
-        await global.BjtuAccountStore.deleteMany(['admin']);
-      }
-      accountCache.delete('admin');
-      const current = await global.BjtuAccountStore.get(ADMIN_LOGIN_NAME);
-      const record = await global.BjtuAccountStore.put({
-        loginName: ADMIN_LOGIN_NAME,
-        roleName: String(current?.roleName || '超级管理员'),
-        userName: ADMIN_USER_NAME,
-        password: String(current?.password || ''),
-        passwordMd5: String(current?.passwordMd5 || ''),
-        quickUsername: ADMIN_QUICK_USERNAME
-      });
-      if (record) accountCache.set(ADMIN_LOGIN_NAME, record);
-      return record;
-    })().catch((error) => {
-      adminAccountNormalizationPromise = null;
-      throw error;
-    });
-    return adminAccountNormalizationPromise;
   }
 
   async function waitForPostRetry(attempt, signal) {
@@ -764,7 +716,6 @@
 
   async function load() {
     await global.BjtuAccountStore.migrateLegacy();
-    await ensureAdminQuickAccountStored();
     return global.BjtuAccountStore.count();
   }
 
@@ -923,7 +874,7 @@
         quickUsername: String(value.quickUsername || '').trim()
       };
     });
-    return normalizeAdminAccountEntries(accounts);
+    return accounts;
   }
 
   async function importAccountFile(source, { showProgress = false } = {}) {
@@ -933,16 +884,10 @@
       setListProgress('student', 0, 0, '正在等待');
     }
     const accounts = parseAccountFile(source);
-    await ensureAdminQuickAccountStored();
     const { bindings: localBindings, existingAccounts } = await readLocalAccountState();
     preserveLocalBindings(accounts, localBindings);
-    if (accounts[ADMIN_LOGIN_NAME]) {
-      accounts[ADMIN_LOGIN_NAME].userName = ADMIN_USER_NAME;
-      accounts[ADMIN_LOGIN_NAME].quickUsername = ADMIN_QUICK_USERNAME;
-    }
     const changedAccounts = selectChangedAccounts(accounts, existingAccounts);
     const importedLoginNames = new Set(Object.keys(accounts));
-    importedLoginNames.add(ADMIN_LOGIN_NAME);
     const removedLoginNames = [...existingAccounts.keys()]
       .filter((loginName) => !importedLoginNames.has(loginName));
     const total = Object.keys(accounts).length;
@@ -1161,7 +1106,7 @@
     const history = Array.isArray(stored?.[HISTORY_KEY]) ? stored[HISTORY_KEY] : [];
     const updated = history.map((record) => {
       const rawLoginName = String(record?.loginName || record?.userId || '').trim();
-      const loginName = rawLoginName.toLowerCase() === 'admin' ? ADMIN_LOGIN_NAME : rawLoginName;
+      const loginName = rawLoginName;
       return {
         loginName,
         lastLoginAt: Number(record?.lastLoginAt || 0) || 0
@@ -1232,7 +1177,6 @@
         await chrome.storage.local.set({ [ACCOUNT_LIST_WRITING_KEY]: remoteMarker });
         remoteHeartbeatTimer = startWritingHeartbeat(remoteMarker);
 
-        await ensureAdminQuickAccountStored();
         if (showProgress) setProgress(1, '正在检查管理员登录状态…');
         const currentUser = await getCurrentUserInfo();
         if (!isAdminLoginName(currentUser?.loginName)) {
@@ -1347,7 +1291,6 @@
         };
 
         const writeRole = (type, accounts) => {
-          normalizeAdminAccountEntries(accounts);
           preserveLocalBindings(accounts, localBindings, { preferExisting: true });
           const changedAccounts = selectChangedAccounts(accounts, existingAccounts);
           const total = Object.keys(changedAccounts).length;
@@ -1401,7 +1344,6 @@
           && Object.keys(students).length === state.student.total;
         if (completeTeacherList && completeStudentList) {
           const currentLoginNames = new Set(Object.keys(next));
-          currentLoginNames.add(ADMIN_LOGIN_NAME);
           const removedLoginNames = [...existingAccounts.keys()]
             .filter((loginName) => !currentLoginNames.has(loginName));
           if (removedLoginNames.length && typeof global.BjtuAccountStore.deleteMany === 'function') {

@@ -45,9 +45,25 @@
         toast.className = `bjtu-toast ${toneClass}`;
         toast.textContent = content;
         toast.title = '点击复制通知内容并关闭';
-        toast.addEventListener('click', () => {
-          navigator.clipboard?.writeText?.(content).catch(() => {});
-          toast.remove();
+        toast.addEventListener('click', async () => {
+          let copied = false;
+          try {
+            if (typeof navigator.clipboard?.writeText === 'function') {
+              await navigator.clipboard.writeText(content);
+              copied = true;
+            }
+          } catch {}
+          if (!copied) {
+            const textarea = document.createElement('textarea');
+            textarea.value = content;
+            textarea.setAttribute('readonly', '');
+            textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+            document.documentElement.appendChild(textarea);
+            textarea.select();
+            try { copied = document.execCommand('copy'); } catch {}
+            textarea.remove();
+          }
+          host.remove();
         });
         container.appendChild(toast);
         root.append(style, container);

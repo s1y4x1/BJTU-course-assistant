@@ -188,12 +188,6 @@
     return completeSuccessfulLogin(result, options.loginName, options);
   }
 
-  async function verifyQuickUsername(quickUsername) {
-    const quick = String(quickUsername || '').trim();
-    if (!quick) return { ok: false, reason: 'empty', message: '极速登录 username 为空' };
-    return requestLogin(global.BjtuVeLoginUtils.buildQuickLoginUrl(quick));
-  }
-
   async function loginWithPassword(loginName, password, { passcode = '', recordHistory = true, passwordPlain = '' } = {}) {
     const id = String(loginName || '').trim();
     const encryptedPassword = String(password || '').trim();
@@ -347,7 +341,6 @@
     login,
     loginWithPassword,
     loginWithQuickUsername,
-    verifyQuickUsername,
     getCaptchaDataUrl,
     recognizeCaptchaDataUrl,
     parseLoginResponse
