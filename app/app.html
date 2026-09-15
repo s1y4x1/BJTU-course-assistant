@@ -216,10 +216,15 @@
                 <span>获取账号同时请求极速登录用户名</span>
             </label>
             <div id="account-init-actions" class="account-init-actions" style="display:none;">
-                <button id="account-init-remote" class="btn" type="button">从平台获取</button>
+                <button id="account-init-aes" class="btn" type="button">AES 加密</button>
                 <button id="account-init-import" class="btn" type="button">导入 JSON</button>
                 <button id="account-init-skip" class="btn" type="button">跳过</button>
                 <input id="account-init-file" type="file" accept=".json,application/json" hidden>
+            </div>
+            <div id="account-init-aes-actions" class="account-init-actions account-init-aes-actions" style="display:none;">
+                <button id="account-init-remote" class="btn" type="button" disabled>从平台获取</button>
+                <button id="account-init-aes-remote" class="btn" type="button">从远程仓库导入</button>
+                <button id="account-init-aes-back" class="btn" type="button">返回</button>
             </div>
             <div id="account-init-import-actions" class="account-init-actions account-init-import-actions" style="display:none;">
                 <button id="account-init-import-local" class="btn" type="button">从本地文件导入</button>
@@ -230,18 +235,6 @@
                 <div id="account-init-download-label" class="account-init-progress-label">下载：正在等待</div>
                 <div class="progress-bar-container">
                     <div id="account-init-download-progress-bar" class="progress-bar"></div>
-                </div>
-            </div>
-            <div class="account-init-progress-row">
-                <div id="account-init-teacher-label" class="account-init-progress-label">教职工：正在等待</div>
-                <div class="progress-bar-container">
-                    <div id="account-init-teacher-progress-bar" class="progress-bar"></div>
-                </div>
-            </div>
-            <div class="account-init-progress-row">
-                <div id="account-init-student-label" class="account-init-progress-label">学生：正在等待</div>
-                <div class="progress-bar-container">
-                    <div id="account-init-student-progress-bar" class="progress-bar"></div>
                 </div>
             </div>
         </div>

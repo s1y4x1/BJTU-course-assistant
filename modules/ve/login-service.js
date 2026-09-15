@@ -136,6 +136,28 @@
     return record;
   }
 
+  async function rememberQuickUsername(loginName, quickUsername, userInfo = null) {
+    const id = String(userInfo?.loginName || loginName || '').trim();
+    const quick = String(quickUsername || '').trim();
+    if (!id || !quick) return null;
+    await global.BjtuAccountStore.migrateLegacy();
+    const current = await global.BjtuAccountStore.get(id);
+    const record = await global.BjtuAccountStore.put({
+      loginName: id,
+      userName: String(userInfo?.userName || current?.userName || '').trim(),
+      roleName: String(userInfo?.roleName || current?.roleName || '').trim(),
+      password: String(current?.password || ''),
+      passwordMd5: String(current?.passwordMd5 || '').trim(),
+      quickUsername: quick
+    });
+    await chrome.storage.local.set({ accountListRevision: Date.now() });
+    return record;
+  }
+
+  async function getAesQuickUsername(loginName) {
+    return global.BjtuAccountStore.resolveAesQuickUsername(loginName);
+  }
+
   function withCredentialEvents(result, events = []) {
     const merged = [
       ...(Array.isArray(result?.credentialEvents) ? result.credentialEvents : []),
@@ -180,7 +202,7 @@
         const account = await global.BjtuAccountStore.getByQuickUsername(quick);
         loginName = String(account?.loginName || '').trim();
       }
-      if (await clearStoredCredential(loginName, 'quickUsername')) {
+      if (options.clearStoredCredential !== false && await clearStoredCredential(loginName, 'quickUsername')) {
         return withCredentialEvents(failedResult, [{ type: 'quickUsername-cleared', loginName }]);
       }
       return failedResult;
@@ -267,7 +289,27 @@
     const allowStoredCredentials = payload?.allowStoredCredentials !== false;
     const credentialEvents = [];
 
-    if (!manualPassword && allowStoredCredentials && account?.quickUsername) {
+    const aesQuickUsername = await getAesQuickUsername(loginName);
+    if (!manualPassword && aesQuickUsername) {
+      const aesResult = await loginWithQuickUsername(aesQuickUsername, {
+        loginName,
+        recordHistory: true,
+        clearStoredCredential: false
+      });
+      if (aesResult.ok) {
+        await rememberQuickUsername(loginName, aesQuickUsername, aesResult.userInfo);
+        return aesResult;
+      }
+      if ((aesResult.reason === 'credential' || Number(aesResult.httpStatus) === 500)
+          && String(account?.quickUsername || '').trim() === aesQuickUsername
+          && await clearStoredCredential(loginName, 'quickUsername')) {
+        credentialEvents.push({ type: 'quickUsername-cleared', loginName });
+      }
+      if (aesResult.reason === 'locked' || aesResult.reason === 'password-reset') return aesResult;
+    }
+
+    if (!manualPassword && allowStoredCredentials && account?.quickUsername
+        && String(account.quickUsername).trim() !== aesQuickUsername) {
       const quickResult = await loginWithQuickUsername(account.quickUsername, { loginName, recordHistory: true });
       if (Array.isArray(quickResult?.credentialEvents)) credentialEvents.push(...quickResult.credentialEvents);
       if (quickResult.ok || quickResult.reason === 'locked' || quickResult.reason === 'password-reset') return quickResult;

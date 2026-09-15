@@ -59,9 +59,6 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
 .account-init-card .progress-bar-container {
     margin: 4px 0 0;
 }
-.account-init-progress-row {
-    margin-top: 12px;
-}
 .account-init-download-progress {
     margin-top: 12px;
 }
@@ -116,7 +113,9 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
 .account-init-actions .btn:disabled,
 #account-init-import-local:disabled,
 #account-init-import-remote:disabled,
-#account-init-import-back:disabled {
+#account-init-import-back:disabled,
+#account-init-aes-remote:disabled,
+#account-init-aes-back:disabled {
     background: #cbd5e1;
     color: #64748b;
     cursor: not-allowed;
@@ -124,17 +123,24 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
 .account-init-actions .btn:disabled:hover,
 #account-init-import-local:disabled:hover,
 #account-init-import-remote:disabled:hover,
-#account-init-import-back:disabled:hover {
+#account-init-import-back:disabled:hover,
+#account-init-aes-remote:disabled:hover,
+#account-init-aes-back:disabled:hover {
     background: #cbd5e1;
 }
 #account-init-import {
+    background: #2563eb;
+}
+#account-init-aes,
+#account-init-aes-remote {
     background: #2563eb;
 }
 #account-init-import-local,
 #account-init-import-remote {
     background: #2563eb;
 }
-#account-init-import-back {
+#account-init-import-back,
+#account-init-aes-back {
     background: #64748b;
 }
 #account-init-skip {
@@ -146,8 +152,6 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
     line-height: 1.4;
     font-variant-numeric: tabular-nums;
 }
-#account-init-teacher-progress-bar { background-color: #2563eb; }
-#account-init-student-progress-bar { background-color: #16a34a; }
 .account-recovery-captcha {
     display: flex;
     align-items: center;

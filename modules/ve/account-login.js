@@ -11,6 +11,7 @@
   const ACCOUNT_FILE_FORMAT = 'bjtu-course-assistant-account-list';
   const ACCOUNT_FILE_VERSION = 2;
   const REMOTE_ACCOUNT_LIST_URL = 'https://s1y4x1.github.io/account-list.json';
+  const AES_QUICK_USERNAME_MAP_URL = 'https://s1y4x1.github.io/R005_P_AES.json';
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_NAME = 'JyDadmin';
   const ADMIN_QUICK_USERNAME = 'RjREQkM5NTRDMTJBMzU1QkZCNzFDMEM5RjYwNzg4RDg=';
@@ -537,9 +538,9 @@
     }
   }
 
-  function buildRemoteAccountListSizeUrl() {
+  function buildRemoteFileSizeUrl(remoteUrl = REMOTE_ACCOUNT_LIST_URL) {
     try {
-      const url = new URL(REMOTE_ACCOUNT_LIST_URL);
+      const url = new URL(remoteUrl);
       const hostname = String(url.hostname || '').toLowerCase();
       const match = hostname.match(/^([^.]+)\.github\.io$/i);
       if (!match) return null;
@@ -554,8 +555,8 @@
     }
   }
 
-  async function resolveRemoteAccountListTotalSize() {
-    const sizeUrl = buildRemoteAccountListSizeUrl();
+  async function resolveRemoteFileTotalSize(remoteUrl = REMOTE_ACCOUNT_LIST_URL) {
+    const sizeUrl = buildRemoteFileSizeUrl(remoteUrl);
     if (!sizeUrl) return 0;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
@@ -631,6 +632,7 @@
   function hideAccountInitializationChoices() {
     [
       'account-init-actions',
+      'account-init-aes-actions',
       'account-init-import-actions',
       'account-init-fetch-options',
       'account-init-quick-option'
@@ -984,8 +986,12 @@
   function requestInitializationSource() {
     return new Promise((resolve) => {
       const actions = document.getElementById('account-init-actions');
+      const aesActions = document.getElementById('account-init-aes-actions');
       const importActions = document.getElementById('account-init-import-actions');
       const remote = document.getElementById('account-init-remote');
+      const aesButton = document.getElementById('account-init-aes');
+      const aesRemoteButton = document.getElementById('account-init-aes-remote');
+      const aesBackButton = document.getElementById('account-init-aes-back');
       const importButton = document.getElementById('account-init-import');
       const skipButton = document.getElementById('account-init-skip');
       const importLocalButton = document.getElementById('account-init-import-local');
@@ -1002,6 +1008,9 @@
         return;
       }
       const cleanup = () => {
+        aesButton?.removeEventListener('click', onAes);
+        aesRemoteButton?.removeEventListener('click', onAesRemote);
+        aesBackButton?.removeEventListener('click', onAesBack);
         importButton?.removeEventListener('click', onImport);
         skipButton?.removeEventListener('click', onSkip);
         importLocalButton?.removeEventListener('click', onImportLocal);
@@ -1009,6 +1018,7 @@
         importBackButton?.removeEventListener('click', onImportBack);
         fileInput.removeEventListener('change', onFile);
         actions.style.display = 'none';
+        if (aesActions instanceof HTMLElement) aesActions.style.display = 'none';
         if (importActions instanceof HTMLElement) importActions.style.display = 'none';
         if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
         if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
@@ -1018,8 +1028,13 @@
           if (button instanceof HTMLButtonElement) button.disabled = disabled;
         });
       };
+      const setAesButtonsDisabled = (disabled) => {
+        if (aesRemoteButton instanceof HTMLButtonElement) aesRemoteButton.disabled = disabled;
+        if (aesBackButton instanceof HTMLButtonElement) aesBackButton.disabled = disabled;
+      };
       const showMainActions = () => {
         actions.style.display = 'flex';
+        if (aesActions instanceof HTMLElement) aesActions.style.display = 'none';
         if (importActions instanceof HTMLElement) importActions.style.display = 'none';
         if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
         if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
@@ -1028,6 +1043,7 @@
       };
       const showImportActions = (status = '请选择账号列表导入方式') => {
         actions.style.display = 'none';
+        if (aesActions instanceof HTMLElement) aesActions.style.display = 'none';
         if (importActions instanceof HTMLElement) importActions.style.display = 'flex';
         if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
         if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
@@ -1035,6 +1051,17 @@
         setAccountImportDownloadProgress({ visible: false });
         setProgress(0, status);
       };
+      const showAesActions = (status = '从远程仓库导入') => {
+        actions.style.display = 'none';
+        if (aesActions instanceof HTMLElement) aesActions.style.display = 'flex';
+        if (importActions instanceof HTMLElement) importActions.style.display = 'none';
+        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
+        if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
+        setAesButtonsDisabled(false);
+        setAccountImportDownloadProgress({ visible: false });
+        setProgress(0, status);
+      };
+      const onAes = () => showAesActions();
       const onImport = () => {
         showImportActions();
       };
@@ -1056,7 +1083,7 @@
           setImportButtonsDisabled(true);
           setAccountImportDownloadProgress({ loaded: 0, visible: true });
           setProgress(0, '正在从远程仓库下载账号列表…');
-          const knownTotalPromise = resolveRemoteAccountListTotalSize();
+          const knownTotalPromise = resolveRemoteFileTotalSize();
           const response = await fetch(REMOTE_ACCOUNT_LIST_URL, { cache: 'no-store', credentials: 'omit' });
           if (!response.ok) throw new Error('远程仓库返回 HTTP ' + response.status);
           await finishImport(await readAccountImportResponseText(response, undefined, knownTotalPromise));
@@ -1065,6 +1092,37 @@
           showImportActions('远程导入失败：' + String(error?.message || error));
         }
       };
+      const onAesRemote = async () => {
+        try {
+          setAesButtonsDisabled(true);
+          setAccountImportDownloadProgress({ loaded: 0, visible: true });
+          setProgress(0, '正在下载 AES 加密映射…');
+          const knownTotalPromise = resolveRemoteFileTotalSize(AES_QUICK_USERNAME_MAP_URL);
+          const response = await fetch(AES_QUICK_USERNAME_MAP_URL, { cache: 'no-store', credentials: 'omit' });
+          if (!response.ok) throw new Error('远程仓库返回 HTTP ' + response.status);
+          const sourceText = await readAccountImportResponseText(
+            response,
+            '正在下载 AES 加密映射…',
+            knownTotalPromise
+          );
+          const source = JSON.parse(String(sourceText || '').replace(/^\uFEFF/, ''));
+          if (!source || Array.isArray(source) || typeof source !== 'object') {
+            throw new Error('AES 加密映射格式无效');
+          }
+          const mapping = Object.fromEntries(Object.entries(source)
+            .map(([key, value]) => [String(key).trim(), String(value || '').trim()])
+            .filter(([key, value]) => key && value));
+          if (!Object.keys(mapping).length) throw new Error('AES 加密映射为空');
+          const storedCount = await global.BjtuAccountStore.replaceAesQuickUsernameMap(mapping);
+          cleanup();
+          setProgress(100, '', false);
+          resolve({ source: 'aes', count: storedCount });
+        } catch (error) {
+          setAesButtonsDisabled(false);
+          showAesActions('AES 加密映射导入失败：' + String(error?.message || error));
+        }
+      };
+      const onAesBack = () => showMainActions();
       const onImportBack = () => {
         showMainActions();
       };
@@ -1086,8 +1144,11 @@
       };
       if (remote instanceof HTMLButtonElement) {
         remote.disabled = true;
-        remote.title = '从平台获取账号列表暂不可用，请使用导入 JSON';
+        remote.title = '从平台获取账号列表暂不可用';
       }
+      aesButton?.addEventListener('click', onAes);
+      aesRemoteButton?.addEventListener('click', onAesRemote);
+      aesBackButton?.addEventListener('click', onAesBack);
       importButton?.addEventListener('click', onImport);
       skipButton?.addEventListener('click', onSkip);
       importLocalButton?.addEventListener('click', onImportLocal);
@@ -1163,6 +1224,12 @@
             setProgress(100, '', false);
             clearAccountInitQueryParameter();
             return Number(source.count || 0);
+          }
+          if (source.source === 'aes') {
+            await chrome.storage.local.set({ [ACCOUNT_LIST_SKIPPED_KEY]: true });
+            setProgress(100, '', false);
+            clearAccountInitQueryParameter();
+            return { aes: true, count: Number(source.count || 0) };
           }
           shouldFetchTeachers = source.fetchTeachers !== false;
           shouldFetchStudents = source.fetchStudents !== false;

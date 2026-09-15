@@ -2,8 +2,9 @@
   'use strict';
 
   const DB_NAME = 'bjtu-course-assistant';
-  const DB_VERSION = 5;
+  const DB_VERSION = 7;
   const STORE_NAME = 'accounts';
+  const QUICK_USERNAME_STORE_NAME = 'QuickUsernames';
   const LEGACY_KEY = 'accountList';
   const LEGACY_MIGRATION_LOCK = 'bjtu-account-store-legacy-migration';
   const PASSWORD_MIGRATION_LOCK = 'bjtu-account-password-field-migration';
@@ -66,6 +67,9 @@
         }
         if (!store.indexNames.contains('roleName')) {
           store.createIndex('roleName', 'roleName', { unique: false });
+        }
+        if (!db.objectStoreNames.contains(QUICK_USERNAME_STORE_NAME)) {
+          db.createObjectStore(QUICK_USERNAME_STORE_NAME, { keyPath: 'key' });
         }
       };
       request.onsuccess = () => {
@@ -703,6 +707,38 @@
     return normalize(value?.loginName, value);
   }
 
+  async function replaceAesQuickUsernameMap(source) {
+    const entries = Object.entries(source || {})
+      .map(([key, value]) => ({ key: String(key).trim(), value: String(value || '').trim() }))
+      .filter((entry) => entry.key && entry.value);
+    const db = await open();
+    const transaction = db.transaction(QUICK_USERNAME_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(QUICK_USERNAME_STORE_NAME);
+    store.clear();
+    entries.forEach((entry) => store.put(entry));
+    await transactionDone(transaction);
+    return entries.length;
+  }
+
+  async function resolveAesQuickUsername(loginName) {
+    const id = String(loginName || '').trim();
+    if (!id) return '';
+    const db = await open();
+    const transaction = db.transaction(QUICK_USERNAME_STORE_NAME);
+    const store = transaction.objectStore(QUICK_USERNAME_STORE_NAME);
+    const parts = [];
+    for (let offset = 0; offset < id.length; offset += 4) parts.push(id.slice(offset, offset + 4));
+    const directPromise = requestResult(store.get(id));
+    const partPromises = parts.length > 1
+      ? parts.map((part) => requestResult(store.get(part)))
+      : [];
+    const [direct, records] = await Promise.all([directPromise, Promise.all(partPromises)]);
+    if (String(direct?.value || '').trim()) return String(direct.value).trim();
+    if (!partPromises.length) return '';
+    const values = records.map((record) => String(record?.value || '').trim());
+    return values.every(Boolean) ? values.join('') : '';
+  }
+
   global.BjtuAccountStore = {
     get,
     getAll,
@@ -714,6 +750,8 @@
     search,
     getQuickAccounts,
     getByQuickUsername,
+    replaceAesQuickUsernameMap,
+    resolveAesQuickUsername,
     getCredentialAccounts,
     getAccountStates,
     deleteMany,
