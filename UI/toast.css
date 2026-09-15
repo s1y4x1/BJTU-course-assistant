@@ -61,7 +61,11 @@
   border-top-color: currentColor;
   border-radius: 50%;
   vertical-align: -2px;
-  animation: spin 1s linear infinite;
+  animation: bjtuToastSpin 1s linear infinite;
+}
+
+@keyframes bjtuToastSpin {
+  to { transform: rotate(360deg); }
 }
 
 #msg {

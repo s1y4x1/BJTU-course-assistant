@@ -121,7 +121,11 @@
       if (!loginName || !password) return setMessage('请输入账号（学号）和密码', false);
       button.disabled = true;
       try {
-        setMessage(`正在登录 CAS（${loginName}），正在识别验证码…`);
+        setMessage(`正在登录 CAS（${loginName}），正在识别验证码…`, true, {
+          type: 'info',
+          loading: true,
+          persistent: true
+        });
         const result = await completeCaptchaChallenge(await send('CAS_LOGIN_WITH_PASSWORD', {
           loginName,
           password,
@@ -159,7 +163,11 @@
       if (!loginName) return;
       select.disabled = true;
       element('casLoginName').value = loginName;
-      setMessage(`正在切换至 CAS 账号 ${loginName}…`);
+      setMessage(`正在切换至 CAS 账号 ${loginName}…`, true, {
+        type: 'info',
+        loading: true,
+        persistent: true
+      });
       try {
         const result = await completeCaptchaChallenge(await send('CAS_SWITCH_ACCOUNT', {
           loginName,
