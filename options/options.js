@@ -2003,7 +2003,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           payload: { loginName: String(username || '').trim() }
         });
         if (!resp?.ok) throw new Error(resp?.message || resp?.error || '后台绑定失败');
-        setMsg(`已绑定极速登录 username：${resp.userId || resp.quickUsername || ''}`);
       } catch (e) {
         setMsg(`绑定失败：${String(e?.message || e || '后台绑定失败')}`, false);
       } finally {
