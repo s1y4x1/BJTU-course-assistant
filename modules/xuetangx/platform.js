@@ -4,6 +4,7 @@
   const BASE = 'https://www.xuetangx.com';
   const COURSE_LIST_URL = `${BASE}/api/v1/lms/user/user-courses`;
   const LOGIN_HEADER_RULE_IDS = Object.freeze([914309, 914310]);
+  const SECOND_CSRF_COOKIE_RULE_ID = 914312;
   const COURSE_STATUS_LABELS = Object.freeze({
     1: '正在上课',
     2: '即将开课',
@@ -125,20 +126,85 @@
     try { return decodeURIComponent(csrfCookie.value); } catch { return String(csrfCookie.value); }
   }
 
-  async function requestJson(url, serial) {
+  function normalizeCsrfToken(value) {
+    let token = String(value || '').trim();
+    if (/^csrftoken\s*=/i.test(token)) token = token.slice(token.indexOf('=') + 1).split(';', 1)[0].trim();
+    try { return decodeURIComponent(token); } catch { return token; }
+  }
+
+  let secondCookieRequestQueue = Promise.resolve();
+
+  async function updateSecondCsrfCookieRule(cookieHeader) {
+    if (!chrome?.declarativeNetRequest?.updateSessionRules) return false;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [SECOND_CSRF_COOKIE_RULE_ID],
+      addRules: [{
+        id: SECOND_CSRF_COOKIE_RULE_ID,
+        priority: 1000,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [{
+            header: 'cookie',
+            operation: 'set',
+            value: String(cookieHeader || '')
+          }]
+        },
+        condition: {
+          urlFilter: '||www.xuetangx.com/api/v1/lms/exercise/',
+          initiatorDomains: [chrome.runtime.id],
+          resourceTypes: ['xmlhttprequest']
+        }
+      }]
+    });
+    return true;
+  }
+
+  async function removeSecondCsrfCookieRule() {
+    if (!chrome?.declarativeNetRequest?.updateSessionRules) return;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [SECOND_CSRF_COOKIE_RULE_ID]
+    }).catch(() => {});
+  }
+
+  function fetchWithSecondCsrfCookie(url, options, cookieHeader) {
+    const run = secondCookieRequestQueue.then(async () => {
+      const ruleInstalled = await updateSecondCsrfCookieRule(cookieHeader);
+      try {
+        return await fetch(String(url), {
+          ...options,
+          credentials: 'omit'
+        });
+      } finally {
+        if (ruleInstalled) await removeSecondCsrfCookieRule();
+      }
+    });
+    secondCookieRequestQueue = run.catch(() => {});
+    return run;
+  }
+
+  async function requestJson(url, serial, csrfOverride = '', cookieOverride = '') {
     if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
-    const csrf = await getXuetangxCsrfToken();
+    const explicitCsrf = normalizeCsrfToken(csrfOverride);
+    const csrf = explicitCsrf || await getXuetangxCsrfToken();
+    const cookieHeader = String(cookieOverride || '').trim();
     const headers = {
       accept: 'application/json, text/plain, */*',
       'x-client': 'web',
       xtbz: 'xt'
     };
     if (csrf) headers['x-csrftoken'] = csrf;
+    if (explicitCsrf) headers.cookie = cookieHeader || `csrftoken=${encodeURIComponent(csrf)}`;
     let result = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
       try {
-        const response = await fetch(String(url), {
+        const response = explicitCsrf
+          ? await fetchWithSecondCsrfCookie(String(url), {
+            method: 'GET',
+            headers,
+            cache: 'no-store'
+          }, cookieHeader)
+          : await fetch(String(url), {
           method: 'GET',
           headers,
           credentials: 'include',
@@ -171,6 +237,283 @@
       throw error;
     }
     return result.data;
+  }
+
+  function hasAnswer(value) {
+    if (value === undefined || value === null) return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return String(value).trim() !== '';
+  }
+
+  function problemIsFillBlank(problem) {
+    const content = problem?.content || {};
+    const typeText = String(content.TypeText || content.type_text || content.Type || problem?.type_text || problem?.type || '').trim();
+    return (Array.isArray(content.Blanks) && content.Blanks.length > 0) || /填空/.test(typeText);
+  }
+
+  function problemIsJudgement(problem) {
+    const content = problem?.content || {};
+    const typeText = String(content.TypeText || content.type_text || content.Type || problem?.type_text || problem?.type || '').trim();
+    return /判断|正误|对错/.test(typeText);
+  }
+
+  function normalizeFillAnswers(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).map(([key, answer]) => {
+      const item = Array.isArray(answer) ? answer[0] : (answer && typeof answer === 'object' ? answer.answer : answer);
+      return [String(key), item === undefined || item === null ? '' : String(item)];
+    }));
+  }
+
+  function normalizeChoiceAnswer(value) {
+    const source = Array.isArray(value) ? value : [value];
+    return source
+      .filter((item) => item !== undefined && item !== null && String(item).trim() !== '')
+      .map((item) => String(item));
+  }
+
+  function answerForSubmit(problem, answerData) {
+    if (problemIsFillBlank(problem)) {
+      const answers = normalizeFillAnswers(answerData?.answers ?? answerData?.answer);
+      return hasAnswer(answers) ? { answers, answer: '' } : null;
+    }
+    const answer = normalizeChoiceAnswer(answerData?.answer);
+    return answer.length ? { answers: {}, answer } : null;
+  }
+
+  function answerFromSecondProblem(problem) {
+    const userAnswer = problem?.user?.answer;
+    if (!hasAnswer(userAnswer)) return null;
+    if (problemIsFillBlank(problem)) {
+      const answers = typeof userAnswer === 'object' && !Array.isArray(userAnswer)
+        ? normalizeFillAnswers(userAnswer)
+        : { '1': String(userAnswer) };
+      return hasAnswer(answers) ? { answers, answer: '' } : null;
+    }
+    const answer = normalizeChoiceAnswer(userAnswer);
+    return answer.length ? { answers: {}, answer } : null;
+  }
+
+  function secondProblemHasSubmittedAnswer(problem) {
+    return !!problem?.user
+      && Object.prototype.hasOwnProperty.call(problem.user, 'answer')
+      && problem.user.answer !== undefined
+      && problem.user.answer !== null;
+  }
+
+  function probeAnswerForProblem(problem) {
+    if (problemIsFillBlank(problem)) return { answers: {}, answer: '' };
+    if (problemIsJudgement(problem)) return { answers: {}, answer: ['true'] };
+    const options = Array.isArray(problem?.content?.Options) ? problem.content.Options : [];
+    const firstKey = options.find((option) => option?.key !== undefined && option?.key !== null)?.key;
+    return { answers: {}, answer: [String(firstKey ?? 'A')] };
+  }
+
+  function problemIdOf(problem) {
+    return String(problem?.problem_id ?? problem?.problemId ?? problem?.id ?? '').trim();
+  }
+
+  function integerId(value) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : 0;
+  }
+
+  function buildProblemApplyPayload(course, task, problem, answer) {
+    const payload = {
+      leaf_id: integerId(problem?.leaf_id ?? problem?.leafId ?? task.chapterLeafId),
+      classroom_id: integerId(course.classroomId),
+      exercise_id: integerId(task.exerciseTypeId || task.exerciseId),
+      problem_id: integerId(problemIdOf(problem)),
+      sign: String(course.sign || ''),
+      answers: answer?.answers || {},
+      answer: answer?.answer ?? []
+    };
+    if (!payload.leaf_id || !payload.exercise_id || !payload.problem_id || !payload.classroom_id || !payload.sign) {
+      throw new Error('题目响应缺少提交所需的 ID 或 sign');
+    }
+    return payload;
+  }
+
+  async function postProblemApply(payload, csrfOverride, serial, cookieOverride = '') {
+    if (serial !== loadSerial) throw Object.assign(new Error('学堂在线操作已取消'), { code: 'cancelled' });
+    const explicitCsrf = normalizeCsrfToken(csrfOverride);
+    const csrf = explicitCsrf || await getXuetangxCsrfToken();
+    const cookieHeader = String(cookieOverride || '').trim();
+    const headers = {
+      accept: 'application/json, text/plain, */*',
+      'content-type': 'application/json',
+      'x-client': 'web',
+      xtbz: 'xt'
+    };
+    if (csrf) headers['x-csrftoken'] = csrf;
+    if (explicitCsrf) headers.cookie = cookieHeader || `csrftoken=${encodeURIComponent(csrf)}`;
+    let response;
+    let data = null;
+    try {
+      const requestOptions = {
+        method: 'POST',
+        headers,
+        cache: 'no-store',
+        body: JSON.stringify(payload)
+      };
+      response = explicitCsrf
+        ? await fetchWithSecondCsrfCookie(`${BASE}/api/v1/lms/exercise/problem_apply/`, requestOptions, cookieHeader)
+        : await fetch(`${BASE}/api/v1/lms/exercise/problem_apply/`, {
+          ...requestOptions,
+          credentials: 'include'
+        });
+      const text = await response.text();
+      try { data = JSON.parse(text); } catch {}
+      if (!data) throw new Error(text.slice(0, 300) || `HTTP ${response.status}`);
+    } catch (error) {
+      if (error?.code === 'cancelled') throw error;
+      const wrapped = new Error(`学堂在线提交请求失败${response?.status ? `（HTTP ${response.status}）` : ''}：${error?.message || error}`);
+      wrapped.code = 'request-failed';
+      throw wrapped;
+    }
+    if (!response.ok || data?.success !== true) {
+      const error = new Error(String(data?.msg || `学堂在线提交失败（HTTP ${response.status}）`));
+      error.code = Number(data?.error_code) === 80001 ? 'no-chance' : (response.status === 401 || response.status === 403 ? 'not-logged-in' : 'submit-failed');
+      error.errorCode = Number(data?.error_code) || 0;
+      error.response = data;
+      throw error;
+    }
+    return data;
+  }
+
+  function normalizeCookieValue(value, name) {
+    let cookie = String(value || '').trim();
+    const prefix = new RegExp(`^${name}\\s*=`, 'i');
+    if (prefix.test(cookie)) cookie = cookie.slice(cookie.indexOf('=') + 1).split(';', 1)[0].trim();
+    try { return decodeURIComponent(cookie); } catch { return cookie; }
+  }
+
+  async function getSecondCredentialsForUse() {
+    const stored = await chrome.storage.local.get([
+      'xuetangxSecondCsrfToken',
+      'xuetangxSecondSessionId'
+    ]).catch(() => ({}));
+    const secondCsrf = normalizeCsrfToken(stored?.xuetangxSecondCsrfToken);
+    const secondSessionId = normalizeCookieValue(stored?.xuetangxSecondSessionId, 'sessionid');
+    if (!secondCsrf) throw new Error('请先在扩展选项中填写学堂在线第二账号 csrftoken');
+    if (!secondSessionId) throw new Error('请先在扩展选项中填写学堂在线第二账号 sessionid');
+    const currentCsrf = normalizeCsrfToken(await getXuetangxCsrfToken());
+    if (!currentCsrf) throw new Error('无法读取当前学堂在线 csrftoken，请先登录主账号');
+    if (currentCsrf === secondCsrf) {
+      throw new Error('当前登录账号与第二账号相同，请先切换到主账号后再查答并提交');
+    }
+    return {
+      csrf: secondCsrf,
+      cookie: `csrftoken=${encodeURIComponent(secondCsrf)}; sessionid=${encodeURIComponent(secondSessionId)}`
+    };
+  }
+
+  async function submitAnswersFromSecondAccount(course, task, { secondCredentials = null, silent = false } = {}) {
+    if (task.secondAnswerBusy) return;
+    task.secondAnswerBusy = true;
+    render();
+    const serial = loadSerial;
+    try {
+      const credentials = secondCredentials || await getSecondCredentialsForUse();
+      const verifiedSecondCsrf = credentials.csrf;
+      if (!task.exerciseTypeId || !task.exerciseSkuId) throw new Error('作业参数尚未加载完成，请稍后重试');
+      const listUrl = `${BASE}/api/v1/lms/exercise/get_exercise_list/${encodeURIComponent(task.exerciseTypeId)}/${encodeURIComponent(task.exerciseSkuId)}/`;
+      const secondList = await requestJson(listUrl, serial, verifiedSecondCsrf, credentials.cookie);
+      if (secondList?.success === false) throw new Error(secondList?.msg || '第二账号题目接口返回失败');
+      const secondProblems = Array.isArray(secondList?.data?.problems) ? secondList.data.problems : [];
+      if (!secondProblems.length) throw new Error('第二账号未获取到题目');
+      const primaryProblems = Array.isArray(task.exerciseProblems) ? task.exerciseProblems : [];
+      const primaryById = new Map(primaryProblems.map((problem) => [problemIdOf(problem), problem]));
+      let submitted = 0;
+      let skipped = 0;
+      let unavailable = 0;
+      for (let index = 0; index < secondProblems.length; index += 1) {
+        const secondProblem = secondProblems[index];
+        const primaryProblem = primaryById.get(problemIdOf(secondProblem));
+        const maxCount = Number(primaryProblem?.user?.count ?? secondProblem?.user?.count ?? 0);
+        const myCount = Number(primaryProblem?.user?.my_count ?? 0);
+        if (maxCount > 0 && myCount >= maxCount) {
+          skipped += 1;
+          continue;
+        }
+        let answer = answerFromSecondProblem(secondProblem);
+        if (!answer && !secondProblemHasSubmittedAnswer(secondProblem)) {
+          try {
+            const probe = await postProblemApply(
+              buildProblemApplyPayload(course, task, secondProblem, probeAnswerForProblem(secondProblem)),
+              verifiedSecondCsrf,
+              serial,
+              credentials.cookie
+            );
+            answer = answerForSubmit(secondProblem, probe?.data);
+          } catch (error) {
+            if (error?.code === 'no-chance') unavailable += 1;
+            else throw error;
+          }
+        }
+        if (!answer) {
+          unavailable += 1;
+          continue;
+        }
+        try {
+          await postProblemApply(buildProblemApplyPayload(course, task, secondProblem, answer), '', serial);
+          submitted += 1;
+        } catch (error) {
+          if (error?.code === 'no-chance') skipped += 1;
+          else throw error;
+        }
+      }
+      if (submitted || secondProblems.length) {
+        const refreshed = await requestJson(listUrl, serial);
+        if (refreshed?.success === true) {
+          task.exerciseProblems = Array.isArray(refreshed?.data?.problems) ? refreshed.data.problems : task.exerciseProblems;
+          task.done = task.exerciseProblems.length > 0
+            && task.exerciseProblems.every((problem) => Number(problem?.user?.my_count) > 0);
+          task.overdue = !task.done && task.deadline > 0 && task.deadline < Date.now();
+        }
+      }
+      render();
+      const summary = { submitted, skipped, unavailable };
+      if (!silent) {
+        env?.toast?.(`学堂在线：已提交 ${submitted} 题${skipped ? `，跳过 ${skipped} 题` : ''}${unavailable ? `，${unavailable} 题未取得答案` : ''}`, submitted ? 'success' : 'info');
+      }
+      return summary;
+    } catch (error) {
+      if (!silent && error?.code !== 'cancelled') env?.toast?.(`学堂在线第二账号查答失败：${error?.message || error}`, 'error');
+      return { submitted: 0, skipped: 0, unavailable: 0, error };
+    } finally {
+      task.secondAnswerBusy = false;
+      if (serial === loadSerial) render();
+    }
+  }
+
+  async function submitAllAnswersFromSecondAccount(course) {
+    if (course.secondAnswerAllBusy) return;
+    const tasks = course.tasks.filter((task) => task.typeId === 11);
+    if (!tasks.length) {
+      env?.toast?.('当前课程没有可提交的学堂在线作业', 'info');
+      return;
+    }
+    course.secondAnswerAllBusy = true;
+    render();
+    try {
+      const secondCredentials = await getSecondCredentialsForUse();
+      const total = { submitted: 0, skipped: 0, unavailable: 0, failed: 0 };
+      for (const task of tasks) {
+        const result = await submitAnswersFromSecondAccount(course, task, { secondCredentials, silent: true });
+        total.submitted += Number(result?.submitted || 0);
+        total.skipped += Number(result?.skipped || 0);
+        total.unavailable += Number(result?.unavailable || 0);
+        if (result?.error && result.error.code !== 'cancelled') total.failed += 1;
+      }
+      env?.toast?.(`学堂在线：全部作业已处理，提交 ${total.submitted} 题${total.skipped ? `，跳过 ${total.skipped} 题` : ''}${total.unavailable ? `，${total.unavailable} 题未取得答案` : ''}${total.failed ? `，失败 ${total.failed} 项` : ''}`, total.failed ? 'error' : (total.submitted ? 'success' : 'info'));
+    } catch (error) {
+      if (error?.code !== 'cancelled') env?.toast?.(`学堂在线批量查答失败：${error?.message || error}`, 'error');
+    } finally {
+      course.secondAnswerAllBusy = false;
+      render();
+    }
   }
 
   function cancelQrLogin() {
@@ -647,6 +990,11 @@
             throw new Error('作业叶节点响应缺少 leaf_type_id 或 sku_id');
           }
           task.exerciseTypeId = exerciseTypeId;
+          task.exerciseId = String(
+            leafInfo?.data?.exercise_id
+              ?? leafInfo?.data?.content_info?.exercise_id
+              ?? exerciseTypeId
+          ).trim();
           task.exerciseSkuId = exerciseSkuId;
           const response = await requestJson(
             `${BASE}/api/v1/lms/exercise/get_exercise_list/${encodeURIComponent(exerciseTypeId)}/${encodeURIComponent(exerciseSkuId)}/`,
@@ -687,6 +1035,9 @@
     });
     const actionLabel = global.BjtuHomeworkUi.actionLabel('xuetangx', task.action, { lead: '去' });
     const chapter = task.chapterPath.filter(Boolean).slice(1).join(' / ');
+    const secondAnswerButton = task.typeId === 11
+      ? `<button type="button" class="btn xuetangx-second-answer-btn" data-xuetangx-action="second-answer-submit" data-course-id="${escape(course.id)}" data-task-id="${escape(task.id)}" style="background:${escape(palette.action)}; padding:2px 6px; font-size:12px; text-decoration:none; color:#fff;" ${task.secondAnswerBusy ? 'disabled' : ''}>${escape(task.secondAnswerBusy ? '提交中…' : '第二账号查答并提交')}</button>`
+      : '';
     return global.BjtuHomeworkUi.renderHomeworkCard({
       done: task.done,
       className: 'xuetangx-task',
@@ -698,7 +1049,7 @@
       titleHtml: global.BjtuHomeworkUi.titleHtml({ typeLabel: task.typeLabel, typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape, className: 'xuetangx-task-title' }),
       metaHtml: `${global.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape })}${chapter ? `<div class="xuetangx-task-meta">${escape(chapter)}</div>` : ''}
         ${global.BjtuHomeworkUi.progressHtml({ ratio: task.schedule, escape, color: THEME_COLOR })}`,
-      actionsHtml: `${score}${global.BjtuHomeworkUi.renderActionLink({
+      actionsHtml: `${score}${secondAnswerButton}${global.BjtuHomeworkUi.renderActionLink({
         href: taskUrl(course, task),
         label: actionLabel,
         color: palette.action,
@@ -744,13 +1095,13 @@
         ? ` · 成绩 ${escape(score.user_score ?? 0)}${score.title ? `（${escape(score.title)}）` : ''}`
         : '';
       const meta = `${course.teachers.length ? escape(course.teachers.join(' / ')) : '教师信息加载中'} · ${escape(COURSE_STATUS_LABELS[course.status] || '未知状态')} · 总进度 ${escape(formatProgress(course.totalSchedule))}${scoreText}`;
-      const card = global.BjtuCourseCardUi.createCourseCard({
+    const card = global.BjtuCourseCardUi.createCourseCard({
         courseId: `xuetangx-${course.id}`,
         className: 'xuetangx-standalone-card',
         order: baseOrder + index,
         rank: pending.length ? 0 : (overdue.length ? 2 : (done.length ? 4 : 7)),
         titleHtml: `<a href="${escape(courseUrl(course))}" target="_blank" rel="noopener noreferrer">${escape(course.name)}</a>`,
-        metaHtml: `<div class="xuetangx-course-meta">${meta}</div>`,
+        metaHtml: `<div class="xuetangx-course-meta">${meta}</div><div class="xuetangx-course-identity-actions"><button type="button" class="btn xuetangx-second-answer-all-btn" data-xuetangx-action="second-answer-submit-all" data-course-id="${escape(course.id)}" style="background:${escape(THEME_COLOR)}; padding:2px 6px; font-size:12px; text-decoration:none; color:#fff;" ${course.secondAnswerAllBusy ? 'disabled' : ''}>${escape(course.secondAnswerAllBusy ? '处理中…' : '查答并提交全部')}</button></div>`,
         contentHtml: `${typeLoadingHtml}${course.detailLoaded
           ? (course.loadError
             ? `<span class="xuetangx-empty">课程详情加载失败：${escape(course.loadError)}</span>`
@@ -938,6 +1289,15 @@
     if (!(button instanceof HTMLElement)) return;
     const course = courses.find((item) => item.id === String(button.dataset.courseId || ''));
     if (!course || button.dataset.animating === '1') return;
+    if (button.dataset.xuetangxAction === 'second-answer-submit') {
+      const task = course.tasks.find((item) => item.id === String(button.dataset.taskId || ''));
+      if (task) void submitAnswersFromSecondAccount(course, task);
+      return;
+    }
+    if (button.dataset.xuetangxAction === 'second-answer-submit-all') {
+      void submitAllAnswersFromSecondAccount(course);
+      return;
+    }
     const kind = button.dataset.xuetangxAction === 'toggle-done' ? 'done' : 'overdue';
     const state = expandedGroups.get(course.id) || { overdue: false, done: false };
     const expanded = !state[kind];

@@ -39,6 +39,7 @@
   const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
   const ACADEMIC_SCORE_SOURCE_CACHE_KEY = 'academicScoreSourceCache';
   const ACADEMIC_CURRENT_EXAM_CACHE_KEY = 'academicCurrentExamCache';
+  const ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY = 'academicSemesterContextCache';
   // Can be changed from the extension service worker console through
   // BjtuAcademicSystemInternals.notifyInitialScoreRows.
   let notifyInitialScoreRows = true;
@@ -84,6 +85,8 @@
   let academicScoreSourcePromise = null;
   let academicCurrentExamCache = null;
   let academicCurrentExamPromise = null;
+  let academicSemesterContextCache = null;
+  let academicSemesterContextPromise = null;
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
   let academicDataCacheUpdatePromise = Promise.resolve();
@@ -578,10 +581,13 @@
     academicScoreSourcePromise = null;
     academicCurrentExamCache = null;
     academicCurrentExamPromise = null;
+    academicSemesterContextCache = null;
+    academicSemesterContextPromise = null;
     await chrome.storage.session.remove([
       ACADEMIC_DATA_CACHE_KEY,
       ACADEMIC_SCORE_SOURCE_CACHE_KEY,
-      ACADEMIC_CURRENT_EXAM_CACHE_KEY
+      ACADEMIC_CURRENT_EXAM_CACHE_KEY,
+      ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY
     ]).catch(() => {});
     const cookies = await chrome.cookies.getAll({ domain: 'aa.bjtu.edu.cn' }).catch(() => []);
     for (const cookie of (cookies || [])) {
@@ -1824,31 +1830,63 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   async function loadAcademicSemesters({ fresh = false } = {}) {
-    const currentSchedule = await fetchSchedulePage('semester');
-    const currentLabel = String(currentSchedule?.termLabel || '').trim();
-    const currentXnxq = String(currentSchedule?.currentXnxq || '').trim();
-    if (!currentLabel || !currentXnxq) throw new Error('本学期课表页面未返回当前学期及 xnxq');
-    const scoreContext = await loadAcademicScoreSemesters({ fresh });
-
-    const byValue = new Map();
-    for (const item of [
-      ...(Array.isArray(currentSchedule?.semesterOptions) ? currentSchedule.semesterOptions.map((semester) => ({
-        label: String(semester?.label || '').trim(),
-        zxjxjhh: String(semester?.xnxq || '').trim()
-      })) : []),
-      ...(Array.isArray(scoreContext?.semesters) ? scoreContext.semesters : [])
-    ]) {
-      const value = String(item?.zxjxjhh || '').trim();
-      const label = String(item?.label || '').trim();
-      if (value && label && !byValue.has(value)) byValue.set(value, { label, zxjxjhh: value });
+    if (fresh) {
+      if (academicSemesterContextPromise) await academicSemesterContextPromise.catch(() => {});
+      academicSemesterContextCache = null;
+      await chrome.storage.session.remove(ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY).catch(() => {});
     }
-    return {
-      ok: true,
-      currentZxjxjhh: String(scoreContext.currentZxjxjhh || ''),
-      currentXnxq,
-      semesters: [...byValue.values()],
-      currentSchedule
-    };
+    if (academicSemesterContextCache) return academicSemesterContextCache;
+    if (academicSemesterContextPromise) return academicSemesterContextPromise;
+    academicSemesterContextPromise = (async () => {
+      const local = await chrome.storage.local.get([STUDENT_ID_KEY]);
+      const expectedStudentId = String(local?.[STUDENT_ID_KEY] || '').trim();
+      if (!fresh) {
+        const stored = await chrome.storage.session.get(ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY);
+        const cached = stored?.[ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY];
+        if (cached?.context && expectedStudentId && String(cached.studentId || '') === expectedStudentId) {
+          return cached.context;
+        }
+      }
+
+      const currentSchedule = await fetchSchedulePage('semester');
+      const currentLabel = String(currentSchedule?.termLabel || '').trim();
+      const currentXnxq = String(currentSchedule?.currentXnxq || '').trim();
+      if (!currentLabel || !currentXnxq) throw new Error('本学期课表页面未返回当前学期及 xnxq');
+      const scoreContext = await loadAcademicScoreSemesters({ fresh });
+
+      const byValue = new Map();
+      for (const item of [
+        ...(Array.isArray(currentSchedule?.semesterOptions) ? currentSchedule.semesterOptions.map((semester) => ({
+          label: String(semester?.label || '').trim(),
+          zxjxjhh: String(semester?.xnxq || '').trim()
+        })) : []),
+        ...(Array.isArray(scoreContext?.semesters) ? scoreContext.semesters : [])
+      ]) {
+        const value = String(item?.zxjxjhh || '').trim();
+        const label = String(item?.label || '').trim();
+        if (value && label && !byValue.has(value)) byValue.set(value, { label, zxjxjhh: value });
+      }
+      const context = {
+        ok: true,
+        currentZxjxjhh: String(scoreContext.currentZxjxjhh || ''),
+        currentXnxq,
+        semesters: [...byValue.values()],
+        currentSchedule
+      };
+      await chrome.storage.session.set({
+        [ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY]: {
+          studentId: String(currentSchedule?.account?.studentId || expectedStudentId),
+          context
+        }
+      });
+      return context;
+    })();
+    try {
+      academicSemesterContextCache = await academicSemesterContextPromise;
+      return academicSemesterContextCache;
+    } finally {
+      academicSemesterContextPromise = null;
+    }
   }
 
   async function loadAcademicScoreSource({ fresh = false } = {}) {

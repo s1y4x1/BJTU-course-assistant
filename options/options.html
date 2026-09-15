@@ -219,6 +219,13 @@
       <div id="xuetangxPlatformDetail" class="platform-option-detail" data-module="xuetangx" hidden>
         <label><input type="checkbox" id="enableXuetangx" style="width:auto;" />启用</label>
         <label><input type="checkbox" id="xuetangxAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
+        <label for="xuetangxSecondCsrfToken">第二账号 csrftoken</label>
+        <input type="password" id="xuetangxSecondCsrfToken" autocomplete="off" spellcheck="false"
+          placeholder="粘贴第二账号的 csrftoken 值" />
+        <label for="xuetangxSecondSessionId">第二账号 sessionid</label>
+        <input type="password" id="xuetangxSecondSessionId" autocomplete="off" spellcheck="false"
+          placeholder="粘贴第二账号的 sessionid 值" />
+        <div class="tip">用于通过第二账号查询学堂在线作业答案；请分别填写第二账号 Cookie 中 csrftoken 和 sessionid 等号后的值。</div>
         <div class="platform-option-divider" role="separator"></div>
         <div class="platform-option-subtitle">要显示的课程状态</div>
         <label><input type="checkbox" class="xuetangx-course-status" value="1" style="width:auto;" checked />正在上课</label>

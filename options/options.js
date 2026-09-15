@@ -768,6 +768,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
     'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
   ]);
+  const { xuetangxSecondCsrfToken, xuetangxSecondSessionId } = await chrome.storage.local.get([
+    'xuetangxSecondCsrfToken',
+    'xuetangxSecondSessionId'
+  ]);
   const { yktActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
     'yktActivityTypes',
     'xuetangxCourseStatuses',
@@ -803,6 +807,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('enableJlgj').checked = !!effectiveEnabled.jlgj;
   document.getElementById('enableMooc').checked = !!effectiveEnabled.mooc;
   document.getElementById('enableXuetangx').checked = !!effectiveEnabled.xuetangx;
+  document.getElementById('xuetangxSecondCsrfToken').value = String(xuetangxSecondCsrfToken || '');
+  document.getElementById('xuetangxSecondSessionId').value = String(xuetangxSecondSessionId || '');
   const platformAutoLoginValues = { veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry };
   Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
     document.getElementById(id).checked = platformAutoLoginValues[id] === undefined
@@ -1241,6 +1247,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.disabled = !visibleState.xuetangx;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.xuetangx);
     });
+    const secondCsrfInput = document.getElementById('xuetangxSecondCsrfToken');
+    secondCsrfInput.disabled = !visibleState.xuetangx;
+    const secondSessionInput = document.getElementById('xuetangxSecondSessionId');
+    secondSessionInput.disabled = !visibleState.xuetangx;
     const jlgjDark = document.getElementById('jlgjDarkModeEnabled');
     const alwaysDark = document.getElementById('jlgjAlwaysDarkModeEnabled');
     const extensionDark = document.documentElement.dataset.colorScheme === 'dark';
@@ -1390,6 +1400,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         document.querySelectorAll('.xuetangx-activity-type').forEach((input) => {
           input.checked = values.has(Number(input.value));
         });
+      }
+      if (changes.xuetangxSecondCsrfToken) {
+        const input = document.getElementById('xuetangxSecondCsrfToken');
+        if (input && document.activeElement !== input) input.value = String(changes.xuetangxSecondCsrfToken.newValue || '');
+      }
+      if (changes.xuetangxSecondSessionId) {
+        const input = document.getElementById('xuetangxSecondSessionId');
+        if (input && document.activeElement !== input) input.value = String(changes.xuetangxSecondSessionId.newValue || '');
       }
       if (changes.injectMoocHelperEnabled) applyBooleanUi('injectMoocHelperEnabled', changes.injectMoocHelperEnabled.newValue, true);
       if (changes.injectMoocPeerReviewEnabled) {
@@ -1593,6 +1611,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
   document.getElementById('enableMooc').addEventListener('change', applyPlatform);
   document.getElementById('enableXuetangx').addEventListener('change', applyPlatform);
+  document.getElementById('xuetangxSecondCsrfToken').addEventListener('change', async (event) => {
+    const value = String(event.currentTarget.value || '').trim();
+    event.currentTarget.value = value;
+    await chrome.storage.local.set({ xuetangxSecondCsrfToken: value });
+    setMsg(value ? '已保存学堂在线第二账号 csrftoken' : '已清除学堂在线第二账号 csrftoken');
+  });
+  document.getElementById('xuetangxSecondSessionId').addEventListener('change', async (event) => {
+    const value = String(event.currentTarget.value || '').trim();
+    event.currentTarget.value = value;
+    await chrome.storage.local.set({ xuetangxSecondSessionId: value });
+    setMsg(value ? '已保存学堂在线第二账号 sessionid' : '已清除学堂在线第二账号 sessionid');
+  });
   Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
     document.getElementById(id).addEventListener('change', async (event) => {
       await chrome.storage.local.set({ [id]: event.currentTarget.checked });
@@ -2178,6 +2208,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       yktActivityTypes: [...DEFAULT_YKT_ACTIVITY_TYPES],
       xuetangxCourseStatuses: [1],
       xuetangxActivityTypes: [...DEFAULT_XUETANGX_ACTIVITY_TYPES],
+      xuetangxSecondCsrfToken: '',
+      xuetangxSecondSessionId: '',
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
       replayDetailCollapsedLines: DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES,
       parallelLimit: DEFAULT_PARALLEL_LIMIT,
@@ -2221,6 +2253,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('enableJlgj').checked = false;
     document.getElementById('enableMooc').checked = false;
     document.getElementById('enableXuetangx').checked = false;
+    document.getElementById('xuetangxSecondCsrfToken').value = '';
+    document.getElementById('xuetangxSecondSessionId').value = '';
     ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc', 'showXuetangx'].forEach((id) => {
       document.getElementById(id).checked = true;
     });
