@@ -108,7 +108,8 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
     margin: 0;
 }
 .account-init-actions .btn {
-    flex: 1;
+    flex: 1 1 auto;
+    width: auto;
 }
 .account-init-actions .btn:disabled,
 #account-init-import-local:disabled,
@@ -177,6 +178,10 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
 }
 .account-recovery-actions .btn {
     flex: 1;
+}
+#account-recovery-choice .btn {
+    flex: 1 1 auto;
+    width: auto;
 }
 .account-recovery-password-row {
     display: grid;
