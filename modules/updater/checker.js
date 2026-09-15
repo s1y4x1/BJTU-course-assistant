@@ -640,7 +640,7 @@ function openVersionUninstallModal() {
       confirmBtn.focus();
       return;
     }
-    confirmBtn.textContent = `卸载（${Math.ceil(remaining / 1000)} 秒）`;
+    confirmBtn.textContent = `卸载（${(remaining / 1000).toFixed(1)} 秒）`;
   };
   updateCountdown();
   versionUninstallCountdownTimer = setInterval(updateCountdown, 100);
@@ -668,20 +668,48 @@ async function uninstallExtensionFiles(confirmBtn) {
 
 function openVersionNoticeModal(overrideMode) {
   const mode = String(overrideMode || versionButtonMode || '').trim();
-  if (mode !== 'outdated' && mode !== 'latest' && mode !== 'ahead') return;
+  if (!['failure', 'outdated', 'latest', 'ahead'].includes(mode)) return;
   const modal = ensureVersionNoticeModal();
   if (!modal) return;
   const titleEl = modal.querySelector('#version-notice-title');
   const bodyEl = modal.querySelector('#version-notice-body');
+  const installOptionsEl = modal.querySelector('#version-install-options');
+  const footerEl = modal.querySelector('.version-notice-footer');
+  const runtimeInfoEl = modal.querySelector('#version-runtime-info');
   const downloadBtn = modal.querySelector('#version-notice-download');
   const ignoreBtn = modal.querySelector('#version-notice-ignore');
+  const isFailure = mode === 'failure';
   cancelVersionNoticeForceCountdown();
   syncVersionNoticeInstallOptions();
+  if (bodyEl instanceof HTMLElement) bodyEl.style.display = isFailure ? 'none' : '';
+  if (installOptionsEl instanceof HTMLElement) installOptionsEl.style.display = isFailure ? 'none' : '';
+  if (footerEl instanceof HTMLElement) footerEl.style.display = isFailure ? 'none' : '';
+  if (runtimeInfoEl instanceof HTMLElement) runtimeInfoEl.style.display = isFailure ? 'flex' : 'none';
+  if (isFailure) {
+    const currentEl = modal.querySelector('#version-runtime-current');
+    const installedEl = modal.querySelector('#version-runtime-installed');
+    const reloadedEl = modal.querySelector('#version-runtime-reloaded');
+    const manifest = chrome.runtime.getManifest();
+    if (currentEl instanceof HTMLElement) {
+      currentEl.textContent = versionButtonLocalVersion || manifest.version_name || manifest.version || '未知';
+    }
+    chrome.storage.local.get(['extensionInstalledAt', 'extensionLastReloadedAt'])
+      .then((stored) => {
+        if (installedEl instanceof HTMLElement) installedEl.textContent = formatVersionRuntimeTime(stored?.extensionInstalledAt);
+        if (reloadedEl instanceof HTMLElement) reloadedEl.textContent = formatVersionRuntimeTime(stored?.extensionLastReloadedAt);
+      })
+      .catch(() => {
+        if (installedEl instanceof HTMLElement) installedEl.textContent = '尚未记录';
+        if (reloadedEl instanceof HTMLElement) reloadedEl.textContent = '尚未记录';
+      });
+  }
   if (titleEl instanceof HTMLElement) {
     const versionLabel = escapeHtml(String(versionButtonLatestDisplayVersion || versionButtonLatestVersion || '').trim() || '--');
     const publishedText = escapeHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
     const timeHtml = publishedText ? `<span class="version-notice-title-time">${publishedText}</span>` : '';
-    if (mode === 'latest') {
+    if (mode === 'failure') {
+      titleEl.textContent = '检查更新失败';
+    } else if (mode === 'latest') {
       titleEl.innerHTML = `<span class="version-notice-title-main">已是最新版本：${versionLabel}</span>${timeHtml}`;
     } else if (mode === 'ahead') {
       const localLabel = escapeHtml(String(versionButtonLocalReleaseVersion || versionButtonLocalVersion || '').trim() || '--');
@@ -734,6 +762,15 @@ function openVersionNoticeModal(overrideMode) {
   if (mode === 'outdated' && versionButtonLatestForce) {
     startVersionNoticeForceCountdown(modal, sourceSelect);
   }
+}
+
+function formatVersionRuntimeTime(value) {
+  const timestamp = Number(value);
+  if (!(timestamp > 0)) return '尚未记录';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '尚未记录';
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function suppressVersionNoticeForDownload() {
@@ -2888,14 +2925,13 @@ function setupVersionButton() {
 
   versionBtn.addEventListener('click', async () => {
     if (versionButtonMode === 'failure') {
-      loadVersionInfo().catch(() => {});
+      await loadVersionInfo().catch(() => {});
+      openVersionNoticeModal();
       return;
     }
     if (versionButtonMode === 'latest') {
       await loadVersionInfo().catch(() => {});
-      if (versionButtonMode === 'latest' || versionButtonMode === 'outdated') {
-        openVersionNoticeModal();
-      }
+      openVersionNoticeModal();
       return;
     }
     if (versionButtonMode === 'outdated') {

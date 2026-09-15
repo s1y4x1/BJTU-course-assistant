@@ -246,6 +246,20 @@ html[data-color-scheme="dark"] .version-module-selection-secondary:hover {
     overflow: auto;
     padding-right: 2px;
 }
+.version-runtime-info {
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+    color: #475569;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.version-runtime-info strong {
+    color: #0f172a;
+    font-weight: 700;
+}
+html[data-color-scheme="dark"] .version-runtime-info { color: #cbd5e1; }
+html[data-color-scheme="dark"] .version-runtime-info strong { color: #f8fafc; }
 .version-install-options {
     display: grid;
     gap: 8px;
