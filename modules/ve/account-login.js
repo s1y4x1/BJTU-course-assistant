@@ -1180,12 +1180,12 @@
         if (showProgress) setProgress(1, '正在检查管理员登录状态…');
         const currentUser = await getCurrentUserInfo();
         if (!isAdminLoginName(currentUser?.loginName)) {
-          if (showProgress) setProgress(1, '正在快速登录管理员账号…');
+          if (showProgress) setProgress(1, '正在极速登录管理员账号…');
           const adminResult = await loginAdminWithQuickUsername();
-          if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号快速登录失败');
+          if (!adminResult.ok) throw new Error(adminResult.message || '管理员账号极速登录失败');
           const adminUser = await getCurrentUserInfo();
           if (!isAdminLoginName(adminUser?.loginName)) {
-            throw new Error('管理员账号快速登录后身份验证失败');
+            throw new Error('管理员账号极速登录后身份验证失败');
           }
         }
 

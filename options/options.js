@@ -2003,7 +2003,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           payload: { loginName: String(username || '').trim() }
         });
         if (!resp?.ok) throw new Error(resp?.message || resp?.error || '后台绑定失败');
-        setMsg(`已绑定快速登录 username：${resp.userId || resp.quickUsername || ''}`);
+        setMsg(`已绑定极速登录 username：${resp.userId || resp.quickUsername || ''}`);
       } catch (e) {
         setMsg(`绑定失败：${String(e?.message || e || '后台绑定失败')}`, false);
       } finally {
@@ -2102,7 +2102,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
     const st = message.payload || {};
     if (st.status === 'done') {
-      setMsg(`已绑定快速登录 username：${st.userId || st.quickUsername || ''}`);
+      setMsg(`已绑定极速登录 username：${st.userId || st.quickUsername || ''}`);
       if (bindBtn) bindBtn.disabled = false;
     } else if (st.status === 'detected') {
       setMsg('已检测到新 username，正在匹配账号信息');

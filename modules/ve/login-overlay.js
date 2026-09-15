@@ -130,7 +130,7 @@
       const quick = document.createElement('span');
       quick.className = '__bjtu_portal_quick_icon';
       quick.textContent = '⚡';
-      quick.title = '支持快速登录';
+      quick.title = '支持极速登录';
       button.appendChild(quick);
     }
     button.addEventListener('click', () => onClick(loginName));

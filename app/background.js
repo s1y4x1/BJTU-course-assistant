@@ -1734,7 +1734,7 @@ async function showPortalPageToast(tabId, message, tone = 'success') {
 }
 
 async function showPortalQuickUsernameBoundToast(tabId) {
-  return showPortalPageToast(tabId, '已为您成功绑定智慧课程平台快速登录');
+  return showPortalPageToast(tabId, '已为您成功绑定智慧课程平台极速登录');
 }
 
 async function finalizePortalQuickUsernameBind(tabId, quickUsername, verifiedUserInfo = null) {
