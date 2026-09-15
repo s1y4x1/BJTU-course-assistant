@@ -304,6 +304,22 @@ html[data-color-scheme="dark"] .version-install-option-description { color: #94a
     color: #fff;
     border: 1px solid #dc2626;
 }
+.version-uninstall-confirm-btn {
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    background-image: linear-gradient(#991b1b, #991b1b);
+    background-position: left center;
+    background-repeat: no-repeat;
+    background-size: 0 100%;
+}
+.version-uninstall-confirm-btn.is-holding {
+    animation: version-uninstall-hold 2s linear forwards;
+}
+@keyframes version-uninstall-hold {
+    from { background-size: 0 100%; }
+    to { background-size: 100% 100%; }
+}
 .version-uninstall-open-btn {
     height: 34px;
     box-sizing: border-box;
@@ -314,7 +330,7 @@ html[data-color-scheme="dark"] .version-install-option-description { color: #94a
     line-height: 1.2;
 }
 .version-uninstall-open-btn:hover,
-.version-uninstall-confirm-btn:not(:disabled):hover { background: #b91c1c; }
+.version-uninstall-confirm-btn:not(:disabled):hover { background-color: #b91c1c; }
 .version-uninstall-card { width: min(480px, calc(100vw - 32px)); }
 .version-uninstall-title {
     color: #991b1b;

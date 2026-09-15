@@ -99,6 +99,8 @@ let versionDownloadClean = false;
 let versionDownloadReload = true;
 let versionUpdateFileTreeRows = new Map();
 let versionUninstallCountdownTimer = null;
+let versionUninstallHoldTimer = null;
+let versionUninstallHoldLabelTimer = null;
 
 const VERSION_UPDATE_FILE_STATE = Object.freeze({
   pending: { symbol: '○', label: '等待覆盖' },
@@ -550,7 +552,52 @@ function closeVersionUninstallModal() {
   if (versionUninstallCountdownTimer) clearInterval(versionUninstallCountdownTimer);
   versionUninstallCountdownTimer = null;
   const modal = document.getElementById('version-uninstall-modal');
+  const confirmBtn = document.getElementById('version-uninstall-confirm');
+  cancelVersionUninstallHold(confirmBtn);
   if (modal instanceof HTMLElement) modal.style.display = 'none';
+}
+
+function cancelVersionUninstallHold(confirmBtn) {
+  if (versionUninstallHoldTimer) clearTimeout(versionUninstallHoldTimer);
+  if (versionUninstallHoldLabelTimer) clearInterval(versionUninstallHoldLabelTimer);
+  versionUninstallHoldTimer = null;
+  versionUninstallHoldLabelTimer = null;
+  if (!(confirmBtn instanceof HTMLButtonElement)) return;
+  confirmBtn.classList.remove('is-holding');
+  if (confirmBtn.dataset.ready === '1' && confirmBtn.dataset.uninstalling !== '1') {
+    confirmBtn.textContent = '长按 2 秒卸载';
+  }
+}
+
+function startVersionUninstallHold(confirmBtn) {
+  if (!(confirmBtn instanceof HTMLButtonElement)
+      || confirmBtn.disabled
+      || confirmBtn.dataset.ready !== '1'
+      || confirmBtn.dataset.uninstalling === '1'
+      || versionUninstallHoldTimer) return;
+  void confirmBtn.offsetWidth;
+  confirmBtn.classList.add('is-holding');
+  const finishAt = Date.now() + 2000;
+  const updateHoldLabel = () => {
+    const remainingSeconds = Math.max(0, finishAt - Date.now()) / 1000;
+    confirmBtn.textContent = `再按 ${remainingSeconds.toFixed(1)} 秒卸载`;
+  };
+  updateHoldLabel();
+  versionUninstallHoldLabelTimer = setInterval(updateHoldLabel, 50);
+  versionUninstallHoldTimer = setTimeout(() => {
+    versionUninstallHoldTimer = null;
+    if (versionUninstallHoldLabelTimer) clearInterval(versionUninstallHoldLabelTimer);
+    versionUninstallHoldLabelTimer = null;
+    confirmBtn.classList.remove('is-holding');
+    confirmBtn.dataset.uninstalling = '1';
+    void uninstallExtensionFiles(confirmBtn).catch((error) => {
+      confirmBtn.dataset.uninstalling = '0';
+      confirmBtn.dataset.ready = '1';
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '长按 2 秒卸载';
+      showToast(`卸载失败：${String(error?.message || error || '未知错误')}`, 'error', 4000);
+    });
+  }, 2000);
 }
 
 function openVersionUninstallModal() {
@@ -564,16 +611,22 @@ function openVersionUninstallModal() {
     modal.addEventListener('click', (event) => {
       if (event.target === modal) closeVersionUninstallModal();
     });
-    confirmBtn.addEventListener('click', () => {
-      void uninstallExtensionFiles(confirmBtn).catch((error) => {
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = '卸载';
-        showToast(`卸载失败：${String(error?.message || error || '未知错误')}`, 'error', 4000);
-      });
+    confirmBtn.addEventListener('click', (event) => event.preventDefault());
+    confirmBtn.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      event.preventDefault();
+      startVersionUninstallHold(confirmBtn);
     });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => {
+      confirmBtn.addEventListener(type, () => cancelVersionUninstallHold(confirmBtn));
+    });
+    confirmBtn.addEventListener('blur', () => cancelVersionUninstallHold(confirmBtn));
   }
   if (versionUninstallCountdownTimer) clearInterval(versionUninstallCountdownTimer);
+  cancelVersionUninstallHold(confirmBtn);
   modal.style.display = 'flex';
+  confirmBtn.dataset.ready = '0';
+  confirmBtn.dataset.uninstalling = '0';
   confirmBtn.disabled = true;
   const readyAt = Date.now() + 2000;
   const updateCountdown = () => {
@@ -581,8 +634,9 @@ function openVersionUninstallModal() {
     if (remaining <= 0) {
       clearInterval(versionUninstallCountdownTimer);
       versionUninstallCountdownTimer = null;
+      confirmBtn.dataset.ready = '1';
       confirmBtn.disabled = false;
-      confirmBtn.textContent = '卸载';
+      confirmBtn.textContent = '长按 2 秒卸载';
       confirmBtn.focus();
       return;
     }
