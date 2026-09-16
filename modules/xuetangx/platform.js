@@ -905,9 +905,7 @@
         && !(deadline > 0 && deadline < Date.now())
         && !hasFullScore;
       const exerciseSubmitted = type.id === 11
-        && (evaluationLeaf?.quiz_commit === true
-          || evaluationLeaf?.is_done === true
-          || schedule >= 0.9995);
+        && schedule >= 0.9995;
       const done = discussionUnsubmitted
         ? false
         : (type.id === 11
@@ -932,7 +930,8 @@
         overdue: !done && deadline > 0 && deadline < Date.now(),
         userScore,
         totalScore,
-        locked: timeInfo.is_locked === true || leaf.is_locked === true
+        locked: timeInfo.is_locked === true || leaf.is_locked === true,
+        exerciseDetailLoading: type.id === 11
       };
     }).filter((task) => visibleActivityTypes.has(task.typeId));
     if (!Object.keys(schedules || {}).length && course.tasks.length) {
@@ -986,7 +985,7 @@
 
   function renderExerciseDetail(course, task, palette) {
     if (task.exerciseDetailLoading) {
-      return `<div class="xuetangx-task-detail" style="border-top-color:${palette.border};"><span class="spinner xuetangx-inline-spinner" style="${global.BjtuHomeworkUi.spinnerPhaseStyle()}"></span> ${global.BjtuHomeworkUi.text.detailLoading}</div>`;
+      return `<div class="xuetangx-task-detail" style="border-top-color:${palette.border};"><span class="spinner xuetangx-inline-spinner" style="${global.BjtuHomeworkUi.spinnerPhaseStyle()}"></span> 正在加载作业详情</div>`;
     }
     if (task.exerciseDetailError) {
       return `<div class="xuetangx-task-detail xuetangx-task-detail--error" style="border-top-color:${palette.border};">${escape(task.exerciseDetailError)}</div>`;
