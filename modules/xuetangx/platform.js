@@ -184,7 +184,7 @@
     }).catch(() => {});
   }
 
-  function fetchWithCurrentCookie(url, options, cookieHeader) {
+  function fetchWithCookie(url, options, cookieHeader) {
     const run = currentCookieRequestQueue.then(async () => {
       const ruleInstalled = await updateCurrentCookieRule(cookieHeader);
       try {
@@ -200,25 +200,12 @@
     return run;
   }
 
-  async function fetchWithSecondCsrfCookie(url, options, cookieHeader) {
-    const result = await chrome.runtime.sendMessage({
-      type: 'XUETANGX_SECOND_REQUEST',
-      url: String(url),
-      cookieHeader: String(cookieHeader || ''),
-      options: {
-        method: String(options?.method || 'GET').toUpperCase(),
-        headers: { ...(options?.headers || {}) },
-        ...(options?.body === undefined ? {} : { body: options.body })
-      }
-    });
-    if (!result?.ok) throw new Error(String(result?.error || '后台第二账号请求失败'));
-    const status = Number(result.status) || 0;
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      url: String(result.url || url),
-      text: async () => String(result.body || '')
-    };
+  function fetchWithCurrentCookie(url, options, cookieHeader) {
+    return fetchWithCookie(url, options, cookieHeader);
+  }
+
+  function fetchWithSecondCsrfCookie(url, options, cookieHeader) {
+    return fetchWithCookie(url, options, cookieHeader);
   }
 
   async function requestJson(url, serial, csrfOverride = '', cookieOverride = '') {
@@ -504,7 +491,7 @@
     if (currentCsrf === secondCsrf) {
       throw new Error('当前登录账号与第二账号相同，请先切换到主账号后再查答并提交');
     }
-    const currentCookie = await getXuetangxCookieHeader();
+    const currentCookie = await getXuetangxCookieHeader(`${BASE}/api/v1/lms/exercise/`);
     return {
       csrf: secondCsrf,
       cookie: replaceCookieHeaderValues(currentCookie, {
