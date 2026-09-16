@@ -126,6 +126,16 @@
     try { return decodeURIComponent(csrfCookie.value); } catch { return String(csrfCookie.value); }
   }
 
+  async function getXuetangxCookieHeader(url = `${BASE}/`) {
+    const cookies = await chrome.cookies.getAll({ url: String(url || `${BASE}/`) }).catch(() => []);
+    const seen = new Set();
+    return cookies
+      .sort((a, b) => String(b?.path || '').length - String(a?.path || '').length)
+      .filter((cookie) => cookie?.name && !seen.has(String(cookie.name)) && seen.add(String(cookie.name)))
+      .map((cookie) => `${String(cookie.name)}=${String(cookie.value ?? '')}`)
+      .join('; ');
+  }
+
   function normalizeCsrfToken(value) {
     let token = String(value || '').trim();
     if (/^csrftoken\s*=/i.test(token)) token = token.slice(token.indexOf('=') + 1).split(';', 1)[0].trim();
@@ -182,6 +192,10 @@
     return run;
   }
 
+  function fetchWithCurrentCookie(url, options, cookieHeader) {
+    return fetchWithSecondCsrfCookie(url, options, cookieHeader);
+  }
+
   async function requestJson(url, serial, csrfOverride = '', cookieOverride = '') {
     if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
     const explicitCsrf = normalizeCsrfToken(csrfOverride);
@@ -198,12 +212,21 @@
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
       try {
+        const useCurrentCookie = !explicitCsrf
+          && /\/api\/v1\/lms\/exercise\/get_exercise_list\//.test(String(url));
+        const currentCookie = useCurrentCookie ? await getXuetangxCookieHeader(String(url)) : '';
         const response = explicitCsrf
           ? await fetchWithSecondCsrfCookie(String(url), {
             method: 'GET',
             headers,
             cache: 'no-store'
           }, cookieHeader)
+          : currentCookie
+            ? await fetchWithCurrentCookie(String(url), {
+              method: 'GET',
+              headers,
+              cache: 'no-store'
+            }, currentCookie)
           : await fetch(String(url), {
           method: 'GET',
           headers,
