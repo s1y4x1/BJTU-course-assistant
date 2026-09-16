@@ -54,8 +54,6 @@
   async function requestWithSecondCookie(message) {
     const request = normalizeRequest(message);
     const ruleId = allocateRuleId();
-    const marker = `bjtu_second_${Date.now()}_${ruleId}_${Math.random().toString(36).slice(2)}`;
-    request.url.searchParams.set('__bjtu_second_request', marker);
     const targetUrl = request.url.href;
     const rulePattern = `^${escapeRegex(targetUrl)}$`;
     try {
@@ -83,7 +81,8 @@
             regexFilter: rulePattern,
             requestDomains: ['www.xuetangx.com'],
             resourceTypes: ['xmlhttprequest'],
-            requestMethods: [request.method.toLowerCase()]
+            requestMethods: [request.method.toLowerCase()],
+            tabIds: [-1]
           }
         }]
       });
