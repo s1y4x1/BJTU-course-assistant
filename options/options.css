@@ -76,6 +76,11 @@ html[data-color-scheme="dark"] .module-options-page-link:focus-visible {
 .option-tip-trigger:focus-visible {
   z-index:1001;
 }
+.xuetangx-use-current-account-btn {
+  margin:4px 0 2px;
+  padding:4px 8px;
+  font-size:12px;
+}
 .theme-mode-btns, .animation-mode-btns { display:inline-flex; gap:6px; }
 .theme-mode-btn, .animation-mode-btn { height:40px; margin-top:0; padding:0; border:2px solid #d1d5db; border-radius:10px; background:#fff; font-size:22px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:border-color .15s, box-shadow .15s; box-sizing:border-box; }
 .theme-mode-btn:not(.theme-mode-btn--text), .animation-mode-btn:not(.animation-mode-btn--text) { width:40px; }

@@ -1251,6 +1251,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     secondCsrfInput.disabled = !visibleState.xuetangx;
     const secondSessionInput = document.getElementById('xuetangxSecondSessionId');
     secondSessionInput.disabled = !visibleState.xuetangx;
+    const useCurrentAccountButton = document.getElementById('xuetangxUseCurrentAccountAsSecondButton');
+    useCurrentAccountButton.disabled = !visibleState.xuetangx;
     const jlgjDark = document.getElementById('jlgjDarkModeEnabled');
     const alwaysDark = document.getElementById('jlgjAlwaysDarkModeEnabled');
     const extensionDark = document.documentElement.dataset.colorScheme === 'dark';
@@ -1622,6 +1624,32 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     event.currentTarget.value = value;
     await chrome.storage.local.set({ xuetangxSecondSessionId: value });
     setMsg(value ? '已保存学堂在线第二账号 sessionid' : '已清除学堂在线第二账号 sessionid');
+  });
+  document.getElementById('xuetangxUseCurrentAccountAsSecondButton').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const cookies = await chrome.cookies.getAll({ url: 'https://www.xuetangx.com/' });
+      const findCookie = (name) => cookies.find((cookie) => String(cookie?.name || '').toLowerCase() === name);
+      const csrfCookie = findCookie('csrftoken');
+      const sessionCookie = findCookie('sessionid');
+      if (!csrfCookie?.value || !sessionCookie?.value) {
+        throw new Error('当前账号缺少 csrftoken 或 sessionid，请先登录学堂在线');
+      }
+      const csrf = String(csrfCookie.value);
+      const sessionId = String(sessionCookie.value);
+      await chrome.storage.local.set({
+        xuetangxSecondCsrfToken: csrf,
+        xuetangxSecondSessionId: sessionId
+      });
+      document.getElementById('xuetangxSecondCsrfToken').value = csrf;
+      document.getElementById('xuetangxSecondSessionId').value = sessionId;
+      setMsg('已将当前学堂在线账号保存为第二账号，请切换回主账号后使用查答功能');
+    } catch (error) {
+      setMsg(`读取当前学堂在线账号失败：${String(error?.message || error)}`, false);
+    } finally {
+      button.disabled = false;
+    }
   });
   Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).forEach(([platform, id]) => {
     document.getElementById(id).addEventListener('change', async (event) => {
