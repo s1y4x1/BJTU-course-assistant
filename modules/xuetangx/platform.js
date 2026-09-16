@@ -157,6 +157,14 @@
             header: 'cookie',
             operation: 'set',
             value: String(cookieHeader || '')
+          }, {
+            header: 'origin',
+            operation: 'set',
+            value: BASE
+          }, {
+            header: 'referer',
+            operation: 'set',
+            value: `${BASE}/`
           }]
         },
         condition: {
@@ -207,7 +215,6 @@
       xtbz: 'xt'
     };
     if (csrf) headers['x-csrftoken'] = csrf;
-    if (explicitCsrf) headers.cookie = cookieHeader || `csrftoken=${encodeURIComponent(csrf)}`;
     let result = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (serial !== loadSerial) throw Object.assign(new Error('学堂在线加载已取消'), { code: 'cancelled' });
@@ -396,11 +403,13 @@
       xtbz: 'xt'
     };
     if (csrf) headers['x-csrftoken'] = csrf;
-    if (explicitCsrf) headers.cookie = cookieHeader || `csrftoken=${encodeURIComponent(csrf)}`;
     let response = null;
     let data = null;
     while (true) {
       try {
+        const currentCookie = !explicitCsrf
+          ? await getXuetangxCookieHeader(`${BASE}/api/v1/lms/exercise/problem_apply/`)
+          : '';
         const requestOptions = {
           method: 'POST',
           headers,
@@ -409,6 +418,8 @@
         };
         response = explicitCsrf
           ? await fetchWithSecondCsrfCookie(`${BASE}/api/v1/lms/exercise/problem_apply/`, requestOptions, cookieHeader)
+          : currentCookie
+            ? await fetchWithCurrentCookie(`${BASE}/api/v1/lms/exercise/problem_apply/`, requestOptions, currentCookie)
           : await fetch(`${BASE}/api/v1/lms/exercise/problem_apply/`, {
             ...requestOptions,
             credentials: 'include'
