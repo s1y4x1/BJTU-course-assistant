@@ -244,6 +244,7 @@ tryImportModuleScripts('../modules/updater/filesystem.js', '../modules/updater/b
 tryImportModuleScripts('../modules/jlgj/background.js');
 tryImportModuleScripts('../modules/mooc/background.js');
 tryImportModuleScripts('../modules/mrjzy/background.js');
+tryImportModuleScripts('../modules/xuetangx/background.js');
 tryImportModuleScripts('../core/module-registry.js');
 tryImportModuleScripts(
   '../modules/qwen/operations.js',

@@ -4,7 +4,7 @@
   const BASE = 'https://www.xuetangx.com';
   const COURSE_LIST_URL = `${BASE}/api/v1/lms/user/user-courses`;
   const LOGIN_HEADER_RULE_IDS = Object.freeze([914309, 914310]);
-  const SECOND_CSRF_COOKIE_RULE_ID = 914312;
+  const CURRENT_COOKIE_RULE_ID = 914312;
   const COURSE_STATUS_LABELS = Object.freeze({
     1: '正在上课',
     2: '即将开课',
@@ -142,14 +142,14 @@
     try { return decodeURIComponent(token); } catch { return token; }
   }
 
-  let secondCookieRequestQueue = Promise.resolve();
+  let currentCookieRequestQueue = Promise.resolve();
 
-  async function updateSecondCsrfCookieRule(cookieHeader) {
+  async function updateCurrentCookieRule(cookieHeader) {
     if (!chrome?.declarativeNetRequest?.updateSessionRules) return false;
     await chrome.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: [SECOND_CSRF_COOKIE_RULE_ID],
+      removeRuleIds: [CURRENT_COOKIE_RULE_ID],
       addRules: [{
-        id: SECOND_CSRF_COOKIE_RULE_ID,
+        id: CURRENT_COOKIE_RULE_ID,
         priority: 1000,
         action: {
           type: 'modifyHeaders',
@@ -177,31 +177,48 @@
     return true;
   }
 
-  async function removeSecondCsrfCookieRule() {
+  async function removeCurrentCookieRule() {
     if (!chrome?.declarativeNetRequest?.updateSessionRules) return;
     await chrome.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: [SECOND_CSRF_COOKIE_RULE_ID]
+      removeRuleIds: [CURRENT_COOKIE_RULE_ID]
     }).catch(() => {});
   }
 
-  function fetchWithSecondCsrfCookie(url, options, cookieHeader) {
-    const run = secondCookieRequestQueue.then(async () => {
-      const ruleInstalled = await updateSecondCsrfCookieRule(cookieHeader);
+  function fetchWithCurrentCookie(url, options, cookieHeader) {
+    const run = currentCookieRequestQueue.then(async () => {
+      const ruleInstalled = await updateCurrentCookieRule(cookieHeader);
       try {
         return await fetch(String(url), {
           ...options,
           credentials: 'omit'
         });
       } finally {
-        if (ruleInstalled) await removeSecondCsrfCookieRule();
+        if (ruleInstalled) await removeCurrentCookieRule();
       }
     });
-    secondCookieRequestQueue = run.catch(() => {});
+    currentCookieRequestQueue = run.catch(() => {});
     return run;
   }
 
-  function fetchWithCurrentCookie(url, options, cookieHeader) {
-    return fetchWithSecondCsrfCookie(url, options, cookieHeader);
+  async function fetchWithSecondCsrfCookie(url, options, cookieHeader) {
+    const result = await chrome.runtime.sendMessage({
+      type: 'XUETANGX_SECOND_REQUEST',
+      url: String(url),
+      cookieHeader: String(cookieHeader || ''),
+      options: {
+        method: String(options?.method || 'GET').toUpperCase(),
+        headers: { ...(options?.headers || {}) },
+        ...(options?.body === undefined ? {} : { body: options.body })
+      }
+    });
+    if (!result?.ok) throw new Error(String(result?.error || '后台第二账号请求失败'));
+    const status = Number(result.status) || 0;
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      url: String(result.url || url),
+      text: async () => String(result.body || '')
+    };
   }
 
   async function requestJson(url, serial, csrfOverride = '', cookieOverride = '') {
