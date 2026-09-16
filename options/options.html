@@ -221,11 +221,21 @@
         <label><input type="checkbox" id="xuetangxAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
         <div class="platform-option-divider" role="separator"></div>
         <label for="xuetangxSecondCsrfToken">第二账号 csrftoken</label>
-        <input type="password" id="xuetangxSecondCsrfToken" autocomplete="off" spellcheck="false"
-          placeholder="粘贴第二账号的 csrftoken 值" />
+        <div class="xuetangx-secret-input-wrap">
+          <input type="password" id="xuetangxSecondCsrfToken" autocomplete="off" spellcheck="false"
+            placeholder="粘贴第二账号的 csrftoken 值" />
+          <button type="button" class="xuetangx-secret-toggle" data-secret-input="xuetangxSecondCsrfToken"
+            aria-label="显示第二账号 csrftoken" aria-pressed="false" title="显示或隐藏"><svg viewBox="0 0 24 24"
+              aria-hidden="true" focusable="false"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle><path class="xuetangx-secret-toggle-slash" d="M4 4 20 20"></path></svg></button>
+        </div>
         <label for="xuetangxSecondSessionId">第二账号 sessionid</label>
-        <input type="password" id="xuetangxSecondSessionId" autocomplete="off" spellcheck="false"
-          placeholder="粘贴第二账号的 sessionid 值" />
+        <div class="xuetangx-secret-input-wrap">
+          <input type="password" id="xuetangxSecondSessionId" autocomplete="off" spellcheck="false"
+            placeholder="粘贴第二账号的 sessionid 值" />
+          <button type="button" class="xuetangx-secret-toggle" data-secret-input="xuetangxSecondSessionId"
+            aria-label="显示第二账号 sessionid" aria-pressed="false" title="显示或隐藏"><svg viewBox="0 0 24 24"
+              aria-hidden="true" focusable="false"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle><path class="xuetangx-secret-toggle-slash" d="M4 4 20 20"></path></svg></button>
+        </div>
         <button type="button" id="xuetangxUseCurrentAccountAsSecondButton" class="xuetangx-use-current-account-btn">使用当前账号作为第二账号</button>
         <div class="tip">请填写第二账号 Cookie 中 csrftoken 和 sessionid 等号后的值，也可点击左侧按钮读取当前账号；保存后请切换回主账号再执行查答并提交。</div>
         <div class="platform-option-divider" role="separator"></div>

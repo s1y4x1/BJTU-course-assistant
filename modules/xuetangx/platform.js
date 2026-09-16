@@ -904,10 +904,14 @@
       const discussionUnsubmitted = type.id === 10
         && !(deadline > 0 && deadline < Date.now())
         && !hasFullScore;
+      const exerciseSubmitted = type.id === 11
+        && (evaluationLeaf?.quiz_commit === true
+          || evaluationLeaf?.is_done === true
+          || schedule >= 0.9995);
       const done = discussionUnsubmitted
         ? false
         : (type.id === 11
-          ? false
+          ? exerciseSubmitted
           : (type.id === 6
             ? schedule >= 0.9995
             : (evaluationLeaf?.quiz_commit === true || evaluationLeaf?.is_done === true || schedule >= 0.9995)));

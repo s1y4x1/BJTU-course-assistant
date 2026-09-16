@@ -1251,6 +1251,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     secondCsrfInput.disabled = !visibleState.xuetangx;
     const secondSessionInput = document.getElementById('xuetangxSecondSessionId');
     secondSessionInput.disabled = !visibleState.xuetangx;
+    document.querySelectorAll('.xuetangx-secret-toggle').forEach((button) => {
+      button.disabled = !visibleState.xuetangx;
+    });
     const useCurrentAccountButton = document.getElementById('xuetangxUseCurrentAccountAsSecondButton');
     useCurrentAccountButton.disabled = !visibleState.xuetangx;
     const jlgjDark = document.getElementById('jlgjDarkModeEnabled');
@@ -1313,6 +1316,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   function setChecked(id, checked) {
     const el = document.getElementById(id);
     if (el instanceof HTMLInputElement) el.checked = !!checked;
+  }
+
+  function setXuetangxSecretVisibility(inputId, button, visible) {
+    const input = document.getElementById(inputId);
+    if (!(input instanceof HTMLInputElement) || !(button instanceof HTMLButtonElement)) return;
+    input.type = visible ? 'text' : 'password';
+    button.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    button.setAttribute('aria-label', `${visible ? '隐藏' : '显示'}第二账号 ${inputId === 'xuetangxSecondCsrfToken' ? 'csrftoken' : 'sessionid'}`);
   }
 
   function applyPlatformUi(raw) {
@@ -1624,6 +1635,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     event.currentTarget.value = value;
     await chrome.storage.local.set({ xuetangxSecondSessionId: value });
     setMsg(value ? '已保存学堂在线第二账号 sessionid' : '已清除学堂在线第二账号 sessionid');
+  });
+  document.querySelectorAll('.xuetangx-secret-toggle').forEach((button) => {
+    button.addEventListener('click', () => {
+      const inputId = String(button.dataset.secretInput || '');
+      const input = document.getElementById(inputId);
+      if (!(input instanceof HTMLInputElement)) return;
+      setXuetangxSecretVisibility(inputId, button, input.type !== 'text');
+    });
   });
   document.getElementById('xuetangxUseCurrentAccountAsSecondButton').addEventListener('click', async (event) => {
     const button = event.currentTarget;
@@ -2283,6 +2302,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('enableXuetangx').checked = false;
     document.getElementById('xuetangxSecondCsrfToken').value = '';
     document.getElementById('xuetangxSecondSessionId').value = '';
+    document.querySelectorAll('.xuetangx-secret-toggle').forEach((button) => {
+      setXuetangxSecretVisibility(String(button.dataset.secretInput || ''), button, false);
+    });
     ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc', 'showXuetangx'].forEach((id) => {
       document.getElementById(id).checked = true;
     });
