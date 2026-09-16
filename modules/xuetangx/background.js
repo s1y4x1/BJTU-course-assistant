@@ -82,7 +82,7 @@
             requestDomains: ['www.xuetangx.com'],
             resourceTypes: ['xmlhttprequest'],
             requestMethods: [request.method.toLowerCase()],
-            tabIds: [-1]
+            initiatorDomains: [chrome.runtime.id]
           }
         }]
       });
