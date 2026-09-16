@@ -442,6 +442,26 @@
     try { return decodeURIComponent(cookie); } catch { return cookie; }
   }
 
+  function replaceCookieHeaderValues(cookieHeader, replacements) {
+    const replacementEntries = Object.entries(replacements || {})
+      .map(([name, value]) => [String(name), String(value ?? '')]);
+    const replaced = new Set();
+    const cookies = String(cookieHeader || '').split(';').map((part) => part.trim()).filter(Boolean);
+    const result = cookies.map((part) => {
+      const separator = part.indexOf('=');
+      if (separator <= 0) return part;
+      const name = part.slice(0, separator).trim();
+      const replacement = replacementEntries.find(([key]) => key.toLowerCase() === name.toLowerCase());
+      if (!replacement) return part;
+      replaced.add(replacement[0].toLowerCase());
+      return `${name}=${replacement[1]}`;
+    });
+    replacementEntries.forEach(([name, value]) => {
+      if (!replaced.has(name.toLowerCase())) result.push(`${name}=${value}`);
+    });
+    return result.join('; ');
+  }
+
   async function getSecondCredentialsForUse() {
     const stored = await chrome.storage.local.get([
       'xuetangxSecondCsrfToken',
@@ -456,9 +476,13 @@
     if (currentCsrf === secondCsrf) {
       throw new Error('当前登录账号与第二账号相同，请先切换到主账号后再查答并提交');
     }
+    const currentCookie = await getXuetangxCookieHeader();
     return {
       csrf: secondCsrf,
-      cookie: `csrftoken=${encodeURIComponent(secondCsrf)}; sessionid=${encodeURIComponent(secondSessionId)}`
+      cookie: replaceCookieHeaderValues(currentCookie, {
+        csrftoken: encodeURIComponent(secondCsrf),
+        sessionid: encodeURIComponent(secondSessionId)
+      })
     };
   }
 
