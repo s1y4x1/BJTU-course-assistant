@@ -7,6 +7,7 @@
   const DEFAULT_INTERVAL_MINUTES = 30;
   const STATUS_KEY = 'backgroundAutoUpdateStatus';
   const DETECTED_NOTIFICATION_VERSION_KEY = 'backgroundUpdateDetectedNotifiedVersion';
+  const INSTALLED_RELEASE_DESCRIPTION_KEY = 'installedReleaseDescription';
   const ISSUE_NOTIFICATIONS_KEY = 'backgroundUpdateIssueNotifications';
   const ALARM_NAME = 'bjtu-background-update-check';
   const DETECTED_NOTIFICATION_PREFIX = 'bjtu-background-update-detected:';
@@ -89,7 +90,66 @@
     return chrome.notifications.create(notificationId, options);
   }
 
-  async function notifyUpdateDetected(release, lastNotifiedVersion = '', installOptionalUpdate = false) {
+  function splitReleaseDescription(value) {
+    return String(value || '')
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter((line, index, lines) => line.trim() || (index > 0 && index < lines.length - 1));
+  }
+
+  function diffReleaseDescriptions(previousValue, nextValue) {
+    const previous = splitReleaseDescription(previousValue);
+    const next = splitReleaseDescription(nextValue);
+    if (!previous.length) return next.join('\n').trim();
+    if (!next.length) return '';
+    const rows = previous.length + 1;
+    const columns = next.length + 1;
+    const lcs = Array.from({ length: rows }, () => new Uint16Array(columns));
+    for (let left = previous.length - 1; left >= 0; left -= 1) {
+      for (let right = next.length - 1; right >= 0; right -= 1) {
+        lcs[left][right] = previous[left] === next[right]
+          ? lcs[left + 1][right + 1] + 1
+          : Math.max(lcs[left + 1][right], lcs[left][right + 1]);
+      }
+    }
+    const changes = [];
+    let left = 0;
+    let right = 0;
+    while (left < previous.length || right < next.length) {
+      if (left < previous.length && right < next.length && previous[left] === next[right]) {
+        left += 1;
+        right += 1;
+      } else if (right < next.length && (left >= previous.length || lcs[left][right + 1] >= lcs[left + 1][right])) {
+        changes.push(`+ ${next[right]}`);
+        right += 1;
+      } else {
+        changes.push(`- ${previous[left]}`);
+        left += 1;
+      }
+    }
+    return changes.join('\n').trim();
+  }
+
+  function buildDetectedNotificationMessage(release, previousDescription, installOptionalUpdate) {
+    const status = release?.force
+      ? '这是强制更新，即将开始后台下载。'
+      : (installOptionalUpdate
+        ? '检测到非强制更新，根据您的后台更新设置，将自动开始更新。'
+        : '检测到非强制更新，根据您的后台更新设置，本次不自动更新，您可以手动选择更新。');
+    const description = String(release?.description || '').trim();
+    if (!description) return status;
+    const previous = String(previousDescription || '').trim();
+    const diff = diffReleaseDescriptions(previous, description);
+    const details = previous
+      ? (diff || '更新说明与当前版本相同。')
+      : description;
+    const label = previous ? '与当前版本的更新说明差异：' : '更新说明：';
+    const message = `${status}\n\n${label}\n${details}`;
+    return message.length > 1800 ? `${message.slice(0, 1797)}...` : message;
+  }
+
+  async function notifyUpdateDetected(release, lastNotifiedVersion = '', installOptionalUpdate = false, previousDescription = '') {
     if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
     try {
       const notificationId = `${DETECTED_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
@@ -97,11 +157,7 @@
         type: 'basic',
         iconUrl: 'icons/128.png',
         title: `发现新版本：${String(release?.name || release?.version || '新版本')}`,
-        message: release?.force
-          ? '这是强制更新，即将开始后台下载。'
-          : (installOptionalUpdate
-            ? '检测到非强制更新，根据您的后台更新设置，将自动开始更新。'
-            : '检测到非强制更新，根据您的后台更新设置，本次不自动更新，您可以手动选择更新。'),
+        message: buildDetectedNotificationMessage(release, previousDescription, installOptionalUpdate),
         priority: 1
       }, 'background-update-detected');
       await chrome.storage.local.set({
@@ -551,7 +607,8 @@
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
-        DETECTED_NOTIFICATION_VERSION_KEY, MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY
+        DETECTED_NOTIFICATION_VERSION_KEY, INSTALLED_RELEASE_DESCRIPTION_KEY,
+        MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY
       ]);
       const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
       if (!forceCheck && !updaterEnabled) return { skipped: true };
@@ -579,6 +636,15 @@
       await setStatus('checking', { localVersion });
       const release = await fetchLatestRelease();
       if (compareVersions(release.version, localVersion) <= 0) {
+        if (compareVersions(release.version, localVersion) === 0) {
+          await chrome.storage.local.set({
+            [INSTALLED_RELEASE_DESCRIPTION_KEY]: {
+              version: release.version,
+              desc: release.description,
+              updatedAt: Date.now()
+            }
+          });
+        }
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
       }
@@ -626,6 +692,7 @@
         const record = {
           ver: release.version,
           name: release.name,
+          description: release.description,
           fileCount: 0,
           force: release.force,
           reload: false,
@@ -636,11 +703,26 @@
         await chrome.storage.local.set({
           [APPLIED_WITHOUT_RELOAD_KEY]: record,
           [PENDING_RELOAD_KEY]: null,
+          [INSTALLED_RELEASE_DESCRIPTION_KEY]: {
+            version: release.version,
+            desc: release.description,
+            updatedAt: Date.now()
+          },
           [STATUS_KEY]: { status: 'latest', localVersion: release.version, version: release.version, name: release.name, skippedByModuleSelection: true, checkedAt: Date.now() }
         });
         return { updated: false, skippedByModuleSelection: true, release };
       }
-      await notifyUpdateDetected(release, stored?.[DETECTED_NOTIFICATION_VERSION_KEY], installOptionalUpdate);
+      const installedDescription = stored?.[INSTALLED_RELEASE_DESCRIPTION_KEY];
+      const previousDescription = installedDescription
+        && normalizeVersion(installedDescription.version) === normalizeVersion(localVersion)
+        ? String(installedDescription.desc || '')
+        : '';
+      await notifyUpdateDetected(
+        release,
+        stored?.[DETECTED_NOTIFICATION_VERSION_KEY],
+        installOptionalUpdate,
+        previousDescription
+      );
       if (!release.force && stored?.[INSTALL_OPTIONAL_KEY] !== true && !retryingStaleInstallation) {
         await setStatus('optional-update-available', {
           localVersion,
@@ -662,6 +744,7 @@
       const record = {
         ver: release.version,
         name: release.name,
+        description: release.description,
         fileCount,
         force: release.force,
         reload: reloadRequired,
@@ -673,6 +756,11 @@
         await chrome.storage.local.set({
           [APPLIED_WITHOUT_RELOAD_KEY]: record,
           [PENDING_RELOAD_KEY]: null,
+          [INSTALLED_RELEASE_DESCRIPTION_KEY]: {
+            version: release.version,
+            desc: release.description,
+            updatedAt: Date.now()
+          },
           [STATUS_KEY]: { status: 'complete', ...record, checkedAt: Date.now(), directoryName: root.name }
         });
         const refreshedAppCount = await globalThis.BjtuForegroundAppPages?.refresh?.().catch(() => 0) || 0;
@@ -692,6 +780,11 @@
       ).catch(() => `${COMPLETE_NOTIFICATION_PREFIX}${normalizeVersion(release.version) || 'unknown'}`);
       await chrome.storage.local.set({
         [PENDING_RELOAD_KEY]: { ...record, autoReloadRequestedAt: Date.now() },
+        [INSTALLED_RELEASE_DESCRIPTION_KEY]: {
+          version: release.version,
+          desc: release.description,
+          updatedAt: Date.now()
+        },
         [RELOAD_HANDOFF_KEY]: {
           ...record,
           requestedAt: Date.now(),

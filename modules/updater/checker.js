@@ -62,6 +62,7 @@ const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-ass
 const VERSION_LATEST_URL = 'https://s1y4x1.github.io/release.json';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
+const VERSION_INSTALLED_RELEASE_DESCRIPTION_KEY = 'installedReleaseDescription';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
 const VERSION_PENDING_RELOAD_KEY = 'pendingUpdateReload';
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
@@ -2341,6 +2342,7 @@ async function downloadVersionByUrlWithProgress(url) {
   const appliedRecord = {
     ver: versionButtonLatestVersion,
     name: versionButtonLatestDisplayVersion,
+    description: versionButtonLatestBodyMarkdown,
     reload: reloadRequired,
     force: forcedUpdate,
     clean: versionDownloadClean,
@@ -2348,6 +2350,11 @@ async function downloadVersionByUrlWithProgress(url) {
     appliedAt: Date.now(),
     autoReloadRequestedAt: reloadRequired ? Date.now() : 0
   };
+  await setLocal(VERSION_INSTALLED_RELEASE_DESCRIPTION_KEY, {
+    version: versionButtonLatestVersion,
+    desc: versionButtonLatestBodyMarkdown,
+    updatedAt: Date.now()
+  });
   if (reloadRequired) {
     await setLocal(VERSION_PENDING_RELOAD_KEY, appliedRecord);
     suppressVersionNoticeForDownload();
