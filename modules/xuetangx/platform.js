@@ -36,6 +36,8 @@
   let qrLoginCancelled = false;
   let qrLoginSocket = null;
   let qrLoginState = null;
+  const problemApplyRateLimitUntil = { current: 0, second: 0 };
+  let problemApplyRateLimitTimer = null;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const escape = (value) => env?.escape?.(String(value ?? '')) ?? String(value ?? '');
@@ -386,10 +388,48 @@
     return Number(response?.status) === 429 ? 1 : null;
   }
 
-  async function waitForProblemApplyRateLimit(response, data, serial) {
+  function problemApplyRateLimitRemaining(account = '') {
+    const now = Date.now();
+    const keys = account === 'second' || account === 'current' ? [account] : ['current', 'second'];
+    return Math.max(0, ...keys.map((key) => Math.max(0, problemApplyRateLimitUntil[key] - now)));
+  }
+
+  function scheduleProblemApplyRateLimitRender() {
+    if (problemApplyRateLimitTimer) clearTimeout(problemApplyRateLimitTimer);
+    const tick = () => {
+      problemApplyRateLimitTimer = null;
+      if (problemApplyRateLimitRemaining() <= 0) {
+        problemApplyRateLimitUntil.current = 0;
+        problemApplyRateLimitUntil.second = 0;
+        render();
+        return;
+      }
+      render();
+      problemApplyRateLimitTimer = setTimeout(tick, 1000);
+    };
+    problemApplyRateLimitTimer = setTimeout(tick, 1000);
+  }
+
+  function problemApplyRateLimitText() {
+    const remaining = problemApplyRateLimitRemaining();
+    return remaining > 0 ? `限速等待 ${Math.ceil(remaining / 1000)} 秒` : '';
+  }
+
+  function noteProblemApplyRateLimit(seconds, account) {
+    const waitMs = Math.max(100, Math.ceil(Number(seconds) * 1000));
+    const until = Date.now() + waitMs;
+    const key = account === 'second' ? 'second' : 'current';
+    problemApplyRateLimitUntil[key] = Math.max(problemApplyRateLimitUntil[key], until);
+    env?.toast?.(`学堂在线提交受到限速，${Math.ceil(waitMs / 1000)}秒后自动重试`, 'info');
+    render();
+    scheduleProblemApplyRateLimitRender();
+  }
+
+  async function waitForProblemApplyRateLimit(response, data, serial, account) {
     const seconds = rateLimitWaitSeconds(response, data);
     if (seconds === null) return false;
     if (serial !== loadSerial) throw Object.assign(new Error('学堂在线操作已取消'), { code: 'cancelled' });
+    noteProblemApplyRateLimit(seconds, account);
     await sleep(Math.max(100, Math.ceil(seconds * 1000)));
     if (serial !== loadSerial) throw Object.assign(new Error('学堂在线操作已取消'), { code: 'cancelled' });
     return true;
@@ -438,7 +478,7 @@
         wrapped.code = 'request-failed';
         throw wrapped;
       }
-      if (!await waitForProblemApplyRateLimit(response, data, serial)) break;
+      if (!await waitForProblemApplyRateLimit(response, data, serial, explicitCsrf ? 'second' : 'current')) break;
     }
     if (!response.ok || data?.success !== true) {
       const error = new Error(String(data?.msg || `学堂在线提交失败（HTTP ${response.status}）`));
@@ -1134,8 +1174,10 @@
     });
     const actionLabel = global.BjtuHomeworkUi.actionLabel('xuetangx', task.action, { lead: '去' });
     const chapter = task.chapterPath.filter(Boolean).slice(1).join(' / ');
+    const rateLimitText = problemApplyRateLimitText();
+    const secondAnswerBusy = task.secondAnswerBusy === true;
     const secondAnswerButton = task.typeId === 11
-      ? `<button type="button" class="btn xuetangx-second-answer-btn" data-xuetangx-action="second-answer-submit" data-course-id="${escape(course.id)}" data-task-id="${escape(task.id)}" style="background:${escape(palette.action)}; padding:2px 6px; font-size:12px; text-decoration:none; color:#fff;" ${task.secondAnswerBusy ? 'disabled' : ''}>${escape(task.secondAnswerBusy ? '提交中…' : '第二账号查答并提交')}</button>`
+      ? `<button type="button" class="btn xuetangx-second-answer-btn" data-xuetangx-action="second-answer-submit" data-course-id="${escape(course.id)}" data-task-id="${escape(task.id)}" style="background:${escape(palette.action)}; padding:2px 6px; font-size:12px; text-decoration:none; color:#fff;" ${secondAnswerBusy || rateLimitText ? 'disabled' : ''}>${escape(rateLimitText || (secondAnswerBusy ? '提交中…' : '第二账号查答并提交'))}</button>`
       : '';
     return global.BjtuHomeworkUi.renderHomeworkCard({
       done: task.done,
@@ -1200,7 +1242,7 @@
         order: baseOrder + index,
         rank: pending.length ? 0 : (overdue.length ? 2 : (done.length ? 4 : 7)),
         titleHtml: `<a href="${escape(courseUrl(course))}" target="_blank" rel="noopener noreferrer">${escape(course.name)}</a>`,
-        metaHtml: `<div class="xuetangx-course-meta">${meta}</div><div class="xuetangx-course-identity-actions"><button type="button" class="btn xuetangx-second-answer-all-btn" data-xuetangx-action="second-answer-submit-all" data-course-id="${escape(course.id)}" style="background:${escape(THEME_COLOR)}; padding:2px 6px; font-size:12px; text-decoration:none; color:#fff;" ${course.secondAnswerAllBusy ? 'disabled' : ''}>${escape(course.secondAnswerAllBusy ? '处理中…' : '查答并提交全部')}</button></div>`,
+        metaHtml: `<div class="xuetangx-course-meta">${meta}</div><div class="xuetangx-course-identity-actions"><button type="button" class="btn xuetangx-second-answer-all-btn" data-xuetangx-action="second-answer-submit-all" data-course-id="${escape(course.id)}" style="background:${escape(THEME_COLOR)}; padding:2px 6px; font-size:12px; text-decoration:none; color:#fff;" ${course.secondAnswerAllBusy || rateLimitText ? 'disabled' : ''}>${escape(rateLimitText || (course.secondAnswerAllBusy ? '处理中…' : '查答并提交全部'))}</button></div>`,
         contentHtml: `${typeLoadingHtml}${course.detailLoaded
           ? (course.loadError
             ? `<span class="xuetangx-empty">课程详情加载失败：${escape(course.loadError)}</span>`
