@@ -252,7 +252,7 @@ tryImportModuleScripts(
   '../modules/qwen/background.js'
 );
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/background-homework.js');
-if (veBackgroundReady) tryImportModuleScripts('../modules/ve/account-upload.js');
+tryImportModuleScripts('./account-upload.js');
 
 const OPTIONAL_CONTENT_SCRIPTS = [
   {
