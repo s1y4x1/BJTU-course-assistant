@@ -8,8 +8,8 @@
   const FONT_SIZE_DEFAULTS = Object.freeze({
     zeroTitle: 24,
     icon: 22,
-    primaryTitle: 18,
-    secondaryTitle: 15,
+    primaryTitle: 20,
+    secondaryTitle: 16,
     body: 13,
     auxiliary: 11
   });
@@ -111,7 +111,9 @@
     ['24px', 'zeroTitle'],
     ['1.5rem', 'zeroTitle'],
     ['22px', 'icon'],
+    ['20px', 'primaryTitle'],
     ['18px', 'primaryTitle'],
+    ['16px', 'secondaryTitle'],
     ['15px', 'secondaryTitle'],
     ['14px', 'secondaryTitle'],
     ['13px', 'body'],

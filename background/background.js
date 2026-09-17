@@ -426,6 +426,29 @@ async function initializeExtensionRuntimeMetadata() {
 
 void initializeExtensionRuntimeMetadata();
 
+const FONT_SIZE_FORCED_DEFAULTS_VERSION_KEY = 'fontSizeForcedDefaultsVersion';
+const FONT_SIZE_FORCED_DEFAULTS_VERSION = 1;
+const FORCED_DEFAULT_FONT_SIZE_SETTINGS = Object.freeze({
+  zeroTitle: 24,
+  icon: 22,
+  primaryTitle: 20,
+  secondaryTitle: 16,
+  body: 13,
+  auxiliary: 11
+});
+
+async function forceCurrentFontSizeDefaultsOnce() {
+  const stored = await chrome.storage.local.get([FONT_SIZE_FORCED_DEFAULTS_VERSION_KEY]).catch(() => ({}));
+  if (Number(stored?.[FONT_SIZE_FORCED_DEFAULTS_VERSION_KEY] || 0) >= FONT_SIZE_FORCED_DEFAULTS_VERSION) return false;
+  await chrome.storage.local.set({
+    fontSizeSettings: { ...FORCED_DEFAULT_FONT_SIZE_SETTINGS },
+    [FONT_SIZE_FORCED_DEFAULTS_VERSION_KEY]: FONT_SIZE_FORCED_DEFAULTS_VERSION
+  });
+  return true;
+}
+
+void forceCurrentFontSizeDefaultsOnce();
+
 const APP_URL = chrome.runtime.getURL('app/app.html');
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';

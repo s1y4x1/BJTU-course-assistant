@@ -176,7 +176,7 @@ html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #b91c1c; }
     margin-bottom: 6px;
 }
 .version-notice-title {
-    font-size: 20px;
+    font-size: var(--bjtu-font-size-primaryTitle, 20px);
     font-weight: 800;
     color: #0f172a;
     display: flex;
@@ -187,7 +187,7 @@ html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #b91c1c; }
     line-height: 1.2;
 }
 .version-notice-title-main {
-    font-size: 20px;
+    font-size: inherit;
     font-weight: 800;
     color: inherit;
     line-height: 1.2;
@@ -202,7 +202,7 @@ html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #b91c1c; }
 }
 .version-module-selection-title {
     color: #0f172a;
-    font-size: 18px;
+    font-size: var(--bjtu-font-size-primaryTitle, 20px);
     font-weight: 800;
     line-height: 1.25;
 }
@@ -348,7 +348,7 @@ html[data-color-scheme="dark"] .version-install-option-description { color: #94a
 .version-uninstall-card { width: min(480px, calc(100vw - 32px)); }
 .version-uninstall-title {
     color: #991b1b;
-    font-size: 18px;
+    font-size: var(--bjtu-font-size-primaryTitle, 20px);
     font-weight: 800;
 }
 .version-uninstall-message {
@@ -480,9 +480,9 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
     line-height: 1.3;
 }
 .version-notice-body h1,
-.version-download-release-notes-body h1 { font-size: 20px; }
+.version-download-release-notes-body h1 { font-size: var(--bjtu-font-size-primaryTitle, 20px); }
 .version-notice-body h2,
-.version-download-release-notes-body h2 { font-size: 18px; }
+.version-download-release-notes-body h2 { font-size: var(--bjtu-font-size-secondaryTitle, 16px); }
 .version-notice-body h3,
 .version-download-release-notes-body h3 { font-size: 16px; }
 .version-notice-body h4,

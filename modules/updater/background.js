@@ -146,7 +146,7 @@
       : description;
     const label = previous ? '与当前版本的更新说明差异：' : '更新说明：';
     const message = `${status}\n\n${label}\n${details}`;
-    return message.length > 1800 ? `${message.slice(0, 1797)}...` : message;
+    return message.length > 1800 ? `${message.slice(0, 1799)}…` : message;
   }
 
   async function notifyUpdateDetected(release, lastNotifiedVersion = '', installOptionalUpdate = false, previousDescription = '') {

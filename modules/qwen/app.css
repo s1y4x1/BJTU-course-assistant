@@ -84,7 +84,7 @@ body.qwen-chat-standalone .qwen-chat-header { cursor: default; }
 
 .qwen-chat-title {
   font-weight: 600;
-  font-size: 18px;
+  font-size: var(--bjtu-font-size-primaryTitle, 20px);
   color: #0f172a;
 }
 

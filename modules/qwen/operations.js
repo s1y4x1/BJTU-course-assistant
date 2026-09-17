@@ -685,7 +685,7 @@
         '',
         '**调用示例**：`ve.currentUser()`',
         '',
-        '**返回示例**：{"userId":"...","userName":"张三","loginName":"zhangsan","roleCode":"student","roleName":"学生"}',
+        '**返回示例**：{"userId":"…","userName":"张三","loginName":"zhangsan","roleCode":"student","roleName":"学生"}',
         '未登录时返回 {"ok":false,"code":"LOGIN_REQUIRED"}。'
       ].join('\n'),
       async run() {
@@ -746,7 +746,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.terms()`',
         '',
-        '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"...","endDate":"..."}],"recommended":"2025-2026-1"}'
+        '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"…","endDate":"…"}],"recommended":"2025-2026-1"}'
       ].join('\n'),
       async run() {
         const core = await veHomework();
@@ -777,7 +777,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.courseList()`',
         '',
-        '**返回示例**：[{"id":"...","name":"高等数学"}]',
+        '**返回示例**：[{"id":"…","name":"高等数学"}]',
         '返回的每一项至少包含 id（课程ID）、name（课程名）。'
       ].join('\n'),
       async run(args) {
@@ -808,7 +808,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments_of_({courseId: "xxx"})`；也可直接按课程名组合调用：`ve.assignments_of_({ courseId: ve.courseList().find(item => item.name === "高等数学").id })`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业标题","content":"作业要求","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]。content 为作业正文，attachments 为详情接口返回的附件。'
+        '**返回示例**：[{"id":"…","title":"作业标题","content":"作业要求","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]。content 为作业正文，attachments 为详情接口返回的附件。'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -883,7 +883,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.uploadFile()`；`ve.uploadFile({accept:".pdf,.doc,.docx"})`；`ve.uploadFile({fileName:"answer.txt", text:"作业内容", mimeType:"text/plain"})`',
         '',
-        '**返回示例**：`{"files":[{"fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","downloadUrl":"http://..."}],"fileList":[{"fileNameNoExt":"answer","fileExtName":"txt","fileSize":"12","visitName":"...","pid":"","ftype":"insert"}]}`。无论上传一个还是多个文件，均返回这一结构。'
+        '**返回示例**：`{"files":[{"fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","downloadUrl":"http://…"}],"fileList":[{"fileNameNoExt":"answer","fileExtName":"txt","fileSize":"12","visitName":"…","pid":"","ftype":"insert"}]}`。无论上传一个还是多个文件，均返回这一结构。'
       ].join('\n'),
       async run(args) {
         return pageInvoke('ve', 'uploadFile', args || {}, 120000);
@@ -972,7 +972,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"...","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"…","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"…"}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1090,7 +1090,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ve.courseware_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"原始rpId","name":"文件名.pdf","category":"电子课件","size":"2.30MB","url":"https://..."}]'
+        '**返回示例**：[{"id":"原始rpId","name":"文件名.pdf","category":"电子课件","size":"2.30MB","url":"https://…"}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -1119,7 +1119,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ve.replay_of_({courseId: "xxx"})`；只查看学生和课件视角：`ve.replay_of_({courseId: "xxx", views: ["student", "courseware"]})`',
         '',
-        '**返回示例**：[{"name":"回放名","teacherName":"老师","startTime":"...","endTime":"...","links":{"student":"https://...","teacher":"https://...","courseware":"https://..."}}]。不再返回内部 videoId。'
+        '**返回示例**：[{"name":"回放名","teacherName":"老师","startTime":"…","endTime":"…","links":{"student":"https://…","teacher":"https://…","courseware":"https://…"}}]。不再返回内部 videoId。'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -1151,7 +1151,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ve.archive_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"原始rpId","name":"归档名.pdf","size":"2.30MB","url":"https://..."}]'
+        '**返回示例**：[{"id":"原始rpId","name":"归档名.pdf","size":"2.30MB","url":"https://…"}]'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -1174,7 +1174,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.courseList()`',
         '',
-        '**返回示例**：[{"classroomId":"...","courseName":"课程名","teacher":"老师","universityId":"..."}]'
+        '**返回示例**：[{"classroomId":"…","courseName":"课程名","teacher":"老师","universityId":"…"}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('ykt', 'courseList', {}, 120000);
@@ -1196,7 +1196,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://..."}]。details 包含活动正文和已加载的试卷题目；线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
+        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文和已加载的试卷题目；线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -1237,7 +1237,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments({status: "pending", type: "试卷"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"ykt:...:...","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"ykt:…:…","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1300,7 +1300,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`academic.currentAccount()`',
         '',
-        '**返回示例**：{"studentId":"...","accounts":[{"studentId":"...","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
+        '**返回示例**：{"studentId":"…","accounts":[{"studentId":"…","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
       ].join('\n'),
       async run() {
         const value = throwOperationFailure(await academicInvoke('currentAccount'), '教务系统账号信息获取失败');
@@ -1351,7 +1351,7 @@ name: 've.teachers_of_',
         '',
         '按学分加权计算一个或多个学期的平均学分绩点。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。百分制和五级制成绩按北京交通大学现行换算规则计算，二级制成绩不参与。',
         '',
-        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: [...]}`。',
+        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: […]}`。',
         '',
         '**调用示例**：`academic.GPA()`；`academic.GPA(["2024-2025-2-2","2023-2024-1-2"])`',
         '',
@@ -1403,7 +1403,7 @@ name: 've.teachers_of_',
         '',
         '按学分加权计算一个或多个学期的平均成绩。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。五级制成绩按北京交通大学现行规则换算为百分制，二级制成绩不参与。',
         '',
-        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: [...]}`。',
+        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: […]}`。',
         '',
         '**调用示例**：`academic.weightedAverageScore()`；`academic.weightedAverageScore(["2024-2025-2-2","2023-2024-1-2"])`',
         '',
@@ -1619,7 +1619,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`cas.loginService({service: "ve"})`；`cas.loginService({service: "academic"})`；`cas.loginService({service: "mail"})`',
         '',
-        '**返回示例**：{"ok":true,"service":"ve","loginName":"z24281271","userName":"苏义新"}；{"ok":true,"service":"academic","studentId":"24281271"}；{"ok":true,"service":"mail","sid":"...","viaSavedPassword":true}'
+        '**返回示例**：{"ok":true,"service":"ve","loginName":"z24281271","userName":"苏义新"}；{"ok":true,"service":"academic","studentId":"24281271"}；{"ok":true,"service":"mail","sid":"…","viaSavedPassword":true}'
       ].join('\n'),
       async run(args) {
         const service = String(args?.service || '').trim().toLowerCase();
@@ -1672,7 +1672,7 @@ name: 've.teachers_of_',
         '',
         '**邮件页面链接**：每条邮件的 `readUrl` 已由扩展使用当前邮箱会话的 `sid` 拼接完成，可直接打开。其格式为 `https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=<当前 sid>#mail.read|${JSON.stringify({fid: 1, mid: row.id, mboxa: ""})}`；其中收件箱的 `fid` 为 `1`，`mid` 使用该邮件的 `id`。由于 `sid` 可能过期，应优先使用本次调用返回的 `readUrl`。',
         '',
-        '**返回示例**：{"rows":[{"id":"...","subject":"...","from":"\\"张三\\" <xx@bjtu.edu.cn>","to":"...","summary":"...","sentDate":"...","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true,"threadMessageCount":1,"readUrl":"https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=...#mail.read|{...}"}],"total":363,"unreadCount":7}'
+        '**返回示例**：{"rows":[{"id":"…","subject":"…","from":"\\"张三\\" <xx@bjtu.edu.cn>","to":"…","summary":"…","sentDate":"…","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true,"threadMessageCount":1,"readUrl":"https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=…#mail.read|{…}"}],"total":363,"unreadCount":7}'
       ].join('\n'),
       async run(args) {
         const hasLimit = !!args && Object.prototype.hasOwnProperty.call(args, 'limit');
@@ -1744,7 +1744,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.courseList()`',
         '',
-        '**返回示例**：`[{"id":"...","name":"课程名","schoolName":"学校","url":"https://...","taskCount":3,"loaded":true}]`'
+        '**返回示例**：`[{"id":"…","name":"课程名","schoolName":"学校","url":"https://…","taskCount":3,"loaded":true}]`'
       ].join('\n'),
       async run() {
         return pageInvoke('mooc', 'courseList', {}, 120000);
@@ -1782,7 +1782,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.assignments_of_({courseId: "xxx", status: "pending"})`',
         '',
-        '**返回示例**：`[{"id":"...","title":"作业名","type":"单元作业","startTime":0,"deadline":1234567890000,"status":"pending","details":{"questions":[]},"actionUrl":"https://..."}]`。details 为已加载的试卷或作业题目详情。'
+        '**返回示例**：`[{"id":"…","title":"作业名","type":"单元作业","startTime":0,"deadline":1234567890000,"status":"pending","details":{"questions":[]},"actionUrl":"https://…"}]`。details 为已加载的试卷或作业题目详情。'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -1808,7 +1808,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.teachers_of_({courseId: "xxx"})`',
         '',
-        '**返回示例**：`[{"name":"老师","url":"https://www.icourse163.org/u/..."}]`'
+        '**返回示例**：`[{"name":"老师","url":"https://www.icourse163.org/u/…"}]`'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -1830,7 +1830,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mooc.assignments({status: "pending", type: "单元作业"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"mooc:...:...","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"mooc:…:…","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
       ].join('\n'),
       async run(args) {
         const value = await pageInvoke('mooc', 'assignments', { status: String(args?.status || 'all'), type: String(args?.type || 'all') }, 240000);
@@ -1849,7 +1849,7 @@ name: 've.teachers_of_',
         '',
         '**参数**：{"imageUrl":"图片URL，必填","model":"可选。指定 omis/cas/omis.onnx 时使用 omis.onnx 模型识别（返回 expression/answer）；指定其他值时按 Tesseract OCR 模型版本处理（如 4.0.0_fast，返回 passcode）；省略时使用默认验证码识别（omis.onnx）"}',
         '',
-        '**调用示例**：`captcha.recognize({imageUrl: "https://...", model: "omis.onnx"})` 或 `captcha.recognize({imageUrl: "https://...", model: "4.0.0_fast"})`',
+        '**调用示例**：`captcha.recognize({imageUrl: "https://…", model: "omis.onnx"})` 或 `captcha.recognize({imageUrl: "https://…", model: "4.0.0_fast"})`',
         '',
         '**返回示例**：{"passcode":"1234"}'
       ].join('\n'),
@@ -1995,7 +1995,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.courseList()`',
         '',
-        '**返回示例**：[{"classNum":"...","divClass":"课程名","teacherName":"老师","homeworkCount":3}]'
+        '**返回示例**：[{"classNum":"…","divClass":"课程名","teacherName":"老师","homeworkCount":3}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('mrjzy', 'courseList', {}, 120000);
@@ -2017,7 +2017,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.assignments_of_({classNum: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业名","startTime":0,"deadline":1767225600000,"status":"pending","details":{},"link":"https://..."}]。details 为每日交作业详情接口返回的数据。'
+        '**返回示例**：[{"id":"…","title":"作业名","startTime":0,"deadline":1767225600000,"status":"pending","details":{},"link":"https://…"}]。details 为每日交作业详情接口返回的数据。'
       ].join('\n'),
       async run(args) {
         const classNum = String(args?.classNum || '').trim();
@@ -2052,7 +2052,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`mrjzy.assignments({status: "pending"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"mrjzy:...:...","courseName":"课程名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"mrjzy:…:…","courseName":"课程名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -2137,7 +2137,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.courseList()`',
         '',
-        '**返回示例**：[{"groupId":"...","name":"群组名","teacherName":"老师","homeworkCount":2}]'
+        '**返回示例**：[{"groupId":"…","name":"群组名","teacherName":"老师","homeworkCount":2}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('jlgj', 'courseList', {}, 120000);
@@ -2159,7 +2159,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.assignments_of_({groupId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","title":"作业名","content":"作业说明","deadline":1767225600000,"status":"pending","link":"https://..."}]'
+        '**返回示例**：[{"id":"…","title":"作业名","content":"作业说明","deadline":1767225600000,"status":"pending","link":"https://…"}]'
       ].join('\n'),
       async run(args) {
         const groupId = String(args?.groupId || '').trim();
@@ -2193,7 +2193,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`jlgj.assignments({status: "pending"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"jlgj:...:...","courseName":"群组名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"jlgj:…:…","courseName":"群组名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -2296,7 +2296,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.courseList()`',
         '',
-        '**返回示例**：[{"classroomId":"...","name":"课程名","sign":"...","status":1,"totalSchedule":10,"score":90,"taskCount":5}]'
+        '**返回示例**：[{"classroomId":"…","name":"课程名","sign":"…","status":1,"totalSchedule":10,"score":90,"taskCount":5}]'
       ].join('\n'),
       async run() {
         const value = await pageInvoke('xuetangx', 'courseList', {}, 120000);
@@ -2327,7 +2327,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"...","title":"任务名","type":"作业","startTime":1760000000000,"deadline":1767225600000,"progress":0.5,"status":"pending","userScore":0,"totalScore":100,"locked":false,"details":{"problems":[]},"action":"https://..."}]。details 包含已加载的作业题目；无详情的任务该字段为 null。'
+        '**返回示例**：[{"id":"…","title":"任务名","type":"作业","startTime":1760000000000,"deadline":1767225600000,"progress":0.5,"status":"pending","userScore":0,"totalScore":100,"locked":false,"details":{"problems":[]},"action":"https://…"}]。details 包含已加载的作业题目；无详情的任务该字段为 null。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -2363,7 +2363,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`xuetangx.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"xuetangx:...:...","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://..."}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"xuetangx:…:…","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -2638,7 +2638,7 @@ name: 've.teachers_of_',
         '',
         '**进度通知示例**：`reminder.send({notificationId: "download-1", replaceExisting: true, type: "progress", title: "正在下载", message: "模型资源", progress: 45})`',
         '',
-        '**返回示例**：`{"notificationId":"bjtu-qwen-notification:..."}`'
+        '**返回示例**：`{"notificationId":"bjtu-qwen-notification:…"}`'
       ].join('\n'),
       async run(args) {
         if (!args || typeof args !== 'object' || Array.isArray(args)) {

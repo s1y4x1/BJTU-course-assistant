@@ -82,8 +82,8 @@ const DEFAULT_ANIMATION_SPEED = 1;
 const DEFAULT_FONT_SIZE_SETTINGS = Object.freeze({
   zeroTitle: 24,
   icon: 22,
-  primaryTitle: 18,
-  secondaryTitle: 15,
+  primaryTitle: 20,
+  secondaryTitle: 16,
   body: 13,
   auxiliary: 11
 });

@@ -917,7 +917,7 @@ if (pasteFileBtn) {
       await ensureVeUploadSession();
       const items = await navigator.clipboard.read();
       if (!items || !items.length) {
-        showToast('剪贴板中没有可粘贴的内容', 'info', 2000);
+        showToast('剪贴板中没有可粘贴的内容', 'warning', 2000);
         return;
       }
       const files = [];
@@ -970,14 +970,14 @@ if (pasteFileBtn) {
         }
       }
       if (!files.length) {
-        showToast('若从资源管理器复制文件或文件夹，请在页面按 Ctrl+V 粘贴', 'info', 3000);
+        showToast('若从资源管理器复制文件或文件夹，请在页面按 Ctrl+V 粘贴', 'warning', 3000);
         return;
       }
       const nonTextCount = files.length - textCount;
       if (textCount > 0 && nonTextCount === 0) {
-        showToast(`已将剪贴板文本转为 ${files.length} 个文件并开始上传`, 'info', 3000);
+        showToast(`已将剪贴板文本转为 ${files.length} 个文件，正在上传…`, 'info', 3000);
       } else if (textCount > 0) {
-        showToast(`已粘贴 ${nonTextCount} 个文件，${textCount} 个文本已转为文件`, 'info', 3000);
+        showToast(`已粘贴 ${nonTextCount} 个文件，${textCount} 个文本已转为文件，正在上传…`, 'info', 3000);
       }
       processFilesForUpload(files);
     } catch (err) {
@@ -1067,7 +1067,7 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
   }
 
   if (skippedDuplicateCount > 0) {
-    showToast(`已复用 ${skippedDuplicateCount} 个已上传文件`, 'info', 1800);
+    showToast(`已复用 ${skippedDuplicateCount} 个已上传文件`, 'success', 1800);
   }
   if (!pendingFiles.length) {
     updateTotalProgress();

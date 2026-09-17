@@ -165,8 +165,11 @@ html[data-color-scheme="dark"] .upload-total-progress-wrap .progress-bar-contain
   gap: 10px;
   margin-bottom: 8px;
 }
+.version-modal-header > :first-child {
+  font-size: var(--bjtu-font-size-primaryTitle, 20px);
+}
 .version-download-title {
-  font-size: 18px;
+  font-size: var(--bjtu-font-size-primaryTitle, 20px);
   font-weight: 700;
   color: #111827;
 }

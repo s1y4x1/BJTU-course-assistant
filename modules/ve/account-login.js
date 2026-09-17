@@ -1214,7 +1214,7 @@
             setProgress(0, '', false);
             global.showToast?.(
               '已跳过账号列表初始化；登录时可在“账号或密码错误”窗口中重新初始化账号列表',
-              'info',
+              'warning',
               5000
             );
             return { skipped: true, count: existingCount };

@@ -28,7 +28,7 @@
 .mooc-progress-mask { z-index:10005; }
 .mooc-progress-mask.show { display:flex; }
 .mooc-progress-card { width:min(560px,calc(100vw - 32px)); box-sizing:border-box; max-height:min(76vh,680px); display:flex; flex-direction:column; overflow:hidden; }
-.mooc-progress-title { font-size:18px; font-weight:700; color:#0f172a; }
+.mooc-progress-title { font-size:var(--bjtu-font-size-primaryTitle, 20px); font-weight:700; color:#0f172a; }
 .mooc-progress-title a { color:#00cc7e; text-decoration:none; }
 .mooc-progress-summary { margin:4px 0 8px; color:#334155; font-size:13px; overflow-wrap:anywhere; }
 .mooc-progress-bar { background:#00cc7e; }

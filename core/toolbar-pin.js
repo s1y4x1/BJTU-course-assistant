@@ -92,7 +92,7 @@
     modal.querySelector('.toolbar-pin-never')?.addEventListener('click', async () => {
       try { await chrome.storage.local.set({ [REMINDER_KEY]: false }); } catch {}
       closeModal();
-      showToast('已关闭提醒，可在扩展选项中重新开启', 'info', 3000);
+      showToast('已关闭提醒，可在扩展选项中重新开启', 'warning', 3000);
     });
     return modal;
   }

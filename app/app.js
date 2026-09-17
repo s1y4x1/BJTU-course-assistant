@@ -2411,7 +2411,7 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
   } else {
     toast.textContent = text;
   }
-  if (type === 'info' && (text.endsWith('...') || text.includes('...') || text.endsWith('…'))) {
+  if (type === 'info' && text.includes('…')) {
     const spinner = document.createElement('span');
     spinner.className = 'toast-spinner';
     toast.appendChild(spinner);
@@ -5512,7 +5512,7 @@ if (resourceDownloadSelectedBtn) {
       }).catch((err) => {
         const msg = String(err?.message || err || '');
         if (msg.includes('下载已取消')) {
-          showToast(`已取消: ${String(item?.name || '未命名文件')}`, 'info', 1200);
+          showToast(`已取消: ${String(item?.name || '未命名文件')}`, 'warning', 1200);
           refreshResourceQueueStatusText();
           return;
         }
@@ -5810,7 +5810,7 @@ if (resourceSpaceList) {
     if (action === 'resource-cancel-download') {
       const cancelled = cancelResourceDownload(id);
       if (cancelled) {
-        showToast('已取消下载', 'info', 1000);
+        showToast('已取消下载', 'warning', 1000);
       }
       return;
     }
@@ -5836,7 +5836,7 @@ if (resourceSpaceList) {
       } catch (err) {
         const msg = String(err?.message || err || '');
         if (msg.includes('下载已取消')) {
-          showToast('下载已取消', 'info', 1000);
+          showToast('下载已取消', 'warning', 1000);
         } else {
           showToast(`下载失败：${msg}`, 'error', 1800);
         }
@@ -5912,7 +5912,7 @@ courseListDiv.addEventListener('click', async (e) => {
 
   if (action === 'resource-cancel-download') {
     const cancelled = cancelResourceDownload(id);
-    if (cancelled) showToast('已取消下载', 'info', 1000);
+    if (cancelled) showToast('已取消下载', 'warning', 1000);
     return;
   }
 
@@ -5922,7 +5922,7 @@ courseListDiv.addEventListener('click', async (e) => {
       showToast('下载完成', 'success', 1200);
     } catch (err) {
       const msg = String(err?.message || err || '');
-      if (msg.includes('下载已取消')) showToast('下载已取消', 'info', 1000);
+      if (msg.includes('下载已取消')) showToast('下载已取消', 'warning', 1000);
       else showToast(`下载失败：${msg}`, 'error', 1800);
     }
   }
@@ -6013,7 +6013,7 @@ usernameInput.addEventListener('change', async () => {
     resetAccountSwitchInterruption();
     isLoginSessionValid = false;
     updateJsessionidState();
-    showToast('账号已清空：可直接填写 JSESSIONID', 'info', 2500);
+    showToast('账号已清空：可直接填写 JSESSIONID', 'warning', 2500);
     await loadResourceSpaceForCurrentAccount();
     return;
   }

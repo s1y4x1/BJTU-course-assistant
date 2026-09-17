@@ -282,7 +282,7 @@ function syncVersionNoticeDownloadButton(buttonText) {
   }
   const downloading = isVersionDownloadingNow();
   if (downloading) {
-    btn.textContent = '后台下载中...';
+    btn.textContent = '后台下载中…';
   } else if (buttonText) {
     btn.textContent = buttonText;
   } else {
@@ -526,7 +526,7 @@ function ensureVersionNoticeModal() {
       if (versionButtonLatestForce) {
         cancelVersionNoticeForceCountdown();
         modal.style.display = 'none';
-        showToast('将在关闭扩展页面后的例行检查中更新', 'info', 2200);
+        showToast('将在关闭扩展页面后的例行检查中更新', 'warning', 2200);
         return;
       }
       const tag = String(versionButtonLatestVersion || '').trim();
@@ -537,7 +537,7 @@ function ensureVersionNoticeModal() {
       versionIgnoredTag = tag;
       await setLocal(VERSION_IGNORE_KEY, tag);
       modal.style.display = 'none';
-      showToast(`已忽略 ${tag} 的更新提示`, 'info', 1600);
+      showToast(`已忽略 ${tag} 的更新提示`, 'warning', 1600);
     });
   }
 
@@ -841,7 +841,7 @@ function ensureVersionDownloadModal() {
       if (versionDownloadPhase !== 'downloading') return;
       versionDownloadMinimized = true;
       modal.style.display = 'none';
-      showToast('已最小化，后台静默下载中...', 'info', 1400);
+      showToast('已最小化，后台静默下载中…', 'info', 1400);
     });
   }
   modal.addEventListener('mousedown', (e) => {
@@ -859,7 +859,7 @@ function ensureVersionDownloadModal() {
         } else if (versionDownloadPhase === 'downloading') {
           versionDownloadMinimized = true;
           modal.style.display = 'none';
-          showToast('已最小化，后台静默下载中...', 'info', 1400);
+          showToast('已最小化，后台静默下载中…', 'info', 1400);
         }
       }
     }
@@ -889,9 +889,9 @@ function renderVersionDownloadBodyHtml(bodyText) {
 
 function setVersionDownloadProgressUi({
   visible = true,
-  status = '下载中...',
+  status = '下载中…',
   title = '正在下载',
-  body = '请稍候，正在下载更新文件...',
+  body = '请稍候，正在下载更新文件…',
   phase = 'downloading'
 } = {}) {
   const modal = ensureVersionDownloadModal();
@@ -929,7 +929,7 @@ function setVersionDownloadProgressUi({
   if (phase === 'finished' || phase === 'failed' || phase === 'directory') setVersionDownloadBar({ visible: false });
 
   if (titleEl) titleEl.textContent = String(title || '正在下载');
-  if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件...');
+  if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件…');
   if (statusEl) {
     statusEl.replaceChildren();
     delete statusEl.dataset.transfer;
@@ -938,7 +938,7 @@ function setVersionDownloadProgressUi({
     delete statusEl.dataset.speed;
     delete statusEl.dataset.eta;
     delete statusEl.dataset.percent;
-    const message = phase === 'finished' ? '' : String(status || '下载中...');
+    const message = phase === 'finished' ? '' : String(status || '下载中…');
     if (message) {
       const messageEl = document.createElement('span');
       messageEl.className = 'version-download-status-message';
@@ -2473,7 +2473,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
   versionBtn.disabled = !(versionButtonMode === 'failure' || versionButtonMode === 'outdated' || versionButtonMode === 'latest' || versionButtonMode === 'ahead');
 
   if (versionButtonMode === 'loading') {
-    versionBtn.innerHTML = '<span class="version-btn-spinner"></span><span>获取最新版本中...</span>';
+    versionBtn.innerHTML = '<span class="version-btn-spinner"></span><span>获取最新版本中…</span>';
     return;
   }
   if (versionButtonMode === 'failure') {

@@ -827,7 +827,7 @@ body.platform-column-resizing {
     word-break: break-all;
 }
 .course-card-title {
-    font-size: var(--bjtu-font-size-primaryTitle, 18px);
+    font-size: var(--bjtu-font-size-primaryTitle, 20px);
 }
 .course-card-title > strong {
     font-size: inherit;
@@ -1413,7 +1413,7 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
 .homework-meta-tail { flex:0 0 auto; margin-left:auto; text-align:right; }
 .homework-deadline-value { font-size:12px; font-weight:700; line-height:inherit; color:#000; }
 .homework-score-badge { color:#e91e63; font-size:12px; font-weight:700; line-height:1; white-space:nowrap; }
-.homework-card-title { font-size:var(--bjtu-font-size-secondaryTitle, 15px); font-weight:700; overflow-wrap:anywhere; }
+.homework-card-title { font-size:var(--bjtu-font-size-secondaryTitle, 16px); font-weight:700; overflow-wrap:anywhere; }
 .homework-card-main { min-width:0; flex:1 1 auto; }
 .homework-card-actions { flex:0 0 auto; }
 .homework-card-title > a { color:inherit; text-decoration:none; }
@@ -1826,7 +1826,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     border: 1px solid #e8edf5;
     position: relative;
 }
-#login-modal .login-panel h3 { margin: 0 0 10px; color: #1f2937; padding-right: 36px; }
+#login-modal .login-panel h3 { margin: 0 0 10px; color: #1f2937; padding-right: 36px; font-size:var(--bjtu-font-size-primaryTitle, 20px); }
 #login-modal #login-modal-close { position: absolute; top: 10px; right: 10px; }
 
 /* Keep course helper readable and left panel slightly denser */
@@ -1925,7 +1925,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     margin:0 -12px 8px;
     padding:10px 12px 8px;
     background:inherit;
-    font-size:18px;
+    font-size:var(--bjtu-font-size-primaryTitle, 20px);
     font-weight:600;
     cursor:move;
     user-select:none;

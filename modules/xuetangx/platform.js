@@ -420,7 +420,7 @@
     const until = Date.now() + waitMs;
     const key = account === 'second' ? 'second' : 'current';
     problemApplyRateLimitUntil[key] = Math.max(problemApplyRateLimitUntil[key], until);
-    env?.toast?.(`学堂在线提交受到限速，${Math.ceil(waitMs / 1000)}秒后自动重试`, 'info');
+    env?.toast?.(`学堂在线提交受到限速，${Math.ceil(waitMs / 1000)}秒后自动重试…`, 'info');
     render();
     scheduleProblemApplyRateLimitRender();
   }
@@ -612,7 +612,7 @@
       render();
       const summary = { submitted, skipped, unavailable };
       if (!silent) {
-        env?.toast?.(`学堂在线：已提交 ${submitted} 题${skipped ? `，跳过 ${skipped} 题` : ''}${unavailable ? `，${unavailable} 题未取得答案` : ''}`, submitted ? 'success' : 'info');
+        env?.toast?.(`学堂在线：已提交 ${submitted} 题${skipped ? `，跳过 ${skipped} 题` : ''}${unavailable ? `，${unavailable} 题未取得答案` : ''}`, submitted ? 'success' : 'warning');
       }
       return summary;
     } catch (error) {
@@ -628,7 +628,7 @@
     if (course.secondAnswerAllBusy) return;
     const tasks = course.tasks.filter((task) => task.typeId === 11);
     if (!tasks.length) {
-      env?.toast?.('当前课程没有可提交的学堂在线作业', 'info');
+      env?.toast?.('当前课程没有可提交的学堂在线作业', 'warning');
       return;
     }
     course.secondAnswerAllBusy = true;
@@ -643,7 +643,7 @@
         total.unavailable += Number(result?.unavailable || 0);
         if (result?.error && result.error.code !== 'cancelled') total.failed += 1;
       }
-      env?.toast?.(`学堂在线：全部作业已处理，提交 ${total.submitted} 题${total.skipped ? `，跳过 ${total.skipped} 题` : ''}${total.unavailable ? `，${total.unavailable} 题未取得答案` : ''}${total.failed ? `，失败 ${total.failed} 项` : ''}`, total.failed ? 'error' : (total.submitted ? 'success' : 'info'));
+      env?.toast?.(`学堂在线：全部作业已处理，提交 ${total.submitted} 题${total.skipped ? `，跳过 ${total.skipped} 题` : ''}${total.unavailable ? `，${total.unavailable} 题未取得答案` : ''}${total.failed ? `，失败 ${total.failed} 项` : ''}`, total.failed ? 'error' : (total.submitted ? 'success' : 'warning'));
     } catch (error) {
       if (error?.code !== 'cancelled') env?.toast?.(`学堂在线批量查答失败：${error?.message || error}`, 'error');
     } finally {

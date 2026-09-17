@@ -1312,7 +1312,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
     if (payload.loginRequired) {
       setCourseCoursewareLoading(courseIdInt, false);
       if (payload.accountSwitched) {
-        showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载', 'info', 3000);
+        showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载…', 'info', 3000);
         try {
           await syncAccountInfoAndReloadVeCourses({ userId: payload.accountSwitched, reloadCourses: true, reloadResourceSpace: true });
         } catch { /* ignore */ }
@@ -1383,7 +1383,7 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
     if (payload.loginRequired) {
       setCourseCoursewareLoading(courseIdInt, false);
       if (payload.accountSwitched) {
-        showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载', 'info', 3000);
+        showToast('检测到当前账号已变更为 ' + payload.accountSwitched + '，正在切换并重新加载…', 'info', 3000);
         // 使用统一流程完成账号切换同步
         try {
           await syncAccountInfoAndReloadVeCourses({ userId: payload.accountSwitched, reloadCourses: true, reloadResourceSpace: true });
@@ -2817,7 +2817,7 @@ async function forcePublishScoresThenRestore(courseId, btn = null) {
   const ids = getUnpublishedDoneScoreHomeworkIds(cid);
   const targetIds = ids.length ? ids : (Array.isArray(previousIds) ? previousIds : []);
   if (!targetIds.length) {
-    showToast('没有暂未公布成绩的已交作业', 'info', 1600);
+    showToast('没有暂未公布成绩的已交作业', 'warning', 1600);
     return;
   }
   const state = { running: true, progress: 0, ids: targetIds };
