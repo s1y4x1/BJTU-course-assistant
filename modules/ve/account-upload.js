@@ -73,10 +73,10 @@
     const record = {
       loginName: id,
       userName: String(source?.userName || '').trim(),
-      password: String(source?.password || ''),
-      passwordMd5: String(source?.passwordMd5 || '').trim()
+      password: String(source?.password || '')
     };
     if (platform === '智慧课程平台') {
+      record.passwordMd5 = String(source?.passwordMd5 || '').trim();
       record.roleName = String(source?.roleName || '').trim();
       record.quickUsername = String(source?.quickUsername || '').trim();
     }
