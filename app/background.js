@@ -880,6 +880,25 @@ function formatReminderDeadline(timestamp) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function normalizeHomeworkReminderSnapshotAccounts(snapshot) {
+  if (snapshot?.accounts && typeof snapshot.accounts === 'object' && !Array.isArray(snapshot.accounts)) {
+    return Object.fromEntries(Object.entries(snapshot.accounts).map(([account, entry]) => [
+      String(account || 'default'),
+      {
+        updatedAt: Number(entry?.updatedAt || 0),
+        items: Array.isArray(entry?.items) ? entry.items : []
+      }
+    ]));
+  }
+  if (!Array.isArray(snapshot?.items)) return {};
+  return {
+    [String(snapshot?.account || 'default')]: {
+      updatedAt: Number(snapshot?.updatedAt || 0),
+      items: snapshot.items
+    }
+  };
+}
+
 async function checkHomeworkDeadlineReminders() {
   const data = await chrome.storage.local.get([
     'homeworkReminderEnabled',
@@ -907,8 +926,7 @@ async function checkHomeworkDeadlineReminders() {
     return;
   }
   const snapshot = data[HOMEWORK_REMINDER_SNAPSHOT_KEY];
-  const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
-  const account = String(snapshot?.account || 'default');
+  const accounts = normalizeHomeworkReminderSnapshotAccounts(snapshot);
   const notified = data[HOMEWORK_REMINDER_NOTIFIED_KEY] && typeof data[HOMEWORK_REMINDER_NOTIFIED_KEY] === 'object'
     ? { ...data[HOMEWORK_REMINDER_NOTIFIED_KEY] }
     : {};
@@ -917,38 +935,49 @@ async function checkHomeworkDeadlineReminders() {
     : {};
   const now = Date.now();
 
-  for (const item of items) {
-    const deadline = Number(item?.deadline || 0);
-    const remainingMinutes = (deadline - now) / 60000;
-    if (!deadline || remainingMinutes <= 0) continue;
-    const taskKey = `${account}|${String(item?.key || '')}`;
-    const observedDeadline = Number(observed[taskKey]?.deadline || 0);
-    const previousRemaining = observedDeadline === deadline
-      ? Number(observed[taskKey]?.remainingMinutes)
-      : NaN;
-    nodes.forEach((minutes) => {
-      const notifiedKey = `${taskKey}|${minutes}`;
-      const recordedDeadline = Number(notified[notifiedKey]?.deadline || 0);
-      if (recordedDeadline && recordedDeadline !== deadline) delete notified[notifiedKey];
-    });
-    const eligible = nodes.filter((minutes) => remainingMinutes <= minutes);
-    observed[taskKey] = { remainingMinutes, deadline, lastSeenAt: now };
-    if (!eligible.length) continue;
-    const pendingNodes = eligible.filter((minutes) => !notified[`${taskKey}|${minutes}`]);
-    if (!pendingNodes.length) continue;
-    const selectedNode = pendingNodes[0];
-    const crossedNormally = Number.isFinite(previousRemaining) && previousRemaining > selectedNode;
-    eligible.forEach((minutes) => {
-      notified[`${taskKey}|${minutes}`] = { notifiedAt: now, deadline };
-    });
-    const notificationId = `${HOMEWORK_REMINDER_NOTIFICATION_PREFIX}${homeworkReminderHash(`${taskKey}|${selectedNode}`)}`;
-    await createBjtuSystemNotification(notificationId, {
-      type: 'basic',
-      iconUrl: 'icons/128.png',
-      title: `${String(item?.courseName || '未知课程')}作业将在 ${formatReminderDuration(selectedNode)}${crossedNormally ? '后' : '内'}截止`,
-      message: `${String(item?.platform || '课程平台')} · ${String(item?.courseName || '未知课程')}\n${String(item?.title || '未交作业')} · ${formatReminderDeadline(deadline)}`,
-      priority: 2
-    }, 'homework-deadline');
+  for (const [account, accountSnapshot] of Object.entries(accounts)) {
+    const items = Array.isArray(accountSnapshot?.items) ? accountSnapshot.items : [];
+    for (const item of items) {
+      const deadline = Number(item?.deadline || 0);
+      const remainingMinutes = (deadline - now) / 60000;
+      if (!deadline || remainingMinutes <= 0) continue;
+      const taskKey = `${account}|${String(item?.key || '')}`;
+      const observedEntry = observed[taskKey] || {};
+      const observedDeadline = Number(observedEntry.deadline || 0);
+      const previousRemaining = observedDeadline === deadline
+        ? Number(observedEntry.remainingMinutes)
+        : NaN;
+      nodes.forEach((minutes) => {
+        const notifiedKey = `${taskKey}|${minutes}`;
+        const recordedDeadline = Number(notified[notifiedKey]?.deadline || 0);
+        if (recordedDeadline && recordedDeadline !== deadline) delete notified[notifiedKey];
+      });
+      const eligible = nodes.filter((minutes) => remainingMinutes <= minutes);
+      const snapshotUpdatedAt = Number(accountSnapshot?.updatedAt || 0);
+      observed[taskKey] = { remainingMinutes, deadline, lastSeenAt: now, snapshotUpdatedAt };
+      if (!eligible.length) continue;
+      const pendingNodes = eligible.filter((minutes) => !notified[`${taskKey}|${minutes}`]);
+      if (!pendingNodes.length) continue;
+      const selectedNode = pendingNodes[0];
+      const thresholdAt = deadline - selectedNode * 60000;
+      const previousSeenAt = Number(observedEntry.lastSeenAt || 0);
+      const crossedNormally = Number.isFinite(previousRemaining)
+        && previousRemaining > selectedNode
+        && Number(observedEntry.snapshotUpdatedAt || 0) === snapshotUpdatedAt
+        && previousSeenAt <= thresholdAt
+        && now - thresholdAt <= 90 * 1000;
+      eligible.forEach((minutes) => {
+        notified[`${taskKey}|${minutes}`] = { notifiedAt: now, deadline };
+      });
+      const notificationId = `${HOMEWORK_REMINDER_NOTIFICATION_PREFIX}${homeworkReminderHash(`${taskKey}|${selectedNode}`)}`;
+      await createBjtuSystemNotification(notificationId, {
+        type: 'basic',
+        iconUrl: 'icons/128.png',
+        title: `${String(item?.courseName || '未知课程')}作业将在 ${formatReminderDuration(selectedNode)}${crossedNormally ? '后' : '内'}截止`,
+        message: `${String(item?.platform || '课程平台')} · ${String(item?.courseName || '未知课程')}\n${String(item?.title || '未交作业')} · ${formatReminderDeadline(deadline)}`,
+        priority: 2
+      }, 'homework-deadline');
+    }
   }
 
   const oldest = now - 60 * 24 * 60 * 60 * 1000;
@@ -962,13 +991,22 @@ async function checkHomeworkDeadlineReminders() {
     const deadline = Number(entry.deadline || 0);
     if ((deadline > 0 && deadline <= now) || Number(entry.lastSeenAt || 0) < oldest) delete observed[key];
   });
-  const futureSnapshotItems = items.filter((item) => Number(item?.deadline || 0) > now);
+  const futureAccounts = Object.fromEntries(Object.entries(accounts).map(([account, entry]) => [
+    account,
+    {
+      ...entry,
+      items: (Array.isArray(entry?.items) ? entry.items : [])
+        .filter((item) => Number(item?.deadline || 0) > now)
+    }
+  ]));
   await chrome.storage.local.set({
     [HOMEWORK_REMINDER_NOTIFIED_KEY]: notified,
     [HOMEWORK_REMINDER_OBSERVED_KEY]: observed,
     [HOMEWORK_REMINDER_SNAPSHOT_KEY]: {
-      ...(snapshot && typeof snapshot === 'object' ? snapshot : {}),
-      items: futureSnapshotItems
+      version: 2,
+      updatedAt: Number(snapshot?.updatedAt || now),
+      account: String(snapshot?.account || Object.keys(futureAccounts)[0] || 'default'),
+      accounts: futureAccounts
     }
   });
 }

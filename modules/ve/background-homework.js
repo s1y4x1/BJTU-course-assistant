@@ -83,7 +83,7 @@
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
     const stored = await chrome.storage.local.get([
-      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, XQ_CODE_KEY
+      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, SNAPSHOT_KEY, XQ_CODE_KEY
     ]).catch(() => ({}));
     if (stored?.[ENABLED_KEY] !== true) return { skipped: 'disabled' };
     const account = String(stored?.[ACCOUNT_KEY] || '').trim();
@@ -164,7 +164,7 @@
       xqSelectHtml,
       xqSelectValue: xqCode
     };
-    const snapshot = { version: 1, updatedAt: savedAt, account, items: reminderItems };
+    const snapshot = mergeVeReminderSnapshot(stored?.[SNAPSHOT_KEY], account, reminderItems, savedAt);
     await chrome.storage.local.set({
       [CACHE_KEY]: cache,
       [SNAPSHOT_KEY]: snapshot,
@@ -203,6 +203,29 @@
     if (Number.isNaN(date.getTime())) return '未知';
     const pad = (part) => String(part).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function mergeVeReminderSnapshot(previousSnapshot, account, items, updatedAt) {
+    const accounts = previousSnapshot?.accounts && typeof previousSnapshot.accounts === 'object'
+      && !Array.isArray(previousSnapshot.accounts)
+      ? { ...previousSnapshot.accounts }
+      : (Array.isArray(previousSnapshot?.items)
+        ? {
+            [String(previousSnapshot?.account || 'default')]: {
+              updatedAt: Number(previousSnapshot?.updatedAt || 0),
+              items: previousSnapshot.items
+            }
+          }
+        : {});
+    const previousItems = Array.isArray(accounts[account]?.items) ? accounts[account].items : [];
+    accounts[account] = {
+      updatedAt,
+      items: [
+        ...previousItems.filter((item) => String(item?.platform || '') !== '智慧课程平台'),
+        ...items
+      ]
+    };
+    return { version: 2, updatedAt, account, accounts };
   }
 
   async function notifyNewHomework(message) {

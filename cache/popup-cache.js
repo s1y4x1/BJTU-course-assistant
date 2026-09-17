@@ -404,12 +404,63 @@ function collectHomeworkReminderSnapshot() {
 }
 
 let homeworkReminderSnapshotTimer = null;
+
+function normalizeHomeworkReminderAccounts(snapshot) {
+  if (snapshot?.accounts && typeof snapshot.accounts === 'object' && !Array.isArray(snapshot.accounts)) {
+    return Object.fromEntries(Object.entries(snapshot.accounts).map(([account, entry]) => [
+      String(account || 'default'),
+      {
+        updatedAt: Number(entry?.updatedAt || 0),
+        items: Array.isArray(entry?.items) ? entry.items : []
+      }
+    ]));
+  }
+  if (!Array.isArray(snapshot?.items)) return {};
+  return {
+    [String(snapshot?.account || 'default')]: {
+      updatedAt: Number(snapshot?.updatedAt || 0),
+      items: snapshot.items
+    }
+  };
+}
+
+const HOMEWORK_REMINDER_PLATFORM_LABELS = Object.freeze({
+  ve: '智慧课程平台',
+  ykt: '雨课堂',
+  mrjzy: '每日交作业',
+  jlgj: '接龙管家',
+  mooc: '中国大学MOOC',
+  xuetangx: '学堂在线'
+});
+
 async function saveHomeworkReminderSnapshotNow() {
+  const now = Date.now();
+  const account = String(window.currentAccountLoginName || 'default').trim() || 'default';
+  const currentItems = collectHomeworkReminderSnapshot();
+  const stored = await chrome.storage.local.get([HOMEWORK_REMINDER_SNAPSHOT_KEY]).catch(() => ({}));
+  const previousSnapshot = stored?.[HOMEWORK_REMINDER_SNAPSHOT_KEY];
+  const accounts = normalizeHomeworkReminderAccounts(previousSnapshot);
+  const previousItems = Array.isArray(accounts[account]?.items) ? accounts[account].items : [];
+  const authoritativePlatforms = new Set();
+  Object.entries(HOMEWORK_REMINDER_PLATFORM_LABELS).forEach(([platform, label]) => {
+    const online = window.platformLoginState?.[platform] === 'online';
+    const loaded = window.platformLoadedOnce?.[platform] === true
+      || currentItems.some((item) => item?.platform === label);
+    if (online && loaded) authoritativePlatforms.add(label);
+  });
+
+  // 登录失效的平台不再出现在当前 DOM 中，但其已知作业仍须继续提醒。
+  // 只替换本次已成功加载的平台数据，其他平台保留上次快照。
+  const mergedItems = [
+    ...previousItems.filter((item) => !authoritativePlatforms.has(String(item?.platform || ''))),
+    ...currentItems.filter((item) => authoritativePlatforms.has(String(item?.platform || '')))
+  ];
+  accounts[account] = { updatedAt: now, items: mergedItems };
   const snapshot = {
-    version: 1,
-    updatedAt: Date.now(),
-    account: String(window.currentAccountLoginName || ''),
-    items: collectHomeworkReminderSnapshot()
+    version: 2,
+    updatedAt: now,
+    account,
+    accounts
   };
   await chrome.storage.local.set({ [HOMEWORK_REMINDER_SNAPSHOT_KEY]: snapshot });
   return snapshot;
