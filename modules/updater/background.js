@@ -25,19 +25,6 @@
   const MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
   const MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
   const REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
-  const ROOT_COMPONENT_DIRECTORY_NAMES = Object.freeze({
-    _locales: '_locales',
-    app: 'app',
-    cache: 'cache',
-    core: 'core',
-    icons: 'icons',
-    options: 'options',
-    popup: 'popup',
-    qr: 'QR',
-    ui: 'UI',
-    uploads: 'uploads'
-  });
-  const ROOT_COMPONENT_IDS = new Set(Object.keys(ROOT_COMPONENT_DIRECTORY_NAMES));
   const IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
   const EXTRACTION_CONCURRENCY = 4;
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
@@ -371,7 +358,6 @@
   function releaseAppliesToSelection(updateRule, selectedModules, knownModules) {
     const scopes = normalizeUpdateScopes(updateRule);
     if (!scopes || scopes.has('main') || [...REQUIRED_MODULE_IDS].some((id) => scopes.has(id))) return true;
-    if ([...scopes].some((id) => ROOT_COMPONENT_IDS.has(id))) return true;
     for (const id of selectedModules || []) {
       if (scopes.has(String(id || '').toLowerCase())) return true;
     }
@@ -400,9 +386,10 @@
     const parts = normalized.split('/').filter(Boolean);
     if (!parts.length) return null;
     if (parts.length === 1) {
-      return parts[0].toLowerCase() === 'manifest.json'
+      const id = parts[0].toLowerCase();
+      return id === 'manifest.json'
         ? { id: 'manifest', module: false, manifest: true }
-        : null;
+        : { id, module: false, manifest: false };
     }
     const first = parts[0].toLowerCase();
     if (IGNORED_ARCHIVE_DIRECTORIES.has(first)) return null;
@@ -419,10 +406,10 @@
     return files.filter(({ path }) => {
       const component = getArchiveComponent(path);
       if (!component) return false;
-      if (!component.module && !component.manifest && !ROOT_COMPONENT_IDS.has(component.id)) return false;
-      if (!scopes || component.manifest) return true;
-      if (component.module) return scopes.has(component.id);
-      return scopes.has('main') || scopes.has(component.id);
+      // Only optional modules under modules/ are controlled by module selection.
+      // Root-level extension files (including background/) are always installed.
+      if (component.manifest || !component.module) return true;
+      return !scopes || scopes.has(component.id);
     });
   }
 
