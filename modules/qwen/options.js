@@ -82,10 +82,75 @@
       label.dataset.state = state;
       label.textContent = status.message ? `${names[state] || state}：${status.message}` : (names[state] || state);
     }
+    const connected = status.connected === true || state === 'connected';
     const disconnect = document.getElementById('qwenLocalBridgeDisconnect');
-    if (disconnect instanceof HTMLButtonElement) disconnect.disabled = status.paired !== true;
+    if (disconnect instanceof HTMLButtonElement) disconnect.hidden = !connected;
     const copy = document.getElementById('qwenLocalBridgeCopyConfig');
-    if (copy instanceof HTMLButtonElement) copy.disabled = status.paired !== true;
+    if (copy instanceof HTMLButtonElement) copy.hidden = !connected;
+    const tokenRow = document.getElementById('qwenLocalBridgeTokenRow');
+    if (tokenRow instanceof HTMLElement) tokenRow.hidden = !connected;
+    const tokenInput = document.getElementById('qwenLocalBridgeToken');
+    if (tokenInput instanceof HTMLInputElement) {
+      if (!connected) {
+        tokenInput.value = '';
+      } else {
+        void chrome.storage.local.get('bjtuLocalBridgeToken').then((stored) => {
+          if (!tokenRow?.hidden) tokenInput.value = String(stored?.bjtuLocalBridgeToken || '');
+        });
+      }
+    }
+  }
+
+  async function ensureMarkdownRenderer() {
+    if (global.marked) return global.marked;
+    if (global.BjtuModuleRegistry?.loadScript) {
+      await global.BjtuModuleRegistry.loadScript('core/vendor/marked.umd.js');
+      return global.marked;
+    }
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('core/vendor/marked.umd.js');
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Markdown 渲染器加载失败'));
+      document.head.appendChild(script);
+    });
+    return global.marked;
+  }
+
+  async function loadLocalBridgeGuide() {
+    const section = document.querySelector('.qwen-local-bridge-options');
+    if (!(section instanceof HTMLElement)) return false;
+    const available = global.BjtuModuleRegistry?.exists
+      ? await global.BjtuModuleRegistry.exists('local-bridge')
+      : (await fetch(chrome.runtime.getURL('modules/local-bridge/module.json'), { cache: 'no-store' }).catch(() => null))?.ok === true;
+    document.querySelectorAll('[data-local-bridge-layout]').forEach((element) => {
+      if (!(element instanceof HTMLElement)) return;
+      element.hidden = !available;
+      element.style.removeProperty('display');
+    });
+    if (!available) return false;
+
+    const body = document.getElementById('qwenLocalBridgeGuideBody');
+    if (!(body instanceof HTMLElement)) return true;
+    try {
+      const [readmeResponse, markdown] = await Promise.all([
+        fetch(chrome.runtime.getURL('modules/local-bridge/README.md'), { cache: 'no-store' }),
+        ensureMarkdownRenderer()
+      ]);
+      if (!readmeResponse.ok) throw new Error(`HTTP ${readmeResponse.status}`);
+      const source = await readmeResponse.text();
+      const html = typeof markdown?.parse === 'function'
+        ? markdown.parse(source)
+        : new markdown.Marked().parse(source);
+      body.innerHTML = html;
+      body.querySelectorAll('a').forEach((link) => {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      });
+    } catch (error) {
+      body.textContent = `说明读取失败：${String(error?.message || error)}`;
+    }
+    return true;
   }
 
   async function refresh() {
@@ -215,6 +280,11 @@
       })().catch((error) => setMessage(`复制失败：${String(error?.message || error)}`, false));
     });
 
+    const bridgeToken = document.getElementById('qwenLocalBridgeToken');
+    if (bridgeToken instanceof HTMLInputElement) {
+      bridgeToken.addEventListener('click', () => bridgeToken.select());
+    }
+
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) {
       toggle.addEventListener('change', () => {
@@ -297,6 +367,7 @@
       setMessage(ok ? '已保存' : '保存失败', ok);
     });
 
+    void loadLocalBridgeGuide();
     void refresh().catch((error) => setMessage(`初始化失败：${String(error?.message || error)}`, false));
     void refreshOperations().catch((error) => setMessage(`操作加载失败：${String(error?.message || error)}`, false));
   }

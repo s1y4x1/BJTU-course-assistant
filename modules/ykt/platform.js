@@ -12,7 +12,7 @@ const YKT_HEADERS = {
 const YKT_ACTIVITY_TYPE_LABELS = Object.freeze({
   14: '课堂',
   15: '线上学习',
-  5: '试卷',
+  5: '考试',
   9: '公告'
 });
 const YKT_WECHAT_QR_LOGIN_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=wxda8c70bb118d342b&scope=snsapi_login&redirect_uri=https://www.yuketang.cn/api/v3/user/login/wechat-web-callback';
@@ -28,8 +28,10 @@ let yktHeaderRuleReady = false;
 // Platform-specific functions extracted from app.js. Shared helpers remain global.
 
 function isYktHomeworkDone(hw) {
-  if (Number(hw?.__actype ?? hw?.actype) === 14) return hw?.attend_status === true;
-  if (Number(hw?.__actype) === 15) {
+  const actype = Number(hw?.__actype ?? hw?.actype);
+  if (actype === 14) return hw?.attend_status === true;
+  if (actype === 5) return Number(hw?.unfinished) === 0;
+  if (actype === 15) {
     if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
       return Number(hw.video_progress_ratio) >= 0.9995;
     }

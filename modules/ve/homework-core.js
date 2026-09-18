@@ -127,12 +127,27 @@
   }
 
   async function fetchCourses(xqCode, options = {}) {
-    const url = `${BASE_VE}back/coursePlatform/course.shtml?method=getCourseList&pagesize=100&page=1&xqCode=${encodeURIComponent(String(xqCode || ''))}`;
+    const requestOptions = { ...options };
+    const bare = requestOptions.bare === true;
+    const boy = String(requestOptions.boy || '').trim();
+    delete requestOptions.bare;
+    delete requestOptions.boy;
+    const params = new URLSearchParams({ method: 'getCourseList', pagesize: '100' });
+    if (!bare) {
+      params.set('xqCode', String(xqCode || ''));
+    }
+    if (boy) params.set('boy', boy);
+    const url = `${BASE_VE}back/coursePlatform/course.shtml?${params.toString()}`;
     const { text, response } = await requestText(url, {
-      ...options,
-      headers: { Accept: 'application/json, text/javascript, */*; q=0.01', ...(options.headers || {}) }
+      ...requestOptions,
+      headers: { Accept: 'application/json, text/javascript, */*; q=0.01', ...(requestOptions.headers || {}) }
     });
-    if (Number(response?.status || 0) >= 500) throw loginError();
+    const httpStatus = Number(response?.status || 0);
+    if (httpStatus >= 500) {
+      const error = httpStatus === 500 ? loginError() : new Error(`HTTP ${httpStatus}`);
+      error.httpStatus = httpStatus;
+      throw error;
+    }
     if (isLoginResponse(text, response)) throw loginError();
     let data;
     try { data = parseJson(text); } catch { throw loginError(); }

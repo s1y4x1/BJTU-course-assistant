@@ -41,7 +41,7 @@ function bearerToken(req) {
 
 function requireBearer(req, res, next) {
   if (tokenMatches(bearerToken(req))) return next();
-  res.status(401).json({ ok: false, code: 'UNAUTHORIZED', error: 'Bearer Token 无效' });
+  res.status(401).json({ ok: false, code: 'UNAUTHORIZED', error: 'Bearer token 无效' });
 }
 
 function extensionConnected() {
@@ -133,7 +133,9 @@ function createMcpServer() {
   }, async ({ name, arguments: args }) => {
     try {
       const response = await sendExtensionRequest('call', { name, arguments: args || {} });
-      return response?.ok === false ? mcpError(Object.assign(new Error(response.error), { code: response.code })) : mcpResult(response);
+      return response?.ok === false
+        ? mcpError(Object.assign(new Error(response.error), { code: response.code }))
+        : mcpResult(response?.result);
     } catch (error) {
       return mcpError(error);
     }
@@ -144,7 +146,7 @@ function createMcpServer() {
 const app = createMcpExpressApp({ host: '127.0.0.1' });
 app.use('/mcp', requireBearer);
 app.use('/api/v1', (req, res, next) => {
-  if (req.path === '/pair') return next();
+  if (req.path === '/pair' || (req.method === 'GET' && req.path === '/operation-list')) return next();
   return requireBearer(req, res, next);
 });
 
@@ -186,10 +188,19 @@ app.post('/api/v1/get-docs', async (req, res) => {
 
 app.post('/api/v1/call', async (req, res) => {
   try {
-    res.json(await sendExtensionRequest('call', {
+    const response = await sendExtensionRequest('call', {
       name: String(req.body?.name || ''),
       arguments: req.body?.arguments || {}
-    }));
+    });
+    if (response?.ok === false) {
+      res.status(400).json({
+        ok: false,
+        code: response.code || 'OPERATION_FAILED',
+        error: String(response.error || '扩展操作失败')
+      });
+      return;
+    }
+    res.json(response?.result ?? null);
   } catch (error) {
     res.status(503).json({ ok: false, code: error.code || 'BRIDGE_ERROR', error: String(error.message || error) });
   }

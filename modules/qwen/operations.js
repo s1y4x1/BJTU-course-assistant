@@ -159,7 +159,7 @@
   }
 
   function yktTypeLabel(value) {
-    return ({ 14: '课堂', 15: '线上学习', 5: '试卷', 9: '公告' })[Number(value)] || '';
+    return ({ 14: '课堂', 15: '线上学习', 5: '考试', 9: '公告' })[Number(value)] || '';
   }
 
   async function sendRuntimeMessage(message) {
@@ -624,7 +624,9 @@
   }
 
   function yktIsHomeworkDone(hw) {
-    if (Number(hw?.__actype ?? hw?.actype) === 15) {
+    const actype = Number(hw?.__actype ?? hw?.actype);
+    if (actype === 5) return Number(hw?.unfinished) === 0;
+    if (actype === 15) {
       const taskProgress = Number(hw?.progress);
       if (Number.isFinite(taskProgress)) return taskProgress >= 0.9995;
       if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
@@ -1204,7 +1206,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文和已加载的试卷题目；线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
+        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文和已加载的考试题目；线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -1216,7 +1218,7 @@ name: 've.teachers_of_',
         return (Array.isArray(value?.homework) ? value.homework : []).map((item) => ({
           id: String(item?.id ?? item?.courseware_id ?? ''),
           title: String(item?.title || '未命名作业'),
-          type: String(item?.activityType || yktTypeLabel(item?.__actype ?? item?.actype)),
+          type: String(yktTypeLabel(item?.__actype ?? item?.actype) || item?.activityType || ''),
           status: computeAssignmentStatus(item?.done === true, item?.overdue === true),
           startTime: parseDeadline(item?.create_time ?? item?.startTime ?? item?.start_time),
           deadline: parseDeadline(item?.end ?? item?.deadline),
@@ -1239,13 +1241,13 @@ name: 've.teachers_of_',
       doc: [
         '## ykt.assignments —— 全平台作业查询',
         '',
-        '直接筛选 ykt.login 完成后 app.html 已加载的雨课堂作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ykt.login()。线上学习任务优先依据扩展获取的 0~1 进度判断：进度完成即为 submitted；仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 试卷 / 公告。',
+        '直接筛选 ykt.login 完成后 app.html 已加载的雨课堂作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ykt.login()。考试根据 unfinished 判断是否已交，0 为已交；线上学习任务优先依据扩展获取的 0~1 进度判断。仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 考试 / 公告。',
         '',
-        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|试卷|公告，默认 all"}',
+        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|考试|公告，默认 all"}',
         '',
-        '**调用示例**：`ykt.assignments({status: "pending", type: "试卷"})`',
+        '**调用示例**：`ykt.assignments({status: "pending", type: "考试"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"ykt:…:…","courseName":"课程名","title":"作业名","type":"试卷","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
+        '**返回示例**：{"total":1,"items":[{"key":"ykt:…:…","courseName":"课程名","title":"作业名","type":"考试","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
       ].join('\n'),
       async run(args) {
         const status = normalizeAssignmentStatus(args?.status);
@@ -1259,7 +1261,7 @@ name: 've.teachers_of_',
           if (!cid) continue;
           const homework = Array.isArray(course?.homework) ? course.homework : [];
           for (const h of homework) {
-            const type = String(h?.activityType || '').trim() || 'all';
+            const type = String(yktTypeLabel(h?.__actype ?? h?.actype) || h?.activityType || '').trim() || 'all';
             if (typeFilter !== 'all' && type !== typeFilter) continue;
             const isClassroomActivity = Number(h?.__actype ?? h?.actype) === 14;
             const deadline = isClassroomActivity ? 0 : parseDeadline(h?.end);

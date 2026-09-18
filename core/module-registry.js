@@ -9,7 +9,10 @@
         'vendor/main2.min.js', 'password-cipher.js', 'login-utils.js',
         'login-credentials-dialog.js', 'login-overlay.js', 'account-store.js',
         'account-login.js', 'homework-core.js', 'platform.js', 'session.js',
-        'resource-download.js', 'login-service.js', 'background-homework.js'
+        'resource-download.js', 'login-service.js', 'background-homework.js',
+        'uploads/duplicate-dialog-loader.js', 'uploads/duplicate-dialog.css',
+        'uploads/duplicate-dialog.html', 'uploads/saved-uploads.js',
+        'uploads/upload-manager.js'
       ]
     },
     ykt: { label: '雨课堂', files: ['platform.js'] },
@@ -80,6 +83,13 @@
         styles: ['operations-ui.css'],
         scripts: ['operations-ui.js']
       }
+    },
+    'local-bridge': {
+      label: '本地 Bridge',
+      files: [
+        'client.js', 'README.md', 'install.ps1', 'package.json', 'package-lock.json',
+        'src/config.js', 'src/server.js'
+      ]
     }
   });
 

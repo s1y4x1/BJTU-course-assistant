@@ -3,7 +3,7 @@
 
   global.__bjtuUploadDuplicateDialogReady = (async () => {
     if (document.getElementById('upload-duplicate-modal')) return true;
-    const response = await fetch(chrome.runtime.getURL('uploads/duplicate-dialog.html'), {
+    const response = await fetch(chrome.runtime.getURL('modules/ve/uploads/duplicate-dialog.html'), {
       cache: 'no-store'
     });
     if (!response.ok) throw new Error(`无法加载重复文件确认弹窗：HTTP ${response.status}`);

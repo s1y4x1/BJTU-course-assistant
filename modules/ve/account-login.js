@@ -160,7 +160,20 @@
     return response?.userInfo || null;
   }
 
-  async function ensureCurrentAccountStored(userInfo, { signal } = {}) {
+  async function fetchCurrentAccountPersonalCenter({ signal } = {}) {
+    const response = await fetch(CURRENT_ACCOUNT_PASSWORD_URL, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      signal
+    });
+    return {
+      ok: response.ok,
+      html: response.ok ? await decodeResponse(response) : ''
+    };
+  }
+
+  async function ensureCurrentAccountStored(userInfo, { signal, personalCenterResult = null } = {}) {
     const loginName = String(userInfo?.loginName || '').trim();
     if (!loginName) return null;
     const userName = String(userInfo?.userName || '').trim();
@@ -170,15 +183,10 @@
     }
 
     const task = (async () => {
-      const response = await fetch(CURRENT_ACCOUNT_PASSWORD_URL, {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
-        signal
-      });
+      const personalCenter = personalCenterResult || await fetchCurrentAccountPersonalCenter({ signal });
       const existing = await global.BjtuAccountStore.get(loginName);
-      if (!response.ok) return existing;
-      const html = await decodeResponse(response);
+      if (!personalCenter?.ok) return existing;
+      const html = String(personalCenter.html || '');
       let password = '';
       try {
         const document = new DOMParser().parseFromString(String(html || ''), 'text/html');
@@ -1602,6 +1610,7 @@
     migratePasswords,
     ensureInitialized: (options = {}) => initialize({ ...options, force: false }),
     getCurrentUserInfo,
+    fetchCurrentAccountPersonalCenter,
     ensureCurrentAccountStored,
     getAccount,
     updateQuickUsername,

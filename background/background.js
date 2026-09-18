@@ -249,9 +249,9 @@ tryImportModuleScripts(
   '../modules/qwen/operations.js',
   '../modules/qwen/qwen-client.js',
   '../modules/qwen/agent.js',
-  '../modules/qwen/background.js',
-  '../core/local-bridge/client.js'
+  '../modules/qwen/background.js'
 );
+tryImportModuleScripts('../modules/local-bridge/client.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/background-homework.js');
 tryImportModuleScripts('./account-upload.js');
 

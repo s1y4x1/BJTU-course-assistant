@@ -112,7 +112,8 @@ function renderDirectOpenNotice() {
 }
 
 const extensionRuntimeId = typeof chrome !== 'undefined' && chrome?.runtime ? String(chrome.runtime.id || '').trim() : '';
-if (location.protocol !== 'chrome-extension:' || !extensionRuntimeId) {
+if ((!extensionRuntimeId && !globalThis.BJTU_ANDROID_WEBVIEW) ||
+    (location.protocol !== 'chrome-extension:' && !globalThis.BJTU_ANDROID_WEBVIEW)) {
   renderDirectOpenNotice();
   throw new Error('Direct app.html open is not supported outside the extension runtime.');
 }
@@ -662,6 +663,7 @@ window.platformLoadedOnce = Object.fromEntries(PLATFORM_IDS.map((id) => [id, fal
 window.platformLoadVersion = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 0]));
 window.platformContentLoadProgress = {};
 window.currentVeCourseList = [];
+window.veDisabledCourseListCache = [];
 window.homeworkScoreCacheByKey = {}; // {"upId|snId": string}
 window.homeworkScorePendingByCourse = {}; // {courseId: boolean}
 window.homeworkScoreForcePublishStateByCourse = {}; // {courseId:{running,progress,ids:[]}}
@@ -1285,6 +1287,9 @@ function togglePlatformSelection(platform, options = {}) {
     refreshPlatformLoginTip();
 
     if (platform === 've') {
+      if (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) {
+        window.veDisabledCourseListCache = window.currentVeCourseList.slice();
+      }
       window.currentVeCourseList = [];
       window.courseListLoadVersion = Number(window.courseListLoadVersion || 0) + 1;
       renderCourseList([]);
@@ -1326,6 +1331,11 @@ function togglePlatformSelection(platform, options = {}) {
     }
     window.platformLoadedOnce[platform] = false;
     if (platform === 've') {
+      window.courseListLoadVersion = window.platformLoadVersion.ve;
+      abortAllCoursewareReplayFetches();
+      if (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) {
+        window.veDisabledCourseListCache = window.currentVeCourseList.slice();
+      }
       window.currentVeCourseList = [];
       renderCourseList([]);
       rematchExternalByVeCourses();
@@ -1343,14 +1353,22 @@ function togglePlatformSelection(platform, options = {}) {
   if (platform === 've') {
     window.platformLoadedOnce.ve = false;
     setPlatformLoginState('ve', 'checking');
+    const cachedCourses = Array.isArray(window.veDisabledCourseListCache)
+      ? window.veDisabledCourseListCache
+      : [];
+    if (cachedCourses.length) {
+      window.currentVeCourseList = cachedCourses.slice();
+      renderCourseList(window.currentVeCourseList, { cachedOnly: true });
+      rematchExternalByVeCourses();
+      rerenderAllHomeworkAreas();
+    }
     if (isPlatformEnabled('ve')) {
       void (async () => {
         await loadAutoLoadCourseResourcesSetting();
-        const username = String(usernameInput?.value || '').trim();
-        if (interactive && username && typeof doLoginFlow === 'function') {
-          await doLoginFlow();
+        if (typeof globalThis.probeVePlatformFromSessionBeforeLogin === 'function') {
+          await globalThis.probeVePlatformFromSessionBeforeLogin();
         } else {
-          await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
+          await globalThis.reloadVePlatformFromSession?.({ reloadCourses: true, reloadResourceSpace: true });
         }
       })();
     }

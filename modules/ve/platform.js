@@ -11,10 +11,13 @@ function parseVeJson(text) {
 
 async function fetchCurrentVeUserInfo() {
   try {
-    return await globalThis.BjtuVeHomeworkCore.fetchCurrentUserInfo();
-  } catch {
-    return null;
-  }
+    const userInfo = await globalThis.BjtuVeHomeworkCore.fetchCurrentUserInfo();
+    if (String(userInfo?.roleName || '').trim()) return userInfo;
+  } catch {}
+  try {
+    return await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.() || null;
+  } catch {}
+  return null;
 }
 
 function fetchCurrentVeUserInfoOnce() {
@@ -23,6 +26,12 @@ function fetchCurrentVeUserInfoOnce() {
       .finally(() => { currentVeUserInfoPromise = null; });
   }
   return currentVeUserInfoPromise;
+}
+
+function isVeTeacherUserInfo(userInfo) {
+  if (!userInfo || typeof userInfo !== 'object') return false;
+  const roleName = String(userInfo?.roleName || '').trim();
+  return roleName !== '学生';
 }
 
 async function refreshCurrentVeAccountFromSession({
@@ -55,18 +64,67 @@ async function reloadVePlatformFromSession({
   await Promise.allSettled(tasks);
   return null;
 }
+globalThis.reloadVePlatformFromSession = reloadVePlatformFromSession;
+
+async function probeVePlatformFromSessionBeforeLogin() {
+  if (!isPlatformEnabled('ve')) return null;
+  prioritizeAccountSwitch();
+  window.platformLoadedOnce.ve = false;
+  setPlatformLoginState('ve', 'checking');
+
+  const baseCoursesPromise = globalThis.BjtuVeHomeworkCore.fetchCourses('', { bare: true })
+    .then((courses) => ({ courses, error: null }), (error) => ({ courses: [], error }));
+  // The status-button probe must inspect the current session instead of reusing
+  // a startup request that may belong to the previously active account.
+  const userInfoPromise = fetchCurrentVeUserInfo();
+  const personalCenterPromise = globalThis.BjtuAccountLogin
+    ?.fetchCurrentAccountPersonalCenter?.()
+    .catch(() => null) || Promise.resolve(null);
+  const accountSyncPromise = Promise.all([userInfoPromise, personalCenterPromise]).then(([info, personalCenterResult]) => {
+    if (!info) return null;
+    const userId = String(info.loginName || info.userId || '').trim();
+    if (!userId) return null;
+    return syncAccountInfoAndReloadVeCourses({
+      userId,
+      reloadCourses: false,
+      reloadResourceSpace: false,
+      knownUserInfo: info,
+      knownPersonalCenterResult: personalCenterResult
+    });
+  }).catch(() => null);
+  const resourceSpacePromise = loadResourceSpaceForCurrentAccount(
+    resourceSpaceSearchKeyword,
+    { suppressLoginPrompt: true }
+  ).catch(() => null);
+
+  try {
+    await loadCourses({ directSessionProbe: true, userInfoPromise, baseCoursesPromise });
+    await Promise.allSettled([accountSyncPromise, resourceSpacePromise]);
+    return { ok: true };
+  } catch (error) {
+    if (Number(error?.httpStatus || 0) === 500) {
+      return doLoginFlow();
+    }
+    await Promise.allSettled([accountSyncPromise, resourceSpacePromise]);
+    return { ok: false, message: String(error?.message || error || '课程加载失败') };
+  }
+}
+globalThis.probeVePlatformFromSessionBeforeLogin = probeVePlatformFromSessionBeforeLogin;
 
 async function syncAccountInfoAndReloadVeCourses({
   userId = '',
   reloadCourses = true,
   reloadResourceSpace = true,
-  knownUserInfo = null
+  knownUserInfo = null,
+  knownPersonalCenterResult = null
 } = {}) {
   if (reloadCourses) prioritizeAccountSwitch();
 
   const finalUser = String(userId || usernameInput.value || lastValidUsername || '').trim();
   if (knownUserInfo) {
-    await globalThis.BjtuAccountLogin?.ensureCurrentAccountStored?.(knownUserInfo).catch(() => null);
+    await globalThis.BjtuAccountLogin?.ensureCurrentAccountStored?.(knownUserInfo, {
+      personalCenterResult: knownPersonalCenterResult
+    }).catch(() => null);
   }
   const localInfo = await getLocalAccountInfo(finalUser);
   const info = knownUserInfo
@@ -91,8 +149,7 @@ async function syncAccountInfoAndReloadVeCourses({
   updateJsessionidState();
   resetAccountSwitchInterruption();
 
-  const roleName = String(info?.roleName || '').trim();
-  window.isTeacherAccount = /教师|老师|助教/.test(roleName);
+  window.isTeacherAccount = isVeTeacherUserInfo(info);
   window.currentAccountLoginName = String(info?.loginName || finalUser).trim();
   setWelcomeMessage(info);
 
@@ -156,7 +213,7 @@ async function fetchResourceSpaceListRaw(rows = 10, searchName = '') {
   return { loginRequired: false, total, result };
 }
 
-async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSearchKeyword) {
+async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSearchKeyword, options = {}) {
   if (!resourceSpaceSection || !resourceSpaceList) return;
   const keyword = normalizeResourceSearchKeyword(searchName);
   resourceSpaceSearchKeyword = keyword;
@@ -185,9 +242,11 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
       setResourceSpaceCount(0);
       setResourceSpaceStatus('未登录或登录已失效，请先登录智慧课程平台', 'warning');
       renderResourceSpaceList();
-      handleLoginRequired(() => {
-        loadResourceSpaceForCurrentAccount(searchName);
-      }, null, '登录已失效，请输入账号登录');
+      if (options.suppressLoginPrompt !== true) {
+        handleLoginRequired(() => {
+          loadResourceSpaceForCurrentAccount(searchName);
+        }, null, '登录已失效，请输入账号登录');
+      }
       return;
     }
 
@@ -1932,7 +1991,20 @@ function toggleReplayFromCache(btn, courseIdInt) {
   startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId).catch(() => {});
 }
 
-async function loadCourses() {
+function mergeVeCourseLists(...lists) {
+  const merged = new Map();
+  lists.flat().forEach((course, index) => {
+    if (!course || typeof course !== 'object') return;
+    const courseId = String(globalThis.BjtuVeHomeworkCore.getCourseId(course) || '').trim();
+    const courseNum = String(course?.course_num || course?.courseNum || course?.courseNo || '').trim();
+    const fzId = String(course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '').trim();
+    const key = courseId || ((courseNum || fzId) ? `${courseNum}\u001f${fzId}` : `course-${index}`);
+    merged.set(key, merged.has(key) ? { ...merged.get(key), ...course } : course);
+  });
+  return [...merged.values()];
+}
+
+async function loadCourses({ directSessionProbe = false, userInfoPromise = null, baseCoursesPromise = null } = {}) {
   // 立即中止所有进行中的课件/回放请求
   abortAllCoursewareReplayFetches();
   const courseLoadVersion = bumpPlatformLoadVersion('ve');
@@ -1955,19 +2027,50 @@ async function loadCourses() {
       return;
     }
 
-    const list = await globalThis.BjtuVeHomeworkCore.fetchCourses(await ensureCurrentXqCode());
+    const xqCode = directSessionProbe ? '' : await ensureCurrentXqCode();
+    const requestOptions = { bare: directSessionProbe };
+    const directBaseCoursesPromise = baseCoursesPromise || globalThis.BjtuVeHomeworkCore.fetchCourses(xqCode, requestOptions)
+        .then((courses) => ({ courses, error: null }), (error) => ({ courses: [], error }));
+      const userInfo = await (userInfoPromise || fetchCurrentVeUserInfo());
+      if (!isPlatformEnabled('ve') || courseLoadVersion !== window.courseListLoadVersion) return;
+      if (!userInfo) {
+        const baseResult = await directBaseCoursesPromise;
+        if (baseResult.error) throw baseResult.error;
+        throw new Error('未获取到当前账号信息，无法确定课程范围');
+      }
+      const teacherAccount = isVeTeacherUserInfo(userInfo);
+      window.isTeacherAccount = teacherAccount;
+      if (userInfo) {
+        setPlatformLoginState('ve', 'online');
+        setPlatformContentLoadProgress('ve', teacherAccount ? 0 : 1, 2);
+      }
+      const teacherCoursesPromise = teacherAccount
+        ? globalThis.BjtuVeHomeworkCore.fetchCourses(xqCode, { ...requestOptions, boy: '2' })
+        : Promise.resolve([]);
+      const [baseResult, teacherCourses] = await Promise.all([directBaseCoursesPromise, teacherCoursesPromise]);
+      if (baseResult.error) throw baseResult.error;
+      const list = mergeVeCourseLists(baseResult.courses, teacherCourses);
+      const directProgressGroups = {
+        baseCourseIds: baseResult.courses.map((course) => globalThis.BjtuVeHomeworkCore.getCourseId(course)).filter(Boolean),
+        teacherCourseIds: teacherCourses.map((course) => globalThis.BjtuVeHomeworkCore.getCourseId(course)).filter(Boolean),
+        teacherSkipped: !teacherAccount
+      };
+    if (!isPlatformEnabled('ve') || courseLoadVersion !== window.courseListLoadVersion) return;
     window.currentVeCourseList = Array.isArray(list) ? list : [];
+    window.veDisabledCourseListCache = window.currentVeCourseList.slice();
     window.platformLoadedOnce.ve = true;
     setPlatformLoginState('ve', 'online');
-    if (courseLoadVersion !== window.courseListLoadVersion) return;
     rematchExternalByVeCourses();
-    renderCourseList(list);
+    renderCourseList(list, { progressGroups: directProgressGroups });
     rerenderAllHomeworkAreas();
     renderEnabledExternalStandaloneCourses();
   } catch (e) {
+    if (courseLoadVersion !== window.courseListLoadVersion) return;
     setPlatformLoginState('ve', 'offline');
+    if (directSessionProbe && Number(e?.httpStatus || 0) === 500) throw e;
     const errMsg = String(e?.message || '');
-    const likelyLoginInvalid = e?.loginRequired || errMsg === 'LOGIN_REQUIRED' || /Failed to fetch/i.test(errMsg);
+    const likelyLoginInvalid = !directSessionProbe
+      && (e?.loginRequired || errMsg === 'LOGIN_REQUIRED' || /Failed to fetch/i.test(errMsg));
     if (likelyLoginInvalid) {
       isLoginSessionValid = false;
       if (usernameInput.value.trim()) {
@@ -1982,6 +2085,7 @@ async function loadCourses() {
     rematchExternalByVeCourses();
     rerenderAllHomeworkAreas();
     renderEnabledExternalStandaloneCourses();
+    if (directSessionProbe) throw e;
   } finally {
     if (courseLoadVersion === window.courseListLoadVersion && courseLoadingStatus) courseLoadingStatus.style.display = 'none';
   }
@@ -2108,7 +2212,8 @@ function renderCourseList(courses, {
   cachedOnly = false,
   append = false,
   deferExternal = false,
-  orderOffset = 0
+  orderOffset = 0,
+  progressGroups = null
 } = {}) {
   if (!append) courseListDiv.innerHTML = '';
   const homeworkLoadPromises = [];
@@ -2118,19 +2223,34 @@ function renderCourseList(courses, {
     ? courses.map((course) => String(course?.id || course?.cId || course?.courseId || course?.course_id || '')).filter(Boolean)
     : [];
   const progressByCourse = new Map(progressCourseIds.map((courseId) => [courseId, [null, null, null]]));
+  const courseProgress = (courseId) => {
+    const typeStates = progressByCourse.get(String(courseId || '')) || [];
+    return typeStates.reduce((typeSum, state) => {
+      if (!state) return typeSum;
+      return typeSum + (state.total ? Math.min(state.completed / state.total, 1) : 1);
+    }, 0) / 3;
+  };
+  const groupProgress = (courseIds) => {
+    const ids = [...new Set((Array.isArray(courseIds) ? courseIds : []).map(String).filter(Boolean))];
+    if (!ids.length) return 1;
+    return ids.reduce((sum, courseId) => sum + courseProgress(courseId), 0) / ids.length;
+  };
   const updateHomeworkLoadProgress = () => {
     if (progressVersion !== window.courseListLoadVersion) return;
     if (!progressCourseIds.length) {
       setPlatformContentLoadProgress('ve', 0, 0);
       return;
     }
+    if (progressGroups) {
+      const baseProgress = groupProgress(progressGroups.baseCourseIds);
+      const teacherProgress = progressGroups.teacherSkipped
+        ? 1
+        : groupProgress(progressGroups.teacherCourseIds);
+      setPlatformContentLoadProgress('ve', baseProgress + teacherProgress, 2);
+      return;
+    }
     const completed = progressCourseIds.reduce((courseSum, courseId) => {
-      const typeStates = progressByCourse.get(courseId) || [];
-      const courseProgress = typeStates.reduce((typeSum, state) => {
-        if (!state) return typeSum;
-        return typeSum + (state.total ? Math.min(state.completed / state.total, 1) : 1);
-      }, 0) / 3;
-      return courseSum + courseProgress;
+      return courseSum + courseProgress(courseId);
     }, 0);
     setPlatformContentLoadProgress('ve', completed, progressCourseIds.length);
   };
@@ -2283,7 +2403,9 @@ function renderCourseList(courses, {
       const markHomeworkFailed = () => {
         homeworkDetailProgress.completeCourse(courseId);
       };
-      hwPromise.catch(markHomeworkFailed);
+      hwPromise.then((ok) => {
+        if (ok === false) markHomeworkFailed();
+      }, markHomeworkFailed);
     }
     if (btnCourseware) {
       hwPromise.finally(() => {

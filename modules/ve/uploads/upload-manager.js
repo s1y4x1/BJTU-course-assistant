@@ -104,7 +104,7 @@ function runPendingLoginCallbacks() {
   return cbs.length;
 }
 
-function handleLoginRequired(retryCallback, cancelCallback, message) {
+function handleLoginRequired(retryCallback, message) {
   if (globalThis.shouldAutoLoginAfterExpiry?.('ve') !== true) {
     const hasUsername = !!String(usernameInput?.value || '').trim();
     if (!hasUsername) {
@@ -116,9 +116,6 @@ function handleLoginRequired(retryCallback, cancelCallback, message) {
     pendingLoginCallbacks.push(retryCallback);
   }
   promptLoginIfPossible(message || '请输入账号登录');
-  if (cancelCallback) {
-    // store cancel? keep simple: ignore
-  }
 }
 
 function normalizeUploadDuplicateName(name) {
@@ -466,7 +463,7 @@ function uploadFile(file, fileId) {
       }
       uploadQueue.push(performUpload);
       processQueue();
-    }, null, '登录已失效，请输入账号登录');
+    }, '登录已失效，请输入账号登录');
   };
 
   retryBtn.onclick = () => {

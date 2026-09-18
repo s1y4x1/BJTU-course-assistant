@@ -70,19 +70,6 @@ async function removeSavedUpload(id) {
   renderSavedUploadsSection();
 }
 
-function formatSavedUploadSize(bytes) {
-  const n = Number(bytes || 0);
-  if (!Number.isFinite(n) || n <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
 let savedUploadsToggleAnimationSerial = 0;
 
 function getSavedUploadAnimatedItems(section) {
@@ -168,7 +155,7 @@ function renderSavedUploadsSection() {
     const synthFileId = `saved_${entryId}`;
     const name = escapeHtml(it.fileName || '(未命名)');
     const sizeBytes = Number(it.fileSize || 0);
-    const size = renderFileSizeText(sizeBytes, formatSavedUploadSize(sizeBytes));
+    const size = renderFileSizeText(sizeBytes, formatSize(sizeBytes));
     const url = String(it.url || '').trim();
     const safeUrl = escapeHtml(url);
     const safeHref = escapeHtml(url);

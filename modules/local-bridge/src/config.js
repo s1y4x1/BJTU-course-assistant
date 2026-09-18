@@ -1,13 +1,12 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 1896;
 
 function configDirectory() {
-  const base = process.env.LOCALAPPDATA || path.join(os.homedir(), '.config');
-  return path.join(base, 'BJTUCourseAssistant');
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 }
 
 export function configPath() {

@@ -136,7 +136,7 @@ html[data-color-scheme="dark"] .module-options-page-link:focus-visible {
 .animation-speed-option input[type="range"] { width:180px; margin:0; padding:0; }
 .animation-speed-value-wrap { display:inline-flex; align-items:center; gap:3px; color:#475569; font-variant-numeric:tabular-nums; }
 .animation-speed-value-wrap #animationSpeedValue { width:68px; margin:0; padding:6px; text-align:right; }
-.font-size-editor { margin-top:12px; }
+.font-size-editor { margin-top:0; }
 .font-size-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:2px 14px; margin-top:7px; }
 .font-size-item { display:grid !important; grid-template-columns:5em 72px max-content max-content; align-items:center; column-gap:4px; row-gap:0; }
 .font-size-item input { box-sizing:border-box; width:72px; margin:0; padding:6px; text-align:right; font-size:inherit; }
@@ -144,7 +144,7 @@ html[data-color-scheme="dark"] .module-options-page-link:focus-visible {
 .font-size-default:hover { color:#1976d2; }
 .font-size-default:focus-visible { border-radius:3px; outline:2px solid #60a5fa; outline-offset:2px; }
 .font-size-default[hidden] { display:none !important; }
-.ui-order-editor { margin-top:12px; border-top:1px solid #e5e7eb; padding-top:9px; }
+.ui-order-editor { margin-top:0; }
 .ui-order-editor > summary { display:flex; width:max-content; max-width:100%; align-items:baseline; gap:8px; color:#1976d2; cursor:pointer; user-select:none; list-style:none; }
 .ui-order-editor > summary::-webkit-details-marker { display:none; }
 .ui-order-editor > summary::before { content:'▶'; flex:0 0 auto; font-size:10px; transition:transform .15s; }
@@ -175,7 +175,6 @@ html[data-color-scheme="dark"] .ui-order-item.drop-after::after { background:#60
 .ui-order-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ui-order-move { width:28px; height:26px; margin:0; padding:0; border-radius:5px; background:#64748b; font-size:13px; line-height:26px; }
 .ui-order-move:disabled { opacity:.35; cursor:not-allowed; }
-html[data-color-scheme="dark"] .ui-order-editor { border-top-color:#334155; }
 html[data-color-scheme="dark"] .ui-order-editor > summary { color:#60a5fa; }
 html[data-color-scheme="dark"] .ui-order-title { color:#cbd5e1; }
 html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background:#1e293b; color:#e2e8f0; }
