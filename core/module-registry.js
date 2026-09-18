@@ -85,11 +85,12 @@
       }
     },
     'local-bridge': {
-      label: '本地 Bridge',
+      label: '本地程序桥接',
       files: [
         'client.js', 'README.md', 'install.ps1', 'package.json', 'package-lock.json',
-        'src/config.js', 'src/server.js'
-      ]
+        'src/config.js', 'src/server.js', 'options.html', 'options.css', 'options.js'
+      ],
+      options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     }
   });
 

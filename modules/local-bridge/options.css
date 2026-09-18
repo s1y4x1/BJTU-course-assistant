@@ -1,0 +1,135 @@
+.local-bridge-options-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+html[data-color-scheme="dark"] .local-bridge-options-card {
+  border-color: #334155;
+  background: #111827;
+}
+
+.local-bridge-toggle,
+.local-bridge-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  color: #1e293b;
+  font-size: var(--bjtu-font-size-body, 13px);
+}
+
+html[data-color-scheme="dark"] .local-bridge-toggle,
+html[data-color-scheme="dark"] .local-bridge-setting-row { color: #e2e8f0; }
+
+.local-bridge-toggle { cursor: pointer; }
+.local-bridge-toggle input { width: auto; margin: 0; accent-color: #2563eb; }
+.local-bridge-setting-row > label { flex: 0 0 auto; margin: 0; font-size: inherit; }
+
+.local-bridge-input {
+  box-sizing: border-box;
+  max-width: 340px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font-size: inherit;
+}
+
+html[data-color-scheme="dark"] .local-bridge-input {
+  border-color: #334155;
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.local-bridge-port { width: 92px; }
+.local-bridge-code { width: 190px; }
+.local-bridge-pair-row { flex-wrap: wrap; }
+.local-bridge-pair-row > [hidden],
+.local-bridge-token-row[hidden] { display: none !important; }
+.local-bridge-token-row { flex-wrap: nowrap; }
+.local-bridge-token {
+  flex: 1 1 320px;
+  min-width: 0;
+  max-width: none;
+  font-family: Consolas, "Cascadia Code", monospace;
+}
+.local-bridge-token-row button { flex: 0 0 auto; }
+
+.local-bridge-danger,
+.local-bridge-danger:hover {
+  border-color: #dc2626 !important;
+  background: #dc2626 !important;
+  color: #fff !important;
+}
+.local-bridge-danger:hover {
+  border-color: #b91c1c !important;
+  background: #b91c1c !important;
+}
+
+.local-bridge-status { color: #64748b; font-size: var(--bjtu-font-size-auxiliary, 11px); }
+.local-bridge-status[data-state="connected"] { color: #15803d; }
+.local-bridge-status[data-state="connecting"] { color: #2563eb; }
+.local-bridge-status[data-state="disconnected"],
+.local-bridge-status[data-state="unpaired"] { color: #b45309; }
+html[data-color-scheme="dark"] .local-bridge-status { color: #94a3b8; }
+html[data-color-scheme="dark"] .local-bridge-status[data-state="connected"] { color: #4ade80; }
+html[data-color-scheme="dark"] .local-bridge-status[data-state="connecting"] { color: #60a5fa; }
+html[data-color-scheme="dark"] .local-bridge-status[data-state="disconnected"],
+html[data-color-scheme="dark"] .local-bridge-status[data-state="unpaired"] { color: #fbbf24; }
+
+.local-bridge-guide {
+  margin-top: 6px;
+  color: #334155;
+  font-size: var(--bjtu-font-size-body, 13px);
+}
+.local-bridge-guide > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #2563eb;
+  font-weight: 600;
+}
+.local-bridge-guide-body {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, .72);
+}
+.local-bridge-guide h1,
+.local-bridge-guide h2,
+.local-bridge-guide h3 {
+  margin: 14px 0 6px;
+  font-size: var(--bjtu-font-size-secondaryTitle, 16px);
+}
+.local-bridge-guide h1:first-child,
+.local-bridge-guide h2:first-child,
+.local-bridge-guide h3:first-child { margin-top: 0; }
+.local-bridge-guide p { margin: 6px 0; line-height: 1.6; }
+.local-bridge-guide a { color: #2563eb; }
+.local-bridge-guide code { font-family: Consolas, "Cascadia Code", monospace; }
+.local-bridge-guide pre {
+  overflow: auto;
+  margin: 6px 0;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: #e9eef5;
+  white-space: pre;
+}
+html[data-color-scheme="dark"] .local-bridge-guide { color: #cbd5e1; }
+html[data-color-scheme="dark"] .local-bridge-guide > summary,
+html[data-color-scheme="dark"] .local-bridge-guide a { color: #60a5fa; }
+html[data-color-scheme="dark"] .local-bridge-guide-body {
+  border-color: #334155;
+  background: rgba(15, 23, 42, .48);
+}
+html[data-color-scheme="dark"] .local-bridge-guide pre { background: #111827; }
+
+@media (max-width: 560px) {
+  .local-bridge-token-row { flex-wrap: wrap; }
+  .local-bridge-token { flex-basis: 100%; width: 100%; }
+}

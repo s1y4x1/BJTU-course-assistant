@@ -40,7 +40,7 @@ tool_timeout_sec = 86400
 
 ## 普通 HTTP API
 
-`GET /api/v1/operation-list` 可直接访问，不需要 Token。其余接口需要配对得到的 Bearer Token：
+`GET /api/v1/operation-list` 可直接访问，不需要 token。其余接口需要配对得到的 Bearer token：
 
 ```text
 GET  /api/v1/operation-list

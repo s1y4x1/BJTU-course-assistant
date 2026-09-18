@@ -46,6 +46,7 @@
       captcha: global.BjtuCaptchaOptions,
       cas: global.BjtuCasOptions,
       mail: global.BjtuMailOptions,
+      'local-bridge': global.BjtuLocalBridgeOptions,
       MJ: global.BjtuMjOptions,
       qwen: global.BjtuQwenOptions
     };

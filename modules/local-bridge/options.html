@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>本地程序桥接选项</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="local-bridge">
+<section class="local-bridge-options-card" data-options-fragment>
+  <div class="section-title">
+    <a class="module-options-page-link" data-module-options-link="local-bridge" href="options.html"
+      title="在当前页面打开本地程序桥接选项">本地程序桥接</a>
+  </div>
+  <label class="local-bridge-toggle">
+    <input type="checkbox" id="localBridgeEnabled">
+    <span>允许本地程序调用扩展操作</span>
+  </label>
+  <div class="local-bridge-setting-row">
+    <label for="localBridgePort">监听端口</label>
+    <input type="number" id="localBridgePort" class="local-bridge-input local-bridge-port"
+      min="1024" max="65535" step="1" value="1896">
+    <span id="localBridgeStatus" class="local-bridge-status">未启用</span>
+  </div>
+  <div class="local-bridge-setting-row local-bridge-pair-row">
+    <label for="localBridgePairCode">配对码</label>
+    <input type="text" id="localBridgePairCode" class="local-bridge-input local-bridge-code"
+      inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Bridge 显示的 6 位数字">
+    <button type="button" id="localBridgePair">配对</button>
+    <button type="button" id="localBridgeDisconnect" class="local-bridge-danger" hidden>断开并删除授权</button>
+  </div>
+  <div id="localBridgeTokenRow" class="local-bridge-setting-row local-bridge-token-row" hidden>
+    <label for="localBridgeToken">Bearer token</label>
+    <input type="text" id="localBridgeToken" class="local-bridge-input local-bridge-token"
+      readonly spellcheck="false" autocomplete="off" title="点击后可复制 Bearer token">
+    <button type="button" id="localBridgeCopyConfig" hidden>复制 Codex 配置</button>
+  </div>
+  <details class="local-bridge-guide">
+    <summary>安装与使用说明</summary>
+    <div id="localBridgeGuideBody" class="local-bridge-guide-body">
+      <span class="spinner"></span><span>正在读取说明…</span>
+    </div>
+  </details>
+</section>
+<div id="msg"></div>
+<script src="options.js"></script>
+<script src="../../core/option-tips.js"></script>
+<script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>
