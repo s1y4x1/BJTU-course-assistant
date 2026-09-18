@@ -456,7 +456,7 @@
     return { id: first, module: false, manifest: false };
   }
 
-  function selectFiles(entries, updateRule) {
+  function selectFiles(entries, updateRule, modulesToInstall = new Set()) {
     const files = normalizeZipFiles(entries);
     const scopes = normalizeUpdateScopes(updateRule);
     return files.filter(({ path }) => {
@@ -465,7 +465,7 @@
       // Only optional modules under modules/ are controlled by module selection.
       // Root-level extension files (including background/) are always installed.
       if (component.manifest || !component.module) return true;
-      return !scopes || scopes.has(component.id);
+      return !scopes || scopes.has(component.id) || modulesToInstall.has(component.id);
     });
   }
 
@@ -561,13 +561,18 @@
       const previousKnown = storedKnownModules?.[MODULE_KNOWN_IDS_KEY];
       const knownIdsInitialized = storedKnownModules?.[MODULE_KNOWN_IDS_INITIALIZED_KEY] === true;
       const installedModuleIds = await getInstalledOptionalModuleIds(root);
-      const knownModules = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : packagedModuleIds);
+      // On the first inventory pass, archive-only modules are new and should
+      // be selected automatically. Once initialized, the remembered list
+      // still prevents a module the user removed from being reselected.
+      const knownModules = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : installedModuleIds);
       installedModuleIds.forEach((id) => knownModules.add(id));
       const newModules = packagedModuleIds.filter((id) => !knownModules.has(id));
       const selectedModules = new Set(installedModuleIds);
       newModules.forEach((id) => selectedModules.add(id));
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-      const selectedArchiveFiles = selectFiles(entries, release.clean ? null : release.update);
+      const installedModuleSet = new Set(installedModuleIds);
+      const modulesToInstall = new Set([...selectedModules].filter((id) => !installedModuleSet.has(id)));
+      const selectedArchiveFiles = selectFiles(entries, release.clean ? null : release.update, modulesToInstall);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
       if (release.clean) {

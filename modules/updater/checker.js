@@ -1691,15 +1691,16 @@ function getVersionArchiveComponent(path) {
   return { id: first, module: false, manifest: false };
 }
 
-function selectUpdateArchiveFiles(files, updateRule) {
+function selectUpdateArchiveFiles(files, updateRule, modulesToInstall = new Set()) {
   const scopes = normalizeVersionUpdateScopes(updateRule);
   return files.filter((item) => {
     const component = getVersionArchiveComponent(item.path);
     if (!component) return false;
-    if (!component.module && !component.manifest && !VERSION_ROOT_COMPONENT_IDS.has(component.id)) return false;
-    if (!scopes || component.manifest) return true;
-    if (component.module) return scopes.has(component.id);
-    return scopes.has('main') || scopes.has(component.id);
+    // Module selection only controls optional directories under modules/.
+    // Every non-ignored root component is part of the extension package and
+    // must be installed even when this updater version has never seen it.
+    if (component.manifest || !component.module) return true;
+    return !scopes || scopes.has(component.id) || modulesToInstall.has(component.id);
   });
 }
 
@@ -1833,7 +1834,10 @@ async function chooseUpdateModules(archiveFiles) {
   ]).catch(() => ({}));
   const previousKnown = stored?.[VERSION_MODULE_KNOWN_IDS_KEY];
   const knownIdsInitialized = stored?.[VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY] === true;
-  const locallyKnownIds = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : packaged);
+  // Before the known-module inventory has been initialized, only directories
+  // that actually exist locally are known. Treating the whole archive as
+  // already known would leave every newly introduced module unchecked.
+  const locallyKnownIds = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : localIds);
   localIds.forEach((id) => locallyKnownIds.add(id));
   const archiveNewModuleIds = new Set(packaged.filter((id) => !locallyKnownIds.has(id)));
   const initial = new Set(candidates.filter((id) => (
@@ -2212,11 +2216,13 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
     .map((entry) => ({ entry, path: normalizeUpdateEntryPath(entry.name, commonRoot) }))
     .filter((item) => item.path);
   const packagedModuleIds = getArchiveModuleIds(archiveFiles);
+  const localModuleIds = new Set(await getLocalOptionalModuleIds(versionUpdateDirectoryHandle, { strict: true }));
   const selectedModules = await chooseUpdateModules(archiveFiles);
   VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
+  const modulesToInstall = new Set([...selectedModules].filter((id) => !localModuleIds.has(id)));
   if (cleanUpdate) await clearVersionUpdateDirectory();
   else await removeUnselectedModuleDirectories(selectedModules);
-  const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule);
+  const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule, modulesToInstall);
   if (!selectedArchiveFiles.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
   const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
   if (!files.length) {
