@@ -188,7 +188,7 @@
       const titleAttribute = title ? ` title="${escapeHtmlQwen(title)}"` : '';
       return `<img src="${escapeHtmlQwen(safeSrc)}" alt="${escapeHtmlQwen(String(text || ''))}"${titleAttribute} loading="lazy">`;
     };
-    renderer.codespan = ({ text }) => `<code class="qwen-md-inline-code" role="button" tabindex="0" title="点击复制">${escapeHtmlQwen(text)}</code>`;
+    renderer.codespan = ({ text }) => `<code class="bjtu-md-inline-code" role="button" tabindex="0" title="点击复制">${escapeHtmlQwen(text)}</code>`;
     renderer.code = ({ text, lang }) => {
       const languageInfo = String(lang || '').trim();
       const language = languageInfo.split(/\s+/)[0];
@@ -198,9 +198,7 @@
         const jsonText = String(text || '').trim();
         return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果（${escapeHtmlQwen(resultMode)}）</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
       }
-      const languageAttribute = language ? ` data-language="${escapeHtmlQwen(language)}"` : '';
-      const languageLabel = language || '代码';
-      return `<div class="qwen-md-codeblock-wrap"${languageAttribute}><div class="qwen-md-codeblock-toolbar"><span class="qwen-md-codeblock-language">${escapeHtmlQwen(languageLabel)}</span><button type="button" class="qwen-md-codeblock-copy" title="复制代码">复制</button></div><pre class="qwen-md-codeblock"><code>${escapeHtmlQwen(String(text || ''))}</code></pre></div>`;
+      return global.BjtuMarkdown.renderCodeBlock(text, language);
     };
     renderer.blockquote = function renderBlockquote({ tokens }) {
       return `<blockquote class="qwen-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
@@ -333,31 +331,7 @@
   }
 
   async function copyQwenText(text, button) {
-    const value = String(text || '');
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = value;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      textarea.remove();
-    }
-    if (button instanceof HTMLButtonElement) {
-      const previous = button.textContent;
-      button.textContent = '已复制';
-      setTimeout(() => { button.textContent = previous; }, 900);
-    } else if (button instanceof HTMLElement) {
-      button.classList.add('qwen-copy-success');
-      button.dataset.copyFeedback = '已复制';
-      setTimeout(() => {
-        button.classList.remove('qwen-copy-success');
-        delete button.dataset.copyFeedback;
-      }, 900);
-    }
+    return global.BjtuMarkdown.copyText(text, button);
   }
 
   function createCopyButton(getText, className = 'qwen-chat-copy-btn') {
@@ -628,7 +602,7 @@
     if (!(node instanceof HTMLElement)) return false;
     if (node.matches('.qwen-chat-op')) return true;
     if (!node.matches('.qwen-chat-msg-row.assistant')) return false;
-    return [...node.querySelectorAll('.qwen-md-codeblock-wrap[data-language]')].some((block) =>
+    return [...node.querySelectorAll('.bjtu-md-codeblock-wrap[data-language]')].some((block) =>
       ['app', 'background', 'sandbox'].includes(String(block.dataset.language || '').toLowerCase())
     );
   }
@@ -1382,8 +1356,8 @@
       }
       // 围栏代码块的光标应留在 <code> 内；行内代码后的光标必须成为
       // 段落的下一个节点，否则看起来会停在 `code` 的底色内部。
-      if (host.matches('.qwen-md-codeblock-wrap')) {
-        const code = host.querySelector(':scope > .qwen-md-codeblock > code');
+      if (host.matches('.bjtu-md-codeblock-wrap')) {
+        const code = host.querySelector(':scope > .bjtu-md-codeblock > code');
         if (code instanceof HTMLElement) host = code;
       } else if (host.matches('pre')) {
         const code = host.querySelector(':scope > code');
@@ -2632,31 +2606,7 @@
       });
     }
 
-    if (messages instanceof HTMLElement) {
-      const copyMarkdownCode = (target, event) => {
-        const inline = target.closest('.qwen-md-inline-code');
-        if (inline instanceof HTMLElement && messages.contains(inline)) {
-          event?.preventDefault();
-          void copyQwenText(inline.textContent || '', inline);
-          return true;
-        }
-        const copyButton = target.closest('.qwen-md-codeblock-copy');
-        if (!(copyButton instanceof HTMLButtonElement) || !messages.contains(copyButton)) return false;
-        const wrapper = copyButton.closest('.qwen-md-codeblock-wrap');
-        const code = wrapper?.querySelector(':scope > .qwen-md-codeblock > code');
-        void copyQwenText(code?.textContent || '', copyButton);
-        return true;
-      };
-      messages.addEventListener('click', (event) => {
-        if (event.target instanceof Element) copyMarkdownCode(event.target, event);
-      });
-      messages.addEventListener('keydown', (event) => {
-        if (!(event.target instanceof HTMLElement) || !event.target.matches('.qwen-md-inline-code')) return;
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        copyMarkdownCode(event.target, event);
-      });
-    }
+    if (messages instanceof HTMLElement) global.BjtuMarkdown.bindCopy(messages);
 
     // app.html 被扩展重载流程恢复时，始终从收起状态开始；
     // 仅在用户主动展开面板后检查登录；普通 API 请求由扩展后台直接发送。

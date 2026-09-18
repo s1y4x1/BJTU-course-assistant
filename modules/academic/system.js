@@ -1947,7 +1947,10 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   function requestedAcademicTerms(args, parameter) {
-    const provided = Array.isArray(args) ? args : args?.[parameter];
+    if (args != null && (typeof args !== 'object' || Array.isArray(args))) {
+      throw new TypeError('参数必须是对象');
+    }
+    const provided = args?.[parameter];
     if (provided !== undefined && !Array.isArray(provided)) {
       throw new TypeError(`${parameter} 必须是学期列表`);
     }
@@ -1987,7 +1990,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   async function loadAcademicExams(args = {}) {
-    const fresh = !Array.isArray(args) && args?.fresh === true;
+    const fresh = args?.fresh === true;
     const cached = fresh ? null : await readAcademicDataCache();
     if (cached) {
       const terms = cachedRequestedTerms(cached, args, 'zxjxjhh');
@@ -2053,16 +2056,17 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   async function loadAcademicSchedule(args = {}) {
-    const providedSemesters = Array.isArray(args)
-      ? args
-      : (args?.semesters !== undefined ? args.semesters : args?.xnxq);
+    if (args == null || typeof args !== 'object' || Array.isArray(args)) {
+      throw new TypeError('参数必须是对象');
+    }
+    const providedSemesters = args?.semesters !== undefined ? args.semesters : args?.xnxq;
     if (providedSemesters !== undefined && !Array.isArray(providedSemesters)) {
       throw new TypeError('semesters 必须是学期列表');
     }
     const effectiveArgs = providedSemesters === undefined
       ? args
-      : { ...(Array.isArray(args) ? {} : args), xnxq: providedSemesters };
-    const fresh = !Array.isArray(args) && args?.fresh === true;
+      : { ...args, xnxq: providedSemesters };
+    const fresh = args?.fresh === true;
     const context = await resolveAcademicTerms(effectiveArgs, 'xnxq');
     const cached = fresh || providedSemesters === undefined ? null : await readAcademicDataCache();
     if (cached) {
@@ -2148,7 +2152,10 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
   }
 
   function requestedScoreSemesters(args) {
-    const provided = Array.isArray(args) ? args : args?.semesters;
+    if (args != null && (typeof args !== 'object' || Array.isArray(args))) {
+      throw new TypeError('参数必须是对象');
+    }
+    const provided = args?.semesters;
     if (provided !== undefined && !Array.isArray(provided)) {
       throw new TypeError('semesters 必须是学期列表');
     }
@@ -2162,7 +2169,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
 
   async function loadAcademicScores(args = {}) {
     const requested = requestedScoreSemesters(args);
-    const fresh = !Array.isArray(args) && args?.fresh === true;
+    const fresh = args?.fresh === true;
     const cached = fresh ? null : await readAcademicDataCache();
     if (cached) {
       const semesters = Array.isArray(cached.academicSemesterOptions) ? cached.academicSemesterOptions : [];

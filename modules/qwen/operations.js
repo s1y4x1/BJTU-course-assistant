@@ -232,7 +232,11 @@
   }
 
   function academicScoreSemesters(args) {
-    const semesters = Array.isArray(args) ? args : (args?.semesters ?? args?.zxjxjhh);
+    if (args == null) return undefined;
+    if (typeof args !== 'object' || Array.isArray(args)) {
+      throw new TypeError('参数必须是对象，例如 {semesters: [...]}');
+    }
+    const semesters = args.semesters;
     if (semesters !== undefined && !Array.isArray(semesters)) {
       throw new TypeError('semesters 必须是学期列表');
     }
@@ -243,7 +247,7 @@
     const semesters = academicScoreSemesters(args);
     return throwOperationFailure(await academicInvoke(
       'scores',
-      semesters === undefined ? {} : semesters,
+      semesters === undefined ? {} : { semesters },
       120000
     ), '成绩获取失败');
   }
@@ -1293,7 +1297,7 @@ name: 've.teachers_of_',
         '**返回示例**：{"studentId":"…","accounts":[{"studentId":"…","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
       ].join('\n'),
       async run() {
-        const value = throwOperationFailure(await academicInvoke('currentAccount'), '教务系统账号信息获取失败');
+        const value = throwOperationFailure(await academicInvoke('currentAccount', {}), '教务系统账号信息获取失败');
         const { ok: _ok, accounts, ...rest } = value && typeof value === 'object' ? value : {};
         return {
           ...rest,
@@ -1319,7 +1323,7 @@ name: 've.teachers_of_',
         '**返回示例**：`{"currentXnxq":"2026-2027-1-2","currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2026-2027-1","zxjxjhh":"2026-2027-1-2"},{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"}]}`。academic.schedule 默认使用 currentXnxq；academic.scores 和 academic.exams 默认使用 currentZxjxjhh。'
       ].join('\n'),
       async run() {
-        const value = throwOperationFailure(await academicInvoke('semesters', undefined, 120000), '教务学期列表获取失败');
+        const value = throwOperationFailure(await academicInvoke('semesters', {}, 120000), '教务学期列表获取失败');
         return {
           currentXnxq: String(value?.currentXnxq || ''),
           currentZxjxjhh: String(value?.currentZxjxjhh || ''),
@@ -1339,9 +1343,9 @@ name: 've.teachers_of_',
         '',
         '按学分加权计算一个或多个学期的平均学分绩点。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。百分制和五级制成绩按北京交通大学现行换算规则计算，二级制成绩不参与。',
         '',
-        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: […]}`。',
+        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`；可省略整个参数对象以使用当前学期。',
         '',
-        '**调用示例**：`academic.GPA()`；`academic.GPA(["2024-2025-2-2","2023-2024-1-2"])`',
+        '**调用示例**：`academic.GPA()`；`academic.GPA({semesters:["2024-2025-2-2","2023-2024-1-2"]})`',
         '',
         '**返回值**：单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallGPA。',
         '',
@@ -1369,9 +1373,9 @@ name: 've.teachers_of_',
         '',
         '按学期查询教务系统成绩。需要教务系统已登录。不传参数时获取当前学期成绩；传入多学期前可先调用 academic.semesters 获取页面当前实际提供的 zxjxjhh。',
         '',
-        '**参数**：zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也接受 academic.semesters 返回的 label，但不接受虚拟的当前学期字符串。列表中包含 currentZxjxjhh 时先获取当前学期成绩；包含其他学期时只获取一次完整历年成绩表，再按表格“学年”列筛选。某学期没有成绩时会正常返回空结果。',
+        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`。semesters 也接受 academic.semesters 返回的 label，但不接受虚拟的当前学期字符串。列表中包含 currentZxjxjhh 时先获取当前学期成绩；包含其他学期时只获取一次完整历年成绩表，再按表格“学年”列筛选。某学期没有成绩时会正常返回空结果。',
         '',
-        '**调用示例**：`academic.scores()`；`academic.scores(["2024-2025-2-2","2023-2024-1-2"])`；`academic.semesters().then(({semesters}) => academic.scores(semesters.map(item => item.zxjxjhh)))`',
+        '**调用示例**：`academic.scores()`；`academic.scores({semesters:["2024-2025-2-2","2023-2024-1-2"]})`；`academic.semesters().then(({semesters}) => academic.scores({semesters: semesters.map(item => item.zxjxjhh)}))`',
         '',
         '**返回示例**：`[{"academicYear":"2024-2025-2","courseCode":"MATH1001","courseName":"高等数学","credit":"4","score":"95","bonusScore":"","teacher":"张老师","details":""}]`'
       ].join('\n'),
@@ -1389,9 +1393,9 @@ name: 've.teachers_of_',
         '',
         '按学分加权计算一个或多个学期的平均成绩。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。五级制成绩按北京交通大学现行规则换算为百分制，二级制成绩不参与。',
         '',
-        '**参数**：可选的 zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。也可传 `{semesters: […]}`。',
+        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`；可省略整个参数对象以使用当前学期。',
         '',
-        '**调用示例**：`academic.weightedAverageScore()`；`academic.weightedAverageScore(["2024-2025-2-2","2023-2024-1-2"])`',
+        '**调用示例**：`academic.weightedAverageScore()`；`academic.weightedAverageScore({semesters:["2024-2025-2-2","2023-2024-1-2"]})`',
         '',
         '**返回值**：单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallWeightedAverageScore。',
         '',
@@ -1419,15 +1423,15 @@ name: 've.teachers_of_',
         '',
         '按学期查询教务系统考试安排。需要教务系统已登录。不传参数时查询当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。',
         '',
-        '**参数**：zxjxjhh 列表，例如 `["2025-2026-2-2","2024-2025-2-2"]`。',
+        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`；可省略整个参数对象以使用当前学期。',
         '',
-        '**调用示例**：`academic.exams()`；`academic.exams(["2024-2025-2-2"])`',
+        '**调用示例**：`academic.exams()`；`academic.exams({semesters:["2024-2025-2-2"]})`',
         '',
         '**返回示例**：[{"exam":"期末考试","course":"MATH1001 高等数学","courseCode":"MATH1001","startAt":1768006800000,"timeLocation":"2026-01-10 09:00 教室","method":"闭卷","remarks":"","registration":"已报名","status":"正常"}]'
       ].join('\n'),
       async run(args) {
-        const zxjxjhh = Array.isArray(args) ? args : args?.zxjxjhh;
-        const value = throwOperationFailure(await academicInvoke('exams', zxjxjhh === undefined ? {} : { zxjxjhh }, 120000), '考试安排获取失败');
+        const semesters = academicScoreSemesters(args);
+        const value = throwOperationFailure(await academicInvoke('exams', semesters === undefined ? {} : { zxjxjhh: semesters }, 120000), '考试安排获取失败');
         return (Array.isArray(value?.results) ? value.results : []).flatMap((result) => (
           (Array.isArray(result?.rows) ? result.rows : []).map((row) => ({
             ...compactAcademicExam(row),
@@ -2869,6 +2873,9 @@ name: 've.teachers_of_',
   async function runOperation(name, args) {
     const op = findOperation(name);
     if (!op) throw new Error(`未找到操作：${name}`);
+    if (op.module === 'academic' && (args == null ? false : (typeof args !== 'object' || Array.isArray(args)))) {
+      return { ok: false, name, error: 'academic 操作参数必须是对象', code: 'INVALID_ARGUMENTS' };
+    }
     if (!String(op.name).startsWith('qwen.')) {
       const enabledSet = await getEnabledOperationSet();
       if (enabledSet && !enabledSet.has(op.name)) {

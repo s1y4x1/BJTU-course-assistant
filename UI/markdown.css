@@ -1,0 +1,102 @@
+.bjtu-md-inline-code {
+  position: relative;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, .08);
+  color: #0f172a;
+  font-size: .92em;
+  cursor: pointer;
+}
+
+.bjtu-md-inline-code:hover,
+.bjtu-md-inline-code:focus-visible {
+  background: rgba(97, 92, 237, .16);
+  outline: none;
+}
+
+.bjtu-md-inline-code.bjtu-copy-success::after {
+  content: attr(data-copy-feedback);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  z-index: 20;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #0f172a;
+  color: #fff;
+  font: 11px/1.4 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+html[data-color-scheme="dark"] .bjtu-md-inline-code {
+  background: rgba(226, 232, 240, .12);
+  color: #e2e8f0;
+}
+
+.bjtu-md-codeblock-wrap {
+  position: relative;
+  overflow: hidden;
+  margin: .5em 0;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.bjtu-md-codeblock-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid rgba(148, 163, 184, .24);
+  background: #1e293b;
+  color: #94a3b8;
+  font: 11px/1.4 system-ui, sans-serif;
+}
+
+.bjtu-md-codeblock-language {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bjtu-md-codeblock-copy {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 1px 4px;
+  background: transparent;
+  color: #cbd5e1;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bjtu-md-codeblock-copy:hover { color: #fff; }
+
+.bjtu-md-codeblock {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 0 0 8px 8px;
+  background: transparent;
+  color: inherit;
+  font-size: .92em;
+  line-height: 1.5;
+}
+
+.bjtu-md-codeblock code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  white-space: pre;
+}

@@ -48,6 +48,14 @@ function extensionConnected() {
   return extensionSocket?.readyState === WebSocket.OPEN && extensionInfo?.authenticated === true;
 }
 
+function operationArguments(value) {
+  if (value == null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw Object.assign(new TypeError('arguments 必须是对象'), { code: 'INVALID_ARGUMENTS' });
+  }
+  return value;
+}
+
 function sendExtensionRequest(action, payload = {}) {
   if (!extensionConnected()) {
     throw Object.assign(new Error('浏览器扩展尚未连接本地 Bridge'), { code: 'EXTENSION_OFFLINE' });
@@ -132,7 +140,7 @@ function createMcpServer() {
     }
   }, async ({ name, arguments: args }) => {
     try {
-      const response = await sendExtensionRequest('call', { name, arguments: args || {} });
+      const response = await sendExtensionRequest('call', { name, arguments: operationArguments(args) });
       return response?.ok === false
         ? mcpError(Object.assign(new Error(response.error), { code: response.code }))
         : mcpResult(response?.result);
@@ -190,7 +198,7 @@ app.post('/api/v1/call', async (req, res) => {
   try {
     const response = await sendExtensionRequest('call', {
       name: String(req.body?.name || ''),
-      arguments: req.body?.arguments || {}
+      arguments: operationArguments(req.body?.arguments)
     });
     if (response?.ok === false) {
       res.status(400).json({
@@ -202,7 +210,8 @@ app.post('/api/v1/call', async (req, res) => {
     }
     res.json(response?.result ?? null);
   } catch (error) {
-    res.status(503).json({ ok: false, code: error.code || 'BRIDGE_ERROR', error: String(error.message || error) });
+    const invalid = String(error?.code || '') === 'INVALID_ARGUMENTS';
+    res.status(invalid ? 400 : 503).json({ ok: false, code: error.code || 'BRIDGE_ERROR', error: String(error.message || error) });
   }
 });
 

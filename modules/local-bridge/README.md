@@ -74,4 +74,4 @@ $body = @{
 Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:1896/api/v1/call' -Headers $headers -ContentType 'application/json' -Body $body
 ```
 
-`/api/v1/call` 成功时直接返回操作的 `result`，不再套入包含 `ok`、`name` 和 `result` 的外层对象。操作是否启用、是否始终允许及需要浏览器交互的确认，均由扩展决定。Bridge 不提供任意 JavaScript 执行接口。
+`arguments` 必须是 JSON 对象；无参数操作可省略该字段或传 `{}`，不能直接传数组。`/api/v1/call` 成功时直接返回操作的 `result`，不再套入包含 `ok`、`name` 和 `result` 的外层对象。操作是否启用、是否始终允许及需要浏览器交互的确认，均由扩展决定。Bridge 不提供任意 JavaScript 执行接口。

@@ -7,54 +7,11 @@
   let guideMarkdown = null;
   const element = (id) => document.getElementById(id);
 
-  function escapeGuideHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, (character) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    }[character]));
-  }
-
   function createGuideMarkdownParser(markedApi) {
     if (!markedApi?.Marked || !markedApi?.Renderer) return markedApi;
     const renderer = new markedApi.Renderer();
-    renderer.code = ({ text, lang }) => {
-      const language = String(lang || '').trim().split(/\s+/)[0] || '代码';
-      return [
-        `<div class="local-bridge-codeblock" data-language="${escapeGuideHtml(language)}">`,
-        '<div class="local-bridge-codeblock-toolbar">',
-        `<span class="local-bridge-codeblock-language">${escapeGuideHtml(language)}</span>`,
-        '<button type="button" class="local-bridge-codeblock-copy" title="复制代码">复制</button>',
-        '</div>',
-        `<pre><code>${escapeGuideHtml(text)}</code></pre>`,
-        '</div>'
-      ].join('');
-    };
+    renderer.code = ({ text, lang }) => global.BjtuMarkdown.renderCodeBlock(text, lang);
     return new markedApi.Marked({ gfm: true, breaks: true, pedantic: false, renderer });
-  }
-
-  function bindGuideCodeCopy() {
-    const body = element('localBridgeGuideBody');
-    if (!(body instanceof HTMLElement) || body.dataset.codeCopyBound === '1') return;
-    body.dataset.codeCopyBound = '1';
-    body.addEventListener('click', (event) => {
-      const button = event.target instanceof Element
-        ? event.target.closest('.local-bridge-codeblock-copy')
-        : null;
-      if (!(button instanceof HTMLButtonElement)) return;
-      const code = button.closest('.local-bridge-codeblock')?.querySelector('pre code');
-      if (!(code instanceof HTMLElement)) return;
-      void navigator.clipboard.writeText(code.textContent || '').then(() => {
-        button.textContent = '已复制';
-        setTimeout(() => {
-          if (button.isConnected) button.textContent = '复制';
-        }, 1200);
-      }).catch((error) => {
-        setMessage(`复制失败：${String(error?.message || error)}`, false);
-      });
-    });
   }
 
   function renderGuide() {
@@ -122,18 +79,28 @@
   }
 
   async function ensureMarkdownRenderer() {
-    if (global.marked) return global.marked;
     if (global.BjtuModuleRegistry?.loadScript) {
-      await global.BjtuModuleRegistry.loadScript('core/vendor/marked.umd.js');
+      await global.BjtuModuleRegistry.loadStyle('UI/markdown.css');
+      await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
+      await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
       return global.marked;
     }
-    await new Promise((resolve, reject) => {
+    if (!document.querySelector('link[data-bjtu-markdown-style]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = chrome.runtime.getURL('UI/markdown.css');
+      link.dataset.bjtuMarkdownStyle = '1';
+      document.head.appendChild(link);
+    }
+    const loadScript = (path) => new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = chrome.runtime.getURL('core/vendor/marked.umd.js');
+      script.src = chrome.runtime.getURL(path);
       script.onload = resolve;
       script.onerror = () => reject(new Error('Markdown 渲染器加载失败'));
       document.head.appendChild(script);
     });
+    if (!global.marked) await loadScript('UI/marked.umd.js');
+    if (!global.BjtuMarkdown) await loadScript('UI/markdown.js');
     return global.marked;
   }
 
@@ -148,7 +115,9 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       guideSource = await response.text();
       guideMarkdown = createGuideMarkdownParser(markdown);
-      bindGuideCodeCopy();
+      global.BjtuMarkdown.bindCopy(body, {
+        onError: (error) => setMessage(`复制失败：${String(error?.message || error)}`, false)
+      });
       renderGuide();
     } catch (error) {
       body.textContent = `说明读取失败：${String(error?.message || error)}`;

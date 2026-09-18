@@ -111,45 +111,13 @@ html[data-color-scheme="dark"] .local-bridge-status[data-state="unpaired"] { col
 .local-bridge-guide p { margin: 6px 0; line-height: 1.6; }
 .local-bridge-guide a { color: #2563eb; }
 .local-bridge-guide code { font-family: Consolas, "Cascadia Code", monospace; }
-.local-bridge-guide pre {
+.local-bridge-guide pre:not(.bjtu-md-codeblock) {
   overflow: auto;
   margin: 6px 0;
   padding: 9px 10px;
   border-radius: 6px;
   background: #e9eef5;
   white-space: pre;
-}
-.local-bridge-codeblock {
-  overflow: hidden;
-  margin: 6px 0;
-  border-radius: 6px;
-  background: #e9eef5;
-}
-.local-bridge-codeblock-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 8px;
-  border-bottom: 1px solid #cbd5e1;
-  color: #475569;
-  font-size: var(--bjtu-font-size-auxiliary, 11px);
-}
-.local-bridge-codeblock-copy {
-  width: auto;
-  min-width: 0;
-  margin: 0;
-  padding: 2px 7px;
-  border: 0;
-  background: transparent;
-  color: #2563eb;
-  cursor: pointer;
-  font: inherit;
-}
-.local-bridge-codeblock > pre {
-  margin: 0;
-  border-radius: 0;
-  background: transparent;
 }
 html[data-color-scheme="dark"] .local-bridge-guide { color: #cbd5e1; }
 html[data-color-scheme="dark"] .local-bridge-guide > summary,
@@ -158,14 +126,7 @@ html[data-color-scheme="dark"] .local-bridge-guide-body {
   border-color: #334155;
   background: rgba(15, 23, 42, .48);
 }
-html[data-color-scheme="dark"] .local-bridge-guide pre { background: #111827; }
-html[data-color-scheme="dark"] .local-bridge-codeblock { background: #111827; }
-html[data-color-scheme="dark"] .local-bridge-codeblock-toolbar {
-  border-bottom-color: #334155;
-  color: #94a3b8;
-}
-html[data-color-scheme="dark"] .local-bridge-codeblock-copy { color: #60a5fa; }
-html[data-color-scheme="dark"] .local-bridge-codeblock > pre { background: transparent; }
+html[data-color-scheme="dark"] .local-bridge-guide pre:not(.bjtu-md-codeblock) { background: #111827; }
 
 @media (max-width: 560px) {
   .local-bridge-token-row { flex-wrap: wrap; }
