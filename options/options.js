@@ -66,6 +66,7 @@ const MIN_POPUP_HEIGHT_PX = 420;
 const MAX_POPUP_HEIGHT_PX = 600;
 
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
+const DEFAULT_LINK_QR_ENABLED = false;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
 const DEFAULT_SIDE_PANEL_CACHE_ENABLED = true;
 const DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED = false;
@@ -889,7 +890,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('saveUploadsEnabled').checked = saveUploadsVal;
   document.getElementById('headerQrEnabled').checked = false;
   document.getElementById('headerQrEnabled').disabled = true;
-  const linkQrVal = linkQrEnabled === undefined ? true : !!linkQrEnabled;
+  const linkQrVal = linkQrEnabled === undefined ? DEFAULT_LINK_QR_ENABLED : !!linkQrEnabled;
   document.getElementById('linkQrEnabled').checked = linkQrVal;
   const popupCacheVal = popupUseFullscreenCacheEnabled === undefined
     ? DEFAULT_POPUP_CACHE_ENABLED
@@ -1486,7 +1487,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       }
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
-      if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, true);
+      if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, DEFAULT_LINK_QR_ENABLED);
       if (changes.popupUseFullscreenCacheEnabled) {
         applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
       }
@@ -2362,7 +2363,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('saveUploadsEnabled').checked = true;
     document.getElementById('headerQrEnabled').checked = false;
     document.getElementById('headerQrEnabled').disabled = true;
-    document.getElementById('linkQrEnabled').checked = true;
+    document.getElementById('linkQrEnabled').checked = DEFAULT_LINK_QR_ENABLED;
     document.getElementById('popupUseFullscreenCacheEnabled').checked = true;
     document.getElementById('sidePanelUseFullscreenCacheEnabled').checked = DEFAULT_SIDE_PANEL_CACHE_ENABLED;
     document.getElementById('injectPortalLoginOnLoginPage').checked = true;
@@ -2371,7 +2372,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
-    await chrome.storage.local.set({ linkQrEnabled: true });
+    await chrome.storage.local.set({ linkQrEnabled: DEFAULT_LINK_QR_ENABLED });
     await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
     await chrome.storage.local.set({ sidePanelUseFullscreenCacheEnabled: DEFAULT_SIDE_PANEL_CACHE_ENABLED });
     await chrome.storage.local.set({

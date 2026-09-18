@@ -2,7 +2,7 @@
 .mail-option-check { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .mail-option-check:first-of-type { margin-top:12px; }
 .mail-option-check input { width:auto; }
-.mail-fullscreen-button-icon-option { display:grid; grid-template-columns:auto minmax(120px,220px); align-items:center; gap:8px; margin:4px 0 8px 22px; }
+.mail-fullscreen-button-icon-option { display:grid; grid-template-columns:max-content minmax(120px,220px); align-items:center; justify-content:start; gap:8px; margin:4px 0 8px 22px; }
 .mail-fullscreen-button-icon-option > label { margin:0; color:#475569; font-size:13px; }
 .mail-fullscreen-button-icon-option.is-disabled { opacity:.5; }
 .mail-fullscreen-button-icon-select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }

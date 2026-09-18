@@ -33,7 +33,7 @@
 .academic-option-check { display:flex; align-items:center; gap:8px; margin:6px 0; }
 .academic-option-check:first-of-type { margin-top:12px; }
 .academic-option-check input { width:auto; }
-.academic-fullscreen-button-icon-option { display:grid; grid-template-columns:auto minmax(120px,220px); align-items:center; gap:8px; margin:4px 0 8px 22px; }
+.academic-fullscreen-button-icon-option { display:grid; grid-template-columns:max-content minmax(120px,220px); align-items:center; justify-content:start; gap:8px; margin:4px 0 8px 22px; }
 .academic-fullscreen-button-icon-option > label { margin:0; color:#475569; font-size:13px; }
 .academic-fullscreen-button-icon-option.is-disabled { opacity:.5; }
 .academic-fullscreen-button-icon-select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }

@@ -75,12 +75,12 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
 }
 
 (async function initDownloadQRTooltips() {
-  window.__linkQrEnabled = true;
+  window.__linkQrEnabled = false;
   try {
     const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
-    window.__linkQrEnabled = linkQrEnabled !== false;
+    window.__linkQrEnabled = linkQrEnabled === true;
   } catch {
-    // allow on error
+    // Keep the default disabled when storage cannot be read.
   }
   if (typeof qrcode !== 'function') return;
 
@@ -104,7 +104,7 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes.linkQrEnabled) return;
       window.__linkQrEnabled = changes.linkQrEnabled.newValue === undefined
-        ? true
+        ? false
         : !!changes.linkQrEnabled.newValue;
       if (!window.__linkQrEnabled) tooltip.style.display = 'none';
     });
