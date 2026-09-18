@@ -2,7 +2,7 @@
  * 每个操作包含名称（module.name）、说明（Markdown）、以及可序列化的执行器。
  * 执行器运行在 Service Worker 环境，可访问各模块的 global API 或转发消息。
  */
-(function initBjtuQwenOperations(global) {
+(function initBJTUCA(global) {
   'use strict';
 
   const LOGIN_REQUIRED_MESSAGE = '未登录智慧课程平台，请先登录后再试。';
@@ -2485,15 +2485,15 @@ name: 've.teachers_of_',
     },
     {
       module: 'qwen',
-      name: 'qwen.listOperations',
+      name: 'qwen.operationList',
       label: '列出全部操作',
       summary: '列出可按模块分组的所有可用操作名',
       doc: [
-        '## qwen.listOperations —— 列出全部操作',
+        '## qwen.operationList —— 列出全部操作',
         '',
         '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/qwen），内层为操作名→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
         '',
-        '**调用示例**：`qwen.listOperations()`',
+        '**调用示例**：`qwen.operationList()`',
         '',
         '**返回示例**：{"ve":{"courseList":"获取智慧课程平台的课程列表","assignments":"按状态与类型查询全部作业"},"ykt":{"courseList":"获取雨课堂课程列表","assignments":"按状态与类型查询全部作业"}}'
       ].join('\n'),
@@ -2515,17 +2515,17 @@ name: 've.teachers_of_',
     },
     {
       module: 'qwen',
-      name: 'qwen.getDoc',
+      name: 'qwen.getDocs',
       label: '查询操作说明',
       summary: '按模块名和操作名批量查询操作说明（Markdown）',
       doc: [
-        '## qwen.getDoc —— 查询操作说明',
+        '## qwen.getDocs —— 查询操作说明',
         '',
         '按模块名和操作名查询详细使用说明（Markdown）。module 和 name 均可传单个字符串、字符串列表或省略；多份说明使用分隔线连接。在执行任何操作前，应先调用本操作查询其说明。',
         '',
         '**参数**：`{"module":"模块名或模块名列表","name":"不含模块前缀的操作名或操作名列表"}`。两个参数都不传时返回本操作自己的说明；只传 module 时返回这些模块的所有操作；只传 name 时返回所有模块中与这些名称匹配的操作；两者都传时按 module × name 两两匹配并跳过不存在的操作。',
         '',
-        '**调用示例**：`qwen.getDoc()`；`qwen.getDoc({module: "ve"})`；`qwen.getDoc({name: "login"})`；`qwen.getDoc({module: ["ve","ykt","academic"], name: ["login","assignments"]})`',
+        '**调用示例**：`qwen.getDocs()`；`qwen.getDocs({module: "ve"})`；`qwen.getDocs({name: "login"})`；`qwen.getDocs({module: ["ve","ykt","academic"], name: ["login","assignments"]})`',
         '',
         '**返回示例**：`"## ve.login —— 智慧课程平台登录\\n……\\n\\n---\\n\\n## ve.assignments —— 作业查询\\n……"`'
       ].join('\n'),
@@ -2549,7 +2549,7 @@ name: 've.teachers_of_',
         let names = normalizeSelectors(args?.name, 'name');
         if (!modules.length && !names.length) {
           modules = ['qwen'];
-          names = ['getDoc'];
+          names = ['getDocs'];
         }
 
         let matches;
@@ -2926,7 +2926,7 @@ name: 've.teachers_of_',
     return ordered;
   }
 
-  async function runOperation(name, args, options = {}) {
+  async function runOperation(name, args) {
     const op = findOperation(name);
     if (!op) throw new Error(`未找到操作：${name}`);
     if (!String(op.name).startsWith('qwen.')) {
@@ -2937,22 +2937,7 @@ name: 've.teachers_of_',
     }
     try {
       await assertPlatformEnabledForOperation(op);
-      if (op.requiresAuthorization === true) {
-        if (typeof options?.authorize !== 'function') {
-          throw Object.assign(new Error(`操作「${op.name}」需要用户授权`), { code: 'AUTHORIZATION_REQUIRED' });
-        }
-        const decision = await options.authorize({
-          name: op.name,
-          label: op.label,
-          message: typeof op.authorizationMessage === 'function'
-            ? op.authorizationMessage(args || {})
-            : `是否允许执行操作「${op.label || op.name}」？`
-        });
-        if (decision !== 'allow' && decision !== 'always') {
-          throw Object.assign(new Error(`用户拒绝执行操作「${op.label || op.name}」`), { code: 'USER_DENIED' });
-        }
-      }
-      const result = await op.run(args || {}, options);
+      const result = await op.run(args || {});
       if (operationNeedsPlatformLogin(op)) {
         if (isLoginRequiredValue(result)) {
           throw Object.assign(new Error(String(result?.message || `${op.module} 需要登录`)), { code: 'LOGIN_REQUIRED' });
@@ -2991,7 +2976,7 @@ name: 've.teachers_of_',
     }
   }
 
-  global.BjtuQwenOperations = {
+  global.BJTUCA = {
     groups: async () => {
       const availability = await getModuleAvailability();
       return (await orderedGroups())
@@ -3007,9 +2992,9 @@ name: 've.teachers_of_',
           operations: group.operations.map((op) => ({ name: op.name, label: op.label, summary: op.summary }))
         }));
     },
-    list: allOperations,
+    operationList: allOperations,
     get: findOperation,
-    docs: (name) => {
+    getDocs: (name) => {
       const op = findOperation(name);
       return op ? { name: op.name, module: op.module, label: op.label, summary: op.summary, doc: op.doc } : null;
     },

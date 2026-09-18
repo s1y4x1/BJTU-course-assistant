@@ -35,6 +35,32 @@ function isJlgjLoginSuccessUrl(url) {
   return u.startsWith(JLGJ_LOGIN_SUCCESS_URL_PREFIX);
 }
 
+function failJlgjLoginAssistAfterUserClose({ windowId = null, tabId = null } = {}) {
+  const matchesWindow = windowId != null
+    && Number(windowId) === Number(jlgjLoginAssistPopupWindowId);
+  const matchesTab = tabId != null
+    && Number(tabId) === Number(jlgjLoginAssistPopupTabId);
+  if (!matchesWindow && !matchesTab) return;
+  jlgjLoginAssistPopupWindowId = null;
+  jlgjLoginAssistPopupTabId = null;
+  stopJlgjLoginAssistWatcher();
+  if (!window.platformInteractiveLoginPending?.jlgj) return;
+  window.platformInteractiveLoginPending.jlgj = false;
+  setPlatformLoginState('jlgj', 'offline');
+}
+
+if (chrome?.windows?.onRemoved) {
+  chrome.windows.onRemoved.addListener((windowId) => {
+    failJlgjLoginAssistAfterUserClose({ windowId });
+  });
+}
+
+if (chrome?.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    failJlgjLoginAssistAfterUserClose({ tabId });
+  });
+}
+
 async function checkJlgjLoginAssistPopupUrl() {
   if (!window.platformInteractiveLoginPending?.jlgj) return false;
   if (!jlgjLoginAssistPopupTabId) return false;
@@ -50,9 +76,10 @@ async function checkJlgjLoginAssistPopupUrl() {
       return true;
     }
   } catch {
-    jlgjLoginAssistPopupWindowId = null;
-    jlgjLoginAssistPopupTabId = null;
-    stopJlgjLoginAssistWatcher();
+    failJlgjLoginAssistAfterUserClose({
+      windowId: jlgjLoginAssistPopupWindowId,
+      tabId: jlgjLoginAssistPopupTabId
+    });
   }
   return false;
 }

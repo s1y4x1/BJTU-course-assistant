@@ -87,6 +87,30 @@
       <span class="qwen-setting-label">发送系统通知</span>
     </div>
 
+    <div class="qwen-local-bridge-options">
+      <div class="qwen-toggle-row">
+        <label class="qwen-toggle">
+          <input type="checkbox" id="qwenLocalBridgeEnabled">
+          <span class="qwen-toggle-label">允许本地程序调用扩展操作</span>
+        </label>
+      </div>
+      <div class="qwen-setting-row">
+        <label class="qwen-setting-label" for="qwenLocalBridgePort">监听端口</label>
+        <input type="number" id="qwenLocalBridgePort" class="qwen-model-select qwen-local-bridge-port"
+          min="1024" max="65535" step="1" value="1896">
+        <span id="qwenLocalBridgeStatus" class="qwen-local-bridge-status">未启用</span>
+      </div>
+      <div class="qwen-setting-row qwen-local-bridge-pair-row">
+        <label class="qwen-setting-label" for="qwenLocalBridgePairCode">配对码</label>
+        <input type="text" id="qwenLocalBridgePairCode" class="qwen-model-select qwen-local-bridge-code"
+          inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Bridge 显示的 6 位数字">
+        <button type="button" id="qwenLocalBridgePair" class="btn">配对</button>
+        <button type="button" id="qwenLocalBridgeCopyConfig" class="btn">复制 Codex 配置</button>
+        <button type="button" id="qwenLocalBridgeDisconnect" class="btn btn-danger">断开并删除授权</button>
+      </div>
+      <div class="tip">先运行 local-bridge/install.ps1，再启动安装后的 Bridge 并输入控制台显示的配对码。Bridge 只监听 127.0.0.1。</div>
+    </div>
+
     <div data-operation-ui-mount></div>
   </div>
 </section>

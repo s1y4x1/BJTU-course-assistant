@@ -125,7 +125,7 @@
       parentIdExplicit = false
     } = options || {};
     const client = global.BjtuQwenClient;
-    const operations = global.BjtuQwenOperations;
+    const operations = global.BJTUCA;
     if (!client || !operations) throw new Error('通义千问模块未就绪');
     await ensureLoggedIn();
 

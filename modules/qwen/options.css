@@ -105,6 +105,31 @@ html[data-color-scheme="dark"] .qwen-setting-label {
 
 .qwen-notification-mode { width: auto; }
 
+.qwen-local-bridge-options {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #dbe3ec;
+}
+
+html[data-color-scheme="dark"] .qwen-local-bridge-options {
+  border-top-color: #334155;
+}
+
+.qwen-local-bridge-port { width: 92px; }
+.qwen-local-bridge-code { width: 190px; }
+.qwen-local-bridge-pair-row { flex-wrap: wrap; }
+.qwen-local-bridge-status { color: #64748b; font-size: var(--font-size-caption, 11px); }
+.qwen-local-bridge-status[data-state="connected"] { color: #15803d; }
+.qwen-local-bridge-status[data-state="connecting"] { color: #2563eb; }
+.qwen-local-bridge-status[data-state="disconnected"],
+.qwen-local-bridge-status[data-state="unpaired"] { color: #b45309; }
+
+html[data-color-scheme="dark"] .qwen-local-bridge-status { color: #94a3b8; }
+html[data-color-scheme="dark"] .qwen-local-bridge-status[data-state="connected"] { color: #4ade80; }
+html[data-color-scheme="dark"] .qwen-local-bridge-status[data-state="connecting"] { color: #60a5fa; }
+html[data-color-scheme="dark"] .qwen-local-bridge-status[data-state="disconnected"],
+html[data-color-scheme="dark"] .qwen-local-bridge-status[data-state="unpaired"] { color: #fbbf24; }
+
 .qwen-model-select[disabled] {
   opacity: .45;
   cursor: not-allowed;

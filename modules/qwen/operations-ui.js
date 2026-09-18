@@ -226,7 +226,7 @@
       const list = root.querySelector('[data-operation-list]');
       if (showLoading && list instanceof HTMLElement && !list.childElementCount) renderState(list, '操作加载中…');
     }
-    const response = await send('QWEN_LIST_OPERATIONS');
+    const response = await send('QWEN_OPERATION_LIST');
     for (const root of targets) {
       if (refreshVersions.get(root) !== versions.get(root)) continue;
       const list = root.querySelector('[data-operation-list]');

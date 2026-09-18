@@ -1217,6 +1217,7 @@
     if (!env?.courseList) return;
     clearCards();
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 140000;
+    const rateLimitText = problemApplyRateLimitText();
     courses.forEach((course, index) => {
       const pending = course.tasks.filter((task) => !task.done && !task.overdue)
         .map((task, taskIndex) => ({ task, taskIndex }))

@@ -226,6 +226,57 @@ async function requestMrjzyAccountApi(url, { method = 'GET', body = null, token 
   return data;
 }
 
+async function authenticateMrjzyWithPassword(phone, password) {
+  const loginPhone = String(phone || '').trim();
+  const loginPassword = String(password || '');
+  if (!loginPhone || !loginPassword) throw new Error('手机号和密码不能为空');
+  const loginData = await requestMrjzyAccountApi(MRJZY_PASSWORD_LOGIN_API, {
+    method: 'POST',
+    body: { phone: loginPhone, password: loginPassword }
+  });
+  const accounts = Array.isArray(loginData?.data?.accounts) ? loginData.data.accounts : [];
+  const loginAccount = accounts.find((account) => String(account?.token || '').trim()) || null;
+  const token = String(loginAccount?.token || '').trim();
+  if (!token) throw new Error('登录成功，但未返回账号 Token');
+  const usersData = await requestMrjzyAccountApi(MRJZY_ALL_USERS_API, { token });
+  const users = Array.isArray(usersData?.data?.users)
+    ? usersData.data.users.filter((user) => String(user?.openId || '').trim())
+    : [];
+  if (!users.length) throw new Error('未获取到可登录的身份');
+  await chrome.runtime.sendMessage({
+    type: 'MRJZY_PASSWORD_LOGIN_SUCCESS',
+    payload: {
+      phone: loginPhone,
+      password: loginPassword,
+      userName: String(loginAccount?.user?.userRealName || ''),
+      identities: users
+    }
+  });
+  return { phone: loginPhone, token, users };
+}
+
+async function activateMrjzyPasswordIdentity({ phone, token, openId, classId = '' }) {
+  const selectedOpenId = String(openId || '').trim();
+  if (!selectedOpenId) throw new Error('未选择要登录的身份');
+  const data = await requestMrjzyAccountApi(MRJZY_SWITCH_USER_API, {
+    method: 'POST',
+    token,
+    body: { openId: selectedOpenId }
+  });
+  const teacherToken = String(data?.data?.token || '').trim();
+  if (!teacherToken) throw new Error('切换身份成功，但未返回账号 Token');
+  if (!await persistMrjzyTeacherTokenCookie(teacherToken)) throw new Error('保存登录凭据失败');
+  await chrome.runtime.sendMessage({
+    type: 'MRJZY_SELECTED_IDENTITY',
+    payload: {
+      phone: String(phone || '').trim(),
+      openId: selectedOpenId,
+      classId: String(classId || '').trim()
+    }
+  });
+  return true;
+}
+
 async function tryMrjzyConfiguredAutoLogin() {
   if (mrjzyAutoLoginPromise) return mrjzyAutoLoginPromise;
   mrjzyAutoLoginPromise = (async () => {
@@ -370,33 +421,13 @@ async function submitMrjzyPasswordLogin(mask) {
   const serial = ++mrjzyPasswordLoginSerial;
   setMrjzyPasswordLoginBusy(mask, true, '正在验证账号…');
   try {
-    const loginData = await requestMrjzyAccountApi(MRJZY_PASSWORD_LOGIN_API, {
-      method: 'POST',
-      body: { phone, password }
-    });
+    const authenticated = await authenticateMrjzyWithPassword(phone, password);
     if (serial !== mrjzyPasswordLoginSerial) return;
-    const accounts = Array.isArray(loginData?.data?.accounts) ? loginData.data.accounts : [];
-    const loginAccount = accounts.find((account) => String(account?.token || '').trim()) || null;
-    const token = String(loginAccount?.token || '').trim();
-    if (!token) throw new Error('登录成功，但未返回账号 Token');
-    const usersData = await requestMrjzyAccountApi(MRJZY_ALL_USERS_API, { token });
-    if (serial !== mrjzyPasswordLoginSerial) return;
-    const users = Array.isArray(usersData?.data?.users) ? usersData.data.users.filter((user) => String(user?.openId || '').trim()) : [];
-    if (!users.length) throw new Error('未获取到可登录的身份');
-    chrome.runtime.sendMessage({
-      type: 'MRJZY_PASSWORD_LOGIN_SUCCESS',
-      payload: {
-        phone,
-        password,
-        userName: String(loginAccount?.user?.userRealName || ''),
-        identities: users
-      }
-    }).catch(() => {});
-    mrjzyPasswordLoginToken = token;
+    mrjzyPasswordLoginToken = authenticated.token;
     mrjzyPasswordLoginPhone = phone;
     passwordInput.value = '';
     setMrjzyPasswordLoginBusy(mask, false, '');
-    renderMrjzyAccountPicker(mask, users);
+    renderMrjzyAccountPicker(mask, authenticated.users);
   } catch (error) {
     if (serial !== mrjzyPasswordLoginSerial) return;
     setMrjzyPasswordLoginBusy(mask, false, String(error?.message || error || '登录失败'));
@@ -415,19 +446,13 @@ async function switchMrjzyPasswordAccount(mask, openId, classId, target) {
     target.innerHTML = `${originalHtml}<span class="mrjzy-account-choice-loading"><span class="spinner mrjzy-inline-spinner"></span> 正在切换…</span>`;
   }
   try {
-    const data = await requestMrjzyAccountApi(MRJZY_SWITCH_USER_API, {
-      method: 'POST',
+    await activateMrjzyPasswordIdentity({
+      phone: mrjzyPasswordLoginPhone,
       token: mrjzyPasswordLoginToken,
-      body: { openId }
+      openId,
+      classId
     });
     if (serial !== mrjzyPasswordLoginSerial) return;
-    const token = String(data?.data?.token || '').trim();
-    if (!token) throw new Error('切换身份成功，但未返回账号 Token');
-    if (!await persistMrjzyTeacherTokenCookie(token)) throw new Error('保存登录凭据失败');
-    chrome.runtime.sendMessage({
-      type: 'MRJZY_SELECTED_IDENTITY',
-      payload: { phone: mrjzyPasswordLoginPhone, openId, classId }
-    }).catch(() => {});
     mrjzyPasswordLoginToken = '';
     mrjzyPasswordLoginPhone = '';
     mrjzyPasswordLoginBusy = false;

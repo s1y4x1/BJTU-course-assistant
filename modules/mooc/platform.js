@@ -3,6 +3,7 @@ let moocLoginAssistPollTimer = null;
 let moocLoginAssistChecking = false;
 let moocLoginAssistPopupWindowId = null;
 let moocLoginAssistPopupTabId = null;
+let moocLoginAssistOpening = null;
 
 (function () {
   'use strict';
@@ -772,6 +773,7 @@ function openMoocLoginAssistPopup(force = false) {
     startMoocLoginAssistWatcher();
     return;
   }
+  if (moocLoginAssistOpening) return moocLoginAssistOpening;
   const openPopup = async () => {
     const popupWidth = PLATFORM_LOGIN_ASSIST_POPUP_SIZE.width;
     const popupHeight = PLATFORM_LOGIN_ASSIST_POPUP_SIZE.height;
@@ -801,10 +803,14 @@ function openMoocLoginAssistPopup(force = false) {
     moocLoginAssistPopupTabId = Number(tab?.id || 0) || null;
     startMoocLoginAssistWatcher();
   };
-  openPopup().catch(() => {
+  const opening = openPopup().catch(() => {
     window.platformInteractiveLoginPending.mooc = false;
     showToast('打开中国大学MOOC登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
+  }).finally(() => {
+    if (moocLoginAssistOpening === opening) moocLoginAssistOpening = null;
   });
+  moocLoginAssistOpening = opening;
+  return opening;
 }
 
 /* ================= qwen 页面桥（service worker 经 app 页面调用） ================= */
@@ -817,9 +823,6 @@ async function moocPageLogin(args = {}) {
   }
   if (!enabled && typeof togglePlatformSelection === 'function') {
     try { togglePlatformSelection(platform, { interactive: true }); } catch {}
-  }
-  if (typeof triggerExternalPlatformLoad === 'function') {
-    try { triggerExternalPlatformLoad(platform, true); } catch {}
   }
   if (typeof openMoocLoginAssistPopup === 'function') {
     try { openMoocLoginAssistPopup(true); } catch {}

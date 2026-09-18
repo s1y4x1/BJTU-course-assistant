@@ -3,7 +3,7 @@
   'use strict';
 
   const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode'];
-  const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.listOperations', 'qwen.getDoc']);
+  const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.operationList', 'qwen.getDocs']);
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
@@ -696,7 +696,7 @@
               visible: message?.uiState?.visible === true
             };
             const client = global.BjtuQwenClient;
-            const operations = global.BjtuQwenOperations;
+            const operations = global.BJTUCA;
             if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
             const modelId = settings.modelId || await resolveDefaultModel(client);
             const groups = await operations.groups();
@@ -1083,8 +1083,8 @@
         })();
         return true;
       }
-      if (type === 'QWEN_LIST_OPERATIONS') {
-        const operations = global.BjtuQwenOperations;
+      if (type === 'QWEN_OPERATION_LIST') {
+        const operations = global.BJTUCA;
         if (!operations) {
           sendResponse({ ok: false, message: '通义千问操作注册表未就绪' });
           return false;
@@ -1102,7 +1102,7 @@
       }
       if (type === 'QWEN_BUILD_SYSTEM_PROMPT') {
         const agent = global.BjtuQwenAgent;
-        const operations = global.BjtuQwenOperations;
+        const operations = global.BJTUCA;
         if (!agent?.buildSystemPrompt) {
           sendResponse({ ok: false, message: '通义千问代理未就绪' });
           return false;
@@ -1110,8 +1110,8 @@
         void (async () => {
           try {
             const qwenDocs = [
-              operations?.docs?.('qwen.listOperations')?.doc,
-              operations?.docs?.('qwen.getDoc')?.doc
+              operations?.getDocs?.('qwen.operationList')?.doc,
+              operations?.getDocs?.('qwen.getDocs')?.doc
             ].filter(Boolean).join('\n\n');
             sendResponse({ ok: true, text: await agent.buildSystemPrompt({ qwenDocs }) });
           } catch (error) {
@@ -1120,27 +1120,21 @@
         })();
         return true;
       }
-      if (type === 'QWEN_OPERATION_DOCS') {
-        const operations = global.BjtuQwenOperations;
+      if (type === 'QWEN_GET_DOCS') {
+        const operations = global.BJTUCA;
         const name = String(message?.payload?.name || '');
-        const doc = operations ? operations.docs(name) : null;
+        const doc = operations ? operations.getDocs(name) : null;
         sendResponse(doc ? { ok: true, ...doc } : { ok: false, message: `未找到操作：${name}` });
         return false;
       }
       if (type === 'BJTU_RUN_OPERATION' || type === 'QWEN_RUN_OPERATION') {
-        const operations = global.BjtuQwenOperations;
+        const operations = global.BJTUCA;
         const name = String(message?.payload?.name || '');
         if (!operations) {
           sendResponse({ ok: false, error: '通义千问操作注册表未就绪', code: 'MODULE_UNAVAILABLE' });
           return false;
         }
-        const senderUrl = String(sender?.url || sender?.tab?.url || '');
-        const directAppInvocation = type === 'BJTU_RUN_OPERATION'
-          && senderUrl.startsWith(chrome.runtime.getURL('app/app.html'));
-        void operations.run(name, message?.payload?.arguments || {}, directAppInvocation ? {
-          // DevTools/app 页面中的显式调用本身即为用户授权；千问代理调用仍走逐次授权弹窗。
-          authorize: async () => 'allow'
-        } : {}).then(sendResponse);
+        void operations.run(name, message?.payload?.arguments || {}).then(sendResponse);
         return true;
       }
       if (type === 'QWEN_SETTINGS_GET') {

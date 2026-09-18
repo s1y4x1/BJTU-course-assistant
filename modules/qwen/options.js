@@ -62,11 +62,39 @@
     option?.querySelectorAll('button').forEach((button) => { button.disabled = !enabled; });
   }
 
+  function applyLocalBridgeStatus(status = {}) {
+    const enabled = document.getElementById('qwenLocalBridgeEnabled');
+    const port = document.getElementById('qwenLocalBridgePort');
+    const state = String(status.state || (status.enabled ? 'disconnected' : 'disabled'));
+    if (enabled instanceof HTMLInputElement) enabled.checked = status.enabled === true;
+    if (port instanceof HTMLInputElement && document.activeElement !== port) {
+      port.value = String(Number(status.port) || 1896);
+    }
+    const label = document.getElementById('qwenLocalBridgeStatus');
+    if (label instanceof HTMLElement) {
+      const names = {
+        disabled: '未启用',
+        unpaired: '尚未配对',
+        connecting: '正在连接…',
+        connected: '已连接',
+        disconnected: '未连接'
+      };
+      label.dataset.state = state;
+      label.textContent = status.message ? `${names[state] || state}：${status.message}` : (names[state] || state);
+    }
+    const disconnect = document.getElementById('qwenLocalBridgeDisconnect');
+    if (disconnect instanceof HTMLButtonElement) disconnect.disabled = status.paired !== true;
+    const copy = document.getElementById('qwenLocalBridgeCopyConfig');
+    if (copy instanceof HTMLButtonElement) copy.disabled = status.paired !== true;
+  }
+
   async function refresh() {
-    const [status, themeSettings] = await Promise.all([
+    const [status, themeSettings, bridgeStatus] = await Promise.all([
       send('QWEN_GET_STATUS'),
-      chrome.storage.local.get('themeMode').catch(() => ({}))
+      chrome.storage.local.get('themeMode').catch(() => ({})),
+      send('BJTUCA_LOCAL_BRIDGE_STATUS')
     ]);
+    applyLocalBridgeStatus(bridgeStatus);
     extensionThemeMode = global.BjtuTheme?.normalizeMode(themeSettings?.themeMode) || 'system';
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
@@ -121,6 +149,71 @@
     if (initialized) return;
     initialized = true;
     setMessage = typeof context?.setMessage === 'function' ? context.setMessage : setMessage;
+
+    const bridgeEnabled = document.getElementById('qwenLocalBridgeEnabled');
+    if (bridgeEnabled instanceof HTMLInputElement) {
+      bridgeEnabled.addEventListener('change', () => {
+        void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { enabled: bridgeEnabled.checked }).then((response) => {
+          applyLocalBridgeStatus(response);
+          setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
+        });
+      });
+    }
+
+    const bridgePort = document.getElementById('qwenLocalBridgePort');
+    if (bridgePort instanceof HTMLInputElement) {
+      bridgePort.addEventListener('change', () => {
+        const port = Number(bridgePort.value);
+        if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+          setMessage('端口必须是 1024 至 65535 的整数', false);
+          void send('BJTUCA_LOCAL_BRIDGE_STATUS').then(applyLocalBridgeStatus);
+          return;
+        }
+        void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { port }).then((response) => {
+          applyLocalBridgeStatus(response);
+          setMessage(response?.ok !== false ? '端口已保存' : `端口修改失败：${response?.error || response?.message || ''}`, response?.ok !== false);
+        });
+      });
+    }
+
+    document.getElementById('qwenLocalBridgePair')?.addEventListener('click', () => {
+      const code = String(document.getElementById('qwenLocalBridgePairCode')?.value || '').trim();
+      const port = Number(document.getElementById('qwenLocalBridgePort')?.value) || 1896;
+      if (!/^\d{6}$/.test(code)) {
+        setMessage('请输入 Bridge 显示的 6 位配对码', false);
+        return;
+      }
+      void send('BJTUCA_LOCAL_BRIDGE_PAIR', { code, port }).then((response) => {
+        applyLocalBridgeStatus(response);
+        setMessage(response?.ok !== false ? '本地 Bridge 配对成功' : `配对失败：${response?.error || response?.message || ''}`, response?.ok !== false);
+      });
+    });
+
+    document.getElementById('qwenLocalBridgeDisconnect')?.addEventListener('click', () => {
+      void send('BJTUCA_LOCAL_BRIDGE_DISCONNECT').then((response) => {
+        applyLocalBridgeStatus(response);
+        setMessage(response?.ok !== false ? '已断开并删除本地 Bridge 授权' : `断开失败：${response?.error || response?.message || ''}`, response?.ok !== false);
+      });
+    });
+
+    document.getElementById('qwenLocalBridgeCopyConfig')?.addEventListener('click', () => {
+      void (async () => {
+        const stored = await chrome.storage.local.get(['bjtuLocalBridgePort', 'bjtuLocalBridgeToken']);
+        const port = Number(stored?.bjtuLocalBridgePort) || 1896;
+        const token = String(stored?.bjtuLocalBridgeToken || '');
+        if (!token) throw new Error('请先完成配对');
+        const text = [
+          `[Environment]::SetEnvironmentVariable('BJTU_CA_BRIDGE_TOKEN', '${token.replace(/'/g, "''")}', 'User')`,
+          '',
+          '[mcp_servers.bjtu_course_assistant]',
+          `url = "http://127.0.0.1:${port}/mcp"`,
+          'bearer_token_env_var = "BJTU_CA_BRIDGE_TOKEN"',
+          'tool_timeout_sec = 86400'
+        ].join('\n');
+        await navigator.clipboard.writeText(text);
+        setMessage('Codex 配置已复制');
+      })().catch((error) => setMessage(`复制失败：${String(error?.message || error)}`, false));
+    });
 
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) {
@@ -210,6 +303,7 @@
 
   async function reset() {
     await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
+    await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { enabled: false, port: 1896 });
     void refresh();
     void refreshOperations();
   }
@@ -234,6 +328,13 @@
       extensionThemeMode = global.BjtuTheme?.normalizeMode(changes.themeMode.newValue) || 'system';
       applyFabColorMode(selectedFabColorMode);
     }
+    if (changes.bjtuLocalBridgeEnabled || changes.bjtuLocalBridgePort || changes.bjtuLocalBridgeToken) {
+      void send('BJTUCA_LOCAL_BRIDGE_STATUS').then(applyLocalBridgeStatus);
+    }
+  });
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'BJTUCA_LOCAL_BRIDGE_STATUS_CHANGED') applyLocalBridgeStatus(message.payload || {});
+    return false;
   });
   systemThemeMedia?.addEventListener?.('change', () => applyFabColorMode(selectedFabColorMode));
 

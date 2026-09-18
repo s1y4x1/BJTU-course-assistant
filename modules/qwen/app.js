@@ -1752,6 +1752,8 @@
 
   let pendingAskId = null;
   let pendingAskMode = '';
+  let pendingAskFromLocalBridge = false;
+  let pendingLocalBridgeApprovalResponse = null;
 
   function updateAskContinueLabel() {
     const count = el('qwen-chat-ask-count');
@@ -1769,6 +1771,7 @@
   function showAsk(message) {
     pendingAskId = String(message?.id || '');
     pendingAskMode = String(message?.mode || '');
+    pendingAskFromLocalBridge = message?.localBridge === true;
     const container = el('qwen-chat-ask');
     const text = el('qwen-chat-ask-text');
     const count = el('qwen-chat-ask-count');
@@ -1788,12 +1791,13 @@
         : 'app';
       const operationNames = Array.isArray(message?.operationNames) ? message.operationNames.map(String).filter(Boolean) : [];
       if (always instanceof HTMLButtonElement) {
+        always.hidden = pendingAskFromLocalBridge;
         always.textContent = pendingAskMode === 'operation-permission'
           ? `在此轮对话中始终允许 ${executionMode} 所有操作`
           : '在所有会话中始终允许';
       }
       if (sessionAlways instanceof HTMLButtonElement) {
-        sessionAlways.hidden = pendingAskMode !== 'operation-permission';
+        sessionAlways.hidden = pendingAskFromLocalBridge || pendingAskMode !== 'operation-permission';
         sessionAlways.textContent = `在本次会话中始终允许 ${executionMode} 所有操作`;
       }
       if (operationsAlways instanceof HTMLButtonElement) {
@@ -1813,6 +1817,8 @@
     if (container instanceof HTMLElement) container.hidden = true;
     pendingAskId = null;
     pendingAskMode = '';
+    pendingAskFromLocalBridge = false;
+    pendingLocalBridgeApprovalResponse = null;
   }
 
   function resolveAsk(action) {
@@ -1820,10 +1826,20 @@
     if (container instanceof HTMLElement) container.hidden = true;
     if (!pendingAskId) return;
     const id = pendingAskId;
+    const localBridgeResponse = pendingAskFromLocalBridge ? pendingLocalBridgeApprovalResponse : null;
     pendingAskId = null;
     pendingAskMode = '';
+    pendingAskFromLocalBridge = false;
+    pendingLocalBridgeApprovalResponse = null;
     const countEl = el('qwen-chat-ask-count');
     const count = countEl instanceof HTMLInputElement ? parseInt(countEl.value, 10) : 0;
+    if (typeof localBridgeResponse === 'function') {
+      localBridgeResponse({
+        handled: true,
+        decision: action === 'continue' ? 'allow' : (action === 'always-operations' ? 'always' : 'deny')
+      });
+      return;
+    }
     try {
       port?.postMessage({ type: 'askResponse', id, action, count: count > 0 ? count : 1 });
     } catch {
@@ -2515,6 +2531,28 @@
     });
     document.addEventListener('visibilitychange', reportQwenViewState);
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'BJTUCA_LOCAL_APPROVAL_RESOLVED') {
+        if (pendingAskFromLocalBridge && pendingAskId === String(message?.id || '')) hideAsk();
+        return false;
+      }
+      if (message?.type === 'BJTUCA_LOCAL_APPROVAL_REQUEST') {
+        const panel = el(PANEL_ID);
+        const visible = document.visibilityState === 'visible'
+          && (STANDALONE_CHAT || (panel instanceof HTMLElement && !panel.hidden));
+        if (!visible || pendingAskId) {
+          return false;
+        }
+        pendingLocalBridgeApprovalResponse = sendResponse;
+        showAsk({
+          id: String(message?.id || crypto.randomUUID()),
+          mode: 'operation-permission',
+          localBridge: true,
+          executionMode: 'app',
+          operationNames: [String(message?.name || '')].filter(Boolean),
+          message: String(message?.message || '本地程序请求执行扩展操作，是否允许？')
+        });
+        return true;
+      }
       if (message?.type === 'QWEN_OPEN_CHAT_PANEL' && String(message?.viewId || '') === QWEN_VIEW_ID) {
         void setEmbeddedPanelOpen(true).then(() => sendResponse({ ok: true }));
         return true;
@@ -2908,7 +2946,7 @@
   global.callOp = invokeOperation;
 
   async function installConsoleOperationNamespaces() {
-    const response = await send('QWEN_LIST_OPERATIONS');
+    const response = await send('QWEN_OPERATION_LIST');
     if (!response?.ok || !Array.isArray(response.groups)) return false;
     for (const group of response.groups) {
       for (const entry of Array.isArray(group?.operations) ? group.operations : []) {

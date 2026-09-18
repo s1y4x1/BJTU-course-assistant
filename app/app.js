@@ -2771,17 +2771,10 @@ async function submitNativeHomework(courseId, hw, content, fileList) {
     return { ok: false, loginRequired: true, message: '登录状态失效' };
   }
 
-  let data = null;
-  try {
-    data = JSON.parse(text || '{}');
-  } catch {
-    data = null;
-  }
-
-  if (String(data?.STATUS) === '0' || String(data?.flag || '').toLowerCase() === 'success') {
-    return { ok: true, data };
-  }
-  return { ok: false, message: String(data?.ERRMSG || data?.message || '提交失败') };
+  const result = globalThis.BjtuVeHomeworkCore.parseHomeworkSubmissionResponse(text);
+  return result.ok
+    ? { ok: true, data: result.data }
+    : { ok: false, message: result.message };
 }
 
 function updateTotalProgress() {
@@ -4203,11 +4196,11 @@ async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {
       if (ready && finalState === 'online') {
         return { ok: true, loggedIn: true, ready: true, loginState: finalState, message: '登录成功，平台数据已加载完毕' };
       }
-      if (finalState === 'offline') return { ok: false, loggedIn: false, ready: false, loginState: finalState, message: '登录失败或会话已失效' };
+      if (finalState === 'offline') return { ok: false, message: '登录失败' };
       return { ok: false, loggedIn: true, ready: false, loginState: finalState, message: '已登录，但等待平台数据加载超时' };
     }
     if (state === 'offline' && !window.platformInteractiveLoginPending?.[p]) {
-      return { ok: false, loggedIn: false, ready: false, loginState: state, message: '登录失败或尚未登录' };
+      return { ok: false, message: '登录失败' };
     }
     await waitForStateChange(Math.min(1500, deadline - Date.now()));
   }

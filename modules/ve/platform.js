@@ -3183,7 +3183,7 @@ async function waitForVeLoginHomeworkResult(timeoutMs, account = '', alreadyEnab
     loginState,
     message: homeworkReady
       ? '平台已启用，作业已全部加载完毕'
-      : (loginState === 'online' ? '已登录，但等待作业加载超时' : '登录失败或尚未登录')
+      : (loginState === 'online' ? '已登录，但等待作业加载超时' : '登录失败')
   };
 }
 

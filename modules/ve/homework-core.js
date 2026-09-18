@@ -382,6 +382,19 @@
     return confirmFn(NON_REPEAT_SUBMISSION_CONFIRM_MESSAGE) === true;
   }
 
+  function parseHomeworkSubmissionResponse(text) {
+    const source = String(text || '').trim();
+    let data = null;
+    try { data = parseJson(source); } catch {}
+    const ok = String(data?.STATUS) === '0'
+      || String(data?.flag || '').toLowerCase() === 'success';
+    return {
+      ok,
+      data,
+      message: ok ? '' : String(data?.ERRMSG || data?.message || source || '提交失败')
+    };
+  }
+
   async function submitHomework(courseId, homework, content, uploadedFiles, options = {}) {
     const cid = String(courseId || '').trim();
     const upId = String(homework?.id ?? homework?.upId ?? homework?.upid ?? homework?.UPID ?? homework?.up_id ?? '').trim();
@@ -420,12 +433,11 @@
     if (isLoginResponse(text, response) || (response?.redirected && String(response.url || '').includes('/ve/s.shtml'))) {
       throw loginError();
     }
-    let data;
-    try { data = parseJson(text); } catch { data = null; }
-    if (String(data?.STATUS) === '0' || String(data?.flag || '').toLowerCase() === 'success') {
-      return { submitted: true, courseId: cid, assignmentId: upId, fileCount: fileList.length, response: data };
+    const result = parseHomeworkSubmissionResponse(text);
+    if (result.ok) {
+      return { submitted: true, courseId: cid, assignmentId: upId, fileCount: fileList.length, response: result.data };
     }
-    throw new Error(String(data?.ERRMSG || data?.message || text || '提交失败'));
+    throw new Error(result.message);
   }
 
   function collectPendingAssignments(courses, courseHomeworkData, { futureOnly = false } = {}) {
@@ -487,6 +499,7 @@
     NON_REPEAT_SUBMISSION_CONFIRM_MESSAGE,
     requiresNonRepeatSubmissionConfirmation,
     confirmHomeworkSubmission,
+    parseHomeworkSubmissionResponse,
     submitHomework,
     collectPendingAssignments
   });
