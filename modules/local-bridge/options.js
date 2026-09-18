@@ -3,7 +3,76 @@
 
   let initialized = false;
   let setMessage = () => {};
+  let guideSource = '';
+  let guideMarkdown = null;
   const element = (id) => document.getElementById(id);
+
+  function escapeGuideHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[character]));
+  }
+
+  function createGuideMarkdownParser(markedApi) {
+    if (!markedApi?.Marked || !markedApi?.Renderer) return markedApi;
+    const renderer = new markedApi.Renderer();
+    renderer.code = ({ text, lang }) => {
+      const language = String(lang || '').trim().split(/\s+/)[0] || '代码';
+      return [
+        `<div class="local-bridge-codeblock" data-language="${escapeGuideHtml(language)}">`,
+        '<div class="local-bridge-codeblock-toolbar">',
+        `<span class="local-bridge-codeblock-language">${escapeGuideHtml(language)}</span>`,
+        '<button type="button" class="local-bridge-codeblock-copy" title="复制代码">复制</button>',
+        '</div>',
+        `<pre><code>${escapeGuideHtml(text)}</code></pre>`,
+        '</div>'
+      ].join('');
+    };
+    return new markedApi.Marked({ gfm: true, breaks: true, pedantic: false, renderer });
+  }
+
+  function bindGuideCodeCopy() {
+    const body = element('localBridgeGuideBody');
+    if (!(body instanceof HTMLElement) || body.dataset.codeCopyBound === '1') return;
+    body.dataset.codeCopyBound = '1';
+    body.addEventListener('click', (event) => {
+      const button = event.target instanceof Element
+        ? event.target.closest('.local-bridge-codeblock-copy')
+        : null;
+      if (!(button instanceof HTMLButtonElement)) return;
+      const code = button.closest('.local-bridge-codeblock')?.querySelector('pre code');
+      if (!(code instanceof HTMLElement)) return;
+      void navigator.clipboard.writeText(code.textContent || '').then(() => {
+        button.textContent = '已复制';
+        setTimeout(() => {
+          if (button.isConnected) button.textContent = '复制';
+        }, 1200);
+      }).catch((error) => {
+        setMessage(`复制失败：${String(error?.message || error)}`, false);
+      });
+    });
+  }
+
+  function renderGuide() {
+    const body = element('localBridgeGuideBody');
+    if (!(body instanceof HTMLElement) || !guideSource || !guideMarkdown) return;
+    const port = Number(element('localBridgePort')?.value) || 1896;
+    const token = String(element('localBridgeToken')?.value || '').trim() || '<配对后自动填入 Bearer Token>';
+    const source = guideSource
+      .replaceAll('{{BJTU_CA_BRIDGE_PORT}}', String(port))
+      .replaceAll('{{BJTU_CA_BRIDGE_TOKEN}}', token);
+    body.innerHTML = typeof guideMarkdown?.parse === 'function'
+      ? guideMarkdown.parse(source)
+      : new guideMarkdown.Marked().parse(source);
+    body.querySelectorAll('a').forEach((link) => {
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    });
+  }
 
   async function send(type, payload) {
     return new Promise((resolve) => {
@@ -36,19 +105,19 @@
     }
     const connected = status.connected === true || state === 'connected';
     const disconnect = element('localBridgeDisconnect');
-    const copy = element('localBridgeCopyConfig');
     const tokenRow = element('localBridgeTokenRow');
     if (disconnect instanceof HTMLButtonElement) disconnect.hidden = !connected;
-    if (copy instanceof HTMLButtonElement) copy.hidden = !connected;
     if (tokenRow instanceof HTMLElement) tokenRow.hidden = !connected;
     const tokenInput = element('localBridgeToken');
     if (!(tokenInput instanceof HTMLInputElement)) return;
     if (!connected) {
       tokenInput.value = '';
+      renderGuide();
       return;
     }
     void chrome.storage.local.get('bjtuLocalBridgeToken').then((stored) => {
       if (!tokenRow?.hidden) tokenInput.value = String(stored?.bjtuLocalBridgeToken || '');
+      renderGuide();
     });
   }
 
@@ -77,14 +146,10 @@
         ensureMarkdownRenderer()
       ]);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const source = await response.text();
-      body.innerHTML = typeof markdown?.parse === 'function'
-        ? markdown.parse(source)
-        : new markdown.Marked().parse(source);
-      body.querySelectorAll('a').forEach((link) => {
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-      });
+      guideSource = await response.text();
+      guideMarkdown = createGuideMarkdownParser(markdown);
+      bindGuideCodeCopy();
+      renderGuide();
     } catch (error) {
       body.textContent = `说明读取失败：${String(error?.message || error)}`;
     }
@@ -130,23 +195,6 @@
         applyStatus(response);
         setMessage(response?.ok !== false ? '已断开并删除本地 Bridge 授权' : `断开失败：${response?.error || response?.message || ''}`, response?.ok !== false);
       });
-    });
-    element('localBridgeCopyConfig')?.addEventListener('click', () => {
-      void (async () => {
-        const stored = await chrome.storage.local.get(['bjtuLocalBridgePort', 'bjtuLocalBridgeToken']);
-        const port = Number(stored?.bjtuLocalBridgePort) || 1896;
-        const token = String(stored?.bjtuLocalBridgeToken || '');
-        if (!token) throw new Error('请先完成配对');
-        await navigator.clipboard.writeText([
-          `[Environment]::SetEnvironmentVariable('BJTU_CA_BRIDGE_TOKEN', '${token.replace(/'/g, "''")}', 'User')`,
-          '',
-          '[mcp_servers.bjtu_course_assistant]',
-          `url = "http://127.0.0.1:${port}/mcp"`,
-          'bearer_token_env_var = "BJTU_CA_BRIDGE_TOKEN"',
-          'tool_timeout_sec = 86400'
-        ].join('\n'));
-        setMessage('Codex 配置已复制');
-      })().catch((error) => setMessage(`复制失败：${String(error?.message || error)}`, false));
     });
     const token = element('localBridgeToken');
     if (token instanceof HTMLInputElement) token.addEventListener('click', () => token.select());

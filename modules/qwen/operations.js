@@ -678,7 +678,6 @@
     {
       module: 've',
       name: 've.currentUser',
-      label: '当前登录用户',
       summary: '获取智慧课程平台当前登录账号的用户信息',
       doc: [
         '## ve.currentUser —— 当前登录用户',
@@ -700,7 +699,6 @@
     {
       module: 've',
 name: 've.accounts',
-      label: '登录历史账号',
       summary: '列出智慧课程平台登录历史中的账号',
       doc: [
         '## ve.accounts —— 登录历史账号',
@@ -739,7 +737,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.terms',
-      label: '学期列表',
       summary: '获取智慧课程平台学期列表，并返回当前学期代码',
       doc: [
         '## ve.terms —— 学期列表',
@@ -768,7 +765,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.courseList',
-      label: '课程列表',
       summary: '获取智慧课程平台的课程列表',
       doc: [
         '## ve.courseList —— 课程列表',
@@ -799,7 +795,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.assignments_of_',
-      label: '课程作业',
       summary: '获取指定智慧课程平台课程的作业列表',
       doc: [
         '## ve.assignments_of_ —— 课程作业',
@@ -874,7 +869,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.uploadFile',
-      label: '上传文件',
       summary: '向智慧课程平台上传文件并返回下载链接和可直接提交的 fileList',
       doc: [
         '## ve.uploadFile —— 上传文件',
@@ -894,7 +888,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.uploadedFiles',
-      label: '获取已上传文件',
       summary: '获取智慧课程平台可直接提交的已上传文件 fileList',
       doc: [
         '## ve.uploadedFiles —— 获取已上传文件',
@@ -922,7 +915,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.submitAssignment',
-      label: '提交作业',
       summary: '向智慧课程平台指定课程提交作业正文和已上传附件',
       doc: [
         '## ve.submitAssignment —— 提交作业',
@@ -971,7 +963,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.assignments',
-      label: '全平台作业查询',
       summary: '按状态与类型查询智慧课程平台所有课程的作业',
       doc: [
         '## ve.assignments —— 全平台作业查询',
@@ -1018,7 +1009,6 @@ name: 've.accounts',
     {
       module: 've',
       name: 've.login',
-      label: '智慧课程平台登录',
       summary: '按需启用并登录智慧课程平台（可指定账号）',
       doc: [
         '## ve.login —— 智慧课程平台登录',
@@ -1042,7 +1032,6 @@ name: 've.accounts',
     {
       module: 've',
 name: 've.teachers_of_',
-      label: '课程老师列表',
       summary: '获取智慧课程平台指定课程的老师与助教列表',
       doc: [
         '## ve.teachers_of_ —— 课程老师列表',
@@ -1066,7 +1055,6 @@ name: 've.teachers_of_',
     {
       module: 've',
       name: 've.students_of_',
-      label: '课程学生列表',
       summary: '获取智慧课程平台指定课程的学生列表',
       doc: [
         '## ve.students_of_ —— 课程学生列表',
@@ -1089,7 +1077,6 @@ name: 've.teachers_of_',
     {
       module: 've',
       name: 've.courseware_of_',
-      label: '课程资源列表',
       summary: '获取智慧课程平台指定课程的五类资源列表',
       doc: [
         '## ve.courseware_of_ —— 课程资源列表',
@@ -1118,7 +1105,6 @@ name: 've.teachers_of_',
     {
       module: 've',
       name: 've.replay_of_',
-      label: '课程回放列表',
       summary: '获取智慧课程平台指定课程的回放列表',
       doc: [
         '## ve.replay_of_ —— 课程回放列表',
@@ -1150,7 +1136,6 @@ name: 've.teachers_of_',
     {
       module: 've',
       name: 've.archive_of_',
-      label: '课程归档列表',
       summary: '获取智慧课程平台指定课程的归档资源列表',
       doc: [
         '## ve.archive_of_ —— 课程归档列表',
@@ -1175,7 +1160,6 @@ name: 've.teachers_of_',
     {
       module: 'ykt',
       name: 'ykt.courseList',
-      label: '雨课堂课程列表',
       summary: '获取雨课堂的课程列表',
       doc: [
         '## ykt.courseList —— 雨课堂课程列表',
@@ -1195,7 +1179,6 @@ name: 've.teachers_of_',
     {
       module: 'ykt',
       name: 'ykt.assignments_of_',
-      label: '雨课堂课程作业',
       summary: ' 获取雨课堂指定课程的作业列表',
       doc: [
         '## ykt.assignments_of_ —— 雨课堂课程作业',
@@ -1236,7 +1219,6 @@ name: 've.teachers_of_',
     {
       module: 'ykt',
       name: 'ykt.assignments',
-      label: '全平台作业查询',
       summary: '按状态与类型查询雨课堂所有课程的作业',
       doc: [
         '## ykt.assignments —— 全平台作业查询',
@@ -1283,7 +1265,6 @@ name: 've.teachers_of_',
     {
       module: 'ykt',
       name: 'ykt.login',
-      label: '雨课堂登录',
       summary: '按需启用并触发雨课堂登录流程',
       doc: [
         '## ykt.login —— 雨课堂登录',
@@ -1301,7 +1282,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.currentAccount',
-      label: '教务系统当前账号',
       summary: '获取教务系统当前登录账号及监控配置',
       doc: [
         '## academic.currentAccount —— 教务系统当前账号',
@@ -1328,7 +1308,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.semesters',
-      label: '教务学期列表',
       summary: '获取教务系统实际提供的学期及查询参数',
       doc: [
         '## academic.semesters —— 教务学期列表',
@@ -1354,7 +1333,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.GPA',
-      label: '平均学分绩点',
       summary: '按一个或多个学期计算平均学分绩点',
       doc: [
         '## academic.GPA —— 平均学分绩点',
@@ -1385,7 +1363,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.scores',
-      label: '成绩查询',
       summary: '按一个或多个学期获取教务系统成绩',
       doc: [
         '## academic.scores —— 成绩查询',
@@ -1406,7 +1383,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.weightedAverageScore',
-      label: '加权平均成绩',
       summary: '按一个或多个学期计算加权平均成绩',
       doc: [
         '## academic.weightedAverageScore —— 加权平均成绩',
@@ -1437,7 +1413,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.exams',
-      label: '考试查询',
       summary: '按一个或多个学期获取教务系统考试安排',
       doc: [
         '## academic.exams —— 考试查询',
@@ -1465,7 +1440,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.schedule',
-      label: '课表查询',
       summary: '获取教务系统课表',
       doc: [
         '## academic.schedule —— 课表查询',
@@ -1499,7 +1473,6 @@ name: 've.teachers_of_',
     {
       module: 'academic',
       name: 'academic.login',
-      label: '教务系统登录',
       summary: '使用当前账号或指定学号及其传入/已保存密码登录教务系统',
       doc: [
         '## academic.login —— 教务系统登录',
@@ -1530,7 +1503,6 @@ name: 've.teachers_of_',
     {
       module: 'cas',
       name: 'cas.currentAccount',
-      label: '统一身份认证当前账号',
       summary: '获取 CAS 统一身份认证的当前账号与已保存账号列表',
       doc: [
         '## cas.currentAccount —— 统一身份认证当前账号',
@@ -1558,7 +1530,6 @@ name: 've.teachers_of_',
     {
       module: 'cas',
       name: 'cas.profile',
-      label: '统一身份认证个人信息',
       summary: '获取 CAS 个人信息页中的姓名与电子邮箱',
       doc: [
         '## cas.profile —— 统一身份认证个人信息',
@@ -1584,7 +1555,6 @@ name: 've.teachers_of_',
     {
       module: 'cas',
       name: 'cas.login',
-      label: '统一身份认证登录',
       summary: '使用传入或已保存的账号密码登录 CAS（自动识别验证码）',
       doc: [
         '## cas.login —— 统一身份认证登录',
@@ -1618,7 +1588,6 @@ name: 've.teachers_of_',
     {
       module: 'cas',
       name: 'cas.loginService',
-      label: '通过 CAS 登录服务',
       summary: '通过 CAS 单点登录智慧课程平台/教务系统/邮箱',
       doc: [
         '## cas.loginService —— 通过 CAS 登录服务',
@@ -1648,7 +1617,6 @@ name: 've.teachers_of_',
     {
       module: 'mail',
       name: 'mail.status',
-      label: '邮件监控状态',
       summary: '获取邮件监控开关、检查间隔与最近一次检查结果',
       doc: [
         '## mail.status —— 邮件监控状态',
@@ -1669,7 +1637,6 @@ name: 've.teachers_of_',
     {
       module: 'mail',
       name: 'mail.inbox',
-      label: '收件箱检测',
       summary: '立即检测收件箱并返回最近邮件列表、总数与未读数',
       doc: [
         '## mail.inbox —— 收件箱检测',
@@ -1720,7 +1687,6 @@ name: 've.teachers_of_',
     {
       module: 'mail',
       name: 'mail.user',
-      label: '邮箱用户信息',
       summary: '获取邮箱地址与姓名',
       doc: [
         '## mail.user —— 邮箱用户信息',
@@ -1745,7 +1711,6 @@ name: 've.teachers_of_',
     {
       module: 'mooc',
       name: 'mooc.courseList',
-      label: 'MOOC 课程列表',
       summary: '获取中国大学MOOC课程列表',
       doc: [
         '## mooc.courseList —— MOOC 课程列表',
@@ -1763,7 +1728,6 @@ name: 've.teachers_of_',
     {
       module: 'mooc',
       name: 'mooc.status',
-      label: 'MOOC 登录状态',
       summary: '检查中国大学MOOC登录状态',
       doc: [
         '## mooc.status —— MOOC 登录状态',
@@ -1781,7 +1745,6 @@ name: 've.teachers_of_',
     {
       module: 'mooc',
       name: 'mooc.assignments_of_',
-      label: 'MOOC 课程作业',
       summary: '从缓存读取指定中国大学MOOC课程的作业',
       doc: [
         '## mooc.assignments_of_ —— MOOC 课程作业',
@@ -1807,7 +1770,6 @@ name: 've.teachers_of_',
     {
       module: 'mooc',
       name: 'mooc.teachers_of_',
-      label: 'MOOC 课程教师',
       summary: '从缓存读取指定中国大学MOOC课程的教师列表',
       doc: [
         '## mooc.teachers_of_ —— MOOC 课程教师',
@@ -1829,7 +1791,6 @@ name: 've.teachers_of_',
     {
       module: 'mooc',
       name: 'mooc.assignments',
-      label: '全平台作业查询',
       summary: '按状态与类型查询中国大学MOOC所有课程的作业',
       doc: [
         '## mooc.assignments —— 全平台作业查询',
@@ -1850,7 +1811,6 @@ name: 've.teachers_of_',
     {
       module: 'captcha',
       name: 'captcha.recognize',
-      label: '验证码识别',
       summary: '识别验证码图片',
       doc: [
         '## captcha.recognize —— 验证码识别',
@@ -1888,7 +1848,6 @@ name: 've.teachers_of_',
     {
       module: 'captcha',
       name: 'captcha.models',
-      label: '获取已安装模型',
       summary: '列出验证码识别已安装的 OCR 模型',
       doc: [
         '## captcha.models —— 获取已安装模型',
@@ -1936,7 +1895,6 @@ name: 've.teachers_of_',
     {
       module: 'campusnet',
       name: 'campusnet.status',
-      label: '校园网重连状态',
       summary: '获取校园网自动重连的启用状态与最近结果',
       doc: [
         '## campusnet.status —— 校园网重连状态',
@@ -1967,7 +1925,6 @@ name: 've.teachers_of_',
     {
       module: 'campusnet',
       name: 'campusnet.reconnect',
-      label: '触发校园网重连',
       summary: '启用校园网自动重连并立即触发一次认证检查',
       doc: [
         '## campusnet.reconnect —— 触发校园网重连',
@@ -1996,7 +1953,6 @@ name: 've.teachers_of_',
     {
       module: 'mrjzy',
       name: 'mrjzy.courseList',
-      label: '每日交作业课程列表',
       summary: '获取每日交作业当前账号的课程列表',
       doc: [
         '## mrjzy.courseList —— 每日交作业课程列表',
@@ -2016,7 +1972,6 @@ name: 've.teachers_of_',
     {
       module: 'mrjzy',
       name: 'mrjzy.assignments_of_',
-      label: '每日交作业课程作业',
       summary: '根据 classNum 获取每日交作业指定班级的作业列表',
       doc: [
         '## mrjzy.assignments_of_ —— 每日交作业课程作业',
@@ -2051,7 +2006,6 @@ name: 've.teachers_of_',
     {
       module: 'mrjzy',
       name: 'mrjzy.assignments',
-      label: '全平台作业查询',
       summary: '按状态查询每日交作业所有班级的作业',
       doc: [
         '## mrjzy.assignments —— 全平台作业查询',
@@ -2102,7 +2056,6 @@ name: 've.teachers_of_',
     {
       module: 'mrjzy',
       name: 'mrjzy.status',
-      label: '每日交作业登录状态',
       summary: '检查每日交作业登录状态',
       doc: [
         '## mrjzy.status —— 每日交作业登录状态',
@@ -2120,7 +2073,6 @@ name: 've.teachers_of_',
     {
       module: 'mrjzy',
       name: 'mrjzy.login',
-      label: '每日交作业登录',
       summary: '按需启用并触发每日交作业登录流程',
       doc: [
         '## mrjzy.login —— 每日交作业登录',
@@ -2146,7 +2098,6 @@ name: 've.teachers_of_',
     {
       module: 'jlgj',
       name: 'jlgj.courseList',
-      label: '接龙管家课程列表',
       summary: '获取接龙管家当前账号的课程列表',
       doc: [
         '## jlgj.courseList —— 接龙管家课程列表',
@@ -2166,7 +2117,6 @@ name: 've.teachers_of_',
     {
       module: 'jlgj',
       name: 'jlgj.assignments_of_',
-      label: '接龙管家课程作业',
       summary: '根据 groupId 获取接龙管家指定群组的作业列表',
       doc: [
         '## jlgj.assignments_of_ —— 接龙管家课程作业',
@@ -2200,7 +2150,6 @@ name: 've.teachers_of_',
     {
       module: 'jlgj',
       name: 'jlgj.assignments',
-      label: '全平台作业查询',
       summary: '按状态查询接龙管家所有群组的作业',
       doc: [
         '## jlgj.assignments —— 全平台作业查询',
@@ -2251,7 +2200,6 @@ name: 've.teachers_of_',
     {
       module: 'jlgj',
       name: 'jlgj.status',
-      label: '接龙管家登录状态',
       summary: '检查接龙管家登录状态',
       doc: [
         '## jlgj.status —— 接龙管家登录状态',
@@ -2269,7 +2217,6 @@ name: 've.teachers_of_',
     {
       module: 'mooc',
       name: 'mooc.login',
-      label: 'MOOC 登录',
       summary: '按需启用并触发中国大学MOOC登录流程',
       doc: [
         '## mooc.login —— MOOC 登录',
@@ -2287,7 +2234,6 @@ name: 've.teachers_of_',
     {
       module: 'jlgj',
       name: 'jlgj.login',
-      label: '接龙管家登录',
       summary: '按需启用并触发接龙管家登录流程',
       doc: [
         '## jlgj.login —— 接龙管家登录',
@@ -2305,7 +2251,6 @@ name: 've.teachers_of_',
     {
       module: 'xuetangx',
       name: 'xuetangx.courseList',
-      label: '学堂在线课程列表',
       summary: '获取学堂在线当前账号的课程列表',
       doc: [
         '## xuetangx.courseList —— 学堂在线课程列表',
@@ -2334,7 +2279,6 @@ name: 've.teachers_of_',
     {
       module: 'xuetangx',
       name: 'xuetangx.assignments_of_',
-      label: '学堂在线课程作业',
       summary: '根据 classroomId 获取学堂在线指定课程的任务列表',
       doc: [
         '## xuetangx.assignments_of_ —— 学堂在线课程任务',
@@ -2370,7 +2314,6 @@ name: 've.teachers_of_',
     {
       module: 'xuetangx',
       name: 'xuetangx.assignments',
-      label: '全平台作业查询',
       summary: '按状态与类型查询学堂在线所有课程的任务',
       doc: [
         '## xuetangx.assignments —— 全平台作业查询',
@@ -2429,7 +2372,6 @@ name: 've.teachers_of_',
     {
       module: 'xuetangx',
       name: 'xuetangx.teachers_of_',
-      label: '学堂在线课程教师',
       summary: '从缓存读取指定学堂在线课程的教师列表',
       doc: [
         '## xuetangx.teachers_of_ —— 学堂在线课程教师',
@@ -2460,7 +2402,6 @@ name: 've.teachers_of_',
     {
       module: 'xuetangx',
       name: 'xuetangx.status',
-      label: '学堂在线登录状态',
       summary: '检查学堂在线登录状态',
       doc: [
         '## xuetangx.status —— 学堂在线登录状态',
@@ -2478,7 +2419,6 @@ name: 've.teachers_of_',
     {
       module: 'xuetangx',
       name: 'xuetangx.login',
-      label: '学堂在线登录',
       summary: '按需启用并触发学堂在线登录流程',
       doc: [
         '## xuetangx.login —— 学堂在线登录',
@@ -2496,7 +2436,6 @@ name: 've.teachers_of_',
     {
       module: 'qwen',
       name: 'qwen.operationList',
-      label: '列出全部操作',
       summary: '列出可按模块分组的所有可用操作名',
       doc: [
         '## qwen.operationList —— 列出全部操作',
@@ -2526,7 +2465,6 @@ name: 've.teachers_of_',
     {
       module: 'qwen',
       name: 'qwen.getDocs',
-      label: '查询操作说明',
       summary: '按模块名和操作名批量查询操作说明（Markdown）',
       doc: [
         '## qwen.getDocs —— 查询操作说明',
@@ -2588,7 +2526,6 @@ name: 've.teachers_of_',
     {
       module: 'theme',
       name: 'theme.get',
-      label: '获取外观颜色模式',
       summary: '获取扩展当前外观颜色模式（light/dark/system）',
       doc: [
         '## theme.get —— 获取外观颜色模式',
@@ -2610,7 +2547,6 @@ name: 've.teachers_of_',
     {
       module: 'theme',
       name: 'theme.set',
-      label: '设置外观颜色模式',
       summary: '设置扩展外观颜色模式，所有扩展页面立即应用',
       doc: [
         '## theme.set —— 设置外观颜色模式',
@@ -2639,7 +2575,6 @@ name: 've.teachers_of_',
     {
       module: 'reminder',
       name: 'reminder.send',
-      label: '发送系统通知',
       summary: '使用浏览器系统通知 API 发送 basic、image、list 或 progress 通知',
       doc: [
         '## reminder.send —— 发送系统通知',
@@ -2688,7 +2623,6 @@ name: 've.teachers_of_',
     {
       module: 'reminder',
       name: 'reminder.get',
-      label: '获取提醒时间点',
       summary: '获取作业截止提醒的全部提前时间点（分钟）',
       doc: [
         '## reminder.get —— 获取提醒时间点',
@@ -2706,7 +2640,6 @@ name: 've.teachers_of_',
     {
       module: 'reminder',
       name: 'reminder.set',
-      label: '设置提醒时间点',
       summary: '整体替换作业截止提醒的提前时间点列表',
       doc: [
         '## reminder.set —— 设置提醒时间点',
@@ -2732,7 +2665,6 @@ name: 've.teachers_of_',
     {
       module: 'reminder',
       name: 'reminder.add',
-      label: '添加提醒时间点',
       summary: '新增一个或多个作业截止提醒的提前时间点',
       doc: [
         '## reminder.add —— 添加提醒时间点',
@@ -2759,7 +2691,6 @@ name: 've.teachers_of_',
     {
       module: 'reminder',
       name: 'reminder.del',
-      label: '删除提醒时间点',
       summary: '删除一个或多个作业截止提醒的提前时间点',
       doc: [
         '## reminder.del —— 删除提醒时间点',
@@ -2786,7 +2717,6 @@ name: 've.teachers_of_',
     {
       module: 'reminder',
       name: 'reminder.enabled',
-      label: '后台作业监控开关',
       summary: '读取或切换「后台监控未交作业并发送系统通知」开关',
       doc: [
         '## reminder.enabled —— 后台作业监控开关',
@@ -2999,14 +2929,14 @@ name: 've.teachers_of_',
         .filter((group) => availability[group.id] !== false)
         .map((group) => ({
           ...group,
-          operations: group.operations.map((op) => ({ name: op.name, label: op.label, summary: op.summary }))
+          operations: group.operations.map((op) => ({ name: op.name, summary: op.summary }))
         }));
     },
     operationList: allOperations,
     get: findOperation,
     getDocs: (name) => {
       const op = findOperation(name);
-      return op ? { name: op.name, module: op.module, label: op.label, summary: op.summary, doc: op.doc } : null;
+      return op ? { name: op.name, module: op.module, summary: op.summary, doc: op.doc } : null;
     },
     formatResult,
     executeCode,

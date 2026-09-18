@@ -159,13 +159,12 @@
       ? stored.qwenAlwaysAllowedOperations : []).map(String));
     if (alwaysAllowed.has(name)) return true;
 
-    const operation = global.BJTUCA?.get?.(name);
     const approvalId = crypto.randomUUID();
     const pageDecision = await chrome.runtime.sendMessage({
       type: 'BJTUCA_LOCAL_APPROVAL_REQUEST',
       id: approvalId,
       name,
-      message: `本地程序请求执行「${operation?.label || name}」，是否允许？`
+      message: `本地程序请求执行「${name}」，是否允许？`
     }).catch(() => null);
     if (pageDecision?.handled === true) {
       void chrome.runtime.sendMessage({
@@ -186,7 +185,7 @@
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/128.png'),
         title: '本地程序请求执行操作',
-        message: `是否允许执行「${operation?.label || name}」？`,
+        message: `是否允许执行「${name}」？`,
         requireInteraction: true,
         buttons: [{ title: '允许一次' }, { title: '始终允许' }]
       }, () => {

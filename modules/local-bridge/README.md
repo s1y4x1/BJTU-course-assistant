@@ -27,14 +27,29 @@ Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
 ## 连接 Codex
 
-配对完成后点击“复制 Codex 配置”。复制内容的第一行会将 Token 写入当前用户的长期环境变量；执行该命令，并把 TOML 部分加入 `~/.codex/config.toml`，随后重新启动 Codex：
+配对完成后，将下面的 TOML 加入 `~/.codex/config.toml`：
 
 ```toml
 [mcp_servers.bjtu_course_assistant]
-url = "http://127.0.0.1:1896/mcp"
+url = "http://127.0.0.1:{{BJTU_CA_BRIDGE_PORT}}/mcp"
 bearer_token_env_var = "BJTU_CA_BRIDGE_TOKEN"
-tool_timeout_sec = 86400
 ```
+
+再选择一种命令，将当前配对得到的 Token 写入用户环境变量。
+
+CMD：
+
+```cmd
+setx BJTU_CA_BRIDGE_TOKEN "{{BJTU_CA_BRIDGE_TOKEN}}"
+```
+
+PowerShell：
+
+```powershell
+[Environment]::SetEnvironmentVariable('BJTU_CA_BRIDGE_TOKEN', '{{BJTU_CA_BRIDGE_TOKEN}}', 'User')
+```
+
+设置完成后，重新启动 Codex。
 
 提供的 MCP 工具为 `BJTUCA_operation_list`、`BJTUCA_get_docs` 和 `BJTUCA_call`。
 

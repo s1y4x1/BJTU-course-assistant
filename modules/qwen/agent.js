@@ -62,7 +62,7 @@
   function operationNamesInCode(code, operations, groups = []) {
     const source = String(code || '');
     const availableNames = new Set((groups || []).flatMap((group) => group?.operations || []).map((entry) => String(entry?.name ?? entry ?? '')));
-    return (typeof operations?.list === 'function' ? operations.list() : [])
+    return (typeof operations?.operationList === 'function' ? operations.operationList() : [])
       .map((operation) => String(operation?.name || ''))
       .filter(Boolean)
       .filter((name) => availableNames.size === 0 || availableNames.has(name))
