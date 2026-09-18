@@ -1088,8 +1088,102 @@ async function mrjzyPageLoginStatus() {
   return { loginState: state, loggedIn: state === 'online', snapshotLoaded: mrjzyPageSnapshot().length > 0 };
 }
 
+function mrjzyIdentityChoices(users) {
+  return (Array.isArray(users) ? users : []).flatMap((user) => {
+    const openId = String(user?.openId || '').trim();
+    const groups = Array.isArray(user?.groups) && user.groups.length ? user.groups : [null];
+    return groups.map((group) => ({
+      user,
+      openId,
+      classId: String(group?.classId || '').trim()
+    }));
+  }).filter((choice) => choice.openId);
+}
+
+function selectMrjzyIdentity(users, args, savedAccount, settings) {
+  const choices = mrjzyIdentityChoices(users);
+  const requestedOpenId = String(args?.openId || '').trim();
+  const requestedClassId = String(args?.classId || '').trim();
+  if (requestedOpenId) {
+    const matches = choices.filter((choice) => choice.openId === requestedOpenId);
+    if (!matches.length) throw new Error(`openId 无效：${requestedOpenId}`);
+    if (requestedClassId) {
+      const exact = matches.find((choice) => choice.classId === requestedClassId);
+      if (!exact) throw new Error(`classId 无效：${requestedClassId}`);
+      return exact;
+    }
+    if (matches.length === 1) return matches[0];
+    return null;
+  }
+
+  const savedOpenId = String(savedAccount?.selectedOpenId || '').trim();
+  const savedClassId = String(savedAccount?.selectedClassId || '').trim();
+  const savedChoice = choices.find((choice) => choice.openId === savedOpenId && choice.classId === savedClassId);
+  if (savedChoice) return savedChoice;
+
+  if (String(settings?.mrjzyAutoLoginAccount || '').trim() === String(args?.phone || '').trim()) {
+    const [configuredOpenId, configuredClassId] = String(settings?.mrjzyAutoLoginClass || '').split('\u001f');
+    const configuredChoice = choices.find((choice) => choice.openId === configuredOpenId && choice.classId === configuredClassId);
+    if (configuredChoice) return configuredChoice;
+  }
+  return choices.length === 1 ? choices[0] : null;
+}
+
+function showMrjzyPasswordIdentityPicker(authenticated) {
+  const mask = ensureMrjzyLoginAssistPopup();
+  stopMrjzyLoginAssistPolling();
+  mrjzyLoginAssistCurrentCode = '';
+  mrjzyPasswordLoginToken = authenticated.token;
+  mrjzyPasswordLoginPhone = authenticated.phone;
+  setMrjzyPasswordLoginBusy(mask, false, '');
+  renderMrjzyAccountPicker(mask, authenticated.users);
+  mask.classList.add('show');
+}
+
+async function startMrjzyCredentialLogin(args) {
+  const phone = String(args?.phone || '').trim();
+  const suppliedPassword = String(args?.password || '');
+  if (!phone) return { ok: false, message: '手机号不能为空' };
+  window.platformInteractiveLoginPending.mrjzy = true;
+  if (isPlatformEnabled('mrjzy')) setPlatformLoginState('mrjzy', 'checking');
+  try {
+    const [saved, settings] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'MRJZY_GET_SAVED_CREDENTIAL', loginName: phone }).catch(() => null),
+      chrome.storage.local.get(['mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass'])
+    ]);
+    const password = suppliedPassword || String(saved?.account?.password || '');
+    if (!password) throw new Error(`未保存账号 ${phone} 的密码，请传入 password`);
+    const authenticated = await authenticateMrjzyWithPassword(phone, password);
+    const choice = selectMrjzyIdentity(authenticated.users, { ...args, phone }, saved?.account, settings);
+    if (!choice) {
+      showMrjzyPasswordIdentityPicker(authenticated);
+      return { ok: true };
+    }
+    await activateMrjzyPasswordIdentity({
+      phone,
+      token: authenticated.token,
+      openId: choice.openId,
+      classId: choice.classId
+    });
+    showToast('每日交作业登录成功', 'success', 1800);
+    closeMrjzyLoginAssistPopup(false);
+    completeExternalLoginAssist('mrjzy', true);
+    return { ok: true };
+  } catch (error) {
+    window.platformInteractiveLoginPending.mrjzy = false;
+    if (isPlatformEnabled('mrjzy')) setPlatformLoginState('mrjzy', 'offline');
+    return { ok: false, message: String(error?.message || error || '登录失败') };
+  }
+}
+
 async function mrjzyPageLogin(args = {}) {
   const platform = 'mrjzy';
+  const hasCredentials = String(args?.phone || '').trim() || String(args?.password || '');
+  if (hasCredentials) {
+    const started = await startMrjzyCredentialLogin(args);
+    if (!started.ok) return started;
+    return await waitForPlatformLoginResult(platform, Number(args?.timeoutMs) || 120000);
+  }
   const enabled = typeof isPlatformEnabled === 'function' ? isPlatformEnabled(platform) : true;
   if (enabled) {
     return globalThis.getEnabledPlatformLoginResult(platform);

@@ -64,7 +64,8 @@
     const write = accountWritePromise.then(async () => {
       const accounts = await getAccounts();
       const previous = accounts[id] || normalizeAccount(id);
-      const changed = previous.password !== secret
+      const passwordChanged = previous.password !== secret;
+      const changed = passwordChanged
         || (!!patch.userName && previous.userName !== String(patch.userName))
         || (Array.isArray(patch.identities) && JSON.stringify(previous.identities) !== JSON.stringify(normalizeIdentities(patch.identities)));
       const account = normalizeAccount(id, {
@@ -79,7 +80,7 @@
         [ACCOUNTS_KEY]: accounts,
         [ACCOUNT_REVISION_KEY]: Date.now()
       });
-      return { ok: true, changed, account };
+      return { ok: true, changed, passwordChanged, account };
     });
     accountWritePromise = write.catch(() => {});
     return write;
@@ -207,15 +208,17 @@
       }
     }
     const userName = String(loginAccount?.user?.userRealName || '').trim();
-    await saveCredentials(credentials.phone, credentials.password, {
+    const saved = await saveCredentials(credentials.phone, credentials.password, {
       userName,
       identities
     });
-    await global.BjtuPageToast?.show(
-      credentials.tabId,
-      `每日交作业登录成功，已保存账号 ${credentials.phone} 的密码`,
-      'success'
-    ).catch(() => {});
+    if (saved.passwordChanged) {
+      await global.BjtuPageToast?.show(
+        credentials.tabId,
+        `每日交作业登录成功，已保存账号 ${credentials.phone} 的密码`,
+        'success'
+      ).catch(() => {});
+    }
     return true;
   }
 

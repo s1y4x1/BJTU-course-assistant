@@ -2123,14 +2123,22 @@ name: 've.teachers_of_',
       doc: [
         '## mrjzy.login —— 每日交作业登录',
         '',
-        '每日交作业尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出扫码/授权窗口。',
+        '可传入手机号和密码直接登录；如果该手机号已保存密码，可只传 phone。一个账号存在多个身份或班级且没有保存过选择时，会显示身份选择窗口；也可传入 openId 和 classId 直接指定。无参调用时，每日交作业尚未启用才启用并触发登录流程，已经启用则直接返回当前状态。',
         '',
-        '**调用示例**：`mrjzy.login()`',
+        '**参数**：{"phone":"手机号，可选","password":"密码，可选；省略时读取该手机号已保存的密码","openId":"身份 openId，可选","classId":"班级 ID，可选"}',
+        '',
+        '**调用示例**：`mrjzy.login()`；`mrjzy.login({phone: "130xxxxxxxx"})`；`mrjzy.login({phone: "130xxxxxxxx", password: "密码"})`',
         '',
         '**返回示例**：{"ok":true}'
       ].join('\n'),
-      async run() {
-        return compactLoginResult(await pageInvoke('mrjzy', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
+      async run(args) {
+        return compactLoginResult(await pageInvoke('mrjzy', 'login', {
+          phone: String(args?.phone || '').trim(),
+          password: String(args?.password || ''),
+          openId: String(args?.openId || '').trim(),
+          classId: String(args?.classId || '').trim(),
+          timeoutMs: Number.POSITIVE_INFINITY
+        }));
       }
     },
     {
