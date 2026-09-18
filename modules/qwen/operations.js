@@ -925,7 +925,7 @@ name: 've.accounts',
       doc: [
         '## ve.submitAssignment —— 提交作业',
         '',
-        '提交智慧课程平台作业。assignmentId 可从 ve.assignments_of_ 获取；附件可直接使用 ve.uploadFile 返回的 fileList，无需再调用 ve.uploadedFiles。正文与附件至少提供一项。',
+        '提交智慧课程平台作业。assignmentId 可从 ve.assignments_of_ 获取；附件可直接使用 ve.uploadFile 返回的 fileList，无需再调用 ve.uploadedFiles。正文与附件至少提供一项。若该作业不允许重复提交，真正发送前会弹出浏览器原生确认框。',
         '',
         '**参数**：{"courseId":"课程ID，必填","assignmentId":"作业ID，必填","content":"正文，可选","fileList":"ve.uploadFile 返回的 fileList 数组，可选"}',
         '',
@@ -953,7 +953,15 @@ name: 've.accounts',
         const assignments = await core.fetchCourseHomework(courseId);
         const homework = assignments.find((item) => String(core.homeworkKey(item) || '') === assignmentId);
         if (!homework) throw new Error(`作业ID无效：${assignmentId} 不在该课程作业列表中`);
-        const result = await core.submitHomework(courseId, homework, content, directFileList);
+        if (core.requiresNonRepeatSubmissionConfirmation(homework)) {
+          const confirmed = await pageInvoke('ve', 'confirmHomeworkSubmission', {
+            is_repeat: homework?.is_repeat ?? homework?.isRepeat
+          }, Number.POSITIVE_INFINITY);
+          if (confirmed !== true) throw new Error('用户已取消提交');
+        }
+        const result = await core.submitHomework(courseId, homework, content, directFileList, {
+          confirmedNonRepeat: true
+        });
         if (result?.submitted !== true) throw new Error(String(result?.message || '作业提交失败'));
         return { submitted: true };
       }

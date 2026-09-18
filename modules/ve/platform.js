@@ -3045,6 +3045,11 @@ globalThis.BjtuVePageApi = Object.freeze({
   archiveItems: (args) => veArchiveItemsWithLinks(String(args?.courseId || '').trim()),
   uploadedFiles: (args) => vePageUploadedFiles(args),
   assignmentSnapshot: () => vePageAssignmentSnapshot(),
+  confirmHomeworkSubmission: (args) => {
+    const core = globalThis.BjtuVeHomeworkCore;
+    if (!core?.requiresNonRepeatSubmissionConfirmation?.(args)) return true;
+    return window.confirm(core.NON_REPEAT_SUBMISSION_CONFIRM_MESSAGE);
+  },
   uploadFile: (args) => {
     const upload = globalThis.BjtuVeUploadApi?.uploadFile;
     if (typeof upload !== 'function') throw new Error('智慧课程平台上传接口尚未就绪');

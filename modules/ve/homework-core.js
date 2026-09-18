@@ -366,11 +366,30 @@
     };
   }
 
+  const NON_REPEAT_SUBMISSION_CONFIRM_MESSAGE = '该作业不允许重复提交，提交后可能无法再次修改。确定继续提交吗？';
+
+  function requiresNonRepeatSubmissionConfirmation(homework) {
+    const value = homework?.is_repeat ?? homework?.isRepeat;
+    return value !== undefined && value !== null && String(value).trim() === '0';
+  }
+
+  function confirmHomeworkSubmission(homework, options = {}) {
+    if (!requiresNonRepeatSubmissionConfirmation(homework) || options.confirmedNonRepeat === true) return true;
+    const confirmFn = typeof options.confirm === 'function'
+      ? options.confirm
+      : (typeof global.confirm === 'function' ? global.confirm.bind(global) : null);
+    if (!confirmFn) throw new Error('该作业不允许重复提交，需要用户确认后才能提交');
+    return confirmFn(NON_REPEAT_SUBMISSION_CONFIRM_MESSAGE) === true;
+  }
+
   async function submitHomework(courseId, homework, content, uploadedFiles, options = {}) {
     const cid = String(courseId || '').trim();
     const upId = String(homework?.id ?? homework?.upId ?? homework?.upid ?? homework?.UPID ?? homework?.up_id ?? '').trim();
     if (!cid) throw new Error('缺少课程 ID');
     if (!upId) throw new Error('缺少作业 ID');
+    if (!confirmHomeworkSubmission(homework, options)) {
+      return { submitted: false, cancelled: true };
+    }
     const fileList = (Array.isArray(uploadedFiles) ? uploadedFiles : [])
       .map(buildHomeworkUploadFile)
       .filter(Boolean);
@@ -465,6 +484,9 @@
     getUnpublishedDoneScoreHomeworkIds,
     setHomeworkScoreDisplayStatus,
     buildHomeworkUploadFile,
+    NON_REPEAT_SUBMISSION_CONFIRM_MESSAGE,
+    requiresNonRepeatSubmissionConfirmation,
+    confirmHomeworkSubmission,
     submitHomework,
     collectPendingAssignments
   });

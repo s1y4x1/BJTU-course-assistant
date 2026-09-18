@@ -5735,6 +5735,12 @@ courseListDiv.addEventListener('click', async (e) => {
     const content = textarea instanceof HTMLTextAreaElement ? textarea.value : '';
     const fileList = getSelectedUploadedFileList();
 
+    const homeworkCore = globalThis.BjtuVeHomeworkCore;
+    if (homeworkCore?.requiresNonRepeatSubmissionConfirmation?.(hw)
+      && !window.confirm(homeworkCore.NON_REPEAT_SUBMISSION_CONFIRM_MESSAGE)) {
+      return;
+    }
+
     const btn = actionEl;
     const oldText = btn.textContent;
     btn.textContent = '提交中…';
