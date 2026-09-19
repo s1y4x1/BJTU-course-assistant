@@ -128,14 +128,10 @@
 
   async function fetchCourses(xqCode, options = {}) {
     const requestOptions = { ...options };
-    const bare = requestOptions.bare === true;
     const boy = String(requestOptions.boy || '').trim();
-    delete requestOptions.bare;
     delete requestOptions.boy;
     const params = new URLSearchParams({ method: 'getCourseList', pagesize: '100' });
-    if (!bare) {
-      params.set('xqCode', String(xqCode || ''));
-    }
+    params.set('xqCode', String(xqCode || ''));
     if (boy) params.set('boy', boy);
     const url = `${BASE_VE}back/coursePlatform/course.shtml?${params.toString()}`;
     const { text, response } = await requestText(url, {

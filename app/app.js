@@ -1287,6 +1287,7 @@ function togglePlatformSelection(platform, options = {}) {
     refreshPlatformLoginTip();
 
     if (platform === 've') {
+      abortAllCoursewareReplayFetches();
       if (Array.isArray(window.currentVeCourseList) && window.currentVeCourseList.length) {
         window.veDisabledCourseListCache = window.currentVeCourseList.slice();
       }
@@ -1365,11 +1366,7 @@ function togglePlatformSelection(platform, options = {}) {
     if (isPlatformEnabled('ve')) {
       void (async () => {
         await loadAutoLoadCourseResourcesSetting();
-        if (typeof globalThis.probeVePlatformFromSessionBeforeLogin === 'function') {
-          await globalThis.probeVePlatformFromSessionBeforeLogin();
-        } else {
-          await globalThis.reloadVePlatformFromSession?.({ reloadCourses: true, reloadResourceSpace: true });
-        }
+        await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
       })();
     }
     return;
