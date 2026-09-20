@@ -78,7 +78,7 @@ function renderDirectOpenNotice() {
       <div style="max-width:720px;width:100%;background:#fff;border:1px solid #dbeafe;border-radius:20px;box-shadow:0 18px 45px rgba(15,23,42,0.12);padding:32px 28px;color:#0f172a;">
         <div style="font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#2563eb;margin-bottom:12px;">BJTU 课程助手</div>
         <h1 style="margin:0 0 14px;font-size:28px;line-height:1.25;">请到 about:extensions 页面加载已解压的扩展，而非直接打开 app.html</h1>
-        <p style="margin:0 0 18px;font-size:16px;line-height:1.8;color:#334155;">这个页面是扩展的工作台，只能在浏览器扩展环境中使用。请复制并在地址栏打开 <span style="font-weight:700;color:#0f172a;">about:extensions</span>，再点击“加载已解压的扩展程序”载入本目录。</p>
+        <p style="margin:0 0 18px;font-size:16px;line-height:1.8;color:#334155;">这个页面是扩展的工作台，只能在浏览器扩展环境中使用。请复制并在地址栏打开 <span style="font-weight:700;color:#0f172a;">about:extensions</span>，开启「开发人员模式」，再点击「加载已解压的扩展程序」载入本目录。</p>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
           <button id="copy-extensions-page-url" type="button" style="display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border:0;border-radius:10px;background:#2563eb;color:#fff;font:inherit;font-weight:700;cursor:pointer;">复制 about:extensions</button>
           <span id="copy-extensions-page-status" style="color:#64748b;font-size:13px;">复制后粘贴到浏览器地址栏打开。</span>
