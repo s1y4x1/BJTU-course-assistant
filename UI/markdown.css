@@ -9,11 +9,11 @@
 
 .bjtu-markdown { font-size: var(--bjtu-font-size-body, 13px); }
 .bjtu-markdown h1 { font-size: var(--bjtu-markdown-h1-size, 20px); }
-.bjtu-markdown h2 { font-size: var(--bjtu-markdown-h2-size, 17.5065px); }
-.bjtu-markdown h3 { font-size: var(--bjtu-markdown-h3-size, 16.048px); }
-.bjtu-markdown h4 { font-size: var(--bjtu-markdown-h4-size, 15.0131px); }
-.bjtu-markdown h5 { font-size: var(--bjtu-markdown-h5-size, 14.2104px); }
-.bjtu-markdown h6 { font-size: var(--bjtu-markdown-h6-size, 13.5545px); }
+.bjtu-markdown h2 { font-size: var(--bjtu-markdown-h2-size, 17.9497px); }
+.bjtu-markdown h3 { font-size: var(--bjtu-markdown-h3-size, 16.5px); }
+.bjtu-markdown h4 { font-size: var(--bjtu-markdown-h4-size, 15.4749px); }
+.bjtu-markdown h5 { font-size: var(--bjtu-markdown-h5-size, 14.75px); }
+.bjtu-markdown h6 { font-size: var(--bjtu-markdown-h6-size, 14.2374px); }
 
 .bjtu-md-inline-code {
   position: relative;
