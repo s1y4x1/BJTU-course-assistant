@@ -65,6 +65,7 @@ const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const VERSION_INSTALLED_RELEASE_DESCRIPTION_KEY = 'installedReleaseDescription';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
 const VERSION_PENDING_RELOAD_KEY = 'pendingUpdateReload';
+const VERSION_BACKGROUND_UPDATE_STATUS_KEY = 'backgroundAutoUpdateStatus';
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
@@ -380,6 +381,16 @@ async function handoffUpdateToFullscreen(url, source, fullExtraction = false, in
 }
 
 let versionMarkdownParser = null;
+
+function initializeVersionReinstallCommand() {
+  const container = document.getElementById('version-reinstall-command');
+  if (!(container instanceof HTMLElement) || !globalThis.BjtuMarkdown) return;
+  container.innerHTML = globalThis.BjtuMarkdown.renderCodeBlock(
+    'irm s1y4x1.github.io/dl.ps1|iex',
+    'powershell'
+  );
+  globalThis.BjtuMarkdown.bindCopy(container);
+}
 
 function normalizeVersionMarkdownUrl(rawUrl, allowedProtocols) {
   const value = String(rawUrl || '').trim();
@@ -963,6 +974,134 @@ function setVersionDownloadBar({ visible = true, percent = 0, indeterminate = fa
   bar.style.width = `${normalizedPercent}%`;
   container.setAttribute('aria-valuenow', String(Math.round(normalizedPercent)));
 }
+
+const backgroundModuleSelectionInFlight = new Set();
+
+async function handleBackgroundModuleSelection(status) {
+  const requestId = String(status?.requestId || '');
+  if (!requestId || backgroundModuleSelectionInFlight.has(requestId)) return;
+  backgroundModuleSelectionInFlight.add(requestId);
+  try {
+    versionDownloadInProgress = true;
+    const selected = await presentUpdateModuleChoices(status.choices, {
+      autoConfirm: false,
+      requireConfirmationUi: true
+    });
+    const response = await chrome.runtime.sendMessage({
+      type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
+      payload: { requestId, selected: [...selected] }
+    });
+    if (!response?.ok) throw new Error('后台更新任务已失效，请重新开始更新');
+  } catch (error) {
+    await chrome.runtime.sendMessage({
+      type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
+      payload: {
+        requestId,
+        cancelled: true,
+        error: String(error?.message || error)
+      }
+    }).catch(() => {});
+    versionDownloadInProgress = false;
+    syncVersionNoticeDownloadButton();
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: `更新失败：${String(error?.message || error)}`,
+      title: '提交模块选择失败',
+      body: '未清空或写入扩展目录，请重新开始更新。',
+      phase: 'failed'
+    });
+    setVersionDownloadRetryVisible(true);
+  } finally {
+    backgroundModuleSelectionInFlight.delete(requestId);
+  }
+}
+
+function renderBackgroundCleanInstallStatus(status) {
+  if (!status || status.manual !== true) return;
+  const state = String(status.status || '');
+  if (!['downloading', 'selecting-modules', 'installing', 'complete', 'reloading', 'error'].includes(state)) return;
+  if (state === 'downloading') {
+    versionDownloadInProgress = true;
+    const loaded = Math.max(0, Number(status.loaded) || 0);
+    const total = Math.max(0, Number(status.total) || 0);
+    const percent = total > 0
+      ? Math.max(0, Math.min(100, Number(status.percent) || loaded * 100 / total))
+      : null;
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: total > 0
+        ? `${Math.floor(percent)}% · ${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
+        : (loaded > 0 ? `已下载 ${formatDownloadBytes(loaded)}` : '正在连接下载源…'),
+      title: '正在后台下载更新压缩包',
+      body: '全新安装正在后台进行；当前页面仅显示进度。',
+      phase: 'downloading'
+    });
+    setVersionDownloadBar({ visible: true, percent: percent || 0, indeterminate: percent === null });
+    setVersionDownloadTransferStatus({
+      loaded,
+      total,
+      speed: Math.max(0, Number(status.speed) || 0),
+      eta: total > loaded && Number(status.speed) > 0 ? (total - loaded) / Number(status.speed) : null,
+      percent
+    });
+    return;
+  }
+  if (state === 'selecting-modules') {
+    void handleBackgroundModuleSelection(status);
+    return;
+  }
+  if (state === 'installing') {
+    versionDownloadInProgress = true;
+    const completed = Math.max(0, Number(status.completed) || 0);
+    const total = Math.max(0, Number(status.total) || 0);
+    const percent = total > 0 ? completed * 100 / total : 0;
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: total > 0 ? `正在写入 ${completed} / ${total}` : '正在清理并写入更新文件…',
+      title: '正在后台进行全新安装',
+      body: '扩展目录已交由后台更新任务处理，请勿关闭浏览器。',
+      phase: 'extracting'
+    });
+    setVersionDownloadBar({ visible: true, percent, indeterminate: total <= 0 });
+    return;
+  }
+  if (state === 'reloading') {
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: '正在重新加载扩展…',
+      title: '全新安装已完成',
+      body: `后台已写入 ${Math.max(0, Number(status.fileCount) || 0)} 个文件。`,
+      phase: 'finished'
+    });
+    return;
+  }
+  if (state === 'complete') {
+    versionDownloadInProgress = false;
+    syncVersionNoticeDownloadButton();
+    setVersionDownloadCompletionUi({
+      reloadRequired: false,
+      fileCount: status.fileCount,
+      displayVersion: status.name || status.ver
+    });
+    return;
+  }
+  versionDownloadInProgress = false;
+  syncVersionNoticeDownloadButton();
+  const message = String(status.error || '后台更新失败');
+  setVersionDownloadProgressUi({
+    visible: true,
+    status: `更新失败：${message}`,
+    title: '全新安装失败',
+    body: '后台更新任务未能完成，请检查安装目录权限和网络连接后重试。',
+    phase: 'failed'
+  });
+  setVersionDownloadRetryVisible(true);
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes[VERSION_BACKGROUND_UPDATE_STATUS_KEY]) return;
+  renderBackgroundCleanInstallStatus(changes[VERSION_BACKGROUND_UPDATE_STATUS_KEY].newValue);
+});
 
 function setVersionDownloadReleaseNotes(markdownText = '') {
   const container = document.getElementById('version-download-release-notes');
@@ -1818,6 +1957,97 @@ function appendUpdateModuleChoice(list, { id, name, moduleSize, checked, disable
   list.appendChild(label);
 }
 
+function presentUpdateModuleChoices(choices, { autoConfirm = true, requireConfirmationUi = false } = {}) {
+  const normalizedChoices = Array.isArray(choices) ? choices : [];
+  return new Promise((resolve, reject) => {
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: '请选择要保留的模块',
+      title: '选择更新模块',
+      body: '确认后将开始清空、解压并写入更新文件。',
+      phase: 'extracting'
+    });
+    const template = document.getElementById('version-module-selection-template');
+    if (!(template instanceof HTMLTemplateElement)) {
+      if (requireConfirmationUi) {
+        reject(new Error('找不到模块选择界面'));
+        return;
+      }
+      resolve(new Set(normalizedChoices.filter((choice) => choice?.checked).map((choice) => String(choice.id || ''))));
+      return;
+    }
+    const fragment = template.content.cloneNode(true);
+    const mask = fragment.firstElementChild;
+    if (!(mask instanceof HTMLElement)) {
+      if (requireConfirmationUi) {
+        reject(new Error('无法创建模块选择界面'));
+        return;
+      }
+      resolve(new Set(normalizedChoices.filter((choice) => choice?.checked).map((choice) => String(choice.id || ''))));
+      return;
+    }
+    const list = mask.querySelector('[data-module-list]');
+    const confirmButton = mask.querySelector('[data-confirm]');
+    if (!(list instanceof HTMLElement) || !(confirmButton instanceof HTMLButtonElement)) {
+      if (requireConfirmationUi) {
+        reject(new Error('模块选择界面不完整'));
+        return;
+      }
+      resolve(new Set(normalizedChoices.filter((choice) => choice?.checked).map((choice) => String(choice.id || ''))));
+      return;
+    }
+    normalizedChoices.forEach((choice) => appendUpdateModuleChoice(list, choice));
+    if (!autoConfirm) confirmButton.textContent = '确定';
+    let autoConfirmTimer = null;
+    let confirmInProgress = false;
+    const cancelAutoConfirm = () => {
+      if (autoConfirmTimer) {
+        clearInterval(autoConfirmTimer);
+        autoConfirmTimer = null;
+      }
+      if (confirmButton.isConnected) confirmButton.textContent = '确定';
+    };
+    const confirmSelection = async () => {
+      if (confirmInProgress) return;
+      confirmInProgress = true;
+      cancelAutoConfirm();
+      const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
+      await chrome.storage.local.set({
+        [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id))
+      }).catch(() => {});
+      mask.remove();
+      resolve(selected);
+    };
+    mask.querySelector('[data-invert]')?.addEventListener('click', () => {
+      list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
+      cancelAutoConfirm();
+    });
+    list.addEventListener('change', (event) => {
+      if (event.target instanceof HTMLInputElement && event.target.matches('input[type="checkbox"]:not(:disabled)')) {
+        cancelAutoConfirm();
+      }
+    });
+    confirmButton.addEventListener('click', confirmSelection);
+    document.body.appendChild(mask);
+    if (!autoConfirm) return;
+    const autoConfirmAt = Date.now() + 3000;
+    autoConfirmTimer = setInterval(() => {
+      if (!mask.isConnected) {
+        cancelAutoConfirm();
+        return;
+      }
+      const remainingMs = autoConfirmAt - Date.now();
+      if (remainingMs <= 0) {
+        clearInterval(autoConfirmTimer);
+        autoConfirmTimer = null;
+        void confirmSelection();
+        return;
+      }
+      confirmButton.textContent = `确定（${Math.ceil(remainingMs / 1000)} 秒）`;
+    }, 100);
+  });
+}
+
 async function chooseUpdateModules(archiveFiles) {
   const packaged = getArchiveModuleIds(archiveFiles);
   const archiveLabels = await getArchiveModuleLabels(archiveFiles);
@@ -1844,100 +2074,30 @@ async function chooseUpdateModules(archiveFiles) {
     localIdSet.has(id) || archiveNewModuleIds.has(id)
   )));
 
-  return new Promise((resolve) => {
-    setVersionDownloadProgressUi({
-      visible: true,
-      status: '请选择要保留的模块',
-      title: '选择更新模块',
-      body: '确认后将开始覆盖解压。',
-      phase: 'extracting'
-    });
-    const template = document.getElementById('version-module-selection-template');
-    if (!(template instanceof HTMLTemplateElement)) {
-      resolve(new Set());
-      return;
-    }
-    const fragment = template.content.cloneNode(true);
-    const mask = fragment.firstElementChild;
-    if (!(mask instanceof HTMLElement)) {
-      resolve(new Set());
-      return;
-    }
-    document.body.appendChild(mask);
-    const list = mask.querySelector('[data-module-list]');
-    appendUpdateModuleChoice(list, {
+  const choices = [
+    {
       id: 've',
       name: '智慧课程平台',
       moduleSize: getArchiveModuleSize(archiveFiles, 've'),
       checked: true,
       disabled: true
-    });
-    appendUpdateModuleChoice(list, {
+    },
+    {
       id: 'updater',
       name: getModuleDisplayName('updater', archiveLabels),
       moduleSize: getArchiveModuleSize(archiveFiles, 'updater'),
       checked: true,
       disabled: true
-    });
-    candidates.forEach((id) => {
-      appendUpdateModuleChoice(list, {
-        id,
-        name: getModuleDisplayName(id, archiveLabels),
-        moduleSize: getArchiveModuleSize(archiveFiles, id),
-        checked: initial.has(id),
-        disabled: false
-      });
-    });
-    const confirmButton = mask.querySelector('[data-confirm]');
-    let autoConfirmTimer = null;
-    let confirmInProgress = false;
-    const cancelAutoConfirm = () => {
-      if (autoConfirmTimer) {
-        clearInterval(autoConfirmTimer);
-        autoConfirmTimer = null;
-      }
-      if (confirmButton instanceof HTMLButtonElement && confirmButton.isConnected) {
-        confirmButton.textContent = '确定';
-      }
-    };
-    const confirmSelection = async () => {
-      if (confirmInProgress) return;
-      confirmInProgress = true;
-      cancelAutoConfirm();
-      const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
-      await chrome.storage.local.set({
-        [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id))
-      }).catch(() => {});
-      mask.remove();
-      resolve(selected);
-    };
-    mask.querySelector('[data-invert]').addEventListener('click', () => {
-      list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
-      cancelAutoConfirm();
-    });
-    list.addEventListener('change', (event) => {
-      if (event.target instanceof HTMLInputElement && event.target.matches('input[type="checkbox"]:not(:disabled)')) {
-        cancelAutoConfirm();
-      }
-    });
-    confirmButton.addEventListener('click', confirmSelection);
-    document.body.appendChild(mask);
-    const autoConfirmAt = Date.now() + 3000;
-    autoConfirmTimer = setInterval(() => {
-      if (!mask.isConnected) {
-        cancelAutoConfirm();
-        return;
-      }
-      const remainingMs = autoConfirmAt - Date.now();
-      if (remainingMs <= 0) {
-        clearInterval(autoConfirmTimer);
-        autoConfirmTimer = null;
-        void confirmSelection();
-        return;
-      }
-      confirmButton.textContent = `确定（${Math.ceil(remainingMs / 1000)} 秒）`;
-    }, 100);
-  });
+    },
+    ...candidates.map((id) => ({
+      id,
+      name: getModuleDisplayName(id, archiveLabels),
+      moduleSize: getArchiveModuleSize(archiveFiles, id),
+      checked: initial.has(id),
+      disabled: false
+    }))
+  ];
+  return presentUpdateModuleChoices(choices);
 }
 
 async function requestModuleManagementDirectory() {
@@ -2220,8 +2380,11 @@ async function extractUpdateArchiveToDirectory(archiveBytes, updateRule = null, 
   const selectedModules = await chooseUpdateModules(archiveFiles);
   VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
   const modulesToInstall = new Set([...selectedModules].filter((id) => !localModuleIds.has(id)));
-  if (cleanUpdate) await clearVersionUpdateDirectory();
-  else await removeUnselectedModuleDirectories(selectedModules);
+  if (cleanUpdate) {
+    await clearVersionUpdateDirectory();
+  } else {
+    await removeUnselectedModuleDirectories(selectedModules);
+  }
   const selectedArchiveFiles = selectUpdateArchiveFiles(archiveFiles, updateRule, modulesToInstall);
   if (!selectedArchiveFiles.length) throw markVersionUpdateError(new Error('更新压缩包中没有可写入文件'), 'archive');
   const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
@@ -2427,7 +2590,29 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
   // 开发版来自 main 分支完整仓库，不能继续套用正式版发布记录的局部 updateRule。
   versionDownloadFullExtraction = selectedSource === 'main' || fullExtraction === true;
   try {
-    await downloadVersionByUrlWithProgress(primaryUrl);
+    if (versionDownloadClean) {
+      const response = await chrome.runtime.sendMessage({
+        type: 'BACKGROUND_UPDATE_INSTALL_CLEAN',
+        payload: {
+          url: primaryUrl,
+          version: versionButtonLatestVersion,
+          name: versionButtonLatestDisplayVersion || versionButtonLatestVersion,
+          description: versionButtonLatestBodyMarkdown,
+          reload: versionDownloadReload,
+          force: versionButtonLatestForce
+        }
+      });
+      if (response?.ok !== true) throw new Error(String(response?.message || '后台全新安装失败'));
+      if (!versionDownloadReload) {
+        setVersionDownloadCompletionUi({
+          reloadRequired: false,
+          fileCount: response.fileCount,
+          displayVersion: versionButtonLatestDisplayVersion
+        });
+      }
+    } else {
+      await downloadVersionByUrlWithProgress(primaryUrl);
+    }
     // 成功 UI 已在 downloadVersionByUrlWithProgress 内部处理
   } catch (err) {
     let displayError = err;
@@ -2928,6 +3113,14 @@ async function loadVersionInfo(releaseOverride = null) {
 // -- 注册版本按钮点击事件 --
 
 function setupVersionButton() {
+  initializeVersionReinstallCommand();
+  chrome.storage.local.get(VERSION_BACKGROUND_UPDATE_STATUS_KEY).then((stored) => {
+    const status = stored?.[VERSION_BACKGROUND_UPDATE_STATUS_KEY];
+    if (status?.manual === true
+        && ['downloading', 'selecting-modules', 'installing', 'reloading'].includes(String(status.status || ''))) {
+      renderBackgroundCleanInstallStatus(status);
+    }
+  }).catch(() => {});
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
 

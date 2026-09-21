@@ -35,6 +35,8 @@
     'options/options.html'
   ]);
   let runningPromise = null;
+  let manualInstallPromise = null;
+  const manualModuleSelectionRequests = new Map();
 
   function normalizeIntervalMinutes(value) {
     const minutes = Math.round(Number(value));
@@ -476,6 +478,96 @@
     }).filter((id) => id && !REQUIRED_MODULE_IDS.has(id)))];
   }
 
+  async function getArchiveModuleLabels(files) {
+    const labels = {};
+    const moduleJsonFiles = (files || []).filter(({ path }) => /^modules\/[^/]+\/module\.json$/i.test(String(path || '')));
+    for (const item of moduleJsonFiles) {
+      const match = String(item.path || '').match(/^modules\/([^/]+)\/module\.json$/i);
+      const id = String(match?.[1] || '').toLowerCase();
+      if (!id) continue;
+      try {
+        const data = JSON.parse(new TextDecoder('utf-8').decode(await inflateEntry(item.entry)));
+        const name = String(data?.name || data?.label || '').trim();
+        if (name) labels[id] = name;
+      } catch {}
+    }
+    return labels;
+  }
+
+  function getArchiveModuleSize(files, moduleId) {
+    const prefix = `modules/${String(moduleId || '').toLowerCase()}/`;
+    return (files || []).reduce((total, item) => (
+      String(item?.path || '').toLowerCase().startsWith(prefix)
+        ? total + Math.max(0, Number(item?.entry?.uncompressedSize) || 0)
+        : total
+    ), 0);
+  }
+
+  async function requestManualModuleSelection({ release, root, archiveFiles, candidates, initial }) {
+    const requestId = crypto.randomUUID();
+    const labels = await getArchiveModuleLabels(archiveFiles);
+    const choices = [
+      {
+        id: 've',
+        name: labels.ve || '智慧课程平台',
+        moduleSize: getArchiveModuleSize(archiveFiles, 've'),
+        checked: true,
+        disabled: true
+      },
+      {
+        id: 'updater',
+        name: labels.updater || '更新组件',
+        moduleSize: getArchiveModuleSize(archiveFiles, 'updater'),
+        checked: true,
+        disabled: true
+      },
+      ...candidates.map((id) => ({
+        id,
+        name: labels[id] || id,
+        moduleSize: getArchiveModuleSize(archiveFiles, id),
+        checked: initial.has(id),
+        disabled: false
+      }))
+    ];
+    const selectionPromise = new Promise((resolve, reject) => {
+      manualModuleSelectionRequests.set(requestId, {
+        allowed: new Set(candidates),
+        resolve,
+        reject
+      });
+    });
+    try {
+      await setStatus('selecting-modules', {
+        manual: true,
+        requestId,
+        version: release.version,
+        name: release.name,
+        directoryName: root.name,
+        choices
+      });
+    } catch (error) {
+      manualModuleSelectionRequests.delete(requestId);
+      throw error;
+    }
+    return selectionPromise;
+  }
+
+  function resolveManualModuleSelection(payload) {
+    const requestId = String(payload?.requestId || '');
+    const pending = manualModuleSelectionRequests.get(requestId);
+    if (!pending) return false;
+    manualModuleSelectionRequests.delete(requestId);
+    if (payload?.cancelled === true) {
+      pending.reject(new Error(String(payload?.error || '已取消模块选择')));
+      return true;
+    }
+    const selected = new Set((Array.isArray(payload?.selected) ? payload.selected : [])
+      .map((id) => String(id || '').toLowerCase())
+      .filter((id) => pending.allowed.has(id)));
+    pending.resolve(selected);
+    return true;
+  }
+
   async function getInstalledOptionalModuleIds(root) {
     const installed = [];
     let modulesDirectory;
@@ -536,20 +628,58 @@
     return globalThis.BjtuUpdateFileSystem.writeFile(root, path, bytes);
   }
 
-  async function downloadArchive(url) {
+  async function downloadArchive(url, progress = null) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
     try {
       const response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: controller.signal });
       if (!response.ok) throw new Error(`下载更新包失败（HTTP ${response.status}）`);
-      return await response.arrayBuffer();
+      if (!response.body?.getReader) return await response.arrayBuffer();
+      const total = Math.max(0, Number(response.headers.get('content-length') || 0));
+      const reader = response.body.getReader();
+      const chunks = [];
+      let received = 0;
+      let lastReportedAt = 0;
+      const startedAt = performance.now();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value?.byteLength) continue;
+        chunks.push(value);
+        received += value.byteLength;
+        const now = performance.now();
+        if (typeof progress === 'function' && (now - lastReportedAt >= 150 || (total > 0 && received >= total))) {
+          lastReportedAt = now;
+          await progress({
+            loaded: received,
+            total,
+            speed: received / Math.max(0.001, (now - startedAt) / 1000),
+            percent: total > 0 ? Math.min(100, received * 100 / total) : null
+          });
+        }
+      }
+      const bytes = new Uint8Array(received);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return bytes.buffer;
     } finally {
       clearTimeout(timer);
     }
   }
 
-  async function installRelease(root, release) {
-    const archive = await retryNetworkOperation(() => downloadArchive(release.url), 2);
+  async function installRelease(root, release, { manual = false } = {}) {
+    const archive = await retryNetworkOperation(() => downloadArchive(release.url, manual
+      ? (transfer) => setStatus('downloading', {
+          manual: true,
+          version: release.version,
+          name: release.name,
+          directoryName: root.name,
+          ...transfer
+        })
+      : null), 2);
     return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
       const entries = parseZipEntries(archive);
       const archiveFiles = normalizeZipFiles(entries);
@@ -567,14 +697,28 @@
       const knownModules = new Set(knownIdsInitialized && Array.isArray(previousKnown) ? previousKnown : installedModuleIds);
       installedModuleIds.forEach((id) => knownModules.add(id));
       const newModules = packagedModuleIds.filter((id) => !knownModules.has(id));
-      const selectedModules = new Set(installedModuleIds);
-      newModules.forEach((id) => selectedModules.add(id));
+      const candidates = [...new Set([...installedModuleIds, ...packagedModuleIds])]
+        .filter((id) => !REQUIRED_MODULE_IDS.has(id));
+      const initial = new Set(candidates.filter((id) => installedModuleIds.includes(id) || newModules.includes(id)));
+      const selectedModules = manual
+        ? await requestManualModuleSelection({ release, root, archiveFiles, candidates, initial })
+        : new Set(initial);
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       const installedModuleSet = new Set(installedModuleIds);
       const modulesToInstall = new Set([...selectedModules].filter((id) => !installedModuleSet.has(id)));
       const selectedArchiveFiles = selectFiles(entries, release.clean ? null : release.update, modulesToInstall);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
+      if (manual) {
+        await setStatus('installing', {
+          manual: true,
+          version: release.version,
+          name: release.name,
+          completed: 0,
+          total: files.length,
+          directoryName: root.name
+        });
+      }
       if (release.clean) {
         await clearDirectory(root);
       } else {
@@ -590,6 +734,7 @@
           completed += 1;
         }));
         await setStatus('installing', {
+          manual,
           version: release.version,
           name: release.name,
           completed,
@@ -605,6 +750,112 @@
       });
       return files.length;
     });
+  }
+
+  function normalizeManualRelease(payload) {
+    const url = String(payload?.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) throw new Error('更新下载地址无效');
+    const version = String(payload?.version || chrome.runtime.getManifest().version || '').trim();
+    return {
+      version,
+      name: String(payload?.name || version).trim() || version,
+      description: String(payload?.description || ''),
+      url,
+      reload: payload?.reload !== false,
+      force: payload?.force === true,
+      update: null,
+      clean: true
+    };
+  }
+
+  async function runManualCleanInstall(payload, sender) {
+    if (manualInstallPromise) return manualInstallPromise;
+    manualInstallPromise = (async () => {
+      const release = normalizeManualRelease(payload);
+      const directoryHandle = await readDirectoryHandle();
+      const root = await validateDirectory(directoryHandle);
+      if (!root) throw new Error('尚未授权扩展安装目录，或目录写入权限已失效');
+      await setStatus('downloading', {
+        manual: true,
+        version: release.version,
+        name: release.name,
+        directoryName: root.name,
+        loaded: 0,
+        total: 0,
+        percent: null
+      });
+      const fileCount = await installRelease(root, release, { manual: true });
+      const record = {
+        ver: release.version,
+        name: release.name,
+        description: release.description,
+        fileCount,
+        force: release.force,
+        reload: release.reload,
+        clean: true,
+        appliedAt: Date.now(),
+        background: true,
+        manual: true
+      };
+      await chrome.storage.local.set({
+        [INSTALLED_RELEASE_DESCRIPTION_KEY]: {
+          version: release.version,
+          desc: release.description,
+          updatedAt: Date.now()
+        }
+      });
+      if (!release.reload) {
+        await chrome.storage.local.set({
+          [APPLIED_WITHOUT_RELOAD_KEY]: record,
+          [PENDING_RELOAD_KEY]: null,
+          [STATUS_KEY]: {
+            status: 'complete',
+            ...record,
+            directoryName: root.name,
+            checkedAt: Date.now()
+          }
+        });
+        return { updated: true, reloaded: false, fileCount, release };
+      }
+
+      const sourceUrl = String(sender?.url || sender?.tab?.url || '');
+      let restoreOptionsPath = '';
+      try {
+        const sourcePath = new URL(sourceUrl).pathname.replace(/^\/+/, '');
+        if (sourcePath === 'options/options.html') restoreOptionsPath = sourcePath;
+      } catch {}
+      await chrome.storage.local.set({
+        [PENDING_RELOAD_KEY]: { ...record, autoReloadRequestedAt: Date.now() },
+        [STATUS_KEY]: {
+          status: 'reloading',
+          ...record,
+          directoryName: root.name,
+          checkedAt: Date.now()
+        }
+      });
+      await globalThis.BjtuForegroundAppPages?.prepareReload?.({
+        ...record,
+        reopenApp: false,
+        restoreOptionsPath
+      }, sender?.tab?.id).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      chrome.runtime.reload();
+      return { updated: true, reloaded: true, fileCount, release };
+    })().catch(async (error) => {
+      const staleDirectoryState = globalThis.BjtuUpdateFileSystem.isInvalidStateError(error);
+      if (staleDirectoryState) await clearStoredDirectoryHandle().catch(() => {});
+      const normalizedError = staleDirectoryState
+        ? new Error('更新期间目录或文件被其他程序修改，请重新选择扩展安装目录。')
+        : error;
+      await setStatus('error', {
+        manual: true,
+        error: String(normalizedError?.message || normalizedError)
+      }).catch(() => {});
+      throw normalizedError;
+    }).finally(() => {
+      manualInstallPromise = null;
+    });
+    return manualInstallPromise;
   }
 
   async function runBackgroundUpdate({ forceCheck = false, suppressRecentReloadRetry = false } = {}) {
@@ -844,9 +1095,16 @@
       runBackgroundUpdate().catch(() => {});
     }
   });
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== 'BACKGROUND_UPDATE_CHECK_NOW') return false;
-    runBackgroundUpdate({ forceCheck: true })
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'BACKGROUND_UPDATE_MODULE_SELECTION') {
+      sendResponse({ ok: resolveManualModuleSelection(message?.payload) });
+      return false;
+    }
+    if (!['BACKGROUND_UPDATE_CHECK_NOW', 'BACKGROUND_UPDATE_INSTALL_CLEAN'].includes(message?.type)) return false;
+    const task = message.type === 'BACKGROUND_UPDATE_INSTALL_CLEAN'
+      ? runManualCleanInstall(message?.payload, sender)
+      : runBackgroundUpdate({ forceCheck: true });
+    task
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;

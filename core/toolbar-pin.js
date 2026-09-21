@@ -4,6 +4,7 @@
 
   const REMINDER_KEY = 'toolbarPinReminderEnabled';
   const MODAL_ID = '__bjtu_toolbar_pin_modal__';
+  const PIN_POLL_INTERVAL_MS = 500;
   let pinPollTimer = 0;
 
   async function queryPinnedState() {
@@ -83,7 +84,7 @@
         stopPinWatch();
         onPinned?.();
       }
-    }, 2000);
+    }, PIN_POLL_INTERVAL_MS);
   }
 
   function stopPinWatch() {

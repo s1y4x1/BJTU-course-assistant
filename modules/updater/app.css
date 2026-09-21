@@ -348,6 +348,9 @@ html[data-color-scheme="dark"] .version-install-option-description { color: #94a
     font-size: 14px;
     line-height: 1.65;
 }
+.version-reinstall-command {
+    margin-top: 6px;
+}
 .version-uninstall-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;

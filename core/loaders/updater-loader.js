@@ -16,6 +16,7 @@
     document.body.appendChild(holder.content.cloneNode(true));
     await global.BjtuModuleRegistry.loadScript('modules/updater/filesystem.js');
     await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
+    await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
     await global.BjtuModuleRegistry.loadScript('modules/updater/checker.js');
     return true;
   })().catch((error) => {
