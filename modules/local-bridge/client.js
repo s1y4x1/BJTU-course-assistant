@@ -62,6 +62,7 @@
   function setState(state, message = '') {
     connectionState = state;
     lastError = String(message || '');
+    void global.BjtuActionBridgeIndicator?.setConnected(state === 'connected');
     broadcastStatus();
   }
 

@@ -5,6 +5,73 @@ const BJTU_TAB_GROUP_TITLE = 'BJTU 课程助手';
 const BJTU_TAB_GROUP_COLOR = 'blue';
 const GROUP_EXTENSION_TABS_ENABLED_KEY = 'groupExtensionTabsEnabled';
 
+const BJTU_ACTION_ICON_PATHS = Object.freeze({
+  16: 'icons/16.png',
+  32: 'icons/128.png',
+  48: 'icons/128.png',
+  128: 'icons/128.png'
+});
+let bjtuBridgeIndicatorConnected = false;
+let bjtuBridgeIndicatorRevision = 0;
+let bjtuBridgeActionIconsPromise = null;
+
+async function createBjtuBridgeActionIcons() {
+  const sourceEntries = await Promise.all(['icons/16.png', 'icons/128.png'].map(async (path) => {
+    const response = await fetch(chrome.runtime.getURL(path));
+    if (!response.ok) throw new Error(`读取扩展图标失败：HTTP ${response.status}`);
+    return [path, await createImageBitmap(await response.blob())];
+  }));
+  const sources = Object.fromEntries(sourceEntries);
+  try {
+    const original = {};
+    const connected = {};
+    for (const size of [16, 32, 48, 128]) {
+      const canvas = new OffscreenCanvas(size, size);
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('无法创建扩展图标画布');
+      const source = sources[size === 16 ? 'icons/16.png' : 'icons/128.png'];
+      context.drawImage(source, 0, 0, size, size);
+      original[size] = context.getImageData(0, 0, size, size);
+      const radius = Math.max(2.5, size * 0.145);
+      const inset = Math.max(0.75, size * 0.035);
+      const center = size - radius - inset;
+      context.beginPath();
+      context.arc(center, center, radius, 0, Math.PI * 2);
+      context.fillStyle = '#22c55e';
+      context.fill();
+      context.lineWidth = Math.max(1, size * 0.045);
+      context.strokeStyle = '#ffffff';
+      context.stroke();
+      connected[size] = context.getImageData(0, 0, size, size);
+    }
+    return { original, connected };
+  } finally {
+    Object.values(sources).forEach((source) => source.close?.());
+  }
+}
+
+async function setBjtuBridgeActionIndicator(connected) {
+  const nextConnected = connected === true;
+  bjtuBridgeIndicatorConnected = nextConnected;
+  const revision = ++bjtuBridgeIndicatorRevision;
+  try {
+    bjtuBridgeActionIconsPromise ||= createBjtuBridgeActionIcons();
+    const icons = await bjtuBridgeActionIconsPromise;
+    if (revision !== bjtuBridgeIndicatorRevision || bjtuBridgeIndicatorConnected !== nextConnected) return;
+    await chrome.action.setIcon({ imageData: nextConnected ? icons.connected : icons.original });
+  } catch (error) {
+    bjtuBridgeActionIconsPromise = null;
+    if (!nextConnected && revision === bjtuBridgeIndicatorRevision) {
+      await chrome.action.setIcon({ path: BJTU_ACTION_ICON_PATHS }).catch(() => {});
+    }
+    console.info('[bjtu] failed to update local Bridge action indicator:', String(error?.message || error));
+  }
+}
+
+globalThis.BjtuActionBridgeIndicator = Object.freeze({
+  setConnected: setBjtuBridgeActionIndicator
+});
+
 let bjtuTabGroupingQueue = Promise.resolve();
 
 async function groupBjtuExtensionOpenedTabNow(tabId) {
