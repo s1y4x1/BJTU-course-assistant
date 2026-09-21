@@ -11,6 +11,11 @@ let runtimePlatformSessionId = DEFAULT_PLATFORM_SESSION_ID;
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const fileList = document.getElementById('file-list');
+const veUploadPickerRequestId = new URLSearchParams(location.search).get('veUploadPicker') || '';
+if (veUploadPickerRequestId) {
+  document.body.classList.add('ve-upload-picker-mode');
+  document.title = '上传至智慧课程平台';
+}
 const usernameInput = document.getElementById('username-input');
 const accountHistorySelect = document.getElementById('account-history-select');
 const xqSelect = document.getElementById('xq-select');
@@ -6077,6 +6082,24 @@ jsessionidInput.addEventListener('change', async () => {
   await globalThis.__bjtuVeAppReady;
   await globalThis.__bjtuPlatformModulesReady;
   await globalThis.__bjtuOptionalPlatformAdaptersReady;
+  if (veUploadPickerRequestId) {
+    await loadPlatformEnabledFromStorage();
+    await loadPlatformAutoLoginSettings();
+    await loadPlatformDetailSettings();
+    await loadSaveUploadsEnabledSetting();
+    setupOptionsStorageLiveSync();
+    document.documentElement.classList.remove('app-options-loading');
+    await loadLoginAccountHistory();
+    await loadSavedUploadsFromStorage();
+    setupSavedUploadsUi();
+    lastValidUsername = (await getLocal('username', '')).trim();
+    usernameInput.value = lastValidUsername;
+    renderLoginAccountHistorySelect(lastValidUsername);
+    updateJsessionidState();
+    if (lastValidUsername) isLoginSessionValid = true;
+    initialUsernameSet = false;
+    return;
+  }
   setupRightColumnResizer();
   updateTotalProgress();
   updateResourceDownloadTotals();

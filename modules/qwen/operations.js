@@ -554,6 +554,59 @@
     return response.value;
   }
 
+  function hasSerializedUploadSource(args) {
+    return args?.dataBase64 !== undefined || args?.base64 !== undefined
+      || Array.isArray(args?.bytes) || args?.text !== undefined || args?.content !== undefined
+      || !!String(args?.url || '').trim();
+  }
+
+  async function openVeUploadPicker(args = {}) {
+    const requestId = crypto.randomUUID();
+    const query = new URLSearchParams({ veUploadPicker: requestId });
+    const accept = String(args?.accept || '').trim();
+    if (accept) query.set('accept', accept);
+    const pickerUrl = chrome.runtime.getURL(`app/app.html?${query.toString()}`);
+    let pickerWindowId = null;
+    let settled = false;
+
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        chrome.runtime.onMessage.removeListener(onMessage);
+        chrome.windows.onRemoved.removeListener(onWindowRemoved);
+      };
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        callback(value);
+      };
+      const onMessage = (message, sender) => {
+        if (message?.type !== 'VE_UPLOAD_PICKER_RESULT' || message?.requestId !== requestId) return false;
+        if (!String(sender?.url || '').startsWith(chrome.runtime.getURL('app/app.html'))) return false;
+        finish(resolve, message.value);
+        return false;
+      };
+      const onWindowRemoved = (windowId) => {
+        if (windowId !== pickerWindowId) return;
+        finish(reject, Object.assign(new Error('用户关闭了文件上传窗口'), { code: 'USER_CANCELLED' }));
+      };
+      chrome.runtime.onMessage.addListener(onMessage);
+      chrome.windows.onRemoved.addListener(onWindowRemoved);
+      void chrome.windows.create({
+        url: pickerUrl,
+        type: 'popup',
+        focused: true,
+        width: 760,
+        height: 680
+      }).then((created) => {
+        pickerWindowId = created?.id ?? null;
+        if (pickerWindowId == null) {
+          finish(reject, new Error('无法打开文件上传窗口'));
+        }
+      }).catch((error) => finish(reject, error));
+    });
+  }
+
   function parseDeadline(value) {
     if (value == null || value === '') return 0;
     if (typeof value === 'number') {
@@ -877,16 +930,40 @@ name: 've.accounts',
       doc: [
         '## ve.uploadFile —— 上传文件',
         '',
-        '向智慧课程平台上传文件，直接返回可下载链接和可原样传给 ve.submitAssignment 的 fileList。不提供文件内容来源时，会直接触发 app.html 的 #file-input（与点击 #drop-zone 相同），支持选择多个本地文件。上传过程会显示在 #file-list 中。',
+        '向智慧课程平台上传文件，返回可原样传给 ve.submitAssignment 的 fileList。不提供文件内容来源时，会打开一个独立上传窗口；请在其中点击或向 drop-zone 拖入本地文件。上传过程会显示在窗口的 file-list 中，完成后窗口自动关闭并返回结果。',
         '',
         '**参数**：不传参数时由用户选择本地文件，可用 accept 限制文件类型；也可传 fileName，并从 text/content（文本）、base64/dataBase64、bytes（0~255 数组）或 url 四种可序列化来源中选择一种；mimeType 可选。使用 url 时若省略 fileName，会从 URL 推断。',
         '',
         '**调用示例**：`ve.uploadFile()`；`ve.uploadFile({accept:".pdf,.doc,.docx"})`；`ve.uploadFile({fileName:"answer.txt", text:"作业内容", mimeType:"text/plain"})`',
         '',
-        '**返回示例**：`{"files":[{"fileName":"answer.txt","fileSize":12,"mimeType":"text/plain","downloadUrl":"http://…"}],"fileList":[{"fileNameNoExt":"answer","fileExtName":"txt","fileSize":"12","visitName":"…","pid":"","ftype":"insert"}]}`。无论上传一个还是多个文件，均返回这一结构。'
+        '**返回示例**：`{"fileList":[{"fileNameNoExt":"answer","fileExtName":"txt","fileSize":"12","visitName":"W:\\\\Root\\\\answer.txt","pid":"","ftype":"insert"}]}`。无论上传一个还是多个文件，均只返回这一结构。',
+        '',
+        '**下载链接转换**：将 visitName 中的 `W:\\Root\\` 替换为 `http://123.121.147.7:8081/`，再将其余反斜杠替换为正斜杠。',
+        '',
+        '### 本地程序直接上传本地文件',
+        '',
+        '通过本地 Bridge 调用时，可在 `arguments` 中传入仅供 Bridge 使用的 `filePath`。Bridge 会生成一个 15 分钟有效、首次读取后立即失效的一次性本地文件地址，并以文件流响应扩展的读取；文件内容不会进入 `/api/v1/call` 的 JSON、不会转换为 base64，也不会经由 Bridge WebSocket 转发。扩展读取后仍交给现有上传管理器，通过智慧课程平台原上传接口提交。可选的 `fileName` 用于覆盖原文件名，`mimeType` 默认为 `application/octet-stream`。文件上限为 1 GiB。',
+        '',
+        '**MCP 调用**：使用 `BJTUCA_call`，参数为 `{"name":"ve.uploadFile","arguments":{"filePath":"D:\\\\作业\\\\answer.pdf","mimeType":"application/pdf"}}`。',
+        '',
+        '**HTTP 调用**：向原有的 `POST /api/v1/call` 发送同样的 JSON 请求体，并携带配对得到的 Bearer token。成功响应仍只有 `fileList`。',
+        '',
+        '```powershell',
+        '$headers = @{ Authorization = "Bearer $env:BJTU_CA_BRIDGE_TOKEN" }',
+        '$body = @{',
+        "  name = 've.uploadFile'",
+        '  arguments = @{',
+        "    filePath = 'D:\\作业\\answer.pdf'",
+        "    mimeType = 'application/pdf'",
+        '  }',
+        '} | ConvertTo-Json -Depth 10',
+        "Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:1896/api/v1/call' -Headers $headers -ContentType 'application/json' -Body $body",
+        '```'
       ].join('\n'),
       async run(args) {
-        return pageInvoke('ve', 'uploadFile', args || {}, 120000);
+        return hasSerializedUploadSource(args)
+          ? pageInvoke('ve', 'uploadFile', args || {}, 120000)
+          : openVeUploadPicker(args || {});
       }
     },
     {
@@ -898,7 +975,7 @@ name: 've.accounts',
         '',
         '获取扩展本地保存的智慧课程平台已上传文件，返回可直接传给 ve.submitAssignment 的 fileList。',
         '',
-        '**路径映射**：visitName 中的 `W:\\Root\\` 路径前缀就是 `http://123.121.147.7:8081/rp`；将其后的反斜杠改为正斜杠即可得到对应的 HTTP 文件地址。',
+        '**路径映射**：将 visitName 中的 `W:\\Root\\` 替换为 `http://123.121.147.7:8081/`，再将其余反斜杠替换为正斜杠，即可得到对应的 HTTP 文件地址。',
         '',
         '**调用示例**：`ve.uploadedFiles()`',
         '',
@@ -923,7 +1000,7 @@ name: 've.accounts',
       doc: [
         '## ve.submitAssignment —— 提交作业',
         '',
-        '提交智慧课程平台作业。assignmentId 可从 ve.assignments_of_ 获取；附件可直接使用 ve.uploadFile 返回的 fileList，无需再调用 ve.uploadedFiles。正文与附件至少提供一项。若该作业不允许重复提交，真正发送前会弹出浏览器原生确认框。',
+        '提交智慧课程平台作业。courseId 不限于当前学期课程；assignmentId 可从对应课程的 ve.assignments_of_ 获取。附件可直接使用 ve.uploadFile 返回的 fileList，无需再调用 ve.uploadedFiles。正文与附件至少提供一项。若该作业不允许重复提交，真正发送前会弹出浏览器原生确认框。',
         '',
         '**参数**：{"courseId":"课程ID，必填","assignmentId":"作业ID，必填","content":"正文，可选","fileList":"ve.uploadFile 返回的 fileList 数组，可选"}',
         '',
@@ -944,7 +1021,7 @@ name: 've.accounts',
           ftype: 'insert',
           __homeworkFileListReady: true
         })).filter((item) => item.fileNameNoExt && item.visitName);
-        await assertCourseIdOf('ve', courseId);
+        if (!courseId) throw new Error('缺少参数 courseId');
         if (!assignmentId) throw new Error('缺少参数 assignmentId');
         if (!content.trim() && !directFileList.length) throw new Error('作业正文与附件不能同时为空');
         const core = await veHomework();

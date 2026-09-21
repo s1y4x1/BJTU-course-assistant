@@ -436,6 +436,20 @@ html[data-color-scheme="dark"] .platform-qr-login-tip {
 :where(#options-controlled-content, [data-options-fragment]) :is(.open-mode-row > div, .schedule-interval-editor > span, .campusnet-interval-editor > span, .mail-monitor-interval-editor > span) {
   font-size:var(--bjtu-font-size-body, 13px) !important;
 }
+:where(#options-controlled-content, [data-options-fragment]) button {
+  font-size:var(--bjtu-font-size-body, 13px) !important;
+}
+:where(#options-controlled-content, [data-options-fragment]) :is(
+  .reminder-node button,
+  .theme-mode-btn:not(.theme-mode-btn--text),
+  .animation-mode-btn:not(.animation-mode-btn--text),
+  .xuetangx-secret-toggle
+) {
+  font-size:var(--bjtu-font-size-icon, 22px) !important;
+}
+.page-header-actions button {
+  font-size:var(--bjtu-font-size-body, 13px) !important;
+}
 
 /* options.html */
 html[data-color-scheme="dark"] .theme-mode-btn,

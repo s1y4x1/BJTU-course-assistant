@@ -17,6 +17,7 @@
   let reconnectTimer = null;
   let reconnectAttempt = 0;
   let heartbeatTimer = null;
+  let pairingInProgress = false;
   let currentSettings = { enabled: false, port: DEFAULT_PORT, token: '' };
   let connectionState = 'disabled';
   let lastError = '';
@@ -106,12 +107,13 @@
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     clearReconnectTimer();
     setState('connecting');
+    const connectionToken = currentSettings.token;
     const ws = new WebSocket(`ws://127.0.0.1:${currentSettings.port}/extension`);
     socket = ws;
     ws.addEventListener('open', () => {
       ws.send(JSON.stringify({
         type: 'hello',
-        token: currentSettings.token,
+        token: connectionToken,
         extensionId: chrome.runtime.id,
         version: chrome.runtime.getManifest().version
       }));
@@ -138,8 +140,19 @@
       if (socket !== ws) return;
       socket = null;
       clearHeartbeat();
-      const reason = event.code === 1008 ? 'Bridge 拒绝了身份验证，请重新配对' : '本地 Bridge 未连接';
-      setState(currentSettings.enabled ? 'disconnected' : 'disabled', reason);
+      const authorizationRevoked = event.code === 1008 || event.code === 4001;
+      if (authorizationRevoked) {
+        currentSettings.token = '';
+        setState(currentSettings.enabled ? 'unpaired' : 'disabled', 'Bridge 授权已失效，请重新配对');
+        if (event.code === 1008 || (event.code === 4001 && !pairingInProgress)) {
+          void chrome.storage.local.get(STORAGE_KEYS.token).then((stored) => {
+            if (String(stored?.[STORAGE_KEYS.token] || '').trim() !== connectionToken) return;
+            return chrome.storage.local.remove(STORAGE_KEYS.token);
+          }).catch(() => {});
+        }
+        return;
+      }
+      setState(currentSettings.enabled ? 'disconnected' : 'disabled', '本地 Bridge 未连接');
       scheduleReconnect();
     });
     ws.addEventListener('error', () => {
@@ -227,7 +240,12 @@
 
   async function executeRequest(action, payload) {
     const api = global.BJTUCA;
-    if (!api) throw Object.assign(new Error('BJTUCA 操作注册表未就绪'), { code: 'MODULE_UNAVAILABLE' });
+    if (!api) {
+      throw Object.assign(
+        new Error('BJTUCA 操作注册表未就绪，请先安装「通义千问」模块以注册操作表'),
+        { code: 'MODULE_UNAVAILABLE' }
+      );
+    }
     if (action === 'operationList') {
       const response = await api.run('qwen.operationList', {});
       if (!response?.ok) throw Object.assign(new Error(response?.error || '操作列表获取失败'), { code: response?.code || '' });
@@ -285,22 +303,27 @@
   }
 
   async function pair(code, port = currentSettings.port) {
-    const targetPort = normalizePort(port);
-    const response = await fetch(`http://127.0.0.1:${targetPort}/api/v1/pair`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: String(code || '').trim() })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.token) throw new Error(String(data?.error || '配对失败'));
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.enabled]: true,
-      [STORAGE_KEYS.port]: targetPort,
-      [STORAGE_KEYS.token]: String(data.token)
-    });
-    closeSocket(1000, 'Reconnecting');
-    await connect();
-    return statusPayload();
+    pairingInProgress = true;
+    try {
+      const targetPort = normalizePort(port);
+      const response = await fetch(`http://127.0.0.1:${targetPort}/api/v1/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: String(code || '').trim() })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.token) throw new Error(String(data?.error || '配对失败'));
+      await chrome.storage.local.set({
+        [STORAGE_KEYS.enabled]: true,
+        [STORAGE_KEYS.port]: targetPort,
+        [STORAGE_KEYS.token]: String(data.token)
+      });
+      closeSocket(1000, 'Reconnecting');
+      await connect();
+      return statusPayload();
+    } finally {
+      pairingInProgress = false;
+    }
   }
 
   async function updateSettings(patch) {

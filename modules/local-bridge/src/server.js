@@ -1,5 +1,8 @@
 import http from 'node:http';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
@@ -27,6 +30,7 @@ let activePort = config.port;
 let restartPromise = null;
 const pendingExtensionCalls = new Map();
 const transports = new Map();
+const localFileRelays = new Map();
 
 function tokenMatches(value) {
   const provided = Buffer.from(String(value || ''), 'utf8');
@@ -67,11 +71,66 @@ function sendExtensionRequest(action, payload = {}) {
   });
 }
 
+async function prepareOperationArguments(name, value) {
+  const args = operationArguments(value);
+  if (String(name || '').trim() !== 've.uploadFile' || !String(args?.filePath || '').trim()) return args;
+  const resolvedPath = path.resolve(String(args.filePath));
+  let info;
+  try {
+    info = await stat(resolvedPath);
+  } catch (error) {
+    throw Object.assign(new Error(`无法读取本地文件：${String(error?.message || error)}`), { code: 'INVALID_ARGUMENT' });
+  }
+  if (!info.isFile()) throw Object.assign(new Error('filePath 指向的路径不是文件'), { code: 'INVALID_ARGUMENT' });
+  if (info.size > 1024 * 1024 * 1024) {
+    throw Object.assign(new Error('文件超过 Bridge 允许的 1 GiB 上限'), { code: 'FILE_TOO_LARGE' });
+  }
+  const relayToken = randomUUID();
+  const relayTimer = setTimeout(() => localFileRelays.delete(relayToken), 15 * 60 * 1000);
+  relayTimer.unref?.();
+  localFileRelays.set(relayToken, {
+    filePath: resolvedPath,
+    fileName: String(args.fileName || path.basename(resolvedPath)).trim(),
+    mimeType: String(args.mimeType || 'application/octet-stream').trim(),
+    fileSize: info.size,
+    timer: relayTimer
+  });
+  const prepared = {
+    ...args,
+    fileName: String(args.fileName || path.basename(resolvedPath)).trim(),
+    mimeType: String(args.mimeType || 'application/octet-stream').trim(),
+    url: `http://127.0.0.1:${activePort}/internal/file/${relayToken}`
+  };
+  delete prepared.filePath;
+  return prepared;
+}
+
 function rejectPendingExtensionCalls(message = '浏览器扩展连接已断开') {
   for (const { reject } of pendingExtensionCalls.values()) {
     reject(Object.assign(new Error(message), { code: 'EXTENSION_OFFLINE' }));
   }
   pendingExtensionCalls.clear();
+}
+
+function clearLocalFileRelays() {
+  for (const relay of localFileRelays.values()) clearTimeout(relay.timer);
+  localFileRelays.clear();
+}
+
+function disconnectExtension(code = 1001, reason = 'Disconnected', message = '浏览器扩展连接已断开') {
+  const current = extensionSocket;
+  extensionSocket = null;
+  extensionInfo = null;
+  rejectPendingExtensionCalls(message);
+  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
+    current.close(code, reason);
+  }
+}
+
+async function closeMcpTransports() {
+  const activeTransports = [...transports.values()];
+  transports.clear();
+  await Promise.allSettled(activeTransports.map((transport) => transport.close()));
 }
 
 function jsonText(value) {
@@ -140,7 +199,10 @@ function createMcpServer() {
     }
   }, async ({ name, arguments: args }) => {
     try {
-      const response = await sendExtensionRequest('call', { name, arguments: operationArguments(args) });
+      const response = await sendExtensionRequest('call', {
+        name,
+        arguments: await prepareOperationArguments(name, args)
+      });
       return response?.ok === false
         ? mcpError(Object.assign(new Error(response.error), { code: response.code }))
         : mcpResult(response?.result);
@@ -167,7 +229,36 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.post('/api/v1/pair', (req, res) => {
+app.get('/internal/file/:token', (req, res) => {
+  const token = String(req.params?.token || '').trim();
+  const relay = localFileRelays.get(token);
+  if (!relay) {
+    res.status(404).type('text/plain').send('文件中继不存在或已失效');
+    return;
+  }
+
+  localFileRelays.delete(token);
+  clearTimeout(relay.timer);
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store',
+    'Content-Type': relay.mimeType || 'application/octet-stream',
+    'Content-Length': String(relay.fileSize),
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(relay.fileName)}`
+  });
+
+  const stream = createReadStream(relay.filePath);
+  stream.on('error', (error) => {
+    if (!res.headersSent) {
+      res.status(500).type('text/plain').send(`读取本地文件失败：${String(error?.message || error)}`);
+      return;
+    }
+    res.destroy(error);
+  });
+  stream.pipe(res);
+});
+
+app.post('/api/v1/pair', async (req, res) => {
   const code = String(req.body?.code || '').trim();
   if (!code || code !== pairingCode) {
     res.status(403).json({ ok: false, code: 'PAIRING_CODE_INVALID', error: '配对码无效' });
@@ -175,7 +266,17 @@ app.post('/api/v1/pair', (req, res) => {
   }
   pairingCode = createPairingCode();
   process.stdout.write(`新配对码：${pairingCode}\n`);
-  res.json({ ok: true, token: config.token, port: activePort });
+  try {
+    const nextToken = randomBytes(32).toString('base64url');
+    await saveConfig({ ...config, token: nextToken });
+    config.token = nextToken;
+    clearLocalFileRelays();
+    disconnectExtension(4001, 'Authorization replaced', 'Bridge 已重新配对，旧连接授权已撤销');
+    await closeMcpTransports();
+    res.json({ ok: true, token: config.token, port: activePort });
+  } catch (error) {
+    res.status(500).json({ ok: false, code: 'PAIRING_FAILED', error: String(error?.message || error) });
+  }
 });
 
 app.get('/api/v1/operation-list', async (_req, res) => {
@@ -196,9 +297,10 @@ app.post('/api/v1/get-docs', async (req, res) => {
 
 app.post('/api/v1/call', async (req, res) => {
   try {
+    const name = String(req.body?.name || '').trim();
     const response = await sendExtensionRequest('call', {
-      name: String(req.body?.name || ''),
-      arguments: operationArguments(req.body?.arguments)
+      name,
+      arguments: await prepareOperationArguments(name, req.body?.arguments)
     });
     if (response?.ok === false) {
       res.status(400).json({
@@ -210,7 +312,7 @@ app.post('/api/v1/call', async (req, res) => {
     }
     res.json(response?.result ?? null);
   } catch (error) {
-    const invalid = String(error?.code || '') === 'INVALID_ARGUMENTS';
+    const invalid = ['INVALID_ARGUMENT', 'INVALID_ARGUMENTS', 'FILE_TOO_LARGE'].includes(String(error?.code || ''));
     res.status(invalid ? 400 : 503).json({ ok: false, code: error.code || 'BRIDGE_ERROR', error: String(error.message || error) });
   }
 });
@@ -268,7 +370,9 @@ wsServer.on('connection', (socket) => {
         return;
       }
       authenticated = true;
-      if (extensionSocket && extensionSocket !== socket) extensionSocket.close(1012, 'Replaced');
+      if (extensionSocket && extensionSocket !== socket) {
+        disconnectExtension(1012, 'Replaced', '浏览器扩展连接已被新连接替换');
+      }
       extensionSocket = socket;
       extensionInfo = {
         authenticated: true,
@@ -344,9 +448,9 @@ const heartbeat = setInterval(() => {
 
 async function shutdown() {
   clearInterval(heartbeat);
-  rejectPendingExtensionCalls('Bridge 已关闭');
-  if (extensionSocket) extensionSocket.close(1001, 'Bridge shutdown');
-  for (const transport of transports.values()) await transport.close().catch(() => {});
+  clearLocalFileRelays();
+  disconnectExtension(1001, 'Bridge shutdown', 'Bridge 已关闭');
+  await closeMcpTransports();
   await new Promise((resolve) => httpServer?.close(() => resolve()));
 }
 

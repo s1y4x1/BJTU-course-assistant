@@ -11,6 +11,12 @@ const VE_SUPPORTED_UPLOAD_EXTENSIONS = Object.freeze([
 const VE_SUPPORTED_UPLOAD_EXTENSION_SET = new Set(VE_SUPPORTED_UPLOAD_EXTENSIONS);
 const VE_SUPPORTED_UPLOAD_ACCEPT = VE_SUPPORTED_UPLOAD_EXTENSIONS.map((extension) => `.${extension}`).join(',');
 let veUploadSessionCheckPromise = null;
+const veUploadPickerId = new URLSearchParams(location.search).get('veUploadPicker') || '';
+let veUploadPickerFinished = false;
+if (veUploadPickerId && fileInput instanceof HTMLInputElement) {
+  const pickerAccept = new URLSearchParams(location.search).get('accept');
+  if (pickerAccept) fileInput.accept = pickerAccept;
+}
 
 function veUploadFileExtension(file) {
   const name = String(file?.name || '').replace(/\\/g, '/').split('/').pop() || '';
@@ -773,6 +779,11 @@ dropZone.addEventListener('click', async (event) => {
   if (target === fileInput
     || (target instanceof Element && target.closest('#paste-file-btn,button,a,input,label'))
     || dropZoneFilePickerOpening) return;
+  if (veUploadPickerId) {
+    // 必须在用户点击事件的同步调用栈中打开选择器；任何 await 都会丢失 user activation。
+    fileInput.click();
+    return;
+  }
   dropZoneFilePickerOpening = true;
   try {
     await ensureVeUploadSession();
@@ -810,7 +821,7 @@ dropZone.addEventListener('drop', async (e) => {
   if (types.includes('Files')) {
     const files = await clipboardDataToFiles(dt);
     if (files.length) {
-      processFilesForUpload(files);
+      processFilesForCurrentMode(files);
     } else {
       showToast('未找到可上传的文件', 'warning', 1800);
     }
@@ -818,7 +829,7 @@ dropZone.addEventListener('drop', async (e) => {
   }
 
   const textFiles = await convertTextDropToFiles(dt);
-  processFilesForUpload(textFiles);
+  processFilesForCurrentMode(textFiles);
 });
 
 fileInput.addEventListener('change', handleFiles);
@@ -897,7 +908,7 @@ async function handleClipboardUploadPaste(e) {
   const files = await clipboardDataToFiles(e.clipboardData);
   if (!files.length) return;
   e.preventDefault();
-  processFilesForUpload(files);
+  processFilesForCurrentMode(files);
 }
 
 document.addEventListener('paste', (e) => {
@@ -976,7 +987,7 @@ if (pasteFileBtn) {
       } else if (textCount > 0) {
         showToast(`已粘贴 ${nonTextCount} 个文件，${textCount} 个文本已转为文件，正在上传…`, 'info', 3000);
       }
-      processFilesForUpload(files);
+      processFilesForCurrentMode(files);
     } catch (err) {
       if (String(err?.message || err).includes('clipboard-read')) {
         showToast('没有剪贴板读取权限，请授予后重试', 'error', 3000);
@@ -1095,9 +1106,51 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
   return reusedResults;
 }
 
+function uploadResultsToFileList(uploaded) {
+  return (Array.isArray(uploaded) ? uploaded : []).map((item) => {
+    const visitName = String(item?.visitName || '').trim();
+    if (!visitName) return null;
+    const parts = splitFileName(item?.fileName || '');
+    return {
+      fileNameNoExt: encodeURIComponent(String(parts?.fileNameNoExt || '')),
+      fileExtName: String(parts?.fileExtName || ''),
+      fileSize: String(Math.max(0, Number(item?.fileSize || 0) || 0)),
+      visitName,
+      pid: '',
+      ftype: 'insert'
+    };
+  }).filter(Boolean);
+}
+
+async function finishVeUploadPicker(uploaded) {
+  if (!veUploadPickerId || veUploadPickerFinished) return;
+  const fileListResult = uploadResultsToFileList(uploaded);
+  if (!fileListResult.length) throw new Error('未获得可提交的上传结果');
+  veUploadPickerFinished = true;
+  await chrome.runtime.sendMessage({
+    type: 'VE_UPLOAD_PICKER_RESULT',
+    requestId: veUploadPickerId,
+    value: { fileList: fileListResult }
+  });
+  setTimeout(() => globalThis.close(), 250);
+}
+
+async function processFilesForCurrentMode(files) {
+  if (!veUploadPickerId) {
+    processFilesForUpload(files);
+    return;
+  }
+  try {
+    const uploaded = await processFilesForUpload(files, { waitForCompletion: true });
+    await finishVeUploadPicker(uploaded);
+  } catch (error) {
+    showToast(`上传失败：${String(error?.message || error)}`, 'error', 3500);
+  }
+}
+
 function handleFiles(e) {
   const files = e.target.files || e.dataTransfer.files;
-  processFilesForUpload(files);
+  processFilesForCurrentMode(files);
 }
 
 function decodeApiUploadBase64(value) {
@@ -1127,7 +1180,11 @@ async function buildApiUploadFile(args = {}) {
     blob = new Blob([String(args.text ?? args.content ?? '')], { type: requestedMimeType || 'text/plain' });
   } else if (String(args?.url || '').trim()) {
     const sourceUrl = new URL(String(args.url).trim()).href;
-    const response = await fetch(sourceUrl, { credentials: 'include', cache: 'no-store' });
+    const sourceHost = new URL(sourceUrl).hostname;
+    const response = await fetch(sourceUrl, {
+      credentials: sourceHost === '127.0.0.1' || sourceHost === 'localhost' ? 'omit' : 'include',
+      cache: 'no-store'
+    });
     if (!response.ok) throw new Error(`获取待上传文件失败：HTTP ${response.status}`);
     blob = await response.blob();
     if (!fileName) {
@@ -1200,27 +1257,7 @@ async function uploadFileForApi(args = {}) {
     : await selectLocalFilesForApi({ accept: args?.accept });
   const results = await processFilesForUpload(files, { waitForCompletion: true });
   const uploaded = Array.isArray(results) ? results : [];
-  const apiFiles = uploaded.map((item) => ({
-    fileName: String(item?.fileName || '').trim(),
-    fileSize: Math.max(0, Number(item?.fileSize || 0) || 0),
-    mimeType: String(item?.mimeType || ''),
-    downloadUrl: String(item?.url || '').trim(),
-    reused: item?.reused === true
-  }));
-  const homeworkFileList = uploaded.map((item) => {
-    const visitName = String(item?.visitName || '').trim();
-    if (!visitName) return null;
-    const parts = splitFileName(item?.fileName || '');
-    return {
-      fileNameNoExt: encodeURIComponent(String(parts?.fileNameNoExt || '')),
-      fileExtName: String(parts?.fileExtName || ''),
-      fileSize: String(Math.max(0, Number(item?.fileSize || 0) || 0)),
-      visitName,
-      pid: '',
-      ftype: 'insert'
-    };
-  }).filter(Boolean);
-  return { files: apiFiles, fileList: homeworkFileList };
+  return { fileList: uploadResultsToFileList(uploaded) };
 }
 
 globalThis.BjtuVeUploadApi = Object.freeze({

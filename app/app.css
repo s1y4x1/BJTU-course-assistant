@@ -41,6 +41,35 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
 #file-input { display: none; }
 .btn { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .btn:hover { background-color: #45a049; }
+
+/* ve.uploadFile() 的独立交互窗口：保留上传区与上传结果，避免后台脚本直接唤起文件选择器。 */
+body.ve-upload-picker-mode {
+    height:auto;
+    min-height:100%;
+    overflow:auto;
+    padding:16px;
+}
+body.ve-upload-picker-mode .page-top-config,
+body.ve-upload-picker-mode .right-column,
+body.ve-upload-picker-mode .fullscreen-module-buttons,
+body.ve-upload-picker-mode .qwen-chat-fab,
+body.ve-upload-picker-mode .qwen-chat-panel,
+body.ve-upload-picker-mode #saved-uploads-section,
+body.ve-upload-picker-mode #resource-space-section,
+body.ve-upload-picker-mode .upload-section-header > div,
+body.ve-upload-picker-mode #copy-all-btn {
+    display:none !important;
+}
+body.ve-upload-picker-mode .layout-container {
+    display:block;
+    overflow:visible;
+}
+body.ve-upload-picker-mode .left-column {
+    width:100%;
+    min-width:0;
+    overflow:visible;
+    padding:0;
+}
 .file-item { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; background:#fff; }
 .progress-bar-container { width: 100%; background-color: #e5e7eb; height: 3px; border-radius: 0; margin-top: 5px; overflow: hidden; }
 .progress-bar { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.2s; text-align: left; line-height: 0; color: transparent; font-size: 0; border-radius: 0; overflow: hidden; }
