@@ -6,12 +6,6 @@
   const MODAL_ID = '__bjtu_toolbar_pin_modal__';
   let pinPollTimer = 0;
 
-  async function createGroupedTab(createProperties) {
-    const tab = await chrome.tabs.create(createProperties);
-    await chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab?.id }).catch(() => null);
-    return tab;
-  }
-
   async function queryPinnedState() {
     try {
       const res = await chrome.runtime.sendMessage({ type: 'GET_ACTION_PINNED_STATE' });
@@ -19,14 +13,6 @@
     } catch {
       return { ok: false, supported: false, pinned: false };
     }
-  }
-
-  function openExtensionsPage() {
-    const isEdge = /Edg\//i.test(String(navigator.userAgent || ''));
-    const scheme = isEdge ? 'edge://' : 'chrome://';
-    createGroupedTab({ url: `${scheme}extensions/?id=${chrome.runtime.id}` }).catch(() => {
-      createGroupedTab({ url: 'about:extensions' }).catch(() => {});
-    });
   }
 
   function showToast(message, type = 'success', duration = 3000) {
@@ -65,7 +51,6 @@
       <div class="version-modal-card toolbar-pin-card">
         <div class="version-modal-header">
           <div id="${MODAL_ID}-title" class="version-download-title"></div>
-          <button type="button" class="btn version-close-btn ${MODAL_ID}-close" title="关闭" aria-label="关闭">×</button>
         </div>
         <div class="toolbar-pin-body">
           <ol class="toolbar-pin-steps">
@@ -73,21 +58,14 @@
             <li>在列表中找到「BJTU 课程助手」。</li>
             <li>点击其右侧的<b>图钉图标</b>，将其固定到工具栏。</li>
           </ol>
-          <div class="toolbar-pin-status"></div>
         </div>
         <div class="toolbar-pin-actions">
-          <button type="button" class="btn toolbar-pin-goto">去固定</button>
-          <button type="button" class="btn toolbar-pin-later">稍后再说</button>
           <button type="button" class="btn toolbar-pin-never">不再提醒</button>
+          <button type="button" class="btn toolbar-pin-later">稍后再说</button>
         </div>
       </div>`;
     document.body.appendChild(modal);
 
-    modal.querySelector(`.${MODAL_ID}-close`)?.addEventListener('click', () => closeModal());
-    modal.querySelector('.toolbar-pin-goto')?.addEventListener('click', () => {
-      openExtensionsPage();
-      setPinStatus('固定后将自动关闭本提示。');
-    });
     modal.querySelector('.toolbar-pin-later')?.addEventListener('click', () => closeModal());
     modal.querySelector('.toolbar-pin-never')?.addEventListener('click', async () => {
       try { await chrome.storage.local.set({ [REMINDER_KEY]: false }); } catch {}
@@ -95,12 +73,6 @@
       showToast('已关闭提醒，可在扩展选项中重新开启', 'warning', 3000);
     });
     return modal;
-  }
-
-  function setPinStatus(text) {
-    const modal = document.getElementById(MODAL_ID);
-    const status = modal?.querySelector('.toolbar-pin-status');
-    if (status instanceof HTMLElement) status.textContent = String(text || '');
   }
 
   function startPinWatch(onPinned) {
@@ -127,7 +99,6 @@
     const neverBtn = modal.querySelector('.toolbar-pin-never');
     if (neverBtn) neverBtn.style.display = showNever ? '' : 'none';
     modal.style.display = 'flex';
-    setPinStatus('');
     startPinWatch(async () => {
       closeModal();
       showToast('已固定到工具栏 ✅');

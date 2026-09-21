@@ -202,7 +202,7 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
   margin-top: 14px;
   display: block;
 }
-#options-controlled-content > div {
+#options-controlled-content > [data-options-section] {
   min-width: 0;
   box-sizing: border-box;
   margin: 0 0 14px !important;
@@ -211,15 +211,8 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
 }
 .options-wide-card { column-span: all; }
 #options-module-slots { display:none; }
-#options-controlled-content > [data-options-module] {
-  min-width:0;
-  box-sizing:border-box;
-  margin:0 0 14px !important;
-  break-inside:avoid;
-  page-break-inside:avoid;
-}
 #options-controlled-content > .options-wide-card {
-  margin-top: 14px !important;
+  margin-top:14px !important;
 }
 @media (min-width: 980px) {
   #options-controlled-content {

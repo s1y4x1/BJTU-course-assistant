@@ -1,4 +1,4 @@
-.academic-options-card { margin-top:14px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; }
+.academic-options-card { margin:0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; }
 .academic-account-row { display:block; }
 .academic-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .academic-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
