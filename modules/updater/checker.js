@@ -2488,7 +2488,7 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
     return;
   }
   if (versionButtonMode === 'latest') {
-    versionBtn.innerHTML = `<span>已是最新版本：${escapeHtml(versionButtonLatestDisplayVersion || latestVersion || localVersion || '--')}</span>`;
+    versionBtn.innerHTML = `<span>最新版本：${escapeHtml(versionButtonLatestDisplayVersion || latestVersion || localVersion || '--')}</span>`;
     return;
   }
   if (versionButtonMode === 'outdated') {
