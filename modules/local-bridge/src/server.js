@@ -2,6 +2,7 @@ import http from 'node:http';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { hostname, networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -14,7 +15,9 @@ import { createPairingCode, loadConfig, normalizePort, saveConfig, configPath } 
 const config = await loadConfig();
 const requestedPortArg = process.argv.find((arg) => arg.startsWith('--port='));
 if (requestedPortArg) {
-  config.port = normalizePort(requestedPortArg.slice('--port='.length));
+  const requestedPort = normalizePort(requestedPortArg.slice('--port='.length), 0);
+  if (!requestedPort) throw new RangeError('--port 必须是 1 至 65535 的整数');
+  config.port = requestedPort;
   await saveConfig(config);
 }
 if (process.argv.includes('--show-token')) {
@@ -27,7 +30,9 @@ let extensionSocket = null;
 let extensionInfo = null;
 let httpServer = null;
 let activePort = config.port;
+let activeAllowLan = config.allowLan === true;
 let restartPromise = null;
+let requestedListenerRestart = null;
 const pendingExtensionCalls = new Map();
 const transports = new Map();
 const localFileRelays = new Map();
@@ -36,6 +41,24 @@ function tokenMatches(value) {
   const provided = Buffer.from(String(value || ''), 'utf8');
   const expected = Buffer.from(config.token, 'utf8');
   return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+function bridgeAllowedHosts() {
+  const hosts = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0', hostname().toLowerCase()]);
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const item of addresses || []) {
+      const address = String(item?.address || '').trim();
+      if (!address) continue;
+      hosts.add(item.family === 'IPv6' || address.includes(':') ? `[${address}]` : address);
+    }
+  }
+  return [...hosts];
+}
+
+function isLoopbackAddress(value) {
+  const address = String(value || '').toLowerCase();
+  return address === '::1' || address === '127.0.0.1'
+    || address.startsWith('127.') || address.startsWith('::ffff:127.');
 }
 
 function bearerToken(req) {
@@ -213,7 +236,7 @@ function createMcpServer() {
   return server;
 }
 
-const app = createMcpExpressApp({ host: '127.0.0.1' });
+const app = createMcpExpressApp({ host: '0.0.0.0', allowedHosts: bridgeAllowedHosts() });
 app.use('/mcp', requireBearer);
 app.use('/api/v1', (req, res, next) => {
   if (req.path === '/pair' || (req.method === 'GET' && req.path === '/operation-list')) return next();
@@ -224,6 +247,7 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     port: activePort,
+    allowLan: activeAllowLan,
     extensionConnected: extensionConnected(),
     extension: extensionInfo?.publicInfo || null
   });
@@ -259,6 +283,10 @@ app.get('/internal/file/:token', (req, res) => {
 });
 
 app.post('/api/v1/pair', async (req, res) => {
+  if (!isLoopbackAddress(req.socket?.remoteAddress)) {
+    res.status(403).json({ ok: false, code: 'PAIRING_LOCAL_ONLY', error: '配对仅允许在运行 Bridge 的本机进行' });
+    return;
+  }
   const code = String(req.body?.code || '').trim();
   if (!code || code !== pairingCode) {
     res.status(403).json({ ok: false, code: 'PAIRING_CODE_INVALID', error: '配对码无效' });
@@ -268,12 +296,17 @@ app.post('/api/v1/pair', async (req, res) => {
   process.stdout.write(`新配对码：${pairingCode}\n`);
   try {
     const nextToken = randomBytes(32).toString('base64url');
-    await saveConfig({ ...config, token: nextToken });
+    const nextAllowLan = typeof req.body?.allowLan === 'boolean' ? req.body.allowLan : config.allowLan === true;
+    await saveConfig({ ...config, token: nextToken, allowLan: nextAllowLan });
     config.token = nextToken;
+    config.allowLan = nextAllowLan;
     clearLocalFileRelays();
     disconnectExtension(4001, 'Authorization replaced', 'Bridge 已重新配对，旧连接授权已撤销');
     await closeMcpTransports();
     res.json({ ok: true, token: config.token, port: activePort });
+    if (nextAllowLan !== activeAllowLan) {
+      setTimeout(() => void restartListener(config.port, nextAllowLan), 100);
+    }
   } catch (error) {
     res.status(500).json({ ok: false, code: 'PAIRING_FAILED', error: String(error?.message || error) });
   }
@@ -320,7 +353,7 @@ app.post('/api/v1/call', async (req, res) => {
 app.post('/api/v1/config/port', async (req, res) => {
   const port = normalizePort(req.body?.port, 0);
   if (!port) {
-    res.status(400).json({ ok: false, code: 'INVALID_PORT', error: '端口必须是 1024 至 65535 的整数' });
+    res.status(400).json({ ok: false, code: 'INVALID_PORT', error: '端口必须是 1 至 65535 的整数' });
     return;
   }
   if (port === activePort) {
@@ -331,6 +364,22 @@ app.post('/api/v1/config/port', async (req, res) => {
   await saveConfig(config);
   res.json({ ok: true, port, changed: true });
   setTimeout(() => void restartOnPort(port), 100);
+});
+
+app.post('/api/v1/config/network', async (req, res) => {
+  if (typeof req.body?.allowLan !== 'boolean') {
+    res.status(400).json({ ok: false, code: 'INVALID_ALLOW_LAN', error: 'allowLan 必须是布尔值' });
+    return;
+  }
+  const allowLan = req.body.allowLan === true;
+  if (allowLan === activeAllowLan) {
+    res.json({ ok: true, allowLan, changed: false });
+    return;
+  }
+  config.allowLan = allowLan;
+  await saveConfig(config);
+  res.json({ ok: true, allowLan, changed: true });
+  setTimeout(() => void restartListener(config.port, allowLan), 100);
 });
 
 app.all('/mcp', async (req, res) => {
@@ -417,30 +466,43 @@ function createHttpServer() {
   return server;
 }
 
-async function listen(port) {
+async function listen(port, allowLan = config.allowLan === true) {
   httpServer = createHttpServer();
+  const listenHost = allowLan ? '0.0.0.0' : '127.0.0.1';
   await new Promise((resolve, reject) => {
     httpServer.once('error', reject);
-    httpServer.listen(port, '127.0.0.1', resolve);
+    httpServer.listen(port, listenHost, resolve);
   });
   activePort = port;
-  process.stdout.write(`BJTU Course Assistant Bridge: http://127.0.0.1:${port}\n`);
+  activeAllowLan = allowLan;
+  process.stdout.write(`BJTU Course Assistant Bridge: http://${allowLan ? '0.0.0.0' : '127.0.0.1'}:${port}\n`);
+  process.stdout.write(`局域网访问：${allowLan ? '允许' : '关闭'}\n`);
   process.stdout.write(`配对码：${pairingCode}\n`);
-  process.stdout.write(`配置文件：${configPath()}\n`);
 }
 
-async function restartOnPort(port) {
+async function restartListener(port, allowLan = config.allowLan === true) {
+  requestedListenerRestart = { port, allowLan };
   if (restartPromise) return restartPromise;
   restartPromise = (async () => {
-    rejectPendingExtensionCalls('Bridge 正在切换端口');
-    if (extensionSocket) extensionSocket.close(1012, 'Port changed');
-    await new Promise((resolve) => httpServer?.close(() => resolve()));
-    await listen(port);
+    while (requestedListenerRestart) {
+      const target = requestedListenerRestart;
+      requestedListenerRestart = null;
+      clearLocalFileRelays();
+      disconnectExtension(1012, 'Listener changed', 'Bridge 正在重新监听');
+      await closeMcpTransports();
+      await new Promise((resolve) => httpServer?.close(() => resolve()));
+      await listen(target.port, target.allowLan);
+    }
   })().finally(() => { restartPromise = null; });
   return restartPromise;
 }
 
+async function restartOnPort(port) {
+  return restartListener(port, config.allowLan === true);
+}
+
 await listen(config.port);
+process.stdout.write(`配置文件：${configPath()}\n`);
 
 const heartbeat = setInterval(() => {
   if (extensionConnected()) extensionSocket.send(JSON.stringify({ type: 'ping' }));

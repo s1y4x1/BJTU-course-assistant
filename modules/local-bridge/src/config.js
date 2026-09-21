@@ -15,7 +15,7 @@ export function configPath() {
 
 export function normalizePort(value, fallback = DEFAULT_PORT) {
   const port = Number(value);
-  return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : fallback;
+  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : fallback;
 }
 
 export async function loadConfig() {
@@ -25,7 +25,8 @@ export async function loadConfig() {
   } catch {}
   const config = {
     port: normalizePort(stored?.port),
-    token: String(stored?.token || '').trim() || randomBytes(32).toString('base64url')
+    token: String(stored?.token || '').trim() || randomBytes(32).toString('base64url'),
+    allowLan: stored?.allowLan === true
   };
   await saveConfig(config);
   return config;
@@ -35,7 +36,8 @@ export async function saveConfig(config) {
   await mkdir(configDirectory(), { recursive: true });
   await writeFile(configPath(), `${JSON.stringify({
     port: normalizePort(config?.port),
-    token: String(config?.token || '')
+    token: String(config?.token || ''),
+    allowLan: config?.allowLan === true
   }, null, 2)}\n`, 'utf8');
 }
 

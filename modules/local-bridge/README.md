@@ -1,6 +1,6 @@
 # 本地 Bridge 安装与使用说明
 
-本地 Bridge 将浏览器扩展已有的 `BJTUCA` 操作提供给 Codex、其他 MCP 客户端和普通本地程序。它只监听 `127.0.0.1`，默认端口为 `1896`。操作注册表由“通义千问”模块提供，因此使用 Bridge 调用操作前必须先安装该模块。
+本地 Bridge 将浏览器扩展已有的 `BJTUCA` 操作提供给 Codex、其他 MCP 客户端和普通本地程序。默认只监听 `127.0.0.1`，默认端口为 `1896`。操作注册表由“通义千问”模块提供，因此使用 Bridge 调用操作前必须先安装该模块。
 
 ## 安装与启动
 
@@ -19,11 +19,12 @@
 Bridge 已连接时，修改监听端口会同时写入 Bridge 配置并切换端口。也可以手动指定端口：
 
 ```powershell
-Set-Location "扩展目录\modules\local-bridge"
 npm start -- --port=1896
 ```
 
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
+
+如需从同一局域网内的其他设备访问，可在扩展选项中开启“允许局域网访问”，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带配对产生的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。
 
 ## 连接 Codex
 

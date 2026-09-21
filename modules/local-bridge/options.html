@@ -23,9 +23,13 @@
   <div class="local-bridge-setting-row">
     <label for="localBridgePort">监听端口</label>
     <input type="number" id="localBridgePort" class="local-bridge-input local-bridge-port"
-      min="1024" max="65535" step="1" value="1896">
+      min="1" max="65535" step="1" value="1896">
     <span id="localBridgeStatus" class="local-bridge-status">未启用</span>
   </div>
+  <label class="local-bridge-toggle" title="开启后 Bridge 将监听所有网络接口；局域网设备仍需使用 Bearer Token 才能调用受保护的接口">
+    <input type="checkbox" id="localBridgeAllowLan">
+    <span>允许局域网访问</span>
+  </label>
   <div class="local-bridge-setting-row local-bridge-pair-row">
     <label for="localBridgePairCode">配对码</label>
     <input type="text" id="localBridgePairCode" class="local-bridge-input local-bridge-code"

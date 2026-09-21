@@ -6,7 +6,8 @@
   const STORAGE_KEYS = Object.freeze({
     enabled: 'bjtuLocalBridgeEnabled',
     port: 'bjtuLocalBridgePort',
-    token: 'bjtuLocalBridgeToken'
+    token: 'bjtuLocalBridgeToken',
+    allowLan: 'bjtuLocalBridgeAllowLan'
   });
   const META_OPERATIONS = new Set(['qwen.operationList', 'qwen.getDocs']);
   const APPROVAL_PREFIX = 'bjtu-local-bridge-approval:';
@@ -18,13 +19,13 @@
   let reconnectAttempt = 0;
   let heartbeatTimer = null;
   let pairingInProgress = false;
-  let currentSettings = { enabled: false, port: DEFAULT_PORT, token: '' };
+  let currentSettings = { enabled: false, port: DEFAULT_PORT, token: '', allowLan: false };
   let connectionState = 'disabled';
   let lastError = '';
 
   function normalizePort(value) {
     const port = Number(value);
-    return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : DEFAULT_PORT;
+    return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : DEFAULT_PORT;
   }
 
   async function loadSettings() {
@@ -32,7 +33,8 @@
     currentSettings = {
       enabled: stored[STORAGE_KEYS.enabled] === true,
       port: normalizePort(stored[STORAGE_KEYS.port]),
-      token: String(stored[STORAGE_KEYS.token] || '').trim()
+      token: String(stored[STORAGE_KEYS.token] || '').trim(),
+      allowLan: stored[STORAGE_KEYS.allowLan] === true
     };
     return currentSettings;
   }
@@ -42,6 +44,7 @@
       ok: true,
       enabled: currentSettings.enabled,
       port: currentSettings.port,
+      allowLan: currentSettings.allowLan,
       paired: Boolean(currentSettings.token),
       state: connectionState,
       connected: connectionState === 'connected',
@@ -309,7 +312,10 @@
       const response = await fetch(`http://127.0.0.1:${targetPort}/api/v1/pair`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: String(code || '').trim() })
+        body: JSON.stringify({
+          code: String(code || '').trim(),
+          allowLan: currentSettings.allowLan === true
+        })
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.token) throw new Error(String(data?.error || '配对失败'));
@@ -330,6 +336,7 @@
     const next = {};
     if (typeof patch?.enabled === 'boolean') next[STORAGE_KEYS.enabled] = patch.enabled;
     if (patch?.port !== undefined) next[STORAGE_KEYS.port] = normalizePort(patch.port);
+    if (typeof patch?.allowLan === 'boolean') next[STORAGE_KEYS.allowLan] = patch.allowLan;
     if (!Object.keys(next).length) {
       await loadSettings();
       return statusPayload();
@@ -358,6 +365,26 @@
       }
     }
     return updateSettings({ port: nextPort });
+  }
+
+  async function changeAllowLan(allowLan) {
+    const nextAllowLan = allowLan === true;
+    if (currentSettings.token && nextAllowLan !== currentSettings.allowLan) {
+      const response = await fetch(`http://127.0.0.1:${currentSettings.port}/api/v1/config/network`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${currentSettings.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ allowLan: nextAllowLan })
+      }).catch(() => null);
+      if (!response) throw new Error('无法连接本地 Bridge');
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(String(data?.error || 'Bridge 局域网访问设置修改失败'));
+      }
+    }
+    return updateSettings({ allowLan: nextAllowLan });
   }
 
   async function disconnect() {
@@ -389,6 +416,9 @@
     if (type === 'BJTUCA_LOCAL_BRIDGE_SETTINGS_SET') {
       const task = (async () => {
         if (message?.payload?.port !== undefined) await changePort(message.payload.port);
+        if (typeof message?.payload?.allowLan === 'boolean') {
+          await changeAllowLan(message.payload.allowLan);
+        }
         if (typeof message?.payload?.enabled === 'boolean') {
           await updateSettings({ enabled: message.payload.enabled });
         }

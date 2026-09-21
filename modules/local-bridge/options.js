@@ -44,7 +44,9 @@
     const state = String(status.state || (status.enabled ? 'disconnected' : 'disabled'));
     const enabled = element('localBridgeEnabled');
     const port = element('localBridgePort');
+    const allowLan = element('localBridgeAllowLan');
     if (enabled instanceof HTMLInputElement) enabled.checked = status.enabled === true;
+    if (allowLan instanceof HTMLInputElement) allowLan.checked = status.allowLan === true;
     if (port instanceof HTMLInputElement && document.activeElement !== port) {
       port.value = String(Number(status.port) || 1896);
     }
@@ -137,14 +139,20 @@
     });
     element('localBridgePort')?.addEventListener('change', (event) => {
       const port = Number(event.currentTarget.value);
-      if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-        setMessage('端口必须是 1024 至 65535 的整数', false);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        setMessage('端口必须是 1 至 65535 的整数', false);
         void refresh();
         return;
       }
       void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { port }).then((response) => {
         applyStatus(response);
         setMessage(response?.ok !== false ? '端口已保存' : `端口修改失败：${response?.error || response?.message || ''}`, response?.ok !== false);
+      });
+    });
+    element('localBridgeAllowLan')?.addEventListener('change', (event) => {
+      void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { allowLan: event.currentTarget.checked === true }).then((response) => {
+        applyStatus(response);
+        setMessage(response?.ok !== false ? '局域网访问设置已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
       });
     });
     element('localBridgePair')?.addEventListener('click', () => {
@@ -170,7 +178,8 @@
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'local') return;
-      if (changes.bjtuLocalBridgeEnabled || changes.bjtuLocalBridgePort || changes.bjtuLocalBridgeToken) {
+      if (changes.bjtuLocalBridgeEnabled || changes.bjtuLocalBridgePort
+        || changes.bjtuLocalBridgeToken || changes.bjtuLocalBridgeAllowLan) {
         void refresh();
       }
     });
@@ -189,7 +198,7 @@
   }
 
   async function reset() {
-    await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { enabled: false, port: 1896 });
+    await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { enabled: false, port: 1896, allowLan: false });
     if (initialized) await refresh();
   }
 
