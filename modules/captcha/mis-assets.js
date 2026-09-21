@@ -11,19 +11,31 @@
   const MIS_CAPTCHA_RESOURCE_LABEL = 'CAS 验证码识别资源';
   const MIS_CAPTCHA_MODEL_LABEL = 'CAS 验证码识别模型';
   const MIS_CAPTCHA_FEATURE_LABEL = '自动识别填充 CAS 验证码';
+  const MIS_DOWNLOAD_SOURCE_KEY = 'misCaptchaDownloadSource';
+  const MIS_DEFAULT_DOWNLOAD_SOURCE = 'bjtu-mis-helper';
+  const MIS_DOWNLOAD_SOURCES = Object.freeze([
+    Object.freeze({ id: 'bjtu-mis-helper', label: 'bjtu-mis-helper' }),
+    Object.freeze({ id: 'extension-remote-mirror', label: '扩展远程仓库镜像下载源' })
+  ]);
 
   const MIS_FILES = Object.freeze([
     Object.freeze({
       key: 'omis.onnx',
       label: `omis.onnx（${MIS_CAPTCHA_MODEL_LABEL}）`,
-      url: 'https://raw.githubusercontent.com/hyskr/bjtu-mis-helper/refs/heads/main/public/omis.onnx',
+      urls: Object.freeze({
+        'bjtu-mis-helper': 'https://raw.githubusercontent.com/hyskr/bjtu-mis-helper/refs/heads/main/public/omis.onnx',
+        'extension-remote-mirror': 'https://s1y4x1.github.io/assets/omis.onnx'
+      }),
       size: 10905617,
       sha256: 'D7CF5FB8AFAEEEAC751E05CACB1D7F6F0CDE0687D5B2B666C0ED7916C151E5BC'
     }),
     Object.freeze({
       key: 'ort-wasm-simd.wasm',
       label: 'ort-wasm-simd.wasm（ONNX Runtime 后端）',
-      url: 'https://github.com/hyskr/bjtu-mis-helper/raw/refs/heads/main/public/onnxruntime/ort-wasm-simd.wasm',
+      urls: Object.freeze({
+        'bjtu-mis-helper': 'https://github.com/hyskr/bjtu-mis-helper/raw/refs/heads/main/public/onnxruntime/ort-wasm-simd.wasm',
+        'extension-remote-mirror': 'https://s1y4x1.github.io/assets/ort-wasm-simd.wasm'
+      }),
       size: 10912730,
       sha256: '8A9CEB098C19F181C72C3BEB9E00E718D3A1DE139D11EB3E3589C5B557CDD78F'
     })
@@ -100,6 +112,24 @@
 
   function fileDefinition(key) {
     return MIS_FILES.find((item) => item.key === key) || null;
+  }
+
+  function normalizeDownloadSource(value) {
+    const source = String(value || '');
+    return MIS_DOWNLOAD_SOURCES.some((item) => item.id === source)
+      ? source
+      : MIS_DEFAULT_DOWNLOAD_SOURCE;
+  }
+
+  async function getMisDownloadSource() {
+    const stored = await chrome.storage.local.get(MIS_DOWNLOAD_SOURCE_KEY).catch(() => ({}));
+    return normalizeDownloadSource(stored?.[MIS_DOWNLOAD_SOURCE_KEY]);
+  }
+
+  async function setMisDownloadSource(value) {
+    const source = normalizeDownloadSource(value);
+    await chrome.storage.local.set({ [MIS_DOWNLOAD_SOURCE_KEY]: source });
+    return source;
   }
 
   async function getMisAsset(key) {
@@ -195,14 +225,17 @@
     }
     downloadControllers.set(key, controller);
     const promise = (async () => {
+      const source = normalizeDownloadSource(options.source || await getMisDownloadSource());
+      const sourceUrl = definition.urls[source] || definition.urls[MIS_DEFAULT_DOWNLOAD_SOURCE];
       options.onProgress?.({ key, loaded: 0, total: definition.size });
-      const bytes = await fetchBytes(definition.url, ({ loaded, total }) => {
+      const bytes = await fetchBytes(sourceUrl, ({ loaded, total }) => {
         options.onProgress?.({ key, loaded, total });
       }, { signal: controller.signal, expectedSize: definition.size });
       await validateAsset(bytes, definition, definition.label);
       const record = {
         key,
-        sourceUrl: definition.url,
+        source,
+        sourceUrl,
         downloadedAt: Date.now(),
         size: bytes.byteLength,
         sha256: definition.sha256,
@@ -253,6 +286,11 @@
     MIS_CAPTCHA_RESOURCE_LABEL,
     MIS_CAPTCHA_FEATURE_LABEL,
     MIS_CAPTCHA_MODEL_LABEL,
+    MIS_DOWNLOAD_SOURCE_KEY,
+    MIS_DOWNLOAD_SOURCES,
+    MIS_DEFAULT_DOWNLOAD_SOURCE,
+    getMisDownloadSource,
+    setMisDownloadSource,
     getMisAsset,
     getMisAssetsStatus,
     ensureMisAssets,

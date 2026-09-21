@@ -163,6 +163,18 @@
     return global.BjtuMisAssets;
   }
 
+  async function initializeMisDownloadSource() {
+    const select = document.getElementById('casCaptchaDownloadSource');
+    const assets = await getMisAssets();
+    if (!(select instanceof HTMLSelectElement) || !assets) return;
+    select.value = await assets.getMisDownloadSource();
+    select.addEventListener('change', () => {
+      void assets.setMisDownloadSource(select.value).then((source) => {
+        select.value = source;
+      });
+    });
+  }
+
   function misElementSuffix(key) {
     return key === 'ort-wasm-simd.wasm' ? 'Wasm' : 'Omis';
   }
@@ -253,7 +265,13 @@
       .then(async (status) => {
         const targets = assets.MIS_FILES.filter((item) => status.files[item.key] !== 'installed');
         if (!targets.length) return;
-        await Promise.all(targets.map((item) => assets.downloadMisAsset(item.key, { onProgress: misDownloadProgressHandler })));
+        await Promise.all(targets.map(async (item) => {
+          const record = await assets.downloadMisAsset(item.key, { onProgress: misDownloadProgressHandler });
+          setMisFileProgress(item.key, false);
+          setMisFileSize(item.key, renderCaptchaFileSizeText(record?.blob?.size || record?.size || 0), true);
+          setMisFileStatus(item.key, '已安装');
+          return record;
+        }));
       })
       .then(() => {
         setMessage(`${MIS_CAPTCHA_RESOURCE_LABEL}已下载完成`);
@@ -773,6 +791,7 @@
       void selectModel(version);
     });
     const toggle = document.getElementById('casCaptchaRecognitionEnabled');
+    void initializeMisDownloadSource();
     if (toggle instanceof HTMLInputElement) {
       toggle.addEventListener('change', () => {
         const enabled = toggle.checked === true;

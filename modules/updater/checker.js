@@ -66,6 +66,7 @@ const VERSION_INSTALLED_RELEASE_DESCRIPTION_KEY = 'installedReleaseDescription';
 const VERSION_APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
 const VERSION_PENDING_RELOAD_KEY = 'pendingUpdateReload';
 const VERSION_BACKGROUND_UPDATE_STATUS_KEY = 'backgroundAutoUpdateStatus';
+const VERSION_FOREGROUND_SESSION_ID = crypto.randomUUID();
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
@@ -976,15 +977,31 @@ function setVersionDownloadBar({ visible = true, percent = 0, indeterminate = fa
 }
 
 const backgroundModuleSelectionInFlight = new Set();
+let activeBackgroundModuleSelectionRequestId = '';
+
+window.addEventListener('pagehide', () => {
+  const requestId = activeBackgroundModuleSelectionRequestId;
+  if (!requestId) return;
+  activeBackgroundModuleSelectionRequestId = '';
+  chrome.runtime.sendMessage({
+    type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
+    payload: {
+      requestId,
+      cancelled: true,
+      error: '模块选择页面已关闭'
+    }
+  }).catch(() => {});
+});
 
 async function handleBackgroundModuleSelection(status) {
   const requestId = String(status?.requestId || '');
   if (!requestId || backgroundModuleSelectionInFlight.has(requestId)) return;
   backgroundModuleSelectionInFlight.add(requestId);
+  activeBackgroundModuleSelectionRequestId = requestId;
   try {
     versionDownloadInProgress = true;
     const selected = await presentUpdateModuleChoices(status.choices, {
-      autoConfirm: false,
+      autoConfirm: true,
       requireConfirmationUi: true
     });
     const response = await chrome.runtime.sendMessage({
@@ -1012,6 +1029,9 @@ async function handleBackgroundModuleSelection(status) {
     });
     setVersionDownloadRetryVisible(true);
   } finally {
+    if (activeBackgroundModuleSelectionRequestId === requestId) {
+      activeBackgroundModuleSelectionRequestId = '';
+    }
     backgroundModuleSelectionInFlight.delete(requestId);
   }
 }
@@ -2599,7 +2619,8 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', fullEx
           name: versionButtonLatestDisplayVersion || versionButtonLatestVersion,
           description: versionButtonLatestBodyMarkdown,
           reload: versionDownloadReload,
-          force: versionButtonLatestForce
+          force: versionButtonLatestForce,
+          ownerId: VERSION_FOREGROUND_SESSION_ID
         }
       });
       if (response?.ok !== true) throw new Error(String(response?.message || '后台全新安装失败'));
@@ -3116,8 +3137,26 @@ function setupVersionButton() {
   initializeVersionReinstallCommand();
   chrome.storage.local.get(VERSION_BACKGROUND_UPDATE_STATUS_KEY).then((stored) => {
     const status = stored?.[VERSION_BACKGROUND_UPDATE_STATUS_KEY];
+    if (status?.manual === true && String(status.status || '') === 'selecting-modules') {
+      const requestId = String(status.requestId || '');
+      if (String(status.ownerId || '') === VERSION_FOREGROUND_SESSION_ID) {
+        renderBackgroundCleanInstallStatus(status);
+        return;
+      }
+      if (requestId) {
+        chrome.runtime.sendMessage({
+          type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
+          payload: {
+            requestId,
+            cancelled: true,
+            error: '模块选择页面已关闭'
+          }
+        }).catch(() => {});
+      }
+      return;
+    }
     if (status?.manual === true
-        && ['downloading', 'selecting-modules', 'installing', 'reloading'].includes(String(status.status || ''))) {
+        && ['downloading', 'installing', 'reloading'].includes(String(status.status || ''))) {
       renderBackgroundCleanInstallStatus(status);
     }
   }).catch(() => {});

@@ -540,6 +540,7 @@
       await setStatus('selecting-modules', {
         manual: true,
         requestId,
+        ownerId: release.ownerId,
         version: release.version,
         name: release.name,
         directoryName: root.name,
@@ -763,6 +764,7 @@
       url,
       reload: payload?.reload !== false,
       force: payload?.force === true,
+      ownerId: String(payload?.ownerId || ''),
       update: null,
       clean: true
     };

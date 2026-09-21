@@ -43,9 +43,10 @@
       </label>
     </div>
     <div class="captcha-core-status mis-captcha-status mis-captcha-group">
-      <span class="captcha-core-file">
-        <span class="captcha-core-name">bjtu-mis-helper</span>
-      </span>
+      <select id="casCaptchaDownloadSource" class="mis-captcha-download-source" aria-label="CAS 验证码识别资源下载源">
+        <option value="bjtu-mis-helper">bjtu-mis-helper</option>
+        <option value="extension-remote-mirror">扩展远程仓库镜像下载源</option>
+      </select>
       <span class="mis-captcha-status-right">
         <span id="casCaptchaStatusValue">正在检查…</span>
         <button type="button" id="casCaptchaDownload" class="captcha-model-action" data-mode="download" hidden>下载</button>
