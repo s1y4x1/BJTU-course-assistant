@@ -5525,7 +5525,6 @@ if (resourceDownloadSelectedBtn) {
       }).catch((err) => {
         const msg = String(err?.message || err || '');
         if (msg.includes('下载已取消')) {
-          showToast(`已取消: ${String(item?.name || '未命名文件')}`, 'warning', 1200);
           refreshResourceQueueStatusText();
           return;
         }
@@ -5855,7 +5854,7 @@ if (resourceSpaceList) {
       } catch (err) {
         const msg = String(err?.message || err || '');
         if (msg.includes('下载已取消')) {
-          showToast('下载已取消', 'warning', 1000);
+          // 取消操作的点击分支已经即时提示，异步任务结束时不再重复显示。
         } else {
           showToast(`下载失败：${msg}`, 'error', 1800);
         }
@@ -5941,7 +5940,9 @@ courseListDiv.addEventListener('click', async (e) => {
       showToast('下载完成', 'success', 1200);
     } catch (err) {
       const msg = String(err?.message || err || '');
-      if (msg.includes('下载已取消')) showToast('下载已取消', 'warning', 1000);
+      if (msg.includes('下载已取消')) {
+        // 取消操作的点击分支已经即时提示，异步任务结束时不再重复显示。
+      }
       else showToast(`下载失败：${msg}`, 'error', 1800);
     }
   }

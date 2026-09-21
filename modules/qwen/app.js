@@ -228,10 +228,11 @@
     let container = bubble.querySelector(':scope > .qwen-chat-md');
     if (!(container instanceof HTMLElement)) {
       container = document.createElement('div');
-      container.className = 'qwen-chat-md';
+      container.className = 'qwen-chat-md bjtu-markdown';
       container._mdText = '';
       bubble.appendChild(container);
     }
+    container.classList.add('bjtu-markdown');
     return container;
   }
 

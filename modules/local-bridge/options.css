@@ -103,7 +103,6 @@ html[data-color-scheme="dark"] .local-bridge-status[data-state="unpaired"] { col
 .local-bridge-guide h2,
 .local-bridge-guide h3 {
   margin: 14px 0 6px;
-  font-size: var(--bjtu-font-size-secondaryTitle, 16px);
 }
 .local-bridge-guide h1:first-child,
 .local-bridge-guide h2:first-child,

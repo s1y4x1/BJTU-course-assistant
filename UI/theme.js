@@ -101,6 +101,17 @@
     Object.entries(fontSizeSettings).forEach(([key, size]) => {
       document.documentElement.style.setProperty(`--bjtu-font-size-${key}`, `${size}px`);
     });
+    const primaryTitleSize = fontSizeSettings.primaryTitle;
+    const bodySize = fontSizeSettings.body;
+    const logarithmicScaleTop = Math.max(primaryTitleSize, bodySize + 1);
+    const logarithmDenominator = Math.log(7);
+    for (let level = 1; level <= 6; level += 1) {
+      const weight = Math.log(7 / level) / logarithmDenominator;
+      const size = level === 1
+        ? primaryTitleSize
+        : bodySize + ((logarithmicScaleTop - bodySize) * weight);
+      document.documentElement.style.setProperty(`--bjtu-markdown-h${level}-size`, `${Number(size.toFixed(4))}px`);
+    }
     try {
       window.dispatchEvent(new CustomEvent('bjtu-font-size-change', { detail: { ...fontSizeSettings } }));
     } catch {}

@@ -238,7 +238,7 @@ html[data-color-scheme="dark"] .version-module-selection-secondary:hover {
     color: #000 !important;
 }
 .version-notice-body {
-    font-size: 13px;
+    font-size: var(--bjtu-font-size-body, 13px);
     color: #334155;
     margin-bottom: 0;
     flex: 1 1 auto;
@@ -479,18 +479,6 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
     color: #0f172a;
     line-height: 1.3;
 }
-.version-notice-body h1,
-.version-download-release-notes-body h1 { font-size: var(--bjtu-font-size-primaryTitle, 20px); }
-.version-notice-body h2,
-.version-download-release-notes-body h2 { font-size: var(--bjtu-font-size-secondaryTitle, 16px); }
-.version-notice-body h3,
-.version-download-release-notes-body h3 { font-size: 16px; }
-.version-notice-body h4,
-.version-notice-body h5,
-.version-notice-body h6,
-.version-download-release-notes-body h4,
-.version-download-release-notes-body h5,
-.version-download-release-notes-body h6 { font-size: 14px; }
 .version-notice-body ul,
 .version-notice-body ol,
 .version-download-release-notes-body ul,
