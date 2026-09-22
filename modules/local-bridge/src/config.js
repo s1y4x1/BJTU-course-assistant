@@ -1,4 +1,4 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,8 +39,4 @@ export async function saveConfig(config) {
     token: String(config?.token || ''),
     allowLan: config?.allowLan === true
   }, null, 2)}\n`, 'utf8');
-}
-
-export function createPairingCode() {
-  return String(randomInt(0, 1_000_000)).padStart(6, '0');
 }

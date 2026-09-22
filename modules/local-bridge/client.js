@@ -18,7 +18,6 @@
   let reconnectTimer = null;
   let reconnectAttempt = 0;
   let heartbeatTimer = null;
-  let pairingInProgress = false;
   let currentSettings = { enabled: false, port: DEFAULT_PORT, token: '', allowLan: false };
   let connectionState = 'disabled';
   let lastError = '';
@@ -105,7 +104,7 @@
     }
     if (!currentSettings.token) {
       closeSocket();
-      setState('unpaired', '请输入 Bridge 启动时显示的配对码');
+      setState('unpaired', '请从 bridge.json 配对');
       return;
     }
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
@@ -148,7 +147,7 @@
       if (authorizationRevoked) {
         currentSettings.token = '';
         setState(currentSettings.enabled ? 'unpaired' : 'disabled', 'Bridge 授权已失效，请重新配对');
-        if (event.code === 1008 || (event.code === 4001 && !pairingInProgress)) {
+        if (event.code === 1008 || event.code === 4001) {
           void chrome.storage.local.get(STORAGE_KEYS.token).then((stored) => {
             if (String(stored?.[STORAGE_KEYS.token] || '').trim() !== connectionToken) return;
             return chrome.storage.local.remove(STORAGE_KEYS.token);
@@ -306,31 +305,33 @@
     sendResponse(ws, id, response);
   }
 
-  async function pair(code, port = currentSettings.port) {
-    pairingInProgress = true;
-    try {
-      const targetPort = normalizePort(port);
-      const response = await fetch(`http://127.0.0.1:${targetPort}/api/v1/pair`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: String(code || '').trim(),
-          allowLan: currentSettings.allowLan === true
-        })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.token) throw new Error(String(data?.error || '配对失败'));
-      await chrome.storage.local.set({
-        [STORAGE_KEYS.enabled]: true,
-        [STORAGE_KEYS.port]: targetPort,
-        [STORAGE_KEYS.token]: String(data.token)
-      });
-      closeSocket(1000, 'Reconnecting');
-      await connect();
-      return statusPayload();
-    } finally {
-      pairingInProgress = false;
+  async function readBridgeConfig() {
+    const configUrl = `${chrome.runtime.getURL('modules/local-bridge/bridge.json')}?t=${Date.now()}`;
+    const response = await fetch(configUrl, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error('无法读取 modules/local-bridge/bridge.json，请先启动 Bridge');
     }
+    const config = await response.json().catch(() => null);
+    const token = String(config?.token || '').trim();
+    if (!token) throw new Error('bridge.json 中没有有效的 Bearer Token');
+    return {
+      token,
+      port: normalizePort(config?.port),
+      allowLan: config?.allowLan === true
+    };
+  }
+
+  async function pair() {
+    const config = await readBridgeConfig();
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.enabled]: true,
+      [STORAGE_KEYS.port]: config.port,
+      [STORAGE_KEYS.token]: config.token,
+      [STORAGE_KEYS.allowLan]: config.allowLan
+    });
+    closeSocket(1000, 'Reconnecting');
+    await connect();
+    return statusPayload();
   }
 
   async function updateSettings(patch) {
@@ -408,7 +409,7 @@
       return true;
     }
     if (type === 'BJTUCA_LOCAL_BRIDGE_PAIR') {
-      void pair(message?.payload?.code, message?.payload?.port).then(
+      void pair().then(
         (value) => sendResponse({ ok: true, ...value }),
         (error) => sendResponse({ ok: false, error: String(error?.message || error) })
       );

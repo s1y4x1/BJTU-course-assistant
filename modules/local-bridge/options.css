@@ -47,7 +47,6 @@ html[data-color-scheme="dark"] .local-bridge-input {
 }
 
 .local-bridge-port { width: 92px; }
-.local-bridge-code { width: 190px; }
 .local-bridge-pair-row { flex-wrap: wrap; }
 .local-bridge-pair-row > [hidden],
 .local-bridge-token-row[hidden] { display: none !important; }

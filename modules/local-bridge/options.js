@@ -156,13 +156,7 @@
       });
     });
     element('localBridgePair')?.addEventListener('click', () => {
-      const code = String(element('localBridgePairCode')?.value || '').trim();
-      const port = Number(element('localBridgePort')?.value) || 1896;
-      if (!/^\d{6}$/.test(code)) {
-        setMessage('请输入 Bridge 显示的 6 位配对码', false);
-        return;
-      }
-      void send('BJTUCA_LOCAL_BRIDGE_PAIR', { code, port }).then((response) => {
+      void send('BJTUCA_LOCAL_BRIDGE_PAIR').then((response) => {
         applyStatus(response);
         setMessage(response?.ok !== false ? '本地 Bridge 配对成功' : `配对失败：${response?.error || response?.message || ''}`, response?.ok !== false);
       });

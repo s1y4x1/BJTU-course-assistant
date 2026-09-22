@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
@@ -10,7 +10,7 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
-import { createPairingCode, loadConfig, normalizePort, saveConfig, configPath } from './config.js';
+import { loadConfig, normalizePort, saveConfig, configPath } from './config.js';
 
 const config = await loadConfig();
 const requestedPortArg = process.argv.find((arg) => arg.startsWith('--port='));
@@ -25,7 +25,6 @@ if (process.argv.includes('--show-token')) {
   process.exit(0);
 }
 
-let pairingCode = createPairingCode();
 let extensionSocket = null;
 let extensionInfo = null;
 let httpServer = null;
@@ -53,12 +52,6 @@ function bridgeAllowedHosts() {
     }
   }
   return [...hosts];
-}
-
-function isLoopbackAddress(value) {
-  const address = String(value || '').toLowerCase();
-  return address === '::1' || address === '127.0.0.1'
-    || address.startsWith('127.') || address.startsWith('::ffff:127.');
 }
 
 function bearerToken(req) {
@@ -239,7 +232,7 @@ function createMcpServer() {
 const app = createMcpExpressApp({ host: '0.0.0.0', allowedHosts: bridgeAllowedHosts() });
 app.use('/mcp', requireBearer);
 app.use('/api/v1', (req, res, next) => {
-  if (req.path === '/pair' || (req.method === 'GET' && req.path === '/operation-list')) return next();
+  if (req.method === 'GET' && req.path === '/operation-list') return next();
   return requireBearer(req, res, next);
 });
 
@@ -280,36 +273,6 @@ app.get('/internal/file/:token', (req, res) => {
     res.destroy(error);
   });
   stream.pipe(res);
-});
-
-app.post('/api/v1/pair', async (req, res) => {
-  if (!isLoopbackAddress(req.socket?.remoteAddress)) {
-    res.status(403).json({ ok: false, code: 'PAIRING_LOCAL_ONLY', error: '配对仅允许在运行 Bridge 的本机进行' });
-    return;
-  }
-  const code = String(req.body?.code || '').trim();
-  if (!code || code !== pairingCode) {
-    res.status(403).json({ ok: false, code: 'PAIRING_CODE_INVALID', error: '配对码无效' });
-    return;
-  }
-  pairingCode = createPairingCode();
-  process.stdout.write(`新配对码：${pairingCode}\n`);
-  try {
-    const nextToken = randomBytes(32).toString('base64url');
-    const nextAllowLan = typeof req.body?.allowLan === 'boolean' ? req.body.allowLan : config.allowLan === true;
-    await saveConfig({ ...config, token: nextToken, allowLan: nextAllowLan });
-    config.token = nextToken;
-    config.allowLan = nextAllowLan;
-    clearLocalFileRelays();
-    disconnectExtension(4001, 'Authorization replaced', 'Bridge 已重新配对，旧连接授权已撤销');
-    await closeMcpTransports();
-    res.json({ ok: true, token: config.token, port: activePort });
-    if (nextAllowLan !== activeAllowLan) {
-      setTimeout(() => void restartListener(config.port, nextAllowLan), 100);
-    }
-  } catch (error) {
-    res.status(500).json({ ok: false, code: 'PAIRING_FAILED', error: String(error?.message || error) });
-  }
 });
 
 app.get('/api/v1/operation-list', async (_req, res) => {
@@ -477,7 +440,6 @@ async function listen(port, allowLan = config.allowLan === true) {
   activeAllowLan = allowLan;
   process.stdout.write(`BJTU Course Assistant Bridge: http://${allowLan ? '0.0.0.0' : '127.0.0.1'}:${port}\n`);
   process.stdout.write(`局域网访问：${allowLan ? '允许' : '关闭'}\n`);
-  process.stdout.write(`配对码：${pairingCode}\n`);
 }
 
 async function restartListener(port, allowLan = config.allowLan === true) {
