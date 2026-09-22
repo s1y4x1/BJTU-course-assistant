@@ -1141,7 +1141,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
 
   async function notifyScoreChange(row, kind, studentId = '') {
     const titlePrefix = kind === 'new' ? '新增成绩' : '成绩更新';
-    const notificationId = `${NOTIFICATION_PREFIX}${shortHash(`${studentId}|${kind}|${row.key}|${scoreFingerprint(row)}`)}`;
+    const eventHash = shortHash(`${studentId}|${kind}|${row.key}|${scoreFingerprint(row)}`);
+    const notificationId = `${NOTIFICATION_PREFIX}${eventHash}:${crypto.randomUUID()}`;
     if (global.BjtuSystemNotifications?.create) {
       await global.BjtuSystemNotifications.create(notificationId, {
         type: 'basic',
@@ -1169,7 +1170,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
 
   async function notifyExamChange(row, kind, studentId = '') {
     const titlePrefix = kind === 'new' ? '新增考试' : '考试信息更新';
-    const notificationId = `${EXAM_NOTIFICATION_PREFIX}${shortHash(`${studentId}|${kind}|${row.key}|${examFingerprint(row)}`)}`;
+    const eventHash = shortHash(`${studentId}|${kind}|${row.key}|${examFingerprint(row)}`);
+    const notificationId = `${EXAM_NOTIFICATION_PREFIX}${eventHash}:${crypto.randomUUID()}`;
     const options = {
       type: 'basic',
       iconUrl: 'icons/128.png',

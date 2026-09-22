@@ -28,6 +28,18 @@ npm start -- --port=1896
 npm --prefix "扩展目录\modules\local-bridge" start
 ```
 
+运行 `install.ps1` 后还会注册用户级命令。重新打开终端后，可在任意目录直接运行：
+
+```powershell
+bjtuca-bridge
+```
+
+也可以传入启动参数，例如：
+
+```powershell
+bjtuca-bridge --port=1000
+```
+
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
 如需从同一局域网内的其他设备访问，可在扩展选项中开启“允许局域网访问”，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带 `bridge.json` 中的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。

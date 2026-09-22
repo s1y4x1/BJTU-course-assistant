@@ -183,9 +183,7 @@
       const authorizationRevoked = event.code === 1008 || event.code === 4001;
       if (authorizationRevoked) {
         currentSettings.token = '';
-        currentSettings.enabled = false;
         setState('unconfigured', 'Bridge 授权已失效，正在重新读取 bridge.json');
-        void chrome.storage.local.set({ [STORAGE_KEYS.enabled]: false });
         if (event.code === 1008 || event.code === 4001) {
           void chrome.storage.local.get(STORAGE_KEYS.token).then((stored) => {
             if (String(stored?.[STORAGE_KEYS.token] || '').trim() !== connectionToken) return;
@@ -195,19 +193,11 @@
         scheduleReconnect();
         return;
       }
-      if (currentSettings.enabled) {
-        currentSettings.enabled = false;
-        void chrome.storage.local.set({ [STORAGE_KEYS.enabled]: false });
-      }
       setState('disconnected', '本地 Bridge 未连接');
       scheduleReconnect();
     });
     ws.addEventListener('error', () => {
       if (socket !== ws) return;
-      if (currentSettings.enabled) {
-        currentSettings.enabled = false;
-        void chrome.storage.local.set({ [STORAGE_KEYS.enabled]: false });
-      }
       setState('disconnected', '无法连接本地 Bridge');
     });
   }
@@ -469,11 +459,6 @@
   async function changePort(port) {
     const nextPort = normalizePort(port);
     if (nextPort !== currentSettings.port) {
-      if (currentSettings.enabled) {
-        currentSettings.enabled = false;
-        await chrome.storage.local.set({ [STORAGE_KEYS.enabled]: false });
-        void global.BjtuActionBridgeIndicator?.setConnected(false);
-      }
       await writeBridgeConfig({ port: nextPort });
     }
     return statusPayload();
@@ -482,11 +467,6 @@
   async function changeAllowLan(allowLan) {
     const nextAllowLan = allowLan === true;
     if (nextAllowLan !== currentSettings.allowLan) {
-      if (currentSettings.enabled) {
-        currentSettings.enabled = false;
-        await chrome.storage.local.set({ [STORAGE_KEYS.enabled]: false });
-        void global.BjtuActionBridgeIndicator?.setConnected(false);
-      }
       await writeBridgeConfig({ allowLan: nextAllowLan });
     }
     return statusPayload();

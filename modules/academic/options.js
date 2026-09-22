@@ -2678,7 +2678,9 @@
       const previousStudentId = String(context?.studentId || '').trim();
       select.disabled = true;
       element('academicStudentId').value = studentId;
-      setMessage(`正在切换至教务系统账号 ${studentId}…`);
+      setMessage(`正在切换至教务系统账号 ${studentId}…`, true, {
+        type: 'info', loading: true, persistent: true
+      });
       try {
         await persistAcademicDataCache();
         invalidateAcademicCaches();

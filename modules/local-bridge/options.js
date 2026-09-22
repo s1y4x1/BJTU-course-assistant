@@ -50,13 +50,15 @@
     const connected = status.connected === true || state === 'connected';
     if (enabled instanceof HTMLInputElement) {
       enabled.checked = status.enabled === true;
-      enabled.disabled = !connected && status.enabled !== true;
+      enabled.disabled = !connected;
       enabled.title = enabled.disabled ? '本地 Bridge 连接后才能开启' : '';
     }
     if (autoRetry instanceof HTMLInputElement) autoRetry.checked = status.autoRetry !== false;
-    if (retryInterval instanceof HTMLInputElement && document.activeElement !== retryInterval) {
-      retryInterval.value = String((Math.max(100, Number(status.retryIntervalMs) || 500) / 1000));
+    if (retryInterval instanceof HTMLInputElement) {
       retryInterval.disabled = status.autoRetry === false;
+      if (document.activeElement !== retryInterval) {
+        retryInterval.value = String((Math.max(100, Number(status.retryIntervalMs) || 500) / 1000));
+      }
     }
     if (allowLan instanceof HTMLInputElement) allowLan.checked = status.allowLan === true;
     if (port instanceof HTMLInputElement && document.activeElement !== port) {

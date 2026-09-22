@@ -28,6 +28,7 @@ html[data-color-scheme="dark"] .local-bridge-setting-row { color: #e2e8f0; }
 .local-bridge-toggle { cursor: pointer; }
 .local-bridge-toggle input { width: auto; margin: 0; accent-color: #2563eb; }
 .local-bridge-setting-row > label { flex: 0 0 auto; margin: 0; font-size: inherit; }
+.local-bridge-sub-setting { margin-left: 24px; }
 
 .local-bridge-input {
   box-sizing: border-box;
