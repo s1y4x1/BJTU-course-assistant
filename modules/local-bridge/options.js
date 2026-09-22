@@ -43,6 +43,8 @@
   function applyStatus(status = {}) {
     const state = String(status.state || (status.enabled ? 'disconnected' : 'disabled'));
     const enabled = element('localBridgeEnabled');
+    const autoRetry = element('localBridgeAutoRetry');
+    const retryInterval = element('localBridgeRetryInterval');
     const port = element('localBridgePort');
     const allowLan = element('localBridgeAllowLan');
     const connected = status.connected === true || state === 'connected';
@@ -50,6 +52,11 @@
       enabled.checked = status.enabled === true;
       enabled.disabled = !connected && status.enabled !== true;
       enabled.title = enabled.disabled ? '本地 Bridge 连接后才能开启' : '';
+    }
+    if (autoRetry instanceof HTMLInputElement) autoRetry.checked = status.autoRetry !== false;
+    if (retryInterval instanceof HTMLInputElement && document.activeElement !== retryInterval) {
+      retryInterval.value = String((Math.max(100, Number(status.retryIntervalMs) || 500) / 1000));
+      retryInterval.disabled = status.autoRetry === false;
     }
     if (allowLan instanceof HTMLInputElement) allowLan.checked = status.allowLan === true;
     if (port instanceof HTMLInputElement && document.activeElement !== port) {
@@ -139,6 +146,27 @@
         setMessage(response?.ok !== false ? '已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
       });
     });
+    element('localBridgeAutoRetry')?.addEventListener('change', (event) => {
+      const autoRetry = event.currentTarget.checked === true;
+      const interval = element('localBridgeRetryInterval');
+      if (interval instanceof HTMLInputElement) interval.disabled = !autoRetry;
+      void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { autoRetry }).then((response) => {
+        applyStatus(response);
+        setMessage(response?.ok !== false ? '自动重试设置已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
+      });
+    });
+    element('localBridgeRetryInterval')?.addEventListener('change', (event) => {
+      const seconds = Number(event.currentTarget.value);
+      if (!Number.isFinite(seconds) || seconds < 0.1 || seconds > 60) {
+        setMessage('重试间隔必须为 0.1 至 60 秒', false);
+        void refresh();
+        return;
+      }
+      void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { retryIntervalMs: Math.round(seconds * 1000) }).then((response) => {
+        applyStatus(response);
+        setMessage(response?.ok !== false ? '重试间隔已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
+      });
+    });
     element('localBridgePort')?.addEventListener('change', (event) => {
       const port = Number(event.currentTarget.value);
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -163,7 +191,8 @@
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'local') return;
       if (changes.bjtuLocalBridgeEnabled || changes.bjtuLocalBridgePort
-        || changes.bjtuLocalBridgeToken || changes.bjtuLocalBridgeAllowLan) {
+        || changes.bjtuLocalBridgeToken || changes.bjtuLocalBridgeAllowLan
+        || changes.bjtuLocalBridgeAutoRetry || changes.bjtuLocalBridgeRetryIntervalMs) {
         void refresh();
       }
     });
@@ -182,7 +211,13 @@
   }
 
   async function reset() {
-    await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { enabled: false, port: 1896, allowLan: false });
+    await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', {
+      enabled: false,
+      port: 1896,
+      allowLan: false,
+      autoRetry: true,
+      retryIntervalMs: 500
+    });
     if (initialized) await refresh();
   }
 

@@ -1384,14 +1384,17 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       pendingOverride || stored?.[PENDING_NOTIFICATIONS_KEY]
     );
     let changed = false;
-    for (const [key, item] of Object.entries(pending)) {
+    const notifications = await Promise.all(Object.entries(pending).map(async ([key, item]) => {
       try {
         await notifyScoreChange(item.row, item.kind, item.studentId);
-        delete pending[key];
-        changed = true;
+        return key;
       } catch {
-        // Keep failed notifications for the next alarm instead of losing them.
+        return '';
       }
+    }));
+    for (const key of notifications.filter(Boolean)) {
+      delete pending[key];
+      changed = true;
     }
     if (changed || pendingOverride) {
       await chrome.storage.local.set({ [PENDING_NOTIFICATIONS_KEY]: pending });
@@ -1529,19 +1532,26 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     );
     let changed = false;
     const now = Date.now();
+    const active = [];
     for (const [key, item] of Object.entries(pending)) {
       if (isPastExam(item.row, now)) {
         delete pending[key];
         changed = true;
         continue;
       }
+      active.push([key, item]);
+    }
+    const notifications = await Promise.all(active.map(async ([key, item]) => {
       try {
         await notifyExamChange(item.row, item.kind, item.studentId);
-        delete pending[key];
-        changed = true;
+        return key;
       } catch {
-        // Keep failed notifications for the next alarm instead of losing them.
+        return '';
       }
+    }));
+    for (const key of notifications.filter(Boolean)) {
+      delete pending[key];
+      changed = true;
     }
     if (changed || pendingOverride) {
       await chrome.storage.local.set({ [EXAM_PENDING_NOTIFICATIONS_KEY]: pending });

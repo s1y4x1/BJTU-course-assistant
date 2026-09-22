@@ -47,6 +47,7 @@ html[data-color-scheme="dark"] .local-bridge-input {
 }
 
 .local-bridge-port { width: 92px; }
+.local-bridge-retry-interval { width: 92px; }
 .local-bridge-token-row[hidden] { display: none !important; }
 .local-bridge-token-row { flex-wrap: nowrap; }
 .local-bridge-token {

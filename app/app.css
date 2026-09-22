@@ -1972,7 +1972,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     border-radius:6px;
     background:transparent;
     color:#64748b;
-    font-size:22px;
+    font-size:28px;
     line-height:1;
 }
 .fullscreen-module-window .fullscreen-module-window-close:hover { background:#e2e8f0; color:#0f172a; }

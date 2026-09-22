@@ -20,6 +20,16 @@
     <input type="checkbox" id="localBridgeEnabled">
     <span>允许本地程序调用扩展操作</span>
   </label>
+  <label class="local-bridge-toggle">
+    <input type="checkbox" id="localBridgeAutoRetry" checked>
+    <span>连接断开后自动重试</span>
+  </label>
+  <div class="local-bridge-setting-row">
+    <label for="localBridgeRetryInterval">重试间隔</label>
+    <input type="number" id="localBridgeRetryInterval" class="local-bridge-input local-bridge-retry-interval"
+      min="0.1" max="60" step="0.1" value="0.5">
+    <span>秒</span>
+  </div>
   <div class="local-bridge-setting-row">
     <label for="localBridgePort">监听端口</label>
     <input type="number" id="localBridgePort" class="local-bridge-input local-bridge-port"

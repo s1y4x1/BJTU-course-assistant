@@ -18,17 +18,19 @@ export function normalizePort(value, fallback = DEFAULT_PORT) {
   return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : fallback;
 }
 
-export async function loadConfig() {
+export async function loadConfig({ persist = true, strict = false } = {}) {
   let stored = {};
   try {
     stored = JSON.parse(await readFile(configPath(), 'utf8'));
-  } catch {}
+  } catch (error) {
+    if (strict) throw error;
+  }
   const config = {
     port: normalizePort(stored?.port),
     token: String(stored?.token || '').trim() || randomBytes(32).toString('base64url'),
     allowLan: stored?.allowLan === true
   };
-  await saveConfig(config);
+  if (persist) await saveConfig(config);
   return config;
 }
 

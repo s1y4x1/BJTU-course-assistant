@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, watch } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
 import path from 'node:path';
@@ -313,38 +313,6 @@ app.post('/api/v1/call', async (req, res) => {
   }
 });
 
-app.post('/api/v1/config/port', async (req, res) => {
-  const port = normalizePort(req.body?.port, 0);
-  if (!port) {
-    res.status(400).json({ ok: false, code: 'INVALID_PORT', error: '端口必须是 1 至 65535 的整数' });
-    return;
-  }
-  if (port === activePort) {
-    res.json({ ok: true, port, changed: false });
-    return;
-  }
-  config.port = port;
-  await saveConfig(config);
-  res.json({ ok: true, port, changed: true });
-  setTimeout(() => void restartOnPort(port), 100);
-});
-
-app.post('/api/v1/config/network', async (req, res) => {
-  if (typeof req.body?.allowLan !== 'boolean') {
-    res.status(400).json({ ok: false, code: 'INVALID_ALLOW_LAN', error: 'allowLan 必须是布尔值' });
-    return;
-  }
-  const allowLan = req.body.allowLan === true;
-  if (allowLan === activeAllowLan) {
-    res.json({ ok: true, allowLan, changed: false });
-    return;
-  }
-  config.allowLan = allowLan;
-  await saveConfig(config);
-  res.json({ ok: true, allowLan, changed: true });
-  setTimeout(() => void restartListener(config.port, allowLan), 100);
-});
-
 app.all('/mcp', async (req, res) => {
   try {
     const sessionId = String(req.headers['mcp-session-id'] || '');
@@ -459,12 +427,38 @@ async function restartListener(port, allowLan = config.allowLan === true) {
   return restartPromise;
 }
 
-async function restartOnPort(port) {
-  return restartListener(port, config.allowLan === true);
-}
-
 await listen(config.port);
 process.stdout.write(`配置文件：${configPath()}\n`);
+
+let configReloadTimer = null;
+async function applyConfigFileChanges() {
+  const next = await loadConfig({ persist: false, strict: true });
+  const listenerChanged = next.port !== activePort || next.allowLan !== activeAllowLan;
+  const tokenChanged = next.token !== config.token;
+  config.port = next.port;
+  config.token = next.token;
+  config.allowLan = next.allowLan;
+  if (tokenChanged) {
+    clearLocalFileRelays();
+    disconnectExtension(4001, 'Authorization changed', 'Bridge 授权配置已更改');
+    await closeMcpTransports();
+  }
+  if (listenerChanged) await restartListener(config.port, config.allowLan);
+}
+
+const configWatcher = watch(path.dirname(configPath()), (_eventType, filename) => {
+  if (String(filename || '') !== path.basename(configPath())) return;
+  if (configReloadTimer) clearTimeout(configReloadTimer);
+  configReloadTimer = setTimeout(() => {
+    configReloadTimer = null;
+    void applyConfigFileChanges().catch((error) => {
+      process.stderr.write(`重新读取 bridge.json 失败：${String(error?.message || error)}\n`);
+    });
+  }, 100);
+});
+configWatcher.on('error', (error) => {
+  process.stderr.write(`监听 bridge.json 失败：${String(error?.message || error)}\n`);
+});
 
 const heartbeat = setInterval(() => {
   if (extensionConnected()) extensionSocket.send(JSON.stringify({ type: 'ping' }));
@@ -472,6 +466,8 @@ const heartbeat = setInterval(() => {
 
 async function shutdown() {
   clearInterval(heartbeat);
+  if (configReloadTimer) clearTimeout(configReloadTimer);
+  configWatcher.close();
   clearLocalFileRelays();
   disconnectExtension(1001, 'Bridge shutdown', 'Bridge 已关闭');
   await closeMcpTransports();
