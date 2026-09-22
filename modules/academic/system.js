@@ -89,6 +89,7 @@
   let academicSemesterContextPromise = null;
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
+  let academicNotificationQueue = Promise.resolve();
   let academicDataCacheUpdatePromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
@@ -496,6 +497,12 @@
       hash = Math.imul(hash, 16777619);
     }
     return (hash >>> 0).toString(36);
+  }
+
+  function enqueueAcademicNotification(task) {
+    const run = academicNotificationQueue.then(task);
+    academicNotificationQueue = run.catch(() => {}).then(() => wait(500));
+    return run;
   }
 
   function formatScoreNotification(row) {
@@ -1388,7 +1395,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     let changed = false;
     const notifications = await Promise.all(Object.entries(pending).map(async ([key, item]) => {
       try {
-        await notifyScoreChange(item.row, item.kind, item.studentId);
+        await enqueueAcademicNotification(() => notifyScoreChange(item.row, item.kind, item.studentId));
         return key;
       } catch {
         return '';
@@ -1545,7 +1552,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     }
     const notifications = await Promise.all(active.map(async ([key, item]) => {
       try {
-        await notifyExamChange(item.row, item.kind, item.studentId);
+        await enqueueAcademicNotification(() => notifyExamChange(item.row, item.kind, item.studentId));
         return key;
       } catch {
         return '';
