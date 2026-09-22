@@ -1175,6 +1175,30 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     });
   }
 
+  async function notifyNewScores(rows, studentId = '') {
+    const items = Array.isArray(rows) ? rows : [];
+    const eventHash = shortHash(`${studentId}|new-scores|${items.map((row) => row.key).join('|')}`);
+    const notificationId = `${NOTIFICATION_PREFIX}${eventHash}:${crypto.randomUUID()}`;
+    const options = {
+      type: 'basic',
+      iconUrl: 'icons/128.png',
+      title: `新增 ${items.length} 个成绩`,
+      message: items.map((row) => `${row.courseName || row.course}：${row.score || '-'}`).join('\n'),
+      priority: 2
+    };
+    if (global.BjtuSystemNotifications?.create) {
+      await global.BjtuSystemNotifications.create(notificationId, options, 'academic-score');
+      return;
+    }
+    await new Promise((resolve, reject) => {
+      chrome.notifications.create(notificationId, options, () => {
+        const error = chrome.runtime.lastError;
+        if (error) reject(new Error(error.message || '创建成绩通知失败'));
+        else resolve(notificationId);
+      });
+    });
+  }
+
   async function notifyExamChange(row, kind, studentId = '') {
     const titlePrefix = kind === 'new' ? '新增考试' : '考试信息更新';
     const eventHash = shortHash(`${studentId}|${kind}|${row.key}|${examFingerprint(row)}`);
@@ -1251,6 +1275,32 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       currentWeek: Number(schedule?.currentWeek || 0),
       weekCheckedAt: Number(schedule?.weekCheckedAt || cache?.scheduleCache?.checkedAt || cache?.updatedAt || 0),
       rows: schedule?.rows || []
+    });
+  }
+
+  async function notifyNewExams(rows, studentId = '') {
+    const items = Array.isArray(rows) ? rows : [];
+    const eventHash = shortHash(`${studentId}|new-exams|${items.map((row) => row.key).join('|')}`);
+    const notificationId = `${EXAM_NOTIFICATION_PREFIX}${eventHash}:${crypto.randomUUID()}`;
+    const options = {
+      type: 'basic',
+      iconUrl: 'icons/128.png',
+      title: `新增 ${items.length} 个考试信息`,
+      message: items.map((row) => (
+        `${row.course || '-'}：${String(row.timeLocation || '-').replace(/\s+/g, ' ')}`
+      )).join('\n'),
+      priority: 2
+    };
+    if (global.BjtuSystemNotifications?.create) {
+      await global.BjtuSystemNotifications.create(notificationId, options, 'academic-exam');
+      return;
+    }
+    await new Promise((resolve, reject) => {
+      chrome.notifications.create(notificationId, options, () => {
+        const error = chrome.runtime.lastError;
+        if (error) reject(new Error(error.message || '创建考试通知失败'));
+        else resolve(notificationId);
+      });
     });
   }
 
@@ -1393,15 +1443,36 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       pendingOverride || stored?.[PENDING_NOTIFICATIONS_KEY]
     );
     let changed = false;
-    const notifications = await Promise.all(Object.entries(pending).map(async ([key, item]) => {
+    const notificationTasks = [];
+    const newByStudent = new Map();
+    for (const entry of Object.entries(pending)) {
+      const [key, item] = entry;
+      if (item.kind !== 'new') {
+        notificationTasks.push({ entries: [entry], notify: () => notifyScoreChange(item.row, item.kind, item.studentId) });
+        continue;
+      }
+      const group = newByStudent.get(item.studentId) || [];
+      group.push([key, item]);
+      newByStudent.set(item.studentId, group);
+    }
+    for (const entries of newByStudent.values()) {
+      const first = entries[0]?.[1];
+      notificationTasks.push({
+        entries,
+        notify: entries.length > 1
+          ? () => notifyNewScores(entries.map(([, item]) => item.row), first?.studentId)
+          : () => notifyScoreChange(first.row, first.kind, first.studentId)
+      });
+    }
+    const notifications = await Promise.all(notificationTasks.map(async ({ entries, notify }) => {
       try {
-        await enqueueAcademicNotification(() => notifyScoreChange(item.row, item.kind, item.studentId));
-        return key;
+        await enqueueAcademicNotification(notify);
+        return entries.map(([key]) => key);
       } catch {
-        return '';
+        return [];
       }
     }));
-    for (const key of notifications.filter(Boolean)) {
+    for (const key of notifications.flat()) {
       delete pending[key];
       changed = true;
     }
@@ -1550,15 +1621,36 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
       }
       active.push([key, item]);
     }
-    const notifications = await Promise.all(active.map(async ([key, item]) => {
+    const notificationTasks = [];
+    const newByStudent = new Map();
+    for (const entry of active) {
+      const [key, item] = entry;
+      if (item.kind !== 'new') {
+        notificationTasks.push({ entries: [entry], notify: () => notifyExamChange(item.row, item.kind, item.studentId) });
+        continue;
+      }
+      const group = newByStudent.get(item.studentId) || [];
+      group.push([key, item]);
+      newByStudent.set(item.studentId, group);
+    }
+    for (const entries of newByStudent.values()) {
+      const first = entries[0]?.[1];
+      notificationTasks.push({
+        entries,
+        notify: entries.length > 1
+          ? () => notifyNewExams(entries.map(([, item]) => item.row), first?.studentId)
+          : () => notifyExamChange(first.row, first.kind, first.studentId)
+      });
+    }
+    const notifications = await Promise.all(notificationTasks.map(async ({ entries, notify }) => {
       try {
-        await enqueueAcademicNotification(() => notifyExamChange(item.row, item.kind, item.studentId));
-        return key;
+        await enqueueAcademicNotification(notify);
+        return entries.map(([key]) => key);
       } catch {
-        return '';
+        return [];
       }
     }));
-    for (const key of notifications.filter(Boolean)) {
+    for (const key of notifications.flat()) {
       delete pending[key];
       changed = true;
     }
@@ -1749,26 +1841,33 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
     return chrome.alarms.get(ALARM_NAME).catch(() => null);
   }
 
+  async function activateAcademicTab(tab) {
+    if (!Number.isInteger(tab?.id)) return;
+    await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+    if (!Number.isInteger(tab.windowId)) return;
+    const browserWindow = await chrome.windows.get(tab.windowId).catch(() => null);
+    if (browserWindow?.state === 'minimized') {
+      await chrome.windows.update(tab.windowId, { state: 'normal' }).catch(() => {});
+    }
+    await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  }
+
   async function focusScorePage() {
     const tabs = await chrome.tabs.query({ url: ['https://aa.bjtu.edu.cn/score/scores/stu/view*'] }).catch(() => []);
     if (tabs.length) {
-      const tab = tabs[0];
-      await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
-      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+      await activateAcademicTab(tabs[0]);
       return;
     }
-    await globalThis.BjtuTabs.create({ url: SCORE_URL, active: true });
+    await activateAcademicTab(await globalThis.BjtuTabs.create({ url: SCORE_URL, active: true }));
   }
 
   async function focusExamPage() {
     const tabs = await chrome.tabs.query({ url: [`${EXAM_URL}*`] }).catch(() => []);
     if (tabs.length) {
-      const tab = tabs[0];
-      await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
-      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+      await activateAcademicTab(tabs[0]);
       return;
     }
-    await globalThis.BjtuTabs.create({ url: EXAM_URL, active: true });
+    await activateAcademicTab(await globalThis.BjtuTabs.create({ url: EXAM_URL, active: true }));
   }
 
   function extractLoginCredentials(details) {

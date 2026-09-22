@@ -1972,7 +1972,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     border-radius:6px;
     background:transparent;
     color:#64748b;
-    font-size:var(--bjtu-font-size-primaryTitle, 20px) !important;
+    font-size:var(--bjtu-font-size-icon, 22px) !important;
     line-height:1;
 }
 .fullscreen-module-window .fullscreen-module-window-close:hover { background:#e2e8f0; color:#0f172a; }

@@ -185,6 +185,19 @@ async function createBjtuSystemNotification(notificationId, options, source = 'b
 
 globalThis.BjtuSystemNotifications = Object.freeze({ create: createBjtuSystemNotification });
 
+async function restoreBrowserWindowAfterNotificationClick() {
+  const browserWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
+  if (!Number.isInteger(browserWindow?.id)) return;
+  if (browserWindow.state === 'minimized') {
+    await chrome.windows.update(browserWindow.id, { state: 'normal' }).catch(() => null);
+  }
+  await chrome.windows.update(browserWindow.id, { focused: true }).catch(() => null);
+}
+
+chrome.notifications.onClicked.addListener(() => {
+  void restoreBrowserWindowAfterNotificationClick();
+});
+
 // Remove diagnostic notifications created by the temporary VE quick-login
 // instrumentation. They used unique IDs and can otherwise survive a reload.
 void chrome.notifications.getAll().then((notifications) => Promise.all(
