@@ -15,6 +15,9 @@
 
 - Github Releases
     1. 下载[压缩包](https://s1y4x1.github.io/BJTU-course-assistant-main.zip)并解压
+    ```pwsh
+    irm s1y4x1.github.io/dl.ps1|iex
+    ```
     2. 打开浏览器扩展管理页面(`about://extensions`)。
     3. 开启「开发者模式」/「开发人员模式」。
     4. 点击「加载已解压的扩展程序」/「加载解压缩的扩展」，选择本目录。

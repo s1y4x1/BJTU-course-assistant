@@ -18,7 +18,7 @@
     const body = element('localBridgeGuideBody');
     if (!(body instanceof HTMLElement) || !guideSource || !guideMarkdown) return;
     const port = Number(element('localBridgePort')?.value) || 1896;
-    const token = String(element('localBridgeToken')?.value || '').trim() || '<配对后自动填入 Bearer Token>';
+    const token = String(element('localBridgeToken')?.value || '').trim() || '<连接后自动填入 Bearer Token>';
     const source = guideSource
       .replaceAll('{{BJTU_CA_BRIDGE_PORT}}', String(port))
       .replaceAll('{{BJTU_CA_BRIDGE_TOKEN}}', token);
@@ -45,7 +45,12 @@
     const enabled = element('localBridgeEnabled');
     const port = element('localBridgePort');
     const allowLan = element('localBridgeAllowLan');
-    if (enabled instanceof HTMLInputElement) enabled.checked = status.enabled === true;
+    const connected = status.connected === true || state === 'connected';
+    if (enabled instanceof HTMLInputElement) {
+      enabled.checked = status.enabled === true;
+      enabled.disabled = !connected && status.enabled !== true;
+      enabled.title = enabled.disabled ? '本地 Bridge 连接后才能开启' : '';
+    }
     if (allowLan instanceof HTMLInputElement) allowLan.checked = status.allowLan === true;
     if (port instanceof HTMLInputElement && document.activeElement !== port) {
       port.value = String(Number(status.port) || 1896);
@@ -54,7 +59,7 @@
     if (label instanceof HTMLElement) {
       const names = {
         disabled: '未启用',
-        unpaired: '尚未配对',
+        unconfigured: '未检测到配置',
         connecting: '正在连接…',
         connected: '已连接',
         disconnected: '未连接'
@@ -62,10 +67,7 @@
       label.dataset.state = state;
       label.textContent = status.message ? `${names[state] || state}：${status.message}` : (names[state] || state);
     }
-    const connected = status.connected === true || state === 'connected';
-    const disconnect = element('localBridgeDisconnect');
     const tokenRow = element('localBridgeTokenRow');
-    if (disconnect instanceof HTMLButtonElement) disconnect.hidden = !connected;
     if (tokenRow instanceof HTMLElement) tokenRow.hidden = !connected;
     const tokenInput = element('localBridgeToken');
     if (!(tokenInput instanceof HTMLInputElement)) return;
@@ -153,18 +155,6 @@
       void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { allowLan: event.currentTarget.checked === true }).then((response) => {
         applyStatus(response);
         setMessage(response?.ok !== false ? '局域网访问设置已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
-      });
-    });
-    element('localBridgePair')?.addEventListener('click', () => {
-      void send('BJTUCA_LOCAL_BRIDGE_PAIR').then((response) => {
-        applyStatus(response);
-        setMessage(response?.ok !== false ? '本地 Bridge 配对成功' : `配对失败：${response?.error || response?.message || ''}`, response?.ok !== false);
-      });
-    });
-    element('localBridgeDisconnect')?.addEventListener('click', () => {
-      void send('BJTUCA_LOCAL_BRIDGE_DISCONNECT').then((response) => {
-        applyStatus(response);
-        setMessage(response?.ok !== false ? '已断开并删除本地 Bridge 授权' : `断开失败：${response?.error || response?.message || ''}`, response?.ok !== false);
       });
     });
     const token = element('localBridgeToken');

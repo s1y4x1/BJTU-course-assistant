@@ -19,7 +19,7 @@
   let reconnectAttempt = 0;
   let heartbeatTimer = null;
   let currentSettings = { enabled: false, port: DEFAULT_PORT, token: '', allowLan: false };
-  let connectionState = 'disabled';
+  let connectionState = 'disconnected';
   let lastError = '';
 
   function normalizePort(value) {
@@ -44,7 +44,7 @@
       enabled: currentSettings.enabled,
       port: currentSettings.port,
       allowLan: currentSettings.allowLan,
-      paired: Boolean(currentSettings.token),
+      configured: Boolean(currentSettings.token),
       state: connectionState,
       connected: connectionState === 'connected',
       message: lastError
@@ -61,7 +61,7 @@
   function setState(state, message = '') {
     connectionState = state;
     lastError = String(message || '');
-    void global.BjtuActionBridgeIndicator?.setConnected(state === 'connected');
+    void global.BjtuActionBridgeIndicator?.setConnected(state === 'connected' && currentSettings.enabled);
     broadcastStatus();
   }
 
@@ -86,7 +86,7 @@
   }
 
   function scheduleReconnect() {
-    if (!currentSettings.enabled || !currentSettings.token || reconnectTimer) return;
+    if (reconnectTimer) return;
     const delay = Math.min(30_000, 500 * (2 ** Math.min(reconnectAttempt, 6)));
     reconnectAttempt += 1;
     reconnectTimer = setTimeout(() => {
@@ -97,15 +97,21 @@
 
   async function connect() {
     await loadSettings();
-    if (!currentSettings.enabled) {
-      closeSocket();
-      setState('disabled');
-      return;
-    }
     if (!currentSettings.token) {
-      closeSocket();
-      setState('unpaired', '请从 bridge.json 配对');
-      return;
+      try {
+        const config = await readBridgeConfig();
+        currentSettings = { ...currentSettings, ...config };
+        await chrome.storage.local.set({
+          [STORAGE_KEYS.port]: config.port,
+          [STORAGE_KEYS.token]: config.token,
+          [STORAGE_KEYS.allowLan]: config.allowLan
+        });
+      } catch (error) {
+        closeSocket();
+        setState('unconfigured', String(error?.message || error));
+        scheduleReconnect();
+        return;
+      }
     }
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     clearReconnectTimer();
@@ -146,16 +152,17 @@
       const authorizationRevoked = event.code === 1008 || event.code === 4001;
       if (authorizationRevoked) {
         currentSettings.token = '';
-        setState(currentSettings.enabled ? 'unpaired' : 'disabled', 'Bridge 授权已失效，请重新配对');
+        setState('unconfigured', 'Bridge 授权已失效，正在重新读取 bridge.json');
         if (event.code === 1008 || event.code === 4001) {
           void chrome.storage.local.get(STORAGE_KEYS.token).then((stored) => {
             if (String(stored?.[STORAGE_KEYS.token] || '').trim() !== connectionToken) return;
             return chrome.storage.local.remove(STORAGE_KEYS.token);
           }).catch(() => {});
         }
+        scheduleReconnect();
         return;
       }
-      setState(currentSettings.enabled ? 'disconnected' : 'disabled', '本地 Bridge 未连接');
+      setState('disconnected', '本地 Bridge 未连接');
       scheduleReconnect();
     });
     ws.addEventListener('error', () => {
@@ -278,6 +285,14 @@
   async function handleRequest(message, ws) {
     const id = String(message?.id || '');
     if (!id) return;
+    if (!currentSettings.enabled) {
+      sendResponse(ws, id, {
+        ok: false,
+        error: '扩展未启用“允许本地程序调用扩展操作”',
+        code: 'BRIDGE_DISABLED'
+      });
+      return;
+    }
     if (completedRequests.has(id)) {
       sendResponse(ws, id, completedRequests.get(id));
       return;
@@ -321,19 +336,6 @@
     };
   }
 
-  async function pair() {
-    const config = await readBridgeConfig();
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.enabled]: true,
-      [STORAGE_KEYS.port]: config.port,
-      [STORAGE_KEYS.token]: config.token,
-      [STORAGE_KEYS.allowLan]: config.allowLan
-    });
-    closeSocket(1000, 'Reconnecting');
-    await connect();
-    return statusPayload();
-  }
-
   async function updateSettings(patch) {
     const next = {};
     if (typeof patch?.enabled === 'boolean') next[STORAGE_KEYS.enabled] = patch.enabled;
@@ -342,6 +344,10 @@
     if (!Object.keys(next).length) {
       await loadSettings();
       return statusPayload();
+    }
+    if (patch?.enabled === false) {
+      for (const pending of approvalRequests.values()) pending.resolve(false);
+      approvalRequests.clear();
     }
     await chrome.storage.local.set(next);
     closeSocket(1000, 'Settings changed');
@@ -389,30 +395,10 @@
     return updateSettings({ allowLan: nextAllowLan });
   }
 
-  async function disconnect() {
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.enabled]: false,
-      [STORAGE_KEYS.token]: ''
-    });
-    for (const pending of approvalRequests.values()) pending.resolve(false);
-    approvalRequests.clear();
-    closeSocket();
-    await loadSettings();
-    setState('disabled');
-    return statusPayload();
-  }
-
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const type = String(message?.type || '');
     if (type === 'BJTUCA_LOCAL_BRIDGE_STATUS') {
       void loadSettings().then(() => sendResponse(statusPayload()));
-      return true;
-    }
-    if (type === 'BJTUCA_LOCAL_BRIDGE_PAIR') {
-      void pair().then(
-        (value) => sendResponse({ ok: true, ...value }),
-        (error) => sendResponse({ ok: false, error: String(error?.message || error) })
-      );
       return true;
     }
     if (type === 'BJTUCA_LOCAL_BRIDGE_SETTINGS_SET') {
@@ -432,10 +418,6 @@
       );
       return true;
     }
-    if (type === 'BJTUCA_LOCAL_BRIDGE_DISCONNECT') {
-      void disconnect().then((value) => sendResponse({ ok: true, ...value }));
-      return true;
-    }
     return false;
   });
 
@@ -446,7 +428,8 @@
       await loadSettings();
       if (before.enabled === currentSettings.enabled
         && before.port === currentSettings.port
-        && before.token === currentSettings.token) return;
+        && before.token === currentSettings.token
+        && before.allowLan === currentSettings.allowLan) return;
       closeSocket(1000, 'Settings changed');
       await connect();
     })();
@@ -454,9 +437,7 @@
 
   global.BJTUCALocalBridge = Object.freeze({
     status: () => statusPayload(),
-    connect,
-    pair,
-    disconnect
+    connect
   });
 
   void connect();

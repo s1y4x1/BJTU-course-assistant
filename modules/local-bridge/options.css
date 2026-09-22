@@ -47,8 +47,6 @@ html[data-color-scheme="dark"] .local-bridge-input {
 }
 
 .local-bridge-port { width: 92px; }
-.local-bridge-pair-row { flex-wrap: wrap; }
-.local-bridge-pair-row > [hidden],
 .local-bridge-token-row[hidden] { display: none !important; }
 .local-bridge-token-row { flex-wrap: nowrap; }
 .local-bridge-token {
@@ -58,27 +56,16 @@ html[data-color-scheme="dark"] .local-bridge-input {
   font-family: Consolas, "Cascadia Code", monospace;
 }
 
-.local-bridge-danger,
-.local-bridge-danger:hover {
-  border-color: #dc2626 !important;
-  background: #dc2626 !important;
-  color: #fff !important;
-}
-.local-bridge-danger:hover {
-  border-color: #b91c1c !important;
-  background: #b91c1c !important;
-}
-
 .local-bridge-status { color: #64748b; font-size: var(--bjtu-font-size-auxiliary, 11px); }
 .local-bridge-status[data-state="connected"] { color: #15803d; }
 .local-bridge-status[data-state="connecting"] { color: #2563eb; }
 .local-bridge-status[data-state="disconnected"],
-.local-bridge-status[data-state="unpaired"] { color: #b45309; }
+.local-bridge-status[data-state="unconfigured"] { color: #b45309; }
 html[data-color-scheme="dark"] .local-bridge-status { color: #94a3b8; }
 html[data-color-scheme="dark"] .local-bridge-status[data-state="connected"] { color: #4ade80; }
 html[data-color-scheme="dark"] .local-bridge-status[data-state="connecting"] { color: #60a5fa; }
 html[data-color-scheme="dark"] .local-bridge-status[data-state="disconnected"],
-html[data-color-scheme="dark"] .local-bridge-status[data-state="unpaired"] { color: #fbbf24; }
+html[data-color-scheme="dark"] .local-bridge-status[data-state="unconfigured"] { color: #fbbf24; }
 
 .local-bridge-guide {
   margin-top: 6px;

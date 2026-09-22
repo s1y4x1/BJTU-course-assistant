@@ -1,6 +1,6 @@
 # 本地 Bridge 安装与使用说明
 
-本地 Bridge 将浏览器扩展已有的 `BJTUCA` 操作提供给 Codex、其他 MCP 客户端和普通本地程序。默认只监听 `127.0.0.1`，默认端口为 `1896`。操作注册表由“通义千问”模块提供，因此使用 Bridge 调用操作前必须先安装该模块。
+本地 Bridge 将浏览器扩展已有的 `BJTUCA` 操作提供给 Codex、其他 MCP 客户端和普通本地程序。默认只监听 `127.0.0.1`，默认端口为 `1896`。操作注册表由「通义千问」模块提供，因此使用 Bridge 调用操作前必须先安装该模块。
 
 ## 安装与启动
 
@@ -14,7 +14,7 @@
 
 安装脚本会直接在当前 `modules/local-bridge` 目录安装依赖并立即执行 `npm start`，不再复制 Bridge。当前 PowerShell 窗口会继续承载 Bridge；按 `Ctrl+C` 可停止。
 
-首次启动时，Bridge 会在当前目录创建 `bridge.json`。在扩展选项中启用“允许本地程序调用扩展操作”，再点击“配对”；扩展会直接读取该文件中的端口、局域网设置与 Bearer Token。
+首次启动时，Bridge 会在当前目录创建 `bridge.json`。扩展会自动读取该文件中的端口、局域网设置与 Bearer Token，并持续检测 Bridge 连接；连接成功后才可开启“允许本地程序调用扩展操作”。
 
 Bridge 已连接时，修改监听端口会同时写入 Bridge 配置并切换端口。也可以手动指定端口：
 
@@ -28,7 +28,7 @@ Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
 ## 连接 Codex
 
-配对完成后，将下面的 TOML 加入 `~/.codex/config.toml`：
+连接完成后，将下面的 TOML 加入 `~/.codex/config.toml`：
 
 ```toml
 [mcp_servers.bjtu_course_assistant]
@@ -36,7 +36,7 @@ url = "http://127.0.0.1:{{BJTU_CA_BRIDGE_PORT}}/mcp"
 bearer_token_env_var = "BJTU_CA_BRIDGE_TOKEN"
 ```
 
-再选择一种命令，将当前配对得到的 Token 写入用户环境变量。
+再选择一种命令，将当前 `bridge.json` 中的 Token 写入用户环境变量。
 
 CMD：
 
@@ -56,7 +56,7 @@ PowerShell：
 
 ## 普通 HTTP API
 
-`GET /api/v1/operation-list` 可直接访问，不需要 token。其余接口需要配对得到的 Bearer token：
+`GET /api/v1/operation-list` 可直接访问，不需要 token。其余接口需要 `bridge.json` 中的 Bearer token：
 
 ```text
 GET  /api/v1/operation-list
