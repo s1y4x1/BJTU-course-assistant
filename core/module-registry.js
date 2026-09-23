@@ -31,7 +31,7 @@
       styles: ['options.css'],
       files: [
         'recognizer.js', 'offscreen.html', 'offscreen.js', 'worker.js',
-        'options.html', 'options.js',
+        'options.html', 'options.js', 'core-loader.js',
         'vendor/tesseract.min.js', 'vendor/worker.min.js'
       ],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }

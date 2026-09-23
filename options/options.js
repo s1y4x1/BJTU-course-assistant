@@ -766,8 +766,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, updateDirectoryStartupCheckEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'updateDirectoryStartupCheckEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
   ]);
   const { xuetangxSecondCsrfToken, xuetangxSecondSessionId } = await chrome.storage.local.get([
     'xuetangxSecondCsrfToken',
@@ -911,6 +911,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     ? DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED
     : backgroundAutoUpdateEnabled === true;
   document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
+  document.getElementById('updateDirectoryStartupCheckEnabled').checked = updateDirectoryStartupCheckEnabled !== false;
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
   setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
   updateThemeModeUi(themeMode);
@@ -1577,6 +1578,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.backgroundAutoInstallOptionalEnabled) {
         applyBooleanUi('backgroundAutoInstallOptionalEnabled', changes.backgroundAutoInstallOptionalEnabled.newValue, DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED);
       }
+      if (changes.updateDirectoryStartupCheckEnabled) {
+        applyBooleanUi('updateDirectoryStartupCheckEnabled', changes.updateDirectoryStartupCheckEnabled.newValue, true);
+      }
       if (changes.backgroundAutoUpdateIntervalMinutes) {
         setScheduleIntervalEditor('backgroundAutoUpdateInterval', changes.backgroundAutoUpdateIntervalMinutes.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
       }
@@ -1966,6 +1970,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     renderBackgroundAutoUpdateStatus(enabled ? { status: 'checking' } : null);
     setMsg(enabled ? '已启用后台自动更新' : '已关闭后台自动更新');
   });
+  document.getElementById('updateDirectoryStartupCheckEnabled')?.addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ updateDirectoryStartupCheckEnabled: event.currentTarget.checked === true });
+    setMsg('已应用更改');
+  });
   document.getElementById('backgroundAutoInstallOptionalEnabled')?.addEventListener('change', async (event) => {
     const enabled = !!event.currentTarget.checked;
     await chrome.storage.local.set({ backgroundAutoInstallOptionalEnabled: enabled });
@@ -2273,6 +2281,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       homeworkBackgroundRefreshIntervalMinutes: DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES,
       homeworkNewAssignmentNotificationEnabled: false,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
+      updateDirectoryStartupCheckEnabled: true,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
       popupWidthPx: DEFAULT_POPUP_WIDTH_PX,
@@ -2339,6 +2348,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     renderHomeworkBackgroundAccounts(portalLoginContext);
     updateHomeworkBackgroundRefreshDisabled();
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
+    document.getElementById('updateDirectoryStartupCheckEnabled').checked = true;
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;
     setScheduleIntervalEditor('backgroundAutoUpdateInterval', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
     updateBackgroundAutoInstallOptionalDisabled();

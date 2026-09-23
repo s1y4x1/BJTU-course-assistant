@@ -6,25 +6,25 @@ $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  throw 'Î´ÕÒµ½ Node.js£¬ÇëÏÈ°²×° Node.js 20 »ò¸ü¸ß°æ±¾¡£'
+  throw 'æœªæ‰¾åˆ° Node.jsï¼Œè¯·å…ˆå®‰è£… Node.js 20 æˆ–æ›´é«˜ç‰ˆæœ¬ã€‚'
 }
 
 Set-Location -LiteralPath $bridgeRoot
 npm ci --ignore-scripts
 
 $commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
-$commandScriptPath = Join-Path $commandDirectory 'bjtuca-bridge.ps1'
+$commandLauncherPath = Join-Path $commandDirectory 'bjtuca-bridge.ps1'
 $commandShimPath = Join-Path $commandDirectory 'bjtuca-bridge.cmd'
 New-Item -ItemType Directory -Path $commandDirectory -Force | Out-Null
 
-$escapedBridgeRoot = $bridgeRoot.Replace("'", "''")
-$commandScript = @"
+$commandScriptPath = Join-Path $bridgeRoot 'command.ps1'
+$escapedCommandScriptPath = $commandScriptPath.Replace("'", "''")
+$launcherText = @"
 param([Parameter(ValueFromRemainingArguments=`$true)][string[]]`$BridgeArguments)
-& npm --prefix '$escapedBridgeRoot' start -- @BridgeArguments
+& '$escapedCommandScriptPath' @BridgeArguments
 exit `$LASTEXITCODE
 "@
-$utf8WithBom = [System.Text.UTF8Encoding]::new($true)
-[System.IO.File]::WriteAllText($commandScriptPath, $commandScript, $utf8WithBom)
+[System.IO.File]::WriteAllText($commandLauncherPath, $launcherText, [System.Text.UTF8Encoding]::new($true))
 [System.IO.File]::WriteAllText(
   $commandShimPath,
   "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0bjtuca-bridge.ps1`" %*`r`n",
@@ -41,9 +41,9 @@ if (-not (($env:Path -split ';') | Where-Object { $_.TrimEnd('\') -ieq $commandD
   $env:Path = "$env:Path;$commandDirectory"
 }
 
-Write-Host "Bridge ÒÑ°²×°µ½µ±Ç°Ä¿Â¼£º$bridgeRoot"
-Write-Host 'ÒÑ×¢²á bjtuca-bridge ÃüÁî£¬¿ÉÔÚÈÎÒâÄ¿Â¼Æô¶¯¡£'
-Write-Host 'Bridge ÕıÔÚÔËĞĞ£»°´ Ctrl+C ¿ÉÍ£Ö¹¡£'
+Write-Host "Bridge å·²å®‰è£…åˆ°å½“å‰ç›®å½•ï¼š$bridgeRoot"
+Write-Host 'å·²æ³¨å†Œ bjtuca-bridge å‘½ä»¤ï¼Œå¯åœ¨ä»»æ„ç›®å½•å¯åŠ¨ã€‚'
+Write-Host 'Bridge æ­£åœ¨è¿è¡Œï¼›æŒ‰ Ctrl+C å¯åœæ­¢ã€‚'
 if ($Port -eq 1896) {
   npm start
 } else {

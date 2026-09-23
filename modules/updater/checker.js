@@ -185,8 +185,11 @@ async function validateVersionUpdateDirectory(handle) {
     const manifestHandle = await handle.getFileHandle('manifest.json');
     const manifest = JSON.parse(await (await manifestHandle.getFile()).text());
     if (!manifest || typeof manifest !== 'object') throw new Error('manifest.json 格式无效');
+    if (manifest.name !== chrome.runtime.getManifest().name) {
+      throw new Error('所选目录不是 BJTU 课程助手的安装目录');
+    }
   } catch (error) {
-    if (String(error?.message || '').includes('manifest.json')) throw error;
+    if (/manifest\.json|不是 BJTU 课程助手/.test(String(error?.message || ''))) throw error;
     throw new Error('所选目录中未找到有效的 manifest.json');
   }
   return handle;
@@ -391,6 +394,76 @@ function initializeVersionReinstallCommand() {
     'powershell'
   );
   globalThis.BjtuMarkdown.bindCopy(container);
+}
+
+async function verifyVersionDirectoryWriteAccess(handle) {
+  await validateVersionUpdateDirectory(handle);
+  const updaterDirectory = await (await handle.getDirectoryHandle('modules')).getDirectoryHandle('updater');
+  const marker = await updaterDirectory.getFileHandle('directory-permission.json', { create: true });
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const content = JSON.stringify({ format: 'bjtu-ca-directory-permission', attempt, checkedAt: Date.now() });
+    const writer = await marker.createWritable();
+    await writer.write(content);
+    await writer.close();
+    const readBack = await (await marker.getFile()).text();
+    if (readBack !== content) throw new Error(`第 ${attempt} 次写入后读取不一致`);
+  }
+  return true;
+}
+
+async function setupVersionDirectoryPermissionCheck() {
+  const stored = await chrome.storage.local.get('updateDirectoryStartupCheckEnabled');
+  if (stored.updateDirectoryStartupCheckEnabled === false) return;
+  const modal = document.getElementById('version-directory-permission-modal');
+  const message = document.getElementById('version-directory-permission-message');
+  const choose = document.getElementById('version-directory-permission-choose');
+  if (!(modal instanceof HTMLElement) || !(choose instanceof HTMLButtonElement)) return;
+  const handle = await readVersionUpdateDirectoryHandle();
+  let savedHandle = handle;
+  if (handle) {
+    try {
+      await verifyVersionDirectoryWriteAccess(handle);
+      return;
+    } catch {
+      if (typeof handle.queryPermission === 'function'
+          && await handle.queryPermission({ mode: 'readwrite' }).catch(() => null) === 'granted') {
+        savedHandle = null;
+      }
+    }
+  }
+  modal.classList.add('show');
+  choose.addEventListener('click', async () => {
+    choose.disabled = true;
+    try {
+      let selected = savedHandle;
+      if (selected) {
+        try {
+          const permission = await selected.requestPermission({ mode: 'readwrite' });
+          if (permission !== 'granted') selected = null;
+        } catch {
+          selected = null;
+        }
+      }
+      if (!selected) {
+        if (!window.showDirectoryPicker) throw new Error('当前浏览器不支持选择目录');
+        selected = await window.showDirectoryPicker({ id: 'bjtu-update-dir', mode: 'readwrite' });
+      }
+      await verifyVersionDirectoryWriteAccess(selected);
+      await storeVersionUpdateDirectoryHandle(selected);
+      modal.classList.remove('show');
+      showToast('扩展安装目录写入权限验证通过', 'success');
+    } catch (error) {
+      savedHandle = null;
+      if (error?.name !== 'AbortError') {
+        message.textContent = `目录验证未通过：${String(error?.message || error)}。请重新选择扩展安装目录并允许写入。`;
+      }
+    } finally {
+      choose.disabled = false;
+    }
+  });
+  document.getElementById('version-directory-permission-later')?.addEventListener('click', () => {
+    modal.classList.remove('show');
+  });
 }
 
 function normalizeVersionMarkdownUrl(rawUrl, allowedProtocols) {
@@ -3134,6 +3207,9 @@ async function loadVersionInfo(releaseOverride = null) {
 // -- 注册版本按钮点击事件 --
 
 function setupVersionButton() {
+  void setupVersionDirectoryPermissionCheck().catch((error) => {
+    console.warn('[bjtu] updater directory permission check failed:', error);
+  });
   initializeVersionReinstallCommand();
   chrome.storage.local.get(VERSION_BACKGROUND_UPDATE_STATUS_KEY).then((stored) => {
     const status = stored?.[VERSION_BACKGROUND_UPDATE_STATUS_KEY];

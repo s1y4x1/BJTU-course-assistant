@@ -88,6 +88,7 @@
     box-sizing: border-box;
 }
 .version-download-modal { z-index: 10021; }
+.version-modal-mask#version-directory-permission-modal { z-index: 10025; }
 .version-notice-modal { z-index: 10022; }
 .version-uninstall-modal { z-index: 10031; }
 .version-notice-modal .version-modal-card {

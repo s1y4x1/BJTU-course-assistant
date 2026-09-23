@@ -34,11 +34,7 @@ npm --prefix "扩展目录\modules\local-bridge" start
 bjtuca-bridge
 ```
 
-也可以传入启动参数，例如：
-
-```powershell
-bjtuca-bridge --port=1000
-```
+可运行 `bjtuca-bridge --help` 查看全部参数：`start`（默认）、`--port=1000`（端口）、`--show-token`（显示 Token）、`uninstall`（卸载注册命令）。卸载只删除命令入口和用户 PATH 项，保留 Bridge 文件、依赖和 `bridge.json`。仅手动删除 `%LOCALAPPDATA%\BJTUCourseAssistant\bin` 会遗留 PATH 项。
 
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 

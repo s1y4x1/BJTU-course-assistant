@@ -14,7 +14,6 @@
   const modelAbortControllers = new Map();
   const modelProgress = new Map();
   const modelStateMessages = new Map();
-  let extensionReloadStarted = false;
   let captchaRuntimeReloadRequired = false;
 
   async function getCaptchaRuntimeState() {
@@ -28,34 +27,15 @@
     };
   }
 
-  async function reloadExtensionAndOpenApp() {
-    if (extensionReloadStarted) return;
-    extensionReloadStarted = true;
-    setMessage('OCR 核心已写入，正在重新加载扩展…');
-    const params = new URLSearchParams(location.search);
-    const isPopupWindow = params.get('popupWindow') === '1';
-    const currentTab = await chrome.tabs.getCurrent().catch(() => null);
-    const response = await chrome.runtime.sendMessage({
-      type: 'RELOAD_EXTENSION_AND_OPEN_APP',
-      payload: {
-        reopenApp: true,
-        source: 'captcha-options',
-        sourceTabId: Number(currentTab?.id) || null,
-        popup: params.get('popup') === '1'
-      }
-    }).catch(() => null);
-    if (response?.ok) {
-      if (isPopupWindow) setTimeout(() => window.close(), 50);
-      return;
+  async function activateCoreInCurrentRuntime() {
+    if (!global.BjtuCaptchaCoreLoader && global.BjtuModuleRegistry?.loadScript) {
+      await global.BjtuModuleRegistry.loadScript('modules/captcha/core-loader.js');
     }
-    try {
-      const suffix = params.get('popup') === '1' ? '?popup=1' : '';
-      location.replace(chrome.runtime.getURL(`app/app.html${suffix}`));
-      chrome.runtime.reload();
-    } catch {
-      const suffix = params.get('popup') === '1' ? '?popup=1' : '';
-      location.replace(chrome.runtime.getURL(`app/app.html${suffix}`));
-    }
+    const ready = await global.BjtuCaptchaCoreLoader?.activate(global.BjtuCaptchaAssets);
+    coreReloadRequired = !ready;
+    if (ready) showCoreReadyStatus();
+    else setCoreStatus('已下载，但当前运行时尚不能使用 OCR 核心或识别器', true);
+    return ready;
   }
 
   async function refreshOrReturnToApp() {
@@ -354,7 +334,7 @@
 
   function showCoreReadyStatus() {
     setCoreStatus(coreReloadRequired
-      ? '已安装，重新加载后生效'
+      ? '已下载，正在检查当前运行时…'
       : '已就绪');
     setCoreProgress({ visible: false });
   }
@@ -391,12 +371,10 @@
       && (runtimeReady || directoryReady);
     coreReady = runtimeReady || directoryReady;
     coreReloadRequired = (!runtimeReady && directoryReady) || staleCaptchaRuntime;
-    if (runtimeReady) {
+    if (runtimeReady && !coreReloadRequired) {
       showCoreReadyStatus();
-      if (coreReloadRequired) setTimeout(() => void reloadExtensionAndOpenApp(), 0);
-    } else if (directoryReady) {
-      showCoreReadyStatus();
-      setTimeout(() => void reloadExtensionAndOpenApp(), 0);
+    } else if (coreReady) {
+      await activateCoreInCurrentRuntime();
     } else {
       setCoreStatus('未安装', true);
     }
@@ -654,9 +632,10 @@
             : `验证码识别模型 ${modelLabel(version)} 及 OCR 核心均已就绪`);
         }
       }
-      if (coreReloadRequired || coreResult.reloadRequired === true) {
-        await reloadExtensionAndOpenApp();
-      } else if (result.downloaded || coreResult.written > 0) {
+      if (coreReloadRequired || coreResult.reloadRequired === true || coreResult.written > 0) {
+        if (!await activateCoreInCurrentRuntime()) return false;
+      }
+      if (result.downloaded || coreResult.written > 0) {
         await refreshOrReturnToApp();
       } else if (isCaptchaOptionsPopupWindow()) {
         window.close();
