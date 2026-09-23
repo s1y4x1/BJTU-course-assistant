@@ -1,4 +1,5 @@
 import http from 'node:http';
+import readline from 'node:readline';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, watch } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -32,6 +33,7 @@ let activePort = config.port;
 let activeAllowLan = config.allowLan === true;
 let restartPromise = null;
 let requestedListenerRestart = null;
+let terminal = null;
 const pendingExtensionCalls = new Map();
 const transports = new Map();
 const localFileRelays = new Map();
@@ -80,10 +82,26 @@ function sendExtensionRequest(action, payload = {}) {
   if (!extensionConnected()) {
     throw Object.assign(new Error('浏览器扩展尚未连接本地 Bridge'), { code: 'EXTENSION_OFFLINE' });
   }
+  const operationName = action === 'call'
+    ? String(payload?.name || '').trim()
+    : action === 'operationList' ? 'qwen.operationList'
+      : action === 'getDocs' ? 'qwen.getDocs' : '';
+  if (operationName) process.stdout.write(`[Bridge] 调用 ${operationName}\n`);
   const id = randomUUID();
   return new Promise((resolve, reject) => {
     pendingExtensionCalls.set(id, { resolve, reject });
     extensionSocket.send(JSON.stringify({ type: 'request', id, action, payload }));
+  }).then((value) => {
+    if (operationName) {
+      const result = action === 'call' && value?.ok === true ? value.result : value;
+      process.stdout.write(`[Bridge] ${operationName} 返回：\n${jsonText(result)}\n`);
+    }
+    return value;
+  }, (error) => {
+    if (operationName) {
+      process.stderr.write(`[Bridge] ${operationName} 失败：${String(error?.message || error)}\n`);
+    }
+    throw error;
   });
 }
 
@@ -119,6 +137,55 @@ async function prepareOperationArguments(name, value) {
   };
   delete prepared.filePath;
   return prepared;
+}
+
+async function callOperation(name, args) {
+  return sendExtensionRequest('call', {
+    name,
+    arguments: await prepareOperationArguments(name, args)
+  });
+}
+
+function parseTerminalOperation(line) {
+  const match = /^([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*)([\s\S]*)$/.exec(line.trim());
+  if (!match) throw new Error('请输入「模块.操作名」或「模块.操作名 {JSON 参数}」');
+  let rawArgs = match[2].trim();
+  if (rawArgs.startsWith('(') && rawArgs.endsWith(')')) rawArgs = rawArgs.slice(1, -1).trim();
+  let args = {};
+  if (rawArgs) {
+    try { args = JSON.parse(rawArgs); }
+    catch { throw new Error('参数必须是合法的 JSON 对象；字符串和键名均需使用双引号'); }
+  }
+  return { name: match[1], args: operationArguments(args) };
+}
+
+function startTerminal() {
+  if (terminal || !process.stdin.isTTY) return;
+  terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
+  terminal.setPrompt('bjtuca> ');
+  process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，Ctrl+C 退出。\n');
+  terminal.on('line', async (input) => {
+    terminal.pause();
+    const line = input.trim();
+    try {
+      if (line === 'help') {
+        process.stdout.write('示例：ve.courseList\n      ve.assignments {"status":"pending"}\n      ve.uploadFile {"filePath":"C:\\\\path\\\\file.pdf"}\n也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
+      } else if (line === 'exit' || line === 'quit') {
+        await shutdown();
+        process.exit(0);
+      } else if (line) {
+        const { name, args } = parseTerminalOperation(line);
+        await callOperation(name, args);
+      }
+    } catch (error) {
+      process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
+    } finally {
+      terminal.resume();
+      terminal.prompt();
+    }
+  });
+  terminal.on('SIGINT', () => void shutdown().finally(() => process.exit(0)));
+  terminal.prompt();
 }
 
 function rejectPendingExtensionCalls(message = '浏览器扩展连接已断开') {
@@ -215,10 +282,7 @@ function createMcpServer() {
     }
   }, async ({ name, arguments: args }) => {
     try {
-      const response = await sendExtensionRequest('call', {
-        name,
-        arguments: await prepareOperationArguments(name, args)
-      });
+      const response = await callOperation(name, args);
       return response?.ok === false
         ? mcpError(Object.assign(new Error(response.error), { code: response.code }))
         : mcpResult(response?.result);
@@ -294,10 +358,7 @@ app.post('/api/v1/get-docs', async (req, res) => {
 app.post('/api/v1/call', async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
-    const response = await sendExtensionRequest('call', {
-      name,
-      arguments: await prepareOperationArguments(name, req.body?.arguments)
-    });
+    const response = await callOperation(name, req.body?.arguments);
     if (response?.ok === false) {
       res.status(400).json({
         ok: false,
@@ -362,6 +423,8 @@ wsServer.on('connection', (socket) => {
         }
       };
       socket.send(JSON.stringify({ type: 'ready', port: activePort }));
+      process.stdout.write(`浏览器扩展已连接（版本 ${extensionInfo.publicInfo.version || '未知'}）。\n`);
+      startTerminal();
       return;
     }
     if (message?.type === 'pong') return;
@@ -380,6 +443,7 @@ wsServer.on('connection', (socket) => {
     if (extensionSocket !== socket) return;
     extensionSocket = null;
     extensionInfo = null;
+    process.stdout.write('浏览器扩展已断开连接。\n');
     rejectPendingExtensionCalls();
   });
 });

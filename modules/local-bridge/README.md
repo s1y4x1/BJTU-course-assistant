@@ -38,6 +38,16 @@ bjtuca-bridge
 
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
+浏览器扩展连接成功后，Bridge 会在启动窗口显示 `bjtuca>` 提示符。可直接输入操作名，或在后面附上单行 JSON 对象参数：
+
+```text
+ve.courseList
+ve.assignments {"status":"pending"}
+ve.courseList({})
+```
+
+本地文件上传可传 `{"filePath":"C:\\path\\file.pdf"}`。命令行只解析操作名和 JSON，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。通过命令行、HTTP 或 MCP 发起的操作及完整返回结果都会打印在 Bridge 窗口。输入 `help` 查看示例，输入 `exit` 或按 `Ctrl+C` 停止 Bridge。
+
 如需从同一局域网内的其他设备访问，可在扩展选项中开启“允许局域网访问”，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带 `bridge.json` 中的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。
 
 ## 连接 Codex
