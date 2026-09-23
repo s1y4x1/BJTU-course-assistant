@@ -4,9 +4,6 @@
 
   const DEFAULT_PORT = 1896;
   const DEFAULT_RETRY_INTERVAL_MS = 500;
-  const FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
-  const FS_STORE_NAME = 'handles';
-  const FS_DIRECTORY_KEY = 'update-directory';
   const BRIDGE_CONFIG_PATH = 'modules/local-bridge/bridge.json';
   const RECONNECT_ALARM = 'bjtu-local-bridge-reconnect';
   const STORAGE_KEYS = Object.freeze({
@@ -379,31 +376,11 @@
     return config;
   }
 
-  function openUpdateFileSystemDatabase() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(FS_DB_NAME, 1);
-      request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(FS_STORE_NAME)) {
-          request.result.createObjectStore(FS_STORE_NAME);
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error('无法打开扩展目录数据库'));
-    });
-  }
-
   async function readExtensionDirectoryHandle() {
-    const db = await openUpdateFileSystemDatabase();
-    try {
-      return await new Promise((resolve, reject) => {
-        const transaction = db.transaction(FS_STORE_NAME, 'readonly');
-        const request = transaction.objectStore(FS_STORE_NAME).get(FS_DIRECTORY_KEY);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error || new Error('无法读取扩展目录'));
-      });
-    } finally {
-      db.close();
+    if (!global.BjtuUpdateFileSystem?.readDirectoryHandle) {
+      throw new Error('更新组件未安装，无法读取扩展安装目录');
     }
+    return global.BjtuUpdateFileSystem.readDirectoryHandle();
   }
 
   async function writeBridgeConfig(patch) {

@@ -16,9 +16,6 @@
   const SOURCE_URLS = [
     'https://s1y4x1.github.io/release.json'
   ];
-  const FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
-  const FS_STORE_NAME = 'handles';
-  const FS_DIRECTORY_KEY = 'update-directory';
   const APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
   const PENDING_RELOAD_KEY = 'pendingUpdateReload';
   const RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
@@ -290,46 +287,12 @@
     ));
   }
 
-  function openFileSystemDatabase() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(FS_DB_NAME, 1);
-      request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(FS_STORE_NAME)) {
-          request.result.createObjectStore(FS_STORE_NAME);
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error('无法打开更新目录数据库'));
-    });
-  }
-
   async function readDirectoryHandle() {
-    const db = await openFileSystemDatabase();
-    try {
-      return await new Promise((resolve, reject) => {
-        const transaction = db.transaction(FS_STORE_NAME, 'readonly');
-        const request = transaction.objectStore(FS_STORE_NAME).get(FS_DIRECTORY_KEY);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error || new Error('无法读取更新目录'));
-      });
-    } finally {
-      db.close();
-    }
+    return globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
   }
 
   async function clearStoredDirectoryHandle() {
-    const db = await openFileSystemDatabase();
-    try {
-      await new Promise((resolve, reject) => {
-        const transaction = db.transaction(FS_STORE_NAME, 'readwrite');
-        transaction.objectStore(FS_STORE_NAME).delete(FS_DIRECTORY_KEY);
-        transaction.oncomplete = resolve;
-        transaction.onerror = () => reject(transaction.error || new Error('无法清除已失效的更新目录'));
-        transaction.onabort = () => reject(transaction.error || new Error('清除已失效的更新目录已中止'));
-      });
-    } finally {
-      db.close();
-    }
+    await globalThis.BjtuUpdateFileSystem.storeDirectoryHandle(null);
   }
 
   async function validateDirectory(handle) {

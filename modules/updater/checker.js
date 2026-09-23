@@ -70,9 +70,6 @@ const VERSION_FOREGROUND_SESSION_ID = crypto.randomUUID();
 const VERSION_AUTO_RELOAD_HANDOFF_KEY = 'versionAutoReloadHandoff';
 const VERSION_AUTO_RELOAD_COMPLETED_KEY = 'versionAutoReloadCompleted';
 const VERSION_FULLSCREEN_REQUEST_KEY = 'fullscreenUpdateRequest';
-const VERSION_FS_DB_NAME = 'bjtu-course-assistant-update-filesystem';
-const VERSION_FS_DB_STORE = 'handles';
-const VERSION_FS_DIRECTORY_KEY = 'update-directory';
 const VERSION_MODULE_SELECTION_KEY = 'updateModuleSelection';
 const VERSION_MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
 const VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
@@ -113,32 +110,12 @@ const VERSION_UPDATE_FILE_STATE = Object.freeze({
   failed: { symbol: '×', label: '覆盖失败' }
 });
 
-function openVersionFileSystemDatabase() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(VERSION_FS_DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(VERSION_FS_DB_STORE)) db.createObjectStore(VERSION_FS_DB_STORE);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('无法打开更新目录数据库'));
-  });
-}
-
 async function readVersionUpdateDirectoryHandle() {
   if (versionUpdateDirectoryHandleLoaded) return versionUpdateDirectoryHandle;
   if (versionUpdateDirectoryHandleLoadPromise) return versionUpdateDirectoryHandleLoadPromise;
   versionUpdateDirectoryHandleLoadPromise = (async () => {
     try {
-      const db = await openVersionFileSystemDatabase();
-      versionUpdateDirectoryHandle = await new Promise((resolve, reject) => {
-        const transaction = db.transaction(VERSION_FS_DB_STORE, 'readonly');
-        const request = transaction.objectStore(VERSION_FS_DB_STORE).get(VERSION_FS_DIRECTORY_KEY);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error || new Error('无法读取更新目录'));
-        transaction.oncomplete = () => db.close();
-        transaction.onabort = () => db.close();
-      });
+      versionUpdateDirectoryHandle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
     } catch {
       versionUpdateDirectoryHandle = null;
     } finally {
@@ -151,17 +128,7 @@ async function readVersionUpdateDirectoryHandle() {
 }
 
 async function storeVersionUpdateDirectoryHandle(handle) {
-  const db = await openVersionFileSystemDatabase();
-  await new Promise((resolve, reject) => {
-    const transaction = db.transaction(VERSION_FS_DB_STORE, 'readwrite');
-    const store = transaction.objectStore(VERSION_FS_DB_STORE);
-    if (handle) store.put(handle, VERSION_FS_DIRECTORY_KEY);
-    else store.delete(VERSION_FS_DIRECTORY_KEY);
-    transaction.oncomplete = resolve;
-    transaction.onerror = () => reject(transaction.error || new Error('无法保存更新目录'));
-    transaction.onabort = () => reject(transaction.error || new Error('保存更新目录已中止'));
-  });
-  db.close();
+  await globalThis.BjtuUpdateFileSystem.storeDirectoryHandle(handle);
   versionUpdateDirectoryHandle = handle || null;
   versionUpdateDirectoryHandleLoaded = true;
 }
@@ -400,13 +367,28 @@ async function verifyVersionDirectoryWriteAccess(handle) {
   await validateVersionUpdateDirectory(handle);
   const updaterDirectory = await (await handle.getDirectoryHandle('modules')).getDirectoryHandle('updater');
   const marker = await updaterDirectory.getFileHandle('directory-permission.json', { create: true });
+  const probeId = crypto.randomUUID();
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const content = JSON.stringify({ format: 'bjtu-ca-directory-permission', attempt, checkedAt: Date.now() });
+    const content = JSON.stringify({ format: 'bjtu-ca-directory-permission', probeId, attempt, checkedAt: Date.now() });
     const writer = await marker.createWritable();
     await writer.write(content);
     await writer.close();
     const readBack = await (await marker.getFile()).text();
     if (readBack !== content) throw new Error(`第 ${attempt} 次写入后读取不一致`);
+    let runtimeMatches = false;
+    for (let retry = 0; retry < 5; retry += 1) {
+      const runtimeUrl = new URL(chrome.runtime.getURL('modules/updater/directory-permission.json'));
+      runtimeUrl.searchParams.set('probe', `${probeId}-${attempt}-${retry}`);
+      const response = await fetch(runtimeUrl, { cache: 'no-store' }).catch(() => null);
+      if (response?.ok && await response.text() === content) {
+        runtimeMatches = true;
+        break;
+      }
+      if (retry < 4) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!runtimeMatches) {
+      throw new Error('所选目录的测试文件与当前扩展运行时读取到的内容不一致，请选择当前扩展的安装目录');
+    }
   }
   return true;
 }

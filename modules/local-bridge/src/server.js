@@ -82,25 +82,21 @@ function sendExtensionRequest(action, payload = {}) {
   if (!extensionConnected()) {
     throw Object.assign(new Error('浏览器扩展尚未连接本地 Bridge'), { code: 'EXTENSION_OFFLINE' });
   }
-  const operationName = action === 'call'
-    ? String(payload?.name || '').trim()
-    : action === 'operationList' ? 'qwen.operationList'
-      : action === 'getDocs' ? 'qwen.getDocs' : '';
-  if (operationName) process.stdout.write(`[Bridge] 调用 ${operationName}\n`);
   const id = randomUUID();
   return new Promise((resolve, reject) => {
     pendingExtensionCalls.set(id, { resolve, reject });
     extensionSocket.send(JSON.stringify({ type: 'request', id, action, payload }));
   }).then((value) => {
-    if (operationName) {
-      const result = action === 'call' && value?.ok === true ? value.result : value;
-      process.stdout.write(`[Bridge] ${operationName} 返回：\n${jsonText(result)}\n`);
-    }
+    const result = action === 'call' && value?.ok === true ? value.result : value;
+    process.stdout.write(`${jsonText(result)}\n`);
     return value;
   }, (error) => {
-    if (operationName) {
-      process.stderr.write(`[Bridge] ${operationName} 失败：${String(error?.message || error)}\n`);
-    }
+    process.stderr.write(`${jsonText({
+      ok: false,
+      code: String(error?.code || 'BRIDGE_ERROR'),
+      error: String(error?.message || error)
+    })}\n`);
+    if (error && typeof error === 'object') error.bridgeLogged = true;
     throw error;
   });
 }
@@ -178,7 +174,7 @@ function startTerminal() {
         await callOperation(name, args);
       }
     } catch (error) {
-      process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
+      if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
     } finally {
       terminal.resume();
       terminal.prompt();
