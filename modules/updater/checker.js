@@ -412,26 +412,43 @@ async function verifyVersionDirectoryWriteAccess(handle) {
 }
 
 async function setupVersionDirectoryPermissionCheck() {
-  const stored = await chrome.storage.local.get('updateDirectoryStartupCheckEnabled');
-  if (stored.updateDirectoryStartupCheckEnabled === false) return;
   const modal = document.getElementById('version-directory-permission-modal');
   const message = document.getElementById('version-directory-permission-message');
   const choose = document.getElementById('version-directory-permission-choose');
   if (!(modal instanceof HTMLElement) || !(choose instanceof HTMLButtonElement)) return;
-  const handle = await readVersionUpdateDirectoryHandle();
-  let savedHandle = handle;
-  if (handle) {
+  let savedHandle = await readVersionUpdateDirectoryHandle();
+  let dismissed = false;
+  let checking = false;
+
+  const audit = async () => {
+    if (checking || choose.disabled) return;
+    checking = true;
     try {
-      await verifyVersionDirectoryWriteAccess(handle);
-      return;
-    } catch {
-      if (typeof handle.queryPermission === 'function'
-          && await handle.queryPermission({ mode: 'readwrite' }).catch(() => null) === 'granted') {
-        savedHandle = null;
+      const stored = await chrome.storage.local.get('updateDirectoryStartupCheckEnabled');
+      if (stored.updateDirectoryStartupCheckEnabled === false) {
+        modal.classList.remove('show');
+        return;
       }
+      const handle = await readVersionUpdateDirectoryHandle();
+      if (handle) {
+        try {
+          await verifyVersionDirectoryWriteAccess(handle);
+          savedHandle = handle;
+          modal.classList.remove('show');
+          return;
+        } catch {
+          if (typeof handle.queryPermission === 'function'
+              && await handle.queryPermission({ mode: 'readwrite' }).catch(() => null) === 'granted') {
+            savedHandle = null;
+          }
+        }
+      }
+      if (!dismissed) modal.classList.add('show');
+    } finally {
+      checking = false;
     }
-  }
-  modal.classList.add('show');
+  };
+
   choose.addEventListener('click', async () => {
     choose.disabled = true;
     try {
@@ -450,6 +467,8 @@ async function setupVersionDirectoryPermissionCheck() {
       }
       await verifyVersionDirectoryWriteAccess(selected);
       await storeVersionUpdateDirectoryHandle(selected);
+      savedHandle = selected;
+      dismissed = false;
       modal.classList.remove('show');
       showToast('扩展安装目录写入权限验证通过', 'success');
     } catch (error) {
@@ -462,8 +481,13 @@ async function setupVersionDirectoryPermissionCheck() {
     }
   });
   document.getElementById('version-directory-permission-later')?.addEventListener('click', () => {
+    dismissed = true;
     modal.classList.remove('show');
   });
+  await audit();
+  setInterval(() => void audit().catch((error) => {
+    console.warn('[bjtu] updater directory permission audit failed:', error);
+  }), 30000);
 }
 
 function normalizeVersionMarkdownUrl(rawUrl, allowedProtocols) {
