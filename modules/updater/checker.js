@@ -484,6 +484,11 @@ async function setupVersionDirectoryPermissionCheck() {
     dismissed = true;
     modal.classList.remove('show');
   });
+  document.getElementById('version-directory-permission-never')?.addEventListener('click', async () => {
+    await chrome.storage.local.set({ updateDirectoryStartupCheckEnabled: false });
+    dismissed = true;
+    modal.classList.remove('show');
+  });
   await audit();
   setInterval(() => void audit().catch((error) => {
     console.warn('[bjtu] updater directory permission audit failed:', error);

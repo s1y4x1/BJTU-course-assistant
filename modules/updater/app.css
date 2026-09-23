@@ -89,6 +89,12 @@
 }
 .version-download-modal { z-index: 10021; }
 .version-modal-mask#version-directory-permission-modal { z-index: 10025; }
+.version-modal-mask#version-directory-permission-modal.show { display: flex; }
+#version-directory-permission-modal .version-download-actions { display: flex; }
+#version-directory-permission-later { background: #6b7280; }
+#version-directory-permission-later:hover { background: #4b5563; }
+#version-directory-permission-never { background: #dc2626; }
+#version-directory-permission-never:hover { background: #b91c1c; }
 .version-notice-modal { z-index: 10022; }
 .version-uninstall-modal { z-index: 10031; }
 .version-notice-modal .version-modal-card {

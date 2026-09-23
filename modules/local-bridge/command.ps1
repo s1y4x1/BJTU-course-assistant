@@ -3,27 +3,28 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$BridgeArguments
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
+if ($BridgeArguments.Count -eq 1 -and $BridgeArguments[0] -eq '') { $BridgeArguments = @() }
 $action = if ($BridgeArguments.Count) { $BridgeArguments[0] } else { 'start' }
 
 switch ($action) {
   { $_ -in @('help', '--help', '-h', '-?', '/?') } {
     Write-Output @'
-ç”¨æ³•ï¼šbjtuca-bridge [start] [--port=ç«¯å£]
+ÓÃ·¨£ºbjtuca-bridge [start] [--port=¶Ë¿Ú]
       bjtuca-bridge --show-token
       bjtuca-bridge uninstall
       bjtuca-bridge --help
 
-start          å¯åŠ¨æœ¬åœ° Bridgeï¼ˆé»˜è®¤æ“ä½œï¼Œç«¯å£è¯»å– bridge.jsonï¼Œåˆå§‹ä¸º 1896ï¼‰
---port=N       æœ¬æ¬¡å¯åŠ¨ä½¿ç”¨ç«¯å£ Nï¼ˆ1 è‡³ 65535ï¼‰ï¼Œå¹¶å†™å› bridge.json
---show-token   æ˜¾ç¤º bridge.json ä¸­çš„ Bearer Tokenï¼Œä¸å¯åŠ¨æœåŠ¡
-uninstall      åˆ é™¤æ³¨å†Œçš„å‘½ä»¤å¹¶ä»ç”¨æˆ· PATH ç§»é™¤å‘½ä»¤ç›®å½•ï¼›ä¿ç•™ Bridge æœ¬èº«åŠé…ç½®
+start          Æô¶¯±¾µØ Bridge£¨Ä¬ÈÏ²Ù×÷£¬¶Ë¿Ú¶ÁÈ¡ bridge.json£¬³õÊ¼Îª 1896£©
+--port=N       ±¾´ÎÆô¶¯Ê¹ÓÃ¶Ë¿Ú N£¨1 ÖÁ 65535£©£¬²¢Ğ´»Ø bridge.json
+--show-token   ÏÔÊ¾ bridge.json ÖĞµÄ Bearer Token£¬²»Æô¶¯·şÎñ
+uninstall      É¾³ı×¢²áµÄÃüÁî²¢´ÓÓÃ»§ PATH ÒÆ³ıÃüÁîÄ¿Â¼£»±£Áô Bridge ±¾Éí¼°ÅäÖÃ
 '@
     return
   }
   'uninstall' {
     $expectedDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'))
     $actualDirectory = [System.IO.Path]::GetFullPath($commandDirectory)
-    if ($actualDirectory -ine $expectedDirectory) { throw 'å‘½ä»¤ç›®å½•æ ¡éªŒå¤±è´¥' }
+    if ($actualDirectory -ine $expectedDirectory) { throw 'ÃüÁîÄ¿Â¼Ğ£ÑéÊ§°Ü' }
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $remaining = @($userPath -split ';' | Where-Object {
       $_.Trim() -and ([System.IO.Path]::GetFullPath($_.Trim()).TrimEnd('\') -ine $actualDirectory.TrimEnd('\'))
@@ -36,23 +37,31 @@ uninstall      åˆ é™¤æ³¨å†Œçš„å‘½ä»¤å¹¶ä»ç”¨æˆ· PATH ç§»é™¤å‘½ä»¤ç›®å½•ï¼›ä¿ç•
     if ((Test-Path -LiteralPath $actualDirectory -PathType Container) -and -not (Get-ChildItem -LiteralPath $actualDirectory -Force | Select-Object -First 1)) {
       Remove-Item -LiteralPath $actualDirectory
     }
-    Write-Output 'bjtuca-bridge å‘½ä»¤å·²å¸è½½ï¼›Bridge æ–‡ä»¶å’Œ bridge.json å·²ä¿ç•™ã€‚'
+    Write-Output 'bjtuca-bridge ÃüÁîÒÑĞ¶ÔØ£»Bridge ÎÄ¼şºÍ bridge.json ÒÑ±£Áô¡£'
     return
   }
-  'start' { $startArguments = @($BridgeArguments | Select-Object -Skip 1) }
+  'start' {
+    $startArguments = if ($BridgeArguments.Count -gt 1) {
+      @($BridgeArguments[1..($BridgeArguments.Count - 1)])
+    } else { @() }
+  }
   default { $startArguments = @($BridgeArguments) }
 }
 
 foreach ($argument in $startArguments) {
   if ($argument -notmatch '^--port=([0-9]+)$' -and $argument -ne '--show-token') {
-    throw "ä¸æ”¯æŒçš„å‚æ•°ï¼š$argumentã€‚è¿è¡Œ bjtuca-bridge --help æŸ¥çœ‹ç”¨æ³•ã€‚"
+    throw "²»Ö§³ÖµÄ²ÎÊı£º$argument¡£ÔËĞĞ bjtuca-bridge --help ²é¿´ÓÃ·¨¡£"
   }
   if ($argument -match '^--port=([0-9]+)$' -and ([int64]$Matches[1] -lt 1 -or [int64]$Matches[1] -gt 65535)) {
-    throw 'ç«¯å£å¿…é¡»æ˜¯ 1 è‡³ 65535 çš„æ•´æ•°'
+    throw '¶Ë¿Ú±ØĞëÊÇ 1 ÖÁ 65535 µÄÕûÊı'
   }
 }
 if ($startArguments -contains '--show-token' -and $startArguments.Count -ne 1) {
-  throw '--show-token ä¸èƒ½ä¸å…¶ä»–å‚æ•°ä¸€èµ·ä½¿ç”¨'
+  throw '--show-token ²»ÄÜÓëÆäËû²ÎÊıÒ»ÆğÊ¹ÓÃ'
 }
-& npm --prefix $bridgeRoot start -- @startArguments
+if ($startArguments.Count) {
+  & npm --prefix $bridgeRoot start -- @startArguments
+} else {
+  & npm --prefix $bridgeRoot start
+}
 exit $LASTEXITCODE
