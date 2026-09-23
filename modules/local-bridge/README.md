@@ -38,7 +38,7 @@ bjtuca-bridge
 
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
-浏览器扩展连接成功后，Bridge 会在启动窗口显示 `bjtuca>` 提示符。可直接输入操作名，或在后面附上单行 JSON 对象参数：
+浏览器扩展连接成功后，Bridge 会在启动窗口显示紫红色的 `BJTUCA>` 提示符（不支持颜色的终端显示普通文本）。可直接输入操作名，或在后面附上单行 JSON 对象参数：
 
 ```text
 ve.courseList

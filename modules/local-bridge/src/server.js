@@ -158,7 +158,9 @@ function parseTerminalOperation(line) {
 function startTerminal() {
   if (terminal || !process.stdin.isTTY) return;
   terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
-  terminal.setPrompt('bjtuca> ');
+  const colorEnabled = !('NO_COLOR' in process.env) && process.stdout.hasColors?.(2);
+  const promptColor = process.stdout.hasColors?.(1 << 24) ? '\x1b[38;2;190;35;112m' : '\x1b[35m';
+  terminal.setPrompt(colorEnabled ? `${promptColor}BJTUCA>\x1b[0m ` : 'BJTUCA> ');
   process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，Ctrl+C 退出。\n');
   terminal.on('line', async (input) => {
     terminal.pause();
