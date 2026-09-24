@@ -680,6 +680,7 @@ window.saveUploadedFilesEnabled = true;
 window.autoLoadCourseResourcesEnabled = false;
 window.yktActivityTypes = [14, 15, 5, 9];
 window.homeworkDetailCollapsedLines = 3;
+window.collapseHomeworkDetailsDownward = true;
 window.replayDetailCollapsedLines = 3;
 window.jlgjDarkModeEnabled = true;
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
@@ -831,6 +832,7 @@ function disablePlatformAfterLoginFailure(platform) {
 const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
 const YKT_ACTIVITY_TYPES_KEY = 'yktActivityTypes';
 const HOMEWORK_DETAIL_COLLAPSED_LINES_KEY = 'homeworkDetailCollapsedLines';
+const COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY = 'collapseHomeworkDetailsDownward';
 const REPLAY_DETAIL_COLLAPSED_LINES_KEY = 'replayDetailCollapsedLines';
 const JLGJ_DARK_MODE_KEY = 'jlgjDarkModeEnabled';
 const AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY = 'autoLoadCourseResourcesDefaultOffState';
@@ -1096,6 +1098,7 @@ async function loadPlatformDetailSettings() {
       PARALLEL_LIMIT_KEY,
       YKT_ACTIVITY_TYPES_KEY,
       HOMEWORK_DETAIL_COLLAPSED_LINES_KEY,
+      COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY,
       REPLAY_DETAIL_COLLAPSED_LINES_KEY,
       JLGJ_DARK_MODE_KEY
     ]);
@@ -1104,12 +1107,14 @@ async function loadPlatformDetailSettings() {
       ? data[YKT_ACTIVITY_TYPES_KEY].map(Number).filter((type) => [14, 15, 5, 9].includes(type))
       : [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
+    window.collapseHomeworkDetailsDownward = data[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY] !== false;
     window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(data[REPLAY_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
   } catch {
     maxParallelUploads = 3;
     window.yktActivityTypes = [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = 3;
+    window.collapseHomeworkDetailsDownward = true;
     window.replayDetailCollapsedLines = 3;
     window.jlgjDarkModeEnabled = true;
   }
@@ -1483,6 +1488,9 @@ function setupOptionsStorageLiveSync() {
       if (window.autoLoadCourseResourcesEnabled) {
         autoLoadCourseResourcesForRenderedCourses();
       }
+    }
+    if (changes[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY]) {
+      window.collapseHomeworkDetailsDownward = changes[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY].newValue !== false;
     }
     if (changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY] || changes[REPLAY_DETAIL_COLLAPSED_LINES_KEY]) {
       if (changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY]) {
@@ -5672,8 +5680,10 @@ courseListDiv.addEventListener('click', async (e) => {
         }, 220);
       } else {
         const collapsed = body.getBoundingClientRect().height;
-        const collapseDuration = Math.max(220, Number(globalThis.BjtuMotion?.duration?.(200)) || 0);
-        keepExpandableTogglePosition(actionEl, collapseDuration);
+        const collapseDuration = window.collapseHomeworkDetailsDownward
+          ? Math.max(220, Number(globalThis.BjtuMotion?.duration?.(200)) || 0)
+          : 220;
+        if (window.collapseHomeworkDetailsDownward) keepExpandableTogglePosition(actionEl, collapseDuration);
         body.style.overflow = 'hidden';
         body.style.maxHeight = `${Math.max(0, collapsed)}px`;
         box.classList.remove('expanded');

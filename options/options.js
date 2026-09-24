@@ -766,8 +766,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, updateDirectoryStartupCheckEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'updateDirectoryStartupCheckEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, collapseHomeworkDetailsDownward, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, updateDirectoryStartupCheckEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'collapseHomeworkDetailsDownward', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'updateDirectoryStartupCheckEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
   ]);
   const { xuetangxSecondCsrfToken, xuetangxSecondSessionId } = await chrome.storage.local.get([
     'xuetangxSecondCsrfToken',
@@ -847,6 +847,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   updateMoocPeerReviewState();
   document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
   document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
+  document.getElementById('collapseHomeworkDetailsDownward').checked = collapseHomeworkDetailsDownward !== false;
   document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
     homeworkDetailCollapsedLines,
     DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
@@ -1442,6 +1443,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         applyBooleanUi('jlgjAlwaysDarkModeEnabled', changes.jlgjAlwaysDarkModeEnabled.newValue, false);
         void enforceJlgjDarkThemeAvailability();
       }
+      if (changes.collapseHomeworkDetailsDownward) {
+        applyBooleanUi('collapseHomeworkDetailsDownward', changes.collapseHomeworkDetailsDownward.newValue, true);
+      }
       if (changes.homeworkDetailCollapsedLines) {
         document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
           changes.homeworkDetailCollapsedLines.newValue,
@@ -1979,6 +1983,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ backgroundAutoInstallOptionalEnabled: enabled });
     setMsg(enabled ? '已启用非强制更新自动安装' : '已关闭非强制更新自动安装');
   });
+  document.getElementById('collapseHomeworkDetailsDownward').addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ collapseHomeworkDetailsDownward: event.currentTarget.checked === true });
+    setMsg('已应用更改');
+  });
   ['homeworkDetailCollapsedLines', 'replayDetailCollapsedLines'].forEach((id) => {
     document.getElementById(id).addEventListener('change', async () => {
       const input = document.getElementById(id);
@@ -2266,6 +2274,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       xuetangxActivityTypes: [...DEFAULT_XUETANGX_ACTIVITY_TYPES],
       xuetangxSecondCsrfToken: '',
       xuetangxSecondSessionId: '',
+      collapseHomeworkDetailsDownward: true,
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
       replayDetailCollapsedLines: DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES,
       parallelLimit: DEFAULT_PARALLEL_LIMIT,
@@ -2334,6 +2343,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setupUiOrderEditor(FALLBACK_OPTIONS_SECTION_ORDER, FALLBACK_PLATFORM_ORDER);
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
+    document.getElementById('collapseHomeworkDetailsDownward').checked = true;
     document.getElementById('homeworkDetailCollapsedLines').value = String(DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES);
     document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);
     document.getElementById('parallelLimit').value = String(DEFAULT_PARALLEL_LIMIT);
