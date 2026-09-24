@@ -5593,6 +5593,31 @@ courseListDiv.addEventListener('mouseover', (e) => {
   }
 });
 
+function keepExpandableTogglePosition(toggle, durationMs) {
+  const top = toggle.getBoundingClientRect().top;
+  const scrollTargets = [];
+  for (let node = toggle.parentElement; node; node = node.parentElement) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (/(auto|scroll)/.test(overflowY) && node.scrollHeight > node.clientHeight + 1) scrollTargets.push(node);
+  }
+  if (document.scrollingElement && !scrollTargets.includes(document.scrollingElement)) {
+    scrollTargets.push(document.scrollingElement);
+  }
+  const until = performance.now() + durationMs + 60;
+  const follow = () => {
+    if (!toggle.isConnected) return;
+    let delta = toggle.getBoundingClientRect().top - top;
+    for (const target of scrollTargets) {
+      if (Math.abs(delta) <= 0.5) break;
+      const before = target.scrollTop;
+      target.scrollTop += delta;
+      delta -= target.scrollTop - before;
+    }
+    if (performance.now() < until) requestAnimationFrame(follow);
+  };
+  requestAnimationFrame(follow);
+}
+
 courseListDiv.addEventListener('click', async (e) => {
   const t = e.target;
   if (!(t instanceof Element)) return;
@@ -5647,6 +5672,8 @@ courseListDiv.addEventListener('click', async (e) => {
         }, 220);
       } else {
         const collapsed = body.getBoundingClientRect().height;
+        const collapseDuration = Math.max(220, Number(globalThis.BjtuMotion?.duration?.(200)) || 0);
+        keepExpandableTogglePosition(actionEl, collapseDuration);
         body.style.overflow = 'hidden';
         body.style.maxHeight = `${Math.max(0, collapsed)}px`;
         box.classList.remove('expanded');
@@ -5661,7 +5688,7 @@ courseListDiv.addEventListener('click', async (e) => {
           body.style.overflowX = '';
           body.style.overflowY = '';
           body.style.overflow = '';
-        }, 220);
+        }, collapseDuration);
       }
     } else {
       box.classList.toggle('expanded');
