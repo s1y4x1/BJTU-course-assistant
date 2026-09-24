@@ -5602,7 +5602,7 @@ courseListDiv.addEventListener('mouseover', (e) => {
 });
 
 function keepExpandableTogglePosition(toggle, durationMs) {
-  const top = toggle.getBoundingClientRect().top;
+  let top = toggle.getBoundingClientRect().top;
   const scrollTargets = [];
   for (let node = toggle.parentElement; node; node = node.parentElement) {
     const overflowY = getComputedStyle(node).overflowY;
@@ -5611,20 +5611,61 @@ function keepExpandableTogglePosition(toggle, durationMs) {
   if (document.scrollingElement && !scrollTargets.includes(document.scrollingElement)) {
     scrollTargets.push(document.scrollingElement);
   }
+  const lastScrollTops = new Map(scrollTargets.map((target) => [target, target.scrollTop]));
   const until = performance.now() + durationMs + 60;
   let stopped = false;
+  let intendedScroll = 0;
+  let lastInputAt = 0;
+  let lastInputDirection = 0;
+  let lastTouchY = null;
+  const recordInput = (delta) => {
+    if (!Number.isFinite(delta) || !delta) return;
+    if (lastInputDirection && Math.sign(delta) !== lastInputDirection) intendedScroll = 0;
+    intendedScroll += delta;
+    lastInputAt = performance.now();
+    lastInputDirection = Math.sign(delta);
+  };
+  const onWheel = (event) => {
+    if (event.ctrlKey) return;
+    const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1;
+    recordInput(event.deltaY * multiplier);
+  };
+  const onTouchStart = (event) => {
+    lastTouchY = event.touches[0]?.clientY ?? null;
+  };
+  const onTouchMove = (event) => {
+    const y = event.touches[0]?.clientY;
+    if (y == null) return;
+    if (lastTouchY != null) recordInput(lastTouchY - y);
+    lastTouchY = y;
+  };
   const stop = () => {
     stopped = true;
-    document.removeEventListener('wheel', stop, true);
-    document.removeEventListener('touchmove', stop, true);
+    document.removeEventListener('wheel', onWheel, true);
+    document.removeEventListener('touchstart', onTouchStart, true);
+    document.removeEventListener('touchmove', onTouchMove, true);
   };
-  document.addEventListener('wheel', stop, { capture: true, passive: true, once: true });
-  document.addEventListener('touchmove', stop, { capture: true, passive: true, once: true });
+  document.addEventListener('wheel', onWheel, { capture: true, passive: true });
+  document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+  document.addEventListener('touchmove', onTouchMove, { capture: true, passive: true });
   const follow = () => {
     if (stopped) return;
     if (!toggle.isConnected) {
       stop();
       return;
+    }
+    let actualScroll = 0;
+    for (const target of scrollTargets) {
+      actualScroll += target.scrollTop - lastScrollTops.get(target);
+    }
+    const recentInput = performance.now() - lastInputAt < 350;
+    if (!recentInput) intendedScroll = 0;
+    if (actualScroll && Math.sign(actualScroll) === lastInputDirection && recentInput) {
+      const userScroll = intendedScroll && Math.sign(intendedScroll) === Math.sign(actualScroll)
+        ? Math.sign(actualScroll) * Math.min(Math.abs(actualScroll), Math.abs(intendedScroll))
+        : actualScroll;
+      top -= userScroll;
+      intendedScroll -= userScroll;
     }
     let delta = toggle.getBoundingClientRect().top - top;
     for (const target of scrollTargets) {
@@ -5633,6 +5674,7 @@ function keepExpandableTogglePosition(toggle, durationMs) {
       target.scrollTop += delta;
       delta -= target.scrollTop - before;
     }
+    for (const target of scrollTargets) lastScrollTops.set(target, target.scrollTop);
     if (performance.now() < until) requestAnimationFrame(follow);
     else stop();
   };
