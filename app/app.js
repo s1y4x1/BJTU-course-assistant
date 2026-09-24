@@ -5612,8 +5612,20 @@ function keepExpandableTogglePosition(toggle, durationMs) {
     scrollTargets.push(document.scrollingElement);
   }
   const until = performance.now() + durationMs + 60;
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    document.removeEventListener('wheel', stop, true);
+    document.removeEventListener('touchmove', stop, true);
+  };
+  document.addEventListener('wheel', stop, { capture: true, passive: true, once: true });
+  document.addEventListener('touchmove', stop, { capture: true, passive: true, once: true });
   const follow = () => {
-    if (!toggle.isConnected) return;
+    if (stopped) return;
+    if (!toggle.isConnected) {
+      stop();
+      return;
+    }
     let delta = toggle.getBoundingClientRect().top - top;
     for (const target of scrollTargets) {
       if (Math.abs(delta) <= 0.5) break;
@@ -5622,6 +5634,7 @@ function keepExpandableTogglePosition(toggle, durationMs) {
       delta -= target.scrollTop - before;
     }
     if (performance.now() < until) requestAnimationFrame(follow);
+    else stop();
   };
   requestAnimationFrame(follow);
 }
