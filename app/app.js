@@ -2368,7 +2368,7 @@ function updateTotalSpeed() {
     total = totalRecentSpeedBps;
   }
   const el = document.getElementById('total-speed');
-  setSpeedDisplay(el, total);
+  setSpeedDisplay(el, total, Object.keys(window.activeSpeeds).length ? null : '');
 }
 
 function formatEta(seconds) {

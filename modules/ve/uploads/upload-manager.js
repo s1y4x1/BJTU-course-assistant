@@ -549,6 +549,13 @@ function uploadFile(file, fileId) {
       window.activeSpeeds[speedId] = 0;
       updateTotalSpeed();
 
+      const finishUploadTransfer = () => {
+        setSpeedDisplay(speedDisplay, 0, '');
+        if (etaDisplay) etaDisplay.textContent = '';
+        delete window.activeSpeeds[speedId];
+        updateTotalSpeed();
+      };
+
       const uploadUrl = getVeUploadUrl({ manualJsessionMode, jsessionid: jsid });
       xhr.open('POST', uploadUrl, true);
       xhr.withCredentials = true;
@@ -606,14 +613,14 @@ function uploadFile(file, fileId) {
           window.filesData[fileId].uploaded = visibleLoaded;
           updateTotalProgress();
         }
+        if (percent >= 100) finishUploadTransfer();
       };
+
+      xhr.upload.onload = finishUploadTransfer;
 
       xhr.onload = async () => {
         xhrRef = null;
-        setSpeedDisplay(speedDisplay, 0, '');
-        if (etaDisplay) etaDisplay.textContent = '';
-        delete window.activeSpeeds[speedId];
-        updateTotalSpeed();
+        finishUploadTransfer();
         if (globalThis.isVeSessionInvalidResponse?.(xhr.responseText, xhr.responseURL)) {
           if (authRetryCount < 1) {
             authRetryCount += 1;

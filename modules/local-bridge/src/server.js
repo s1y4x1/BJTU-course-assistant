@@ -78,7 +78,7 @@ function operationArguments(value) {
   return value;
 }
 
-function sendExtensionRequest(action, payload = {}) {
+function sendExtensionRequest(action, payload = {}, { printResult = true } = {}) {
   if (!extensionConnected()) {
     throw Object.assign(new Error('浏览器扩展尚未连接本地 Bridge'), { code: 'EXTENSION_OFFLINE' });
   }
@@ -88,7 +88,7 @@ function sendExtensionRequest(action, payload = {}) {
     extensionSocket.send(JSON.stringify({ type: 'request', id, action, payload }));
   }).then((value) => {
     const result = action === 'call' && value?.ok === true ? value.result : value;
-    process.stdout.write(`${jsonText(result)}\n`);
+    if (printResult) process.stdout.write(`${jsonText(result)}\n`);
     return value;
   }, (error) => {
     process.stderr.write(`${jsonText({
@@ -155,6 +155,16 @@ function parseTerminalOperation(line) {
   return { name: match[1], args: operationArguments(args) };
 }
 
+function parseTerminalHelpOperations(line) {
+  const match = /^help(?:\s+([\s\S]+)|\(([\s\S]*)\))$/i.exec(line);
+  if (!match) return null;
+  const names = [...new Set(String(match[1] ?? match[2] ?? '').trim().split(/[\s,]+/).filter(Boolean))];
+  if (!names.length || names.some((name) => !/^[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$/.test(name))) {
+    throw new Error('请输入操作名，如 help ve.courseList ykt.assignments 或 help(ve.courseList)');
+  }
+  return names;
+}
+
 function startTerminal() {
   if (terminal || !process.stdin.isTTY) return;
   terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -167,13 +177,22 @@ function startTerminal() {
     const line = input.trim();
     try {
       if (line === 'help') {
-        process.stdout.write('示例：ve.courseList\n      ve.assignments {"status":"pending"}\n      ve.uploadFile {"filePath":"C:\\\\path\\\\file.pdf"}\n也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
+        process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs {"module":"ve","name":"courseList"}\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile {"filePath":"C:\\\\path\\\\file.pdf"}\n也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
       } else if (line === 'exit' || line === 'quit') {
         await shutdown();
         process.exit(0);
       } else if (line) {
-        const { name, args } = parseTerminalOperation(line);
-        await callOperation(name, args);
+        const helpOperations = parseTerminalHelpOperations(line);
+        if (helpOperations) {
+          for (const name of helpOperations) {
+            const [module, operationName] = name.split('.');
+            const doc = await sendExtensionRequest('getDocs', { module, name: operationName }, { printResult: false });
+            process.stdout.write(`${String(doc || `未找到操作说明：${name}`)}\n`);
+          }
+        } else {
+          const { name, args } = parseTerminalOperation(line);
+          await callOperation(name, args);
+        }
       }
     } catch (error) {
       if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
