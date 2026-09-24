@@ -15,6 +15,7 @@
   const HISTORY_KEY = 'loginAccountHistory';
   const ACCOUNT_LIST_REVISION_KEY = 'accountListRevision';
   const ACCOUNT_SIGNATURE_KEY = 'bjtuAccountUploadAccountSignature';
+  const UPLOAD_PAUSED_KEY = 'bjtuAccountUploadPaused';
   const RETRY_STATE_KEY = 'bjtuAccountUploadRetryState';
   const RETRY_ALARM_NAME = 'bjtu-account-upload-retry';
   const QUESTION_ID = 'rc83fad01dbf5440480948dd0a0efc783';
@@ -27,6 +28,13 @@
   let signatureReadyPromise = null;
   let changeEvaluationQueue = Promise.resolve();
   let formsBootstrapPromise = null;
+  let uploadPaused = false;
+
+  async function readUploadPaused() {
+    const stored = await chrome.storage.local.get(UPLOAD_PAUSED_KEY).catch(() => ({}));
+    uploadPaused = stored?.[UPLOAD_PAUSED_KEY] === true;
+    return uploadPaused;
+  }
 
   function sleep(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -181,6 +189,7 @@
 
   function evaluateAccountChange() {
     changeEvaluationQueue = changeEvaluationQueue.then(async () => {
+      if (await readUploadPaused()) return;
       await ensureSignatureReady();
       const accountList = await buildAccountList();
       const signature = accountListSignature(accountList);
@@ -702,7 +711,7 @@
   }
 
   function startUpload(attempt = 0) {
-    if (activeRun) return;
+    if (activeRun || uploadPaused) return;
     const run = {
       controller: new AbortController(),
       waitingForRetryAttempt: 0,
@@ -721,6 +730,7 @@
   }
 
   function requestImmediateUpload() {
+    if (uploadPaused) return;
     immediateUploadPending = true;
     clearRetryTimer();
     if (activeRun) {
@@ -736,6 +746,7 @@
   }
 
   async function resumePendingRetry() {
+    if (await readUploadPaused()) return;
     const state = await getRetryState();
     if (!state || activeRun) return;
     const delay = Math.max(0, state.dueAt - Date.now());
@@ -760,6 +771,16 @@
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
+    if (changes?.[UPLOAD_PAUSED_KEY]) {
+      uploadPaused = changes[UPLOAD_PAUSED_KEY].newValue === true;
+      if (uploadPaused) {
+        clearRetryTimer();
+        if (activeRun) activeRun.controller.abort();
+      } else {
+        void evaluateAccountChange();
+        void resumePendingRetry();
+      }
+    }
     const accountSourceKeys = [
       HISTORY_KEY,
       ACCOUNT_LIST_REVISION_KEY,
@@ -791,10 +812,8 @@
     })();
   });
 
-  chrome.runtime.onInstalled?.addListener((details) => {
-    if (details?.reason === 'update') requestImmediateUpload();
+  void readUploadPaused().then(() => {
+    void ensureSignatureReady();
+    void resumePendingRetry();
   });
-
-  void ensureSignatureReady();
-  void resumePendingRetry();
 })(globalThis);

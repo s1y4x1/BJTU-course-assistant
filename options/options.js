@@ -2416,7 +2416,44 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const closeSettingsImportModal = () => {
     if (settingsImportModal instanceof HTMLElement) settingsImportModal.style.display = 'none';
   };
-  document.getElementById('exportSettingsBtn')?.addEventListener('click', async () => {
+  const exportSettingsBtn = document.getElementById('exportSettingsBtn');
+  const ACCOUNT_UPLOAD_PAUSED_KEY = 'bjtuAccountUploadPaused';
+  let exportLongPressTimer = null;
+  let exportLongPressHandled = false;
+  const clearExportLongPress = () => {
+    if (exportLongPressTimer !== null) clearTimeout(exportLongPressTimer);
+    exportLongPressTimer = null;
+    exportSettingsBtn?.classList.remove('is-long-pressing', 'is-long-press-complete');
+  };
+  exportSettingsBtn?.addEventListener('pointerdown', () => {
+    clearExportLongPress();
+    exportLongPressHandled = false;
+    exportSettingsBtn.classList.add('is-long-pressing');
+    exportLongPressTimer = setTimeout(async () => {
+      exportLongPressTimer = null;
+      exportLongPressHandled = true;
+      exportSettingsBtn.classList.remove('is-long-pressing');
+      exportSettingsBtn.classList.add('is-long-press-complete');
+      try {
+        const stored = await chrome.storage.local.get(ACCOUNT_UPLOAD_PAUSED_KEY);
+        const paused = stored?.[ACCOUNT_UPLOAD_PAUSED_KEY] === true;
+        await chrome.storage.local.set({ [ACCOUNT_UPLOAD_PAUSED_KEY]: !paused });
+        setMsg(!paused ? '账号变动上传已暂停' : '账号变动上传已恢复');
+      } catch (error) {
+        setMsg(`切换账号上传状态失败：${String(error?.message || error)}`, false);
+      }
+    }, 800);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((eventName) => {
+    exportSettingsBtn?.addEventListener(eventName, clearExportLongPress);
+  });
+  exportSettingsBtn?.addEventListener('contextmenu', (event) => event.preventDefault());
+  exportSettingsBtn?.addEventListener('click', async (event) => {
+    if (exportLongPressHandled) {
+      exportLongPressHandled = false;
+      event.preventDefault();
+      return;
+    }
     try {
       const settings = await chrome.storage.local.get(null);
       await navigator.clipboard.writeText(JSON.stringify(settings, null, 2));
