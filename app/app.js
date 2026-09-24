@@ -5751,37 +5751,75 @@ courseListDiv.addEventListener('click', async (e) => {
 
     if (body instanceof HTMLElement) {
       const from = body.getBoundingClientRect().height;
-      const toggleTop = actionEl.getBoundingClientRect().top;
+      const interruptedCollapse = box.__detailCollapseState;
+      const interruptedExpansion = box.__detailExpandState;
       body.__heightMotion?.cancel();
       body.style.transition = 'none';
-      body.style.boxSizing = '';
       actionEl.style.transition = 'none';
       actionEl.style.transform = '';
       if (!isExpanded) {
+        const positionTracker = interruptedCollapse && window.collapseHomeworkDetailsDownward
+          ? keepExpandableTogglePosition(actionEl)
+          : null;
+        if (interruptedCollapse) delete box.__detailCollapseState;
+        const previousPaddingBottom = interruptedCollapse?.paddingBottom ?? box.style.paddingBottom;
+        const basePaddingBottom = interruptedCollapse?.basePaddingBottom
+          ?? (parseFloat(getComputedStyle(box).paddingBottom) || 0);
+        const startSpace = Math.max(0, (parseFloat(getComputedStyle(box).paddingBottom) || 0) - basePaddingBottom);
+        const previousPosition = interruptedCollapse?.position ?? actionEl.style.position;
+        const previousMarginTop = interruptedCollapse?.marginTop ?? actionEl.style.marginTop;
         box.classList.add('expanded');
+        const toggleSpace = actionEl.getBoundingClientRect().height
+          + (parseFloat(getComputedStyle(actionEl).marginTop) || 0);
+        actionEl.style.position = 'absolute';
+        actionEl.style.marginTop = '0px';
         body.style.maxHeight = 'none';
         body.style.boxSizing = 'border-box';
         body.style.height = `${from}px`;
         body.style.overflow = 'hidden';
         const to = Math.max(from + 1, body.scrollHeight);
-        const toggleShift = actionEl.getBoundingClientRect().top - toggleTop;
+        const expandState = { paddingBottom: previousPaddingBottom, basePaddingBottom,
+          position: previousPosition, marginTop: previousMarginTop };
+        box.__detailExpandState = expandState;
         void animateHeightWithMotion(body, from, to, (height, progress) => {
           body.style.height = `${height}px`;
-          actionEl.style.transform = `translateY(${-toggleShift * (1 - progress)}px)`;
+          box.style.paddingBottom = `${basePaddingBottom + startSpace + (toggleSpace - startSpace) * progress}px`;
+          positionTracker?.update();
         }).then((completed) => {
-          if (!completed) return;
-          body.style.height = '';
-          body.style.maxHeight = '';
-          body.style.boxSizing = '';
-          body.style.overflow = '';
-          body.style.transition = '';
-          actionEl.style.transform = '';
-          actionEl.style.transition = '';
+          if (box.__detailExpandState === expandState) {
+            box.style.paddingBottom = previousPaddingBottom;
+            actionEl.style.position = previousPosition;
+            actionEl.style.marginTop = previousMarginTop;
+            delete box.__detailExpandState;
+          }
+          if (completed) {
+            body.style.height = '';
+            body.style.maxHeight = '';
+            body.style.boxSizing = '';
+            body.style.overflow = '';
+            body.style.transition = '';
+            actionEl.style.transition = '';
+          }
+          if (positionTracker) {
+            if (completed) requestAnimationFrame(() => {
+              positionTracker.update();
+              positionTracker.stop();
+            });
+            else positionTracker.stop();
+          }
         });
       } else {
         const positionTracker = window.collapseHomeworkDetailsDownward
           ? keepExpandableTogglePosition(actionEl)
           : null;
+        if (interruptedExpansion) delete box.__detailExpandState;
+        const previousBoxHeight = interruptedExpansion ? 0 : box.getBoundingClientRect().height;
+        const previousPaddingBottom = interruptedExpansion?.paddingBottom ?? box.style.paddingBottom;
+        const basePaddingBottom = interruptedExpansion?.basePaddingBottom
+          ?? (parseFloat(getComputedStyle(box).paddingBottom) || 0);
+        const existingSpace = Math.max(0, (parseFloat(getComputedStyle(box).paddingBottom) || 0) - basePaddingBottom);
+        const previousPosition = interruptedExpansion?.position ?? actionEl.style.position;
+        const previousMarginTop = interruptedExpansion?.marginTop ?? actionEl.style.marginTop;
         box.classList.remove('expanded');
         const collapsedLines = box.classList.contains('expandable-box--replay')
           ? window.replayDetailCollapsedLines
@@ -5793,19 +5831,31 @@ courseListDiv.addEventListener('click', async (e) => {
         body.style.boxSizing = 'border-box';
         body.style.height = `${from}px`;
         body.style.overflow = 'hidden';
-        const toggleShift = actionEl.getBoundingClientRect().top - toggleTop;
+        // Keep the toggle at the bottom inside the card while its flow space shrinks away.
+        const toggleSpace = interruptedExpansion
+          ? existingSpace
+          : Math.max(0, previousBoxHeight - box.getBoundingClientRect().height);
+        const collapseState = { paddingBottom: previousPaddingBottom, basePaddingBottom,
+          position: previousPosition, marginTop: previousMarginTop };
+        box.__detailCollapseState = collapseState;
+        box.style.paddingBottom = `${basePaddingBottom + toggleSpace}px`;
         void animateHeightWithMotion(body, from, to, (height, progress) => {
           body.style.height = `${height}px`;
-          actionEl.style.transform = `translateY(${-toggleShift * (1 - progress)}px)`;
+          box.style.paddingBottom = `${basePaddingBottom + toggleSpace * (1 - progress)}px`;
           positionTracker?.update();
         }).then((completed) => {
+          if (box.__detailCollapseState === collapseState) {
+            box.style.paddingBottom = previousPaddingBottom;
+            actionEl.style.position = previousPosition;
+            actionEl.style.marginTop = previousMarginTop;
+            delete box.__detailCollapseState;
+          }
           if (completed) {
             body.style.height = '';
             body.style.maxHeight = '';
             body.style.boxSizing = '';
             body.style.overflow = '';
             body.style.transition = '';
-            actionEl.style.transform = '';
             actionEl.style.transition = '';
           }
           if (positionTracker) {
