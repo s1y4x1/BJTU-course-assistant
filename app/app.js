@@ -5673,24 +5673,41 @@ courseListDiv.addEventListener('click', async (e) => {
     const closeText = actionEl.dataset.closeText || '点击收起';
     const body = box.querySelector('.expandable-body');
     const isExpanded = box.classList.contains('expanded');
+    const animationId = Number(box.dataset.expandAnimationId || 0) + 1;
+    box.dataset.expandAnimationId = String(animationId);
 
     if (body instanceof HTMLElement) {
       if (!isExpanded) {
         const from = body.getBoundingClientRect().height;
+        const toggleTop = actionEl.getBoundingClientRect().top;
         body.style.overflow = 'hidden';
         body.style.maxHeight = `${Math.max(0, from)}px`;
         box.classList.add('expanded');
+        const toggleShift = actionEl.getBoundingClientRect().top - toggleTop;
+        actionEl.style.transition = 'none';
+        actionEl.style.transform = `translateY(${-toggleShift}px)`;
+        void actionEl.offsetHeight;
+        actionEl.style.transition = '';
         const to = Math.max(from + 1, body.scrollHeight);
         requestAnimationFrame(() => {
+          if (box.dataset.expandAnimationId !== String(animationId)) return;
           body.style.maxHeight = `${to}px`;
+          actionEl.style.transform = '';
         });
-        setTimeout(() => {
+        const finishExpansion = () => {
+          body.removeEventListener('transitionend', onHeightTransitionEnd);
+          if (box.dataset.expandAnimationId !== String(animationId)) return;
           // Clear inline limits so expanded CSS state fully controls overflow behavior.
           body.style.maxHeight = '';
           body.style.overflow = '';
           body.style.overflowX = '';
           body.style.overflowY = '';
-        }, 220);
+        };
+        const onHeightTransitionEnd = (event) => {
+          if (event.target === body && event.propertyName === 'max-height') finishExpansion();
+        };
+        body.addEventListener('transitionend', onHeightTransitionEnd);
+        setTimeout(finishExpansion, Math.max(220, Number(globalThis.BjtuMotion?.duration?.(200)) || 0) + 60);
       } else {
         const collapsed = body.getBoundingClientRect().height;
         const collapseDuration = window.collapseHomeworkDetailsDownward
@@ -5701,12 +5718,14 @@ courseListDiv.addEventListener('click', async (e) => {
         body.style.maxHeight = `${Math.max(0, collapsed)}px`;
         box.classList.remove('expanded');
         requestAnimationFrame(() => {
+          if (box.dataset.expandAnimationId !== String(animationId)) return;
           const collapsedLines = box.classList.contains('expandable-box--replay')
             ? window.replayDetailCollapsedLines
             : window.homeworkDetailCollapsedLines;
           body.style.maxHeight = detailCollapsedMaxHeight(collapsedLines);
         });
         setTimeout(() => {
+          if (box.dataset.expandAnimationId !== String(animationId)) return;
           body.style.maxHeight = '';
           body.style.overflowX = '';
           body.style.overflowY = '';

@@ -1286,6 +1286,7 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     color: #000;
     cursor: pointer;
     user-select: none;
+    transition: transform 0.2s ease;
     background: linear-gradient(180deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.72) 100%);
 }
 .expandable-toggle:hover {
