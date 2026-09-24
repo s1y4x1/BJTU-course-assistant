@@ -1362,7 +1362,7 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
     btn.style.display = '';
     setCourseCoursewareState(courseIdInt, true);
     if (shouldRender()) {
-      resultArea.innerHTML = html;
+      replaceResultAreaHtmlAnimated(resultArea, html);
     }
     startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId);
   } catch (e) {
@@ -1461,9 +1461,16 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
   };
 
   if (isOpen && currentView === 'courseware') {
+    resultArea.dataset.closingView = 'courseware';
     toggleResultAreaAnimated(resultArea, false);
     card.dataset.resultView = '';
     syncCourseActionButtonText(card, '');
+    return;
+  }
+
+  if (resumeResultAreaCollapse(resultArea, 'courseware')) {
+    card.dataset.resultView = 'courseware';
+    syncCourseActionButtonText(card, 'courseware');
     return;
   }
 
@@ -1647,7 +1654,7 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
   if (currentView === 'courseware') {
     const newHtml = buildCoursewareListHtml(courseIdInt, items);
     cache.html = newHtml;
-    resultArea.innerHTML = newHtml;
+    replaceResultAreaHtmlAnimated(resultArea, newHtml);
   }
   btn.classList.remove('courseware-link-progress');
   btn.style.removeProperty('--courseware-progress');
@@ -1755,7 +1762,7 @@ async function autoLoadVideoLinks(btn, courseIdInt, courseNum, fzId, xqCode) {
     // Keep replay list DOM in hidden shadow area so background parsing/updating won't override current visible view.
     replayShadowArea.innerHTML = replayListHtml;
     if (shouldTouchVisibleArea && currentView === 'replay') {
-      resultArea.innerHTML = replayListHtml;
+      replaceResultAreaHtmlAnimated(resultArea, replayListHtml);
     }
 
     // List is ready: allow users to open/close replay panel immediately.
@@ -1878,8 +1885,7 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   cache.html = finalHtml;
 
   if (currentView === 'replay' && finalHtml) {
-    resultArea.innerHTML = cache.html;
-    toggleResultAreaAnimated(resultArea, true, { immediate: true });
+    replaceResultAreaHtmlAnimated(resultArea, cache.html);
   }
   btn.classList.remove('replay-link-progress');
   btn.style.removeProperty('--replay-progress');
@@ -1908,9 +1914,16 @@ function toggleReplayFromCache(btn, courseIdInt) {
   };
 
   if (isOpen && currentView === 'replay') {
+    resultArea.dataset.closingView = 'replay';
     toggleResultAreaAnimated(resultArea, false);
     card.dataset.resultView = '';
     syncCourseActionButtonText(card, '');
+    return;
+  }
+
+  if (resumeResultAreaCollapse(resultArea, 'replay')) {
+    card.dataset.resultView = 'replay';
+    syncCourseActionButtonText(card, 'replay');
     return;
   }
 
@@ -2666,9 +2679,15 @@ async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
     replayShadowArea.appendChild(fragment);
   };
   if (render && activeView === 'archive' && isResultAreaOpen(resultArea)) {
+    resultArea.dataset.closingView = 'archive';
     toggleResultAreaAnimated(resultArea, false);
     card.dataset.resultView = '';
     syncCourseActionButtonText(card, '');
+    return;
+  }
+  if (render && resumeResultAreaCollapse(resultArea, 'archive')) {
+    card.dataset.resultView = 'archive';
+    syncCourseActionButtonText(card, 'archive');
     return;
   }
 

@@ -4518,6 +4518,7 @@ function animateHeightWithMotion(element, from, to, onFrame) {
 function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } = {}) {
   if (!(resultArea instanceof HTMLElement)) return;
   resultArea.__heightMotion?.cancel();
+  if (shouldOpen) delete resultArea.dataset.closingView;
   const reset = () => {
     resultArea.style.transition = '';
     resultArea.style.maxHeight = '';
@@ -4531,10 +4532,12 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
     reset();
     resultArea.style.display = shouldOpen ? 'block' : 'none';
     resultArea.dataset.animOpen = shouldOpen ? '1' : '0';
+    if (!shouldOpen) delete resultArea.dataset.closingView;
     return;
   }
   if (!shouldOpen && resultArea.style.display === 'none') {
     resultArea.dataset.animOpen = '0';
+    delete resultArea.dataset.closingView;
     return;
   }
   const from = shouldOpen && resultArea.style.display === 'none'
@@ -4564,12 +4567,35 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
   }).then((completed) => {
     if (!completed) return;
     resultArea.style.display = 'none';
+    delete resultArea.dataset.closingView;
     reset();
   });
 }
 
+function resumeResultAreaCollapse(resultArea, view) {
+  if (!(resultArea instanceof HTMLElement) || resultArea.dataset.closingView !== view
+    || resultArea.style.display === 'none' || !resultArea.__heightMotion) return false;
+  toggleResultAreaAnimated(resultArea, true);
+  return true;
+}
+
+function replaceResultAreaHtmlAnimated(resultArea, html) {
+  if (!(resultArea instanceof HTMLElement)) return;
+  if (resultArea.dataset.animOpen !== '1' || resultArea.style.display === 'none') {
+    resultArea.innerHTML = html;
+    return;
+  }
+  const from = resultArea.getBoundingClientRect().height;
+  resultArea.__heightMotion?.cancel();
+  resultArea.style.boxSizing = 'border-box';
+  resultArea.style.height = `${from}px`;
+  resultArea.innerHTML = html;
+  toggleResultAreaAnimated(resultArea, true);
+}
+
 function prepareResultAreaViewSwitch(resultArea) {
   if (!(resultArea instanceof HTMLElement)) return;
+  delete resultArea.dataset.closingView;
   const parent = resultArea.parentElement;
   parent?.querySelectorAll(':scope > .result-area-outgoing').forEach((outgoing) => {
     outgoing.__heightMotion?.cancel();
