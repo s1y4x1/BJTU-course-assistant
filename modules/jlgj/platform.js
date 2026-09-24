@@ -147,6 +147,8 @@ function openJlgjLoginAssistPopup(force = false) {
   };
 
   openPopup().catch(() => {
+    window.platformInteractiveLoginPending.jlgj = false;
+    setPlatformLoginState('jlgj', 'offline');
     showToast('打开接龙管家登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
   });
 }
@@ -163,13 +165,13 @@ function renderJlgjNeedLoginMessage() {
   window.platformLoadedOnce.jlgj = false;
   clearPlatformData('jlgj');
   rerenderAllHomeworkAreas();
-  setPlatformLoginState('jlgj', 'offline');
-
   if (shouldOpenAssist) {
+    setPlatformLoginState('jlgj', 'checking');
     openJlgjLoginAssistPopup(true);
     return;
   }
 
+  setPlatformLoginState('jlgj', 'offline');
   closeJlgjLoginAssistPopup(true);
   window.platformNeedLogin.jlgj = false;
   refreshPlatformLoginTip();

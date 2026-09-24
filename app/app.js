@@ -642,7 +642,7 @@ window.platformOrder = [...PLATFORM_IDS];
 window.platformNeedLogin = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
 window.platformLoginState = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 'checking'])); // checking|offline|online
 window.platformLoginChecked = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
-window.platformInteractiveLoginPending = { ykt: false, mrjzy: false, jlgj: false, mooc: false, xuetangx: false };
+window.platformInteractiveLoginPending = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false, xuetangx: false };
 const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
 const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true };
 const PLATFORM_AUTO_LOGIN_STORAGE_KEYS = Object.freeze({
@@ -1267,6 +1267,10 @@ function togglePlatformSelection(platform, options = {}) {
   const interactive = options?.interactive !== false;
   const persist = options?.persist !== false;
   if (isPlatformChecking(platform)) {
+    if (platform === 've') {
+      window.platformInteractiveLoginPending.ve = false;
+      if (loginModal?.style.display !== 'none') dismissLoginModal();
+    }
     if (platform === 'ykt') {
       window.platformInteractiveLoginPending.ykt = false;
       closeYktLoginAssistPopup(true);
@@ -1357,6 +1361,7 @@ function togglePlatformSelection(platform, options = {}) {
   }
 
   if (platform === 've') {
+    window.platformInteractiveLoginPending.ve = !!interactive;
     window.platformLoadedOnce.ve = false;
     setPlatformLoginState('ve', 'checking');
     const cachedCourses = Array.isArray(window.veDisabledCourseListCache)
@@ -4091,6 +4096,7 @@ function setPlatformLoginState(platform, state) {
   const prev = String(window.platformLoginState?.[p] || '').trim();
   const s = (state === 'online' || state === 'offline') ? state : 'checking';
   window.platformLoginState[p] = s;
+  if (p === 've' && s === 'online') window.platformInteractiveLoginPending.ve = false;
   window.dispatchEvent(new CustomEvent('bjtu-platform-login-state-change', {
     detail: { platform: p, state: s, previousState: prev }
   }));

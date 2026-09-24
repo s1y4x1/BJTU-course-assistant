@@ -1991,7 +1991,7 @@ async function loadCourses() {
       if (!userInfo) {
         const baseResult = await directBaseCoursesPromise;
         if (baseResult.error) throw baseResult.error;
-        throw new Error('未获取到当前账号信息，无法确定课程范围');
+        throw Object.assign(new Error('未获取到当前账号信息，无法确定课程范围'), { loginRequired: true });
       }
       const teacherAccount = isVeTeacherUserInfo(userInfo);
       window.isTeacherAccount = teacherAccount;
@@ -2021,12 +2021,29 @@ async function loadCourses() {
     renderEnabledExternalStandaloneCourses();
   } catch (e) {
     if (courseLoadVersion !== window.courseListLoadVersion) return;
-    setPlatformLoginState('ve', 'offline');
     const errMsg = String(e?.message || '');
     const likelyLoginInvalid = e?.loginRequired || errMsg === 'LOGIN_REQUIRED' || /Failed to fetch/i.test(errMsg);
+    const interactiveLogin = likelyLoginInvalid && window.platformInteractiveLoginPending?.ve
+      && !!String(usernameInput?.value || '').trim();
+    if (interactiveLogin) {
+      setPlatformLoginState('ve', 'checking');
+      void doLoginFlow().then((result) => {
+        if (!result?.ok && window.platformInteractiveLoginPending?.ve && isPlatformEnabled('ve')) {
+          window.platformInteractiveLoginPending.ve = false;
+          setPlatformLoginState('ve', 'offline');
+        }
+      }).catch(() => {
+        if (!window.platformInteractiveLoginPending?.ve || !isPlatformEnabled('ve')) return;
+        window.platformInteractiveLoginPending.ve = false;
+        setPlatformLoginState('ve', 'offline');
+      });
+    } else {
+      window.platformInteractiveLoginPending.ve = false;
+      setPlatformLoginState('ve', 'offline');
+    }
     if (likelyLoginInvalid) {
       isLoginSessionValid = false;
-      if (usernameInput.value.trim()) {
+      if (!interactiveLogin && usernameInput.value.trim()) {
         handleLoginRequired(() => {
           loadCourses();
         }, null, '请输入账号登录');

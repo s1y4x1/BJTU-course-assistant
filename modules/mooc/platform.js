@@ -407,7 +407,7 @@ let moocLoginAssistOpening = null;
       env.setLoaded(false);
       if (error?.code === 'not-logged-in') {
         env.loginRequired?.();
-        env.setState('offline');
+        env.setState(window.platformInteractiveLoginPending?.mooc ? 'checking' : 'offline');
       } else if (error?.code === 'missing-csrf') {
         // 登录成功后两个 Cookie 的写入存在短暂先后顺序；这是可恢复状态，
         // 保持加载中并静默重试，不能向用户报告一次伪失败。
@@ -732,6 +732,21 @@ function closeMoocLoginAssistPopup(cancelPending = false) {
   if (cancelPending) window.platformInteractiveLoginPending.mooc = false;
 }
 
+function failMoocLoginAssistAfterUserClose({ windowId = null, tabId = null } = {}) {
+  const matchesWindow = windowId != null && Number(windowId) === Number(moocLoginAssistPopupWindowId);
+  const matchesTab = tabId != null && Number(tabId) === Number(moocLoginAssistPopupTabId);
+  if (!matchesWindow && !matchesTab) return;
+  moocLoginAssistPopupWindowId = null;
+  moocLoginAssistPopupTabId = null;
+  stopMoocLoginAssistWatcher();
+  if (!window.platformInteractiveLoginPending?.mooc) return;
+  window.platformInteractiveLoginPending.mooc = false;
+  setPlatformLoginState('mooc', 'offline');
+}
+
+chrome.windows.onRemoved.addListener((windowId) => failMoocLoginAssistAfterUserClose({ windowId }));
+chrome.tabs.onRemoved.addListener((tabId) => failMoocLoginAssistAfterUserClose({ tabId }));
+
 async function checkMoocLoginAssistStatus() {
   if (moocLoginAssistChecking || !window.platformInteractiveLoginPending?.mooc) return false;
   moocLoginAssistChecking = true;
@@ -739,10 +754,7 @@ async function checkMoocLoginAssistStatus() {
     if (moocLoginAssistPopupTabId) {
       const tab = await chrome.tabs.get(Number(moocLoginAssistPopupTabId)).catch(() => null);
       if (!tab) {
-        moocLoginAssistPopupWindowId = null;
-        moocLoginAssistPopupTabId = null;
-        window.platformInteractiveLoginPending.mooc = false;
-        stopMoocLoginAssistWatcher();
+        failMoocLoginAssistAfterUserClose({ tabId: moocLoginAssistPopupTabId });
         return false;
       }
       if (!String(tab?.url || '').startsWith('https://www.icourse163.org/')) return false;
@@ -805,6 +817,7 @@ function openMoocLoginAssistPopup(force = false) {
   };
   const opening = openPopup().catch(() => {
     window.platformInteractiveLoginPending.mooc = false;
+    setPlatformLoginState('mooc', 'offline');
     showToast('打开中国大学MOOC登录弹窗失败，请检查浏览器弹窗权限', 'error', 2200);
   }).finally(() => {
     if (moocLoginAssistOpening === opening) moocLoginAssistOpening = null;
