@@ -184,11 +184,13 @@ function startTerminal() {
       } else if (line) {
         const helpOperations = parseTerminalHelpOperations(line);
         if (helpOperations) {
+          const docs = [];
           for (const name of helpOperations) {
             const [module, operationName] = name.split('.');
             const doc = await sendExtensionRequest('getDocs', { module, name: operationName }, { printResult: false });
-            process.stdout.write(`${String(doc || `未找到操作说明：${name}`)}\n`);
+            docs.push(String(doc || `未找到操作说明：${name}`).trim());
           }
+          process.stdout.write(`${docs.join('\n\n---\n\n')}\n`);
         } else {
           const { name, args } = parseTerminalOperation(line);
           await callOperation(name, args);
