@@ -1307,9 +1307,10 @@ async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
 
   setCoursewareButtonLoading(btn, true);
   setCourseCoursewareLoading(courseIdInt, true);
-  toggleResultAreaAnimated(resultArea, true);
+  if (String(card.dataset.resultView || '').trim() !== 'courseware') prepareResultAreaViewSwitch(resultArea);
   card.dataset.resultView = 'courseware';
   resultArea.innerHTML = '<div class="spinner" style="border-color:#1e3a8a; border-top-color:transparent; display:inline-block;"></div> <span style="color:#666;">正在获取资源…</span>';
+  toggleResultAreaAnimated(resultArea, true);
   syncCourseActionButtonText(card, 'courseware');
 
   const cwAbortController = new AbortController();
@@ -1468,6 +1469,7 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
 
   if (cache?.loaded && cache?.html) {
     // If replay links are still resolving, preserve live replay DOM in shadow before replacing visible area.
+    prepareResultAreaViewSwitch(resultArea);
     moveVisibleReplayToShadowIfNeeded();
     syncCoursewareItemsIndex(courseIdInt, cache.items || []);
     resultArea.innerHTML = cache.html;
@@ -1484,6 +1486,7 @@ function toggleCoursewareFromCache(btn, courseIdInt, courseNum, fzId) {
     const latestCache = window.coursewareCacheByCourseId?.[courseIdInt];
     if (!latestCache?.loaded || !latestCache?.html) return;
     if (!Array.isArray(latestCache.items) || !latestCache.items.length) return;
+    prepareResultAreaViewSwitch(resultArea);
     syncCoursewareItemsIndex(courseIdInt, latestCache.items || []);
     resultArea.innerHTML = latestCache.html;
     toggleResultAreaAnimated(resultArea, true);
@@ -1925,6 +1928,7 @@ function toggleReplayFromCache(btn, courseIdInt) {
     return;
   }
 
+  prepareResultAreaViewSwitch(resultArea);
   if (cache?.linksFetching) {
     const shadowHtml = (shadowArea instanceof HTMLElement) ? String(shadowArea.innerHTML || '') : '';
     if (shadowHtml.trim()) {
@@ -2675,6 +2679,7 @@ async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
       return;
     }
     if (!render) return;
+    prepareResultAreaViewSwitch(resultArea);
     preservePendingReplayDom();
     syncArchiveItemsIndex(cid, cache.items || []);
     resultArea.innerHTML = cache.html;
@@ -2707,6 +2712,7 @@ async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
     window.archiveCacheByCourseId[cid] = { loading: false, loaded: true, items: payload.items, html };
     syncArchiveItemsIndex(cid, payload.items);
     if (render) {
+      prepareResultAreaViewSwitch(resultArea);
       preservePendingReplayDom();
       resultArea.innerHTML = html;
       card.dataset.resultView = 'archive';

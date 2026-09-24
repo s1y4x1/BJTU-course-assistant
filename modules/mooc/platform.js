@@ -562,7 +562,6 @@ let moocLoginAssistOpening = null;
     const course = courses.find((item) => item.id === String(button.dataset.courseId || ''));
     if (!course) return;
     if (button.dataset.moocAction === 'toggle-overdue' || button.dataset.moocAction === 'toggle-done') {
-      if (button.dataset.animating === '1') return;
       const kind = button.dataset.moocAction === 'toggle-overdue' ? 'overdue' : 'done';
       const state = expandedGroups.get(course.id) || { overdue: false, done: false };
       const expanded = !state[kind];
@@ -583,17 +582,14 @@ let moocLoginAssistOpening = null;
       button.classList.remove('homework-toggle-btn--up', 'homework-toggle-btn--down');
       button.classList.add(expanded ? 'homework-toggle-btn--up' : 'homework-toggle-btn--down');
       button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-      button.dataset.animating = '1';
       group.dataset.expanded = expanded ? '1' : '0';
       group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
-      env.animateHomeworkGroupVisibility(group, expanded);
-      setTimeout(() => {
-        delete button.dataset.animating;
-        if (expanded) {
+      void Promise.resolve(env.animateHomeworkGroupVisibility(group, expanded)).then((completed) => {
+        if (completed && expanded) {
           env.applyExpandableAutoToggle?.(card);
           env.updateCountdowns?.();
         }
-      }, 240);
+      });
       return;
     }
     if (button.dataset.moocAction === 'course') runTasks(course.tasks);

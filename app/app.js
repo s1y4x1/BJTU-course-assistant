@@ -4464,98 +4464,149 @@ function isResultAreaOpen(resultArea) {
   return !!resultArea.offsetHeight;
 }
 
+const HEIGHT_MOTION_ACCELERATION = 48000;
+
+function animateHeightWithMotion(element, from, to, onFrame) {
+  element.__heightMotion?.cancel();
+  const distance = Math.abs(to - from);
+  if (distance < 1 || globalThis.BjtuMotion?.isEnabled?.() === false) {
+    onFrame(to, 1);
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const direction = Math.sign(to - from);
+    let position = from;
+    let velocity = 0;
+    let lastTime = 0;
+    let frameId = 0;
+    const motion = {
+      cancel() {
+        cancelAnimationFrame(frameId);
+        if (element.__heightMotion === motion) delete element.__heightMotion;
+        resolve(false);
+      }
+    };
+    element.__heightMotion = motion;
+    onFrame(from, 0);
+    const step = (now) => {
+      if (element.__heightMotion !== motion) return;
+      if (globalThis.BjtuMotion?.isEnabled?.() === false) {
+        position = to;
+      } else {
+        const dt = Math.min(0.05, (now - (lastTime || now - 16.7)) / 1000);
+        lastTime = now;
+        const remaining = Math.abs(to - position);
+        const rate = Math.max(0.05, Number(globalThis.BjtuMotion?.getSpeed?.()) || 1);
+        const acceleration = HEIGHT_MOTION_ACCELERATION * rate * rate;
+        velocity = Math.min(velocity + acceleration * dt, Math.sqrt(2 * acceleration * remaining));
+        position += direction * Math.min(remaining, velocity * dt);
+      }
+      const progress = Math.min(1, Math.abs(position - from) / distance);
+      onFrame(position, progress);
+      if (Math.abs(to - position) <= 0.75) {
+        onFrame(to, 1);
+        delete element.__heightMotion;
+        resolve(true);
+      } else {
+        frameId = requestAnimationFrame(step);
+      }
+    };
+    frameId = requestAnimationFrame(step);
+  });
+}
+
 function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } = {}) {
   if (!(resultArea instanceof HTMLElement)) return;
-
-  const transition = 'max-height 220ms ease, opacity 180ms ease';
-  const clearTransitionHandlers = () => {
-    if (resultArea.__resultAnimCleanup) {
-      resultArea.__resultAnimCleanup();
-      resultArea.__resultAnimCleanup = null;
-    }
-  };
-  const finishNow = () => {
-    clearTransitionHandlers();
+  resultArea.__heightMotion?.cancel();
+  const reset = () => {
     resultArea.style.transition = '';
     resultArea.style.maxHeight = '';
+    resultArea.style.height = '';
+    resultArea.style.boxSizing = '';
     resultArea.style.opacity = '';
     resultArea.style.overflow = '';
+    resultArea.style.willChange = '';
   };
-
   if (immediate) {
-    finishNow();
+    reset();
     resultArea.style.display = shouldOpen ? 'block' : 'none';
     resultArea.dataset.animOpen = shouldOpen ? '1' : '0';
     return;
   }
-
-  clearTransitionHandlers();
-  resultArea.style.willChange = 'max-height, opacity';
-
-  if (shouldOpen) {
-    resultArea.style.display = 'block';
-    resultArea.style.overflow = 'hidden';
-    resultArea.style.opacity = '0';
-    resultArea.style.maxHeight = '0px';
-    // Force style flush so transition can run from collapsed state.
-    void resultArea.offsetHeight;
-
-    const targetHeight = Math.max(resultArea.scrollHeight, 1);
-    resultArea.style.transition = transition;
-    resultArea.style.opacity = '1';
-    resultArea.style.maxHeight = `${targetHeight}px`;
-
-    const onEnd = (ev) => {
-      if (ev.target !== resultArea || ev.propertyName !== 'max-height') return;
-      clearTransitionHandlers();
-      resultArea.style.transition = '';
-      resultArea.style.maxHeight = '';
-      resultArea.style.opacity = '';
-      resultArea.style.overflow = '';
-      resultArea.style.willChange = '';
-      resultArea.dataset.animOpen = '1';
-    };
-    resultArea.addEventListener('transitionend', onEnd);
-    resultArea.__resultAnimCleanup = () => {
-      resultArea.removeEventListener('transitionend', onEnd);
-      resultArea.style.willChange = '';
-    };
-    return;
-  }
-
-  if (resultArea.style.display === 'none') {
+  if (!shouldOpen && resultArea.style.display === 'none') {
     resultArea.dataset.animOpen = '0';
     return;
   }
-
-  const currentHeight = Math.max(resultArea.scrollHeight, resultArea.offsetHeight, 1);
+  const from = shouldOpen && resultArea.style.display === 'none'
+    ? 0
+    : resultArea.getBoundingClientRect().height;
+  resultArea.style.transition = 'none';
+  resultArea.style.boxSizing = 'border-box';
   resultArea.style.display = 'block';
+  resultArea.style.maxHeight = 'none';
+  resultArea.style.height = `${from}px`;
   resultArea.style.overflow = 'hidden';
-  resultArea.style.maxHeight = `${currentHeight}px`;
-  resultArea.style.opacity = '1';
-  // Force style flush so transition can run to collapsed state.
-  void resultArea.offsetHeight;
-
-  resultArea.style.transition = transition;
-  resultArea.style.maxHeight = '0px';
-  resultArea.style.opacity = '0';
-
-  const onEnd = (ev) => {
-    if (ev.target !== resultArea || ev.propertyName !== 'max-height') return;
-    clearTransitionHandlers();
+  resultArea.style.willChange = 'height, opacity';
+  resultArea.dataset.animOpen = shouldOpen ? '1' : '0';
+  if (shouldOpen) {
+    const to = Math.max(resultArea.scrollHeight + resultArea.offsetHeight - resultArea.clientHeight, 1);
+    const startOpacity = from > 0 ? Number(getComputedStyle(resultArea).opacity) : 0;
+    void animateHeightWithMotion(resultArea, from, to, (height, progress) => {
+      resultArea.style.height = `${height}px`;
+      resultArea.style.opacity = String(startOpacity + (1 - startOpacity) * progress);
+    }).then((completed) => { if (completed) reset(); });
+    return;
+  }
+  const startOpacity = Number(getComputedStyle(resultArea).opacity);
+  void animateHeightWithMotion(resultArea, from, 0, (height, progress) => {
+    resultArea.style.height = `${height}px`;
+    resultArea.style.opacity = String(startOpacity * (1 - progress));
+  }).then((completed) => {
+    if (!completed) return;
     resultArea.style.display = 'none';
-    resultArea.style.transition = '';
-    resultArea.style.maxHeight = '';
-    resultArea.style.opacity = '';
-    resultArea.style.overflow = '';
-    resultArea.style.willChange = '';
-    resultArea.dataset.animOpen = '0';
-  };
-  resultArea.addEventListener('transitionend', onEnd);
-  resultArea.__resultAnimCleanup = () => {
-    resultArea.removeEventListener('transitionend', onEnd);
-    resultArea.style.willChange = '';
-  };
+    reset();
+  });
+}
+
+function prepareResultAreaViewSwitch(resultArea) {
+  if (!(resultArea instanceof HTMLElement)) return;
+  const parent = resultArea.parentElement;
+  parent?.querySelectorAll(':scope > .result-area-outgoing').forEach((outgoing) => {
+    outgoing.__heightMotion?.cancel();
+    outgoing.remove();
+  });
+  if (resultArea.style.display === 'none' || resultArea.getBoundingClientRect().height <= 0) return;
+  resultArea.__heightMotion?.cancel();
+  const from = resultArea.getBoundingClientRect().height;
+  if (from > 0 && resultArea.firstChild) {
+    const outgoing = resultArea.cloneNode(true);
+    outgoing.classList.add('result-area-outgoing');
+    outgoing.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+    outgoing.setAttribute('aria-hidden', 'true');
+    outgoing.inert = true;
+    outgoing.style.pointerEvents = 'none';
+    outgoing.style.transition = 'none';
+    outgoing.style.display = 'block';
+    outgoing.style.boxSizing = 'border-box';
+    outgoing.style.maxHeight = 'none';
+    outgoing.style.height = `${from}px`;
+    outgoing.style.overflow = 'hidden';
+    resultArea.after(outgoing);
+    const opacity = Number(getComputedStyle(outgoing).opacity);
+    void animateHeightWithMotion(outgoing, from, 0, (height, progress) => {
+      outgoing.style.height = `${height}px`;
+      outgoing.style.opacity = String(opacity * (1 - progress));
+    }).then(() => outgoing.remove());
+  }
+  resultArea.style.transition = '';
+  resultArea.style.maxHeight = '';
+  resultArea.style.height = '';
+  resultArea.style.boxSizing = '';
+  resultArea.style.opacity = '';
+  resultArea.style.overflow = '';
+  resultArea.style.willChange = '';
+  resultArea.style.display = 'none';
+  resultArea.dataset.animOpen = '0';
 }
 
 function syncCourseActionButtonText(card, activeView = '') {
@@ -4847,84 +4898,43 @@ function syncForcePublishScoreButtonRow(courseId, expanded) {
 }
 
 function animateHomeworkGroupVisibility(group, expanded) {
-  if (!(group instanceof HTMLElement)) return;
-
-  const generation = Number(group.dataset.visibilityAnimationGeneration || 0) + 1;
-  group.dataset.visibilityAnimationGeneration = String(generation);
-  if (group.__homeworkVisibilityAnimationFrame) {
-    cancelAnimationFrame(group.__homeworkVisibilityAnimationFrame);
-    group.__homeworkVisibilityAnimationFrame = 0;
-  }
-  if (group.__homeworkVisibilityAnimationTimer) {
-    clearTimeout(group.__homeworkVisibilityAnimationTimer);
-    group.__homeworkVisibilityAnimationTimer = 0;
-  }
-
-  const isCurrentAnimation = () => (
-    Number(group.dataset.visibilityAnimationGeneration || 0) === generation
-    && group.dataset.expanded === (expanded ? '1' : '0')
-  );
+  if (!(group instanceof HTMLElement)) return Promise.resolve(false);
+  group.__heightMotion?.cancel();
+  const from = group.getBoundingClientRect().height;
   if (globalThis.BjtuMotion?.isEnabled?.() === false) {
     group.classList.toggle('is-hidden', !expanded);
-    group.classList.remove('homework-group-animating');
     group.style.maxHeight = '';
+    group.style.height = '';
+    group.style.boxSizing = '';
     group.style.opacity = '';
     group.style.transform = '';
     group.style.overflow = '';
-    return;
+    group.style.transition = '';
+    return Promise.resolve(true);
   }
-  const currentHeight = Math.max(0, group.getBoundingClientRect().height);
-  group.classList.remove('homework-group-animating');
+  const startOpacity = Number(getComputedStyle(group).opacity);
+  group.classList.remove('is-hidden');
+  group.style.transition = 'none';
+  group.style.boxSizing = 'border-box';
+  group.style.maxHeight = 'none';
+  group.style.height = `${from}px`;
   group.style.overflow = 'hidden';
-
-  if (expanded) {
-    group.classList.remove('is-hidden');
-    group.style.maxHeight = `${currentHeight}px`;
-    group.style.opacity = currentHeight > 0 ? getComputedStyle(group).opacity : '0';
-    group.style.transform = currentHeight > 0 ? getComputedStyle(group).transform : 'translateY(-3px)';
-    void group.offsetHeight;
-    group.classList.add('homework-group-animating');
-    group.__homeworkVisibilityAnimationFrame = requestAnimationFrame(() => {
-      group.__homeworkVisibilityAnimationFrame = 0;
-      if (!isCurrentAnimation()) return;
-      group.style.maxHeight = `${Math.max(1, group.scrollHeight)}px`;
-      group.style.opacity = '1';
-      group.style.transform = 'translateY(0)';
-    });
-    group.__homeworkVisibilityAnimationTimer = setTimeout(() => {
-      group.__homeworkVisibilityAnimationTimer = 0;
-      if (!isCurrentAnimation()) return;
-      group.classList.remove('homework-group-animating');
-      group.style.maxHeight = '';
-      group.style.opacity = '';
-      group.style.transform = '';
-      group.style.overflow = '';
-    }, globalThis.BjtuMotion?.duration?.(230) ?? 230);
-    return;
-  }
-
-  group.style.maxHeight = `${Math.max(1, currentHeight || group.scrollHeight)}px`;
-  group.style.opacity = getComputedStyle(group).opacity || '1';
-  group.style.transform = getComputedStyle(group).transform || 'translateY(0)';
-  void group.offsetHeight;
-  group.classList.add('homework-group-animating');
-  group.__homeworkVisibilityAnimationFrame = requestAnimationFrame(() => {
-    group.__homeworkVisibilityAnimationFrame = 0;
-    if (!isCurrentAnimation()) return;
-    group.style.maxHeight = '0px';
-    group.style.opacity = '0';
-    group.style.transform = 'translateY(-3px)';
-  });
-  group.__homeworkVisibilityAnimationTimer = setTimeout(() => {
-    group.__homeworkVisibilityAnimationTimer = 0;
-    if (!isCurrentAnimation()) return;
-    group.classList.add('is-hidden');
-    group.classList.remove('homework-group-animating');
+  const to = expanded ? Math.max(1, group.scrollHeight) : 0;
+  return animateHeightWithMotion(group, from, to, (height, progress) => {
+    group.style.height = `${height}px`;
+    group.style.opacity = String(startOpacity + ((expanded ? 1 : 0) - startOpacity) * progress);
+  }).then((completed) => {
+    if (!completed) return false;
+    group.classList.toggle('is-hidden', !expanded);
     group.style.maxHeight = '';
+    group.style.height = '';
+    group.style.boxSizing = '';
     group.style.opacity = '';
     group.style.transform = '';
     group.style.overflow = '';
-  }, globalThis.BjtuMotion?.duration?.(230) ?? 230);
+    group.style.transition = '';
+    return true;
+  });
 }
 
 window.toggleOverdueView = function (courseId) {
@@ -5601,7 +5611,7 @@ courseListDiv.addEventListener('mouseover', (e) => {
   }
 });
 
-function keepExpandableTogglePosition(toggle, durationMs) {
+function keepExpandableTogglePosition(toggle) {
   let top = toggle.getBoundingClientRect().top;
   const scrollTargets = [];
   for (let node = toggle.parentElement; node; node = node.parentElement) {
@@ -5612,7 +5622,6 @@ function keepExpandableTogglePosition(toggle, durationMs) {
     scrollTargets.push(document.scrollingElement);
   }
   const lastScrollTops = new Map(scrollTargets.map((target) => [target, target.scrollTop]));
-  const until = performance.now() + durationMs + 60;
   let stopped = false;
   let intendedScroll = 0;
   let lastInputAt = 0;
@@ -5648,7 +5657,7 @@ function keepExpandableTogglePosition(toggle, durationMs) {
   document.addEventListener('wheel', onWheel, { capture: true, passive: true });
   document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
   document.addEventListener('touchmove', onTouchMove, { capture: true, passive: true });
-  const follow = () => {
+  const update = () => {
     if (stopped) return;
     if (!toggle.isConnected) {
       stop();
@@ -5675,10 +5684,8 @@ function keepExpandableTogglePosition(toggle, durationMs) {
       delta -= target.scrollTop - before;
     }
     for (const target of scrollTargets) lastScrollTops.set(target, target.scrollTop);
-    if (performance.now() < until) requestAnimationFrame(follow);
-    else stop();
   };
-  requestAnimationFrame(follow);
+  return { update, stop };
 }
 
 courseListDiv.addEventListener('click', async (e) => {
@@ -5715,64 +5722,74 @@ courseListDiv.addEventListener('click', async (e) => {
     const closeText = actionEl.dataset.closeText || '点击收起';
     const body = box.querySelector('.expandable-body');
     const isExpanded = box.classList.contains('expanded');
-    const animationId = Number(box.dataset.expandAnimationId || 0) + 1;
-    box.dataset.expandAnimationId = String(animationId);
 
     if (body instanceof HTMLElement) {
+      const from = body.getBoundingClientRect().height;
+      const toggleTop = actionEl.getBoundingClientRect().top;
+      body.__heightMotion?.cancel();
+      body.style.transition = 'none';
+      body.style.boxSizing = '';
+      actionEl.style.transition = 'none';
+      actionEl.style.transform = '';
       if (!isExpanded) {
-        const from = body.getBoundingClientRect().height;
-        const toggleTop = actionEl.getBoundingClientRect().top;
-        body.style.overflow = 'hidden';
-        body.style.maxHeight = `${Math.max(0, from)}px`;
         box.classList.add('expanded');
-        const toggleShift = actionEl.getBoundingClientRect().top - toggleTop;
-        actionEl.style.transition = 'none';
-        actionEl.style.transform = `translateY(${-toggleShift}px)`;
-        void actionEl.offsetHeight;
-        actionEl.style.transition = '';
-        const to = Math.max(from + 1, body.scrollHeight);
-        requestAnimationFrame(() => {
-          if (box.dataset.expandAnimationId !== String(animationId)) return;
-          body.style.maxHeight = `${to}px`;
-          actionEl.style.transform = '';
-        });
-        const finishExpansion = () => {
-          body.removeEventListener('transitionend', onHeightTransitionEnd);
-          if (box.dataset.expandAnimationId !== String(animationId)) return;
-          // Clear inline limits so expanded CSS state fully controls overflow behavior.
-          body.style.maxHeight = '';
-          body.style.overflow = '';
-          body.style.overflowX = '';
-          body.style.overflowY = '';
-        };
-        const onHeightTransitionEnd = (event) => {
-          if (event.target === body && event.propertyName === 'max-height') finishExpansion();
-        };
-        body.addEventListener('transitionend', onHeightTransitionEnd);
-        setTimeout(finishExpansion, Math.max(220, Number(globalThis.BjtuMotion?.duration?.(200)) || 0) + 60);
-      } else {
-        const collapsed = body.getBoundingClientRect().height;
-        const collapseDuration = window.collapseHomeworkDetailsDownward
-          ? Math.max(220, Number(globalThis.BjtuMotion?.duration?.(200)) || 0)
-          : 220;
-        if (window.collapseHomeworkDetailsDownward) keepExpandableTogglePosition(actionEl, collapseDuration);
+        body.style.maxHeight = 'none';
+        body.style.boxSizing = 'border-box';
+        body.style.height = `${from}px`;
         body.style.overflow = 'hidden';
-        body.style.maxHeight = `${Math.max(0, collapsed)}px`;
-        box.classList.remove('expanded');
-        requestAnimationFrame(() => {
-          if (box.dataset.expandAnimationId !== String(animationId)) return;
-          const collapsedLines = box.classList.contains('expandable-box--replay')
-            ? window.replayDetailCollapsedLines
-            : window.homeworkDetailCollapsedLines;
-          body.style.maxHeight = detailCollapsedMaxHeight(collapsedLines);
-        });
-        setTimeout(() => {
-          if (box.dataset.expandAnimationId !== String(animationId)) return;
+        const to = Math.max(from + 1, body.scrollHeight);
+        const toggleShift = actionEl.getBoundingClientRect().top - toggleTop;
+        void animateHeightWithMotion(body, from, to, (height, progress) => {
+          body.style.height = `${height}px`;
+          actionEl.style.transform = `translateY(${-toggleShift * (1 - progress)}px)`;
+        }).then((completed) => {
+          if (!completed) return;
+          body.style.height = '';
           body.style.maxHeight = '';
-          body.style.overflowX = '';
-          body.style.overflowY = '';
+          body.style.boxSizing = '';
           body.style.overflow = '';
-        }, collapseDuration);
+          body.style.transition = '';
+          actionEl.style.transform = '';
+          actionEl.style.transition = '';
+        });
+      } else {
+        const positionTracker = window.collapseHomeworkDetailsDownward
+          ? keepExpandableTogglePosition(actionEl)
+          : null;
+        box.classList.remove('expanded');
+        const collapsedLines = box.classList.contains('expandable-box--replay')
+          ? window.replayDetailCollapsedLines
+          : window.homeworkDetailCollapsedLines;
+        body.style.height = '';
+        body.style.maxHeight = detailCollapsedMaxHeight(collapsedLines);
+        const to = body.getBoundingClientRect().height;
+        body.style.maxHeight = 'none';
+        body.style.boxSizing = 'border-box';
+        body.style.height = `${from}px`;
+        body.style.overflow = 'hidden';
+        const toggleShift = actionEl.getBoundingClientRect().top - toggleTop;
+        void animateHeightWithMotion(body, from, to, (height, progress) => {
+          body.style.height = `${height}px`;
+          actionEl.style.transform = `translateY(${-toggleShift * (1 - progress)}px)`;
+          positionTracker?.update();
+        }).then((completed) => {
+          if (completed) {
+            body.style.height = '';
+            body.style.maxHeight = '';
+            body.style.boxSizing = '';
+            body.style.overflow = '';
+            body.style.transition = '';
+            actionEl.style.transform = '';
+            actionEl.style.transition = '';
+          }
+          if (positionTracker) {
+            if (completed) requestAnimationFrame(() => {
+              positionTracker.update();
+              positionTracker.stop();
+            });
+            else positionTracker.stop();
+          }
+        });
       }
     } else {
       box.classList.toggle('expanded');

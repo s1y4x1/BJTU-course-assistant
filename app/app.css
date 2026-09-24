@@ -1418,10 +1418,6 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
 .homework-group + .hw-card-item {
     margin-top: 8px;
 }
-.homework-group.homework-group-animating {
-    transition: max-height 0.22s ease, opacity 0.18s ease, transform 0.18s ease;
-    will-change: max-height, opacity, transform;
-}
 .homework-status-overdue {
     color: #dc2626;
     font-weight: 600;

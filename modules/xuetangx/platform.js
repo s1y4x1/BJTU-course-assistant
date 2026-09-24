@@ -1430,7 +1430,7 @@
     const button = event.target instanceof Element ? event.target.closest('[data-xuetangx-action]') : null;
     if (!(button instanceof HTMLElement)) return;
     const course = courses.find((item) => item.id === String(button.dataset.courseId || ''));
-    if (!course || button.dataset.animating === '1') return;
+    if (!course) return;
     if (button.dataset.xuetangxAction === 'second-answer-submit') {
       const task = course.tasks.find((item) => item.id === String(button.dataset.taskId || ''));
       if (task) void submitAnswersFromSecondAccount(course, task);
@@ -1458,11 +1458,9 @@
     button.classList.toggle('homework-toggle-btn--up', expanded);
     button.classList.toggle('homework-toggle-btn--down', !expanded);
     button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    button.dataset.animating = '1';
     group.dataset.expanded = expanded ? '1' : '0';
     group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
-    env.animateHomeworkGroupVisibility(group, expanded);
-    setTimeout(() => { delete button.dataset.animating; }, 240);
+    void env.animateHomeworkGroupVisibility(group, expanded);
   }
 
   global.BjtuXuetangxPlatform = {
