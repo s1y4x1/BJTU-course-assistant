@@ -188,9 +188,9 @@
   const motionPolicy = document.createElement('style');
   motionPolicy.id = 'bjtu-animation-policy';
   motionPolicy.textContent = `
-    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *)),
-    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *))::before,
-    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *))::after {
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], .account-upload-hold-progress, [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *)),
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], .account-upload-hold-progress, [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *))::before,
+    html[data-animation-enabled="false"] *:not(:is([class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], .account-upload-hold-progress, [role="progressbar"], [role="progressbar"] *, .is-indeterminate, .is-indeterminate *))::after {
       animation-delay: 0s !important;
       animation-duration: 0.001ms !important;
       animation-iteration-count: 1 !important;

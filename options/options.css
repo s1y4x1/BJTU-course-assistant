@@ -192,15 +192,13 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
   white-space:nowrap;
   font-size:var(--bjtu-font-size-secondaryTitle, 16px);
 }
-#exportSettingsBtn { position:relative; overflow:hidden; }
+#exportSettingsBtn { position:relative; overflow:hidden; isolation:isolate; }
 #exportSettingsBtn::after {
   position:absolute;
-  right:0;
-  bottom:0;
-  left:0;
-  height:3px;
+  inset:0;
   content:"";
-  background:var(--accent-color, #2563eb);
+  z-index:-1;
+  background:color-mix(in hsl, #2563eb 70%, black);
   transform:scaleX(0);
   transform-origin:left center;
   pointer-events:none;
