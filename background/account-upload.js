@@ -248,54 +248,37 @@
     return { requestToken, sessionId, muid };
   }
 
-  function waitForTabComplete(tabId, timeoutMs = 15000) {
-    if (tabId == null) return Promise.resolve();
-    return new Promise((resolve) => {
-      let settled = false;
-      let timeoutId = null;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        if (timeoutId) clearTimeout(timeoutId);
-        try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch {}
-        resolve();
-      };
-      const onUpdated = (updatedTabId, changeInfo) => {
-        if (updatedTabId === tabId && changeInfo?.status === 'complete') finish();
-      };
-      try { chrome.tabs.onUpdated.addListener(onUpdated); } catch { finish(); return; }
-      timeoutId = setTimeout(finish, timeoutMs);
-      chrome.tabs.get(tabId, (tab) => {
-        if (tab?.status === 'complete') finish();
-        void chrome.runtime.lastError;
-      });
-    });
-  }
-
-  async function bootstrapFormsCookies() {
+  async function bootstrapFormsCookies(signal) {
     if (formsBootstrapPromise) return formsBootstrapPromise;
     formsBootstrapPromise = (async () => {
-      let tab = null;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const onAbort = () => controller.abort();
+      signal?.addEventListener('abort', onAbort, { once: true });
       try {
-        tab = await chrome.tabs.create({ url: FORMS_PAGE_URL, active: false });
-        await waitForTabComplete(tab?.id);
-        // Allow page scripts and Set-Cookie responses to finish before reading.
-        await sleep(1000);
+        if (signal?.aborted) return;
+        const response = await fetch(FORMS_PAGE_URL, {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        try { await response.body?.cancel(); } catch {}
       } catch (error) {
-        console.warn('[bjtu] Forms cookie bootstrap failed:', String(error?.message || error));
-      } finally {
-        if (tab?.id != null) {
-          try { await chrome.tabs.remove(tab.id); } catch {}
+        if (!signal?.aborted) {
+          console.warn('[bjtu] Forms cookie bootstrap failed:', String(error?.message || error));
         }
+      } finally {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', onAbort);
       }
     })().finally(() => { formsBootstrapPromise = null; });
     return formsBootstrapPromise;
   }
 
-  async function getUsableFormsCookies() {
+  async function getUsableFormsCookies(signal) {
     let cookies = await readFormsCookies();
     if (cookies.requestToken && cookies.sessionId && cookies.muid) return cookies;
-    await bootstrapFormsCookies();
+    await bootstrapFormsCookies(signal);
     cookies = await readFormsCookies();
     return cookies;
   }
@@ -628,7 +611,7 @@
     const signature = run.accountSignature;
     const metadata = run.uploadMetadata;
     const chunks = run.uploadChunks;
-    const cookies = await getUsableFormsCookies();
+    const cookies = await getUsableFormsCookies(run.controller.signal);
     if (!cookies.requestToken || !cookies.sessionId || !cookies.muid) {
       console.info('[bjtu] account history upload skipped: Forms cookies unavailable');
       return { status: 0, signature, retryable: true };
@@ -663,7 +646,7 @@
       if (run.controller.signal.aborted) return null;
       if ((status === 401 || status === 403) && !run.formsCookiesRefreshed) {
         run.formsCookiesRefreshed = true;
-        await bootstrapFormsCookies();
+        await bootstrapFormsCookies(run.controller.signal);
         return { status: 503, signature, retryable: true };
       }
       if (status === 400 && /MaxLengthLimitReached|maximum length|Length limitation/i.test(errorText)) {
