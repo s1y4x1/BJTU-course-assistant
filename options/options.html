@@ -67,18 +67,22 @@
         <input type="checkbox" id="fullscreenTopBarFullWidth" style="width:auto;" />
         <span>全屏页面顶栏占满宽度</span>
       </label>
+      <div class="tip">开启时账号、学期等顶部控件横跨全屏页面；关闭时它们位于左栏顶部，课程助手右栏从页面顶部开始。</div>
       <label style="display:flex; align-items:center; gap:8px; margin:4px 0;">
         <input type="checkbox" id="stickyCourseHeader" style="width:auto;" checked />
         <span>固定课程助手顶栏</span>
       </label>
+      <div class="tip">开启时仅滚动课程列表，课程助手标题和平台状态按钮始终显示在右栏顶部。</div>
       <div class="option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:4px 0;">
         <input type="checkbox" id="collapseHomeworkDetailsDownward" style="width:auto;" checked />
         <span>向下收起作业详情</span>
       </label>
-      <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin:10px 0 0;">
-        <span>作业详情默认显示行数</span>
-        <input id="homeworkDetailCollapsedLines" type="number" step="1" style="width:88px;" value="3">
+      <div class="tip">开启时收起动画从作业详情上方向下推进，尽量保持展开/收起按钮的位置；关闭时恢复原来的收起方向。</div>
+      <label class="homework-detail-lines-option">
+        <span>作业详情默认显示</span>
+        <input id="homeworkDetailCollapsedLines" type="number" min="0" step="1" value="3" aria-label="作业详情默认显示行数">
+        <span>行</span>
       </label>
       <div class="option-divider" role="separator"></div>
       <details class="ui-order-editor font-size-editor" id="fontSizeEditor">
