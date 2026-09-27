@@ -4522,9 +4522,11 @@ function createTopDownListFade(items) {
     original: item.style.opacity,
     target: Number(getComputedStyle(item).opacity) || 1
   }));
+  let currentFraction = 0;
   return {
     update(fraction) {
       const revealed = Math.max(0, Math.min(1, fraction));
+      currentFraction = revealed;
       states.forEach(({ item, target }, index) => {
         const finishAt = 0.35 + 0.65 * index / Math.max(1, states.length - 1);
         item.style.opacity = String(target * Math.min(1, revealed / finishAt));
@@ -4532,8 +4534,18 @@ function createTopDownListFade(items) {
     },
     reset() {
       states.forEach(({ item, original }) => { item.style.opacity = original; });
+    },
+    snapshotHtml(container) {
+      this.reset();
+      const html = container.innerHTML;
+      this.update(currentFraction);
+      return html;
     }
   };
+}
+
+function getResultAreaHtmlForCache(resultArea) {
+  return resultArea.__topDownListFade?.snapshotHtml(resultArea) ?? resultArea.innerHTML;
 }
 
 function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } = {}) {

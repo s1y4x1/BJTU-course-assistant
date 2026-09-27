@@ -1876,7 +1876,7 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   cache.linksFetching = false;
   cache.linksFetched = true;
   const currentView = String(card.dataset.resultView || '').trim();
-  const visibleHtml = String(resultArea.innerHTML || '').trim();
+  const visibleHtml = String(getResultAreaHtmlForCache(resultArea) || '').trim();
   const shadowHtml = (shadowArea instanceof HTMLElement) ? String(shadowArea.innerHTML || '').trim() : '';
   const workingHtml = String(workingArea.innerHTML || '').trim();
   // Only prefer visible area when replay view is active; otherwise visible area may be courseware content.
@@ -1884,7 +1884,7 @@ async function startReplayLinkFetchIfNeeded(btn, courseIdInt, courseNum, fzId) {
   const finalHtml = visibleReplayHtml || shadowHtml || workingHtml || String(cache.html || '');
   cache.html = finalHtml;
 
-  if (currentView === 'replay' && finalHtml) {
+  if (currentView === 'replay' && finalHtml && !visibleReplayHtml) {
     replaceResultAreaHtmlAnimated(resultArea, cache.html);
   }
   btn.classList.remove('replay-link-progress');
