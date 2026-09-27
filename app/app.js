@@ -1452,6 +1452,16 @@ function setupOptionsStorageLiveSync() {
     if (!popupMode && changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY]) {
       setCourseHelperFocusMode(changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY].newValue === true);
     }
+    if (!popupMode && (changes[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] || changes[STICKY_COURSE_HEADER_KEY])) {
+      applyFullscreenHeaderLayout(
+        changes[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY]
+          ? changes[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY].newValue === true
+          : !document.body.classList.contains('page-top-config-in-left-column'),
+        changes[STICKY_COURSE_HEADER_KEY]
+          ? changes[STICKY_COURSE_HEADER_KEY].newValue !== false
+          : document.body.classList.contains('course-header-sticky')
+      );
+    }
     if (!popupMode && changes[SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY]) {
       window.showCourseListDuringLayoutTransition = changes[SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY].newValue === true;
       syncCourseHelperLayoutProcessingPlaceholder();
@@ -1574,6 +1584,8 @@ function getOrderedCoursePlatformColumns() {
     .filter(Boolean);
 }
 const COURSE_HELPER_EXPANDED_DEFAULT_KEY = 'courseHelperExpandedByDefault';
+const FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY = 'fullscreenTopBarFullWidth';
+const STICKY_COURSE_HEADER_KEY = 'stickyCourseHeader';
 const SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY = 'showCourseListDuringLayoutTransition';
 const COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY = 'courseHelperPlatformColumnWeights';
 const COURSE_HELPER_PLATFORM_COLUMN_MIN_WIDTH = 240;
@@ -1584,6 +1596,33 @@ let coursePlatformColumnDragCleanup = null;
 let courseHelperLayoutTransitionTimer = 0;
 let courseHelperLayoutTransitioning = false;
 let courseHelperLayoutWorkPending = false;
+
+function applyFullscreenHeaderLayout(fullWidth, sticky) {
+  if (popupMode || appSearchParams.get('view') === 'sidepanel') return;
+  const topConfig = document.querySelector('.page-top-config');
+  if (!(topConfig instanceof HTMLElement) || !leftColumn || !layoutContainer) return;
+  const courseListStage = rightColumn?.querySelector('.course-list-stage');
+  const wasSticky = document.body.classList.contains('course-header-sticky');
+  const previousScrollTop = wasSticky ? courseListStage?.scrollTop || 0 : rightColumn?.scrollTop || 0;
+  const courseHeader = rightColumn?.querySelector('.course-header');
+  const headerHeight = courseHeader
+    ? courseHeader.offsetHeight + (parseFloat(getComputedStyle(courseHeader).marginBottom) || 0)
+    : 0;
+  if (fullWidth) document.body.insertBefore(topConfig, layoutContainer);
+  else leftColumn.prepend(topConfig);
+  document.body.classList.toggle('page-top-config-in-left-column', !fullWidth);
+  document.body.classList.toggle('course-header-sticky', sticky);
+  if (wasSticky !== sticky) {
+    rightColumn.scrollTop = 0;
+    if (courseListStage instanceof HTMLElement) courseListStage.scrollTop = 0;
+    if (sticky && courseListStage instanceof HTMLElement) {
+      courseListStage.scrollTop = Math.max(0, previousScrollTop - headerHeight);
+    } else if (!sticky) {
+      rightColumn.scrollTop = previousScrollTop + (previousScrollTop > 0 ? headerHeight : 0);
+    }
+  }
+  window.syncRightColumnResizer?.();
+}
 
 function shouldSuspendCourseHelperLayoutWork() {
   return !popupMode
@@ -2007,6 +2046,8 @@ async function loadCourseHelperLayoutSettings() {
   if (popupMode) return;
   const stored = await chrome.storage.local.get([
     COURSE_HELPER_EXPANDED_DEFAULT_KEY,
+    FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY,
+    STICKY_COURSE_HEADER_KEY,
     COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY,
     SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY
   ]).catch(() => ({}));
@@ -2022,6 +2063,10 @@ async function loadCourseHelperLayoutSettings() {
     await chrome.storage.local.remove(COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY).catch(() => {});
   }
   window.showCourseListDuringLayoutTransition = stored[SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY] === true;
+  applyFullscreenHeaderLayout(
+    stored[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] === true,
+    stored[STICKY_COURSE_HEADER_KEY] !== false
+  );
   setCourseHelperFocusMode(stored[COURSE_HELPER_EXPANDED_DEFAULT_KEY] === true);
 }
 

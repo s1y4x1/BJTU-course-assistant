@@ -295,6 +295,31 @@
     await globalThis.BjtuUpdateFileSystem.storeDirectoryHandle(null);
   }
 
+  async function verifyBackgroundDirectoryWriteAccess(expectedForegroundProbe) {
+    const root = await readDirectoryHandle();
+    const validRoot = await validateDirectory(root);
+    if (!validRoot) throw new Error('后台没有扩展目录的读写权限');
+    const updaterDirectory = await (await validRoot.getDirectoryHandle('modules')).getDirectoryHandle('updater');
+    const foregroundMarker = await updaterDirectory.getFileHandle('directory-permission.json');
+    const foregroundProbe = await (await foregroundMarker.getFile()).text();
+    if (!expectedForegroundProbe || foregroundProbe !== expectedForegroundProbe) {
+      throw new Error('后台访问的扩展目录与前台验证的目录不一致');
+    }
+    const marker = await updaterDirectory.getFileHandle('directory-permission-background.json', { create: true });
+    const probeId = crypto.randomUUID();
+    let content = '';
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      content = JSON.stringify({ format: 'bjtu-ca-background-directory-permission', probeId, attempt, checkedAt: Date.now() });
+      const writer = await marker.createWritable();
+      await writer.write(content);
+      await writer.close();
+      if (await (await marker.getFile()).text() !== content) {
+        throw new Error(`后台第 ${attempt} 次写入后读取不一致`);
+      }
+    }
+    return content;
+  }
+
   async function validateDirectory(handle) {
     if (!handle || handle.kind !== 'directory' || typeof handle.queryPermission !== 'function') return null;
     if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted') return null;
@@ -1061,6 +1086,12 @@
     }
   });
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'VERIFY_UPDATER_DIRECTORY_BACKGROUND_ACCESS') {
+      verifyBackgroundDirectoryWriteAccess(message?.expectedForegroundProbe)
+        .then((probe) => sendResponse({ ok: true, probe }))
+        .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+      return true;
+    }
     if (message?.type === 'BACKGROUND_UPDATE_MODULE_SELECTION') {
       sendResponse({ ok: resolveManualModuleSelection(message?.payload) });
       return false;

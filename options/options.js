@@ -766,8 +766,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, collapseHomeworkDetailsDownward, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, updateDirectoryStartupCheckEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'collapseHomeworkDetailsDownward', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'updateDirectoryStartupCheckEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, collapseHomeworkDetailsDownward, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, updateDirectoryStartupCheckEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, fullscreenTopBarFullWidth, stickyCourseHeader, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'collapseHomeworkDetailsDownward', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'updateDirectoryStartupCheckEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'fullscreenTopBarFullWidth', 'stickyCourseHeader', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
   ]);
   const { xuetangxSecondCsrfToken, xuetangxSecondSessionId } = await chrome.storage.local.get([
     'xuetangxSecondCsrfToken',
@@ -883,6 +883,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     MAX_POPUP_HEIGHT_PX
   ));
   document.getElementById('courseHelperExpandedByDefault').checked = courseHelperExpandedByDefault === true;
+  document.getElementById('fullscreenTopBarFullWidth').checked = fullscreenTopBarFullWidth === true;
+  document.getElementById('stickyCourseHeader').checked = stickyCourseHeader !== false;
   document.getElementById('showCourseListDuringLayoutTransition').checked = showCourseListDuringLayoutTransition === true;
   document.getElementById('deadlineCountdownStyle').value = normalizeDeadlineCountdownStyle(deadlineCountdownStyle);
   const saveUploadsVal = saveUploadedFilesEnabled === undefined
@@ -1474,6 +1476,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.courseHelperExpandedByDefault) {
         applyBooleanUi('courseHelperExpandedByDefault', changes.courseHelperExpandedByDefault.newValue, DEFAULT_COURSE_HELPER_EXPANDED);
       }
+      if (changes.fullscreenTopBarFullWidth) {
+        applyBooleanUi('fullscreenTopBarFullWidth', changes.fullscreenTopBarFullWidth.newValue, false);
+      }
+      if (changes.stickyCourseHeader) {
+        applyBooleanUi('stickyCourseHeader', changes.stickyCourseHeader.newValue, true);
+      }
       if (changes.showCourseListDuringLayoutTransition) {
         applyBooleanUi(
           'showCourseListDuringLayoutTransition',
@@ -1757,6 +1765,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ courseHelperExpandedByDefault: event.currentTarget.checked });
     setMsg('已应用更改');
   });
+  for (const id of ['fullscreenTopBarFullWidth', 'stickyCourseHeader']) {
+    document.getElementById(id).addEventListener('change', async (event) => {
+      await chrome.storage.local.set({ [id]: event.currentTarget.checked });
+      setMsg('已应用更改');
+    });
+  }
   document.getElementById('themeMode').addEventListener('click', async (e) => {
     const btn = e.target.closest('.theme-mode-btn');
     if (!btn) return;
@@ -2298,6 +2312,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       preferExistingFullscreenPage: DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE,
       groupExtensionTabsEnabled: DEFAULT_GROUP_EXTENSION_TABS_ENABLED,
       courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
+      fullscreenTopBarFullWidth: false,
+      stickyCourseHeader: true,
       showCourseListDuringLayoutTransition: DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION,
       deadlineCountdownStyle: DEFAULT_DEADLINE_COUNTDOWN_STYLE,
       themeMode: DEFAULT_THEME_MODE,
@@ -2380,6 +2396,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('popupWidthPx').value = String(DEFAULT_POPUP_WIDTH_PX);
     document.getElementById('popupHeightPx').value = String(DEFAULT_POPUP_HEIGHT_PX);
     document.getElementById('courseHelperExpandedByDefault').checked = DEFAULT_COURSE_HELPER_EXPANDED;
+    document.getElementById('fullscreenTopBarFullWidth').checked = false;
+    document.getElementById('stickyCourseHeader').checked = true;
     document.getElementById('saveUploadsEnabled').checked = true;
     document.getElementById('headerQrEnabled').checked = false;
     document.getElementById('headerQrEnabled').disabled = true;

@@ -368,8 +368,9 @@ async function verifyVersionDirectoryWriteAccess(handle) {
   const updaterDirectory = await (await handle.getDirectoryHandle('modules')).getDirectoryHandle('updater');
   const marker = await updaterDirectory.getFileHandle('directory-permission.json', { create: true });
   const probeId = crypto.randomUUID();
+  let content = '';
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const content = JSON.stringify({ format: 'bjtu-ca-directory-permission', probeId, attempt, checkedAt: Date.now() });
+    content = JSON.stringify({ format: 'bjtu-ca-directory-permission', probeId, attempt, checkedAt: Date.now() });
     const writer = await marker.createWritable();
     await writer.write(content);
     await writer.close();
@@ -390,7 +391,37 @@ async function verifyVersionDirectoryWriteAccess(handle) {
       throw new Error('所选目录的测试文件与当前扩展运行时读取到的内容不一致，请选择当前扩展的安装目录');
     }
   }
-  return true;
+  return content;
+}
+
+async function verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe) {
+  const result = await chrome.runtime.sendMessage({
+    type: 'VERIFY_UPDATER_DIRECTORY_BACKGROUND_ACCESS',
+    expectedForegroundProbe: foregroundProbe
+  });
+  if (!result?.ok || !result.probe) {
+    throw new Error(`后台目录权限验证失败：${String(result?.message || '后台未返回验证结果')}`);
+  }
+  const updaterDirectory = await (await handle.getDirectoryHandle('modules')).getDirectoryHandle('updater');
+  const marker = await updaterDirectory.getFileHandle('directory-permission-background.json');
+  if (await (await marker.getFile()).text() !== result.probe) {
+    throw new Error('前台读到的后台测试文件与后台写入内容不一致');
+  }
+  for (let retry = 0; retry < 5; retry += 1) {
+    const runtimeUrl = new URL(chrome.runtime.getURL('modules/updater/directory-permission-background.json'));
+    runtimeUrl.searchParams.set('probe', `${retry}-${Date.now()}`);
+    const response = await fetch(runtimeUrl, { cache: 'no-store' }).catch(() => null);
+    if (response?.ok && await response.text() === result.probe) return;
+    if (retry < 4) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('后台测试文件与当前扩展运行时读取到的内容不一致');
+}
+
+function withVersionDirectoryPermissionAuditLock(operation) {
+  const locks = navigator.locks;
+  return locks?.request
+    ? locks.request('bjtu-ca-directory-permission-audit', { mode: 'exclusive' }, operation)
+    : operation();
 }
 
 async function setupVersionDirectoryPermissionCheck() {
@@ -411,10 +442,15 @@ async function setupVersionDirectoryPermissionCheck() {
         modal.classList.remove('show');
         return;
       }
-      const handle = await readVersionUpdateDirectoryHandle();
+      const handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
       if (handle) {
         try {
-          await verifyVersionDirectoryWriteAccess(handle);
+          await withVersionDirectoryPermissionAuditLock(async () => {
+            const foregroundProbe = await verifyVersionDirectoryWriteAccess(handle);
+            await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
+          });
+          versionUpdateDirectoryHandle = handle;
+          versionUpdateDirectoryHandleLoaded = true;
           savedHandle = handle;
           modal.classList.remove('show');
           return;
@@ -447,12 +483,15 @@ async function setupVersionDirectoryPermissionCheck() {
         if (!window.showDirectoryPicker) throw new Error('当前浏览器不支持选择目录');
         selected = await window.showDirectoryPicker({ id: 'bjtu-update-dir', mode: 'readwrite' });
       }
-      await verifyVersionDirectoryWriteAccess(selected);
-      await storeVersionUpdateDirectoryHandle(selected);
+      await withVersionDirectoryPermissionAuditLock(async () => {
+        const foregroundProbe = await verifyVersionDirectoryWriteAccess(selected);
+        await storeVersionUpdateDirectoryHandle(selected);
+        await verifyVersionBackgroundDirectoryWriteAccess(selected, foregroundProbe);
+      });
       savedHandle = selected;
       dismissed = false;
       modal.classList.remove('show');
-      showToast('扩展安装目录写入权限验证通过', 'success');
+      showToast('前台与后台的扩展安装目录写入权限均已验证通过', 'success');
     } catch (error) {
       savedHandle = null;
       if (error?.name !== 'AbortError') {

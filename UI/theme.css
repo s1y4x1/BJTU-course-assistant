@@ -46,6 +46,18 @@ html[data-color-scheme="dark"] .config-area {
   background: #111827;
 }
 
+html[data-color-scheme="dark"] .right-column {
+  --course-header-sticky-bg: #111827;
+}
+
+html[data-color-scheme="dark"] body.course-header-sticky .course-list-stage {
+  scrollbar-color: rgba(203,213,225,0.8) transparent;
+}
+
+html[data-color-scheme="dark"] body.course-header-sticky .course-list-stage::-webkit-scrollbar-thumb {
+  background: rgba(203,213,225,0.72);
+}
+
 html[data-color-scheme="dark"] #drop-zone {
   border-color: #475569;
   background: #111827;

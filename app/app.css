@@ -323,6 +323,7 @@ input[type="text"], input[type="number"], input[type="password"] { padding: 8px;
     border-radius: 0;
 }
 .right-column {
+    --course-header-sticky-bg: #f9f9f9;
     flex: 0 1 auto;
     min-width: 480px;
     position: relative;
@@ -1666,6 +1667,31 @@ a.homework-type-badge { text-decoration:none; }
     justify-content: space-between;
     gap: 8px;
     flex-wrap: nowrap;
+}
+body.course-header-sticky .right-column {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+body.course-header-sticky .right-column .course-header {
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 4;
+    background: var(--course-header-sticky-bg);
+}
+body.course-header-sticky .right-column .course-list-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148,163,184,0.9) transparent;
+}
+body.course-header-sticky .course-list-stage::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+body.course-header-sticky .course-list-stage::-webkit-scrollbar-thumb {
+    background: rgba(148,163,184,0.85);
 }
 .course-header > span:first-child {
     flex: 0 0 auto;
