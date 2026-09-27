@@ -97,20 +97,20 @@ function animateSavedUploadsItems(section, expanding) {
   if (globalThis.BjtuMotion?.isEnabled?.() === false
     || (!globalThis.BjtuMotion && matchMedia('(prefers-reduced-motion: reduce)').matches)) return Promise.resolve();
   const items = getSavedUploadAnimatedItems(section);
-  const closingFrames = [
-        { opacity: 1, transform: 'translateY(0) scaleY(1)', transformOrigin: 'top center' },
-        { opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' }
-      ];
   return Promise.all(items.map((item, index) => {
     const finishAt = 0.35 + 0.55 * index / Math.max(1, items.length - 1);
-    const frames = expanding ? [
+    const openingFrames = [
       { offset: 0, opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' },
       { offset: finishAt, opacity: 1, transform: `translateY(${-7 * (1 - finishAt)}px) scaleY(${0.96 + 0.04 * finishAt})` },
       { offset: 1, opacity: 1, transform: 'translateY(0) scaleY(1)' }
-    ] : closingFrames;
+    ];
+    const frames = expanding ? openingFrames : openingFrames.slice().reverse().map((frame) => ({
+      ...frame,
+      offset: 1 - frame.offset
+    }));
     const animation = item.animate(frames, {
-      duration: expanding ? 220 : 180,
-      easing: expanding ? 'cubic-bezier(0.2, 0.8, 0.2, 1)' : 'ease-in',
+      duration: 220,
+      easing: expanding ? 'cubic-bezier(0.2, 0.8, 0.2, 1)' : 'cubic-bezier(0.8, 0, 0.8, 0.2)',
       fill: 'both'
     });
     try { animation.updatePlaybackRate(globalThis.BjtuMotion?.getSpeed?.() || 1); } catch {}
