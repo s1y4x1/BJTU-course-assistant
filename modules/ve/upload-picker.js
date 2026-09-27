@@ -198,7 +198,7 @@
           const file = selected[index];
           const known = knownFiles.find((item) => item?.fileName === file.name
             && Number(item?.fileSize) === file.size && String(item?.visitName || '').trim());
-          if (known && globalThis.confirm(`「${file.name}」已上传过，是否直接复用已上传文件？\n选择“取消”将重新上传。`)) {
+          if (known && globalThis.confirm(`「${file.name}」已上传过，是否直接复用已上传文件？\n选择「取消」将重新上传。`)) {
             completed.push({ fileName: file.name, fileSize: file.size, visitName: known.visitName, reused: true });
             rows[index].bar.style.width = '100%';
             rows[index].state.textContent = '已复用上传记录';

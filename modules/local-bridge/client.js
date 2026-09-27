@@ -317,7 +317,7 @@
     if (!currentSettings.enabled) {
       sendResponse(ws, id, {
         ok: false,
-        error: '扩展未启用“允许本地程序调用扩展操作”',
+        error: '扩展未启用「允许本地程序调用扩展操作」',
         code: 'BRIDGE_DISABLED'
       });
       return;
@@ -387,7 +387,7 @@
     const root = await readExtensionDirectoryHandle();
     if (!root || typeof root.queryPermission !== 'function'
         || await root.queryPermission({ mode: 'readwrite' }) !== 'granted') {
-      throw new Error('没有扩展安装目录写入权限，请先在“更新”中授权扩展目录');
+      throw new Error('没有扩展安装目录写入权限，请先在「更新」中授权扩展目录');
     }
     const current = await readBridgeConfig();
     const next = {
