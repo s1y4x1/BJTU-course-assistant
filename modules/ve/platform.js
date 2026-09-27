@@ -912,27 +912,19 @@ function normalizeVeStudentItem(item) {
 async function fetchVeCourseStudents(courseId) {
   const cid = String(courseId || '').trim();
   if (!cid) return { students: [], total: 0 };
-  const request = async (pageSize) => {
-    const url = `${BASE_VE}back/coursePlatform/studentCourse.shtml?method=getStudentCourse&cId=${encodeURIComponent(cid)}&pageSize=${encodeURIComponent(String(pageSize))}`;
-    const { text, res } = await fetchText(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json, text/javascript, */*; q=0.01',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      signal: window.globalVeAbortController?.signal
-    });
-    if (isLikelyLoginPageHtml(text, res?.url)) throw new Error('LOGIN_REQUIRED');
-    return parseVeJson(text);
-  };
-
-  let data = await request(100);
+  const url = `${BASE_VE}back/coursePlatform/studentCourse.shtml?method=getStudentCourse&cId=${encodeURIComponent(cid)}&pageSize=0`;
+  const { text, res } = await fetchText(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    signal: window.globalVeAbortController?.signal
+  });
+  if (isLikelyLoginPageHtml(text, res?.url)) throw new Error('LOGIN_REQUIRED');
+  const data = parseVeJson(text);
   if (String(data?.STATUS || '0') !== '0') throw new Error(String(data?.ERRMSG || data?.message || '获取学生列表失败'));
   const total = Math.max(0, Number(data?.total || 0) || 0);
-  if (total > 100) {
-    data = await request(total);
-    if (String(data?.STATUS || '0') !== '0') throw new Error(String(data?.ERRMSG || data?.message || '获取学生列表失败'));
-  }
   const students = (Array.isArray(data?.result) ? data.result : []).map(normalizeVeStudentItem)
     .filter((item) => item.stuNo || item.stuName || item.className || item.groupName);
   return { students, total: Math.max(total, students.length) };
