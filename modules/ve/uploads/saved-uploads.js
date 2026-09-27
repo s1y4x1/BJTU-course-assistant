@@ -93,29 +93,42 @@ function updateSavedUploadsToggleButton(section, expanded) {
   if (label instanceof HTMLElement) label.textContent = `${text || ''} (${count})`;
 }
 
-function animateSavedUploadsItems(section, expanding) {
-  if (globalThis.BjtuMotion?.isEnabled?.() === false
-    || (!globalThis.BjtuMotion && matchMedia('(prefers-reduced-motion: reduce)').matches)) return Promise.resolve();
-  const items = getSavedUploadAnimatedItems(section);
-  return Promise.all(items.map((item, index) => {
-    const finishAt = 0.35 + 0.55 * index / Math.max(1, items.length - 1);
-    const openingFrames = [
-      { offset: 0, opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' },
-      { offset: finishAt, opacity: 1, transform: `translateY(${-7 * (1 - finishAt)}px) scaleY(${0.96 + 0.04 * finishAt})` },
-      { offset: 1, opacity: 1, transform: 'translateY(0) scaleY(1)' }
-    ];
-    const frames = expanding ? openingFrames : openingFrames.slice().reverse().map((frame) => ({
-      ...frame,
-      offset: 1 - frame.offset
-    }));
-    const animation = item.animate(frames, {
-      duration: 220,
-      easing: expanding ? 'cubic-bezier(0.2, 0.8, 0.2, 1)' : 'cubic-bezier(0.8, 0, 0.8, 0.2)',
-      fill: 'both'
-    });
-    try { animation.updatePlaybackRate(globalThis.BjtuMotion?.getSpeed?.() || 1); } catch {}
-    return animation.finished.catch(() => {});
-  })).then(() => {});
+function animateSavedUploadsItems(section, expanding, initialHeight) {
+  const previousFraction = section.__savedUploadsFade?.getFraction();
+  section.__heightMotion?.cancel();
+  section.__savedUploadsFade?.reset();
+  delete section.__savedUploadsFade;
+
+  const from = initialHeight ?? section.getBoundingClientRect().height;
+  const collapsedHeight = section.querySelector('.homework-toggle-row')?.offsetHeight || 0;
+  const fullHeight = Math.max(section.scrollHeight, from, collapsedHeight + 1);
+  const to = expanding ? fullHeight : collapsedHeight;
+  const fade = createTopDownListFade(getSavedUploadAnimatedItems(section));
+  const startFraction = previousFraction ?? Math.max(0, Math.min(1,
+    (from - collapsedHeight) / (fullHeight - collapsedHeight)
+  ));
+  section.__savedUploadsFade = fade;
+  section.style.boxSizing = 'border-box';
+  section.style.height = `${from}px`;
+  section.style.overflow = 'hidden';
+
+  return animateHeightWithMotion(section, from, to, (height, progress) => {
+    section.style.height = `${height}px`;
+    fade.update(expanding
+      ? startFraction + (1 - startFraction) * progress
+      : startFraction * (1 - progress));
+  }).then((completed) => {
+    if (section.__savedUploadsFade === fade) {
+      fade.reset();
+      delete section.__savedUploadsFade;
+    }
+    if (completed) {
+      section.style.height = '';
+      section.style.boxSizing = '';
+      section.style.overflow = '';
+    }
+    return completed;
+  });
 }
 
 function renderSavedUploadsSection() {
@@ -243,9 +256,12 @@ function setupSavedUploadsUi() {
           const expanded = section.dataset.expanded === '1';
           const serial = ++savedUploadsToggleAnimationSerial;
           if (!expanded) {
+            const from = section.getBoundingClientRect().height;
+            const hasItems = getSavedUploadAnimatedItems(section).length > 0;
             section.dataset.expanded = '1';
-            renderSavedUploadsSection();
-            void animateSavedUploadsItems(section, true);
+            if (hasItems) updateSavedUploadsToggleButton(section, true);
+            else renderSavedUploadsSection();
+            void animateSavedUploadsItems(section, true, from);
             return;
           }
           section.dataset.expanded = '0';
