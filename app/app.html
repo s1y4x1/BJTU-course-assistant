@@ -86,7 +86,7 @@
                     <input type="file" id="file-input" accept=".ppt,.pptx,.doc,.docx,.pdf,.txt,.xls,.xlsx,.jpg,.jpeg,.png,.bmp,.gif,.mp3,.mp4,.avi,.wmv,.mov,.rmvb,.flv,.f4v,.rar,.zip" multiple>
                 </div>
                 <div style="display:flex; align-items:center; justify-content:center; border:1px dashed #d1d5db; border-radius:6px; margin:4px; padding:8px 16px; min-width:80px; cursor:pointer;" id="paste-file-btn" title="点击粘贴剪贴板文件">
-                    <span class="paste-file-label" style="font-size:18px; color:#475569; user-select:none;">📋<br>粘贴</span>
+                    <span class="paste-file-label" style="font-size:18px; color:#475569; user-select:none;"><span class="paste-file-icon">📋</span><br>粘贴</span>
                 </div>
             </div>
             <div id="saved-uploads-section"></div>
@@ -305,6 +305,7 @@
     <script src="../core/platform-loader.js"></script>
     <script src="../core/optional-platform-adapters.js"></script>
     <script src="../modules/ve/uploads/saved-uploads.js"></script>
+    <script src="../modules/ve/uploads/upload-common.js"></script>
     <script src="../UI/deadline-countdown.js"></script>
     <script src="../modules/ve/uploads/duplicate-dialog-loader.js"></script>
     <script src="../core/option-tips.js"></script>

@@ -12,7 +12,8 @@
         'resource-download.js', 'login-service.js', 'background-homework.js',
         'uploads/duplicate-dialog-loader.js', 'uploads/duplicate-dialog.css',
         'uploads/duplicate-dialog.html', 'uploads/saved-uploads.js',
-        'uploads/upload-manager.js'
+        'uploads/upload-manager.js', 'uploads/upload-common.js',
+        'upload-picker.html', 'upload-picker.css', 'upload-picker.js'
       ]
     },
     ykt: { label: '雨课堂', files: ['platform.js'] },

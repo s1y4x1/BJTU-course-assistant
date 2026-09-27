@@ -1,48 +1,6 @@
 // -------------------- Upload --------------------
-const VE_UPLOAD_BASE = 'http://123.121.147.7:88';
-const VE_TEACHER_UPLOAD_URL = `${VE_UPLOAD_BASE}/ve/back/rp/common/rpUpload.shtml`;
-const VE_STUDENT_UPLOAD_URL = `${VE_UPLOAD_BASE}/ve/back/rp/common/homeworkUpload.shtml?noteId=1`;
-const VE_SUPPORTED_UPLOAD_EXTENSIONS = Object.freeze([
-  'ppt', 'pptx', 'doc', 'docx', 'pdf', 'txt', 'xls', 'xlsx',
-  'jpg', 'jpeg', 'png', 'bmp', 'gif',
-  'mp3', 'mp4', 'avi', 'wmv', 'mov', 'rmvb', 'flv', 'f4v',
-  'rar', 'zip'
-]);
-const VE_SUPPORTED_UPLOAD_EXTENSION_SET = new Set(VE_SUPPORTED_UPLOAD_EXTENSIONS);
-const VE_SUPPORTED_UPLOAD_ACCEPT = VE_SUPPORTED_UPLOAD_EXTENSIONS.map((extension) => `.${extension}`).join(',');
+const VE_SUPPORTED_UPLOAD_ACCEPT = globalThis.BjtuVeUploadCommon.accept;
 let veUploadSessionCheckPromise = null;
-const veUploadPickerId = new URLSearchParams(location.search).get('veUploadPicker') || '';
-let veUploadPickerFinished = false;
-if (veUploadPickerId && fileInput instanceof HTMLInputElement) {
-  const pickerAccept = new URLSearchParams(location.search).get('accept');
-  if (pickerAccept) fileInput.accept = pickerAccept;
-}
-
-function veUploadFileExtension(file) {
-  const name = String(file?.name || '').replace(/\\/g, '/').split('/').pop() || '';
-  const index = name.lastIndexOf('.');
-  return index > 0 && index < name.length - 1 ? name.slice(index + 1).toLowerCase() : '';
-}
-
-function isVeUploadFileExtensionSupported(file) {
-  return VE_SUPPORTED_UPLOAD_EXTENSION_SET.has(veUploadFileExtension(file));
-}
-
-function confirmUnsupportedVeUploadFiles(files) {
-  const unsupported = (Array.isArray(files) ? files : []).filter((file) => !isVeUploadFileExtensionSupported(file));
-  if (!unsupported.length) return true;
-  const shownNames = unsupported.slice(0, 12).map((file) => `• ${String(file?.name || '(未命名文件)')}`);
-  if (unsupported.length > shownNames.length) shownNames.push(`• 以及另外 ${unsupported.length - shownNames.length} 个文件`);
-  return globalThis.confirm([
-    '以下文件的后缀不在智慧课程平台支持范围内：',
-    '',
-    ...shownNames,
-    '',
-    `支持的后缀：${VE_SUPPORTED_UPLOAD_EXTENSIONS.join('、')}`,
-    '',
-    '平台可能拒绝或无法正常使用这些文件，是否仍继续上传？'
-  ].join('\n'));
-}
 
 function applyVeUploadAccountInfo(userInfo) {
   const info = userInfo && typeof userInfo === 'object' ? userInfo : null;
@@ -87,10 +45,10 @@ async function ensureVeUploadSession() {
 }
 
 function getVeUploadUrl({ manualJsessionMode = false, jsessionid = '' } = {}) {
-  if (!window.isTeacherAccount) return VE_STUDENT_UPLOAD_URL;
-  return manualJsessionMode && String(jsessionid || '').trim()
-    ? `${VE_TEACHER_UPLOAD_URL};jsessionid=${encodeURIComponent(String(jsessionid).trim())}`
-    : VE_TEACHER_UPLOAD_URL;
+  return globalThis.BjtuVeUploadCommon.uploadUrl(
+    window.isTeacherAccount ? '教师' : '学生',
+    manualJsessionMode ? String(jsessionid || '').trim() : ''
+  );
 }
 
 function processQueue() {
@@ -786,11 +744,6 @@ dropZone.addEventListener('click', async (event) => {
   if (target === fileInput
     || (target instanceof Element && target.closest('#paste-file-btn,button,a,input,label'))
     || dropZoneFilePickerOpening) return;
-  if (veUploadPickerId) {
-    // 必须在用户点击事件的同步调用栈中打开选择器；任何 await 都会丢失 user activation。
-    fileInput.click();
-    return;
-  }
   dropZoneFilePickerOpening = true;
   try {
     await ensureVeUploadSession();
@@ -828,7 +781,7 @@ dropZone.addEventListener('drop', async (e) => {
   if (types.includes('Files')) {
     const files = await clipboardDataToFiles(dt);
     if (files.length) {
-      processFilesForCurrentMode(files);
+      processFilesForUpload(files);
     } else {
       showToast('未找到可上传的文件', 'warning', 1800);
     }
@@ -836,7 +789,7 @@ dropZone.addEventListener('drop', async (e) => {
   }
 
   const textFiles = await convertTextDropToFiles(dt);
-  processFilesForCurrentMode(textFiles);
+  processFilesForUpload(textFiles);
 });
 
 fileInput.addEventListener('change', handleFiles);
@@ -915,7 +868,7 @@ async function handleClipboardUploadPaste(e) {
   const files = await clipboardDataToFiles(e.clipboardData);
   if (!files.length) return;
   e.preventDefault();
-  processFilesForCurrentMode(files);
+  processFilesForUpload(files);
 }
 
 document.addEventListener('paste', (e) => {
@@ -994,7 +947,7 @@ if (pasteFileBtn) {
       } else if (textCount > 0) {
         showToast(`已粘贴 ${nonTextCount} 个文件，${textCount} 个文本已转为文件，正在上传…`, 'info', 3000);
       }
-      processFilesForCurrentMode(files);
+      processFilesForUpload(files);
     } catch (err) {
       if (String(err?.message || err).includes('clipboard-read')) {
         showToast('没有剪贴板读取权限，请授予后重试', 'error', 3000);
@@ -1025,8 +978,8 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
   let filesList = Array.from(files).filter(Boolean);
   if (!filesList.length) return;
 
-  const unsupportedFiles = filesList.filter((file) => !isVeUploadFileExtensionSupported(file));
-  if (unsupportedFiles.length && !confirmUnsupportedVeUploadFiles(unsupportedFiles)) {
+  const unsupportedFiles = filesList.filter((file) => !globalThis.BjtuVeUploadCommon.extensions.includes(globalThis.BjtuVeUploadCommon.fileExtension(file)));
+  if (unsupportedFiles.length && !globalThis.BjtuVeUploadCommon.confirmUnsupportedFiles(unsupportedFiles)) {
     const unsupportedSet = new Set(unsupportedFiles);
     filesList = filesList.filter((file) => !unsupportedSet.has(file));
     if (!filesList.length) {
@@ -1114,50 +1067,12 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
 }
 
 function uploadResultsToFileList(uploaded) {
-  return (Array.isArray(uploaded) ? uploaded : []).map((item) => {
-    const visitName = String(item?.visitName || '').trim();
-    if (!visitName) return null;
-    const parts = splitFileName(item?.fileName || '');
-    return {
-      fileNameNoExt: encodeURIComponent(String(parts?.fileNameNoExt || '')),
-      fileExtName: String(parts?.fileExtName || ''),
-      fileSize: String(Math.max(0, Number(item?.fileSize || 0) || 0)),
-      visitName,
-      pid: '',
-      ftype: 'insert'
-    };
-  }).filter(Boolean);
-}
-
-async function finishVeUploadPicker(uploaded) {
-  if (!veUploadPickerId || veUploadPickerFinished) return;
-  const fileListResult = uploadResultsToFileList(uploaded);
-  if (!fileListResult.length) throw new Error('未获得可提交的上传结果');
-  veUploadPickerFinished = true;
-  await chrome.runtime.sendMessage({
-    type: 'VE_UPLOAD_PICKER_RESULT',
-    requestId: veUploadPickerId,
-    value: { fileList: fileListResult }
-  });
-  setTimeout(() => globalThis.close(), 250);
-}
-
-async function processFilesForCurrentMode(files) {
-  if (!veUploadPickerId) {
-    processFilesForUpload(files);
-    return;
-  }
-  try {
-    const uploaded = await processFilesForUpload(files, { waitForCompletion: true });
-    await finishVeUploadPicker(uploaded);
-  } catch (error) {
-    showToast(`上传失败：${String(error?.message || error)}`, 'error', 3500);
-  }
+  return (Array.isArray(uploaded) ? uploaded : []).map(globalThis.BjtuVeUploadCommon.fileListItem).filter(Boolean);
 }
 
 function handleFiles(e) {
   const files = e.target.files || e.dataTransfer.files;
-  processFilesForCurrentMode(files);
+  processFilesForUpload(files);
 }
 
 function decodeApiUploadBase64(value) {

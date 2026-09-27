@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>上传至智慧课程平台</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../app/app.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="upload-picker.css">
+</head>
+<body class="ve-upload-picker-page">
+  <main>
+    <div class="upload-section-header"><h1 class="zero-title">文件上传</h1></div>
+    <div class="upload-summary-area">
+      <div class="upload-total-progress-wrap">
+        <div class="upload-total-meta">
+          <div id="total-size-info">0 B / 0 B</div>
+          <div id="total-percent">0%</div>
+          <div id="total-speed">0 KB/s</div>
+          <div id="total-eta"></div>
+        </div>
+        <div class="progress-bar-container"><div id="total-server-bar" class="progress-bar"></div></div>
+      </div>
+    </div>
+    <div id="drop-zone" tabindex="0" role="button" aria-label="选择文件">
+      <div class="drop-zone-main">
+        <p><span>向</span><strong>此处</strong><span>拖入</span><strong>文件</strong><span>点</span><span>选择</span></p>
+        <input id="file-input" type="file" multiple>
+      </div>
+      <button id="paste-file-btn" type="button" title="点击粘贴剪贴板文件"><span class="paste-file-label"><span class="paste-file-icon">📋</span><br>粘贴</span></button>
+    </div>
+    <p id="picker-status" role="status">请选择要上传的文件</p>
+    <div id="file-list"></div>
+    <div class="picker-actions">
+      <button id="picker-login" class="btn" type="button" hidden>打开智慧课程平台登录页</button>
+      <button id="picker-retry" class="btn" type="button" hidden>重试上传</button>
+      <button id="picker-cancel" class="btn" type="button">取消</button>
+    </div>
+  </main>
+  <script src="uploads/upload-common.js"></script>
+  <script src="upload-picker.js"></script>
+</body>
+</html>

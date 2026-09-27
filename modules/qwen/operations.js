@@ -562,10 +562,10 @@
 
   async function openVeUploadPicker(args = {}) {
     const requestId = crypto.randomUUID();
-    const query = new URLSearchParams({ veUploadPicker: requestId });
+    const query = new URLSearchParams({ requestId });
     const accept = String(args?.accept || '').trim();
     if (accept) query.set('accept', accept);
-    const pickerUrl = chrome.runtime.getURL(`app/app.html?${query.toString()}`);
+    const pickerUrl = chrome.runtime.getURL(`modules/ve/upload-picker.html?${query.toString()}`);
     let pickerWindowId = null;
     let settled = false;
 
@@ -582,7 +582,7 @@
       };
       const onMessage = (message, sender) => {
         if (message?.type !== 'VE_UPLOAD_PICKER_RESULT' || message?.requestId !== requestId) return false;
-        if (!String(sender?.url || '').startsWith(chrome.runtime.getURL('app/app.html'))) return false;
+        if (!String(sender?.url || '').startsWith(chrome.runtime.getURL('modules/ve/upload-picker.html?'))) return false;
         finish(resolve, message.value);
         return false;
       };
