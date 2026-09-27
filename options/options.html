@@ -85,6 +85,17 @@
         <span>行</span>
       </label>
       <div class="option-divider" role="separator"></div>
+      <label style="display:flex; align-items:center; gap:8px; margin:4px 0;">
+        <input type="checkbox" id="scrollExpandHomeworkLists" style="width:auto;" checked />
+        <span>滚动展开列表</span>
+      </label>
+      <div class="tip">开启时作业、资源、回放和归档列表由上至下滚动显示，并逐项显现。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:4px 0;">
+        <input type="checkbox" id="scrollCollapseHomeworkLists" style="width:auto;" checked />
+        <span>滚动收起列表</span>
+      </label>
+      <div class="tip">开启时作业、资源、回放和归档列表项从上到下渐隐并向上滚动；收起途中再次展开会反向播放。</div>
+      <div class="option-divider" role="separator"></div>
       <details class="ui-order-editor font-size-editor" id="fontSizeEditor">
         <summary><span class="ui-order-summary-label">字号</span><span class="tip">相同默认字号的文字由同一分类统一控制。</span></summary>
         <div class="font-size-grid">
@@ -422,7 +433,7 @@
         <input type="checkbox" id="backgroundAutoInstallOptionalEnabled" style="width:auto;" />
         自动安装非强制更新
       </label>
-      <div id="backgroundAutoUpdateStatus" class="option-status" style="margin-top:8px;">后台自动更新未启用。</div>
+      <div id="backgroundAutoUpdateStatus" class="option-status" style="margin-top:8px; margin-bottom:0;">后台自动更新未启用。</div>
       <div class="tip" data-tip-target="#updater-options-title" style="margin-top:4px;">需先在全屏页面手动更新一次并授权扩展安装目录。更新完成后会按更新源要求自动重新加载扩展。</div>
     </div>
     <div id="options-module-slots"></div>
