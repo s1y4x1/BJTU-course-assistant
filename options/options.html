@@ -51,11 +51,18 @@
           <span>×</span>
         </span>
       </label>
+      <div class="option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
         <input type="checkbox" id="courseHelperExpandedByDefault" style="width:auto;" />
         <span>默认展开右栏课程助手</span>
       </label>
       <div class="tip">仅影响全屏页面；展开后会收起左栏和顶部控件，并按平台分栏显示课程。</div>
+      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
+        <input type="checkbox" id="showCourseListDuringLayoutTransition" style="width:auto;" />
+        <span>展开/折叠课程助手时显示课程列表</span>
+      </label>
+      <div class="tip">关闭时，在布局动画期间隐藏课程列表并显示“正在处理…”，动画完成后立即恢复。</div>
+      <div class="option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:4px 0;">
         <input type="checkbox" id="fullscreenTopBarFullWidth" style="width:auto;" />
         <span>全屏页面顶栏占满宽度</span>
@@ -64,19 +71,7 @@
         <input type="checkbox" id="stickyCourseHeader" style="width:auto;" checked />
         <span>固定课程助手顶栏</span>
       </label>
-      <label style="display:flex; align-items:center; gap:8px; margin:10px 0 0;">
-        <input type="checkbox" id="showCourseListDuringLayoutTransition" style="width:auto;" />
-        <span>折叠/展开左栏时显示课程列表</span>
-      </label>
-      <div class="tip">关闭时，在布局动画期间隐藏课程列表并显示“正在处理…”，动画完成后立即恢复。</div>
-      <label class="countdown-style-option">
-        <span>剩余时间倒计时</span>
-        <select id="deadlineCountdownStyle" aria-label="剩余时间倒计时">
-          <option value="normal">正常字体</option>
-          <option value="seven-seg">七段数码管</option>
-          <option value="none">不显示</option>
-        </select>
-      </label>
+      <div class="option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:4px 0;">
         <input type="checkbox" id="collapseHomeworkDetailsDownward" style="width:auto;" checked />
         <span>向下收起作业详情</span>
@@ -329,6 +324,14 @@
     <div data-options-section="reminders" data-options-label="作业截止提醒"
       style="padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb;">
       <div class="section-title" id="homework-reminder-title">作业截止提醒</div>
+      <label class="countdown-style-option">
+        <span>剩余时间倒计时</span>
+        <select id="deadlineCountdownStyle" aria-label="剩余时间倒计时">
+          <option value="normal">正常字体</option>
+          <option value="seven-seg">七段数码管</option>
+          <option value="none">不显示</option>
+        </select>
+      </label>
       <label style="display:flex; align-items:center; gap:8px; margin:0;">
         <input type="checkbox" id="homeworkReminderEnabled" style="width:auto;" checked />
         后台监控未交作业并发送系统通知
