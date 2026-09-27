@@ -26,6 +26,8 @@ function applyPopupSize(size = {}) {
 document.addEventListener('DOMContentLoaded', async () => {
   const frame = document.getElementById('popup-frame');
   const sidePanelView = new URLSearchParams(location.search).get('view') === 'sidepanel';
+  if (sidePanelView) frame.hidden = true;
+  frame.src = chrome.runtime.getURL('app/app.html?popup=1' + (sidePanelView ? '&view=sidepanel' : ''));
   let qwenFrame = null;
   let qwenAvailable = false;
   const ensureQwenFrame = () => {
@@ -64,13 +66,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   } catch {
     applyPopupSize();
-  }
-
-  // keep iframe pinned to popup-mode app page
-  try {
-    frame.src = chrome.runtime.getURL('app/app.html?popup=1' + (sidePanelView ? '&view=sidepanel' : ''));
-  } catch (e) {
-    // ignore
   }
 
   // 两个页面始终保留在各自 iframe 中；切换只改变可见性，不销毁千问会话页面。

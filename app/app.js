@@ -11,11 +11,6 @@ let runtimePlatformSessionId = DEFAULT_PLATFORM_SESSION_ID;
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const fileList = document.getElementById('file-list');
-const veUploadPickerRequestId = new URLSearchParams(location.search).get('veUploadPicker') || '';
-if (veUploadPickerRequestId) {
-  document.body.classList.add('ve-upload-picker-mode');
-  document.title = '上传至智慧课程平台';
-}
 const usernameInput = document.getElementById('username-input');
 const accountHistorySelect = document.getElementById('account-history-select');
 const xqSelect = document.getElementById('xq-select');
@@ -681,6 +676,8 @@ window.autoLoadCourseResourcesEnabled = false;
 window.yktActivityTypes = [14, 15, 5, 9];
 window.homeworkDetailCollapsedLines = 3;
 window.collapseHomeworkDetailsDownward = true;
+window.scrollExpandHomeworkLists = true;
+window.scrollCollapseHomeworkLists = true;
 window.replayDetailCollapsedLines = 3;
 window.jlgjDarkModeEnabled = true;
 window.homeworkDetailExpandedByCourse = {}; // {courseId: {expandKey: boolean}}
@@ -833,6 +830,8 @@ const AUTO_LOAD_COURSE_RESOURCES_KEY = 'autoLoadCourseResourcesEnabled';
 const YKT_ACTIVITY_TYPES_KEY = 'yktActivityTypes';
 const HOMEWORK_DETAIL_COLLAPSED_LINES_KEY = 'homeworkDetailCollapsedLines';
 const COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY = 'collapseHomeworkDetailsDownward';
+const SCROLL_EXPAND_HOMEWORK_LISTS_KEY = 'scrollExpandHomeworkLists';
+const SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY = 'scrollCollapseHomeworkLists';
 const REPLAY_DETAIL_COLLAPSED_LINES_KEY = 'replayDetailCollapsedLines';
 const JLGJ_DARK_MODE_KEY = 'jlgjDarkModeEnabled';
 const AUTO_LOAD_COURSE_RESOURCES_DEFAULT_OFF_STATE_KEY = 'autoLoadCourseResourcesDefaultOffState';
@@ -1099,6 +1098,8 @@ async function loadPlatformDetailSettings() {
       YKT_ACTIVITY_TYPES_KEY,
       HOMEWORK_DETAIL_COLLAPSED_LINES_KEY,
       COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY,
+      SCROLL_EXPAND_HOMEWORK_LISTS_KEY,
+      SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY,
       REPLAY_DETAIL_COLLAPSED_LINES_KEY,
       JLGJ_DARK_MODE_KEY
     ]);
@@ -1108,6 +1109,8 @@ async function loadPlatformDetailSettings() {
       : [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.collapseHomeworkDetailsDownward = data[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY] !== false;
+    window.scrollExpandHomeworkLists = data[SCROLL_EXPAND_HOMEWORK_LISTS_KEY] !== false;
+    window.scrollCollapseHomeworkLists = data[SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY] !== false;
     window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(data[REPLAY_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
   } catch {
@@ -1115,6 +1118,8 @@ async function loadPlatformDetailSettings() {
     window.yktActivityTypes = [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = 3;
     window.collapseHomeworkDetailsDownward = true;
+    window.scrollExpandHomeworkLists = true;
+    window.scrollCollapseHomeworkLists = true;
     window.replayDetailCollapsedLines = 3;
     window.jlgjDarkModeEnabled = true;
   }
@@ -1501,6 +1506,12 @@ function setupOptionsStorageLiveSync() {
     }
     if (changes[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY]) {
       window.collapseHomeworkDetailsDownward = changes[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY].newValue !== false;
+    }
+    if (changes[SCROLL_EXPAND_HOMEWORK_LISTS_KEY]) {
+      window.scrollExpandHomeworkLists = changes[SCROLL_EXPAND_HOMEWORK_LISTS_KEY].newValue !== false;
+    }
+    if (changes[SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY]) {
+      window.scrollCollapseHomeworkLists = changes[SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY].newValue !== false;
     }
     if (changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY] || changes[REPLAY_DETAIL_COLLAPSED_LINES_KEY]) {
       if (changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY]) {
@@ -1982,9 +1993,18 @@ function refreshCourseHelperLayoutMode() {
   }, 0);
 }
 
-function setCourseHelperFocusMode(enabled) {
+function setCourseHelperFocusMode(enabled, { immediate = false } = {}) {
   const next = !popupMode && enabled === true;
   if (window.courseHelperPlatformSplitMode === next) return;
+  if (immediate) {
+    window.courseHelperPlatformSplitMode = next;
+    document.body.classList.toggle('course-helper-focus', next);
+    syncCourseHelperCollapseTogglePresentation();
+    syncCourseHelperEvenWidthsButton();
+    window.applyRightColumnResponsiveWidth?.();
+    window.syncRightColumnResizer?.();
+    return;
+  }
   if (courseHelperLayoutTransitionTimer) clearTimeout(courseHelperLayoutTransitionTimer);
   courseHelperLayoutTransitioning = true;
   courseHelperLayoutWorkPending = false;
@@ -2067,7 +2087,7 @@ async function loadCourseHelperLayoutSettings() {
     stored[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] === true,
     stored[STICKY_COURSE_HEADER_KEY] !== false
   );
-  setCourseHelperFocusMode(stored[COURSE_HELPER_EXPANDED_DEFAULT_KEY] === true);
+  setCourseHelperFocusMode(stored[COURSE_HELPER_EXPANDED_DEFAULT_KEY] === true, { immediate: true });
 }
 
 function setupRightColumnResizer() {
@@ -4596,15 +4616,23 @@ function createTopDownListFade(items) {
 }
 
 function getResultAreaHtmlForCache(resultArea) {
-  return resultArea.__topDownListFade?.snapshotHtml(resultArea) ?? resultArea.innerHTML;
+  return resultArea.__scrollListMotion?.snapshotHtml(resultArea)
+    ?? resultArea.__topDownListFade?.snapshotHtml(resultArea)
+    ?? resultArea.innerHTML;
 }
 
 function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } = {}) {
   if (!(resultArea instanceof HTMLElement)) return;
+  const scrollMotionEnabled = (shouldOpen ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+  const previousScrollMotion = resultArea.__scrollListMotion;
   const previousFraction = resultArea.__topDownListFade?.getFraction();
   resultArea.__heightMotion?.cancel();
   resultArea.__topDownListFade?.reset();
   delete resultArea.__topDownListFade;
+  if (!scrollMotionEnabled && previousScrollMotion) {
+    previousScrollMotion.reset();
+    delete resultArea.__scrollListMotion;
+  }
   if (shouldOpen) delete resultArea.dataset.closingView;
   const reset = () => {
     resultArea.style.transition = '';
@@ -4616,6 +4644,8 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
     resultArea.style.willChange = '';
   };
   if (immediate) {
+    previousScrollMotion?.reset();
+    delete resultArea.__scrollListMotion;
     reset();
     resultArea.style.display = shouldOpen ? 'block' : 'none';
     resultArea.dataset.animOpen = shouldOpen ? '1' : '0';
@@ -4638,6 +4668,26 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
   resultArea.style.overflow = 'hidden';
   resultArea.style.willChange = 'height';
   resultArea.dataset.animOpen = shouldOpen ? '1' : '0';
+  if (scrollMotionEnabled) {
+    const fullHeight = Math.max(resultArea.scrollHeight + resultArea.offsetHeight - resultArea.clientHeight, from, previousScrollMotion?.fullHeight || 0, 1);
+    const motion = previousScrollMotion || createListScrollMotion(resultArea, fullHeight, '', { revealTopFirst: shouldOpen });
+    resultArea.__scrollListMotion = motion;
+    resultArea.style.opacity = '1';
+    void animateHeightWithMotion(resultArea, from, shouldOpen ? fullHeight : 0, (height) => {
+      resultArea.style.height = `${height}px`;
+      motion.update(height);
+    }).then((completed) => {
+      if (resultArea.__scrollListMotion !== motion || !completed) return;
+      if (!shouldOpen) {
+        resultArea.style.display = 'none';
+        delete resultArea.dataset.closingView;
+      }
+      motion.reset();
+      delete resultArea.__scrollListMotion;
+      reset();
+    });
+    return;
+  }
   if (shouldOpen) {
     const to = Math.max(resultArea.scrollHeight + resultArea.offsetHeight - resultArea.clientHeight, 1);
     const fade = createTopDownListFade(resultArea.children);
@@ -4686,11 +4736,16 @@ function resumeResultAreaCollapse(resultArea, view) {
 function replaceResultAreaHtmlAnimated(resultArea, html) {
   if (!(resultArea instanceof HTMLElement)) return;
   if (resultArea.dataset.animOpen !== '1' || resultArea.style.display === 'none') {
+    if (resultArea.__heightMotion) toggleResultAreaAnimated(resultArea, false, { immediate: true });
+    resultArea.__scrollListMotion?.reset();
+    delete resultArea.__scrollListMotion;
     resultArea.innerHTML = html;
     return;
   }
   const from = resultArea.getBoundingClientRect().height;
   resultArea.__heightMotion?.cancel();
+  resultArea.__scrollListMotion?.reset();
+  delete resultArea.__scrollListMotion;
   resultArea.style.boxSizing = 'border-box';
   resultArea.style.height = `${from}px`;
   resultArea.innerHTML = html;
@@ -4708,13 +4763,18 @@ function prepareResultAreaViewSwitch(resultArea) {
   if (resultArea.style.display === 'none' || resultArea.getBoundingClientRect().height <= 0) {
     resultArea.__topDownListFade?.reset();
     delete resultArea.__topDownListFade;
+    resultArea.__scrollListMotion?.reset();
+    delete resultArea.__scrollListMotion;
     return;
   }
   resultArea.__heightMotion?.cancel();
+  resultArea.__scrollListMotion?.reset();
+  delete resultArea.__scrollListMotion;
   const from = resultArea.getBoundingClientRect().height;
   if (from > 0 && resultArea.firstChild) {
     const outgoing = resultArea.cloneNode(true);
     outgoing.classList.add('result-area-outgoing');
+    outgoing.removeAttribute('id');
     outgoing.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
     outgoing.setAttribute('aria-hidden', 'true');
     outgoing.inert = true;
@@ -4726,11 +4786,14 @@ function prepareResultAreaViewSwitch(resultArea) {
     outgoing.style.height = `${from}px`;
     outgoing.style.overflow = 'hidden';
     resultArea.after(outgoing);
-    const outgoingFade = createTopDownListFade(outgoing.children);
+    const scrollOutgoing = window.scrollCollapseHomeworkLists !== false;
+    const outgoingMotion = scrollOutgoing
+      ? createListScrollMotion(outgoing, Math.max(outgoing.scrollHeight, from, 1))
+      : createTopDownListFade(outgoing.children);
     outgoing.style.opacity = '1';
     void animateHeightWithMotion(outgoing, from, 0, (height, progress) => {
       outgoing.style.height = `${height}px`;
-      outgoingFade.update(1 - progress);
+      outgoingMotion.update(scrollOutgoing ? height : 1 - progress);
     }).then(() => outgoing.remove());
   }
   resultArea.__topDownListFade?.reset();
@@ -5007,41 +5070,73 @@ function toggleHomeworkGroupDom(courseId, key, expanded) {
 
   group.dataset.expanded = expanded ? '1' : '0';
   group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
-  if (kind === 'done') syncForcePublishScoreButtonRow(courseId, expanded);
   animateHomeworkGroupVisibility(group, expanded);
   return true;
 }
 
-function syncForcePublishScoreButtonRow(courseId, expanded) {
-  const cid = String(courseId || '').trim();
-  if (!cid) return;
-  const area = document.getElementById(`homework-area-${cid}`);
-  if (!(area instanceof HTMLElement)) return;
-  area.querySelectorAll('.force-score-publish-row').forEach((el) => {
-    if (el instanceof HTMLElement && String(el.dataset.courseId || '').trim() === cid) el.remove();
-  });
-  if (!expanded || window.isTeacherAccount) return;
-  const html = renderForcePublishScoreButton(cid);
-  if (!html) return;
-  const doneRow = area.querySelector('.homework-toggle-row--done');
-  if (!(doneRow instanceof HTMLElement)) return;
-  const holder = document.createElement('div');
-  holder.innerHTML = html.trim();
-  const row = holder.firstElementChild;
-  if (!(row instanceof HTMLElement)) return;
-  row.dataset.courseId = cid;
-  doneRow.insertAdjacentElement('afterend', row);
-  updateForcePublishScoreButtonState(cid);
+function createListScrollMotion(container, fullHeight, itemSelector = '', { revealTopFirst = false } = {}) {
+  const containerTop = container.getBoundingClientRect().top;
+  const children = Array.from(container.children).filter((item) => item instanceof HTMLElement).map((item) => ({
+    item,
+    transform: item.style.transform
+  }));
+  const fadeItems = itemSelector ? container.querySelectorAll(itemSelector) : container.children;
+  const items = Array.from(fadeItems).filter((item) => item instanceof HTMLElement).map((item) => ({
+    item,
+    opacity: item.style.opacity,
+    targetOpacity: Number(getComputedStyle(item).opacity),
+    top: item.getBoundingClientRect().top - containerTop,
+    bottom: item.getBoundingClientRect().bottom - containerTop,
+    height: Math.max(1, item.getBoundingClientRect().height)
+  }));
+  let currentHeight = fullHeight;
+  return {
+    fullHeight,
+    update(height) {
+      currentHeight = height;
+      const scroll = revealTopFirst
+        ? Math.min(24, Math.max(0, fullHeight - height))
+        : Math.max(0, fullHeight - height);
+      children.forEach(({ item, transform }) => {
+        item.style.transform = scroll > 0 ? `translateY(-${scroll}px) ${transform}`.trim() : transform;
+      });
+      items.forEach(({ item, targetOpacity, top, bottom, height: itemHeight }) => {
+        const fadeDistance = Math.max(24, Math.min(96, itemHeight));
+        const fraction = revealTopFirst
+          ? (height - top) / fadeDistance
+          : (bottom - scroll) / fadeDistance;
+        item.style.opacity = String(targetOpacity * Math.max(0, Math.min(1, fraction)));
+      });
+    },
+    reset() {
+      children.forEach(({ item, transform }) => { item.style.transform = transform; });
+      items.forEach(({ item, opacity }) => { item.style.opacity = opacity; });
+    },
+    snapshotHtml(element) {
+      this.reset();
+      const html = element.innerHTML;
+      this.update(currentHeight);
+      return html;
+    }
+  };
 }
 
 function animateHomeworkGroupVisibility(group, expanded) {
   if (!(group instanceof HTMLElement)) return Promise.resolve(false);
+  const scrollMotionEnabled = (expanded ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+  const previousScrollMotion = group.__scrollListMotion;
   const previousFraction = group.__topDownListFade?.getFraction();
   group.__heightMotion?.cancel();
   group.__topDownListFade?.reset();
   delete group.__topDownListFade;
+  if (!scrollMotionEnabled && previousScrollMotion) {
+    previousScrollMotion.reset();
+    delete group.__scrollListMotion;
+  }
   const from = group.getBoundingClientRect().height;
   if (globalThis.BjtuMotion?.isEnabled?.() === false) {
+    previousScrollMotion?.reset();
+    delete group.__scrollListMotion;
     group.classList.toggle('is-hidden', !expanded);
     group.style.maxHeight = '';
     group.style.height = '';
@@ -5059,9 +5154,32 @@ function animateHomeworkGroupVisibility(group, expanded) {
   group.style.height = `${from}px`;
   group.style.overflow = 'hidden';
   const to = expanded ? Math.max(1, group.scrollHeight) : 0;
+  if (scrollMotionEnabled) {
+    const fullHeight = Math.max(group.scrollHeight, from, previousScrollMotion?.fullHeight || 0, 1);
+    const motion = previousScrollMotion || createListScrollMotion(group, fullHeight, '.hw-card-item, .force-score-publish-row', { revealTopFirst: expanded });
+    group.__scrollListMotion = motion;
+    group.style.opacity = '1';
+    return animateHeightWithMotion(group, from, expanded ? fullHeight : 0, (height) => {
+      group.style.height = `${height}px`;
+      motion.update(height);
+    }).then((completed) => {
+      if (group.__scrollListMotion !== motion) return false;
+      if (!completed) return false;
+      group.classList.toggle('is-hidden', !expanded);
+      motion.reset();
+      delete group.__scrollListMotion;
+      group.style.maxHeight = '';
+      group.style.height = '';
+      group.style.boxSizing = '';
+      group.style.opacity = '';
+      group.style.overflow = '';
+      group.style.transition = '';
+      return true;
+    });
+  }
   const fade = createTopDownListFade(
-    group.querySelectorAll('.hw-card-item').length
-      ? group.querySelectorAll('.hw-card-item')
+    group.querySelectorAll('.hw-card-item, .force-score-publish-row').length
+      ? group.querySelectorAll('.hw-card-item, .force-score-publish-row')
       : group.children
   );
   const fullHeight = Math.max(group.scrollHeight, from, 1);
@@ -5253,7 +5371,7 @@ function renderHomeworkList(courseId) {
   // 教师账号：doneToggleRow 始终使用原文案
   const isTeacherMode2 = !!window.isTeacherAccount;
   const doneToggleRowHtml = totalDoneCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--done">${renderHomeworkToggle('done', 'toggle-done', data.showDone, totalDoneCount, '查看已交作业', '收起已交作业', 'down', 'up')}</div>` : '';
-  const forcePublishScoreButtonHtml = (!isTeacherMode2 && data.showDone) ? renderForcePublishScoreButton(courseId) : '';
+  const forcePublishScoreButtonHtml = (!isTeacherMode2 && totalDoneCount > 0) ? renderForcePublishScoreButton(courseId) : '';
 
   const nativeCourse = (window.currentVeCourseList || []).find((course) => String(
     course?.id || course?.cId || course?.courseId || course?.course_id || ''
@@ -5459,7 +5577,7 @@ function renderHomeworkList(courseId) {
     ? `<div class="homework-group homework-group--pending" data-homework-group="teacher-active">${teacherNonOverdueHtml}</div>`
     : '';
 
-  area.innerHTML = `${typeLoadingHtml}${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${forcePublishScoreButtonHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
+  area.innerHTML = `${typeLoadingHtml}${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${forcePublishScoreButtonHtml}${doneHtml}</div>` : ''}`;
   applyExpandableAutoToggle(area);
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
@@ -6421,24 +6539,6 @@ jsessionidInput.addEventListener('change', async () => {
   await globalThis.__bjtuVeAppReady;
   await globalThis.__bjtuPlatformModulesReady;
   await globalThis.__bjtuOptionalPlatformAdaptersReady;
-  if (veUploadPickerRequestId) {
-    await loadPlatformEnabledFromStorage();
-    await loadPlatformAutoLoginSettings();
-    await loadPlatformDetailSettings();
-    await loadSaveUploadsEnabledSetting();
-    setupOptionsStorageLiveSync();
-    document.documentElement.classList.remove('app-options-loading');
-    await loadLoginAccountHistory();
-    await loadSavedUploadsFromStorage();
-    setupSavedUploadsUi();
-    lastValidUsername = (await getLocal('username', '')).trim();
-    usernameInput.value = lastValidUsername;
-    renderLoginAccountHistorySelect(lastValidUsername);
-    updateJsessionidState();
-    if (lastValidUsername) isLoginSessionValid = true;
-    initialUsernameSet = false;
-    return;
-  }
   setupRightColumnResizer();
   updateTotalProgress();
   updateResourceDownloadTotals();

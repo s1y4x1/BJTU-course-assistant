@@ -31,6 +31,13 @@ body {
 }
 html.app-options-loading .options-controlled-slot > [data-options-controlled] { display:none !important; }
 html.app-options-loading .options-controlled-slot > .options-loading-placeholder { display:inline-flex; }
+html.app-options-loading body,
+html.app-options-loading .layout-container,
+html.app-options-loading .left-column,
+html.app-options-loading .right-column,
+html.app-options-loading .page-top-config {
+    transition: none !important;
+}
 .platform-options-slot { min-width:24px; justify-content:flex-end; }
 .save-uploads-options-slot { min-width:24px; }
 
@@ -39,37 +46,10 @@ html.app-options-loading .options-controlled-slot > .options-loading-placeholder
 #drop-zone.dragover-invalid { border-color: #f44336; background-color: #fff0f0; }
 #drop-zone.dragover-text { border-color: #2196F3; background-color: #f0f7ff; }
 #file-input { display: none; }
+.paste-file-icon { font-size: var(--bjtu-font-size-icon, 22px); }
 .btn { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .btn:hover { background-color: #45a049; }
 
-/* ve.uploadFile() 的独立交互窗口：保留上传区与上传结果，避免后台脚本直接唤起文件选择器。 */
-body.ve-upload-picker-mode {
-    height:auto;
-    min-height:100%;
-    overflow:auto;
-    padding:16px;
-}
-body.ve-upload-picker-mode .page-top-config,
-body.ve-upload-picker-mode .right-column,
-body.ve-upload-picker-mode .fullscreen-module-buttons,
-body.ve-upload-picker-mode .qwen-chat-fab,
-body.ve-upload-picker-mode .qwen-chat-panel,
-body.ve-upload-picker-mode #saved-uploads-section,
-body.ve-upload-picker-mode #resource-space-section,
-body.ve-upload-picker-mode .upload-section-header > div,
-body.ve-upload-picker-mode #copy-all-btn {
-    display:none !important;
-}
-body.ve-upload-picker-mode .layout-container {
-    display:block;
-    overflow:visible;
-}
-body.ve-upload-picker-mode .left-column {
-    width:100%;
-    min-width:0;
-    overflow:visible;
-    padding:0;
-}
 .file-item { border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; background:#fff; }
 .progress-bar-container { width: 100%; background-color: #e5e7eb; height: 3px; border-radius: 0; margin-top: 5px; overflow: hidden; }
 .progress-bar { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.2s; text-align: left; line-height: 0; color: transparent; font-size: 0; border-radius: 0; overflow: hidden; }
@@ -408,7 +388,7 @@ body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focu
     padding-top: 20px;
 }
 body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .right-column {
-    padding-top: 35px;
+    padding-top: 15px;
 }
 body.course-helper-focus {
     padding: 0;
@@ -622,7 +602,7 @@ body.platform-column-resizing {
     .right-column {
         flex: 1 1 0;
         position: relative;
-        padding: 26px 10px 0;
+        padding: 15px 10px 0;
         height: auto;
         max-height: none;
         min-height: 0;
@@ -683,7 +663,7 @@ body.platform-column-resizing {
         flex: 1 1 100%;
         width: 100% !important;
         min-height: 0;
-        padding: 26px 10px 0;
+        padding: 15px 10px 0;
         overflow-y: auto;
         overflow-x: auto;
     }
@@ -692,7 +672,7 @@ body.platform-column-resizing {
     }
     body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .right-column,
     body.page-top-config-in-left-column.course-header-sticky.course-helper-focus .right-column {
-        padding-top: 38px;
+        padding-top: 15px;
     }
     body.course-helper-focus .column-resizer {
         display: block;
