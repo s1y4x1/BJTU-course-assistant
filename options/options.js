@@ -848,7 +848,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('jlgjDarkModeEnabled').checked = jlgjDarkModeEnabled !== false;
   document.getElementById('jlgjAlwaysDarkModeEnabled').checked = jlgjAlwaysDarkModeEnabled === true;
   document.getElementById('collapseHomeworkDetailsDownward').checked = collapseHomeworkDetailsDownward !== false;
-  document.getElementById('scrollExpandHomeworkLists').checked = scrollExpandHomeworkLists !== false;
+  document.getElementById('scrollExpandHomeworkLists').checked = scrollExpandHomeworkLists === true;
   document.getElementById('scrollCollapseHomeworkLists').checked = scrollCollapseHomeworkLists !== false;
   document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
     homeworkDetailCollapsedLines,
@@ -1451,7 +1451,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         applyBooleanUi('collapseHomeworkDetailsDownward', changes.collapseHomeworkDetailsDownward.newValue, true);
       }
       if (changes.scrollExpandHomeworkLists) {
-        applyBooleanUi('scrollExpandHomeworkLists', changes.scrollExpandHomeworkLists.newValue, true);
+        applyBooleanUi('scrollExpandHomeworkLists', changes.scrollExpandHomeworkLists.newValue, false);
       }
       if (changes.scrollCollapseHomeworkLists) {
         applyBooleanUi('scrollCollapseHomeworkLists', changes.scrollCollapseHomeworkLists.newValue, true);
@@ -2305,7 +2305,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       xuetangxSecondCsrfToken: '',
       xuetangxSecondSessionId: '',
       collapseHomeworkDetailsDownward: true,
-      scrollExpandHomeworkLists: true,
+      scrollExpandHomeworkLists: false,
       scrollCollapseHomeworkLists: true,
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
       replayDetailCollapsedLines: DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES,
@@ -2378,7 +2378,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('jlgjDarkModeEnabled').checked = true;
     document.getElementById('jlgjAlwaysDarkModeEnabled').checked = false;
     document.getElementById('collapseHomeworkDetailsDownward').checked = true;
-    document.getElementById('scrollExpandHomeworkLists').checked = true;
+    document.getElementById('scrollExpandHomeworkLists').checked = false;
     document.getElementById('scrollCollapseHomeworkLists').checked = true;
     document.getElementById('homeworkDetailCollapsedLines').value = String(DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES);
     document.getElementById('replayDetailCollapsedLines').value = String(DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES);

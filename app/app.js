@@ -676,7 +676,7 @@ window.autoLoadCourseResourcesEnabled = false;
 window.yktActivityTypes = [14, 15, 5, 9];
 window.homeworkDetailCollapsedLines = 3;
 window.collapseHomeworkDetailsDownward = true;
-window.scrollExpandHomeworkLists = true;
+window.scrollExpandHomeworkLists = false;
 window.scrollCollapseHomeworkLists = true;
 window.replayDetailCollapsedLines = 3;
 window.jlgjDarkModeEnabled = true;
@@ -1109,7 +1109,7 @@ async function loadPlatformDetailSettings() {
       : [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.collapseHomeworkDetailsDownward = data[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY] !== false;
-    window.scrollExpandHomeworkLists = data[SCROLL_EXPAND_HOMEWORK_LISTS_KEY] !== false;
+    window.scrollExpandHomeworkLists = data[SCROLL_EXPAND_HOMEWORK_LISTS_KEY] === true;
     window.scrollCollapseHomeworkLists = data[SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY] !== false;
     window.replayDetailCollapsedLines = normalizeDetailCollapsedLines(data[REPLAY_DETAIL_COLLAPSED_LINES_KEY], 3);
     window.jlgjDarkModeEnabled = data[JLGJ_DARK_MODE_KEY] !== false;
@@ -1118,7 +1118,7 @@ async function loadPlatformDetailSettings() {
     window.yktActivityTypes = [14, 15, 5, 9];
     window.homeworkDetailCollapsedLines = 3;
     window.collapseHomeworkDetailsDownward = true;
-    window.scrollExpandHomeworkLists = true;
+    window.scrollExpandHomeworkLists = false;
     window.scrollCollapseHomeworkLists = true;
     window.replayDetailCollapsedLines = 3;
     window.jlgjDarkModeEnabled = true;
@@ -1508,7 +1508,7 @@ function setupOptionsStorageLiveSync() {
       window.collapseHomeworkDetailsDownward = changes[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY].newValue !== false;
     }
     if (changes[SCROLL_EXPAND_HOMEWORK_LISTS_KEY]) {
-      window.scrollExpandHomeworkLists = changes[SCROLL_EXPAND_HOMEWORK_LISTS_KEY].newValue !== false;
+      window.scrollExpandHomeworkLists = changes[SCROLL_EXPAND_HOMEWORK_LISTS_KEY].newValue === true;
     }
     if (changes[SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY]) {
       window.scrollCollapseHomeworkLists = changes[SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY].newValue !== false;
@@ -4641,7 +4641,7 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
     && resultArea.__listTransition.open !== shouldOpen;
   const scrollMotionEnabled = interrupted
     ? resultArea.__listTransition.scroll
-    : (shouldOpen ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+    : shouldOpen ? window.scrollExpandHomeworkLists === true : window.scrollCollapseHomeworkLists !== false;
   const transition = { open: shouldOpen, scroll: scrollMotionEnabled };
   resultArea.__listTransition = transition;
   const previousScrollMotion = resultArea.__scrollListMotion;
@@ -5147,7 +5147,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
     && group.__listTransition.open !== expanded;
   const scrollMotionEnabled = interrupted
     ? group.__listTransition.scroll
-    : (expanded ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+    : expanded ? window.scrollExpandHomeworkLists === true : window.scrollCollapseHomeworkLists !== false;
   const transition = { open: expanded, scroll: scrollMotionEnabled };
   group.__listTransition = transition;
   const previousScrollMotion = group.__scrollListMotion;
