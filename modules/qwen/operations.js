@@ -580,9 +580,10 @@
         cleanup();
         callback(value);
       };
-      const onMessage = (message, sender) => {
+      const onMessage = (message, sender, sendResponse) => {
         if (message?.type !== 'VE_UPLOAD_PICKER_RESULT' || message?.requestId !== requestId) return false;
         if (!String(sender?.url || '').startsWith(chrome.runtime.getURL('modules/ve/upload-picker.html?'))) return false;
+        sendResponse({ ok: true });
         finish(resolve, message.value);
         return false;
       };

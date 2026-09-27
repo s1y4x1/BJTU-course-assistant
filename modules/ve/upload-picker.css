@@ -21,8 +21,7 @@ body.ve-upload-picker-page .paste-file-label { font-size: 18px; color: #475569; 
 body.ve-upload-picker-page .paste-file-icon { font-size: var(--bjtu-font-size-icon, 22px); }
 body.ve-upload-picker-page #picker-status { margin: 8px 0 12px; color: #52606d; min-height: 20px; }
 body.ve-upload-picker-page #picker-status.error, body.ve-upload-picker-page .inline-status.error { color: #c62828; }
-body.ve-upload-picker-page .picker-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-body.ve-upload-picker-page #picker-cancel { background: #64748b; }
+body.ve-upload-picker-page #picker-error-actions { display: flex; gap: 8px; margin: 0 0 12px; }
 body.ve-upload-picker-page .file-item { overflow-wrap: anywhere; }
 body.ve-upload-picker-page .upload-file-head-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 body.ve-upload-picker-page .upload-file-head-row > div:first-child { min-width: 0; }

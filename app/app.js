@@ -2027,7 +2027,7 @@ function setCourseHelperFocusMode(enabled, { immediate = false } = {}) {
       if (window.courseHelperPlatformSplitMode) return;
       window.applyRightColumnResponsiveWidth?.();
       document.body.classList.remove('course-helper-focus');
-      window.syncRightColumnResizer?.();
+      window.trackRightColumnResizer?.();
       courseHelperLayoutTransitionTimer = setTimeout(() => {
         courseHelperLayoutTransitionTimer = 0;
         if (window.courseHelperPlatformSplitMode) return;
@@ -2047,7 +2047,7 @@ function setCourseHelperFocusMode(enabled, { immediate = false } = {}) {
   }
 
   document.body.classList.add('course-helper-focus');
-  window.syncRightColumnResizer?.();
+  window.trackRightColumnResizer?.();
   courseHelperLayoutTransitionTimer = setTimeout(() => {
     courseHelperLayoutTransitionTimer = 0;
     if (window.courseHelperPlatformSplitMode !== next) return;
@@ -2186,6 +2186,7 @@ function setupRightColumnResizer() {
 
   let resizerSyncFrame = 0;
   let resizerSyncEndTimer = 0;
+  let resizerTrackingFrame = 0;
   const scheduleResizerSync = () => {
     if (!resizerSyncFrame) {
       resizerSyncFrame = requestAnimationFrame(() => {
@@ -2200,6 +2201,15 @@ function setupRightColumnResizer() {
     }, COURSE_HELPER_LAYOUT_TRANSITION_MS + 30);
   };
   window.syncRightColumnResizer = scheduleResizerSync;
+  window.trackRightColumnResizer = () => {
+    if (resizerTrackingFrame) cancelAnimationFrame(resizerTrackingFrame);
+    const until = performance.now() + COURSE_HELPER_LAYOUT_TRANSITION_MS + 50;
+    const track = (now) => {
+      syncResizerGeometry();
+      resizerTrackingFrame = now < until ? requestAnimationFrame(track) : 0;
+    };
+    resizerTrackingFrame = requestAnimationFrame(track);
+  };
   window.applyRightColumnResponsiveWidth = applyResponsiveWidth;
 
   applyResponsiveWidth();
@@ -4596,7 +4606,7 @@ function createTopDownListFade(items) {
       const revealed = Math.max(0, Math.min(1, fraction));
       currentFraction = revealed;
       states.forEach(({ item, target }, index) => {
-        const finishAt = 0.35 + 0.65 * index / Math.max(1, states.length - 1);
+        const finishAt = listFadeFinishAt(index, states.length);
         item.style.opacity = String(target * Math.min(1, revealed / finishAt));
       });
     },
@@ -4615,6 +4625,10 @@ function createTopDownListFade(items) {
   };
 }
 
+function listFadeFinishAt(index, count) {
+  return 0.35 + 0.65 * index / Math.max(1, count - 1);
+}
+
 function getResultAreaHtmlForCache(resultArea) {
   return resultArea.__scrollListMotion?.snapshotHtml(resultArea)
     ?? resultArea.__topDownListFade?.snapshotHtml(resultArea)
@@ -4623,7 +4637,13 @@ function getResultAreaHtmlForCache(resultArea) {
 
 function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } = {}) {
   if (!(resultArea instanceof HTMLElement)) return;
-  const scrollMotionEnabled = (shouldOpen ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+  const interrupted = !!resultArea.__heightMotion && !!resultArea.__listTransition
+    && resultArea.__listTransition.open !== shouldOpen;
+  const scrollMotionEnabled = interrupted
+    ? resultArea.__listTransition.scroll
+    : (shouldOpen ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+  const transition = { open: shouldOpen, scroll: scrollMotionEnabled };
+  resultArea.__listTransition = transition;
   const previousScrollMotion = resultArea.__scrollListMotion;
   const previousFraction = resultArea.__topDownListFade?.getFraction();
   resultArea.__heightMotion?.cancel();
@@ -4644,6 +4664,7 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
     resultArea.style.willChange = '';
   };
   if (immediate) {
+    delete resultArea.__listTransition;
     previousScrollMotion?.reset();
     delete resultArea.__scrollListMotion;
     reset();
@@ -4653,6 +4674,7 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
     return;
   }
   if (!shouldOpen && resultArea.style.display === 'none') {
+    delete resultArea.__listTransition;
     resultArea.dataset.animOpen = '0';
     delete resultArea.dataset.closingView;
     return;
@@ -4670,7 +4692,7 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
   resultArea.dataset.animOpen = shouldOpen ? '1' : '0';
   if (scrollMotionEnabled) {
     const fullHeight = Math.max(resultArea.scrollHeight + resultArea.offsetHeight - resultArea.clientHeight, from, previousScrollMotion?.fullHeight || 0, 1);
-    const motion = previousScrollMotion || createListScrollMotion(resultArea, fullHeight, '', { revealTopFirst: shouldOpen });
+    const motion = previousScrollMotion || createListScrollMotion(resultArea, fullHeight);
     resultArea.__scrollListMotion = motion;
     resultArea.style.opacity = '1';
     void animateHeightWithMotion(resultArea, from, shouldOpen ? fullHeight : 0, (height) => {
@@ -4678,6 +4700,7 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
       motion.update(height);
     }).then((completed) => {
       if (resultArea.__scrollListMotion !== motion || !completed) return;
+      if (resultArea.__listTransition === transition) delete resultArea.__listTransition;
       if (!shouldOpen) {
         resultArea.style.display = 'none';
         delete resultArea.dataset.closingView;
@@ -4702,7 +4725,10 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
         fade.reset();
         delete resultArea.__topDownListFade;
       }
-      if (completed) reset();
+      if (completed) {
+        if (resultArea.__listTransition === transition) delete resultArea.__listTransition;
+        reset();
+      }
     });
     return;
   }
@@ -4720,6 +4746,7 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
       delete resultArea.__topDownListFade;
     }
     if (!completed) return;
+    if (resultArea.__listTransition === transition) delete resultArea.__listTransition;
     resultArea.style.display = 'none';
     delete resultArea.dataset.closingView;
     reset();
@@ -5074,8 +5101,7 @@ function toggleHomeworkGroupDom(courseId, key, expanded) {
   return true;
 }
 
-function createListScrollMotion(container, fullHeight, itemSelector = '', { revealTopFirst = false } = {}) {
-  const containerTop = container.getBoundingClientRect().top;
+function createListScrollMotion(container, fullHeight, itemSelector = '') {
   const children = Array.from(container.children).filter((item) => item instanceof HTMLElement).map((item) => ({
     item,
     transform: item.style.transform
@@ -5084,28 +5110,22 @@ function createListScrollMotion(container, fullHeight, itemSelector = '', { reve
   const items = Array.from(fadeItems).filter((item) => item instanceof HTMLElement).map((item) => ({
     item,
     opacity: item.style.opacity,
-    targetOpacity: Number(getComputedStyle(item).opacity),
-    top: item.getBoundingClientRect().top - containerTop,
-    bottom: item.getBoundingClientRect().bottom - containerTop,
-    height: Math.max(1, item.getBoundingClientRect().height)
+    targetOpacity: Number(getComputedStyle(item).opacity)
   }));
   let currentHeight = fullHeight;
   return {
     fullHeight,
     update(height) {
       currentHeight = height;
-      const scroll = revealTopFirst
-        ? Math.min(24, Math.max(0, fullHeight - height))
-        : Math.max(0, fullHeight - height);
+      const scroll = Math.max(0, fullHeight - height);
       children.forEach(({ item, transform }) => {
         item.style.transform = scroll > 0 ? `translateY(-${scroll}px) ${transform}`.trim() : transform;
       });
-      items.forEach(({ item, targetOpacity, top, bottom, height: itemHeight }) => {
-        const fadeDistance = Math.max(24, Math.min(96, itemHeight));
-        const fraction = revealTopFirst
-          ? (height - top) / fadeDistance
-          : (bottom - scroll) / fadeDistance;
-        item.style.opacity = String(targetOpacity * Math.max(0, Math.min(1, fraction)));
+      const collapsedFraction = Math.min(1, scroll / fullHeight);
+      items.forEach(({ item, targetOpacity }, index) => {
+        const finishAt = listFadeFinishAt(index, items.length);
+        const visibleFraction = 1 - Math.min(1, collapsedFraction / finishAt);
+        item.style.opacity = String(targetOpacity * visibleFraction);
       });
     },
     reset() {
@@ -5123,7 +5143,13 @@ function createListScrollMotion(container, fullHeight, itemSelector = '', { reve
 
 function animateHomeworkGroupVisibility(group, expanded) {
   if (!(group instanceof HTMLElement)) return Promise.resolve(false);
-  const scrollMotionEnabled = (expanded ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+  const interrupted = !!group.__heightMotion && !!group.__listTransition
+    && group.__listTransition.open !== expanded;
+  const scrollMotionEnabled = interrupted
+    ? group.__listTransition.scroll
+    : (expanded ? window.scrollExpandHomeworkLists : window.scrollCollapseHomeworkLists) !== false;
+  const transition = { open: expanded, scroll: scrollMotionEnabled };
+  group.__listTransition = transition;
   const previousScrollMotion = group.__scrollListMotion;
   const previousFraction = group.__topDownListFade?.getFraction();
   group.__heightMotion?.cancel();
@@ -5135,6 +5161,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
   }
   const from = group.getBoundingClientRect().height;
   if (globalThis.BjtuMotion?.isEnabled?.() === false) {
+    delete group.__listTransition;
     previousScrollMotion?.reset();
     delete group.__scrollListMotion;
     group.classList.toggle('is-hidden', !expanded);
@@ -5156,7 +5183,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
   const to = expanded ? Math.max(1, group.scrollHeight) : 0;
   if (scrollMotionEnabled) {
     const fullHeight = Math.max(group.scrollHeight, from, previousScrollMotion?.fullHeight || 0, 1);
-    const motion = previousScrollMotion || createListScrollMotion(group, fullHeight, '.hw-card-item, .force-score-publish-row', { revealTopFirst: expanded });
+    const motion = previousScrollMotion || createListScrollMotion(group, fullHeight, '.hw-card-item, .force-score-publish-row');
     group.__scrollListMotion = motion;
     group.style.opacity = '1';
     return animateHeightWithMotion(group, from, expanded ? fullHeight : 0, (height) => {
@@ -5165,6 +5192,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
     }).then((completed) => {
       if (group.__scrollListMotion !== motion) return false;
       if (!completed) return false;
+      if (group.__listTransition === transition) delete group.__listTransition;
       group.classList.toggle('is-hidden', !expanded);
       motion.reset();
       delete group.__scrollListMotion;
@@ -5197,6 +5225,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
       delete group.__topDownListFade;
     }
     if (!completed) return false;
+    if (group.__listTransition === transition) delete group.__listTransition;
     group.classList.toggle('is-hidden', !expanded);
     group.style.maxHeight = '';
     group.style.height = '';

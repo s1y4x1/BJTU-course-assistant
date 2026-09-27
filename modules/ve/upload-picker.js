@@ -10,14 +10,13 @@
   const status = document.getElementById('picker-status');
   const loginButton = document.getElementById('picker-login');
   const retryButton = document.getElementById('picker-retry');
-  const cancelButton = document.getElementById('picker-cancel');
+  const errorActions = document.getElementById('picker-error-actions');
   const totalSizeInfo = document.getElementById('total-size-info');
   const totalPercent = document.getElementById('total-percent');
   const totalBar = document.getElementById('total-server-bar');
   const totalSpeed = document.getElementById('total-speed');
   const totalEta = document.getElementById('total-eta');
   let pendingFiles = [];
-  let activeRequest = null;
   let uploading = false;
 
   if (!requestId) {
@@ -111,7 +110,6 @@
   function uploadOne(file, userInfo, ui, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      activeRequest = xhr;
       xhr.open('POST', common.uploadUrl(userInfo.roleName), true);
       xhr.withCredentials = true;
       xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -127,7 +125,6 @@
         if (event.lengthComputable && event.loaded >= event.total) ui.state.textContent = '等待服务器处理…';
       };
       xhr.onload = () => {
-        activeRequest = null;
         if (xhr.status !== 200) {
           reject(new Error(`上传失败：HTTP ${xhr.status}`));
           return;
@@ -146,8 +143,8 @@
         showDownloadLink(ui, data.visitName);
         resolve({ fileName: file.name, fileSize: file.size, visitName: data.visitName });
       };
-      xhr.onerror = () => { activeRequest = null; reject(new Error('网络请求失败')); };
-      xhr.onabort = () => { activeRequest = null; reject(new Error('上传已取消')); };
+      xhr.onerror = () => reject(new Error('网络请求失败'));
+      xhr.onabort = () => reject(new Error('上传已取消'));
       const body = new FormData();
       body.append('file', file);
       xhr.send(body);
@@ -167,8 +164,7 @@
     pendingFiles = selected;
     uploading = true;
     dropZone.setAttribute('aria-disabled', 'true');
-    retryButton.hidden = true;
-    loginButton.hidden = true;
+    errorActions.hidden = true;
     fileList.replaceChildren();
     const rows = selected.map(createFileRow);
     const loadedBytes = selected.map(() => 0);
@@ -248,8 +244,7 @@
       globalThis.close();
     } catch (error) {
       setStatus(String(error?.message || error), true);
-      retryButton.hidden = false;
-      loginButton.hidden = false;
+      errorActions.hidden = false;
     } finally {
       uploading = false;
       dropZone.removeAttribute('aria-disabled');
@@ -295,9 +290,5 @@
     void chrome.tabs.create({ url: 'http://123.121.147.7:88/ve/', active: true }).then((tab) => {
       if (tab?.id != null) void chrome.runtime.sendMessage({ type: 'GROUP_BJTU_OPENED_TAB', tabId: tab.id });
     });
-  });
-  cancelButton.addEventListener('click', () => {
-    if (activeRequest) activeRequest.abort();
-    globalThis.close();
   });
 })();

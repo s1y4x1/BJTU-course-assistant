@@ -422,12 +422,6 @@ body.course-helper-focus .right-column {
     padding: 15px 12px 0 34px;
     overflow-x: auto;
 }
-body.course-helper-focus .column-resizer {
-    left: 0 !important;
-    top: 0 !important;
-    height: 100vh !important;
-    transform: none;
-}
 body.course-helper-focus .column-collapse-toggle {
     left: 0;
     right: auto;
