@@ -52,6 +52,15 @@
   // 将 .tip 文本转换为 ℹ️ 触发器与悬浮气泡；可重复调用，仅处理尚未转换的 .tip。
   function setup() {
     ensurePopover();
+    document.querySelectorAll('label[title]').forEach((label) => {
+      const text = String(label.getAttribute('title') || '').trim();
+      label.removeAttribute('title');
+      if (!text || label.nextElementSibling?.matches('.tip')) return;
+      const tip = document.createElement('span');
+      tip.className = 'tip';
+      tip.textContent = text;
+      label.after(tip);
+    });
     document.querySelectorAll('.tip').forEach((tip) => {
       const text = String(tip.textContent || '').replace(/\s+/g, ' ').trim();
       if (!text) {
@@ -87,6 +96,8 @@
         || target.querySelector(':scope > label, :scope > button')
       )) {
         target.appendChild(trigger);
+        target.addEventListener('mouseenter', () => showPopover(trigger));
+        target.addEventListener('mouseleave', () => hidePopover(trigger));
         tip.remove();
       } else {
         tip.replaceWith(trigger);

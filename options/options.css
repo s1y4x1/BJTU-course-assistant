@@ -25,7 +25,7 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   font-size:14px;
   line-height:1;
   vertical-align:middle;
-  cursor:help;
+  cursor:pointer;
   user-select:none;
 }
 .section-title {
@@ -75,6 +75,10 @@ html[data-color-scheme="dark"] .module-options-page-link:focus-visible {
 .option-tip-trigger:hover,
 .option-tip-trigger:focus-visible {
   z-index:1001;
+}
+#options-controlled-content label:has(input:not(:disabled), select:not(:disabled), textarea:not(:disabled)),
+body.module-options-standalone label:has(input:not(:disabled), select:not(:disabled), textarea:not(:disabled)) {
+  cursor:pointer;
 }
 .xuetangx-use-current-account-btn {
   margin:4px 0 2px;
@@ -309,7 +313,7 @@ html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5f
 .is-disabled { opacity: 0.5; pointer-events: none; }
 .is-disabled .option-tip-trigger {
   pointer-events:auto;
-  cursor:help;
+  cursor:pointer;
 }
 .platform-option { margin:8px 0; }
 .platform-option > label { display:flex; align-items:center; gap:8px; margin:0; font-size:15px; font-weight:600; }

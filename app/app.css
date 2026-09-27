@@ -401,6 +401,15 @@ body.column-resizing .right-column {
     transition: max-height 0.22s ease, opacity 0.16s ease, transform 0.22s ease,
         margin 0.22s ease, padding 0.22s ease;
 }
+body.page-top-config-in-left-column.course-header-sticky {
+    padding-top: 0;
+}
+body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .left-column {
+    padding-top: 20px;
+}
+body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .right-column {
+    padding-top: 35px;
+}
 body.course-helper-focus {
     padding: 0;
 }
@@ -677,6 +686,13 @@ body.platform-column-resizing {
         padding: 26px 10px 0;
         overflow-y: auto;
         overflow-x: auto;
+    }
+    body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .left-column {
+        padding-top: 12px;
+    }
+    body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .right-column,
+    body.page-top-config-in-left-column.course-header-sticky.course-helper-focus .right-column {
+        padding-top: 38px;
     }
     body.course-helper-focus .column-resizer {
         display: block;
@@ -2036,8 +2052,11 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     font-size:14px;
     line-height:1;
     vertical-align:middle;
-    cursor:help;
+    cursor:pointer;
     user-select:none;
+}
+.fullscreen-module-window label:has(input:not(:disabled), select:not(:disabled), textarea:not(:disabled)) {
+    cursor:pointer;
 }
 .option-tip-popover {
     position:fixed;
