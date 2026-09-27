@@ -2498,7 +2498,7 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
         <div class="resource-row-title" style="margin-bottom:4px; cursor:pointer;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(resourceId)}" ${checked} style="margin:0 4px 0 0;">
           <span style="color:#111827; font-weight:700;">${escapeHtml(fileNameNoExt)}</span>
-          <span class="file-size-emphasis" data-file-size-bytes="${sizeBytes}" style="${sizeStyle}">${escapeHtml(sizeText)}</span>
+          <span class="file-size-emphasis" data-file-size-bytes="${sizeBytes}" data-file-size-color-scheme="light" style="${sizeStyle}">${escapeHtml(sizeText)}</span>
         </div>
         <div class="resource-link-row">
           <a class="resource-url" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>

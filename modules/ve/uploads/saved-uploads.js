@@ -97,16 +97,17 @@ function animateSavedUploadsItems(section, expanding) {
   if (globalThis.BjtuMotion?.isEnabled?.() === false
     || (!globalThis.BjtuMotion && matchMedia('(prefers-reduced-motion: reduce)').matches)) return Promise.resolve();
   const items = getSavedUploadAnimatedItems(section);
-  const frames = expanding
-    ? [
-        { opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' },
-        { opacity: 1, transform: 'translateY(0) scaleY(1)', transformOrigin: 'top center' }
-      ]
-    : [
+  const closingFrames = [
         { opacity: 1, transform: 'translateY(0) scaleY(1)', transformOrigin: 'top center' },
         { opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' }
       ];
-  return Promise.all(items.map((item) => {
+  return Promise.all(items.map((item, index) => {
+    const finishAt = 0.35 + 0.55 * index / Math.max(1, items.length - 1);
+    const frames = expanding ? [
+      { offset: 0, opacity: 0, transform: 'translateY(-7px) scaleY(0.96)', transformOrigin: 'top center' },
+      { offset: finishAt, opacity: 1, transform: `translateY(${-7 * (1 - finishAt)}px) scaleY(${0.96 + 0.04 * finishAt})` },
+      { offset: 1, opacity: 1, transform: 'translateY(0) scaleY(1)' }
+    ] : closingFrames;
     const animation = item.animate(frames, {
       duration: expanding ? 220 : 180,
       easing: expanding ? 'cubic-bezier(0.2, 0.8, 0.2, 1)' : 'ease-in',

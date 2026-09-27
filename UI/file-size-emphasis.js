@@ -12,7 +12,7 @@
     return `${parseFloat((value / Math.pow(unit, index)).toFixed(2))} ${units[index]}`;
   }
 
-  function buildMegabytesStyle(megabytes) {
+  function buildMegabytesStyle(megabytes, colorScheme = document.documentElement.dataset.colorScheme) {
     const mb = Number(megabytes);
     if (!Number.isFinite(mb) || mb <= 0) {
       return 'font-size:10px; font-weight:500; color:#94a3b8; text-shadow:none;';
@@ -22,7 +22,7 @@
     const weight = Math.round(500 + ratio * 320);
     const shadowBlur = Math.max(0, (ratio - 0.18) * 5).toFixed(2);
     const shadowAlpha = Math.max(0, (ratio - 0.2) * 0.35);
-    if (document.documentElement.dataset.colorScheme === 'dark') {
+    if (colorScheme === 'dark') {
       const red = Math.round(182 + ratio * 73);
       const green = Math.round(194 + ratio * 61);
       const blue = Math.round(209 + ratio * 46);
@@ -40,8 +40,8 @@
     return `font-size:${fontPx}px; font-weight:${weight}; color:rgb(${red},${green},${blue}); text-shadow:${shadow};`;
   }
 
-  function buildBytesStyle(bytes) {
-    return buildMegabytesStyle(Math.max(0, Number(bytes) || 0) / (1024 * 1024));
+  function buildBytesStyle(bytes, colorScheme) {
+    return buildMegabytesStyle(Math.max(0, Number(bytes) || 0) / (1024 * 1024), colorScheme);
   }
 
   function applyStyle(element, styleText) {
@@ -60,8 +60,8 @@
     root.querySelectorAll?.('[data-file-size-bytes], [data-file-size-mb]').forEach((element) => {
       if (!(element instanceof HTMLElement)) return;
       const style = element.dataset.fileSizeBytes !== undefined
-        ? buildBytesStyle(Number(element.dataset.fileSizeBytes || 0))
-        : buildMegabytesStyle(Number(element.dataset.fileSizeMb || 0));
+        ? buildBytesStyle(Number(element.dataset.fileSizeBytes || 0), element.dataset.fileSizeColorScheme)
+        : buildMegabytesStyle(Number(element.dataset.fileSizeMb || 0), element.dataset.fileSizeColorScheme);
       applyStyle(element, style);
     });
   }

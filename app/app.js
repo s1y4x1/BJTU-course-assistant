@@ -2567,7 +2567,7 @@ function stripFileExtension(name) {
 }
 
 function buildHomeworkAttachmentSizeStyle(bytes) {
-  return buildFileSizeEmphasisStyle(bytes);
+  return globalThis.BjtuFileSizeEmphasis.buildBytesStyle(bytes, 'light');
 }
 
 function normalizeHomeworkAttachmentUrl(raw) {
@@ -4515,9 +4515,33 @@ function animateHeightWithMotion(element, from, to, onFrame) {
   });
 }
 
+function createTopDownListFade(items) {
+  const elements = Array.from(items).filter((item) => item instanceof HTMLElement);
+  const states = elements.map((item) => ({
+    item,
+    original: item.style.opacity,
+    target: Number(getComputedStyle(item).opacity) || 1
+  }));
+  return {
+    update(fraction) {
+      const revealed = Math.max(0, Math.min(1, fraction));
+      states.forEach(({ item, target }, index) => {
+        const finishAt = 0.35 + 0.65 * index / Math.max(1, states.length - 1);
+        item.style.opacity = String(target * Math.min(1, revealed / finishAt));
+      });
+    },
+    reset() {
+      states.forEach(({ item, original }) => { item.style.opacity = original; });
+    }
+  };
+}
+
 function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } = {}) {
   if (!(resultArea instanceof HTMLElement)) return;
+  const wasClosing = resultArea.dataset.animOpen === '0' && !!resultArea.__heightMotion;
   resultArea.__heightMotion?.cancel();
+  resultArea.__topDownListFade?.reset();
+  delete resultArea.__topDownListFade;
   if (shouldOpen) delete resultArea.dataset.closingView;
   const reset = () => {
     resultArea.style.transition = '';
@@ -4554,10 +4578,23 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
   if (shouldOpen) {
     const to = Math.max(resultArea.scrollHeight + resultArea.offsetHeight - resultArea.clientHeight, 1);
     const startOpacity = from > 0 ? Number(getComputedStyle(resultArea).opacity) : 0;
+    const fade = wasClosing ? null : createTopDownListFade(resultArea.children);
+    const startFraction = Math.min(1, from / to);
+    if (fade) {
+      resultArea.__topDownListFade = fade;
+      resultArea.style.opacity = '1';
+    }
     void animateHeightWithMotion(resultArea, from, to, (height, progress) => {
       resultArea.style.height = `${height}px`;
-      resultArea.style.opacity = String(startOpacity + (1 - startOpacity) * progress);
-    }).then((completed) => { if (completed) reset(); });
+      if (fade) fade.update(startFraction + (1 - startFraction) * progress);
+      else resultArea.style.opacity = String(startOpacity + (1 - startOpacity) * progress);
+    }).then((completed) => {
+      if (resultArea.__topDownListFade === fade) {
+        fade.reset();
+        delete resultArea.__topDownListFade;
+      }
+      if (completed) reset();
+    });
     return;
   }
   const startOpacity = Number(getComputedStyle(resultArea).opacity);
@@ -4926,6 +4963,8 @@ function syncForcePublishScoreButtonRow(courseId, expanded) {
 function animateHomeworkGroupVisibility(group, expanded) {
   if (!(group instanceof HTMLElement)) return Promise.resolve(false);
   group.__heightMotion?.cancel();
+  group.__topDownListFade?.reset();
+  delete group.__topDownListFade;
   const from = group.getBoundingClientRect().height;
   if (globalThis.BjtuMotion?.isEnabled?.() === false) {
     group.classList.toggle('is-hidden', !expanded);
@@ -4946,10 +4985,24 @@ function animateHomeworkGroupVisibility(group, expanded) {
   group.style.height = `${from}px`;
   group.style.overflow = 'hidden';
   const to = expanded ? Math.max(1, group.scrollHeight) : 0;
+  const fade = expanded ? createTopDownListFade(
+    group.querySelectorAll('.hw-card-item').length
+      ? group.querySelectorAll('.hw-card-item')
+      : group.children
+  ) : null;
+  if (fade) {
+    group.__topDownListFade = fade;
+    group.style.opacity = '1';
+  }
   return animateHeightWithMotion(group, from, to, (height, progress) => {
     group.style.height = `${height}px`;
-    group.style.opacity = String(startOpacity + ((expanded ? 1 : 0) - startOpacity) * progress);
+    if (fade) fade.update(Math.min(1, from / to) + (1 - Math.min(1, from / to)) * progress);
+    else group.style.opacity = String(startOpacity * (1 - progress));
   }).then((completed) => {
+    if (group.__topDownListFade === fade) {
+      fade.reset();
+      delete group.__topDownListFade;
+    }
     if (!completed) return false;
     group.classList.toggle('is-hidden', !expanded);
     group.style.maxHeight = '';
