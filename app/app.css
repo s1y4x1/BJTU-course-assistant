@@ -15,6 +15,9 @@ body {
     flex-direction: column;
     transition: padding 0.22s ease;
 }
+body.page-top-config-in-left-column:not(.course-helper-focus) {
+    padding-right: 0;
+}
 
 .platform-qr-login-mask { z-index: 10010 !important; }
 
@@ -385,7 +388,7 @@ body.page-top-config-in-left-column.course-header-sticky {
     padding-top: 0;
 }
 body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .left-column {
-    padding-top: 20px;
+    padding-top: 15px;
 }
 body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .right-column {
     padding-top: 15px;
