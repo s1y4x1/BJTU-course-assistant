@@ -5,6 +5,7 @@
   const LEGACY_PREFIX = 'academicDataCache:';
   const WRITE_LOCK = 'bjtu-academic-data-cache';
   let writeQueue = Promise.resolve();
+  let legacyMigrationChecked = false;
 
   function isObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -49,6 +50,10 @@
   }
 
   async function readAllUnlocked() {
+    if (legacyMigrationChecked) {
+      const stored = await chrome.storage.local.get(KEY);
+      return readCollectionValue(stored?.[KEY]);
+    }
     const [localValues, sessionValues] = await Promise.all([
       chrome.storage.local.get(null),
       chrome.storage.session.get(null).catch(() => ({}))
@@ -72,6 +77,7 @@
       if (legacyLocalKeys.length) await chrome.storage.local.remove(legacyLocalKeys);
       if (legacySessionKeys.length) await chrome.storage.session.remove(legacySessionKeys).catch(() => {});
     }
+    legacyMigrationChecked = true;
     return collection;
   }
 

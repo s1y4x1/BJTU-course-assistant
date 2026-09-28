@@ -775,6 +775,13 @@
     initialized = true;
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
     bindEvents();
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !initialized) return;
+      if (changes[SCRIPT.storageKey] || changes[SOUND_VIDEO_ENABLED_KEY]
+          || changes[SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY]) {
+        void refresh({ prefetch: false });
+      }
+    });
     const stored = await chrome.storage.local.get([AUTO_INSTALL_PENDING_KEY]);
     await refresh({ prefetch: stored[AUTO_INSTALL_PENDING_KEY] !== true });
     if (stored[AUTO_INSTALL_PENDING_KEY] === true) {

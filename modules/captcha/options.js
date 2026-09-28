@@ -770,6 +770,9 @@
       void selectModel(version);
     });
     const toggle = document.getElementById('casCaptchaRecognitionEnabled');
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[MIS_CAPTCHA_ENABLED_KEY]) void refreshMisCaptchaOptions();
+    });
     void initializeMisDownloadSource();
     if (toggle instanceof HTMLInputElement) {
       toggle.addEventListener('change', () => {

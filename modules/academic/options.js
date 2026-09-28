@@ -122,9 +122,12 @@
       studentId,
       academicSemesterOptions,
       scoreCurrentZxjxjhh,
-      scheduleCurrentXnxq,
       scheduleCache,
-      examsCache,
+      examsCache: examsCache && {
+        currentZxjxjhh: String(examsCache.currentZxjxjhh || ''),
+        results: Array.isArray(examsCache.results) ? examsCache.results : [],
+        checkedAt: Number(examsCache.checkedAt || 0)
+      },
       scoresCache,
       loadedSharedTerms: [...loadedSharedTerms],
       loadedScheduleTerms: [...loadedScheduleTerms],
@@ -1570,9 +1573,16 @@
       ));
     }
     const preferred = String(preferredValue || '');
+    const cachedScoreLabels = new Set((scoresCache?.rows || [])
+      .map((row) => String(row?.academicYear || '').trim()).filter(Boolean));
+    const currentLabel = String(scoreSemesterOptions
+      .find((item) => String(item?.zxjxjhh || '') === scoreCurrentZxjxjhh)?.label || '').trim();
+    const latestCached = scoreSemesterOptions.find((item) => cachedScoreLabels.has(String(item?.label || '').trim()));
     select.value = preferred && [...select.options].some((option) => option.value === preferred)
       ? preferred
-      : (scoreCurrentZxjxjhh || '__all__');
+      : (currentLabel && cachedScoreLabels.has(currentLabel)
+          ? scoreCurrentZxjxjhh
+          : String(latestCached?.zxjxjhh || scoreCurrentZxjxjhh || '__all__'));
     scoreSemesterPreference = select.value === scoreCurrentZxjxjhh ? '' : select.value;
     const button = element('academicScoreCurrentSemesterBtn');
     if (button instanceof HTMLButtonElement) {
@@ -1987,7 +1997,13 @@
     }
     const results = [...byTerm.values()];
     const currentXnxq = String(scheduleCurrentXnxq || value.currentXnxq || '').trim();
-    return { ...value, currentXnxq, results };
+    return {
+      currentXnxq,
+      selectionSemester: value.selectionSemester || null,
+      selectionProbed: value.selectionProbed === true,
+      results,
+      checkedAt: Number(value.checkedAt || 0)
+    };
   }
 
   async function ensureCurrentScheduleTerm(values) {
@@ -2001,11 +2017,15 @@
 
   function applyScheduleView(result) {
     scheduleData = result;
+    const status = element('academicScheduleStatus');
     if (result.weekWarning) {
-      element('academicScheduleStatus').style.display = 'block';
-      element('academicScheduleStatus').textContent = result.weekSource === 'bksy'
+      status.style.display = 'block';
+      status.textContent = result.weekSource === 'bksy'
         ? `${result.weekWarning}，当前周数使用本科生院教学服务平台`
         : result.weekWarning;
+    } else {
+      status.style.display = 'none';
+      status.textContent = '';
     }
     renderScheduleWeekOptions(result, element('academicScheduleWeek')?.value || 'all');
     renderSchedule();
@@ -2072,9 +2092,9 @@
     const byTerm = new Map((examsCache?.results || []).map((item) => [item.zxjxjhh, item]));
     for (const item of (result.results || [])) byTerm.set(item.zxjxjhh, item);
     examsCache = {
-      ...result,
       currentZxjxjhh: result.currentZxjxjhh || examsCache?.currentZxjxjhh || scoreCurrentZxjxjhh,
-      results: [...byTerm.values()]
+      results: [...byTerm.values()],
+      checkedAt: Number(result.checkedAt || Date.now())
     };
   }
 
@@ -2088,11 +2108,11 @@
       byTerm.set(item.xnxq, item);
     }
     scheduleCache = normalizedScheduleCache({
-      ...result,
       currentXnxq: result.currentXnxq || scheduleCurrentXnxq || scheduleCache?.currentXnxq || '',
       selectionSemester: result.selectionSemester || scheduleCache?.selectionSemester || null,
       selectionProbed: result.selectionProbed === true || scheduleCache?.selectionProbed === true,
-      results: [...byTerm.values()]
+      results: [...byTerm.values()],
+      checkedAt: Number(result.checkedAt || Date.now())
     });
   }
 
@@ -2910,6 +2930,21 @@
       if (changes.academicSystemStudentId && element('academicStudentId')) {
         element('academicStudentId').value = String(changes.academicSystemStudentId.newValue || '');
       }
+      if (changes.academicScheduleWeek && element('academicScheduleWeek')) {
+        const value = String(changes.academicScheduleWeek.newValue || 'all');
+        const select = element('academicScheduleWeek');
+        select.value = [...select.options].some((option) => option.value === value) ? value : 'all';
+        renderSchedule();
+      }
+      if (changes.academicScheduleSemester) {
+        scheduleSemesterPreference = String(changes.academicScheduleSemester.newValue || '');
+        renderCachedScheduleData();
+      }
+      if (changes.academicScoreSemester) {
+        scoreSemesterPreference = String(changes.academicScoreSemester.newValue || '');
+        renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
+        renderCachedSharedData();
+      }
       if (changes.academicOptionsWideEnabled) {
         const enabled = changes.academicOptionsWideEnabled.newValue !== false;
         element('academicOptionsWideEnabled').checked = enabled;
@@ -2917,6 +2952,12 @@
       }
       if (changes[ACADEMIC_FULLSCREEN_BUTTON_KEY] && element(ACADEMIC_FULLSCREEN_BUTTON_KEY)) {
         element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = changes[ACADEMIC_FULLSCREEN_BUTTON_KEY].newValue !== false;
+        updateDisabledState();
+      }
+      if (changes[ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY] && element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY)) {
+        element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = changes[ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY].newValue === 'system'
+          ? 'system'
+          : 'graduation';
       }
       if (changes.academicScoreMonitorStatus) renderMonitorStatus(changes.academicScoreMonitorStatus.newValue);
       if (changes.academicExamMonitorStatus) renderExamStatus(changes.academicExamMonitorStatus.newValue);

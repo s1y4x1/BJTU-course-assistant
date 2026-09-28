@@ -1079,7 +1079,8 @@ async function fetchVeWeekContext() {
     const data = global.BjtuVeHomeworkCore?.parseJson
       ? global.BjtuVeHomeworkCore.parseJson(text)
       : JSON.parse(String(text || '').trim());
-    const week = Number(data?.weekCode || 0);
+    const rawWeek = data?.weekCode ?? data?.data?.weekCode ?? data?.currentWeek ?? data?.week;
+    const week = Number(String(rawWeek ?? '').trim().match(/^(?:第\s*)?(\d{1,2})(?:\s*周)?$/u)?.[1] || 0);
     if (!week) throw Object.assign(
       new Error('智慧课程平台周次接口未返回周数'),
       { code: 've-week-empty' }
@@ -1116,7 +1117,7 @@ async function fetchVeWeekContext() {
     };
   }
 
-async function fetchCurrentWeekContext(scheduleWeeks = []) {
+async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     let preferred = null;
     let warning = '';
     try {
@@ -1127,8 +1128,32 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         preferred = await fetchBksyWeekContext();
       } catch (bksyError) {
         const fallbackMessage = String(bksyError?.message || bksyError || '本科生院周次获取失败');
-        warning = `${warning}；${fallbackMessage}。当前显示全部课表`;
-        preferred = { week: 0, weeks: [], weekLabels: {}, termName: '', source: 'schedule' };
+        const cache = await readAcademicDataCache().catch(() => null);
+        const cachedSchedule = currentScheduleFromCache(cache);
+        const cachedWeek = String(cachedSchedule?.xnxq || '') === String(currentXnxq || '')
+          ? Number(cachedSchedule?.currentWeek || 0)
+          : 0;
+        const checkedAt = Number(cachedSchedule?.weekCheckedAt || 0);
+        let estimatedWeek = 0;
+        if (cachedWeek > 0 && checkedAt > 0) {
+          const monday = (timestamp) => {
+            const date = new Date(timestamp);
+            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+            return date.getTime();
+          };
+          estimatedWeek = cachedWeek + Math.round((monday(Date.now()) - monday(checkedAt)) / 604800000);
+        }
+        const availableWeeks = new Set((Array.isArray(scheduleWeeks) ? scheduleWeeks : []).map(Number));
+        const useCachedWeek = estimatedWeek > 0 && (!availableWeeks.size || availableWeeks.has(estimatedWeek));
+        warning = useCachedWeek
+          ? '周次接口暂未提供周数，当前周数根据已缓存课表推算'
+          : `${warning}；${fallbackMessage}。当前显示全部课表`;
+        preferred = {
+          week: useCachedWeek ? estimatedWeek : 0,
+          weeks: [], weekLabels: {}, termName: '',
+          source: useCachedWeek ? 'cache' : 'schedule'
+        };
       }
     }
     const weeks = new Set([
@@ -1493,10 +1518,10 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
           .find((item) => String(item?.zxjxjhh || '') === current);
         const currentLabel = String(currentOption?.label || rows?.[0]?.academicYear || '').trim();
         if (kind === 'scores') {
+          const cachedRows = Array.isArray(cache.scoresCache?.rows) ? cache.scoresCache.rows : [];
           const preserved = currentLabel
-            ? (Array.isArray(cache.scoresCache?.rows) ? cache.scoresCache.rows : [])
-              .filter((row) => String(row?.academicYear || '').trim() !== currentLabel)
-            : [];
+            ? cachedRows.filter((row) => String(row?.academicYear || '').trim() !== currentLabel)
+            : cachedRows;
           cache.scoresCache = { rows: [...preserved, ...rows], checkedAt };
         } else if (kind === 'exams' && current) {
           const byTerm = new Map((Array.isArray(cache.examsCache?.results) ? cache.examsCache.results : [])
@@ -2224,7 +2249,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = []) {
         ? context.currentSchedule
         : await fetchSchedulePage('semester', semester.zxjxjhh);
       const weekContext = isCurrent
-        ? await fetchCurrentWeekContext(schedule.weeks)
+        ? await fetchCurrentWeekContext(schedule.weeks, semester.zxjxjhh)
         : {
             week: 0,
             weeks: schedule.weeks,

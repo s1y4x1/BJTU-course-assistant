@@ -2531,11 +2531,19 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
         throw new Error('设置内容必须是 JSON 对象');
       }
+      const activationKeys = Object.values(globalThis.BjtuModuleRegistry?.definitions || {})
+        .map((definition) => String(definition?.activationKey || '')).filter(Boolean);
+      const previousActivation = activationKeys.length
+        ? await chrome.storage.local.get(activationKeys)
+        : {};
+      const moduleVisibilityChanged = activationKeys.some((key) => (
+        (previousActivation[key] === true) !== (imported[key] === true)
+      ));
       await chrome.storage.local.clear();
       await chrome.storage.local.set(imported);
       closeSettingsImportModal();
-      setMsg('设置导入成功，正在重新加载');
-      setTimeout(() => location.reload(), 500);
+      setMsg(moduleVisibilityChanged ? '设置导入成功，正在刷新模块列表…' : '设置导入成功');
+      if (moduleVisibilityChanged) setTimeout(() => location.reload(), 500);
     } catch (error) {
       setMsg(`导入设置失败：${String(error?.message || error)}`, false);
     }

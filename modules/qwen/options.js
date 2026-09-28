@@ -216,6 +216,25 @@
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
+    if (changes.qwenEnabled) {
+      const enabled = changes.qwenEnabled.newValue !== false;
+      const toggle = document.getElementById('qwenEnabled');
+      if (toggle instanceof HTMLInputElement) toggle.checked = enabled;
+      applyEnabledState(enabled);
+    }
+    if (changes.qwenThinkingEnabled) {
+      const toggle = document.getElementById('qwenThinkingEnabled');
+      if (toggle instanceof HTMLInputElement) toggle.checked = changes.qwenThinkingEnabled.newValue === true;
+    }
+    if (changes.qwenModelId) {
+      const select = document.getElementById('qwenModelSelect');
+      if (select instanceof HTMLSelectElement) select.value = String(changes.qwenModelId.newValue || '');
+    }
+    if (changes.qwenMaxIterations) {
+      const input = document.getElementById('qwenMaxIterations');
+      if (input instanceof HTMLInputElement) input.value = String(Math.max(1, Number(changes.qwenMaxIterations.newValue) || 6));
+    }
+    if (changes.qwenEnabledOperations || changes.qwenAlwaysAllowedOperations) void refreshOperations();
     if (changes.qwenAlwaysAllow) applyAlwaysAllowState(changes.qwenAlwaysAllow.newValue === true);
     if (changes.qwenApprovalNotificationMode) {
       const approvalNotification = document.getElementById('qwenApprovalNotificationMode');

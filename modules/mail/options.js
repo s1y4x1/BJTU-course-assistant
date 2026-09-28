@@ -523,6 +523,14 @@
       if (changes[INTERVAL_KEY]) {
         setIntervalEditor(changes[INTERVAL_KEY].newValue, DEFAULT_INTERVAL_MINUTES);
       }
+      if (changes[LIST_LIMIT_KEY]) {
+        const input = element(LIST_LIMIT_KEY);
+        if (input instanceof HTMLInputElement && document.activeElement !== input) {
+          const value = changes[LIST_LIMIT_KEY].newValue;
+          input.value = value === '' || value == null ? '' : String(value);
+        }
+        void loadThreads();
+      }
       if (changes[STATUS_KEY]) renderStatus(changes[STATUS_KEY].newValue);
       if (changes[FULLSCREEN_BUTTON_KEY] && element(FULLSCREEN_BUTTON_KEY)) {
         element(FULLSCREEN_BUTTON_KEY).checked = changes[FULLSCREEN_BUTTON_KEY].newValue !== false;
