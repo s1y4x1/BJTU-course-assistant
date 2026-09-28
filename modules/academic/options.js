@@ -17,7 +17,7 @@
   const BB_WISH_LIST_KEY = 'academicBbWishListCourses';
   const BB_REFRESH_DELAY_KEY = 'academicBbRefreshDelayMs';
   const DEFAULT_BB_REFRESH_DELAY_MS = 3000;
-  const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
+  const ACADEMIC_CACHE_KEYS = ['academicScheduleCache', 'academicScoreCache', 'academicExamCache'];
   const ACADEMIC_STUDENT_ID_KEY = 'academicSystemStudentId';
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_FULLSCREEN_BUTTON_KEY = 'academicFullscreenButtonEnabled';
@@ -57,7 +57,7 @@
   const scheduleTermsInFlight = new Map();
   let scheduleTermWorkerRunning = false;
   let selectionSchedulePromise = null;
-  let academicDataCacheWritePromise = Promise.resolve();
+  let academicCacheWritePromise = Promise.resolve();
   const localAcademicCacheWriteTokens = new Set();
   let renderedAcademicCacheStudentId = '';
   let sharedAllLoading = false;
@@ -116,7 +116,7 @@
 
   function persistAcademicDataCache() {
     const studentId = String(context?.studentId || renderedAcademicCacheStudentId || '').trim();
-    if (!studentId || !academicSemestersLoaded) return academicDataCacheWritePromise;
+    if (!studentId || !academicSemestersLoaded) return academicCacheWritePromise;
     const writeToken = crypto.randomUUID();
     const snapshot = structuredClone({
       studentId,
@@ -135,13 +135,13 @@
       writeToken
     });
     localAcademicCacheWriteTokens.add(writeToken);
-    academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
-      .then(() => academicCacheStore.set(studentId, snapshot))
+    academicCacheWritePromise = academicCacheWritePromise.catch(() => {})
+      .then(() => academicCacheStore.update(studentId, (stored) => ({ ...stored, ...snapshot })))
       .catch((error) => {
         localAcademicCacheWriteTokens.delete(writeToken);
         throw error;
       });
-    return academicDataCacheWritePromise;
+    return academicCacheWritePromise;
   }
 
   function applyAcademicDataCache(cache, studentId = '') {
@@ -1956,7 +1956,7 @@
   function invalidateAcademicCaches({ removeStored = false } = {}) {
     const studentId = String(context?.studentId || '').trim();
     if (removeStored && studentId) {
-      academicDataCacheWritePromise = academicDataCacheWritePromise.catch(() => {})
+      academicCacheWritePromise = academicCacheWritePromise.catch(() => {})
         .then(() => academicCacheStore.remove(studentId));
     }
     scheduleCache = null;
@@ -2905,16 +2905,17 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       const activeStudentId = String(context?.studentId || renderedAcademicCacheStudentId || '').trim();
-      const updatedCache = activeStudentId
-        ? changes[ACADEMIC_DATA_CACHE_KEY]?.newValue?.[activeStudentId]
-        : null;
-      if (updatedCache) {
-        const writeToken = String(updatedCache?.writeToken || '');
-        if (writeToken && localAcademicCacheWriteTokens.has(writeToken)) {
-          localAcademicCacheWriteTokens.delete(writeToken);
-        } else {
-          applyAcademicDataCache(updatedCache, activeStudentId);
-        }
+      if (activeStudentId && ACADEMIC_CACHE_KEYS.some((key) => changes[key])) {
+        void academicCacheStore.get(activeStudentId).then((updatedCache) => {
+          if (!updatedCache?.academicSemesterOptions?.length
+            || activeStudentId !== String(context?.studentId || renderedAcademicCacheStudentId || '').trim()) return;
+          const writeToken = String(updatedCache.writeToken || '');
+          if (writeToken && localAcademicCacheWriteTokens.has(writeToken)) {
+            localAcademicCacheWriteTokens.delete(writeToken);
+          } else {
+            applyAcademicDataCache(updatedCache, activeStudentId);
+          }
+        }).catch(() => {});
       }
       for (const key of ['academicScoreMonitorEnabled', 'academicExamMonitorEnabled', 'academicClassReminderEnabled']) {
         if (changes[key] && element(key)) element(key).checked = changes[key].newValue === true;

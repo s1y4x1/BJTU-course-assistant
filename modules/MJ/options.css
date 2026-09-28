@@ -1,6 +1,4 @@
 .mj-options-card {
-  display: grid;
-  gap: 12px;
   margin: 0;
   padding: 10px 12px;
   border: 1px solid #e5e7eb;
@@ -13,6 +11,7 @@
   align-items: baseline;
   gap: 8px;
   font-size: 15px;
+  margin-bottom: 6px;
 }
 
 .mj-external-script-header .tip {
@@ -23,7 +22,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
   padding: 10px 12px;
   border: 1px solid #d1d5db;
   border-radius: 10px;
@@ -35,6 +33,7 @@
   align-items: center;
   justify-self: end;
   gap: 8px;
+  margin-left: 6px;
   white-space: nowrap;
 }
 
@@ -56,7 +55,7 @@
 
 .mj-external-script-name {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--bjtu-font-size-body, 13px);
   overflow-wrap: anywhere;
 }
 
@@ -99,7 +98,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 1px 0 0 22px;
+  margin: 4px 0 0 22px;
   color: #475569;
   font-size: 12px;
 }
@@ -112,7 +111,7 @@
   grid-column: 1 / -1;
   display: grid;
   gap: 6px;
-  margin-left: 22px;
+  margin: 4px 0 0 22px;
 }
 
 .mj-video-assets.is-disabled {
@@ -184,6 +183,7 @@
 .mj-external-script-progress {
   grid-column: 1 / -1;
   min-width: 0;
+  margin-top: 4px;
 }
 
 .mj-external-script-progress-label {

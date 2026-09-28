@@ -24,10 +24,8 @@
   const CLASS_REMINDER_EVENTS_KEY = 'academicClassReminderEvents';
   const MONITOR_INTERVAL_KEY = 'academicScoreMonitorIntervalMinutes';
   const DEFAULT_MONITOR_INTERVAL_MINUTES = 1;
-  const SNAPSHOTS_KEY = 'academicScoreSnapshots';
   const PENDING_NOTIFICATIONS_KEY = 'academicScorePendingNotifications';
   const STATUS_KEY = 'academicScoreMonitorStatus';
-  const EXAM_SNAPSHOTS_KEY = 'academicExamSnapshots';
   const EXAM_PENDING_NOTIFICATIONS_KEY = 'academicExamPendingNotifications';
   const EXAM_STATUS_KEY = 'academicExamMonitorStatus';
   const ALARM_NAME = 'bjtu-academic-score-check';
@@ -36,7 +34,7 @@
   const CLASS_NOTIFICATION_PREFIX = 'bjtu-academic-class:';
   const CLASS_ALARM_PREFIX = 'bjtu-academic-class-event:';
   const LOGIN_HEADER_RULE_ID = 914304;
-  const ACADEMIC_DATA_CACHE_KEY = 'academicDataCache';
+  const ACADEMIC_SCHEDULE_CACHE_KEY = 'academicScheduleCache';
   const ACADEMIC_SCORE_SOURCE_CACHE_KEY = 'academicScoreSourceCache';
   const ACADEMIC_CURRENT_EXAM_CACHE_KEY = 'academicCurrentExamCache';
   const ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY = 'academicSemesterContextCache';
@@ -90,7 +88,7 @@
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
   let academicNotificationQueue = Promise.resolve();
-  let academicDataCacheUpdatePromise = Promise.resolve();
+  let academicCacheUpdatePromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_REQUEST_PRIORITY = Object.freeze({
@@ -591,7 +589,6 @@
     academicSemesterContextCache = null;
     academicSemesterContextPromise = null;
     await chrome.storage.session.remove([
-      ACADEMIC_DATA_CACHE_KEY,
       ACADEMIC_SCORE_SOURCE_CACHE_KEY,
       ACADEMIC_CURRENT_EXAM_CACHE_KEY,
       ACADEMIC_SEMESTER_CONTEXT_CACHE_KEY
@@ -1403,12 +1400,12 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     }
     classReminderSchedulePromise = (async () => {
       const stored = await chrome.storage.local.get([
-        CLASS_REMINDER_KEY, CLASS_REMINDER_LEAD_KEY, STUDENT_ID_KEY, ACADEMIC_DATA_CACHE_KEY
+        CLASS_REMINDER_KEY, CLASS_REMINDER_LEAD_KEY, STUDENT_ID_KEY
       ]);
       await clearClassReminderAlarms();
       if (stored?.[CLASS_REMINDER_KEY] !== true) return { skipped: true, scheduled: 0 };
       const studentId = String(stored?.[STUDENT_ID_KEY] || '').trim();
-      const cache = accountCacheFromCollection(stored?.[ACADEMIC_DATA_CACHE_KEY], studentId);
+      const cache = await global.BjtuAcademicCacheStore.get(studentId);
       const events = buildClassReminderEvents(cache, studentId, stored?.[CLASS_REMINDER_LEAD_KEY]);
       const eventMap = {};
       events.forEach((event, index) => {
@@ -1507,12 +1504,14 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     return pending;
   }
 
-  function updateAcademicDataCacheFromMonitor(kind, rows, studentId, checkedAt) {
+  function updateAcademicDataCacheFromMonitor(kind, rows, studentId, checkedAt, monitor) {
     const id = String(studentId || '').trim();
     if (!id) return Promise.resolve();
-    academicDataCacheUpdatePromise = academicDataCacheUpdatePromise.catch(() => {}).then(async () => {
-      await global.BjtuAcademicCacheStore.update(id, async (cache) => {
-        if (!cache || typeof cache !== 'object') return undefined;
+    academicCacheUpdatePromise = academicCacheUpdatePromise.catch(() => {}).then(async () => {
+      await global.BjtuAcademicCacheStore.update(id, async (storedCache) => {
+        const cache = storedCache && typeof storedCache === 'object' ? storedCache : { studentId: id };
+        if (kind === 'scores') cache.scoreMonitor = monitor;
+        else cache.examMonitor = monitor;
         const current = String(cache.scoreCurrentZxjxjhh || '').trim();
         const currentOption = (Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [])
           .find((item) => String(item?.zxjxjhh || '') === current);
@@ -1545,34 +1544,29 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
             current
           ])];
         }
-        cache.updatedAt = checkedAt;
+        if (!cache.scheduleCache) cache.updatedAt = checkedAt;
         delete cache.writeToken;
         return cache;
       });
     });
-    return academicDataCacheUpdatePromise;
+    return academicCacheUpdatePromise;
   }
 
   async function processScoreRowsInternal(rows, studentId = '', source = 'poll') {
     const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeScoreRow)
       .filter((row) => row.academicYear && row.course);
     const stored = await chrome.storage.local.get([
-      SNAPSHOTS_KEY, PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, MONITOR_KEY, 'username'
+      PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, MONITOR_KEY, 'username'
     ]);
     const id = String(studentId || stored?.[STUDENT_ID_KEY] || stored?.username || 'default').trim() || 'default';
-    const snapshots = stored?.[SNAPSHOTS_KEY] && typeof stored[SNAPSHOTS_KEY] === 'object'
-      ? { ...stored[SNAPSHOTS_KEY] }
-      : {};
-    const previous = snapshots[id]?.rows && typeof snapshots[id].rows === 'object'
-      ? snapshots[id].rows
-      : null;
-    const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, row]));
+    const previous = (await global.BjtuAcademicCacheStore.get(id))?.scoreMonitor?.rows || null;
+    const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, scoreFingerprint(row)]));
     const changes = [];
     const notificationsEnabled = stored?.[MONITOR_KEY] !== false;
     if (previous && notificationsEnabled) {
       for (const row of normalizedRows) {
         if (!previous[row.key]) changes.push({ kind: 'new', row });
-        else if (scoreFingerprint(previous[row.key]) !== scoreFingerprint(row)) changes.push({ kind: 'updated', row });
+        else if (previous[row.key] !== nextRows[row.key]) changes.push({ kind: 'updated', row });
       }
     } else if (!previous && notificationsEnabled && notifyInitialScoreRows) {
       for (const row of normalizedRows) changes.push({ kind: 'new', row });
@@ -1588,14 +1582,13 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       };
     }
     const checkedAt = Date.now();
-    snapshots[id] = { rows: nextRows, updatedAt: checkedAt, source };
     await chrome.storage.local.set({
-      [SNAPSHOTS_KEY]: snapshots,
       [PENDING_NOTIFICATIONS_KEY]: pending,
       [STUDENT_ID_KEY]: id,
       [STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt }
     });
-    await updateAcademicDataCacheFromMonitor('scores', normalizedRows, id, checkedAt);
+    await updateAcademicDataCacheFromMonitor('scores', normalizedRows, id, checkedAt,
+      { rows: nextRows, updatedAt: checkedAt, source });
     broadcastAcademicData('scores', normalizedRows, id, checkedAt);
     const remainingPending = await flushPendingScoreNotifications(pending);
     return {
@@ -1689,16 +1682,11 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     const normalizedRows = (Array.isArray(rows) ? rows : []).map(normalizeExamRow)
       .filter((row) => row.exam && row.course);
     const stored = await chrome.storage.local.get([
-      EXAM_SNAPSHOTS_KEY, EXAM_PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, EXAM_MONITOR_KEY, 'username'
+      EXAM_PENDING_NOTIFICATIONS_KEY, STUDENT_ID_KEY, EXAM_MONITOR_KEY, 'username'
     ]);
     const id = String(studentId || stored?.[STUDENT_ID_KEY] || stored?.username || 'default').trim() || 'default';
-    const snapshots = stored?.[EXAM_SNAPSHOTS_KEY] && typeof stored[EXAM_SNAPSHOTS_KEY] === 'object'
-      ? { ...stored[EXAM_SNAPSHOTS_KEY] }
-      : {};
-    const previous = snapshots[id]?.rows && typeof snapshots[id].rows === 'object'
-      ? snapshots[id].rows
-      : null;
-    const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, row]));
+    const previous = (await global.BjtuAcademicCacheStore.get(id))?.examMonitor?.rows || null;
+    const nextRows = Object.fromEntries(normalizedRows.map((row) => [row.key, examFingerprint(row)]));
     const changes = [];
     const notificationsEnabled = stored?.[EXAM_MONITOR_KEY] !== false;
     const now = Date.now();
@@ -1706,7 +1694,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       for (const row of normalizedRows) {
         if (isPastExam(row, now)) continue;
         if (!previous[row.key]) changes.push({ kind: 'new', row });
-        else if (examFingerprint(previous[row.key]) !== examFingerprint(row)) {
+        else if (previous[row.key] !== nextRows[row.key]) {
           changes.push({ kind: 'updated', row });
         }
       }
@@ -1727,14 +1715,13 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       };
     }
     const checkedAt = Date.now();
-    snapshots[id] = { rows: nextRows, updatedAt: checkedAt, source };
     await chrome.storage.local.set({
-      [EXAM_SNAPSHOTS_KEY]: snapshots,
       [EXAM_PENDING_NOTIFICATIONS_KEY]: pending,
       [STUDENT_ID_KEY]: id,
       [EXAM_STATUS_KEY]: { status: 'ok', studentId: id, count: normalizedRows.length, checkedAt }
     });
-    await updateAcademicDataCacheFromMonitor('exams', normalizedRows, id, checkedAt);
+    await updateAcademicDataCacheFromMonitor('exams', normalizedRows, id, checkedAt,
+      { rows: nextRows, updatedAt: checkedAt, source });
     broadcastAcademicData('exams', normalizedRows, id, checkedAt);
     const remainingPending = await flushPendingExamNotifications(pending);
     return {
@@ -2573,7 +2560,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       const classSettingsChanged = !!(
         changes[CLASS_REMINDER_KEY] || changes[CLASS_REMINDER_LEAD_KEY] || changes[STUDENT_ID_KEY]
       );
-      if (!monitorSettingsChanged && !classSettingsChanged && !changes[ACADEMIC_DATA_CACHE_KEY]) return;
+      if (!monitorSettingsChanged && !classSettingsChanged && !changes[ACADEMIC_SCHEDULE_CACHE_KEY]) return;
       if (monitorSettingsChanged) void ensureAlarm();
       if (changes[MONITOR_KEY]) {
         if (changes[MONITOR_KEY].newValue === true) checkScores('enabled').catch(() => {});
@@ -2589,11 +2576,11 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       } else if (classSettingsChanged) {
         scheduleClassRemindersFromCache().catch(() => {});
       }
-      if (changes[ACADEMIC_DATA_CACHE_KEY]) {
+      if (changes[ACADEMIC_SCHEDULE_CACHE_KEY]) {
         void chrome.storage.local.get([STUDENT_ID_KEY]).then((stored) => {
           const studentId = String(stored?.[STUDENT_ID_KEY] || '').trim();
-          const oldCache = accountCacheFromCollection(changes[ACADEMIC_DATA_CACHE_KEY].oldValue, studentId);
-          const newCache = accountCacheFromCollection(changes[ACADEMIC_DATA_CACHE_KEY].newValue, studentId);
+          const oldCache = accountCacheFromCollection(changes[ACADEMIC_SCHEDULE_CACHE_KEY].oldValue, studentId);
+          const newCache = accountCacheFromCollection(changes[ACADEMIC_SCHEDULE_CACHE_KEY].newValue, studentId);
           if (currentScheduleFingerprint(oldCache) !== currentScheduleFingerprint(newCache)) {
             scheduleClassRemindersFromCache().catch(() => {});
           }
