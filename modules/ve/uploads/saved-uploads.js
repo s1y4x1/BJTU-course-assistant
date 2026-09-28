@@ -72,14 +72,6 @@ async function removeSavedUpload(id) {
 
 let savedUploadsToggleAnimationSerial = 0;
 
-function getSavedUploadAnimatedItems(section) {
-  return Array.from(section?.children || []).filter((element) => (
-    element instanceof HTMLElement
-    && (element.matches('.file-item[data-saved-upload-id]') || element.matches('.saved-uploads-divider'))
-    && element.getClientRects().length > 0
-  ));
-}
-
 function updateSavedUploadsToggleButton(section, expanded) {
   const button = section?.querySelector('[data-action="toggle-saved-uploads"]');
   if (!(button instanceof HTMLButtonElement)) return;
@@ -94,39 +86,51 @@ function updateSavedUploadsToggleButton(section, expanded) {
 }
 
 function animateSavedUploadsItems(section, expanding, initialHeight) {
-  const previousFraction = section.__savedUploadsFade?.getFraction();
-  section.__heightMotion?.cancel();
-  section.__savedUploadsFade?.reset();
-  delete section.__savedUploadsFade;
+  const list = section.querySelector('.saved-uploads-list');
+  if (!(list instanceof HTMLElement)) return Promise.resolve(false);
+  const interrupted = !!list.__heightMotion && !!list.__listTransition
+    && list.__listTransition.open !== expanding;
+  const scrollMotionEnabled = interrupted
+    ? list.__listTransition.scroll
+    : expanding ? window.scrollExpandHomeworkLists === true : window.scrollCollapseHomeworkLists !== false;
+  const transition = { open: expanding, scroll: scrollMotionEnabled };
+  list.__listTransition = transition;
+  const previousScrollMotion = list.__scrollListMotion;
+  const previousFraction = list.__savedUploadsFade?.getFraction();
+  list.__heightMotion?.cancel();
+  list.__savedUploadsFade?.reset();
+  delete list.__savedUploadsFade;
+  if (!scrollMotionEnabled && previousScrollMotion) {
+    previousScrollMotion.reset();
+    delete list.__scrollListMotion;
+  }
 
-  const from = initialHeight ?? section.getBoundingClientRect().height;
-  const collapsedHeight = section.querySelector('.homework-toggle-row')?.offsetHeight || 0;
-  const fullHeight = Math.max(section.scrollHeight, from, collapsedHeight + 1);
-  const to = expanding ? fullHeight : collapsedHeight;
-  const fade = createTopDownListFade(getSavedUploadAnimatedItems(section));
-  const startFraction = previousFraction ?? Math.max(0, Math.min(1,
-    (from - collapsedHeight) / (fullHeight - collapsedHeight)
-  ));
-  section.__savedUploadsFade = fade;
-  section.style.boxSizing = 'border-box';
-  section.style.height = `${from}px`;
-  section.style.overflow = 'hidden';
+  const from = initialHeight ?? list.getBoundingClientRect().height;
+  const fullHeight = Math.max(list.scrollHeight, from, previousScrollMotion?.fullHeight || 0, 1);
+  list.style.boxSizing = 'border-box';
+  list.style.height = `${from}px`;
+  list.style.overflow = 'hidden';
+  const motion = scrollMotionEnabled
+    ? previousScrollMotion || createListScrollMotion(list, fullHeight)
+    : createTopDownListFade(list.children);
+  if (scrollMotionEnabled) list.__scrollListMotion = motion;
+  else list.__savedUploadsFade = motion;
+  const startFraction = previousFraction ?? Math.min(1, from / fullHeight);
 
-  return animateHeightWithMotion(section, from, to, (height, progress) => {
-    section.style.height = `${height}px`;
-    fade.update(expanding
+  return animateHeightWithMotion(list, from, expanding ? fullHeight : 0, (height, progress) => {
+    list.style.height = `${height}px`;
+    motion.update(scrollMotionEnabled ? height : expanding
       ? startFraction + (1 - startFraction) * progress
       : startFraction * (1 - progress));
   }).then((completed) => {
-    if (section.__savedUploadsFade === fade) {
-      fade.reset();
-      delete section.__savedUploadsFade;
-    }
-    if (completed) {
-      section.style.height = '';
-      section.style.boxSizing = '';
-      section.style.overflow = '';
-    }
+    if (!completed) return false;
+    if (list.__listTransition === transition) delete list.__listTransition;
+    motion.reset();
+    if (scrollMotionEnabled) delete list.__scrollListMotion;
+    else delete list.__savedUploadsFade;
+    list.style.height = '';
+    list.style.boxSizing = '';
+    list.style.overflow = '';
     return completed;
   });
 }
@@ -219,7 +223,7 @@ function renderSavedUploadsSection() {
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
       </button>
     </div>
-    ${expanded ? `${cardsHtml}<div class="saved-uploads-divider" aria-hidden="true"></div>` : ''}
+    ${expanded ? `<div class="saved-uploads-list">${cardsHtml}<div class="saved-uploads-divider" aria-hidden="true"></div></div>` : ''}
   `;
   if (typeof refreshUploadSelectVisibility === 'function') {
     refreshUploadSelectVisibility();
@@ -239,7 +243,7 @@ function setupSavedUploadsUi() {
   if (invertBtn) {
     invertBtn.addEventListener('click', () => {
       document.querySelectorAll('#file-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
-      document.querySelectorAll('#saved-uploads-section[data-expanded="1"] > .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
+      document.querySelectorAll('#saved-uploads-section[data-expanded="1"] .saved-uploads-list > .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
     });
   }
   const section = document.getElementById('saved-uploads-section');
@@ -256,12 +260,11 @@ function setupSavedUploadsUi() {
           const expanded = section.dataset.expanded === '1';
           const serial = ++savedUploadsToggleAnimationSerial;
           if (!expanded) {
-            const from = section.getBoundingClientRect().height;
-            const hasItems = getSavedUploadAnimatedItems(section).length > 0;
+            const hasItems = !!section.querySelector('.saved-uploads-list');
             section.dataset.expanded = '1';
             if (hasItems) updateSavedUploadsToggleButton(section, true);
             else renderSavedUploadsSection();
-            void animateSavedUploadsItems(section, true, from);
+            void animateSavedUploadsItems(section, true, hasItems ? undefined : 0);
             return;
           }
           section.dataset.expanded = '0';
