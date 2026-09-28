@@ -130,21 +130,14 @@
     return changes.join('\n').trim();
   }
 
-  function buildDetectedNotificationMessage(release, previousDescription, installOptionalUpdate) {
-    const status = release?.force
-      ? '这是强制更新，即将开始后台下载。'
-      : (installOptionalUpdate
-        ? '检测到非强制更新，根据您的后台更新设置，将自动开始更新。'
-        : '检测到非强制更新，根据您的后台更新设置，本次不自动更新，您可以手动选择更新。');
+  function buildDetectedNotificationMessage(release, previousDescription) {
     const description = String(release?.description || '').trim();
-    if (!description) return status;
+    if (!description) return '暂无更新说明。';
     const previous = String(previousDescription || '').trim();
     const diff = diffReleaseDescriptions(previous, description);
-    const details = previous
+    const message = previous
       ? (diff || '更新说明与当前版本相同。')
       : description;
-    const label = previous ? '与当前版本的更新说明差异：' : '更新说明：';
-    const message = `${status}\n\n${label}\n${details}`;
     return message.length > 1800 ? `${message.slice(0, 1799)}…` : message;
   }
 
@@ -152,11 +145,15 @@
     if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
     try {
       const notificationId = `${DETECTED_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
+      const titlePrefix = release?.force ? '正在更新：'
+        : (installOptionalUpdate ? '安装非强制更新：' : '发现新版本：');
+      const version = String(release?.version || '').trim();
+      const titleVersion = release?.hasName ? `${release.name} (${version})` : (version || '新版本');
       await createSystemNotification(notificationId, {
         type: 'basic',
         iconUrl: 'icons/128.png',
-        title: `发现新版本：${String(release?.name || release?.version || '新版本')}`,
-        message: buildDetectedNotificationMessage(release, previousDescription, installOptionalUpdate),
+        title: `${titlePrefix}${titleVersion}`,
+        message: buildDetectedNotificationMessage(release, previousDescription),
         priority: 1
       }, 'background-update-detected');
       await chrome.storage.local.set({
@@ -260,6 +257,7 @@
       return {
         version,
         name: String(data?.name || version).trim() || version,
+        hasName: !!String(data?.name || '').trim(),
         description: String(data?.desc || '').trim(),
         url: new URL(url).href,
         reload: data?.reload !== false,
