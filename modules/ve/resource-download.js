@@ -250,7 +250,7 @@ function processResourceDownloadQueue() {
     window.resourceDownloadQueueRunning += 1;
     (async () => {
       try {
-        await downloadResourceItemWithProgress(entry.item);
+        await downloadResourceItemWithProgress(entry.item, entry.direct);
         entry.resolve();
       } catch (err) {
         entry.reject(err);
@@ -272,6 +272,11 @@ function enqueueResourceDownload(item) {
   if (!id) return Promise.reject(new Error('资源链接无效'));
   if (isResourceDownloadActive(id)) return Promise.reject(new Error('该文件正在下载中'));
   const expectedBytes = getResourceItemSizeBytes(item);
+  const direct = window.downloadInExtensionEnabled === false;
+  if (direct && !Object.values(window.resourceDownloadTasks || {}).some((t) => t?.active)
+    && !(window.resourceDownloadQueue || []).some((q) => q && !q.cancelled)) {
+    window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
+  }
 
   const existing = window.resourceDownloadQueueById?.[id];
   if (existing?.promise && !existing.cancelled && !existing.settled) return existing.promise;
@@ -288,6 +293,7 @@ function enqueueResourceDownload(item) {
     id,
     item,
     expectedBytes,
+    direct,
     resolve: resolveRef,
     reject: rejectRef,
     cancelled: false,
@@ -305,6 +311,7 @@ function enqueueResourceDownload(item) {
     percent: 0,
     loaded: 0,
     total: expectedBytes,
+    indeterminate: direct,
     speed: 0,
     etaSec: null,
     status: '排队等待…'
@@ -398,6 +405,7 @@ function updateResourceDownloadTotals() {
   const queuedEntries = (window.resourceDownloadQueue || []).filter((q) => q && !q.cancelled && !q.started);
   const batch = window.resourceDownloadBatch || {};
   const hasActiveOrQueued = !!tasks.length || !!batch.active || !!queuedEntries.length;
+  const indeterminate = tasks.some((t) => t.indeterminate) || queuedEntries.some((q) => q.direct);
 
   const completedLoaded = Math.max(0, Number(window.resourceDownloadCompletedContribution?.loadedBytes) || 0);
   const completedTotal = Math.max(0, Number(window.resourceDownloadCompletedContribution?.totalBytes) || 0);
@@ -408,6 +416,7 @@ function updateResourceDownloadTotals() {
   }
 
   if (!tasks.length && !batch.active && !queuedEntries.length && completedLoaded <= 0 && completedTotal <= 0) {
+    resourceProgressWrap?.classList.remove('is-indeterminate');
     if (resourceProgressWrap instanceof HTMLElement) resourceProgressWrap.style.display = 'none';
     resourceTotalBar.style.width = '0%';
     resourceTotalBar.textContent = '';
@@ -457,10 +466,20 @@ function updateResourceDownloadTotals() {
     ? Math.max(0, Math.min(100, (totalLoaded / totalSize) * 100))
     : 0;
   const percent = Math.round(exactPercent);
-  if (resourceProgressWrap instanceof HTMLElement) resourceProgressWrap.style.display = totalSize > 0 ? '' : 'none';
-  resourceTotalPercent.style.display = totalSize > 0 ? '' : 'none';
+  if (resourceProgressWrap instanceof HTMLElement) {
+    resourceProgressWrap.classList.toggle('is-indeterminate', indeterminate);
+    resourceProgressWrap.style.display = indeterminate || totalSize > 0 ? '' : 'none';
+  }
+  resourceTotalPercent.style.display = !indeterminate && totalSize > 0 ? '' : 'none';
   resourceTotalBar.style.width = `${exactPercent}%`;
   resourceTotalBar.textContent = '';
+  if (indeterminate) {
+    resourceTotalSizeInfo.textContent = '';
+    resourceTotalSpeed.textContent = '';
+    resourceTotalEta.textContent = '';
+    refreshResourceQueueStatusText();
+    return;
+  }
   resourceTotalSizeInfo.innerHTML = hasKnownTotal && totalSize > 0
     ? renderFileSizePair(totalLoaded, totalSize)
     : `${renderFileSizeText(totalLoaded)} <span class="file-size-separator">/</span> <span class="file-size-placeholder">--</span>`;
@@ -529,10 +548,18 @@ function cancelResourceDownload(resourceId) {
   return false;
 }
 
-function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '' } = {}) {
+function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '', indeterminate = false } = {}) {
   const row = findResourceItemElementById(resourceId);
-  if (!row) return;
   const task = getResourceDownloadTask(resourceId);
+  if (!row) {
+    if (task) {
+      task.loaded = Math.max(0, Number(loaded) || 0);
+      task.total = Math.max(0, Number(total) || 0);
+      task.speed = Math.max(0, Number(speed) || 0);
+    }
+    updateResourceDownloadTotals();
+    return;
+  }
   const requestedTotal = Math.max(0, Number(total) || 0);
   const knownTaskTotal = Math.max(0, Number(task?.total) || 0);
   const knownItemTotal = getKnownResourceSizeBytes(resourceId);
@@ -547,6 +574,9 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
   const etaEl = row.querySelector('.resource-dl-eta');
   if (!(wrap instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
 
+  indeterminate = active && (indeterminate || !!task?.indeterminate);
+  wrap.querySelector('.progress-bar-container')?.classList.toggle('is-indeterminate', indeterminate);
+
   wrap.style.display = active ? 'block' : 'none';
 
   const pct = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -554,6 +584,14 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
   bar.textContent = '';
 
   if (statusEl instanceof HTMLElement) statusEl.textContent = String(status || '');
+
+  if (indeterminate) {
+    if (sizeEl instanceof HTMLElement) sizeEl.textContent = '';
+    if (speedEl instanceof HTMLElement) speedEl.textContent = '';
+    if (etaEl instanceof HTMLElement) etaEl.textContent = '';
+    updateResourceDownloadTotals();
+    return;
+  }
 
   if (sizeEl instanceof HTMLElement) {
     const loadedSafe = Math.max(0, Number(loaded) || 0);
@@ -593,7 +631,7 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
   updateResourceDownloadTotals();
 }
 
-async function downloadResourceItemWithProgress(item) {
+async function downloadResourceItemWithProgress(item, direct = window.downloadInExtensionEnabled === false) {
   const id = String(item?.id || '').trim();
   let rawUrl = String(item?.url || '').trim();
   const fileName = ensureResourceDownloadFileName(item, rawUrl);
@@ -635,6 +673,8 @@ async function downloadResourceItemWithProgress(item) {
     cancelled: false,
     chromeDownloadId: null
   };
+  task.indeterminate = direct;
+  task.item = item;
   window.resourceDownloadTasks[id] = task;
   setResourceItemDownloadingState(id, true);
   setResourceDownloadUi(id, {
@@ -713,10 +753,16 @@ async function downloadResourceItemWithProgress(item) {
       delete window.resourceDownloadQueueById[id];
     }
     setResourceItemDownloadingState(id, false);
+    if (direct && !Object.values(window.resourceDownloadTasks || {}).some((t) => t?.active)
+      && !(window.resourceDownloadQueue || []).some((q) => q && !q.cancelled)) {
+      window.resourceDownloadCompletedContribution = { loadedBytes: 0, totalBytes: 0 };
+    }
     updateResourceDownloadTotals();
     setTimeout(() => {
-      setResourceDownloadUi(id, { active: false, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '' });
-    }, 1800);
+      if (!isResourceDownloadActive(id)) {
+        setResourceDownloadUi(id, { active: false, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '' });
+      }
+    }, direct ? 0 : 1800);
   };
 
   const saveBlobToFile = (blob, loaded = 0, total = 0) => {
@@ -811,6 +857,65 @@ async function downloadResourceItemWithProgress(item) {
       }
     );
   });
+
+  const waitForBrowserDownload = () => new Promise((resolve, reject) => {
+    if (!chrome?.downloads?.download || !chrome?.downloads?.onChanged) {
+      reject(new Error('浏览器下载接口不可用'));
+      return;
+    }
+    let downloadId = null;
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      chrome.downloads.onChanged.removeListener(onChanged);
+      if (error) reject(error); else resolve();
+    };
+    const onChanged = (delta) => {
+      if (delta.id !== downloadId || !delta.state) return;
+      if (delta.state.current === 'complete') finish();
+      else if (delta.state.current === 'interrupted') finish(new Error(task.cancelled ? '下载已取消' : '浏览器下载已中断'));
+    };
+    chrome.downloads.onChanged.addListener(onChanged);
+    const options = { url, conflictAction: 'uniquify', saveAs: false };
+    if (!item?.preferServerFilename) options.filename = fileName;
+    chrome.downloads.download(options, (id) => {
+      const error = chrome.runtime?.lastError;
+      if (error || !Number.isInteger(id)) {
+        finish(new Error(error?.message || '浏览器下载启动失败'));
+        return;
+      }
+      downloadId = id;
+      task.chromeDownloadId = id;
+      if (task.cancelled) {
+        chrome.downloads.cancel(id, () => {});
+        finish(new Error('下载已取消'));
+        return;
+      }
+      chrome.downloads.search({ id }, (results) => {
+        if (chrome.runtime?.lastError || settled) return;
+        const state = results?.[0]?.state;
+        if (state === 'complete') finish();
+        else if (state === 'interrupted') finish(new Error('浏览器下载已中断'));
+      });
+    });
+  });
+
+  if (direct) {
+    try {
+      await waitForBrowserDownload();
+      task.indeterminate = false;
+      finalizeSuccessUi(0, 0, '已保存');
+    } catch (error) {
+      task.indeterminate = false;
+      if (task.cancelled) finalizeCancelledUi();
+      else setResourceDownloadUi(id, { active: true, status: '下载失败' });
+      throw error;
+    } finally {
+      cleanup();
+    }
+    return;
+  }
 
   try {
     task.abortController = new AbortController();

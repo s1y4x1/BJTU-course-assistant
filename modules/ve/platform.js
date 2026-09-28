@@ -2552,18 +2552,8 @@ function downloadCourseAssessmentWorkbook(courseId) {
   const cid = String(courseId || '').trim();
   if (!cid || !window.isTeacherAccount) return;
   const url = getCourseAssessmentWorkbookUrl(cid);
-  try {
-    chrome.downloads.download({
-      url,
-      filename: sanitizeDownloadFileName(`课程考核记录表-${cid}.xls`, '课程考核记录表.xls'),
-      saveAs: false
-    }, () => {
-      const err = chrome.runtime?.lastError?.message || '';
-      if (err) showToast('课程考核记录表下载失败：' + err, 'error', 3000);
-    });
-  } catch (error) {
-    showToast('课程考核记录表下载失败：' + String(error?.message || error), 'error', 3000);
-  }
+  enqueueResourceDownload({ id: `assessment_${cid}`, name: `课程考核记录表-${cid}.xls`, url })
+    .catch((error) => showToast('课程考核记录表下载失败：' + String(error?.message || error), 'error', 3000));
 }
 
 function getCourseArchiveDownloadUrl(courseId) {
@@ -2746,17 +2736,8 @@ function downloadCourseArchive(courseId) {
   const cid = String(courseId || '').trim();
   if (!cid) return;
   const url = getCourseArchiveDownloadUrl(cid);
-  try {
-    chrome.downloads.download({
-      url,
-      saveAs: false
-    }, () => {
-      const err = chrome.runtime?.lastError?.message || '';
-      if (err) showToast('打包下载失败：' + err, 'error', 3000);
-    });
-  } catch (error) {
-    showToast('打包下载失败：' + String(error?.message || error), 'error', 3000);
-  }
+  enqueueResourceDownload({ id: `archive_batch_${cid}`, name: `课程归档-${cid}.zip`, url, preferServerFilename: true })
+    .catch((error) => showToast('打包下载失败：' + String(error?.message || error), 'error', 3000));
 }
 
 async function prefetchHomeworkAttachments(courseId, list, onItemComplete, { signal, isCurrent = () => true } = {}) {

@@ -672,6 +672,7 @@ window.homeworkAttachmentPendingByCourse = {}; // {courseId: boolean}
 window.uploadedFileMetaById = {}; // {fileId: {fileNameNoExt,fileExtName,fileSize,visitName,pid,ftype}}
 window.savedUploadedFiles = []; // [{id,fileName,fileSize,visitName,url,savedAt}]
 window.saveUploadedFilesEnabled = true;
+window.downloadInExtensionEnabled = true;
 window.autoLoadCourseResourcesEnabled = false;
 window.yktActivityTypes = [14, 15, 5, 9];
 window.homeworkDetailCollapsedLines = 3;
@@ -1506,6 +1507,11 @@ function setupOptionsStorageLiveSync() {
     }
     if (changes[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY]) {
       window.collapseHomeworkDetailsDownward = changes[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY].newValue !== false;
+    }
+    if (changes.downloadInExtensionEnabled) {
+      window.downloadInExtensionEnabled = changes.downloadInExtensionEnabled.newValue !== false;
+      const cb = document.getElementById('download-in-extension-enabled');
+      if (cb instanceof HTMLInputElement) cb.checked = window.downloadInExtensionEnabled;
     }
     if (changes[SCROLL_EXPAND_HOMEWORK_LISTS_KEY]) {
       window.scrollExpandHomeworkLists = changes[SCROLL_EXPAND_HOMEWORK_LISTS_KEY].newValue === true;
@@ -3453,15 +3459,25 @@ globalThis.fetchVeWithAuthRetry = fetchVeWithAuthRetry;
 
 async function loadSaveUploadsEnabledSetting() {
   try {
-    const data = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
+    const data = await chrome.storage.local.get(['saveUploadedFilesEnabled', 'downloadInExtensionEnabled']);
     window.saveUploadedFilesEnabled = data.saveUploadedFilesEnabled === undefined
       ? true
       : !!data.saveUploadedFilesEnabled;
+    window.downloadInExtensionEnabled = data.downloadInExtensionEnabled !== false;
   } catch {
     window.saveUploadedFilesEnabled = true;
+    window.downloadInExtensionEnabled = true;
   }
   const input = document.getElementById('save-uploads-enabled');
   if (input instanceof HTMLInputElement) input.checked = !!window.saveUploadedFilesEnabled;
+  const downloadInput = document.getElementById('download-in-extension-enabled');
+  if (downloadInput instanceof HTMLInputElement) {
+    downloadInput.checked = window.downloadInExtensionEnabled;
+    downloadInput.addEventListener('change', () => {
+      window.downloadInExtensionEnabled = downloadInput.checked;
+      chrome.storage.local.set({ downloadInExtensionEnabled: downloadInput.checked });
+    });
+  }
 }
 
 const trackedExpandableMedia = new WeakSet();

@@ -177,6 +177,11 @@
           <span>在本地存储以后上传的文件链接</span>
         </label>
         <div class="tip">开启后，已上传的文件会保存在扩展存储中，可在主页查看/复制链接/作为作业附件提交。</div>
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="checkbox" id="downloadInExtensionEnabled" style="width:auto;" checked />
+          <span>在扩展中下载</span>
+        </label>
+        <div class="tip">先在扩展中下载，完成后再通过浏览器保存；关闭后则直接将下载任务送至浏览器，扩展将无法显示进度，但关闭扩展页面后仍可继续下载。</div>
         <div class="platform-option-divider" role="separator"></div>
         <button id="bindPortalUsernameBtn" type="button" style="background:#16a34a;">🔗 通过 MIS 绑定 username</button>
         <button id="exportBindDataBtn" type="button" style="background:#0f766e;">📤 导出 MIS 绑定数据</button>

@@ -43,6 +43,7 @@ html.app-options-loading .page-top-config {
 }
 .platform-options-slot { min-width:24px; justify-content:flex-end; }
 .save-uploads-options-slot { min-width:24px; }
+.resource-space-header .save-uploads-toggle { display:flex; align-items:center; gap:6px; font-size:12px; color:#475569; cursor:pointer; white-space:nowrap; }
 
 #drop-zone { border: 2px dashed #ccc; border-radius: 20px; width: 100%; padding: 40px; text-align: center; box-sizing: border-box; margin-bottom: 4px; transition: border-color 0.3s; cursor: pointer; }
 #drop-zone.dragover { border-color: #4CAF50; background-color: #f0f9f0; }
@@ -964,6 +965,12 @@ body.platform-column-resizing {
 .resource-download-progress .progress-bar {
     background: #4CAF50;
     width: 0;
+}
+.resource-download-progress .progress-bar-container.is-indeterminate .progress-bar,
+.resource-total-progress-wrap .progress-bar-container.is-indeterminate .progress-bar {
+    width: 35% !important;
+    transition: none !important;
+    animation: account-init-download-progress-indeterminate 1s linear infinite !important;
 }
 .resource-download-meta {
     margin-top: 3px;

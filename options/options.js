@@ -66,6 +66,7 @@ const MIN_POPUP_HEIGHT_PX = 420;
 const MAX_POPUP_HEIGHT_PX = 600;
 
 const DEFAULT_SAVE_UPLOADS_ENABLED = true;
+const DEFAULT_DOWNLOAD_IN_EXTENSION_ENABLED = true;
 const DEFAULT_LINK_QR_ENABLED = false;
 const DEFAULT_POPUP_CACHE_ENABLED = true;
 const DEFAULT_SIDE_PANEL_CACHE_ENABLED = true;
@@ -781,7 +782,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode, preferExistingFullscreenPage } = await chrome.storage.local.get(['openMode', 'preferExistingFullscreenPage']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
-  const { saveUploadedFilesEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled']);
+  const { saveUploadedFilesEnabled, downloadInExtensionEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled', 'downloadInExtensionEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
   const { popupUseFullscreenCacheEnabled, sidePanelUseFullscreenCacheEnabled } = await chrome.storage.local.get([
     'popupUseFullscreenCacheEnabled',
@@ -893,6 +894,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     ? DEFAULT_SAVE_UPLOADS_ENABLED
     : !!saveUploadedFilesEnabled;
   document.getElementById('saveUploadsEnabled').checked = saveUploadsVal;
+  document.getElementById('downloadInExtensionEnabled').checked = downloadInExtensionEnabled === undefined
+    ? DEFAULT_DOWNLOAD_IN_EXTENSION_ENABLED : !!downloadInExtensionEnabled;
   document.getElementById('headerQrEnabled').checked = false;
   document.getElementById('headerQrEnabled').disabled = true;
   const linkQrVal = linkQrEnabled === undefined ? DEFAULT_LINK_QR_ENABLED : !!linkQrEnabled;
@@ -1508,6 +1511,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       }
       if (changes.autoLoadCourseResourcesEnabled) applyBooleanUi('autoLoadCourseResourcesEnabled', changes.autoLoadCourseResourcesEnabled.newValue, DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED);
       if (changes.saveUploadedFilesEnabled) applyBooleanUi('saveUploadsEnabled', changes.saveUploadedFilesEnabled.newValue, DEFAULT_SAVE_UPLOADS_ENABLED);
+      if (changes.downloadInExtensionEnabled) applyBooleanUi('downloadInExtensionEnabled', changes.downloadInExtensionEnabled.newValue, DEFAULT_DOWNLOAD_IN_EXTENSION_ENABLED);
       if (changes.linkQrEnabled) applyBooleanUi('linkQrEnabled', changes.linkQrEnabled.newValue, DEFAULT_LINK_QR_ENABLED);
       if (changes.popupUseFullscreenCacheEnabled) {
         applyBooleanUi('popupUseFullscreenCacheEnabled', changes.popupUseFullscreenCacheEnabled.newValue, DEFAULT_POPUP_CACHE_ENABLED);
@@ -1996,6 +2000,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     renderBackgroundAutoUpdateStatus(enabled ? { status: 'checking' } : null);
     setMsg(enabled ? '已启用后台自动更新' : '已关闭后台自动更新');
   });
+
+  document.getElementById('downloadInExtensionEnabled').addEventListener('change', async () => {
+    await chrome.storage.local.set({ downloadInExtensionEnabled: !!document.getElementById('downloadInExtensionEnabled').checked });
+    setMsg('已应用更改');
+  });
   document.getElementById('updateDirectoryStartupCheckEnabled')?.addEventListener('change', async (event) => {
     await chrome.storage.local.set({ updateDirectoryStartupCheckEnabled: event.currentTarget.checked === true });
     setMsg('已应用更改');
@@ -2419,6 +2428,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('fullscreenTopBarFullWidth').checked = false;
     document.getElementById('stickyCourseHeader').checked = true;
     document.getElementById('saveUploadsEnabled').checked = true;
+    document.getElementById('downloadInExtensionEnabled').checked = DEFAULT_DOWNLOAD_IN_EXTENSION_ENABLED;
     document.getElementById('headerQrEnabled').checked = false;
     document.getElementById('headerQrEnabled').disabled = true;
     document.getElementById('linkQrEnabled').checked = DEFAULT_LINK_QR_ENABLED;
@@ -2430,6 +2440,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
+    await chrome.storage.local.set({ downloadInExtensionEnabled: DEFAULT_DOWNLOAD_IN_EXTENSION_ENABLED });
     await chrome.storage.local.set({ linkQrEnabled: DEFAULT_LINK_QR_ENABLED });
     await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
     await chrome.storage.local.set({ sidePanelUseFullscreenCacheEnabled: DEFAULT_SIDE_PANEL_CACHE_ENABLED });
