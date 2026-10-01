@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>上传至智慧课程平台</title>
   <script src="../../UI/theme.js"></script>
+  <script src="../../UI/file-size-emphasis.js"></script>
   <link rel="stylesheet" href="../../app/app.css">
+  <link rel="stylesheet" href="../../UI/file-size-emphasis.css">
   <link rel="stylesheet" href="../../UI/theme.css">
   <link rel="stylesheet" href="upload-picker.css">
 </head>
@@ -25,7 +27,7 @@
     </div>
     <div id="drop-zone" tabindex="0" role="button" aria-label="选择文件">
       <div class="drop-zone-main">
-        <p><span>向</span><strong>此处</strong><span>拖入</span><strong>文件</strong><span>点</span><span>选择</span></p>
+        <p><span>向</span><span class="drop-zone-emphasis">此处</span><span>拖入</span><span class="drop-zone-emphasis">文件</span><span>点</span><span>选择</span></p>
         <input id="file-input" type="file" multiple>
       </div>
       <button id="paste-file-btn" type="button" title="点击粘贴剪贴板文件"><span class="paste-file-label"><span class="paste-file-icon">📋</span><br>粘贴</span></button>

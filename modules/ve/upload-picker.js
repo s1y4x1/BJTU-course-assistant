@@ -70,7 +70,7 @@
     state.textContent = '等待上传';
     const size = document.createElement('span');
     size.className = 'size-progress';
-    size.textContent = `(0 B / ${formatSize(file.size)})`;
+    setSizePair(size, 0, file.size, true);
     const progress = document.createElement('div');
     progress.className = 'progress-bar-container';
     const bar = document.createElement('div');
@@ -86,6 +86,14 @@
   function formatSize(bytes) {
     const n = Math.max(0, Number(bytes) || 0);
     return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MB`;
+  }
+
+  function setSizePair(element, loaded, total, parentheses = false) {
+    const left = Math.max(0, Number(loaded) || 0);
+    const right = Math.max(0, Number(total) || 0);
+    const size = (bytes) => `<span class="file-size-emphasis" data-file-size-bytes="${bytes}">${formatSize(bytes)}</span>`;
+    element.innerHTML = `${parentheses ? '(' : ''}${size(left)} <span class="file-size-separator">/</span> ${size(right)}${parentheses ? ')' : ''}`;
+    globalThis.BjtuFileSizeEmphasis.refresh(element);
   }
 
   function showDownloadLink(ui, visitName) {
@@ -119,7 +127,7 @@
         if (event.lengthComputable) {
           const loaded = Math.min(file.size, event.loaded);
           ui.bar.style.width = `${Math.min(100, event.loaded / event.total * 100)}%`;
-          ui.size.textContent = `(${formatSize(loaded)} / ${formatSize(file.size)})`;
+          setSizePair(ui.size, loaded, file.size, true);
           onProgress(loaded);
         }
         if (event.lengthComputable && event.loaded >= event.total) ui.state.textContent = '等待服务器处理…';
@@ -137,7 +145,7 @@
           return;
         }
         ui.bar.style.width = '100%';
-        ui.size.textContent = `(${formatSize(file.size)} / ${formatSize(file.size)})`;
+        setSizePair(ui.size, file.size, file.size, true);
         onProgress(file.size);
         ui.state.textContent = '上传完成';
         showDownloadLink(ui, data.visitName);
@@ -174,7 +182,7 @@
     const updateSummary = () => {
       const done = loadedBytes.reduce((sum, bytes) => sum + bytes, 0);
       const percent = totalBytes > 0 ? Math.min(100, done / totalBytes * 100) : 0;
-      totalSizeInfo.textContent = `${formatSize(done)} / ${formatSize(totalBytes)}`;
+      setSizePair(totalSizeInfo, done, totalBytes);
       totalPercent.textContent = `${Math.round(percent)}%`;
       totalBar.style.width = `${percent}%`;
       const now = Date.now();
@@ -202,7 +210,7 @@
             completed.push({ fileName: file.name, fileSize: file.size, visitName: known.visitName, reused: true });
             rows[index].bar.style.width = '100%';
             rows[index].state.textContent = '已复用上传记录';
-            rows[index].size.textContent = `(${formatSize(file.size)} / ${formatSize(file.size)})`;
+            setSizePair(rows[index].size, file.size, file.size, true);
             showDownloadLink(rows[index], known.visitName);
             loadedBytes[index] = file.size;
             updateSummary();
