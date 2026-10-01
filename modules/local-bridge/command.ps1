@@ -14,6 +14,8 @@ switch ($action) {
       bjtuca-bridge uninstall
       bjtuca-bridge --help
 
+BJTUCA 为同一命令的别名，支持相同参数，如 BJTUCA --help。
+
 start          启动本地 Bridge（默认操作，端口读取 bridge.json，初始为 1896）
 --port=N       本次启动使用端口 N（1 至 65535），并写回 bridge.json
 --show-token   显示 bridge.json 中的 Bearer Token，不启动服务
@@ -30,14 +32,16 @@ uninstall      删除注册的命令并从用户 PATH 移除命令目录；保留 Bridge 本身及配置
       $_.Trim() -and ([System.IO.Path]::GetFullPath($_.Trim()).TrimEnd('\') -ine $actualDirectory.TrimEnd('\'))
     })
     [Environment]::SetEnvironmentVariable('Path', ($remaining -join ';'), 'User')
-    foreach ($extension in @('.cmd', '.ps1')) {
-      $target = Join-Path $actualDirectory ('bjtuca-bridge' + $extension)
-      if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }
+    foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
+      foreach ($extension in @('.cmd', '.ps1')) {
+        $target = Join-Path $actualDirectory ($commandName + $extension)
+        if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }
+      }
     }
     if ((Test-Path -LiteralPath $actualDirectory -PathType Container) -and -not (Get-ChildItem -LiteralPath $actualDirectory -Force | Select-Object -First 1)) {
       Remove-Item -LiteralPath $actualDirectory
     }
-    Write-Output 'bjtuca-bridge 命令已卸载；Bridge 文件和 bridge.json 已保留。'
+    Write-Output 'bjtuca-bridge 和 BJTUCA 命令已卸载；Bridge 文件和 bridge.json 已保留。'
     return
   }
   'start' {
