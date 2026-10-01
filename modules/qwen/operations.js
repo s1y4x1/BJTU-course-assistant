@@ -560,13 +560,13 @@
       || !!String(args?.url || '').trim();
   }
 
-  async function openVeUploadPicker(args = {}) {
-    const requestId = crypto.randomUUID();
-    const query = new URLSearchParams({ requestId });
+  async function openVeUploader(args = {}) {
+    const query = new URLSearchParams();
     const accept = String(args?.accept || '').trim();
     if (accept) query.set('accept', accept);
-    const pickerUrl = chrome.runtime.getURL(`modules/ve/upload-picker.html?${query.toString()}`);
-    let pickerWindowId = null;
+    const uploaderPageUrl = chrome.runtime.getURL('modules/ve/uploader/index.html');
+    const uploaderUrl = query.size ? `${uploaderPageUrl}?${query.toString()}` : uploaderPageUrl;
+    let uploaderWindowId = null;
     let settled = false;
 
     return new Promise((resolve, reject) => {
@@ -581,27 +581,27 @@
         callback(value);
       };
       const onMessage = (message, sender, sendResponse) => {
-        if (message?.type !== 'VE_UPLOAD_PICKER_RESULT' || message?.requestId !== requestId) return false;
-        if (!String(sender?.url || '').startsWith(chrome.runtime.getURL('modules/ve/upload-picker.html?'))) return false;
+        if (message?.type !== 'VE_UPLOADER_RESULT' || sender?.tab?.windowId !== uploaderWindowId) return false;
+        if (String(sender?.url || '').split('?')[0] !== uploaderPageUrl) return false;
         sendResponse({ ok: true });
         finish(resolve, message.value);
         return false;
       };
       const onWindowRemoved = (windowId) => {
-        if (windowId !== pickerWindowId) return;
+        if (windowId !== uploaderWindowId) return;
         finish(reject, Object.assign(new Error('用户关闭了文件上传窗口'), { code: 'USER_CANCELLED' }));
       };
       chrome.runtime.onMessage.addListener(onMessage);
       chrome.windows.onRemoved.addListener(onWindowRemoved);
       void chrome.windows.create({
-        url: pickerUrl,
+        url: uploaderUrl,
         type: 'popup',
         focused: true,
         width: 760,
         height: 680
       }).then((created) => {
-        pickerWindowId = created?.id ?? null;
-        if (pickerWindowId == null) {
+        uploaderWindowId = created?.id ?? null;
+        if (uploaderWindowId == null) {
           finish(reject, new Error('无法打开文件上传窗口'));
         }
       }).catch((error) => finish(reject, error));
@@ -964,7 +964,7 @@ name: 've.accounts',
       async run(args) {
         return hasSerializedUploadSource(args)
           ? pageInvoke('ve', 'uploadFile', args || {}, 120000)
-          : openVeUploadPicker(args || {});
+          : openVeUploader(args || {});
       }
     },
     {

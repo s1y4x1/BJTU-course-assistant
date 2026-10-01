@@ -1,16 +1,15 @@
-(function initVeUploadPicker() {
+(function initVeUploader() {
   'use strict';
 
   const query = new URLSearchParams(location.search);
-  const requestId = query.get('requestId') || '';
   const common = globalThis.BjtuVeUploadCommon;
   const input = document.getElementById('file-input');
   const dropZone = document.getElementById('drop-zone');
   const fileList = document.getElementById('file-list');
-  const status = document.getElementById('picker-status');
-  const loginButton = document.getElementById('picker-login');
-  const retryButton = document.getElementById('picker-retry');
-  const errorActions = document.getElementById('picker-error-actions');
+  const status = document.getElementById('uploader-status');
+  const loginButton = document.getElementById('uploader-login');
+  const retryButton = document.getElementById('uploader-retry');
+  const errorActions = document.getElementById('uploader-error-actions');
   const totalSizeInfo = document.getElementById('total-size-info');
   const totalPercent = document.getElementById('total-percent');
   const totalBar = document.getElementById('total-server-bar');
@@ -19,12 +18,6 @@
   let pendingFiles = [];
   let uploading = false;
 
-  if (!requestId) {
-    status.textContent = '缺少上传请求标识';
-    status.classList.add('error');
-    dropZone.hidden = true;
-    return;
-  }
   input.accept = query.get('accept') || common.accept;
 
   function setStatus(message, error = false) {
@@ -248,8 +241,11 @@
       setStatus('上传完成，正在返回结果…');
       totalSpeed.textContent = '0 KB/s';
       totalEta.textContent = '';
-      await sendRuntimeMessage({ type: 'VE_UPLOAD_PICKER_RESULT', requestId, value: { fileList: fileListResult } });
-      globalThis.close();
+      chrome.runtime.sendMessage({ type: 'VE_UPLOADER_RESULT', value: { fileList: fileListResult } }, (response) => {
+        const error = chrome.runtime.lastError;
+        if (!error && response?.ok) globalThis.close();
+        else setStatus('上传完成');
+      });
     } catch (error) {
       setStatus(String(error?.message || error), true);
       errorActions.hidden = false;

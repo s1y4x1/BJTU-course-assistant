@@ -10,10 +10,10 @@
         'login-credentials-dialog.js', 'login-overlay.js', 'account-store.js',
         'account-login.js', 'homework-core.js', 'platform.js', 'session.js',
         'resource-download.js', 'login-service.js', 'background-homework.js',
-        'uploads/duplicate-dialog-loader.js', 'uploads/duplicate-dialog.css',
-        'uploads/duplicate-dialog.html', 'uploads/saved-uploads.js',
-        'uploads/upload-manager.js', 'uploads/upload-common.js',
-        'upload-picker.html', 'upload-picker.css', 'upload-picker.js'
+        'uploader/duplicate-dialog-loader.js', 'uploader/duplicate-dialog.css',
+        'uploader/duplicate-dialog.html', 'uploader/saved-uploads.js',
+        'uploader/upload-manager.js', 'uploader/upload-common.js',
+        'uploader/index.html', 'uploader/index.css', 'uploader/index.js'
       ]
     },
     ykt: { label: '雨课堂', files: ['platform.js'] },
