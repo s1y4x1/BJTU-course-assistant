@@ -480,17 +480,63 @@ function createHttpServer() {
   return server;
 }
 
+async function askForAvailablePort(reader) {
+  while (true) {
+    const input = await new Promise((resolve, reject) => {
+      const onClose = () => reject(new Error('端口输入已结束，Bridge 尚未启动'));
+      if (reader.closed) { onClose(); return; }
+      reader.once('close', onClose);
+      reader.question('请输入新的监听端口（1 至 65535）：', (answer) => {
+        reader.removeListener('close', onClose);
+        resolve(answer.trim());
+      });
+    });
+    const port = /^\d+$/.test(input) ? normalizePort(input, 0) : 0;
+    if (port) return port;
+    process.stderr.write('端口必须是 1 至 65535 的整数，请重新输入。\n');
+  }
+}
+
 async function listen(port, allowLan = config.allowLan === true) {
-  httpServer = createHttpServer();
   const listenHost = allowLan ? '0.0.0.0' : '127.0.0.1';
-  await new Promise((resolve, reject) => {
-    httpServer.once('error', reject);
-    httpServer.listen(port, listenHost, resolve);
-  });
-  activePort = port;
-  activeAllowLan = allowLan;
-  process.stdout.write(`BJTU Course Assistant Bridge: http://${allowLan ? '0.0.0.0' : '127.0.0.1'}:${port}\n`);
-  process.stdout.write(`局域网访问：${allowLan ? '允许' : '关闭'}\n`);
+  let portReader = null;
+  try {
+    while (true) {
+      httpServer = createHttpServer();
+      try {
+        await new Promise((resolve, reject) => {
+          const onError = (error) => {
+            httpServer.removeListener('listening', onListening);
+            reject(error);
+          };
+          const onListening = () => {
+            httpServer.removeListener('error', onError);
+            resolve();
+          };
+          httpServer.once('error', onError);
+          httpServer.once('listening', onListening);
+          httpServer.listen(port, listenHost);
+        });
+        break;
+      } catch (error) {
+        if (error?.code !== 'EADDRINUSE') throw error;
+        process.stderr.write(`端口 ${port} 已被占用。\n`);
+        portReader ||= terminal || readline.createInterface({ input: process.stdin, output: process.stdout });
+        port = await askForAvailablePort(portReader);
+      }
+    }
+    activePort = port;
+    activeAllowLan = allowLan;
+    if (config.port !== port) {
+      config.port = port;
+      await saveConfig(config);
+    }
+    process.stdout.write(`BJTU Course Assistant Bridge: http://${listenHost}:${port}\n`);
+    process.stdout.write(`局域网访问：${allowLan ? '允许' : '关闭'}\n`);
+  } finally {
+    if (portReader && portReader !== terminal) portReader.close();
+    else if (portReader) terminal.prompt();
+  }
 }
 
 async function restartListener(port, allowLan = config.allowLan === true) {
