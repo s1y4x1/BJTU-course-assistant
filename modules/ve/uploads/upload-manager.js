@@ -882,65 +882,12 @@ if (pasteFileBtn) {
   pasteFileBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
-      await ensureVeUploadSession();
-      const items = await navigator.clipboard.read();
-      if (!items || !items.length) {
-        showToast('剪贴板中没有可粘贴的内容', 'warning', 2000);
-        return;
-      }
-      const files = [];
-      let textCount = 0;
-      for (const item of items) {
-        let handled = false;
-        const allTypes = item.types || [];
-        for (const type of allTypes) {
-          if (type.startsWith('image/')) {
-            const blob = await item.getType(type);
-            const ext = type.split('/')[1] || 'png';
-            files.push(new File([blob], `pasted-image.${ext}`, { type }));
-            handled = true;
-            break;
-          }
-        }
-        if (handled) continue;
-        // Try text types
-        const textBlob = await item.getType('text/plain').catch(() => null);
-        const htmlBlob = await item.getType('text/html').catch(() => null);
-        if (textBlob || htmlBlob) {
-          let addedText = false;
-          let content = '';
-          if (htmlBlob) {
-            content = await htmlBlob.text();
-            if (content.trim()) {
-              files.push(new File([new Blob([content], { type: 'text/html' })], 'pasted-content.html', { type: 'text/html' }));
-              addedText = true;
-            }
-          } else if (textBlob) {
-            content = await textBlob.text();
-            if (content.trim()) {
-              files.push(new File([new Blob([content], { type: 'text/plain' })], 'pasted-content.txt', { type: 'text/plain' }));
-              addedText = true;
-            }
-          }
-          if (addedText) textCount++;
-          handled = true;
-        }
-        if (handled) continue;
-        // Fallback: try any non-text type as a file
-        for (const type of allTypes) {
-          if (type.startsWith('text/')) continue;
-          try {
-            const blob = await item.getType(type);
-            const ext = type.includes('/') ? type.split('/')[1].split(';')[0] : 'bin';
-            files.push(new File([blob], `pasted-file.${ext || 'bin'}`, { type }));
-            break;
-          } catch {}
-        }
-      }
+      const { files, textCount } = await globalThis.BjtuVeUploadCommon.readClipboardFiles();
       if (!files.length) {
-        showToast('若从资源管理器复制文件或文件夹，请在页面按 Ctrl+V 粘贴', 'warning', 3000);
+        showToast('没有读取到可上传的内容；若已复制文件，请在页面按 Ctrl+V 粘贴', 'warning', 3000);
         return;
       }
+      await ensureVeUploadSession();
       const nonTextCount = files.length - textCount;
       if (textCount > 0 && nonTextCount === 0) {
         showToast(`已将剪贴板文本转为 ${files.length} 个文件，正在上传…`, 'info', 3000);

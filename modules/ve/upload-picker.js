@@ -273,22 +273,17 @@
     void upload(event.dataTransfer?.files);
   });
   input.addEventListener('change', () => { void upload(input.files); input.value = ''; });
-  document.getElementById('paste-file-btn').addEventListener('click', async () => {
+  document.getElementById('paste-file-btn').addEventListener('click', async (event) => {
+    event.stopPropagation();
+    if (uploading) return;
     try {
-      const entries = await navigator.clipboard.read();
-      const files = [];
-      for (const entry of entries) {
-        const type = entry.types.find((value) => value.startsWith('image/') || value === 'application/pdf');
-        if (!type) continue;
-        const blob = await entry.getType(type);
-        files.push(new File([blob], `粘贴文件.${type.split('/')[1] || 'bin'}`, { type }));
-      }
+      const { files } = await common.readClipboardFiles();
       if (files.length) void upload(files);
-      else setStatus('剪贴板中没有文件', true);
+      else setStatus('没有读取到可上传的内容；若已复制文件，请在页面按 Ctrl+V 粘贴', true);
     } catch (error) { setStatus(`读取剪贴板失败：${String(error?.message || error)}`, true); }
   });
   document.addEventListener('paste', (event) => {
-    const files = Array.from(event.clipboardData?.files || []);
+    const files = common.clipboardFiles(event.clipboardData);
     if (!files.length) return;
     event.preventDefault();
     void upload(files);
