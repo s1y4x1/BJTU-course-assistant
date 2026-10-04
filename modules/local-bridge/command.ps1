@@ -10,7 +10,7 @@ $displayCommand = if ($env:BJTUCA_COMMAND_NAME) {
 } else { 'BJTUCA' }
 if ($BridgeArguments.Count -eq 1 -and $BridgeArguments[0] -eq '') { $BridgeArguments = @() }
 $action = if ($BridgeArguments.Count) { $BridgeArguments[0] } else { 'start' }
-if ($action -in @('uninstall', 'uninst', 'u')) {
+if ($action -in @('uninstall', 'uninst', 'unist', 'u')) {
   if ($BridgeArguments.Count -gt 2 -or ($BridgeArguments.Count -eq 2 -and $BridgeArguments[1] -ne '-r')) {
     throw "卸载命令仅接受 -r 参数（只取消注册），如 $displayCommand u -r"
   }
@@ -32,8 +32,8 @@ bjtuca-bridge 和 BJTUCA 支持相同参数。
 start          启动本地 Bridge（默认操作，端口读取 bridge.json，初始为 1896）
 --port=N       本次启动使用端口 N（1 至 65535），并写回 bridge.json
 --show-token   显示 bridge.json 中的 Bearer Token，不启动服务
-uninstall      删除注册的命令并从用户 PATH 移除命令目录，且删除 Bridge 本身及配置（简写 u/uninst）
-unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 unreg 或 u -r）
+uninstall      删除注册的命令并从用户 PATH 移除命令目录，且删除 Bridge 本身及配置（简写 u/uninst/unist）
+unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 unreg，或 uninstall 及其简写加 -r）
 "@
     return
   }

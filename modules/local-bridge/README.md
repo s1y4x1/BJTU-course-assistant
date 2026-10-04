@@ -38,9 +38,9 @@ bjtuca-bridge
 
 启动时会比较已注册命令入口的版本与 `install.ps1` 中的 `InstallerVersion`。安装脚本版本更高时，自动重新执行安装并按原参数启动 Bridge；帮助、卸载和查看 Token 不触发安装。修改安装脚本后需提高 `InstallerVersion` 才会触发已安装入口的自动更新。
 
-可运行 `bjtuca-bridge --help` 查看全部参数：`start`（默认）、`--port=1000`（端口）、`--show-token`（显示 Token）、`uninstall`（完全卸载，简写 `u` 或 `uninst`）、`unregister`（仅取消命令注册，简写 `unreg` 或 `u -r`）。
+可运行 `bjtuca-bridge --help` 查看全部参数：`start`（默认）、`--port=1000`（端口）、`--show-token`（显示 Token）、`uninstall`（完全卸载，简写 `u`、`uninst` 或 `unist`）、`unregister`（仅取消命令注册，简写 `unreg`）。
 
-`BJTUCA uninstall`、`BJTUCA u` 或 `BJTUCA uninst` 删除两个命令入口、用户 PATH 项以及整个 `modules/local-bridge/` 目录，包括 Bridge 本身、依赖和 `bridge.json`。`BJTUCA unregister`、`BJTUCA unreg` 或 `BJTUCA u -r` 只删除命令入口和用户 PATH 项，保留 Bridge 文件及配置。仅手动删除 `%LOCALAPPDATA%\BJTUCourseAssistant\bin` 会遗留 PATH 项。
+`BJTUCA uninstall` 及其简写删除两个命令入口、用户 PATH 项以及整个 `modules/local-bridge/` 目录，包括 Bridge 本身、依赖和 `bridge.json`。`BJTUCA unregister`、`BJTUCA unreg`、`BJTUCA u -r`、`BJTUCA uninst -r`、`BJTUCA unist -r` 和 `BJTUCA uninstall -r` 只删除命令入口和用户 PATH 项，保留 Bridge 文件及配置。仅手动删除 `%LOCALAPPDATA%\BJTUCourseAssistant\bin` 会遗留 PATH 项。
 
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
