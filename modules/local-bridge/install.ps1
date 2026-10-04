@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.1'
+$InstallerVersion = '1.0.2'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -32,7 +32,7 @@ foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
   [System.IO.File]::WriteAllText($commandLauncherPath, $launcherText, [System.Text.Encoding]::GetEncoding(936))
   [System.IO.File]::WriteAllText(
     $commandShimPath,
-    "@echo off`r`nsetlocal`r`nset `"BJTUCA_COMMAND_NAME=%~n0`"`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$commandName.ps1`" %* & exit /b`r`n",
+    "@echo off`r`nsetlocal`r`nset `"BJTUCA_COMMAND_NAME=%~n0`"`r`n(goto) 2>nul & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$commandName.ps1`" %*`r`n",
     [System.Text.Encoding]::ASCII
   )
 }
