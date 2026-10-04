@@ -13,7 +13,14 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
 import { loadConfig, normalizePort, saveConfig, configPath } from './config.js';
 
+async function main() {
 const config = await loadConfig();
+const commandArgIndex = process.argv.indexOf('-c');
+const singleCommand = (commandArgIndex >= 0
+  ? process.argv.slice(commandArgIndex + 1).join(' ')
+  : String(process.env.BJTUCA_RUN_COMMAND || '')).trim();
+if (commandArgIndex >= 0 && !singleCommand) throw new Error('-c 后必须提供命令');
+let singleCommandStarted = false;
 const requestedPortArg = process.argv.find((arg) => arg.startsWith('--port='));
 if (requestedPortArg) {
   const requestedPort = normalizePort(requestedPortArg.slice('--port='.length), 0);
@@ -165,7 +172,49 @@ function parseTerminalHelpOperations(line) {
   return names;
 }
 
+async function runTerminalCommand(input, { request = sendExtensionRequest, call = callOperation } = {}) {
+  const line = input.trim();
+  if (line === 'help') {
+    process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs {"module":"ve","name":"courseList"}\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile {"filePath":"C:\\\\path\\\\file.pdf"}\n也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
+  } else if (line === 'exit' || line === 'quit') {
+    return true;
+  } else if (line) {
+    const helpOperations = parseTerminalHelpOperations(line);
+    if (helpOperations) {
+      const docs = [];
+      for (const name of helpOperations) {
+        const [module, operationName] = name.split('.');
+        const doc = await request('getDocs', { module, name: operationName }, { printResult: false });
+        docs.push(String(doc || `未找到操作说明：${name}`).trim());
+      }
+      process.stdout.write(`${docs.join('\n\n---\n\n')}\n`);
+    } else {
+      const { name, args } = parseTerminalOperation(line);
+      const response = await call(name, args);
+      if (response?.ok === false) {
+        throw Object.assign(new Error(response.error || '扩展操作失败'), { bridgeLogged: true });
+      }
+    }
+  }
+  return false;
+}
+
+async function runSingleCommand() {
+  if (singleCommandStarted) return;
+  singleCommandStarted = true;
+  let exitCode = 0;
+  try { await runTerminalCommand(singleCommand); }
+  catch (error) {
+    exitCode = 1;
+    if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
+  } finally {
+    await shutdown();
+    process.exitCode = exitCode;
+  }
+}
+
 function startTerminal() {
+  if (singleCommand) { void runSingleCommand(); return; }
   if (terminal || !process.stdin.isTTY) return;
   terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
   const colorEnabled = !('NO_COLOR' in process.env) && process.stdout.hasColors?.(2);
@@ -174,27 +223,10 @@ function startTerminal() {
   process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，Ctrl+C 退出。\n');
   terminal.on('line', async (input) => {
     terminal.pause();
-    const line = input.trim();
     try {
-      if (line === 'help') {
-        process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs {"module":"ve","name":"courseList"}\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile {"filePath":"C:\\\\path\\\\file.pdf"}\n也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
-      } else if (line === 'exit' || line === 'quit') {
+      if (await runTerminalCommand(input)) {
         await shutdown();
         process.exit(0);
-      } else if (line) {
-        const helpOperations = parseTerminalHelpOperations(line);
-        if (helpOperations) {
-          const docs = [];
-          for (const name of helpOperations) {
-            const [module, operationName] = name.split('.');
-            const doc = await sendExtensionRequest('getDocs', { module, name: operationName }, { printResult: false });
-            docs.push(String(doc || `未找到操作说明：${name}`).trim());
-          }
-          process.stdout.write(`${docs.join('\n\n---\n\n')}\n`);
-        } else {
-          const { name, args } = parseTerminalOperation(line);
-          await callOperation(name, args);
-        }
       }
     } catch (error) {
       if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
@@ -556,6 +588,46 @@ async function restartListener(port, allowLan = config.allowLan === true) {
   return restartPromise;
 }
 
+if (singleCommand) {
+  if (['help', 'exit', 'quit'].includes(singleCommand)) {
+    await runTerminalCommand(singleCommand);
+    return;
+  }
+  if (!parseTerminalHelpOperations(singleCommand)) parseTerminalOperation(singleCommand);
+  const bridgeUrl = `http://127.0.0.1:${config.port}`;
+  let health = await fetch(`${bridgeUrl}/health`, { headers: { Connection: 'close' } }).then((response) => response.json()).catch(() => null);
+  if (health?.ok && typeof health.extensionConnected === 'boolean') {
+    try {
+      if (!health.extensionConnected) process.stdout.write('正在等待浏览器扩展连接…\n');
+      while (!health.extensionConnected) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        health = await fetch(`${bridgeUrl}/health`, { headers: { Connection: 'close' } }).then((response) => response.json());
+      }
+      const request = async (action, payload = {}, { printResult = true } = {}) => {
+        const route = { call: 'call', getDocs: 'get-docs', operationList: 'operation-list' }[action];
+        const response = await fetch(`${bridgeUrl}/api/v1/${route}`, {
+          method: action === 'operationList' ? 'GET' : 'POST',
+          headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', Connection: 'close' },
+          ...(action === 'operationList' ? {} : { body: JSON.stringify(payload) })
+        });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
+        if (printResult) process.stdout.write(`${jsonText(value)}\n`);
+        return action === 'call' ? { ok: true, result: value } : value;
+      };
+      await runTerminalCommand(singleCommand, {
+        request,
+        call: (name, args) => request('call', { name, arguments: args })
+      });
+      process.exitCode = 0;
+    } catch (error) {
+      process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+}
+
 await listen(config.port);
 process.stdout.write(`配置文件：${configPath()}\n`);
 
@@ -605,3 +677,6 @@ async function shutdown() {
 
 process.on('SIGINT', () => void shutdown().finally(() => process.exit(0)));
 process.on('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
+}
+
+await main();

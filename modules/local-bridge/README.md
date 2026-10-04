@@ -44,6 +44,17 @@ bjtuca-bridge
 
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
+使用 `-c` 可以执行一条与终端中相同语法的命令，输出结果后退出：
+
+```powershell
+BJTUCA -c "ve.courseList"
+BJTUCA -c "qwen.operationList"
+BJTUCA -c "help ve.login ykt.assignments"
+BJTUCA -c 'qwen.getDocs {"module":"ve","name":"login"}'
+```
+
+若 Bridge 已在运行，会直接通过它执行，不会关闭该 Bridge。否则临时启动服务，等待扩展连接后执行，结束时关闭临时服务。端口参数放在 `-c` 之前，例如 `BJTUCA --port=1000 -c "ve.courseList"`。成功时退出码为 0，执行出错时为 1。
+
 浏览器扩展连接成功后，Bridge 会在启动窗口显示紫红色的 `BJTUCA>` 提示符（不支持颜色的终端显示普通文本）。可直接输入操作名，或在后面附上单行 JSON 对象参数：
 
 ```text

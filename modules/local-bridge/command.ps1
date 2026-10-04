@@ -22,6 +22,8 @@ switch ($action) {
     Write-Output @"
 用法：$displayCommand [start] [--port=端口]
       $displayCommand --show-token
+      $displayCommand -c "ve.courseList"
+      $displayCommand -c "help ve.login ykt.assignments"
       $displayCommand uninstall
       $displayCommand unregister
       $displayCommand u -r
@@ -32,6 +34,7 @@ bjtuca-bridge 和 BJTUCA 支持相同参数。
 start          启动本地 Bridge（默认操作，端口读取 bridge.json，初始为 1896）
 --port=N       本次启动使用端口 N（1 至 65535），并写回 bridge.json
 --show-token   显示 bridge.json 中的 Bearer Token，不启动服务
+-c 命令        执行一条终端命令并退出；复用正在运行的 Bridge，否则临时启动并等待扩展连接
 uninstall      删除注册的命令并从用户 PATH 移除命令目录，且删除 Bridge 本身及配置（简写 u/uninst/unist）
 unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 unreg，或 uninstall 及其简写加 -r）
 "@
@@ -81,6 +84,15 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
   default { $startArguments = @($BridgeArguments) }
 }
 
+$startArguments = @($startArguments)
+$singleCommandIndex = [Array]::IndexOf($startArguments, '-c')
+$singleCommandText = $null
+if ($singleCommandIndex -ge 0) {
+  if ($singleCommandIndex -eq $startArguments.Count - 1) { throw '-c 后必须提供命令' }
+  $singleCommandText = ($startArguments[($singleCommandIndex + 1)..($startArguments.Count - 1)] -join ' ').Trim()
+  if (-not $singleCommandText) { throw '-c 后必须提供命令' }
+  $startArguments = if ($singleCommandIndex) { @($startArguments[0..($singleCommandIndex - 1)]) } else { @() }
+}
 foreach ($argument in $startArguments) {
   if ($argument -notmatch '^--port=([0-9]+)$' -and $argument -ne '--show-token') {
     throw "不支持的参数：$argument。运行 $displayCommand --help 查看用法。"
@@ -92,6 +104,7 @@ foreach ($argument in $startArguments) {
 if ($startArguments -contains '--show-token' -and $startArguments.Count -ne 1) {
   throw '--show-token 不能与其他参数一起使用'
 }
+if ($singleCommandText -and $startArguments -contains '--show-token') { throw '-c 不能与 --show-token 一起使用' }
 if ($startArguments -notcontains '--show-token') {
   $installerPath = Join-Path $bridgeRoot 'install.ps1'
   $installerText = [System.IO.File]::ReadAllText($installerPath, [System.Text.Encoding]::GetEncoding(936))
@@ -105,9 +118,15 @@ if ($startArguments -notcontains '--show-token') {
     & $installerPath -SkipStart
   }
 }
-if ($startArguments.Count) {
-  & npm --prefix $bridgeRoot start -- @startArguments
-} else {
-  & npm --prefix $bridgeRoot start
+$previousRunCommand = $env:BJTUCA_RUN_COMMAND
+try {
+  $env:BJTUCA_RUN_COMMAND = $singleCommandText
+  if ($startArguments.Count) {
+    & npm --prefix $bridgeRoot start -- @startArguments
+  } else {
+    & npm --prefix $bridgeRoot start
+  }
+} finally {
+  $env:BJTUCA_RUN_COMMAND = $previousRunCommand
 }
 exit $LASTEXITCODE
