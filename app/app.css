@@ -980,6 +980,9 @@ body.platform-column-resizing {
     gap: 6px;
     flex-wrap: wrap;
 }
+.resource-download-meta .file-size-separator {
+    color: #000 !important;
+}
 .course-resource-file-item .resource-download-meta {
     align-items: center;
     line-height: 1;

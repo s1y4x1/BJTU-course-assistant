@@ -122,7 +122,7 @@ html[data-color-scheme="dark"] .resource-download-meta:not(.result-area *),
 html[data-color-scheme="dark"] .resource-space-status,
 html[data-color-scheme="dark"] .upload-total-meta,
 html[data-color-scheme="dark"] .resource-total-meta,
-html[data-color-scheme="dark"] .file-size-separator:not(.hw-card-item *),
+html[data-color-scheme="dark"] .file-size-separator:not(.hw-card-item *):not(.resource-download-meta *),
 html[data-color-scheme="dark"] .file-size-placeholder:not(.hw-card-item *) {
   color: #cbd5e1 !important;
 }
