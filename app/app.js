@@ -2154,41 +2154,35 @@ async function loadCourseHelperLayoutSettings() {
 
 function setupRightColumnResizer() {
   if (!layoutContainer || !leftColumn || !rightColumn || !columnResizer) return;
-  const WIDTH_STORAGE_KEY = 'courseHelperWidthPx';
+  const LANDSCAPE_RATIO_STORAGE_KEY = 'courseHelperSplitRatio';
   const PORTRAIT_RATIO_STORAGE_KEY = 'courseHelperPortraitSplitRatio';
-  const BASE_MIN_W = 480;
-  const DEFAULT_W = 576;
-  const DEFAULT_PORTRAIT_RATIO = 0.45;
-  const MIN_PORTRAIT_RATIO = 0.1;
-  const MAX_PORTRAIT_RATIO = 0.9;
+  const DEFAULT_RATIO = 0.5;
+  const MIN_RATIO = 0.1;
+  const MAX_RATIO = 0.9;
 
   const isAdaptiveLayout = isCourseHelperAdaptiveLayout;
 
-  const getBounds = () => {
-    const vw = Math.max(0, Number(window.innerWidth || 0));
-    const minW = BASE_MIN_W;
-    const maxW = Math.max(minW + 20, vw - 48);
-    return { minW, maxW };
-  };
-
-  const getSavedPortraitRatio = () => {
+  const getSavedRatio = (key) => {
     try {
-      const value = Number(localStorage.getItem(PORTRAIT_RATIO_STORAGE_KEY));
+      const value = Number(localStorage.getItem(key));
       if (Number.isFinite(value) && value > 0 && value < 1) {
-        return Math.max(MIN_PORTRAIT_RATIO, Math.min(MAX_PORTRAIT_RATIO, value));
+        return Math.max(MIN_RATIO, Math.min(MAX_RATIO, value));
       }
     } catch {
       // ignore
     }
-    return DEFAULT_PORTRAIT_RATIO;
+    return DEFAULT_RATIO;
   };
+
+  let activeLandscapeRatio = getSavedRatio(LANDSCAPE_RATIO_STORAGE_KEY);
+  let activePortraitRatio = getSavedRatio(PORTRAIT_RATIO_STORAGE_KEY);
 
   const applyPortraitRatio = (ratio) => {
     const normalized = Math.max(
-      MIN_PORTRAIT_RATIO,
-      Math.min(MAX_PORTRAIT_RATIO, Number(ratio) || DEFAULT_PORTRAIT_RATIO)
+      MIN_RATIO,
+      Math.min(MAX_RATIO, Number(ratio) || DEFAULT_RATIO)
     );
-    const gap = Number.parseFloat(getComputedStyle(layoutContainer).rowGap || getComputedStyle(layoutContainer).gap) || 0;
+    const gap = Number.parseFloat(getComputedStyle(layoutContainer).getPropertyValue('--course-helper-split-gap')) || 0;
     layoutContainer.style.setProperty(
       '--course-helper-portrait-split-basis',
       `calc(${normalized * 100}% - ${gap * normalized}px)`
@@ -2203,11 +2197,17 @@ function setupRightColumnResizer() {
     return { rect, available, gap, resizerLineCenter };
   };
 
+  const applyLandscapeRatio = () => {
+    const gap = Number.parseFloat(getComputedStyle(layoutContainer).getPropertyValue('--course-helper-split-gap')) || 0;
+    const rightRatio = 1 - activeLandscapeRatio;
+    rightColumn.style.width = `calc(${rightRatio * 100}% - ${gap * rightRatio}px)`;
+  };
+
   const applyResponsiveWidth = () => {
     if (isAdaptiveLayout()) {
       rightColumn.style.width = '';
       rightColumn.style.minWidth = '0';
-      applyPortraitRatio(getSavedPortraitRatio());
+      applyPortraitRatio(activePortraitRatio);
       return;
     }
     layoutContainer.style.removeProperty('--course-helper-portrait-split-basis');
@@ -2215,19 +2215,7 @@ function setupRightColumnResizer() {
       return;
     }
     rightColumn.style.minWidth = '';
-    const { minW, maxW } = getBounds();
-    let target = DEFAULT_W;
-    try {
-      const savedValue = localStorage.getItem(WIDTH_STORAGE_KEY);
-      const saved = Number(savedValue);
-      if (savedValue !== null && Number.isFinite(saved) && saved > 0) {
-        target = saved;
-      }
-    } catch {
-      // ignore
-    }
-    const clamped = Math.max(minW, Math.min(maxW, Math.round(target)));
-    rightColumn.style.width = `${clamped}px`;
+    applyLandscapeRatio();
   };
 
   const syncResizerGeometry = () => {
@@ -2280,7 +2268,6 @@ function setupRightColumnResizer() {
 
   let dragging = false;
   let dragAxis = '';
-  let activePortraitRatio = getSavedPortraitRatio();
 
   const onMove = (e) => {
     if (!dragging || !rightColumn) return;
@@ -2289,18 +2276,19 @@ function setupRightColumnResizer() {
       if (available <= 0) return;
       const pointerTop = Number(e.clientY || 0) - rect.top - gap - resizerLineCenter;
       const topPane = Math.max(
-        available * MIN_PORTRAIT_RATIO,
-        Math.min(available * MAX_PORTRAIT_RATIO, pointerTop)
+        available * MIN_RATIO,
+        Math.min(available * MAX_RATIO, pointerTop)
       );
       activePortraitRatio = topPane / available;
       applyPortraitRatio(activePortraitRatio);
       return;
     }
-    const { minW, maxW } = getBounds();
-    const vw = Math.max(0, window.innerWidth || 0);
-    const w = vw - Number(e.clientX || 0) - 24;
-    const clamped = Math.max(minW, Math.min(maxW, Math.round(w)));
-    rightColumn.style.width = `${clamped}px`;
+    const rect = layoutContainer.getBoundingClientRect();
+    const gap = Number.parseFloat(getComputedStyle(layoutContainer).columnGap || getComputedStyle(layoutContainer).gap) || 0;
+    const available = rect.width - gap;
+    if (available <= 0) return;
+    activeLandscapeRatio = Math.max(MIN_RATIO, Math.min(MAX_RATIO, (e.clientX - rect.left - gap) / available));
+    applyLandscapeRatio();
     scheduleResizerSync();
   };
 
@@ -2321,11 +2309,7 @@ function setupRightColumnResizer() {
           localStorage.setItem(PORTRAIT_RATIO_STORAGE_KEY, String(activePortraitRatio));
         }
       } else {
-        const { minW, maxW } = getBounds();
-        const current = parseInt(String(rightColumn.style.width || '0').replace('px', ''), 10);
-        if (Number.isFinite(current) && current >= minW && current <= maxW) {
-          localStorage.setItem(WIDTH_STORAGE_KEY, String(current));
-        }
+        localStorage.setItem(LANDSCAPE_RATIO_STORAGE_KEY, String(activeLandscapeRatio));
       }
     } catch {
       // ignore
@@ -2337,7 +2321,6 @@ function setupRightColumnResizer() {
     e.preventDefault();
     dragging = true;
     dragAxis = isAdaptiveLayout() ? 'row' : 'column';
-    activePortraitRatio = getSavedPortraitRatio();
     rightColumn.classList.add('dragging');
     document.body.classList.add('column-resizing');
     document.body.style.cursor = dragAxis === 'row' ? 'row-resize' : 'col-resize';
@@ -2370,7 +2353,7 @@ function setupRightColumnResizer() {
 
   let previousAdaptiveLayout = isAdaptiveLayout();
   window.addEventListener('resize', () => {
-    if (dragging && isAdaptiveLayout()) {
+    if (dragging && (isAdaptiveLayout() ? 'row' : 'column') !== dragAxis) {
       onUp();
     }
     syncCourseHelperCollapseTogglePresentation();
@@ -2383,6 +2366,18 @@ function setupRightColumnResizer() {
     } else {
       scheduleCourseCardsByPlatform();
     }
+  });
+
+  window.addEventListener('storage', (event) => {
+    if (event.key === LANDSCAPE_RATIO_STORAGE_KEY && !(dragging && dragAxis === 'column')) {
+      activeLandscapeRatio = getSavedRatio(LANDSCAPE_RATIO_STORAGE_KEY);
+    } else if (event.key === PORTRAIT_RATIO_STORAGE_KEY && !(dragging && dragAxis === 'row')) {
+      activePortraitRatio = getSavedRatio(PORTRAIT_RATIO_STORAGE_KEY);
+    } else {
+      return;
+    }
+    applyResponsiveWidth();
+    scheduleResizerSync();
   });
 
   window.addEventListener('scroll', scheduleResizerSync, true);

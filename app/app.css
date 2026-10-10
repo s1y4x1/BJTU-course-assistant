@@ -262,8 +262,9 @@ input[type="text"], input[type="number"], input[type="password"] { padding: 8px;
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .layout-container {
+    --course-helper-split-gap: 12px;
     display: flex;
-    gap: 12px;
+    gap: var(--course-helper-split-gap);
     align-items: stretch;
     margin: 0;
     flex: 1 1 auto;
@@ -273,7 +274,7 @@ input[type="text"], input[type="number"], input[type="password"] { padding: 8px;
 }
 .left-column {
     flex: 1 1 0;
-    min-width: 480px;
+    min-width: 0;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -309,7 +310,8 @@ input[type="text"], input[type="number"], input[type="password"] { padding: 8px;
 .right-column {
     --course-header-sticky-bg: #f9f9f9;
     flex: 0 1 auto;
-    min-width: 480px;
+    min-width: 0;
+    width: calc(50% - 6px);
     position: relative;
     top: auto;
     background: #f9f9f9;
@@ -586,7 +588,7 @@ body.platform-column-resizing {
         scrollbar-width: thin;
     }
     .left-column {
-        flex: 0 0 var(--course-helper-portrait-split-basis, 45%);
+        flex: 0 0 var(--course-helper-portrait-split-basis, calc(50% - 6px));
         min-height: 0;
         max-height: 100%;
         overflow-y: auto;
