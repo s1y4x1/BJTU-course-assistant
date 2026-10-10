@@ -180,11 +180,9 @@
         });
         if (response?.ok !== false) applyStatus(response);
         setMessage(response?.ok !== false ? '配对成功' : `配对失败：${response?.error || ''}`, response?.ok !== false);
-        if (response?.ok !== false) {
-          input.value = '';
-          attemptedPairCode = '';
-        }
       } finally {
+        input.value = '';
+        attemptedPairCode = '';
         pairing = false;
         updateLanFields(element('localBridgeAllowLan').checked);
       }
