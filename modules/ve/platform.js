@@ -295,10 +295,10 @@ function updateVeTeacherMetaUi(courseId) {
 
 function renderVeTeacherMetaPopHtml(meta, teachers) {
   if (meta.loading) {
-    return '<div style="font-size:12px; color:#64748b;"><span class="spinner" style="width:10px;height:10px;border-width:1px;border-color:#2563eb;border-top-color:transparent;"></span> 正在获取教师信息…</div>';
+    return '<div class="ve-course-teacher-loading"><span class="spinner" style="width:10px;height:10px;border-width:1px;border-color:#2563eb;border-top-color:transparent;"></span><span>正在获取教师列表…</span></div>';
   }
   if (!teachers.length) {
-    return '<div style="font-size:12px; color:#64748b;">未查询到教师/助教信息</div>';
+    return '<div class="ve-course-teacher-loading">未查询到教师/助教信息</div>';
   }
 
   const rows = teachers.map((t) => {
@@ -2285,7 +2285,7 @@ function renderCourseList(courses, {
             <span class="ve-teacher-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
               <span class="ve-teacher-name">${escapeHtml(teacherLabel)}</span>
               <span class="ve-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}">
-                <div style="font-size:12px; color:#64748b;">悬停加载教师信息…</div>
+                <div class="ve-course-teacher-loading">悬停加载教师列表…</div>
               </span>
             </span>
             <span>·</span>
