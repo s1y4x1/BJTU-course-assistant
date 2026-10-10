@@ -300,6 +300,7 @@ function tryImportModuleScripts(...paths) {
 }
 
 const veBackgroundReady = tryImportModuleScripts(
+  '../modules/ve/address.js',
   '../modules/ve/vendor/main2.min.js',
   '../core/md5.js',
   '../modules/ve/login-utils.js',

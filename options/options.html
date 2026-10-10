@@ -76,9 +76,9 @@
       <div class="option-divider" role="separator"></div>
       <label style="display:flex; align-items:center; gap:8px; margin:4px 0;">
         <input type="checkbox" id="collapseHomeworkDetailsDownward" style="width:auto;" checked />
-        <span>向下收起作业详情</span>
+        <span>当顶部超出屏幕时，向下收起作业详情</span>
       </label>
-      <div class="tip">开启时收起动画从作业详情上方向下推进，尽量保持展开/收起按钮的位置；关闭时恢复原来的收起方向。</div>
+      <div class="tip">开启后，仅当作业详情顶部已超出可见区域时向下收起，尽量保持按钮位置；详情完整显示时仍向上收起。关闭后总是向上收起。</div>
       <label class="homework-detail-lines-option">
         <span>作业详情默认显示</span>
         <input id="homeworkDetailCollapsedLines" type="number" min="0" step="1" value="3" aria-label="作业详情默认显示行数">
@@ -131,6 +131,8 @@
       <div id="vePlatformDetail" class="platform-option-detail" data-module="ve" hidden>
         <label><input type="checkbox" id="enableVe" style="width:auto;" checked />启用</label>
         <label><input type="checkbox" id="veAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
+        <label><input type="checkbox" id="veDecimalAddressEnabled" style="width:auto;" />使用十进制 IP 地址</label>
+        <div class="tip">将智慧课程平台的链接和请求中的 123.121.147.7 替换为 2071565063。浏览器可能自动将地址还原为标准 IPv4 写法。</div>
         <label style="display:flex; align-items:center; gap:8px; margin:0;">
           <input type="checkbox" id="autoLoadCourseResourcesEnabled" style="width:auto;" />
           自动获取课件/回放/归档列表

@@ -2,6 +2,7 @@
   'use strict';
 
   const scripts = [
+    'modules/ve/address.js',
     'modules/ve/vendor/main2.min.js',
     'modules/ve/login-utils.js',
     'modules/ve/login-credentials-dialog.js',
@@ -22,6 +23,7 @@
       await global.BjtuModuleRegistry.loadStyle(`modules/ve/${path}`);
     }
     for (const path of scripts) await global.BjtuModuleRegistry.loadScript(path);
+    await global.BjtuVeAddress.ready;
     if (available.captcha) {
       await global.BjtuModuleRegistry.loadScript('modules/captcha/recognizer.js');
     }

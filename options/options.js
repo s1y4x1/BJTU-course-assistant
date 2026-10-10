@@ -2314,6 +2314,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       xuetangxSecondCsrfToken: '',
       xuetangxSecondSessionId: '',
       collapseHomeworkDetailsDownward: true,
+      veDecimalAddressEnabled: false,
       scrollExpandHomeworkLists: false,
       scrollCollapseHomeworkLists: true,
       homeworkDetailCollapsedLines: DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,

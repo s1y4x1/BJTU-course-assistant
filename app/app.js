@@ -569,6 +569,32 @@ if (!popupMode) {
 }
 
 if (usernameInput) {
+  const measureCanvas = document.createElement('canvas');
+  const measureContext = measureCanvas.getContext('2d');
+  const updateUsernameWidth = () => {
+    const style = getComputedStyle(usernameInput);
+    measureContext.font = style.font;
+    const text = usernameInput.value || usernameInput.placeholder;
+    const spacing = parseFloat(style.letterSpacing) || 0;
+    const measure = (value) => measureContext.measureText(value).width + Math.max(0, value.length - 1) * spacing;
+    const contentWidth = Math.max(measure('账号'), measure(text));
+    const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    usernameInput.style.minWidth = `${Math.ceil(measure('账号') + (style.boxSizing === 'border-box' ? padding + border : 0))}px`;
+    usernameInput.style.width = `${Math.ceil(contentWidth + (style.boxSizing === 'border-box' ? padding + border : 0) + 1)}px`;
+  };
+  // Programmatic account selection should resize just like typing does.
+  const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  Object.defineProperty(usernameInput, 'value', {
+    configurable: true,
+    get() { return valueDescriptor.get.call(this); },
+    set(value) { valueDescriptor.set.call(this, value); updateUsernameWidth(); }
+  });
+  usernameInput.addEventListener('input', updateUsernameWidth);
+  window.addEventListener('bjtu-font-size-change', updateUsernameWidth);
+  new MutationObserver(updateUsernameWidth).observe(document.documentElement, { attributes:true, attributeFilter:['style'] });
+  document.fonts.ready.then(updateUsernameWidth);
+  updateUsernameWidth();
   let mjActivationRequested = false;
   usernameInput.addEventListener('input', () => {
     const value = String(usernameInput.value || '').trim();
@@ -5928,6 +5954,21 @@ courseListDiv.addEventListener('mouseover', (e) => {
   }
 });
 
+function shouldCollapseDetailDownward(body) {
+  if (!window.collapseHomeworkDetailsDownward) return false;
+  let visibleTop = 0;
+  for (let node = body.parentElement; node; node = node.parentElement) {
+    if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(node).overflowY)) {
+      visibleTop = Math.max(visibleTop, node.getBoundingClientRect().top + node.clientTop);
+    }
+  }
+  const stickyHeader = body.closest('.right-column')?.querySelector('.course-header');
+  if (stickyHeader && ['sticky', 'fixed'].includes(getComputedStyle(stickyHeader).position)) {
+    visibleTop = Math.max(visibleTop, stickyHeader.getBoundingClientRect().bottom);
+  }
+  return body.getBoundingClientRect().top < visibleTop;
+}
+
 function keepExpandableTogglePosition(toggle) {
   let top = toggle.getBoundingClientRect().top;
   const scrollTargets = [];
@@ -6049,7 +6090,7 @@ courseListDiv.addEventListener('click', async (e) => {
       actionEl.style.transition = 'none';
       actionEl.style.transform = '';
       if (!isExpanded) {
-        const positionTracker = interruptedCollapse && window.collapseHomeworkDetailsDownward
+        const positionTracker = interruptedCollapse?.downward
           ? keepExpandableTogglePosition(actionEl)
           : null;
         if (interruptedCollapse) delete box.__detailCollapseState;
@@ -6100,7 +6141,8 @@ courseListDiv.addEventListener('click', async (e) => {
           }
         });
       } else {
-        const positionTracker = window.collapseHomeworkDetailsDownward
+        const downward = shouldCollapseDetailDownward(body);
+        const positionTracker = downward
           ? keepExpandableTogglePosition(actionEl)
           : null;
         if (interruptedExpansion) delete box.__detailExpandState;
@@ -6126,7 +6168,7 @@ courseListDiv.addEventListener('click', async (e) => {
         const toggleSpace = interruptedExpansion
           ? existingSpace
           : Math.max(0, previousBoxHeight - box.getBoundingClientRect().height);
-        const collapseState = { paddingBottom: previousPaddingBottom, basePaddingBottom,
+        const collapseState = { downward, paddingBottom: previousPaddingBottom, basePaddingBottom,
           position: previousPosition, marginTop: previousMarginTop };
         box.__detailCollapseState = collapseState;
         box.style.paddingBottom = `${basePaddingBottom + toggleSpace}px`;

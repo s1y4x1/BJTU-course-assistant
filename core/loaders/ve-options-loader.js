@@ -4,6 +4,14 @@
   global.__bjtuVeOptionsReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
     if (!available.ve) return false;
+    await global.BjtuModuleRegistry.loadScript('modules/ve/address.js');
+    await global.BjtuVeAddress.ready;
+    const addressOption = document.getElementById('veDecimalAddressEnabled');
+    addressOption.checked = global.BjtuVeAddress.enabled;
+    addressOption.addEventListener('change', () => chrome.storage.local.set({ veDecimalAddressEnabled: addressOption.checked }));
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.veDecimalAddressEnabled) addressOption.checked = changes.veDecimalAddressEnabled.newValue === true;
+    });
     await global.BjtuModuleRegistry.loadScript('modules/ve/account-store.js');
     await global.BjtuModuleRegistry.loadScript('modules/ve/account-login.js');
     return true;
