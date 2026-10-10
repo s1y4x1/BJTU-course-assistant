@@ -38,17 +38,27 @@
       };
       const recognizeCurrentCaptcha = async (imageUrl, version) => {
         if (!(passcodeInput instanceof HTMLInputElement) || !recognizeCaptcha || !imageUrl) return;
+        const settings = await chrome.storage.local.get('veCaptchaRecognitionEnabled');
+        if (settled || version !== captchaVersion) return;
+        if (settings.veCaptchaRecognitionEnabled !== true) {
+          passcodeInput.placeholder = '输入 4 位验证码';
+          return;
+        }
         passcodeInput.value = '';
         passcodeInput.placeholder = '正在识别';
         passcodeInput.dataset.recognizing = '1';
         let failed = false;
         try {
           const passcode = String(await recognizeCaptcha(imageUrl) || '').replace(/\D/g, '').slice(0, 4);
+          const latestSettings = await chrome.storage.local.get('veCaptchaRecognitionEnabled');
           if (settled || version !== captchaVersion) return;
+          if (latestSettings.veCaptchaRecognitionEnabled !== true) return;
           if (passcode.length !== 4) throw new Error('未能识别出 4 位数字');
           if (!/^\d{4}$/.test(passcodeInput.value)) passcodeInput.value = passcode;
           if (message instanceof HTMLElement) message.textContent = initialMessageText;
         } catch (error) {
+          const latestSettings = await chrome.storage.local.get('veCaptchaRecognitionEnabled');
+          if (settled || version !== captchaVersion || latestSettings.veCaptchaRecognitionEnabled !== true) return;
           failed = true;
           if (message instanceof HTMLElement) {
             message.textContent = '验证码识别失败：' + String(error?.message || error);

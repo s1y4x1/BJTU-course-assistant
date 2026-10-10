@@ -17,19 +17,19 @@
 
   const FALLBACK_MODEL_VERSIONS = Object.freeze({
     '4.0.0_fast': Object.freeze({
-      label: '4.0.0 Fast（原内置模型，推荐）',
+      label: '原内置模型，推荐',
       url: 'https://cdn.jsdelivr.net/gh/naptha/tessdata/4.0.0_fast/eng.traineddata.gz',
       size: 1984273,
       sha256: '18C1AC52B75E35D44735FB6C2A60ACFAF23033524653200738E98F0243EDB75B'
     }),
     '4.0.0_best_int': Object.freeze({
-      label: '4.0.0 LSTM 精简版',
+      label: 'LSTM 精简版',
       url: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int/eng.traineddata.gz',
       size: 2952873,
       sha256: '45B4CB346724AC1774F1C36F42F182B887BCDB28EBE63E6FFF90AC41F3FCFF91'
     }),
     '4.0.0': Object.freeze({
-      label: '4.0.0 完整版',
+      label: '完整版',
       url: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0/eng.traineddata.gz',
       size: 10923060,
       sha256: 'ED350F3752F81EE8F38769EDC14D92D997DABABE23B565C59879372CC46A2468'
@@ -43,10 +43,10 @@
   }
 
   function sourceLabel(version) {
-    if (version === DEFAULT_MODEL_VERSION) return `${version} Fast（原内置模型，推荐）`;
-    if (/_best_int$/i.test(version)) return `${version} LSTM 精简版`;
-    if (/_fast_int$/i.test(version)) return `${version} LSTM 快速版`;
-    return `${version} 完整版`;
+    if (version === DEFAULT_MODEL_VERSION) return '原内置模型，推荐';
+    if (/_best_int$/i.test(version)) return 'LSTM 精简版';
+    if (/_fast_int$/i.test(version)) return 'LSTM 快速版';
+    return '完整版';
   }
 
   function base64Sha256ToHex(value) {

@@ -15,6 +15,11 @@
   font-weight: 600;
 }
 
+#captcha-model-label {
+  font-size: var(--bjtu-font-size-secondaryTitle, 16px) !important;
+  font-weight: 700;
+}
+
 .captcha-model-list {
   display: grid;
   gap: 0;
@@ -92,7 +97,6 @@
   display: flex;
   align-items: center;
   min-height: 30px;
-  margin-bottom: 8px;
 }
 
 .mis-captcha-toggle {
