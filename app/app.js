@@ -337,6 +337,7 @@ async function initFullscreenModuleButtons() {
 
   const prepareWindowInteractions = (view, moduleId) => {
     const header = view.querySelector(':scope > .section-title');
+    const scrollBody = view.querySelector(':scope > .fullscreen-module-window-body');
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'fullscreen-module-window-close';
@@ -377,12 +378,12 @@ async function initFullscreenModuleButtons() {
       view.style.bottom = 'auto';
       view.style.width = `${rect.width}px`;
       view.style.height = `${rect.height}px`;
-      preservedScroll = { left: view.scrollLeft, top: view.scrollTop, windowX: window.scrollX, windowY: window.scrollY };
+      preservedScroll = { left: scrollBody.scrollLeft, top: scrollBody.scrollTop, windowX: window.scrollX, windowY: window.scrollY };
     }, true);
     const restoreScroll = () => {
       if (!preservedScroll) return;
-      view.scrollLeft = preservedScroll.left;
-      view.scrollTop = preservedScroll.top;
+      scrollBody.scrollLeft = preservedScroll.left;
+      scrollBody.scrollTop = preservedScroll.top;
       window.scrollTo(preservedScroll.windowX, preservedScroll.windowY);
     };
     const resizeObserver = new ResizeObserver(() => {
@@ -423,6 +424,13 @@ async function initFullscreenModuleButtons() {
       view.classList.add('fullscreen-module-window', 'floating-launcher-window');
       view.dataset.module = moduleId;
       view.hidden = true;
+      const header = view.querySelector(':scope > .section-title');
+      const scrollBody = document.createElement('div');
+      scrollBody.className = 'fullscreen-module-window-body';
+      for (const node of Array.from(view.childNodes)) {
+        if (node !== header) scrollBody.appendChild(node);
+      }
+      view.appendChild(scrollBody);
       view.querySelectorAll('.module-options-page-link').forEach((link) => {
         const title = document.createElement('span');
         title.textContent = link.textContent;

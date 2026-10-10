@@ -1964,8 +1964,10 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     min-width: 320px;
     min-height: 240px;
     margin: 0 !important;
-    padding-top: 0 !important;
-    overflow: auto;
+    padding: 0 !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     overscroll-behavior: contain;
     resize: both;
     box-shadow: 0 12px 40px rgba(15, 23, 42, .2);
@@ -1973,18 +1975,27 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 }
 .fullscreen-module-window[hidden] { display:none !important; }
 .fullscreen-module-window > .section-title {
-    position:sticky;
-    top:0;
+    position:relative;
+    flex:0 0 auto;
     z-index:30;
     display:flex;
     align-items:center;
-    margin:0 -12px 8px;
+    margin:0 0 8px;
     padding:10px 12px 8px;
     background:inherit;
     font-size:var(--bjtu-font-size-primaryTitle, 20px);
     font-weight:600;
     cursor:move;
     user-select:none;
+}
+.fullscreen-module-window-body {
+    flex:1 1 auto;
+    min-height:0;
+    min-width:0;
+    overflow:auto;
+    overscroll-behavior:contain;
+    scrollbar-width:thin;
+    padding:0 12px 10px;
 }
 .fullscreen-module-window .fullscreen-module-window-close {
     display:inline-flex;
