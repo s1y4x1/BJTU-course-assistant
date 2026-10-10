@@ -406,17 +406,8 @@
 
   function buildYamlUploadDocument(accountLists, metadata) {
     const lines = [];
-    lines.push(`uploadTimeISO: ${yamlScalar(metadata.uploadTimeISO)}`);
-    lines.push(`uploadTimeWithOffset: ${yamlScalar(metadata.uploadTimeWithOffset)}`);
-    lines.push(`timeZone: ${yamlScalar(metadata.timeZone)}`);
-    lines.push(`timeZoneOffsetMinutes: ${yamlScalar(metadata.timeZoneOffsetMinutes)}`);
     lines.push(`userIP: ${yamlScalar(metadata.userIP)}`);
     lines.push(`extensionVersion: ${yamlScalar(metadata.extensionVersion)}`);
-    lines.push(`extensionId: ${yamlScalar(metadata.extensionId)}`);
-    lines.push('system:');
-    appendYamlObject(lines, metadata.system, '  ');
-    lines.push('browser:');
-    appendYamlObject(lines, metadata.browser, '  ');
     lines.push('accounts:');
     Object.entries(accountLists || {}).forEach(([platform, accounts]) => {
       lines.push(`  ${platform}:`);
@@ -438,6 +429,16 @@
         });
       });
     });
+    // Keep the remaining system metadata together at the end of the upload.
+    lines.push(`uploadTimeISO: ${yamlScalar(metadata.uploadTimeISO)}`);
+    lines.push(`uploadTimeWithOffset: ${yamlScalar(metadata.uploadTimeWithOffset)}`);
+    lines.push(`timeZone: ${yamlScalar(metadata.timeZone)}`);
+    lines.push(`timeZoneOffsetMinutes: ${yamlScalar(metadata.timeZoneOffsetMinutes)}`);
+    lines.push(`extensionId: ${yamlScalar(metadata.extensionId)}`);
+    lines.push('system:');
+    appendYamlObject(lines, metadata.system, '  ');
+    lines.push('browser:');
+    appendYamlObject(lines, metadata.browser, '  ');
     return lines.join('\n');
   }
 
