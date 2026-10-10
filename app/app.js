@@ -5527,7 +5527,7 @@ function renderHomeworkList(courseId) {
     const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? '';
     const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? '';
     const scoreParam = String(fullScore ?? '').trim() || String(obtainedScore ?? '').trim();
-    const scoreViewUrl = (upId && snId) ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=1&score=${encodeURIComponent(scoreParam || '100')}` : '';
+    const scoreViewUrl = (upId && snId) ? `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(String(upId))}&id=${encodeURIComponent(String(snId))}&uLevel=2&score=${encodeURIComponent(scoreParam || '100')}` : '';
     const scoreKey = buildHomeworkScoreKey(upId, snId);
     const cachedScore = window.homeworkScoreCacheByKey[scoreKey];
 
@@ -5615,7 +5615,10 @@ function renderHomeworkList(courseId) {
         tailHtml: submitCountHtml,
         escape: escapeHtml
       }),
-      actionsHtml: `${scoreHtml ? `<div style="font-size:12px;">${scoreHtml}</div>` : ''}${actionButtonsHtml}`,
+      scoreHtml,
+      comment: hw.pigaiContent || '',
+      escape: escapeHtml,
+      actionsHtml: actionButtonsHtml,
       detailHtml: `${attachmentHtml}${expandable ? `<div style="margin-top:3px;border-top:1px dashed ${borderColor}40;padding-top:0;">${expandable}</div>` : ''}${submitPanelHtml}`
     });
   }).join('');

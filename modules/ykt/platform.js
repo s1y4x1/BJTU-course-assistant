@@ -768,7 +768,8 @@ function renderYktHomeworkItems(courseId, items) {
         showCountdown: !isClassroomActivity,
         escape: escapeHtml
       })}${progressHtml}`,
-      actionsHtml: `${titleScoreBadge ? `<div style="font-size:12px;line-height:1;">${titleScoreBadge}</div>` : ''}${globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml })}`,
+      scoreHtml: titleScoreBadge,
+      actionsHtml: globalThis.BjtuHomeworkUi.renderActionLink({ href: it.link, label: actionText, color: palette.action, escape: escapeHtml }),
       detailHtml: `${detailExpandable ? `<div style="margin-top:3px;border-top:1px dashed ${palette.border}40;padding-top:0;">${detailExpandable}</div>` : ''}${detailStatusHtml}`
     });
   }).join('');

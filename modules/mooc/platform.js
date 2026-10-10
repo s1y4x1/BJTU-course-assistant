@@ -264,7 +264,8 @@ let moocLoginAssistOpening = null;
       actionsClass: 'mooc-task-actions',
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: typeText(task.type), typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape: env.escape, className: 'mooc-task-title' }),
       metaHtml: `<div class="mooc-task-meta">${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div>${env.escape(task.chapterName)}</div>` : ''}${task.type === 'hw' && task.detail?.tname ? `<div>${env.escape(task.detail.tname)}</div>` : ''}${task.type === 'quiz' && task.detail?.description ? `<div>${sanitizeDetailHtml(task.detail.description)}</div>` : ''}</div>`,
-      actionsHtml: `${score}<div class="mooc-task-button-row">
+      scoreHtml: score,
+      actionsHtml: `<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
           ${isPaperTask(task) ? `<button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>` : ''}
         </div>`,

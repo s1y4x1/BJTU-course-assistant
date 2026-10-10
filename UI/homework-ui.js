@@ -226,6 +226,9 @@
     border = '#d1d5db',
     titleHtml = '',
     metaHtml = '',
+    scoreHtml = '',
+    comment = '',
+    escape = (value) => String(value ?? ''),
     actionsHtml = '',
     detailHtml = '',
     headClass = '',
@@ -244,6 +247,7 @@
         ${actionsHtml ? `<div class="${actionClasses}" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">${actionsHtml}</div>` : ''}
       </div>
       ${metaHtml ? `<div class="homework-card-meta">${metaHtml}</div>` : ''}
+      ${scoreHtml || comment ? `<div class="homework-feedback">${scoreHtml}${comment ? `<span class="homework-feedback-comment">${escape(comment)}</span>` : ''}</div>` : ''}
       ${detailHtml}
     </div>`;
   }

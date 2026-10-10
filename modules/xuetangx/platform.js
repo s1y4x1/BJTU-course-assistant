@@ -1190,7 +1190,8 @@
       titleHtml: global.BjtuHomeworkUi.titleHtml({ typeLabel: task.typeLabel, typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape, className: 'xuetangx-task-title' }),
       metaHtml: `${global.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape })}${chapter ? `<div class="xuetangx-task-meta">${escape(chapter)}</div>` : ''}
         ${global.BjtuHomeworkUi.progressHtml({ ratio: task.schedule, escape, color: THEME_COLOR })}`,
-      actionsHtml: `${score}${secondAnswerButton}${global.BjtuHomeworkUi.renderActionLink({
+      scoreHtml: score,
+      actionsHtml: `${secondAnswerButton}${global.BjtuHomeworkUi.renderActionLink({
         href: taskUrl(course, task),
         label: actionLabel,
         color: palette.action,

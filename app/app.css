@@ -1446,6 +1446,9 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
 .homework-card-title { font-size:var(--bjtu-font-size-secondaryTitle, 16px); font-weight:700; overflow-wrap:anywhere; }
 .homework-card-main { min-width:0; flex:1 1 auto; }
 .homework-card-actions { flex:0 0 auto; }
+.homework-feedback { margin-top:3px; color:#111827; font-size:var(--bjtu-font-size-body, 13px); overflow-wrap:anywhere; }
+.homework-feedback-comment { white-space:pre-wrap; }
+.homework-feedback .homework-score-badge + .homework-feedback-comment { margin-left:.4em; }
 .homework-card-title > a { color:inherit; text-decoration:none; }
 .homework-type-badge { display:inline-block; margin-right:6px; padding:1px 4px; border:1px solid currentColor; border-radius:3px; color:inherit; font-size:var(--bjtu-font-size-auxiliary, 11px); line-height:1.3; vertical-align:1px; }
 .homework-type-loading { display:flex; align-items:center; gap:6px; margin:0 0 6px; color:#64748b; font-size:13px; line-height:1.5; }

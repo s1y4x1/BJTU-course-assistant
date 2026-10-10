@@ -2841,7 +2841,10 @@ async function checkHomework(courseId, progress, loadVersion = window.courseList
       signal: window.globalVeAbortController?.signal,
       isCurrent
     });
-    await attachmentPrefetchPromise.finally(() => {
+    await Promise.all([
+      attachmentPrefetchPromise,
+      prefetchCourseScores(courseId, { isCurrent, signal: window.globalVeAbortController?.signal })
+    ]).finally(() => {
       if (isCurrent()) recomputeCourseHomeworkState(courseId);
     }).catch(() => {});
     return isCurrent();
@@ -2864,6 +2867,14 @@ function getHomeworkPublishScoreId(hw) {
 }
 
 function isHomeworkScoreUnpublished(hw) {
+  const upId = hw.id ?? hw.upId ?? hw.upid ?? hw.UPID ?? hw.up_id ?? '';
+  const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? '';
+  const scores = [window.homeworkScoreCacheByKey[buildHomeworkScoreKey(upId, snId)],
+    hw.lastScore, hw.last_score, hw.oldScore, hw.old_score, hw.finalScore, hw.final_score];
+  if (scores.some((score) => {
+    const value = String(score ?? '').trim();
+    return value === '未批改' || (value !== '' && Number.isFinite(Number(value)));
+  })) return false;
   const text = `${String(hw?.lastScore ?? hw?.last_score ?? '')} ${String(hw?.scoreStatus ?? hw?.score_status ?? '')}`;
   return /暂未公布/.test(text);
 }
@@ -2887,7 +2898,7 @@ function getUnpublishedDoneScoreHomeworkIds(courseId) {
 
 function renderForcePublishScoreButton(courseId) {
   const state = window.homeworkScoreForcePublishStateByCourse?.[courseId] || {};
-  const ids = Array.isArray(state.ids) && state.ids.length ? state.ids : getUnpublishedDoneScoreHomeworkIds(courseId);
+  const ids = state.running && Array.isArray(state.ids) ? state.ids : getUnpublishedDoneScoreHomeworkIds(courseId);
   if (!ids.length) return '';
   const running = !!state.running;
   const progress = Math.max(0, Math.min(100, Number(state.progress || 0) || 0));
@@ -2974,10 +2985,11 @@ async function forcePublishScoresThenRestore(courseId, btn = null) {
   }
 }
 
-async function fetchHomeworkScore(upId, snId) {
+async function fetchHomeworkScore(upId, snId, signal) {
   if (!upId || !snId) return null;
-  const url = `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(upId)}&id=${encodeURIComponent(snId)}&uLevel=1`;
+  const url = `${BASE_VE}back/course/courseWorkInfo.shtml?method=piGaiDiv&upId=${encodeURIComponent(upId)}&id=${encodeURIComponent(snId)}&uLevel=2`;
   const { text, res } = await fetchText(url, {
+    signal,
     headers: {
       Accept: 'text/html, */*; q=0.8',
       'X-Requested-With': 'XMLHttpRequest',
@@ -2990,15 +3002,15 @@ async function fetchHomeworkScore(upId, snId) {
     throw new Error('LOGIN_REQUIRED');
   }
 
-  // match oldScore similarly to python implementation
-  const m1 = String(text || '').match(/(?:id|name)=["']oldScore["'][^>]*value=["']([^"']*)["']/i);
-  if (m1?.[1] !== undefined) return m1[1];
-  const m2 = String(text || '').match(/value=["']([^"']*)["'][^>]*(?:id|name)=["']oldScore["']/i);
-  if (m2?.[1] !== undefined) return m2[1];
-  return null;
+  const doc = new DOMParser().parseFromString(String(text || ''), 'text/html');
+  return {
+    score: doc.querySelector('input#oldScore, input[name="oldScore"]')?.value ?? null,
+    comment: doc.querySelector('textarea#pigaiContent')?.value || ''
+  };
 }
 
-async function prefetchCourseScores(courseId) {
+async function prefetchCourseScores(courseId, { isCurrent = () => true, signal } = {}) {
+  if (window.isTeacherAccount || !isCurrent()) return;
   if (window.homeworkScorePendingByCourse[courseId]) return;
   const nativeList = window.courseHomeworkData[courseId]?.list || [];
   const tasks = [];
@@ -3009,14 +3021,9 @@ async function prefetchCourseScores(courseId) {
     const snId = hw.snId ?? hw.snid ?? hw.SNID ?? hw.noteSnId ?? hw.note_sn_id ?? '';
     if (!upId || !snId) return;
 
-    const scoreStatus = hw.lastScore ?? hw.last_score ?? hw.scoreStatus ?? hw.score_status ?? hw.lastScoreText ?? hw.last_score_text ?? '';
-    const obtainedScore = hw.lastScore ?? hw.oldScore ?? hw.old_score ?? hw.finalScore ?? hw.final_score ?? '';
-    const pendingText = `${String(scoreStatus || '').trim()} ${String(obtainedScore || '').trim()}`;
-    if (!/暂未公布/.test(pendingText)) return;
-
     const key = buildHomeworkScoreKey(upId, snId);
-    if (window.homeworkScoreCacheByKey[key] !== undefined) return;
-    tasks.push({ key, upId, snId });
+    if (hw.pigaiContent !== undefined && window.homeworkScoreCacheByKey[key] !== undefined) return;
+    tasks.push({ key, upId, snId, hw });
   });
 
   if (!tasks.length) return;
@@ -3024,11 +3031,12 @@ async function prefetchCourseScores(courseId) {
   window.homeworkScorePendingByCourse[courseId] = true;
   const results = await Promise.allSettled(
     tasks.map(async (t) => {
-      const score = await fetchHomeworkScore(t.upId, t.snId);
-      return { key: t.key, score };
+      const review = await fetchHomeworkScore(t.upId, t.snId, signal);
+      return { key: t.key, hw: t.hw, ...review };
     })
   );
   window.homeworkScorePendingByCourse[courseId] = false;
+  if (!isCurrent()) return;
 
   let hasLoginRequired = false;
   results.forEach((result) => {
@@ -3039,9 +3047,11 @@ async function prefetchCourseScores(courseId) {
       }
       return;
     }
-    const { key, score } = result.value;
+    const { key, hw, score, comment } = result.value;
+    hw.pigaiContent = comment;
     if (score === null || score === undefined || score === '') {
-      window.homeworkScoreCacheByKey[key] = '未批改';
+      const obtainedScore = String(hw.lastScore ?? hw.oldScore ?? hw.old_score ?? hw.finalScore ?? hw.final_score ?? '').trim();
+      window.homeworkScoreCacheByKey[key] = obtainedScore && !/暂未公布/.test(obtainedScore) ? obtainedScore : '未批改';
     } else {
       window.homeworkScoreCacheByKey[key] = String(score);
     }
@@ -3049,7 +3059,7 @@ async function prefetchCourseScores(courseId) {
 
   if (hasLoginRequired) {
     handleLoginRequired(
-      () => prefetchCourseScores(courseId),
+      () => prefetchCourseScores(courseId, { isCurrent, signal }),
       null,
       globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve')
     );
