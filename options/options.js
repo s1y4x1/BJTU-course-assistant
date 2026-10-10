@@ -927,6 +927,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   let currentFontSizeSettings = globalThis.BjtuTypography?.normalizeSettings(fontSizeSettings)
     || { ...DEFAULT_FONT_SIZE_SETTINGS };
   let animationSpeedDragging = false;
+  let animationSpeedWritePromise = null;
+  let pendingAnimationSpeed = null;
+  let animationUiRefreshRevision = 0;
   updateFontSizeUi();
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
   let currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccount || '').trim();
@@ -1191,6 +1194,30 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   function formatAnimationSpeedValue(value) {
     return String(Number(value));
+  }
+
+  async function syncAnimationUiFromStorage() {
+    const revision = ++animationUiRefreshRevision;
+    const data = await chrome.storage.local.get(['animationMode', 'animationSpeed']);
+    if (revision !== animationUiRefreshRevision || animationSpeedDragging || animationSpeedWritePromise) return;
+    updateAnimationUi(data.animationMode, data.animationSpeed);
+  }
+
+  function persistAnimationSpeed(value) {
+    pendingAnimationSpeed = value;
+    if (!animationSpeedWritePromise) {
+      animationSpeedWritePromise = (async () => {
+        while (pendingAnimationSpeed !== null) {
+          const speed = pendingAnimationSpeed;
+          pendingAnimationSpeed = null;
+          await chrome.storage.local.set({ animationSpeed: speed });
+        }
+      })().finally(() => {
+        animationSpeedWritePromise = null;
+        void syncAnimationUiFromStorage();
+      });
+    }
+    return animationSpeedWritePromise;
   }
 
   function updateAnimationUi(modeValue, speedValue) {
@@ -1572,12 +1599,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         void renderMrjzyAutoLoginAccounts();
       }
       if (changes.animationMode || changes.animationSpeed) {
-        if (!animationSpeedDragging) {
-          updateAnimationUi(
-            changes.animationMode?.newValue ?? globalThis.BjtuMotion?.getMode(),
-            changes.animationSpeed?.newValue ?? globalThis.BjtuMotion?.getSpeed()
-          );
-        }
+        // Delayed storage events must not replay the slider's earlier positions.
+        void syncAnimationUiFromStorage();
       }
       if (changes.fontSizeSettings) {
         currentFontSizeSettings = globalThis.BjtuTypography?.normalizeSettings(changes.fontSizeSettings.newValue)
@@ -1809,12 +1832,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       document.getElementById('animationSpeedValue').value = formatAnimationSpeedValue(value);
       globalThis.BjtuMotion?.apply?.(globalThis.BjtuMotion.getMode(), value);
       // 拖动时只锁定当前页面的 UI；共享设置仍需立即写入，其他页面才能实时同步。
-      await chrome.storage.local.set({ animationSpeed: value });
+      await persistAnimationSpeed(value);
       return true;
     } else {
       updateAnimationUi(globalThis.BjtuMotion?.getMode(), value);
     }
-    await chrome.storage.local.set({ animationSpeed: value });
+    globalThis.BjtuMotion?.apply?.(globalThis.BjtuMotion.getMode(), value);
+    await persistAnimationSpeed(value);
     return true;
   };
   const animationSpeedInput = document.getElementById('animationSpeed');

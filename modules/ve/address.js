@@ -68,6 +68,9 @@
       return next;
     };
     const rewriteNode = (node) => {
+      const element = node.nodeType === 1 ? node : node.parentElement;
+      // Help text describes the literal addresses, not an address to open.
+      if (element?.closest('.tip, .option-tip-trigger, .option-tip-popover')) return;
       if (node.nodeType === 3) {
         if (node.parentElement?.closest('script, style, textarea')) return;
         const next = documentValue(node, '', node.nodeValue);
