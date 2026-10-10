@@ -784,6 +784,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   try { await chrome.storage.sync.remove(['platformEnabled']); } catch {}
   const { openMode, preferExistingFullscreenPage } = await chrome.storage.local.get(['openMode', 'preferExistingFullscreenPage']);
   const { autoLoadCourseResourcesEnabled } = await chrome.storage.local.get(['autoLoadCourseResourcesEnabled']);
+  const { platformButtonTextAction } = await chrome.storage.local.get('platformButtonTextAction');
+  document.getElementById('platformButtonTextAction').value = platformButtonTextAction === 'open' ? 'open' : 'load';
   const { saveUploadedFilesEnabled, downloadInExtensionEnabled } = await chrome.storage.local.get(['saveUploadedFilesEnabled', 'downloadInExtensionEnabled']);
   const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
   const { popupUseFullscreenCacheEnabled, sidePanelUseFullscreenCacheEnabled } = await chrome.storage.local.get([
@@ -1437,6 +1439,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           input.checked = values.has(Number(input.value));
         });
       }
+      if (changes.platformButtonTextAction) {
+        document.getElementById('platformButtonTextAction').value = changes.platformButtonTextAction.newValue === 'open' ? 'open' : 'load';
+      }
       if (changes.yktActivityTypes) {
         const values = new Set(
           Array.isArray(changes.yktActivityTypes.newValue)
@@ -1781,6 +1786,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       await chrome.storage.local.set({ moocActivityTypes: selected });
       setMsg('已应用更改');
     });
+  });
+  document.getElementById('platformButtonTextAction').addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ platformButtonTextAction: event.currentTarget.value });
+    setMsg('已应用更改');
   });
   document.getElementById('openModePopup').addEventListener('change', applyOpenMode);
   document.getElementById('openModePage').addEventListener('change', applyOpenMode);
@@ -2343,6 +2352,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const defaultPlatform = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
     await chrome.storage.local.set({
       platformEnabled: defaultPlatform,
+      platformButtonTextAction: 'load',
       platformVisible: { ...DEFAULT_PLATFORM_VISIBLE },
       optionsSectionOrder: [...FALLBACK_OPTIONS_SECTION_ORDER],
       platformOrder: [...FALLBACK_PLATFORM_ORDER],
@@ -2428,6 +2438,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.checked = DEFAULT_XUETANGX_ACTIVITY_TYPES.includes(Number(input.value));
     });
     document.getElementById('injectMoocHelperEnabled').checked = true;
+    document.getElementById('platformButtonTextAction').value = 'load';
     document.getElementById('injectMoocPeerReviewEnabled').checked = true;
     document.getElementById('moocPeerReviewCount').value = String(DEFAULT_MOOC_PEER_REVIEW_COUNT);
     updateMoocPeerReviewState();

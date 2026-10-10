@@ -1739,7 +1739,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     border: 0;
     border-radius: 999px;
     padding: 3px 6px;
-    font-size: 11px;
+    font-size: var(--bjtu-font-size-body, 13px);
     color: #fff;
     background: #9ca3af;
     display: inline-flex;
@@ -1809,7 +1809,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     text-decoration: none;
     display: inline-block;
     line-height: 1.2;
-    font-size: 11px;
+    font-size: var(--bjtu-font-size-body, 13px);
 }
 .platform-status-btn.unselected .platform-link {
     color: #111827;
@@ -1868,6 +1868,17 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 .platform-status-btn.unselected.unselected-checked-online .dot { border-color: #16a34a; }
 .platform-status-btn.unselected.unselected-checked-offline .dot { border-color: #dc2626; }
 .platform-status-btn.unselected.unselected-checked-checking .dot { border-color: #6b7280; }
+.platform-status-btn.platform-text-load { cursor:pointer; border:1.5px solid rgba(255,255,255,.8); }
+.platform-status-btn.platform-text-load .dot { display:none; }
+.platform-status-btn.platform-text-load .platform-link { color:inherit !important; text-decoration:none !important; cursor:pointer; }
+.platform-status-btn.platform-text-load.online { border-color:#16a34a; }
+.platform-status-btn.platform-text-load.offline { border-color:#dc2626; }
+.platform-status-btn.platform-text-load.unselected { border-color:#374151; }
+.platform-status-btn.platform-text-load.unselected.unselected-checked-online { border-color:#16a34a; }
+.platform-status-btn.platform-text-load.unselected.unselected-checked-offline { border-color:#dc2626; }
+.platform-status-btn.platform-text-load.unselected.unselected-checked-checking { border-color:#6b7280; }
+html[data-color-scheme="dark"] .platform-status-btn.platform-text-load.unselected.unselected-checked-online { border-color:#16a34a; }
+html[data-color-scheme="dark"] .platform-status-btn.platform-text-load.unselected.unselected-checked-offline { border-color:#dc2626; }
 
 /* Login modal (modern extension-like) */
 #login-modal .login-panel {

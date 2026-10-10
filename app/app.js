@@ -692,6 +692,27 @@ const DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY = Object.freeze({
 });
 window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
 window.platformVisible = { ...DEFAULT_PLATFORM_VISIBLE };
+let platformButtonTextAction = 'load';
+function applyPlatformButtonTextAction(value) {
+  platformButtonTextAction = value === 'open' ? 'open' : 'load';
+  document.querySelectorAll('.platform-status-btn').forEach((button) => {
+    const loadCourses = platformButtonTextAction === 'load';
+    button.classList.toggle('platform-text-load', loadCourses);
+    const link = button.querySelector('.platform-link');
+    if (!link) return;
+    if (loadCourses) {
+      if (link.hasAttribute('href')) link.dataset.platformHref = link.getAttribute('href');
+      link.removeAttribute('href');
+      link.setAttribute('role', 'button');
+      link.setAttribute('tabindex', '0');
+    } else {
+      link.setAttribute('href', globalThis.BjtuVeAddress?.replace(link.dataset.platformHref) || link.dataset.platformHref);
+      link.removeAttribute('role');
+      link.removeAttribute('tabindex');
+    }
+  });
+}
+applyPlatformButtonTextAction('load');
 window.platformAutoLoginOnExpiry = { ...DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY };
 window.platformLoadedOnce = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
 window.platformLoadVersion = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 0]));
@@ -1492,6 +1513,7 @@ function setupOptionsStorageLiveSync() {
     if (!popupMode && changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY]) {
       setCourseHelperFocusMode(changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY].newValue === true);
     }
+    if (changes.platformButtonTextAction) applyPlatformButtonTextAction(changes.platformButtonTextAction.newValue);
     if (!popupMode && (changes[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] || changes[STICKY_COURSE_HEADER_KEY])) {
       applyFullscreenHeaderLayout(
         changes[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY]
@@ -3577,7 +3599,8 @@ if (courseListDiv) {
 
 async function loadPlatformVisibleFromStorage() {
   try {
-    const data = await chrome.storage.local.get(['platformVisible']);
+    const data = await chrome.storage.local.get(['platformVisible', 'platformButtonTextAction']);
+    applyPlatformButtonTextAction(data.platformButtonTextAction);
     window.platformVisible = sanitizePlatformVisible(data?.platformVisible, DEFAULT_PLATFORM_VISIBLE);
   } catch {
     window.platformVisible = { ...DEFAULT_PLATFORM_VISIBLE };
@@ -6561,11 +6584,20 @@ courseListDiv.addEventListener('wheel', (e) => {
 document.addEventListener('click', (e) => {
   const t = e.target;
   if (!(t instanceof HTMLElement)) return;
-  if (t.dataset.action !== 'toggle-platform') return;
+  const button = t.closest('.platform-status-btn');
+  const toggle = t.closest('[data-action="toggle-platform"]');
+  if (!toggle && !(button && platformButtonTextAction === 'load')) return;
   e.preventDefault();
   e.stopPropagation();
-  const platform = String(t.dataset.platform || '').trim();
+  const platform = String(toggle?.dataset.platform || button?.dataset.module || '').trim();
   togglePlatformSelection(platform);
+});
+document.addEventListener('keydown', (event) => {
+  if (platformButtonTextAction !== 'load' || !['Enter', ' '].includes(event.key)) return;
+  const link = event.target instanceof HTMLElement ? event.target.closest('.platform-status-btn .platform-link') : null;
+  if (!link) return;
+  event.preventDefault();
+  link.click();
 });
 
 let initialUsernameSet = true;
