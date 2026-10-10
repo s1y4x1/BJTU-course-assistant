@@ -11,6 +11,9 @@
     port: 'bjtuLocalBridgePort',
     token: 'bjtuLocalBridgeToken',
     host: 'bjtuLocalBridgeHost',
+    localPort: 'bjtuLocalBridgeListenPort',
+    localToken: 'bjtuLocalBridgeLocalToken',
+    remoteConfig: 'bjtuLocalBridgeRemoteConfig',
     allowLan: 'bjtuLocalBridgeAllowLan',
     autoRetry: 'bjtuLocalBridgeAutoRetry',
     retryIntervalMs: 'bjtuLocalBridgeRetryIntervalMs'
@@ -26,13 +29,15 @@
   let configWritePromise = null;
   let lastConfigReadAt = 0;
   let connectionReplaced = false;
-  const configReplies = new Map();
   let currentSettings = {
     enabled: false,
     port: DEFAULT_PORT,
     token: '',
     host: '127.0.0.1',
     allowLan: false,
+    localPort: DEFAULT_PORT,
+    localToken: '',
+    remoteConfig: { host: '127.0.0.1', port: DEFAULT_PORT, token: '' },
     autoRetry: true,
     retryIntervalMs: DEFAULT_RETRY_INTERVAL_MS
   };
@@ -66,11 +71,19 @@
 
   async function loadSettings() {
     const stored = await chrome.storage.local.get(Object.values(STORAGE_KEYS)).catch(() => ({}));
+    const remoteConfig = stored[STORAGE_KEYS.remoteConfig] || {};
+    const host = normalizeHost(remoteConfig.host);
+    const remote = !['127.0.0.1', 'localhost', '[::1]'].includes(host);
+    const localPort = normalizePort(stored[STORAGE_KEYS.localPort]);
+    const localToken = String(stored[STORAGE_KEYS.localToken] || '').trim();
     currentSettings = {
       enabled: stored[STORAGE_KEYS.enabled] === true,
-      port: normalizePort(stored[STORAGE_KEYS.port]),
-      token: String(stored[STORAGE_KEYS.token] || '').trim(),
-      host: normalizeHost(stored[STORAGE_KEYS.host]),
+      port: remote ? normalizePort(remoteConfig.port) : localPort,
+      token: remote ? String(remoteConfig.token || '').trim() : localToken,
+      host,
+      localPort,
+      localToken,
+      remoteConfig: { host, port: normalizePort(remoteConfig.port), token: String(remoteConfig.token || '').trim() },
       allowLan: stored[STORAGE_KEYS.allowLan] === true,
       autoRetry: stored[STORAGE_KEYS.autoRetry] !== false,
       retryIntervalMs: normalizeRetryInterval(stored[STORAGE_KEYS.retryIntervalMs])
@@ -86,6 +99,7 @@
       host: currentSettings.host,
       remote: isRemote(),
       allowLan: currentSettings.allowLan,
+      localPort: currentSettings.localPort,
       autoRetry: currentSettings.autoRetry,
       retryIntervalMs: currentSettings.retryIntervalMs,
       configured: Boolean(currentSettings.token),
@@ -119,8 +133,6 @@
     clearReconnectTimer();
     const current = socket;
     socket = null;
-    for (const pending of configReplies.values()) pending.reject(new Error('Bridge 连接已断开'));
-    configReplies.clear();
     if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
       try { current.close(code, reason); } catch {}
     }
@@ -161,7 +173,7 @@
         lastConfigReadAt = Date.now();
         await syncBridgeConfigFromFile();
       }
-      if (socket && (before.port !== currentSettings.port || before.token !== currentSettings.token)) {
+      if (socket && (before.port !== currentSettings.port || before.token !== currentSettings.token || before.host !== currentSettings.host)) {
         closeSocket(1000, 'Bridge config changed');
       }
     } catch (error) {
@@ -174,6 +186,11 @@
     }
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     clearReconnectTimer();
+    if (isRemote() && !currentSettings.token) {
+      setState('unconfigured', '请输入目标 Bridge 的 6 位配对码');
+      scheduleReconnect();
+      return;
+    }
     setState('connecting');
     const connectionToken = currentSettings.token;
     const ws = new WebSocket(`ws://${currentSettings.host}:${currentSettings.port}/extension`);
@@ -198,22 +215,11 @@
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: '合一' }));
         return;
       }
-      if (message?.type === 'config-saved') {
-        const pending = configReplies.get(message.id);
-        if (pending) {
-          configReplies.delete(message.id);
-          if (message.ok === false) pending.reject(new Error(message.error));
-          else pending.resolve(message.config);
-        }
-        return;
-      }
       if (message?.type === 'request') void handleRequest(message, ws);
     });
     ws.addEventListener('close', (event) => {
       if (socket !== ws) return;
       socket = null;
-      for (const pending of configReplies.values()) pending.reject(new Error('Bridge 连接已断开'));
-      configReplies.clear();
       if (event.code === 4002) {
         connectionReplaced = true;
         clearReconnectTimer();
@@ -393,25 +399,45 @@
       throw new Error('无法读取 modules/local-bridge/bridge.json，请先启动 Bridge');
     }
     const config = await response.json().catch(() => null);
-    const token = String(config?.token || '').trim();
     return {
-      token,
-      host: normalizeHost(config?.host),
+      token: String(config?.token || '').trim(),
       port: normalizePort(config?.port),
-      allowLan: config?.allowLan === true
+      allowLan: config?.allowLan === true,
+      remote: {
+        host: normalizeHost(config?.remote?.host),
+        port: normalizePort(config?.remote?.port),
+        token: String(config?.remote?.token || '').trim()
+      }
     };
   }
 
   async function syncBridgeConfigFromFile() {
     const config = await readBridgeConfig();
-    currentSettings = { ...currentSettings, ...config };
+    await storeBridgeConfig(config);
+    return config;
+  }
+
+  async function storeBridgeConfig(config) {
+    const remote = !['127.0.0.1', 'localhost', '[::1]'].includes(config.remote.host);
+    const effective = {
+      host: config.remote.host,
+      port: remote ? config.remote.port : config.port,
+      token: remote ? config.remote.token : config.token,
+      localPort: config.port,
+      localToken: config.token,
+      remoteConfig: config.remote,
+      allowLan: config.allowLan
+    };
+    currentSettings = { ...currentSettings, ...effective };
     await chrome.storage.local.set({
-      [STORAGE_KEYS.host]: config.host,
-      [STORAGE_KEYS.port]: config.port,
-      [STORAGE_KEYS.token]: config.token,
+      [STORAGE_KEYS.host]: effective.host,
+      [STORAGE_KEYS.port]: effective.port,
+      [STORAGE_KEYS.token]: effective.token,
+      [STORAGE_KEYS.localPort]: config.port,
+      [STORAGE_KEYS.localToken]: config.token,
+      [STORAGE_KEYS.remoteConfig]: config.remote,
       [STORAGE_KEYS.allowLan]: config.allowLan
     });
-    return config;
   }
 
   async function readExtensionDirectoryHandle() {
@@ -440,41 +466,32 @@
     }
     let current;
     try { current = await readBridgeConfig(); }
-    catch { current = { ...currentSettings }; }
+    catch {
+      current = { port: currentSettings.localPort, token: currentSettings.localToken,
+        allowLan: currentSettings.allowLan, remote: { ...currentSettings.remoteConfig } };
+    }
+    const host = patch.host === undefined ? current.remote.host : normalizeHost(patch.host);
+    const remoteTarget = !['127.0.0.1', 'localhost', '[::1]'].includes(host);
+    const hostChanged = host !== current.remote.host;
     const next = {
-      port: patch?.port === undefined ? current.port : normalizePort(patch.port),
-      token: patch?.token === undefined ? current.token : String(patch.token),
-      host: patch?.host === undefined ? current.host : normalizeHost(patch.host),
-      allowLan: patch?.allowLan === undefined ? current.allowLan : patch.allowLan === true
+      port: patch.localPort !== undefined ? normalizePort(patch.localPort)
+        : !remoteTarget && patch.port !== undefined ? normalizePort(patch.port) : current.port,
+      token: current.token,
+      allowLan: patch.allowLan === undefined ? current.allowLan : patch.allowLan === true,
+      remote: {
+        host,
+        port: remoteTarget && patch.port !== undefined ? normalizePort(patch.port)
+          : hostChanged ? DEFAULT_PORT : current.remote.port,
+        token: patch.remoteToken !== undefined ? String(patch.remoteToken)
+          : hostChanged && remoteTarget ? '' : current.remote.token
+      }
     };
     const bytes = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
     if (!global.BjtuUpdateFileSystem?.writeFile) throw new Error('扩展文件写入组件不可用');
     await global.BjtuUpdateFileSystem.writeFile(root, BRIDGE_CONFIG_PATH, bytes);
     lastConfigReadAt = Date.now();
-    // A remote listener cannot read this machine's file; send the same listener settings over the authenticated socket.
-    if (isRemote() && connectionState === 'connected' && patch.token === undefined && patch.host === undefined) {
-      await sendRemoteConfig({ port: next.port, allowLan: next.allowLan });
-    }
-    currentSettings = { ...currentSettings, ...next };
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.host]: next.host,
-      [STORAGE_KEYS.port]: next.port,
-      [STORAGE_KEYS.token]: next.token,
-      [STORAGE_KEYS.allowLan]: next.allowLan
-    });
+    await storeBridgeConfig(next);
     return next;
-  }
-
-  function sendRemoteConfig(patch) {
-    const id = crypto.randomUUID();
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { configReplies.delete(id); reject(new Error('Bridge 配置确认超时')); }, 10000);
-      configReplies.set(id, {
-        resolve(value) { clearTimeout(timer); resolve(value); },
-        reject(error) { clearTimeout(timer); reject(error); }
-      });
-      socket.send(JSON.stringify({ type: 'config-update', id, patch }));
-    });
   }
 
   async function pairRemote(host, port, code) {
@@ -496,7 +513,7 @@
         ws.addEventListener('close', () => finish(reject, new Error('配对码无效或已过期')));
       });
       closeSocket();
-      await writeBridgeConfig({ host:targetHost, port:targetPort, token:config.token, allowLan:config.allowLan });
+      await writeBridgeConfig({ host:targetHost, port:targetPort, remoteToken:config.token });
       connectionReplaced = false;
       await connect();
       return statusPayload();
@@ -529,22 +546,6 @@
     return statusPayload();
   }
 
-  async function changePort(port) {
-    const nextPort = normalizePort(port);
-    if (nextPort !== currentSettings.port) {
-      await writeBridgeConfig({ port: nextPort });
-    }
-    return statusPayload();
-  }
-
-  async function changeAllowLan(allowLan) {
-    const nextAllowLan = allowLan === true;
-    if (nextAllowLan !== currentSettings.allowLan) {
-      await writeBridgeConfig({ allowLan: nextAllowLan });
-    }
-    return statusPayload();
-  }
-
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const type = String(message?.type || '');
     if (type === 'BJTUCA_LOCAL_BRIDGE_STATUS') {
@@ -559,15 +560,18 @@
     }
     if (type === 'BJTUCA_LOCAL_BRIDGE_SETTINGS_SET') {
       const task = (async () => {
-        if (message?.payload?.host !== undefined) {
-          await writeBridgeConfig({ host: message.payload.host });
-          connectionReplaced = false;
-          closeSocket();
-          await connect();
-        }
-        if (message?.payload?.port !== undefined) await changePort(message.payload.port);
-        if (typeof message?.payload?.allowLan === 'boolean') {
-          await changeAllowLan(message.payload.allowLan);
+        const configPatch = Object.fromEntries(['host', 'port', 'localPort', 'allowLan']
+          .filter((key) => message.payload?.[key] !== undefined)
+          .map((key) => [key, message.payload[key]]));
+        if (Object.keys(configPatch).length) {
+          const before = { ...currentSettings };
+          await writeBridgeConfig(configPatch);
+          if (before.host !== currentSettings.host || before.port !== currentSettings.port
+            || before.token !== currentSettings.token) {
+            connectionReplaced = false;
+            closeSocket();
+            await connect();
+          } else broadcastStatus();
         }
         if (typeof message?.payload?.autoRetry === 'boolean'
             || message?.payload?.retryIntervalMs !== undefined) {

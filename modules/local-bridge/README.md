@@ -68,17 +68,17 @@ ve.courseList({})
 
 本地文件上传可传 `filePath:'C:\\path\\file.pdf'`。命令行使用 JSON5 解析参数，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。HTTP/MCP 请求仍使用标准 JSON 对象。通过命令行、HTTP 或 MCP 发起的操作会在 Bridge 窗口直接打印完整返回结果，不另加操作名或结果标题。输入 `help` 查看示例；输入 `help ve.courseList ykt.assignments` 或 `help(ve.courseList)` 查看指定操作说明；输入 `exit`、`quit` 或按 `Ctrl+C` 停止 Bridge。
 
-如需从同一局域网内的其他设备访问，可在扩展选项中开启「允许局域网访问」，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带 `bridge.json` 中的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。
+如需从同一局域网内的其他设备访问本机 Bridge，可在「本机 Bridge」中开启「允许局域网设备连接本机 Bridge」，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后本机 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带其 `bridge.json` 中的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。
 
 ### 连接另一台电脑上的扩展
 
-在程序所在电脑运行 Bridge，并先开启该 Bridge 的「允许局域网访问」（可在这台电脑的扩展选项中设置，或把其 `bridge.json` 的 `allowLan` 设为 `true`）。在另一台电脑的扩展选项中开启「允许局域网访问」，将下方「Bridge 地址」填为前者的局域网 IP，填写对应端口；输入满 Bridge 终端显示的 6 位数字配对码后自动配对。程序调用该 Bridge 时，操作将在已配对的那台电脑的浏览器扩展中执行。
+在程序所在电脑运行 Bridge，并允许该 Bridge 被局域网设备访问（在那台电脑的扩展选项中设置，或把其 `bridge.json` 的 `allowLan` 设为 `true`）。在另一台电脑的「扩展连接目标」中，将「Bridge 地址」填为前者的局域网 IP，「连接端口」填为前者的监听端口；输入满前者 Bridge 终端显示的 6 位数字配对码后自动配对。这台电脑不必开启本机 Bridge 的局域网访问。程序调用该 Bridge 时，操作将在已配对的那台电脑的浏览器扩展中执行。
 
 配对码 5 分钟内有效、只能使用一次；在 Bridge 终端输入 `pair` 可生成新码。每个来源 IP 每分钟最多尝试 5 次。配对后 token 自动保存，无需手动输入长串 token；HTTP/MCP 调用仍须 Bearer Token。连接仅用于可信局域网，当前 HTTP/WebSocket 不提供传输加密。
 
 一个 Bridge 同时只控制一个扩展。新配对/连接替换旧连接时，旧扩展暂停自动重连，避免两台电脑循环抢占；如需接回，在旧扩展重新配对即可。
 
-未连接或连接本机 Bridge 时，配置由扩展写入本机的 `modules/local-bridge/bridge.json`，Bridge 监听文件并更新。连接远程 Bridge 时，扩展写入本机配置，同时通过已认证连接将端口、局域网开关同步至远程 Bridge 的配置文件。文件写入仍需要在「更新」模块中授权扩展目录。
+设置均由扩展写入本机的 `modules/local-bridge/bridge.json`：顶层 `port`、`allowLan`、`token` 专用于本机 Bridge；`remote` 对象的 `host`、`port`、`token` 专用于扩展连接远程 Bridge，配对不会覆盖本机授权。地址为 `127.0.0.1` 时使用本机 token，连接端口自动跟随本机监听端口。更改连接目标或远程连接端口不会修改远程 Bridge 的服务配置；远程服务须在所在电脑配置。文件写入仍需要在「更新」模块中授权扩展目录。
 
 认证失败后保留 token，按所选「重试间隔」等待后重连，不再每次查询状态都读取配置或重建连接。重连时配置文件读取间隔至少 10 秒；普通网络断连也按所选重试间隔处理。Bridge 发送「知行」，扩展回复「合一」。
 

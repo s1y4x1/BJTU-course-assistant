@@ -505,21 +505,6 @@ wsServer.on('connection', (socket, req) => {
       return;
     }
     if (message?.type === '合一') return;
-    if (message?.type === 'config-update') {
-      void (async () => {
-        try {
-          const patch = message.patch || {};
-          const port = patch.port === undefined ? config.port : normalizePort(patch.port, 0);
-          if (!port) throw new Error('端口必须为 1 至 65535');
-          const next = { ...config, port, allowLan:patch.allowLan === undefined ? config.allowLan : patch.allowLan === true };
-          await saveConfig(next);
-          socket.send(JSON.stringify({ type:'config-saved', id:message.id, ok:true, config:{port:next.port,allowLan:next.allowLan} }));
-        } catch (error) {
-          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type:'config-saved',id:message.id,ok:false,error:String(error.message || error) }));
-        }
-      })();
-      return;
-    }
     if (message?.type === 'response') {
       const pending = pendingExtensionCalls.get(String(message.id || ''));
       if (!pending) return;
@@ -682,7 +667,7 @@ async function applyConfigFileChanges() {
   config.port = next.port;
   config.token = next.token;
   config.allowLan = next.allowLan;
-  config.host = next.host;
+  config.remote = next.remote;
   if (tokenChanged) {
     clearLocalFileRelays();
     disconnectExtension(4001, 'Authorization changed', 'Bridge 授权配置已更改');

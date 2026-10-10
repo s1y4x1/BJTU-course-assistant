@@ -30,26 +30,34 @@
       min="0.1" max="60" step="0.1" value="0.5">
     <span>秒</span>
   </div>
+  <div class="option-divider" role="separator"></div>
+  <div class="local-bridge-group-title">本机 Bridge</div>
   <div class="local-bridge-setting-row">
-    <label for="localBridgePort">监听端口</label>
-    <input type="number" id="localBridgePort" class="local-bridge-input local-bridge-port"
+    <label for="localBridgeListenPort">监听端口</label>
+    <input type="number" id="localBridgeListenPort" class="local-bridge-input local-bridge-port"
       min="1" max="65535" step="1" value="1896">
-    <span id="localBridgeStatus" class="local-bridge-status">未启用</span>
   </div>
   <label class="local-bridge-toggle">
     <input type="checkbox" id="localBridgeAllowLan">
-    <span>允许局域网访问</span>
+    <span>允许局域网设备连接本机 Bridge</span>
   </label>
-  <div class="tip">开启后 Bridge 将监听所有网络接口；局域网设备仍需使用 Bearer Token 才能调用受保护的接口。</div>
-  <div class="local-bridge-setting-row local-bridge-sub-setting">
+  <div class="tip">仅控制本机 Bridge 的监听范围：关闭时仅本机可访问，开启时局域网设备也可连接。仍需认证及防火墙放行；不会更改远程 Bridge 的配置。</div>
+  <div class="option-divider" role="separator"></div>
+  <div class="local-bridge-group-title">扩展连接目标 <span id="localBridgeStatus" class="local-bridge-status">未连接</span></div>
+  <div class="local-bridge-setting-row">
     <label for="localBridgeHost">Bridge 地址</label>
-    <input type="text" id="localBridgeHost" class="local-bridge-input" value="127.0.0.1" spellcheck="false" placeholder="127.0.0.1 或局域网 IP" disabled>
+    <input type="text" id="localBridgeHost" class="local-bridge-input" value="127.0.0.1" spellcheck="false" placeholder="127.0.0.1 或局域网 IP">
   </div>
+  <div class="local-bridge-setting-row">
+    <label for="localBridgePort">连接端口</label>
+    <input type="number" id="localBridgePort" class="local-bridge-input local-bridge-port" min="1" max="65535" step="1" value="1896" readonly>
+  </div>
+  <div class="tip">127.0.0.1 表示本机，连接端口自动跟随本机监听端口；填写其他电脑的地址后，可设置那台 Bridge 的连接端口。这里只选择连接目标，不会修改那台服务。</div>
   <div class="local-bridge-setting-row local-bridge-sub-setting">
     <label for="localBridgePairCode">配对码</label>
     <input type="text" id="localBridgePairCode" class="local-bridge-input local-bridge-pair-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" disabled>
   </div>
-  <div class="tip">在运行 Bridge 的电脑终端查看配对码，或输入 pair 生成新码。输入满 6 位数字后自动配对。配对码 5 分钟内有效且只能使用一次；配对后自动保存 token，无需手动输入。局域网连接必须先在 Bridge 所在电脑开启「允许局域网访问」。</div>
+  <div class="tip">连接远程 Bridge 时，在目标电脑终端查看配对码，或输入 pair 生成新码。输入满 6 位数字后自动配对；配对码 5 分钟内有效且只能使用一次。只需目标电脑的 Bridge 允许局域网访问，本机无需开启。连接本机时自动读取本机 token，无需配对。</div>
   <div id="localBridgeTokenRow" class="local-bridge-setting-row local-bridge-token-row" hidden>
     <label for="localBridgeToken">Bearer token</label>
     <input type="text" id="localBridgeToken" class="local-bridge-input local-bridge-token"

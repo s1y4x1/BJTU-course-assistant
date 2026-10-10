@@ -9,9 +9,11 @@
   let attemptedPairCode = '';
   const element = (id) => document.getElementById(id);
 
-  function updateLanFields(allowLan) {
-    element('localBridgeHost').disabled = !allowLan;
-    element('localBridgePairCode').disabled = !allowLan || pairing;
+  function updateConnectionFields() {
+    const host = element('localBridgeHost').value.trim().toLowerCase();
+    const remote = !['', '127.0.0.1', 'localhost', '[::1]', '::1'].includes(host);
+    element('localBridgePairCode').disabled = !remote || pairing;
+    element('localBridgePort').readOnly = !remote;
   }
 
   function createGuideMarkdownParser(markedApi) {
@@ -70,12 +72,14 @@
       }
     }
     if (allowLan instanceof HTMLInputElement) allowLan.checked = status.allowLan === true;
-    updateLanFields(status.allowLan === true);
+    const listenPort = element('localBridgeListenPort');
+    if (document.activeElement !== listenPort) listenPort.value = String(status.localPort || 1896);
     if (port instanceof HTMLInputElement && document.activeElement !== port) {
       port.value = String(Number(status.port) || 1896);
     }
     const host = element('localBridgeHost');
     if (host instanceof HTMLInputElement && document.activeElement !== host) host.value = String(status.host || '127.0.0.1');
+    updateConnectionFields();
     const label = element('localBridgeStatus');
     if (label instanceof HTMLElement) {
       const names = {
@@ -155,6 +159,7 @@
 
   function bindEvents() {
     element('localBridgeHost')?.addEventListener('change', (event) => {
+      updateConnectionFields();
       void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', {host:event.currentTarget.value}).then((response) => {
         if (response?.ok !== false) applyStatus(response);
         setMessage(response?.ok !== false ? '地址已保存' : `保存失败：${response?.error || ''}`, response?.ok !== false);
@@ -168,10 +173,10 @@
         attemptedPairCode = '';
         return;
       }
-      if (pairing || code === attemptedPairCode || !element('localBridgeAllowLan').checked) return;
+      if (pairing || code === attemptedPairCode || input.disabled) return;
       attemptedPairCode = code;
       pairing = true;
-      updateLanFields(true);
+      updateConnectionFields();
       try {
         const response = await send('BJTUCA_LOCAL_BRIDGE_PAIR', {
           host:element('localBridgeHost').value,
@@ -184,7 +189,7 @@
         input.value = '';
         attemptedPairCode = '';
         pairing = false;
-        updateLanFields(element('localBridgeAllowLan').checked);
+        updateConnectionFields();
       }
     });
     element('localBridgeEnabled')?.addEventListener('change', (event) => {
@@ -214,20 +219,20 @@
         setMessage(response?.ok !== false ? '重试间隔已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
       });
     });
-    element('localBridgePort')?.addEventListener('change', (event) => {
+    for (const id of ['localBridgePort', 'localBridgeListenPort']) element(id)?.addEventListener('change', (event) => {
       const port = Number(event.currentTarget.value);
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
         setMessage('端口必须是 1 至 65535 的整数', false);
         void refresh();
         return;
       }
-      void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { port }).then((response) => {
+      const patch = id === 'localBridgeListenPort' ? { localPort: port } : { port };
+      void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', patch).then((response) => {
         applyStatus(response);
         setMessage(response?.ok !== false ? '端口已保存' : `端口修改失败：${response?.error || response?.message || ''}`, response?.ok !== false);
       });
     });
     element('localBridgeAllowLan')?.addEventListener('change', (event) => {
-      updateLanFields(event.currentTarget.checked === true);
       void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { allowLan: event.currentTarget.checked === true }).then((response) => {
         applyStatus(response);
         setMessage(response?.ok !== false ? '局域网访问设置已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
@@ -240,6 +245,7 @@
       if (areaName !== 'local') return;
       if (changes.bjtuLocalBridgeEnabled || changes.bjtuLocalBridgePort
         || changes.bjtuLocalBridgeHost
+        || changes.bjtuLocalBridgeListenPort || changes.bjtuLocalBridgeRemoteConfig
         || changes.bjtuLocalBridgeToken || changes.bjtuLocalBridgeAllowLan
         || changes.bjtuLocalBridgeAutoRetry || changes.bjtuLocalBridgeRetryIntervalMs) {
         void refresh();
@@ -264,6 +270,7 @@
       enabled: false,
       host: '127.0.0.1',
       port: 1896,
+      localPort: 1896,
       allowLan: false,
       autoRetry: true,
       retryIntervalMs: 500
