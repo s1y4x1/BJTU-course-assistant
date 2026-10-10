@@ -255,7 +255,7 @@ let moocLoginAssistOpening = null;
       mainClass: 'mooc-task-main',
       actionsClass: 'mooc-task-actions',
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: typeText(task.type), typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape: env.escape, className: 'mooc-task-title' }),
-      metaHtml: `<div class="mooc-task-meta">${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div>${env.escape(task.chapterName)}</div>` : ''}${task.detail?.tname ? `<div>${env.escape(task.detail.tname)}</div>` : ''}</div>`,
+      metaHtml: `<div class="mooc-task-meta">${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div>${env.escape(task.chapterName)}</div>` : ''}${task.type === 'hw' && task.detail?.tname ? `<div>${env.escape(task.detail.tname)}</div>` : ''}</div>`,
       actionsHtml: `${score}<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
           ${isPaperTask(task) ? `<button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>` : ''}
@@ -340,19 +340,19 @@ let moocLoginAssistOpening = null;
     }
   }
 
-  async function loadObjectiveDetail(task, withAnswers = true) {
+  async function loadObjectiveDetail(task) {
     task.detailLoading = true;
     render();
     try {
       const [answers, paper] = await Promise.all([
-        withAnswers ? request('gins-answer', { tid: task.id }).catch(() => ({ data: { questionList: [] } })) : null,
+        request('gins-answer', { tid: task.id }).catch(() => ({ data: { questionList: [] } })),
         requestPaperWithRetry('quiz-paper', task.id, '试卷数据为空（可能受到并发限制）')
       ]);
       const correctIds = new Set();
       for (const question of (answers?.data?.questionList || [])) {
         for (const option of (question.optionList || [])) if (option.answer) correctIds.add(option.id);
       }
-      task.detail = { questions: buildPaperDetail(paper, correctIds), tname: String(paper.tname || '') };
+      task.detail = { questions: buildPaperDetail(paper, correctIds) };
       taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
       return { paper, correctIds };
     } finally {
@@ -361,17 +361,14 @@ let moocLoginAssistOpening = null;
     }
   }
 
-  async function hydrateTaskDetails(course) {
-    const tasks = course.tasks.filter((task) => task.type === 'hw' || task.type === 'quiz');
+  async function hydrateHomeworkDetails(course) {
+    const tasks = course.tasks.filter((task) => task.type === 'hw');
     let next = 0;
     const failures = [];
     const workers = Array.from({ length: Math.min(3, tasks.length) }, async () => {
       while (next < tasks.length) {
         const task = tasks[next++];
-        try {
-          if (task.type === 'hw') await loadHomeworkDetail(task);
-          else await loadObjectiveDetail(task, false);
-        } catch (error) { failures.push(error); }
+        try { await loadHomeworkDetail(task); } catch (error) { failures.push(error); }
       }
     });
     await Promise.all(workers);
@@ -413,7 +410,7 @@ let moocLoginAssistOpening = null;
               teachers: teacherResult.status === 'fulfilled' ? teacherResult.value : []
             }, term);
             render();
-            await hydrateTaskDetails(courses[index]);
+            await hydrateHomeworkDetails(courses[index]);
           } catch (error) {
             if (error?.code === 'not-logged-in') throw error;
             courses[index].detailLoaded = true;
@@ -502,7 +499,8 @@ let moocLoginAssistOpening = null;
   async function completeTask(task) {
     const completed = await request('complete-task', { taskType: task.type, tid: task.id });
     const correctIds = new Set(Array.isArray(completed?.correctIds) ? completed.correctIds : []);
-    task.detail = { questions: buildPaperDetail(completed?.paper || {}, correctIds), tname: String(completed?.paper?.tname || '') };
+    task.detail = { questions: buildPaperDetail(completed?.paper || {}, correctIds) };
+    if (task.type === 'hw') task.detail.tname = String(completed?.paper?.tname || '');
     taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
     render();
     return completed?.response;
