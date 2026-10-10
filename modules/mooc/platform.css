@@ -18,12 +18,18 @@
 .mooc-task-detail { margin-top:6px; padding-top:6px; border-top:1px dashed; font-size:12px; color:#374151; line-height:1.45; }
 .mooc-question-detail { padding:5px 6px; border-radius:5px; background:rgba(255,255,255,.46); margin-top:4px; }
 .mooc-question-detail:first-child { margin-top:0; }
-.mooc-question-title { font-weight:700; color:#1f2937; overflow-wrap:anywhere; }
+.mooc-question-title { display:flex; align-items:flex-start; gap:.4em; font-weight:700; color:#1f2937; overflow-wrap:anywhere; }
+.mooc-question-number { flex:none; white-space:nowrap; }
+.mooc-question-option { display:flex; align-items:flex-start; gap:.4em; }
+.mooc-option-marker { flex:0 0 1em; text-align:center; }
+.mooc-question-content { flex:1; min-width:0; }
+.mooc-question-content > :first-child { margin-top:0; }
+.mooc-question-content > :last-child { margin-bottom:0; }
 .mooc-question-lines { margin-top:2px; color:#4b5563; overflow-wrap:anywhere; }
 .mooc-question-detail p { margin:.2em 0; }
 .mooc-question-detail ul, .mooc-question-detail ol { margin:.2em 0; padding-left:1.15em; }
 .mooc-question-detail li { margin:.08em 0; }
-.mooc-correct-mark { color:#16a34a; font-weight:700; }
+.mooc-correct-mark { display:inline-block; color:#16a34a; font-weight:700; }
 .mooc-empty { color:#999; }
 .mooc-inline-spinner { display:inline-block; width:10px; height:10px; border-width:1px; border-color:#00cc7e; border-top-color:transparent; }
 .mooc-progress-mask { z-index:10005; }

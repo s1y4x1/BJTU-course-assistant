@@ -204,8 +204,8 @@ let moocLoginAssistOpening = null;
     if (!questions.length) return '';
     const contentHtml = questions.map((question, index) => `
       <div class="mooc-question-detail">
-        <div class="mooc-question-title">第${index + 1}题 · ${question.titleHtml || env.escape(question.title || '')}</div>
-        ${(question.linesHtml?.length || question.lines?.length) ? `<div class="mooc-question-lines">${(question.linesHtml || question.lines || []).map((line) => `<div>${question.linesHtml ? line : env.escape(line)}</div>`).join('')}</div>` : ''}
+        <div class="mooc-question-title"><span class="mooc-question-number">第${index + 1}题 ·</span><div class="mooc-question-content">${question.titleHtml || env.escape(question.title || '')}</div></div>
+        ${(question.linesHtml?.length || question.lines?.length) ? `<div class="mooc-question-lines">${(question.linesHtml || question.lines || []).map((line) => renderQuestionLine(line, !!question.linesHtml)).join('')}</div>` : ''}
       </div>`).join('');
     const courseId = `mooc-${course.id}`;
     const expandKey = `mooc-detail:${task.type}:${task.id}`;
@@ -220,6 +220,14 @@ let moocLoginAssistOpening = null;
         }))
       : contentHtml;
     return `<div class="mooc-task-detail" style="border-top-color:${colors[1]};">${expandable}</div>`;
+  }
+
+  function renderQuestionLine(line, isHtml) {
+    const html = isHtml ? String(line) : env.escape(line);
+    const mark = '<span class="mooc-correct-mark">✓</span>';
+    const correct = isHtml && html.startsWith(mark);
+    const content = correct ? html.slice(mark.length).trimStart() : html;
+    return `<div class="mooc-question-option"><span class="mooc-option-marker">${correct ? mark : ''}</span><div class="mooc-question-content">${content}</div></div>`;
   }
 
   function renderTeachers(course) {
@@ -368,7 +376,7 @@ let moocLoginAssistOpening = null;
     render();
   }
 
-  async function hydrateTaskMetadata(course) {
+  async function hydrateTaskMetadata(course, onTaskLoaded = () => {}) {
     const tasks = course.tasks.filter((task) => task.type === 'hw' || task.type === 'quiz');
     let next = 0;
     const failures = [];
@@ -379,6 +387,7 @@ let moocLoginAssistOpening = null;
           if (task.type === 'hw') await loadHomeworkDetail(task);
           else await loadQuizInfo(task);
         } catch (error) { failures.push(error); }
+        finally { onTaskLoaded(task); }
       }
     });
     await Promise.all(workers);
@@ -399,7 +408,20 @@ let moocLoginAssistOpening = null;
       render();
       env.setLoaded(true);
       env.setState('online');
-      let completedCourseLoads = 0;
+      const progressTypes = [...visibleTypes];
+      const progressByCourse = courses.map(() => null);
+      const updateProgress = () => {
+        if (serial !== loadSerial) return;
+        const completed = progressByCourse.reduce((sum, states) => {
+          if (!states) return sum;
+          if (!progressTypes.length) return sum + 1;
+          return sum + progressTypes.reduce((typeSum, type) => {
+            const state = states.get(type);
+            return typeSum + (state.total ? state.completed / state.total : 1);
+          }, 0) / progressTypes.length;
+        }, 0);
+        env.setProgress?.(completed, courses.length);
+      };
       env.setProgress?.(0, courses.length);
       let next = 0;
       const workers = Array.from({ length: Math.min(4, courses.length) }, async () => {
@@ -411,6 +433,7 @@ let moocLoginAssistOpening = null;
               request('course-detail', { tid: Number(old.tid) }),
               requestTeachersWithRetry(old.url)
             ]);
+            if (serial !== loadSerial) return;
             if (detailResult.status === 'rejected') throw detailResult.reason;
             const response = detailResult.value;
             const term = response?.result?.mocTermDto || response?.mocTermDto;
@@ -419,16 +442,27 @@ let moocLoginAssistOpening = null;
               schoolPanel: { name: old.schoolName, shortName: old.schoolShortName },
               teachers: teacherResult.status === 'fulfilled' ? teacherResult.value : []
             }, term);
+            const states = new Map(progressTypes.map((type) => {
+              const total = courses[index].tasks.filter((task) => task.type === type).length;
+              return [type, { total, completed: type === 'hw' || type === 'quiz' ? 0 : total }];
+            }));
+            progressByCourse[index] = states;
+            updateProgress();
             render();
-            await hydrateTaskMetadata(courses[index]);
+            await hydrateTaskMetadata(courses[index], (task) => {
+              const state = states.get(task.type);
+              if (state) state.completed += 1;
+              updateProgress();
+            });
           } catch (error) {
+            if (serial !== loadSerial) return;
             if (error?.code === 'not-logged-in') throw error;
             courses[index].detailLoaded = true;
             courses[index].pendingTypeLabels = [];
           } finally {
             if (serial === loadSerial) {
-              completedCourseLoads += 1;
-              env.setProgress?.(completedCourseLoads, courses.length);
+              progressByCourse[index] = new Map(progressTypes.map((type) => [type, { total: 0, completed: 0 }]));
+              updateProgress();
             }
           }
           if (serial === loadSerial) render();
