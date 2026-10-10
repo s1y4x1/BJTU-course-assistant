@@ -11,6 +11,7 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
+import JSON5 from 'json5';
 import { loadConfig, normalizePort, saveConfig, configPath } from './config.js';
 
 async function main() {
@@ -161,13 +162,13 @@ async function callOperation(name, args) {
 
 function parseTerminalOperation(line) {
   const match = /^([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*)([\s\S]*)$/.exec(line.trim());
-  if (!match) throw new Error('请输入「模块.操作名」或「模块.操作名 {JSON 参数}」');
+  if (!match) throw new Error('请输入「模块.操作名」或「模块.操作名 键名:值」');
   let rawArgs = match[2].trim();
   if (rawArgs.startsWith('(') && rawArgs.endsWith(')')) rawArgs = rawArgs.slice(1, -1).trim();
   let args = {};
   if (rawArgs) {
-    try { args = JSON.parse(rawArgs); }
-    catch { throw new Error('参数必须是合法的 JSON 对象；字符串和键名均需使用双引号'); }
+    try { args = JSON5.parse(rawArgs.startsWith('{') || rawArgs.startsWith('[') ? rawArgs : `{${rawArgs}}`); }
+    catch { throw new Error('参数格式错误；请使用 键名:值，多项以逗号分隔，字符串使用单引号或双引号'); }
   }
   return { name: match[1], args: operationArguments(args) };
 }
@@ -186,7 +187,7 @@ async function runTerminalCommand(input, { request = sendExtensionRequest, call 
   const line = input.trim();
   if (line === 'help') {
     process.stdout.write('输入 pair 生成 6 位扩展配对码（5 分钟内有效，仅使用一次）。\n');
-    process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs {"module":"ve","name":"courseList"}\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile {"filePath":"C:\\\\path\\\\file.pdf"}\n也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
+    process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs module:"ve", name:"courseList"\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile filePath:"C:\\\\path\\\\file.pdf"\n键名无需引号，可省略对象花括号；字符串支持单引号或双引号。也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
   } else if (line === 'pair') {
     issuePairingCode();
   } else if (line === 'exit' || line === 'quit') {

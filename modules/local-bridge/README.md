@@ -55,15 +55,18 @@ BJTUCA -c 'qwen.getDocs {"module":"ve","name":"login"}'
 
 若 Bridge 已在运行，会直接通过它执行，不会关闭该 Bridge。否则临时启动服务，等待扩展连接后执行，结束时关闭临时服务。端口参数放在 `-c` 之前，例如 `BJTUCA --port=1000 -c "ve.courseList"`。成功时退出码为 0，执行出错时为 1。
 
-浏览器扩展连接成功后，Bridge 会在启动窗口显示紫红色的 `BJTUCA>` 提示符（不支持颜色的终端显示普通文本）。可直接输入操作名，或在后面附上单行 JSON 对象参数：
+浏览器扩展连接成功后，Bridge 会在启动窗口显示紫红色的 `BJTUCA>` 提示符（不支持颜色的终端显示普通文本）。可直接输入操作名，或附上对象参数。键名无需引号，外层 `{}` 可省略；字符串支持单引号或双引号，多项参数以逗号分隔：
 
 ```text
 ve.courseList
 ve.assignments {"status":"pending"}
+qwen.getDocs {module:'ve', name:'courseList'}
+qwen.getDocs module:'ve', name:'courseList'
+qwen.getDocs(module:'ve', name:'courseList')
 ve.courseList({})
 ```
 
-本地文件上传可传 `{"filePath":"C:\\path\\file.pdf"}`。命令行只解析操作名和 JSON，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。通过命令行、HTTP 或 MCP 发起的操作会在 Bridge 窗口直接打印完整返回结果，不另加操作名或结果标题。输入 `help` 查看示例；输入 `help ve.courseList ykt.assignments` 或 `help(ve.courseList)` 查看指定操作说明；输入 `exit`、`quit` 或按 `Ctrl+C` 停止 Bridge。
+本地文件上传可传 `filePath:'C:\\path\\file.pdf'`。命令行使用 JSON5 解析参数，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。HTTP/MCP 请求仍使用标准 JSON 对象。通过命令行、HTTP 或 MCP 发起的操作会在 Bridge 窗口直接打印完整返回结果，不另加操作名或结果标题。输入 `help` 查看示例；输入 `help ve.courseList ykt.assignments` 或 `help(ve.courseList)` 查看指定操作说明；输入 `exit`、`quit` 或按 `Ctrl+C` 停止 Bridge。
 
 如需从同一局域网内的其他设备访问，可在扩展选项中开启「允许局域网访问」，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带 `bridge.json` 中的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。
 
