@@ -96,7 +96,6 @@ function animateSavedUploadsItems(section, expanding, initialHeight) {
   const transition = { open: expanding, scroll: scrollMotionEnabled };
   list.__listTransition = transition;
   const previousScrollMotion = list.__scrollListMotion;
-  const previousFraction = list.__savedUploadsFade?.getFraction();
   list.__heightMotion?.cancel();
   list.__savedUploadsFade?.reset();
   delete list.__savedUploadsFade;
@@ -112,16 +111,12 @@ function animateSavedUploadsItems(section, expanding, initialHeight) {
   list.style.overflow = 'hidden';
   const motion = scrollMotionEnabled
     ? previousScrollMotion || createListScrollMotion(list, fullHeight)
-    : createTopDownListFade(list.children);
+    : createTopDownListFade(list.children, list, fullHeight);
   if (scrollMotionEnabled) list.__scrollListMotion = motion;
   else list.__savedUploadsFade = motion;
-  const startFraction = previousFraction ?? Math.min(1, from / fullHeight);
-
-  return animateHeightWithMotion(list, from, expanding ? fullHeight : 0, (height, progress) => {
+  return animateHeightWithMotion(list, from, expanding ? fullHeight : 0, (height) => {
     list.style.height = `${height}px`;
-    motion.update(scrollMotionEnabled ? height : expanding
-      ? startFraction + (1 - startFraction) * progress
-      : startFraction * (1 - progress));
+    motion.update(height);
   }).then((completed) => {
     if (!completed) return false;
     if (list.__listTransition === transition) delete list.__listTransition;

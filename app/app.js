@@ -4640,43 +4640,47 @@ function animateHeightWithMotion(element, from, to, onFrame) {
   });
 }
 
-function createTopDownListFade(items) {
+function exponentialListOpacity(distance, scale) {
+  return -Math.expm1(-Math.max(0, distance) / scale);
+}
+
+function createTopDownListFade(items, container, fullHeight) {
   const elements = Array.from(items).filter((item) => item instanceof HTMLElement);
+  const containerTop = container.getBoundingClientRect().top;
   const states = elements.map((item) => {
     const opacity = Number(getComputedStyle(item).opacity);
     return {
       item,
       original: item.style.opacity,
-      target: Number.isFinite(opacity) ? opacity : 1
+      target: Number.isFinite(opacity) ? opacity : 1,
+      top: item.getBoundingClientRect().top - containerTop,
+      height: Math.max(1, item.getBoundingClientRect().height)
     };
   });
-  let currentFraction = 0;
+  const itemHeights = states.map(({ height }) => height).sort((left, right) => left - right);
+  const fadeDistance = itemHeights[Math.floor(itemHeights.length / 2)] || 1;
+  let currentHeight = 0;
   return {
-    update(fraction) {
-      const revealed = Math.max(0, Math.min(1, fraction));
-      currentFraction = revealed;
-      states.forEach(({ item, target }, index) => {
-        const finishAt = listFadeFinishAt(index, states.length);
-        item.style.opacity = String(target * Math.min(1, revealed / finishAt));
+    update(height) {
+      currentHeight = Math.max(0, Math.min(fullHeight, height));
+      states.forEach(({ item, target, top }) => {
+        const initialOpacity = exponentialListOpacity(fullHeight - top, fadeDistance);
+        const visibleFraction = initialOpacity > 0
+          ? Math.min(1, exponentialListOpacity(currentHeight - top, fadeDistance) / initialOpacity)
+          : 0;
+        item.style.opacity = String(target * visibleFraction);
       });
     },
     reset() {
       states.forEach(({ item, original }) => { item.style.opacity = original; });
     },
-    getFraction() {
-      return currentFraction;
-    },
     snapshotHtml(container) {
       this.reset();
       const html = container.innerHTML;
-      this.update(currentFraction);
+      this.update(currentHeight);
       return html;
     }
   };
-}
-
-function listFadeFinishAt(index, count) {
-  return 0.35 + 0.65 * index / Math.max(1, count - 1);
 }
 
 function getResultAreaHtmlForCache(resultArea) {
@@ -4695,7 +4699,6 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
   const transition = { open: shouldOpen, scroll: scrollMotionEnabled };
   resultArea.__listTransition = transition;
   const previousScrollMotion = resultArea.__scrollListMotion;
-  const previousFraction = resultArea.__topDownListFade?.getFraction();
   resultArea.__heightMotion?.cancel();
   resultArea.__topDownListFade?.reset();
   delete resultArea.__topDownListFade;
@@ -4763,13 +4766,12 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
   }
   if (shouldOpen) {
     const to = Math.max(resultArea.scrollHeight + resultArea.offsetHeight - resultArea.clientHeight, 1);
-    const fade = createTopDownListFade(resultArea.children);
-    const startFraction = previousFraction ?? Math.min(1, from / to);
+    const fade = createTopDownListFade(resultArea.children, resultArea, to);
     resultArea.__topDownListFade = fade;
     resultArea.style.opacity = '1';
-    void animateHeightWithMotion(resultArea, from, to, (height, progress) => {
+    void animateHeightWithMotion(resultArea, from, to, (height) => {
       resultArea.style.height = `${height}px`;
-      fade.update(startFraction + (1 - startFraction) * progress);
+      fade.update(height);
     }).then((completed) => {
       if (resultArea.__topDownListFade === fade) {
         fade.reset();
@@ -4783,13 +4785,12 @@ function toggleResultAreaAnimated(resultArea, shouldOpen, { immediate = false } 
     return;
   }
   const fullHeight = Math.max(resultArea.scrollHeight + resultArea.offsetHeight - resultArea.clientHeight, from, 1);
-  const fade = createTopDownListFade(resultArea.children);
-  const startFraction = previousFraction ?? Math.min(1, from / fullHeight);
+  const fade = createTopDownListFade(resultArea.children, resultArea, fullHeight);
   resultArea.__topDownListFade = fade;
   resultArea.style.opacity = '1';
-  void animateHeightWithMotion(resultArea, from, 0, (height, progress) => {
+  void animateHeightWithMotion(resultArea, from, 0, (height) => {
     resultArea.style.height = `${height}px`;
-    fade.update(startFraction * (1 - progress));
+    fade.update(height);
   }).then((completed) => {
     if (resultArea.__topDownListFade === fade) {
       fade.reset();
@@ -4866,11 +4867,11 @@ function prepareResultAreaViewSwitch(resultArea) {
     const scrollOutgoing = window.scrollCollapseHomeworkLists !== false;
     const outgoingMotion = scrollOutgoing
       ? createListScrollMotion(outgoing, Math.max(outgoing.scrollHeight, from, 1))
-      : createTopDownListFade(outgoing.children);
+      : createTopDownListFade(outgoing.children, outgoing, Math.max(outgoing.scrollHeight, from, 1));
     outgoing.style.opacity = '1';
-    void animateHeightWithMotion(outgoing, from, 0, (height, progress) => {
+    void animateHeightWithMotion(outgoing, from, 0, (height) => {
       outgoing.style.height = `${height}px`;
-      outgoingMotion.update(scrollOutgoing ? height : 1 - progress);
+      outgoingMotion.update(height);
     }).then(() => outgoing.remove());
   }
   resultArea.__topDownListFade?.reset();
@@ -5165,6 +5166,9 @@ function createListScrollMotion(container, fullHeight, itemSelector = '') {
     top: item.getBoundingClientRect().top - containerTop,
     height: Math.max(1, item.getBoundingClientRect().height)
   }));
+  const itemHeights = items.map(({ height }) => height).sort((left, right) => left - right);
+  const fadeDistance = itemHeights[Math.floor(itemHeights.length / 2)] || 1;
+  const opacityAtDistance = (distance) => exponentialListOpacity(distance, fadeDistance);
   let currentHeight = fullHeight;
   return {
     fullHeight,
@@ -5175,7 +5179,13 @@ function createListScrollMotion(container, fullHeight, itemSelector = '') {
         item.style.transform = scroll > 0 ? `translateY(-${scroll}px) ${transform}`.trim() : transform;
       });
       items.forEach(({ item, targetOpacity, top, height: itemHeight }) => {
-        const visibleFraction = 1 - Math.max(0, Math.min(1, (scroll - top) / itemHeight));
+        const bottom = top + itemHeight;
+        // Normalize against the open state so upcoming rows fade exponentially,
+        // without dimming a fully expanded list; reversing uses the same curve.
+        const initialOpacity = opacityAtDistance(bottom);
+        const visibleFraction = initialOpacity > 0
+          ? Math.min(1, opacityAtDistance(bottom - scroll) / initialOpacity)
+          : 0;
         item.style.opacity = String(targetOpacity * visibleFraction);
       });
     },
@@ -5202,7 +5212,6 @@ function animateHomeworkGroupVisibility(group, expanded) {
   const transition = { open: expanded, scroll: scrollMotionEnabled };
   group.__listTransition = transition;
   const previousScrollMotion = group.__scrollListMotion;
-  const previousFraction = group.__topDownListFade?.getFraction();
   group.__heightMotion?.cancel();
   group.__topDownListFade?.reset();
   delete group.__topDownListFade;
@@ -5256,20 +5265,19 @@ function animateHomeworkGroupVisibility(group, expanded) {
       return true;
     });
   }
+  const fullHeight = Math.max(group.scrollHeight, from, 1);
   const fade = createTopDownListFade(
     group.querySelectorAll('.hw-card-item, .force-score-publish-row').length
       ? group.querySelectorAll('.hw-card-item, .force-score-publish-row')
-      : group.children
+      : group.children,
+    group,
+    fullHeight
   );
-  const fullHeight = Math.max(group.scrollHeight, from, 1);
-  const startFraction = previousFraction ?? Math.min(1, from / fullHeight);
   group.__topDownListFade = fade;
   group.style.opacity = '1';
-  return animateHeightWithMotion(group, from, to, (height, progress) => {
+  return animateHeightWithMotion(group, from, to, (height) => {
     group.style.height = `${height}px`;
-    fade.update(expanded
-      ? startFraction + (1 - startFraction) * progress
-      : startFraction * (1 - progress));
+    fade.update(height);
   }).then((completed) => {
     if (group.__topDownListFade === fade) {
       fade.reset();
