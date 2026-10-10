@@ -5,7 +5,14 @@
   let setMessage = () => {};
   let guideSource = '';
   let guideMarkdown = null;
+  let pairing = false;
+  let attemptedPairCode = '';
   const element = (id) => document.getElementById(id);
+
+  function updateLanFields(allowLan) {
+    element('localBridgeHost').disabled = !allowLan;
+    element('localBridgePairCode').disabled = !allowLan || pairing;
+  }
 
   function createGuideMarkdownParser(markedApi) {
     if (!markedApi?.Marked || !markedApi?.Renderer) return markedApi;
@@ -18,9 +25,11 @@
     const body = element('localBridgeGuideBody');
     if (!(body instanceof HTMLElement) || !guideSource || !guideMarkdown) return;
     const port = Number(element('localBridgePort')?.value) || 1896;
+    const host = String(element('localBridgeHost')?.value || '127.0.0.1').trim();
     const token = String(element('localBridgeToken')?.value || '').trim() || '<连接后自动填入 Bearer Token>';
     const source = guideSource
       .replaceAll('{{BJTU_CA_BRIDGE_PORT}}', String(port))
+      .replaceAll('{{BJTU_CA_BRIDGE_HOST}}', host)
       .replaceAll('{{BJTU_CA_BRIDGE_TOKEN}}', token);
     body.innerHTML = typeof guideMarkdown?.parse === 'function'
       ? guideMarkdown.parse(source)
@@ -50,8 +59,8 @@
     const connected = status.connected === true || state === 'connected';
     if (enabled instanceof HTMLInputElement) {
       enabled.checked = status.enabled === true;
-      enabled.disabled = !connected;
-      enabled.title = enabled.disabled ? '本地 Bridge 连接后才能开启' : '';
+      enabled.disabled = false;
+      enabled.title = '';
     }
     if (autoRetry instanceof HTMLInputElement) autoRetry.checked = status.autoRetry !== false;
     if (retryInterval instanceof HTMLInputElement) {
@@ -61,9 +70,12 @@
       }
     }
     if (allowLan instanceof HTMLInputElement) allowLan.checked = status.allowLan === true;
+    updateLanFields(status.allowLan === true);
     if (port instanceof HTMLInputElement && document.activeElement !== port) {
       port.value = String(Number(status.port) || 1896);
     }
+    const host = element('localBridgeHost');
+    if (host instanceof HTMLInputElement && document.activeElement !== host) host.value = String(status.host || '127.0.0.1');
     const label = element('localBridgeStatus');
     if (label instanceof HTMLElement) {
       const names = {
@@ -142,6 +154,41 @@
   }
 
   function bindEvents() {
+    element('localBridgeHost')?.addEventListener('change', (event) => {
+      void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', {host:event.currentTarget.value}).then((response) => {
+        if (response?.ok !== false) applyStatus(response);
+        setMessage(response?.ok !== false ? '地址已保存' : `保存失败：${response?.error || ''}`, response?.ok !== false);
+      });
+    });
+    element('localBridgePairCode')?.addEventListener('input', async (event) => {
+      const input = event.currentTarget;
+      input.value = input.value.replace(/\D/g, '').slice(0, 6);
+      const code = input.value;
+      if (code.length !== 6) {
+        attemptedPairCode = '';
+        return;
+      }
+      if (pairing || code === attemptedPairCode || !element('localBridgeAllowLan').checked) return;
+      attemptedPairCode = code;
+      pairing = true;
+      updateLanFields(true);
+      try {
+        const response = await send('BJTUCA_LOCAL_BRIDGE_PAIR', {
+          host:element('localBridgeHost').value,
+          port:Number(element('localBridgePort').value),
+          code
+        });
+        if (response?.ok !== false) applyStatus(response);
+        setMessage(response?.ok !== false ? '配对成功' : `配对失败：${response?.error || ''}`, response?.ok !== false);
+        if (response?.ok !== false) {
+          input.value = '';
+          attemptedPairCode = '';
+        }
+      } finally {
+        pairing = false;
+        updateLanFields(element('localBridgeAllowLan').checked);
+      }
+    });
     element('localBridgeEnabled')?.addEventListener('change', (event) => {
       void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { enabled: event.currentTarget.checked === true }).then((response) => {
         applyStatus(response);
@@ -182,6 +229,7 @@
       });
     });
     element('localBridgeAllowLan')?.addEventListener('change', (event) => {
+      updateLanFields(event.currentTarget.checked === true);
       void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', { allowLan: event.currentTarget.checked === true }).then((response) => {
         applyStatus(response);
         setMessage(response?.ok !== false ? '局域网访问设置已保存' : `保存失败：${response?.error || response?.message || ''}`, response?.ok !== false);
@@ -193,6 +241,7 @@
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'local') return;
       if (changes.bjtuLocalBridgeEnabled || changes.bjtuLocalBridgePort
+        || changes.bjtuLocalBridgeHost
         || changes.bjtuLocalBridgeToken || changes.bjtuLocalBridgeAllowLan
         || changes.bjtuLocalBridgeAutoRetry || changes.bjtuLocalBridgeRetryIntervalMs) {
         void refresh();
@@ -215,6 +264,7 @@
   async function reset() {
     await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', {
       enabled: false,
+      host: '127.0.0.1',
       port: 1896,
       allowLan: false,
       autoRetry: true,

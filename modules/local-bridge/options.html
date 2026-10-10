@@ -41,6 +41,15 @@
     <span>允许局域网访问</span>
   </label>
   <div class="tip">开启后 Bridge 将监听所有网络接口；局域网设备仍需使用 Bearer Token 才能调用受保护的接口。</div>
+  <div class="local-bridge-setting-row local-bridge-sub-setting">
+    <label for="localBridgeHost">Bridge 地址</label>
+    <input type="text" id="localBridgeHost" class="local-bridge-input" value="127.0.0.1" spellcheck="false" placeholder="127.0.0.1 或局域网 IP" disabled>
+  </div>
+  <div class="local-bridge-setting-row local-bridge-sub-setting">
+    <label for="localBridgePairCode">配对码</label>
+    <input type="text" id="localBridgePairCode" class="local-bridge-input local-bridge-pair-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" disabled>
+  </div>
+  <div class="tip">在运行 Bridge 的电脑终端查看配对码，或输入 pair 生成新码。输入满 6 位数字后自动配对。配对码 5 分钟内有效且只能使用一次；配对后自动保存 token，无需手动输入。局域网连接必须先在 Bridge 所在电脑开启「允许局域网访问」。</div>
   <div id="localBridgeTokenRow" class="local-bridge-setting-row local-bridge-token-row" hidden>
     <label for="localBridgeToken">Bearer token</label>
     <input type="text" id="localBridgeToken" class="local-bridge-input local-bridge-token"

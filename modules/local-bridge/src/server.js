@@ -1,6 +1,6 @@
 import http from 'node:http';
 import readline from 'node:readline';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, randomInt, timingSafeEqual } from 'node:crypto';
 import { createReadStream, watch } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
@@ -15,6 +15,14 @@ import { loadConfig, normalizePort, saveConfig, configPath } from './config.js';
 
 async function main() {
 const config = await loadConfig();
+let pairingCode = '';
+let pairingExpiresAt = 0;
+const pairingAttempts = new Map();
+function issuePairingCode() {
+  pairingCode = String(randomInt(1000000)).padStart(6, '0');
+  pairingExpiresAt = Date.now() + 5 * 60000;
+  process.stdout.write(`扩展配对码：${pairingCode}（5 分钟内有效，仅可使用一次；输入 pair 生成新码）。\n`);
+}
 const commandArgIndex = process.argv.indexOf('-c');
 const singleCommand = (commandArgIndex >= 0
   ? process.argv.slice(commandArgIndex + 1).join(' ')
@@ -132,11 +140,13 @@ async function prepareOperationArguments(name, value) {
     fileSize: info.size,
     timer: relayTimer
   });
+  const localAddress = String(extensionSocket?._socket?.localAddress || '127.0.0.1').replace(/^::ffff:/, '');
+  const relayHost = localAddress.includes(':') ? `[${localAddress}]` : localAddress;
   const prepared = {
     ...args,
     fileName: String(args.fileName || path.basename(resolvedPath)).trim(),
     mimeType: String(args.mimeType || 'application/octet-stream').trim(),
-    url: `http://127.0.0.1:${activePort}/internal/file/${relayToken}`
+    url: `http://${relayHost}:${activePort}/internal/file/${relayToken}`
   };
   delete prepared.filePath;
   return prepared;
@@ -175,7 +185,10 @@ function parseTerminalHelpOperations(line) {
 async function runTerminalCommand(input, { request = sendExtensionRequest, call = callOperation } = {}) {
   const line = input.trim();
   if (line === 'help') {
+    process.stdout.write('输入 pair 生成 6 位扩展配对码（5 分钟内有效，仅使用一次）。\n');
     process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs {"module":"ve","name":"courseList"}\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile {"filePath":"C:\\\\path\\\\file.pdf"}\n也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
+  } else if (line === 'pair') {
+    issuePairingCode();
   } else if (line === 'exit' || line === 'quit') {
     return true;
   } else if (line) {
@@ -451,19 +464,31 @@ app.all('/mcp', async (req, res) => {
 });
 
 const wsServer = new WebSocketServer({ noServer: true });
-wsServer.on('connection', (socket) => {
+wsServer.on('connection', (socket, req) => {
   let authenticated = false;
   socket.on('message', (raw) => {
     let message;
     try { message = JSON.parse(String(raw)); } catch { return; }
     if (!authenticated) {
-      if (message?.type !== 'hello' || !tokenMatches(message?.token)) {
+      let paired = false;
+      if (message?.type === 'hello' && message.pairingCode !== undefined) {
+        const address = String(req.socket.remoteAddress || '');
+        const now = Date.now();
+        for (const [ip, attempt] of pairingAttempts) if (attempt.until <= now) pairingAttempts.delete(ip);
+        const attempt = pairingAttempts.get(address) || { count:0, until:now + 60000 };
+        attempt.count++;
+        pairingAttempts.set(address, attempt);
+        paired = attempt.count <= 5 && now < pairingExpiresAt && pairingCode !== ''
+          && String(message.pairingCode) === pairingCode;
+        if (paired) { pairingCode = ''; pairingExpiresAt = 0; }
+      }
+      if (message?.type !== 'hello' || (!paired && !tokenMatches(message?.token))) {
         socket.close(1008, 'Unauthorized');
         return;
       }
       authenticated = true;
       if (extensionSocket && extensionSocket !== socket) {
-        disconnectExtension(1012, 'Replaced', '浏览器扩展连接已被新连接替换');
+        disconnectExtension(4002, 'Replaced', '浏览器扩展连接已被新连接替换');
       }
       extensionSocket = socket;
       extensionInfo = {
@@ -473,12 +498,27 @@ wsServer.on('connection', (socket) => {
           version: String(message?.version || '')
         }
       };
-      socket.send(JSON.stringify({ type: 'ready', port: activePort }));
+      socket.send(JSON.stringify({ type: 'ready', port: activePort, allowLan:activeAllowLan, ...(paired ? { token:config.token } : {}) }));
       process.stdout.write(`浏览器扩展已连接（版本 ${extensionInfo.publicInfo.version || '未知'}）。\n`);
       startTerminal();
       return;
     }
-    if (message?.type === 'pong') return;
+    if (message?.type === '合一') return;
+    if (message?.type === 'config-update') {
+      void (async () => {
+        try {
+          const patch = message.patch || {};
+          const port = patch.port === undefined ? config.port : normalizePort(patch.port, 0);
+          if (!port) throw new Error('端口必须为 1 至 65535');
+          const next = { ...config, port, allowLan:patch.allowLan === undefined ? config.allowLan : patch.allowLan === true };
+          await saveConfig(next);
+          socket.send(JSON.stringify({ type:'config-saved', id:message.id, ok:true, config:{port:next.port,allowLan:next.allowLan} }));
+        } catch (error) {
+          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type:'config-saved',id:message.id,ok:false,error:String(error.message || error) }));
+        }
+      })();
+      return;
+    }
     if (message?.type === 'response') {
       const pending = pendingExtensionCalls.get(String(message.id || ''));
       if (!pending) return;
@@ -630,6 +670,8 @@ if (singleCommand) {
 
 await listen(config.port);
 process.stdout.write(`配置文件：${configPath()}\n`);
+issuePairingCode();
+if (!singleCommand) startTerminal();
 
 let configReloadTimer = null;
 async function applyConfigFileChanges() {
@@ -639,6 +681,7 @@ async function applyConfigFileChanges() {
   config.port = next.port;
   config.token = next.token;
   config.allowLan = next.allowLan;
+  config.host = next.host;
   if (tokenChanged) {
     clearLocalFileRelays();
     disconnectExtension(4001, 'Authorization changed', 'Bridge 授权配置已更改');
@@ -662,7 +705,7 @@ configWatcher.on('error', (error) => {
 });
 
 const heartbeat = setInterval(() => {
-  if (extensionConnected()) extensionSocket.send(JSON.stringify({ type: 'ping' }));
+  if (extensionConnected()) extensionSocket.send(JSON.stringify({ type: '知行' }));
 }, 20_000);
 
 async function shutdown() {

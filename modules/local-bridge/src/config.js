@@ -28,7 +28,8 @@ export async function loadConfig({ persist = true, strict = false } = {}) {
   const config = {
     port: normalizePort(stored?.port),
     token: String(stored?.token || '').trim() || randomBytes(32).toString('base64url'),
-    allowLan: stored?.allowLan === true
+    allowLan: stored?.allowLan === true,
+    host: String(stored?.host || '127.0.0.1')
   };
   if (persist) await saveConfig(config);
   return config;
@@ -39,6 +40,7 @@ export async function saveConfig(config) {
   await writeFile(configPath(), `${JSON.stringify({
     port: normalizePort(config?.port),
     token: String(config?.token || ''),
-    allowLan: config?.allowLan === true
+    allowLan: config?.allowLan === true,
+    host: String(config?.host || '127.0.0.1')
   }, null, 2)}\n`, 'utf8');
 }

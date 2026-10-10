@@ -49,6 +49,14 @@ html[data-color-scheme="dark"] .local-bridge-input {
 
 .local-bridge-port { width: 92px; }
 .local-bridge-retry-interval { width: 92px; }
+.local-bridge-input.local-bridge-pair-code {
+  flex: 0 0 auto;
+  width: calc(6ch + 18px);
+  min-width: calc(6ch + 18px);
+  max-width: calc(6ch + 18px);
+  font-family: Consolas, "Cascadia Code", monospace;
+  letter-spacing: 0;
+}
 .local-bridge-token-row[hidden] { display: none !important; }
 .local-bridge-token-row { flex-wrap: nowrap; }
 .local-bridge-token {
