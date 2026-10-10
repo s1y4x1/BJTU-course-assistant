@@ -5152,6 +5152,7 @@ function toggleHomeworkGroupDom(courseId, key, expanded) {
 }
 
 function createListScrollMotion(container, fullHeight, itemSelector = '') {
+  const containerTop = container.getBoundingClientRect().top;
   const children = Array.from(container.children).filter((item) => item instanceof HTMLElement).map((item) => ({
     item,
     transform: item.style.transform
@@ -5160,7 +5161,9 @@ function createListScrollMotion(container, fullHeight, itemSelector = '') {
   const items = Array.from(fadeItems).filter((item) => item instanceof HTMLElement).map((item) => ({
     item,
     opacity: item.style.opacity,
-    targetOpacity: Number(getComputedStyle(item).opacity)
+    targetOpacity: Number(getComputedStyle(item).opacity),
+    top: item.getBoundingClientRect().top - containerTop,
+    height: Math.max(1, item.getBoundingClientRect().height)
   }));
   let currentHeight = fullHeight;
   return {
@@ -5171,10 +5174,8 @@ function createListScrollMotion(container, fullHeight, itemSelector = '') {
       children.forEach(({ item, transform }) => {
         item.style.transform = scroll > 0 ? `translateY(-${scroll}px) ${transform}`.trim() : transform;
       });
-      const collapsedFraction = Math.min(1, scroll / fullHeight);
-      items.forEach(({ item, targetOpacity }, index) => {
-        const finishAt = listFadeFinishAt(index, items.length);
-        const visibleFraction = 1 - Math.min(1, collapsedFraction / finishAt);
+      items.forEach(({ item, targetOpacity, top, height: itemHeight }) => {
+        const visibleFraction = 1 - Math.max(0, Math.min(1, (scroll - top) / itemHeight));
         item.style.opacity = String(targetOpacity * visibleFraction);
       });
     },

@@ -239,12 +239,7 @@
   async function fetchHomeworkAttachments(course, homeworkList, options = {}) {
     const courseId = getCourseId(course);
     if (!courseId) return {};
-    let teacherId = String(course?.teacher_id || course?.teacherId || course?.teacherid || '').trim();
-    if (!teacherId) {
-      const teachers = await fetchCourseTeachers(courseId, options).catch(() => []);
-      teacherId = String((teachers.find((item) => String(item?.userType) === '1') || teachers[0])?.loginName || '').trim();
-    }
-    if (!teacherId) return {};
+    const teacherId = String(course?.teacher_id || course?.teacherId || course?.teacherid || '').trim();
 
     const cache = {};
     const list = Array.isArray(homeworkList) ? homeworkList : [];

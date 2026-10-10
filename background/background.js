@@ -391,6 +391,13 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     runAt: 'document_idle'
   },
   {
+    id: 'bjtu-ve-captcha-fill',
+    module: 'captcha',
+    matches: ['http://123.121.147.7:88/ve/*', 'http://2071565063:88/ve/*'],
+    js: ['modules/captcha/ve-login.js'],
+    runAt: 'document_idle'
+  },
+  {
     id: 'bjtu-qwen-page-bridge',
     module: 'qwen',
     matches: ['https://chat.qwen.ai/*'],

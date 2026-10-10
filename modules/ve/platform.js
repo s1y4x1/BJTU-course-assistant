@@ -345,6 +345,10 @@ async function hydrateVeTeacherMeta(courseId, courseNum, fzId) {
     window.veTeacherMetaByCourseId[cid] = { teacherId: '', teachers: [], loading: false, loaded: true };
   }
   updateVeTeacherMetaUi(cid);
+  const list = window.courseHomeworkData?.[cid]?.list;
+  if (list?.some((item) => !item.__attachmentKey) && window.veTeacherMetaByCourseId[cid]?.teacherId) {
+    await prefetchHomeworkAttachments(cid, list);
+  }
 }
 
 function normalizeVeReplayScheduleItem(item, index = 0) {
@@ -2365,8 +2369,6 @@ function renderCourseList(courses, {
       updateArchiveButtonVisibility(courseId);
     }
 
-    if (allowNetworkLoad) hydrateVeTeacherMeta(courseId, courseNumRaw, fzId).catch(() => {});
-
     // Prioritize homework fetching before replay link prefetch.
     if (!deferExternal) updateCourseListEmptyPlaceholder();
     const hwPromise = allowNetworkLoad
@@ -2430,14 +2432,9 @@ async function ensureHomeworkTeacherId(courseId) {
   let teacherId = getHomeworkTeacherId(cid);
   if (teacherId) return teacherId;
 
-  const card = document.getElementById(`course-${cid}`);
-  const wrap = card?.querySelector('.ve-course-num-wrap');
-  const courseNum = String(wrap?.dataset?.courseNum || '').trim();
-  if (!courseNum) return '';
-
-  await hydrateVeTeacherMeta(cid, courseNum, '');
-  teacherId = String(window.veTeacherMetaByCourseId?.[cid]?.teacherId || '').trim();
-  return teacherId;
+  const list = window.courseHomeworkData?.[cid]?.list || [];
+  const homework = list.find((item) => item.teacher_id || item.teacherId);
+  return String(homework?.teacher_id || homework?.teacherId || '').trim();
 }
 
 function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor = '') {
@@ -2756,7 +2753,7 @@ async function prefetchHomeworkAttachments(courseId, list, onItemComplete, { sig
   };
   try {
     const teacherId = await ensureHomeworkTeacherId(courseId);
-    if (!teacherId || !isCurrent()) return;
+    if (!isCurrent()) return;
     itemLoadingStarted = true;
 
     await Promise.all(items.map(async (hw) => {

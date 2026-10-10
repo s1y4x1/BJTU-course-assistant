@@ -459,7 +459,8 @@
       radio.disabled = busy;
       const name = document.createElement('span');
       name.className = 'captcha-model-name';
-      name.textContent = definition.label;
+      const filePath = decodeURIComponent(new URL(definition.url).pathname).split('/').slice(-2).join('/');
+      name.textContent = `${filePath}（${definition.label}）`;
       const size = document.createElement('span');
       size.className = 'captcha-model-size';
       size.textContent = formatBytes(definition.size);
@@ -769,9 +770,20 @@
       event.preventDefault();
       void selectModel(version);
     });
+    const veToggle = document.getElementById('veCaptchaRecognitionEnabled');
+    void chrome.storage.local.get('veCaptchaRecognitionEnabled').then((stored) => {
+      veToggle.checked = stored.veCaptchaRecognitionEnabled === true;
+    });
+    veToggle.addEventListener('change', () => {
+      void chrome.storage.local.set({ veCaptchaRecognitionEnabled: veToggle.checked });
+      if (veToggle.checked) void prepareModel(selectedVersion);
+    });
     const toggle = document.getElementById('casCaptchaRecognitionEnabled');
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes[MIS_CAPTCHA_ENABLED_KEY]) void refreshMisCaptchaOptions();
+      if (area === 'local' && changes.veCaptchaRecognitionEnabled) {
+        veToggle.checked = changes.veCaptchaRecognitionEnabled.newValue === true;
+      }
     });
     void initializeMisDownloadSource();
     if (toggle instanceof HTMLInputElement) {
@@ -832,6 +844,7 @@
   }
 
   async function reset() {
+    await chrome.storage.local.set({ veCaptchaRecognitionEnabled: false });
     const assets = global.BjtuCaptchaAssets;
     if (!assets) return;
     const version = assets.DEFAULT_MODEL_VERSION;

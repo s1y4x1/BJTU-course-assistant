@@ -154,6 +154,8 @@
         iconUrl: 'icons/128.png',
         title: `${titlePrefix}${titleVersion}`,
         message: buildDetectedNotificationMessage(release, previousDescription),
+        ...(!release.force && !installOptionalUpdate
+          ? { buttons: [{ title: '安装' }, { title: '忽略' }] } : {}),
         priority: 1
       }, 'background-update-detected');
       await chrome.storage.local.set({
@@ -852,7 +854,7 @@
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
         DETECTED_NOTIFICATION_VERSION_KEY, INSTALLED_RELEASE_DESCRIPTION_KEY,
-        MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY
+        MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY, 'ignoredUpdateVersion'
       ]);
       const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
       if (!forceCheck && !updaterEnabled) return { skipped: true };
@@ -879,6 +881,10 @@
       }
       await setStatus('checking', { localVersion });
       const release = await fetchLatestRelease();
+      if (!release.force && !stored[INSTALL_OPTIONAL_KEY]
+        && normalizeVersion(stored.ignoredUpdateVersion) === normalizeVersion(release.version)) {
+        return { updated: false, ignored: true, release };
+      }
       if (compareVersions(release.version, localVersion) <= 0) {
         if (compareVersions(release.version, localVersion) === 0) {
           await chrome.storage.local.set({
@@ -1066,6 +1072,25 @@
     chrome.alarms.create(ALARM_NAME, { delayInMinutes: interval, periodInMinutes: interval });
     return chrome.alarms.get(ALARM_NAME).catch(() => null);
   }
+
+  chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+    if (!notificationId.startsWith(DETECTED_NOTIFICATION_PREFIX)) return;
+    const version = notificationId.slice(DETECTED_NOTIFICATION_PREFIX.length);
+    void (async () => {
+      if (buttonIndex === 1) {
+        await chrome.storage.local.set({ ignoredUpdateVersion: version });
+      } else if (buttonIndex === 0) {
+        const appUrl = chrome.runtime.getURL('app/app.html');
+        const tab = (await chrome.tabs.query({})).find((item) => item.url?.startsWith(appUrl));
+        const targetUrl = `${appUrl}?autoUpdate=1`;
+        const opened = tab
+          ? await chrome.tabs.update(tab.id, { url: targetUrl, active: true })
+          : await globalThis.BjtuTabs.create({ url: targetUrl, active: true });
+        await chrome.windows.update(opened.windowId, { focused: true });
+      }
+      await chrome.notifications.clear(notificationId);
+    })().catch((error) => console.warn('[bjtu] update notification action failed:', error));
+  });
 
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm?.name === ALARM_NAME) runBackgroundUpdate().catch(() => {});
