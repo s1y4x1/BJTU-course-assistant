@@ -357,7 +357,7 @@ function initializeVersionReinstallCommand() {
   const container = document.getElementById('version-reinstall-command');
   if (!(container instanceof HTMLElement) || !globalThis.BjtuMarkdown) return;
   container.innerHTML = globalThis.BjtuMarkdown.renderCodeBlock(
-    'irm s1y4x1.github.io/dl.ps1|iex',
+    'irm s1y4x1.github.io/dl|iex',
     'powershell'
   );
   globalThis.BjtuMarkdown.bindCopy(container);

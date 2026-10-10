@@ -1257,8 +1257,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   refreshActionPopupFromStorage().catch(() => {});
+  if (details.reason === 'install') {
+    focusExistingAppTabOrOpen().catch((error) => {
+      console.warn('[bjtu] first-install app opening failed:', error);
+    });
+  }
 });
 
 chrome.runtime.onStartup.addListener(() => {
