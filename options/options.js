@@ -75,6 +75,7 @@ const DEFAULT_PARALLEL_LIMIT = 3;
 const DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES = 3;
 const DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES = 3;
 const DEFAULT_YKT_ACTIVITY_TYPES = Object.freeze([14, 15, 5, 9]);
+const DEFAULT_MOOC_ACTIVITY_TYPES = Object.freeze(['hw', 'quiz', 'exam']);
 const DEFAULT_XUETANGX_ACTIVITY_TYPES = Object.freeze([6, 7, 8, 10, 11, 12]);
 const DEFAULT_HOMEWORK_REMINDER_ENABLED = true;
 const DEFAULT_HOMEWORK_REMINDER_MINUTES = [15, 30, 60, 120, 240, 480, 960, 1440, 2880];
@@ -774,7 +775,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     'xuetangxSecondCsrfToken',
     'xuetangxSecondSessionId'
   ]);
-  const { yktActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
+  const { yktActivityTypes, moocActivityTypes, xuetangxCourseStatuses, xuetangxActivityTypes } = await chrome.storage.local.get([
+    'moocActivityTypes',
     'yktActivityTypes',
     'xuetangxCourseStatuses',
     'xuetangxActivityTypes'
@@ -828,6 +830,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   );
   document.querySelectorAll('.ykt-activity-type').forEach((input) => {
     input.checked = visibleYktActivityTypes.has(Number(input.value));
+  });
+  const visibleMoocActivityTypes = new Set(Array.isArray(moocActivityTypes) ? moocActivityTypes : DEFAULT_MOOC_ACTIVITY_TYPES);
+  document.querySelectorAll('.mooc-activity-type').forEach((input) => {
+    input.checked = visibleMoocActivityTypes.has(input.value);
   });
   const visibleXuetangxActivityTypes = new Set(
     Array.isArray(xuetangxActivityTypes) ? xuetangxActivityTypes.map(Number) : DEFAULT_XUETANGX_ACTIVITY_TYPES
@@ -1451,6 +1457,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           input.checked = values.has(Number(input.value));
         });
       }
+      if (changes.moocActivityTypes) {
+        const values = new Set(Array.isArray(changes.moocActivityTypes.newValue) ? changes.moocActivityTypes.newValue : DEFAULT_MOOC_ACTIVITY_TYPES);
+        document.querySelectorAll('.mooc-activity-type').forEach((input) => {
+          input.checked = values.has(input.value);
+        });
+      }
       if (changes.xuetangxSecondCsrfToken) {
         const input = document.getElementById('xuetangxSecondCsrfToken');
         if (input && document.activeElement !== input) input.value = String(changes.xuetangxSecondCsrfToken.newValue || '');
@@ -1760,6 +1772,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       const selected = [...document.querySelectorAll('.ykt-activity-type:checked')]
         .map((item) => Number(item.value));
       await chrome.storage.local.set({ yktActivityTypes: selected });
+      setMsg('已应用更改');
+    });
+  });
+  document.querySelectorAll('.mooc-activity-type').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const selected = [...document.querySelectorAll('.mooc-activity-type:checked')].map((item) => item.value);
+      await chrome.storage.local.set({ moocActivityTypes: selected });
       setMsg('已应用更改');
     });
   });
@@ -2333,6 +2352,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       jlgjDarkModeEnabled: true,
       jlgjAlwaysDarkModeEnabled: false,
       yktActivityTypes: [...DEFAULT_YKT_ACTIVITY_TYPES],
+      moocActivityTypes: [...DEFAULT_MOOC_ACTIVITY_TYPES],
       xuetangxCourseStatuses: [1],
       xuetangxActivityTypes: [...DEFAULT_XUETANGX_ACTIVITY_TYPES],
       xuetangxSecondCsrfToken: '',
@@ -2400,6 +2420,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     });
     document.querySelectorAll('.ykt-activity-type').forEach((input) => {
       input.checked = DEFAULT_YKT_ACTIVITY_TYPES.includes(Number(input.value));
+    });
+    document.querySelectorAll('.mooc-activity-type').forEach((input) => {
+      input.checked = DEFAULT_MOOC_ACTIVITY_TYPES.includes(input.value);
     });
     document.querySelectorAll('.xuetangx-activity-type').forEach((input) => {
       input.checked = DEFAULT_XUETANGX_ACTIVITY_TYPES.includes(Number(input.value));

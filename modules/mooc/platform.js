@@ -15,6 +15,18 @@ let moocLoginAssistOpening = null;
   let currentOperationCancel = null;
   const expandedGroups = new Map();
   const taskDetailCache = new Map();
+  const taskTypes = { video: '视频', document: '文档', discussion: '讨论', hw: '单元作业', quiz: '单元测试', exam: '考试' };
+  const defaultVisibleTypes = ['hw', 'quiz', 'exam'];
+  let visibleTypes = new Set(defaultVisibleTypes);
+  const settingsReady = chrome.storage.local.get('moocActivityTypes').then(({ moocActivityTypes }) => {
+    visibleTypes = new Set(Array.isArray(moocActivityTypes) ? moocActivityTypes : defaultVisibleTypes);
+    render();
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.moocActivityTypes) return;
+    visibleTypes = new Set(Array.isArray(changes.moocActivityTypes.newValue) ? changes.moocActivityTypes.newValue : defaultVisibleTypes);
+    render();
+  });
 
   const request = async (action, payload = {}) => {
     const response = await chrome.runtime.sendMessage({ type: 'MOOC_REQUEST', action, payload });
@@ -41,7 +53,8 @@ let moocLoginAssistOpening = null;
     const pad = (v) => String(v).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
-  const typeText = (type) => type === 'hw' ? '单元作业' : (type === 'exam' ? '考试' : '单元测试');
+  const typeText = (type) => taskTypes[type];
+  const isPaperTask = (task) => ['hw', 'quiz', 'exam'].includes(task.type);
   const actionKind = (type) => type === 'hw' ? 'submit' : (type === 'exam' ? 'exam' : 'quiz');
   const isLongTaskTitle = (value) => Array.from(String(value || '')).reduce(
     (length, character) => length + (/^[\x00-\xff]$/.test(character) ? 1 : 2),
@@ -117,6 +130,16 @@ let moocLoginAssistOpening = null;
       for (const item of (chapter?.homeworks || [])) if (item?.test?.id) tasks.push(buildTask(item.test, 'hw', chapter.name));
       for (const item of (chapter?.quizs || [])) if (item?.test?.id) tasks.push(buildTask(item.test, 'quiz', chapter.name));
       if (chapter?.exam?.objectTestVo?.id) tasks.push(buildTask(chapter.exam.objectTestVo, 'exam', chapter.name));
+      for (const lesson of (chapter.lessons || [])) {
+        for (const unit of (lesson.units || [])) {
+          const type = { 1: 'video', 3: 'document', 6: 'discussion' }[unit.contentType];
+          if (!type || !unit.id) continue;
+          const task = buildTask(unit, type, chapter.name);
+          task.contentType = Number(unit.contentType);
+          task.contentId = unit.contentId;
+          tasks.push(task);
+        }
+      }
     }
     return tasks;
   }
@@ -135,11 +158,16 @@ let moocLoginAssistOpening = null;
       url: `https://www.icourse163.org/learn/${encodeURIComponent(schoolShortName)}-${encodeURIComponent(id)}?tid=${encodeURIComponent(tid)}`,
       tasks: normalizeTasks(term),
       detailLoaded: !!term,
-      pendingTypeLabels: term ? [] : ['单元作业', '单元测试', '考试']
+      pendingTypeLabels: term ? [] : Object.values(taskTypes)
     };
   }
 
   function taskUrl(course, task) {
+    if (!isPaperTask(task)) {
+      const params = new URLSearchParams({ type: String(task.contentType), id: task.id });
+      if (task.contentId != null) params.set('cid', String(task.contentId));
+      return `${course.url}#/learn/content?${params}`;
+    }
     const hash = task.type === 'hw' ? `#/learn/hw?id=${task.id}`
       : (task.type === 'exam' ? `#/learn/examObject?id=${task.id}` : `#/learn/quiz?id=${task.id}`);
     return course.url + hash;
@@ -216,7 +244,7 @@ let moocLoginAssistOpening = null;
     const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done: task.done, overdue: task.overdue });
     const colors = [palette.background, palette.border, palette.foreground];
     const score = globalThis.BjtuHomeworkUi.scoreBadgeHtml({ userScore: task.userScore, totalScore: task.totalScore, escape: env.escape });
-    const goActionText = globalThis.BjtuHomeworkUi.actionLabel('mooc', actionKind(task.type), { lead: '前往' });
+    const goActionText = isPaperTask(task) ? globalThis.BjtuHomeworkUi.actionLabel('mooc', actionKind(task.type), { lead: '前往' }) : `查看${typeText(task.type)}`;
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done: task.done,
       className: `mooc-task${isLongTaskTitle(task.title) ? ' mooc-task--long-title' : ''}`,
@@ -227,10 +255,10 @@ let moocLoginAssistOpening = null;
       mainClass: 'mooc-task-main',
       actionsClass: 'mooc-task-actions',
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: typeText(task.type), typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape: env.escape, className: 'mooc-task-title' }),
-      metaHtml: `${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div class="mooc-task-meta">${env.escape(task.chapterName)}</div>` : ''}`,
+      metaHtml: `<div class="mooc-task-meta">${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div>${env.escape(task.chapterName)}</div>` : ''}${task.detail?.tname ? `<div>${env.escape(task.detail.tname)}</div>` : ''}</div>`,
       actionsHtml: `${score}<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
-          <button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>
+          ${isPaperTask(task) ? `<button class="btn mooc-gins-btn" style="background:${colors[2]};" data-mooc-action="task" data-course-id="${env.escape(course.id)}" data-task-id="${env.escape(task.id)}">通过GinsMooc完成</button>` : ''}
         </div>`,
       detailHtml: renderTaskDetail(course, task, colors)
     });
@@ -253,12 +281,13 @@ let moocLoginAssistOpening = null;
     clearCards();
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 120000;
     courses.forEach((course, index) => {
-      const pending = course.tasks.filter((task) => !task.done && !task.overdue)
+      const visibleTasks = course.tasks.filter((task) => visibleTypes.has(task.type));
+      const pending = visibleTasks.filter((task) => !task.done && !task.overdue)
         .map((task, taskIndex) => ({ task, taskIndex }))
         .sort((a, b) => (Number(a.task.deadline) > 0 ? Number(a.task.deadline) : Number.MAX_SAFE_INTEGER) - (Number(b.task.deadline) > 0 ? Number(b.task.deadline) : Number.MAX_SAFE_INTEGER) || a.taskIndex - b.taskIndex)
         .map(({ task }) => task);
-      const overdue = course.tasks.filter((task) => task.overdue);
-      const done = course.tasks.filter((task) => task.done);
+      const overdue = visibleTasks.filter((task) => task.overdue);
+      const done = visibleTasks.filter((task) => task.done);
       const expanded = expandedGroups.get(course.id) || { overdue: false, done: false };
       const pendingHtml = pending.map((task) => renderTask(course, task)).join('');
       const overdueHtml = overdue.map((task) => renderTask(course, task)).join('');
@@ -268,7 +297,7 @@ let moocLoginAssistOpening = null;
         ${overdue.length ? `<div class="homework-group homework-group--overdue ${expanded.overdue ? '' : 'is-hidden'}" data-homework-group="overdue" aria-hidden="${expanded.overdue ? 'false' : 'true'}">${overdueHtml}</div>` : ''}
         ${done.length ? renderToggle(course.id, 'done', expanded.done, done.length, '查看已交作业', '收起已交作业') : ''}
         ${done.length ? `<div class="homework-group homework-group--done ${expanded.done ? '' : 'is-hidden'}" data-homework-group="done" aria-hidden="${expanded.done ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
-      const typeLoadingHtml = globalThis.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels, { escape: env.escape });
+      const typeLoadingHtml = globalThis.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels.filter((label) => [...visibleTypes].some((type) => typeText(type) === label)), { escape: env.escape });
       const card = globalThis.BjtuCourseCardUi.createCourseCard({
         courseId: `mooc-${course.id}`,
         className: 'mooc-standalone-card',
@@ -277,7 +306,7 @@ let moocLoginAssistOpening = null;
         titleHtml: `<a href="${env.escape(course.url)}" target="_blank" rel="noopener noreferrer">${env.escape(course.name)}</a>`,
         metaHtml: `<div class="mooc-course-meta">${renderTeachers(course)}</div>`,
         actionsHtml: `<button class="btn mooc-complete-all-btn" data-mooc-action="course" data-course-id="${env.escape(course.id)}">通过GinsMooc完成全部</button>`,
-        contentHtml: `${typeLoadingHtml}${course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有单元测试、单元作业或考试</span>') : ''}`,
+        contentHtml: `${typeLoadingHtml}${course.detailLoaded ? (taskSections.trim() || '<span class="mooc-empty">没有所选类型的作业或课件</span>') : ''}`,
         headerClass: 'mooc-course-head',
         identityClass: 'mooc-course-identity',
         homeworkClass: 'homework-area mooc-homework-area',
@@ -302,7 +331,7 @@ let moocLoginAssistOpening = null;
     render();
     try {
       const paper = await requestPaperWithRetry('homework-paper', task.id, '作业详情为空（可能受到并发限制）');
-      task.detail = { questions: buildPaperDetail(paper) };
+      task.detail = { questions: buildPaperDetail(paper), tname: String(paper.tname || '') };
       taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
       return paper;
     } finally {
@@ -311,19 +340,19 @@ let moocLoginAssistOpening = null;
     }
   }
 
-  async function loadObjectiveDetail(task) {
+  async function loadObjectiveDetail(task, withAnswers = true) {
     task.detailLoading = true;
     render();
     try {
       const [answers, paper] = await Promise.all([
-        request('gins-answer', { tid: task.id }).catch(() => ({ data: { questionList: [] } })),
+        withAnswers ? request('gins-answer', { tid: task.id }).catch(() => ({ data: { questionList: [] } })) : null,
         requestPaperWithRetry('quiz-paper', task.id, '试卷数据为空（可能受到并发限制）')
       ]);
       const correctIds = new Set();
       for (const question of (answers?.data?.questionList || [])) {
         for (const option of (question.optionList || [])) if (option.answer) correctIds.add(option.id);
       }
-      task.detail = { questions: buildPaperDetail(paper, correctIds) };
+      task.detail = { questions: buildPaperDetail(paper, correctIds), tname: String(paper.tname || '') };
       taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
       return { paper, correctIds };
     } finally {
@@ -332,14 +361,17 @@ let moocLoginAssistOpening = null;
     }
   }
 
-  async function hydrateHomeworkDetails(course) {
-    const tasks = course.tasks.filter((task) => task.type === 'hw');
+  async function hydrateTaskDetails(course) {
+    const tasks = course.tasks.filter((task) => task.type === 'hw' || task.type === 'quiz');
     let next = 0;
     const failures = [];
     const workers = Array.from({ length: Math.min(3, tasks.length) }, async () => {
       while (next < tasks.length) {
         const task = tasks[next++];
-        try { await loadHomeworkDetail(task); } catch (error) { failures.push(error); }
+        try {
+          if (task.type === 'hw') await loadHomeworkDetail(task);
+          else await loadObjectiveDetail(task, false);
+        } catch (error) { failures.push(error); }
       }
     });
     await Promise.all(workers);
@@ -347,6 +379,7 @@ let moocLoginAssistOpening = null;
   }
 
   async function load() {
+    await settingsReady;
     const serial = ++loadSerial;
     env.setState('checking');
     env.setProgress?.(0, 0);
@@ -380,7 +413,7 @@ let moocLoginAssistOpening = null;
               teachers: teacherResult.status === 'fulfilled' ? teacherResult.value : []
             }, term);
             render();
-            await hydrateHomeworkDetails(courses[index]);
+            await hydrateTaskDetails(courses[index]);
           } catch (error) {
             if (error?.code === 'not-logged-in') throw error;
             courses[index].detailLoaded = true;
@@ -469,13 +502,14 @@ let moocLoginAssistOpening = null;
   async function completeTask(task) {
     const completed = await request('complete-task', { taskType: task.type, tid: task.id });
     const correctIds = new Set(Array.isArray(completed?.correctIds) ? completed.correctIds : []);
-    task.detail = { questions: buildPaperDetail(completed?.paper || {}, correctIds) };
+    task.detail = { questions: buildPaperDetail(completed?.paper || {}, correctIds), tname: String(completed?.paper?.tname || '') };
     taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
     render();
     return completed?.response;
   }
 
   function isTaskSubmittable(task) {
+    if (!isPaperTask(task) || !visibleTypes.has(task.type)) return false;
     if (task.overdue) return false;
     if (task.type === 'hw') return true;
     if (task.userScore === null || task.totalScore === null) return true;
