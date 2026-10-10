@@ -1637,7 +1637,7 @@ name: 've.teachers_of_',
     {
       module: 'cas',
       name: 'cas.login',
-      summary: '使用传入或已保存的账号密码登录 CAS（自动识别验证码）',
+      summary: '使用传入或已保存的账号密码登录 CAS',
       doc: [
         '## cas.login —— 统一身份认证登录',
         '',
