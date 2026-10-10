@@ -7,6 +7,7 @@
     courseList: `${MOOC_ORIGIN}/web/j/learnerCourseRpcBean.getMyLearnedCoursePanelList.rpc`,
     courseDetail: `${MOOC_ORIGIN}/web/j/courseBean.getLastLearnedMocTermDto.rpc`,
     quizPaper: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.getOpenQuizPaperDto.rpc`,
+    quizInfo: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.getOpenQuizInfo.rpc`,
     homeworkPaper: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.getOpenHomeworkPaperDto.rpc`,
     submit: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.submitAnswers.rpc`,
     answer: 'https://ginnnnnn.top/api/mooc/test/'
@@ -275,6 +276,7 @@
     if (action === 'course-list') result = await fetchCourseList(csrfKey);
     else if (action === 'course-detail') result = await postJson(MOOC_API.courseDetail, { termId: Number(payload?.tid) }, csrfKey);
     else if (action === 'quiz-paper') result = await postJson(MOOC_API.quizPaper, { tid: Number(payload?.tid) }, csrfKey);
+    else if (action === 'quiz-info') result = await postJson(MOOC_API.quizInfo, { tid: Number(payload?.tid), targetAid: null, isDraft: false }, csrfKey);
     else if (action === 'homework-paper') result = await postJson(MOOC_API.homeworkPaper, { tid: Number(payload?.tid), withStdAnswerAndAnalyse: false }, csrfKey);
     else if (action === 'submit') result = await postJson(MOOC_API.submit, { paperDto: payload?.paperDto, preview: false }, csrfKey);
     else if (action === 'complete-task') result = await completeTask(payload, csrfKey);
