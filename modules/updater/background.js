@@ -4,7 +4,7 @@
   const ENABLED_KEY = 'backgroundAutoUpdateEnabled';
   const INSTALL_OPTIONAL_KEY = 'backgroundAutoInstallOptionalEnabled';
   const INTERVAL_KEY = 'backgroundAutoUpdateIntervalMinutes';
-  const DEFAULT_INTERVAL_MINUTES = 30;
+  const DEFAULT_INTERVAL_MINUTES = 5;
   const STATUS_KEY = 'backgroundAutoUpdateStatus';
   const DETECTED_NOTIFICATION_VERSION_KEY = 'backgroundUpdateDetectedNotifiedVersion';
   const INSTALLED_RELEASE_DESCRIPTION_KEY = 'installedReleaseDescription';
