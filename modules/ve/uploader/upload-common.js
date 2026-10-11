@@ -8,6 +8,21 @@
     'rar', 'zip'
   ]);
   const extensionSet = new Set(extensions);
+  const fileHashes = new WeakMap();
+
+  function fileHash(file) {
+    if (!fileHashes.has(file)) {
+      const pending = file.arrayBuffer()
+        .then((buffer) => global.crypto.subtle.digest('SHA-256', buffer))
+        .then((digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(''))
+        .catch((error) => {
+          fileHashes.delete(file);
+          throw error;
+        });
+      fileHashes.set(file, pending);
+    }
+    return fileHashes.get(file);
+  }
 
   function fileExtension(file) {
     const name = String(file?.name || '').replace(/\\/g, '/').split('/').pop() || '';
@@ -115,6 +130,7 @@
     extensions,
     accept: extensions.map((extension) => `.${extension}`).join(','),
     fileExtension,
+    fileHash,
     confirmUnsupportedFiles,
     uploadUrl,
     fileListItem,

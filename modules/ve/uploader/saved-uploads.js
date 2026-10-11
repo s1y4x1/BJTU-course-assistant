@@ -42,6 +42,7 @@ async function addSavedUpload(file, serverData, convertedUrl) {
     id: `up_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     fileName,
     fileSize,
+    sha256: await globalThis.BjtuVeUploadCommon.fileHash(file),
     visitName,
     url,
     savedAt: Date.now()
@@ -156,6 +157,7 @@ function renderSavedUploadsSection() {
       fileNameNoExt: String(nameParts?.fileNameNoExt || ''),
       fileExtName: String(nameParts?.fileExtName || ''),
       fileSize: String(Number(it.fileSize || 0) || 0),
+      sha256: it.sha256,
       visitName: String(it.visitName || ''),
       pid: '',
       ftype: 'insert'

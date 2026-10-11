@@ -82,28 +82,6 @@ function handleLoginRequired(retryCallback, message) {
   promptLoginIfPossible(message || '请输入账号登录');
 }
 
-function normalizeUploadDuplicateName(name) {
-  return String(name || '')
-    .replace(/\\/g, '/')
-    .replace(/^\/+/, '')
-    .trim()
-    .toLowerCase();
-}
-
-function isSameUploadFileSize(a, b) {
-  const na = Number(a);
-  const nb = Number(b);
-  if (!Number.isFinite(na) || !Number.isFinite(nb)) return false;
-  return Math.max(0, Math.round(na)) === Math.max(0, Math.round(nb));
-}
-
-function isApproxSameUploadFileSize(a, b) {
-  const na = Number(a);
-  const nb = Number(b);
-  if (!Number.isFinite(na) || !Number.isFinite(nb) || na < 0 || nb < 0) return false;
-  const diff = Math.abs(na - nb);
-  return diff <= Math.max(64 * 1024, Math.max(na, nb) * 0.01);
-}
 
 function buildUploadMetaFromKnownFile(file, known) {
   const nameParts = splitFileName(file?.name || known?.fileName || known?.name || '');
@@ -111,6 +89,7 @@ function buildUploadMetaFromKnownFile(file, known) {
     fileNameNoExt: String(nameParts.fileNameNoExt || safeDecodeUploadNamePart(known?.fileNameNoExt) || '').trim(),
     fileExtName: String(nameParts.fileExtName || known?.fileExtName || '').trim(),
     fileSize: Number(known?.fileSize || file?.size || 0),
+    sha256: known?.sha256,
     visitName: String(known?.visitName || '').trim(),
     pid: '',
     ftype: 'insert',
@@ -128,57 +107,15 @@ function safeDecodeUploadNamePart(v) {
   }
 }
 
-function findAlreadyUploadedFile(file) {
-  const fileName = normalizeUploadDuplicateName(file?.name || '');
-  const fileSize = Number(file?.size || 0);
-  if (!fileName) return null;
-
+function findAlreadyUploadedFile(file, sha256) {
   const savedList = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles : [];
-  const saved = savedList.find((it) => (
-    normalizeUploadDuplicateName(it?.fileName) === fileName &&
-    isSameUploadFileSize(it?.fileSize, fileSize) &&
-    String(it?.visitName || '').trim() &&
-    String(it?.url || '').trim()
-  ));
-  if (saved) {
-    return {
-      source: '本地记录',
-      fileName: String(saved.fileName || file?.name || '').trim(),
-      fileSize: Number(saved.fileSize || fileSize || 0),
-      visitName: String(saved.visitName || '').trim(),
-      url: String(saved.url || '').trim()
-    };
-  }
+  const saved = savedList.find((item) => item?.sha256 === sha256
+    && String(item?.visitName || '').trim() && String(item?.url || '').trim());
+  if (saved) return { source: '本地记录', ...buildUploadMetaFromKnownFile(file, saved) };
 
-  const current = Object.values(window.uploadedFileMetaById || {}).find((meta) => {
-    if (!meta?.visitName) return false;
-    const metaName = normalizeUploadDuplicateName(
-      meta.fileName || `${safeDecodeUploadNamePart(meta.fileNameNoExt)}${meta.fileExtName ? '.' + meta.fileExtName : ''}`
-    );
-    return metaName === fileName && isSameUploadFileSize(meta.fileSize, fileSize);
-  });
-  if (current) {
-    return {
-      source: '本页已上传',
-      ...buildUploadMetaFromKnownFile(file, current)
-    };
-  }
-
-  const resource = (Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : []).find((it) => (
-    normalizeUploadDuplicateName(it?.name) === fileName &&
-    isApproxSameUploadFileSize(getResourceItemSizeBytes(it), fileSize) &&
-    String(it?.url || '').trim()
-  ));
-  if (resource) {
-    return {
-      source: '资源空间',
-      fileName: String(resource.name || file?.name || '').trim(),
-      fileSize,
-      visitName: '',
-      url: String(resource.url || '').trim()
-    };
-  }
-
+  const current = Object.values(window.uploadedFileMetaById || {})
+    .find((meta) => meta?.sha256 === sha256 && meta?.visitName);
+  if (current) return { source: '本页已上传', ...buildUploadMetaFromKnownFile(file, current) };
   return null;
 }
 
@@ -624,6 +561,7 @@ function uploadFile(file, fileId) {
               fileNameNoExt: String(data.fileNameNoExt || encodeURIComponent(nameParts.fileNameNoExt || '') || '').trim(),
               fileExtName: String(data.fileExtName || nameParts.fileExtName || '').trim(),
               fileSize: Number(data.fileSize || file.size || 0),
+              sha256: await globalThis.BjtuVeUploadCommon.fileHash(file),
               visitName: String(data.visitName || '').trim(),
               pid: '',
               ftype: 'insert',
@@ -946,14 +884,18 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
 
   const pendingFiles = [];
   const duplicateEntries = [];
-  filesList.forEach((f) => {
-    const known = findAlreadyUploadedFile(f);
-    if (known) {
-      duplicateEntries.push({ file: f, known });
-      return;
+  try {
+    for (const f of filesList) {
+      const sha256 = await globalThis.BjtuVeUploadCommon.fileHash(f);
+      const known = findAlreadyUploadedFile(f, sha256);
+      if (known) duplicateEntries.push({ file: f, known });
+      else pendingFiles.push(f);
     }
-    pendingFiles.push(f);
-  });
+  } catch (error) {
+    showToast(`计算文件散列失败：${error?.message || error}`, 'error');
+    if (waitForCompletion) throw error;
+    return [];
+  }
 
   let skippedDuplicateCount = 0;
   const reusedResults = [];

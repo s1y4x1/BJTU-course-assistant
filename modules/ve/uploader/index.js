@@ -197,10 +197,12 @@
       for (let index = 0; index < selected.length; index += 1) {
         try {
           const file = selected[index];
-          const known = knownFiles.find((item) => item?.fileName === file.name
-            && Number(item?.fileSize) === file.size && String(item?.visitName || '').trim());
+          rows[index].state.textContent = '正在计算文件散列…';
+          const sha256 = await common.fileHash(file);
+          const known = knownFiles.find((item) => item?.sha256 === sha256
+            && String(item?.visitName || '').trim());
           if (known && globalThis.confirm(`「${file.name}」已上传过，是否直接复用已上传文件？\n选择「取消」将重新上传。`)) {
-            completed.push({ fileName: file.name, fileSize: file.size, visitName: known.visitName, reused: true });
+            completed.push({ fileName: file.name, fileSize: file.size, sha256, visitName: known.visitName, reused: true });
             rows[index].bar.style.width = '100%';
             rows[index].state.textContent = '已复用上传记录';
             setSizePair(rows[index].size, file.size, file.size, true);
@@ -208,10 +210,12 @@
             loadedBytes[index] = file.size;
             updateSummary();
           } else {
-            completed.push(await uploadOne(file, userInfo, rows[index], (loaded) => {
+            const result = await uploadOne(file, userInfo, rows[index], (loaded) => {
               loadedBytes[index] = loaded;
               updateSummary();
-            }));
+            });
+            completed.push({ ...result, sha256 });
+            knownFiles.push({ ...result, sha256 });
           }
         } catch (error) {
           rows[index].state.textContent = String(error?.message || error);
@@ -228,6 +232,7 @@
             id: `up_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             fileName: item.fileName,
             fileSize: item.fileSize,
+            sha256: item.sha256,
             visitName: item.visitName,
             url: common.downloadUrl(item.visitName),
             savedAt: Date.now()
