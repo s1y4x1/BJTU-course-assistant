@@ -19,6 +19,7 @@
     <input type="checkbox" id="campusNetworkReconnectEnabled">
     每隔一段时间请求校园网认证接口
   </label>
+  <div class="tip">遇到 503 会忽略并按间隔重试；即使已经在线也会继续请求。</div>
   <div id="campusNetworkReconnectDetail" class="campusnet-options-detail">
     <label for="campusNetworkReconnectAccount">上网账号</label>
     <input id="campusNetworkReconnectAccount" type="text" autocomplete="username" placeholder="默认使用学号">
@@ -39,7 +40,6 @@
       <input type="checkbox" id="campusNetworkReconnectNotifyOnSuccess" checked>
       重连成功时发送系统通知
     </label>
-    <div class="tip">遇到 503 会忽略并按间隔重试；即使已经在线也会继续请求。</div>
     <div id="campusNetworkReconnectStatus" class="option-status campusnet-status">校园网自动重连未启用。</div>
   </div>
 </section>

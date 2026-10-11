@@ -65,9 +65,11 @@
       'parse-error': '校园网认证响应解析失败。',
       failed: '校园网认证失败。'
     };
-    target.textContent = message
-      ? `${labels[state] || '最近一次校园网认证请求已完成。'} ${message}`
-      : (labels[state] || '等待下一次校园网认证请求。');
+    const label = labels[state] || '最近一次校园网认证请求已完成。';
+    const heading = label.replace(/[。.!！?？]+$/, '');
+    target.textContent = message && !label.includes(message)
+      ? (message.includes(heading) ? message : `${label} ${message}`)
+      : label;
   }
 
   async function saveInterval() {
