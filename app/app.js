@@ -576,6 +576,29 @@ if (!popupMode) {
   });
 }
 
+if (resourceSearchInput) {
+  let mjActivationRequested = false;
+  resourceSearchInput.addEventListener('input', () => {
+    const value = String(resourceSearchInput.value || '').trim();
+    const activateMj = value.toLowerCase() === 'mj';
+    if (activateMj && !mjActivationRequested) {
+      mjActivationRequested = true;
+      chrome.runtime.sendMessage({ type: 'ACTIVATE_MJ_MODULE' }).then((result) => {
+        if (!result?.ok) {
+          mjActivationRequested = false;
+          if (result?.code === 'MODULE_NOT_INSTALLED') return;
+          showToast?.(`无法激活 MJ：${result?.message || '未知错误'}`, 'error');
+        }
+      }).catch((error) => {
+        mjActivationRequested = false;
+        showToast?.(`无法激活 MJ：${String(error?.message || error)}`, 'error');
+      });
+    } else if (!activateMj) {
+      mjActivationRequested = false;
+    }
+  });
+}
+
 if (usernameInput) {
   const measureCanvas = document.createElement('canvas');
   const measureContext = measureCanvas.getContext('2d');
@@ -603,25 +626,8 @@ if (usernameInput) {
   new MutationObserver(updateUsernameWidth).observe(document.documentElement, { attributes:true, attributeFilter:['style'] });
   document.fonts.ready.then(updateUsernameWidth);
   updateUsernameWidth();
-  let mjActivationRequested = false;
   usernameInput.addEventListener('input', () => {
     const value = String(usernameInput.value || '').trim();
-    const activateMj = value.toLowerCase() === 'mj';
-    if (activateMj && !mjActivationRequested) {
-      mjActivationRequested = true;
-      chrome.runtime.sendMessage({ type: 'ACTIVATE_MJ_MODULE' }).then((result) => {
-        if (!result?.ok) {
-          mjActivationRequested = false;
-          if (result?.code === 'MODULE_NOT_INSTALLED') return;
-          showToast?.(`无法激活 MJ：${result?.message || '未知错误'}`, 'error');
-        }
-      }).catch((error) => {
-        mjActivationRequested = false;
-        showToast?.(`无法激活 MJ：${String(error?.message || error)}`, 'error');
-      });
-    } else if (!activateMj) {
-      mjActivationRequested = false;
-    }
     const current = String(lastValidUsername || '').trim();
     if (value && value !== current) {
       beginAccountSwitchInterruption();
