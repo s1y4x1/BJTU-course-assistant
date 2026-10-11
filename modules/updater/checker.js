@@ -3289,33 +3289,36 @@ function setupVersionButton() {
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
 
+  let pendingBackgroundVersionClick = false;
+  function triggerPendingVersionClick() {
+    if (!pendingBackgroundVersionClick || document.visibilityState !== 'visible'
+        || !document.hasFocus() || versionBtn.disabled) return;
+    pendingBackgroundVersionClick = false;
+    versionBtn.click();
+  }
+  window.addEventListener('focus', triggerPendingVersionClick);
+  document.addEventListener('visibilitychange', triggerPendingVersionClick);
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    if (message?.type !== 'BJTU_UPDATER_OPEN_VERSION_NOTICE'
+        || sender.id !== chrome.runtime.id
+        || location.pathname !== '/app/app.html') return;
+    pendingBackgroundVersionClick = true;
+    triggerPendingVersionClick();
+  });
+
   // 确保版本按钮区域可见
   const versionInfoEl = document.getElementById('version-info');
   if (versionInfoEl) versionInfoEl.style.display = '';
   versionBtn.style.display = '';
 
   versionBtn.addEventListener('click', async () => {
-    if (versionButtonMode === 'failure') {
-      await loadVersionInfo().catch(() => {});
-      openVersionNoticeModal();
-      return;
-    }
-    if (versionButtonMode === 'latest') {
-      await loadVersionInfo().catch(() => {});
-      openVersionNoticeModal();
-      return;
-    }
-    if (versionButtonMode === 'outdated') {
-      openVersionNoticeModal();
-      return;
-    }
-    if (versionButtonMode === 'ahead') {
-      openVersionNoticeModal('ahead');
-    }
+    await loadVersionInfo().catch(() => {});
+    openVersionNoticeModal(versionButtonMode === 'ahead' ? 'ahead' : undefined);
+    triggerPendingVersionClick();
   });
 
   // 启动更新检查
-  loadVersionInfo().catch(() => {});
+  loadVersionInfo().catch(() => {}).finally(triggerPendingVersionClick);
 }
 
 // 在 app.js 加载完成后再初始化版本按钮

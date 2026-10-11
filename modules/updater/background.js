@@ -76,6 +76,20 @@
     return tabs.some((tab) => isForegroundExtensionUrl(tab?.url));
   }
 
+  async function focusUpdateApp() {
+    const appUrl = chrome.runtime.getURL('app/app.html');
+    const tabs = await chrome.tabs.query({});
+    const existing = tabs.find((tab) => String(tab.url || '').split(/[?#]/, 1)[0] === appUrl);
+    const opened = existing
+      ? await chrome.tabs.update(existing.id, { active: true })
+      : await globalThis.BjtuTabs.create({ url: appUrl, active: true });
+    const window = await chrome.windows.get(opened.windowId);
+    await chrome.windows.update(opened.windowId, {
+      ...(window.state === 'minimized' ? { state: 'normal' } : {}),
+      focused: true
+    });
+  }
+
   async function setStatus(status, extra = {}) {
     await chrome.storage.local.set({
       [STATUS_KEY]: { status, ...extra, checkedAt: Date.now() }
@@ -861,10 +875,6 @@
       const manifestVersion = String(chrome.runtime.getManifest().version || '0');
       const appliedVersion = String(stored?.[APPLIED_WITHOUT_RELOAD_KEY]?.ver || '');
       const localVersion = compareVersions(appliedVersion, manifestVersion) > 0 ? appliedVersion : manifestVersion;
-      if (await hasOpenForegroundPage()) {
-        await setStatus('foreground-active', { localVersion });
-        return { updated: false, foregroundActive: true };
-      }
       const pendingReloadVersion = String(stored?.[PENDING_RELOAD_KEY]?.ver || '');
       const lastReloadRequestAt = Number(stored?.[PENDING_RELOAD_KEY]?.autoReloadRequestedAt || 0);
       const staleReloadRecentlyRequested = pendingReloadVersion
@@ -898,6 +908,7 @@
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
       }
+      await focusUpdateApp();
       if (await hasOpenForegroundPage()) {
         await setStatus('foreground-active', {
           localVersion,
@@ -905,6 +916,9 @@
           name: release.name,
           force: release.force
         });
+        await chrome.runtime.sendMessage({
+          type: 'BJTU_UPDATER_OPEN_VERSION_NOTICE'
+        }).catch(() => {});
         return { updated: false, foregroundActive: true, release };
       }
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
