@@ -754,6 +754,8 @@ function renderYktHomeworkItems(courseId, items) {
       : '';
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done,
+      overdue,
+      deadline: isClassroomActivity ? '' : deadline,
       background: palette.background,
       border: palette.border,
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: activityTypeLabel, typeHref: it.link, title: it.title || '雨课堂作业', color: palette.foreground, href: it.link, escape: escapeHtml }),

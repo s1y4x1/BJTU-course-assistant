@@ -5649,6 +5649,9 @@ function renderHomeworkList(courseId) {
 
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done: !isTeacherMode && isDone,
+      deadlineGradient: !isTeacherMode,
+      overdue,
+      deadline,
       background: bgColor,
       border: borderColor,
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: homeworkTypeLabel, typeHref: homeworkPageUrl, title, color: titleColor, href: homeworkPageUrl, escape: escapeHtml }),

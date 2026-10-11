@@ -141,6 +141,10 @@ body.module-options-standalone label:has(input:not(:disabled), select:not(:disab
 .animation-speed-value-wrap { display:inline-flex; align-items:center; gap:3px; color:#475569; font-variant-numeric:tabular-nums; }
 .animation-speed-value-wrap #animationSpeedValue { width:68px; margin:0; padding:6px; text-align:right; }
 .font-size-editor { margin-top:0; }
+.component-color-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:2px 14px; margin-top:7px; }
+.component-color-item { display:flex; align-items:center; gap:6px; }
+.component-color-item > span { width:5em; }
+.component-color-item input[type="color"] { width:44px; height:28px; margin:0; padding:2px; cursor:pointer; }
 .font-size-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:2px 14px; margin-top:7px; }
 .font-size-item { display:grid !important; grid-template-columns:5em 72px max-content max-content; align-items:center; column-gap:4px; row-gap:0; }
 .font-size-item input { box-sizing:border-box; width:72px; margin:0; padding:6px; text-align:right; font-size:inherit; }

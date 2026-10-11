@@ -1181,6 +1181,8 @@
       : '';
     return global.BjtuHomeworkUi.renderHomeworkCard({
       done: task.done,
+      overdue: task.overdue,
+      deadline: task.deadline,
       className: 'xuetangx-task',
       background: palette.background,
       border: palette.border,

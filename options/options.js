@@ -2405,7 +2405,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       themeMode: DEFAULT_THEME_MODE,
       animationMode: DEFAULT_ANIMATION_MODE,
       animationSpeed: DEFAULT_ANIMATION_SPEED,
-      fontSizeSettings: { ...DEFAULT_FONT_SIZE_SETTINGS }
+      fontSizeSettings: { ...DEFAULT_FONT_SIZE_SETTINGS },
+      colorSettings: {},
+      homeworkDeadlineGradientEnabled: true
     });
     await chrome.storage.sync.remove(['platformEnabled']);
     document.getElementById('enableVe').checked = true;

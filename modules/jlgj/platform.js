@@ -288,6 +288,8 @@ function renderJlgjHomeworkItems(items) {
       : '';
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done,
+      overdue,
+      deadline,
       background: palette.background,
       border: palette.border,
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ title: it.title || '接龙作业', color: palette.foreground, href: link, escape: escapeHtml }),

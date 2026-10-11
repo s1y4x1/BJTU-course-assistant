@@ -255,6 +255,8 @@ let moocLoginAssistOpening = null;
     const goActionText = isPaperTask(task) ? globalThis.BjtuHomeworkUi.actionLabel('mooc', actionKind(task.type), { lead: '前往' }) : `查看${typeText(task.type)}`;
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done: task.done,
+      overdue: task.overdue,
+      deadline: task.deadline,
       className: `mooc-task${isLongTaskTitle(task.title) ? ' mooc-task--long-title' : ''}`,
       background: palette.background,
       border: palette.border,
