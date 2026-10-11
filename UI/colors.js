@@ -99,7 +99,7 @@
         : done ? 'doneCard' : overdue ? 'overdueCard' : 'pendingCard';
       const c = !teacher && !done && !overdue ? urgency(card.dataset.homeworkDeadline, now) : 0;
       const effects = marqueeEnabled && !teacher && !done && !overdue && Number.isFinite(time) && time > now;
-      const period = effects ? Math.log2(1 + (time - now) / 3600000) : 0;
+      const period = effects ? Math.log2(1 + (time - now) / 3600000) + 0.5 : 0;
       const background = active
         ? interpolate(settings.pendingCard || defaults.pendingCard, settings.overdueCard || defaults.overdueCard, c)
         : settings[key] || defaults[key];

@@ -114,7 +114,7 @@
         <div id="componentColorGrid" class="component-color-grid"></div>
         <label class="component-color-gradient-toggle"><input type="checkbox" id="homeworkDeadlineGradientEnabled" checked> 使用渐变的未交作业卡片颜色</label>
         <div class="tip">未交作业从未交作业颜色渐变至逾期作业颜色；距离截止越近，渐变进度、闪烁、呼吸与边框跑马灯越明显，每隔一天临期强度减半。无截止时间的作业不渐变，已交、逾期及教师作业不使用跑马灯。</div>
-        <label class="component-color-gradient-toggle"><input type="checkbox" id="homeworkMarqueeEnabled" checked> 未交作业卡片跑马灯效果<span class="tip">同时控制跑马灯与呼吸，仅用于有截止时间的未交作业。周期为 log₂(1 + 剩余小时数) 秒，光亮强度等仍按指数变化；关闭后保留卡片颜色，动画总开关也会控制这些效果。</span></label>
+        <label class="component-color-gradient-toggle"><input type="checkbox" id="homeworkMarqueeEnabled" checked> 未交作业卡片跑马灯效果<span class="tip">同时控制跑马灯与呼吸，仅用于有截止时间的未交作业。周期为 log₂(1 + 剩余小时数) + 0.5 秒，光亮强度等仍按指数变化；关闭后保留卡片颜色，动画总开关也会控制这些效果。</span></label>
       </details>
       <div class="option-divider" role="separator"></div>
       <details class="ui-order-editor" id="uiOrderEditor">
