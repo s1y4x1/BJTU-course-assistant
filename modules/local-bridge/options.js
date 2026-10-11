@@ -267,7 +267,7 @@
 
   async function reset() {
     await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', {
-      enabled: false,
+      enabled: true,
       host: '127.0.0.1',
       port: 1896,
       localPort: 1896,

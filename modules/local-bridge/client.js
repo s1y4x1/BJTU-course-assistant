@@ -30,7 +30,7 @@
   let lastConfigReadAt = 0;
   let connectionReplaced = false;
   let currentSettings = {
-    enabled: false,
+    enabled: true,
     port: DEFAULT_PORT,
     token: '',
     host: '127.0.0.1',
@@ -77,7 +77,7 @@
     const localPort = normalizePort(stored[STORAGE_KEYS.localPort]);
     const localToken = String(stored[STORAGE_KEYS.localToken] || '').trim();
     currentSettings = {
-      enabled: stored[STORAGE_KEYS.enabled] === true,
+      enabled: stored[STORAGE_KEYS.enabled] !== false,
       port: remote ? normalizePort(remoteConfig.port) : localPort,
       token: remote ? String(remoteConfig.token || '').trim() : localToken,
       host,
