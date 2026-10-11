@@ -1896,6 +1896,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 @property --homework-border-angle { syntax:'<angle>'; initial-value:0deg; inherits:false; }
 @property --homework-card-fill { syntax:'<color>'; initial-value:transparent; inherits:true; }
 .hw-card-item { position:relative; --homework-card-fill:var(--homework-card-background,var(--homework-base-background)); background:var(--homework-card-fill) !important; }
+html[data-color-scheme="dark"] .hw-card-item.homework-pending { --homework-marquee-white:85%; }
 .hw-card-item.homework-pending::before {
     content:'';
     position:absolute;
@@ -1904,9 +1905,9 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     padding:2px;
     background:conic-gradient(from var(--homework-border-angle),
         transparent 0deg 235deg,
-        color-mix(in srgb,var(--homework-card-border,var(--homework-base-border,#a7bcd9)),white 55%) 275deg,
+        color-mix(in srgb,var(--homework-card-border,var(--homework-base-border,#a7bcd9)),white var(--homework-marquee-white,55%)) 275deg,
         rgba(255,255,255,.95) 300deg,
-        color-mix(in srgb,var(--homework-card-border,var(--homework-base-border,#a7bcd9)),white 55%) 325deg,
+        color-mix(in srgb,var(--homework-card-border,var(--homework-base-border,#a7bcd9)),white var(--homework-marquee-white,55%)) 325deg,
         transparent 360deg);
     -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
     -webkit-mask-composite:xor;
@@ -1916,6 +1917,13 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     z-index:1;
     opacity:var(--homework-marquee-opacity,.28);
     animation:homeworkBorderMarquee var(--homework-marquee-period,14s) linear infinite;
+}
+html[data-color-scheme="dark"] .hw-card-item.homework-pending::before {
+    inset:-3px;
+    padding:3px;
+    border-radius:9px;
+    opacity:calc(.55 + var(--homework-urgency,0) * .45);
+    filter:drop-shadow(0 0 2px rgba(255,255,255,.65));
 }
 @keyframes homeworkBorderMarquee { to { --homework-border-angle:360deg; } }
 #course-list .hw-card-item .file-item {
