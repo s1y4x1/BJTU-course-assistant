@@ -52,21 +52,24 @@
     return Number.isFinite(time) ? Math.pow(2, -Math.max(0, time - now) / 86400000) : 0;
   }
 
-  function foreground(color) {
+  function luminance(color) {
     const values = [1, 3, 5].map((offset) => {
       const value = parseInt(color.slice(offset, offset + 2), 16) / 255;
       return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
     });
-    const luminance = values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
-    return luminance > 0.179 ? '#111827' : '#f8fafc';
+    return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
+  }
+
+  function foreground(color) {
+    return luminance(color) > 0.179 ? '#111827' : '#f8fafc';
   }
 
   function setProperty(element, name, value) {
     if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
   }
 
-  function toneVersion(color, transformLightness) {
-    // HSL: keep hue and saturation while adjusting lightness.
+  function toneVersion(color, transformLightness, transformSaturation = (value) => value) {
+    // HSL: preserve hue; adjust lightness and optionally saturation.
     const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16) / 255);
     const min = Math.min(...channels);
     const max = Math.max(...channels);
@@ -74,9 +77,33 @@
     const lightness = (max + min) / 2;
     const saturation = range ? range / (1 - Math.abs(2 * lightness - 1)) : 0;
     const nextLightness = transformLightness(lightness);
-    const chroma = (1 - Math.abs(2 * nextLightness - 1)) * saturation;
+    const chroma = (1 - Math.abs(2 * nextLightness - 1)) * transformSaturation(saturation);
     const offset = nextLightness - chroma / 2;
     return '#' + channels.map((value) => Math.round(255 * (range ? offset + chroma * (value - min) / range : nextLightness)).toString(16).padStart(2, '0')).join('');
+  }
+
+  const vividColorCache = new Map();
+  function vividVersion(background) {
+    if (vividColorCache.has(background)) return vividColorCache.get(background);
+    const makeColor = (lightness) => toneVersion(background, () => lightness, (saturation) => Math.max(saturation, 0.9));
+    // Use the brightest high-saturation shade that keeps white button text and
+    // card titles readable, including the darkest phase of the card's breathing.
+    let lower = 0;
+    let upper = 0.48;
+    const titleOnLightCard = foreground(background) === '#111827';
+    for (let i = 0; i < 18; i += 1) {
+      const lightness = (lower + upper) / 2;
+      const color = makeColor(lightness);
+      const ink = luminance(color) + 0.05;
+      const readable = 1.05 / ink >= 4.5
+        && (!titleOnLightCard || (luminance(interpolate(background, color, 0.08)) + 0.05) / ink >= 4.5);
+      if (readable) lower = lightness;
+      else upper = lightness;
+    }
+    const color = makeColor(lower);
+    if (vividColorCache.size >= 512) vividColorCache.clear();
+    vividColorCache.set(background, color);
+    return color;
   }
 
   function refreshCards(cards = document.querySelectorAll('.hw-card-item')) {
@@ -103,7 +130,7 @@
       const background = active
         ? interpolate(settings.pendingCard || defaults.pendingCard, settings.overdueCard || defaults.overdueCard, c)
         : settings[key] || defaults[key];
-      const action = toneVersion(background, (lightness) => Math.min(lightness, 0.24));
+      const action = vividVersion(background);
       setProperty(card, '--homework-card-background', background);
       setProperty(card, '--homework-card-action', action);
       setProperty(card, '--homework-card-title', foreground(background) === '#111827' ? action : '#f8fafc');
