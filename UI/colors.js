@@ -65,18 +65,18 @@
     if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
   }
 
-  function darkVersion(color) {
-    // HSL: keep hue and saturation, reduce only lightness (YUV clipping can shift hue).
+  function toneVersion(color, transformLightness) {
+    // HSL: keep hue and saturation while adjusting lightness.
     const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16) / 255);
     const min = Math.min(...channels);
     const max = Math.max(...channels);
     const range = max - min;
     const lightness = (max + min) / 2;
     const saturation = range ? range / (1 - Math.abs(2 * lightness - 1)) : 0;
-    const darkLightness = Math.min(lightness, 0.24);
-    const chroma = (1 - Math.abs(2 * darkLightness - 1)) * saturation;
-    const offset = darkLightness - chroma / 2;
-    return '#' + channels.map((value) => Math.round(255 * (range ? offset + chroma * (value - min) / range : darkLightness)).toString(16).padStart(2, '0')).join('');
+    const nextLightness = transformLightness(lightness);
+    const chroma = (1 - Math.abs(2 * nextLightness - 1)) * saturation;
+    const offset = nextLightness - chroma / 2;
+    return '#' + channels.map((value) => Math.round(255 * (range ? offset + chroma * (value - min) / range : nextLightness)).toString(16).padStart(2, '0')).join('');
   }
 
   function refreshCards(cards = document.querySelectorAll('.hw-card-item')) {
@@ -103,12 +103,13 @@
       const background = active
         ? interpolate(settings.pendingCard || defaults.pendingCard, settings.overdueCard || defaults.overdueCard, c)
         : settings[key] || defaults[key];
-      const action = darkVersion(background);
+      const action = toneVersion(background, (lightness) => Math.min(lightness, 0.24));
       setProperty(card, '--homework-card-background', background);
       setProperty(card, '--homework-card-action', action);
       setProperty(card, '--homework-card-title', foreground(background) === '#111827' ? action : '#f8fafc');
       setProperty(card, '--homework-card-foreground', foreground(background));
       setProperty(card, '--homework-card-border', action);
+      setProperty(card, '--homework-card-glow', toneVersion(background, () => 0.62));
       setProperty(card, '--homework-card-breathe-background', interpolate(background, action, 0.025 + 0.055 * c));
       setProperty(card, '--homework-urgency', c.toFixed(4));
       setProperty(card, '--homework-marquee-opacity', (0.28 + 0.72 * c).toFixed(4));

@@ -1886,8 +1886,18 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
         homeworkUrgencyBlink var(--homework-blink-period,10s) ease-in-out infinite;
 }
 @keyframes homeworkUrgencyBreathe {
-    0%,100% { --homework-card-fill:var(--homework-card-background); box-shadow:0 0 0 0 rgba(249,115,22,0); }
-    50% { --homework-card-fill:var(--homework-card-breathe-background); box-shadow:0 0 8px 2px rgba(219,157,141,calc(var(--homework-urgency,0) * .3)); }
+    0%,100% {
+        --homework-card-fill:var(--homework-card-background);
+        box-shadow:0 0 2px 0 color-mix(in srgb,var(--homework-card-glow) calc(var(--homework-urgency,0) * 15%),transparent),
+            0 0 10px 1px color-mix(in srgb,var(--homework-card-glow) calc(var(--homework-urgency,0) * 8%),transparent),
+            0 0 24px 2px transparent;
+    }
+    50% {
+        --homework-card-fill:var(--homework-card-breathe-background);
+        box-shadow:0 0 3px 1px color-mix(in srgb,var(--homework-card-glow) calc(15% + var(--homework-urgency,0) * 75%),transparent),
+            0 0 14px 3px color-mix(in srgb,var(--homework-card-glow) calc(5% + var(--homework-urgency,0) * 50%),transparent),
+            0 0 32px 5px color-mix(in srgb,var(--homework-card-glow) calc(var(--homework-urgency,0) * 30%),transparent);
+    }
 }
 @keyframes homeworkUrgencyBlink {
     0%,80%,100% { filter:brightness(1); }
@@ -1905,9 +1915,9 @@ html[data-color-scheme="dark"] .hw-card-item.homework-pending { --homework-marqu
     padding:calc(1px + var(--homework-urgency,0) * 1px);
     background:conic-gradient(from var(--homework-border-angle),
         transparent 0deg 235deg,
-        color-mix(in srgb,var(--homework-card-border,var(--homework-base-border,#a7bcd9)),white var(--homework-marquee-white,55%)) 275deg,
-        rgba(255,255,255,.95) 300deg,
-        color-mix(in srgb,var(--homework-card-border,var(--homework-base-border,#a7bcd9)),white var(--homework-marquee-white,55%)) 325deg,
+        var(--homework-card-glow) 275deg,
+        color-mix(in srgb,var(--homework-card-glow),white var(--homework-marquee-white,55%)) 300deg,
+        var(--homework-card-glow) 325deg,
         transparent 360deg);
     -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
     -webkit-mask-composite:xor;
@@ -1923,7 +1933,8 @@ html[data-color-scheme="dark"] .hw-card-item.homework-pending.homework-marquee::
     padding:calc(2px + var(--homework-urgency,0) * 2px);
     border-radius:calc(8px + var(--homework-urgency,0) * 2px);
     opacity:calc(.55 + var(--homework-urgency,0) * .45);
-    filter:drop-shadow(0 0 2px rgba(255,255,255,.65));
+    filter:drop-shadow(0 0 2px color-mix(in srgb,var(--homework-card-glow),white 65%))
+        drop-shadow(0 0 6px color-mix(in srgb,var(--homework-card-glow) 85%,transparent));
 }
 @keyframes homeworkBorderMarquee { to { --homework-border-angle:360deg; } }
 #course-list .hw-card-item .file-item {
