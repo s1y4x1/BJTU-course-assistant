@@ -5650,6 +5650,7 @@ function renderHomeworkList(courseId) {
     return globalThis.BjtuHomeworkUi.renderHomeworkCard({
       done: !isTeacherMode && isDone,
       deadlineGradient: !isTeacherMode,
+      teacher: isTeacherMode,
       overdue,
       deadline,
       background: bgColor,

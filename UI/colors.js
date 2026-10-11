@@ -5,13 +5,15 @@
   const gradientKey = 'homeworkDeadlineGradientEnabled';
   const defaults = Object.freeze({
     button: '#1976d2', courseCard: '#ffffff', fileCard: '#ffffff',
-    pendingCard: '#fff3e0', overdueCard: '#ffebee', doneCard: '#e8f5e9',
-    deadlineFar: '#fffbd6', deadlineNear: '#ffe2da'
+    pendingCard: '#ffffe6', overdueCard: '#ffe6e6', doneCard: '#e6ffe6',
+    resource: '#1e3a8a', replay: '#9c27b0', assessment: '#0f766e', archive: '#0369a1',
+    copy: '#4caf50', download: '#1e3a8a', teacherPendingCard: '#dbeafe', teacherOverdueCard: '#ede9fe'
   });
   const labels = {
     button: '操作按钮', courseCard: '课程卡片', fileCard: '文件卡片',
     pendingCard: '未交作业', overdueCard: '逾期作业', doneCard: '已交作业',
-    deadlineFar: '远期作业', deadlineNear: '临期作业'
+    resource: '资源下载', replay: '回放下载', assessment: '课程考核记录表下载', archive: '归档下载',
+    copy: '复制', download: '下载', teacherPendingCard: '未了作业（教师）', teacherOverdueCard: '过时作业（教师）'
   };
   let settings = {};
   let gradientEnabled = true;
@@ -60,40 +62,42 @@
     if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
   }
 
+  function darkVersion(color) {
+    const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16));
+    const min = Math.min(...channels);
+    const range = Math.max(...channels) - min;
+    return '#' + channels.map((value) => Math.round(range ? 35 + 75 * (value - min) / range : 55).toString(16).padStart(2, '0')).join('');
+  }
+
   function refreshCards(cards = document.querySelectorAll('.hw-card-item')) {
     cards.forEach((card) => {
       const done = card.dataset.homeworkDone === '1';
       const overdue = card.dataset.homeworkOverdue === '1';
+      const teacher = card.dataset.homeworkTeacher === '1';
       const time = deadlineTime(card.dataset.homeworkDeadline);
-      const active = gradientEnabled && card.dataset.homeworkGradient !== '0'
+      const active = gradientEnabled && !teacher && card.dataset.homeworkGradient !== '0'
         && !done && !overdue && Number.isFinite(time) && time > Date.now();
-      const key = done ? 'doneCard' : overdue ? 'overdueCard' : 'pendingCard';
+      const key = teacher ? (overdue ? 'teacherOverdueCard' : 'teacherPendingCard')
+        : done ? 'doneCard' : overdue ? 'overdueCard' : 'pendingCard';
+      const c = !teacher && !done && !overdue ? urgency(card.dataset.homeworkDeadline) : 0;
+      const background = active
+        ? interpolate(settings.pendingCard || defaults.pendingCard, settings.overdueCard || defaults.overdueCard, c)
+        : settings[key] || defaults[key];
+      const action = darkVersion(background);
+      setProperty(card, '--homework-card-background', background);
+      setProperty(card, '--homework-card-action', action);
+      setProperty(card, '--homework-card-title', foreground(background) === '#111827' ? action : '#f8fafc');
+      setProperty(card, '--homework-card-foreground', foreground(background));
+      setProperty(card, '--homework-card-border', action);
+      setProperty(card, '--homework-urgency', c.toFixed(4));
+      setProperty(card, '--homework-marquee-opacity', (0.08 + 0.92 * c).toFixed(4));
+      setProperty(card, '--homework-marquee-period', `${(14 - 7 * c).toFixed(2)}s`);
       if (active) {
-        const c = urgency(card.dataset.homeworkDeadline);
-        const background = interpolate(settings.deadlineFar || defaults.deadlineFar, settings.deadlineNear || defaults.deadlineNear, c);
-        setProperty(card, '--homework-card-background', background);
-        setProperty(card, '--homework-card-border', interpolate('#d2c75f', '#db9d8d', c));
-        const action = interpolate('#797000', '#983e2e', c);
-        setProperty(card, '--homework-card-action', action);
-        setProperty(card, '--homework-card-title', foreground(background) === '#111827' ? action : '#f8fafc');
-        setProperty(card, '--homework-card-foreground', foreground(background));
-        setProperty(card, '--homework-urgency', c.toFixed(4));
         setProperty(card, '--homework-breathe-period', `${(5 - 2 * c).toFixed(2)}s`);
         setProperty(card, '--homework-blink-period', `${(10 - 6 * c).toFixed(2)}s`);
-        setProperty(card, '--homework-marquee-period', `${(14 - 7 * c).toFixed(2)}s`);
-      } else {
-        const background = settings[key];
-        if (background) setProperty(card, '--homework-card-background', background);
-        else card.style.removeProperty('--homework-card-background');
-        const base = background || card.dataset.homeworkBaseBackground;
-        if (base && /^#[0-9a-f]{6}$/i.test(base)) setProperty(card, '--homework-card-foreground', foreground(base));
-        else card.style.removeProperty('--homework-card-foreground');
-        card.style.removeProperty('--homework-card-border');
-        card.style.removeProperty('--homework-card-action');
-        card.style.removeProperty('--homework-card-title');
-        card.style.removeProperty('--homework-marquee-period');
       }
       card.classList.toggle('homework-deadline-gradient', active);
+      card.classList.toggle('homework-pending', !teacher && !done && !overdue);
     });
   }
 
@@ -113,9 +117,10 @@
     gradientEnabled = gradient !== false;
     Object.keys(defaults).forEach((key) => {
       document.documentElement.toggleAttribute(`data-custom-color-${key.toLowerCase()}`, !!settings[key]);
-      if (settings[key]) {
-        setProperty(document.documentElement, `--bjtu-color-${key}`, settings[key]);
-        setProperty(document.documentElement, `--bjtu-color-${key}-foreground`, foreground(settings[key]));
+      if (settings[key] || ['resource', 'replay', 'assessment', 'archive', 'copy', 'download'].includes(key)) {
+        const color = settings[key] || defaults[key];
+        setProperty(document.documentElement, `--bjtu-color-${key}`, color);
+        setProperty(document.documentElement, `--bjtu-color-${key}-foreground`, foreground(color));
       } else {
         document.documentElement.style.removeProperty(`--bjtu-color-${key}`);
         document.documentElement.style.removeProperty(`--bjtu-color-${key}-foreground`);
@@ -171,7 +176,7 @@
       });
     }).observe(document.body, {
       childList: true, subtree: true, attributes: true,
-      attributeFilter: ['data-homework-done', 'data-homework-overdue', 'data-homework-deadline']
+      attributeFilter: ['data-homework-done', 'data-homework-overdue', 'data-homework-deadline', 'data-homework-teacher', 'data-homework-gradient']
     });
     setInterval(refreshCards, 60000);
   }

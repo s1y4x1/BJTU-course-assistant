@@ -222,6 +222,7 @@
     overdue = false,
     deadline = '',
     deadlineGradient = true,
+    teacher = false,
     className = '',
     background = '#fff',
     border = '#d1d5db',
@@ -243,7 +244,7 @@
     const mainClasses = mainClass || 'homework-card-main';
     const actionClasses = actionsClass || 'homework-card-actions';
     const deadlineAttribute = String(deadline ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    return `<div class="${classes}" data-homework-done="${done ? '1' : '0'}" data-homework-overdue="${overdue ? '1' : '0'}" data-homework-deadline="${deadlineAttribute}" data-homework-gradient="${deadlineGradient ? '1' : '0'}" data-homework-base-background="${background}" ${attributes} style="--homework-base-background:${background};--homework-base-border:${border};background:var(--homework-card-background, var(--homework-base-background));border:1px solid var(--homework-card-border, var(--homework-base-border));border-radius:6px;padding:8px;margin-top:8px;">
+    return `<div class="${classes}" data-homework-done="${done ? '1' : '0'}" data-homework-overdue="${overdue ? '1' : '0'}" data-homework-teacher="${teacher ? '1' : '0'}" data-homework-deadline="${deadlineAttribute}" data-homework-gradient="${deadlineGradient ? '1' : '0'}" data-homework-base-background="${background}" ${attributes} style="--homework-base-background:${background};--homework-base-border:${border};background:var(--homework-card-background, var(--homework-base-background));border:1px solid var(--homework-card-border, var(--homework-base-border));border-radius:6px;padding:8px;margin-top:8px;">
       <div class="${headClasses}" style="${headStyle}">
         <div class="${mainClasses}">${titleHtml}</div>
         ${actionsHtml ? `<div class="${actionClasses}" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">${actionsHtml}</div>` : ''}

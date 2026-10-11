@@ -143,7 +143,9 @@ body.module-options-standalone label:has(input:not(:disabled), select:not(:disab
 .font-size-editor { margin-top:0; }
 .component-color-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:2px 14px; margin-top:7px; }
 .component-color-item { display:flex; align-items:center; gap:6px; }
-.component-color-item > span { width:5em; }
+.component-color-item > span { flex:1; }
+.component-color-gradient-toggle { display:flex; align-items:center; gap:6px; }
+.component-color-gradient-toggle input[type="checkbox"] { width:auto; flex:0 0 auto; margin:0; }
 .component-color-item input[type="color"] { width:44px; height:28px; margin:0; padding:2px; cursor:pointer; }
 .font-size-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:2px 14px; margin-top:7px; }
 .font-size-item { display:grid !important; grid-template-columns:5em 72px max-content max-content; align-items:center; column-gap:4px; row-gap:0; }

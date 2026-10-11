@@ -112,8 +112,8 @@
       <details class="ui-order-editor" id="colorEditor">
         <summary><span class="ui-order-summary-label">颜色</span><span class="tip">自定义主要按钮与卡片；点击默认可恢复原配色。</span></summary>
         <div id="componentColorGrid" class="component-color-grid"></div>
-        <label><input type="checkbox" id="homeworkDeadlineGradientEnabled" checked> 使用渐变的未交作业卡片颜色</label>
-        <div class="tip">距离截止越近，颜色越接近橙红色，闪烁与呼吸越明显；每隔一天，临期强度减半。无截止时间、已交或逾期作业不使用此效果。</div>
+        <label class="component-color-gradient-toggle"><input type="checkbox" id="homeworkDeadlineGradientEnabled" checked> 使用渐变的未交作业卡片颜色</label>
+        <div class="tip">未交作业从未交作业颜色渐变至逾期作业颜色；距离截止越近，渐变进度、闪烁、呼吸与边框跑马灯越明显，每隔一天临期强度减半。无截止时间的作业不渐变，已交、逾期及教师作业不使用跑马灯。</div>
       </details>
       <div class="option-divider" role="separator"></div>
       <details class="ui-order-editor" id="uiOrderEditor">

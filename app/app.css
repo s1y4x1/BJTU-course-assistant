@@ -1895,7 +1895,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 }
 @property --homework-border-angle { syntax:'<angle>'; initial-value:0deg; inherits:false; }
 .hw-card-item { position:relative; }
-.hw-card-item::before {
+.hw-card-item.homework-pending::before {
     content:'';
     position:absolute;
     inset:-1px;
@@ -1913,6 +1913,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     mask-composite:exclude;
     pointer-events:none;
     z-index:1;
+    opacity:var(--homework-marquee-opacity,.08);
     animation:homeworkBorderMarquee var(--homework-marquee-period,14s) linear infinite;
 }
 @keyframes homeworkBorderMarquee { to { --homework-border-angle:360deg; } }
@@ -1921,16 +1922,22 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     border:1px solid var(--homework-card-border,var(--homework-base-border)) !important;
     color:var(--homework-card-foreground,#111827) !important;
 }
-#course-list .hw-card-item.homework-deadline-gradient :is(.homework-card-actions,.mooc-task-actions,.xuetangx-task-actions) .btn,
-#course-list .hw-card-item.homework-deadline-gradient .confirm-submit-btn {
+#course-list .hw-card-item :is(.homework-card-actions,.mooc-task-actions,.xuetangx-task-actions) .btn,
+#course-list .hw-card-item .confirm-submit-btn {
     background:var(--homework-card-action) !important;
     border:1px solid var(--homework-card-action) !important;
     color:#fff !important;
 }
-#course-list .hw-card-item.homework-deadline-gradient :is(.homework-card-title,.mooc-task-title,.xuetangx-task-title,.deadline-countdown-prefix) {
+#course-list .hw-card-item :is(.homework-card-title,.mooc-task-title,.xuetangx-task-title,.deadline-countdown-prefix) {
     color:var(--homework-card-title) !important;
 }
 html[data-custom-color-button] :is(.course-actions .btn,.homework-card-actions .btn,.confirm-submit-btn,.resource-copy-btn,.upload-header-controls .btn,#refresh-btn,#paste-file-btn) { background:var(--bjtu-color-button) !important; color:var(--bjtu-color-button-foreground) !important; }
+#course-list button[data-action="courseware"] { background:var(--bjtu-color-resource) !important; color:var(--bjtu-color-resource-foreground) !important; }
+#course-list button[data-action="videos"] { background:var(--bjtu-color-replay) !important; color:var(--bjtu-color-replay-foreground) !important; }
+#course-list button[data-action="assessment"] { background:var(--bjtu-color-assessment) !important; color:var(--bjtu-color-assessment-foreground) !important; }
+#course-list button[data-action="archive"] { background:var(--bjtu-color-archive) !important; color:var(--bjtu-color-archive-foreground) !important; }
+html:root :is(.resource-copy-btn,.saved-upload-copy,#resource-copy-selected-btn) { background:var(--bjtu-color-copy) !important; color:var(--bjtu-color-copy-foreground) !important; }
+html:root :is(.resource-download-btn:not(.is-cancel),.saved-upload-download:not(.is-cancel),#resource-download-selected-btn) { background:var(--bjtu-color-download) !important; color:var(--bjtu-color-download-foreground) !important; }
 html[data-custom-color-coursecard] #course-list .file-item[data-course-rankable="1"] { background:var(--bjtu-color-courseCard) !important; color:var(--bjtu-color-courseCard-foreground); }
 html[data-custom-color-coursecard] #course-list .file-item[data-course-rankable="1"] :is(.course-card-title,.course-card-title strong,.course-card-identity > :not(.course-card-title),.mooc-course-identity > :not(.course-card-title),.xuetangx-course-identity > :not(.course-card-title)) { color:var(--bjtu-color-courseCard-foreground) !important; }
 html[data-custom-color-filecard] :is(#file-list,.resource-space-list,.saved-uploads-list,.result-area) .file-item:not([data-course-rankable="1"]) { background:var(--bjtu-color-fileCard) !important; color:var(--bjtu-color-fileCard-foreground); }
