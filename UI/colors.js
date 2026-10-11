@@ -5,9 +5,9 @@
   const gradientKey = 'homeworkDeadlineGradientEnabled';
   const defaults = Object.freeze({
     button: '#1976d2', courseCard: '#ffffff', fileCard: '#ffffff',
-    pendingCard: '#ffffe6', overdueCard: '#ffe6e6', doneCard: '#e6ffe6',
+    pendingCard: '#fff5e6', overdueCard: '#ffe6e6', doneCard: '#e6ffe6',
     resource: '#1e3a8a', replay: '#9c27b0', assessment: '#0f766e', archive: '#0369a1',
-    copy: '#4caf50', download: '#1e3a8a', teacherPendingCard: '#dbeafe', teacherOverdueCard: '#ede9fe'
+    copy: '#45a049', download: '#1e3a8a', teacherPendingCard: '#dbeafe', teacherOverdueCard: '#ede9fe'
   });
   const labels = {
     button: '操作按钮', courseCard: '课程卡片', fileCard: '文件卡片',
@@ -63,10 +63,17 @@
   }
 
   function darkVersion(color) {
-    const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16));
+    // HSL: keep hue and saturation, reduce only lightness (YUV clipping can shift hue).
+    const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16) / 255);
     const min = Math.min(...channels);
-    const range = Math.max(...channels) - min;
-    return '#' + channels.map((value) => Math.round(range ? 35 + 75 * (value - min) / range : 55).toString(16).padStart(2, '0')).join('');
+    const max = Math.max(...channels);
+    const range = max - min;
+    const lightness = (max + min) / 2;
+    const saturation = range ? range / (1 - Math.abs(2 * lightness - 1)) : 0;
+    const darkLightness = Math.min(lightness, 0.24);
+    const chroma = (1 - Math.abs(2 * darkLightness - 1)) * saturation;
+    const offset = darkLightness - chroma / 2;
+    return '#' + channels.map((value) => Math.round(255 * (range ? offset + chroma * (value - min) / range : darkLightness)).toString(16).padStart(2, '0')).join('');
   }
 
   function refreshCards(cards = document.querySelectorAll('.hw-card-item')) {
@@ -89,13 +96,12 @@
       setProperty(card, '--homework-card-title', foreground(background) === '#111827' ? action : '#f8fafc');
       setProperty(card, '--homework-card-foreground', foreground(background));
       setProperty(card, '--homework-card-border', action);
+      setProperty(card, '--homework-card-breathe-background', interpolate(background, action, 0.025 + 0.055 * c));
       setProperty(card, '--homework-urgency', c.toFixed(4));
-      setProperty(card, '--homework-marquee-opacity', (0.08 + 0.92 * c).toFixed(4));
+      setProperty(card, '--homework-marquee-opacity', (0.28 + 0.72 * c).toFixed(4));
       setProperty(card, '--homework-marquee-period', `${(14 - 7 * c).toFixed(2)}s`);
-      if (active) {
-        setProperty(card, '--homework-breathe-period', `${(5 - 2 * c).toFixed(2)}s`);
-        setProperty(card, '--homework-blink-period', `${(10 - 6 * c).toFixed(2)}s`);
-      }
+      setProperty(card, '--homework-breathe-period', `${(5 - 2 * c).toFixed(2)}s`);
+      setProperty(card, '--homework-blink-period', `${(10 - 6 * c).toFixed(2)}s`);
       card.classList.toggle('homework-deadline-gradient', active);
       card.classList.toggle('homework-pending', !teacher && !done && !overdue);
     });
@@ -120,7 +126,7 @@
       if (settings[key] || ['resource', 'replay', 'assessment', 'archive', 'copy', 'download'].includes(key)) {
         const color = settings[key] || defaults[key];
         setProperty(document.documentElement, `--bjtu-color-${key}`, color);
-        setProperty(document.documentElement, `--bjtu-color-${key}-foreground`, foreground(color));
+        setProperty(document.documentElement, `--bjtu-color-${key}-foreground`, ['button', 'resource', 'replay', 'assessment', 'archive', 'copy', 'download'].includes(key) ? '#ffffff' : foreground(color));
       } else {
         document.documentElement.style.removeProperty(`--bjtu-color-${key}`);
         document.documentElement.style.removeProperty(`--bjtu-color-${key}-foreground`);
