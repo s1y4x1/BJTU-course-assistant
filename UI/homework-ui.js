@@ -75,9 +75,7 @@
     return template.innerHTML.trim();
   }
 
-  function statusHtml({ done = false, overdue = false } = {}) {
-    if (done) return '';
-    if (overdue) return '<span class="homework-status-overdue">(已逾期)</span>';
+  function statusHtml() {
     return '';
   }
 

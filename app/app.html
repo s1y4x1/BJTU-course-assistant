@@ -46,7 +46,10 @@
         <div class="left-column">
             <div class="upload-section-header" style="display:flex; align-items:center; justify-content:space-between; margin: 0 0 10px;">
                 <h1 class="zero-title" style="margin: 0;">文件上传</h1>
-                <div style="display:flex; align-items:center; gap:8px;">
+                <div class="upload-header-controls" style="display:flex; align-items:center; gap:8px;">
+                    <label class="upload-parallel-limit">并行
+                        <input id="upload-parallel-limit" type="number" min="1" step="1" value="3" placeholder="∞" aria-label="文件上传/下载并行数，留空表示不限数量">
+                    </label>
                     <span class="options-controlled-slot save-uploads-options-slot">
                         <label class="save-uploads-toggle" data-options-controlled style="display:flex; align-items:center; gap:6px; font-size:12px; color:#475569; cursor:pointer;">
                             <input type="checkbox" id="save-uploads-enabled" checked>

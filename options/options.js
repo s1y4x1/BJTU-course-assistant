@@ -190,6 +190,7 @@ function normalizeDetailCollapsedLines(value, fallback = 3) {
 }
 
 function normalizeParallelLimit(value, fallback = DEFAULT_PARALLEL_LIMIT) {
+  if (value === '' || value === null) return '';
   const limit = Math.trunc(Number(value));
   return Number.isFinite(limit) && limit > 0 ? limit : fallback;
 }

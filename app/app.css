@@ -272,6 +272,10 @@ input[type="text"], input[type="number"], input[type="password"] { padding: 8px;
     overflow: hidden;
     transition: gap 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
+.upload-section-header { gap:8px; flex-wrap:wrap; }
+.upload-header-controls { flex-wrap:wrap; justify-content:flex-end; max-width:100%; }
+.upload-parallel-limit { display:inline-flex; align-items:center; gap:4px; margin:0; font-size:var(--bjtu-font-size-body, 13px); white-space:nowrap; }
+.upload-parallel-limit input { box-sizing:border-box; width:54px; padding:3px 5px; border:1px solid #ccc; border-radius:6px; font:inherit; background:#fff; color:#111827; }
 .left-column {
     flex: 1 1 0;
     min-width: 0;
@@ -1424,10 +1428,6 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
 .homework-group + .hw-card-item {
     margin-top: 8px;
 }
-.homework-status-overdue {
-    color: #dc2626;
-    font-weight: 600;
-}
 .deadline-countdown {
     display: inline-flex;
     align-items: center;
@@ -1448,6 +1448,7 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
 .homework-card-title { font-size:var(--bjtu-font-size-secondaryTitle, 16px); font-weight:700; overflow-wrap:anywhere; }
 .homework-card-main { min-width:0; flex:1 1 auto; }
 .homework-card-actions { flex:0 0 auto; }
+.btn[data-action="download-homework-package"]:disabled { opacity:.55; cursor:not-allowed; }
 .homework-feedback { margin-top:3px; color:#111827; font-size:var(--bjtu-font-size-body, 13px); overflow-wrap:anywhere; }
 .homework-feedback-comment { white-space:pre-wrap; }
 .homework-feedback .homework-score-badge + .homework-feedback-comment { margin-left:.4em; }

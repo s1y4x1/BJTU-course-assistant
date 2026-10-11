@@ -645,6 +645,12 @@ const uploadQueue = [];
 let activeUploads = 0;
 let maxParallelUploads = 3;
 const PARALLEL_LIMIT_KEY = 'parallelLimit';
+const uploadParallelLimitInput = document.getElementById('upload-parallel-limit');
+uploadParallelLimitInput?.addEventListener('change', async (event) => {
+  const value = normalizeParallelLimit(event.currentTarget.value);
+  event.currentTarget.value = Number.isFinite(value) ? String(value) : '';
+  await chrome.storage.local.set({ [PARALLEL_LIMIT_KEY]: Number.isFinite(value) ? value : '' });
+});
 let pendingLoginCallbacks = [];
 let isLoginSessionValid = true;
 window.filesData = {}; // {fileId: {size, uploaded}}
@@ -1180,9 +1186,11 @@ async function loadPlatformDetailSettings() {
     window.jlgjDarkModeEnabled = true;
   }
   applyDetailCollapsedLineSettings();
+  if (uploadParallelLimitInput) uploadParallelLimitInput.value = Number.isFinite(maxParallelUploads) ? String(maxParallelUploads) : '';
 }
 
 function normalizeParallelLimit(value, fallback = 3) {
+  if (value === '' || value === null) return Infinity;
   const limit = Math.trunc(Number(value));
   return Number.isFinite(limit) && limit > 0 ? limit : fallback;
 }
@@ -1593,6 +1601,7 @@ function setupOptionsStorageLiveSync() {
     }
     if (changes[PARALLEL_LIMIT_KEY]) {
       maxParallelUploads = normalizeParallelLimit(changes[PARALLEL_LIMIT_KEY].newValue, 3);
+      if (uploadParallelLimitInput) uploadParallelLimitInput.value = Number.isFinite(maxParallelUploads) ? String(maxParallelUploads) : '';
       if (typeof processQueue === 'function') processQueue();
       if (typeof processResourceDownloadQueue === 'function') processResourceDownloadQueue();
     }
@@ -2709,6 +2718,45 @@ function normalizeHomeworkAttachmentUrl(raw) {
   const normalized = text.startsWith('/') ? text : `/${text}`;
   if (normalized.startsWith('/rp/')) return `${FILE_BASE}${normalized}`;
   return `${BASE}${normalized}`;
+}
+
+const homeworkPackageDownloads = new Map();
+
+function downloadHomeworkPackage(url) {
+  if (homeworkPackageDownloads.has(url)) return homeworkPackageDownloads.get(url);
+  const pending = new Promise((resolve, reject) => {
+    let downloadId;
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      chrome.downloads.onChanged.removeListener(onChanged);
+      if (error) reject(error); else resolve();
+    };
+    const checkState = (state, error) => {
+      if (state === 'complete') finish();
+      else if (state === 'interrupted') finish(new Error(error === 'USER_CANCELED' ? '下载已取消' : '浏览器下载已中断'));
+    };
+    const onChanged = (delta) => {
+      if (delta.id === downloadId) checkState(delta.state?.current, delta.error?.current);
+    };
+    chrome.downloads.onChanged.addListener(onChanged);
+    const downloadUrl = globalThis.BjtuVeAddress?.replace(url) || url;
+    chrome.downloads.download({ url: downloadUrl, conflictAction: 'uniquify', saveAs: false })
+      .then((id) => {
+        downloadId = id;
+        return chrome.downloads.search({ id });
+      })
+      .then((items) => checkState(items[0]?.state, items[0]?.error))
+      .catch(finish);
+  }).finally(() => {
+    homeworkPackageDownloads.delete(url);
+    courseListDiv.querySelectorAll('[data-action="download-homework-package"]').forEach((button) => {
+      if (button.dataset.downloadUrl === url) button.disabled = false;
+    });
+  });
+  homeworkPackageDownloads.set(url, pending);
+  return pending;
 }
 
 function triggerHomeworkAttachmentDownload(url, fileName) {
@@ -5575,7 +5623,7 @@ function renderHomeworkList(courseId) {
     const actionButtonsHtml = isTeacherMode
       ? `<div style="display:flex; align-items:center; gap:6px;">
           ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
-          ${batchDownloadUrl ? `<a class="btn" href="${batchDownloadUrl}" target="_blank" rel="noopener noreferrer" style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">下载已交作业包</a>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
+          ${batchDownloadUrl ? `<button type="button" class="btn" data-action="download-homework-package" data-download-url="${escapeHtml(batchDownloadUrl)}" ${homeworkPackageDownloads.has(batchDownloadUrl) ? 'disabled' : ''} style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; color:#fff;">下载已交作业包</button>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
         </div>`
       : `<div style="display:flex; align-items:center; gap:6px;">
           ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
@@ -6090,6 +6138,21 @@ courseListDiv.addEventListener('click', async (e) => {
   const actionEl = t.closest('[data-action]');
   if (!(actionEl instanceof HTMLElement)) return;
   const action = String(actionEl.dataset.action || '').trim();
+
+  if (action === 'download-homework-package') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (actionEl.disabled) return;
+    actionEl.disabled = true;
+    try {
+      await downloadHomeworkPackage(actionEl.dataset.downloadUrl);
+    } catch (error) {
+      showToast(`下载已交作业包失败：${error?.message || error}`, 'error');
+    } finally {
+      actionEl.disabled = false;
+    }
+    return;
+  }
 
   if (action === 'courseware' || action === 'videos') {
     const card = actionEl.closest('.file-item[id^="course-"]');
