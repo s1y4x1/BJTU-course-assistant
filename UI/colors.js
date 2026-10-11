@@ -5,12 +5,16 @@
   const gradientKey = 'homeworkDeadlineGradientEnabled';
   const marqueeKey = 'homeworkMarqueeEnabled';
   const defaults = Object.freeze({
+    backgroundLight: global.BjtuTheme.backgroundDefaults.light, backgroundDark: global.BjtuTheme.backgroundDefaults.dark,
+    cardLight: global.BjtuTheme.cardDefaults.light, cardDark: global.BjtuTheme.cardDefaults.dark,
     button: '#1976d2', courseCard: '#ffffff', fileCard: '#ffffff',
     pendingCard: '#fff5e6', overdueCard: '#ffe6e6', doneCard: '#e6ffe6',
     resource: '#1e3a8a', replay: '#9c27b0', assessment: '#0f766e', archive: '#0369a1',
     copy: '#45a049', download: '#1e3a8a', teacherPendingCard: '#dbeafe', teacherOverdueCard: '#ede9fe'
   });
   const labels = {
+    background: '背景',
+    card: '卡片',
     button: '操作按钮', courseCard: '课程卡片', fileCard: '文件卡片',
     pendingCard: '未交作业', overdueCard: '逾期作业', doneCard: '已交作业',
     resource: '资源下载', replay: '回放下载', assessment: '课程考核记录表下载', archive: '归档下载',
@@ -154,10 +158,15 @@
 
   function refreshEditor() {
     document.querySelectorAll('[data-component-color]').forEach((input) => {
-      const key = input.dataset.componentColor;
+      const previousKey = input.dataset.componentColor;
+      const surface = previousKey.match(/^(background|card)(Light|Dark)$/);
+      const key = surface ? currentSurfaceKey(surface[1]) : previousKey;
+      input.dataset.componentColor = key;
       const value = settings[key] || defaults[key];
-      if (document.activeElement !== input) input.value = value;
-      input.closest('label').querySelector('button').hidden = !settings[key];
+      if (key !== previousKey || document.activeElement !== input) input.value = value;
+      const reset = input.closest('label').querySelector('button');
+      reset.dataset.resetColor = key;
+      reset.hidden = !settings[key];
     });
     const toggle = document.getElementById('homeworkDeadlineGradientEnabled');
     if (toggle) toggle.checked = gradientEnabled;
@@ -165,10 +174,15 @@
     if (marqueeToggle) marqueeToggle.checked = marqueeEnabled;
   }
 
+  function currentSurfaceKey(category) {
+    return category + (document.documentElement.dataset.colorScheme === 'dark' ? 'Dark' : 'Light');
+  }
+
   function apply(value = settings, gradient = gradientEnabled, marquee = marqueeEnabled) {
     settings = normalize(value);
     gradientEnabled = gradient !== false;
     marqueeEnabled = marquee !== false;
+    global.BjtuTheme.applyBackgroundColors(settings);
     Object.keys(defaults).forEach((key) => {
       document.documentElement.toggleAttribute(`data-custom-color-${key.toLowerCase()}`, !!settings[key]);
       if (settings[key] || ['resource', 'replay', 'assessment', 'archive', 'copy', 'download'].includes(key)) {
@@ -187,7 +201,10 @@
   function init() {
     const grid = document.getElementById('componentColorGrid');
     if (grid) {
-      grid.innerHTML = Object.keys(defaults).map((key) => `<label class="component-color-item"><span>${labels[key]}</span><input type="color" data-component-color="${key}" value="${defaults[key]}" aria-label="${labels[key]}颜色"><button class="font-size-default" type="button" data-reset-color="${key}" hidden>默认</button></label>`).join('');
+      grid.innerHTML = Object.keys(labels).map((name) => {
+        const key = name === 'background' || name === 'card' ? currentSurfaceKey(name) : name;
+        return `<label class="component-color-item"><span>${labels[name]}</span><input type="color" data-component-color="${key}" value="${defaults[key]}" aria-label="${labels[name]}颜色"><button class="font-size-default" type="button" data-reset-color="${key}" hidden>默认</button></label>`;
+      }).join('');
       grid.addEventListener('input', (event) => {
         const key = event.target.dataset.componentColor;
         if (!key) return;
@@ -250,6 +267,7 @@
       changes[gradientKey] ? changes[gradientKey].newValue !== false : gradientEnabled,
       changes[marqueeKey] ? changes[marqueeKey].newValue !== false : marqueeEnabled);
   });
+  global.addEventListener('bjtu-theme-change', refreshEditor);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })(globalThis);

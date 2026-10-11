@@ -105,36 +105,36 @@
 }
 .ve-course-teacher-loading.warning { color:#b45309; }
 
-.btn.replay-list-loading,
-.btn.replay-list-loading:hover {
-  background:#dba7e6 !important;
+#course-list button[data-action="videos"].replay-list-loading,
+#course-list button[data-action="videos"].replay-list-loading:hover {
+  background:color-mix(in srgb,var(--bjtu-color-replay,#9c27b0),white 65%) !important;
   color:#fff !important;
 }
-.btn.replay-link-progress,
-.btn.replay-link-progress:hover {
-  background:linear-gradient(90deg,#9c27b0 0 var(--replay-progress,0%),#dba7e6 var(--replay-progress,0%) 100%) !important;
-  color:#fff !important;
-  transition:background .25s ease;
-}
-.btn.courseware-list-loading,
-.btn.courseware-list-loading:hover {
-  background:#9bb8ec !important;
-  color:#fff !important;
-}
-.btn.courseware-link-progress,
-.btn.courseware-link-progress:hover {
-  background:linear-gradient(90deg,#1e3a8a 0 var(--courseware-progress,0%),#9bb8ec var(--courseware-progress,0%) 100%) !important;
+#course-list button[data-action="videos"].replay-link-progress,
+#course-list button[data-action="videos"].replay-link-progress:hover {
+  background:linear-gradient(90deg,var(--bjtu-color-replay,#9c27b0) 0 var(--replay-progress,0%),color-mix(in srgb,var(--bjtu-color-replay,#9c27b0),white 65%) var(--replay-progress,0%) 100%) !important;
   color:#fff !important;
   transition:background .25s ease;
 }
-.btn.archive-list-loading,
-.btn.archive-list-loading:hover {
-  background:#8fc7df !important;
+#course-list button[data-action="courseware"].courseware-list-loading,
+#course-list button[data-action="courseware"].courseware-list-loading:hover {
+  background:color-mix(in srgb,var(--bjtu-color-resource,#1e3a8a),white 65%) !important;
   color:#fff !important;
 }
-.btn.archive-link-progress,
-.btn.archive-link-progress:hover {
-  background:linear-gradient(90deg,#0369a1 0 var(--archive-progress,0%),#8fc7df var(--archive-progress,0%) 100%) !important;
+#course-list button[data-action="courseware"].courseware-link-progress,
+#course-list button[data-action="courseware"].courseware-link-progress:hover {
+  background:linear-gradient(90deg,var(--bjtu-color-resource,#1e3a8a) 0 var(--courseware-progress,0%),color-mix(in srgb,var(--bjtu-color-resource,#1e3a8a),white 65%) var(--courseware-progress,0%) 100%) !important;
+  color:#fff !important;
+  transition:background .25s ease;
+}
+#course-list button[data-action="archive"].archive-list-loading,
+#course-list button[data-action="archive"].archive-list-loading:hover {
+  background:color-mix(in srgb,var(--bjtu-color-archive,#0369a1),white 65%) !important;
+  color:#fff !important;
+}
+#course-list button[data-action="archive"].archive-link-progress,
+#course-list button[data-action="archive"].archive-link-progress:hover {
+  background:linear-gradient(90deg,var(--bjtu-color-archive,#0369a1) 0 var(--archive-progress,0%),color-mix(in srgb,var(--bjtu-color-archive,#0369a1),white 65%) var(--archive-progress,0%) 100%) !important;
   color:#fff !important;
   transition:background .25s ease;
 }

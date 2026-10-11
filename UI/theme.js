@@ -1,6 +1,9 @@
 (() => {
   const STORAGE_KEY = 'themeMode';
   const DEFAULT_MODE = 'system';
+  const BACKGROUND_DEFAULTS = Object.freeze({ light: '#f9f9f9', dark: '#0f172a' });
+  const CARD_DEFAULTS = Object.freeze({ light: '#ffffff', dark: '#000000' });
+  let backgroundColors = {};
   const media = window.matchMedia?.('(prefers-color-scheme: dark)');
   const ANIMATION_STORAGE_KEY = 'animationMode';
   const ANIMATION_SPEED_STORAGE_KEY = 'animationSpeed';
@@ -31,9 +34,22 @@
     document.documentElement.dataset.themeMode = mode;
     document.documentElement.dataset.colorScheme = resolved;
     document.documentElement.style.colorScheme = resolved;
+    applyBackgroundColors();
     try {
       window.dispatchEvent(new CustomEvent('bjtu-theme-change', { detail: { mode, resolved } }));
     } catch {}
+  }
+
+  function applyBackgroundColors(value = backgroundColors) {
+    backgroundColors = value || {};
+    const scheme = document.documentElement.dataset.colorScheme === 'dark' ? 'dark' : 'light';
+    const key = scheme === 'dark' ? 'backgroundDark' : 'backgroundLight';
+    const color = backgroundColors[key];
+    const custom = /^#[0-9a-f]{6}$/i.test(String(color || ''));
+    document.documentElement.toggleAttribute('data-custom-background', custom);
+    document.documentElement.style.setProperty('--bjtu-page-background', custom ? color : BACKGROUND_DEFAULTS[scheme]);
+    const card = backgroundColors[scheme === 'dark' ? 'cardDark' : 'cardLight'];
+    document.documentElement.style.setProperty('--bjtu-card-background', /^#[0-9a-f]{6}$/i.test(String(card || '')) ? card : CARD_DEFAULTS[scheme]);
   }
 
   function normalizeAnimationMode(value) {
@@ -206,13 +222,15 @@
   applyFontSizeSettings();
 
   try {
-    chrome.storage.local.get([STORAGE_KEY, ANIMATION_STORAGE_KEY, ANIMATION_SPEED_STORAGE_KEY, FONT_SIZE_STORAGE_KEY]).then((data) => {
+    chrome.storage.local.get([STORAGE_KEY, ANIMATION_STORAGE_KEY, ANIMATION_SPEED_STORAGE_KEY, FONT_SIZE_STORAGE_KEY, 'colorSettings']).then((data) => {
+      applyBackgroundColors(data?.colorSettings);
       applyTheme(data?.[STORAGE_KEY]);
       applyAnimation(data?.[ANIMATION_STORAGE_KEY], data?.[ANIMATION_SPEED_STORAGE_KEY]);
       applyFontSizeSettings(data?.[FONT_SIZE_STORAGE_KEY]);
     }).catch(() => {});
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if (changes.colorSettings) applyBackgroundColors(changes.colorSettings.newValue);
       if (changes[STORAGE_KEY]) applyTheme(changes[STORAGE_KEY].newValue);
       if (changes[ANIMATION_STORAGE_KEY] || changes[ANIMATION_SPEED_STORAGE_KEY]) {
         applyAnimation(
@@ -248,6 +266,9 @@
     defaultMode: DEFAULT_MODE,
     normalizeMode,
     applyTheme,
+    applyBackgroundColors,
+    backgroundDefaults: BACKGROUND_DEFAULTS,
+    cardDefaults: CARD_DEFAULTS,
     getMode: () => mode
   });
 

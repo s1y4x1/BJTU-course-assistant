@@ -1,3 +1,16 @@
+html[data-color-scheme],
+html[data-color-scheme] :is(body, .left-column, .right-column, .page-top-config) {
+  background:var(--bjtu-page-background) !important;
+}
+html[data-color-scheme] .right-column {
+  --course-header-sticky-bg:var(--bjtu-page-background) !important;
+}
+html[data-color-scheme] :is(.config-area, [data-options-section], [data-options-fragment]),
+html[data-color-scheme] .file-item:not(:where(.hw-card-item *, .result-area *)),
+html[data-color-scheme] #drop-zone:not(:where(.dragover, .dragover-invalid, .dragover-text)) {
+  background:var(--bjtu-card-background) !important;
+}
+
 html[data-color-scheme="dark"] {
   background: #0f172a;
   color: #e5e7eb;
@@ -43,7 +56,7 @@ html[data-color-scheme="dark"] textarea:not(.hw-card-item *):not(.result-area *)
 /* app.html and popup.html */
 html[data-color-scheme="dark"] .right-column,
 html[data-color-scheme="dark"] .config-area {
-  background: #111827;
+  background:var(--bjtu-page-background);
 }
 
 html[data-color-scheme="dark"] .right-column {
@@ -60,7 +73,7 @@ html[data-color-scheme="dark"] body.course-header-sticky .course-list-stage::-we
 
 html[data-color-scheme="dark"] #drop-zone {
   border-color: #475569;
-  background: #111827;
+  background:var(--bjtu-card-background);
 }
 
 html[data-color-scheme="dark"] #drop-zone.dragover { background: #102a20; }
@@ -72,7 +85,7 @@ html[data-color-scheme="dark"] #course-list > .platform-course-column > .platfor
 html[data-color-scheme="dark"] #file-list > .file-item,
 html[data-color-scheme="dark"] .resource-space-list > .file-item,
 html[data-color-scheme="dark"] .saved-uploads-list > .file-item {
-  background: #111827 !important;
+  background:var(--bjtu-card-background) !important;
   border-color: #334155 !important;
   color: #e5e7eb;
 }
@@ -493,7 +506,7 @@ html[data-color-scheme="dark"] .animation-mode-btn--system-active {
 html[data-color-scheme="dark"] .animation-speed-value-wrap { color:#cbd5e1; }
 html[data-color-scheme="dark"] .font-size-default { color:#94a3b8; }
 html[data-color-scheme="dark"] #options-controlled-content > div {
-  background: #111827 !important;
+  background:var(--bjtu-card-background) !important;
   border-color: #334155 !important;
 }
 
