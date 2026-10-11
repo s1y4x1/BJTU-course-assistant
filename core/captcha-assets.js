@@ -281,7 +281,10 @@
     await getModelVersions();
     const version = normalizeVersion(options.version || await getSelectedModelVersion());
     const cached = await getCachedModel(version);
-    if (cached) return { ...cached, downloaded: false };
+    if (cached) {
+      await enableRecognitionByDefault();
+      return { ...cached, downloaded: false };
+    }
     if (!modelDownloadPromises.has(version)) {
       const definition = modelVersions[version];
       const controller = new AbortController();
@@ -317,7 +320,9 @@
       }));
     }
     options.onProgress?.({ phase: 'model', loaded: 0, total: 0, version });
-    return modelDownloadPromises.get(version);
+    const result = await modelDownloadPromises.get(version);
+    await enableRecognitionByDefault();
+    return result;
   }
 
   function cancelModelDownload(version) {
@@ -348,6 +353,19 @@
     if (bytes.byteLength < 1000000) throw new Error('验证码识别核心内容无效');
     await validateAsset(bytes, { size: CORE_SIZE, sha256: CORE_SHA256 }, '验证码识别核心');
     return bytes;
+  }
+
+  async function enableRecognitionByDefault() {
+    const stored = await chrome.storage.local.get('veCaptchaRecognitionEnabled');
+    if (stored.veCaptchaRecognitionEnabled !== undefined) return;
+    const [model, core] = await Promise.all([
+      getSelectedModelVersion().then(getCachedModel), extensionCoreExists()
+    ]);
+    if (!model || !core) return;
+    const latest = await chrome.storage.local.get('veCaptchaRecognitionEnabled');
+    if (latest.veCaptchaRecognitionEnabled === undefined) {
+      await chrome.storage.local.set({ veCaptchaRecognitionEnabled: true });
+    }
   }
 
   const POPUP_TRACK_KEY = '__bjtuCaptchaOptionsPopupWindowId';
@@ -427,9 +445,11 @@
     cancelModelDownload,
     extensionCoreExists,
     downloadCore,
+    enableRecognitionByDefault,
     openOptionsPopup
   });
 
+  void enableRecognitionByDefault().catch(() => {});
   void deleteIndexedDatabase('keyval-store').catch((error) => {
     console.info('[bjtu] legacy captcha cache cleanup deferred:', String(error?.message || error));
   });

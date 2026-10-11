@@ -636,6 +636,7 @@
       if (coreReloadRequired || coreResult.reloadRequired === true || coreResult.written > 0) {
         if (!await activateCoreInCurrentRuntime()) return false;
       }
+      await assets.enableRecognitionByDefault();
       if (result.downloaded || coreResult.written > 0) {
         await refreshOrReturnToApp();
       } else if (isCaptchaOptionsPopupWindow()) {
@@ -844,7 +845,7 @@
   }
 
   async function reset() {
-    await chrome.storage.local.set({ veCaptchaRecognitionEnabled: false });
+    await chrome.storage.local.remove('veCaptchaRecognitionEnabled');
     const assets = global.BjtuCaptchaAssets;
     if (!assets) return;
     const version = assets.DEFAULT_MODEL_VERSION;
@@ -852,6 +853,7 @@
       await prepareModel(version, { interactive: false, notify: false });
     }
     selectedVersion = await assets.setSelectedModelVersion(version);
+    await assets.enableRecognitionByDefault();
     renderModels();
     await chrome.runtime.sendMessage({ type: 'CAPTCHA_MODEL_VERSION_CHANGED' }).catch(() => {});
   }
