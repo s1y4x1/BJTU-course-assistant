@@ -122,6 +122,7 @@ function findAlreadyUploadedFile(file, sha256) {
 async function promptDuplicateUploadConfirmation(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return Promise.resolve(new Set());
+  void chrome.runtime.sendMessage({ type: 'VE_UPLOAD_CONFIRMATION_FOCUS' }).catch(() => {});
   await globalThis.__bjtuUploadDuplicateDialogReady;
   const modal = document.getElementById('upload-duplicate-modal');
   const listEl = document.getElementById('upload-duplicate-list');
@@ -901,6 +902,12 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
   const reusedResults = [];
   if (duplicateEntries.length > 0) {
     const selectedDuplicateIndexes = await promptDuplicateUploadConfirmation(duplicateEntries);
+    if (selectedDuplicateIndexes === null) {
+      updateTotalProgress();
+      return waitForCompletion
+        ? { fileList: [], message: '用户取消了重复文件确认，本次所选文件未上传。' }
+        : [];
+    }
     if (selectedDuplicateIndexes instanceof Set) {
       duplicateEntries.forEach((entry, idx) => {
         if (selectedDuplicateIndexes.has(idx)) {
@@ -1067,6 +1074,7 @@ async function uploadFileForApi(args = {}) {
     ? [await buildApiUploadFile(args)]
     : await selectLocalFilesForApi({ accept: args?.accept });
   const results = await processFilesForUpload(files, { waitForCompletion: true });
+  if (results?.message) return results;
   const uploaded = Array.isArray(results) ? results : [];
   return { fileList: uploadResultsToFileList(uploaded) };
 }

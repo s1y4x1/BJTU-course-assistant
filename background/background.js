@@ -185,6 +185,21 @@ async function createBjtuSystemNotification(notificationId, options, source = 'b
 
 globalThis.BjtuSystemNotifications = Object.freeze({ create: createBjtuSystemNotification });
 
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'VE_UPLOAD_CONFIRMATION_FOCUS') return false;
+  const page = String(sender.url || '').split('?')[0];
+  if (![chrome.runtime.getURL('app/app.html'), chrome.runtime.getURL('modules/ve/uploader/index.html')].includes(page)
+      || !Number.isInteger(sender.tab?.id)) return false;
+  void (async () => {
+    const tab = await chrome.tabs.update(sender.tab.id, { active: true });
+    const browserWindow = await chrome.windows.get(tab.windowId);
+    if (browserWindow.state === 'minimized') await chrome.windows.update(browserWindow.id, { state: 'normal' });
+    await chrome.windows.update(browserWindow.id, { focused: true });
+    return { ok: true };
+  })().then(sendResponse, (error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+  return true;
+});
+
 async function restoreBrowserWindowAfterNotificationClick() {
   const browserWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
   if (!Number.isInteger(browserWindow?.id)) return;
