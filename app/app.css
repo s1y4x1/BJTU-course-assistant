@@ -391,13 +391,13 @@ body.column-resizing .right-column {
     transition: max-height 0.22s ease, opacity 0.16s ease, transform 0.22s ease,
         margin 0.22s ease, padding 0.22s ease;
 }
-body.page-top-config-in-left-column.course-header-sticky {
+body.page-top-config-in-left-column {
     padding-top: 0;
 }
-body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .left-column {
+body.page-top-config-in-left-column:not(.course-helper-focus) .left-column {
     padding-top: 15px;
 }
-body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .right-column {
+body.page-top-config-in-left-column:not(.course-helper-focus) .right-column {
     padding-top: 15px;
 }
 body.course-helper-focus {
@@ -676,11 +676,11 @@ body.platform-column-resizing {
         overflow-y: auto;
         overflow-x: auto;
     }
-    body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .left-column {
+    body.page-top-config-in-left-column:not(.course-helper-focus) .left-column {
         padding-top: 12px;
     }
-    body.page-top-config-in-left-column.course-header-sticky:not(.course-helper-focus) .right-column,
-    body.page-top-config-in-left-column.course-header-sticky.course-helper-focus .right-column {
+    body.page-top-config-in-left-column:not(.course-helper-focus) .right-column,
+    body.page-top-config-in-left-column.course-helper-focus .right-column {
         padding-top: 15px;
     }
     body.course-helper-focus .column-resizer {
@@ -1679,6 +1679,9 @@ a.homework-type-badge { text-decoration:none; }
     justify-content: space-between;
     gap: 8px;
     flex-wrap: nowrap;
+}
+#course-list-empty-placeholder {
+    font-size: var(--bjtu-font-size-body, 13px) !important;
 }
 body.course-header-sticky .right-column {
     display: flex;
