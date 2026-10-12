@@ -461,6 +461,14 @@
           <option value="1440">天</option>
         </select>
       </div>
+      <label>
+        发现新版本时若已打开扩展页面：
+        <select id="updateForegroundPromptMode">
+          <option value="immediate">立即定位页面并提示</option>
+          <option value="active" selected>用户使用页面时提示</option>
+          <option value="silent">不提示，等待页面关闭后台更新</option>
+        </select>
+      </label>
       <label style="display:flex; align-items:center; gap:8px; margin:6px 0 0; padding-left:22px;">
         <input type="checkbox" id="backgroundAutoInstallOptionalEnabled" style="width:auto;" />
         自动安装非强制更新

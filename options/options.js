@@ -927,6 +927,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('backgroundAutoUpdateEnabled').checked = backgroundAutoUpdateEnabled === undefined
     ? DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED
     : backgroundAutoUpdateEnabled === true;
+  const updatePromptSelect = document.getElementById('updateForegroundPromptMode');
+  const updatePromptStored = await chrome.storage.local.get('updateForegroundPromptMode');
+  const normalizeUpdatePromptMode = (value) => ['immediate', 'active', 'silent'].includes(value) ? value : 'active';
+  updatePromptSelect.value = normalizeUpdatePromptMode(updatePromptStored.updateForegroundPromptMode);
+  updatePromptSelect.addEventListener('change', () => {
+    void chrome.storage.local.set({ updateForegroundPromptMode: updatePromptSelect.value });
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.updateForegroundPromptMode) {
+      updatePromptSelect.value = normalizeUpdatePromptMode(changes.updateForegroundPromptMode.newValue);
+    }
+  });
   document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
   document.getElementById('updateDirectoryStartupCheckEnabled').checked = updateDirectoryStartupCheckEnabled !== false;
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
@@ -2390,6 +2402,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       homeworkBackgroundRefreshIntervalMinutes: DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES,
       homeworkNewAssignmentNotificationEnabled: false,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
+      updateForegroundPromptMode: 'active',
       updateDirectoryStartupCheckEnabled: true,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,

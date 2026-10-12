@@ -4,6 +4,7 @@
   const ENABLED_KEY = 'backgroundAutoUpdateEnabled';
   const INSTALL_OPTIONAL_KEY = 'backgroundAutoInstallOptionalEnabled';
   const INTERVAL_KEY = 'backgroundAutoUpdateIntervalMinutes';
+  const FOREGROUND_PROMPT_KEY = 'updateForegroundPromptMode';
   const DEFAULT_INTERVAL_MINUTES = 5;
   const STATUS_KEY = 'backgroundAutoUpdateStatus';
   const DETECTED_NOTIFICATION_VERSION_KEY = 'backgroundUpdateDetectedNotifiedVersion';
@@ -868,7 +869,7 @@
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
         DETECTED_NOTIFICATION_VERSION_KEY, INSTALLED_RELEASE_DESCRIPTION_KEY,
-        MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY, 'ignoredUpdateVersion'
+        MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY, 'ignoredUpdateVersion', FOREGROUND_PROMPT_KEY
       ]);
       const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
       if (!forceCheck && !updaterEnabled) return { skipped: true };
@@ -908,17 +909,22 @@
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
       }
-      await focusUpdateApp();
       if (await hasOpenForegroundPage()) {
+        const promptMode = ['immediate', 'active', 'silent'].includes(stored[FOREGROUND_PROMPT_KEY])
+          ? stored[FOREGROUND_PROMPT_KEY] : 'active';
+        if (promptMode === 'immediate') await focusUpdateApp();
         await setStatus('foreground-active', {
           localVersion,
           version: release.version,
           name: release.name,
-          force: release.force
+          force: release.force,
+          foregroundPromptMode: promptMode
         });
-        await chrome.runtime.sendMessage({
-          type: 'BJTU_UPDATER_OPEN_VERSION_NOTICE'
-        }).catch(() => {});
+        if (promptMode !== 'silent') {
+          await chrome.runtime.sendMessage({
+            type: 'BJTU_UPDATER_OPEN_VERSION_NOTICE', version: release.version
+          }).catch(() => {});
+        }
         return { updated: false, foregroundActive: true, release };
       }
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)

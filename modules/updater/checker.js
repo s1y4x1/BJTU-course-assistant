@@ -39,6 +39,12 @@ let versionButtonLocalReleaseVersion = '';
 let versionButtonLocalPublishedAt = '';
 let versionButtonLatestBodyMarkdown = '';
 let versionNoticeShownVersion = '';
+let queueAutomaticVersionNotice = () => {};
+
+async function requestAutomaticVersionNotice(version) {
+  const stored = await chrome.storage.local.get('updateForegroundPromptMode');
+  if (stored.updateForegroundPromptMode !== 'silent') queueAutomaticVersionNotice(version);
+}
 let versionDownloadInProgress = false;
 let versionDownloadMinimized = false;
 let versionDownloadPhase = 'downloading';
@@ -3171,7 +3177,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
             }
           );
         } else if (!versionNoticeSuppressedByDownload) {
-          openVersionNoticeModal();
+          await requestAutomaticVersionNotice(latestTag);
         }
         return;
       }
@@ -3194,7 +3200,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
       const ignoredSameVersion = normalizeVersionText(versionIgnoredTag) === normalizeVersionText(latestTag);
       if (!versionNoticeSuppressedByDownload && !ignoredSameVersion && versionNoticeShownVersion !== latestTag) {
         versionNoticeShownVersion = latestTag;
-        openVersionNoticeModal();
+        await requestAutomaticVersionNotice(latestTag);
       }
       return;
     }
@@ -3286,24 +3292,55 @@ function setupVersionButton() {
       renderBackgroundCleanInstallStatus(status);
     }
   }).catch(() => {});
-  const versionBtn = document.getElementById('version-btn');
-  if (!versionBtn) return;
+  let versionBtn = document.getElementById('version-btn');
+  const hasVisibleVersionButton = !!versionBtn;
+  if (!versionBtn) {
+    const holder = document.createElement('div');
+    holder.hidden = true;
+    versionBtn = document.createElement('button');
+    versionBtn.id = 'version-btn';
+    holder.appendChild(versionBtn);
+    document.body.appendChild(holder);
+  }
 
   let pendingBackgroundVersionClick = false;
+  let lastBackgroundPromptVersion = '';
+  let updatePromptMode = 'active';
+  function queueBackgroundVersionClick(version) {
+    if (updatePromptMode === 'silent' || !version || version === lastBackgroundPromptVersion) return;
+    pendingBackgroundVersionClick = version;
+    triggerPendingVersionClick();
+  }
+  queueAutomaticVersionNotice = queueBackgroundVersionClick;
   function triggerPendingVersionClick() {
     if (!pendingBackgroundVersionClick || document.visibilityState !== 'visible'
-        || !document.hasFocus() || versionBtn.disabled) return;
+        || !document.hasFocus() || versionBtn.disabled || updatePromptMode === 'silent') return;
+    lastBackgroundPromptVersion = pendingBackgroundVersionClick;
     pendingBackgroundVersionClick = false;
     versionBtn.click();
   }
   window.addEventListener('focus', triggerPendingVersionClick);
   document.addEventListener('visibilitychange', triggerPendingVersionClick);
+  document.addEventListener('pointerdown', triggerPendingVersionClick);
+  document.addEventListener('keydown', triggerPendingVersionClick);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes.updateForegroundPromptMode) {
+      updatePromptMode = changes.updateForegroundPromptMode.newValue || 'active';
+      if (updatePromptMode === 'silent') pendingBackgroundVersionClick = false;
+    }
+    const status = changes[VERSION_BACKGROUND_UPDATE_STATUS_KEY]?.newValue;
+    if (status?.status === 'foreground-active') queueBackgroundVersionClick(status.version);
+  });
+  void chrome.storage.local.get(['updateForegroundPromptMode', VERSION_BACKGROUND_UPDATE_STATUS_KEY]).then((stored) => {
+    updatePromptMode = stored.updateForegroundPromptMode || 'active';
+    const status = stored[VERSION_BACKGROUND_UPDATE_STATUS_KEY];
+    if (status?.status === 'foreground-active') queueBackgroundVersionClick(status.version);
+  });
   chrome.runtime.onMessage.addListener((message, sender) => {
     if (message?.type !== 'BJTU_UPDATER_OPEN_VERSION_NOTICE'
-        || sender.id !== chrome.runtime.id
-        || location.pathname !== '/app/app.html') return;
-    pendingBackgroundVersionClick = true;
-    triggerPendingVersionClick();
+        || sender.id !== chrome.runtime.id) return;
+    queueBackgroundVersionClick(message.version);
   });
 
   // 确保版本按钮区域可见
@@ -3318,7 +3355,7 @@ function setupVersionButton() {
   });
 
   // 启动更新检查
-  loadVersionInfo().catch(() => {}).finally(triggerPendingVersionClick);
+  if (hasVisibleVersionButton) loadVersionInfo().catch(() => {}).finally(triggerPendingVersionClick);
 }
 
 // 在 app.js 加载完成后再初始化版本按钮
