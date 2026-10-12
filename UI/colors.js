@@ -24,6 +24,32 @@
   let gradientEnabled = true;
   let marqueeEnabled = true;
   const reportedExpiredCards = new WeakSet();
+  const homeworkAnimationPeriods = {
+    homeworkUrgencyBreathe: '--homework-breathe-period',
+    homeworkUrgencyBlink: '--homework-blink-period',
+    homeworkBorderMarquee: '--homework-marquee-period'
+  };
+
+  function nextHomeworkPeriod(card) {
+    return Math.log2(1 + Math.max(0, deadlineTime(card.dataset.homeworkDeadline) - Date.now()) / 3600000) + 0.5;
+  }
+
+  document.addEventListener('animationiteration', (event) => {
+    const property = homeworkAnimationPeriods[event.animationName];
+    const card = event.target;
+    if (!property || !card.matches('.hw-card-item.homework-marquee')) return;
+    const animation = card.getAnimations().find((item) => item.animationName === event.animationName
+      && (item.effect.pseudoElement || '') === (event.pseudoElement || ''));
+    if (!animation || animation.currentTime === null) return;
+    const previousDuration = animation.effect.getComputedTiming().duration;
+    const currentTime = animation.currentTime;
+    if (!(previousDuration > 0)) return;
+    setProperty(card, property, `${nextHomeworkPeriod(card)}s`);
+    // CSS changes duration without resetting elapsed time. Preserve the boundary
+    // (including event-delivery delay) so the next cycle starts continuously.
+    const duration = animation.effect.getComputedTiming().duration;
+    animation.currentTime = currentTime * duration / previousDuration;
+  });
 
   function normalize(value) {
     return Object.fromEntries(Object.keys(defaults)
@@ -144,9 +170,9 @@
       setProperty(card, '--homework-card-breathe-background', interpolate(background, action, 0.025 + 0.055 * c));
       setProperty(card, '--homework-urgency', c.toFixed(4));
       setProperty(card, '--homework-marquee-opacity', (0.28 + 0.72 * c).toFixed(4));
-      setProperty(card, '--homework-marquee-period', `${period}s`);
-      setProperty(card, '--homework-breathe-period', `${period}s`);
-      setProperty(card, '--homework-blink-period', `${period}s`);
+      if (effects && !card.classList.contains('homework-marquee')) {
+        Object.values(homeworkAnimationPeriods).forEach((property) => setProperty(card, property, `${period}s`));
+      }
       card.classList.toggle('homework-deadline-gradient', active);
       card.classList.toggle('homework-pending', !teacher && !done && !overdue);
       card.classList.toggle('homework-marquee', effects);
