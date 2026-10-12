@@ -499,6 +499,8 @@
     if (modal instanceof HTMLElement) modal.style.display = visible ? 'flex' : 'none';
     if (text instanceof HTMLElement) text.textContent = String(status || '');
     if (!visible) {
+      const writeProgress = document.getElementById('account-init-write-progress');
+      if (writeProgress instanceof HTMLElement) writeProgress.hidden = true;
       setAccountImportDownloadProgress({ visible: false });
       setListProgress('teacher', 0, 0, '正在等待');
       setListProgress('student', 0, 0, '正在等待');
@@ -638,6 +640,8 @@
   }
 
   function hideAccountInitializationChoices() {
+    const writeProgress = document.getElementById('account-init-write-progress');
+    if (writeProgress instanceof HTMLElement) writeProgress.hidden = true;
     [
       'account-init-actions',
       'account-init-aes-actions',
@@ -657,7 +661,12 @@
     const safeParsed = Math.max(0, Number(parsed) || 0);
     const safeTotal = Math.max(0, Number(total) || 0);
     const percent = safeTotal > 0 ? Math.min(100, (safeParsed / safeTotal) * 100) : 0;
-    if (bar instanceof HTMLElement) bar.style.width = percent + '%';
+    if (bar instanceof HTMLElement) {
+      bar.style.width = percent + '%';
+      if (bar.parentElement?.getAttribute('role') === 'progressbar') {
+        bar.parentElement.setAttribute('aria-valuenow', String(Math.round(percent)));
+      }
+    }
     if (label instanceof HTMLElement) {
       const name = type === 'teacher' ? '教职工' : '学生';
       const prefix = name + (phase ? phase : '') + '：';
@@ -912,13 +921,15 @@
     try {
       if (showProgress) setProgress(0, '正在导入账号列表…');
       if (showProgress) {
+        const writeProgress = document.getElementById('account-init-write-progress');
+        if (writeProgress instanceof HTMLElement) writeProgress.hidden = changedTotal === 0;
         setListProgress('teacher', 0, changedTeacherTotal, changedTeacherTotal ? '正在写入' : '无需写入', '写入');
         setListProgress('student', 0, changedStudentTotal, changedStudentTotal ? '正在写入' : '无需写入', '写入');
       }
       if (changedTotal > 0) {
         await global.BjtuAccountStore.putAll(changedAccounts, (progress) => {
           if (!showProgress) return;
-          setProgress(100, '正在导入账号列表变动…（' + Number(progress?.written || 0) + ' / ' + changedTotal + '）');
+          setProgress(100 * Number(progress?.written || 0) / changedTotal, '正在导入账号列表变动…（' + Number(progress?.written || 0) + ' / ' + changedTotal + '）');
           setListProgress('teacher', progress?.teacherWritten, changedTeacherTotal, '正在写入', '写入', progress?.teacherCurrentPrefixes);
           setListProgress('student', progress?.studentWritten, changedStudentTotal, '正在写入', '写入', progress?.studentCurrentPrefixes);
         }, { preserveExistingCredentials: false });

@@ -166,6 +166,7 @@ html.app-options-loading .page-top-config {
     line-height: 1.4;
     font-variant-numeric: tabular-nums;
 }
+.account-init-progress-row { margin-top: 10px; }
 .account-recovery-captcha {
     display: flex;
     align-items: center;
