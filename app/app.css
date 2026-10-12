@@ -1056,8 +1056,6 @@ body.platform-column-resizing {
     margin-left: 0;
 }
 .top-inline-controls #account-history-select {
-    margin-left: 4px;
-    margin-right: 4px;
     color: #111827;
     font-weight: 600;
 }
