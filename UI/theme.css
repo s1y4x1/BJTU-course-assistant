@@ -22,7 +22,7 @@ html select {
   border-radius: 6px !important;
   background: var(--bjtu-select-background) !important;
   color: var(--bjtu-select-color) !important;
-  cursor: pointer;
+  cursor: default !important;
 }
 html select:not([multiple]):not([size]) {
   height: var(--bjtu-select-height, 34px) !important;
@@ -33,7 +33,20 @@ html select:focus-visible {
 }
 html select:disabled {
   opacity: .5;
-  cursor: not-allowed;
+}
+
+/* Text fields share the options-page appearance without imposing a width. */
+.bjtu-text-input,
+:where(#options-controlled-content, [data-options-fragment]) input:is([type="text"], [type="password"], [type="email"], [type="url"]) {
+  box-sizing: border-box;
+  min-height: 34px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: var(--bjtu-font-size-body, 13px);
+  background: #fff;
+  color: #111827;
 }
 
 html[data-color-scheme],
