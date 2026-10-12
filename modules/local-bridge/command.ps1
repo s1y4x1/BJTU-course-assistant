@@ -1,6 +1,7 @@
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$BridgeArguments)
 
 $ErrorActionPreference = 'Stop'
+$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
 $displayCommand = if ($env:BJTUCA_COMMAND_NAME) {
@@ -121,7 +122,9 @@ if ($startArguments -notcontains '--show-token') {
 $previousRunCommand = $env:BJTUCA_RUN_COMMAND
 try {
   $env:BJTUCA_RUN_COMMAND = $singleCommandText
-  if ($startArguments.Count) {
+  if ($singleCommandText) {
+    & npm --silent --prefix $bridgeRoot start -- @startArguments
+  } elseif ($startArguments.Count) {
     & npm --prefix $bridgeRoot start -- @startArguments
   } else {
     & npm --prefix $bridgeRoot start

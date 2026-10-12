@@ -22,7 +22,7 @@ const pairingAttempts = new Map();
 function issuePairingCode() {
   pairingCode = String(randomInt(1000000)).padStart(6, '0');
   pairingExpiresAt = Date.now() + 5 * 60000;
-  process.stdout.write(`扩展配对码：${pairingCode}（5 分钟内有效，仅可使用一次；输入 pair 生成新码）。\n`);
+  if (!singleCommand) process.stdout.write(`扩展配对码：${pairingCode}（5 分钟内有效，仅可使用一次；输入 pair 生成新码）。\n`);
 }
 const commandArgIndex = process.argv.indexOf('-c');
 const singleCommand = (commandArgIndex >= 0
@@ -589,8 +589,10 @@ async function listen(port, allowLan = config.allowLan === true) {
       config.port = port;
       await saveConfig(config);
     }
-    process.stdout.write(`BJTU Course Assistant Bridge: http://${listenHost}:${port}\n`);
-    process.stdout.write(`局域网访问：${allowLan ? '允许' : '关闭'}\n`);
+    if (!singleCommand) {
+      process.stdout.write(`BJTU Course Assistant Bridge: http://${listenHost}:${port}\n`);
+      process.stdout.write(`局域网访问：${allowLan ? '允许' : '关闭'}\n`);
+    }
   } finally {
     if (portReader && portReader !== terminal) portReader.close();
     else if (portReader) terminal.prompt();
@@ -655,7 +657,7 @@ if (singleCommand) {
 }
 
 await listen(config.port);
-process.stdout.write(`配置文件：${configPath()}\n`);
+if (!singleCommand) process.stdout.write(`配置文件：${configPath()}\n`);
 issuePairingCode();
 if (!singleCommand) startTerminal();
 
