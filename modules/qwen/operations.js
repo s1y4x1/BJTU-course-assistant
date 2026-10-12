@@ -857,7 +857,7 @@ name: 've.accounts',
       doc: [
         '## ve.assignments_of_ —— 课程作业',
         '',
-        '获取指定课程的作业列表（含已交/未交）。courseId 为课程ID，可先调用 ve.courseList 获取。若有已交作业的成绩暂未公布，会临时公布成绩、重新获取结果，并在返回前立即取消公布。',
+        '获取指定课程的作业列表（含已交/未交）。courseId 为课程ID，可先调用 ve.courseList 获取。',
         '',
         '**参数**：{"courseId":"课程ID，必填"}',
         '',
