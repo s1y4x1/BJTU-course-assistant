@@ -3292,28 +3292,21 @@ function setupVersionButton() {
       renderBackgroundCleanInstallStatus(status);
     }
   }).catch(() => {});
-  let versionBtn = document.getElementById('version-btn');
-  const hasVisibleVersionButton = !!versionBtn;
-  if (!versionBtn) {
-    const holder = document.createElement('div');
-    holder.hidden = true;
-    versionBtn = document.createElement('button');
-    versionBtn.id = 'version-btn';
-    holder.appendChild(versionBtn);
-    document.body.appendChild(holder);
-  }
+  const versionBtn = document.getElementById('version-btn');
+  if (!versionBtn) return;
 
   let pendingBackgroundVersionClick = false;
   let lastBackgroundPromptVersion = '';
   let updatePromptMode = 'active';
   function queueBackgroundVersionClick(version) {
-    if (updatePromptMode === 'silent' || !version || version === lastBackgroundPromptVersion) return;
+    if (location.pathname !== '/app/app.html' || updatePromptMode === 'silent'
+        || !version || version === lastBackgroundPromptVersion) return;
     pendingBackgroundVersionClick = version;
     triggerPendingVersionClick();
   }
   queueAutomaticVersionNotice = queueBackgroundVersionClick;
   function triggerPendingVersionClick() {
-    if (!pendingBackgroundVersionClick || document.visibilityState !== 'visible'
+    if (location.pathname !== '/app/app.html' || !pendingBackgroundVersionClick || document.visibilityState !== 'visible'
         || !document.hasFocus() || versionBtn.disabled || updatePromptMode === 'silent') return;
     lastBackgroundPromptVersion = pendingBackgroundVersionClick;
     pendingBackgroundVersionClick = false;
@@ -3355,7 +3348,7 @@ function setupVersionButton() {
   });
 
   // 启动更新检查
-  if (hasVisibleVersionButton) loadVersionInfo().catch(() => {}).finally(triggerPendingVersionClick);
+  loadVersionInfo().catch(() => {}).finally(triggerPendingVersionClick);
 }
 
 // 在 app.js 加载完成后再初始化版本按钮
