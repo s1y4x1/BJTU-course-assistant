@@ -103,8 +103,10 @@
       renderGuide();
       return;
     }
-    void chrome.storage.local.get('bjtuLocalBridgeToken').then((stored) => {
-      if (!tokenRow?.hidden) tokenInput.value = String(stored?.bjtuLocalBridgeToken || '');
+    void chrome.storage.local.get(['bjtuLocalBridgeRemoteConfig', 'bjtuLocalBridgeLocalToken']).then((stored) => {
+      if (!tokenRow?.hidden) tokenInput.value = String(status.remote
+        ? stored?.bjtuLocalBridgeRemoteConfig?.token || ''
+        : stored?.bjtuLocalBridgeLocalToken || '');
       renderGuide();
     });
   }
@@ -249,10 +251,9 @@
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'local') return;
-      if (changes.bjtuLocalBridgeEnabled || changes.bjtuLocalBridgePort
-        || changes.bjtuLocalBridgeHost
+      if (changes.bjtuLocalBridgeEnabled
         || changes.bjtuLocalBridgeListenPort || changes.bjtuLocalBridgeRemoteConfig
-        || changes.bjtuLocalBridgeToken || changes.bjtuLocalBridgeAllowLan
+        || changes.bjtuLocalBridgeLocalToken || changes.bjtuLocalBridgeAllowLan
         || changes.bjtuLocalBridgeAutoRetry || changes.bjtuLocalBridgeRetryIntervalMs) {
         void refresh();
       }

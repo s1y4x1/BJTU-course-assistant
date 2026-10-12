@@ -8,9 +8,6 @@
   const RECONNECT_ALARM = 'bjtu-local-bridge-reconnect';
   const STORAGE_KEYS = Object.freeze({
     enabled: 'bjtuLocalBridgeEnabled',
-    port: 'bjtuLocalBridgePort',
-    token: 'bjtuLocalBridgeToken',
-    host: 'bjtuLocalBridgeHost',
     localPort: 'bjtuLocalBridgeListenPort',
     localToken: 'bjtuLocalBridgeLocalToken',
     remoteConfig: 'bjtuLocalBridgeRemoteConfig',
@@ -440,9 +437,6 @@
     };
     currentSettings = { ...currentSettings, ...effective };
     await chrome.storage.local.set({
-      [STORAGE_KEYS.host]: effective.host,
-      [STORAGE_KEYS.port]: effective.port,
-      [STORAGE_KEYS.token]: effective.token,
       [STORAGE_KEYS.localPort]: config.port,
       [STORAGE_KEYS.localToken]: config.token,
       [STORAGE_KEYS.allowLan]: config.allowLan
@@ -642,5 +636,7 @@
     connect
   });
 
-  void connect();
+  void chrome.storage.local.remove([
+    'bjtuLocalBridgeHost', 'bjtuLocalBridgePort', 'bjtuLocalBridgeToken'
+  ]).then(() => connect());
 })(globalThis);
