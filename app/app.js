@@ -2174,6 +2174,7 @@ function setupRightColumnResizer() {
   const DEFAULT_RATIO = 0.5;
   const MIN_RATIO = 0.1;
   const MAX_RATIO = 0.9;
+  const MIN_COLUMN_WIDTH = 300;
 
   const isAdaptiveLayout = isCourseHelperAdaptiveLayout;
 
@@ -2214,7 +2215,10 @@ function setupRightColumnResizer() {
 
   const applyLandscapeRatio = () => {
     const gap = Number.parseFloat(getComputedStyle(layoutContainer).getPropertyValue('--course-helper-split-gap')) || 0;
-    const rightRatio = 1 - activeLandscapeRatio;
+    const available = Math.max(1, layoutContainer.clientWidth - gap);
+    const minimumRatio = Math.min(0.5, MIN_COLUMN_WIDTH / available);
+    const leftRatio = Math.max(minimumRatio, Math.min(1 - minimumRatio, activeLandscapeRatio));
+    const rightRatio = 1 - leftRatio;
     rightColumn.style.width = `calc(${rightRatio * 100}% - ${gap * rightRatio}px)`;
   };
 
@@ -2302,7 +2306,8 @@ function setupRightColumnResizer() {
     const gap = Number.parseFloat(getComputedStyle(layoutContainer).columnGap || getComputedStyle(layoutContainer).gap) || 0;
     const available = rect.width - gap;
     if (available <= 0) return;
-    activeLandscapeRatio = Math.max(MIN_RATIO, Math.min(MAX_RATIO, (e.clientX - rect.left - gap) / available));
+    const minimumRatio = Math.max(MIN_RATIO, Math.min(0.5, MIN_COLUMN_WIDTH / available));
+    activeLandscapeRatio = Math.max(minimumRatio, Math.min(1 - minimumRatio, (e.clientX - rect.left - gap) / available));
     applyLandscapeRatio();
     scheduleResizerSync();
   };
