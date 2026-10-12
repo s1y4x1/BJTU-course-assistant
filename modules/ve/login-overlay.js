@@ -42,6 +42,7 @@ async function openBjtuPortalLogin() {
   shadow.innerHTML = `<style>${stylesheet}</style>${template}`;
   const mask = shadow.querySelector('#__bjtu_portal_login_mask__');
   if (!(mask instanceof HTMLElement)) return;
+  if (isExtensionPage) mask.dataset.extensionPage = '1';
   document.documentElement.appendChild(host);
 
   const status = mask.querySelector('#__bjtu_portal_status__');

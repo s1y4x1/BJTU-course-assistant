@@ -1,4 +1,5 @@
   #__bjtu_portal_login_mask__{position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:clamp(10px,3vh,24px);box-sizing:border-box;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  #__bjtu_portal_login_mask__[data-extension-page]{z-index:10015}
   #__bjtu_portal_login_mask__ *{box-sizing:border-box;letter-spacing:0}
   #__bjtu_portal_login_card__{width:94vw;max-width:none;max-height:88vh;display:flex;flex-direction:column;overflow:auto;background:#fff;border:1px solid #e8edf5;border-radius:12px;box-shadow:0 20px 44px rgba(0,0,0,.25);padding:16px;color:#0f172a}
   .__bjtu_portal_header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:0 0 auto;margin-bottom:10px}
@@ -26,9 +27,9 @@
   .__bjtu_portal_account_id{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700;color:#1d4ed8}
   .__bjtu_portal_account_name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#334155}
   .__bjtu_portal_account_role{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:#64748b;white-space:nowrap}
-  .__bjtu_portal_account.__bjtu_portal_quick_account{padding-left:28px;border-color:#86efac;background:#dcfce7}
+  .__bjtu_portal_account.__bjtu_portal_quick_account{border-color:#86efac;background:#dcfce7}
   .__bjtu_portal_account.__bjtu_portal_quick_account:hover,.__bjtu_portal_account.__bjtu_portal_quick_account:focus{border-color:#22c55e;background:#bbf7d0}
-  .__bjtu_portal_quick_icon{position:absolute;top:4px;left:6px;color:#15803d;font-size:14px;line-height:1;font-weight:700}
+  .__bjtu_portal_quick_icon{position:absolute;top:2px;left:2px;color:#15803d;font-size:14px;line-height:1;font-weight:700;pointer-events:none}
   .__bjtu_portal_account_delete{position:absolute;top:2px;right:6px;color:#dc2626;font-size:var(--bjtu-font-size-icon,22px);line-height:1;cursor:pointer}
   .__bjtu_portal_account_delete:hover{color:#b91c1c}
   .__bjtu_portal_account_delete:focus-visible{outline:2px solid #3b82f6;border-radius:3px}
