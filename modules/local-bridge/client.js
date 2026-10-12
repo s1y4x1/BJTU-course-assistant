@@ -248,7 +248,7 @@
     ws.send(JSON.stringify({ type: 'response', id, ...response }));
   }
 
-  async function operationApproval(name) {
+  async function operationApproval(name, description = '') {
     if (META_OPERATIONS.has(name)) return true;
     const stored = await chrome.storage.local.get('qwenAlwaysAllowedOperations').catch(() => ({}));
     const alwaysAllowed = new Set((Array.isArray(stored?.qwenAlwaysAllowedOperations)
@@ -260,7 +260,7 @@
       type: 'BJTUCA_LOCAL_APPROVAL_REQUEST',
       id: approvalId,
       name,
-      message: `本地程序请求执行「${name}」，是否允许？`
+      message: `本地程序请求执行「${name}」，是否允许？${description ? `\n${description}` : ''}`
     }).catch(() => null);
     if (pageDecision?.handled === true) {
       void chrome.runtime.sendMessage({
@@ -281,7 +281,7 @@
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/128.png'),
         title: '本地程序请求执行操作',
-        message: `是否允许执行「${name}」？`,
+        message: `是否允许执行「${name}」？${description ? `\n${description}` : ''}`,
         requireInteraction: true,
         buttons: [{ title: '允许一次' }, { title: '始终允许' }]
       }, () => {
@@ -338,6 +338,17 @@
       const response = await api.run('qwen.getDocs', payload || {});
       if (!response?.ok) throw Object.assign(new Error(response?.error || '操作说明获取失败'), { code: response?.code || '' });
       return response.result;
+    }
+    if (action === 'executeCode') {
+      const mode = String(payload?.mode || 'app');
+      const code = String(payload?.code || '');
+      if (!['app', 'background', 'sandbox'].includes(mode) || !code.trim()) {
+        throw Object.assign(new Error('代码或执行环境无效'), { code: 'INVALID_ARGUMENT' });
+      }
+      if (mode !== 'sandbox' && !await operationApproval(`code.${mode}`, code)) {
+        throw Object.assign(new Error('用户拒绝执行代码'), { code: 'USER_DENIED' });
+      }
+      return api.executeCode(mode, code);
     }
     if (action === 'call') {
       const name = String(payload?.name || '').trim();
@@ -403,12 +414,7 @@
     return {
       token: String(config?.token || '').trim(),
       port: normalizePort(config?.port),
-      allowLan: config?.allowLan === true,
-      remote: {
-        host: normalizeHost(config?.remote?.host),
-        port: normalizePort(config?.remote?.port),
-        token: String(config?.remote?.token || '').trim()
-      }
+      allowLan: config?.allowLan === true
     };
   }
 
@@ -422,14 +428,14 @@
   }
 
   async function storeBridgeConfig(config) {
-    const remote = !['127.0.0.1', 'localhost', '[::1]'].includes(config.remote.host);
+    const remoteConfig = currentSettings.remoteConfig;
+    const remote = !['127.0.0.1', 'localhost', '[::1]'].includes(remoteConfig.host);
     const effective = {
-      host: config.remote.host,
-      port: remote ? config.remote.port : config.port,
-      token: remote ? config.remote.token : config.token,
+      host: remoteConfig.host,
+      port: remote ? remoteConfig.port : config.port,
+      token: remote ? remoteConfig.token : config.token,
       localPort: config.port,
       localToken: config.token,
-      remoteConfig: config.remote,
       allowLan: config.allowLan
     };
     currentSettings = { ...currentSettings, ...effective };
@@ -439,7 +445,6 @@
       [STORAGE_KEYS.token]: effective.token,
       [STORAGE_KEYS.localPort]: config.port,
       [STORAGE_KEYS.localToken]: config.token,
-      [STORAGE_KEYS.remoteConfig]: config.remote,
       [STORAGE_KEYS.allowLan]: config.allowLan
     });
   }
@@ -464,39 +469,47 @@
   }
 
   async function writeBridgeConfigOnce(patch) {
-    const root = await readExtensionDirectoryHandle();
-    if (!root || typeof root.queryPermission !== 'function'
-        || await root.queryPermission({ mode: 'readwrite' }) !== 'granted') {
-      throw new Error('没有扩展安装目录写入权限，请先在「更新」中授权扩展目录');
-    }
-    let current;
-    try { current = await readBridgeConfig(); }
-    catch {
-      current = { port: currentSettings.localPort, token: currentSettings.localToken,
-        allowLan: currentSettings.allowLan, remote: { ...currentSettings.remoteConfig } };
-    }
-    const host = patch.host === undefined ? current.remote.host : normalizeHost(patch.host);
+    await loadSettings();
+    const currentRemote = currentSettings.remoteConfig;
+    const host = patch.host === undefined ? currentRemote.host : normalizeHost(patch.host);
     const remoteTarget = !['127.0.0.1', 'localhost', '[::1]'].includes(host);
-    const hostChanged = host !== current.remote.host;
-    const next = {
-      port: patch.localPort !== undefined ? normalizePort(patch.localPort)
-        : !remoteTarget && patch.port !== undefined ? normalizePort(patch.port) : current.port,
-      token: current.token,
-      allowLan: patch.allowLan === undefined ? current.allowLan : patch.allowLan === true,
-      remote: {
-        host,
-        port: remoteTarget && patch.port !== undefined ? normalizePort(patch.port)
-          : hostChanged ? DEFAULT_PORT : current.remote.port,
-        token: patch.remoteToken !== undefined ? String(patch.remoteToken)
-          : hostChanged && remoteTarget ? '' : current.remote.token
-      }
+    const hostChanged = host !== currentRemote.host;
+    const remoteConfig = {
+      host,
+      port: remoteTarget && patch.port !== undefined ? normalizePort(patch.port)
+        : hostChanged ? DEFAULT_PORT : currentRemote.port,
+      token: patch.remoteToken !== undefined ? String(patch.remoteToken)
+        : hostChanged && remoteTarget ? '' : currentRemote.token
     };
-    const bytes = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
-    if (!global.BjtuUpdateFileSystem?.writeFile) throw new Error('扩展文件写入组件不可用');
-    await global.BjtuUpdateFileSystem.writeFile(root, BRIDGE_CONFIG_PATH, bytes);
-    lastConfigReadAt = Date.now();
-    await storeBridgeConfig(next);
-    return next;
+    const writesLocalConfig = patch.localPort !== undefined || patch.allowLan !== undefined
+      || (!remoteTarget && patch.port !== undefined);
+    if (writesLocalConfig) {
+      const root = await readExtensionDirectoryHandle();
+      if (!root || typeof root.queryPermission !== 'function'
+          || await root.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+        throw new Error('没有扩展安装目录写入权限，请先在「更新」中授权扩展目录');
+      }
+      let current;
+      try { current = await readBridgeConfig(); }
+      catch {
+        current = { port: currentSettings.localPort, token: currentSettings.localToken,
+          allowLan: currentSettings.allowLan };
+      }
+      const next = {
+        port: patch.localPort !== undefined ? normalizePort(patch.localPort)
+          : !remoteTarget && patch.port !== undefined ? normalizePort(patch.port) : current.port,
+        token: current.token,
+        allowLan: patch.allowLan === undefined ? current.allowLan : patch.allowLan === true
+      };
+      const bytes = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
+      if (!global.BjtuUpdateFileSystem?.writeFile) throw new Error('扩展文件写入组件不可用');
+      await global.BjtuUpdateFileSystem.writeFile(root, BRIDGE_CONFIG_PATH, bytes);
+      lastConfigReadAt = Date.now();
+      await storeBridgeConfig(next);
+    }
+    await chrome.storage.local.set({ [STORAGE_KEYS.remoteConfig]: remoteConfig });
+    await loadSettings();
+    return currentSettings;
   }
 
   async function pairRemote(host, port, code) {

@@ -103,7 +103,7 @@ function sendExtensionRequest(action, payload = {}, { printResult = true } = {})
     pendingExtensionCalls.set(id, { resolve, reject });
     extensionSocket.send(JSON.stringify({ type: 'request', id, action, payload }));
   }).then((value) => {
-    const result = action === 'call' && value?.ok === true ? value.result : value;
+    const result = ['call', 'executeCode'].includes(action) && value?.ok === true ? value.result : value;
     if (printResult) process.stdout.write(`${jsonText(result)}\n`);
     return value;
   }, (error) => {
@@ -187,11 +187,21 @@ async function runTerminalCommand(input, { request = sendExtensionRequest, call 
   const line = input.trim();
   if (line === 'help') {
     process.stdout.write('输入 pair 生成 6 位扩展配对码（5 分钟内有效，仅使用一次）。\n');
-    process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs module:"ve", name:"courseList"\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile filePath:"C:\\\\path\\\\file.pdf"\n键名无需引号，可省略对象花括号；字符串支持单引号或双引号。也可写 ve.courseList({})；不会执行任意 JavaScript。\n');
+    process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs module:"ve", name:"courseList"\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile filePath:"C:\\\\path\\\\file.pdf"\n键名无需引号，可省略对象花括号；字符串支持单引号或双引号。也可写 ve.courseList({})。\nJavaScript 可直接输入，无需前缀，例如 await ve.courseList()。代码由扩展在 app 环境执行，沿用千问助手的执行入口并询问授权，Bridge 不执行代码。\n');
   } else if (line === 'pair') {
     issuePairingCode();
   } else if (line === 'exit' || line === 'quit') {
     return true;
+  } else if (line && !parseTerminalHelpOperations(line)) {
+    let operation;
+    try { operation = parseTerminalOperation(line); } catch {}
+    if (operation) {
+      const response = await call(operation.name, operation.args);
+      if (response?.ok === false) throw Object.assign(new Error(response.error || '扩展操作失败'), { bridgeLogged: true });
+      return false;
+    }
+    const response = await request('executeCode', { mode: 'app', code: line });
+    if (response?.ok === false) throw Object.assign(new Error(response.error || '代码执行失败'), { bridgeLogged: true });
   } else if (line) {
     const helpOperations = parseTerminalHelpOperations(line);
     if (helpOperations) {
@@ -423,7 +433,9 @@ app.post('/api/v1/get-docs', async (req, res) => {
 app.post('/api/v1/call', async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
-    const response = await callOperation(name, req.body?.arguments);
+    const response = typeof req.body?.code === 'string'
+      ? await sendExtensionRequest('executeCode', { mode: req.body.mode || 'app', code: req.body.code })
+      : await callOperation(name, req.body?.arguments);
     if (response?.ok === false) {
       res.status(400).json({
         ok: false,
@@ -621,7 +633,6 @@ if (singleCommand) {
     await runTerminalCommand(singleCommand);
     return;
   }
-  if (!parseTerminalHelpOperations(singleCommand)) parseTerminalOperation(singleCommand);
   const bridgeUrl = `http://127.0.0.1:${config.port}`;
   let health = await fetch(`${bridgeUrl}/health`, { headers: { Connection: 'close' } }).then((response) => response.json()).catch(() => null);
   if (health?.ok && typeof health.extensionConnected === 'boolean') {
@@ -632,7 +643,7 @@ if (singleCommand) {
         health = await fetch(`${bridgeUrl}/health`, { headers: { Connection: 'close' } }).then((response) => response.json());
       }
       const request = async (action, payload = {}, { printResult = true } = {}) => {
-        const route = { call: 'call', getDocs: 'get-docs', operationList: 'operation-list' }[action];
+        const route = { call: 'call', executeCode: 'call', getDocs: 'get-docs', operationList: 'operation-list' }[action];
         const response = await fetch(`${bridgeUrl}/api/v1/${route}`, {
           method: action === 'operationList' ? 'GET' : 'POST',
           headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', Connection: 'close' },
@@ -641,7 +652,7 @@ if (singleCommand) {
         const value = await response.json();
         if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
         if (printResult) process.stdout.write(`${jsonText(value)}\n`);
-        return action === 'call' ? { ok: true, result: value } : value;
+        return ['call', 'executeCode'].includes(action) ? { ok: true, result: value } : value;
       };
       await runTerminalCommand(singleCommand, {
         request,
@@ -669,7 +680,6 @@ async function applyConfigFileChanges() {
   config.port = next.port;
   config.token = next.token;
   config.allowLan = next.allowLan;
-  config.remote = next.remote;
   if (tokenChanged) {
     clearLocalFileRelays();
     disconnectExtension(4001, 'Authorization changed', 'Bridge 授权配置已更改');
