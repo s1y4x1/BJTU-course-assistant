@@ -27,6 +27,7 @@
   let reconnectTimer = null;
   let connectPromise = null;
   let configWritePromise = null;
+  let configRevision = 0;
   let lastConfigReadAt = 0;
   let connectionReplaced = false;
   let currentSettings = {
@@ -412,7 +413,10 @@
   }
 
   async function syncBridgeConfigFromFile() {
+    if (configWritePromise) await configWritePromise;
+    const revision = configRevision;
     const config = await readBridgeConfig();
+    if (revision !== configRevision || configWritePromise) return config;
     await storeBridgeConfig(config);
     return config;
   }
@@ -448,6 +452,7 @@
   }
 
   function writeBridgeConfig(patch) {
+    configRevision++;
     const previous = configWritePromise;
     const task = (async () => {
       if (previous) await previous;

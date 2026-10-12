@@ -7,6 +7,8 @@
   let guideMarkdown = null;
   let pairing = false;
   let attemptedPairCode = '';
+  let hostPending = false;
+  let hostDirty = false;
   const element = (id) => document.getElementById(id);
 
   function updateConnectionFields() {
@@ -78,7 +80,7 @@
       port.value = String(Number(status.port) || 1896);
     }
     const host = element('localBridgeHost');
-    if (host instanceof HTMLInputElement && document.activeElement !== host) host.value = String(status.host || '127.0.0.1');
+    if (host instanceof HTMLInputElement && !hostPending && !hostDirty && document.activeElement !== host) host.value = String(status.host || '127.0.0.1');
     updateConnectionFields();
     const label = element('localBridgeStatus');
     if (label instanceof HTMLElement) {
@@ -158,9 +160,13 @@
   }
 
   function bindEvents() {
+    element('localBridgeHost')?.addEventListener('input', () => { hostDirty = true; });
     element('localBridgeHost')?.addEventListener('change', (event) => {
+      hostPending = true;
       updateConnectionFields();
       void send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', {host:event.currentTarget.value}).then((response) => {
+        hostPending = false;
+        if (response?.ok !== false) hostDirty = false;
         if (response?.ok !== false) applyStatus(response);
         setMessage(response?.ok !== false ? '地址已保存' : `保存失败：${response?.error || ''}`, response?.ok !== false);
       });
