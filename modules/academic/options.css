@@ -1,6 +1,6 @@
 .academic-options-card { margin:0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; }
 .academic-account-row { display:block; }
-.academic-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.academic-account-row select { width:100%; min-width:0; }
 .academic-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
 #bindAcademicSystemBtn { background:#16a34a; }
 .academic-external-script-header { display:flex; align-items:baseline; justify-content:flex-start; gap:4px; margin:14px 0 7px; }
@@ -36,7 +36,7 @@
 .academic-fullscreen-button-icon-option { display:grid; grid-template-columns:max-content minmax(120px,220px); align-items:center; justify-content:start; gap:8px; margin:4px 0 8px 22px; }
 .academic-fullscreen-button-icon-option > label { margin:0; color:#475569; font-size:13px; }
 .academic-fullscreen-button-icon-option.is-disabled { opacity:.5; }
-.academic-fullscreen-button-icon-select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.academic-fullscreen-button-icon-select { width:100%; min-width:0; }
 #academicScoreMonitorIntervalEditor { padding-left:0; }
 .academic-score-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 7px; }
 .academic-score-header > strong { font-size:15px; }
@@ -70,7 +70,7 @@
 .academic-schedule-header { align-items:flex-end; }
 .academic-schedule-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; }
 .academic-schedule-controls label { margin:0; font-size:12px; color:#64748b; }
-.academic-schedule-controls select { width:auto; min-width:96px; height:32px; margin:0; padding:4px 7px; }
+.academic-schedule-controls select { width:auto; min-width:96px; margin:0; }
 .academic-schedule-controls button { width:auto; height:32px; margin:0; padding:4px 10px; }
 .academic-schedule-table { min-width:0; table-layout:auto; }
 .academic-schedule-table th, .academic-schedule-table td { width:auto; height:auto; padding:6px; white-space:normal !important; }
@@ -112,8 +112,6 @@
 .academic-course-hover-field.is-multiline .academic-course-hover-value { white-space:pre-line; }
 html[data-color-scheme="dark"] .academic-options-card { border-color:#334155; background:#0f172a; }
 html[data-color-scheme="dark"] .academic-fullscreen-button-icon-option > label { color:#cbd5e1; }
-html[data-color-scheme="dark"] .academic-fullscreen-button-icon-select { border-color:#475569; background:#1e293b; color:#f8fafc; }
-html[data-color-scheme="dark"] .academic-account-row select { border-color:#475569; background:#111827; color:#f8fafc; }
 html[data-color-scheme="dark"] .academic-external-script-list { border-color:#475569; background:#111827; }
 html[data-color-scheme="dark"] .academic-external-script-item + .academic-external-script-item { border-top-color:#334155; }
 html[data-color-scheme="dark"] .academic-external-script-config { background:#1e293b; }

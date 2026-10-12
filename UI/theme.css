@@ -1,3 +1,41 @@
+/* Shared native select styling, including controls inserted after page load.
+   Components own width/layout; override height via --bjtu-select-height only. */
+html {
+  --bjtu-select-background: #fff;
+  --bjtu-select-color: #111827;
+  --bjtu-select-border: #ccc;
+}
+html[data-color-scheme="dark"] {
+  --bjtu-select-background: #111827;
+  --bjtu-select-color: #e5e7eb;
+  --bjtu-select-border: #475569;
+}
+html select {
+  box-sizing: border-box !important;
+  font-family: inherit !important;
+  font-size: var(--bjtu-font-size-body, 13px) !important;
+  font-weight: 400 !important;
+  line-height: 1.4 !important;
+  min-height: 34px !important;
+  padding: 6px 8px !important;
+  border: 1px solid var(--bjtu-select-border) !important;
+  border-radius: 6px !important;
+  background: var(--bjtu-select-background) !important;
+  color: var(--bjtu-select-color) !important;
+  cursor: pointer;
+}
+html select:not([multiple]):not([size]) {
+  height: var(--bjtu-select-height, 34px) !important;
+}
+html select:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+html select:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
 html[data-color-scheme],
 html[data-color-scheme] :is(body, .left-column, .right-column, .page-top-config) {
   background:var(--bjtu-page-background) !important;
@@ -41,7 +79,6 @@ html[data-color-scheme="dark"] .right-column::-webkit-scrollbar-thumb {
 }
 
 html[data-color-scheme="dark"] input:not(.hw-card-item *):not(.result-area *),
-html[data-color-scheme="dark"] select:not(.hw-card-item *):not(.result-area *),
 html[data-color-scheme="dark"] textarea:not(.hw-card-item *):not(.result-area *) {
   border-color: #475569 !important;
   background: #111827 !important;

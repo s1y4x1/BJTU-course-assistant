@@ -2,7 +2,7 @@
 .cas-option-check { display:flex; align-items:center; gap:8px; margin:10px 0 2px; }
 .cas-option-check input { width:auto; }
 .cas-account-row { display:block; }
-.cas-account-row select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.cas-account-row select { width:100%; min-width:0; }
 .cas-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
 .cas-captcha-modal { position:fixed; inset:0; z-index:2147483000; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.55); }
 .cas-captcha-modal[hidden] { display:none; }
@@ -14,7 +14,6 @@
 .cas-captcha-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
 .cas-captcha-cancel { background:#64748b; }
 html[data-color-scheme="dark"] .cas-options-card { border-color:#334155; background:#0f172a; }
-html[data-color-scheme="dark"] .cas-account-row select { border-color:#475569; background:#111827; color:#f8fafc; }
 html[data-color-scheme="dark"] .cas-captcha-dialog { border-color:#475569; background:#111827; color:#f8fafc; }
 html[data-color-scheme="dark"] .cas-captcha-message { color:#cbd5e1; }
 

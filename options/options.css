@@ -193,9 +193,9 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
 .theme-mode-btn--active, .animation-mode-btn--active { border-color:#2563eb; background:#eff6ff; box-shadow:0 0 0 1px #2563eb; }
 .theme-mode-btn--system-active, .animation-mode-btn--system-active { box-shadow:inset 0 0 0 2px #93c5fd; }
 .countdown-style-option { display:flex; align-items:center; justify-content:flex-start; gap:12px; margin:10px 0 0; }
-.countdown-style-option select, .platform-text-action-option select, .inline-select-option select { width:auto; min-width:150px; height:34px; padding:5px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.countdown-style-option select, .platform-text-action-option select, .inline-select-option select { width:auto; min-width:150px; }
 .platform-text-action-option, .inline-select-option { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
-.inline-select-option select { max-width:100%; box-sizing:border-box; font:inherit; color:inherit; }
+.inline-select-option select { max-width:100%; }
 .homework-detail-lines-option { display:flex; align-items:center; gap:6px; margin:10px 0 0; }
 .homework-detail-lines-option input { width:64px; height:34px; padding:5px 8px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -355,7 +355,7 @@ html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5f
 .platform-option-detail label { display:flex; align-items:center; gap:8px; margin:4px 0; font-weight:400; }
 .mrjzy-auto-login-row { display:flex; flex-wrap:wrap; align-items:center; gap:7px; min-width:0; margin:4px 0; }
 .mrjzy-auto-login-row > label { flex:0 0 auto; margin:0; white-space:nowrap; }
-.mrjzy-auto-login-row > select { flex:0 1 auto; width:fit-content; min-width:0; max-width:100%; min-height:32px; height:auto; padding:4px 7px; border:1px solid #ccc; border-radius:6px; background:#fff; color:inherit; white-space:normal; overflow-wrap:anywhere; field-sizing:content; }
+.mrjzy-auto-login-row > select { --bjtu-select-height:auto; flex:0 1 auto; width:fit-content; min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; field-sizing:content; }
 .mrjzy-auto-login-row > select option { white-space:normal; overflow-wrap:anywhere; }
 .mooc-peer-review-count-editor { display:grid; grid-template-columns:auto 84px auto; align-items:center; justify-content:start; gap:8px; margin:6px 0 4px 22px; }
 .mooc-peer-review-count-editor label { margin:0; }
@@ -379,13 +379,15 @@ html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5f
 html.options-loading #options-controlled-content { display:none; }
 html.options-loading #options-loading-placeholder { display:flex; }
 .reminder-editor { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:8px; align-items:center; margin-top:8px; }
-.reminder-editor input, .reminder-editor select { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.reminder-editor input { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.reminder-editor select { min-width:0; }
 .reminder-editor button { margin:0; height:34px; }
 .schedule-interval-editor { display:grid; grid-template-columns:auto minmax(72px,1fr) auto; gap:8px; align-items:center; margin:8px 0; padding-left:22px; }
-.schedule-interval-editor input, .schedule-interval-editor select { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.schedule-interval-editor input { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.schedule-interval-editor select { min-width:0; }
 .homework-background-refresh-detail { margin-left:22px; }
 .homework-background-refresh-detail > label[for] { margin:6px 0 4px; font-size:13px; color:#475569; }
-.homework-background-refresh-detail > select { width:100%; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.homework-background-refresh-detail > select { width:100%; min-width:0; }
 .system-notification-test-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
 .system-notification-test-row button { flex:0 0 auto; margin:0; }
 .system-notification-test-row .option-status { min-width:180px; margin:0; }
