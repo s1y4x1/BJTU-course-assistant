@@ -1222,6 +1222,9 @@
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 140000;
     const rateLimitText = problemApplyRateLimitText();
     courses.forEach((course, index) => {
+      for (const task of course.tasks) {
+        if (!task.done && Number(task.deadline) > 0 && Number(task.deadline) <= Date.now()) task.overdue = true;
+      }
       const pending = course.tasks.filter((task) => !task.done && !task.overdue)
         .map((task, taskIndex) => ({ task, taskIndex }))
         .sort((a, b) => (Number(a.task.deadline) > 0 ? Number(a.task.deadline) : Number.MAX_SAFE_INTEGER) - (Number(b.task.deadline) > 0 ? Number(b.task.deadline) : Number.MAX_SAFE_INTEGER) || a.taskIndex - b.taskIndex)

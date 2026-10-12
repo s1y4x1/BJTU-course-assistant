@@ -4104,8 +4104,19 @@ function parseDeadlineToTs(v) {
 
 function isDeadlinePassed(v) {
   const ts = parseDeadlineToTs(v);
-  return !!(ts && ts < Date.now());
+  return !!(ts && ts <= Date.now());
 }
+
+document.addEventListener('bjtu-homework-expired', (event) => {
+  const courseIds = event.detail.courseIds;
+  for (const courseId of courseIds) {
+    if (courseId.startsWith('mooc-') || courseId.startsWith('xuetangx-')) continue;
+    renderHomeworkList(courseId);
+    updateCourseCardRank(courseId);
+  }
+  if (courseIds.some((id) => id.startsWith('mooc-'))) window.BjtuMoocPlatform.render();
+  if (courseIds.some((id) => id.startsWith('xuetangx-'))) window.BjtuXuetangxPlatform.render();
+});
 
 function sortHomeworkItemsByDeadline(items, pickDeadline) {
   const list = Array.isArray(items) ? items.slice() : [];

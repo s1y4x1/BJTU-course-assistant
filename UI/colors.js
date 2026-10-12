@@ -3,6 +3,7 @@
 
   const storageKey = 'colorSettings';
   const gradientKey = 'homeworkDeadlineGradientEnabled';
+  const marqueeKey = 'homeworkMarqueeEnabled';
   const defaults = Object.freeze({
     button: '#1976d2', courseCard: '#ffffff', fileCard: '#ffffff',
     pendingCard: '#fff5e6', overdueCard: '#ffe6e6', doneCard: '#e6ffe6',
@@ -17,6 +18,8 @@
   };
   let settings = {};
   let gradientEnabled = true;
+  let marqueeEnabled = true;
+  const reportedExpiredCards = new WeakSet();
 
   function normalize(value) {
     return Object.fromEntries(Object.keys(defaults)
@@ -77,16 +80,26 @@
   }
 
   function refreshCards(cards = document.querySelectorAll('.hw-card-item')) {
+    const now = Date.now();
+    const expiredCourseIds = new Set();
     cards.forEach((card) => {
       const done = card.dataset.homeworkDone === '1';
-      const overdue = card.dataset.homeworkOverdue === '1';
       const teacher = card.dataset.homeworkTeacher === '1';
       const time = deadlineTime(card.dataset.homeworkDeadline);
+      const expired = !done && Number.isFinite(time) && time <= now;
+      const overdue = card.dataset.homeworkOverdue === '1' || expired;
+      if (expired && card.dataset.homeworkOverdue !== '1' && !reportedExpiredCards.has(card)) {
+        reportedExpiredCards.add(card);
+        const courseId = card.closest('.file-item[data-course-rankable="1"]')?.dataset.courseId;
+        if (courseId) expiredCourseIds.add(courseId);
+      }
       const active = gradientEnabled && !teacher && card.dataset.homeworkGradient !== '0'
-        && !done && !overdue && Number.isFinite(time) && time > Date.now();
+        && !done && !overdue && Number.isFinite(time) && time > now;
       const key = teacher ? (overdue ? 'teacherOverdueCard' : 'teacherPendingCard')
         : done ? 'doneCard' : overdue ? 'overdueCard' : 'pendingCard';
-      const c = !teacher && !done && !overdue ? urgency(card.dataset.homeworkDeadline) : 0;
+      const c = !teacher && !done && !overdue ? urgency(card.dataset.homeworkDeadline, now) : 0;
+      const effects = marqueeEnabled && !teacher && !done && !overdue && Number.isFinite(time) && time > now;
+      const period = effects ? Math.log2(1 + (time - now) / 3600000) : 0;
       const background = active
         ? interpolate(settings.pendingCard || defaults.pendingCard, settings.overdueCard || defaults.overdueCard, c)
         : settings[key] || defaults[key];
@@ -99,12 +112,16 @@
       setProperty(card, '--homework-card-breathe-background', interpolate(background, action, 0.025 + 0.055 * c));
       setProperty(card, '--homework-urgency', c.toFixed(4));
       setProperty(card, '--homework-marquee-opacity', (0.28 + 0.72 * c).toFixed(4));
-      setProperty(card, '--homework-marquee-period', `${(14 - 7 * c).toFixed(2)}s`);
-      setProperty(card, '--homework-breathe-period', `${(5 - 2 * c).toFixed(2)}s`);
-      setProperty(card, '--homework-blink-period', `${(10 - 6 * c).toFixed(2)}s`);
+      setProperty(card, '--homework-marquee-period', `${period}s`);
+      setProperty(card, '--homework-breathe-period', `${period}s`);
+      setProperty(card, '--homework-blink-period', `${period}s`);
       card.classList.toggle('homework-deadline-gradient', active);
       card.classList.toggle('homework-pending', !teacher && !done && !overdue);
+      card.classList.toggle('homework-marquee', effects);
     });
+    if (expiredCourseIds.size) {
+      document.dispatchEvent(new CustomEvent('bjtu-homework-expired', { detail: { courseIds: [...expiredCourseIds] } }));
+    }
   }
 
   function refreshEditor() {
@@ -116,11 +133,14 @@
     });
     const toggle = document.getElementById('homeworkDeadlineGradientEnabled');
     if (toggle) toggle.checked = gradientEnabled;
+    const marqueeToggle = document.getElementById('homeworkMarqueeEnabled');
+    if (marqueeToggle) marqueeToggle.checked = marqueeEnabled;
   }
 
-  function apply(value = settings, gradient = gradientEnabled) {
+  function apply(value = settings, gradient = gradientEnabled, marquee = marqueeEnabled) {
     settings = normalize(value);
     gradientEnabled = gradient !== false;
+    marqueeEnabled = marquee !== false;
     Object.keys(defaults).forEach((key) => {
       document.documentElement.toggleAttribute(`data-custom-color-${key.toLowerCase()}`, !!settings[key]);
       if (settings[key] || ['resource', 'replay', 'assessment', 'archive', 'copy', 'download'].includes(key)) {
@@ -159,6 +179,10 @@
         apply(settings, event.target.checked);
         void chrome.storage.local.set({ [gradientKey]: gradientEnabled });
       });
+      document.getElementById('homeworkMarqueeEnabled').addEventListener('change', (event) => {
+        apply(settings, gradientEnabled, event.target.checked);
+        void chrome.storage.local.set({ [marqueeKey]: marqueeEnabled });
+      });
     }
     refreshEditor();
     refreshCards();
@@ -184,15 +208,19 @@
       childList: true, subtree: true, attributes: true,
       attributeFilter: ['data-homework-done', 'data-homework-overdue', 'data-homework-deadline', 'data-homework-teacher', 'data-homework-gradient']
     });
-    setInterval(refreshCards, 60000);
+    setInterval(refreshCards, 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshCards();
+    });
   }
 
-  global.BjtuColors = Object.freeze({ storageKey, gradientKey, defaults, normalize, interpolate, deadlineTime, urgency, apply });
-  void chrome.storage.local.get([storageKey, gradientKey]).then((stored) => apply(stored[storageKey] || {}, stored[gradientKey] !== false));
+  global.BjtuColors = Object.freeze({ storageKey, gradientKey, marqueeKey, defaults, normalize, interpolate, deadlineTime, urgency, apply });
+  void chrome.storage.local.get([storageKey, gradientKey, marqueeKey]).then((stored) => apply(stored[storageKey] || {}, stored[gradientKey] !== false, stored[marqueeKey] !== false));
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || (!changes[storageKey] && !changes[gradientKey])) return;
+    if (area !== 'local' || (!changes[storageKey] && !changes[gradientKey] && !changes[marqueeKey])) return;
     apply(changes[storageKey] ? (changes[storageKey].newValue || {}) : settings,
-      changes[gradientKey] ? changes[gradientKey].newValue !== false : gradientEnabled);
+      changes[gradientKey] ? changes[gradientKey].newValue !== false : gradientEnabled,
+      changes[marqueeKey] ? changes[marqueeKey].newValue !== false : marqueeEnabled);
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();

@@ -2533,6 +2533,7 @@
         return true;
       }
       if (message?.type === 'QWEN_SHARED_CHAT_UPDATED') {
+        if (message.sourceViewId === QWEN_VIEW_ID) return false;
         adoptSharedChatId(message?.chatId, { reload: true });
         return false;
       }

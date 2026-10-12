@@ -292,6 +292,9 @@ let moocLoginAssistOpening = null;
     clearCards();
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 120000;
     courses.forEach((course, index) => {
+      for (const task of course.tasks) {
+        if (!task.done && Number(task.deadline) > 0 && Number(task.deadline) <= Date.now()) task.overdue = true;
+      }
       const visibleTasks = course.tasks.filter((task) => visibleTypes.has(task.type));
       const pending = visibleTasks.filter((task) => !task.done && !task.overdue)
         .map((task, taskIndex) => ({ task, taskIndex }))

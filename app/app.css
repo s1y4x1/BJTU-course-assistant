@@ -1881,7 +1881,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     0%,100% { box-shadow:0 0 0 0 rgba(59,130,246,.08); }
     50% { box-shadow:0 0 0 4px rgba(59,130,246,.38); }
 }
-.hw-card-item.homework-pending:not(.hw-done-enter):not(.hw-done-leave) {
+.hw-card-item.homework-pending.homework-marquee:not(.hw-done-enter):not(.hw-done-leave) {
     animation:homeworkUrgencyBreathe var(--homework-breathe-period,5s) ease-in-out infinite,
         homeworkUrgencyBlink var(--homework-blink-period,10s) ease-in-out infinite;
 }
@@ -1897,12 +1897,12 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
 @property --homework-card-fill { syntax:'<color>'; initial-value:transparent; inherits:true; }
 .hw-card-item { position:relative; --homework-card-fill:var(--homework-card-background,var(--homework-base-background)); background:var(--homework-card-fill) !important; }
 html[data-color-scheme="dark"] .hw-card-item.homework-pending { --homework-marquee-white:85%; }
-.hw-card-item.homework-pending::before {
+.hw-card-item.homework-pending.homework-marquee::before {
     content:'';
     position:absolute;
     inset:0;
     border-radius:inherit;
-    padding:2px;
+    padding:calc(1px + var(--homework-urgency,0) * 1px);
     background:conic-gradient(from var(--homework-border-angle),
         transparent 0deg 235deg,
         color-mix(in srgb,var(--homework-card-border,var(--homework-base-border,#a7bcd9)),white var(--homework-marquee-white,55%)) 275deg,
@@ -1918,10 +1918,10 @@ html[data-color-scheme="dark"] .hw-card-item.homework-pending { --homework-marqu
     opacity:var(--homework-marquee-opacity,.28);
     animation:homeworkBorderMarquee var(--homework-marquee-period,14s) linear infinite;
 }
-html[data-color-scheme="dark"] .hw-card-item.homework-pending::before {
-    inset:-3px;
-    padding:3px;
-    border-radius:9px;
+html[data-color-scheme="dark"] .hw-card-item.homework-pending.homework-marquee::before {
+    inset:calc(-2px - var(--homework-urgency,0) * 2px);
+    padding:calc(2px + var(--homework-urgency,0) * 2px);
+    border-radius:calc(8px + var(--homework-urgency,0) * 2px);
     opacity:calc(.55 + var(--homework-urgency,0) * .45);
     filter:drop-shadow(0 0 2px rgba(255,255,255,.65));
 }

@@ -412,10 +412,10 @@
     return sharedChatCreationPromise;
   }
 
-  function broadcastSharedChatUpdated(chatId) {
+  function broadcastSharedChatUpdated(chatId, sourceViewId) {
     const id = String(chatId || '');
     if (!id) return;
-    void chrome.runtime.sendMessage({ type: 'QWEN_SHARED_CHAT_UPDATED', chatId: id }).catch(() => {});
+    void chrome.runtime.sendMessage({ type: 'QWEN_SHARED_CHAT_UPDATED', chatId: id, sourceViewId }).catch(() => {});
   }
 
   function postCompletionStreamEvent(port, event) {
@@ -826,7 +826,7 @@
             if (result.chatId) {
               const shared = await chrome.storage.local.get('qwenLastChatId').catch(() => ({}));
               if (String(shared?.qwenLastChatId || '') === String(result.chatId)) {
-                broadcastSharedChatUpdated(result.chatId);
+                broadcastSharedChatUpdated(result.chatId, activeUiState.viewId);
               }
             }
             if (result.stoppedByLimit !== true) {
