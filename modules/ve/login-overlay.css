@@ -22,7 +22,7 @@
   .__bjtu_portal_view_all:hover{text-decoration:underline}
   .__bjtu_portal_list{display:flex;flex-wrap:wrap;align-items:flex-start;align-content:flex-start;gap:6px;max-height:min(30vh,320px);overflow:auto;padding:6px}
   .__bjtu_portal_empty{flex:1 0 100%;display:flex;align-items:center;justify-content:center;padding:12px;color:#94a3b8;font-size:12px;text-align:center}
-  .__bjtu_portal_account{position:relative;width:auto;max-width:100%;display:inline-flex;align-items:baseline;gap:8px;margin:0;padding:9px 28px 9px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;text-align:left;cursor:pointer;color:#0f172a;overflow:hidden}
+  .__bjtu_portal_account{position:relative;width:auto;max-width:100%;display:inline-flex;align-items:baseline;gap:8px;margin:0;padding:9px 28px 9px 16px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;text-align:left;cursor:pointer;color:#0f172a;overflow:hidden}
   .__bjtu_portal_account:hover,.__bjtu_portal_account:focus{border-color:#93c5fd;background:#eff6ff}
   .__bjtu_portal_account_id{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700;color:#1d4ed8}
   .__bjtu_portal_account_name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#334155}
