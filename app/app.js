@@ -1486,6 +1486,9 @@ function setupOptionsStorageLiveSync() {
   optionsStorageLiveSyncReady = true;
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
+    if (changes.loginAccountHistory) {
+      void loadLoginAccountHistory().then(() => renderLoginAccountHistorySelect(usernameInput?.value || ''));
+    }
 
     if (changes.platformEnabled) {
       applyPlatformEnabledSettingFromStorage(changes.platformEnabled.newValue);
@@ -3146,15 +3149,21 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
   const current = String(currentUserId || usernameInput?.value || '').trim();
   isSyncingAccountHistorySelect = true;
   accountHistorySelect.innerHTML = '';
+  const panelOption = document.createElement('option');
+  panelOption.value = '__open_account_panel__';
+  panelOption.textContent = '打开账号面板';
+  accountHistorySelect.appendChild(panelOption);
 
   const list = normalizeLoginAccountHistoryList(loginAccountHistory);
   if (!list.length) {
     const emptyOpt = document.createElement('option');
     emptyOpt.value = '';
     emptyOpt.textContent = '';
+    emptyOpt.hidden = true;
     accountHistorySelect.appendChild(emptyOpt);
     accountHistorySelect.value = '';
     isSyncingAccountHistorySelect = false;
+    adjustAccountHistorySelectWidth();
     return;
   }
 
@@ -6730,6 +6739,15 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     if (isSyncingAccountHistorySelect) return;
     adjustAccountHistorySelectWidth();
     const picked = String(accountHistorySelect.value || '').trim();
+    if (picked === '__open_account_panel__') {
+      renderLoginAccountHistorySelect(usernameInput?.value || '');
+      void (async () => {
+        if (!await globalThis.__bjtuVeAppReady) throw new Error('智慧课程平台模块未就绪');
+        await globalThis.BjtuModuleRegistry.loadScript('modules/ve/login-overlay.js');
+        await globalThis.BjtuVeAccountPanel.open();
+      })().catch((error) => showToast(String(error?.message || error), 'error'));
+      return;
+    }
     if (!picked) return;
     const current = String(usernameInput.value || '').trim();
     if (picked === current) return;

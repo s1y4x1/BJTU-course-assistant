@@ -1,4 +1,4 @@
-(async function initBjtuPortalLogin() {
+async function openBjtuPortalLogin() {
   'use strict';
   if (document.getElementById('__bjtu_portal_login_host__')) return;
 
@@ -8,7 +8,8 @@
     && !!document.querySelector('input.loginBtn[type="submit"][value="登录"]');
   const isTimeoutPage = title.includes('会话结束')
     || (bodyText.includes('会话结束,请退出系统') && bodyText.includes('重新登录'));
-  if (!isLoginPage && !isTimeoutPage) return;
+  const isExtensionPage = location.href.startsWith(chrome.runtime.getURL('/'));
+  if (!isExtensionPage && !isLoginPage && !isTimeoutPage) return;
   const injectionOptions = await chrome.storage.local.get([
     'injectPortalLoginOnLoginPage',
     'injectPortalLoginOnTimeoutPage',
@@ -125,6 +126,32 @@
     role.className = '__bjtu_portal_account_role';
     role.textContent = String(record?.roleName || '').trim();
     button.append(id, role, personName);
+    const remove = document.createElement('span');
+    remove.className = '__bjtu_portal_account_delete';
+    remove.textContent = '×';
+    remove.title = '删除账号';
+    remove.setAttribute('role', 'button');
+    remove.setAttribute('aria-label', `删除账号 ${loginName}`);
+    remove.tabIndex = 0;
+    const deleteAccount = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!window.confirm(`确定删除账号 ${loginName} 及其保存的登录凭据吗？`)) return;
+      const response = await sendMessage({ type: 'PORTAL_DELETE_ACCOUNT', payload: { loginName } });
+      if (!response?.ok) {
+        setStatus(response?.message || '删除账号失败', 'error');
+        return;
+      }
+      history = Array.isArray(response.history) ? response.history : [];
+      renderAccounts(historyList, history, '暂无登录历史');
+      await searchAccounts();
+      setStatus(`已删除账号 ${loginName}`, 'success');
+    };
+    remove.addEventListener('click', (event) => void deleteAccount(event));
+    remove.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') void deleteAccount(event);
+    });
+    button.appendChild(remove);
     if (String(record?.quickUsername || '').trim()) {
       button.classList.add('__bjtu_portal_quick_account');
       const quick = document.createElement('span');
@@ -158,7 +185,7 @@
   });
 
   const context = await sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' });
-  const history = Array.isArray(context?.history) ? context.history : [];
+  let history = Array.isArray(context?.history) ? context.history : [];
   renderAccounts(historyList, history, '暂无登录历史');
   if (username instanceof HTMLInputElement) {
     const nativeUsername = document.querySelector('input[name="username"]');
@@ -275,6 +302,16 @@
     if (username instanceof HTMLInputElement) username.value = loginName;
     loginRunning = true;
     setStatus('正在登录…');
+    if (isExtensionPage) {
+      try {
+        const response = await globalThis.BjtuVePageApi.login({ account: loginName });
+        if (response?.ok) close();
+        else setStatus(response?.message || '登录失败', 'error');
+      } catch (error) {
+        setStatus(String(error?.message || error), 'error');
+      } finally { loginRunning = false; }
+      return;
+    }
     const response = await sendMessage({
       type: 'VE_LOGIN_REQUEST',
       payload: {
@@ -319,4 +356,17 @@
       else void submit();
     });
   });
-})();
+}
+
+let bjtuPortalOpenPromise = null;
+globalThis.BjtuVeAccountPanel = Object.freeze({
+  open: () => {
+    if (!bjtuPortalOpenPromise) {
+      bjtuPortalOpenPromise = openBjtuPortalLogin().finally(() => { bjtuPortalOpenPromise = null; });
+    }
+    return bjtuPortalOpenPromise;
+  }
+});
+if (!location.href.startsWith(chrome.runtime.getURL('/'))) {
+  void globalThis.BjtuVeAccountPanel.open();
+}

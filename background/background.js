@@ -1375,6 +1375,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === 'PORTAL_DELETE_ACCOUNT') {
+    (async () => {
+      const loginName = String(message.payload?.loginName || '').trim();
+      if (!loginName) throw new Error('缺少账号');
+      await globalThis.BjtuAccountStore.deleteMany([loginName]);
+      const history = (await getPortalLoginAccountHistory()).filter((record) => record.loginName !== loginName);
+      await chrome.storage.local.set({ [LOGIN_ACCOUNT_HISTORY_KEY]: serializePortalLoginAccountHistory(history) });
+      return { ok: true, history: await getEnrichedPortalLoginAccountHistory() };
+    })().then(sendResponse, (error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+    return true;
+  }
+
   if (message?.type === 'VE_LOGIN_GET_CAPTCHA') {
     globalThis.BjtuVeLoginService.getCaptchaDataUrl()
       .then((imageUrl) => sendResponse({ ok: true, imageUrl }))
