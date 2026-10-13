@@ -2147,9 +2147,7 @@ function bindCourseCardActionButtons(root = courseListDiv) {
       });
     }
     if (btnArchive instanceof HTMLButtonElement) {
-      const archiveCache = window.archiveCacheByCourseId?.[String(courseId || '').trim()];
-      const archiveKnownEmpty = archiveCache?.loaded && (!Array.isArray(archiveCache.items) || !archiveCache.items.length);
-      btnArchive.style.display = archiveKnownEmpty ? 'none' : '';
+      updateArchiveButtonVisibility(courseId);
     }
   });
 }
@@ -2178,7 +2176,7 @@ function autoLoadCourseResourcesForCard(card) {
   if (btnVideos instanceof HTMLElement && !window.videoReplayCacheByCourseId?.[courseId]?.loaded) {
     autoLoadVideoLinks(btnVideos, courseId, courseNumRaw, fzId, xqCode).catch(() => {});
   }
-  if (btnArchive instanceof HTMLButtonElement && !window.archiveCacheByCourseId?.[courseId]?.loaded) {
+  if (window.isTeacherAccount && btnArchive instanceof HTMLButtonElement && !window.archiveCacheByCourseId?.[courseId]?.loaded) {
     toggleCourseArchive(btnArchive, courseId, { render: false }).catch(() => {});
   }
 }
@@ -2398,7 +2396,7 @@ function renderCourseList(courses, {
     }
     if (btnArchive) {
       hwPromise.finally(() => {
-        if (allowNetworkLoad && isAutoLoadCourseResourcesEnabled()) {
+        if (window.isTeacherAccount && allowNetworkLoad && isAutoLoadCourseResourcesEnabled()) {
           toggleCourseArchive(btnArchive, courseId, { render: false }).catch(() => {});
         }
       });
@@ -2537,7 +2535,7 @@ function updateArchiveButtonVisibility(courseId) {
   if (!(btn instanceof HTMLButtonElement)) return;
   const cache = window.archiveCacheByCourseId?.[String(courseId || '').trim()];
   const knownEmpty = cache?.loaded && (!Array.isArray(cache.items) || !cache.items.length);
-  btn.style.display = knownEmpty ? 'none' : '';
+  btn.style.display = !window.isTeacherAccount || knownEmpty ? 'none' : '';
 }
 
 function getCourseAssessmentWorkbookUrl(courseId) {
@@ -2643,6 +2641,7 @@ async function startCourseArchiveLinkFetch(btn, courseId) {
 }
 
 async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
+  if (!window.isTeacherAccount) return;
   const card = btn?.closest('.file-item');
   const resultArea = card?.querySelector('.result-area');
   const cid = String(courseId || '').trim();
