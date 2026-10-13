@@ -1073,6 +1073,9 @@
         setProgress(0, status);
       };
       const showAesActions = (status = '从远程仓库导入') => {
+        if (status === '从远程仓库导入' && remote?.disabled === false) {
+          status = '「从平台获取」已解禁，请选择获取范围后点击';
+        }
         actions.style.display = 'none';
         if (aesActions instanceof HTMLElement) aesActions.style.display = 'flex';
         if (importActions instanceof HTMLElement) importActions.style.display = 'none';
@@ -1101,7 +1104,7 @@
           if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
           setProgress(0, remoteUnlockClicks < 5
             ? `再点${5 - remoteUnlockClicks}次解禁「从平台获取」`
-            : '「从平台获取」已解禁');
+            : '「从平台获取」已解禁，请选择获取范围后点击');
         }
         if (remoteUnlockClicks < 5) return;
         remote.disabled = false;
