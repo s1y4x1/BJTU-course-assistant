@@ -353,7 +353,7 @@
   async function enrichQuickUsernames(accounts, roleState, updateProgress) {
     const rows = Object.values(accounts || {}).filter((account) => {
       const loginName = String(account?.loginName || '').trim();
-      return loginName && !String(account?.quickUsername || '').trim();
+      return loginName && !/^\d+$/.test(loginName) && !String(account?.quickUsername || '').trim();
     });
     roleState.phase = 'quick';
     roleState.quickProcessed = 0;
@@ -1101,7 +1101,7 @@
           if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
           setProgress(0, remoteUnlockClicks < 5
             ? `再点${5 - remoteUnlockClicks}次解禁「从平台获取」`
-            : '「从平台获取」已解禁，请选择获取范围后点击');
+            : '「从平台获取」已解禁');
         }
         if (remoteUnlockClicks < 5) return;
         remote.disabled = false;
@@ -1481,7 +1481,8 @@
 
         if (shouldFetchQuickUsernames) {
           const pendingAccounts = (await global.BjtuAccountStore.getAll())
-            .filter((account) => !String(account?.quickUsername || '').trim());
+            .filter((account) => !/^\d+$/.test(String(account?.loginName || '').trim())
+              && !String(account?.quickUsername || '').trim());
           const teachers = Object.fromEntries(pendingAccounts
             .filter((account) => String(account?.roleName || '').trim() !== '学生')
             .map((account) => [account.loginName, account]));
