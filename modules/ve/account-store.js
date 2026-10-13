@@ -2,7 +2,7 @@
   'use strict';
 
   const DB_NAME = 'bjtu-course-assistant';
-  const DB_VERSION = 7;
+  const DB_VERSION = 8;
   const STORE_NAME = 'accounts';
   const QUICK_USERNAME_STORE_NAME = 'QuickUsernames';
   const LEGACY_KEY = 'accountList';
@@ -70,6 +70,14 @@
         }
         if (!db.objectStoreNames.contains(QUICK_USERNAME_STORE_NAME)) {
           db.createObjectStore(QUICK_USERNAME_STORE_NAME, { keyPath: 'key' });
+        } else if (event.oldVersion < 8) {
+          const cursorRequest = request.transaction.objectStore(QUICK_USERNAME_STORE_NAME).openCursor();
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (!cursor) return;
+            if (String(cursor.key).length > 4) cursor.delete();
+            cursor.continue();
+          };
         }
       };
       request.onsuccess = () => {
@@ -715,9 +723,15 @@
       !String(key).trim() || typeof value !== 'string' || !value.trim())) {
       throw new Error('AES 加密字典不能为空，且所有键值都必须是非空字符串');
     }
-    const entries = Object.entries(source || {})
-      .map(([key, value]) => ({ key: String(key).trim(), value: String(value || '').trim() }))
-      .filter((entry) => entry.key && entry.value);
+    const entriesByKey = new Map();
+    Object.entries(source).forEach(([key, value]) => {
+      aesQuickUsernameEntries(key, value).forEach((entry) => {
+        const previous = entriesByKey.get(entry.key);
+        if (previous && previous.value !== entry.value) throw new Error(`AES 加密字典片段 ${entry.key} 存在冲突`);
+        entriesByKey.set(entry.key, entry);
+      });
+    });
+    const entries = [...entriesByKey.values()];
     const db = await open();
     const transaction = db.transaction(QUICK_USERNAME_STORE_NAME, 'readwrite');
     const store = transaction.objectStore(QUICK_USERNAME_STORE_NAME);
@@ -742,18 +756,23 @@
     return parts;
   }
 
-  async function recordAesQuickUsername(loginName, quickUsername) {
+  function aesQuickUsernameEntries(loginName, quickUsername) {
     const parts = splitAesAccount(loginName);
     const ciphertext = String(quickUsername || '').trim().toUpperCase();
     if (!parts.length || !/^[0-9A-F]+$/.test(ciphertext) || ciphertext.length !== parts.length * 16) {
       throw new Error('极速登录密文与账号的四字符分组不匹配，未写入 AES 加密字典');
     }
+    return parts.map((key, index) => ({ key, value: ciphertext.slice(index * 16, (index + 1) * 16) }));
+  }
+
+  async function recordAesQuickUsername(loginName, quickUsername) {
+    const entries = aesQuickUsernameEntries(loginName, quickUsername);
     const db = await open();
     const transaction = db.transaction(QUICK_USERNAME_STORE_NAME, 'readwrite');
     const store = transaction.objectStore(QUICK_USERNAME_STORE_NAME);
-    parts.forEach((key, index) => store.put({ key, value: ciphertext.slice(index * 16, (index + 1) * 16) }));
+    entries.forEach((entry) => store.put(entry));
     await transactionDone(transaction);
-    return parts.length;
+    return entries.length;
   }
 
   async function resolveAesQuickUsername(loginName) {
@@ -763,13 +782,7 @@
     const transaction = db.transaction(QUICK_USERNAME_STORE_NAME);
     const store = transaction.objectStore(QUICK_USERNAME_STORE_NAME);
     const parts = splitAesAccount(id);
-    const directPromise = requestResult(store.get(id));
-    const partPromises = parts.length > 1
-      ? parts.map((part) => requestResult(store.get(part)))
-      : [];
-    const [direct, records] = await Promise.all([directPromise, Promise.all(partPromises)]);
-    if (String(direct?.value || '').trim()) return String(direct.value).trim();
-    if (!partPromises.length) return '';
+    const records = await Promise.all(parts.map((part) => requestResult(store.get(part))));
     const values = records.map((record) => String(record?.value || '').trim());
     return values.every(Boolean) ? values.join('') : '';
   }
