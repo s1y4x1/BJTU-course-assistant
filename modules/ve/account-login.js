@@ -1315,6 +1315,8 @@
         let writeQueue = Promise.resolve();
         const updateProgress = () => {
           if (!showProgress) return;
+          const progress = document.getElementById('account-init-write-progress');
+          if (progress instanceof HTMLElement) progress.hidden = false;
           setProgress(0, '正在获取并写入账号列表…');
           ['teacher', 'student'].forEach((type) => {
             const roleState = state[type];
