@@ -2374,7 +2374,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (!file) return;
     importAesDictionaryBtn.disabled = true;
     try {
-      if (!await globalThis.__bjtuVeAppReady) throw new Error('智慧课程平台模块未就绪');
+      if (!await globalThis.__bjtuVeOptionsReady) throw new Error('智慧课程平台模块未就绪');
       const dictionary = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
       const count = await globalThis.BjtuAccountStore.replaceAesQuickUsernameMap(dictionary);
       setMsg(`已导入 AES 加密字典，共 ${count} 项`);
@@ -2385,7 +2385,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   exportAesDictionaryBtn.addEventListener('click', async () => {
     exportAesDictionaryBtn.disabled = true;
     try {
-      if (!await globalThis.__bjtuVeAppReady) throw new Error('智慧课程平台模块未就绪');
+      if (!await globalThis.__bjtuVeOptionsReady) throw new Error('智慧课程平台模块未就绪');
       const dictionary = await globalThis.BjtuAccountStore.exportAesQuickUsernameMap();
       const url = URL.createObjectURL(new Blob([JSON.stringify(dictionary, null, 2)], { type: 'application/json;charset=utf-8' }));
       const link = document.createElement('a');

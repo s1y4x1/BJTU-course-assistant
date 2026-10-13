@@ -206,13 +206,13 @@
         <div class="account-list-actions" style="margin-top:4px;">
           <button id="importAccountListBtn" type="button">📥 导入账号列表</button>
           <button id="exportAccountListBtn" type="button" style="background:#0f766e;">📤 导出账号列表</button>
-          <input id="importAccountListFile" type="file" accept=".json,application/json" hidden>
+          <input id="importAccountListFile" type="file" accept=".json" hidden>
           <div class="tip" data-tip-target=".account-list-actions">JSON 文件包含解析后的账号、姓名、角色、密码原文、密码 MD5 和极速登录数据，请妥善保管。导入会替换当前账号列表。</div>
         </div>
         <div class="aes-dictionary-actions">
             <button id="importAesDictionaryBtn" type="button">📥 导入 AES 加密字典</button>
             <button id="exportAesDictionaryBtn" type="button" style="background:#0f766e;">📤 导出 AES 加密字典</button>
-            <input id="importAesDictionaryFile" type="file" accept=".json,application/json" hidden>
+            <input id="importAesDictionaryFile" type="file" accept=".json" hidden>
             <div class="tip" data-tip-target=".aes-dictionary-actions">导入会替换 IndexedDB 中的 AES 加密字典；导出为 R005_P_AES.json。获取极速登录用户名时，按每四个 UTF-16 码元保存账号片段与对应密文；中文请求参数使用 GBK 编码。字典不包含完整账号列表。</div>
         </div>
       </div>
