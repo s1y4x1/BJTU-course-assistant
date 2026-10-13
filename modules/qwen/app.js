@@ -1652,7 +1652,7 @@
   async function refreshModels() {
     const select = el(MODEL_ID);
     if (!(select instanceof HTMLSelectElement)) return;
-    const status = await send('QWEN_GET_STATUS', { ensureLogin: false });
+    const status = await send('QWEN_GET_STATUS', { checkLogin: false });
     const response = await send('QWEN_LIST_MODELS');
     select.replaceChildren();
     if (response?.ok && Array.isArray(response.models) && response.models.length) {
@@ -1674,8 +1674,8 @@
     }
   }
 
-  async function refreshStatus({ openLoginIfNeeded = false, allowOpening = true } = {}) {
-    const status = await send('QWEN_GET_STATUS', { ensureLogin: openLoginIfNeeded === true });
+  async function refreshStatus({ checkLogin = false, allowOpening = true } = {}) {
+    const status = await send('QWEN_GET_STATUS', { checkLogin: checkLogin === true });
     lastKnownLoggedIn = status?.loggedIn === true;
     lastKnownEnabled = status?.enabled !== false;
     if (status?.loggedIn) {
@@ -2419,7 +2419,7 @@
     if (panelActivationPromise) return panelActivationPromise;
     panelActivationPromise = (async () => {
       await loadChatStateFromStorage();
-      const status = await refreshStatus({ openLoginIfNeeded: true, allowOpening: false });
+      const status = await refreshStatus({ checkLogin: true, allowOpening: false });
       if (status?.loggedIn !== true) return;
       const modelsPromise = refreshModels();
       let historyPromise = Promise.resolve();

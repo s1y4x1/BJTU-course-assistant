@@ -976,12 +976,8 @@
           let loggedIn = false;
           let checkError = '';
           try {
-            if (client && message?.payload?.ensureLogin) {
+            if (client && message?.payload?.checkLogin) {
               loggedIn = await client.tryRefreshLogin();
-              if (!loggedIn) {
-                await rememberQwenLoginOrigin(sender);
-                await client.openLoginPage();
-              }
             } else {
               loggedIn = client ? await client.isLoggedIn() : false;
             }
