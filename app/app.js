@@ -2464,7 +2464,7 @@ function prioritizeAccountSwitch() {
   abortAllCoursewareReplayFetches();
 }
 
-// 课件/回放请求的 AbortController 集合，用于账号/学期切换时立即中止
+// 资源/回放请求的 AbortController 集合，用于账号/学期切换时立即中止
 window.activeCoursewareAbortControllers = {}; // {courseId: AbortController}
 window.activeReplayAbortControllers = {}; // {courseId: AbortController}
 window.globalVeAbortController = new AbortController();

@@ -538,7 +538,7 @@
     throw lastError || new Error('课程助手页面接口尚未就绪');
   }
 
-  // 经扩展 app 页面的消息桥调用平台页面级接口（学生列表/课件/回放/归档/雨课堂等）。
+  // 经扩展 app 页面的消息桥调用平台页面级接口（学生列表/资源/回放/归档/雨课堂等）。
   async function pageInvoke(module, fn, args, timeoutMs = 90000) {
     let response;
     try {

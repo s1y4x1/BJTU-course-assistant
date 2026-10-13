@@ -1986,7 +1986,7 @@ function mergeVeCourseLists(...lists) {
 }
 
 async function loadCourses() {
-  // 立即中止所有进行中的课件/回放请求
+  // 立即中止所有进行中的资源/回放请求
   abortAllCoursewareReplayFetches();
   const courseLoadVersion = bumpPlatformLoadVersion('ve');
   window.courseListLoadVersion = courseLoadVersion;
