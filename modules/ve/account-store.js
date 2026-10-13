@@ -708,6 +708,13 @@
   }
 
   async function replaceAesQuickUsernameMap(source) {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      throw new Error('AES 加密字典必须是键值对应的 JSON 对象');
+    }
+    if (!Object.keys(source).length || Object.entries(source).some(([key, value]) =>
+      !String(key).trim() || typeof value !== 'string' || !value.trim())) {
+      throw new Error('AES 加密字典不能为空，且所有键值都必须是非空字符串');
+    }
     const entries = Object.entries(source || {})
       .map(([key, value]) => ({ key: String(key).trim(), value: String(value || '').trim() }))
       .filter((entry) => entry.key && entry.value);
@@ -718,6 +725,13 @@
     entries.forEach((entry) => store.put(entry));
     await transactionDone(transaction);
     return entries.length;
+  }
+
+  async function exportAesQuickUsernameMap() {
+    const db = await open();
+    const records = await requestResult(db.transaction(QUICK_USERNAME_STORE_NAME)
+      .objectStore(QUICK_USERNAME_STORE_NAME).getAll());
+    return Object.fromEntries(records.map((record) => [record.key, record.value]));
   }
 
   async function resolveAesQuickUsername(loginName) {
@@ -751,6 +765,7 @@
     getQuickAccounts,
     getByQuickUsername,
     replaceAesQuickUsernameMap,
+    exportAesQuickUsernameMap,
     resolveAesQuickUsername,
     getCredentialAccounts,
     getAccountStates,

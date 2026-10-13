@@ -8,6 +8,7 @@ body.module-options-standalone {
 body.module-options-standalone > [data-options-fragment] { margin:0 !important; }
 h2 { margin: 0; }
 label { display:block; }
+.aes-dictionary-actions { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
 input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
 button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
 .option-status { margin-bottom: 12px; color: #666; font-size: 13px; }

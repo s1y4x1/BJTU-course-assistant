@@ -2362,6 +2362,43 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
   });
 
+  const importAesDictionaryBtn = document.getElementById('importAesDictionaryBtn');
+  const exportAesDictionaryBtn = document.getElementById('exportAesDictionaryBtn');
+  const importAesDictionaryFile = document.getElementById('importAesDictionaryFile');
+  importAesDictionaryBtn.addEventListener('click', () => {
+    importAesDictionaryFile.value = '';
+    importAesDictionaryFile.click();
+  });
+  importAesDictionaryFile.addEventListener('change', async () => {
+    const file = importAesDictionaryFile.files?.[0];
+    if (!file) return;
+    importAesDictionaryBtn.disabled = true;
+    try {
+      if (!await globalThis.__bjtuVeAppReady) throw new Error('智慧课程平台模块未就绪');
+      const dictionary = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
+      const count = await globalThis.BjtuAccountStore.replaceAesQuickUsernameMap(dictionary);
+      setMsg(`已导入 AES 加密字典，共 ${count} 项`);
+    } catch (error) {
+      setMsg('导入 AES 加密字典失败：' + String(error?.message || error), false);
+    } finally { importAesDictionaryBtn.disabled = false; }
+  });
+  exportAesDictionaryBtn.addEventListener('click', async () => {
+    exportAesDictionaryBtn.disabled = true;
+    try {
+      if (!await globalThis.__bjtuVeAppReady) throw new Error('智慧课程平台模块未就绪');
+      const dictionary = await globalThis.BjtuAccountStore.exportAesQuickUsernameMap();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(dictionary, null, 2)], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'R005_P_AES.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMsg(`已导出 AES 加密字典，共 ${Object.keys(dictionary).length} 项`);
+    } catch (error) {
+      setMsg('导出 AES 加密字典失败：' + String(error?.message || error), false);
+    } finally { exportAesDictionaryBtn.disabled = false; }
+  });
+
   // Reset: restore defaults. Platform display/load should only check VE.
   const restoreDefaultSettings = async () => {
     await globalThis.BjtuOptionsModules?.resetAll();
