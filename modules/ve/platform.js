@@ -1269,6 +1269,7 @@ async function fetchAllCoursewareItems(courseNum, fzId, externalAbortController 
     linkTotal: 0,
     linkDone: 0
   }]));
+  if (typeof onProgress === 'function') onProgress(0, typeProgress);
   const results = await Promise.all(VE_COURSE_RESOURCE_TYPES.map(async (type) => {
     const payload = await fetchCoursewareItems(courseNum, fzId, externalAbortController, type);
     const items = Array.isArray(payload?.items) ? payload.items : [];
@@ -1289,8 +1290,8 @@ async function fetchAllCoursewareItems(courseNum, fzId, externalAbortController 
 
 function updateCourseResourceButtonProgress(btn, percent) {
   if (!(btn instanceof HTMLButtonElement)) return;
-  btn.classList.add('courseware-link-progress');
   btn.style.setProperty('--courseware-progress', `${Math.max(0, Math.min(100, Number(percent) || 0))}%`);
+  btn.classList.add('courseware-link-progress');
 }
 
 async function loadCoursewareList(btn, courseIdInt, courseNum, fzId) {
@@ -1576,6 +1577,11 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
     linkTotal: items.filter((item) => String(item?.docType || '') === type.docType && !item?.url && item?.rpId).length,
     linkDone: 0
   }]));
+  VE_COURSE_RESOURCE_TYPES.forEach((type) => {
+    const state = typeProgress[type.docType];
+    const missing = rpItems.filter((item) => String(item?.docType || '') === type.docType).length;
+    state.linkDone = Math.max(0, state.linkTotal - missing);
+  });
   cache.typeProgress = typeProgress;
   updateCourseResourceButtonProgress(btn, calculateCourseResourceProgress(typeProgress));
   const onOneLinkDone = (item) => {
