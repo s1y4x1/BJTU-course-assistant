@@ -13,8 +13,8 @@
   const REMOTE_ACCOUNT_LIST_URL = 'https://s1y4x1.github.io/account-list.json';
   const AES_QUICK_USERNAME_MAP_URL = 'https://s1y4x1.github.io/R005_P_AES.json';
   const HISTORY_KEY = 'loginAccountHistory';
-  const ADMIN_LOGIN_NAME = 'JyDadmin';
-  const ADMIN_QUICK_USERNAME = 'RjREQkM5NTRDMTJBMzU1QkZCNzFDMEM5RjYwNzg4RDg=';
+  const ADMIN_LOGIN_NAME = '114514';
+  const ADMIN_QUICK_USERNAME = '35FB025B242928F7D225330A3DB6C108';
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
@@ -1022,11 +1022,15 @@
       const studentCheckbox = document.getElementById('account-init-fetch-students');
       const quickOption = document.getElementById('account-init-quick-option');
       const quickCheckbox = document.getElementById('account-init-fetch-quick-usernames');
+      let remoteUnlockClicks = 0;
+      let remoteUnlockLastClick = 0;
       if (!(actions instanceof HTMLElement) || !(fileInput instanceof HTMLInputElement)) {
         resolve({ source: 'skip' });
         return;
       }
       const cleanup = () => {
+        aesActions?.removeEventListener('click', onRemoteUnlock);
+        remote?.removeEventListener('click', onRemote);
         aesButton?.removeEventListener('click', onAes);
         aesRemoteButton?.removeEventListener('click', onAesRemote);
         aesBackButton?.removeEventListener('click', onAesBack);
@@ -1081,6 +1085,32 @@
         setProgress(0, status);
       };
       const onAes = () => showAesActions();
+      const onRemoteUnlock = (event) => {
+        if (!(remote instanceof HTMLButtonElement) || !remote.disabled) return;
+        const rect = remote.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right
+            || event.clientY < rect.top || event.clientY > rect.bottom) {
+          remoteUnlockClicks = 0;
+          remoteUnlockLastClick = 0;
+          return;
+        }
+        const now = performance.now();
+        remoteUnlockClicks = now - remoteUnlockLastClick <= 1000 ? remoteUnlockClicks + 1 : 1;
+        remoteUnlockLastClick = now;
+        if (remoteUnlockClicks < 5) return;
+        remote.disabled = false;
+        remote.title = '从平台获取账号列表';
+      };
+      const onRemote = () => {
+        if (remote.disabled) return;
+        cleanup();
+        resolve({
+          source: 'platform',
+          fetchTeachers: teacherCheckbox?.checked !== false,
+          fetchStudents: studentCheckbox?.checked !== false,
+          fetchQuickUsernames: quickCheckbox?.checked === true
+        });
+      };
       const onImport = () => {
         showImportActions();
       };
@@ -1163,8 +1193,10 @@
       };
       if (remote instanceof HTMLButtonElement) {
         remote.disabled = true;
-        remote.title = '从平台获取账号列表暂不可用';
+        remote.title = '连续点击 5 次解除禁用';
       }
+      aesActions?.addEventListener('click', onRemoteUnlock);
+      remote?.addEventListener('click', onRemote);
       aesButton?.addEventListener('click', onAes);
       aesRemoteButton?.addEventListener('click', onAesRemote);
       aesBackButton?.addEventListener('click', onAesBack);

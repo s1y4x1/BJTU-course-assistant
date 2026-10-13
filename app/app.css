@@ -134,6 +134,7 @@ html.app-options-loading .page-top-config {
     color: #64748b;
     cursor: not-allowed;
 }
+#account-init-remote:disabled { pointer-events: none; }
 .account-init-actions .btn:disabled:hover,
 #account-init-import-local:disabled:hover,
 #account-init-import-remote:disabled:hover,
