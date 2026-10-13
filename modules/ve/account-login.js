@@ -350,10 +350,10 @@
     return String(data?.jrName || '').trim();
   }
 
-  async function enrichQuickUsernames(accounts, roleState, updateProgress, existingQuickLoginNames = new Set()) {
+  async function enrichQuickUsernames(accounts, roleState, updateProgress) {
     const rows = Object.values(accounts || {}).filter((account) => {
       const loginName = String(account?.loginName || '').trim();
-      return loginName && !String(account?.quickUsername || '').trim() && !existingQuickLoginNames.has(loginName);
+      return loginName && !String(account?.quickUsername || '').trim();
     });
     roleState.phase = 'quick';
     roleState.quickProcessed = 0;
@@ -370,7 +370,10 @@
         const account = rows[index];
         try {
           const quickUsername = await fetchQuickUsername(account.loginName);
-          if (quickUsername) account.quickUsername = quickUsername;
+          if (quickUsername) {
+            await global.BjtuAccountStore.update(account.loginName, { quickUsername });
+            account.quickUsername = quickUsername;
+          }
         } catch {
           // A missing quick username must not discard the account or abort initialization.
         } finally {
@@ -766,12 +769,7 @@
       const quickUsername = String(record?.quickUsername || '').trim();
       if (password || passwordMd5 || quickUsername) bindings.set(loginName, { password, passwordMd5, quickUsername });
     });
-    const existingQuickLoginNames = new Set(
-      [...existingAccounts.entries()]
-        .filter(([, record]) => !!String(record?.quickUsername || '').trim())
-        .map(([loginName]) => loginName)
-    );
-    return { bindings, existingAccounts, existingQuickLoginNames };
+    return { bindings, existingAccounts };
   }
 
   function preserveLocalBindings(next, bindings, { preferExisting = false } = {}) {
@@ -1078,8 +1076,9 @@
         actions.style.display = 'none';
         if (aesActions instanceof HTMLElement) aesActions.style.display = 'flex';
         if (importActions instanceof HTMLElement) importActions.style.display = 'none';
-        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = remote?.disabled === false ? 'flex' : 'none';
-        if (quickOption instanceof HTMLElement) quickOption.style.display = remote?.disabled === false ? 'flex' : 'none';
+        const showFetchOptions = remote?.disabled === false || remoteUnlockClicks >= 3;
+        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = showFetchOptions ? 'flex' : 'none';
+        if (quickOption instanceof HTMLElement) quickOption.style.display = showFetchOptions ? 'flex' : 'none';
         setAesButtonsDisabled(false);
         setAccountImportDownloadProgress({ visible: false });
         setProgress(0, status);
@@ -1097,6 +1096,13 @@
         const now = performance.now();
         remoteUnlockClicks = now - remoteUnlockLastClick <= 1000 ? remoteUnlockClicks + 1 : 1;
         remoteUnlockLastClick = now;
+        if (remoteUnlockClicks >= 3) {
+          if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'flex';
+          if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
+          setProgress(0, remoteUnlockClicks < 5
+            ? `再点${5 - remoteUnlockClicks}次解禁「从平台获取」`
+            : '「从平台获取」已解禁，请选择获取范围后点击');
+        }
         if (remoteUnlockClicks < 5) return;
         remote.disabled = false;
         remote.title = '从平台获取账号列表';
@@ -1105,10 +1111,6 @@
       };
       const onRemote = () => {
         if (remote.disabled) return;
-        if (teacherCheckbox?.checked === false && studentCheckbox?.checked === false) {
-          setProgress(0, '请至少选择获取教职工或学生中的一类');
-          return;
-        }
         cleanup();
         resolve({
           source: 'platform',
@@ -1214,7 +1216,7 @@
       fileInput.addEventListener('change', onFile);
       if (teacherCheckbox instanceof HTMLInputElement) teacherCheckbox.checked = true;
       if (studentCheckbox instanceof HTMLInputElement) studentCheckbox.checked = true;
-      if (quickCheckbox instanceof HTMLInputElement) quickCheckbox.checked = false;
+      if (quickCheckbox instanceof HTMLInputElement) quickCheckbox.checked = true;
       showMainActions();
     });
   }
@@ -1292,8 +1294,10 @@
           shouldFetchStudents = source.fetchStudents !== false;
           shouldFetchQuickUsernames = source.fetchQuickUsernames === true;
         }
-        if (!shouldFetchTeachers && !shouldFetchStudents) {
-          throw new Error('请至少选择获取教职工或学生中的一类');
+        if (!shouldFetchTeachers && !shouldFetchStudents && !shouldFetchQuickUsernames) {
+          if (showProgress) setProgress(100, '', false);
+          clearAccountInitQueryParameter();
+          return existingCount;
         }
 
         releaseRemoteWritingLock = await acquireWritingLock();
@@ -1317,13 +1321,14 @@
           teacher: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, writeTotal: 0, total: 0, phase: shouldFetchTeachers ? 'load' : 'skipped', currentPrefixes: [] },
           student: { parsed: 0, quickProcessed: 0, quickTotal: 0, written: 0, writeTotal: 0, total: 0, phase: shouldFetchStudents ? 'load' : 'skipped', currentPrefixes: [] }
         };
-        const { bindings: localBindings, existingAccounts, existingQuickLoginNames } = await readLocalAccountState();
+        const { bindings: localBindings, existingAccounts } = await readLocalAccountState();
         let writeQueue = Promise.resolve();
         const updateProgress = () => {
           if (!showProgress) return;
           const progress = document.getElementById('account-init-write-progress');
           if (progress instanceof HTMLElement) progress.hidden = false;
-          setProgress(0, '正在获取并写入账号列表…');
+          const fetchingQuick = state.teacher.phase === 'quick' || state.student.phase === 'quick';
+          setProgress(0, fetchingQuick ? '正在获取缺失的极速登录用户名…' : '正在获取并写入账号列表…');
           ['teacher', 'student'].forEach((type) => {
             const roleState = state[type];
             if (roleState.phase === 'skipped') {
@@ -1340,7 +1345,7 @@
               type,
               isWriting ? roleState.written : (isFetchingQuick ? roleState.quickProcessed : roleState.parsed),
               isWriting ? roleState.writeTotal : (isFetchingQuick ? roleState.quickTotal : roleState.total),
-              isWriting ? '正在写入' : (isFetchingQuick ? '正在获取极速登录名' : '正在读取总数'),
+              isWriting ? '正在写入' : (isFetchingQuick ? (roleState.quickTotal ? '正在获取极速登录名' : '无需查询') : '正在读取总数'),
               isWriting ? '写入' : (isFetchingQuick ? '获取极速登录名' : '读取'),
               roleState.currentPrefixes
             );
@@ -1375,9 +1380,6 @@
             body: body.toString()
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('教职工列表解析为空');
-          if (shouldFetchQuickUsernames) {
-            await enrichQuickUsernames(parser.result, state.teacher, updateProgress, existingQuickLoginNames);
-          }
           return parser.result;
         };
 
@@ -1410,9 +1412,6 @@
             body: body.toString()
           }, (text, final) => parser.push(text, final));
           if (!Object.keys(parser.result).length) throw new Error('学生列表解析为空');
-          if (shouldFetchQuickUsernames) {
-            await enrichQuickUsernames(parser.result, state.student, updateProgress, existingQuickLoginNames);
-          }
           return parser.result;
         };
 
@@ -1462,7 +1461,7 @@
           : Promise.resolve({});
         const [teachers, students] = await Promise.all([teacherTask, studentTask]);
         const next = { ...teachers, ...students };
-        if (!Object.keys(next).length) throw new Error('账号列表为空');
+        if ((shouldFetchTeachers || shouldFetchStudents) && !Object.keys(next).length) throw new Error('账号列表为空');
 
         const completeTeacherList = shouldFetchTeachers
           && Object.keys(teachers).length === state.teacher.total;
@@ -1480,6 +1479,26 @@
           }
         }
 
+        if (shouldFetchQuickUsernames) {
+          const pendingAccounts = (await global.BjtuAccountStore.getAll())
+            .filter((account) => !String(account?.quickUsername || '').trim());
+          const teachers = Object.fromEntries(pendingAccounts
+            .filter((account) => String(account?.roleName || '').trim() !== '学生')
+            .map((account) => [account.loginName, account]));
+          const students = Object.fromEntries(pendingAccounts
+            .filter((account) => String(account?.roleName || '').trim() === '学生')
+            .map((account) => [account.loginName, account]));
+          state.teacher.phase = 'quick';
+          state.student.phase = 'quick';
+          state.teacher.quickTotal = Object.keys(teachers).length;
+          state.student.quickTotal = Object.keys(students).length;
+          updateProgress();
+          await Promise.all([
+            enrichQuickUsernames(teachers, state.teacher, updateProgress),
+            enrichQuickUsernames(students, state.student, updateProgress)
+          ]);
+        }
+
         await chrome.storage.local.set({
           [ACCOUNT_LIST_VERSION_KEY]: ACCOUNT_LIST_VERSION,
           [ACCOUNT_LIST_REVISION_KEY]: Date.now()
@@ -1489,7 +1508,9 @@
         accountCache.clear();
         if (showProgress) setProgress(100, '', false);
         clearAccountInitQueryParameter();
-        return Object.keys(next).length;
+        return shouldFetchTeachers || shouldFetchStudents
+          ? Object.keys(next).length
+          : await global.BjtuAccountStore.count();
       } catch (error) {
         if (showProgress) {
           setProgress(100, '账号列表初始化失败：' + String(error?.message || error));
