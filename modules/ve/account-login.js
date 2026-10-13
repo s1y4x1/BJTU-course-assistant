@@ -18,7 +18,7 @@
   const PERSONAL_CENTER_URL = BASE_VE + 'back/personalCenter/personalCenter.shtml?method=toPersonalCenter';
   const CURRENT_ACCOUNT_PASSWORD_URL = PERSONAL_CENTER_URL + '&pageToType=2';
   const TEACHER_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=F70FAB64CDA3B68EA6A1E9E008548F93';
-  const QUICK_USERNAME_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=570820F5E1FC9260A1B9D87499FD2190A6A1E9E008548F93&jrName=';
+  const QUICK_USERNAME_URL = BASE_VE + 'back/core/base/person/R005_P.shtml?para=570820F5E1FC9260A1B9D87499FD2190AF113E5A83A421CC&jrName=';
   const STUDENT_URL = BASE_VE + 'back/jw/student/student.shtml?method=studentList&ref=ch';
   const QUICK_USERNAME_CONCURRENCY = 5;
   const accountCache = new Map();
@@ -338,7 +338,12 @@
   }
 
   async function fetchQuickUsername(loginName, { signal } = {}) {
-    const response = await fetch(QUICK_USERNAME_URL + encodeURIComponent(String(loginName || '').trim()), {
+    const account = String(loginName || '').trim();
+    const encodedAccount = gbkUrlEncode(account);
+    if (decodePercentBytes(encodedAccount, 'gbk') !== account) {
+      throw new Error('账号包含 GBK 无法表示的字符，无法准确获取极速登录用户名');
+    }
+    const response = await fetch(QUICK_USERNAME_URL + encodedAccount, {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
@@ -347,7 +352,9 @@
     });
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const data = JSON.parse(String(await decodeResponse(response) || '').trim());
-    return String(data?.jrName || '').trim();
+    const quickUsername = String(data?.jrName || '').trim();
+    if (quickUsername) await global.BjtuAccountStore.recordAesQuickUsername(account, quickUsername);
+    return quickUsername;
   }
 
   async function enrichQuickUsernames(accounts, roleState, updateProgress) {

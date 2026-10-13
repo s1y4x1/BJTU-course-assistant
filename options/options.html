@@ -213,7 +213,7 @@
             <button id="importAesDictionaryBtn" type="button">📥 导入 AES 加密字典</button>
             <button id="exportAesDictionaryBtn" type="button" style="background:#0f766e;">📤 导出 AES 加密字典</button>
             <input id="importAesDictionaryFile" type="file" accept=".json,application/json" hidden>
-            <div class="tip" data-tip-target=".aes-dictionary-actions">导入会替换 IndexedDB 中的 AES 加密字典；导出为 R005_P_AES.json，内容是账号片段与极速登录密文的对应关系，不包含账号列表。</div>
+            <div class="tip" data-tip-target=".aes-dictionary-actions">导入会替换 IndexedDB 中的 AES 加密字典；导出为 R005_P_AES.json。获取极速登录用户名时，按每四个 UTF-16 码元保存账号片段与对应密文；中文请求参数使用 GBK 编码。字典不包含完整账号列表。</div>
         </div>
       </div>
       <div class="platform-option" data-module="ykt" hidden><label><input type="checkbox" id="showYkt"

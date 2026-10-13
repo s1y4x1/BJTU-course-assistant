@@ -734,14 +734,35 @@
     return Object.fromEntries(records.map((record) => [record.key, record.value]));
   }
 
+  function splitAesAccount(loginName) {
+    const parts = [];
+    const id = String(loginName || '').trim();
+    // Encryption blocks contain four UTF-16 code units, not four GBK bytes.
+    for (let offset = 0; offset < id.length; offset += 4) parts.push(id.slice(offset, offset + 4));
+    return parts;
+  }
+
+  async function recordAesQuickUsername(loginName, quickUsername) {
+    const parts = splitAesAccount(loginName);
+    const ciphertext = String(quickUsername || '').trim().toUpperCase();
+    if (!parts.length || !/^[0-9A-F]+$/.test(ciphertext) || ciphertext.length !== parts.length * 16) {
+      throw new Error('极速登录密文与账号的四字符分组不匹配，未写入 AES 加密字典');
+    }
+    const db = await open();
+    const transaction = db.transaction(QUICK_USERNAME_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(QUICK_USERNAME_STORE_NAME);
+    parts.forEach((key, index) => store.put({ key, value: ciphertext.slice(index * 16, (index + 1) * 16) }));
+    await transactionDone(transaction);
+    return parts.length;
+  }
+
   async function resolveAesQuickUsername(loginName) {
     const id = String(loginName || '').trim();
     if (!id) return '';
     const db = await open();
     const transaction = db.transaction(QUICK_USERNAME_STORE_NAME);
     const store = transaction.objectStore(QUICK_USERNAME_STORE_NAME);
-    const parts = [];
-    for (let offset = 0; offset < id.length; offset += 4) parts.push(id.slice(offset, offset + 4));
+    const parts = splitAesAccount(id);
     const directPromise = requestResult(store.get(id));
     const partPromises = parts.length > 1
       ? parts.map((part) => requestResult(store.get(part)))
@@ -766,6 +787,7 @@
     getByQuickUsername,
     replaceAesQuickUsernameMap,
     exportAesQuickUsernameMap,
+    recordAesQuickUsername,
     resolveAesQuickUsername,
     getCredentialAccounts,
     getAccountStates,
