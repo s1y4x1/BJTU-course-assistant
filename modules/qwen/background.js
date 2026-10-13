@@ -14,6 +14,7 @@
   const pendingAskNotifications = new Map();
   const chatPermissionSessions = new Map();
   let qwenLoginCompletionPromise = null;
+  let qwenLoginPendingToken = '';
   let wafPopupOpenPromise = null;
 
   function withAlwaysAllowedMetaOperations(values) {
@@ -299,14 +300,17 @@
   async function completeQwenLogin(token) {
     const value = String(token || '').trim();
     if (!value) return;
+    qwenLoginPendingToken = value;
     if (qwenLoginCompletionPromise) return qwenLoginCompletionPromise;
     qwenLoginCompletionPromise = (async () => {
       const tokenState = await chrome.storage.session.get('qwenToken').catch(() => ({}));
-      const tokenChanged = String(tokenState?.qwenToken || '') !== value;
-      await global.BjtuQwenClient?.captureToken?.(value);
-      if (tokenChanged) await broadcastTokenCaptured('login');
+      const authenticated = await global.BjtuQwenClient.tryRefreshLogin({ token: value }).catch(() => false);
+      if (!authenticated || qwenLoginPendingToken !== value) return;
+      const verifiedState = await chrome.storage.session.get('qwenToken');
+      const tokenChanged = String(tokenState?.qwenToken || '') !== String(verifiedState?.qwenToken || '');
       const stored = await chrome.storage.session.get([LOGIN_TAB_ID_KEY, LOGIN_ORIGIN_KEY]).catch(() => ({}));
       const loginTabId = Number(stored?.[LOGIN_TAB_ID_KEY]);
+      if (tokenChanged || Number.isInteger(loginTabId)) await broadcastTokenCaptured('login');
       if (!Number.isInteger(loginTabId)) return;
       const loginTab = await chrome.tabs.get(loginTabId).catch(() => null);
       const openedFromSidePanel = stored?.[LOGIN_ORIGIN_KEY]?.sidePanel === true;
@@ -318,6 +322,9 @@
       await focusQwenAppPage();
     })().finally(() => {
       qwenLoginCompletionPromise = null;
+      const nextToken = qwenLoginPendingToken;
+      qwenLoginPendingToken = '';
+      if (nextToken && nextToken !== value) void completeQwenLogin(nextToken);
     });
     return qwenLoginCompletionPromise;
   }

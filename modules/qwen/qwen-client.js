@@ -191,11 +191,14 @@
   }
 
   // 登录检查直接由扩展后台请求 /api/v1/auths/，不创建临时网页。
-  async function tryRefreshLogin() {
-    if (loginCheckPromise) return loginCheckPromise;
+  async function tryRefreshLogin({ token: candidateToken = '' } = {}) {
+    if (loginCheckPromise) {
+      if (!candidateToken) return loginCheckPromise;
+      await loginCheckPromise.catch(() => {});
+    }
     loginCheckPromise = (async () => {
       await ensureDirectRequestHeaders();
-      const token = await getStoredToken();
+      const token = candidateToken || await getStoredToken();
       let response;
       try {
         response = await fetch(`${CHAT_BASE}/api/v1/auths/`, {
