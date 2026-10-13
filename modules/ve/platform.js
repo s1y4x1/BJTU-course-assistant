@@ -1386,9 +1386,7 @@ async function autoLoadCourseware(btn, courseIdInt, courseNum, fzId) {
   setCourseCoursewareLoading(courseIdInt, true);
 
   try {
-    const payload = await fetchAllCoursewareItems(courseNum, fzId, null, (percent) => {
-      updateCourseResourceButtonProgress(btn, percent);
-    });
+    const payload = await fetchAllCoursewareItems(courseNum, fzId);
     if (isStale()) {
       setCourseCoursewareLoading(courseIdInt, false);
       return;

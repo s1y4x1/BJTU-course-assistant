@@ -937,7 +937,7 @@ function showAutoLoadCourseResourcesDisabledNotice() {
     <div class="version-modal-card" role="alertdialog" aria-modal="true" aria-labelledby="auto-load-resources-disabled-title">
       <div id="auto-load-resources-disabled-title" class="version-download-title">选项已调整</div>
       <div class="version-download-body" style="margin-top:10px;line-height:1.65;">
-        已为您关闭「自动获取课件/回放列表」选项以减少请求数，您可以在<a href="#" data-action="open-extension-options" style="color:#0369a1;font-weight:700;text-decoration:underline;">扩展选项</a>中重新开启
+        已为您关闭「自动获取资源/回放/归档列表」选项以减少请求数，您可以在<a href="#" data-action="open-extension-options" style="color:#0369a1;font-weight:700;text-decoration:underline;">扩展选项</a>中重新开启
       </div>
       <button type="button" class="btn version-notice-download-btn" data-action="acknowledge" style="margin-top:12px;" disabled>我知道了（2 秒）</button>
     </div>`;
@@ -4661,8 +4661,7 @@ function setCoursewareButtonLoading(btn, isLoading) {
     btn.disabled = true;
     btn.style.opacity = '1';
     btn.style.pointerEvents = 'none';
-    btn.classList.add('courseware-list-loading', 'courseware-link-progress');
-    btn.style.setProperty('--courseware-progress', '0%');
+    btn.classList.add('courseware-list-loading');
     btn.innerHTML = `资源下载 <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
     return;
   }
