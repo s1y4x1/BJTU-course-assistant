@@ -1078,8 +1078,8 @@
         actions.style.display = 'none';
         if (aesActions instanceof HTMLElement) aesActions.style.display = 'flex';
         if (importActions instanceof HTMLElement) importActions.style.display = 'none';
-        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'none';
-        if (quickOption instanceof HTMLElement) quickOption.style.display = 'none';
+        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = remote?.disabled === false ? 'flex' : 'none';
+        if (quickOption instanceof HTMLElement) quickOption.style.display = remote?.disabled === false ? 'flex' : 'none';
         setAesButtonsDisabled(false);
         setAccountImportDownloadProgress({ visible: false });
         setProgress(0, status);
@@ -1100,9 +1100,15 @@
         if (remoteUnlockClicks < 5) return;
         remote.disabled = false;
         remote.title = '从平台获取账号列表';
+        if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'flex';
+        if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
       };
       const onRemote = () => {
         if (remote.disabled) return;
+        if (teacherCheckbox?.checked === false && studentCheckbox?.checked === false) {
+          setProgress(0, '请至少选择获取教职工或学生中的一类');
+          return;
+        }
         cleanup();
         resolve({
           source: 'platform',
