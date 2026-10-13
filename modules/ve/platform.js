@@ -1562,10 +1562,10 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
 
   if (!cache) return;
   cache.rpLinksFetching = true;
+  const includeListProgress = btn.classList.contains('courseware-link-progress');
 
   const activeView = String(card.dataset.resultView || '').trim();
   const baseText = activeView === 'courseware' ? '收起' : '资源下载';
-  btn.classList.add('courseware-link-progress');
   btn.dataset.coursewareLinkFetching = '1';
   btn.innerHTML = `${baseText} <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:2px; border-color:#1e3a8a; border-top-color:transparent;${spinnerPhaseDelayStyle()}"></span>`;
   const batchAbortController = new AbortController();
@@ -1581,11 +1581,19 @@ async function startCoursewareRpLinkFetchIfNeeded(btn, courseIdInt, courseNum, f
     state.linkDone = Math.max(0, state.linkTotal - missing);
   });
   cache.typeProgress = typeProgress;
-  updateCourseResourceButtonProgress(btn, calculateCourseResourceProgress(typeProgress));
+  const progressBaseline = includeListProgress ? 0 : calculateCourseResourceProgress(typeProgress);
+  const updateLinkProgress = () => {
+    const progress = calculateCourseResourceProgress(typeProgress);
+    const percent = progressBaseline < 100
+      ? (progress - progressBaseline) * 100 / (100 - progressBaseline)
+      : 100;
+    updateCourseResourceButtonProgress(btn, percent);
+  };
+  updateLinkProgress();
   const onOneLinkDone = (item) => {
     const state = typeProgress[String(item?.docType || '')];
     if (state) state.linkDone = Math.min(state.linkTotal, (state.linkDone || 0) + 1);
-    updateCourseResourceButtonProgress(btn, calculateCourseResourceProgress(typeProgress));
+    updateLinkProgress();
   };
 
   let loginHandled = false;
