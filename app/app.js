@@ -3916,6 +3916,9 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
           showToast(mismatchResult.message, 'error', 3500);
           return mismatchResult;
         }
+        window.dispatchEvent(new CustomEvent('bjtu-ve-login-success', {
+          detail: { account: username }
+        }));
         await handleLoginSuccess(username, { reloadPlatform });
         return { ...result, account: username };
       }

@@ -89,11 +89,16 @@ async function openBjtuPortalLogin() {
   else if (typeof themeMedia?.addListener === 'function') themeMedia.addListener(onPortalSystemThemeChanged);
 
   const close = () => {
+    window.removeEventListener('bjtu-ve-login-success', onLoginSuccess);
     try { chrome.storage.onChanged.removeListener(onPortalThemeStorageChanged); } catch {}
     if (typeof themeMedia?.removeEventListener === 'function') themeMedia.removeEventListener('change', onPortalSystemThemeChanged);
     else if (typeof themeMedia?.removeListener === 'function') themeMedia.removeListener(onPortalSystemThemeChanged);
     host.remove();
   };
+  const onLoginSuccess = (event) => {
+    if (loginRunning && event.detail?.account === selectedLoginName) close();
+  };
+  if (isExtensionPage) window.addEventListener('bjtu-ve-login-success', onLoginSuccess);
   const setStatus = (text, type = 'info') => {
     if (!(status instanceof HTMLElement)) return;
     status.textContent = String(text || '');
@@ -325,8 +330,8 @@ async function openBjtuPortalLogin() {
     });
     loginRunning = false;
     if (response?.ok) {
-      setStatus('登录成功', 'success');
-      setTimeout(() => { location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt'; }, 350);
+      close();
+      location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
       return;
     }
     const startManualWithCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';
