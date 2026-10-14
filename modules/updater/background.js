@@ -863,7 +863,7 @@
     return manualInstallPromise;
   }
 
-  async function runBackgroundUpdate({ forceCheck = false, suppressRecentReloadRetry = false } = {}) {
+  async function runBackgroundUpdate({ forceCheck = false, suppressRecentReloadRetry = false, installVersion = '' } = {}) {
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
@@ -892,7 +892,8 @@
       }
       await setStatus('checking', { localVersion });
       const release = await fetchLatestRelease();
-      if (!release.force && !stored[INSTALL_OPTIONAL_KEY]
+      const installRequested = !!installVersion && normalizeVersion(installVersion) === normalizeVersion(release.version);
+      if (!installRequested && !release.force && !stored[INSTALL_OPTIONAL_KEY]
         && normalizeVersion(stored.ignoredUpdateVersion) === normalizeVersion(release.version)) {
         return { updated: false, ignored: true, release };
       }
@@ -909,7 +910,7 @@
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
       }
-      if (await hasOpenForegroundPage()) {
+      if (!installRequested && await hasOpenForegroundPage()) {
         const promptMode = ['immediate', 'active', 'silent'].includes(stored[FOREGROUND_PROMPT_KEY])
           ? stored[FOREGROUND_PROMPT_KEY] : 'active';
         if (promptMode === 'immediate') await focusUpdateApp();
@@ -929,7 +930,7 @@
       }
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
         === normalizeVersion(release.version);
-      const installOptionalUpdate = stored?.[INSTALL_OPTIONAL_KEY] === true || retryingStaleInstallation;
+      const installOptionalUpdate = installRequested || stored?.[INSTALL_OPTIONAL_KEY] === true || retryingStaleInstallation;
       const directoryHandle = await readDirectoryHandle();
       const root = await validateDirectory(directoryHandle);
       if (!root) {
@@ -993,7 +994,7 @@
         installOptionalUpdate,
         previousDescription
       );
-      if (!release.force && stored?.[INSTALL_OPTIONAL_KEY] !== true && !retryingStaleInstallation) {
+      if (!release.force && !installOptionalUpdate) {
         await setStatus('optional-update-available', {
           localVersion,
           version: release.version,
@@ -1100,13 +1101,10 @@
       if (buttonIndex === 1) {
         await chrome.storage.local.set({ ignoredUpdateVersion: version });
       } else if (buttonIndex === 0) {
-        const appUrl = chrome.runtime.getURL('app/app.html');
-        const tab = (await chrome.tabs.query({})).find((item) => item.url?.startsWith(appUrl));
-        const targetUrl = `${appUrl}?autoUpdate=1`;
-        const opened = tab
-          ? await chrome.tabs.update(tab.id, { url: targetUrl, active: true })
-          : await globalThis.BjtuTabs.create({ url: targetUrl, active: true });
-        await chrome.windows.update(opened.windowId, { focused: true });
+        await chrome.notifications.clear(notificationId);
+        if (runningPromise) await runningPromise;
+        await runBackgroundUpdate({ forceCheck: true, installVersion: version });
+        return;
       }
       await chrome.notifications.clear(notificationId);
     })().catch((error) => console.warn('[bjtu] update notification action failed:', error));
