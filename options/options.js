@@ -730,7 +730,7 @@ async function goBackToApp() {
   }
 }
 
-const EXTENSION_RUNTIME_STORAGE_KEYS = ['extensionInstalledAt', 'extensionLastReloadedAt'];
+const EXTENSION_RUNTIME_STORAGE_KEYS = ['extensionInstalledAt', 'extensionLastReloadedAt', 'appliedUpdateWithoutReload'];
 
 function formatExtensionRuntimeTime(value) {
   const timestamp = Number(value);
@@ -747,8 +747,14 @@ async function renderExtensionRuntimeInfo() {
   const reloadedEl = document.getElementById('extension-reloaded-at');
   if (!versionEl || !installedEl || !reloadedEl) return;
   const manifest = chrome.runtime.getManifest();
-  versionEl.textContent = manifest.version_name || manifest.version || '未知';
   const stored = await chrome.storage.local.get(EXTENSION_RUNTIME_STORAGE_KEYS).catch(() => ({}));
+  const appliedVersion = String(stored.appliedUpdateWithoutReload?.ver || '').replace(/^v/i, '');
+  const appliedParts = appliedVersion.split('.').map(Number);
+  const runtimeParts = String(manifest.version || '').split('.').map(Number);
+  const versionDifference = Array.from({ length: 4 }, (_, index) => (
+    (appliedParts[index] || 0) - (runtimeParts[index] || 0)
+  )).find((difference) => difference !== 0) || 0;
+  versionEl.textContent = versionDifference > 0 ? appliedVersion : (manifest.version_name || manifest.version || '未知');
   installedEl.textContent = formatExtensionRuntimeTime(stored.extensionInstalledAt);
   reloadedEl.textContent = formatExtensionRuntimeTime(stored.extensionLastReloadedAt);
 }
