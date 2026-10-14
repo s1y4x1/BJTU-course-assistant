@@ -5,6 +5,8 @@ body {
     height: 100%;
     overflow: hidden;
 }
+html { --app-loading-color:#000; }
+html[data-color-scheme="dark"] { --app-loading-color:#fff; }
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 0;
@@ -27,8 +29,8 @@ body.page-top-config-in-left-column:not(.course-helper-focus) {
     width:12px;
     height:12px;
     box-sizing:border-box;
-    border:2px solid #cbd5e1;
-    border-top-color:#4CAF50;
+    border:2px solid var(--app-loading-color);
+    border-top-color:transparent;
     border-radius:50%;
     animation:spin .75s linear infinite;
 }
@@ -498,7 +500,7 @@ body.course-helper-focus .column-collapse-toggle {
     width: 18px;
     height: 18px;
     border-width: 2px;
-    border-color: #64748b;
+    border-color: var(--app-loading-color);
     border-top-color: transparent;
 }
 body.course-helper-layout-processing .course-list-stage {
