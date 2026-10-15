@@ -159,14 +159,10 @@
     return key === 'ort-wasm-simd.wasm' ? 'Wasm' : 'Omis';
   }
 
-  function setMisFileStatus(key, text, error = false, asHtml = false) {
+  function setMisFileStatus(key, text, error = false) {
     const target = document.getElementById(`casCaptchaStatus${misElementSuffix(key)}`);
     if (!(target instanceof HTMLElement)) return;
-    if (asHtml) {
-      target.innerHTML = String(text ?? '');
-    } else {
-      target.textContent = String(text ?? '');
-    }
+    target.textContent = String(text ?? '');
     target.classList.toggle('error', error);
   }
 
@@ -200,7 +196,8 @@
           setMisFileSize(item.key, installed ? renderCaptchaFileSizeText(record?.blob?.size || 0) : '—', installed);
           if (downloading) {
             setMisFileProgress(item.key, true, 0, 1);
-            setMisFileStatus(item.key, `${renderCaptchaFileSizePair(0, item.size)} 0%`, false, true);
+            setMisFileSize(item.key, `${renderCaptchaFileSizePair(0, item.size)} 0%`, true);
+            setMisFileStatus(item.key, '下载中…');
           } else {
             setMisFileProgress(item.key, false);
             setMisFileStatus(item.key, installed ? '已安装' : '未安装', !installed);
@@ -231,7 +228,8 @@
   function misDownloadProgressHandler({ key, loaded, total }) {
     setMisStatus('下载中…', false);
     const ratio = total > 0 ? Math.round((loaded / total) * 100) : 0;
-    setMisFileStatus(key, `${renderCaptchaFileSizePair(loaded, total)} ${ratio}%`, false, true);
+    setMisFileSize(key, `${renderCaptchaFileSizePair(loaded, total)} ${ratio}%`, true);
+    setMisFileStatus(key, '下载中…');
     setMisFileProgress(key, true, loaded, total);
   }
 
