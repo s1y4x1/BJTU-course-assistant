@@ -126,7 +126,6 @@ html[data-color-scheme="dark"] .api-operation-group-title {
 .api-operation-item input {
   width: auto;
   margin: 0;
-  accent-color: var(--api-accent, #615ced);
 }
 
 html[data-color-scheme="dark"] .api-operation-item {
