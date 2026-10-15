@@ -189,7 +189,32 @@
     });
   }
 
+  function archiveCacheKey(url, version) {
+    const key = new URL('https://bjtuca.invalid/update-archive.zip');
+    key.searchParams.set('url', new URL(url).href);
+    key.searchParams.set('version', String(version || '').replace(/^v/i, ''));
+    return key.href;
+  }
+
+  async function readArchive(url, version) {
+    const cache = await caches.open('bjtu-ca-update-archive');
+    const response = await cache.match(archiveCacheKey(url, version));
+    return response ? new Uint8Array(await response.arrayBuffer()) : null;
+  }
+
+  async function storeArchive(url, version, bytes) {
+    const cache = await caches.open('bjtu-ca-update-archive');
+    const key = archiveCacheKey(url, version);
+    await cache.put(key, new Response(bytes, { headers: { 'Content-Type': 'application/zip' } }));
+    for (const request of await cache.keys()) {
+      if (request.url !== key) await cache.delete(request);
+    }
+  }
+
   global.BjtuUpdateFileSystem = {
+    readArchive,
+    storeArchive,
+    fileMatchesBytes,
     isInvalidStateError,
     retryInvalidState,
     withInstallLock,

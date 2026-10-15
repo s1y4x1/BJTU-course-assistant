@@ -1790,6 +1790,13 @@ async function writeBytesToVersionUpdateDirectory(bytes, relativePath) {
 }
 
 async function fetchUpdateArchiveWithProgress(url) {
+  const cached = await globalThis.BjtuUpdateFileSystem.readArchive(url, versionButtonLatestVersion);
+  if (cached) {
+    resetVersionUpdateFileTree();
+    setVersionDownloadBar({ visible: true, percent: 100 });
+    setVersionDownloadProgressUi({ visible: true, status: '已读取后台下载的更新包', title: '正在准备更新', body: '更新包已缓存，无需再次下载。', phase: 'downloading' });
+    return cached;
+  }
   const controller = new AbortController();
   let idleTimer = null;
   const startedAt = Date.now();
@@ -1828,6 +1835,7 @@ async function fetchUpdateArchiveWithProgress(url) {
       setVersionDownloadBar({ visible: true, percent: 100 });
       setVersionDownloadProgressUi({ visible: true, status: `100% · ${formatDownloadBytes(bytes.byteLength)}`, title: '正在下载更新压缩包', body: '更新压缩包下载完成，正在准备覆盖解压。', phase: 'downloading' });
       setVersionDownloadTransferStatus({ loaded: bytes.byteLength, total: total || bytes.byteLength, speed, eta: 0 });
+      await globalThis.BjtuUpdateFileSystem.storeArchive(url, versionButtonLatestVersion, bytes);
       return bytes;
     }
     const reader = response.body.getReader();
@@ -1883,6 +1891,7 @@ async function fetchUpdateArchiveWithProgress(url) {
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     });
+    await globalThis.BjtuUpdateFileSystem.storeArchive(url, versionButtonLatestVersion, bytes);
     setVersionDownloadTransferStatus({
       loaded: received,
       total: total || received,
@@ -3243,6 +3252,16 @@ function setupVersionButton() {
       if (updatePromptMode === 'silent') pendingBackgroundVersionClick = false;
     }
     const status = changes[VERSION_BACKGROUND_UPDATE_STATUS_KEY]?.newValue;
+    if (status?.status === 'complete' && status.metadataOnly === true) {
+      pendingBackgroundVersionClick = false;
+      setVersionButtonState('latest', {
+        localVersion: status.ver,
+        latestVersion: status.ver,
+        latestDisplayVersion: status.name,
+        body: status.description,
+        reload: false
+      });
+    }
     if (status?.status === 'foreground-active') queueBackgroundVersionClick(status.version);
   });
   void chrome.storage.local.get(['updateForegroundPromptMode', VERSION_BACKGROUND_UPDATE_STATUS_KEY]).then((stored) => {

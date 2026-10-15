@@ -599,7 +599,16 @@
     return globalThis.BjtuUpdateFileSystem.writeFileIfChanged(root, path, bytes);
   }
 
-  async function downloadArchive(url, progress = null) {
+  async function downloadArchive(url, progress = null, version = '') {
+    const cached = await globalThis.BjtuUpdateFileSystem.readArchive(url, version);
+    if (cached) return cached;
+    const bytes = await downloadArchiveFromNetwork(url, progress);
+    parseZipEntries(bytes);
+    await globalThis.BjtuUpdateFileSystem.storeArchive(url, version, bytes);
+    return bytes;
+  }
+
+  async function downloadArchiveFromNetwork(url, progress = null) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
     try {
@@ -641,6 +650,68 @@
     }
   }
 
+  async function applyMetadataOnlyRelease(root, release, archive) {
+    if (!root) return false;
+    return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
+      const archiveFiles = selectFiles(normalizeZipFiles(parseZipEntries(archive)));
+      if (!archiveFiles.some(({ path }) => path === 'manifest.json')) throw new Error('更新包缺少 manifest.json');
+      const installed = await getInstalledOptionalModuleIds(root);
+      const inventory = await chrome.storage.local.get([MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY]);
+      const known = new Set(inventory[MODULE_KNOWN_IDS_INITIALIZED_KEY] === true
+        ? inventory[MODULE_KNOWN_IDS_KEY] || [] : installed);
+      installed.forEach((id) => known.add(id));
+      // A newly introduced module is selected by default and requires the normal update flow.
+      if (getArchiveModuleIds(archiveFiles).some((id) => !known.has(id))) return false;
+      const files = filterFilesByModules(archiveFiles, new Set(installed));
+      let localManifest;
+      for (const { entry, path } of files) {
+        if (path === 'release.json') continue;
+        let directory = root;
+        const parts = path.split('/');
+        let file;
+        try {
+          for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
+          file = await (await directory.getFileHandle(parts.at(-1))).getFile();
+        } catch (error) {
+          if (error?.name === 'NotFoundError') return false;
+          throw error;
+        }
+        const bytes = await inflateEntry(entry);
+        if (path === 'manifest.json') {
+          localManifest = JSON.parse(await file.text());
+          const incoming = JSON.parse(new TextDecoder().decode(bytes));
+          const current = { ...localManifest };
+          delete incoming.version;
+          delete incoming.version_name;
+          delete current.version;
+          delete current.version_name;
+          const canonical = (value) => JSON.stringify(value, function (_key, item) {
+            return item && typeof item === 'object' && !Array.isArray(item)
+              ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item;
+          });
+          if (canonical(current) !== canonical(incoming)) return false;
+        } else if (!await globalThis.BjtuUpdateFileSystem.fileMatchesBytes(file, bytes)) return false;
+      }
+      const incomingManifest = archiveFiles.find(({ path }) => path === 'manifest.json');
+      const metadata = JSON.parse(new TextDecoder().decode(await inflateEntry(incomingManifest.entry)));
+      localManifest.version = metadata.version;
+      if (metadata.version_name !== undefined) localManifest.version_name = metadata.version_name;
+      else delete localManifest.version_name;
+      await writeFile(root, 'manifest.json', new TextEncoder().encode(`${JSON.stringify(localManifest, null, 2)}\n`));
+      const record = {
+        ver: release.version, name: release.name, description: release.description,
+        reload: false, fileCount: 1, appliedAt: Date.now(), background: true
+      };
+      await chrome.storage.local.set({
+        [APPLIED_WITHOUT_RELOAD_KEY]: record,
+        [PENDING_RELOAD_KEY]: null,
+        [INSTALLED_RELEASE_DESCRIPTION_KEY]: { version: release.version, desc: release.description, updatedAt: Date.now() }
+      });
+      await setStatus('complete', { ...record, metadataOnly: true });
+      return true;
+    });
+  }
+
   async function installRelease(root, release, { manual = false } = {}) {
     const archive = await retryNetworkOperation(() => downloadArchive(release.url, manual
       ? (transfer) => setStatus('downloading', {
@@ -650,7 +721,7 @@
           directoryName: root.name,
           ...transfer
         })
-      : null), 2);
+      : null, release.version), 2);
     return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
       const entries = parseZipEntries(archive);
       const archiveFiles = normalizeZipFiles(entries);
@@ -862,10 +933,6 @@
       await setStatus('checking', { localVersion });
       const release = await fetchLatestRelease();
       const installRequested = !!installVersion && normalizeVersion(installVersion) === normalizeVersion(release.version);
-      if (!installRequested && !release.force && !stored[INSTALL_OPTIONAL_KEY]
-        && normalizeVersion(stored.ignoredUpdateVersion) === normalizeVersion(release.version)) {
-        return { updated: false, ignored: true, release };
-      }
       if (compareVersions(release.version, localVersion) <= 0) {
         if (compareVersions(release.version, localVersion) === 0) {
           await chrome.storage.local.set({
@@ -878,6 +945,16 @@
         }
         await setStatus('latest', { localVersion, version: release.version, name: release.name });
         return { updated: false, release };
+      }
+      const archive = await retryNetworkOperation(() => downloadArchive(release.url, null, release.version), 2);
+      const directoryHandle = await readDirectoryHandle();
+      const root = await validateDirectory(directoryHandle);
+      if (await applyMetadataOnlyRelease(root, release, archive)) {
+        return { updated: true, reloaded: false, metadataOnly: true, release };
+      }
+      if (!installRequested && !release.force && !stored[INSTALL_OPTIONAL_KEY]
+        && normalizeVersion(stored.ignoredUpdateVersion) === normalizeVersion(release.version)) {
+        return { updated: false, ignored: true, release };
       }
       if (!installRequested && await hasOpenForegroundPage()) {
         const promptMode = ['immediate', 'active', 'silent'].includes(stored[FOREGROUND_PROMPT_KEY])
@@ -900,8 +977,6 @@
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
         === normalizeVersion(release.version);
       const installOptionalUpdate = installRequested || stored?.[INSTALL_OPTIONAL_KEY] === true || retryingStaleInstallation;
-      const directoryHandle = await readDirectoryHandle();
-      const root = await validateDirectory(directoryHandle);
       if (!root) {
         await notifyUpdateIssue(
           'permission',
