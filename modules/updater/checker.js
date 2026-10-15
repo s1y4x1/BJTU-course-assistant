@@ -424,12 +424,16 @@ async function setupVersionDirectoryPermissionCheck() {
   let dismissed = false;
   let checking = false;
 
-  const audit = async () => {
+  const report = (text, ok = true) => {
+    if (typeof showToast === 'function') showToast(text, ok ? 'success' : 'error');
+    else setMsg(text, ok);
+  };
+  const audit = async (manual = false) => {
     if (checking || choose.disabled) return;
     checking = true;
     try {
       const stored = await chrome.storage.local.get('updateDirectoryStartupCheckEnabled');
-      if (stored.updateDirectoryStartupCheckEnabled === false) {
+      if (!manual && stored.updateDirectoryStartupCheckEnabled === false) {
         modal.classList.remove('show');
         return;
       }
@@ -444,6 +448,7 @@ async function setupVersionDirectoryPermissionCheck() {
           versionUpdateDirectoryHandleLoaded = true;
           savedHandle = handle;
           modal.classList.remove('show');
+          if (manual) report('前台与后台的扩展安装目录写入权限均已验证通过');
           return;
         } catch {
           if (typeof handle.queryPermission === 'function'
@@ -452,11 +457,24 @@ async function setupVersionDirectoryPermissionCheck() {
           }
         }
       }
+      if (manual) dismissed = false;
       if (!dismissed) modal.classList.add('show');
     } finally {
       checking = false;
     }
   };
+
+  document.getElementById('checkUpdateDirectoryPermission')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await audit(true);
+    } catch (error) {
+      report(`目录权限检查失败：${String(error?.message || error)}`, false);
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   choose.addEventListener('click', async () => {
     choose.disabled = true;
@@ -482,7 +500,7 @@ async function setupVersionDirectoryPermissionCheck() {
       savedHandle = selected;
       dismissed = false;
       modal.classList.remove('show');
-      showToast('前台与后台的扩展安装目录写入权限均已验证通过', 'success');
+      report('前台与后台的扩展安装目录写入权限均已验证通过');
     } catch (error) {
       savedHandle = null;
       if (error?.name !== 'AbortError') {
