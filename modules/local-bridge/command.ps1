@@ -43,7 +43,7 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
   }
   { $_ -in @('uninstall', 'unregister', 'unreg') } {
     $actualBridgeDirectory = [System.IO.Path]::GetFullPath($bridgeRoot)
-    if ($action -eq 'uninstall') {
+    if ($action -eq 'uninstall' -and (Test-Path -LiteralPath $actualBridgeDirectory)) {
       $bridgeModulePath = Join-Path $actualBridgeDirectory 'module.json'
       if ((Split-Path -Leaf $actualBridgeDirectory) -ine 'local-bridge' -or
           -not (Test-Path -LiteralPath $bridgeModulePath -PathType Leaf) -or
@@ -54,6 +54,7 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
     $expectedDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'))
     $actualDirectory = [System.IO.Path]::GetFullPath($commandDirectory)
     if ($actualDirectory -ine $expectedDirectory) { throw '命令目录校验失败' }
+    Set-Location -LiteralPath $env:TEMP
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $remaining = @($userPath -split ';' | Where-Object {
       $_.Trim() -and ([System.IO.Path]::GetFullPath($_.Trim()).TrimEnd('\') -ine $actualDirectory.TrimEnd('\'))
@@ -69,8 +70,9 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
       Remove-Item -LiteralPath $actualDirectory
     }
     if ($action -eq 'uninstall') {
-      Set-Location -LiteralPath (Split-Path -Parent $actualBridgeDirectory)
-      Remove-Item -LiteralPath $actualBridgeDirectory -Recurse -Force
+      if (Test-Path -LiteralPath $actualBridgeDirectory -PathType Container) {
+        Remove-Item -LiteralPath $actualBridgeDirectory -Recurse -Force
+      }
       Write-Output 'bjtuca-bridge 和 BJTUCA 命令、用户 PATH 项及 Bridge 目录（含配置和依赖）已删除。'
     } else {
       Write-Output 'bjtuca-bridge 和 BJTUCA 命令已取消注册；Bridge 文件和 bridge.json 已保留。'

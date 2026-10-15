@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.2'
+$InstallerVersion = '1.0.3'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -19,13 +19,12 @@ $commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
 New-Item -ItemType Directory -Path $commandDirectory -Force | Out-Null
 
 $commandScriptPath = Join-Path $bridgeRoot 'command.ps1'
-$escapedCommandScriptPath = $commandScriptPath.Replace("'", "''")
-$launcherText = @"
-param([Parameter(ValueFromRemainingArguments=`$true)][string[]]`$BridgeArguments)
-`$BJTUCACommandVersion = '$InstallerVersion'
-& '$escapedCommandScriptPath' @BridgeArguments
-exit `$LASTEXITCODE
-"@
+$escapedBridgeRoot = $bridgeRoot.Replace("'", "''")
+$launcherText = [System.IO.File]::ReadAllText($commandScriptPath, [System.Text.Encoding]::GetEncoding(936))
+$launcherText = $launcherText.Replace(
+  '$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path',
+  "`$BJTUCACommandVersion = '$InstallerVersion'`r`n`$bridgeRoot = '$escapedBridgeRoot'"
+)
 foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
   $commandLauncherPath = Join-Path $commandDirectory ($commandName + '.ps1')
   $commandShimPath = Join-Path $commandDirectory ($commandName + '.cmd')
