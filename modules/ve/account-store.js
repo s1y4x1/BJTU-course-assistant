@@ -1,7 +1,7 @@
 (function initBjtuAccountStore(global) {
   'use strict';
 
-  const DB_NAME = 'bjtu-course-assistant';
+  const DB_NAME = 'BJTUCA-Accounts';
   const DB_VERSION = 8;
   const STORE_NAME = 'accounts';
   const QUICK_USERNAME_STORE_NAME = 'QuickUsernames';

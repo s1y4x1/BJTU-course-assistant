@@ -3,7 +3,7 @@
 
   const MODEL_VERSION_KEY = 'captchaModelVersion';
   const DEFAULT_MODEL_VERSION = '4.0.0_fast';
-  const MODEL_DB_NAME = 'bjtu-captcha-assets';
+  const MODEL_DB_NAME = 'BJTUCA-Captcha';
   const MODEL_DB_STORE = 'assets';
   const CORE_RELATIVE_PATH = 'modules/captcha/vendor/tesseract-core-simd.wasm.js';
   const CORE_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core-simd.wasm.js';

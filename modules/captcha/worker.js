@@ -1,7 +1,7 @@
 (function initBjtuCaptchaWorker(global) {
   'use strict';
 
-  const MODEL_DB_NAME = 'bjtu-captcha-assets';
+  const MODEL_DB_NAME = 'BJTUCA-Captcha';
   const MODEL_DB_STORE = 'assets';
   const MODEL_PATH_MARKER = '/__captcha_model__/';
   const nativeFetch = global.fetch.bind(global);

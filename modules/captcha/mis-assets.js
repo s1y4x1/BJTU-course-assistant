@@ -1,7 +1,7 @@
 (function initBjtuMisAssets(global) {
   'use strict';
 
-  const MIS_DB_NAME = 'bjtu-captcha-assets';
+  const MIS_DB_NAME = 'BJTUCA-Captcha';
   const MIS_DB_STORE = 'assets';
 
   const MIS_CAPTCHA_SETTING_PREFIX = 'misCaptcha';
