@@ -636,10 +636,12 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
     white-space: nowrap;
 }
 .version-update-tree-file[data-state="extracting"] .version-update-tree-state,
+.version-update-tree-file[data-state="comparing"] .version-update-tree-state,
 .version-update-tree-file[data-state="writing"] .version-update-tree-state {
     color: #2563eb;
 }
 .version-update-tree-file[data-state="extracting"] .version-update-tree-state-label,
+.version-update-tree-file[data-state="comparing"] .version-update-tree-state-label,
 .version-update-tree-file[data-state="writing"] .version-update-tree-state-label {
     color: #1d4ed8;
 }

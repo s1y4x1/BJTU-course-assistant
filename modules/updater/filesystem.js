@@ -125,7 +125,26 @@
     return lockManager.request(INSTALL_LOCK_NAME, { mode: 'exclusive' }, operation);
   }
 
-  async function writeFile(root, relativePath, bytes) {
+  async function fileMatchesBytes(file, bytes) {
+    if (file.size !== bytes.byteLength) return false;
+    const reader = file.stream().getReader();
+    let offset = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) return offset === bytes.byteLength;
+        for (let index = 0; index < value.byteLength; index += 1) {
+          if (value[index] !== bytes[offset + index]) return false;
+        }
+        offset += value.byteLength;
+      }
+    } finally {
+      await reader.cancel();
+      reader.releaseLock();
+    }
+  }
+
+  async function writeFile(root, relativePath, bytes, { skipUnchanged = false } = {}) {
     if (!root) throw new Error('尚未授权更新目录');
     const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
     if (!parts.length || parts.some((part) => part === '.' || part === '..')) {
@@ -136,6 +155,15 @@
       for (const part of parts.slice(0, -1)) {
         directory = await directory.getDirectoryHandle(part, { create: true });
       }
+      if (skipUnchanged) {
+        try {
+          const existing = await directory.getFileHandle(parts.at(-1));
+          const content = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+          if (await fileMatchesBytes(await existing.getFile(), content)) return false;
+        } catch (error) {
+          if (error?.name !== 'NotFoundError') throw error;
+        }
+      }
       const fileHandle = await directory.getFileHandle(parts.at(-1), { create: true });
       const writable = await fileHandle.createWritable();
       try {
@@ -145,6 +173,7 @@
         await writable.abort?.().catch(() => {});
         throw error;
       }
+      return true;
     });
   }
 
@@ -167,6 +196,7 @@
     readDirectoryHandle,
     storeDirectoryHandle,
     writeFile,
+    writeFileIfChanged: (root, relativePath, bytes) => writeFile(root, relativePath, bytes, { skipUnchanged: true }),
     removeEntry
   };
 })(globalThis);

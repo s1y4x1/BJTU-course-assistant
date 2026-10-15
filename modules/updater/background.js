@@ -279,7 +279,6 @@
         url: new URL(url).href,
         reload: data?.reload !== false,
         force: data?.force === true,
-        update: Array.isArray(data?.update) ? data.update : null,
         clean: data?.clean === true,
         sourceUrl
       };
@@ -405,29 +404,6 @@
     return bytes;
   }
 
-  function normalizeUpdateScopes(updateRule) {
-    if (!Array.isArray(updateRule) || updateRule.length === 0 || (updateRule.length === 1 && updateRule[0] === true)) {
-      return null;
-    }
-    const scopes = new Set(updateRule
-      .filter((item) => typeof item === 'string')
-      .map((item) => String(item || '').replace(/\\/g, '/').replace(/^\/+/, '').trim().toLowerCase())
-      .filter(Boolean));
-    return scopes.size ? scopes : null;
-  }
-
-  function releaseAppliesToSelection(updateRule, selectedModules, knownModules) {
-    const scopes = normalizeUpdateScopes(updateRule);
-    if (!scopes || scopes.has('main') || [...REQUIRED_MODULE_IDS].some((id) => scopes.has(id))) return true;
-    for (const id of selectedModules || []) {
-      if (scopes.has(String(id || '').toLowerCase())) return true;
-    }
-    for (const id of scopes) {
-      if (!knownModules?.has(id)) return true;
-    }
-    return false;
-  }
-
   function normalizeZipFiles(entries) {
     const names = entries.map((entry) => entry.name).filter(Boolean);
     const rootName = names[0]?.split('/')[0] || '';
@@ -461,17 +437,8 @@
     return { id: first, module: false, manifest: false };
   }
 
-  function selectFiles(entries, updateRule, modulesToInstall = new Set()) {
-    const files = normalizeZipFiles(entries);
-    const scopes = normalizeUpdateScopes(updateRule);
-    return files.filter(({ path }) => {
-      const component = getArchiveComponent(path);
-      if (!component) return false;
-      // Only optional modules under modules/ are controlled by module selection.
-      // Root-level extension files (including background/) are always installed.
-      if (component.manifest || !component.module) return true;
-      return !scopes || scopes.has(component.id) || modulesToInstall.has(component.id);
-    });
+  function selectFiles(files) {
+    return files.filter(({ path }) => getArchiveComponent(path));
   }
 
   function getArchiveModuleIds(files) {
@@ -629,7 +596,7 @@
   }
 
   async function writeFile(root, path, bytes) {
-    return globalThis.BjtuUpdateFileSystem.writeFile(root, path, bytes);
+    return globalThis.BjtuUpdateFileSystem.writeFileIfChanged(root, path, bytes);
   }
 
   async function downloadArchive(url, progress = null) {
@@ -708,9 +675,7 @@
         ? await requestManualModuleSelection({ release, root, archiveFiles, candidates, initial })
         : new Set(initial);
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-      const installedModuleSet = new Set(installedModuleIds);
-      const modulesToInstall = new Set([...selectedModules].filter((id) => !installedModuleSet.has(id)));
-      const selectedArchiveFiles = selectFiles(entries, release.clean ? null : release.update, modulesToInstall);
+      const selectedArchiveFiles = selectFiles(archiveFiles);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
       if (manual) {
@@ -729,12 +694,13 @@
         await removeUnselectedModules(root, selectedModules);
       }
       let completed = 0;
+      let writtenCount = 0;
       for (const batch of Array.from(
         { length: Math.ceil(files.length / EXTRACTION_CONCURRENCY) },
         (_, index) => files.slice(index * EXTRACTION_CONCURRENCY, index * EXTRACTION_CONCURRENCY + EXTRACTION_CONCURRENCY)
       )) {
         await Promise.all(batch.map(async ({ entry, path }) => {
-          await writeFile(root, path, await inflateEntry(entry));
+          if (await writeFile(root, path, await inflateEntry(entry))) writtenCount += 1;
           completed += 1;
         }));
         await setStatus('installing', {
@@ -752,7 +718,7 @@
         [MODULE_KNOWN_IDS_KEY]: [...knownModules],
         [MODULE_KNOWN_IDS_INITIALIZED_KEY]: true
       });
-      return files.length;
+      return writtenCount;
     });
   }
 
@@ -768,7 +734,6 @@
       reload: payload?.reload !== false,
       force: payload?.force === true,
       ownerId: String(payload?.ownerId || ''),
-      update: null,
       clean: true
     };
   }
@@ -869,7 +834,7 @@
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
         DETECTED_NOTIFICATION_VERSION_KEY, INSTALLED_RELEASE_DESCRIPTION_KEY,
-        MODULE_KNOWN_IDS_KEY, MODULE_KNOWN_IDS_INITIALIZED_KEY, 'ignoredUpdateVersion', FOREGROUND_PROMPT_KEY
+        'ignoredUpdateVersion', FOREGROUND_PROMPT_KEY
       ]);
       const updaterEnabled = stored?.[ENABLED_KEY] === undefined ? true : stored?.[ENABLED_KEY] === true;
       if (!forceCheck && !updaterEnabled) return { skipped: true };
@@ -948,40 +913,6 @@
           force: release.force
         });
         return { updated: false, directoryRequired: true, release };
-      }
-      const localModuleIds = await getInstalledOptionalModuleIds(root);
-      const selectedModules = new Set(localModuleIds);
-      const storedKnownModuleIds = stored?.[MODULE_KNOWN_IDS_KEY];
-      const knownIdsInitialized = stored?.[MODULE_KNOWN_IDS_INITIALIZED_KEY] === true;
-      const knownModules = new Set(knownIdsInitialized && Array.isArray(storedKnownModuleIds) ? storedKnownModuleIds : []);
-      localModuleIds.forEach((id) => knownModules.add(id));
-      if (!knownIdsInitialized) {
-        for (const id of normalizeUpdateScopes(release.update) || []) knownModules.add(id);
-      }
-      REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
-      if (!release.clean && !releaseAppliesToSelection(release.update, selectedModules, knownModules)) {
-        const record = {
-          ver: release.version,
-          name: release.name,
-          description: release.description,
-          fileCount: 0,
-          force: release.force,
-          reload: false,
-          skippedByModuleSelection: true,
-          appliedAt: Date.now(),
-          background: true
-        };
-        await chrome.storage.local.set({
-          [APPLIED_WITHOUT_RELOAD_KEY]: record,
-          [PENDING_RELOAD_KEY]: null,
-          [INSTALLED_RELEASE_DESCRIPTION_KEY]: {
-            version: release.version,
-            desc: release.description,
-            updatedAt: Date.now()
-          },
-          [STATUS_KEY]: { status: 'latest', localVersion: release.version, version: release.version, name: release.name, skippedByModuleSelection: true, checkedAt: Date.now() }
-        });
-        return { updated: false, skippedByModuleSelection: true, release };
       }
       const installedDescription = stored?.[INSTALLED_RELEASE_DESCRIPTION_KEY];
       const previousDescription = installedDescription
