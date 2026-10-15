@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.3'
+$InstallerVersion = '1.0.4'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -12,8 +12,19 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 }
 
 Set-Location -LiteralPath $bridgeRoot
-npm ci --ignore-scripts
-if ($LASTEXITCODE -ne 0) { throw '安装 Bridge 依赖失败' }
+$dependencyCheckPath = Join-Path $bridgeRoot 'src\check-dependencies.js'
+npm ls --omit=dev --all --silent *> $null
+$dependenciesReady = $LASTEXITCODE -eq 0
+if ($dependenciesReady) {
+  & node $dependencyCheckPath *> $null
+  $dependenciesReady = $LASTEXITCODE -eq 0
+}
+if (-not $dependenciesReady) {
+  npm install --ignore-scripts --no-audit --no-fund
+  if ($LASTEXITCODE -ne 0) { throw '安装 Bridge 依赖失败' }
+  & node $dependencyCheckPath
+  if ($LASTEXITCODE -ne 0) { throw 'Bridge 依赖校验失败，未更新命令入口' }
+}
 
 $commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
 New-Item -ItemType Directory -Path $commandDirectory -Force | Out-Null
