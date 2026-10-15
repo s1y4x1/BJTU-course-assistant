@@ -590,10 +590,10 @@ if (resourceSearchInput) {
     updateMjSearchHint();
   });
   void Promise.all([
-    globalThis.BjtuModuleRegistry.installed,
+    fetch(chrome.runtime.getURL('modules/MJ/module.json'), { cache: 'no-store' }).then((response) => response.ok),
     chrome.storage.local.get('mjModuleActivated')
   ]).then(([installed, stored]) => {
-    mjInstalled = installed.MJ === true;
+    mjInstalled = installed;
     if (mjActivated === undefined) mjActivated = stored.mjModuleActivated === true;
     updateMjSearchHint();
   }).catch((error) => console.warn('[bjtu] MJ search hint failed:', error));
