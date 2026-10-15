@@ -671,9 +671,13 @@
       const candidates = [...new Set([...installedModuleIds, ...packagedModuleIds])]
         .filter((id) => !REQUIRED_MODULE_IDS.has(id));
       const initial = new Set(candidates.filter((id) => installedModuleIds.includes(id) || newModules.includes(id)));
-      const selectedModules = manual
+      const chosenModules = manual
         ? await requestManualModuleSelection({ release, root, archiveFiles, candidates, initial })
         : new Set(initial);
+      const selectedModules = globalThis.BjtuModuleRegistry.withDependencies(chosenModules);
+      globalThis.BjtuModuleRegistry.assertDependencies(selectedModules, [
+        ...packagedModuleIds, ...(release.clean ? [] : installedModuleIds)
+      ]);
       REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
       const selectedArchiveFiles = selectFiles(archiveFiles);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');

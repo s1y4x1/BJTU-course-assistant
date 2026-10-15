@@ -188,7 +188,7 @@ async function runTerminalCommand(input, { request = sendExtensionRequest, call 
   const line = input.trim();
   if (line === 'help') {
     process.stdout.write('输入 pair 生成 6 位扩展配对码（5 分钟内有效，仅使用一次）。\n');
-    process.stdout.write('获取操作列表：qwen.operationList\n获取操作说明：qwen.getDocs module:"ve", name:"courseList"\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile filePath:"C:\\\\path\\\\file.pdf"\n键名无需引号，可省略对象花括号；字符串支持单引号或双引号。也可写 ve.courseList({})。\nJavaScript 可直接输入，无需前缀，例如 await ve.courseList()。代码由扩展在 app 环境执行，沿用千问助手的执行入口并询问授权，Bridge 不执行代码。\n');
+    process.stdout.write('获取操作列表：api.operationList\n获取操作说明：api.getDocs module:"ve", name:"courseList"\n按操作名查看说明：help ve.courseList ykt.assignments；也支持 help(ve.courseList)\n调用示例：ve.courseList\n          ve.uploadFile filePath:"C:\\\\path\\\\file.pdf"\n键名无需引号，可省略对象花括号；字符串支持单引号或双引号。也可写 ve.courseList({})。\nJavaScript 可直接输入，无需前缀，例如 await ve.courseList()。代码由扩展在 app 环境执行，通过扩展接口模块的执行入口并询问授权，Bridge 不执行代码。\n');
   } else if (line === 'pair') {
     issuePairingCode();
   } else if (line === 'exit' || line === 'quit') {

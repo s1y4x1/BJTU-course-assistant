@@ -1,4 +1,4 @@
-/* 操作注册表：将各模块常用操作暴露给 AI 调用。
+/* 扩展接口操作注册表：供控制台、智能助手和本地程序共用。
  * 每个操作包含名称（module.name）、说明（Markdown）、以及可序列化的执行器。
  * 执行器运行在 Service Worker 环境，可访问各模块的 global API 或转发消息。
  */
@@ -335,7 +335,7 @@
     const suffix = typeof global.crypto?.randomUUID === 'function'
       ? global.crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    return `bjtu-qwen-notification:${suffix}`;
+    return `bjtu-api-notification:${suffix}`;
   }
 
   // 轮询等待登录完成；超时返回 null。
@@ -520,6 +520,7 @@
   }
 
   async function tryPageInvoke(module, fn, args) {
+    if (module === 'api') return global.BjtuApiSettings.invokePage(fn, args || {});
     return sendRuntimeMessage({ type: 'PAGE_API', payload: { module, fn, args: args || {} } });
   }
 
@@ -2516,15 +2517,15 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'qwen',
-      name: 'qwen.operationList',
+      module: 'api',
+      name: 'api.operationList',
       summary: '列出可按模块分组的所有可用操作名',
       doc: [
-        '## qwen.operationList —— 列出全部操作',
+        '## api.operationList —— 列出全部操作',
         '',
-        '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/qwen），内层为操作名→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
+        '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/api），内层为操作名→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
         '',
-        '**调用示例**：`qwen.operationList()`',
+        '**调用示例**：`api.operationList()`',
         '',
         '**返回示例**：{"ve":{"courseList":"获取智慧课程平台的课程列表","assignments":"按状态与类型查询全部作业"},"ykt":{"courseList":"获取雨课堂课程列表","assignments":"按状态与类型查询全部作业"}}'
       ].join('\n'),
@@ -2536,7 +2537,7 @@ name: 've.teachers_of_',
           if (op.hiddenFromPrompt === true) continue;
           const module = String(op.module || '');
           if (availability[module] === false) continue;
-          if (enabledSet && !enabledSet.has(op.name) && !String(op.name).startsWith('qwen.')) continue;
+          if (enabledSet && !enabledSet.has(op.name) && !String(op.name).startsWith('api.')) continue;
           const key = String(op.name).split('.').slice(1).join('.');
           if (!operations[module]) operations[module] = {};
           operations[module][key] = op.summary || op.name;
@@ -2545,17 +2546,17 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'qwen',
-      name: 'qwen.getDocs',
+      module: 'api',
+      name: 'api.getDocs',
       summary: '按模块名和操作名批量查询操作说明（Markdown）',
       doc: [
-        '## qwen.getDocs —— 查询操作说明',
+        '## api.getDocs —— 查询操作说明',
         '',
         '按模块名和操作名查询详细使用说明（Markdown）。module 和 name 均可传单个字符串、字符串列表或省略；多份说明使用分隔线连接。在执行任何操作前，应先调用本操作查询其说明。',
         '',
         '**参数**：`{"module":"模块名或模块名列表","name":"不含模块前缀的操作名或操作名列表"}`。两个参数都不传时返回本操作自己的说明；只传 module 时返回这些模块的所有操作；只传 name 时返回所有模块中与这些名称匹配的操作；两者都传时按 module × name 两两匹配并跳过不存在的操作。',
         '',
-        '**调用示例**：`qwen.getDocs()`；`qwen.getDocs({module: "ve"})`；`qwen.getDocs({name: "login"})`；`qwen.getDocs({module: ["ve","ykt","academic"], name: ["login","assignments"]})`',
+        '**调用示例**：`api.getDocs()`；`api.getDocs({module: "ve"})`；`api.getDocs({name: "login"})`；`api.getDocs({module: ["ve","ykt","academic"], name: ["login","assignments"]})`',
         '',
         '**返回示例**：`"## ve.login —— 智慧课程平台登录\\n……\\n\\n---\\n\\n## ve.assignments —— 作业查询\\n……"`'
       ].join('\n'),
@@ -2578,7 +2579,7 @@ name: 've.teachers_of_',
         let modules = normalizeSelectors(args?.module, 'module');
         let names = normalizeSelectors(args?.name, 'name');
         if (!modules.length && !names.length) {
-          modules = ['qwen'];
+          modules = ['api'];
           names = ['getDocs'];
         }
 
@@ -2673,7 +2674,7 @@ name: 've.teachers_of_',
         '',
         '**进度通知示例**：`reminder.send({notificationId: "download-1", replaceExisting: true, type: "progress", title: "正在下载", message: "模型资源", progress: 45})`',
         '',
-        '**返回示例**：`{"notificationId":"bjtu-qwen-notification:…"}`'
+        '**返回示例**：`{"notificationId":"bjtu-api-notification:…"}`'
       ].join('\n'),
       async run(args) {
         if (!args || typeof args !== 'object' || Array.isArray(args)) {
@@ -2696,7 +2697,7 @@ name: 've.teachers_of_',
         const createdId = await createNotification(
           notificationId,
           notificationOptions,
-          'qwen-operation',
+          'api-operation',
           replaceExisting === true
         );
         return { notificationId: createdId };
@@ -2845,7 +2846,7 @@ name: 've.teachers_of_',
     { id: 'captcha', label: '本地验证码识别', operations: OPERATIONS.filter((op) => op.module === 'captcha') },
     { id: 'theme', label: '外观', operations: OPERATIONS.filter((op) => op.module === 'theme') },
     { id: 'reminder', label: '作业截止提醒', operations: OPERATIONS.filter((op) => op.module === 'reminder') },
-    { id: 'qwen', label: '通义千问元操作', operations: OPERATIONS.filter((op) => op.module === 'qwen') }
+    { id: 'api', label: '扩展接口', operations: OPERATIONS.filter((op) => op.module === 'api') }
   ];
 
   function allOperations() {
@@ -2954,7 +2955,7 @@ name: 've.teachers_of_',
     if (op.module === 'academic' && (args == null ? false : (typeof args !== 'object' || Array.isArray(args)))) {
       return { ok: false, name, error: 'academic 操作参数必须是对象', code: 'INVALID_ARGUMENTS' };
     }
-    if (!String(op.name).startsWith('qwen.')) {
+    if (!String(op.name).startsWith('api.')) {
       const enabledSet = await getEnabledOperationSet();
       if (enabledSet && !enabledSet.has(op.name)) {
         return { ok: false, name, error: `操作「${op.name}」已被禁止调用，请先在「操作」面板中启用它。` };
@@ -2989,7 +2990,7 @@ name: 've.teachers_of_',
       return { ok: false, name: `code.${normalizedMode}`, code: 'EMPTY_CODE', error: 'JavaScript 代码为空' };
     }
     try {
-      const result = await pageInvoke('qwen', 'executeJs', { code: source, mode: normalizedMode }, 45000);
+      const result = await pageInvoke('api', 'executeJs', { code: source, mode: normalizedMode }, 45000);
       return { ok: true, name: `code.${normalizedMode}`, result };
     } catch (error) {
       return {
@@ -2999,6 +3000,16 @@ name: 've.teachers_of_',
         code: String(error?.code || 'CODE_EXECUTION_FAILED')
       };
     }
+  }
+
+  for (const operation of OPERATIONS) {
+    const [module, method] = operation.name.split('.');
+    const namespace = global[module] ||= {};
+    namespace[method] = async (args = {}) => {
+      const response = await runOperation(operation.name, args);
+      if (response.ok) return response.result;
+      throw Object.assign(new Error(response.error), { code: response.code || '' });
+    };
   }
 
   global.BJTUCA = {

@@ -1,1 +1,1 @@
-{"id":"local-bridge","name":"本地程序桥接"}
+{"id":"local-bridge","name":"本地程序桥接","dependencies":["api"]}

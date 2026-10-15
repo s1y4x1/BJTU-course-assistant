@@ -214,7 +214,7 @@ function updateMoocPeerReviewState() {
   }
 }
 
-const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:cas', 'module:mail', 'module:qwen'];
+const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:cas', 'module:mail', 'module:api', 'module:qwen'];
 const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
 const PLATFORM_ORDER_LABELS = {
   ve: '智慧课程平台',
@@ -586,7 +586,8 @@ async function setupInstalledModuleOptions() {
   if (updaterReady && globalThis.BjtuUpdaterModuleManager?.prepare) {
     await globalThis.BjtuUpdaterModuleManager.prepare().catch(() => null);
   }
-  const installed = new Set(Object.keys(definitions).filter((id) => available[id] === true));
+  const installedFiles = await globalThis.BjtuModuleRegistry.installed;
+  const installed = new Set(Object.keys(definitions).filter((id) => installedFiles[id] === true));
   list.innerHTML = '';
   const orderedIds = await getInstalledModuleOrderedIds(definitions);
   orderedIds.forEach((id) => {
@@ -621,7 +622,11 @@ async function setupInstalledModuleOptions() {
     event.preventDefault();
     setMsg('不可卸载此模块，但您可前往扩展安装目录手动删除，可能引发异常问题', false);
   });
-  list.addEventListener('change', refreshButton);
+  list.addEventListener('change', (event) => {
+    globalThis.BjtuModuleRegistry.syncSelection(list, event.target);
+    refreshButton();
+  });
+  globalThis.BjtuModuleRegistry.syncSelection(list);
   refreshButton();
   if (status instanceof HTMLElement) status.textContent = `已安装 ${installed.size} 个模块。取消勾选可卸载，勾选未安装模块可安装。`;
 

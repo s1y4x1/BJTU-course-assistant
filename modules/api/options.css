@@ -1,0 +1,20 @@
+.api-options-card {
+  --api-accent: #615ced;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+html[data-color-scheme="dark"] .api-options-card {
+  border-color: #334155;
+  background: #111827;
+}
+
+.api-console-hint {
+  margin: 6px 0;
+  font-size: var(--bjtu-font-size-body, 13px);
+  line-height: 1.6;
+}

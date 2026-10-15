@@ -1,6 +1,6 @@
 # 本地 Bridge 安装与使用说明
 
-本地 Bridge 将浏览器扩展已有的 `BJTUCA` 操作提供给 Codex、其他 MCP 客户端和普通本地程序。默认只监听 `127.0.0.1`，默认端口为 `1896`。操作注册表由「通义千问」模块提供，因此使用 Bridge 调用操作前必须先安装该模块。
+本地 Bridge 将浏览器扩展已有的 `BJTUCA` 操作提供给 Codex、其他 MCP 客户端和普通本地程序。默认只监听 `127.0.0.1`，默认端口为 `1896`。操作注册表、文档、执行桥及操作权限由「扩展接口」（api）模块提供；它是 Bridge 的必要前置模块，无需安装「通义千问」。
 
 ## 安装与启动
 
@@ -50,9 +50,9 @@ Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 
 ```powershell
 BJTUCA -c "ve.courseList"
-BJTUCA -c "qwen.operationList"
+BJTUCA -c "api.operationList"
 BJTUCA -c "help ve.login ykt.assignments"
-BJTUCA -c 'qwen.getDocs {"module":"ve","name":"login"}'
+BJTUCA -c 'api.getDocs {"module":"ve","name":"login"}'
 ```
 
 若 Bridge 已在运行，会直接通过它执行，不会关闭该 Bridge。否则临时启动服务，等待扩展连接后执行，结束时关闭临时服务。端口参数放在 `-c` 之前，例如 `BJTUCA --port=1000 -c "ve.courseList"`。成功时退出码为 0，执行出错时为 1。
@@ -62,9 +62,9 @@ BJTUCA -c 'qwen.getDocs {"module":"ve","name":"login"}'
 ```text
 ve.courseList
 ve.assignments {"status":"pending"}
-qwen.getDocs {module:'ve', name:'courseList'}
-qwen.getDocs module:'ve', name:'courseList'
-qwen.getDocs(module:'ve', name:'courseList')
+api.getDocs {module:'ve', name:'courseList'}
+api.getDocs module:'ve', name:'courseList'
+api.getDocs(module:'ve', name:'courseList')
 ve.courseList({})
 ```
 

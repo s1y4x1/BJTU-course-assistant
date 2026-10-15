@@ -341,8 +341,8 @@ tryImportModuleScripts('../modules/jlgj/background.js');
 tryImportModuleScripts('../modules/mooc/background.js');
 tryImportModuleScripts('../modules/mrjzy/background.js');
 tryImportModuleScripts('../core/module-registry.js');
+tryImportModuleScripts('../modules/api/operations.js', '../modules/api/background.js');
 tryImportModuleScripts(
-  '../modules/qwen/operations.js',
   '../modules/qwen/qwen-client.js',
   '../modules/qwen/agent.js',
   '../modules/qwen/background.js'

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>扩展接口选项</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="options.css">
+  <link rel="stylesheet" href="operations-ui.css">
+</head>
+<body class="module-options-standalone" data-options-module="api">
+<section class="api-options-card" data-options-fragment>
+  <div class="section-title">
+    <a class="module-options-page-link" data-module-options-link="api" href="options.html"
+      title="在当前页面打开扩展接口选项">扩展接口</a>
+  </div>
+  <p class="api-console-hint">在扩展页面的开发者工具控制台中可直接调用操作，例如 <code>ve.login()</code>。
+    使用 <code>api.operationList()</code> 获取操作列表、<code>api.getDocs()</code> 查询说明。</p>
+  <div data-operation-ui-mount></div>
+</section>
+
+<div id="msg" role="status" aria-live="polite"></div>
+
+<script src="../../core/module-registry.js"></script>
+<script src="../../core/loaders/api-loader.js"></script>
+<script src="operations-ui.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

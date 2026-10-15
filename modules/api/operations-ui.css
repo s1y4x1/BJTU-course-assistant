@@ -1,28 +1,28 @@
-/* 共享的「允许 AI 调用以下操作」列表样式。
- * 同时被 modules/qwen/options.html 与聊天面板的「操作」弹窗使用，保证两处显示一致。 */
-.qwen-operation-panel {
+/* 控制台、智能助手与本地程序共用的操作设置样式。
+ * 同时被 modules/api/options.html 与聊天面板的「操作」弹窗使用，保证两处显示一致。 */
+.api-operation-panel {
   display: flex;
   flex-direction: column;
 }
 
-.qwen-operation-header {
+.api-operation-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.qwen-operation-header-title {
+.api-operation-header-title {
   font-size: 14px;
   font-weight: 600;
   color: #334155;
 }
 
-html[data-color-scheme="dark"] .qwen-operation-header-title {
+html[data-color-scheme="dark"] .api-operation-header-title {
   color: #cbd5e1;
 }
 
-.qwen-operation-toggle-all {
+.api-operation-toggle-all {
   margin: 0;
   padding: 4px 8px;
   border: 1px solid #bfdbfe;
@@ -35,7 +35,7 @@ html[data-color-scheme="dark"] .qwen-operation-header-title {
   user-select: none;
 }
 
-.qwen-operation-toggle-actions {
+.api-operation-toggle-actions {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -43,59 +43,59 @@ html[data-color-scheme="dark"] .qwen-operation-header-title {
   gap: 5px;
 }
 
-html[data-color-scheme="dark"] .qwen-operation-toggle-all {
+html[data-color-scheme="dark"] .api-operation-toggle-all {
   color: #60a5fa;
   border-color: #1e40af;
   background: rgba(30, 64, 175, 0.22);
 }
 
-.qwen-operation-toggle-all:hover {
+.api-operation-toggle-all:hover {
   border-color: #60a5fa;
   background: #dbeafe;
 }
-html[data-color-scheme="dark"] .qwen-operation-toggle-all:hover { background:rgba(30,64,175,.38); }
+html[data-color-scheme="dark"] .api-operation-toggle-all:hover { background:rgba(30,64,175,.38); }
 
-.qwen-operation-tip {
+.api-operation-tip {
   margin: 4px 0 8px;
   font-size: 11px;
   color: #64748b;
   line-height: 1.5;
 }
 
-html[data-color-scheme="dark"] .qwen-operation-tip {
+html[data-color-scheme="dark"] .api-operation-tip {
   color: #94a3b8;
 }
 
-.qwen-operation-list {
+.api-operation-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.qwen-operation-group {
+.api-operation-group {
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 8px;
   padding: 8px 10px;
 }
 
-.qwen-operation-group-title {
+.api-operation-group-title {
   font-size: 13px;
   font-weight: 600;
   color: #334155;
   margin-bottom: 6px;
 }
 
-html[data-color-scheme="dark"] .qwen-operation-group-title {
+html[data-color-scheme="dark"] .api-operation-group-title {
   color: #cbd5e1;
 }
 
-.qwen-operation-group-items {
+.api-operation-group-items {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.qwen-operation-item {
+.api-operation-item {
   display: grid;
   grid-template-columns:auto minmax(0,1fr) auto;
   align-items: center;
@@ -105,8 +105,8 @@ html[data-color-scheme="dark"] .qwen-operation-group-title {
   color: #475569;
 }
 
-.qwen-operation-enable,
-.qwen-operation-always {
+.api-operation-enable,
+.api-operation-always {
   display:inline-flex;
   align-items:center;
   gap:6px;
@@ -114,44 +114,44 @@ html[data-color-scheme="dark"] .qwen-operation-group-title {
   cursor:pointer;
 }
 
-.qwen-operation-always {
+.api-operation-always {
   justify-self:end;
   white-space:nowrap;
   color:#64748b;
   font-size:11px;
 }
 
-.qwen-operation-always:has(input:disabled) { cursor:not-allowed; opacity:.5; }
+.api-operation-always:has(input:disabled) { cursor:not-allowed; opacity:.5; }
 
-.qwen-operation-item input {
+.api-operation-item input {
   width: auto;
   margin: 0;
-  accent-color: var(--qwen-accent, #615ced);
+  accent-color: var(--api-accent, #615ced);
 }
 
-html[data-color-scheme="dark"] .qwen-operation-item {
+html[data-color-scheme="dark"] .api-operation-item {
   color: #94a3b8;
 }
 
-.qwen-operation-item code {
+.api-operation-item code {
   font-family: inherit;
   background: rgba(148, 163, 184, 0.15);
   padding: 1px 5px;
   border-radius: 4px;
 }
 
-.qwen-operation-item-desc {
+.api-operation-item-desc {
   color: #475569;
   font-size: 11px;
   line-height: 1.4;
   margin-left: 0;
 }
 
-html[data-color-scheme="dark"] .qwen-operation-item-desc {
+html[data-color-scheme="dark"] .api-operation-item-desc {
   color: #cbd5e1;
 }
 
-.qwen-operation-loading {
+.api-operation-loading {
   font-size: 13px;
   color: #64748b;
   display: inline-flex;

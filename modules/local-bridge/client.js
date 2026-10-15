@@ -1,6 +1,7 @@
 /* 本地程序桥接客户端：连接本机或局域网内的 BJTU Course Assistant Bridge。 */
 (function initBJTUCALocalBridge(global) {
   'use strict';
+  if (!global.BJTUCA || !global.BjtuApiSettings) return;
 
   const DEFAULT_PORT = 1896;
   const DEFAULT_RETRY_INTERVAL_MS = 500;
@@ -15,7 +16,7 @@
     autoRetry: 'bjtuLocalBridgeAutoRetry',
     retryIntervalMs: 'bjtuLocalBridgeRetryIntervalMs'
   });
-  const META_OPERATIONS = new Set(['qwen.operationList', 'qwen.getDocs']);
+  const META_OPERATIONS = new Set(['api.operationList', 'api.getDocs']);
   const APPROVAL_PREFIX = 'bjtu-local-bridge-approval:';
   const approvalRequests = new Map();
   const completedRequests = new Map();
@@ -247,9 +248,8 @@
 
   async function operationApproval(name, description = '') {
     if (META_OPERATIONS.has(name)) return true;
-    const stored = await chrome.storage.local.get('qwenAlwaysAllowedOperations').catch(() => ({}));
-    const alwaysAllowed = new Set((Array.isArray(stored?.qwenAlwaysAllowedOperations)
-      ? stored.qwenAlwaysAllowedOperations : []).map(String));
+    const settings = await global.BjtuApiSettings.get();
+    const alwaysAllowed = new Set(settings.alwaysAllowedOperations);
     if (alwaysAllowed.has(name)) return true;
 
     const approvalId = crypto.randomUUID();
@@ -290,12 +290,8 @@
   }
 
   async function rememberAlwaysAllowed(name) {
-    const stored = await chrome.storage.local.get('qwenAlwaysAllowedOperations').catch(() => ({}));
-    const next = [...new Set([
-      ...(Array.isArray(stored?.qwenAlwaysAllowedOperations) ? stored.qwenAlwaysAllowedOperations : []),
-      name
-    ].map(String).filter(Boolean))];
-    await chrome.storage.local.set({ qwenAlwaysAllowedOperations: next });
+    const settings = await global.BjtuApiSettings.get();
+    await global.BjtuApiSettings.save({ alwaysAllowedOperations: [...settings.alwaysAllowedOperations, name] });
   }
 
   chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
@@ -317,17 +313,17 @@
     const api = global.BJTUCA;
     if (!api) {
       throw Object.assign(
-        new Error('BJTUCA 操作注册表未就绪，请先安装「通义千问」模块以注册操作表'),
+        new Error('BJTUCA 操作注册表未就绪，请先安装「扩展接口」模块'),
         { code: 'MODULE_UNAVAILABLE' }
       );
     }
     if (action === 'operationList') {
-      const response = await api.run('qwen.operationList', {});
+      const response = await api.run('api.operationList', {});
       if (!response?.ok) throw Object.assign(new Error(response?.error || '操作列表获取失败'), { code: response?.code || '' });
       return response.result;
     }
     if (action === 'getDocs') {
-      const response = await api.run('qwen.getDocs', payload || {});
+      const response = await api.run('api.getDocs', payload || {});
       if (!response?.ok) throw Object.assign(new Error(response?.error || '操作说明获取失败'), { code: response?.code || '' });
       return response.result;
     }

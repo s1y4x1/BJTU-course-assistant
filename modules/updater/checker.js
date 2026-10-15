@@ -2110,7 +2110,7 @@ function presentUpdateModuleChoices(choices, { autoConfirm = true, requireConfir
       if (confirmInProgress) return;
       confirmInProgress = true;
       cancelAutoConfirm();
-      const selected = new Set([...list.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value));
+      const selected = globalThis.BjtuModuleRegistry.syncSelection(list);
       await chrome.storage.local.set({
         [VERSION_MODULE_SELECTION_KEY]: [...selected].filter((id) => !VERSION_REQUIRED_MODULE_IDS.has(id))
       }).catch(() => {});
@@ -2119,15 +2119,18 @@ function presentUpdateModuleChoices(choices, { autoConfirm = true, requireConfir
     };
     mask.querySelector('[data-invert]')?.addEventListener('click', () => {
       list.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((checkbox) => { checkbox.checked = !checkbox.checked; });
+      globalThis.BjtuModuleRegistry.syncSelection(list);
       cancelAutoConfirm();
     });
     list.addEventListener('change', (event) => {
       if (event.target instanceof HTMLInputElement && event.target.matches('input[type="checkbox"]:not(:disabled)')) {
+        globalThis.BjtuModuleRegistry.syncSelection(list, event.target);
         cancelAutoConfirm();
       }
     });
     confirmButton.addEventListener('click', confirmSelection);
     document.body.appendChild(mask);
+    globalThis.BjtuModuleRegistry.syncSelection(list);
     if (!autoConfirm) return;
     const autoConfirmAt = Date.now() + 3000;
     autoConfirmTimer = setInterval(() => {
@@ -2332,7 +2335,7 @@ async function fetchModuleArchive(onProgress) {
 }
 
 async function applyModuleSelection({ selected = [], installed = [], onProgress = null } = {}) {
-  const selectedSet = new Set(selected.map((id) => String(id || '').toLowerCase()));
+  const selectedSet = globalThis.BjtuModuleRegistry.withDependencies(selected.map((id) => String(id || '').toLowerCase()));
   const installedSet = new Set(installed.map((id) => String(id || '').toLowerCase()));
   selectedSet.add('updater');
   const additions = [...selectedSet].filter((id) => id !== 'updater' && !installedSet.has(id));
@@ -2475,7 +2478,11 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
     .map((entry) => ({ entry, path: normalizeUpdateEntryPath(entry.name, commonRoot) }))
     .filter((item) => item.path);
   const packagedModuleIds = getArchiveModuleIds(archiveFiles);
-  const selectedModules = await chooseUpdateModules(archiveFiles);
+  const selectedModules = globalThis.BjtuModuleRegistry.withDependencies(await chooseUpdateModules(archiveFiles));
+  globalThis.BjtuModuleRegistry.assertDependencies(selectedModules, [
+    ...packagedModuleIds,
+    ...(cleanUpdate ? [] : await getLocalOptionalModuleIds(versionUpdateDirectoryHandle, { strict: true }))
+  ]);
   VERSION_REQUIRED_MODULE_IDS.forEach((id) => selectedModules.add(id));
   if (cleanUpdate) {
     await clearVersionUpdateDirectory();

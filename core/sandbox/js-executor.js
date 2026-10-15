@@ -1,7 +1,7 @@
 (function initJsExecutorSandbox() {
   'use strict';
 
-  const CHANNEL = 'bjtu-qwen-js-sandbox';
+  const CHANNEL = 'bjtu-api-js-sandbox';
   const pendingBridgeCalls = new Map();
   const bridgeCallbacks = new Map();
   const deferredValues = new WeakMap();

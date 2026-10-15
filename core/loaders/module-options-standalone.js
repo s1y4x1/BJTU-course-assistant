@@ -40,8 +40,20 @@
       return;
     }
     const id = String(document.body?.dataset?.optionsModule || '');
+    if (!global.BjtuModuleRegistry) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = chrome.runtime.getURL('core/module-registry.js');
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+    if (!global.__bjtuApiReady) await global.BjtuModuleRegistry.loadScript('core/loaders/api-loader.js');
+    await global.__bjtuApiReady;
     const controllers = {
       academic: global.BjtuAcademicOptions,
+      api: global.BjtuApiOptions,
       campusnet: global.BjtuCampusnetOptions,
       captcha: global.BjtuCaptchaOptions,
       cas: global.BjtuCasOptions,

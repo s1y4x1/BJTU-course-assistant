@@ -2,12 +2,12 @@
   'use strict';
   global.__bjtuQwenAppReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
-    if (!available.qwen) return false;
+    if (!await global.__bjtuApiReady || !available.qwen) return false;
     await global.BjtuModuleRegistry.loadStyle('UI/file-size-emphasis.css');
     await global.BjtuModuleRegistry.loadStyle('UI/markdown.css');
     await global.BjtuModuleRegistry.loadScript('UI/file-size-emphasis.js');
     await global.BjtuModuleRegistry.loadStyle('modules/qwen/app.css');
-    await global.BjtuModuleRegistry.loadStyle('modules/qwen/operations-ui.css');
+    await global.BjtuModuleRegistry.loadStyle('modules/api/operations-ui.css');
     const markupResponse = await fetch(chrome.runtime.getURL('modules/qwen/app.html'), {
       cache: 'no-store'
     });
@@ -23,7 +23,7 @@
     }
     await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
     await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
-    await global.BjtuModuleRegistry.loadScript('modules/qwen/operations-ui.js');
+    await global.BjtuModuleRegistry.loadScript('modules/api/operations-ui.js');
     await global.BjtuModuleRegistry.loadScript('modules/qwen/app.js');
     return true;
   })().catch((error) => {

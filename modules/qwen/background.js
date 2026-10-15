@@ -1,9 +1,9 @@
 /* Qwen 模块后台：存储设置、查询状态、执行操作、转发聊天。 */
 (function initBjtuQwenBackground(global) {
   'use strict';
+  if (!global.BJTUCA || !global.BjtuApiSettings) return;
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenEnabledOperations', 'qwenAlwaysAllowedOperations', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode'];
-  const ALWAYS_ALLOWED_META_OPERATIONS = Object.freeze(['qwen.operationList', 'qwen.getDocs']);
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode'];
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
@@ -16,13 +16,6 @@
   let qwenLoginCompletionPromise = null;
   let qwenLoginPendingToken = '';
   let wafPopupOpenPromise = null;
-
-  function withAlwaysAllowedMetaOperations(values) {
-    return [...new Set([
-      ...ALWAYS_ALLOWED_META_OPERATIONS,
-      ...(Array.isArray(values) ? values.map(String).filter(Boolean) : [])
-    ])];
-  }
 
   async function loadChatPermissionSession(chatId) {
     const id = String(chatId || '');
@@ -331,16 +324,14 @@
 
   async function getSettings() {
     const stored = await chrome.storage.local.get(SETTINGS_KEYS).catch(() => ({}));
+    const operationSettings = await global.BjtuApiSettings.get();
     return {
       enabled: stored.qwenEnabled !== false,
       fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.qwenFabColorMode)
         ? stored.qwenFabColorMode
         : 'extension',
       modelId: String(stored.qwenModelId || ''),
-      enabledOperations: Array.isArray(stored.qwenEnabledOperations)
-        ? stored.qwenEnabledOperations
-        : null,
-      alwaysAllowedOperations: withAlwaysAllowedMetaOperations(stored.qwenAlwaysAllowedOperations),
+      ...operationSettings,
       thinkingEnabled: stored.qwenThinkingEnabled === true,
       maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
       alwaysAllow: stored.qwenAlwaysAllow === true,
@@ -362,22 +353,8 @@
         : 'extension';
     }
     if (patch?.modelId !== undefined) next.qwenModelId = String(patch.modelId || '');
-    if (patch?.enabledOperations !== undefined) {
-      next.qwenEnabledOperations = Array.isArray(patch.enabledOperations)
-        ? patch.enabledOperations
-        : null;
-    }
-    if (patch?.alwaysAllowedOperations !== undefined) {
-      next.qwenAlwaysAllowedOperations = withAlwaysAllowedMetaOperations(patch.alwaysAllowedOperations);
-      if (patch?.enabledOperations === undefined) {
-        const current = await chrome.storage.local.get('qwenEnabledOperations').catch(() => ({}));
-        if (Array.isArray(current?.qwenEnabledOperations)) {
-          next.qwenEnabledOperations = [...new Set([
-            ...current.qwenEnabledOperations.map(String),
-            ...next.qwenAlwaysAllowedOperations
-          ].filter(Boolean))];
-        }
-      }
+    if (patch?.enabledOperations !== undefined || patch?.alwaysAllowedOperations !== undefined) {
+      await global.BjtuApiSettings.save(patch);
     }
     if (typeof patch?.thinkingEnabled === 'boolean') next.qwenThinkingEnabled = patch.thinkingEnabled;
     if (patch?.maxIterations !== undefined) {
@@ -890,85 +867,9 @@
     return String(models[0]?.id || '');
   }
 
-  function backgroundBridgePathParts(path) {
-    const parts = String(path || '').split('.').map((part) => part.trim()).filter(Boolean);
-    if (!parts.length) throw new Error('桥接路径为空');
-    if (['globalThis', 'self'].includes(parts[0])) parts.shift();
-    if (!parts.length) throw new Error('不能直接访问整个后台全局对象');
-    return parts;
-  }
-
-  function resolveBackgroundBridgePath(path) {
-    const parts = backgroundBridgePathParts(path);
-    let owner = global;
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      owner = owner?.[parts[i]];
-      if (owner == null) throw new Error(`后台桥接路径不存在：${parts.slice(0, i + 1).join('.')}`);
-    }
-    const key = parts.at(-1);
-    return { owner, key, value: owner?.[key] };
-  }
-
-  function backgroundBridgeSerializable(value, seen = new WeakSet(), depth = 0) {
-    if (value === undefined) return { __type: 'undefined' };
-    if (typeof value === 'bigint') return `${value}n`;
-    if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
-    if (typeof value === 'symbol') return String(value);
-    if (value === null || typeof value !== 'object') return value;
-    if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack || '' };
-    if (depth > 8) return '[深度受限]';
-    if (seen.has(value)) return '[循环引用]';
-    seen.add(value);
-    if (Array.isArray(value)) return value.map((item) => backgroundBridgeSerializable(item, seen, depth + 1));
-    const output = {};
-    for (const key of Object.keys(value)) {
-      try { output[key] = backgroundBridgeSerializable(value[key], seen, depth + 1); } catch (error) {
-        output[key] = `[读取失败：${String(error?.message || error)}]`;
-      }
-    }
-    return output;
-  }
-
-  async function handleBackgroundJsBridge(action, payload) {
-    if (action === 'roots') {
-      return [...new Set([
-        'chrome',
-        ...Object.getOwnPropertyNames(global)
-      ].filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(name))))];
-    }
-    const target = resolveBackgroundBridgePath(payload?.path);
-    if (action === 'get') return backgroundBridgeSerializable(target.value);
-    if (action === 'set') {
-      target.owner[target.key] = payload?.value;
-      return true;
-    }
-    if (action === 'call') {
-      if (typeof target.value !== 'function') throw new Error(`后台方法不存在：${String(payload?.path || '')}`);
-      const result = await target.value.apply(target.owner, Array.isArray(payload?.args) ? payload.args : []);
-      return backgroundBridgeSerializable(result);
-    }
-    throw new Error(`未知 background 桥接操作：${String(action || '')}`);
-  }
-
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const type = String(message?.type || '');
-      if (type === 'QWEN_JS_BACKGROUND_BRIDGE') {
-        const senderUrl = String(sender?.url || '');
-        if (!senderUrl.startsWith(chrome.runtime.getURL('app/app.html'))) {
-          sendResponse({ ok: false, message: '只允许 app.html 调用后台 JavaScript 桥接' });
-          return false;
-        }
-        void handleBackgroundJsBridge(
-          String(message?.payload?.action || ''),
-          message?.payload?.payload
-        ).then((value) => {
-          sendResponse({ ok: true, value });
-        }).catch((error) => {
-          sendResponse({ ok: false, message: String(error?.message || error) });
-        });
-        return true;
-      }
       if (type === 'QWEN_GET_STATUS') {
         void (async () => {
           const settings = await getSettings();
@@ -1086,23 +987,6 @@
         })();
         return true;
       }
-      if (type === 'QWEN_OPERATION_LIST') {
-        const operations = global.BJTUCA;
-        if (!operations) {
-          sendResponse({ ok: false, message: '通义千问操作注册表未就绪' });
-          return false;
-        }
-        void (async () => {
-          const settings = await getSettings();
-          sendResponse({
-            ok: true,
-            groups: await operations.groupsDetailed(),
-            enabledOperations: settings.enabledOperations,
-            alwaysAllowedOperations: settings.alwaysAllowedOperations
-          });
-        })();
-        return true;
-      }
       if (type === 'QWEN_BUILD_SYSTEM_PROMPT') {
         const agent = global.BjtuQwenAgent;
         const operations = global.BJTUCA;
@@ -1113,31 +997,14 @@
         void (async () => {
           try {
             const qwenDocs = [
-              operations?.getDocs?.('qwen.operationList')?.doc,
-              operations?.getDocs?.('qwen.getDocs')?.doc
+              operations?.getDocs?.('api.operationList')?.doc,
+              operations?.getDocs?.('api.getDocs')?.doc
             ].filter(Boolean).join('\n\n');
             sendResponse({ ok: true, text: await agent.buildSystemPrompt({ qwenDocs }) });
           } catch (error) {
             sendResponse({ ok: false, message: String(error?.message || error) });
           }
         })();
-        return true;
-      }
-      if (type === 'QWEN_GET_DOCS') {
-        const operations = global.BJTUCA;
-        const name = String(message?.payload?.name || '');
-        const doc = operations ? operations.getDocs(name) : null;
-        sendResponse(doc ? { ok: true, ...doc } : { ok: false, message: `未找到操作：${name}` });
-        return false;
-      }
-      if (type === 'BJTU_RUN_OPERATION' || type === 'QWEN_RUN_OPERATION') {
-        const operations = global.BJTUCA;
-        const name = String(message?.payload?.name || '');
-        if (!operations) {
-          sendResponse({ ok: false, error: '通义千问操作注册表未就绪', code: 'MODULE_UNAVAILABLE' });
-          return false;
-        }
-        void operations.run(name, message?.payload?.arguments || {}).then(sendResponse);
         return true;
       }
       if (type === 'QWEN_SETTINGS_GET') {

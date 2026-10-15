@@ -73,23 +73,32 @@
       styles: ['app.css'],
       files: ['app.html', 'checker.js', 'background.js', 'filesystem.js']
     },
+    api: {
+      label: '扩展接口',
+      styles: ['options.css', 'operations-ui.css'],
+      files: ['operations.js', 'background.js', 'page.js', 'operations-ui.js', 'operations-ui.html', 'options.html', 'options.js'],
+      options: {
+        fragment: 'options.html', style: 'options.css', script: 'options.js',
+        styles: ['operations-ui.css'], scripts: ['operations-ui.js']
+      }
+    },
     qwen: {
       label: '通义千问',
-      styles: ['options.css', 'app.css', 'operations-ui.css', 'chat.css'],
-      files: ['background.js', 'operations.js', 'qwen-client.js', 'agent.js', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'options.html', 'options.js', 'operations-ui.js', 'operations-ui.html'],
+      dependencies: ['api'],
+      styles: ['options.css', 'app.css', 'chat.css'],
+      files: ['background.js', 'qwen-client.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'options.html', 'options.js'],
       options: {
         fragment: 'options.html',
         style: 'options.css',
-        script: 'options.js',
-        styles: ['operations-ui.css'],
-        scripts: ['operations-ui.js']
+        script: 'options.js'
       }
     },
     'local-bridge': {
       label: '本地程序桥接',
+      dependencies: ['api'],
       files: [
         'client.js', 'README.md', 'install.ps1', 'package.json', 'package-lock.json',
-        'src/config.js', 'src/server.js', 'options.html', 'options.css', 'options.js'
+        'src/config.js', 'src/server.js', 'src/check-dependencies.js', 'options.html', 'options.css', 'options.js'
       ],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     }
@@ -109,9 +118,16 @@
     }
   }
 
-  const ready = (async () => {
+  const installed = (async () => {
     const entries = await Promise.all(Object.keys(MODULES).map(async (id) => [id, await exists(id)]));
-    const available = Object.fromEntries(entries);
+    return Object.fromEntries(entries);
+  })();
+
+  const ready = (async () => {
+    const available = { ...await installed };
+    for (const id of Object.keys(MODULES)) {
+      if ([...withDependencies([id])].some((dependency) => !available[dependency])) available[id] = false;
+    }
     global.__bjtuAvailableModules = available;
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.modulesReady = '1';
@@ -128,6 +144,43 @@
 
   function has(id) {
     return global.__bjtuAvailableModules?.[id] === true;
+  }
+
+  function withDependencies(ids) {
+    const selected = new Set(ids);
+    const visit = (id) => {
+      for (const dependency of MODULES[id]?.dependencies || []) {
+        if (selected.has(dependency)) continue;
+        selected.add(dependency);
+        visit(dependency);
+      }
+    };
+    for (const id of [...selected]) visit(id);
+    return selected;
+  }
+
+  function syncSelection(container, changed = null) {
+    const inputs = [...container.querySelectorAll('input[type="checkbox"]')];
+    let selected = new Set(inputs.filter((input) => input.checked).map((input) => input.value));
+    if (changed && !changed.checked) {
+      for (const id of [...selected]) {
+        if (withDependencies([id]).has(changed.value)) selected.delete(id);
+      }
+    }
+    selected = withDependencies(selected);
+    inputs.forEach((input) => { input.checked = selected.has(input.value); });
+    return selected;
+  }
+
+  function assertDependencies(selected, presentIds) {
+    const present = new Set(presentIds);
+    for (const id of selected) {
+      for (const dependency of withDependencies(MODULES[id]?.dependencies || [])) {
+        if (!present.has(dependency)) {
+          throw new Error(`${MODULES[id]?.label || id}需要前置模块「${MODULES[dependency]?.label || dependency}」，但本地或更新包中未找到该模块`);
+        }
+      }
+    }
   }
 
   const scriptLoads = new Map();
@@ -161,5 +214,5 @@
     });
   }
 
-  global.BjtuModuleRegistry = { definitions: MODULES, ready, has, exists, loadScript, loadStyle };
+  global.BjtuModuleRegistry = { definitions: MODULES, installed, ready, has, exists, withDependencies, syncSelection, assertDependencies, loadScript, loadStyle };
 })(globalThis);

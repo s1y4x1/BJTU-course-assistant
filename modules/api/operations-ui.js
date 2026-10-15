@@ -1,14 +1,14 @@
 /* 共享的「允许 AI 调用以下操作」界面。
- * 通过 fetch 注入 modules/qwen/operations-ui.html 到页面上每个 [data-operation-ui-mount] 占位符中，
- * 供 modules/qwen/options.html 与聊天面板的「操作」弹窗共用，保证两处显示一致。
- * 暴露：BjtuQwenOperationsUi.refresh()（从后台读取并刷新当前页面上的全部操作面板）
- *        BjtuQwenOperationsUi.collect(list)  // 全部选中返回 null，否则返回已勾选操作名数组
- * 勾选变化与「反选」按钮会自动通过 QWEN_SETTINGS_SET 持久化，并派发
- * document 上的 'qwenOperationsPersisted'（detail.ok）事件供宿主提示。 */
+ * 通过 fetch 注入 modules/api/operations-ui.html 到页面上每个 [data-operation-ui-mount] 占位符中，
+ * 供 modules/api/options.html 与聊天面板的「操作」弹窗共用，保证两处显示一致。
+ * 暴露：BjtuApiOperationsUi.refresh()（从后台读取并刷新当前页面上的全部操作面板）
+ *        BjtuApiOperationsUi.collect(list)  // 全部选中返回 null，否则返回已勾选操作名数组
+ * 勾选变化与「反选」按钮会自动通过 BJTUCA_OPERATION_SETTINGS_SET 持久化，并派发
+ * document 上的 'bjtuApiOperationsPersisted'（detail.ok）事件供宿主提示。 */
 (function (global) {
   'use strict';
 
-  const NS = 'BjtuQwenOperationsUi';
+  const NS = 'BjtuApiOperationsUi';
   const refreshVersions = new WeakMap();
 
   function send(type, payload) {
@@ -40,23 +40,23 @@
       });
       if (!names.length) continue;
       const groupEl = document.createElement('div');
-      groupEl.className = 'qwen-operation-group';
+      groupEl.className = 'api-operation-group';
 
       const title = document.createElement('div');
-      title.className = 'qwen-operation-group-title';
+      title.className = 'api-operation-group-title';
       title.textContent = String(group.label || '');
       groupEl.appendChild(title);
 
       const items = document.createElement('div');
-      items.className = 'qwen-operation-group-items';
+      items.className = 'api-operation-group-items';
       for (const entry of names) {
         const name = String(entry?.name ?? entry ?? '');
         const summary = String(entry?.summary || '');
-        const isMeta = name.startsWith('qwen.');
+        const isMeta = name.startsWith('api.');
         const item = document.createElement('div');
-        item.className = 'qwen-operation-item';
+        item.className = 'api-operation-item';
         const label = document.createElement('label');
-        label.className = 'qwen-operation-enable';
+        label.className = 'api-operation-enable';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.dataset.operationName = name;
@@ -69,13 +69,13 @@
         item.appendChild(label);
         if (showSummary && summary) {
           const desc = document.createElement('span');
-          desc.className = 'qwen-operation-item-desc';
+          desc.className = 'api-operation-item-desc';
           desc.textContent = summary;
           item.appendChild(desc);
         }
         const alwaysLabel = document.createElement('label');
-        alwaysLabel.className = 'qwen-operation-always';
-        alwaysLabel.title = isMeta ? '千问元操作默认在所有会话中始终允许' : `在所有会话中始终允许 ${name}`;
+        alwaysLabel.className = 'api-operation-always';
+        alwaysLabel.title = isMeta ? '接口元操作默认在所有会话中始终允许' : `在所有会话中始终允许 ${name}`;
         const alwaysCheckbox = document.createElement('input');
         alwaysCheckbox.type = 'checkbox';
         alwaysCheckbox.dataset.operationName = name;
@@ -94,7 +94,7 @@
 
     if (list.childElementCount === 0) {
       const empty = document.createElement('div');
-      empty.className = 'qwen-operation-loading';
+      empty.className = 'api-operation-loading';
       empty.textContent = '暂无可调用的操作';
       list.appendChild(empty);
     }
@@ -104,7 +104,7 @@
     if (!(list instanceof HTMLElement)) return;
     list.replaceChildren();
     const state = document.createElement('div');
-    state.className = 'qwen-operation-loading';
+    state.className = 'api-operation-loading';
     state.textContent = String(message || '操作加载失败');
     list.appendChild(state);
   }
@@ -127,12 +127,12 @@
   }
 
   async function persistAll(list) {
-    const response = await send('QWEN_SETTINGS_SET', {
+    const response = await send('BJTUCA_OPERATION_SETTINGS_SET', {
       enabledOperations: collect(list),
       alwaysAllowedOperations: collectAlwaysAllowed(list)
     });
-    document.dispatchEvent(new CustomEvent('qwenOperationsPersisted', {
-      detail: { ok: response?.ok !== false }
+    document.dispatchEvent(new CustomEvent('bjtuApiOperationsPersisted', {
+      detail: { ok: response?.ok === true }
     }));
   }
 
@@ -189,7 +189,7 @@
   let markupPromise = null;
   function loadMarkup() {
     if (markupPromise) return markupPromise;
-    markupPromise = fetch(chrome.runtime.getURL('modules/qwen/operations-ui.html'), { cache: 'no-store' })
+    markupPromise = fetch(chrome.runtime.getURL('modules/api/operations-ui.html'), { cache: 'no-store' })
       .then((response) => {
         if (!response.ok) throw new Error(`operations-ui.html HTTP ${response.status}`);
         return response.text();
@@ -226,7 +226,7 @@
       const list = root.querySelector('[data-operation-list]');
       if (showLoading && list instanceof HTMLElement && !list.childElementCount) renderState(list, '操作加载中…');
     }
-    const response = await send('QWEN_OPERATION_LIST');
+    const response = await send('BJTUCA_OPERATION_SETTINGS_GET');
     for (const root of targets) {
       if (refreshVersions.get(root) !== versions.get(root)) continue;
       const list = root.querySelector('[data-operation-list]');
@@ -240,10 +240,10 @@
           { alwaysAllowedOperations: response.alwaysAllowedOperations }
         );
       } else {
-        renderState(list, response?.message || '操作加载失败');
+        renderState(list, response?.message || response?.error || '操作加载失败');
       }
     }
-    document.dispatchEvent(new CustomEvent('qwenOperationsRefreshed', {
+    document.dispatchEvent(new CustomEvent('bjtuApiOperationsRefreshed', {
       detail: { ok: response?.ok === true }
     }));
     return response;

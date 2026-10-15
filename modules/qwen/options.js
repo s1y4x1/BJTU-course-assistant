@@ -113,10 +113,6 @@
     }
   }
 
-  async function refreshOperations() {
-    return global.BjtuQwenOperationsUi.refresh({ showLoading: true });
-  }
-
   function init(context) {
     if (initialized) return;
     initialized = true;
@@ -199,19 +195,12 @@
       });
     }
 
-    document.addEventListener('qwenOperationsPersisted', (event) => {
-      const ok = event?.detail?.ok !== false;
-      setMessage(ok ? '已保存' : '保存失败', ok);
-    });
-
     void refresh().catch((error) => setMessage(`初始化失败：${String(error?.message || error)}`, false));
-    void refreshOperations().catch((error) => setMessage(`操作加载失败：${String(error?.message || error)}`, false));
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', enabledOperations: null, alwaysAllowedOperations: [], thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
+    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
     void refresh();
-    void refreshOperations();
   }
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -234,7 +223,6 @@
       const input = document.getElementById('qwenMaxIterations');
       if (input instanceof HTMLInputElement) input.value = String(Math.max(1, Number(changes.qwenMaxIterations.newValue) || 6));
     }
-    if (changes.qwenEnabledOperations || changes.qwenAlwaysAllowedOperations) void refreshOperations();
     if (changes.qwenAlwaysAllow) applyAlwaysAllowState(changes.qwenAlwaysAllow.newValue === true);
     if (changes.qwenApprovalNotificationMode) {
       const approvalNotification = document.getElementById('qwenApprovalNotificationMode');

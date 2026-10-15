@@ -12,6 +12,7 @@
     'module:academic',
     'module:cas',
     'module:mail',
+    'module:api',
     'module:qwen'
   ]);
   const DEFAULT_PLATFORM_ORDER = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
