@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.4'
+$InstallerVersion = '1.0.5'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -11,19 +11,33 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw '未找到 Node.js，请先安装 Node.js 20 或更高版本。'
 }
 
+function Invoke-BridgeDependencyCommand {
+  param([string]$Command, [string[]]$CommandArguments, [switch]$Quiet)
+  # Windows PowerShell turns native stderr into ErrorRecord objects. Keep those
+  # local to this call; dependency checks must be decided by the exit code.
+  $ErrorActionPreference = 'Continue'
+  $PSNativeCommandUseErrorActionPreference = $false
+  $commandOutput = & $Command @CommandArguments 2>&1
+  $commandExitCode = $LASTEXITCODE
+  if (-not $Quiet) {
+    foreach ($line in $commandOutput) { Write-Host $line.ToString() }
+  }
+  return $commandExitCode
+}
+
 Set-Location -LiteralPath $bridgeRoot
 $dependencyCheckPath = Join-Path $bridgeRoot 'src\check-dependencies.js'
-npm ls --omit=dev --all --silent *> $null
-$dependenciesReady = $LASTEXITCODE -eq 0
+$dependenciesReady = (Invoke-BridgeDependencyCommand -Command npm -CommandArguments @('ls', '--omit=dev', '--all', '--silent') -Quiet) -eq 0
 if ($dependenciesReady) {
-  & node $dependencyCheckPath *> $null
-  $dependenciesReady = $LASTEXITCODE -eq 0
+  $dependenciesReady = (Invoke-BridgeDependencyCommand -Command node -CommandArguments @($dependencyCheckPath) -Quiet) -eq 0
 }
 if (-not $dependenciesReady) {
-  npm install --ignore-scripts --no-audit --no-fund
-  if ($LASTEXITCODE -ne 0) { throw '安装 Bridge 依赖失败' }
-  & node $dependencyCheckPath
-  if ($LASTEXITCODE -ne 0) { throw 'Bridge 依赖校验失败，未更新命令入口' }
+  if ((Invoke-BridgeDependencyCommand -Command npm -CommandArguments @('install', '--ignore-scripts', '--no-audit', '--no-fund')) -ne 0) {
+    throw '安装 Bridge 依赖失败'
+  }
+  if ((Invoke-BridgeDependencyCommand -Command node -CommandArguments @($dependencyCheckPath)) -ne 0) {
+    throw 'Bridge 依赖校验失败，未更新命令入口'
+  }
 }
 
 $commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
