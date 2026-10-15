@@ -141,9 +141,9 @@ try {
   if ($singleCommandText) {
     & npm --silent --prefix $bridgeRoot start -- @startArguments
   } elseif ($startArguments.Count) {
-    & npm --prefix $bridgeRoot start -- @startArguments
+    & npm --silent --prefix $bridgeRoot start -- @startArguments
   } else {
-    & npm --prefix $bridgeRoot start
+    & npm --silent --prefix $bridgeRoot start
   }
 } finally {
   $env:BJTUCA_RUN_COMMAND = $previousRunCommand

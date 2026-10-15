@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.7'
+$InstallerVersion = '1.0.8'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -86,7 +86,7 @@ Write-Host '已注册 bjtuca-bridge 和 BJTUCA 命令，可在任意目录启动。'
 if ($SkipStart) { return }
 Write-Host 'Bridge 正在运行；按 Ctrl+C 可停止。'
 if ($Port -eq 1896) {
-  npm start
+  npm --silent start
 } else {
-  npm start -- --port=$Port
+  npm --silent start -- --port=$Port
 }
