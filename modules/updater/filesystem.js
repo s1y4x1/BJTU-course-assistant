@@ -3,7 +3,7 @@
 
   const INSTALL_LOCK_NAME = 'bjtu-course-assistant-update-install';
   const INVALID_STATE_RETRY_DELAYS = [80, 200];
-  const DIRECTORY_DB_NAME = 'bjtu-course-assistant-filesystem';
+  const DIRECTORY_DB_NAME = 'BJTUCA-FileSystem';
   const LEGACY_DIRECTORY_DB_NAME = 'bjtu-course-assistant-update-filesystem';
   const DIRECTORY_STORE = 'handles';
   const DIRECTORY_KEY = 'update-directory';
