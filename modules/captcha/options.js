@@ -86,6 +86,12 @@
     return `${renderCaptchaFileSizeText(loaded)} <span class="file-size-separator">/</span> ${renderCaptchaFileSizeText(total)}`;
   }
 
+  function renderDownloadSize(loaded, total) {
+    return total > 0
+      ? `${renderCaptchaFileSizePair(loaded, total)} ${Math.min(100, Math.round(loaded / total * 100))}%`
+      : renderCaptchaFileSizeText(loaded);
+  }
+
   function modelLabel(version) {
     return versions[version]?.label || version;
   }
@@ -196,7 +202,7 @@
           setMisFileSize(item.key, installed ? renderCaptchaFileSizeText(record?.blob?.size || 0) : '—', installed);
           if (downloading) {
             setMisFileProgress(item.key, true, 0, 1);
-            setMisFileSize(item.key, `${renderCaptchaFileSizePair(0, item.size)} 0%`, true);
+            setMisFileSize(item.key, renderDownloadSize(0, item.size), true);
             setMisFileStatus(item.key, '下载中…');
           } else {
             setMisFileProgress(item.key, false);
@@ -227,8 +233,7 @@
 
   function misDownloadProgressHandler({ key, loaded, total }) {
     setMisStatus('下载中…', false);
-    const ratio = total > 0 ? Math.round((loaded / total) * 100) : 0;
-    setMisFileSize(key, `${renderCaptchaFileSizePair(loaded, total)} ${ratio}%`, true);
+    setMisFileSize(key, renderDownloadSize(loaded, total), true);
     setMisFileStatus(key, '下载中…');
     setMisFileProgress(key, true, loaded, total);
   }
@@ -387,11 +392,10 @@
     return `${prefix}：${sizeHtml}`;
   }
 
-  function setModelProgress(version, label, loaded = 0, total = 0) {
+  function setModelProgress(version, loaded = 0, total = 0) {
     const needsRender = !modelDownloadVersions.has(version);
     modelDownloadVersions.add(version);
     modelProgress.set(version, {
-      label,
       loaded: Math.max(0, Number(loaded) || 0),
       total: Math.max(0, Number(total) || 0)
     });
@@ -401,12 +405,12 @@
     if (!(item instanceof HTMLElement)) return;
     const progress = modelProgress.get(version);
     const container = item.querySelector('.captcha-model-progress');
-    const text = item.querySelector('.captcha-model-progress-label');
+    const size = item.querySelector('.captcha-model-size');
     const bar = item.querySelector('.captcha-model-progress-bar');
     if (!(container instanceof HTMLElement)
-        || !(text instanceof HTMLElement)
+        || !(size instanceof HTMLElement)
         || !(bar instanceof HTMLElement)) return;
-    text.innerHTML = progress.label;
+    size.innerHTML = renderDownloadSize(progress.loaded, progress.total);
     const determinate = progress.total > 0;
     container.classList.toggle('is-indeterminate', !determinate);
     bar.style.width = determinate
@@ -461,9 +465,10 @@
       name.textContent = `${filePath}（${definition.label}）`;
       const size = document.createElement('span');
       size.className = 'captcha-model-size';
-      size.textContent = formatBytes(definition.size);
-      size.dataset.fileSizeBytes = String(Math.max(0, Number(definition.size) || 0));
-      size.style.cssText = buildFileSizeEmphasisStyle(definition.size);
+      const progress = modelProgress.get(version) || { loaded: 0, total: 0 };
+      size.innerHTML = modelDownloading
+        ? renderDownloadSize(progress.loaded, progress.total)
+        : renderCaptchaFileSizeText(definition.size);
       choice.append(radio, name, size);
 
       const actions = document.createElement('div');
@@ -491,12 +496,8 @@
       }
       item.append(choice, actions);
       if (modelDownloading) {
-        const progress = modelProgress.get(version) || { label: '正在准备…', loaded: 0, total: 0 };
         const progressContainer = document.createElement('div');
         progressContainer.className = `captcha-model-progress${progress.total > 0 ? '' : ' is-indeterminate'}`;
-        const progressLabel = document.createElement('div');
-        progressLabel.className = 'captcha-model-progress-label';
-        progressLabel.innerHTML = progress.label;
         const progressTrack = document.createElement('div');
         progressTrack.className = 'captcha-model-progress-track';
         const progressBar = document.createElement('div');
@@ -505,7 +506,7 @@
           ? `${Math.min(100, progress.loaded / progress.total * 100)}%`
           : '';
         progressTrack.append(progressBar);
-        progressContainer.append(progressLabel, progressTrack);
+        progressContainer.append(progressTrack);
         item.append(progressContainer);
       }
       fragment.append(item);
@@ -579,7 +580,7 @@
     modelStateMessages.delete(version);
     if (!cachedVersions.has(version)) {
       modelDownloadVersions.add(version);
-      modelProgress.set(version, { label: '正在准备…', loaded: 0, total: 0 });
+      modelProgress.set(version, { loaded: 0, total: 0 });
     }
     renderModels();
     try {
@@ -588,7 +589,6 @@
         signal: abortController.signal,
         onProgress: (progress) => setModelProgress(
           version,
-          progressText('正在下载识别模型', progress),
           progress.loaded,
           progress.total
         )

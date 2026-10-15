@@ -350,16 +350,6 @@ html[data-color-scheme="dark"] .mis-captcha-status-right #casCaptchaDelete:not(:
   min-width: 0;
 }
 
-.captcha-model-progress-label {
-  margin-bottom: 4px;
-  overflow: hidden;
-  color: #475569;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .file-size-separator {
   margin: 0 2px;
   color: #64748b;
@@ -422,7 +412,6 @@ html[data-color-scheme="dark"] .captcha-core-progress-bar { background:#60a5fa; 
 
 html[data-color-scheme="dark"] .captcha-model-size,
 html[data-color-scheme="dark"] .captcha-model-state,
-html[data-color-scheme="dark"] .captcha-model-progress-label,
 html[data-color-scheme="dark"] .captcha-model-loading {
   color: #94a3b8;
 }
