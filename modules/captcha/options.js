@@ -366,13 +366,6 @@
     return coreReady;
   }
 
-  function progressText(prefix, progress) {
-    const sizeHtml = Number(progress?.total) > 0
-      ? renderCaptchaFileSizePair(progress?.loaded, progress.total)
-      : renderCaptchaFileSizeText(progress?.loaded);
-    return `${prefix}：${sizeHtml}`;
-  }
-
   function setModelProgress(version, loaded = 0, total = 0) {
     const needsRender = !modelDownloadVersions.has(version);
     modelDownloadVersions.add(version);
@@ -526,13 +519,17 @@
       }
       return { written: 0, corePending: false };
     }
+    const size = document.getElementById('captchaCoreSize');
     try {
       const result = await manager.prepareCaptchaAssets({
         interactive,
         modelReady: true,
         onProgress(progress) {
           if (progress.phase === 'core') {
-            setCoreStatus(progressText('下载中', progress));
+            setCoreStatus('下载中…');
+            if (size instanceof HTMLElement) {
+              size.innerHTML = renderDownloadSize(progress.loaded, progress.total);
+            }
             setCoreProgress({ loaded: progress.loaded, total: progress.total });
           } else if (progress.phase === 'write') {
             setCoreStatus(progress.completed >= progress.total ? '写入完成' : '正在写入…');
@@ -549,6 +546,8 @@
       setCoreStatus(escapeOptionsHtml(String(error?.message || error)), true);
       setCoreProgress({ visible: false });
       throw error;
+    } finally {
+      if (size instanceof HTMLElement) size.innerHTML = renderCaptchaFileSizeText(assets.CORE_SIZE);
     }
   }
 
