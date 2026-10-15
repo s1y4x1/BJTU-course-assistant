@@ -626,7 +626,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
   await chrome.alarms.clear(EXTENSION_RELOAD_RESTORE_ALARM).catch(() => false);
   await chrome.storage.local.set({
     [VERSION_AUTO_RELOAD_COMPLETED_KEY]: {
-      ...handoff,
+      ver: String(handoff.ver || ''),
       completedAt: Date.now()
     }
   }).catch(() => {});
