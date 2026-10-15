@@ -165,6 +165,7 @@
     const installedCount = installedVideoAssets().length;
     for (const asset of VIDEO_ASSETS) {
       const assetState = state.videoAssets[asset.name];
+      const downloading = assetState.busy && Boolean(assetState.controller);
       const row = document.querySelector(`[data-video-asset="${CSS.escape(asset.name)}"]`);
       if (!(row instanceof HTMLElement)) continue;
       const size = row.querySelector('.mj-video-asset-size');
@@ -179,7 +180,7 @@
         assetStatus.textContent = assetState.canceling
           ? '正在取消…'
           : (assetState.busy
-            ? '正在下载…'
+            ? (downloading ? '正在下载…' : '正在删除…')
             : (assetState.error || (assetState.installed ? '已下载' : '未下载')));
         assetStatus.classList.toggle('error', Boolean(assetState.error));
       }
@@ -199,7 +200,7 @@
           ? '请先取消勾选「替换素材为有声视频（实验）」，再删除'
           : '';
       }
-      if (assetState.busy) setVideoAssetProgress(asset, true, assetState.loaded, assetState.total);
+      setVideoAssetProgress(asset, downloading, assetState.loaded, assetState.total);
     }
   }
 
@@ -373,7 +374,9 @@
     const installedAssetCount = installedVideoAssets().length;
     state.soundVideoRequested = stored[SOUND_VIDEO_ENABLED_KEY] !== false
       || stored[SOUND_VIDEO_AUTO_ENABLE_PENDING_KEY] === true;
-    state.soundVideoAutoEnablePending = state.soundVideoRequested && installedAssetCount < VIDEO_ASSETS.length;
+    state.soundVideoAutoEnablePending = state.soundVideoRequested
+      && (installedAssetCount === 0
+        || (stored[SOUND_VIDEO_ENABLED_KEY] !== true && installedAssetCount < VIDEO_ASSETS.length));
     state.soundVideoEnabled = state.soundVideoRequested && !state.soundVideoAutoEnablePending;
     state.ready = true;
     if (!state.installed && stored[SCRIPT.storageKey] === true) {
@@ -539,13 +542,12 @@
     });
     render();
     setMessage('已启用有声视频素材');
-    if (installedCount < VIDEO_ASSETS.length) await ensureVideoAssets();
   }
 
   async function resumeAutomaticSoundVideoEnable() {
     if (!state.enabled || !state.soundVideoRequested) return;
     const installedCount = installedVideoAssets().length;
-    if (installedCount === VIDEO_ASSETS.length) {
+    if (installedCount > 0 && (!state.soundVideoAutoEnablePending || installedCount === VIDEO_ASSETS.length)) {
       state.soundVideoEnabled = true;
       state.soundVideoAutoEnablePending = false;
       await chrome.storage.local.set({
