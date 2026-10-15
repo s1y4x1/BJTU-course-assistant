@@ -45,6 +45,8 @@
       size: 0,
       busy: false,
       canceling: false,
+      loaded: 0,
+      total: 0,
       controller: null,
       error: ''
     }]))
@@ -197,6 +199,7 @@
           ? '请先取消勾选「替换素材为有声视频（实验）」，再删除'
           : '';
       }
+      if (assetState.busy) setVideoAssetProgress(asset, true, assetState.loaded, assetState.total);
     }
   }
 
@@ -204,11 +207,13 @@
     const row = document.querySelector(`[data-video-asset="${CSS.escape(asset.name)}"]`);
     const container = row?.querySelector('.mj-video-asset-progress');
     const bar = row?.querySelector('.mj-video-asset-progress-bar');
-    const assetStatus = row?.querySelector('.mj-video-asset-status');
+    const size = row?.querySelector('.mj-video-asset-size');
     if (!(container instanceof HTMLElement)) return;
     container.hidden = !visible;
     const loadedBytes = Math.max(0, Number(loaded) || 0);
     const totalBytes = Math.max(0, Number(total) || 0);
+    state.videoAssets[asset.name].loaded = loadedBytes;
+    state.videoAssets[asset.name].total = totalBytes;
     container.classList.toggle('is-indeterminate', visible && totalBytes <= 0);
     if (bar instanceof HTMLElement) {
       const ratio = totalBytes > 0
@@ -216,15 +221,14 @@
         : 0;
       bar.style.width = totalBytes > 0 ? `${ratio}%` : '';
     }
-    if (visible && assetStatus instanceof HTMLElement) {
+    if (visible && size instanceof HTMLElement) {
+      const sizeText = (bytes) => `<span class="file-size-emphasis" style="${fileSizeStyle(bytes)}">${formatBytes(bytes)}</span>`;
       if (totalBytes > 0) {
-        const ratio = Math.round(loadedBytes / totalBytes * 100);
-        const size = (bytes) => `<span class="file-size-emphasis" style="${fileSizeStyle(bytes)}">${formatBytes(bytes)}</span>`;
-        assetStatus.innerHTML = `${size(loadedBytes)} <span class="file-size-separator">/</span> ${size(totalBytes)} ${ratio}%`;
+        const ratio = Math.min(100, Math.round(loadedBytes / totalBytes * 100));
+        size.innerHTML = `${sizeText(loadedBytes)} <span class="file-size-separator">/</span> ${sizeText(totalBytes)} ${ratio}%`;
       } else {
-        assetStatus.textContent = '正在准备…';
+        size.innerHTML = sizeText(loadedBytes);
       }
-      assetStatus.classList.remove('error');
     }
   }
 
@@ -393,6 +397,8 @@
     if (!assetState || assetState.busy || assetState.installed) return true;
     assetState.busy = true;
     assetState.canceling = false;
+    assetState.loaded = 0;
+    assetState.total = 0;
     assetState.controller = new AbortController();
     assetState.error = '';
     if (standalone) state.videoBusy = true;
