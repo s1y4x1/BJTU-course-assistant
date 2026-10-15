@@ -27,8 +27,6 @@
   .__bjtu_portal_account_id{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700;color:#1d4ed8}
   .__bjtu_portal_account_name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#334155}
   .__bjtu_portal_account_role{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:#64748b;white-space:nowrap}
-  .__bjtu_portal_account.__bjtu_portal_quick_account{border-color:#86efac;background:#dcfce7}
-  .__bjtu_portal_account.__bjtu_portal_quick_account:hover,.__bjtu_portal_account.__bjtu_portal_quick_account:focus{border-color:#22c55e;background:#bbf7d0}
   .__bjtu_portal_quick_icon{position:absolute;top:2px;left:2px;color:#15803d;font-size:14px;line-height:1;font-weight:700;pointer-events:none}
   .__bjtu_portal_account_delete{position:absolute;top:2px;right:2px;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:4px;color:#dc2626;font-size:var(--bjtu-font-size-icon,22px);line-height:1;cursor:pointer}
   .__bjtu_portal_account_delete:hover,.__bjtu_portal_account_delete:focus-visible{background:#dc2626;color:#fff;box-shadow:0 0 0 2px #fca5a5}
@@ -83,9 +81,6 @@
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_account:focus{background:#172554;border-color:#60a5fa}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_account_id,
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_view_all{color:#60a5fa}
-  #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_account.__bjtu_portal_quick_account{background:#123524;border-color:#166534}
-  #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_account.__bjtu_portal_quick_account:hover,
-  #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_account.__bjtu_portal_quick_account:focus{background:#14532d;border-color:#22c55e}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] .__bjtu_portal_quick_icon{color:#86efac}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_recovery_default__{background:#102a43;border-color:#0369a1;color:#7dd3fc}
   #__bjtu_portal_login_mask__[data-color-scheme="dark"] #__bjtu_portal_status__[data-status-type="info"]{background:#102a43!important;border-color:#1d4ed8!important;color:#93c5fd!important}
