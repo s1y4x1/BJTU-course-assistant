@@ -7,17 +7,15 @@
   background: #f9fafb;
 }
 
-.captcha-model-label {
+#captcha-model-label {
   display: flex;
   align-items: center;
-  margin-bottom: 7px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-#captcha-model-label {
   font-size: var(--bjtu-font-size-secondaryTitle, 16px) !important;
   font-weight: 700;
+}
+
+#captcha-model-label > input {
+  margin: 0 4px 0 0;
 }
 
 .captcha-model-list {
