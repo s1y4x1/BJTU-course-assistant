@@ -1163,30 +1163,30 @@
         try {
           setAesButtonsDisabled(true);
           setAccountImportDownloadProgress({ loaded: 0, visible: true });
-          setProgress(0, '正在下载 AES 加密映射…');
+          setProgress(0, '正在下载 AES 加密字典…');
           const knownTotalPromise = resolveRemoteFileTotalSize(AES_QUICK_USERNAME_MAP_URL);
           const response = await fetch(AES_QUICK_USERNAME_MAP_URL, { cache: 'no-store', credentials: 'omit' });
           if (!response.ok) throw new Error('远程仓库返回 HTTP ' + response.status);
           const sourceText = await readAccountImportResponseText(
             response,
-            '正在下载 AES 加密映射…',
+            '正在下载 AES 加密字典…',
             knownTotalPromise
           );
           const source = JSON.parse(String(sourceText || '').replace(/^\uFEFF/, ''));
           if (!source || Array.isArray(source) || typeof source !== 'object') {
-            throw new Error('AES 加密映射格式无效');
+            throw new Error('AES 加密字典格式无效');
           }
           const mapping = Object.fromEntries(Object.entries(source)
             .map(([key, value]) => [String(key).trim(), String(value || '').trim()])
             .filter(([key, value]) => key && value));
-          if (!Object.keys(mapping).length) throw new Error('AES 加密映射为空');
+          if (!Object.keys(mapping).length) throw new Error('AES 加密字典为空');
           const storedCount = await global.BjtuAccountStore.replaceAesQuickUsernameMap(mapping);
           cleanup();
           setProgress(100, '', false);
           resolve({ source: 'aes', count: storedCount });
         } catch (error) {
           setAesButtonsDisabled(false);
-          showAesActions('AES 加密映射导入失败：' + String(error?.message || error));
+          showAesActions('AES 加密字典导入失败：' + String(error?.message || error));
         }
       };
       const onAesBack = () => showMainActions();
