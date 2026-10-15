@@ -118,12 +118,24 @@
     }
   }
 
+  if (typeof document !== 'undefined') {
+    global.__bjtuDatabaseMigrationReady = (async () => {
+      await Promise.resolve();
+      if (window.parent !== window && window.parent.__bjtuDatabaseMigrationReady) {
+        return window.parent.__bjtuDatabaseMigrationReady;
+      }
+      await loadScript('core/database-migration.js');
+      return global.BjtuDatabaseMigration.run();
+    })();
+  }
+
   const installed = (async () => {
     const entries = await Promise.all(Object.keys(MODULES).map(async (id) => [id, await exists(id)]));
     return Object.fromEntries(entries);
   })();
 
   const ready = (async () => {
+    await global.__bjtuDatabaseMigrationReady;
     const available = { ...await installed };
     for (const id of Object.keys(MODULES)) {
       if ([...withDependencies([id])].some((dependency) => !available[dependency])) available[id] = false;

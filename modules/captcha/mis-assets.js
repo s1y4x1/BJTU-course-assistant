@@ -44,7 +44,8 @@
   const downloadPromises = new Map();
   const downloadControllers = new Map();
 
-  function openDatabase(name, storeName) {
+  async function openDatabase(name, storeName) {
+    await global.__bjtuDatabaseMigrationReady;
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(name, 1);
       request.onupgradeneeded = () => {

@@ -4,11 +4,8 @@
   const INSTALL_LOCK_NAME = 'bjtu-course-assistant-update-install';
   const INVALID_STATE_RETRY_DELAYS = [80, 200];
   const DIRECTORY_DB_NAME = 'BJTUCA-FileSystem';
-  const LEGACY_DIRECTORY_DB_NAME = 'bjtu-course-assistant-update-filesystem';
   const DIRECTORY_STORE = 'handles';
   const DIRECTORY_KEY = 'update-directory';
-  const MIGRATION_KEY = 'directory-db-migrated';
-  let migrationPromise = null;
 
   function openDirectoryDatabase(name) {
     return new Promise((resolve, reject) => {
@@ -36,15 +33,14 @@
     }
   }
 
-  async function writeDirectoryValue(handle, markMigrated = false) {
+  async function writeDirectoryValue(handle) {
     const db = await openDirectoryDatabase(DIRECTORY_DB_NAME);
     try {
       await new Promise((resolve, reject) => {
         const transaction = db.transaction(DIRECTORY_STORE, 'readwrite');
         const store = transaction.objectStore(DIRECTORY_STORE);
         if (handle) store.put(handle, DIRECTORY_KEY);
-        else if (!markMigrated) store.delete(DIRECTORY_KEY);
-        if (markMigrated) store.put(true, MIGRATION_KEY);
+        else store.delete(DIRECTORY_KEY);
         transaction.oncomplete = resolve;
         transaction.onerror = () => reject(transaction.error || new Error('无法保存扩展目录'));
         transaction.onabort = () => reject(transaction.error || new Error('保存扩展目录已中止'));
@@ -54,41 +50,13 @@
     }
   }
 
-  async function migrateDirectoryDatabase() {
-    if (migrationPromise) return migrationPromise;
-    migrationPromise = (async () => {
-      const databases = await indexedDB.databases();
-      const legacyExists = databases.some((database) => database.name === LEGACY_DIRECTORY_DB_NAME);
-      if (await readDirectoryValue(DIRECTORY_DB_NAME, MIGRATION_KEY)) {
-        if (legacyExists) removeLegacyDirectoryDatabase();
-        return;
-      }
-      const current = await readDirectoryValue(DIRECTORY_DB_NAME, DIRECTORY_KEY);
-      let previous = null;
-      if (!current && legacyExists) {
-        previous = await readDirectoryValue(LEGACY_DIRECTORY_DB_NAME, DIRECTORY_KEY);
-      }
-      await writeDirectoryValue(current || previous, true);
-      if (legacyExists) removeLegacyDirectoryDatabase();
-    })().catch((error) => {
-      migrationPromise = null;
-      throw error;
-    });
-    return migrationPromise;
-  }
-
-  function removeLegacyDirectoryDatabase() {
-    const deletion = indexedDB.deleteDatabase(LEGACY_DIRECTORY_DB_NAME);
-    deletion.onerror = () => console.warn('[bjtu] 无法移除旧扩展目录数据库', deletion.error);
-  }
-
   async function readDirectoryHandle() {
-    await migrateDirectoryDatabase();
+    await global.__bjtuDatabaseMigrationReady;
     return readDirectoryValue(DIRECTORY_DB_NAME, DIRECTORY_KEY);
   }
 
   async function storeDirectoryHandle(handle) {
-    await migrateDirectoryDatabase();
+    await global.__bjtuDatabaseMigrationReady;
     await writeDirectoryValue(handle);
   }
 
