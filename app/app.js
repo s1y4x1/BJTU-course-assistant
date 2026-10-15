@@ -577,6 +577,26 @@ if (!popupMode) {
 }
 
 if (resourceSearchInput) {
+  const searchPlaceholder = resourceSearchInput.placeholder;
+  let mjInstalled = false;
+  let mjActivated;
+  const updateMjSearchHint = () => {
+    resourceSearchInput.placeholder = mjInstalled && mjActivated !== true
+      ? `${searchPlaceholder}(MJ)` : searchPlaceholder;
+  };
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.mjModuleActivated) return;
+    mjActivated = changes.mjModuleActivated.newValue === true;
+    updateMjSearchHint();
+  });
+  void Promise.all([
+    globalThis.BjtuModuleRegistry.installed,
+    chrome.storage.local.get('mjModuleActivated')
+  ]).then(([installed, stored]) => {
+    mjInstalled = installed.MJ === true;
+    if (mjActivated === undefined) mjActivated = stored.mjModuleActivated === true;
+    updateMjSearchHint();
+  }).catch((error) => console.warn('[bjtu] MJ search hint failed:', error));
   let mjActivationRequested = false;
   resourceSearchInput.addEventListener('input', () => {
     const value = String(resourceSearchInput.value || '').trim();
