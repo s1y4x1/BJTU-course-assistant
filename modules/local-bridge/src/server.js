@@ -568,11 +568,12 @@ async function askForAvailablePort(reader) {
       const onClose = () => reject(new Error('端口输入已结束，Bridge 尚未启动'));
       if (reader.closed) { onClose(); return; }
       reader.once('close', onClose);
-      reader.question('请输入新的监听端口（1 至 65535）：', (answer) => {
+      reader.question('请输入新的监听端口（1 至 65535，留空则重新读取 bridge.json）：', (answer) => {
         reader.removeListener('close', onClose);
         resolve(answer.trim());
       });
     });
+    if (!input) return (await loadConfig({ persist: false, strict: true })).port;
     const port = /^\d+$/.test(input) ? normalizePort(input, 0) : 0;
     if (port) return port;
     process.stderr.write('端口必须是 1 至 65535 的整数，请重新输入。\n');
