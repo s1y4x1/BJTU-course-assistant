@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.5'
+$InstallerVersion = '1.0.6'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -40,7 +40,8 @@ if (-not $dependenciesReady) {
   }
 }
 
-$commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
+$commandDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant'))
+$legacyCommandDirectory = Join-Path $commandDirectory 'bin'
 New-Item -ItemType Directory -Path $commandDirectory -Force | Out-Null
 
 $commandScriptPath = Join-Path $bridgeRoot 'command.ps1'
@@ -62,13 +63,22 @@ foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
 }
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-$pathEntries = @($userPath -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-if (-not ($pathEntries | Where-Object { $_.TrimEnd('\') -ieq $commandDirectory.TrimEnd('\') })) {
-  $nextUserPath = (@($pathEntries) + $commandDirectory) -join ';'
+$pathEntries = @($userPath -split ';' | ForEach-Object { $_.Trim() } | Where-Object {
+  $_ -and $_.TrimEnd('\') -ine $commandDirectory.TrimEnd('\') -and $_.TrimEnd('\') -ine $legacyCommandDirectory.TrimEnd('\')
+})
+$nextUserPath = (@($pathEntries) + $commandDirectory) -join ';'
+if ($nextUserPath -cne $userPath) {
   [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User')
 }
-if (-not (($env:Path -split ';') | Where-Object { $_.TrimEnd('\') -ieq $commandDirectory.TrimEnd('\') })) {
-  $env:Path = "$env:Path;$commandDirectory"
+$processPathEntries = @($env:Path -split ';' | Where-Object {
+  $_.Trim() -and $_.Trim().TrimEnd('\') -ine $commandDirectory.TrimEnd('\') -and $_.Trim().TrimEnd('\') -ine $legacyCommandDirectory.TrimEnd('\')
+})
+$env:Path = (@($processPathEntries) + $commandDirectory) -join ';'
+if (Test-Path -LiteralPath $legacyCommandDirectory -PathType Container) {
+  if ([System.IO.Path]::GetFullPath((Split-Path -Parent $legacyCommandDirectory)) -ine $commandDirectory) {
+    throw '旧命令目录校验失败'
+  }
+  Remove-Item -LiteralPath $legacyCommandDirectory -Recurse -Force
 }
 
 Write-Host "Bridge 已安装到当前目录：$bridgeRoot"

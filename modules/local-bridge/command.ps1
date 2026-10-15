@@ -3,7 +3,7 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$BridgeArguments
 $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'
+$commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant'
 $displayCommand = if ($env:BJTUCA_COMMAND_NAME) {
   $env:BJTUCA_COMMAND_NAME
 } elseif ($MyInvocation.ScriptName) {
@@ -29,6 +29,7 @@ switch ($action) {
       $displayCommand unregister
       $displayCommand u -r
       $displayCommand --help
+      $displayCommand -v
 
 bjtuca-bridge 和 BJTUCA 支持相同参数。
 
@@ -38,7 +39,19 @@ start          启动本地 Bridge（默认操作，端口读取 bridge.json，初始为 1896）
 -c 命令        执行一条终端命令并退出；复用正在运行的 Bridge，否则临时启动并等待扩展连接
 uninstall      删除注册的命令并从用户 PATH 移除命令目录，且删除 Bridge 本身及配置（简写 u/uninst/unist）
 unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 unreg，或 uninstall 及其简写加 -r）
+-v, --version  显示命令入口版本，不启动 Bridge
 "@
+    return
+  }
+  { $_ -in @('-v', '--version') } {
+    $versionVariable = Get-Variable -Name BJTUCACommandVersion -ErrorAction SilentlyContinue
+    if ($versionVariable) {
+      $commandVersion = $versionVariable.Value
+    } else {
+      $installerText = [System.IO.File]::ReadAllText((Join-Path $bridgeRoot 'install.ps1'), [System.Text.Encoding]::GetEncoding(936))
+      $commandVersion = [regex]::Match($installerText, '(?m)^\$InstallerVersion\s*=\s*''([0-9]+(?:\.[0-9]+){1,3})''').Groups[1].Value
+    }
+    Write-Output "BJTUCA $commandVersion"
     return
   }
   { $_ -in @('uninstall', 'unregister', 'unreg') } {
@@ -51,23 +64,21 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
         throw 'Bridge 目录校验失败，未执行卸载'
       }
     }
-    $expectedDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant\bin'))
+    $expectedDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant'))
     $actualDirectory = [System.IO.Path]::GetFullPath($commandDirectory)
     if ($actualDirectory -ine $expectedDirectory) { throw '命令目录校验失败' }
+    $legacyCommandDirectory = Join-Path $actualDirectory 'bin'
     Set-Location -LiteralPath $env:TEMP
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $remaining = @($userPath -split ';' | Where-Object {
-      $_.Trim() -and ([System.IO.Path]::GetFullPath($_.Trim()).TrimEnd('\') -ine $actualDirectory.TrimEnd('\'))
+      $_.Trim() -and $_.Trim().TrimEnd('\') -ine $actualDirectory.TrimEnd('\') -and $_.Trim().TrimEnd('\') -ine $legacyCommandDirectory.TrimEnd('\')
     })
     [Environment]::SetEnvironmentVariable('Path', ($remaining -join ';'), 'User')
-    foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
-      foreach ($extension in @('.cmd', '.ps1')) {
-        $target = Join-Path $actualDirectory ($commandName + $extension)
-        if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }
-      }
-    }
-    if ((Test-Path -LiteralPath $actualDirectory -PathType Container) -and -not (Get-ChildItem -LiteralPath $actualDirectory -Force | Select-Object -First 1)) {
-      Remove-Item -LiteralPath $actualDirectory
+    $env:Path = (@($env:Path -split ';' | Where-Object {
+      $_.Trim() -and $_.Trim().TrimEnd('\') -ine $actualDirectory.TrimEnd('\') -and $_.Trim().TrimEnd('\') -ine $legacyCommandDirectory.TrimEnd('\')
+    })) -join ';'
+    if (Test-Path -LiteralPath $actualDirectory -PathType Container) {
+      Remove-Item -LiteralPath $actualDirectory -Recurse -Force
     }
     if ($action -eq 'uninstall') {
       if (Test-Path -LiteralPath $actualBridgeDirectory -PathType Container) {
