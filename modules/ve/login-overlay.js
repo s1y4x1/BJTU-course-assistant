@@ -135,14 +135,13 @@ async function openBjtuPortalLogin() {
     const remove = document.createElement('span');
     remove.className = '__bjtu_portal_account_delete';
     remove.textContent = '×';
-    remove.title = '删除账号';
+    remove.title = `立即删除账号 ${loginName} 及其保存的登录凭据`;
     remove.setAttribute('role', 'button');
     remove.setAttribute('aria-label', `删除账号 ${loginName}`);
     remove.tabIndex = 0;
     const deleteAccount = async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!window.confirm(`确定删除账号 ${loginName} 及其保存的登录凭据吗？`)) return;
       const response = await sendMessage({ type: 'PORTAL_DELETE_ACCOUNT', payload: { loginName } });
       if (!response?.ok) {
         setStatus(response?.message || '删除账号失败', 'error');

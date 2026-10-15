@@ -30,8 +30,8 @@
   .__bjtu_portal_account.__bjtu_portal_quick_account{border-color:#86efac;background:#dcfce7}
   .__bjtu_portal_account.__bjtu_portal_quick_account:hover,.__bjtu_portal_account.__bjtu_portal_quick_account:focus{border-color:#22c55e;background:#bbf7d0}
   .__bjtu_portal_quick_icon{position:absolute;top:2px;left:2px;color:#15803d;font-size:14px;line-height:1;font-weight:700;pointer-events:none}
-  .__bjtu_portal_account_delete{position:absolute;top:2px;right:6px;color:#dc2626;font-size:var(--bjtu-font-size-icon,22px);line-height:1;cursor:pointer}
-  .__bjtu_portal_account_delete:hover{color:#b91c1c}
+  .__bjtu_portal_account_delete{position:absolute;top:2px;right:2px;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:4px;color:#dc2626;font-size:var(--bjtu-font-size-icon,22px);line-height:1;cursor:pointer}
+  .__bjtu_portal_account_delete:hover,.__bjtu_portal_account_delete:focus-visible{background:#dc2626;color:#fff;box-shadow:0 0 0 2px #fca5a5}
   .__bjtu_portal_account_delete:focus-visible{outline:2px solid #3b82f6;border-radius:3px}
   #__bjtu_portal_recovery_mask__{position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
   .__bjtu_portal_recovery_card{width:min(420px,calc(100vw - 32px));background:#fff;border:1px solid #e8edf5;border-radius:12px;box-shadow:0 20px 44px rgba(0,0,0,.25);padding:16px;color:#0f172a}
