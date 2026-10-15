@@ -280,7 +280,7 @@
         title: '本地程序请求执行操作',
         message: `是否允许执行「${name}」？${description ? `\n${description}` : ''}`,
         requireInteraction: true,
-        buttons: [{ title: '允许一次' }, { title: '始终允许' }]
+        buttons: [{ title: '允许' }, { title: '拒绝' }]
       }, () => {
         if (!chrome.runtime.lastError) return;
         approvalRequests.delete(notificationId);
@@ -303,12 +303,7 @@
     if (!pending) return;
     approvalRequests.delete(notificationId);
     chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
-    void (async () => {
-      if (buttonIndex === 1) {
-        await rememberAlwaysAllowed(pending.name);
-      }
-      pending.resolve(buttonIndex === 0 || buttonIndex === 1);
-    })();
+    pending.resolve(buttonIndex === 0);
   });
 
   chrome.notifications.onClosed.addListener((notificationId) => {
