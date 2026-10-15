@@ -351,36 +351,17 @@
     }
     setCoreStatus('检查中…');
     setCoreProgress({ visible: false });
-    const runtimeCheck = assets.extensionCoreExists();
-    const directoryCheck = (async () => {
+    const runtimeReady = await assets.extensionCoreExists();
+    const directoryReady = runtimeReady ? false : await (async () => {
       const updaterReady = await global.__bjtuUpdaterReady;
       const manager = updaterReady && global.BjtuUpdaterModuleManager;
       return manager?.captchaCoreExistsInDirectory
         ? manager.captchaCoreExistsInDirectory()
         : false;
-    })();
-    const [runtimeReady, directoryReady, captchaRuntime] = await Promise.all([
-      runtimeCheck.catch(() => false),
-      directoryCheck.catch(() => false),
-      getCaptchaRuntimeState()
-    ]);
-    const params = new URLSearchParams(location.search);
-    captchaRuntimeReloadRequired = params.get('from') === 'app'
-      && captchaRuntime.moduleReady
-      && !captchaRuntime.recognizerReady;
-    const staleCaptchaRuntime = params.get('from') === 'app'
-      && captchaRuntimeReloadRequired
-      && cachedVersions.has(selectedVersion)
-      && (runtimeReady || directoryReady);
+    })().catch(() => false);
     coreReady = runtimeReady || directoryReady;
-    coreReloadRequired = (!runtimeReady && directoryReady) || staleCaptchaRuntime;
-    if (runtimeReady && !coreReloadRequired) {
-      showCoreReadyStatus();
-    } else if (coreReady) {
-      await activateCoreInCurrentRuntime();
-    } else {
-      setCoreStatus('未安装', true);
-    }
+    coreReloadRequired = !runtimeReady && directoryReady;
+    setCoreStatus(coreReady ? '已就绪' : '未安装', !coreReady);
     setCoreProgress({ visible: false });
     return coreReady;
   }
@@ -714,11 +695,23 @@
     const list = document.getElementById('captchaModelList');
     if (!assets || !(list instanceof HTMLElement)) return;
 
-    versions = await assets.getModelVersions();
-    selectedVersion = await assets.getSelectedModelVersion();
-    await refreshCachedVersions();
-    await refreshCoreStatus();
-    renderModels();
+    const selectionReady = assets.getSelectedModelVersion().then((version) => {
+      selectedVersion = version;
+    });
+    const modelsReady = (async () => {
+      versions = await assets.getModelVersions();
+      await selectionReady;
+      await refreshCachedVersions();
+      renderModels();
+    })();
+    const coreCheckReady = refreshCoreStatus().catch((error) => {
+      setCoreStatus(`检查失败：${String(error?.message || error)}`, true);
+    });
+    const runtimeReady = getCaptchaRuntimeState().then((state) => {
+      captchaRuntimeReloadRequired = new URLSearchParams(location.search).get('from') === 'app'
+        && state.moduleReady && !state.recognizerReady;
+    });
+    await Promise.all([modelsReady, coreCheckReady, runtimeReady]);
     await prepareModel(selectedVersion, { interactive: false, notify: false });
   }
 
