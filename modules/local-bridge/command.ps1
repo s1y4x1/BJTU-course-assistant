@@ -1,4 +1,7 @@
-param([Parameter(ValueFromRemainingArguments = $true)][string[]]$BridgeArguments)
+param(
+  [Parameter(ValueFromRemainingArguments = $true)][string[]]$BridgeArguments,
+  [Alias('v')][switch]$ShowVersion
+)
 
 $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -10,7 +13,7 @@ $displayCommand = if ($env:BJTUCA_COMMAND_NAME) {
   [System.IO.Path]::GetFileNameWithoutExtension($MyInvocation.ScriptName)
 } else { 'BJTUCA' }
 if ($BridgeArguments.Count -eq 1 -and $BridgeArguments[0] -eq '') { $BridgeArguments = @() }
-$action = if ($BridgeArguments.Count) { $BridgeArguments[0] } else { 'start' }
+$action = if ($ShowVersion) { '--version' } elseif ($BridgeArguments.Count) { $BridgeArguments[0] } else { 'start' }
 if ($action -in @('uninstall', 'uninst', 'unist', 'u')) {
   if ($BridgeArguments.Count -gt 2 -or ($BridgeArguments.Count -eq 2 -and $BridgeArguments[1] -ne '-r')) {
     throw "卸载命令仅接受 -r 参数（只取消注册），如 $displayCommand u -r"

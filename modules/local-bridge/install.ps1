@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.6'
+$InstallerVersion = '1.0.7'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
