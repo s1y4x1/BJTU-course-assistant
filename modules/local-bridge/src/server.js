@@ -50,6 +50,7 @@ let activeAllowLan = config.allowLan === true;
 let restartPromise = null;
 let requestedListenerRestart = null;
 let terminal = null;
+let terminalCommandRunning = false;
 const pendingExtensionCalls = new Map();
 const transports = new Map();
 const localFileRelays = new Map();
@@ -237,6 +238,15 @@ async function runSingleCommand() {
   }
 }
 
+function writeTerminalNotice(message) {
+  if (terminal && process.stdout.isTTY) {
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+  }
+  process.stdout.write(`${message}\n`);
+  if (terminal && !terminalCommandRunning) terminal.prompt(true);
+}
+
 function startTerminal() {
   if (singleCommand) { void runSingleCommand(); return; }
   if (terminal || !process.stdin.isTTY) return;
@@ -246,6 +256,7 @@ function startTerminal() {
   terminal.setPrompt(colorEnabled ? `${promptColor}BJTUCA>\x1b[0m ` : 'BJTUCA> ');
   process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，Ctrl+C 退出。\n');
   terminal.on('line', async (input) => {
+    terminalCommandRunning = true;
     terminal.pause();
     try {
       if (await runTerminalCommand(input)) {
@@ -255,6 +266,7 @@ function startTerminal() {
     } catch (error) {
       if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
     } finally {
+      terminalCommandRunning = false;
       terminal.resume();
       terminal.prompt();
     }
@@ -512,7 +524,7 @@ wsServer.on('connection', (socket, req) => {
         }
       };
       socket.send(JSON.stringify({ type: 'ready', port: activePort, allowLan:activeAllowLan, ...(paired ? { token:config.token } : {}) }));
-      process.stdout.write(`浏览器扩展已连接（版本 ${extensionInfo.publicInfo.version || '未知'}）。\n`);
+      writeTerminalNotice(`浏览器扩展已连接（版本 ${extensionInfo.publicInfo.version || '未知'}）。`);
       startTerminal();
       return;
     }
@@ -532,7 +544,7 @@ wsServer.on('connection', (socket, req) => {
     if (extensionSocket !== socket) return;
     extensionSocket = null;
     extensionInfo = null;
-    process.stdout.write('浏览器扩展已断开连接。\n');
+    writeTerminalNotice('浏览器扩展已断开连接。');
     rejectPendingExtensionCalls();
   });
 });
