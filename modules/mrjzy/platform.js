@@ -363,6 +363,8 @@ function setMrjzyPasswordLoginBusy(mask, busy, status = '') {
   if (phone instanceof HTMLInputElement) phone.disabled = !!busy;
   if (password instanceof HTMLInputElement) password.disabled = !!busy;
   if (statusEl instanceof HTMLElement) statusEl.textContent = String(status || '');
+  if (!busy && String(status || '').includes('phone is invalid') && phone instanceof HTMLInputElement) phone.focus();
+  if (!busy && String(status || '').includes('密码错误') && password instanceof HTMLInputElement) password.focus();
 }
 
 function showMrjzyLoginMethods(mask) {

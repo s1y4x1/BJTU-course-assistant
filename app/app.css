@@ -852,13 +852,12 @@ body.platform-column-resizing {
     min-width: 0;
 }
 .resource-row-title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    display: block;
     min-width: 0;
     cursor: pointer;
 }
+.resource-row-title > span { display:inline; white-space:normal; }
+.resource-row-title > :not(:last-child) { margin-right:6px; }
 .resource-name {
     font-weight: bold;
     font-size: 13px;
