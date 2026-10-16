@@ -588,7 +588,7 @@
     }
   }
 
-  async function loginWithPassword(loginName, password, { allowManualCaptcha = false } = {}) {
+  async function loginWithPassword(loginName, password, { allowManualCaptcha = false, onProgress } = {}) {
     const id = String(loginName || '').trim();
     if (!id) throw new Error('请输入账号（学号）');
     const secret = String(password || (await getCasAccounts())[id]?.password || '');
@@ -601,6 +601,7 @@
       if (!page.ok) return page;
       let captchaAnswer;
       try {
+        await onProgress?.('recognizing-captcha', id);
         captchaAnswer = await recognizeCasCaptcha(page.captchaImageUrl);
       } catch (error) {
         if (allowManualCaptcha && needsManualCaptcha(error)) {
@@ -608,6 +609,7 @@
         }
         return { ok: false, message: String(error?.message || error) };
       }
+      await onProgress?.('submitting-login', id);
       lastResult = await submitCasLogin({
         csrf: page.csrf,
         captchaKey: page.captchaKey,
@@ -683,6 +685,12 @@
     return loginName && password ? { loginName, password, capturedAt: Date.now() } : null;
   }
 
+  function loginProgressReporter(message) {
+    const requestId = String(message?.payload?.requestId || '');
+    if (!requestId) return undefined;
+    return (stage, loginName) => broadcastStatus({ status: 'login-progress', requestId, loginName, stage });
+  }
+
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'SSO_LOGIN_WITH_PASSWORD' || message?.type === 'SSO_AUTO_LOGIN') {
@@ -698,7 +706,8 @@
       }
       if (message?.type === 'CAS_LOGIN_WITH_PASSWORD') {
         loginWithPassword(message?.payload?.loginName, message?.payload?.password, {
-          allowManualCaptcha: message?.payload?.allowManualCaptcha === true
+          allowManualCaptcha: message?.payload?.allowManualCaptcha === true,
+          onProgress: loginProgressReporter(message)
         })
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
@@ -706,7 +715,8 @@
       }
       if (message?.type === 'CAS_SWITCH_ACCOUNT') {
         loginSavedCasAccount(message?.payload?.loginName, {
-          allowManualCaptcha: message?.payload?.allowManualCaptcha === true
+          allowManualCaptcha: message?.payload?.allowManualCaptcha === true,
+          onProgress: loginProgressReporter(message)
         })
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
@@ -726,7 +736,8 @@
       }
       if (message?.type === 'CAS_AUTO_LOGIN') {
         autoLoginSavedCasAccount({
-          allowManualCaptcha: message?.payload?.allowManualCaptcha === true
+          allowManualCaptcha: message?.payload?.allowManualCaptcha === true,
+          onProgress: loginProgressReporter(message)
         })
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));

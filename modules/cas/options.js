@@ -79,7 +79,7 @@
     });
   }
 
-  async function completeCaptchaChallenge(initialResult) {
+  async function completeCaptchaChallenge(initialResult, onSubmit) {
     let result = initialResult;
     while (result?.code === 'CAPTCHA_INPUT_REQUIRED') {
       const challengeId = String(result?.challengeId || '');
@@ -88,9 +88,33 @@
         await send('CAS_CANCEL_CAPTCHA', { challengeId });
         throw new Error('已取消输入验证码');
       }
+      onSubmit?.();
       result = await send('CAS_SUBMIT_CAPTCHA', { challengeId, captchaAnswer: answer });
     }
     return result;
+  }
+
+  async function performLogin(type, payload) {
+    if (!type.startsWith('CAS_')) return completeCaptchaChallenge(await send(type, payload));
+    const requestId = crypto.randomUUID();
+    let loginName = String(payload?.loginName || '');
+    const showProgress = (recognizing = false) => {
+      setMessage(`正在登录 CAS（${loginName}）${recognizing ? '，正在识别验证码' : ''}…`, true, {
+        type: 'info', loading: true, persistent: true
+      });
+    };
+    const onStatus = (message) => {
+      const status = message?.payload;
+      if (message?.type !== 'CAS_SYSTEM_STATUS' || status?.status !== 'login-progress' || status.requestId !== requestId) return;
+      loginName = status.loginName;
+      showProgress(status.stage === 'recognizing-captcha');
+    };
+    chrome.runtime.onMessage.addListener(onStatus);
+    try {
+      return await completeCaptchaChallenge(await send(type, { ...payload, requestId }), () => showProgress());
+    } finally {
+      chrome.runtime.onMessage.removeListener(onStatus);
+    }
   }
 
   function renderAccounts(value) {
@@ -143,7 +167,7 @@
       button.disabled = true;
       setMessage(`正在登录 SSO（${loginName}）…`, true, { type: 'info', loading: true, persistent: true });
       try {
-        const result = await completeCaptchaChallenge(await send('SSO_LOGIN_WITH_PASSWORD', { loginName, password }));
+        const result = await performLogin('SSO_LOGIN_WITH_PASSWORD', { loginName, password });
         if (!result?.ok) throw new Error(result?.message || '登录失败');
         element('casPassword').value = '';
         await refreshContext();
@@ -166,11 +190,11 @@
           loading: true,
           persistent: true
         });
-        const result = await completeCaptchaChallenge(await send('CAS_LOGIN_WITH_PASSWORD', {
+        const result = await performLogin('CAS_LOGIN_WITH_PASSWORD', {
           loginName,
           password,
           allowManualCaptcha: true
-        }));
+        });
         if (!result?.ok) throw new Error(result?.message || '登录失败');
         element('casPassword').value = '';
         await refreshContext();
@@ -212,10 +236,10 @@
         persistent: true
       });
       try {
-        const result = await completeCaptchaChallenge(await send(selectedPlatform === 'SSO' ? 'SSO_LOGIN_WITH_PASSWORD' : 'CAS_SWITCH_ACCOUNT', {
+        const result = await performLogin(selectedPlatform === 'SSO' ? 'SSO_LOGIN_WITH_PASSWORD' : 'CAS_SWITCH_ACCOUNT', {
           loginName,
           allowManualCaptcha: true
-        }));
+        });
         if (!result?.ok) {
           setMessage(`切换 ${selectedPlatform} 账号失败：${result?.message || '未知错误'}`, false);
           await refreshContext();
@@ -263,9 +287,9 @@
 
   async function autoLoginIfPossible() {
     try {
-      const result = await completeCaptchaChallenge(await send(platform === 'SSO' ? 'SSO_AUTO_LOGIN' : 'CAS_AUTO_LOGIN', {
+      const result = await performLogin(platform === 'SSO' ? 'SSO_AUTO_LOGIN' : 'CAS_AUTO_LOGIN', {
         allowManualCaptcha: true
-      }));
+      });
       if (result?.ok) {
         await refreshContext();
       } else if (result?.ok === false && result.code !== 'no-saved-account') {
