@@ -1671,6 +1671,8 @@ function setupPortalUsernameBindMessageListener() {
         if (lastValidUsername === loginName) lastValidUsername = '';
         isLoginSessionValid = false;
         usernameInput.value = '';
+        loginAccountHistory = loginAccountHistory.filter((record) => record.userId !== loginName && record.loginName !== loginName);
+        renderLoginAccountHistorySelect('');
         window.currentVeCourseList = [];
         window.veDisabledCourseListCache = [];
         for (const key of ['courseHomeworkData', 'homeworkScoreCacheByKey', 'homeworkNoteAttachmentCacheByKey', 'courseCardStateById', 'videoReplayCacheByCourseId', 'coursewareCacheByCourseId', 'veTeacherMetaByCourseId', 'veCourseTeachersMetaByCourseId']) window[key] = {};
@@ -3194,23 +3196,13 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
   accountHistorySelect.appendChild(panelOption);
 
   const list = normalizeLoginAccountHistoryList(loginAccountHistory);
-  if (!list.length) {
-    const emptyOpt = document.createElement('option');
-    emptyOpt.value = '';
-    emptyOpt.textContent = '';
-    emptyOpt.hidden = true;
-    accountHistorySelect.appendChild(emptyOpt);
-    accountHistorySelect.value = '';
-    isSyncingAccountHistorySelect = false;
-    return;
-  }
-
-  let selectedUserId = current;
-  if (!list.some((it) => it.userId === selectedUserId)) {
-    selectedUserId = String(list[0]?.userId || '').trim();
-  }
-
-  const selectedRecord = list.find((it) => it.userId === selectedUserId) || list[0];
+  const emptyOpt = document.createElement('option');
+  emptyOpt.value = '';
+  emptyOpt.textContent = '';
+  emptyOpt.hidden = true;
+  accountHistorySelect.appendChild(emptyOpt);
+  const selectedRecord = list.find((it) => it.userId === current);
+  const selectedUserId = selectedRecord?.userId || '';
   if (selectedRecord) {
     const opt = document.createElement('option');
     opt.value = selectedRecord.userId;
