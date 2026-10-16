@@ -482,9 +482,9 @@
   function buildUserMessage({ modelId, content, timestamp, thinking = false }) {
     return {
       id: null,
-      fid: (globalThis.crypto?.randomUUID?.() || `fid-${Date.now()}`),
+      fid: global.crypto.randomUUID(),
       parentId: null,
-      childrenIds: [],
+      childrenIds: [global.crypto.randomUUID()],
       role: 'user',
       content: String(content || ''),
       user_action: 'chat',
@@ -497,9 +497,10 @@
         thinking_enabled: thinking === true,
         output_schema: 'phase',
         research_mode: 'normal',
-        auto_thinking: false,
-        thinking_mode: 'Auto',
-        auto_search: false
+        auto_thinking: thinking === true,
+        thinking_mode: thinking === true ? 'Auto' : 'Fast',
+        auto_search: true,
+        thinking_format: 'detail'
       },
       extra: { meta: { subChatType: 't2t' } },
       sub_chat_type: 't2t',

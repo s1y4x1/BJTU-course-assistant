@@ -156,7 +156,6 @@
         }
       }
     }
-    const history = [];
     let fullText = '';
     let lastResultText = '';
     let lastCleanReply = '';
@@ -283,26 +282,6 @@
       if (turnRef) turnRef.responseId = parentId;
       if (turnRef) turnRef.lastMessageId = String(response?.responseParentId || turnRef.lastMessageId || '');
       const replyText = String(response?.text || '');
-      history.push(message, {
-        id: null,
-        fid: parentId || `asst-${iteration}`,
-        parentId: null,
-        childrenIds: [],
-        role: 'assistant',
-        content: replyText,
-        user_action: 'chat',
-        files: [],
-        timestamp: Math.floor(Date.now() / 1000),
-        models: [String(modelId || '')],
-        model: String(modelId || ''),
-        chat_type: 't2t',
-        feature_config: { thinking_enabled: requestThinking, output_schema: 'phase', research_mode: 'normal', auto_thinking: false, thinking_mode: 'Auto', auto_search: false },
-        extra: { meta: { subChatType: 't2t' } },
-        sub_chat_type: 't2t',
-        parent_id: null,
-        response_id: parentId
-      });
-
       const parsedExecution = parseExecutionBlocks(replyText);
       if (!parsedExecution) {
         return {
