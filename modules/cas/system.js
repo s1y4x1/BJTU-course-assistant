@@ -12,6 +12,7 @@
   const MANUAL_CAPTCHA_SESSION_PREFIX = 'casManualCaptcha:';
   const LOGIN_HEADER_RULE_ID = 914303;
   const SSO_LOGIN_URL = 'https://sso.bjtu.edu.cn/sso/login';
+  const SSO_LOGOUT_URL = 'https://uc.bjtu.edu.cn/api/logout';
   const SSO_ENTRY_URL = `${SSO_LOGIN_URL}?${new URLSearchParams({
     service: 'https://uc.bjtu.edu.cn/user/login', pageName: 'login'
   })}`;
@@ -98,10 +99,10 @@
     return write;
   }
 
-  async function clearLoginCookies(domain = 'cas.bjtu.edu.cn') {
-    const cookies = await chrome.cookies.getAll({ domain }).catch(() => []);
+  async function clearCasCookies() {
+    const cookies = await chrome.cookies.getAll({ domain: 'cas.bjtu.edu.cn' }).catch(() => []);
     await Promise.all((cookies || []).map((cookie) => {
-      const host = String(cookie.domain || domain).replace(/^\./, '');
+      const host = String(cookie.domain || 'cas.bjtu.edu.cn').replace(/^\./, '');
       const path = String(cookie.path || '/');
       return chrome.cookies.remove({
         url: `https://${host}${path}`,
@@ -264,11 +265,12 @@
     const accounts = await getCasAccounts();
     const secret = String(password || accounts[id]?.password || '');
     if (!secret) throw new Error('请输入 SSO 密码');
-    await clearLoginCookies('sso.bjtu.edu.cn');
+    const logoutResponse = await fetch(SSO_LOGOUT_URL, { method: 'GET', credentials: 'include', cache: 'no-store' });
+    if (!logoutResponse.ok) throw new Error(`SSO 退出登录 HTTP ${logoutResponse.status}`);
     const response = await fetch(SSO_ENTRY_URL, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) throw new Error(`SSO 登录页 HTTP ${response.status}`);
     const page = parseSsoPage(await response.text());
-    if (!page.fields.flowId) throw new Error('SSO 未返回登录表单，可能已登录，请先在 SSO 网站退出后再切换账号');
+    if (!page.fields.flowId) throw new Error('SSO 退出后未返回登录表单，请检查退出接口和登录页响应');
     return submitSsoLogin(page, id, secret);
   }
 
@@ -593,7 +595,7 @@
     if (!id) throw new Error('请输入账号（学号）');
     const secret = String(password || (await getCasAccounts())[id]?.password || '');
     if (!secret) throw new Error('此账号没有已保存的密码，请输入密码');
-    await clearLoginCookies();
+    await clearCasCookies();
     await logoutMisIfEnabled();
     let lastResult = { ok: false, message: 'CAS 未返回登录结果' };
     for (let attempt = 0; attempt < 2; attempt += 1) {
