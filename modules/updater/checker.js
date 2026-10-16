@@ -79,7 +79,6 @@ const VERSION_MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
 const VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
 const VERSION_REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
 const VERSION_IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
-const VERSION_EXTRACTION_CONCURRENCY = 4;
 const VERSION_EXTRACTION_PROGRESS_INTERVAL_MS = 80;
 let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
@@ -2671,7 +2670,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
     renderExtractionProgress();
   };
   const workers = Array.from(
-    { length: Math.min(VERSION_EXTRACTION_CONCURRENCY, files.length) },
+    { length: Math.min(await globalThis.BjtuUpdateFileSystem.readFileConcurrency(), files.length) },
     async () => {
       while (!extractionError && nextFileIndex < files.length) {
         const item = files[nextFileIndex];

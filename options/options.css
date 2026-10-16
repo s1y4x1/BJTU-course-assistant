@@ -384,6 +384,8 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .reminder-editor select { min-width:0; }
 .reminder-editor button { margin:0; height:34px; }
 .reminder-editor-actions { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.update-file-concurrency-option { display:flex; align-items:center; gap:8px; }
+.update-file-concurrency-option > input { width:80px; font:inherit; }
 .schedule-interval-editor { display:grid; grid-template-columns:auto minmax(72px,1fr) auto; gap:8px; align-items:center; margin:8px 0; padding-left:22px; }
 .schedule-interval-editor input { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .schedule-interval-editor select { min-width:0; }

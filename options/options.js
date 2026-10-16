@@ -944,6 +944,23 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   });
   document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
   document.getElementById('updateDirectoryStartupCheckEnabled').checked = updateDirectoryStartupCheckEnabled !== false;
+  const updateFileConcurrencyInput = document.getElementById('updateFileConcurrency');
+  if (globalThis.BjtuUpdateFileSystem) {
+    const { normalizeFileConcurrency } = globalThis.BjtuUpdateFileSystem;
+    const stored = await chrome.storage.local.get('updateFileConcurrency');
+    updateFileConcurrencyInput.value = String(normalizeFileConcurrency(stored.updateFileConcurrency) ?? '');
+    updateFileConcurrencyInput.addEventListener('change', async () => {
+      const count = normalizeFileConcurrency(updateFileConcurrencyInput.value);
+      updateFileConcurrencyInput.value = String(count ?? '');
+      await chrome.storage.local.set({ updateFileConcurrency: count });
+      setMsg('已应用更改');
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.updateFileConcurrency) {
+        updateFileConcurrencyInput.value = String(normalizeFileConcurrency(changes.updateFileConcurrency.newValue) ?? '');
+      }
+    });
+  }
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
   setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
   updateThemeModeUi(themeMode);
@@ -2444,6 +2461,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
       updateForegroundPromptMode: 'active',
       updateDirectoryStartupCheckEnabled: true,
+      updateFileConcurrency: null,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
       popupWidthPx: DEFAULT_POPUP_WIDTH_PX,

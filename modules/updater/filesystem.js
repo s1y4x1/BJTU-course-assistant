@@ -164,6 +164,17 @@
     return key.href;
   }
 
+  function normalizeFileConcurrency(value) {
+    if (value === null || value === '') return null;
+    const count = Number(value);
+    return Number.isSafeInteger(count) && count > 0 ? count : null;
+  }
+
+  async function readFileConcurrency() {
+    const stored = await chrome.storage.local.get('updateFileConcurrency');
+    return normalizeFileConcurrency(stored.updateFileConcurrency) ?? Infinity;
+  }
+
   async function readArchive(url, version) {
     const cache = await caches.open('bjtu-ca-update-archive');
     const response = await cache.match(archiveCacheKey(url, version));
@@ -180,6 +191,8 @@
   }
 
   global.BjtuUpdateFileSystem = {
+    normalizeFileConcurrency,
+    readFileConcurrency,
     readArchive,
     storeArchive,
     fileMatchesBytes,

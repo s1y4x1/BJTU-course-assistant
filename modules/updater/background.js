@@ -25,7 +25,6 @@
   const MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
   const REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
   const IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
-  const EXTRACTION_CONCURRENCY = 4;
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   const FOREGROUND_PAGE_PATHS = new Set([
     'app/app.html',
@@ -770,9 +769,10 @@
       }
       let completed = 0;
       let writtenCount = 0;
+      const concurrency = Math.max(1, Math.min(await globalThis.BjtuUpdateFileSystem.readFileConcurrency(), files.length));
       for (const batch of Array.from(
-        { length: Math.ceil(files.length / EXTRACTION_CONCURRENCY) },
-        (_, index) => files.slice(index * EXTRACTION_CONCURRENCY, index * EXTRACTION_CONCURRENCY + EXTRACTION_CONCURRENCY)
+        { length: Math.ceil(files.length / concurrency) },
+        (_, index) => files.slice(index * concurrency, index * concurrency + concurrency)
       )) {
         await Promise.all(batch.map(async ({ entry, path }) => {
           if (await writeFile(root, path, await inflateEntry(entry))) writtenCount += 1;
