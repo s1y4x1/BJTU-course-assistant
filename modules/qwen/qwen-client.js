@@ -484,7 +484,7 @@
       id: null,
       fid: global.crypto.randomUUID(),
       parentId: null,
-      childrenIds: [global.crypto.randomUUID()],
+      childrenIds: [],
       role: 'user',
       content: String(content || ''),
       user_action: 'chat',
