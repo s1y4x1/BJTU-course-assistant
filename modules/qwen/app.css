@@ -80,12 +80,16 @@ html[data-color-scheme="dark"] .qwen-chat-panel {
   flex-wrap: wrap;
 }
 
+.qwen-chat-header .qwen-chat-model,
 .qwen-chat-header .qwen-chat-id {
-  flex: 1 1 100px;
-  width: 140px;
-  min-width: 60px;
-  max-width: 300px;
+  field-sizing: content;
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
   box-sizing: border-box;
+}
+.qwen-chat-header .qwen-chat-id {
   user-select: text;
 }
 
