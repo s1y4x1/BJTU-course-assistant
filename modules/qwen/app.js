@@ -863,6 +863,7 @@
         // 原会话已被用户删除：清空会话并重新触发开场，
         // 由 maybeSendOpening/sendOpening 自动新建会话并发送系统提示词。
         sessionChatId = '';
+        syncChatIdInput();
         sessionParentId = '';
         nextReplyFresh = false;
         pendingEditParentId = '';
@@ -1025,6 +1026,7 @@
 
   function setBusy(value) {
     busy = value === true;
+    syncChatIdInput();
     const sendBtn = el(SEND_ID);
     const input = el(INPUT_ID);
     const stopBtn = el(STOP_ID);
@@ -2156,6 +2158,7 @@
     if (chatStateLoadPromise) return chatStateLoadPromise;
     chatStateLoadPromise = chrome.storage.local.get(['qwenLastChatId', 'qwenOpeningPendingChatId']).then((data) => {
       sessionChatId = String(data?.qwenLastChatId || '');
+      syncChatIdInput();
       const pendingOpeningChatId = String(data?.qwenOpeningPendingChatId || '');
       openingCompleted = !!sessionChatId && pendingOpeningChatId !== sessionChatId;
       chatStateLoaded = true;
@@ -2180,6 +2183,7 @@
     if (!changed && !reload) return;
     if (changed) {
       sessionChatId = nextChatId;
+      syncChatIdInput();
       sessionParentId = '';
       nextReplyFresh = false;
       pendingEditParentId = '';
@@ -2198,6 +2202,31 @@
       });
     } else {
       void loadHistory();
+    }
+  }
+
+  function syncChatIdInput() {
+    const input = el('qwen-chat-id');
+    if (!(input instanceof HTMLInputElement)) return;
+    input.value = sessionChatId;
+    input.disabled = busy;
+  }
+
+  async function changeChatId() {
+    const input = el('qwen-chat-id');
+    const nextChatId = input.value.trim();
+    await loadChatStateFromStorage();
+    if (busy || !nextChatId || nextChatId === sessionChatId) {
+      syncChatIdInput();
+      return;
+    }
+    try {
+      await chrome.storage.local.remove('qwenOpeningPendingChatId');
+      await chrome.storage.local.set({ qwenLastChatId: nextChatId });
+      adoptSharedChatId(nextChatId);
+    } catch (error) {
+      syncChatIdInput();
+      setStatus(`切换会话失败：${error.message}`, 'error');
     }
   }
 
@@ -2562,6 +2591,18 @@
         void setEmbeddedPanelOpen(false);
       });
     }
+    const chatIdInput = el('qwen-chat-id');
+    chatIdInput?.addEventListener('change', () => void changeChatId());
+    chatIdInput?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        chatIdInput.blur();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        syncChatIdInput();
+        chatIdInput.blur();
+      }
+    });
     const newChatBtn = el('qwen-chat-new');
     if (newChatBtn instanceof HTMLButtonElement) {
       newChatBtn.addEventListener('click', () => {
@@ -2569,6 +2610,7 @@
         const doNew = async () => {
           await chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']);
           sessionChatId = '';
+          syncChatIdInput();
           sessionParentId = '';
           nextReplyFresh = false;
           pendingEditParentId = '';

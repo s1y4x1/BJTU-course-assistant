@@ -77,6 +77,16 @@ html[data-color-scheme="dark"] .qwen-chat-panel {
   flex: 0 0 auto;
   cursor: move;
   user-select: none;
+  flex-wrap: wrap;
+}
+
+.qwen-chat-header .qwen-chat-id {
+  flex: 1 1 100px;
+  width: 140px;
+  min-width: 60px;
+  max-width: 300px;
+  box-sizing: border-box;
+  user-select: text;
 }
 
 html.qwen-side-panel-view .qwen-chat-header { cursor: default; }
