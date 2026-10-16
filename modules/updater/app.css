@@ -606,7 +606,6 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
     font-weight: 700;
     cursor: pointer;
 }
-.version-update-file-tree ul:not([data-show-skipped="true"]) > .version-update-tree-file[data-state="skipped"] { display: none; }
 .version-update-tree-skipped-toggle > button {
     padding: 0;
     border: 0;

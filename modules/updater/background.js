@@ -663,8 +663,8 @@
       if (getArchiveModuleIds(archiveFiles).some((id) => !known.has(id))) return false;
       const files = filterFilesByModules(archiveFiles, new Set(installed));
       let localManifest;
-      for (const { entry, path } of files) {
-        if (path === 'release.json') continue;
+      const fileMatches = async ({ entry, path }) => {
+        if (path === 'release.json') return true;
         let directory = root;
         const parts = path.split('/');
         let file;
@@ -690,7 +690,18 @@
           });
           if (canonical(current) !== canonical(incoming)) return false;
         } else if (!await globalThis.BjtuUpdateFileSystem.fileMatchesBytes(file, bytes)) return false;
-      }
+        return true;
+      };
+      let nextFile = 0;
+      let changed = false;
+      const concurrency = await globalThis.BjtuUpdateFileSystem.readFileConcurrency();
+      await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, async () => {
+        while (!changed && nextFile < files.length) {
+          const item = files[nextFile++];
+          if (!await fileMatches(item)) changed = true;
+        }
+      }));
+      if (changed) return false;
       const incomingManifest = archiveFiles.find(({ path }) => path === 'manifest.json');
       const metadata = JSON.parse(new TextDecoder().decode(await inflateEntry(incomingManifest.entry)));
       localManifest.version = metadata.version;

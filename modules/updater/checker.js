@@ -88,6 +88,10 @@ let versionNoticeForceCountdownAt = 0;
 let versionDownloadClean = false;
 let versionDownloadReload = true;
 let versionUpdateFileTreeRows = new Map();
+let versionUpdateFileTreeFrame = 0;
+const versionUpdateDirtyFiles = new Set();
+const versionUpdateDirtyDirectories = new Set();
+const versionUpdateDirtyLists = new Set();
 let versionUninstallCountdownTimer = null;
 let versionUninstallHoldTimer = null;
 let versionUninstallHoldLabelTimer = null;
@@ -1483,6 +1487,11 @@ function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, et
 }
 
 function resetVersionUpdateFileTree() {
+  if (versionUpdateFileTreeFrame) cancelAnimationFrame(versionUpdateFileTreeFrame);
+  versionUpdateFileTreeFrame = 0;
+  versionUpdateDirtyFiles.clear();
+  versionUpdateDirtyDirectories.clear();
+  versionUpdateDirtyLists.clear();
   versionUpdateFileTreeRows = new Map();
   const wrapper = document.getElementById('version-update-files');
   const summary = document.getElementById('version-update-file-summary');
@@ -1523,10 +1532,9 @@ function renderVersionUpdateFileTree(files) {
   const tree = document.getElementById('version-update-file-tree');
   const summary = document.getElementById('version-update-file-summary');
   if (!(wrapper instanceof HTMLElement) || !(tree instanceof HTMLElement) || !(summary instanceof HTMLElement)) return;
-  versionUpdateFileTreeRows = new Map();
-  tree.replaceChildren();
+  resetVersionUpdateFileTree();
   const rootList = document.createElement('ul');
-  tree.appendChild(rootList);
+  rootList.versionTreeList = { skipped: 0, toggle: null, directory: null };
   const directories = new Map([['', rootList]]);
 
   files.forEach((item) => {
@@ -1535,30 +1543,38 @@ function renderVersionUpdateFileTree(files) {
     if (!parts.length) return;
     let parentPath = '';
     let parentList = rootList;
+    const ancestors = [];
     parts.slice(0, -1).forEach((part) => {
       const directoryPath = parentPath ? `${parentPath}/${part}` : part;
       let childList = directories.get(directoryPath);
       if (!childList) {
         const directoryItem = document.createElement('li');
         directoryItem.className = 'version-update-tree-directory';
-        directoryItem.dataset.totalFiles = '0';
-        directoryItem.dataset.skippedFiles = '0';
         directoryItem.appendChild(createVersionUpdateTreeRow(part, { directory: true }));
         childList = document.createElement('ul');
         directoryItem.appendChild(childList);
         const directoryRow = directoryItem.firstElementChild;
+        const directory = {
+          item: directoryItem, row: directoryRow, list: childList,
+          symbol: directoryRow.firstElementChild,
+          total: 0, skipped: 0, changed: 0, userExpanded: undefined
+        };
+        childList.versionTreeList = { skipped: 0, toggle: null, directory };
         directoryRow.tabIndex = 0;
         directoryRow.setAttribute('role', 'button');
         directoryRow.setAttribute('aria-expanded', 'true');
         const toggle = () => {
           childList.hidden = !childList.hidden;
-          directoryItem.dataset.userExpanded = String(!childList.hidden);
-          if (!childList.hidden && directoryItem.dataset.state === 'skipped') {
+          directory.userExpanded = !childList.hidden;
+          if (!childList.hidden && directory.skipped === directory.total) {
             childList.dataset.showSkipped = 'true';
             updateVersionSkippedFileToggle(childList);
           }
           directoryRow.setAttribute('aria-expanded', String(!childList.hidden));
-          directoryRow.querySelector('.version-update-tree-state').textContent = childList.hidden ? '▸' : '▾';
+          directory.symbol.textContent = childList.hidden ? '▸' : '▾';
+          for (const child of childList.children) {
+            if (child.versionTreeFile) updateVersionUpdateTreeFile(child);
+          }
         };
         directoryRow.addEventListener('click', toggle);
         directoryRow.addEventListener('keydown', (event) => {
@@ -1571,7 +1587,8 @@ function renderVersionUpdateFileTree(files) {
       }
       parentPath = directoryPath;
       parentList = childList;
-      childList.parentElement.dataset.totalFiles = String(Number(childList.parentElement.dataset.totalFiles) + 1);
+      childList.versionTreeList.directory.total += 1;
+      ancestors.push(childList.versionTreeList.directory);
     });
 
     const fileItem = document.createElement('li');
@@ -1581,26 +1598,36 @@ function renderVersionUpdateFileTree(files) {
     fileItem.appendChild(createVersionUpdateTreeRow(parts.at(-1), {
       size: Math.max(0, Number(item?.entry?.uncompressedSize) || 0)
     }));
+    fileItem.versionTreeFile = {
+      state: 'pending', list: parentList, ancestors,
+      symbol: fileItem.firstElementChild.children[0],
+      label: fileItem.firstElementChild.children[2]
+    };
     parentList.appendChild(fileItem);
     versionUpdateFileTreeRows.set(path, fileItem);
   });
 
+  tree.appendChild(rootList);
   summary.textContent = `已完成 0 / ${files.length}`;
   wrapper.style.display = '';
 }
 
 function updateVersionSkippedFileToggle(list) {
-  const count = Number(list.dataset.skippedFiles || 0);
-  let toggle = list.querySelector(':scope > .version-update-tree-skipped-toggle');
+  const count = list.versionTreeList.skipped;
+  let toggle = list.versionTreeList.toggle;
   if (!count && !toggle) return;
   if (!toggle) {
     toggle = document.createElement('li');
     toggle.className = 'version-update-tree-skipped-toggle';
+    list.versionTreeList.toggle = toggle;
     const button = document.createElement('button');
     button.type = 'button';
     button.addEventListener('click', () => {
       list.dataset.showSkipped = String(list.dataset.showSkipped !== 'true');
       updateVersionSkippedFileToggle(list);
+      for (const child of list.children) {
+        if (child.versionTreeFile) updateVersionUpdateTreeFile(child);
+      }
     });
     toggle.appendChild(button);
     list.appendChild(toggle);
@@ -1612,40 +1639,65 @@ function updateVersionSkippedFileToggle(list) {
   button.setAttribute('aria-expanded', String(expanded));
 }
 
+function updateVersionUpdateTreeFile(row) {
+  const file = row.versionTreeFile;
+  const state = file.state;
+  const visible = state === 'skipped'
+    ? file.list.dataset.showSkipped === 'true'
+    : true;
+  if (row.hidden === visible) row.hidden = !visible;
+  if (!visible) return;
+  const config = VERSION_UPDATE_FILE_STATE[state] || VERSION_UPDATE_FILE_STATE.pending;
+  row.dataset.state = state;
+  row.title = config.label;
+  file.symbol.textContent = config.symbol;
+  file.symbol.title = config.label;
+  file.label.textContent = config.label;
+}
+
+function flushVersionUpdateFileTree() {
+  if (versionUpdateFileTreeFrame) cancelAnimationFrame(versionUpdateFileTreeFrame);
+  versionUpdateFileTreeFrame = 0;
+  for (const directory of versionUpdateDirtyDirectories) {
+    const expanded = directory.userExpanded ?? directory.skipped !== directory.total;
+    if (directory.list.hidden === expanded) directory.list.hidden = !expanded;
+    const ariaExpanded = String(expanded);
+    if (directory.row.getAttribute('aria-expanded') !== ariaExpanded) {
+      directory.row.setAttribute('aria-expanded', ariaExpanded);
+      directory.symbol.textContent = expanded ? '▾' : '▸';
+    }
+    const state = directory.skipped === directory.total ? 'skipped' : '';
+    if (directory.item.dataset.state !== state) {
+      directory.item.dataset.state = state;
+      directory.item.title = state ? VERSION_UPDATE_FILE_STATE.skipped.label : '';
+    }
+  }
+  for (const list of versionUpdateDirtyLists) updateVersionSkippedFileToggle(list);
+  for (const row of versionUpdateDirtyFiles) updateVersionUpdateTreeFile(row);
+  versionUpdateDirtyDirectories.clear();
+  versionUpdateDirtyLists.clear();
+  versionUpdateDirtyFiles.clear();
+}
+
 function setVersionUpdateFileState(path, state) {
   const normalizedPath = String(path || '').replace(/\\/g, '/');
   const row = versionUpdateFileTreeRows.get(normalizedPath);
-  const config = VERSION_UPDATE_FILE_STATE[state] || VERSION_UPDATE_FILE_STATE.pending;
   if (!(row instanceof HTMLElement)) return;
-  const skippedDelta = Number(state === 'skipped') - Number(row.dataset.state === 'skipped');
-  row.dataset.state = state;
-  if (skippedDelta) {
-    const list = row.parentElement;
-    list.dataset.skippedFiles = String(Number(list.dataset.skippedFiles || 0) + skippedDelta);
-    updateVersionSkippedFileToggle(list);
-    let directory = list.closest('.version-update-tree-directory');
-    while (directory) {
-      const skipped = Number(directory.dataset.skippedFiles) + skippedDelta;
-      directory.dataset.skippedFiles = String(skipped);
-      const allSkipped = skipped === Number(directory.dataset.totalFiles);
-      directory.dataset.state = allSkipped ? 'skipped' : '';
-      const children = directory.querySelector(':scope > ul');
-      if (directory.dataset.userExpanded === undefined) children.hidden = allSkipped;
-      const directoryRow = directory.firstElementChild;
-      directoryRow.setAttribute('aria-expanded', String(!children.hidden));
-      directoryRow.querySelector('.version-update-tree-state').textContent = children.hidden ? '▸' : '▾';
-      directory.title = allSkipped ? VERSION_UPDATE_FILE_STATE.skipped.label : '';
-      directory = directory.parentElement.closest('.version-update-tree-directory');
+  const file = row.versionTreeFile;
+  const skippedDelta = Number(state === 'skipped') - Number(file.state === 'skipped');
+  const changedDelta = Number(state === 'done' || state === 'failed') - Number(file.state === 'done' || file.state === 'failed');
+  file.state = state;
+  if (skippedDelta || changedDelta) {
+    file.list.versionTreeList.skipped += skippedDelta;
+    if (skippedDelta) versionUpdateDirtyLists.add(file.list);
+    for (const directory of file.ancestors) {
+      directory.skipped += skippedDelta;
+      directory.changed += changedDelta;
+      versionUpdateDirtyDirectories.add(directory);
     }
   }
-  row.title = config.label;
-  const stateEl = row.querySelector(':scope > .version-update-tree-row > .version-update-tree-state');
-  if (stateEl instanceof HTMLElement) {
-    stateEl.textContent = config.symbol;
-    stateEl.title = config.label;
-  }
-  const stateLabel = row.querySelector(':scope > .version-update-tree-row > .version-update-tree-state-label');
-  if (stateLabel instanceof HTMLElement) stateLabel.textContent = config.label;
+  if (!row.hidden || changedDelta || file.list.versionTreeList.directory?.userExpanded) versionUpdateDirtyFiles.add(row);
+  if (!versionUpdateFileTreeFrame) versionUpdateFileTreeFrame = requestAnimationFrame(flushVersionUpdateFileTree);
 }
 
 function setVersionUpdateFileSummary({ completed = 0, total = 0, path = '', state = '' } = {}) {
@@ -2685,6 +2737,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
     }
   );
   const results = await Promise.allSettled(workers);
+  flushVersionUpdateFileTree();
   const failedResult = results.find((result) => result.status === 'rejected');
   if (failedResult) throw failedResult.reason;
   renderExtractionProgress(true);
