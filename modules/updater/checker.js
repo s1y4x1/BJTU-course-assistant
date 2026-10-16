@@ -1542,14 +1542,37 @@ function renderVersionUpdateFileTree(files) {
       if (!childList) {
         const directoryItem = document.createElement('li');
         directoryItem.className = 'version-update-tree-directory';
+        directoryItem.dataset.totalFiles = '0';
+        directoryItem.dataset.skippedFiles = '0';
         directoryItem.appendChild(createVersionUpdateTreeRow(part, { directory: true }));
         childList = document.createElement('ul');
         directoryItem.appendChild(childList);
+        const directoryRow = directoryItem.firstElementChild;
+        directoryRow.tabIndex = 0;
+        directoryRow.setAttribute('role', 'button');
+        directoryRow.setAttribute('aria-expanded', 'true');
+        const toggle = () => {
+          childList.hidden = !childList.hidden;
+          directoryItem.dataset.userExpanded = String(!childList.hidden);
+          if (!childList.hidden && directoryItem.dataset.state === 'skipped') {
+            childList.dataset.showSkipped = 'true';
+            updateVersionSkippedFileToggle(childList);
+          }
+          directoryRow.setAttribute('aria-expanded', String(!childList.hidden));
+          directoryRow.querySelector('.version-update-tree-state').textContent = childList.hidden ? '▸' : '▾';
+        };
+        directoryRow.addEventListener('click', toggle);
+        directoryRow.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          toggle();
+        });
         parentList.appendChild(directoryItem);
         directories.set(directoryPath, childList);
       }
       parentPath = directoryPath;
       parentList = childList;
+      childList.parentElement.dataset.totalFiles = String(Number(childList.parentElement.dataset.totalFiles) + 1);
     });
 
     const fileItem = document.createElement('li');
@@ -1567,12 +1590,55 @@ function renderVersionUpdateFileTree(files) {
   wrapper.style.display = '';
 }
 
+function updateVersionSkippedFileToggle(list) {
+  const count = Number(list.dataset.skippedFiles || 0);
+  let toggle = list.querySelector(':scope > .version-update-tree-skipped-toggle');
+  if (!count && !toggle) return;
+  if (!toggle) {
+    toggle = document.createElement('li');
+    toggle.className = 'version-update-tree-skipped-toggle';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      list.dataset.showSkipped = String(list.dataset.showSkipped !== 'true');
+      updateVersionSkippedFileToggle(list);
+    });
+    toggle.appendChild(button);
+    list.appendChild(toggle);
+  }
+  toggle.hidden = count === 0;
+  const expanded = list.dataset.showSkipped === 'true';
+  const button = toggle.firstElementChild;
+  button.textContent = `${expanded ? '▾' : '▸'} 未更改，已跳过（${count} 个文件）`;
+  button.setAttribute('aria-expanded', String(expanded));
+}
+
 function setVersionUpdateFileState(path, state) {
   const normalizedPath = String(path || '').replace(/\\/g, '/');
   const row = versionUpdateFileTreeRows.get(normalizedPath);
   const config = VERSION_UPDATE_FILE_STATE[state] || VERSION_UPDATE_FILE_STATE.pending;
   if (!(row instanceof HTMLElement)) return;
+  const skippedDelta = Number(state === 'skipped') - Number(row.dataset.state === 'skipped');
   row.dataset.state = state;
+  if (skippedDelta) {
+    const list = row.parentElement;
+    list.dataset.skippedFiles = String(Number(list.dataset.skippedFiles || 0) + skippedDelta);
+    updateVersionSkippedFileToggle(list);
+    let directory = list.closest('.version-update-tree-directory');
+    while (directory) {
+      const skipped = Number(directory.dataset.skippedFiles) + skippedDelta;
+      directory.dataset.skippedFiles = String(skipped);
+      const allSkipped = skipped === Number(directory.dataset.totalFiles);
+      directory.dataset.state = allSkipped ? 'skipped' : '';
+      const children = directory.querySelector(':scope > ul');
+      if (directory.dataset.userExpanded === undefined) children.hidden = allSkipped;
+      const directoryRow = directory.firstElementChild;
+      directoryRow.setAttribute('aria-expanded', String(!children.hidden));
+      directoryRow.querySelector('.version-update-tree-state').textContent = children.hidden ? '▸' : '▾';
+      directory.title = allSkipped ? VERSION_UPDATE_FILE_STATE.skipped.label : '';
+      directory = directory.parentElement.closest('.version-update-tree-directory');
+    }
+  }
   row.title = config.label;
   const stateEl = row.querySelector(':scope > .version-update-tree-row > .version-update-tree-state');
   if (stateEl instanceof HTMLElement) {
