@@ -158,7 +158,7 @@
       const button = element('casLoginBtn');
       const loginName = String(element('casLoginName')?.value || '').trim();
       const password = String(element('casPassword')?.value || '');
-      if (!loginName || !password) return setMessage('请输入账号（学号）和密码', false);
+      if (!loginName) return setMessage('请输入账号（学号）', false);
       button.disabled = true;
       try {
         setMessage(`正在登录 CAS（${loginName}），正在识别验证码…`, true, {

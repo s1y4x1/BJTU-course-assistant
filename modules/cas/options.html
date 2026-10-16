@@ -33,7 +33,7 @@
   <input id="casLoginName" type="text" autocomplete="username" placeholder="默认为学号，自动使用智慧课程平台账号">
   <label for="casPassword">密码</label>
   <input id="casPassword" type="password" autocomplete="off"
-    placeholder="登录成功后保存在扩展本地存储">
+    placeholder="留空时使用已保存的密码；登录成功后保存密码">
   <div class="cas-login-actions" data-cas-platform="CAS">
     <button id="casLoginBtn" type="button">登录统一身份认证中心（CAS）</button>
     <div class="tip">登录时会先读取 CAS 登录页以更新 CSRF Token，再自动识别验证码提交账号密码；未安装验证码识别模块或资源时会显示验证码供手工输入。账号密码会在登录成功后按账号保存在扩展本地存储中。在 CAS 页面自行登录时，扩展同样会捕获并保存账密。</div>

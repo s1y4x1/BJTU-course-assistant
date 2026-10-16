@@ -590,9 +590,9 @@
 
   async function loginWithPassword(loginName, password, { allowManualCaptcha = false } = {}) {
     const id = String(loginName || '').trim();
-    const secret = String(password ?? '');
     if (!id) throw new Error('请输入账号（学号）');
-    if (!secret) throw new Error('请输入密码');
+    const secret = String(password || (await getCasAccounts())[id]?.password || '');
+    if (!secret) throw new Error('此账号没有已保存的密码，请输入密码');
     await clearLoginCookies();
     await logoutMisIfEnabled();
     let lastResult = { ok: false, message: 'CAS 未返回登录结果' };
