@@ -8,12 +8,10 @@
   const STATUS_KEY = 'homeworkBackgroundRefreshStatus';
   const KNOWN_ASSIGNMENTS_KEY = 'homeworkBackgroundKnownAssignments';
   const CACHE_KEY = 'popupFullscreenCourseCache';
-  const SNAPSHOT_KEY = 'homeworkReminderSnapshot';
   const XQ_CODE_KEY = 'selectedXqCode';
   const ALARM_NAME = 'bjtu-homework-background-refresh';
   const DEFAULT_INTERVAL_MINUTES = 30;
   const APP_URL = chrome.runtime.getURL('app/app.html');
-  const NOTIFICATION_PREFIX = 'bjtu-homework-reminder:new:';
   let runningPromise = null;
   let activeRefreshController = null;
   let foregroundCloseResumeTimer = null;
@@ -83,7 +81,7 @@
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
     const stored = await chrome.storage.local.get([
-      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, SNAPSHOT_KEY, XQ_CODE_KEY
+      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, XQ_CODE_KEY
     ]).catch(() => ({}));
     if (stored?.[ENABLED_KEY] !== true) return { skipped: 'disabled' };
     const account = String(stored?.[ACCOUNT_KEY] || '').trim();
@@ -164,13 +162,12 @@
       xqSelectHtml,
       xqSelectValue: xqCode
     };
-    const snapshot = mergeVeReminderSnapshot(stored?.[SNAPSHOT_KEY], account, reminderItems, savedAt);
-    await chrome.storage.local.set({
-      [CACHE_KEY]: cache,
-      [SNAPSHOT_KEY]: snapshot,
-      [XQ_CODE_KEY]: xqCode
+    await globalThis.BjtuHomeworkReminders.update(async (state) => {
+      if (!await globalThis.BjtuAccountStore.get(account)) throw new Error('后台维护账号已被删除');
+      globalThis.BjtuHomeworkReminders.replaceSnapshot(state.snapshot, 've', account, reminderItems, savedAt);
+      await chrome.storage.local.set({ [CACHE_KEY]: cache, [XQ_CODE_KEY]: xqCode });
+      await notifyNewHomework({ account, assignments });
     });
-    await notifyNewHomework({ account, assignments });
     await setStatus('complete', {
       account,
       courseCount: courses.length,
@@ -205,28 +202,6 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
-  function mergeVeReminderSnapshot(previousSnapshot, account, items, updatedAt) {
-    const accounts = previousSnapshot?.accounts && typeof previousSnapshot.accounts === 'object'
-      && !Array.isArray(previousSnapshot.accounts)
-      ? { ...previousSnapshot.accounts }
-      : (Array.isArray(previousSnapshot?.items)
-        ? {
-            [String(previousSnapshot?.account || 'default')]: {
-              updatedAt: Number(previousSnapshot?.updatedAt || 0),
-              items: previousSnapshot.items
-            }
-          }
-        : {});
-    const previousItems = Array.isArray(accounts[account]?.items) ? accounts[account].items : [];
-    accounts[account] = {
-      updatedAt,
-      items: [
-        ...previousItems.filter((item) => String(item?.platform || '') !== '智慧课程平台'),
-        ...items
-      ]
-    };
-    return { version: 2, updatedAt, account, accounts };
-  }
 
   async function notifyNewHomework(message) {
     const stored = await chrome.storage.local.get([NEW_HOMEWORK_NOTIFY_KEY, KNOWN_ASSIGNMENTS_KEY]).catch(() => ({}));
@@ -249,10 +224,7 @@
     await chrome.storage.local.set({ [KNOWN_ASSIGNMENTS_KEY]: knownByAccount }).catch(() => {});
     if (!previousList || stored?.[NEW_HOMEWORK_NOTIFY_KEY] !== true) return;
     await Promise.all(additions.map((item) => {
-      const id = `${NOTIFICATION_PREFIX}${homeworkIdentity(item).split('').reduce((hash, ch) => {
-        hash ^= ch.charCodeAt(0);
-        return Math.imul(hash, 16777619);
-      }, 2166136261) >>> 0}`;
+      const id = globalThis.BjtuHomeworkReminders.notificationId('new', 've', account, homeworkIdentity(item));
       const createNotification = global.BjtuSystemNotifications?.create
         || ((notificationId, options) => chrome.notifications.create(notificationId, options));
       return createNotification(id, {

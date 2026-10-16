@@ -466,10 +466,11 @@
         const subType = Number(homework?.subType ?? homework?.sub_type);
         const courseToPage = ({ 0: 10460, 1: 10461, 2: 10462 })[subType] || 10460;
         const actionUrl = `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=${courseToPage}&courseId=${encodeURIComponent(courseNum)}&cId=${encodeURIComponent(courseId)}&xknId=${encodeURIComponent(fzId)}&xkhId=${encodeURIComponent(fzId)}&xqCode=${encodeURIComponent(xqCode)}`;
-        const key = `智慧课程平台|${courseName}|${title}|${deadline}`;
+        const key = `${courseName}|${title}|${deadline}`;
         if (seen.has(key)) return;
         seen.add(key);
-        output.push({ key, platform: '智慧课程平台', courseName, title, deadline, actionUrl });
+        const detail = global.BjtuHomeworkReminders.plainText(homework.content || homework.content_clean || homework.workContent || '');
+        output.push({ key, platform: '智慧课程平台', courseName, title, deadline, actionUrl, detail });
       });
     });
     return output;

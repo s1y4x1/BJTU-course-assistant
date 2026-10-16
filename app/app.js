@@ -1657,7 +1657,26 @@ function setupPortalUsernameBindMessageListener() {
   if (portalUsernameBindMessageListenerReady || !chrome?.runtime?.onMessage) return;
   portalUsernameBindMessageListenerReady = true;
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'HOMEWORK_REMINDER_OPEN') {
+      void consumePendingHomeworkReminder();
+      return;
+    }
     void (async () => {
+      if (message?.type === 'PORTAL_ACCOUNT_DELETED') {
+        const loginName = String(message.payload?.loginName || '');
+        if (window.currentAccountLoginName !== loginName) return;
+        if (isPlatformEnabled('ve')) togglePlatformSelection('ve', { interactive: false });
+        window.currentAccountLoginName = '';
+        window.isTeacherAccount = false;
+        if (lastValidUsername === loginName) lastValidUsername = '';
+        isLoginSessionValid = false;
+        usernameInput.value = '';
+        window.currentVeCourseList = [];
+        window.veDisabledCourseListCache = [];
+        for (const key of ['courseHomeworkData', 'homeworkScoreCacheByKey', 'homeworkNoteAttachmentCacheByKey', 'courseCardStateById', 'videoReplayCacheByCourseId', 'coursewareCacheByCourseId', 'veTeacherMetaByCourseId', 'veCourseTeachersMetaByCourseId']) window[key] = {};
+        scheduleFullscreenCourseCacheSave(0);
+        return;
+      }
       if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
       const st = message.payload || {};
       if (st.status !== 'done') return;
@@ -6761,8 +6780,43 @@ jsessionidInput.addEventListener('change', async () => {
   }
 });
 
+let homeworkReminderNavigationPromise = null;
+function consumePendingHomeworkReminder() {
+  if (homeworkReminderNavigationPromise) return homeworkReminderNavigationPromise;
+  homeworkReminderNavigationPromise = (async () => {
+    await appInitializationPromise;
+    const tab = await chrome.tabs.getCurrent();
+    if (tab?.id == null) return;
+    const key = `homeworkReminderOpenTarget:${tab.id}`;
+    const stored = await chrome.storage.session.get(key);
+    const target = stored[key];
+    if (!target) return;
+    await chrome.storage.session.remove(key);
+    const platform = target.platform;
+    if (!globalThis.BjtuModuleRegistry.has(platform)) throw new Error(`请先安装${globalThis.BjtuHomeworkReminders.labels[platform] || platform}模块`);
+    if (platform === 've') {
+      const account = String(target.account || '');
+      if (!account) return;
+      if (activeLoginFlowPromise) await activeLoginFlowPromise.catch(() => {});
+      if (window.currentAccountLoginName === account && isPlatformEnabled('ve') && window.platformLoadedOnce.ve && window.platformLoginState.ve === 'online') return;
+      usernameInput.value = account;
+      window.platformEnabled.ve = true;
+      window.platformInteractiveLoginPending.ve = true;
+      await savePlatformEnabledToStorage();
+      await doLoginFlow();
+    } else if (!isPlatformEnabled(platform)) {
+      togglePlatformSelection(platform, { interactive: true });
+    } else if (window.platformLoginState[platform] === 'offline') {
+      window.platformInteractiveLoginPending[platform] = true;
+      triggerExternalPlatformLoad(platform, true);
+    }
+  })().catch((error) => showToast(`打开作业提醒失败：${error.message}`, 'error', 4000))
+    .finally(() => { homeworkReminderNavigationPromise = null; });
+  return homeworkReminderNavigationPromise;
+}
+
 // -------------------- Init --------------------
-(async function init() {
+const appInitializationPromise = (async function init() {
   const autoUpdateParam = new URLSearchParams(location.search).get('autoUpdate');
   const autoUpdateMode = autoUpdateParam === '1' || autoUpdateParam === '2';
   await globalThis.BjtuModuleRegistry?.ready;
@@ -6922,3 +6976,4 @@ jsessionidInput.addEventListener('change', async () => {
   applyPlatformVisibility();
   updateCourseListEmptyPlaceholder();
 });
+void appInitializationPromise.then(() => consumePendingHomeworkReminder());

@@ -1,7 +1,6 @@
 var POPUP_CACHE_ENABLED_KEY = window.POPUP_CACHE_ENABLED_KEY = 'popupUseFullscreenCacheEnabled';
 var SIDE_PANEL_CACHE_ENABLED_KEY = window.SIDE_PANEL_CACHE_ENABLED_KEY = 'sidePanelUseFullscreenCacheEnabled';
 var POPUP_FULLSCREEN_CACHE_KEY = window.POPUP_FULLSCREEN_CACHE_KEY = 'popupFullscreenCourseCache';
-var HOMEWORK_REMINDER_SNAPSHOT_KEY = 'homeworkReminderSnapshot';
 
 window.popupUseFullscreenCacheEnabled = true;
 window.sidePanelUseFullscreenCacheEnabled = true;
@@ -352,7 +351,10 @@ async function saveFullscreenCourseCache({ force = false } = {}) {
     xqSelectValue: String(xqSelect?.value || '')
   };
   try {
-    await chrome.storage.local.set({ [POPUP_FULLSCREEN_CACHE_KEY]: cache });
+    await window.BjtuHomeworkReminders.update(async () => {
+      if (cache.currentAccountLoginName && window.BjtuAccountStore && !await window.BjtuAccountStore.get(cache.currentAccountLoginName)) return;
+      await chrome.storage.local.set({ [POPUP_FULLSCREEN_CACHE_KEY]: cache });
+    });
   } catch (e) {
     try { console.warn('[bjtu] save popup cache failed:', e); } catch {}
   }
@@ -362,8 +364,8 @@ function detectReminderPlatform(item, courseCard) {
   if (item.classList.contains('xuetangx-task') || String(courseCard?.id || '').startsWith('course-xuetangx-')) return '学堂在线';
   if (item.classList.contains('mooc-task') || String(courseCard?.id || '').startsWith('course-mooc-')) return '中国大学MOOC';
   const hrefs = Array.from(item.querySelectorAll('a[href]')).map((link) => String(link.href || '')).join(' ');
+  if (/yuketang\.cn|examination\.xuetangx\.com/i.test(hrefs)) return '雨课堂';
   if (/xuetangx\.com/i.test(hrefs)) return '学堂在线';
-  if (/yuketang\.cn/i.test(hrefs)) return '雨课堂';
   if (/lulufind\.com|mrzuoye\.com/i.test(hrefs)) return '每日交作业';
   if (/jielong\.com/i.test(hrefs)) return '接龙管家';
   return '智慧课程平台';
@@ -386,15 +388,17 @@ function collectPendingHomeworkItems({ futureDeadlineOnly = false } = {}) {
     if (!(homework instanceof HTMLElement) || !(courseCard instanceof HTMLElement)) return;
     if (homework.dataset.homeworkDone === '1') return;
     const courseName = String(courseCard.querySelector('.course-card-title')?.textContent || '未知课程').replace(/\s+/g, ' ').trim();
-    const titleElement = homework.querySelector('.mooc-task-title, .xuetangx-task-title')
+    const titleElement = homework.querySelector('.homework-card-title, .mooc-task-title, .xuetangx-task-title')
       || Array.from(homework.querySelectorAll('div')).find((node) => node instanceof HTMLElement && node.style.fontWeight === 'bold');
-    const title = String(titleElement?.textContent || '未交作业').replace(/\s+/g, ' ').trim();
+    const title = String(titleElement?.dataset.homeworkTitle || titleElement?.textContent || '未交作业').replace(/\s+/g, ' ').trim();
     const platform = detectReminderPlatform(homework, courseCard);
     const actionUrl = String(homework.querySelector('a.btn[href]')?.href || courseCard.querySelector('.course-card-title a[href]')?.href || '');
-    const key = `${platform}|${courseName}|${title}|${deadline}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    items.push({ key, platform, courseName, title, deadline, actionUrl });
+    const key = `${courseName}|${title}|${deadline}`;
+    const identity = `${platform}|${key}`;
+    if (seen.has(identity)) return;
+    seen.add(identity);
+    const detail = Array.from(homework.querySelectorAll('.expandable-body')).map((body) => window.BjtuHomeworkReminders.plainText(body.innerHTML)).filter(Boolean).join('\n');
+    items.push({ key, platform, courseName, title, deadline, actionUrl, detail });
   });
   return items;
 }
@@ -405,65 +409,20 @@ function collectHomeworkReminderSnapshot() {
 
 let homeworkReminderSnapshotTimer = null;
 
-function normalizeHomeworkReminderAccounts(snapshot) {
-  if (snapshot?.accounts && typeof snapshot.accounts === 'object' && !Array.isArray(snapshot.accounts)) {
-    return Object.fromEntries(Object.entries(snapshot.accounts).map(([account, entry]) => [
-      String(account || 'default'),
-      {
-        updatedAt: Number(entry?.updatedAt || 0),
-        items: Array.isArray(entry?.items) ? entry.items : []
-      }
-    ]));
-  }
-  if (!Array.isArray(snapshot?.items)) return {};
-  return {
-    [String(snapshot?.account || 'default')]: {
-      updatedAt: Number(snapshot?.updatedAt || 0),
-      items: snapshot.items
-    }
-  };
-}
-
-const HOMEWORK_REMINDER_PLATFORM_LABELS = Object.freeze({
-  ve: '智慧课程平台',
-  ykt: '雨课堂',
-  mrjzy: '每日交作业',
-  jlgj: '接龙管家',
-  mooc: '中国大学MOOC',
-  xuetangx: '学堂在线'
-});
-
 async function saveHomeworkReminderSnapshotNow() {
   const now = Date.now();
-  const account = String(window.currentAccountLoginName || 'default').trim() || 'default';
+  const account = String(window.currentAccountLoginName || '').trim();
   const currentItems = collectHomeworkReminderSnapshot();
-  const stored = await chrome.storage.local.get([HOMEWORK_REMINDER_SNAPSHOT_KEY]).catch(() => ({}));
-  const previousSnapshot = stored?.[HOMEWORK_REMINDER_SNAPSHOT_KEY];
-  const accounts = normalizeHomeworkReminderAccounts(previousSnapshot);
-  const previousItems = Array.isArray(accounts[account]?.items) ? accounts[account].items : [];
-  const authoritativePlatforms = new Set();
-  Object.entries(HOMEWORK_REMINDER_PLATFORM_LABELS).forEach(([platform, label]) => {
-    const online = window.platformLoginState?.[platform] === 'online';
-    const loaded = window.platformLoadedOnce?.[platform] === true
-      || currentItems.some((item) => item?.platform === label);
-    if (online && loaded) authoritativePlatforms.add(label);
+  const reminders = window.BjtuHomeworkReminders;
+  return reminders.update(async ({ snapshot }) => {
+    for (const [platform, label] of Object.entries(reminders.labels)) {
+      const loaded = window.platformLoadedOnce?.[platform] === true;
+      if (window.platformLoginState?.[platform] !== 'online' || !loaded) continue;
+      if (platform === 've' && (!account || !await window.BjtuAccountStore.get(account))) continue;
+      reminders.replaceSnapshot(snapshot, platform, account, currentItems.filter((item) => item.platform === label), now);
+    }
+    return snapshot;
   });
-
-  // 登录失效的平台不再出现在当前 DOM 中，但其已知作业仍须继续提醒。
-  // 只替换本次已成功加载的平台数据，其他平台保留上次快照。
-  const mergedItems = [
-    ...previousItems.filter((item) => !authoritativePlatforms.has(String(item?.platform || ''))),
-    ...currentItems.filter((item) => authoritativePlatforms.has(String(item?.platform || '')))
-  ];
-  accounts[account] = { updatedAt: now, items: mergedItems };
-  const snapshot = {
-    version: 2,
-    updatedAt: now,
-    account,
-    accounts
-  };
-  await chrome.storage.local.set({ [HOMEWORK_REMINDER_SNAPSHOT_KEY]: snapshot });
-  return snapshot;
 }
 
 function scheduleHomeworkReminderSnapshotSave(delayMs = 500) {

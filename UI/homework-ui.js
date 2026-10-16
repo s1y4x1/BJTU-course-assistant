@@ -214,7 +214,7 @@
     const text = href
       ? `<a href="${escape(href)}" target="_blank" rel="noopener noreferrer">${escape(title)}</a>`
       : escape(title);
-    return `<div class="homework-card-title ${escape(className)}" style="color:${escape(color)};">${type}${text}</div>`;
+    return `<div class="homework-card-title ${escape(className)}" data-homework-title="${escape(title)}" style="color:${escape(color)};">${type}${text}</div>`;
   }
 
   function renderHomeworkCard({
