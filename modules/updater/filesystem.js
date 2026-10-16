@@ -194,6 +194,27 @@
     return fileConcurrencyDefaultsPromise;
   }
 
+  async function processFiles(files, operation) {
+    const concurrency = Math.min(await readFileConcurrency(), files.length);
+    let next = 0;
+    let failed = false;
+    let failure;
+    await Promise.all(Array.from({ length: concurrency }, async () => {
+      while (!failed && next < files.length) {
+        const file = files[next++];
+        try {
+          await operation(file);
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            failure = error;
+          }
+        }
+      }
+    }));
+    if (failed) throw failure;
+  }
+
   async function readArchive(url, version) {
     const cache = await caches.open('bjtu-ca-update-archive');
     const response = await cache.match(archiveCacheKey(url, version));
@@ -210,6 +231,7 @@
   }
 
   global.BjtuUpdateFileSystem = {
+    processFiles,
     ensureFileConcurrencyDefaults,
     normalizeFileConcurrency,
     readFileConcurrency,

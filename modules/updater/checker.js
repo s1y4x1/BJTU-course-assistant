@@ -2478,6 +2478,29 @@ async function fetchModuleArchive(onProgress) {
   return { bytes, release };
 }
 
+async function processVersionArchiveFiles(files, { onFileState, onFileComplete } = {}) {
+  await globalThis.BjtuUpdateFileSystem.processFiles(files, async (item) => {
+    onFileState?.(item, 'extracting');
+    let bytes;
+    try {
+      bytes = await inflateZipEntry(item.entry);
+    } catch (error) {
+      onFileState?.(item, 'failed');
+      throw markVersionUpdateError(error, 'archive');
+    }
+    onFileState?.(item, 'comparing');
+    let written;
+    try {
+      written = await writeBytesToVersionUpdateDirectory(bytes, item.path);
+    } catch (error) {
+      onFileState?.(item, 'failed');
+      throw markVersionUpdateError(error, 'directory');
+    }
+    onFileState?.(item, written ? 'done' : 'skipped');
+    onFileComplete?.({ item, bytes, written });
+  });
+}
+
 async function applyModuleSelection({ selected = [], installed = [], onProgress = null } = {}) {
   const selectedSet = globalThis.BjtuModuleRegistry.withDependencies(selected.map((id) => String(id || '').toLowerCase()));
   const installedSet = new Set(installed.map((id) => String(id || '').toLowerCase()));
@@ -2527,12 +2550,14 @@ async function applyModuleSelection({ selected = [], installed = [], onProgress 
       });
     }
     const totalWrites = archiveFiles.length;
-    for (const item of archiveFiles) {
-      const inflated = await inflateZipEntry(item.entry);
-      await writeBytesToVersionUpdateDirectory(inflated, item.path);
-      written += 1;
-      onProgress?.({ phase: 'write', completed: written, total: totalWrites, path: item.path });
-    }
+    let completed = 0;
+    await processVersionArchiveFiles(archiveFiles, {
+      onFileComplete({ item, written: fileWritten }) {
+        written += Number(fileWritten);
+        completed += 1;
+        onProgress?.({ phase: 'write', completed, total: totalWrites, path: item.path });
+      }
+    });
     const orderedRemovals = removals.sort((a, b) => (a === 'updater' ? 1 : 0) - (b === 'updater' ? 1 : 0));
     for (const id of orderedRemovals) {
       await globalThis.BjtuUpdateFileSystem.removeEntry(modulesDirectory, id, { recursive: true }).catch((error) => {
@@ -2657,8 +2682,6 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
     phase: 'extracting'
   });
   setVersionDownloadTransferStatus({ loaded: 0, total: totalBytes, speed: 0, eta: null, percent: 0 });
-  let nextFileIndex = 0;
-  let extractionError = null;
   let lastProgressRenderAt = 0;
   let latestCompletedPath = '';
   const renderExtractionProgress = (force = false) => {
@@ -2685,61 +2708,25 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
       state: completedCount ? 'done' : 'extracting'
     });
   };
-  const processFile = async (item) => {
-    setVersionUpdateFileState(item.path, 'extracting');
-    let inflated;
-    try {
-      inflated = await inflateZipEntry(item.entry);
-    } catch (error) {
-      setVersionUpdateFileState(item.path, 'failed');
-      setVersionUpdateFileSummary({
-        completed: completedCount,
-        total: files.length,
-        path: item.path,
-        state: 'failed'
-      });
-      throw markVersionUpdateError(error, 'archive');
-    }
-    setVersionUpdateFileState(item.path, 'comparing');
-    let written;
-    try {
-      written = await writeBytesToVersionUpdateDirectory(inflated, item.path);
-    } catch (error) {
-      setVersionUpdateFileState(item.path, 'failed');
-      setVersionUpdateFileSummary({
-        completed: completedCount,
-        total: files.length,
-        path: item.path,
-        state: 'failed'
-      });
-      throw markVersionUpdateError(error, 'directory');
-    }
-    completedCount += 1;
-    if (written) writtenCount += 1;
-    completedBytes += inflated.byteLength;
-    latestCompletedPath = item.path;
-    setVersionUpdateFileState(item.path, written ? 'done' : 'skipped');
-    renderExtractionProgress();
-  };
-  const workers = Array.from(
-    { length: Math.min(await globalThis.BjtuUpdateFileSystem.readFileConcurrency(), files.length) },
-    async () => {
-      while (!extractionError && nextFileIndex < files.length) {
-        const item = files[nextFileIndex];
-        nextFileIndex += 1;
-        try {
-          await processFile(item);
-        } catch (error) {
-          extractionError ||= error;
-          throw error;
+  try {
+    await processVersionArchiveFiles(files, {
+      onFileState(item, state) {
+        setVersionUpdateFileState(item.path, state);
+        if (state === 'failed') {
+          setVersionUpdateFileSummary({ completed: completedCount, total: files.length, path: item.path, state });
         }
+      },
+      onFileComplete({ item, bytes, written }) {
+        completedCount += 1;
+        if (written) writtenCount += 1;
+        completedBytes += bytes.byteLength;
+        latestCompletedPath = item.path;
+        renderExtractionProgress();
       }
-    }
-  );
-  const results = await Promise.allSettled(workers);
-  flushVersionUpdateFileTree();
-  const failedResult = results.find((result) => result.status === 'rejected');
-  if (failedResult) throw failedResult.reason;
+    });
+  } finally {
+    flushVersionUpdateFileTree();
+  }
   renderExtractionProgress(true);
   await rememberUpdateModuleIds(packagedModuleIds, { markInitialized: true });
   return writtenCount;
