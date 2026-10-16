@@ -2592,7 +2592,10 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       if (id.startsWith(NOTIFICATION_PREFIX)) focusScorePage().catch(() => {});
       else if (id.startsWith(EXAM_NOTIFICATION_PREFIX)) focusExamPage().catch(() => {});
       else if (id.startsWith(CLASS_NOTIFICATION_PREFIX)) {
-        globalThis.BjtuTabs.create({ url: chrome.runtime.getURL('options/options.html'), active: true }).catch(() => {});
+        globalThis.BjtuTabs.create({
+          url: 'http://123.121.147.7:88/ve/back/rp/common/myTimeTableDetail.shtml?method=skipIndex',
+          active: true
+        }).then(activateAcademicTab).catch(() => {});
       }
       else return;
       chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
