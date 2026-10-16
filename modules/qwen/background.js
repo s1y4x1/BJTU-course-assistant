@@ -1039,6 +1039,7 @@
     chrome.webRequest.onBeforeSendHeaders.addListener(
       (details) => {
         try {
+          if (details.initiator !== 'https://chat.qwen.ai') return;
           const headers = details?.requestHeaders || [];
           const pick = (name) => {
             const lower = name.toLowerCase();
@@ -1051,6 +1052,7 @@
             qwenAntiBotHeaders: {
               bxUa,
               bxUmidtoken: pick('bx-umidtoken'),
+              bxVersion: pick('bx-v'),
               capturedAt: Date.now()
             }
           }).catch(() => {});

@@ -6,6 +6,7 @@
   const CHAT_BASE = 'https://chat.qwen.ai';
   const AUTH_URL = `${CHAT_BASE}/auth`;
   const DIRECT_REQUEST_HEADER_RULE_ID = 914305;
+  const COMPLETION_HEADER_RULE_ID = 914313;
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   let openLoginPagePromise = null;
   let loginCheckPromise = null;
@@ -248,10 +249,10 @@
 
   function buildBrowserHeaders() {
     return {
-      'x-ap': 'cn-hongkong',
-      Version: '0.2.86',
-      'X-Request-Id': (globalThis.crypto?.randomUUID?.() || `req-${Date.now()}`),
+      'X-Request-Id': global.crypto.randomUUID(),
       source: 'web',
+      timezone: new Date().toString().replace(/ \([^)]*\)$/, ''),
+      'X-Accel-Buffering': 'no',
       'bx-v': '2.5.37'
     };
   }
@@ -269,7 +270,7 @@
             type: 'modifyHeaders',
             requestHeaders: [
               { header: 'Origin', operation: 'set', value: CHAT_BASE },
-              { header: 'Referer', operation: 'set', value: `${CHAT_BASE}/c/new-chat` }
+              { header: 'Referer', operation: 'set', value: `${CHAT_BASE}/` }
             ]
           },
           condition: {
@@ -286,6 +287,32 @@
     return directRequestHeadersPromise;
   }
 
+  // Keep the conversation Referer scoped to this request; concurrent history/auth
+  // requests must not replace it. Release the lock once response headers arrive,
+  // not after the entire EventStream has finished.
+  async function fetchCompletion(url, options) {
+    return navigator.locks.request('bjtu-qwen-completion-headers', options.signal ? { signal: options.signal } : {}, async () => {
+      const chatId = new URL(url).searchParams.get('chat_id');
+      const regexFilter = `^${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [COMPLETION_HEADER_RULE_ID],
+        addRules: [{
+          id: COMPLETION_HEADER_RULE_ID,
+          priority: 2,
+          action: { type: 'modifyHeaders', requestHeaders: [
+            { header: 'Referer', operation: 'set', value: `${CHAT_BASE}/c/${encodeURIComponent(chatId)}` }
+          ] },
+          condition: { regexFilter, initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest'] }
+        }]
+      });
+      try {
+        return await fetch(url, options);
+      } finally {
+        await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [COMPLETION_HEADER_RULE_ID] });
+      }
+    });
+  }
+
   async function buildBrowserHeadersWithAntiBot() {
     const base = buildBrowserHeaders();
     let antiBot = {};
@@ -295,6 +322,7 @@
       if (h.bxUa && h.capturedAt && (Date.now() - h.capturedAt <= 120000)) {
         antiBot = { 'bx-ua': h.bxUa };
         if (h.bxUmidtoken) antiBot['bx-umidtoken'] = h.bxUmidtoken;
+        if (h.bxVersion) antiBot['bx-v'] = h.bxVersion;
       }
     } catch {
       // 忽略
@@ -517,10 +545,10 @@
     const parent = String(parentId || '');
     let response;
     try {
-      response = await fetch(url, {
+      response = await fetchCompletion(url, {
         method: resumeId ? 'GET' : 'POST',
         headers: {
-          Accept: 'text/event-stream',
+          Accept: resumeId ? 'text/event-stream' : 'application/json',
           ...(resumeId ? {} : { 'Content-Type': 'application/json' }),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(await buildBrowserHeadersWithAntiBot())
