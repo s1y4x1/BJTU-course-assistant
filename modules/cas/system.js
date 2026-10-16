@@ -11,6 +11,10 @@
   const MANUAL_CAPTCHA_TTL_MS = 5 * 60 * 1000;
   const MANUAL_CAPTCHA_SESSION_PREFIX = 'casManualCaptcha:';
   const LOGIN_HEADER_RULE_ID = 914303;
+  const SSO_LOGIN_URL = 'https://sso.bjtu.edu.cn/sso/login';
+  const SSO_ENTRY_URL = `${SSO_LOGIN_URL}?${new URLSearchParams({
+    service: 'https://uc.bjtu.edu.cn/user/login', pageName: 'login'
+  })}`;
 
   const pendingCredentialsByTab = new Map();
   const pendingManualCaptchas = new Map();
@@ -150,6 +154,121 @@
       if (htmlAttribute(match[0], 'name') === name) return htmlAttribute(match[0], 'value');
     }
     return '';
+  }
+
+  // Read JSON literals only: never execute scripts from the remote login page.
+  function ssoPageJson(html, name) {
+    const source = String(html);
+    const declaration = new RegExp(`\\bvar\\s+${name}\\s*=\\s*`).exec(source);
+    if (!declaration) return null;
+    const start = declaration.index + declaration[0].length;
+    if (source.slice(start, start + 4) === 'null') return null;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let i = start; i < source.length; i += 1) {
+      const char = source[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') quoted = true;
+      else if (char === '{' || char === '[') depth += 1;
+      else if ((char === '}' || char === ']') && --depth === 0) return JSON.parse(source.slice(start, i + 1));
+      else if (depth === 0) break;
+    }
+    throw new Error(`SSO 登录页中的 ${name} 格式异常`);
+  }
+
+  function parseSsoPage(html) {
+    const fields = {};
+    const form = /<form\b[^>]*\bid=["']loginForm["'][^>]*>([\s\S]*?)<\/form>/i.exec(html);
+    for (const match of String(form?.[1] || '').matchAll(/<input\b[^>]*>/gi)) {
+      const name = htmlAttribute(match[0], 'name');
+      if (name) fields[name] = htmlAttribute(match[0], 'value');
+    }
+    return { fields, config: ssoPageJson(html, 'ssoConfig'), error: ssoPageJson(html, 'error') };
+  }
+
+  async function ssoCaptchaChallenge(page, loginName, password) {
+    const type = page.error?.data?.captchaType;
+    if (type !== 'penggle.image') {
+      return { ok: false, message: page.error?.msg || 'SSO 要求交互验证，请在 SSO 网站完成验证后重试' };
+    }
+    const scene = page.config?.captchaProvider?.scene || page.error?.data?.scene || page.error?.data?.captchaScene;
+    const response = await fetch('https://sso.bjtu.edu.cn/api/captcha/getCaptcha', {
+      method: 'POST', credentials: 'include', cache: 'no-store',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: scene || undefined
+    });
+    if (!response.ok) throw new Error(`SSO 验证码 HTTP ${response.status}`);
+    const result = await response.json();
+    const data = result.data;
+    if (!data?.captchaId || !data?.captchaImg) throw new Error(result.msg || 'SSO 未返回验证码图片');
+    page.captchaId = data.captchaId;
+    const image = String(data.captchaImg);
+    const imageUrl = /^(?:data:|https?:|\/)/i.test(image)
+      ? new URL(image, SSO_LOGIN_URL).href : `data:image/png;base64,${image}`;
+    if (!imageUrl.startsWith('data:')) {
+      if (new URL(imageUrl).origin !== new URL(SSO_LOGIN_URL).origin) throw new Error('SSO 验证码图片地址异常');
+      const imageResponse = await fetch(imageUrl, { credentials: 'include', cache: 'no-store' });
+      if (!imageResponse.ok) throw new Error(`SSO 验证码图片 HTTP ${imageResponse.status}`);
+      page.captchaImageDataUrl = await blobToDataUrl(await imageResponse.blob());
+    } else page.captchaImageDataUrl = imageUrl;
+    return keepManualCaptcha({ page, loginName, password, system: 'SSO' }, page.error?.msg || '请输入 SSO 验证码');
+  }
+
+  async function submitSsoLogin(page, loginName, password, answer = '') {
+    if (!page.fields.flowId || !page.config?.sm2?.enabled || !page.config.sm2.publicKey) {
+      throw new Error('SSO 登录页缺少 flowId 或 SM2 加密配置');
+    }
+    const fields = new URLSearchParams(page.fields);
+    fields.set('username', loginName);
+    fields.set('password', global.BjtuSsoSm2.encrypt(password, page.config.sm2.publicKey));
+    fields.set('loginType', 'username_password');
+    if (page.captchaId) fields.set('captcha', JSON.stringify({ captchaId: page.captchaId, captchaValue: answer }));
+    const ruleId = 914304;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [ruleId],
+      addRules: [{ id: ruleId, priority: 1, action: { type: 'modifyHeaders', requestHeaders: [
+        { header: 'Origin', operation: 'set', value: 'https://sso.bjtu.edu.cn' },
+        { header: 'Referer', operation: 'set', value: SSO_ENTRY_URL }
+      ] }, condition: { regexFilter: '^https://sso\\.bjtu\\.edu\\.cn/sso/login(?:\\?.*)?$',
+        resourceTypes: ['xmlhttprequest'], requestMethods: ['post'] } }]
+    });
+    let response;
+    try {
+      response = await fetch(SSO_LOGIN_URL, {
+        method: 'POST', credentials: 'include', cache: 'no-store', redirect: 'follow',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: fields.toString()
+      });
+    } finally {
+      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [ruleId] });
+    }
+    if (!response.ok) throw new Error(`SSO 登录 HTTP ${response.status}`);
+    const html = await response.text();
+    const next = parseSsoPage(html);
+    if (next.error?.data?.captchaType) return ssoCaptchaChallenge(next, loginName, password);
+    if (next.error) return { ok: false, message: next.error.msg || `登录失败（${next.error.code}）` };
+    const url = new URL(response.url);
+    if (url.hostname !== 'uc.bjtu.edu.cn' || /\bid=["']loginForm["']/i.test(html)) {
+      return { ok: false, message: 'SSO 登录未完成，可能需要进一步验证，请在 SSO 网站完成登录' };
+    }
+    await saveCasAccount(loginName, { password, lastLoginAt: Date.now() });
+    return { ok: true };
+  }
+
+  async function loginSso(loginName, password) {
+    const id = String(loginName || '').trim();
+    if (!id) throw new Error('请输入 SSO 账号（学号）');
+    const accounts = await getCasAccounts();
+    const secret = String(password || accounts[id]?.password || '');
+    if (!secret) throw new Error('请输入 SSO 密码');
+    const response = await fetch(SSO_ENTRY_URL, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) throw new Error(`SSO 登录页 HTTP ${response.status}`);
+    const page = parseSsoPage(await response.text());
+    if (!page.fields.flowId) throw new Error('SSO 未返回登录表单，可能已登录，请先在 SSO 网站退出后再切换账号');
+    return submitSsoLogin(page, id, secret);
   }
 
   function captchaImageSrcFromHtml(html) {
@@ -342,6 +461,7 @@
       code: 'CAPTCHA_INPUT_REQUIRED',
       message: message || '请查看验证码图片并输入结果',
       challengeId: challenge.id,
+      system: challenge.system,
       captchaImage: String(challenge.page?.captchaImageDataUrl || challenge.page?.captchaImageUrl || '')
     };
   }
@@ -394,13 +514,14 @@
     return true;
   }
 
-  async function keepManualCaptcha({ page, loginName, password }, message) {
+  async function keepManualCaptcha({ page, loginName, password, system = 'CAS' }, message) {
     const id = crypto.randomUUID();
     const challenge = {
       id,
       page,
       loginName,
       password,
+      system,
       expiresAt: Date.now() + MANUAL_CAPTCHA_TTL_MS,
       timer: null
     };
@@ -419,6 +540,11 @@
     if (!answer) return manualCaptchaResponse(challenge, '请输入验证码');
     let result;
     try {
+      if (challenge.system === 'SSO') {
+        await discardManualCaptcha(id);
+        return await navigator.locks.request('bjtu-cas-sso-login', () =>
+          submitSsoLogin(challenge.page, challenge.loginName, challenge.password, answer));
+      }
       result = await submitCasLogin({
         csrf: challenge.page.csrf,
         captchaKey: challenge.page.captchaKey,
@@ -541,6 +667,16 @@
 
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'SSO_LOGIN_WITH_PASSWORD') {
+        if (_sender.id !== chrome.runtime.id || _sender.url && !String(_sender.url).startsWith(chrome.runtime.getURL(''))) {
+          sendResponse({ ok: false, message: '仅允许扩展页面调用 SSO 登录' });
+          return false;
+        }
+        navigator.locks.request('bjtu-cas-sso-login', () => loginSso(message.payload?.loginName, message.payload?.password))
+          .then(sendResponse)
+          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+        return true;
+      }
       if (message?.type === 'CAS_LOGIN_WITH_PASSWORD') {
         loginWithPassword(message?.payload?.loginName, message?.payload?.password, {
           allowManualCaptcha: message?.payload?.allowManualCaptcha === true

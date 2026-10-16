@@ -52,7 +52,7 @@
     cas: {
       label: '统一身份认证',
       styles: ['options.css'],
-      files: ['system.js', 'options.html', 'options.js'],
+      files: ['system.js', 'vendor/sm2.min.js', 'options.html', 'options.js'],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     },
     mail: {

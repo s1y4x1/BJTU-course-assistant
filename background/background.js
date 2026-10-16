@@ -333,7 +333,7 @@ const academicBackgroundReady = tryImportModuleScripts(
   '../modules/academic/system.js'
 );
 if (academicBackgroundReady) void globalThis.BjtuAcademicCacheStore.readAll().catch(() => {});
-tryImportModuleScripts('../modules/cas/system.js');
+tryImportModuleScripts('../modules/cas/vendor/sm2.min.js', '../modules/cas/system.js');
 tryImportModuleScripts('../modules/mail/system.js');
 tryImportModuleScripts('../modules/campusnet/background.js');
 tryImportModuleScripts('../modules/updater/filesystem.js', '../modules/updater/background.js');

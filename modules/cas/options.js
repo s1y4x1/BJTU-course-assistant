@@ -13,6 +13,7 @@
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
 
   function promptCaptcha(result) {
+    element('casCaptchaTitle').textContent = result?.system === 'SSO' ? '输入 SSO 验证码' : '输入 CAS 验证码';
     const modal = element('casCaptchaModal');
     const image = element('casCaptchaImage');
     const input = element('casCaptchaAnswer');
@@ -27,6 +28,7 @@
       return Promise.resolve(null);
     }
     image.src = String(result?.captchaImage || '');
+    image.alt = result?.system === 'SSO' ? 'SSO 登录验证码' : 'CAS 登录验证码';
     input.value = '';
     if (message instanceof HTMLElement) {
       message.textContent = String(result?.message || '请输入图片中的验证码');
@@ -114,6 +116,25 @@
   }
 
   function bindEvents() {
+    element('ssoLoginBtn')?.addEventListener('click', async () => {
+      const button = element('ssoLoginBtn');
+      const loginName = element('casLoginName').value.trim();
+      const password = element('casPassword').value;
+      if (!loginName) return setMessage('请输入 SSO 账号（学号）', false);
+      button.disabled = true;
+      setMessage(`正在登录 SSO（${loginName}）…`, true, { type: 'info', loading: true, persistent: true });
+      try {
+        const result = await completeCaptchaChallenge(await send('SSO_LOGIN_WITH_PASSWORD', { loginName, password }));
+        if (!result?.ok) throw new Error(result?.message || '登录失败');
+        element('casPassword').value = '';
+        await refreshContext();
+        setMessage(`SSO 账号 ${loginName} 登录成功`);
+      } catch (error) {
+        setMessage(`SSO 登录失败：${error.message}`, false);
+      } finally {
+        button.disabled = false;
+      }
+    });
     element('casLoginBtn')?.addEventListener('click', async () => {
       const button = element('casLoginBtn');
       const loginName = String(element('casLoginName')?.value || '').trim();
