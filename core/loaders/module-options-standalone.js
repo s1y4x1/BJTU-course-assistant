@@ -1,26 +1,8 @@
 (function initStandaloneModuleOptions(global) {
   'use strict';
 
-  let messageHideTimer = 0;
-
   function setMessage(text, ok = true, options = {}) {
-    const message = document.getElementById('msg');
-    if (!(message instanceof HTMLElement)) return;
-    if (messageHideTimer) clearTimeout(messageHideTimer);
-    message.textContent = String(text || '');
-    const type = options?.type === 'info' ? 'info' : (ok ? 'ok' : 'err');
-    message.className = `${type} show`;
-    if (options?.loading) {
-      const spinner = document.createElement('span');
-      spinner.className = 'toast-spinner';
-      message.appendChild(spinner);
-    }
-    if (!options?.persistent) {
-      messageHideTimer = setTimeout(() => {
-        messageHideTimer = 0;
-        message.classList.remove('show');
-      }, ok ? 1800 : 3200);
-    }
+    global.BjtuOptionsMessage.show(text, ok, options);
   }
 
   async function applyTheme() {

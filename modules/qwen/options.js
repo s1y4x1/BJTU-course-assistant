@@ -5,13 +5,7 @@
   let selectedFabColorMode = 'extension';
   let extensionThemeMode = 'system';
   const systemThemeMedia = global.matchMedia?.('(prefers-color-scheme: dark)');
-  let setMessage = (text, ok = true) => {
-    const message = document.getElementById('msg');
-    if (message instanceof HTMLElement) {
-      message.textContent = String(text || '');
-      message.className = `${ok ? 'ok' : 'err'} show`;
-    }
-  };
+  let setMessage = (...args) => global.BjtuOptionsMessage.show(...args);
 
   async function send(type, payload) {
     return new Promise((resolve) => {

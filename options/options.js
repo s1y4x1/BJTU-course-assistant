@@ -1,36 +1,5 @@
-let msgHideTimer = null;
-function scheduleMsgHide(msg, delay) {
-  if (msgHideTimer) clearTimeout(msgHideTimer);
-  msgHideTimer = setTimeout(() => msg.classList.remove('show'), delay);
-}
-
 function setMsg(text, ok = true, options = {}) {
-  const msg = document.getElementById('msg');
-  msg.textContent = text;
-  const type = options?.type === 'info' ? 'info' : (ok ? 'ok' : 'err');
-  msg.className = `${type} show`;
-  if (options?.loading) {
-    const spinner = document.createElement('span');
-    spinner.className = 'toast-spinner';
-    msg.appendChild(spinner);
-  }
-  msg.title = '点击复制通知内容并关闭';
-  const delay = ok ? 1800 : 3200;
-  msg.onmouseenter = () => {
-    if (msgHideTimer) clearTimeout(msgHideTimer);
-  };
-  msg.onmouseleave = options?.persistent ? null : () => scheduleMsgHide(msg, delay);
-  if (msg.dataset.copyBound !== '1') {
-    msg.dataset.copyBound = '1';
-    msg.addEventListener('click', () => {
-      const content = String(msg.textContent || '');
-      if (content) navigator.clipboard.writeText(content).catch(() => {});
-      if (msgHideTimer) clearTimeout(msgHideTimer);
-      msg.classList.remove('show');
-    });
-  }
-  if (!options?.persistent) scheduleMsgHide(msg, delay);
-  else if (msgHideTimer) clearTimeout(msgHideTimer);
+  globalThis.BjtuOptionsMessage.show(text, ok, options);
 }
 
 const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };

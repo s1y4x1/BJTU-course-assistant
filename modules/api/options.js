@@ -2,18 +2,7 @@
   'use strict';
 
   let initialized = false;
-  let messageHideTimer = 0;
-  let setMessage = (text, ok = true) => {
-    const message = document.getElementById('msg');
-    if (!(message instanceof HTMLElement)) return;
-    if (messageHideTimer) clearTimeout(messageHideTimer);
-    message.textContent = String(text || '');
-    message.className = `${ok ? 'ok' : 'err'} show`;
-    messageHideTimer = setTimeout(() => {
-      messageHideTimer = 0;
-      message.classList.remove('show');
-    }, ok ? 1800 : 3200);
-  };
+  let setMessage = (...args) => global.BjtuOptionsMessage.show(...args);
 
   async function refresh() {
     const response = await global.BjtuApiOperationsUi.refresh({ showLoading: true });
