@@ -528,7 +528,7 @@
           model: String(modelId || ''),
           parent_id: parent || null,
           messages,
-          timestamp: Date.now()
+          timestamp: Math.floor(Date.now() / 1000)
         }),
         signal
       });
