@@ -181,11 +181,13 @@
         button.disabled = false;
       }
     });
-    element('casPassword')?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        element(platform === 'SSO' ? 'ssoLoginBtn' : 'casLoginBtn')?.click();
-      }
+    ['casLoginName', 'casPassword'].forEach((id) => {
+      element(id)?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.isComposing) {
+          event.preventDefault();
+          element(platform === 'SSO' ? 'ssoLoginBtn' : 'casLoginBtn')?.click();
+        }
+      });
     });
     element('casLoginName')?.addEventListener('change', (event) => {
       chrome.storage.local.set({ [LOGIN_NAME_KEY]: String(event.currentTarget.value || '').trim() });
