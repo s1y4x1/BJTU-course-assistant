@@ -1167,5 +1167,6 @@
       .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
     return true;
   });
-  void ensureAlarm();
+  void globalThis.BjtuUpdateFileSystem.ensureFileConcurrencyDefaults().then(ensureAlarm)
+    .catch((error) => console.warn('[bjtu] updater defaults initialization failed:', error));
 })();

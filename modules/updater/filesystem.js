@@ -6,6 +6,7 @@
   const DIRECTORY_DB_NAME = 'BJTUCA-FileSystem';
   const DIRECTORY_STORE = 'handles';
   const DIRECTORY_KEY = 'update-directory';
+  let fileConcurrencyDefaultsPromise = null;
 
   function openDirectoryDatabase(name) {
     return new Promise((resolve, reject) => {
@@ -171,8 +172,26 @@
   }
 
   async function readFileConcurrency() {
+    await ensureFileConcurrencyDefaults();
     const stored = await chrome.storage.local.get('updateFileConcurrency');
     return normalizeFileConcurrency(stored.updateFileConcurrency) ?? Infinity;
+  }
+
+  function ensureFileConcurrencyDefaults() {
+    if (!fileConcurrencyDefaultsPromise) {
+      const initialize = async () => {
+        const stored = await chrome.storage.local.get('updateFileConcurrencyDefaultsVersion');
+        if (stored.updateFileConcurrencyDefaultsVersion === 1) return;
+        await chrome.storage.local.set({ updateFileConcurrency: null, updateFileConcurrencyDefaultsVersion: 1 });
+      };
+      fileConcurrencyDefaultsPromise = (global.navigator?.locks
+        ? global.navigator.locks.request('bjtu-ca-file-concurrency-defaults', initialize)
+        : initialize()).catch((error) => {
+          fileConcurrencyDefaultsPromise = null;
+          throw error;
+        });
+    }
+    return fileConcurrencyDefaultsPromise;
   }
 
   async function readArchive(url, version) {
@@ -191,6 +210,7 @@
   }
 
   global.BjtuUpdateFileSystem = {
+    ensureFileConcurrencyDefaults,
     normalizeFileConcurrency,
     readFileConcurrency,
     readArchive,
