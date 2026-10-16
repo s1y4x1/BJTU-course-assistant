@@ -3,6 +3,8 @@
 
   const LOGIN_NAME_KEY = 'casLoginName';
   const SWITCH_MIS_LOGOUT_KEY = 'casSwitchMisLogoutEnabled';
+  const PLATFORM_KEY = 'casLoginPlatform';
+  let platform = 'CAS';
 
   let initialized = false;
   let context = null;
@@ -11,6 +13,16 @@
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
+
+  function applyPlatform(value) {
+    platform = value === 'SSO' ? 'SSO' : 'CAS';
+    document.querySelectorAll('input[name="casLoginPlatform"]').forEach((radio) => {
+      radio.checked = radio.value === platform;
+    });
+    document.querySelectorAll('[data-cas-platform]').forEach((row) => {
+      row.hidden = row.dataset.casPlatform !== platform;
+    });
+  }
 
   function promptCaptcha(result) {
     element('casCaptchaTitle').textContent = result?.system === 'SSO' ? '输入 SSO 验证码' : '输入 CAS 验证码';
@@ -116,6 +128,13 @@
   }
 
   function bindEvents() {
+    document.querySelectorAll('input[name="casLoginPlatform"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        if (!radio.checked) return;
+        applyPlatform(radio.value);
+        void chrome.storage.local.set({ [PLATFORM_KEY]: platform });
+      });
+    });
     element('ssoLoginBtn')?.addEventListener('click', async () => {
       const button = element('ssoLoginBtn');
       const loginName = element('casLoginName').value.trim();
@@ -165,7 +184,7 @@
     element('casPassword')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        element('casLoginBtn')?.click();
+        element(platform === 'SSO' ? 'ssoLoginBtn' : 'casLoginBtn')?.click();
       }
     });
     element('casLoginName')?.addEventListener('change', (event) => {
@@ -183,26 +202,27 @@
       const loginName = String(select.value || '').trim();
       if (!loginName) return;
       select.disabled = true;
+      const selectedPlatform = platform;
       element('casLoginName').value = loginName;
-      setMessage(`正在切换至 CAS 账号 ${loginName}…`, true, {
+      setMessage(`正在切换至 ${selectedPlatform} 账号 ${loginName}…`, true, {
         type: 'info',
         loading: true,
         persistent: true
       });
       try {
-        const result = await completeCaptchaChallenge(await send('CAS_SWITCH_ACCOUNT', {
+        const result = await completeCaptchaChallenge(await send(selectedPlatform === 'SSO' ? 'SSO_LOGIN_WITH_PASSWORD' : 'CAS_SWITCH_ACCOUNT', {
           loginName,
           allowManualCaptcha: true
         }));
         if (!result?.ok) {
-          setMessage(`切换 CAS 账号失败：${result?.message || '未知错误'}`, false);
+          setMessage(`切换 ${selectedPlatform} 账号失败：${result?.message || '未知错误'}`, false);
           await refreshContext();
           return;
         }
         await refreshContext();
-        setMessage(`已切换至 CAS 账号 ${loginName}`);
+        setMessage(`已切换至 ${selectedPlatform} 账号 ${loginName}`);
       } catch (error) {
-        setMessage(`切换 CAS 账号失败：${String(error?.message || error)}`, false);
+        setMessage(`切换 ${selectedPlatform} 账号失败：${String(error?.message || error)}`, false);
         await refreshContext();
       } finally {
         select.disabled = false;
@@ -225,6 +245,7 @@
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if (changes[PLATFORM_KEY]) applyPlatform(changes[PLATFORM_KEY].newValue);
       if (changes.casAccounts) void refreshContext();
       if (changes[LOGIN_NAME_KEY] && document.activeElement !== element('casLoginName')) {
         element('casLoginName').value = String(changes[LOGIN_NAME_KEY].newValue || '');
@@ -240,7 +261,7 @@
 
   async function autoLoginIfPossible() {
     try {
-      const result = await completeCaptchaChallenge(await send('CAS_AUTO_LOGIN', {
+      const result = await completeCaptchaChallenge(await send(platform === 'SSO' ? 'SSO_AUTO_LOGIN' : 'CAS_AUTO_LOGIN', {
         allowManualCaptcha: true
       }));
       if (result?.ok) {
@@ -257,7 +278,8 @@
     if (initialized) return true;
     initialized = true;
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
-    const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY]);
+    const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY, PLATFORM_KEY]);
+    applyPlatform(stored[PLATFORM_KEY]);
     const misCheckbox = element(SWITCH_MIS_LOGOUT_KEY);
     if (misCheckbox instanceof HTMLInputElement) {
       misCheckbox.checked = stored[SWITCH_MIS_LOGOUT_KEY] !== false;
@@ -270,8 +292,9 @@
   }
 
   async function reset() {
-    await chrome.storage.local.remove([LOGIN_NAME_KEY]);
+    await chrome.storage.local.remove([LOGIN_NAME_KEY, PLATFORM_KEY]);
     if (!initialized) return;
+    applyPlatform('CAS');
     element('casLoginName').value = '';
     element('casPassword').value = '';
     await refreshContext();

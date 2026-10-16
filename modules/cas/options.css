@@ -1,6 +1,10 @@
 .cas-options-card { margin:0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; }
 .cas-option-check { display:flex; align-items:center; gap:8px; margin:10px 0 2px; }
 .cas-option-check input { width:auto; }
+.cas-platform-choice { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.cas-platform-choice label { display:inline-flex; align-items:center; gap:4px; }
+.cas-platform-choice input { width:auto; margin:0; }
+[data-cas-platform][hidden] { display:none; }
 .cas-account-row { display:block; }
 .cas-account-row select { width:100%; min-width:0; }
 .cas-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }

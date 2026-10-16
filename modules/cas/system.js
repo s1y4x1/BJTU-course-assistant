@@ -98,10 +98,10 @@
     return write;
   }
 
-  async function clearCasCookies() {
-    const cookies = await chrome.cookies.getAll({ domain: 'cas.bjtu.edu.cn' }).catch(() => []);
+  async function clearLoginCookies(domain = 'cas.bjtu.edu.cn') {
+    const cookies = await chrome.cookies.getAll({ domain }).catch(() => []);
     await Promise.all((cookies || []).map((cookie) => {
-      const host = String(cookie.domain || 'cas.bjtu.edu.cn').replace(/^\./, '');
+      const host = String(cookie.domain || domain).replace(/^\./, '');
       const path = String(cookie.path || '/');
       return chrome.cookies.remove({
         url: `https://${host}${path}`,
@@ -264,11 +264,29 @@
     const accounts = await getCasAccounts();
     const secret = String(password || accounts[id]?.password || '');
     if (!secret) throw new Error('请输入 SSO 密码');
+    await clearLoginCookies('sso.bjtu.edu.cn');
     const response = await fetch(SSO_ENTRY_URL, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) throw new Error(`SSO 登录页 HTTP ${response.status}`);
     const page = parseSsoPage(await response.text());
     if (!page.fields.flowId) throw new Error('SSO 未返回登录表单，可能已登录，请先在 SSO 网站退出后再切换账号');
     return submitSsoLogin(page, id, secret);
+  }
+
+  async function autoLoginSavedSsoAccount() {
+    const response = await fetch(SSO_ENTRY_URL, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) throw new Error(`SSO 登录页 HTTP ${response.status}`);
+    const page = parseSsoPage(await response.text());
+    if (!page.fields.flowId) {
+      return new URL(response.url).hostname === 'uc.bjtu.edu.cn'
+        ? { ok: true, skipped: true }
+        : { ok: false, message: 'SSO 未返回登录表单' };
+    }
+    const stored = await chrome.storage.local.get([LOGIN_NAME_KEY]);
+    const accounts = Object.values(await getCasAccounts()).filter((account) => account.password);
+    const target = accounts.find((account) => account.loginName === stored[LOGIN_NAME_KEY])
+      || accounts.sort((a, b) => (b.lastLoginAt || b.updatedAt) - (a.lastLoginAt || a.updatedAt))[0];
+    if (!target) return { ok: false, code: 'no-saved-account', message: '没有已保存密码的账号' };
+    return submitSsoLogin(page, target.loginName, target.password);
   }
 
   function captchaImageSrcFromHtml(html) {
@@ -575,7 +593,7 @@
     const secret = String(password ?? '');
     if (!id) throw new Error('请输入账号（学号）');
     if (!secret) throw new Error('请输入密码');
-    await clearCasCookies();
+    await clearLoginCookies();
     await logoutMisIfEnabled();
     let lastResult = { ok: false, message: 'CAS 未返回登录结果' };
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -667,12 +685,13 @@
 
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (message?.type === 'SSO_LOGIN_WITH_PASSWORD') {
+      if (message?.type === 'SSO_LOGIN_WITH_PASSWORD' || message?.type === 'SSO_AUTO_LOGIN') {
         if (_sender.id !== chrome.runtime.id || _sender.url && !String(_sender.url).startsWith(chrome.runtime.getURL(''))) {
           sendResponse({ ok: false, message: '仅允许扩展页面调用 SSO 登录' });
           return false;
         }
-        navigator.locks.request('bjtu-cas-sso-login', () => loginSso(message.payload?.loginName, message.payload?.password))
+        navigator.locks.request('bjtu-cas-sso-login', () => message.type === 'SSO_AUTO_LOGIN'
+          ? autoLoginSavedSsoAccount() : loginSso(message.payload?.loginName, message.payload?.password))
           .then(sendResponse)
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
         return true;
