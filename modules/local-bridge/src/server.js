@@ -30,6 +30,7 @@ const singleCommand = (commandArgIndex >= 0
   : String(process.env.BJTUCA_RUN_COMMAND || '')).trim();
 if (commandArgIndex >= 0 && !singleCommand) throw new Error('-c 后必须提供命令');
 let singleCommandStarted = false;
+let singleCommandConnectionTimer = null;
 const requestedPortArg = process.argv.find((arg) => arg.startsWith('--port='));
 if (requestedPortArg) {
   const requestedPort = normalizePort(requestedPortArg.slice('--port='.length), 0);
@@ -227,6 +228,7 @@ async function runTerminalCommand(input, { request = sendExtensionRequest, call 
 async function runSingleCommand() {
   if (singleCommandStarted) return;
   singleCommandStarted = true;
+  clearTimeout(singleCommandConnectionTimer);
   let exitCode = 0;
   try { await runTerminalCommand(singleCommand); }
   catch (error) {
@@ -509,6 +511,7 @@ wsServer.on('connection', (socket, req) => {
       }
       if (message?.type !== 'hello' || (!paired && !tokenMatches(message?.token))) {
         socket.close(1008, 'Unauthorized');
+        if (singleCommand) void runSingleCommand();
         return;
       }
       authenticated = true;
@@ -524,11 +527,15 @@ wsServer.on('connection', (socket, req) => {
         }
       };
       socket.send(JSON.stringify({ type: 'ready', port: activePort, allowLan:activeAllowLan, ...(paired ? { token:config.token } : {}) }));
-      writeTerminalNotice(`浏览器扩展已连接（版本 ${extensionInfo.publicInfo.version || '未知'}）。`);
+      if (!singleCommand) writeTerminalNotice(`浏览器扩展已连接（版本 ${extensionInfo.publicInfo.version || '未知'}）。`);
       startTerminal();
       return;
     }
     if (message?.type === '合一') return;
+    if (message?.type === 'version' && extensionSocket === socket) {
+      extensionInfo.publicInfo.version = String(message.version || '');
+      return;
+    }
     if (message?.type === 'response') {
       const pending = pendingExtensionCalls.get(String(message.id || ''));
       if (!pending) return;
@@ -602,7 +609,7 @@ async function listen(port, allowLan = config.allowLan === true) {
         });
         break;
       } catch (error) {
-        if (error?.code !== 'EADDRINUSE') throw error;
+        if (error?.code !== 'EADDRINUSE' || singleCommand) throw error;
         process.stderr.write(`端口 ${port} 已被占用。\n`);
         portReader ||= terminal || readline.createInterface({ input: process.stdin, output: process.stdout });
         port = await askForAvailablePort(portReader);
@@ -647,14 +654,16 @@ if (singleCommand) {
     return;
   }
   const bridgeUrl = `http://127.0.0.1:${config.port}`;
-  let health = await fetch(`${bridgeUrl}/health`, { headers: { Connection: 'close' } }).then((response) => response.json()).catch(() => null);
-  if (health?.ok && typeof health.extensionConnected === 'boolean') {
+  const health = await fetch(`${bridgeUrl}/health`, {
+    headers: { Connection: 'close' }, signal: AbortSignal.timeout(2000)
+  }).then((response) => response.json()).catch(() => null);
+  if (health?.ok && health.extensionConnected !== true) {
+    process.stderr.write('命令执行失败：浏览器扩展尚未连接本地 Bridge\n');
+    process.exitCode = 1;
+    return;
+  }
+  if (health?.ok) {
     try {
-      if (!health.extensionConnected) process.stdout.write('正在等待浏览器扩展连接…\n');
-      while (!health.extensionConnected) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        health = await fetch(`${bridgeUrl}/health`, { headers: { Connection: 'close' } }).then((response) => response.json());
-      }
       const request = async (action, payload = {}, { printResult = true } = {}) => {
         const route = { call: 'call', executeCode: 'call', getDocs: 'get-docs', operationList: 'operation-list' }[action];
         const response = await fetch(`${bridgeUrl}/api/v1/${route}`, {
@@ -680,7 +689,14 @@ if (singleCommand) {
   }
 }
 
-await listen(config.port);
+try {
+  await listen(config.port);
+} catch (error) {
+  if (!singleCommand) throw error;
+  process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
+  process.exitCode = 1;
+  return;
+}
 if (!singleCommand) process.stdout.write(`配置文件：${configPath()}\n`);
 issuePairingCode();
 if (!singleCommand) startTerminal();
@@ -718,8 +734,10 @@ configWatcher.on('error', (error) => {
 const heartbeat = setInterval(() => {
   if (extensionConnected()) extensionSocket.send(JSON.stringify({ type: '知行' }));
 }, 20_000);
+if (singleCommand) singleCommandConnectionTimer = setTimeout(() => void runSingleCommand(), 5000);
 
 async function shutdown() {
+  clearTimeout(singleCommandConnectionTimer);
   clearInterval(heartbeat);
   if (configReloadTimer) clearTimeout(configReloadTimer);
   configWatcher.close();

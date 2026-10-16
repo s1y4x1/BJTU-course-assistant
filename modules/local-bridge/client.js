@@ -155,6 +155,23 @@
     void connect();
   });
 
+  async function extensionVersion() {
+    const manifestVersion = chrome.runtime.getManifest().version;
+    const stored = await chrome.storage.local.get('appliedUpdateWithoutReload').catch(() => ({}));
+    const applied = String(stored.appliedUpdateWithoutReload?.ver || '').replace(/^v/i, '');
+    if (!/^\d+(?:\.\d+){0,3}$/.test(applied)) return manifestVersion;
+    const appliedParts = applied.split('.').map(Number);
+    const manifestParts = manifestVersion.split('.').map(Number);
+    const difference = Array.from({ length: 4 }, (_, index) => (
+      (appliedParts[index] || 0) - (manifestParts[index] || 0)
+    )).find(value => value !== 0) || 0;
+    return difference > 0 ? applied : manifestVersion;
+  }
+
+  async function helloMessage(authentication) {
+    return { type: 'hello', extensionId: chrome.runtime.id, version: await extensionVersion(), ...authentication };
+  }
+
   function connect() {
     if (connectPromise) return connectPromise;
     connectPromise = connectOnce().finally(() => { connectPromise = null; });
@@ -194,13 +211,9 @@
     const connectionToken = currentSettings.token;
     const ws = new WebSocket(`ws://${currentSettings.host}:${currentSettings.port}/extension`);
     socket = ws;
-    ws.addEventListener('open', () => {
-      ws.send(JSON.stringify({
-        type: 'hello',
-        token: connectionToken,
-        extensionId: chrome.runtime.id,
-        version: chrome.runtime.getManifest().version
-      }));
+    ws.addEventListener('open', async () => {
+      const message = await helloMessage({ token: connectionToken });
+      if (socket === ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
     });
     ws.addEventListener('message', (event) => {
       if (socket !== ws) return;
@@ -506,7 +519,10 @@
       const config = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => { reject(new Error('配对连接超时')); }, 15000);
         const finish = (fn, value) => { clearTimeout(timer); fn(value); };
-        ws.addEventListener('open', () => ws.send(JSON.stringify({ type:'hello', pairingCode:String(code), extensionId:chrome.runtime.id, version:chrome.runtime.getManifest().version })));
+        ws.addEventListener('open', async () => {
+          const message = await helloMessage({ pairingCode: String(code) });
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+        });
         ws.addEventListener('message', (event) => {
           let message;
           try { message = JSON.parse(String(event.data)); } catch { return; }
@@ -600,6 +616,14 @@
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.appliedUpdateWithoutReload) {
+      const current = socket;
+      void extensionVersion().then((version) => {
+        if (socket === current && current?.readyState === WebSocket.OPEN) {
+          current.send(JSON.stringify({ type: 'version', version }));
+        }
+      });
+    }
     if (areaName !== 'local' || !Object.values(STORAGE_KEYS).some((key) => changes[key])) return;
     void (async () => {
       const before = { ...currentSettings };
