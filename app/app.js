@@ -3183,7 +3183,6 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
     accountHistorySelect.appendChild(emptyOpt);
     accountHistorySelect.value = '';
     isSyncingAccountHistorySelect = false;
-    adjustAccountHistorySelectWidth();
     return;
   }
 
@@ -3220,28 +3219,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
     });
 
   accountHistorySelect.value = selectedUserId;
-  adjustAccountHistorySelectWidth();
   isSyncingAccountHistorySelect = false;
-}
-
-const ACCOUNT_HISTORY_SELECT_EXTRA_PX = 20;
-
-function adjustAccountHistorySelectWidth() {
-  if (!(accountHistorySelect instanceof HTMLSelectElement)) return;
-  const selectedText = String(accountHistorySelect.selectedOptions?.[0]?.text || accountHistorySelect.value || '').trim();
-  if (!selectedText) {
-    accountHistorySelect.style.width = '';
-    return;
-  }
-  const cs = getComputedStyle(accountHistorySelect);
-  const canvas = adjustAccountHistorySelectWidth._canvas || (adjustAccountHistorySelectWidth._canvas = document.createElement('canvas'));
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.font = `${cs.fontStyle || 'normal'} ${cs.fontVariant || 'normal'} ${cs.fontWeight || '400'} ${cs.fontSize || '14px'} / ${cs.lineHeight || 'normal'} ${cs.fontFamily || 'sans-serif'}`;
-  const textWidth = Math.ceil(ctx.measureText(selectedText).width);
-  const borderPadding = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
-    .reduce((sum, key) => sum + (parseFloat(cs[key]) || 0), 0);
-  accountHistorySelect.style.width = `${Math.ceil(textWidth + borderPadding + ACCOUNT_HISTORY_SELECT_EXTRA_PX)}px`;
 }
 
 function normalizeCurrentXqOptions(rawList) {
@@ -3277,13 +3255,6 @@ function chooseCurrentXqCode(list, preferredCode = '') {
   return String(normalizedList[0]?.xqCode || '').trim();
 }
 
-function adjustXqSelectWidth() {
-  if (!(xqSelect instanceof HTMLSelectElement)) return;
-  const selectedText = String(xqSelect.selectedOptions?.[0]?.text || xqSelect.value || '').trim();
-  const scaledChars = Math.max(10, Math.ceil(selectedText.length * 1.25));
-  xqSelect.style.width = `calc(${scaledChars}ch + 36px)`;
-}
-
 function renderCurrentXqSelect(list = currentXqOptions, preferredCode = currentXqCode) {
   if (!(xqSelect instanceof HTMLSelectElement)) return;
   const normalizedList = Array.isArray(list) ? list : [];
@@ -3298,7 +3269,6 @@ function renderCurrentXqSelect(list = currentXqOptions, preferredCode = currentX
     xqSelect.appendChild(empty);
     xqSelect.disabled = !empty.value;
     xqSelect.title = empty.value ? `已保存学期：${empty.value}` : '未获取到学期列表';
-    adjustXqSelectWidth();
     return;
   }
 
@@ -3315,7 +3285,6 @@ function renderCurrentXqSelect(list = currentXqOptions, preferredCode = currentX
   xqSelect.value = selected;
   currentXqCode = selected;
   xqSelect.title = normalizedList.find((item) => String(item.xqCode || '').trim() === selected)?.title || normalizedList.find((item) => String(item.xqCode || '').trim() === selected)?.xqName || '学期选择';
-  adjustXqSelectWidth();
 }
 
 function getCurrentXqCode() {
@@ -3378,7 +3347,6 @@ if (xqSelect instanceof HTMLSelectElement) {
     } catch {
       // ignore
     }
-    adjustXqSelectWidth();
     if (isPlatformEnabled('ve')) {
       try {
         await loadCourses();
@@ -6759,7 +6727,6 @@ usernameInput.addEventListener('change', async () => {
 if (accountHistorySelect instanceof HTMLSelectElement) {
   accountHistorySelect.addEventListener('change', () => {
     if (isSyncingAccountHistorySelect) return;
-    adjustAccountHistorySelectWidth();
     const picked = String(accountHistorySelect.value || '').trim();
     if (picked === '__open_account_panel__') {
       renderLoginAccountHistorySelect(usernameInput?.value || '');
