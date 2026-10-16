@@ -216,7 +216,7 @@ html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #b91c1c; }
     flex: 0 0 auto;
     padding: 8px 14px;
     background: #111827;
-    font-size: 13px;
+    font-size: var(--bjtu-font-size-secondaryTitle, 16px);
 }
 .version-module-selection-secondary:hover { background: #000; }
 .version-module-selection-primary {
@@ -224,7 +224,7 @@ html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #b91c1c; }
     width: 100%;
     padding: 8px 14px;
     background: #2563eb;
-    font-size: 13px;
+    font-size: var(--bjtu-font-size-secondaryTitle, 16px);
 }
 .version-module-selection-primary:hover { background: #1d4ed8; }
 html[data-color-scheme="dark"] .version-module-selection-title { color: #f8fafc; }
