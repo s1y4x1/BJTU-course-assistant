@@ -352,13 +352,21 @@
     }
   }
 
+  function apiResponseError(text) {
+    const response = JSON.parse(text);
+    const code = String(response.data?.code || 'API_ERROR');
+    const details = extractApiDetails(text) || '通义千问返回了错误';
+    const requestId = String(response.request_id || '');
+    return Object.assign(new Error(`${code}：${details}${requestId ? `\n请求 ID：${requestId}` : ''}`), { code, requestId });
+  }
+
   function parseJsonOrThrow(text) {
     if (!text) return null;
     const kind = detectApiErrorText(text);
     if (kind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
     if (kind === 'NOT_LOGGED_IN') throw notLoggedInError();
     if (kind === 'CHAT_NOT_FOUND') throw Object.assign(new Error(extractApiDetails(text) || '会话不存在或已被删除'), { code: 'CHAT_NOT_FOUND' });
-    if (kind === 'API_ERROR') throw new Error(extractApiDetails(text) || '通义千问返回了错误');
+    if (kind === 'API_ERROR') throw apiResponseError(text);
     if (kind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(text));
     if (kind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(text));
     if (kind === 'WAF_CHALLENGE') throw unparsableError();
@@ -542,7 +550,7 @@
       const errKind = detectApiErrorText(text);
       if (errKind === 'NOT_LOGGED_IN') throw notLoggedInError();
       if (errKind === 'RATE_LIMITED') throw rateLimitError(extractRateLimitNum(text));
-      if (errKind === 'API_ERROR') throw new Error(extractApiDetails(text) || `通义千问 API 请求失败：HTTP ${response.status}`);
+      if (errKind === 'API_ERROR') throw apiResponseError(text);
       if (errKind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(text));
       if (errKind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(text));
       if (errKind === 'WAF_CHALLENGE') throw unparsableError();
@@ -553,7 +561,7 @@
       const text = await response.text();
       const kind = detectApiErrorText(text);
       if (kind === 'NOT_LOGGED_IN') throw notLoggedInError();
-      if (kind === 'API_ERROR') throw new Error(extractApiDetails(text) || '通义千问返回了错误');
+      if (kind === 'API_ERROR') throw apiResponseError(text);
       if (kind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(text));
       if (kind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(text));
       if (kind || text.trim()) throw unparsableError();
@@ -582,6 +590,7 @@
         }
         const payloadText = JSON.stringify(payload);
         const payloadErrorKind = detectApiErrorText(payloadText);
+        if (payloadErrorKind === 'API_ERROR') throw apiResponseError(payloadText);
         if (payloadErrorKind === 'WAF_BUSY') {
           throw wafBusyError(extractWafValidationUrl(payloadText));
         }
@@ -716,6 +725,7 @@
     }
     if (!sawDataLine && rawText.trim()) {
       const kind = detectApiErrorText(rawText);
+      if (kind === 'API_ERROR') throw apiResponseError(rawText);
       if (kind === 'WAF_BUSY') throw wafBusyError(extractWafValidationUrl(rawText));
       if (kind === 'WAF_PUNISH') throw wafPunishError(extractWafValidationUrl(rawText));
       if (kind) throw unparsableError();
