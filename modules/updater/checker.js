@@ -1211,7 +1211,8 @@ function setVersionDownloadProgressUi({
   if (phase === 'failed' && closeBtn instanceof HTMLElement) closeBtn.style.display = '';
   if (phase === 'finished' || phase === 'failed' || phase === 'directory') setVersionDownloadBar({ visible: false });
 
-  if (titleEl) titleEl.textContent = String(title || '正在下载');
+  if (titleEl) titleEl.textContent = versionDownloadSelectedSource === 'history' && title === '正在下载更新压缩包'
+    ? '正在下载压缩包' : String(title || '正在下载');
   if (bodyEl) bodyEl.innerHTML = renderVersionDownloadBodyHtml(body || '请稍候，正在下载更新文件…');
   if (statusEl) {
     statusEl.replaceChildren();
@@ -2946,29 +2947,29 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
     || (primaryUrl === VERSION_DOWNLOAD_URL ? 'main' : 'zipball');
   versionDownloadSelectedSource = selectedSource;
   versionDownloadSelectedUrl = primaryUrl;
-  versionDownloadRelease = await resolveVersionDownloadRelease(primaryUrl, selectedSource);
-  const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
-    body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = versionDownloadRelease;
-  setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
-  const writableDirectory = await getWritableVersionUpdateDirectory();
-  if (!writableDirectory) {
-    showVersionUpdateDirectoryRequired(downloadUrl, source);
-    return;
-  }
-  versionUpdateDirectoryHandle = writableDirectory;
   versionDownloadMinimized = false;
-
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
+  setVersionDownloadReleaseNotes('');
   setVersionDownloadBar({ visible: true, indeterminate: true });
   setVersionDownloadProgressUi({
     visible: true,
-    status: '正在连接下载源…',
+    status: selectedSource === 'history' ? '正在读取历史版本信息…' : '正在连接下载源…',
     title: '正在下载更新压缩包',
     body: '正在下载更新文件，下载完成后将自动覆盖解压。',
     phase: 'downloading'
   });
   try {
+    versionDownloadRelease = await resolveVersionDownloadRelease(primaryUrl, selectedSource);
+    const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
+      body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = versionDownloadRelease;
+    setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
+    const writableDirectory = await getWritableVersionUpdateDirectory();
+    if (!writableDirectory) {
+      showVersionUpdateDirectoryRequired(downloadUrl, source);
+      return;
+    }
+    versionUpdateDirectoryHandle = writableDirectory;
     if (versionDownloadClean) {
       const response = await chrome.runtime.sendMessage({
         type: 'BACKGROUND_UPDATE_INSTALL_CLEAN',
@@ -3014,9 +3015,10 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
     });
     setVersionDownloadRetryVisible(true);
     showToast(failure.toast, 'error', 3200);
+  } finally {
+    versionDownloadInProgress = false;
+    syncVersionNoticeDownloadButton();
   }
-  versionDownloadInProgress = false;
-  syncVersionNoticeDownloadButton();
 }
 
 function setVersionButtonState(mode, { localVersion = '', latestVersion = '', latestDisplayVersion = '', latestPublishedAt = '', downloadUrl = '', body = '', zipballUrl = '', reload = true, force = false, clean = false } = {}) {
