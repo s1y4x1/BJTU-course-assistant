@@ -259,6 +259,7 @@ async function loadVersionHistory() {
   const count = document.getElementById('version-history-per-page');
   const status = document.getElementById('version-history-status');
   if (!count.reportValidity()) return;
+  const pages = Number(count.value);
   const selectedSha = select.value;
   versionHistoryRequest?.abort();
   const controller = new AbortController();
@@ -269,14 +270,20 @@ async function loadVersionHistory() {
   status.textContent = '正在获取历史版本…';
   syncVersionNoticeDownloadButton();
   try {
-    const response = await fetch(`${VERSION_COMMITS_URL}?sha=main&per_page=${count.value}`, {
-      headers: { Accept: 'application/vnd.github+json' },
-      signal: controller.signal
-    });
-    if (!response.ok) throw new Error(`获取提交记录失败 (${response.status})`);
-    const commits = await response.json();
-    if (versionHistoryRequest !== controller) return;
-    if (!Array.isArray(commits)) throw new Error('提交记录格式无效');
+    const commits = [];
+    for (let page = 1; page <= pages; page += 1) {
+      status.textContent = `正在获取历史版本（${page}/${pages} 页）…`;
+      const response = await fetch(`${VERSION_COMMITS_URL}?sha=main&per_page=100&page=${page}`, {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`获取提交记录失败 (${response.status})`);
+      const batch = await response.json();
+      if (versionHistoryRequest !== controller) return;
+      if (!Array.isArray(batch)) throw new Error('提交记录格式无效');
+      commits.push(...batch);
+      if (batch.length < 100 || !response.headers.get('Link')?.includes('rel="next"')) break;
+    }
     versionHistoryCommits.clear();
     select.replaceChildren();
     commits.forEach((entry) => {
