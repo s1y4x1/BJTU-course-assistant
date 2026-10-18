@@ -382,6 +382,16 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     runAt: 'document_idle'
   },
   {
+    id: 'bjtu-ve-video-native-layout',
+    module: 've',
+    matches: ['http://123.121.147.7:88/*', 'http://2071565063:88/*'],
+    js: ['modules/ve/video-native-layout.js'],
+    runAt: 'document_start',
+    world: 'MAIN',
+    allFrames: true,
+    matchOriginAsFallback: true
+  },
+  {
     id: 'bjtu-ve-video-page',
     module: 've',
     matches: ['http://123.121.147.7:88/*', 'http://2071565063:88/*'],
