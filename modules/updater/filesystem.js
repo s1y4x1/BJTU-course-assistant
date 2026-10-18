@@ -215,6 +215,20 @@
     if (failed) throw failure;
   }
 
+  async function readArchiveRelease(files, inflate, release) {
+    const file = files.find(({ path }) => path === 'manifest.json');
+    if (!file) throw new Error('更新包缺少 manifest.json');
+    const manifest = JSON.parse(new TextDecoder().decode(await inflate(file.entry)));
+    if (typeof manifest.version !== 'string' || !manifest.version.trim()) throw new Error('更新包缺少扩展版本号');
+    const name = manifest.version_name || manifest.version;
+    return {
+      ...release,
+      version: manifest.version,
+      name: release.commit ? `${name} (${release.commit.slice(0, 7)})`
+        : release.version === manifest.version ? release.name || name : name
+    };
+  }
+
   async function readArchive(url, version) {
     const cache = await caches.open('bjtu-ca-update-archive');
     const response = await cache.match(archiveCacheKey(url, version));
@@ -231,6 +245,7 @@
   }
 
   global.BjtuUpdateFileSystem = {
+    readArchiveRelease,
     processFiles,
     ensureFileConcurrencyDefaults,
     normalizeFileConcurrency,

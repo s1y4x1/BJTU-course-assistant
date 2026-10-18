@@ -736,6 +736,7 @@
     return globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
       const entries = parseZipEntries(archive);
       const archiveFiles = normalizeZipFiles(entries);
+      Object.assign(release, await globalThis.BjtuUpdateFileSystem.readArchiveRelease(archiveFiles, inflateEntry, release));
       const packagedModuleIds = getArchiveModuleIds(archiveFiles);
       const storedKnownModules = await chrome.storage.local.get([
         MODULE_KNOWN_IDS_KEY,
@@ -812,9 +813,10 @@
   function normalizeManualRelease(payload) {
     const url = String(payload?.url || '').trim();
     if (!/^https?:\/\//i.test(url)) throw new Error('更新下载地址无效');
-    const version = String(payload?.version || chrome.runtime.getManifest().version || '').trim();
+    const version = payload?.commit ? '' : String(payload?.version || chrome.runtime.getManifest().version || '').trim();
     return {
       version,
+      commit: payload?.commit,
       name: String(payload?.name || version).trim() || version,
       description: String(payload?.description || ''),
       url,

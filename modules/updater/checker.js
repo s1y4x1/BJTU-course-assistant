@@ -309,20 +309,17 @@ async function loadVersionHistory() {
   }
 }
 
-async function resolveVersionDownloadRelease(url, source) {
+function resolveVersionDownloadRelease(url, source) {
   if (source !== 'history') {
     return { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
       body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce };
   }
   const sha = new URL(url).pathname.split('/').pop();
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('请选择有效的历史提交');
-  const response = await fetch(`https://raw.githubusercontent.com/s1y4x1/BJTU-course-assistant/${sha}/manifest.json`);
-  if (!response.ok) throw new Error(`读取历史版本信息失败 (${response.status})`);
-  const manifest = await response.json();
-  if (!manifest.version) throw new Error('历史提交缺少扩展版本号');
   return {
-    version: manifest.version,
-    name: `${manifest.version_name || manifest.version} (${sha.slice(0, 7)})`,
+    version: '',
+    name: `历史版本 (${sha.slice(0, 7)})`,
+    commit: sha,
     body: versionHistoryCommits.get(sha)?.commit.message || `历史提交：${sha}`,
     force: false
   };
@@ -2783,6 +2780,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
     .filter((entry) => !entry.directory)
     .map((entry) => ({ entry, path: normalizeUpdateEntryPath(entry.name, commonRoot) }))
     .filter((item) => item.path);
+  versionDownloadRelease = await globalThis.BjtuUpdateFileSystem.readArchiveRelease(archiveFiles, inflateZipEntry, getVersionDownloadRelease());
   const packagedModuleIds = getArchiveModuleIds(archiveFiles);
   const selectedModules = globalThis.BjtuModuleRegistry.withDependencies(await chooseUpdateModules(archiveFiles));
   globalThis.BjtuModuleRegistry.assertDependencies(selectedModules, [
@@ -2870,8 +2868,6 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
 }
 
 async function downloadVersionByUrlWithProgress(url) {
-  const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
-    body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = getVersionDownloadRelease();
   const finalUrl = String(url || '').trim();
   if (!finalUrl) throw new Error('下载链接为空');
   if (!versionUpdateDirectoryHandle) throw new Error('尚未授权更新目录');
@@ -2881,6 +2877,8 @@ async function downloadVersionByUrlWithProgress(url) {
   const fileCount = await globalThis.BjtuUpdateFileSystem.withInstallLock(() => (
     extractUpdateArchiveToDirectory(archiveBytes, versionDownloadClean)
   ));
+  const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
+    body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = getVersionDownloadRelease();
   const reloadRequired = versionDownloadReload || versionSupplementalReloadRequired;
   const forcedUpdate = versionButtonLatestForce;
   const appliedRecord = {
@@ -2949,13 +2947,13 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
   setVersionDownloadBar({ visible: true, indeterminate: true });
   setVersionDownloadProgressUi({
     visible: true,
-    status: selectedSource === 'history' ? '正在读取历史版本信息…' : '正在连接下载源…',
+    status: '正在连接下载源…',
     title: '正在下载更新压缩包',
     body: '正在下载更新文件，下载完成后将自动覆盖解压。',
     phase: 'downloading'
   });
   try {
-    versionDownloadRelease = await resolveVersionDownloadRelease(primaryUrl, selectedSource);
+    versionDownloadRelease = resolveVersionDownloadRelease(primaryUrl, selectedSource);
     const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
       body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = versionDownloadRelease;
     setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
@@ -2973,17 +2971,19 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
           version: versionButtonLatestVersion,
           name: versionButtonLatestDisplayVersion || versionButtonLatestVersion,
           description: versionButtonLatestBodyMarkdown,
+          commit: versionDownloadRelease.commit,
           reload: versionDownloadReload,
           force: versionButtonLatestForce,
           ownerId: VERSION_FOREGROUND_SESSION_ID
         }
       });
       if (response?.ok !== true) throw new Error(String(response?.message || '后台全新安装失败'));
+      versionDownloadRelease = { ...versionDownloadRelease, ...response.release };
       if (!versionDownloadReload) {
         setVersionDownloadCompletionUi({
           reloadRequired: false,
           fileCount: response.fileCount,
-          displayVersion: versionButtonLatestDisplayVersion
+          displayVersion: versionDownloadRelease.name
         });
       }
     } else {
