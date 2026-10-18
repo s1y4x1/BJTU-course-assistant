@@ -61,9 +61,15 @@ let versionButtonLatestForce = false;
 let versionNoticeSuppressedByDownload = false;
 let versionLatestReleaseRequestPromise = null;
 let versionInfoLoadPromise = null;
+let versionDownloadRelease = null;
+const versionHistoryCommits = new Map();
+let versionHistoryNextPage = 1;
+let versionHistoryLoading = false;
+let versionHistoryHasMore = true;
 let versionQueuedRelease = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/main';
 const VERSION_LATEST_URL = 'https://s1y4x1.github.io/release.json';
+const VERSION_COMMITS_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/commits';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
 const VERSION_INSTALLED_RELEASE_DESCRIPTION_KEY = 'installedReleaseDescription';
@@ -233,14 +239,81 @@ function showUpdateDownloadCompleteNotification() {
 
 function getVersionDownloadButtonLabel(mode, source) {
   const src = String(source || 'zipball').trim();
+  if (src === 'history') return '下载历史版本';
   if (mode === 'latest') return src === 'zipball' ? '下载修复包' : '下载尝鲜包';
   if (mode === 'ahead') return src === 'zipball' ? '下载正式版' : '下载开发版';
   return src === 'zipball' ? '下载更新' : '下载开发版';
 }
 
+function getVersionDownloadRelease() {
+  return versionDownloadRelease || {
+    version: versionButtonLatestVersion,
+    name: versionButtonLatestDisplayVersion,
+    body: versionButtonLatestBodyMarkdown,
+    force: versionButtonLatestForce
+  };
+}
+
+async function loadVersionHistory() {
+  if (versionHistoryLoading || !versionHistoryHasMore) return;
+  const select = document.getElementById('version-history-select');
+  const more = document.getElementById('version-history-more');
+  const status = document.getElementById('version-history-status');
+  versionHistoryLoading = true;
+  more.disabled = true;
+  status.textContent = '正在获取历史版本…';
+  try {
+    const response = await fetch(`${VERSION_COMMITS_URL}?sha=main&per_page=50&page=${versionHistoryNextPage}`, {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+    if (!response.ok) throw new Error(`获取提交记录失败 (${response.status})`);
+    const commits = await response.json();
+    if (!Array.isArray(commits)) throw new Error('提交记录格式无效');
+    commits.forEach((entry) => {
+      if (versionHistoryCommits.has(entry.sha)) return;
+      versionHistoryCommits.set(entry.sha, entry);
+      const date = new Date(entry.commit.committer.date).toLocaleString();
+      select.add(new Option(`${date} · ${entry.commit.message.split('\n')[0]} · ${entry.sha.slice(0, 7)}`, entry.sha));
+    });
+    versionHistoryNextPage += 1;
+    versionHistoryHasMore = !!response.headers.get('Link')?.includes('rel="next"');
+    more.hidden = !versionHistoryHasMore;
+    more.textContent = '加载更多';
+    status.textContent = versionHistoryCommits.size ? '' : '暂无历史版本';
+  } catch (error) {
+    status.textContent = String(error.message || error);
+    more.textContent = '重试';
+  } finally {
+    versionHistoryLoading = false;
+    more.disabled = false;
+    syncVersionNoticeDownloadButton();
+  }
+}
+
+async function resolveVersionDownloadRelease(url, source) {
+  if (source !== 'history') {
+    return { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
+      body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce };
+  }
+  const sha = new URL(url).pathname.split('/').pop();
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('请选择有效的历史提交');
+  const response = await fetch(`https://raw.githubusercontent.com/s1y4x1/BJTU-course-assistant/${sha}/manifest.json`);
+  if (!response.ok) throw new Error(`读取历史版本信息失败 (${response.status})`);
+  const manifest = await response.json();
+  if (!manifest.version) throw new Error('历史提交缺少扩展版本号');
+  return {
+    version: manifest.version,
+    name: `${manifest.version_name || manifest.version} (${sha.slice(0, 7)})`,
+    body: versionHistoryCommits.get(sha)?.commit.message || `历史提交：${sha}`,
+    force: false
+  };
+}
+
 function syncVersionNoticeDownloadButton(buttonText) {
   const btn = document.getElementById('version-notice-download');
   if (!(btn instanceof HTMLButtonElement)) return;
+  const historySelected = document.getElementById('version-source-select')?.value === 'history';
+  btn.disabled = historySelected && !document.getElementById('version-history-select')?.value;
   if (versionNoticeForceCountdownTimer) {
     const sourceSelect = document.getElementById('version-source-select');
     const source = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
@@ -286,9 +359,13 @@ function cancelVersionNoticeForceCountdown() {
 
 async function beginVersionNoticeDownload(modal, sourceSelect) {
   cancelVersionNoticeForceCountdown();
-  if (modal instanceof HTMLElement) modal.style.display = 'none';
   const selectedSource = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
-  const selectedUrl = selectedSource === 'zipball' && versionButtonLatestZipballUrl
+  const commit = document.getElementById('version-history-select')?.value;
+  if (selectedSource === 'history' && !commit) return;
+  if (modal instanceof HTMLElement) modal.style.display = 'none';
+  const selectedUrl = selectedSource === 'history'
+    ? `https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/${commit}`
+    : selectedSource === 'zipball' && versionButtonLatestZipballUrl
     ? versionButtonLatestZipballUrl : VERSION_DOWNLOAD_URL;
   const installOptions = readVersionNoticeInstallOptions();
   if (typeof popupMode !== 'undefined' && popupMode) {
@@ -654,8 +731,18 @@ function ensureVersionNoticeModal() {
 
   const sourceSelect = modal.querySelector('#version-source-select');
   if (sourceSelect instanceof HTMLSelectElement) {
-    sourceSelect.addEventListener('change', () => syncVersionNoticeDownloadButton());
+    sourceSelect.addEventListener('change', () => {
+      const history = sourceSelect.value === 'history';
+      document.getElementById('version-history-row').hidden = !history;
+      if (history) {
+        cancelVersionNoticeForceCountdown();
+        if (!versionHistoryCommits.size) void loadVersionHistory();
+      }
+      syncVersionNoticeDownloadButton();
+    });
   }
+  modal.querySelector('#version-history-select').addEventListener('change', () => syncVersionNoticeDownloadButton());
+  modal.querySelector('#version-history-more').addEventListener('click', () => void loadVersionHistory());
   const downloadBtn = modal.querySelector('#version-notice-download');
   if (downloadBtn instanceof HTMLButtonElement) {
     downloadBtn.addEventListener('click', () => {
@@ -886,6 +973,7 @@ function openVersionNoticeModal(overrideMode) {
       optMaster.textContent = isLatest ? '尝鲜' : '开发版';
     }
     sourceSelect.value = 'zipball';
+    document.getElementById('version-history-row').hidden = true;
   }
   if (ignoreBtn instanceof HTMLButtonElement) {
     const ignoreLabel = ignoreBtn.querySelector('.version-ignore-main');
@@ -1280,7 +1368,7 @@ function showVersionUpdateDirectoryRequired(downloadUrl, source) {
   const selectButton = document.getElementById('version-download-select-directory');
   const closeButton = document.getElementById('version-download-close');
   const actions = document.getElementById('version-download-actions');
-  const locked = versionButtonLatestForce === true;
+  const locked = getVersionDownloadRelease().force === true;
   if (modal instanceof HTMLElement) modal.dataset.locked = locked ? '1' : '0';
   if (selectButton instanceof HTMLElement) selectButton.style.display = '';
   if (closeButton instanceof HTMLElement) closeButton.style.display = locked ? 'none' : '';
@@ -1328,6 +1416,8 @@ async function selectVersionUpdateDirectoryAndResume() {
 }
 
 function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion } = {}) {
+  const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
+    force: versionButtonLatestForce } = getVersionDownloadRelease();
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
   const writtenFileCount = Math.max(0, Number(fileCount) || 0);
@@ -1384,6 +1474,7 @@ function showVersionReloadMismatchUi(localVersion, sourceVersion) {
 }
 
 async function scheduleAutomaticExtensionReload({ fileCount, displayVersion } = {}) {
+  const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion } = getVersionDownloadRelease();
   const writtenFileCount = Math.max(0, Number(fileCount) || 0);
   await setLocal(VERSION_AUTO_RELOAD_HANDOFF_KEY, {
     ver: versionButtonLatestVersion,
@@ -1907,6 +1998,7 @@ async function writeBytesToVersionUpdateDirectory(bytes, relativePath) {
 }
 
 async function fetchUpdateArchiveWithProgress(url) {
+  const { version: versionButtonLatestVersion } = getVersionDownloadRelease();
   const cached = await globalThis.BjtuUpdateFileSystem.readArchive(url, versionButtonLatestVersion);
   if (cached) {
     resetVersionUpdateFileTree();
@@ -2733,6 +2825,8 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
 }
 
 async function downloadVersionByUrlWithProgress(url) {
+  const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
+    body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = getVersionDownloadRelease();
   const finalUrl = String(url || '').trim();
   if (!finalUrl) throw new Error('下载链接为空');
   if (!versionUpdateDirectoryHandle) throw new Error('尚未授权更新目录');
@@ -2798,6 +2892,14 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
     versionDownloadClean = installOptions.clean === true;
     versionDownloadReload = installOptions.reload !== false;
   }
+  const primaryUrl = String(downloadUrl || versionButtonDownloadUrl || VERSION_DOWNLOAD_URL).trim() || VERSION_DOWNLOAD_URL;
+  const selectedSource = String(source || versionDownloadSelectedSource || '').trim()
+    || (primaryUrl === VERSION_DOWNLOAD_URL ? 'main' : 'zipball');
+  versionDownloadSelectedSource = selectedSource;
+  versionDownloadSelectedUrl = primaryUrl;
+  versionDownloadRelease = await resolveVersionDownloadRelease(primaryUrl, selectedSource);
+  const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
+    body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = versionDownloadRelease;
   setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
   const writableDirectory = await getWritableVersionUpdateDirectory();
   if (!writableDirectory) {
@@ -2817,11 +2919,6 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
     body: '正在下载更新文件，下载完成后将自动覆盖解压。',
     phase: 'downloading'
   });
-  const primaryUrl = String(downloadUrl || versionButtonDownloadUrl || VERSION_DOWNLOAD_URL).trim() || VERSION_DOWNLOAD_URL;
-  const selectedSource = String(source || versionDownloadSelectedSource || '').trim()
-    || (primaryUrl === VERSION_DOWNLOAD_URL ? 'main' : 'zipball');
-  versionDownloadSelectedSource = selectedSource;
-  versionDownloadSelectedUrl = primaryUrl;
   try {
     if (versionDownloadClean) {
       const response = await chrome.runtime.sendMessage({

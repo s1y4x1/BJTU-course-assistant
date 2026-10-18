@@ -35,7 +35,13 @@
         <select id="version-source-select">
           <option value="zipball" selected>正式版</option>
           <option value="main">开发版</option>
+          <option value="history">历史版本</option>
         </select>
+      </div>
+      <div id="version-history-row" class="version-history-row" hidden>
+        <select id="version-history-select" aria-label="历史版本"></select>
+        <button id="version-history-more" class="btn" type="button">加载更多</button>
+        <span id="version-history-status" role="status"></span>
       </div>
     </div>
     <div class="version-uninstall-entry">
