@@ -63,9 +63,8 @@ let versionLatestReleaseRequestPromise = null;
 let versionInfoLoadPromise = null;
 let versionDownloadRelease = null;
 const versionHistoryCommits = new Map();
-let versionHistoryNextPage = 1;
 let versionHistoryLoading = false;
-let versionHistoryHasMore = true;
+let versionHistoryRequest = null;
 let versionQueuedRelease = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/main';
 const VERSION_LATEST_URL = 'https://s1y4x1.github.io/release.json';
@@ -255,38 +254,51 @@ function getVersionDownloadRelease() {
 }
 
 async function loadVersionHistory() {
-  if (versionHistoryLoading || !versionHistoryHasMore) return;
   const select = document.getElementById('version-history-select');
-  const more = document.getElementById('version-history-more');
+  const count = document.getElementById('version-history-per-page');
   const status = document.getElementById('version-history-status');
+  if (!count.reportValidity()) return;
+  const selectedSha = select.value;
+  versionHistoryRequest?.abort();
+  const controller = new AbortController();
+  versionHistoryRequest = controller;
   versionHistoryLoading = true;
-  more.disabled = true;
+  select.hidden = true;
+  status.hidden = false;
   status.textContent = '正在获取历史版本…';
+  syncVersionNoticeDownloadButton();
   try {
-    const response = await fetch(`${VERSION_COMMITS_URL}?sha=main&per_page=50&page=${versionHistoryNextPage}`, {
-      headers: { Accept: 'application/vnd.github+json' }
+    const response = await fetch(`${VERSION_COMMITS_URL}?sha=main&per_page=${count.value}`, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: controller.signal
     });
     if (!response.ok) throw new Error(`获取提交记录失败 (${response.status})`);
     const commits = await response.json();
+    if (versionHistoryRequest !== controller) return;
     if (!Array.isArray(commits)) throw new Error('提交记录格式无效');
+    versionHistoryCommits.clear();
+    select.replaceChildren();
     commits.forEach((entry) => {
       if (versionHistoryCommits.has(entry.sha)) return;
       versionHistoryCommits.set(entry.sha, entry);
       const date = new Date(entry.commit.committer.date).toLocaleString();
-      select.add(new Option(`${date} · ${entry.commit.message.split('\n')[0]} · ${entry.sha.slice(0, 7)}`, entry.sha));
+      select.add(new Option(`${date} · ${entry.sha.slice(0, 7)} · ${entry.commit.message.split('\n')[0]}`, entry.sha));
     });
-    versionHistoryNextPage += 1;
-    versionHistoryHasMore = !!response.headers.get('Link')?.includes('rel="next"');
-    more.hidden = !versionHistoryHasMore;
-    more.textContent = '加载更多';
+    if (versionHistoryCommits.has(selectedSha)) select.value = selectedSha;
+    select.hidden = !versionHistoryCommits.size;
+    status.hidden = !!versionHistoryCommits.size;
     status.textContent = versionHistoryCommits.size ? '' : '暂无历史版本';
   } catch (error) {
+    if (versionHistoryRequest !== controller) return;
+    versionHistoryCommits.clear();
+    select.replaceChildren();
     status.textContent = String(error.message || error);
-    more.textContent = '重试';
   } finally {
-    versionHistoryLoading = false;
-    more.disabled = false;
-    syncVersionNoticeDownloadButton();
+    if (versionHistoryRequest === controller) {
+      versionHistoryRequest = null;
+      versionHistoryLoading = false;
+      syncVersionNoticeDownloadButton();
+    }
   }
 }
 
@@ -313,7 +325,7 @@ function syncVersionNoticeDownloadButton(buttonText) {
   const btn = document.getElementById('version-notice-download');
   if (!(btn instanceof HTMLButtonElement)) return;
   const historySelected = document.getElementById('version-source-select')?.value === 'history';
-  btn.disabled = historySelected && !document.getElementById('version-history-select')?.value;
+  btn.disabled = historySelected && (versionHistoryLoading || !document.getElementById('version-history-select')?.value);
   if (versionNoticeForceCountdownTimer) {
     const sourceSelect = document.getElementById('version-source-select');
     const source = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
@@ -361,7 +373,7 @@ async function beginVersionNoticeDownload(modal, sourceSelect) {
   cancelVersionNoticeForceCountdown();
   const selectedSource = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
   const commit = document.getElementById('version-history-select')?.value;
-  if (selectedSource === 'history' && !commit) return;
+  if (selectedSource === 'history' && (versionHistoryLoading || !commit)) return;
   if (modal instanceof HTMLElement) modal.style.display = 'none';
   const selectedUrl = selectedSource === 'history'
     ? `https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/${commit}`
@@ -742,7 +754,7 @@ function ensureVersionNoticeModal() {
     });
   }
   modal.querySelector('#version-history-select').addEventListener('change', () => syncVersionNoticeDownloadButton());
-  modal.querySelector('#version-history-more').addEventListener('click', () => void loadVersionHistory());
+  modal.querySelector('#version-history-per-page').addEventListener('change', () => void loadVersionHistory());
   const downloadBtn = modal.querySelector('#version-notice-download');
   if (downloadBtn instanceof HTMLButtonElement) {
     downloadBtn.addEventListener('click', () => {

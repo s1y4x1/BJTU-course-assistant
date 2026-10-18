@@ -39,9 +39,13 @@
         </select>
       </div>
       <div id="version-history-row" class="version-history-row" hidden>
-        <select id="version-history-select" aria-label="历史版本"></select>
-        <button id="version-history-more" class="btn" type="button">加载更多</button>
-        <span id="version-history-status" role="status"></span>
+        <div class="version-history-picker">
+          <select id="version-history-select" aria-label="历史版本"></select>
+          <span id="version-history-status" role="status" hidden></span>
+        </div>
+        <label class="version-history-count" for="version-history-per-page">获取条数
+          <input id="version-history-per-page" class="bjtu-text-input" type="number" min="1" max="100" step="1" value="50" required>
+        </label>
       </div>
     </div>
     <div class="version-uninstall-entry">

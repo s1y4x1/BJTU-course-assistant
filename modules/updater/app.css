@@ -402,9 +402,11 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
     gap:6px;
     margin-top:6px;
 }
-.version-history-row select { flex:1; min-width:0; }
-#version-history-status { flex-basis:100%; }
-#version-history-status:empty { display:none; }
+.version-history-picker { flex:1; min-width:0; }
+.version-history-picker select { width:100%; min-width:0; }
+#version-history-status:not([hidden]) { display:flex; align-items:center; min-height:34px; font-size:var(--bjtu-font-size-body,13px); }
+.version-history-count { display:flex; align-items:center; gap:4px; margin:0; white-space:nowrap; font-size:var(--bjtu-font-size-body,13px); }
+.version-history-count input { width:5em; font-size:var(--bjtu-font-size-body,13px); }
 .version-download-body {
     flex: 0 0 auto;
     font-size: 13px;
