@@ -66,7 +66,7 @@
     if (window === window.top || isCoursePage(ownUrl)) toggle = createToggle('三画面布局', enabled, (checked) => {
       void chrome.storage.local.set({ [storageKey]: checked });
     });
-    if (toggle) toggle.title = '切换时重新加载播放器所在页面，并恢复播放位置';
+    if (toggle) toggle.title = '只重新初始化播放器，保留页面及播放位置';
     syncLayout();
   });
 })();
