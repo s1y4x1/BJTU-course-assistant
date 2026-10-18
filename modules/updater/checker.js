@@ -259,7 +259,7 @@ async function loadVersionHistory() {
   const count = document.getElementById('version-history-per-page');
   const status = document.getElementById('version-history-status');
   if (!count.reportValidity()) return;
-  const pages = Number(count.value);
+  let pages = Number(count.value);
   const selectedSha = select.value;
   versionHistoryRequest?.abort();
   const controller = new AbortController();
@@ -281,6 +281,15 @@ async function loadVersionHistory() {
       const batch = await response.json();
       if (versionHistoryRequest !== controller) return;
       if (!Array.isArray(batch)) throw new Error('提交记录格式无效');
+      if (page === 1) {
+        // 每页 100 条时，最后一页页码即 ceil(提交总数 / 100)。
+        const lastPageUrl = response.headers.get('Link')?.match(/<([^>]+)>;\s*rel="last"/)?.[1];
+        if (lastPageUrl || batch.length < 100 || !response.headers.get('Link')?.includes('rel="next"')) {
+          count.max = lastPageUrl ? new URL(lastPageUrl).searchParams.get('page') : '1';
+          pages = Math.min(pages, Number(count.max));
+          count.value = String(pages);
+        }
+      }
       commits.push(...batch);
       if (batch.length < 100 || !response.headers.get('Link')?.includes('rel="next"')) break;
     }
