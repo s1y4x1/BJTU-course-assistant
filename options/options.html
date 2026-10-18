@@ -474,13 +474,17 @@
           <option value="1440">天</option>
         </select>
       </div>
-      <label for="updateForegroundPromptMode" class="inline-select-option">
+      <label for="updateForegroundPromptMode" class="inline-select-option" style="padding-left:22px;">
         发现新版本时若已打开扩展页面：
         <select id="updateForegroundPromptMode">
           <option value="immediate">立即定位页面并提示</option>
           <option value="active" selected>用户使用页面时提示</option>
           <option value="silent">等待页面关闭后更新</option>
         </select>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; padding-left:22px;">
+        <input type="checkbox" id="backgroundAutoInstallForcedEnabled" style="width:auto;" checked />
+        自动安装强制更新
       </label>
       <label style="display:flex; align-items:center; gap:8px; margin:6px 0 0; padding-left:22px;">
         <input type="checkbox" id="backgroundAutoInstallOptionalEnabled" style="width:auto;" />
@@ -518,6 +522,17 @@
       <div class="export-bind-data-actions">
         <a id="export-bind-data-github" href="https://github.com/s1y4x1/BJTU-course-assistant/discussions/2" target="_blank" rel="noopener noreferrer">我有 Github 账号</a>
         <a id="export-bind-data-form" href="https://v.wjx.cn/vm/eW3zqxc.aspx" target="_blank" rel="noopener noreferrer">我没有 Github 账号</a>
+      </div>
+    </div>
+  </div>
+  <div id="forced-update-confirm-modal" class="account-progress-mask" style="display:none;" role="dialog" aria-modal="true"
+    aria-labelledby="forced-update-confirm-title">
+    <div class="account-progress-card reset-confirm-card">
+      <div id="forced-update-confirm-title" class="account-progress-title">关闭强制更新自动安装</div>
+      <div class="reset-confirm-message">关闭后可能错过重要更新，导致部分功能不可用。确定要关闭「自动安装强制更新」吗？</div>
+      <div class="reset-confirm-actions">
+        <button id="forced-update-confirm-cancel" type="button" style="background:#64748b;">撤销更改</button>
+        <button id="forced-update-confirm-submit" type="button" style="background:#dc2626;">确认更改</button>
       </div>
     </div>
   </div>

@@ -900,13 +900,44 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     ? DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED
     : backgroundAutoUpdateEnabled === true;
   const updatePromptSelect = document.getElementById('updateForegroundPromptMode');
-  const updatePromptStored = await chrome.storage.local.get('updateForegroundPromptMode');
+  const updatePromptStored = await chrome.storage.local.get(['updateForegroundPromptMode', 'backgroundAutoInstallForcedEnabled']);
+  const forcedUpdateInput = document.getElementById('backgroundAutoInstallForcedEnabled');
+  const forcedUpdateModal = document.getElementById('forced-update-confirm-modal');
+  forcedUpdateInput.checked = updatePromptStored.backgroundAutoInstallForcedEnabled !== false;
+  const cancelForcedUpdateChange = () => {
+    forcedUpdateModal.style.display = 'none';
+    forcedUpdateInput.focus();
+  };
+  forcedUpdateInput.addEventListener('change', async () => {
+    if (!forcedUpdateInput.checked) {
+      forcedUpdateInput.checked = true;
+      forcedUpdateModal.style.display = 'flex';
+      document.getElementById('forced-update-confirm-cancel').focus();
+      return;
+    }
+    await chrome.storage.local.set({ backgroundAutoInstallForcedEnabled: true });
+    setMsg('已启用强制更新自动安装');
+  });
+  document.getElementById('forced-update-confirm-cancel').addEventListener('click', cancelForcedUpdateChange);
+  document.getElementById('forced-update-confirm-submit').addEventListener('click', async () => {
+    await chrome.storage.local.set({ backgroundAutoInstallForcedEnabled: false });
+    forcedUpdateInput.checked = false;
+    cancelForcedUpdateChange();
+    setMsg('已关闭强制更新自动安装');
+  });
+  forcedUpdateModal.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') cancelForcedUpdateChange();
+  });
   const normalizeUpdatePromptMode = (value) => ['immediate', 'active', 'silent'].includes(value) ? value : 'active';
   updatePromptSelect.value = normalizeUpdatePromptMode(updatePromptStored.updateForegroundPromptMode);
   updatePromptSelect.addEventListener('change', () => {
     void chrome.storage.local.set({ updateForegroundPromptMode: updatePromptSelect.value });
   });
   chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.backgroundAutoInstallForcedEnabled) {
+      forcedUpdateInput.checked = changes.backgroundAutoInstallForcedEnabled.newValue !== false;
+      forcedUpdateModal.style.display = 'none';
+    }
     if (area === 'local' && changes.updateForegroundPromptMode) {
       updatePromptSelect.value = normalizeUpdatePromptMode(changes.updateForegroundPromptMode.newValue);
     }
@@ -2432,6 +2463,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       updateDirectoryStartupCheckEnabled: true,
       updateFileConcurrency: null,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
+      backgroundAutoInstallForcedEnabled: true,
       backgroundAutoUpdateIntervalMinutes: DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES,
       popupWidthPx: DEFAULT_POPUP_WIDTH_PX,
       popupHeightPx: DEFAULT_POPUP_HEIGHT_PX,
@@ -2511,6 +2543,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
     document.getElementById('updateDirectoryStartupCheckEnabled').checked = true;
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;
+    forcedUpdateInput.checked = true;
     setScheduleIntervalEditor('backgroundAutoUpdateInterval', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
     updateBackgroundAutoInstallOptionalDisabled();
     renderBackgroundAutoUpdateStatus(null);

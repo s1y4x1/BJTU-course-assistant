@@ -58,6 +58,7 @@ let versionPendingDirectoryUpdate = null;
 let versionSupplementalReloadRequired = false;
 let versionButtonLatestReload = true;
 let versionButtonLatestForce = false;
+let versionAutoInstallForcedEnabled = true;
 let versionNoticeSuppressedByDownload = false;
 let versionLatestReleaseRequestPromise = null;
 let versionInfoLoadPromise = null;
@@ -769,7 +770,7 @@ function ensureVersionNoticeModal() {
   const ignoreBtn = modal.querySelector('#version-notice-ignore');
   if (ignoreBtn instanceof HTMLButtonElement) {
     ignoreBtn.addEventListener('click', async () => {
-      if (versionButtonLatestForce) {
+      if (versionButtonLatestForce && versionAutoInstallForcedEnabled) {
         cancelVersionNoticeForceCountdown();
         modal.style.display = 'none';
         showToast('将在关闭扩展页面后的例行检查中更新', 'warning', 2200);
@@ -989,7 +990,7 @@ function openVersionNoticeModal(overrideMode) {
   }
   if (ignoreBtn instanceof HTMLButtonElement) {
     const ignoreLabel = ignoreBtn.querySelector('.version-ignore-main');
-    if (mode === 'outdated' && versionButtonLatestForce) {
+    if (mode === 'outdated' && versionButtonLatestForce && versionAutoInstallForcedEnabled) {
       if (ignoreLabel instanceof HTMLElement) ignoreLabel.textContent = '关闭页面后更新';
       ignoreBtn.style.display = 'flex';
     } else if (mode === 'outdated') {
@@ -1007,7 +1008,7 @@ function openVersionNoticeModal(overrideMode) {
   }
   modal.style.display = 'flex';
   syncVersionNoticeDownloadButton();
-  if (mode === 'outdated' && versionButtonLatestForce) {
+  if (mode === 'outdated' && versionButtonLatestForce && versionAutoInstallForcedEnabled) {
     startVersionNoticeForceCountdown(modal, sourceSelect);
   }
 }
@@ -3187,6 +3188,7 @@ function queueHigherVersionRelease(release) {
 }
 
 async function loadVersionInfoInternal(releaseOverride = null) {
+  versionAutoInstallForcedEnabled = (await getLocal('backgroundAutoInstallForcedEnabled', true)) !== false;
   const isPopupPage = typeof popupMode !== 'undefined' && popupMode;
   const autoUpdateParam = !isPopupPage ? (() => {
     try {
@@ -3308,7 +3310,7 @@ async function loadVersionInfoInternal(releaseOverride = null) {
         }
         return;
       }
-      if (latestForce) {
+      if (latestForce && versionAutoInstallForcedEnabled) {
         versionNoticeShownVersion = latestTag;
         const requestedAt = Number(fullscreenUpdateRequest?.requestedAt) || 0;
         const requestIsFresh = autoUpdateRequested && requestedAt > 0 && Date.now() - requestedAt < 5 * 60 * 1000;
@@ -3461,6 +3463,20 @@ function setupVersionButton() {
   document.addEventListener('keydown', triggerPendingVersionClick);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
+    if (changes.backgroundAutoInstallForcedEnabled) {
+      versionAutoInstallForcedEnabled = changes.backgroundAutoInstallForcedEnabled.newValue !== false;
+      if (!versionAutoInstallForcedEnabled) cancelVersionNoticeForceCountdown();
+      const modal = document.getElementById('version-notice-modal');
+      const ignoreLabel = modal?.querySelector('.version-ignore-main');
+      if (versionButtonLatestForce && ignoreLabel) {
+        ignoreLabel.textContent = versionAutoInstallForcedEnabled ? '关闭页面后更新' : '忽略本次更新';
+      }
+      if (versionAutoInstallForcedEnabled && versionButtonLatestForce && versionButtonMode === 'outdated'
+          && modal?.style.display === 'flex' && document.getElementById('version-source-select')?.value === 'zipball') {
+        startVersionNoticeForceCountdown(modal, document.getElementById('version-source-select'));
+      }
+      syncVersionNoticeDownloadButton();
+    }
     if (changes.updateForegroundPromptMode) {
       updatePromptMode = changes.updateForegroundPromptMode.newValue || 'active';
       if (updatePromptMode === 'silent') pendingBackgroundVersionClick = false;

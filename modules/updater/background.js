@@ -3,6 +3,7 @@
 
   const ENABLED_KEY = 'backgroundAutoUpdateEnabled';
   const INSTALL_OPTIONAL_KEY = 'backgroundAutoInstallOptionalEnabled';
+  const INSTALL_FORCED_KEY = 'backgroundAutoInstallForcedEnabled';
   const INTERVAL_KEY = 'backgroundAutoUpdateIntervalMinutes';
   const FOREGROUND_PROMPT_KEY = 'updateForegroundPromptMode';
   const DEFAULT_INTERVAL_MINUTES = 5;
@@ -155,12 +156,12 @@
     return message.length > 1800 ? `${message.slice(0, 1799)}…` : message;
   }
 
-  async function notifyUpdateDetected(release, lastNotifiedVersion = '', installOptionalUpdate = false, previousDescription = '') {
+  async function notifyUpdateDetected(release, lastNotifiedVersion = '', installUpdate = false, previousDescription = '') {
     if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
     try {
       const notificationId = `${DETECTED_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
-      const titlePrefix = release?.force ? '正在更新：'
-        : (installOptionalUpdate ? '安装非强制更新：' : '发现新版本：');
+      const titlePrefix = installUpdate
+        ? (release?.force ? '正在更新：' : '安装非强制更新：') : '发现新版本：';
       const version = String(release?.version || '').trim();
       const titleVersion = release?.hasName ? `${release.name} (${version})` : (version || '新版本');
       await createSystemNotification(notificationId, {
@@ -168,7 +169,7 @@
         iconUrl: 'icons/128.png',
         title: `${titlePrefix}${titleVersion}`,
         message: buildDetectedNotificationMessage(release, previousDescription),
-        ...(!release.force && !installOptionalUpdate
+        ...(!installUpdate
           ? { buttons: [{ title: '安装' }, { title: '忽略' }] } : {}),
         priority: 1
       }, 'background-update-detected');
@@ -918,7 +919,7 @@
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
-        ENABLED_KEY, INSTALL_OPTIONAL_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
+        ENABLED_KEY, INSTALL_OPTIONAL_KEY, INSTALL_FORCED_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
         DETECTED_NOTIFICATION_VERSION_KEY, INSTALLED_RELEASE_DESCRIPTION_KEY,
         'ignoredUpdateVersion', FOREGROUND_PROMPT_KEY
       ]);
@@ -963,7 +964,9 @@
       if (await applyMetadataOnlyRelease(root, release, archive)) {
         return { updated: true, reloaded: false, metadataOnly: true, release };
       }
-      if (!installRequested && !release.force && !stored[INSTALL_OPTIONAL_KEY]
+      const autoInstallForced = (await chrome.storage.local.get(INSTALL_FORCED_KEY))[INSTALL_FORCED_KEY] !== false;
+      const autoInstallEnabled = release.force ? autoInstallForced : stored[INSTALL_OPTIONAL_KEY] === true;
+      if (!installRequested && !autoInstallEnabled
         && normalizeVersion(stored.ignoredUpdateVersion) === normalizeVersion(release.version)) {
         return { updated: false, ignored: true, release };
       }
@@ -987,7 +990,7 @@
       }
       const retryingStaleInstallation = normalizeVersion(stored?.[PENDING_RELOAD_KEY]?.ver)
         === normalizeVersion(release.version);
-      const installOptionalUpdate = installRequested || stored?.[INSTALL_OPTIONAL_KEY] === true || retryingStaleInstallation;
+      const installUpdate = installRequested || autoInstallEnabled || (!release.force && retryingStaleInstallation);
       if (!root) {
         await notifyUpdateIssue(
           'permission',
@@ -1012,15 +1015,15 @@
       await notifyUpdateDetected(
         release,
         stored?.[DETECTED_NOTIFICATION_VERSION_KEY],
-        installOptionalUpdate,
+        installUpdate,
         previousDescription
       );
-      if (!release.force && !installOptionalUpdate) {
+      if (!installUpdate) {
         await setStatus('optional-update-available', {
           localVersion,
           version: release.version,
           name: release.name,
-          force: false
+          force: release.force
         });
         return { updated: false, optionalUpdateAvailable: true, release };
       }
@@ -1141,9 +1144,9 @@
     ensureAlarm().then(() => runBackgroundUpdate({ suppressRecentReloadRetry: true })).catch(() => {});
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INSTALL_OPTIONAL_KEY] && !changes[INTERVAL_KEY])) return;
+    if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INSTALL_OPTIONAL_KEY] && !changes[INSTALL_FORCED_KEY] && !changes[INTERVAL_KEY])) return;
     void ensureAlarm();
-    if (changes[ENABLED_KEY]?.newValue === true || changes[INSTALL_OPTIONAL_KEY]?.newValue === true) {
+    if (changes[ENABLED_KEY]?.newValue === true || changes[INSTALL_OPTIONAL_KEY]?.newValue === true || changes[INSTALL_FORCED_KEY]?.newValue === true) {
       runBackgroundUpdate().catch(() => {});
     }
   });
