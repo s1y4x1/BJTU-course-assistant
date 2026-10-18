@@ -1218,6 +1218,7 @@
 
   function render() {
     if (!env?.courseList) return;
+    const animationSnapshot = global.BjtuColors.captureAnimations(env.courseList, '.xuetangx-standalone-card .hw-card-item');
     clearCards();
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 140000;
     const rateLimitText = problemApplyRateLimitText();
@@ -1263,6 +1264,7 @@
       });
       env.courseList.appendChild(card);
     });
+    global.BjtuColors.restoreAnimations(env.courseList, animationSnapshot, '.xuetangx-standalone-card .hw-card-item');
     env.updateEmpty?.();
     env.sortCourseCards?.();
     env.scheduleCache?.();

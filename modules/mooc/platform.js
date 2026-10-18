@@ -289,6 +289,7 @@ let moocLoginAssistOpening = null;
 
   function render() {
     if (!env?.courseList) return;
+    const animationSnapshot = globalThis.BjtuColors.captureAnimations(env.courseList, '.mooc-standalone-card .hw-card-item');
     clearCards();
     const baseOrder = Number(env.courseList.dataset.orderBase || 100000) + 120000;
     courses.forEach((course, index) => {
@@ -331,6 +332,7 @@ let moocLoginAssistOpening = null;
       });
       env.courseList.appendChild(card);
     });
+    globalThis.BjtuColors.restoreAnimations(env.courseList, animationSnapshot, '.mooc-standalone-card .hw-card-item');
     env.updateEmpty?.();
     env.sortCourseCards?.();
     env.scheduleCache?.();

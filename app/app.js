@@ -5771,6 +5771,7 @@ function renderHomeworkList(courseId) {
     : '';
 
   area.innerHTML = `${typeLoadingHtml}${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${forcePublishScoreButtonHtml}${doneHtml}</div>` : ''}`;
+  const homeworkAnimationSnapshot = BjtuColors.captureAnimations(area);
   applyExpandableAutoToggle(area);
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
@@ -5778,6 +5779,7 @@ function renderHomeworkList(courseId) {
 }
 
 // Videos (best-effort implementation)
+  BjtuColors.restoreAnimations(area, homeworkAnimationSnapshot);
 async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId, { signal = null, onLinkExpired = null } = {}) {
   const getLinksDiv = () => document.getElementById(containerId);
   const courseListVersion = getCourseListLoadVersionSnapshot();

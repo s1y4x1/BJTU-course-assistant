@@ -34,22 +34,65 @@
     return Math.log2(1 + Math.max(0, deadlineTime(card.dataset.homeworkDeadline) - Date.now()) / 3600000) + 0.5;
   }
 
+  function homeworkAnimations(card) {
+    return card.getAnimations({ subtree: true }).filter((animation) => homeworkAnimationPeriods[animation.animationName]
+      && animation.effect.getComputedTiming().iterations === Infinity);
+  }
+
   document.addEventListener('animationiteration', (event) => {
     const property = homeworkAnimationPeriods[event.animationName];
     const card = event.target;
     if (!property || !card.matches('.hw-card-item.homework-marquee')) return;
-    const animation = card.getAnimations().find((item) => item.animationName === event.animationName
+    const animation = homeworkAnimations(card).find((item) => item.animationName === event.animationName
       && (item.effect.pseudoElement || '') === (event.pseudoElement || ''));
     if (!animation || animation.currentTime === null) return;
     const previousDuration = animation.effect.getComputedTiming().duration;
     const currentTime = animation.currentTime;
     if (!(previousDuration > 0)) return;
-    setProperty(card, property, `${nextHomeworkPeriod(card)}s`);
-    // CSS changes duration without resetting elapsed time. Preserve the boundary
-    // (including event-delivery delay) so the next cycle starts continuously.
-    const duration = animation.effect.getComputedTiming().duration;
+    const duration = nextHomeworkPeriod(card) * 1000;
+    // CSS timing is resolved lazily; override it explicitly before preserving phase.
+    animation.effect.updateTiming({ duration });
     animation.currentTime = currentTime * duration / previousDuration;
   });
+
+  function homeworkAnimationKey(card) {
+    const title = card.querySelector('[data-homework-title]');
+    return JSON.stringify([card.closest('[data-course-rankable="1"]')?.dataset.courseId,
+      title?.dataset.homeworkTitle, title?.querySelector('a')?.getAttribute('href'), card.dataset.homeworkDeadline]);
+  }
+
+  function captureAnimations(root, selector = '.hw-card-item') {
+    const states = new Map();
+    root.querySelectorAll(selector).forEach((card) => {
+      const animations = homeworkAnimations(card).filter((animation) => animation.currentTime !== null).map((animation) => ({
+        name: animation.animationName,
+        pseudoElement: animation.effect.pseudoElement || '',
+        duration: animation.effect.getComputedTiming().duration,
+        currentTime: animation.currentTime,
+        playbackRate: animation.playbackRate
+      }));
+      if (animations.length) states.set(homeworkAnimationKey(card), animations);
+    });
+    return { states, time: document.timeline.currentTime };
+  }
+
+  function restoreAnimations(root, snapshot, selector = '.hw-card-item') {
+    const cards = [...root.querySelectorAll(selector)];
+    refreshCards(cards);
+    const elapsed = document.timeline.currentTime - snapshot.time;
+    cards.forEach((card) => {
+      const saved = snapshot.states.get(homeworkAnimationKey(card));
+      if (!saved) return;
+      homeworkAnimations(card).forEach((animation) => {
+        const state = saved.find((item) => item.name === animation.animationName
+          && item.pseudoElement === (animation.effect.pseudoElement || ''));
+        if (!state) return;
+        animation.effect.updateTiming({ duration: state.duration });
+        animation.playbackRate = state.playbackRate;
+        animation.currentTime = state.currentTime + elapsed * state.playbackRate;
+      });
+    });
+  }
 
   function normalize(value) {
     return Object.fromEntries(Object.keys(defaults)
@@ -285,7 +328,7 @@
     });
   }
 
-  global.BjtuColors = Object.freeze({ storageKey, gradientKey, marqueeKey, defaults, normalize, interpolate, deadlineTime, urgency, apply });
+  global.BjtuColors = Object.freeze({ storageKey, gradientKey, marqueeKey, defaults, normalize, interpolate, deadlineTime, urgency, apply, captureAnimations, restoreAnimations });
   void chrome.storage.local.get([storageKey, gradientKey, marqueeKey]).then((stored) => apply(stored[storageKey] || {}, stored[gradientKey] !== false, stored[marqueeKey] !== false));
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || (!changes[storageKey] && !changes[gradientKey] && !changes[marqueeKey])) return;
