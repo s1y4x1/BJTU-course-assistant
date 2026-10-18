@@ -259,7 +259,6 @@ async function loadVersionHistory() {
   if (versionHistoryLoading || versionHistoryEnded) return;
   const select = document.getElementById('version-history-select');
   const list = document.getElementById('version-history-list');
-  const toggle = document.getElementById('version-history-toggle');
   const status = document.getElementById('version-history-status');
   const retry = document.getElementById('version-history-retry');
   versionHistoryLoading = true;
@@ -285,10 +284,6 @@ async function loadVersionHistory() {
       option.setAttribute('role', 'option');
       option.dataset.sha = entry.sha;
       option.textContent = `${date} · ${entry.sha.slice(0, 7)} · ${entry.commit.message.split('\n')[0]}`;
-      if (!select.value) {
-        select.value = entry.sha;
-        toggle.textContent = option.textContent;
-      }
       option.setAttribute('aria-selected', String(select.value === entry.sha));
       fragment.append(option);
     });
@@ -337,7 +332,7 @@ function syncVersionNoticeDownloadButton(buttonText) {
   const btn = document.getElementById('version-notice-download');
   if (!(btn instanceof HTMLButtonElement)) return;
   const historySelected = document.getElementById('version-source-select')?.value === 'history';
-  btn.disabled = historySelected && !document.getElementById('version-history-select')?.value;
+  btn.disabled = historySelected && !versionHistoryCommits.has(document.getElementById('version-history-select')?.value);
   if (versionNoticeForceCountdownTimer) {
     const sourceSelect = document.getElementById('version-source-select');
     const source = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
@@ -385,7 +380,7 @@ async function beginVersionNoticeDownload(modal, sourceSelect) {
   cancelVersionNoticeForceCountdown();
   const selectedSource = sourceSelect instanceof HTMLSelectElement ? sourceSelect.value : 'zipball';
   const commit = document.getElementById('version-history-select')?.value;
-  if (selectedSource === 'history' && !commit) return;
+  if (selectedSource === 'history' && !versionHistoryCommits.has(commit)) return;
   if (modal instanceof HTMLElement) modal.style.display = 'none';
   const selectedUrl = selectedSource === 'history'
     ? `https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/${commit}`

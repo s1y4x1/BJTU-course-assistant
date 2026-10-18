@@ -819,6 +819,16 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
 .version-notice-download-btn:hover {
     background: #1e40af;
 }
+.version-notice-download-btn:disabled,
+.version-notice-download-btn:disabled:hover {
+    background:#e2e8f0;
+    color:#64748b;
+    cursor:not-allowed;
+}
+html[data-color-scheme="dark"] .version-notice-download-btn:disabled {
+    background:#334155;
+    color:#94a3b8;
+}
 .version-notice-ignore-btn {
     margin-top: 8px;
     width: 100%;
