@@ -40,12 +40,13 @@
       </div>
       <div id="version-history-row" class="version-history-row" hidden>
         <div class="version-history-picker">
-          <select id="version-history-select" aria-label="历史版本"></select>
-          <span id="version-history-status" role="status" hidden></span>
+          <input id="version-history-select" type="hidden">
+          <button id="version-history-toggle" type="button" popovertarget="version-history-list" aria-label="历史版本" aria-haspopup="listbox">选择历史版本</button>
+          <div id="version-history-list" popover="auto" role="listbox" aria-label="历史版本">
+            <div id="version-history-status" role="status"></div>
+            <button id="version-history-retry" type="button" hidden>重试</button>
+          </div>
         </div>
-        <label class="version-history-count" for="version-history-per-page">加载
-          <input id="version-history-per-page" class="bjtu-text-input" type="number" min="1" step="1" value="1" aria-label="加载页数，每页100条" required>00条
-        </label>
       </div>
     </div>
     <div class="version-uninstall-entry">

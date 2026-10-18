@@ -403,37 +403,64 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
     margin-top:6px;
 }
 .version-history-picker { flex:1; min-width:0; }
-.version-history-picker select { width:100%; min-width:0; }
-#version-history-select,
-#version-history-select::picker(select) { appearance:base-select; }
-#version-history-select {
-    height:auto !important;
+#version-history-toggle {
+    anchor-name:--version-history;
+    box-sizing:border-box;
+    width:100%;
+    min-height:34px;
+    padding:6px 8px;
+    font:inherit;
+    font-size:var(--bjtu-font-size-body,13px);
+    text-align:left;
     white-space:normal;
     overflow-wrap:anywhere;
+    color:var(--bjtu-select-color);
+    background:var(--bjtu-select-background);
+    border:1px solid var(--bjtu-select-border);
+    border-radius:6px;
+    cursor:default;
 }
-#version-history-select::picker(select) {
+#version-history-toggle::after { content:' ▾'; }
+#version-history-list {
+    position-anchor:--version-history;
+    position-area:bottom span-right;
+    position-try-fallbacks:flip-block, flip-inline;
+    inset:auto;
+    margin:4px 0;
+    padding:0;
     box-sizing:border-box;
     width:anchor-size(width);
     max-width:calc(100vw - 24px);
     max-height:min(60vh, 480px);
     overflow:auto;
-    font:inherit;
+    font-family:inherit;
+    font-size:var(--bjtu-font-size-body,13px);
+    text-align:left;
     color:var(--bjtu-select-color);
     background:var(--bjtu-select-background);
     border:1px solid var(--bjtu-select-border);
     border-radius:6px;
 }
-#version-history-select option {
+#version-history-list [role="option"] {
+    display:block;
+    width:100%;
     min-width:0;
     padding:6px 8px;
+    border:0;
+    border-radius:0;
+    font:inherit;
+    color:inherit;
+    background:transparent;
+    text-align:left;
+    cursor:default;
     white-space:normal;
     overflow-wrap:anywhere;
 }
-#version-history-select option:checked { background:color-mix(in srgb, #3b82f6 18%, var(--bjtu-select-background)); }
-#version-history-select option:hover { background:color-mix(in srgb, #3b82f6 10%, var(--bjtu-select-background)); }
-#version-history-status:not([hidden]) { display:flex; align-items:center; min-height:34px; font-size:var(--bjtu-font-size-body,13px); }
-.version-history-count { display:flex; align-items:center; gap:4px; margin:0; white-space:nowrap; font-size:var(--bjtu-font-size-body,13px); }
-.version-history-count input { width:5em; font-size:var(--bjtu-font-size-body,13px); }
+#version-history-list [aria-selected="true"] { background:color-mix(in srgb, #3b82f6 18%, var(--bjtu-select-background)); }
+#version-history-list [role="option"]:hover,
+#version-history-list [role="option"]:focus-visible { background:color-mix(in srgb, #3b82f6 10%, var(--bjtu-select-background)); }
+#version-history-status { padding:8px; color:inherit; opacity:.7; }
+#version-history-retry { margin:0 8px 8px; font:inherit; }
 .version-download-body {
     flex: 0 0 auto;
     font-size: 13px;
