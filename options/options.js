@@ -904,15 +904,24 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const forcedUpdateInput = document.getElementById('backgroundAutoInstallForcedEnabled');
   const forcedUpdateModal = document.getElementById('forced-update-confirm-modal');
   forcedUpdateInput.checked = updatePromptStored.backgroundAutoInstallForcedEnabled !== false;
+  let forcedUpdateChangeTarget = null;
+  const requestForcedUpdateChange = (input) => {
+    forcedUpdateChangeTarget = input;
+    input.checked = true;
+    forcedUpdateModal.querySelector('.reset-confirm-message').textContent = input === forcedUpdateInput
+      ? '关闭后可能错过重要更新，导致部分功能不可用。确定要关闭「自动安装强制更新」吗？'
+      : '关闭「后台自动检查并安装更新」也会停止强制更新的自动安装，可能错过重要更新，导致部分功能不可用。确定要关闭吗？';
+    forcedUpdateModal.style.display = 'flex';
+    document.getElementById('forced-update-confirm-cancel').focus();
+  };
   const cancelForcedUpdateChange = () => {
     forcedUpdateModal.style.display = 'none';
-    forcedUpdateInput.focus();
+    forcedUpdateChangeTarget?.focus();
+    forcedUpdateChangeTarget = null;
   };
   forcedUpdateInput.addEventListener('change', async () => {
     if (!forcedUpdateInput.checked) {
-      forcedUpdateInput.checked = true;
-      forcedUpdateModal.style.display = 'flex';
-      document.getElementById('forced-update-confirm-cancel').focus();
+      requestForcedUpdateChange(forcedUpdateInput);
       return;
     }
     await chrome.storage.local.set({ backgroundAutoInstallForcedEnabled: true });
@@ -920,10 +929,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   });
   document.getElementById('forced-update-confirm-cancel').addEventListener('click', cancelForcedUpdateChange);
   document.getElementById('forced-update-confirm-submit').addEventListener('click', async () => {
-    await chrome.storage.local.set({ backgroundAutoInstallForcedEnabled: false });
-    forcedUpdateInput.checked = false;
+    if (forcedUpdateChangeTarget === forcedUpdateInput) {
+      await chrome.storage.local.set({ backgroundAutoInstallForcedEnabled: false });
+      forcedUpdateInput.checked = false;
+      setMsg('已关闭强制更新自动安装');
+    } else if (forcedUpdateChangeTarget) {
+      await applyBackgroundAutoUpdateChange(false);
+    }
     cancelForcedUpdateChange();
-    setMsg('已关闭强制更新自动安装');
   });
   forcedUpdateModal.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') cancelForcedUpdateChange();
@@ -1115,10 +1128,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   };
   renderBackgroundAutoUpdateStatus(backgroundAutoUpdateStatus);
 
-  const updateBackgroundAutoInstallOptionalDisabled = () => {
+  const updateBackgroundAutoUpdateOptionsDisabled = () => {
     const parentEnabled = !!document.getElementById('backgroundAutoUpdateEnabled')?.checked;
-    const child = document.getElementById('backgroundAutoInstallOptionalEnabled');
-    if (child instanceof HTMLInputElement) {
+    for (const id of ['backgroundAutoInstallOptionalEnabled', 'backgroundAutoInstallForcedEnabled', 'updateForegroundPromptMode']) {
+      const child = document.getElementById(id);
       child.disabled = !parentEnabled;
       child.closest('label')?.classList.toggle('is-disabled', !parentEnabled);
     }
@@ -1147,7 +1160,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     };
     homeworkBackgroundRefreshStatusEl.textContent = messages[state] || '等待下一次后台作业获取。';
   };
-  updateBackgroundAutoInstallOptionalDisabled();
+  updateBackgroundAutoUpdateOptionsDisabled();
 
   const renderHomeworkBackgroundAccounts = (context) => {
     if (!(homeworkBackgroundRefreshAccountSelect instanceof HTMLSelectElement)) return;
@@ -1672,7 +1685,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       }
       if (changes.backgroundAutoUpdateEnabled) {
         applyBooleanUi('backgroundAutoUpdateEnabled', changes.backgroundAutoUpdateEnabled.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED);
-        updateBackgroundAutoInstallOptionalDisabled();
+        updateBackgroundAutoUpdateOptionsDisabled();
         renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus?.newValue || null);
       }
       if (changes.backgroundAutoInstallOptionalEnabled) {
@@ -2081,12 +2094,20 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
   });
 
-  document.getElementById('backgroundAutoUpdateEnabled')?.addEventListener('change', async (event) => {
-    const enabled = !!event.currentTarget.checked;
+  async function applyBackgroundAutoUpdateChange(enabled) {
     await chrome.storage.local.set({ backgroundAutoUpdateEnabled: enabled });
-    updateBackgroundAutoInstallOptionalDisabled();
+    document.getElementById('backgroundAutoUpdateEnabled').checked = enabled;
+    updateBackgroundAutoUpdateOptionsDisabled();
     renderBackgroundAutoUpdateStatus(enabled ? { status: 'checking' } : null);
     setMsg(enabled ? '已启用后台自动更新' : '已关闭后台自动更新');
+  }
+  document.getElementById('backgroundAutoUpdateEnabled')?.addEventListener('change', async (event) => {
+    const enabled = !!event.currentTarget.checked;
+    if (!enabled && forcedUpdateInput.checked) {
+      requestForcedUpdateChange(event.currentTarget);
+      return;
+    }
+    await applyBackgroundAutoUpdateChange(enabled);
   });
 
   document.getElementById('downloadInExtensionEnabled').addEventListener('change', async () => {
@@ -2545,7 +2566,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;
     forcedUpdateInput.checked = true;
     setScheduleIntervalEditor('backgroundAutoUpdateInterval', DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
-    updateBackgroundAutoInstallOptionalDisabled();
+    updateBackgroundAutoUpdateOptionsDisabled();
     renderBackgroundAutoUpdateStatus(null);
     updateThemeModeUi(DEFAULT_THEME_MODE);
     updateAnimationUi(DEFAULT_ANIMATION_MODE, DEFAULT_ANIMATION_SPEED);
