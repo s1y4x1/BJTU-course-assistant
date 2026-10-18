@@ -75,26 +75,26 @@
   position:relative;
   display:inline-block;
 }
-.ve-course-teacher-table {
+.ve-popover-table {
   border-collapse:collapse;
   font-size:12px;
   width:max-content;
   table-layout:auto;
 }
-.ve-course-teacher-table th,
-.ve-course-teacher-table td {
-  border:1px solid #e5e7eb;
+.ve-popover-table th,
+.ve-popover-table td {
+  border:1px solid #94a3b8;
   padding:4px 6px;
   text-align:left;
   vertical-align:middle;
   white-space:nowrap;
 }
-.ve-course-teacher-table th {
+.ve-popover-table th {
   background:#f8fafc;
   color:#334155;
   font-weight:700;
 }
-.ve-course-teacher-table td:last-child { white-space:nowrap; }
+.ve-popover-table td:last-child { white-space:nowrap; }
 .ve-course-teacher-loading {
   margin-top:6px;
   font-size:12px;

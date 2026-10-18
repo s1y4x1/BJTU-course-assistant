@@ -422,14 +422,14 @@ html[data-color-scheme="dark"] .version-download-percent {
     color: #e2e8f0;
 }
 
-html[data-color-scheme="dark"] .ve-course-teacher-table th {
+html[data-color-scheme="dark"] .ve-popover-table th {
   background: #1e293b;
   color: #e2e8f0;
 }
 
-html[data-color-scheme="dark"] .ve-course-teacher-table th,
-html[data-color-scheme="dark"] .ve-course-teacher-table td {
-  border-color: #334155;
+html[data-color-scheme="dark"] .ve-popover-table th,
+html[data-color-scheme="dark"] .ve-popover-table td {
+  border-color: #64748b;
 }
 
 html[data-color-scheme="dark"] .platform-status-btn.unselected,

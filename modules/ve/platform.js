@@ -313,7 +313,7 @@ function renderVeTeacherMetaPopHtml(meta, teachers) {
   }).join('');
 
   return `
-    <table class="ve-course-teacher-table" style="font-size:12px;">
+    <table class="ve-popover-table" style="font-size:12px;">
       <thead><tr><th>姓名</th><th>教职工号/助教号</th><th>角色</th><th>操作</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -707,7 +707,7 @@ function renderVeCourseTeachersPopHtml(meta) {
     ? (() => {
       const body = renderVeCourseTeacherRowsHtml(rows);
       return `
-        <table class="ve-course-teacher-table">
+        <table class="ve-popover-table">
           <thead><tr><th>教师姓名</th><th>工号</th><th>操作</th><th>教室</th><th>课程号</th></tr></thead>
           <tbody>${body}</tbody>
         </table>
@@ -857,7 +857,7 @@ function updateVeCourseTeachersPopUi(courseId) {
       } else {
         const tbody = renderVeCourseTeacherRowsHtml(rows);
         tableWrap.innerHTML = `
-          <table class="ve-course-teacher-table">
+          <table class="ve-popover-table">
             <thead><tr><th>教师姓名</th><th>工号</th><th>操作</th><th>教室</th><th>课程号</th></tr></thead>
             <tbody>${tbody}</tbody>
           </table>
@@ -989,7 +989,7 @@ function renderVeStudentsPopHtml(meta) {
     return '<div style="font-size:12px; color:#64748b;">未查询到学生</div>';
   }
   return `
-    <table class="ve-course-teacher-table">
+    <table class="ve-popover-table">
       <thead><tr><th>所属分组</th><th>班级</th><th>学号</th><th>姓名</th><th>操作</th></tr></thead>
       <tbody>${renderVeStudentRowsHtml(students)}</tbody>
     </table>
