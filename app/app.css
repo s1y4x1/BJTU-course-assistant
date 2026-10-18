@@ -1393,6 +1393,15 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     background: transparent;
     color: #0284c7;
 }
+:is(.homework-toggle-row--done, .homework-toggle-row--overdue) .homework-toggle-btn.is-expanded { color:#0369a1; }
+:is(.homework-toggle-row--done, .homework-toggle-row--overdue) .homework-toggle-btn.is-expanded:hover { color:#0284c7; }
+html[data-color-scheme="dark"] .homework-toggle-btn { color:#7dd3fc; }
+html[data-color-scheme="dark"] .homework-toggle-btn.is-expanded { color:#cbd5e1; }
+html[data-color-scheme="dark"] .homework-toggle-btn:hover { color:#38bdf8; }
+html[data-color-scheme="dark"] .homework-toggle-btn.is-expanded:hover { color:#94a3b8; }
+html[data-color-scheme="dark"] .homework-toggle-btn .homework-toggle-line { opacity:.75; }
+html[data-color-scheme="dark"] :is(.homework-toggle-row--done, .homework-toggle-row--overdue) .homework-toggle-btn.is-expanded { color:#7dd3fc; }
+html[data-color-scheme="dark"] :is(.homework-toggle-row--done, .homework-toggle-row--overdue) .homework-toggle-btn.is-expanded:hover { color:#38bdf8; }
 .force-score-publish-row {
     display: flex;
     justify-content: center;
