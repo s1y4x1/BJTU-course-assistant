@@ -1,12 +1,13 @@
 (function initVeVideoPage() {
   'use strict';
 
-  let pageUrl;
-  try { pageUrl = new URL(window.top.location.href); } catch { return; }
-  const coursePage = pageUrl.pathname === '/ve/back/coursePlatform/coursePlatform.shtml'
-    && pageUrl.searchParams.get('method') === 'toCoursePlatform';
-  const visitsPage = pageUrl.pathname === '/ve/back/video/teachingVisits.shtml'
-    && pageUrl.searchParams.get('method') === 'videoList1';
+  const ownUrl = new URL(location.href);
+  const isCoursePage = (url) => url.pathname === '/ve/back/coursePlatform/coursePlatform.shtml'
+    && url.searchParams.get('method') === 'toCoursePlatform';
+  const visitsPage = ownUrl.pathname === '/ve/back/video/teachingVisits.shtml'
+    && ownUrl.searchParams.get('method') === 'videoList1';
+  let coursePage = isCoursePage(ownUrl);
+  try { coursePage ||= isCoursePage(new URL(window.top.location.href)); } catch {}
   if (!coursePage && !visitsPage) return;
 
   function createToggle(text, checked, onChange) {
@@ -25,14 +26,13 @@
   }
 
   if (visitsPage) {
-    if (window !== window.top) return;
     const identity = new URL(location.href);
     identity.searchParams.delete('userRole');
     identity.searchParams.sort();
     identity.hash = '';
     const key = `bjtuca-ve-video-role:${identity.href}`;
     const savedRole = sessionStorage.getItem(key);
-    createToggle('切换访问角色（userRole=2）', savedRole !== null && pageUrl.searchParams.get('userRole') === '2', (enabled) => {
+    createToggle('切换访问角色（userRole=2）', savedRole !== null && ownUrl.searchParams.get('userRole') === '2', (enabled) => {
       const url = new URL(location.href);
       if (enabled) {
         sessionStorage.setItem(key, JSON.stringify(url.searchParams.get('userRole')));
@@ -114,7 +114,7 @@
   });
   void chrome.storage.local.get(storageKey).then((stored) => {
     enabled = stored[storageKey] === true;
-    if (window === window.top) toggle = createToggle('三画面布局', enabled, (checked) => {
+    if (window === window.top || isCoursePage(ownUrl)) toggle = createToggle('三画面布局', enabled, (checked) => {
       enabled = checked;
       applyLayout();
       void chrome.storage.local.set({ [storageKey]: checked });

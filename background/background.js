@@ -384,12 +384,12 @@ const OPTIONAL_CONTENT_SCRIPTS = [
   {
     id: 'bjtu-ve-video-page',
     module: 've',
-    matches: ['http://123.121.147.7:88/ve/*', 'http://2071565063:88/ve/*'],
+    matches: ['http://123.121.147.7:88/*', 'http://2071565063:88/*'],
     js: ['modules/ve/video-page.js'],
     css: ['modules/ve/video-page.css'],
     runAt: 'document_idle',
     allFrames: true,
-    matchAboutBlank: true
+    matchOriginAsFallback: true
   },
   { id: 'bjtu-mooc-inject', module: 'mooc', matches: ['https://www.icourse163.org/*'], js: ['modules/mooc/inject.js'], runAt: 'document_idle' },
   { id: 'bjtu-jlgj-theme', module: 'jlgj', matches: ['https://i.jielong.com/*'], js: ['modules/jlgj/theme.js'], runAt: 'document_start' },
