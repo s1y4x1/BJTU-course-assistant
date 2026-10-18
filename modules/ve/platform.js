@@ -2141,11 +2141,12 @@ function bindCourseCardActionButtons(root = courseListDiv) {
     if (btnAssessment instanceof HTMLButtonElement && btnAssessment.__courseActionBound !== true) {
       const assessmentUrl = getCourseAssessmentWorkbookUrl(courseId);
       if (assessmentUrl) btnAssessment.dataset.qrUrl = assessmentUrl;
+      btnAssessment.disabled = browserPackageDownloads.has(assessmentUrl);
       btnAssessment.__courseActionBound = true;
       btnAssessment.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        downloadCourseAssessmentWorkbook(courseId);
+        downloadCourseAssessmentWorkbook(courseId, btnAssessment);
       });
     }
 
@@ -2361,11 +2362,12 @@ function renderCourseList(courses, {
     if (btnAssessment) {
       const assessmentUrl = getCourseAssessmentWorkbookUrl(courseId);
       if (assessmentUrl) btnAssessment.dataset.qrUrl = assessmentUrl;
+      btnAssessment.disabled = browserPackageDownloads.has(assessmentUrl);
       btnAssessment.__courseActionBound = true;
       btnAssessment.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        downloadCourseAssessmentWorkbook(courseId);
+        downloadCourseAssessmentWorkbook(courseId, btnAssessment);
       });
       updateAssessmentButtonVisibility(courseId);
     }
@@ -2555,12 +2557,18 @@ function getCourseAssessmentWorkbookUrl(courseId) {
   return cid ? `${BASE_VE}back/coursePlatform/homeWork.shtml?method=exportProcessAssessmentList&cId=${encodeURIComponent(cid)}` : '';
 }
 
-function downloadCourseAssessmentWorkbook(courseId) {
+async function downloadCourseAssessmentWorkbook(courseId, button) {
   const cid = String(courseId || '').trim();
-  if (!cid || !window.isTeacherAccount) return;
+  if (!cid || !window.isTeacherAccount || button.disabled) return;
   const url = getCourseAssessmentWorkbookUrl(cid);
-  enqueueResourceDownload({ id: `assessment_${cid}`, name: `课程考核记录表-${cid}.xls`, url })
-    .catch((error) => showToast('课程考核记录表下载失败：' + String(error?.message || error), 'error', 3000));
+  button.disabled = true;
+  try {
+    await downloadBrowserPackage(url);
+  } catch (error) {
+    showToast('课程考核记录表下载失败：' + String(error?.message || error), 'error', 3000);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function getCourseArchiveDownloadUrl(courseId) {
@@ -2740,12 +2748,18 @@ async function toggleCourseArchive(btn, courseId, { render = true } = {}) {
   }
 }
 
-function downloadCourseArchive(courseId) {
+async function downloadCourseArchive(courseId, button) {
   const cid = String(courseId || '').trim();
-  if (!cid) return;
+  if (!cid || button.disabled) return;
   const url = getCourseArchiveDownloadUrl(cid);
-  enqueueResourceDownload({ id: `archive_batch_${cid}`, name: `课程归档-${cid}.zip`, url, preferServerFilename: true })
-    .catch((error) => showToast('打包下载失败：' + String(error?.message || error), 'error', 3000));
+  button.disabled = true;
+  try {
+    await downloadBrowserPackage(url);
+  } catch (error) {
+    showToast('打包下载失败：' + String(error?.message || error), 'error', 3000);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function prefetchHomeworkAttachments(courseId, list, onItemComplete, { signal, isCurrent = () => true } = {}) {

@@ -2775,10 +2775,19 @@ function normalizeHomeworkAttachmentUrl(raw) {
   return `${BASE}${normalized}`;
 }
 
-const homeworkPackageDownloads = new Map();
+const browserPackageDownloads = new Map();
 
-function downloadHomeworkPackage(url) {
-  if (homeworkPackageDownloads.has(url)) return homeworkPackageDownloads.get(url);
+function syncBrowserPackageButtons(root = courseListDiv) {
+  root.querySelectorAll('[data-action="download-homework-package"], [data-action="assessment"], [data-action="archive-batch-download"]').forEach((button) => {
+    const url = button.dataset.downloadUrl || button.dataset.qrUrl;
+    // URL normalizes the decimal IPv4 spelling used by the address rewriter.
+    button.disabled = !!url && browserPackageDownloads.has(new URL(url).href);
+  });
+}
+
+function downloadBrowserPackage(url) {
+  url = new URL(url).href;
+  if (browserPackageDownloads.has(url)) return browserPackageDownloads.get(url);
   const pending = new Promise((resolve, reject) => {
     let downloadId;
     let settled = false;
@@ -2805,12 +2814,11 @@ function downloadHomeworkPackage(url) {
       .then((items) => checkState(items[0]?.state, items[0]?.error))
       .catch(finish);
   }).finally(() => {
-    homeworkPackageDownloads.delete(url);
-    courseListDiv.querySelectorAll('[data-action="download-homework-package"]').forEach((button) => {
-      if (button.dataset.downloadUrl === url) button.disabled = false;
-    });
+    browserPackageDownloads.delete(url);
+    syncBrowserPackageButtons();
   });
-  homeworkPackageDownloads.set(url, pending);
+  browserPackageDownloads.set(url, pending);
+  syncBrowserPackageButtons();
   return pending;
 }
 
@@ -4987,6 +4995,7 @@ function prepareResultAreaViewSwitch(resultArea) {
 
 function syncCourseActionButtonText(card, activeView = '') {
   if (!card) return;
+  syncBrowserPackageButtons(card);
   const replayBtn = card.querySelector('button[data-action="videos"]');
   const coursewareBtn = card.querySelector('button[data-action="courseware"]');
   const archiveBtn = card.querySelector('button[data-action="archive"]');
@@ -5655,7 +5664,7 @@ function renderHomeworkList(courseId) {
     const actionButtonsHtml = isTeacherMode
       ? `<div style="display:flex; align-items:center; gap:6px;">
           ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
-          ${batchDownloadUrl ? `<button type="button" class="btn" data-action="download-homework-package" data-download-url="${escapeHtml(batchDownloadUrl)}" ${homeworkPackageDownloads.has(batchDownloadUrl) ? 'disabled' : ''} style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; color:#fff;">下载已交作业包</button>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
+          ${batchDownloadUrl ? `<button type="button" class="btn" data-action="download-homework-package" data-download-url="${escapeHtml(batchDownloadUrl)}" ${browserPackageDownloads.has(batchDownloadUrl) ? 'disabled' : ''} style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; color:#fff;">下载已交作业包</button>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
         </div>`
       : `<div style="display:flex; align-items:center; gap:6px;">
           ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
@@ -5765,21 +5774,21 @@ function renderHomeworkList(courseId) {
   const noRelatedTip = !hasPendingTypeLoads && !isTeacherMode2 && !pendingHtml && totalHomeworkCount > 0 && !noPendingTip ? '<span class="homework-empty-tip" style="color:#999;">无未交作业</span>' : '';
   const noDataTip = !hasPendingTypeLoads && !isExternalStandalone && totalHomeworkCount === 0 ? '<span style="color:#999;">没有作业数据</span>' : '';
 
+  const homeworkAnimationSnapshot = BjtuColors.captureAnimations(area);
   // 教师账号：VE 非过时作业始终可见（蓝色）
   const teacherNonOverdueSectionHtml = (window.isTeacherAccount && teacherNonOverdueHtml)
     ? `<div class="homework-group homework-group--pending" data-homework-group="teacher-active">${teacherNonOverdueHtml}</div>`
     : '';
 
   area.innerHTML = `${typeLoadingHtml}${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${forcePublishScoreButtonHtml}${doneHtml}</div>` : ''}`;
-  const homeworkAnimationSnapshot = BjtuColors.captureAnimations(area);
   applyExpandableAutoToggle(area);
+  BjtuColors.restoreAnimations(area, homeworkAnimationSnapshot);
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
   setTimeout(() => typeof updateAllCountdowns === 'function' && updateAllCountdowns(), 0);
 }
 
 // Videos (best-effort implementation)
-  BjtuColors.restoreAnimations(area, homeworkAnimationSnapshot);
 async function fetchVideoLinkInternal(containerId, videoId, courseNum, fzId, teacherId, { signal = null, onLinkExpired = null } = {}) {
   const getLinksDiv = () => document.getElementById(containerId);
   const courseListVersion = getCourseListLoadVersionSnapshot();
@@ -6183,7 +6192,7 @@ courseListDiv.addEventListener('click', async (e) => {
     if (actionEl.disabled) return;
     actionEl.disabled = true;
     try {
-      await downloadHomeworkPackage(actionEl.dataset.downloadUrl);
+      await downloadBrowserPackage(actionEl.dataset.downloadUrl);
     } catch (error) {
       showToast(`下载已交作业包失败：${error?.message || error}`, 'error');
     } finally {
@@ -6580,7 +6589,7 @@ courseListDiv.addEventListener('click', async (e) => {
   if (action === 'archive-batch-download') {
     e.preventDefault();
     e.stopPropagation();
-    downloadCourseArchive(String(t.dataset.courseId || '').trim());
+    downloadCourseArchive(String(t.dataset.courseId || '').trim(), t);
     return;
   }
   if (action === 'courseware-select-all') {
