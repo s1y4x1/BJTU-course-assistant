@@ -1,0 +1,72 @@
+#bjtuca-ve-video-toggle {
+  all:initial;
+  position:fixed;
+  top:12px;
+  right:12px;
+  z-index:2147483647;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 12px;
+  border:1px solid #94a3b8;
+  border-radius:8px;
+  background:rgba(255,255,255,.94);
+  box-shadow:0 3px 12px #0003;
+  color:#111827;
+  font:13px/1.5 system-ui,sans-serif;
+  cursor:pointer;
+}
+#bjtuca-ve-video-toggle input {
+  all:revert;
+  margin:0;
+  width:16px;
+  height:16px;
+  accent-color:#1976d2;
+  cursor:pointer;
+}
+#bjtuca-ve-video-toggle span { all:unset; font:inherit; color:inherit; }
+@media (prefers-color-scheme:dark) {
+  #bjtuca-ve-video-toggle { background:rgba(15,23,42,.94); color:#f1f5f9; border-color:#64748b; }
+}
+.jyd-videoPart[data-bjtuca-three-screen] {
+  position:relative !important;
+  height:auto !important;
+  min-height:0 !important;
+  aspect-ratio:8 / 3;
+}
+.jyd-videoPart[data-bjtuca-three-screen] > .jyd-videoWrap {
+  display:block !important;
+  position:absolute !important;
+  float:none !important;
+  margin:0 !important;
+  min-height:0 !important;
+  max-height:none !important;
+}
+.jyd-videoPart[data-bjtuca-three-screen] > #jyd-video1Wrap {
+  left:0 !important;
+  right:auto !important;
+  top:0 !important;
+  width:66.6666667% !important;
+  height:100% !important;
+}
+.jyd-videoPart[data-bjtuca-three-screen] > :is(#jyd-video2Wrap,#jyd-video3Wrap) {
+  left:auto !important;
+  right:0 !important;
+  width:33.3333333% !important;
+  height:50% !important;
+}
+.jyd-videoPart[data-bjtuca-three-screen] > #jyd-video2Wrap { top:0 !important; }
+.jyd-videoPart[data-bjtuca-three-screen] > #jyd-video3Wrap { top:50% !important; }
+.jyd-videoPart[data-bjtuca-three-screen] .jyd-videoWrap > video {
+  width:100% !important;
+  height:100% !important;
+  object-fit:contain;
+}
+.jyd-videoPart[data-bjtuca-three-screen] :is(.jyd-videoCover,.jyd-videoWaitingCover) { height:100% !important; }
+.jyd-videoPart[data-bjtuca-three-screen] :is(.jyd-coverPlayBtn,.jyd-coverWaitingBtn) {
+  position:absolute !important;
+  top:50% !important;
+  left:50% !important;
+  margin:0 !important;
+  transform:translate(-50%,-50%) !important;
+}

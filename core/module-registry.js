@@ -8,6 +8,7 @@
       files: [
         'vendor/main2.min.js', 'password-cipher.js', 'login-utils.js',
         'login-credentials-dialog.js', 'login-overlay.js', 'account-store.js',
+        'video-page.js', 'video-page.css',
         'account-login.js', 'homework-core.js', 'platform.js', 'session.js',
         'resource-download.js', 'login-service.js', 'background-homework.js',
         'uploader/duplicate-dialog-loader.js', 'uploader/duplicate-dialog.css',
