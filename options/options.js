@@ -1205,7 +1205,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const state = String(status?.status || 'waiting');
     const messages = {
       loading: homeworkBackgroundRefreshInput.checked
-        ? `正在后台维护 ${String(status?.account || '')} 并获取作业…` : '正在后台获取所选平台的作业…',
+        ? `正在后台维护 ${String(status?.account || '')} 的登录状态…` : '正在后台获取所选平台的作业…',
+      'login-maintained': `已维护 ${String(status?.account || '')} 的登录状态。`,
       complete: `最近刷新完成：${Number(status?.courseCount || 0)} 门课程，${Number(status?.homeworkCount || 0)} 项未交作业。`,
       'foreground-open': '已打开扩展课程页面，本轮不执行后台获取。',
       error: `最近刷新失败：${String(status?.error || '未知错误')}`

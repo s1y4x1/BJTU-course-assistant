@@ -121,9 +121,10 @@
         failures.push(`${globalThis.BjtuHomeworkReminders.labels[platform]}：${error?.message || error}`);
       }
     }
-    const refreshVe = stored[ENABLED_KEY] === true || (selected.has('ve') && stored.platformEnabled?.ve !== false
-      && stored[CACHE_KEY]?.platformLoginState?.ve === 'online');
-    if (!refreshVe) {
+    const maintainLogin = stored[ENABLED_KEY] === true;
+    const refreshVe = selected.has('ve') && stored.platformEnabled?.ve !== false
+      && stored[CACHE_KEY]?.platformLoginState?.ve === 'online';
+    if (!maintainLogin && !refreshVe) {
       await setStatus(failures.length ? 'error' : 'complete', { account, homeworkCount: externalCount, error: failures.join('；') });
       return { updated: true, homeworkCount: externalCount, failures };
     }
@@ -133,13 +134,20 @@
     if (!loginService?.login || !loginService?.fetchCurrentUserInfo) {
       throw new Error('智慧课程平台登录服务未加载');
     }
-    const loginResult = stored[ENABLED_KEY] === true ? await loginService.login({ loginName: account })
+    const loginResult = maintainLogin ? await loginService.login({ loginName: account })
       : { ok: true, userInfo: await loginService.fetchCurrentUserInfo() };
     controller.signal.throwIfAborted();
     if (!loginResult?.ok) throw new Error(String(loginResult?.message || '后台登录失败'));
     const userInfo = loginResult?.userInfo;
     const currentAccount = String(userInfo?.loginName || '').trim();
     if (currentAccount !== account) throw new Error(`后台登录账号不匹配：${currentAccount || '未登录'}`);
+
+    if (!refreshVe) {
+      await setStatus(failures.length ? 'error' : selected.size ? 'complete' : 'login-maintained', {
+        account, homeworkCount: externalCount, error: failures.join('；')
+      });
+      return { maintained: true, account, homeworkCount: externalCount, failures };
+    }
 
     const core = globalThis.BjtuVeHomeworkCore;
     if (!core) throw new Error('智慧课程平台后台核心未加载');
