@@ -162,6 +162,27 @@
   }
 
   function bindEvents() {
+    element('localBridgeOpen')?.addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.href = 'bjtuca://start';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
+    element('localBridgeHost')?.addEventListener('keydown', async (event) => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      hostPending = true;
+      const response = await send('BJTUCA_LOCAL_BRIDGE_SETTINGS_SET', {
+        host: event.currentTarget.value, autoRetry: true, reconnect: true
+      });
+      hostPending = false;
+      if (response?.ok !== false) {
+        hostDirty = false;
+        applyStatus(response);
+      }
+      setMessage(response?.ok !== false ? '已启用自动重连，正在重新连接…' : `连接失败：${response?.error || ''}`, response?.ok !== false);
+    });
     element('localBridgeHost')?.addEventListener('input', () => { hostDirty = true; });
     element('localBridgeHost')?.addEventListener('change', (event) => {
       hostPending = true;

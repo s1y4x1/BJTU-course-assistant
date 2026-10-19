@@ -239,7 +239,7 @@
       if (event.code === 4002) {
         connectionReplaced = true;
         clearReconnectTimer();
-        setState('disconnected', 'Bridge 已连接另一个扩展，已暂停自动重连；如需接回，请重新配对');
+        setState('disconnected', 'Bridge 已连接另一个扩展，已暂停自动重连；如需接回，请在 Bridge 地址框按回车或重新配对');
         return;
       }
       const authorizationRevoked = event.code === 1008 || event.code === 4001;
@@ -620,8 +620,10 @@
           if (before.host !== currentSettings.host || before.port !== currentSettings.port
             || before.token !== currentSettings.token) {
             connectionReplaced = false;
-            closeSocket();
-            await connect();
+            if (message.payload?.reconnect !== true) {
+              closeSocket();
+              await connect();
+            }
           } else broadcastStatus();
         }
         if (typeof message?.payload?.autoRetry === 'boolean'
@@ -635,6 +637,11 @@
         }
         if (typeof message?.payload?.enabled === 'boolean') {
           await updateSettings({ enabled: message.payload.enabled });
+        }
+        if (message.payload?.reconnect === true) {
+          connectionReplaced = false;
+          closeSocket(1000, 'User reconnect');
+          await connect();
         }
         return statusPayload();
       })();
