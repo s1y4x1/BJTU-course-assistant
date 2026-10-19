@@ -16,6 +16,7 @@
   let setMessage = () => {};
   let mailPreviewRequestId = 0;
   let activeMailPreviewCell = null;
+  let mailPreviewController = null;
 
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
@@ -134,28 +135,23 @@
       </div>
       <iframe class="mail-message-preview-frame" title="邮件正文" sandbox="allow-same-origin" referrerpolicy="no-referrer" hidden></iframe>
     `;
-    const frame = card.querySelector('.mail-message-preview-frame');
-    frame?.addEventListener('load', () => {
-      const frameDocument = frame instanceof HTMLIFrameElement ? frame.contentDocument : null;
-      frameDocument?.addEventListener('click', (event) => {
-        const anchor = event.target instanceof Element
-          ? event.target.closest('a[data-mail-authenticated-url]')
-          : null;
-        if (!(anchor instanceof HTMLAnchorElement)) return;
-        event.preventDefault();
-        void downloadMailUrl(anchor.dataset.mailAuthenticatedUrl);
-      });
-    });
     card.addEventListener('mouseleave', hideMailPreviewWhenOutside);
     document.body.appendChild(card);
     return card;
   }
 
   function hideMailPreview() {
+    mailPreviewController?.abort();
+    mailPreviewController = null;
     activeMailPreviewCell = null;
     mailPreviewRequestId += 1;
     const card = document.getElementById('mailMessagePreviewCard');
-    if (card instanceof HTMLElement) card.hidden = true;
+    if (card instanceof HTMLElement) {
+      card.hidden = true;
+      const frame = card.querySelector('.mail-message-preview-frame');
+      frame.hidden = true;
+      frame.removeAttribute('src');
+    }
   }
 
   function hideMailPreviewWhenOutside(event) {
@@ -196,31 +192,6 @@
     if (top + cardRect.height > window.innerHeight - margin) top = window.innerHeight - cardRect.height - margin;
     card.style.left = `${Math.max(margin, left)}px`;
     card.style.top = `${Math.max(margin, top)}px`;
-  }
-
-  function buildMailPreviewDocument(content) {
-    const parsed = new DOMParser().parseFromString(String(content || ''), 'text/html');
-    parsed.querySelectorAll('script, object, embed, iframe, frame, base, meta[http-equiv="refresh" i]').forEach((node) => node.remove());
-    const base = parsed.createElement('base');
-    base.href = 'https://mail.bjtu.edu.cn/';
-    const policy = parsed.createElement('meta');
-    policy.httpEquiv = 'Content-Security-Policy';
-    policy.content = "default-src 'none'; base-uri https://mail.bjtu.edu.cn; img-src https: http: data:; style-src 'unsafe-inline'; font-src https: data:";
-    const style = parsed.createElement('style');
-    style.textContent = 'html,body{margin:0;padding:8px;box-sizing:border-box;overflow-wrap:anywhere;color:#111827;background:#fff;font:13px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}';
-    parsed.querySelectorAll('a[href]').forEach((anchor) => {
-      let url;
-      try { url = new URL(anchor.getAttribute('href'), 'https://mail.bjtu.edu.cn/'); } catch { return; }
-      if (url.protocol === 'https:' && url.hostname === 'mail.bjtu.edu.cn' && url.pathname.startsWith('/coremail/')) {
-        anchor.dataset.mailAuthenticatedUrl = url.href;
-        anchor.href = url.href;
-      } else {
-        anchor.target = '_blank';
-        anchor.rel = 'noopener noreferrer';
-      }
-    });
-    parsed.head.prepend(policy, base, style);
-    return `<!doctype html>${parsed.documentElement.outerHTML}`;
   }
 
   async function downloadMailUrl(url) {
@@ -265,6 +236,8 @@
 
   async function showMailPreview(cell, row, { showAttachments = false, showContent = true } = {}) {
     if (!(cell instanceof HTMLElement)) return;
+    mailPreviewController?.abort();
+    mailPreviewController = null;
     activeMailPreviewCell = cell;
     const requestId = ++mailPreviewRequestId;
     const card = ensureMailPreviewCard();
@@ -283,12 +256,64 @@
     }
     if (frame instanceof HTMLIFrameElement) {
       frame.hidden = true;
-      frame.removeAttribute('srcdoc');
+      frame.removeAttribute('src');
     }
     card.hidden = false;
     positionMailPreview(cell);
 
-    const result = await send('MAIL_GET_MESSAGE_CONTENT', { mid: row.id });
+    if (showContent && frame instanceof HTMLIFrameElement) {
+      const url = new URL(`https://mail.bjtu.edu.cn/coremail/mbox-data/${encodeURIComponent(row.subject || 'message')}.htm`);
+      url.search = new URLSearchParams({ part: '2', mid: row.id }).toString();
+      const controller = new AbortController();
+      mailPreviewController = controller;
+      let previewDocument;
+      try {
+        const response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
+        const charset = /charset\s*=\s*["']?([^;\s"']+)/i.exec(response.headers.get('content-type') || '')?.[1] || 'utf-8';
+        const decoder = new TextDecoder(charset);
+        previewDocument = frame.contentDocument;
+        previewDocument.open();
+        previewDocument.write('<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; base-uri https://mail.bjtu.edu.cn; img-src https: http: data:; style-src \'unsafe-inline\'; font-src https: data:"><base href="https://mail.bjtu.edu.cn/"><style>html,body{margin:0;padding:8px;overflow-wrap:anywhere;color:#111827;background:#fff;font:13px/1.6 system-ui,sans-serif}img{max-width:100%;height:auto}pre{white-space:pre-wrap}</style></head><body>');
+        previewDocument.addEventListener('click', (event) => {
+          const anchor = event.target.closest?.('a[href]');
+          if (!anchor) return;
+          const target = new URL(anchor.getAttribute('href'), 'https://mail.bjtu.edu.cn/');
+          if (target.protocol === 'https:' && target.hostname === 'mail.bjtu.edu.cn' && target.pathname.startsWith('/coremail/')) {
+            event.preventDefault();
+            void downloadMailUrl(target.href);
+          }
+        });
+        frame.hidden = false;
+        positionMailPreview(cell);
+        const reader = response.body.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
+            previewDocument.write(decoder.decode(value, { stream: !done }));
+            if (done) break;
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } catch (failure) {
+        if (!controller.signal.aborted && requestId === mailPreviewRequestId) {
+          error.textContent = `邮件正文读取失败：${failure.message}`;
+          error.hidden = false;
+        }
+      } finally {
+        if (requestId === mailPreviewRequestId) {
+          previewDocument?.close();
+          loading.hidden = true;
+          mailPreviewController = null;
+        }
+      }
+      return;
+    }
+
+    const result = await send('MAIL_GET_MESSAGE_ATTACHMENTS', { mid: row.id });
     if (requestId !== mailPreviewRequestId || activeMailPreviewCell !== cell || !cell.isConnected) return;
     if (loading instanceof HTMLElement) loading.hidden = true;
     if (!result?.ok) {
@@ -299,10 +324,6 @@
     } else {
       if (showAttachments) {
         renderMailPreviewAttachments(card, result.mid || row.id, result.attachments);
-      }
-      if (showContent && frame instanceof HTMLIFrameElement) {
-        frame.srcdoc = buildMailPreviewDocument(result.content);
-        frame.hidden = false;
       }
     }
     positionMailPreview(cell);
