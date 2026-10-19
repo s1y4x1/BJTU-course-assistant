@@ -1,0 +1,6 @@
+body { color:var(--bjtu-color-text, #111827); }
+html[data-color-scheme="dark"] body { color:#e5e7eb; }
+.section-title { display:flex; align-items:center; justify-content:space-between; }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:var(--bjtu-font-size-body, 13px); }
+#operationLoading { display:flex; align-items:center; gap:8px; }
+#operationLoading[hidden] { display:none; }

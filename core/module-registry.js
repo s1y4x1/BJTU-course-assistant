@@ -77,7 +77,7 @@
     api: {
       label: '扩展接口',
       styles: ['options.css', 'operations-ui.css'],
-      files: ['operations.js', 'background.js', 'page.js', 'operations-ui.js', 'operations-ui.html', 'options.html', 'options.js'],
+      files: ['operations.js', 'background.js', 'page.js', 'operations-ui.js', 'operations-ui.html', 'options.html', 'options.js', 'run.html', 'run.js', 'run.css'],
       options: {
         fragment: 'options.html', style: 'options.css', script: 'options.js',
         styles: ['operations-ui.css'], scripts: ['operations-ui.js']

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BJTUCA 操作结果</title>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="run.css">
+</head>
+<body>
+  <section data-options-fragment>
+    <div class="section-title">操作结果 <button id="copyResult" type="button" disabled>复制</button></div>
+    <pre id="operationCode"></pre>
+    <div id="operationLoading"><span class="options-page-spinner"></span>执行中…</div>
+    <pre id="operationResult" hidden></pre>
+  </section>
+  <script src="../../core/module-registry.js"></script>
+  <script src="../../core/loaders/api-loader.js"></script>
+  <script src="run.js"></script>
+</body>
+</html>

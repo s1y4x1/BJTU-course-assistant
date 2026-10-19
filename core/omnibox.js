@@ -7,6 +7,11 @@
     { title: '扩展选项 设置', url: chrome.runtime.getURL('options/options.html') }
   ];
   let generation = 0;
+  const operationCode = (text) => {
+    const code = text.trim();
+    if (/^[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$/.test(code)) return `${code}()`;
+    return /^(?:await\s+)?[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\s*\(/.test(code) ? code : '';
+  };
   const escape = (value) => String(value ?? '').replace(/[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]);
   function safeUrl(value) {
@@ -44,10 +49,15 @@
   }
   chrome.omnibox.onInputStarted.addListener(() => {
     generation++;
-    void chrome.omnibox.setDefaultSuggestion({ description: '搜索缓存的课程、作业；可输入「课程 关键词」「作业 关键词」或「设置」' });
+    void chrome.omnibox.setDefaultSuggestion({ description: '搜索课程、作业，或调用 API，例如 reminder.enabled(true)、api.operationList()' });
   });
   chrome.omnibox.onInputChanged.addListener((text, suggest) => {
     const revision = ++generation;
+    if (operationCode(text)) {
+      void chrome.omnibox.setDefaultSuggestion({ description: `执行扩展 API：${escape(text.trim())}` });
+      suggest([]);
+      return;
+    }
     void search(text.trim()).then((items) => {
       if (revision !== generation) return;
       void chrome.omnibox.setDefaultSuggestion({ description: items.length
@@ -61,7 +71,15 @@
   chrome.omnibox.onInputEntered.addListener((text, disposition) => {
     generation++;
     void (async () => {
-      const url = safeUrl(text) || (await search(text.trim()))[0]?.url || pages[0].url;
+      const code = operationCode(text);
+      let url;
+      if (code) {
+        const installed = await globalThis.BjtuModuleRegistry.ready;
+        if (!installed.api) throw new Error('请先安装「扩展接口」模块');
+        const id = crypto.randomUUID();
+        await chrome.storage.session.set({ [`omniboxOperation:${id}`]: code });
+        url = chrome.runtime.getURL(`modules/api/run.html?request=${id}`);
+      } else url = safeUrl(text) || (await search(text.trim()))[0]?.url || pages[0].url;
       if (disposition === 'currentTab') {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id != null) {
@@ -71,6 +89,10 @@
         }
       }
       await globalThis.BjtuTabs.create({ url, active: disposition !== 'newBackgroundTab' });
-    })().catch((error) => console.warn('[bjtu] omnibox navigation failed:', error));
+    })().catch((error) => {
+      console.warn('[bjtu] omnibox navigation failed:', error);
+      void chrome.notifications.create({ type: 'basic', iconUrl: chrome.runtime.getURL('icons/128.png'),
+        title: 'BJTUCA 地址栏操作失败', message: String(error?.message || error) });
+    });
   });
 })();
