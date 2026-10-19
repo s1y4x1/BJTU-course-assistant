@@ -162,13 +162,6 @@
   }
 
   function bindEvents() {
-    element('localBridgeOpen')?.addEventListener('click', () => {
-      const link = document.createElement('a');
-      link.href = 'bjtuca://start';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    });
     element('localBridgeHost')?.addEventListener('keydown', async (event) => {
       if (event.key !== 'Enter' || event.isComposing) return;
       event.preventDefault();
