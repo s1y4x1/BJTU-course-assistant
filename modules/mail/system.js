@@ -26,7 +26,7 @@
   let cachedInboxTotal = 0;
   let mailCheckPromise = null;
   let mailProcessPromise = Promise.resolve();
-  const mailAttachmentCache = new Map();
+  const mailContentCache = new Map();
 
   function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
@@ -239,12 +239,12 @@
     return { rows, total };
   }
 
-  async function fetchMailAttachments(mid, { allowSessionRetry = true } = {}) {
+  async function fetchMailContent(mid, { allowSessionRetry = true } = {}) {
     const messageId = String(mid || '').trim();
     if (!messageId) throw new Error('缺少邮件 ID');
     const sid = await getMailSid();
     const cacheKey = `${sid}|${messageId}`;
-    if (mailAttachmentCache.has(cacheKey)) return mailAttachmentCache.get(cacheKey);
+    if (mailContentCache.has(cacheKey)) return mailContentCache.get(cacheKey);
     const data = await requestJson(READ_MESSAGE_URL, {
       method: 'POST',
       headers: {
@@ -257,9 +257,9 @@
       const message = `${data?.code || '无响应码'}${data?.message ? ` ${data.message}` : ''}`;
       if (allowSessionRetry && /\bFA_SECURITY\b/i.test(message)) {
         invalidateSid();
-        return fetchMailAttachments(messageId, { allowSessionRetry: false });
+        return fetchMailContent(messageId, { allowSessionRetry: false });
       }
-      throw new Error(`读取邮件附件失败：${message}`);
+      throw new Error(`读取邮件内容失败：${message}`);
     }
     const mail = data?.var?.mail;
     const attachments = (Array.isArray(mail?.attachments) ? mail.attachments : [])
@@ -271,9 +271,9 @@
         estimateSize: Math.max(0, Number(attachment?.estimateSize) || 0)
       }))
       .filter((attachment) => attachment.id);
-    const result = { attachments, mid: messageId };
-    mailAttachmentCache.set(cacheKey, result);
-    if (mailAttachmentCache.size > 100) mailAttachmentCache.delete(mailAttachmentCache.keys().next().value);
+    const result = { content: mail?.mainPartData?.content, attachments, mid: messageId };
+    mailContentCache.set(cacheKey, result);
+    if (mailContentCache.size > 100) mailContentCache.delete(mailContentCache.keys().next().value);
     return result;
   }
 
@@ -669,9 +669,16 @@
         });
         return true;
       }
-      if (message?.type === 'MAIL_GET_MESSAGE_ATTACHMENTS') {
-        fetchMailAttachments(message?.payload?.mid)
-          .then((result) => sendResponse({ ok: true, ...result }))
+      if (message?.type === 'MAIL_GET_MESSAGE_ATTACHMENTS' || message?.type === 'MAIL_GET_MESSAGE_CONTENT') {
+        fetchMailContent(message?.payload?.mid)
+          .then((result) => {
+            if (message.type === 'MAIL_GET_MESSAGE_ATTACHMENTS') {
+              sendResponse({ ok: true, attachments: result.attachments, mid: result.mid });
+            } else {
+              if (typeof result.content !== 'string') throw new Error('邮件正文响应中没有 var.mail.mainPartData.content');
+              sendResponse({ ok: true, content: result.content, mid: result.mid });
+            }
+          })
           .catch((error) => sendResponse({
             ok: false,
             code: String(error?.code || ''),

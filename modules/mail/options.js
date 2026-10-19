@@ -262,13 +262,20 @@
     positionMailPreview(cell);
 
     if (showContent && frame instanceof HTMLIFrameElement) {
-      const url = new URL(`https://mail.bjtu.edu.cn/coremail/mbox-data/${encodeURIComponent(row.subject || 'message')}.htm`);
+      const url = new URL('https://mail.bjtu.edu.cn/coremail/mbox-data/content.htm');
       url.search = new URLSearchParams({ part: '2', mid: row.id }).toString();
       const controller = new AbortController();
       mailPreviewController = controller;
       let previewDocument;
       try {
-        const response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+        let response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+        if (response.status === 500) {
+          await response.body?.cancel();
+          const result = await send('MAIL_GET_MESSAGE_CONTENT', { mid: row.id });
+          if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
+          if (!result?.ok) throw new Error(result?.message || '旧接口读取正文失败');
+          response = new Response(result.content, { headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
+        }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
         const charset = /charset\s*=\s*["']?([^;\s"']+)/i.exec(response.headers.get('content-type') || '')?.[1] || 'utf-8';
