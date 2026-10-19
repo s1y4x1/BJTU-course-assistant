@@ -14,7 +14,6 @@
 
   let initialized = false;
   let setMessage = () => {};
-  let mailPreviewHideTimer = null;
   let mailPreviewRequestId = 0;
   let activeMailPreviewCell = null;
 
@@ -147,28 +146,38 @@
         void downloadMailUrl(anchor.dataset.mailAuthenticatedUrl);
       });
     });
-    card.addEventListener('mouseenter', () => {
-      if (mailPreviewHideTimer) clearTimeout(mailPreviewHideTimer);
-      mailPreviewHideTimer = null;
-    });
-    card.addEventListener('mouseleave', scheduleHideMailPreview);
+    card.addEventListener('mouseleave', hideMailPreviewWhenOutside);
     document.body.appendChild(card);
     return card;
   }
 
   function hideMailPreview() {
-    if (mailPreviewHideTimer) clearTimeout(mailPreviewHideTimer);
-    mailPreviewHideTimer = null;
     activeMailPreviewCell = null;
     mailPreviewRequestId += 1;
     const card = document.getElementById('mailMessagePreviewCard');
     if (card instanceof HTMLElement) card.hidden = true;
   }
 
-  function scheduleHideMailPreview() {
-    if (mailPreviewHideTimer) clearTimeout(mailPreviewHideTimer);
-    mailPreviewHideTimer = setTimeout(hideMailPreview, 220);
+  function hideMailPreviewWhenOutside(event) {
+    if (!activeMailPreviewCell) return;
+    if (event.currentTarget instanceof HTMLElement && event.currentTarget.classList.contains('mail-summary-preview-target')
+        && event.currentTarget !== activeMailPreviewCell) return;
+    const card = document.getElementById('mailMessagePreviewCard');
+    if (card?.contains(event.relatedTarget) || activeMailPreviewCell.contains(event.relatedTarget)) return;
+    if (event.type !== 'blur' && card && !card.hidden) {
+      const anchor = activeMailPreviewCell.getBoundingClientRect();
+      const preview = card.getBoundingClientRect();
+      const inside = (rect) => event.clientX >= rect.left && event.clientX <= rect.right
+        && event.clientY >= rect.top && event.clientY <= rect.bottom;
+      // 保留通往浮窗的窄通道，不再通过延迟关闭来允许鼠标跨越间隙。
+      const gap = preview.left >= anchor.right ? { left: anchor.right, right: preview.left }
+        : anchor.left >= preview.right ? { left: preview.right, right: anchor.left } : null;
+      if (inside(anchor) || inside(preview) || (gap && inside({ ...gap,
+        top: Math.min(anchor.top, preview.top), bottom: Math.max(anchor.bottom, preview.bottom) }))) return;
+    }
+    hideMailPreview();
   }
+  document.addEventListener('mousemove', hideMailPreviewWhenOutside);
 
   function positionMailPreview(cell) {
     const card = ensureMailPreviewCard();
@@ -256,8 +265,6 @@
 
   async function showMailPreview(cell, row, { showAttachments = false, showContent = true } = {}) {
     if (!(cell instanceof HTMLElement)) return;
-    if (mailPreviewHideTimer) clearTimeout(mailPreviewHideTimer);
-    mailPreviewHideTimer = null;
     activeMailPreviewCell = cell;
     const requestId = ++mailPreviewRequestId;
     const card = ensureMailPreviewCard();
@@ -305,14 +312,16 @@
     if (!(cell instanceof HTMLElement)) return;
     cell.classList.add('mail-summary-preview-target');
     cell.tabIndex = 0;
-    cell.addEventListener('mouseenter', () => {
-      void showMailPreview(cell, row, { showAttachments, showContent });
-    });
-    cell.addEventListener('mouseleave', scheduleHideMailPreview);
+    const showCurrentPreview = () => {
+      if (activeMailPreviewCell !== cell) void showMailPreview(cell, row, { showAttachments, showContent });
+    };
+    cell.addEventListener('mouseenter', showCurrentPreview);
+    cell.addEventListener('mousemove', showCurrentPreview);
+    cell.addEventListener('mouseleave', hideMailPreviewWhenOutside);
     cell.addEventListener('focus', () => {
       void showMailPreview(cell, row, { showAttachments, showContent });
     });
-    cell.addEventListener('blur', scheduleHideMailPreview);
+    cell.addEventListener('blur', hideMailPreviewWhenOutside);
   }
 
   function renderRows(rows) {
