@@ -16,6 +16,18 @@
 
 首次启动时，Bridge 会在当前目录创建 `bridge.json`。扩展会自动读取该文件中的端口、局域网设置与 Bearer Token，并持续检测 Bridge 连接；连接成功后才可开启「允许本地程序调用扩展操作」。
 
+### 从浏览器启动 Bridge
+
+安装脚本会为当前 Windows 用户注册 `bjtuca://` 协议，无需管理员权限。扩展页面可提供由用户点击的链接 `<a href="bjtuca://start">启动本机 Bridge</a>`；浏览器可能询问是否打开外部应用。也可在 PowerShell 中运行：
+
+```powershell
+Start-Process 'bjtuca://start'
+```
+
+协议入口位于 `%LOCALAPPDATA%\BJTUCourseAssistant\protocol.ps1`，按本机 `bridge.json` 中的端口检查 `/health`。Bridge 已运行时直接返回，否则启动已注册的 `BJTUCA.ps1 start`；重复唤起不会重复启动。此协议只启动本机 Bridge，不改变扩展的连接目标，也不传递 Token、命令或 JavaScript。启动后，扩展仍通过原有 WebSocket 连接，并按现有规则批准和执行操作。
+
+`bjtuca unreg`、`bjtuca uninstall` 及其别名也会移除协议注册；扩展目录已被删除时仍可取消注册。
+
 Bridge 已连接时，修改监听端口会同时写入 Bridge 配置并切换端口。也可以手动指定端口：
 
 ```powershell

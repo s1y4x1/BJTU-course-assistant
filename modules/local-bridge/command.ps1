@@ -70,6 +70,10 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
     $expectedDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant'))
     $actualDirectory = [System.IO.Path]::GetFullPath($commandDirectory)
     if ($actualDirectory -ine $expectedDirectory) { throw '命令目录校验失败' }
+    $protocolKey = 'HKCU:\Software\Classes\bjtuca'
+    if (Test-Path -LiteralPath $protocolKey) {
+      Remove-Item -LiteralPath $protocolKey -Recurse -Force
+    }
     $legacyCommandDirectory = Join-Path $actualDirectory 'bin'
     Set-Location -LiteralPath $env:TEMP
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')

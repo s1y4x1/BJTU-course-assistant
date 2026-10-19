@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.8'
+$InstallerVersion = '1.0.9'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -62,6 +62,22 @@ foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
   )
 }
 
+$protocolScriptPath = Join-Path $commandDirectory 'protocol.ps1'
+$protocolText = [System.IO.File]::ReadAllText((Join-Path $bridgeRoot 'protocol.ps1'), [System.Text.Encoding]::GetEncoding(936))
+$protocolText = $protocolText.Replace(
+  '$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path',
+  "`$bridgeRoot = '$escapedBridgeRoot'"
+)
+[System.IO.File]::WriteAllText($protocolScriptPath, $protocolText, [System.Text.Encoding]::GetEncoding(936))
+$protocolKey = 'HKCU:\Software\Classes\bjtuca'
+New-Item -Path $protocolKey -Force | Out-Null
+Set-Item -LiteralPath $protocolKey -Value 'URL:BJTUCA Bridge Protocol'
+New-ItemProperty -LiteralPath $protocolKey -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
+$protocolCommandKey = Join-Path $protocolKey 'shell\open\command'
+New-Item -Path $protocolCommandKey -Force | Out-Null
+$powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+Set-Item -LiteralPath $protocolCommandKey -Value ('"' + $powershellPath + '" -NoProfile -ExecutionPolicy Bypass -File "' + $protocolScriptPath + '" "%1"')
+
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $pathEntries = @($userPath -split ';' | ForEach-Object { $_.Trim() } | Where-Object {
   $_ -and $_.TrimEnd('\') -ine $commandDirectory.TrimEnd('\') -and $_.TrimEnd('\') -ine $legacyCommandDirectory.TrimEnd('\')
@@ -82,7 +98,7 @@ if (Test-Path -LiteralPath $legacyCommandDirectory -PathType Container) {
 }
 
 Write-Host "Bridge 已安装到当前目录：$bridgeRoot"
-Write-Host '已注册 bjtuca-bridge 和 BJTUCA 命令，可在任意目录启动。'
+Write-Host '已注册 bjtuca-bridge 和 BJTUCA 命令及 bjtuca://start 协议，可在任意目录或从浏览器启动。'
 if ($SkipStart) { return }
 Write-Host 'Bridge 正在运行；按 Ctrl+C 可停止。'
 if ($Port -eq 1896) {
