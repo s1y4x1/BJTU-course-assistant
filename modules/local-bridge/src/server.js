@@ -15,6 +15,7 @@ import JSON5 from 'json5';
 import { loadConfig, normalizePort, saveConfig, configPath } from './config.js';
 
 async function main() {
+process.title = 'BJTUCA-bridge';
 const config = await loadConfig();
 let pairingCode = '';
 let pairingExpiresAt = 0;
