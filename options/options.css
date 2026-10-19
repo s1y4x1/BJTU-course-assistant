@@ -314,6 +314,15 @@ html[data-color-scheme="dark"] .option-download-progress-track { background:#1e3
 html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5fa; }
 .back-home-link { color: #1976d2; cursor: pointer; text-decoration: none; }
 .back-home-link:hover { text-decoration: underline; }
+.option-action-link,
+.option-action-link:visited,
+.option-action-link:hover {
+  color:#1976d2;
+  font-size:var(--bjtu-font-size-body, 13px);
+  font-weight:400;
+  text-decoration:none;
+}
+html[data-color-scheme="dark"] .option-action-link { color:#60a5fa; }
 .open-mode-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
 .popup-size-editor { display:grid; grid-template-columns:repeat(2, minmax(120px, 1fr)); gap:8px; margin:8px 0 4px; }
 .popup-size-editor label { display:flex; align-items:center; gap:8px; margin:0; font-size:13px; }
