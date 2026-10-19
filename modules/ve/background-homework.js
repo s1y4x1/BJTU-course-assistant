@@ -115,7 +115,7 @@
           globalThis.BjtuHomeworkReminders.replaceSnapshot(state.snapshot, platform, '', assignments.filter((item) => item.deadline > savedAt), savedAt);
         });
         await notifyNewHomework({ platform, assignments });
-        externalCount += assignments.length;
+        externalCount += assignments.filter((item) => !item.monitorOnly).length;
       } catch (error) {
         controller.signal.throwIfAborted();
         failures.push(`${globalThis.BjtuHomeworkReminders.labels[platform]}：${error?.message || error}`);
@@ -261,11 +261,21 @@
       : {};
     const previousList = Array.isArray(knownByAccount[scopeKey]) ? knownByAccount[scopeKey] : null;
     const previousKeys = new Set(previousList || []);
-    const freshItems = Array.isArray(message?.assignments) ? message.assignments : [];
+    const allItems = Array.isArray(message?.assignments) ? message.assignments : [];
+    const freshItems = allItems.filter((item) => !item.monitorOnly);
     const additions = freshItems.filter((item) => {
       const key = homeworkIdentity(item);
       return key && !previousKeys.has(key);
     });
+    if (platform === 'ykt') {
+      const reports = { ...(knownByAccount.yktClassroomReports || {}) };
+      for (const item of allItems.filter((entry) => entry.monitorOnly && entry.classroomReportKey && entry.classroomReportSignature)) {
+        const old = reports[item.classroomReportKey];
+        if (old && old !== item.classroomReportSignature && !additions.some((added) => homeworkIdentity(added) === homeworkIdentity(item))) additions.push(item);
+        reports[item.classroomReportKey] = item.classroomReportSignature;
+      }
+      knownByAccount.yktClassroomReports = Object.fromEntries(Object.entries(reports).slice(-5000));
+    }
     knownByAccount[scopeKey] = [...new Set([
       ...(previousList || []),
       ...freshItems.map(homeworkIdentity).filter(Boolean)
@@ -275,14 +285,15 @@
     if (platform === 've' && stored.homeworkReminderOnlySelectedAccount !== false
         && account !== globalThis.BjtuHomeworkReminders.selectedVeAccount(stored)) return;
     await Promise.all(additions.map((item) => {
-      const id = globalThis.BjtuHomeworkReminders.notificationId('new', platform, account, homeworkIdentity(item));
+      const id = globalThis.BjtuHomeworkReminders.notificationId('new', platform, account, `${homeworkIdentity(item)}${item.classroomReportSignature || ''}`);
       const createNotification = globalThis.BjtuSystemNotifications?.create
         || ((notificationId, options) => chrome.notifications.create(notificationId, options));
       return createNotification(id, {
         type: 'basic',
         iconUrl: 'icons/128.png',
         title: `发现新作业：${String(item?.courseName || '未知课程')}`,
-        message: `${String(item?.platform || '课程平台')} · ${String(item?.title || '未命名作业')}\n截止时间：${formatDeadline(item?.deadline)}`,
+        message: item.monitorOnly ? `雨课堂 · ${item.title}\n课堂题目或作答、得分信息发生变化`
+          : `${String(item?.platform || '课程平台')} · ${String(item?.title || '未命名作业')}\n截止时间：${formatDeadline(item?.deadline)}`,
         priority: 2
       }, 'new-homework');
     }));

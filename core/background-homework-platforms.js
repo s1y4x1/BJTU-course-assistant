@@ -30,6 +30,12 @@
       }))).flat();
       const videos = activities.filter((a) => a.__actype === 15);
       const progress = videos.length ? await fetchYktCoursewareProgress(cid, videos.map((a) => a.courseware_id), pickYktUniversityId(course, response.data)) : {};
+      const classroomReports = await Promise.all(activities.filter((a) => a.__actype === 14 && a.courseware_id).map(async (a) => {
+        const report = await fetchYktClassroomReport(a.courseware_id);
+        return { monitorOnly: true, classroomReportKey: `${cid}|${a.courseware_id}`, classroomReportSignature: report.signature,
+          platform: '雨课堂', courseName: course.course?.name || course.name || '', title: a.title || '课堂',
+          actionUrl: yktClassroomReportLink(cid, a.courseware_id, a.id) };
+      }));
       return activities.map((a) => {
         const leaf = a.content?.leaf_id ?? a.leaf_id;
         const video = a.__actype === 15 ? normalizeYktVideoProgress(progress[String(a.courseware_id)], leaf) : null;
@@ -41,7 +47,7 @@
         return item('ykt', course.course?.name || course.name || '', a.title || '雨课堂作业',
           getYktActivityDeadline(a), isYktHomeworkDone(hw) || (a.__actype === 14 && a.is_finished),
           typeof a.content === 'string' ? a.content : a.content?.content || a.content?.description || '', url);
-      }).filter(Boolean);
+      }).filter(Boolean).concat(classroomReports);
     }));
     return groups.flat();
   }

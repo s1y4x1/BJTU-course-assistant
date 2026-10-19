@@ -80,6 +80,19 @@ const YKT_ACTIVITY_TYPE_LABELS = Object.freeze({
 let yktHeaderRulePromise = null;
 let yktHeaderRuleReady = false;
 
+async function fetchYktClassroomReport(lessonId) {
+  const response = await fetchYktJson(`${YKT_BASE}/api/v3/classroom-report/student/detail?lesson_id=${encodeURIComponent(String(lessonId))}`);
+  if (!response?.data || (response.errcode !== undefined && Number(response.errcode) !== 0) || response.success === false) {
+    throw new Error(response?.errmsg || response?.message || '课堂报告获取失败');
+  }
+  const report = Object.fromEntries(['problem', 'quiz'].map((key) => [key,
+    Array.isArray(response.data[key]?.studentList) ? response.data[key].studentList : []]));
+  const canonical = (value) => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonical(report))));
+  return { ...report, signature: [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('') };
+}
+
 async function fetchYktJson(url) {
   const res = await fetch(url, {
     method: 'GET',

@@ -441,6 +441,14 @@ async function notifyForegroundNewHomework() {
   const now = Date.now();
   const account = String(window.currentAccountLoginName || '').trim();
   const items = collectPendingHomeworkItems().filter((item) => !item.deadline || item.deadline > now);
+  for (const course of window.yktCourseGroupsSnapshot || []) {
+    for (const homework of course.homeworks || []) {
+      if (Number(homework.__actype) !== 14 || homework.exam_detail_state !== 'done' || !homework.classroom_report_signature) continue;
+      items.push({ monitorOnly: true, classroomReportKey: `${course.classroom_id}|${homework.courseware_id}`,
+        classroomReportSignature: homework.classroom_report_signature, platform: '雨课堂',
+        courseName: course.course_name || course.name || '', title: homework.title || '课堂', actionUrl: homework.link });
+    }
+  }
   for (const [platform, label] of Object.entries(window.BjtuHomeworkReminders.labels)) {
     if (!isPlatformEnabled(platform) || !getEnabledPlatformLoginResult(platform).ready) continue;
     if (platform === 've' && !account) continue;

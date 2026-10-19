@@ -380,13 +380,10 @@ async function fetchYktHomeworkDetail(homework) {
   }
   const lessonId = String(homework?.courseware_id || '').trim();
   if (!lessonId) throw new Error('课堂缺少 courseware_id');
-  const response = await fetchYktJson(`${YKT_BASE}/api/v3/classroom-report/student/detail?lesson_id=${encodeURIComponent(lessonId)}`);
-  if (!response?.data || (response.errcode !== undefined && Number(response.errcode) !== 0) || response.success === false) {
-    throw new Error(response?.errmsg || response?.message || '课堂报告获取失败');
-  }
+  const report = await fetchYktClassroomReport(lessonId);
   const problems = [];
   for (const [key, label] of [['problem', '课堂练习'], ['quiz', '随堂测验']]) {
-    const students = response.data[key]?.studentList;
+    const students = report[key];
     if (!Array.isArray(students)) continue;
     for (const item of students) {
       if (!item || typeof item !== 'object') continue;
@@ -404,7 +401,7 @@ async function fetchYktHomeworkDetail(homework) {
       });
     }
   }
-  return { problems };
+  return { problems, classroom_report_signature: report.signature };
 }
 
 function renderYktProblemsHtml(problemList) {
@@ -481,12 +478,14 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
             const paper = await fetchYktHomeworkDetail(hw);
             if (paper?.title) hw.title = paper.title;
             hw.detail_problems = Array.isArray(paper?.problems) ? paper.problems : [];
+            hw.classroom_report_signature = paper?.classroom_report_signature;
           }
           hw.exam_detail_state = 'done';
           if (detailKey) {
             window.yktDetailCacheByKey[detailKey] = {
               state: 'done', title: hw.title,
               detail_problems: Array.isArray(hw.detail_problems) ? hw.detail_problems : [],
+              classroom_report_signature: hw.classroom_report_signature,
               promise: null
             };
           }
@@ -668,6 +667,7 @@ function buildYktEntryHomeworks(entry, acts) {
       exam_id: examId,
       __actype: a?.__actype,
       detail_problems: Array.isArray(cache?.detail_problems) ? cache.detail_problems : [],
+      classroom_report_signature: cache?.classroom_report_signature,
       detail_content: a?.content ?? null,
       exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
       detail_cache_key: detailKey,
@@ -946,7 +946,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const detailKey = String(hw?.detail_cache_key || '').trim();
     const cache = detailKey ? window.yktDetailCacheByKey[detailKey] : null;
 
-    if (cache?.state === 'done') {
+    if (cache?.state === 'done' && actype !== 14) {
       if (cache.title) hw.title = cache.title;
       hw.detail_problems = Array.isArray(cache.detail_problems) ? cache.detail_problems : [];
       hw.exam_detail_state = 'done';
@@ -961,6 +961,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       const latest = window.yktDetailCacheByKey[detailKey] || {};
       if (latest.title) hw.title = latest.title;
       hw.detail_problems = Array.isArray(latest.detail_problems) ? latest.detail_problems : [];
+      hw.classroom_report_signature = latest.classroom_report_signature;
       hw.exam_detail_state = latest.state === 'done' ? 'done' : 'failed';
       rerenderEntryCard(entry);
       markHomeworkDetailLoaded(entry, hw);
@@ -986,6 +987,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       const examPaper = await p;
       if (examPaper?.title) hw.title = examPaper.title;
       hw.detail_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
+      hw.classroom_report_signature = examPaper?.classroom_report_signature;
 
       hw.exam_detail_state = 'done';
       if (detailKey) {
@@ -994,6 +996,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           state: 'done',
           title: hw.title,
           detail_problems: Array.isArray(hw.detail_problems) ? hw.detail_problems : [],
+          classroom_report_signature: hw.classroom_report_signature,
           promise: null
         };
       }
@@ -1164,6 +1167,7 @@ async function yktPageCourseHomework(classroomId) {
   await Promise.all(homework.filter((item) => Number(item.__actype) === 14 && item.courseware_id).map(async (item) => {
     const detail = await fetchYktHomeworkDetail(item);
     item.detail_problems = detail.problems;
+    item.classroom_report_signature = detail.classroom_report_signature;
   }));
   if (videoCoursewareIds.length) {
     try {
