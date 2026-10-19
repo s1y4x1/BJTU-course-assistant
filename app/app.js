@@ -1195,7 +1195,7 @@ async function loadPlatformDetailSettings() {
     window.yktActivityTypes = Array.isArray(data[YKT_ACTIVITY_TYPES_KEY])
       ? data[YKT_ACTIVITY_TYPES_KEY].map(Number).filter((type) => [14, 15, 5, 9].includes(type))
       : [14, 15, 5, 9];
-    window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3);
+    window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(data[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY], 3, true);
     window.collapseHomeworkDetailsDownward = data[COLLAPSE_HOMEWORK_DETAILS_DOWNWARD_KEY] !== false;
     window.scrollExpandHomeworkLists = data[SCROLL_EXPAND_HOMEWORK_LISTS_KEY] === true;
     window.scrollCollapseHomeworkLists = data[SCROLL_COLLAPSE_HOMEWORK_LISTS_KEY] !== false;
@@ -1221,7 +1221,8 @@ function normalizeParallelLimit(value, fallback = 3) {
   return Number.isFinite(limit) && limit > 0 ? limit : fallback;
 }
 
-function normalizeDetailCollapsedLines(value, fallback = 3) {
+function normalizeDetailCollapsedLines(value, fallback = 3, allowUnlimited = false) {
+  if (allowUnlimited && (value === '' || value === null)) return null;
   if (value === '' || value === null || value === undefined) return fallback;
   const lines = Number(value);
   return Number.isFinite(lines) && lines >= 0 ? Math.trunc(lines) : fallback;
@@ -1239,6 +1240,7 @@ function applyDetailCollapsedLineSettings() {
 }
 
 function detailCollapsedMaxHeight(lines) {
+  if (lines === null) return 'none';
   return `calc(${normalizeDetailCollapsedLines(lines, 3) * 1.5}em + 2px)`;
 }
 
@@ -1257,7 +1259,7 @@ async function loadPlatformAutoLoginSettings() {
 }
 
 function detailVisibleMaxHeight(lines) {
-  return `calc(${normalizeDetailCollapsedLines(lines, 3) * 1.5}em + 2px)`;
+  return detailCollapsedMaxHeight(lines);
 }
 
 function rematchExternalByVeCourses(platform = '') {
@@ -1616,7 +1618,8 @@ function setupOptionsStorageLiveSync() {
       if (changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY]) {
         window.homeworkDetailCollapsedLines = normalizeDetailCollapsedLines(
           changes[HOMEWORK_DETAIL_COLLAPSED_LINES_KEY].newValue,
-          3
+          3,
+          true
         );
       }
       if (changes[REPLAY_DETAIL_COLLAPSED_LINES_KEY]) {
@@ -3642,7 +3645,8 @@ function applyExpandableAutoToggle(root = document) {
       box.classList.remove('expanded');
       box.dataset.expanded = '0';
     }
-    body.style.maxHeight = prev;
+    body.style.maxHeight = box.classList.contains('expanded') || box.__detailCollapseState || box.__detailExpandState
+      ? prev : visibleLimit;
     body.style.overflow = prevOverflow;
   });
 }

@@ -152,7 +152,8 @@ function normalizePopupDimension(value, fallback, min, max) {
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
 }
 
-function normalizeDetailCollapsedLines(value, fallback = 3) {
+function normalizeDetailCollapsedLines(value, fallback = 3, allowUnlimited = false) {
+  if (allowUnlimited && (value === '' || value === null)) return null;
   if (value === '' || value === null || value === undefined) return fallback;
   const lines = Number(value);
   return Number.isFinite(lines) && lines >= 0 ? Math.trunc(lines) : fallback;
@@ -834,8 +835,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('scrollCollapseHomeworkLists').checked = scrollCollapseHomeworkLists !== false;
   document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
     homeworkDetailCollapsedLines,
-    DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
-  ));
+    DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
+    true
+  ) ?? '');
   document.getElementById('replayDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
     replayDetailCollapsedLines,
     DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES
@@ -1555,8 +1557,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.homeworkDetailCollapsedLines) {
         document.getElementById('homeworkDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
           changes.homeworkDetailCollapsedLines.newValue,
-          DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
-        ));
+          DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES,
+          true
+        ) ?? '');
       }
       if (changes.replayDetailCollapsedLines) {
         document.getElementById('replayDetailCollapsedLines').value = String(normalizeDetailCollapsedLines(
@@ -2141,8 +2144,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       const fallback = id === 'homeworkDetailCollapsedLines'
         ? DEFAULT_HOMEWORK_DETAIL_COLLAPSED_LINES
         : DEFAULT_REPLAY_DETAIL_COLLAPSED_LINES;
-      const value = normalizeDetailCollapsedLines(input.value, fallback);
-      input.value = String(value);
+      const value = normalizeDetailCollapsedLines(input.value, fallback, id === 'homeworkDetailCollapsedLines');
+      input.value = String(value ?? '');
       await chrome.storage.local.set({ [id]: value });
       setMsg('已应用更改');
     });
