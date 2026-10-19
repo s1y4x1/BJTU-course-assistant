@@ -14,8 +14,11 @@
   box-shadow:0 3px 12px #0003;
   color:#111827;
   font:13px/1.5 system-ui,sans-serif;
-  cursor:pointer;
+  cursor:grab;
+  touch-action:none;
+  user-select:none;
 }
+#bjtuca-ve-video-toggle.dragging { cursor:grabbing; }
 #bjtuca-ve-video-toggle input {
   all:revert;
   margin:0;

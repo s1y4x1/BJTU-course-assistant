@@ -768,10 +768,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   ]);
   const {
     injectPortalLoginOnLoginPage,
-    injectPortalLoginOnTimeoutPage
+    injectPortalLoginOnTimeoutPage,
+    veThreeScreenLayoutEnabled,
+    veStudentLiveRoleEnabled
   } = await chrome.storage.local.get([
     'injectPortalLoginOnLoginPage',
-    'injectPortalLoginOnTimeoutPage'
+    'injectPortalLoginOnTimeoutPage',
+    'veThreeScreenLayoutEnabled',
+    'veStudentLiveRoleEnabled'
   ]);
   const enabled = normalizePlatformEnabled(platformEnabled);
   const visible = normalizePlatformVisible(platformVisible);
@@ -894,6 +898,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     : !!sidePanelUseFullscreenCacheEnabled;
   document.getElementById('injectPortalLoginOnLoginPage').checked = injectPortalLoginOnLoginPage !== false;
   document.getElementById('injectPortalLoginOnTimeoutPage').checked = injectPortalLoginOnTimeoutPage !== false;
+  document.getElementById('veThreeScreenLayoutEnabled').checked = veThreeScreenLayoutEnabled === true;
+  document.getElementById('veStudentLiveRoleEnabled').checked = veStudentLiveRoleEnabled === true;
   document.getElementById('homeworkReminderEnabled').checked = homeworkReminderEnabled === undefined
     ? DEFAULT_HOMEWORK_REMINDER_ENABLED
     : !!homeworkReminderEnabled;
@@ -1747,6 +1753,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.injectPortalLoginOnTimeoutPage) {
         applyBooleanUi('injectPortalLoginOnTimeoutPage', changes.injectPortalLoginOnTimeoutPage.newValue, true);
       }
+      for (const key of ['veThreeScreenLayoutEnabled', 'veStudentLiveRoleEnabled']) {
+        if (changes[key]) applyBooleanUi(key, changes[key].newValue, false);
+      }
       if (changes.backgroundAutoUpdateEnabled) {
         applyBooleanUi('backgroundAutoUpdateEnabled', changes.backgroundAutoUpdateEnabled.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED);
         updateBackgroundAutoUpdateOptionsDisabled();
@@ -2069,7 +2078,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setMsg('已应用更改');
   });
 
-  ['injectPortalLoginOnLoginPage', 'injectPortalLoginOnTimeoutPage'].forEach((id) => {
+  ['injectPortalLoginOnLoginPage', 'injectPortalLoginOnTimeoutPage', 'veThreeScreenLayoutEnabled', 'veStudentLiveRoleEnabled'].forEach((id) => {
     document.getElementById(id).addEventListener('change', async () => {
       await chrome.storage.local.set({ [id]: !!document.getElementById(id).checked });
       setMsg('已应用更改');
@@ -2666,6 +2675,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('sidePanelUseFullscreenCacheEnabled').checked = DEFAULT_SIDE_PANEL_CACHE_ENABLED;
     document.getElementById('injectPortalLoginOnLoginPage').checked = true;
     document.getElementById('injectPortalLoginOnTimeoutPage').checked = true;
+    document.getElementById('veThreeScreenLayoutEnabled').checked = false;
+    document.getElementById('veStudentLiveRoleEnabled').checked = false;
     updatePopupCacheDisabled();
     await chrome.storage.local.set({ openMode: DEFAULT_OPEN_MODE });
     await chrome.storage.local.set({ autoLoadCourseResourcesEnabled: DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED });
@@ -2676,7 +2687,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ sidePanelUseFullscreenCacheEnabled: DEFAULT_SIDE_PANEL_CACHE_ENABLED });
     await chrome.storage.local.set({
       injectPortalLoginOnLoginPage: true,
-      injectPortalLoginOnTimeoutPage: true
+      injectPortalLoginOnTimeoutPage: true,
+      veThreeScreenLayoutEnabled: false,
+      veStudentLiveRoleEnabled: false
     });
     setMsg('已恢复默认配置');
   };

@@ -2,7 +2,8 @@
   'use strict';
 
   const isCoursePage = (url) => url.pathname === '/ve/back/coursePlatform/coursePlatform.shtml'
-    && url.searchParams.get('method') === 'toCoursePlatform';
+    && url.searchParams.get('method') === 'toCoursePlatform'
+    && url.searchParams.get('courseToPage') === '10480';
   let coursePage = isCoursePage(new URL(location.href));
   try { coursePage ||= isCoursePage(new URL(window.top.location.href)); } catch {}
   if (!coursePage) return;
