@@ -260,7 +260,7 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
 }
 .installed-modules-block { margin-bottom:0; }
 .installed-modules-label { margin-bottom:7px; font-size:15px; font-weight:600; color:#334155; }
-.installed-module-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:9px; }
+.installed-module-list { display:flex; flex-wrap:wrap; gap:7px; margin:4px 0 9px; }
 .installed-module-item { display:inline-flex; align-items:center; gap:6px; margin:0; padding:6px 8px; border:1px solid #dbe2ea; border-radius:6px; background:#fff; font-size:13px; }
 .installed-module-item input { width:auto; margin:0; padding:0; }
 #applyInstalledModules { margin:0; }
