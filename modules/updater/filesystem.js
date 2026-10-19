@@ -218,7 +218,7 @@
   function applyReleaseVersionName(bytes, release) {
     if (!release || release.commit || !String(release.name || '').trim()) return bytes;
     const manifest = JSON.parse(new TextDecoder().decode(bytes));
-    manifest.version_name = String(release.name).trim();
+    manifest.version_name = release.manifestVersionName || `${manifest.version} ${String(release.name).trim()}`;
     return new TextEncoder().encode(`${JSON.stringify(manifest, null, 2)}\n`);
   }
 
@@ -231,6 +231,8 @@
     return {
       ...release,
       version: manifest.version,
+      manifestVersionName: release.version === manifest.version && release.name
+        ? `${manifest.version} ${String(release.name).trim()}` : manifest.version_name || manifest.version,
       name: release.commit ? `${name} (${release.commit.slice(0, 7)})`
         : release.version === manifest.version ? release.name || name : name
     };
