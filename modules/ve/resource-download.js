@@ -994,10 +994,12 @@ function renderResourceSpaceList() {
   if (!resourceSpaceList) return;
   const list = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
   if (!list.length) {
-    resourceSpaceList.innerHTML = '<div class="resource-space-status">暂无资源文件</div>';
+    resourceSpaceList.replaceChildren();
+    if (!String(resourceSpaceStatus?.textContent || '').trim()) setResourceSpaceStatus('暂无资源文件');
     refreshResourceSelectAllButton();
     return;
   }
+  if (resourceSpaceStatus?.textContent === '暂无资源文件') setResourceSpaceStatus('');
 
   resourceSpaceList.innerHTML = list.map((it) => {
     const id = String(it.id || '').trim();
