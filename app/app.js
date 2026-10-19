@@ -3234,6 +3234,7 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
   }
 
   list
+    .filter((it) => it.userId !== selectedUserId)
     .forEach((it) => {
       const opt = document.createElement('option');
       opt.value = it.userId;
@@ -6779,7 +6780,12 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     }
     if (!picked) return;
     const current = String(usernameInput.value || '').trim();
-    if (picked === current) return;
+    if (picked === current) {
+      if (isPlatformEnabled('ve') && currentVeAccountInfo
+          && window.currentAccountLoginName === picked && window.platformLoginState?.ve === 'online') return;
+      void doLoginFlow();
+      return;
+    }
     highPrioritySwitchTarget = picked;
     usernameInput.value = picked;
     usernameInput.dispatchEvent(new Event('change'));
