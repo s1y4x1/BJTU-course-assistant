@@ -314,6 +314,8 @@ function tryImportModuleScripts(...paths) {
   }
 }
 
+importScripts('../core/omnibox.js');
+
 const veBackgroundReady = tryImportModuleScripts(
   '../modules/ve/address.js',
   '../modules/ve/vendor/main2.min.js',

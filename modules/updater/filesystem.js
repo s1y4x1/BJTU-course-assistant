@@ -215,6 +215,13 @@
     if (failed) throw failure;
   }
 
+  function applyReleaseVersionName(bytes, release) {
+    if (!release || release.commit || !String(release.name || '').trim()) return bytes;
+    const manifest = JSON.parse(new TextDecoder().decode(bytes));
+    manifest.version_name = String(release.name).trim();
+    return new TextEncoder().encode(`${JSON.stringify(manifest, null, 2)}\n`);
+  }
+
   async function readArchiveRelease(files, inflate, release) {
     const file = files.find(({ path }) => path === 'manifest.json');
     if (!file) throw new Error('更新包缺少 manifest.json');
@@ -245,6 +252,7 @@
   }
 
   global.BjtuUpdateFileSystem = {
+    applyReleaseVersionName,
     readArchiveRelease,
     processFiles,
     ensureFileConcurrencyDefaults,

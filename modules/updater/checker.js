@@ -2612,12 +2612,13 @@ async function fetchModuleArchive(onProgress) {
   return { bytes, release };
 }
 
-async function processVersionArchiveFiles(files, { onFileState, onFileComplete } = {}) {
+async function processVersionArchiveFiles(files, { onFileState, onFileComplete, release } = {}) {
   await globalThis.BjtuUpdateFileSystem.processFiles(files, async (item) => {
     onFileState?.(item, 'extracting');
     let bytes;
     try {
       bytes = await inflateZipEntry(item.entry);
+      if (item.path === 'manifest.json') bytes = globalThis.BjtuUpdateFileSystem.applyReleaseVersionName(bytes, release);
     } catch (error) {
       onFileState?.(item, 'failed');
       throw markVersionUpdateError(error, 'archive');
@@ -2845,6 +2846,7 @@ async function extractUpdateArchiveToDirectory(archiveBytes, cleanUpdate = false
   };
   try {
     await processVersionArchiveFiles(files, {
+      release: getVersionDownloadRelease(),
       onFileState(item, state) {
         setVersionUpdateFileState(item.path, state);
         if (state === 'failed') {

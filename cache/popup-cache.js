@@ -308,12 +308,24 @@ function restoreFullscreenCacheStateForBackground(cache) {
   }
 }
 
+function collectOmniboxSearchIndex() {
+  const courses = [...courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]')].flatMap((card) => {
+    const title = card.querySelector('.course-card-title');
+    const link = title?.querySelector('a[href]');
+    return link ? [{ kind: 'course', title: String(title.textContent || '').trim(),
+      platform: getCourseCardPlatform(card), url: link.href }] : [];
+  });
+  return courses.concat(collectPendingHomeworkItems().map((item) => ({ kind: 'homework', title: item.title,
+    platform: item.platform, courseName: item.courseName, url: item.actionUrl })));
+}
+
 async function saveFullscreenCourseCache({ force = false } = {}) {
   if (popupMode || (!force && !shouldSaveFullscreenCourseCache()) || !courseListDiv) return;
   const cache = {
     version: 1,
     structuredCourseCache: true,
     savedAt: Date.now(),
+    searchIndex: collectOmniboxSearchIndex(),
     platformEnabled: safeStorageClone(window.platformEnabled, {}),
     platformLoginState: safeStorageClone(window.platformLoginState, {}),
     platformLoginChecked: safeStorageClone(window.platformLoginChecked, {}),

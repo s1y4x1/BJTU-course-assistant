@@ -5,6 +5,8 @@
   "description": "聚合智慧课程平台、雨课堂、每日交作业、接龙管家、中国大学MOOC和学堂在线的课程与作业，并支持教务系统登录和成绩提醒。",
   "version": "17.14.8",
   "default_locale": "zh_CN",
+  "version_name": "Hetero",
+  "omnibox": { "keyword": "bjtuca" },
   "icons": {
     "16": "icons/16.png",
     "32": "icons/128.png",

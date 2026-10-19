@@ -704,7 +704,9 @@
       }));
       if (changed) return false;
       const incomingManifest = archiveFiles.find(({ path }) => path === 'manifest.json');
-      const metadata = JSON.parse(new TextDecoder().decode(await inflateEntry(incomingManifest.entry)));
+      const metadata = JSON.parse(new TextDecoder().decode(globalThis.BjtuUpdateFileSystem.applyReleaseVersionName(
+        await inflateEntry(incomingManifest.entry), release
+      )));
       localManifest.version = metadata.version;
       if (metadata.version_name !== undefined) localManifest.version_name = metadata.version_name;
       else delete localManifest.version_name;
@@ -788,7 +790,9 @@
         (_, index) => files.slice(index * concurrency, index * concurrency + concurrency)
       )) {
         await Promise.all(batch.map(async ({ entry, path }) => {
-          if (await writeFile(root, path, await inflateEntry(entry))) writtenCount += 1;
+          let bytes = await inflateEntry(entry);
+          if (path === 'manifest.json') bytes = globalThis.BjtuUpdateFileSystem.applyReleaseVersionName(bytes, release);
+          if (await writeFile(root, path, bytes)) writtenCount += 1;
           completed += 1;
         }));
         await setStatus('installing', {
