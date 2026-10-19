@@ -869,6 +869,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     MAX_POPUP_HEIGHT_PX
   ));
   document.getElementById('courseHelperExpandedByDefault').checked = courseHelperExpandedByDefault === true;
+  const independentPlatformScrollSettings = await chrome.storage.local.get('courseHelperIndependentPlatformScroll');
+  document.getElementById('courseHelperIndependentPlatformScroll').checked = independentPlatformScrollSettings.courseHelperIndependentPlatformScroll !== false;
   document.getElementById('fullscreenTopBarFullWidth').checked = fullscreenTopBarFullWidth === true;
   document.getElementById('stickyCourseHeader').checked = stickyCourseHeader !== false;
   document.getElementById('showCourseListDuringLayoutTransition').checked = showCourseListDuringLayoutTransition === true;
@@ -1636,6 +1638,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.courseHelperExpandedByDefault) {
         applyBooleanUi('courseHelperExpandedByDefault', changes.courseHelperExpandedByDefault.newValue, DEFAULT_COURSE_HELPER_EXPANDED);
       }
+      if (changes.courseHelperIndependentPlatformScroll) {
+        applyBooleanUi('courseHelperIndependentPlatformScroll', changes.courseHelperIndependentPlatformScroll.newValue, true);
+      }
       if (changes.fullscreenTopBarFullWidth) {
         applyBooleanUi('fullscreenTopBarFullWidth', changes.fullscreenTopBarFullWidth.newValue, false);
       }
@@ -1936,7 +1941,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ courseHelperExpandedByDefault: event.currentTarget.checked });
     setMsg('已应用更改');
   });
-  for (const id of ['fullscreenTopBarFullWidth', 'stickyCourseHeader']) {
+  for (const id of ['fullscreenTopBarFullWidth', 'stickyCourseHeader', 'courseHelperIndependentPlatformScroll']) {
     document.getElementById(id).addEventListener('change', async (event) => {
       await chrome.storage.local.set({ [id]: event.currentTarget.checked });
       setMsg('已应用更改');
@@ -2554,6 +2559,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       preferExistingFullscreenPage: DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE,
       groupExtensionTabsEnabled: DEFAULT_GROUP_EXTENSION_TABS_ENABLED,
       courseHelperExpandedByDefault: DEFAULT_COURSE_HELPER_EXPANDED,
+      courseHelperIndependentPlatformScroll: true,
       fullscreenTopBarFullWidth: false,
       stickyCourseHeader: true,
       showCourseListDuringLayoutTransition: DEFAULT_SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION,
@@ -2648,6 +2654,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('popupWidthPx').value = String(DEFAULT_POPUP_WIDTH_PX);
     document.getElementById('popupHeightPx').value = String(DEFAULT_POPUP_HEIGHT_PX);
     document.getElementById('courseHelperExpandedByDefault').checked = DEFAULT_COURSE_HELPER_EXPANDED;
+    document.getElementById('courseHelperIndependentPlatformScroll').checked = true;
     document.getElementById('fullscreenTopBarFullWidth').checked = false;
     document.getElementById('stickyCourseHeader').checked = true;
     document.getElementById('saveUploadsEnabled').checked = true;

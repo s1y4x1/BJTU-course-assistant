@@ -1728,6 +1728,28 @@ body.course-header-sticky .course-list-stage::-webkit-scrollbar {
 body.course-header-sticky .course-list-stage::-webkit-scrollbar-thumb {
     background: rgba(148,163,184,0.85);
 }
+body.course-helper-focus.course-platform-independent-scroll .right-column:has(#course-list.platform-split-grid) {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+body.course-helper-focus.course-platform-independent-scroll .course-list-stage:has(> #course-list.platform-split-grid) {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto hidden;
+}
+body.course-helper-focus.course-platform-independent-scroll #course-list.platform-split-grid {
+    flex: 1 1 0;
+    min-height: 0;
+}
+body.course-helper-focus.course-platform-independent-scroll #course-list.platform-split-grid > .platform-course-column {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148,163,184,0.9) transparent;
+}
 .course-header > span:first-child {
     flex: 0 0 auto;
     white-space: nowrap;

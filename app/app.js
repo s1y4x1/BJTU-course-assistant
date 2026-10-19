@@ -1553,6 +1553,9 @@ function setupOptionsStorageLiveSync() {
     if (!popupMode && changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY]) {
       setCourseHelperFocusMode(changes[COURSE_HELPER_EXPANDED_DEFAULT_KEY].newValue === true);
     }
+    if (!popupMode && changes.courseHelperIndependentPlatformScroll) {
+      document.body.classList.toggle('course-platform-independent-scroll', changes.courseHelperIndependentPlatformScroll.newValue !== false);
+    }
     if (changes.platformButtonTextAction) applyPlatformButtonTextAction(changes.platformButtonTextAction.newValue);
     if (!popupMode && (changes[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] || changes[STICKY_COURSE_HEADER_KEY])) {
       applyFullscreenHeaderLayout(
@@ -2191,6 +2194,7 @@ async function loadCourseHelperLayoutSettings() {
   if (popupMode) return;
   const stored = await chrome.storage.local.get([
     COURSE_HELPER_EXPANDED_DEFAULT_KEY,
+    'courseHelperIndependentPlatformScroll',
     FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY,
     STICKY_COURSE_HEADER_KEY,
     COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY,
@@ -2208,6 +2212,7 @@ async function loadCourseHelperLayoutSettings() {
     await chrome.storage.local.remove(COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY).catch(() => {});
   }
   window.showCourseListDuringLayoutTransition = stored[SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY] === true;
+  document.body.classList.toggle('course-platform-independent-scroll', stored.courseHelperIndependentPlatformScroll !== false);
   applyFullscreenHeaderLayout(
     stored[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] === true,
     stored[STICKY_COURSE_HEADER_KEY] !== false
