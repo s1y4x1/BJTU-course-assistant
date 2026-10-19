@@ -3,19 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BJTUCA 操作结果</title>
+  <title>BJTUCA 命令控制台</title>
   <script src="../../UI/theme.js"></script>
+  <script src="../../UI/file-size-emphasis.js"></script>
   <link rel="stylesheet" href="../../options/options.css">
   <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="../../UI/file-size-emphasis.css">
   <link rel="stylesheet" href="run.css">
 </head>
 <body>
-  <section data-options-fragment>
-    <div class="section-title">操作结果 <button id="copyResult" type="button" disabled>复制</button></div>
-    <pre id="operationCode"></pre>
-    <div id="operationLoading"><span class="options-page-spinner"></span>执行中…</div>
-    <pre id="operationResult" hidden></pre>
-  </section>
+  <main class="api-console" data-options-fragment>
+    <header class="console-header">
+      <div><h1>BJTUCA <span>命令控制台</span></h1><p>直接调用扩展 API，结果保留在下方。</p></div>
+      <button id="clearConsole" class="console-secondary" type="button">清空记录</button>
+    </header>
+    <nav class="console-examples" aria-label="命令示例">
+      <button type="button" data-command="api.operationList()">操作列表</button>
+      <button type="button" data-command="help ve.login">操作说明</button>
+      <button type="button" data-command="help">帮助</button>
+    </nav>
+    <div id="consoleOutput" class="console-output" role="log" aria-label="执行记录">
+      <div id="consoleWelcome" class="console-welcome"><span class="console-prompt">BJTUCA&gt;</span><p>输入命令开始，或点击上方示例填入命令。</p><code>api.operationList()</code></div>
+    </div>
+    <form id="consoleForm" class="console-composer">
+      <label for="commandInput" class="console-prompt">BJTUCA&gt;</label>
+      <textarea id="commandInput" rows="2" spellcheck="false" autocomplete="off" aria-label="命令" placeholder="例如 reminder.enabled(true) 或 help ve.login"></textarea>
+      <button id="executeCommand" type="submit">执行</button>
+    </form>
+    <footer class="console-footer"><span id="consoleStatus" role="status">准备就绪</span><span>Enter 执行 · Shift+Enter 换行 · ↑/↓ 历史</span></footer>
+  </main>
   <script src="../../core/module-registry.js"></script>
   <script src="../../core/loaders/api-loader.js"></script>
   <script src="run.js"></script>
