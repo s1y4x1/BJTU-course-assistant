@@ -12,7 +12,7 @@
 .\install.ps1
 ```
 
-安装脚本会直接在当前 `modules/local-bridge` 目录安装依赖并立即执行 `npm start`，不再复制 Bridge。当前 PowerShell 窗口会继续承载 Bridge；按 `Ctrl+C` 可停止。
+安装脚本会直接在当前 `modules/local-bridge` 目录安装依赖并立即执行 `npm start`，不再复制 Bridge。当前 PowerShell 窗口会继续承载 Bridge；空闲时按 `Ctrl+C` 可停止。
 
 首次启动时，Bridge 会在当前目录创建 `bridge.json`。扩展会自动读取该文件中的端口、局域网设置与 Bearer Token，并持续检测 Bridge 连接；连接成功后才可开启「允许本地程序调用扩展操作」。
 
@@ -68,7 +68,9 @@ api.getDocs(module:'ve', name:'courseList')
 ve.courseList({})
 ```
 
-本地文件上传可传 `filePath:'C:\\path\\file.pdf'`。命令行使用 JSON5 解析参数，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。HTTP/MCP 请求仍使用标准 JSON 对象。通过命令行、HTTP 或 MCP 发起的操作会在 Bridge 窗口直接打印完整返回结果，不另加操作名或结果标题。输入 `help` 查看示例；输入 `help ve.courseList ykt.assignments` 或 `help(ve.courseList)` 查看指定操作说明；输入 `exit`、`quit` 或按 `Ctrl+C` 停止 Bridge。
+本地文件上传可传 `filePath:'C:\\path\\file.pdf'`。命令行使用 JSON5 解析参数，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。HTTP/MCP 请求仍使用标准 JSON 对象。通过命令行、HTTP 或 MCP 发起的操作会在 Bridge 窗口直接打印完整返回结果，不另加操作名或结果标题。输入 `help` 查看示例；输入 `help ve.courseList ykt.assignments` 或 `help(ve.courseList)` 查看指定操作说明；输入 `exit`、`quit` 或在空闲时按 `Ctrl+C` 停止 Bridge。
+
+命令等待用户授权时，按 `Ctrl+C` 可立即取消当前命令并撤销对应授权提示，随后继续输入其他命令。`bjtuca -c "操作"` 也支持取消；连接到已有 Bridge 时不会停止该 Bridge。
 
 如需从同一局域网内的其他设备访问本机 Bridge，可在「本机 Bridge」中开启「允许局域网设备连接本机 Bridge」，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后本机 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带其 `bridge.json` 中的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。
 

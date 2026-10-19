@@ -21,6 +21,7 @@
   const approvalRequests = new Map();
   const completedRequests = new Map();
   const inflightRequests = new Map();
+  const requestControllers = new Map();
   let socket = null;
   let reconnectTimer = null;
   let connectPromise = null;
@@ -130,6 +131,7 @@
 
   function closeSocket(code = 1000, reason = 'Disabled') {
     clearReconnectTimer();
+    for (const controller of requestControllers.values()) controller.abort();
     const current = socket;
     socket = null;
     if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
@@ -228,9 +230,11 @@
         return;
       }
       if (message?.type === 'request') void handleRequest(message, ws);
+      if (message?.type === 'cancel') requestControllers.get(String(message.id || ''))?.abort();
     });
     ws.addEventListener('close', (event) => {
       if (socket !== ws) return;
+      for (const controller of requestControllers.values()) controller.abort();
       socket = null;
       if (event.code === 4002) {
         connectionReplaced = true;
@@ -259,19 +263,35 @@
     ws.send(JSON.stringify({ type: 'response', id, ...response }));
   }
 
-  async function operationApproval(name, description = '') {
+  async function operationApproval(name, description = '', signal) {
+    signal?.throwIfAborted();
     if (META_OPERATIONS.has(name)) return true;
     const settings = await global.BjtuApiSettings.get();
+    signal?.throwIfAborted();
     const alwaysAllowed = new Set(settings.alwaysAllowedOperations);
     if (alwaysAllowed.has(name)) return true;
 
     const approvalId = crypto.randomUUID();
-    const pageDecision = await chrome.runtime.sendMessage({
-      type: 'BJTUCA_LOCAL_APPROVAL_REQUEST',
-      id: approvalId,
-      name,
-      message: `本地程序请求执行「${name}」，是否允许？${description ? `\n${description}` : ''}`
-    }).catch(() => null);
+    let cancelPage;
+    const cancelled = new Promise((resolve) => {
+      cancelPage = () => resolve(null);
+      signal?.addEventListener('abort', cancelPage, { once: true });
+    });
+    let pageDecision;
+    try {
+      pageDecision = await Promise.race([cancelled, chrome.runtime.sendMessage({
+        type: 'BJTUCA_LOCAL_APPROVAL_REQUEST',
+        id: approvalId,
+        name,
+        message: `本地程序请求执行「${name}」，是否允许？${description ? `\n${description}` : ''}`
+      }).catch(() => null)]);
+    } finally {
+      signal?.removeEventListener('abort', cancelPage);
+      if (signal?.aborted) {
+        void chrome.runtime.sendMessage({ type: 'BJTUCA_LOCAL_APPROVAL_RESOLVED', id: approvalId }).catch(() => {});
+      }
+    }
+    signal?.throwIfAborted();
     if (pageDecision?.handled === true) {
       void chrome.runtime.sendMessage({
         type: 'BJTUCA_LOCAL_APPROVAL_RESOLVED',
@@ -285,8 +305,16 @@
     }
 
     const notificationId = `${APPROVAL_PREFIX}${crypto.randomUUID()}`;
+    const cancelNotification = () => {
+      const pending = approvalRequests.get(notificationId);
+      if (!pending) return;
+      approvalRequests.delete(notificationId);
+      chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
+      pending.resolve(false);
+    };
     return new Promise((resolve) => {
       approvalRequests.set(notificationId, { resolve, name });
+      signal?.addEventListener('abort', cancelNotification, { once: true });
       chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/128.png'),
@@ -295,11 +323,12 @@
         requireInteraction: true,
         buttons: [{ title: '允许' }, { title: '拒绝' }]
       }, () => {
+        if (signal?.aborted) chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
         if (!chrome.runtime.lastError) return;
         approvalRequests.delete(notificationId);
         resolve(false);
       });
-    });
+    }).finally(() => signal?.removeEventListener('abort', cancelNotification));
   }
 
   async function rememberAlwaysAllowed(name) {
@@ -322,7 +351,8 @@
     pending.resolve(false);
   });
 
-  async function executeRequest(action, payload) {
+  async function executeRequest(action, payload, signal) {
+    signal?.throwIfAborted();
     const api = global.BJTUCA;
     if (!api) {
       throw Object.assign(
@@ -346,9 +376,10 @@
       if (!['app', 'background', 'sandbox'].includes(mode) || !code.trim()) {
         throw Object.assign(new Error('代码或执行环境无效'), { code: 'INVALID_ARGUMENT' });
       }
-      if (mode !== 'sandbox' && !await operationApproval(`code.${mode}`, code)) {
+      if (mode !== 'sandbox' && !await operationApproval(`code.${mode}`, code, signal)) {
         throw Object.assign(new Error('用户拒绝执行代码'), { code: 'USER_DENIED' });
       }
+      signal?.throwIfAborted();
       return api.executeCode(mode, code);
     }
     if (action === 'call') {
@@ -359,9 +390,10 @@
         throw Object.assign(new TypeError('arguments 必须是对象'), { code: 'INVALID_ARGUMENTS' });
       }
       if (!api.get?.(name)) throw Object.assign(new Error(`未找到操作：${name}`), { code: 'OPERATION_NOT_FOUND' });
-      if (!await operationApproval(name)) {
+      if (!await operationApproval(name, '', signal)) {
         throw Object.assign(new Error(`用户拒绝执行操作「${name}」`), { code: 'USER_DENIED' });
       }
+      signal?.throwIfAborted();
       return api.run(name, args || {});
     }
     throw Object.assign(new Error(`未知 Bridge 请求：${action}`), { code: 'UNKNOWN_ACTION' });
@@ -386,9 +418,11 @@
       sendResponse(ws, id, await inflightRequests.get(id));
       return;
     }
+    const controller = new AbortController();
+    requestControllers.set(id, controller);
     const task = (async () => {
       try {
-        return { ok: true, result: await executeRequest(String(message?.action || ''), message?.payload || {}) };
+        return { ok: true, result: await executeRequest(String(message?.action || ''), message?.payload || {}, controller.signal) };
       } catch (error) {
         return {
           ok: false,
@@ -399,6 +433,7 @@
     })();
     inflightRequests.set(id, task);
     const response = await task;
+    requestControllers.delete(id);
     inflightRequests.delete(id);
     completedRequests.set(id, response);
     while (completedRequests.size > 100) completedRequests.delete(completedRequests.keys().next().value);

@@ -53,6 +53,7 @@ let restartPromise = null;
 let requestedListenerRestart = null;
 let terminal = null;
 let terminalCommandRunning = false;
+let terminalCommandController = null;
 const pendingExtensionCalls = new Map();
 const transports = new Map();
 const localFileRelays = new Map();
@@ -97,15 +98,24 @@ function operationArguments(value) {
   return value;
 }
 
-function sendExtensionRequest(action, payload = {}, { printResult = true } = {}) {
+function sendExtensionRequest(action, payload = {}, { printResult = true, signal } = {}) {
+  signal?.throwIfAborted();
   if (!extensionConnected()) {
     throw Object.assign(new Error('浏览器扩展尚未连接本地 Bridge'), { code: 'EXTENSION_OFFLINE' });
   }
   const id = randomUUID();
+  const cancel = () => {
+    const pending = pendingExtensionCalls.get(id);
+    if (!pending) return;
+    pendingExtensionCalls.delete(id);
+    if (extensionConnected()) extensionSocket.send(JSON.stringify({ type: 'cancel', id }));
+    pending.reject(signal.reason);
+  };
   return new Promise((resolve, reject) => {
     pendingExtensionCalls.set(id, { resolve, reject });
+    signal?.addEventListener('abort', cancel, { once: true });
     extensionSocket.send(JSON.stringify({ type: 'request', id, action, payload }));
-  }).then((value) => {
+  }).finally(() => signal?.removeEventListener('abort', cancel)).then((value) => {
     const result = ['call', 'executeCode'].includes(action) && value?.ok === true ? value.result : value;
     if (printResult) process.stdout.write(`${jsonText(result)}\n`);
     return value;
@@ -156,11 +166,23 @@ async function prepareOperationArguments(name, value) {
   return prepared;
 }
 
-async function callOperation(name, args) {
+async function callOperation(name, args, options) {
   return sendExtensionRequest('call', {
     name,
     arguments: await prepareOperationArguments(name, args)
-  });
+  }, options);
+}
+
+function cancelTerminalCommand() {
+  terminalCommandController?.abort(Object.assign(new Error('命令已取消'), { code: 'COMMAND_CANCELLED' }));
+}
+
+function terminalRequestOptions() {
+  const signal = terminalCommandController.signal;
+  return {
+    request: (action, payload, options) => sendExtensionRequest(action, payload, { ...options, signal }),
+    call: (name, args) => callOperation(name, args, { signal })
+  };
 }
 
 function parseTerminalOperation(line) {
@@ -231,11 +253,13 @@ async function runSingleCommand() {
   singleCommandStarted = true;
   clearTimeout(singleCommandConnectionTimer);
   let exitCode = 0;
-  try { await runTerminalCommand(singleCommand); }
+  terminalCommandController = new AbortController();
+  try { await runTerminalCommand(singleCommand, terminalRequestOptions()); }
   catch (error) {
     exitCode = 1;
     if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
   } finally {
+    terminalCommandController = null;
     await shutdown();
     process.exitCode = exitCode;
   }
@@ -257,12 +281,13 @@ function startTerminal() {
   const colorEnabled = !('NO_COLOR' in process.env) && process.stdout.hasColors?.(2);
   const promptColor = process.stdout.hasColors?.(1 << 24) ? '\x1b[38;2;190;35;112m' : '\x1b[35m';
   terminal.setPrompt(colorEnabled ? `${promptColor}BJTUCA>\x1b[0m ` : 'BJTUCA> ');
-  process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，Ctrl+C 退出。\n');
+  process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，执行中按 Ctrl+C 取消命令，空闲时按 Ctrl+C 退出。\n');
   terminal.on('line', async (input) => {
+    if (terminalCommandRunning) return;
     terminalCommandRunning = true;
-    terminal.pause();
+    terminalCommandController = new AbortController();
     try {
-      if (await runTerminalCommand(input)) {
+      if (await runTerminalCommand(input, terminalRequestOptions())) {
         await shutdown();
         process.exit(0);
       }
@@ -270,11 +295,11 @@ function startTerminal() {
       if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
     } finally {
       terminalCommandRunning = false;
-      terminal.resume();
+      terminalCommandController = null;
       terminal.prompt();
     }
   });
-  terminal.on('SIGINT', () => void shutdown().finally(() => process.exit(0)));
+  terminal.on('SIGINT', handleTerminalInterrupt);
   terminal.prompt();
 }
 
@@ -446,11 +471,16 @@ app.post('/api/v1/get-docs', async (req, res) => {
 });
 
 app.post('/api/v1/call', async (req, res) => {
+  const controller = new AbortController();
+  const cancel = () => {
+    if (!res.writableEnded) controller.abort(Object.assign(new Error('调用连接已关闭'), { code: 'COMMAND_CANCELLED' }));
+  };
+  res.on('close', cancel);
   try {
     const name = String(req.body?.name || '').trim();
     const response = typeof req.body?.code === 'string'
-      ? await sendExtensionRequest('executeCode', { mode: req.body.mode || 'app', code: req.body.code })
-      : await callOperation(name, req.body?.arguments);
+      ? await sendExtensionRequest('executeCode', { mode: req.body.mode || 'app', code: req.body.code }, { signal: controller.signal })
+      : await callOperation(name, req.body?.arguments, { signal: controller.signal });
     if (response?.ok === false) {
       res.status(400).json({
         ok: false,
@@ -461,8 +491,11 @@ app.post('/api/v1/call', async (req, res) => {
     }
     res.json(response?.result ?? null);
   } catch (error) {
+    if (controller.signal.aborted) return;
     const invalid = ['INVALID_ARGUMENT', 'INVALID_ARGUMENTS', 'FILE_TOO_LARGE'].includes(String(error?.code || ''));
     res.status(invalid ? 400 : 503).json({ ok: false, code: error.code || 'BRIDGE_ERROR', error: String(error.message || error) });
+  } finally {
+    res.off('close', cancel);
   }
 });
 
@@ -664,10 +697,14 @@ if (singleCommand) {
     return;
   }
   if (health?.ok) {
+    const commandController = new AbortController();
+    const interrupt = () => commandController.abort(Object.assign(new Error('命令已取消'), { code: 'COMMAND_CANCELLED' }));
+    process.on('SIGINT', interrupt);
     try {
       const request = async (action, payload = {}, { printResult = true } = {}) => {
         const route = { call: 'call', executeCode: 'call', getDocs: 'get-docs', operationList: 'operation-list' }[action];
         const response = await fetch(`${bridgeUrl}/api/v1/${route}`, {
+          signal: commandController.signal,
           method: action === 'operationList' ? 'GET' : 'POST',
           headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', Connection: 'close' },
           ...(action === 'operationList' ? {} : { body: JSON.stringify(payload) })
@@ -685,6 +722,8 @@ if (singleCommand) {
     } catch (error) {
       process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
       process.exitCode = 1;
+    } finally {
+      process.off('SIGINT', interrupt);
     }
     return;
   }
@@ -748,7 +787,11 @@ async function shutdown() {
   await new Promise((resolve) => httpServer?.close(() => resolve()));
 }
 
-process.on('SIGINT', () => void shutdown().finally(() => process.exit(0)));
+function handleTerminalInterrupt() {
+  if (terminalCommandController) cancelTerminalCommand();
+  else void shutdown().finally(() => process.exit(0));
+}
+process.on('SIGINT', handleTerminalInterrupt);
 process.on('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
 }
 
