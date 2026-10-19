@@ -742,8 +742,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
-  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkBackgroundRefreshAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, collapseHomeworkDetailsDownward, scrollExpandHomeworkLists, scrollCollapseHomeworkLists, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, updateDirectoryStartupCheckEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, fullscreenTopBarFullWidth, stickyCourseHeader, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
-    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'collapseHomeworkDetailsDownward', 'scrollExpandHomeworkLists', 'scrollCollapseHomeworkLists', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'updateDirectoryStartupCheckEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'fullscreenTopBarFullWidth', 'stickyCourseHeader', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
+  const { platformEnabled, platformVisible, injectMoocHelperEnabled, injectMoocPeerReviewEnabled, moocPeerReviewCount, homeworkReminderEnabled, homeworkReminderMinutes, homeworkBackgroundRefreshEnabled, homeworkReminderAccount, homeworkBackgroundRefreshIntervalMinutes, homeworkNewAssignmentNotificationEnabled, homeworkBackgroundRefreshStatus, systemNotificationStatus, themeMode, animationMode, animationSpeed, fontSizeSettings, jlgjDarkModeEnabled, jlgjAlwaysDarkModeEnabled, collapseHomeworkDetailsDownward, scrollExpandHomeworkLists, scrollCollapseHomeworkLists, homeworkDetailCollapsedLines, replayDetailCollapsedLines, parallelLimit, backgroundAutoUpdateEnabled, backgroundAutoInstallOptionalEnabled, updateDirectoryStartupCheckEnabled, backgroundAutoUpdateStatus, backgroundAutoUpdateIntervalMinutes, popupWidthPx, popupHeightPx, courseHelperExpandedByDefault, fullscreenTopBarFullWidth, stickyCourseHeader, showCourseListDuringLayoutTransition, deadlineCountdownStyle, toolbarPinReminderEnabled, groupExtensionTabsEnabled, mrjzyAutoLoginEnabled, mrjzyAutoLoginAccount, mrjzyAutoLoginClass, veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry } = await chrome.storage.local.get([
+    'platformEnabled', 'platformVisible', 'injectMoocHelperEnabled', 'injectMoocPeerReviewEnabled', 'moocPeerReviewCount', 'homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkReminderAccount', 'homeworkBackgroundRefreshIntervalMinutes', 'homeworkNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshStatus', 'systemNotificationStatus', 'themeMode', 'animationMode', 'animationSpeed', 'fontSizeSettings', 'jlgjDarkModeEnabled', 'jlgjAlwaysDarkModeEnabled', 'collapseHomeworkDetailsDownward', 'scrollExpandHomeworkLists', 'scrollCollapseHomeworkLists', 'homeworkDetailCollapsedLines', 'replayDetailCollapsedLines', 'parallelLimit', 'backgroundAutoUpdateEnabled', 'backgroundAutoInstallOptionalEnabled', 'updateDirectoryStartupCheckEnabled', 'backgroundAutoUpdateStatus', 'backgroundAutoUpdateIntervalMinutes', 'popupWidthPx', 'popupHeightPx', 'courseHelperExpandedByDefault', 'fullscreenTopBarFullWidth', 'stickyCourseHeader', 'showCourseListDuringLayoutTransition', 'deadlineCountdownStyle', 'toolbarPinReminderEnabled', 'groupExtensionTabsEnabled', 'mrjzyAutoLoginEnabled', 'mrjzyAutoLoginAccount', 'mrjzyAutoLoginClass', ...Object.values(PLATFORM_AUTO_LOGIN_OPTION_IDS)
   ]);
   const { xuetangxSecondCsrfToken, xuetangxSecondSessionId } = await chrome.storage.local.get([
     'xuetangxSecondCsrfToken',
@@ -988,15 +988,30 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   let animationUiRefreshRevision = 0;
   updateFontSizeUi();
   let currentHomeworkReminderMinutes = normalizeHomeworkReminderMinutes(homeworkReminderMinutes);
-  let currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccount || '').trim();
+  let currentHomeworkReminderAccount = String(homeworkReminderAccount || '').trim();
   let currentMrjzyAutoLoginAccount = String(mrjzyAutoLoginAccount || '').trim();
   let currentMrjzyAutoLoginClass = String(mrjzyAutoLoginClass || '').trim();
   let mrjzySavedAccounts = [];
   let portalLoginContext = await chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).catch(() => null);
   const backgroundAutoUpdateStatusEl = document.getElementById('backgroundAutoUpdateStatus');
   const homeworkBackgroundRefreshInput = document.getElementById('homeworkBackgroundRefreshEnabled');
-  const homeworkBackgroundRefreshAccountSelect = document.getElementById('homeworkBackgroundRefreshAccount');
+  const homeworkReminderAccountSelect = document.getElementById('homeworkReminderAccount');
+  const reminderScopeSettings = await chrome.storage.local.get('homeworkReminderOnlySelectedAccount');
+  const onlySelectedAccountInput = document.getElementById('homeworkReminderOnlySelectedAccount');
+  onlySelectedAccountInput.checked = reminderScopeSettings.homeworkReminderOnlySelectedAccount !== false;
+  onlySelectedAccountInput.addEventListener('change', async () => {
+    await chrome.storage.local.set({ homeworkReminderOnlySelectedAccount: onlySelectedAccountInput.checked });
+    setMsg('已应用更改');
+  });
   const homeworkNewAssignmentNotificationInput = document.getElementById('homeworkNewAssignmentNotificationEnabled');
+  const foregroundNewHomeworkInput = document.getElementById('homeworkForegroundNewAssignmentNotificationEnabled');
+  const foregroundNewHomeworkSettings = await chrome.storage.local.get('homeworkForegroundNewAssignmentNotificationEnabled');
+  foregroundNewHomeworkInput.checked = foregroundNewHomeworkSettings.homeworkForegroundNewAssignmentNotificationEnabled === true;
+  foregroundNewHomeworkInput.addEventListener('change', async () => {
+    void renderHomeworkBackgroundPlatforms();
+    await chrome.storage.local.set({ homeworkForegroundNewAssignmentNotificationEnabled: foregroundNewHomeworkInput.checked });
+    setMsg('已应用更改');
+  });
   const homeworkBackgroundRefreshStatusEl = document.getElementById('homeworkBackgroundRefreshStatus');
   const systemNotificationStatusEl = document.getElementById('systemNotificationStatus');
   const mrjzyAutoLoginInput = document.getElementById('mrjzyAutoLoginEnabled');
@@ -1141,56 +1156,88 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     editor?.classList.toggle('is-disabled', !parentEnabled);
     editor?.querySelectorAll('input,select').forEach((control) => { control.disabled = !parentEnabled; });
   };
-  const updateHomeworkBackgroundRefreshDisabled = () => {
-    const enabled = homeworkBackgroundRefreshInput instanceof HTMLInputElement && homeworkBackgroundRefreshInput.checked;
-    const detail = document.getElementById('homeworkBackgroundRefreshDetail');
-    detail?.classList.toggle('is-disabled', !enabled);
-    detail?.querySelectorAll('input,select').forEach((control) => { control.disabled = !enabled; });
+  const renderHomeworkBackgroundPlatforms = async () => {
+    const notificationsEnabled = foregroundNewHomeworkInput.checked || homeworkNewAssignmentNotificationInput.checked;
+    const intervalEditor = document.getElementById('homeworkBackgroundRefreshIntervalEditor');
+    intervalEditor.classList.toggle('is-disabled', !notificationsEnabled);
+    intervalEditor.querySelectorAll('input,select').forEach((control) => {
+      control.disabled = !notificationsEnabled;
+    });
+    const stored = await chrome.storage.local.get(['homeworkBackgroundRefreshPlatforms', 'platformEnabled', 'popupFullscreenCourseCache']);
+    const installed = await globalThis.BjtuModuleRegistry.ready;
+    const selected = new Set(stored.homeworkBackgroundRefreshPlatforms || []);
+    const cached = stored.popupFullscreenCourseCache || {};
+    const enabled = normalizePlatformEnabled(stored.platformEnabled);
+    const labels = { ve:'智慧课程平台', ykt:'雨课堂', mooc:'中国大学MOOC', xuetangx:'学堂在线', mrjzy:'每日交作业', jlgj:'接龙管家' };
+    const container = document.getElementById('homeworkBackgroundRefreshPlatforms');
+    container.replaceChildren();
+    for (const [id, name] of Object.entries(labels)) {
+      if (!installed[id]) continue;
+      const available = enabled[id] && cached.platformLoginState?.[id] === 'online';
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'checkbox'; input.value = id;
+      input.checked = selected.has(id); input.disabled = !notificationsEnabled || !available;
+      label.classList.toggle('is-unavailable', !notificationsEnabled || !available);
+      input.style.pointerEvents = notificationsEnabled && available ? '' : 'none';
+      label.addEventListener('click', (event) => {
+        if (!notificationsEnabled) { event.preventDefault(); return; }
+        if (available) return;
+        event.preventDefault();
+        setMsg('请先启用该平台', false);
+      });
+      label.append(input, name); container.append(label);
+      input.addEventListener('change', async () => {
+        const latest = await chrome.storage.local.get('homeworkBackgroundRefreshPlatforms');
+        const platforms = new Set(latest.homeworkBackgroundRefreshPlatforms || []);
+        input.checked ? platforms.add(id) : platforms.delete(id);
+        await chrome.storage.local.set({ homeworkBackgroundRefreshPlatforms: [...platforms] });
+        setMsg('已应用更改');
+      });
+    }
   };
   const renderHomeworkBackgroundRefreshStatus = (status) => {
     if (!(homeworkBackgroundRefreshStatusEl instanceof HTMLElement)) return;
-    if (!(homeworkBackgroundRefreshInput instanceof HTMLInputElement) || !homeworkBackgroundRefreshInput.checked) {
+    if (!homeworkBackgroundRefreshInput.checked && !document.querySelector('#homeworkBackgroundRefreshPlatforms input:checked')) {
       homeworkBackgroundRefreshStatusEl.textContent = '后台作业获取未启用。';
       return;
     }
     const state = String(status?.status || 'waiting');
     const messages = {
-      loading: `正在后台登录 ${String(status?.account || '')} 并获取作业…`,
+      loading: homeworkBackgroundRefreshInput.checked
+        ? `正在后台维护 ${String(status?.account || '')} 并获取作业…` : '正在后台获取所选平台的作业…',
       complete: `最近刷新完成：${Number(status?.courseCount || 0)} 门课程，${Number(status?.homeworkCount || 0)} 项未交作业。`,
-      'foreground-open': '已打开全屏页面，本轮不执行后台获取。',
+      'foreground-open': '已打开扩展课程页面，本轮不执行后台获取。',
       error: `最近刷新失败：${String(status?.error || '未知错误')}`
     };
     homeworkBackgroundRefreshStatusEl.textContent = messages[state] || '等待下一次后台作业获取。';
   };
   updateBackgroundAutoUpdateOptionsDisabled();
 
-  const renderHomeworkBackgroundAccounts = (context) => {
-    if (!(homeworkBackgroundRefreshAccountSelect instanceof HTMLSelectElement)) return;
+  const renderHomeworkReminderAccounts = (context) => {
+    if (!(homeworkReminderAccountSelect instanceof HTMLSelectElement)) return;
     const history = Array.isArray(context?.history) ? context.history : [];
-    const selected = String(currentHomeworkBackgroundRefreshAccount || homeworkBackgroundRefreshAccountSelect.value || '').trim();
-    homeworkBackgroundRefreshAccountSelect.replaceChildren();
-    if (!history.length) {
-      homeworkBackgroundRefreshAccountSelect.append(new Option('暂无已登录账号', ''));
-      return;
-    }
+    const selected = currentHomeworkReminderAccount;
+    homeworkReminderAccountSelect.replaceChildren();
+    homeworkReminderAccountSelect.append(new Option('最后登录的账号', ''));
     history.forEach((account) => {
       const loginName = String(account?.loginName || account?.userId || '').trim();
       if (!loginName) return;
       const userName = String(account?.userName || '').trim();
       const roleName = String(account?.roleName || '').trim();
-      homeworkBackgroundRefreshAccountSelect.append(new Option(
+      homeworkReminderAccountSelect.append(new Option(
         [loginName, roleName, userName].filter(Boolean).join(' '),
         loginName
       ));
     });
     if (history.some((account) => String(account?.loginName || account?.userId || '').trim() === selected)) {
-      homeworkBackgroundRefreshAccountSelect.value = selected;
+      homeworkReminderAccountSelect.value = selected;
     } else {
-      homeworkBackgroundRefreshAccountSelect.value = String(homeworkBackgroundRefreshAccountSelect.options[0]?.value || '');
+      homeworkReminderAccountSelect.value = '';
     }
   };
-  renderHomeworkBackgroundAccounts(portalLoginContext);
-  updateHomeworkBackgroundRefreshDisabled();
+  renderHomeworkReminderAccounts(portalLoginContext);
+  renderHomeworkBackgroundPlatforms();
   renderHomeworkBackgroundRefreshStatus(homeworkBackgroundRefreshStatus);
 
   const updateHomeworkReminderDisabled = () => {
@@ -1466,6 +1513,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if (changes.platformEnabled || changes.popupFullscreenCourseCache || changes.homeworkBackgroundRefreshPlatforms) {
+        void renderHomeworkBackgroundPlatforms();
+      }
+      if (changes.homeworkReminderOnlySelectedAccount) onlySelectedAccountInput.checked = changes.homeworkReminderOnlySelectedAccount.newValue !== false;
+      if (changes.homeworkForegroundNewAssignmentNotificationEnabled) foregroundNewHomeworkInput.checked = changes.homeworkForegroundNewAssignmentNotificationEnabled.newValue === true;
       let uiOrderChanged = false;
       if (changes.platformEnabled) applyPlatformUi(changes.platformEnabled.newValue);
       if (changes.platformVisible) applyPlatformVisibleUi(changes.platformVisible.newValue);
@@ -1628,7 +1680,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       }
       if (changes.homeworkBackgroundRefreshEnabled) {
         applyBooleanUi('homeworkBackgroundRefreshEnabled', changes.homeworkBackgroundRefreshEnabled.newValue, false);
-        updateHomeworkBackgroundRefreshDisabled();
+        renderHomeworkBackgroundPlatforms();
         renderHomeworkBackgroundRefreshStatus(changes.homeworkBackgroundRefreshStatus?.newValue || null);
       }
       if (changes.homeworkBackgroundRefreshIntervalMinutes) {
@@ -1637,9 +1689,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.homeworkNewAssignmentNotificationEnabled) {
         applyBooleanUi('homeworkNewAssignmentNotificationEnabled', changes.homeworkNewAssignmentNotificationEnabled.newValue, false);
       }
-      if (changes.homeworkBackgroundRefreshAccount && homeworkBackgroundRefreshAccountSelect instanceof HTMLSelectElement) {
-        currentHomeworkBackgroundRefreshAccount = String(changes.homeworkBackgroundRefreshAccount.newValue || '').trim();
-        homeworkBackgroundRefreshAccountSelect.value = currentHomeworkBackgroundRefreshAccount;
+      if (changes.homeworkNewAssignmentNotificationEnabled || changes.homeworkForegroundNewAssignmentNotificationEnabled) {
+        void renderHomeworkBackgroundPlatforms();
+      }
+      if (changes.homeworkReminderAccount && homeworkReminderAccountSelect instanceof HTMLSelectElement) {
+        currentHomeworkReminderAccount = String(changes.homeworkReminderAccount.newValue || '').trim();
+        homeworkReminderAccountSelect.value = currentHomeworkReminderAccount;
       }
       if (changes.homeworkBackgroundRefreshStatus) {
         renderHomeworkBackgroundRefreshStatus(changes.homeworkBackgroundRefreshStatus.newValue);
@@ -1650,7 +1705,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.loginAccountHistory) {
         chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).then((context) => {
           if (context?.ok) portalLoginContext = context;
-          renderHomeworkBackgroundAccounts(portalLoginContext);
+          renderHomeworkReminderAccounts(portalLoginContext);
         }).catch(() => {});
       }
       if (changes.mrjzyAccountRevision) {
@@ -2176,26 +2231,27 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   bindScheduleIntervalSetting('homeworkBackgroundRefreshInterval', 'homeworkBackgroundRefreshIntervalMinutes', DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES, '后台作业刷新间隔');
   homeworkBackgroundRefreshInput?.addEventListener('change', async () => {
     const enabled = homeworkBackgroundRefreshInput.checked;
-    const account = String(homeworkBackgroundRefreshAccountSelect?.value || '').trim();
-    if (enabled && !account) {
+    const account = String(homeworkReminderAccountSelect?.value || '').trim();
+    if (enabled && !account && !(portalLoginContext?.history || []).length) {
       homeworkBackgroundRefreshInput.checked = false;
-      updateHomeworkBackgroundRefreshDisabled();
+      renderHomeworkBackgroundPlatforms();
       setMsg('请先登录至少一个智慧课程平台账号', false);
       return;
     }
     await chrome.storage.local.set({
       homeworkBackgroundRefreshEnabled: enabled,
-      ...(enabled ? { homeworkBackgroundRefreshAccount: account } : {})
+      ...(enabled ? { homeworkReminderAccount: account } : {})
     });
-    updateHomeworkBackgroundRefreshDisabled();
+    renderHomeworkBackgroundPlatforms();
     setMsg(enabled ? '已启用后台作业获取' : '已关闭后台作业获取');
   });
-  homeworkBackgroundRefreshAccountSelect?.addEventListener('change', async () => {
-    currentHomeworkBackgroundRefreshAccount = String(homeworkBackgroundRefreshAccountSelect.value || '').trim();
-    await chrome.storage.local.set({ homeworkBackgroundRefreshAccount: currentHomeworkBackgroundRefreshAccount });
-    setMsg('已更改后台维护账号');
+  homeworkReminderAccountSelect?.addEventListener('change', async () => {
+    currentHomeworkReminderAccount = String(homeworkReminderAccountSelect.value || '').trim();
+    await chrome.storage.local.set({ homeworkReminderAccount: currentHomeworkReminderAccount });
+    setMsg('已更改智慧课程平台提醒与后台维护账号');
   });
   homeworkNewAssignmentNotificationInput?.addEventListener('change', async () => {
+    void renderHomeworkBackgroundPlatforms();
     await chrome.storage.local.set({ homeworkNewAssignmentNotificationEnabled: homeworkNewAssignmentNotificationInput.checked });
     setMsg(homeworkNewAssignmentNotificationInput.checked ? '已启用新增作业通知' : '已关闭新增作业通知');
   });
@@ -2475,13 +2531,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       homeworkReminderMinutes: DEFAULT_HOMEWORK_REMINDER_MINUTES,
       toolbarPinReminderEnabled: true,
       homeworkBackgroundRefreshEnabled: false,
-      homeworkBackgroundRefreshAccount: '',
+      homeworkReminderAccount: '',
+      homeworkReminderOnlySelectedAccount: true,
+      homeworkBackgroundRefreshPlatforms: [],
       mrjzyAutoLoginEnabled: true,
       mrjzyAutoLoginAccount: '',
       mrjzyAutoLoginClass: '',
       ...Object.fromEntries(Object.entries(PLATFORM_AUTO_LOGIN_OPTION_IDS).map(([platform, id]) => [id, DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY[platform]])),
       homeworkBackgroundRefreshIntervalMinutes: DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES,
       homeworkNewAssignmentNotificationEnabled: false,
+      homeworkForegroundNewAssignmentNotificationEnabled: false,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
       updateForegroundPromptMode: 'active',
       updateDirectoryStartupCheckEnabled: true,
@@ -2561,9 +2620,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('homeworkBackgroundRefreshEnabled').checked = false;
     document.getElementById('homeworkNewAssignmentNotificationEnabled').checked = false;
     setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
-    currentHomeworkBackgroundRefreshAccount = '';
-    renderHomeworkBackgroundAccounts(portalLoginContext);
-    updateHomeworkBackgroundRefreshDisabled();
+    currentHomeworkReminderAccount = '';
+    renderHomeworkReminderAccounts(portalLoginContext);
+    renderHomeworkBackgroundPlatforms();
     document.getElementById('backgroundAutoUpdateEnabled').checked = DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED;
     document.getElementById('updateDirectoryStartupCheckEnabled').checked = true;
     document.getElementById('backgroundAutoInstallOptionalEnabled').checked = DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED;

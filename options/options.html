@@ -403,16 +403,34 @@
         </div>
       </div>
       <div id="homeworkReminderNodeList" class="reminder-node-list"></div>
-      <label style="display:flex; align-items:center; gap:8px; margin:12px 0 6px;">
-        <input type="checkbox" id="homeworkBackgroundRefreshEnabled" style="width:auto;" />
-        后台维护智慧课程平台此账号登录状态并自动获取作业
-      </label>
-      <div id="homeworkBackgroundRefreshDetail" class="homework-background-refresh-detail">
-        <label for="homeworkBackgroundRefreshAccount">固定账号</label>
-        <select id="homeworkBackgroundRefreshAccount" aria-label="后台作业刷新账号">
-          <option value="">暂无已登录账号</option>
+      <div class="option-divider" role="separator"></div>
+      <label class="homework-reminder-account-row" for="homeworkReminderAccount">
+        <span>智慧课程平台账号</span>
+        <select id="homeworkReminderAccount" aria-label="智慧课程平台提醒与后台维护账号">
+          <option value="">最后登录的账号</option>
         </select>
-        <div id="homeworkBackgroundRefreshIntervalEditor" class="schedule-interval-editor" style="padding-left:0;">
+      </label>
+      <label class="homework-account-sub-option">
+        <input type="checkbox" id="homeworkBackgroundRefreshEnabled" style="width:auto;" />
+        后台维护此账号登录状态并自动获取作业
+      </label>
+      <label class="homework-account-sub-option">
+        <input type="checkbox" id="homeworkReminderOnlySelectedAccount" style="width:auto;" checked />
+        仅提醒此账号作业
+      </label>
+      <div class="option-divider" role="separator"></div>
+      <div id="homeworkBackgroundRefreshDetail" class="homework-background-refresh-detail">
+        <label class="homework-notification-option">
+          <input type="checkbox" id="homeworkForegroundNewAssignmentNotificationEnabled" style="width:auto;" />
+          前台发现新增作业时通知
+        </label>
+        <div class="tip">打开扩展课程页面时，也按下方刷新间隔重新获取所选平台的作业列表，发现新增作业时发送系统通知。首次加载仅建立记录，与后台共用记录以避免重复通知。</div>
+        <label class="homework-notification-option">
+          <input type="checkbox" id="homeworkNewAssignmentNotificationEnabled" style="width:auto;" />
+          后台发现新增作业时通知
+        </label>
+        <div class="tip">仅在未打开全屏页面时定时获取所选平台的作业。平台须在前台启用并登录；其他平台登录失效时不会自动打开登录窗口。首次获取仅建立记录，后续发现新增作业时通知。</div>
+        <div id="homeworkBackgroundRefreshIntervalEditor" class="schedule-interval-editor">
           <span>刷新间隔</span>
           <input type="number" id="homeworkBackgroundRefreshIntervalValue" min="1" step="1" value="30"
             aria-label="后台作业刷新间隔" />
@@ -422,11 +440,7 @@
             <option value="1440">天</option>
           </select>
         </div>
-        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-          <input type="checkbox" id="homeworkNewAssignmentNotificationEnabled" style="width:auto;" />
-          后台发现新增作业时通知
-        </label>
-        <div class="tip">仅在未打开全屏页面时运行；必要时会登录固定账号，刷新作业提醒数据和弹出窗口缓存。</div>
+        <div id="homeworkBackgroundRefreshPlatforms" class="homework-background-platforms" aria-label="后台定时获取作业的平台"></div>
         <div id="homeworkBackgroundRefreshStatus" class="option-status" style="margin:4px 0 0;">后台作业获取未启用。</div>
       </div>
       <div class="option-divider" role="separator"></div>

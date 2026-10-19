@@ -93,6 +93,12 @@
     return { platform, account: platform === 've' ? decodeURIComponent(account || '') : '' };
   }
 
+  function selectedVeAccount(stored) {
+    const account = String(stored.homeworkReminderAccount || '').trim();
+    const latest = Array.isArray(stored.loginAccountHistory) ? stored.loginAccountHistory[0] : null;
+    return account || String(latest?.loginName || latest?.userId || '').trim();
+  }
+
   function plainText(value) {
     const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
     return String(value || '').replace(/<br\s*\/?\s*>|<\/(?:p|div|li)>/gi, '\n').replace(/<[^>]*>/g, '')
@@ -101,5 +107,5 @@
         : entities[entity.toLowerCase()]).trim();
   }
 
-  global.BjtuHomeworkReminders = { labels, keys, scope, snapshots, replaceSnapshot, update, notificationId, notificationTarget, plainText };
+  global.BjtuHomeworkReminders = { labels, keys, scope, snapshots, replaceSnapshot, update, notificationId, notificationTarget, plainText, selectedVeAccount };
 })(globalThis);

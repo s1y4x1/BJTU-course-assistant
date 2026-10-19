@@ -389,9 +389,16 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .schedule-interval-editor { display:grid; grid-template-columns:auto minmax(72px,1fr) auto; gap:8px; align-items:center; margin:8px 0; padding-left:22px; }
 .schedule-interval-editor input { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .schedule-interval-editor select { min-width:0; }
-.homework-background-refresh-detail { margin-left:22px; }
-.homework-background-refresh-detail > label[for] { margin:6px 0 4px; font-size:13px; color:#475569; }
-.homework-background-refresh-detail > select { width:100%; min-width:0; }
+.homework-reminder-account-row { display:flex; align-items:center; justify-content:flex-start; gap:8px; }
+.homework-reminder-account-row select { width:auto; min-width:0; max-width:100%; field-sizing:content; }
+.homework-account-sub-option { display:flex; align-items:center; gap:8px; padding-left:22px; }
+.homework-background-platforms { display:flex; flex-wrap:wrap; gap:4px 12px; padding-left:22px; }
+.homework-background-platforms label { display:inline-flex; align-items:center; gap:6px; }
+.homework-background-platforms input { width:auto; }
+.homework-background-platforms label.is-unavailable { opacity:.5; }
+.homework-notification-option { display:flex; align-items:center; gap:8px; }
+#homeworkBackgroundRefreshIntervalValue { field-sizing:content; width:auto; min-width:2ch; }
+#homeworkBackgroundRefreshIntervalEditor { display:flex; justify-content:flex-start; }
 .system-notification-test-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
 .system-notification-test-row button { flex:0 0 auto; margin:0; }
 .system-notification-test-row .option-status { min-width:180px; margin:0; }

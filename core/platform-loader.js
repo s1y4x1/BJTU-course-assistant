@@ -1,9 +1,9 @@
 (function loadBjtuPlatformModules(global) {
   'use strict';
   const scripts = {
-    ykt: ['modules/ykt/platform.js'],
-    mrjzy: ['core/md5.js', 'modules/mrjzy/platform.js'],
-    jlgj: ['modules/jlgj/platform.js'],
+    ykt: ['modules/ykt/network.js', 'modules/ykt/platform.js'],
+    mrjzy: ['core/md5.js', 'modules/mrjzy/network.js', 'modules/mrjzy/platform.js'],
+    jlgj: ['modules/jlgj/network.js', 'modules/jlgj/platform.js'],
     mooc: ['modules/mooc/platform.js'],
     xuetangx: ['modules/xuetangx/platform.js']
   };

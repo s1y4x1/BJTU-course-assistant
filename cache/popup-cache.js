@@ -425,13 +425,70 @@ async function saveHomeworkReminderSnapshotNow() {
   });
 }
 
+async function notifyForegroundNewHomework() {
+  const now = Date.now();
+  const account = String(window.currentAccountLoginName || '').trim();
+  const items = collectPendingHomeworkItems().filter((item) => !item.deadline || item.deadline > now);
+  for (const [platform, label] of Object.entries(window.BjtuHomeworkReminders.labels)) {
+    if (!isPlatformEnabled(platform) || !getEnabledPlatformLoginResult(platform).ready) continue;
+    if (platform === 've' && !account) continue;
+    await chrome.runtime.sendMessage({ type: 'HOMEWORK_FOREGROUND_DISCOVERED',
+      payload: { platform, account: platform === 've' ? account : '', assignments: items.filter((item) => item.platform === label) } });
+  }
+}
+
+let foregroundHomeworkRefreshTimer = null;
+let foregroundHomeworkRefreshGeneration = 0;
+async function scheduleForegroundHomeworkRefresh() {
+  const generation = ++foregroundHomeworkRefreshGeneration;
+  clearTimeout(foregroundHomeworkRefreshTimer);
+  const settings = await chrome.storage.local.get([
+    'homeworkForegroundNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshIntervalMinutes'
+  ]);
+  if (generation !== foregroundHomeworkRefreshGeneration
+      || settings.homeworkForegroundNewAssignmentNotificationEnabled !== true) return;
+  const minutes = Math.max(1, Number(settings.homeworkBackgroundRefreshIntervalMinutes) || 30);
+  foregroundHomeworkRefreshTimer = setTimeout(async () => {
+    try {
+      await navigator.locks.request('bjtu-homework-foreground-refresh', { ifAvailable: true }, async (lock) => {
+        if (!lock) return;
+        const current = await chrome.storage.local.get([
+          'homeworkForegroundNewAssignmentNotificationEnabled', 'homeworkBackgroundRefreshPlatforms'
+        ]);
+        if (current.homeworkForegroundNewAssignmentNotificationEnabled !== true) return;
+        for (const platform of current.homeworkBackgroundRefreshPlatforms || []) {
+          if (!isPlatformEnabled(platform) || !getEnabledPlatformLoginResult(platform).ready) continue;
+          try {
+            if (platform === 've') await loadCourses();
+            else await triggerExternalPlatformLoad(platform, true);
+          } catch (error) {
+            console.warn(`[bjtu] foreground ${platform} homework refresh failed:`, error);
+          }
+        }
+        scheduleHomeworkReminderSnapshotSave();
+      });
+    } catch (error) {
+      console.warn('[bjtu] foreground homework refresh failed:', error);
+    } finally {
+      if (generation === foregroundHomeworkRefreshGeneration) void scheduleForegroundHomeworkRefresh();
+    }
+  }, minutes * 60000);
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && (changes.homeworkForegroundNewAssignmentNotificationEnabled
+      || changes.homeworkBackgroundRefreshIntervalMinutes || changes.homeworkBackgroundRefreshPlatforms)) {
+    void scheduleForegroundHomeworkRefresh();
+  }
+});
+void scheduleForegroundHomeworkRefresh();
+
 function scheduleHomeworkReminderSnapshotSave(delayMs = 500) {
-  if (popupMode) return;
   if (homeworkReminderSnapshotTimer) clearTimeout(homeworkReminderSnapshotTimer);
   homeworkReminderSnapshotTimer = setTimeout(async () => {
     homeworkReminderSnapshotTimer = null;
     try {
-      await saveHomeworkReminderSnapshotNow();
+      if (!popupMode) await saveHomeworkReminderSnapshotNow();
+      await notifyForegroundNewHomework();
     } catch (error) {
       try { console.warn('[bjtu] save homework reminder snapshot failed:', error); } catch {}
     }
@@ -440,7 +497,7 @@ function scheduleHomeworkReminderSnapshotSave(delayMs = 500) {
 
 let popupCourseCacheSaveTimer = null;
 function scheduleFullscreenCourseCacheSave(delayMs = 900) {
-  if (!popupMode) scheduleHomeworkReminderSnapshotSave(Math.min(500, Number(delayMs) || 500));
+  scheduleHomeworkReminderSnapshotSave(Math.min(500, Number(delayMs) || 500));
   if (popupMode || !shouldSaveFullscreenCourseCache()) return;
   if (popupCourseCacheSaveTimer) clearTimeout(popupCourseCacheSaveTimer);
   popupCourseCacheSaveTimer = setTimeout(() => {

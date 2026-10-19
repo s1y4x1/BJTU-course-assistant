@@ -341,6 +341,11 @@ tryImportModuleScripts('../modules/updater/filesystem.js', '../modules/updater/b
 tryImportModuleScripts('../modules/jlgj/background.js');
 tryImportModuleScripts('../modules/mooc/background.js');
 tryImportModuleScripts('../modules/mrjzy/background.js');
+tryImportModuleScripts('../modules/ykt/network.js');
+tryImportModuleScripts('../modules/mrjzy/network.js');
+tryImportModuleScripts('../modules/jlgj/network.js');
+tryImportModuleScripts('../modules/xuetangx/platform.js');
+tryImportModuleScripts('../core/background-homework-platforms.js');
 tryImportModuleScripts('../core/module-registry.js');
 tryImportModuleScripts('../modules/api/operations.js', '../modules/api/background.js');
 tryImportModuleScripts(
@@ -1026,7 +1031,7 @@ function formatReminderDeadline(timestamp) {
 async function checkHomeworkDeadlineReminders() {
   const reminders = globalThis.BjtuHomeworkReminders;
   return reminders.update(async (state) => {
-    const data = await chrome.storage.local.get(['homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled']);
+    const data = await chrome.storage.local.get(['homeworkReminderEnabled', 'homeworkReminderMinutes', 'homeworkBackgroundRefreshEnabled', 'homeworkBackgroundRefreshPlatforms', 'homeworkReminderAccount', 'homeworkReminderOnlySelectedAccount', 'loginAccountHistory']);
     const nodes = normalizeHomeworkReminderMinutes(data.homeworkReminderMinutes);
     if (data.homeworkReminderEnabled === false || !nodes.length) {
       const active = await chrome.notifications.getAll();
@@ -1034,12 +1039,22 @@ async function checkHomeworkDeadlineReminders() {
         .map((id) => chrome.notifications.clear(id)));
       state.notified = {};
       state.observed = {};
-      if (data.homeworkBackgroundRefreshEnabled !== true) state.snapshot = {};
+      if (data.homeworkBackgroundRefreshEnabled !== true && !(data.homeworkBackgroundRefreshPlatforms || []).length) state.snapshot = {};
       return;
     }
     const now = Date.now();
     const oldest = now - 60 * 24 * 60 * 60 * 1000;
+    const selectedAccount = reminders.selectedVeAccount(data);
+    const onlySelectedAccount = data.homeworkReminderOnlySelectedAccount !== false;
+    if (onlySelectedAccount) {
+      const active = await chrome.notifications.getAll();
+      await Promise.all(Object.keys(active).filter((id) => {
+        const target = reminders.notificationTarget(id);
+        return target?.platform === 've' && target.account !== selectedAccount;
+      }).map((id) => chrome.notifications.clear(id)));
+    }
     for (const { platform, account, entry } of reminders.snapshots(state.snapshot)) {
+      if (platform === 've' && onlySelectedAccount && account !== selectedAccount) continue;
       const items = (Array.isArray(entry.items) ? entry.items : []).filter((item) => Number(item.deadline) > now);
       entry.items = items;
       const notified = reminders.scope(state.notified, platform, account, true);
@@ -1090,11 +1105,11 @@ async function deleteAccountHomework(loginName) {
   await reminders.update(async (state) => {
     await globalThis.BjtuAccountStore.deleteMany([loginName]);
     for (const root of Object.values(state)) if (root.ve) delete root.ve[loginName];
-    const stored = await chrome.storage.local.get(['popupFullscreenCourseCache', 'homeworkBackgroundKnownAssignments', 'username', 'homeworkBackgroundRefreshAccount']);
+    const stored = await chrome.storage.local.get(['popupFullscreenCourseCache', 'homeworkBackgroundKnownAssignments', 'username', 'homeworkReminderAccount']);
     const changes = {};
     const known = stored.homeworkBackgroundKnownAssignments;
-    if (known?.[loginName]) {
-      delete known[loginName];
+    if (known?.[`ve|${loginName}`]) {
+      delete known[`ve|${loginName}`];
       changes.homeworkBackgroundKnownAssignments = known;
     }
     const cache = stored.popupFullscreenCourseCache;
@@ -1110,7 +1125,7 @@ async function deleteAccountHomework(loginName) {
       changes.popupFullscreenCourseCache = cache;
     }
     if (stored.username === loginName) changes.username = '';
-    if (stored.homeworkBackgroundRefreshAccount === loginName) changes.homeworkBackgroundRefreshAccount = '';
+    if (stored.homeworkReminderAccount === loginName) changes.homeworkReminderAccount = '';
     if (Object.keys(changes).length) await chrome.storage.local.set(changes);
     const active = await chrome.notifications.getAll();
     await Promise.all(Object.keys(active).filter((id) => {
@@ -1259,7 +1274,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.openMode) {
     refreshActionPopupFromStorage().catch(() => {});
   }
-  if (changes.homeworkReminderSnapshot || changes.homeworkReminderEnabled || changes.homeworkReminderMinutes) {
+  if (changes.homeworkReminderSnapshot || changes.homeworkReminderEnabled || changes.homeworkReminderMinutes
+      || changes.homeworkReminderAccount || changes.homeworkReminderOnlySelectedAccount || changes.loginAccountHistory) {
     scheduleHomeworkReminderCheck();
   }
 });

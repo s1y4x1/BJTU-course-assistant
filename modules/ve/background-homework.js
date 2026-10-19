@@ -2,9 +2,11 @@
   'use strict';
 
   const ENABLED_KEY = 'homeworkBackgroundRefreshEnabled';
-  const ACCOUNT_KEY = 'homeworkBackgroundRefreshAccount';
+  const ACCOUNT_KEY = 'homeworkReminderAccount';
+  const PLATFORMS_KEY = 'homeworkBackgroundRefreshPlatforms';
   const INTERVAL_KEY = 'homeworkBackgroundRefreshIntervalMinutes';
   const NEW_HOMEWORK_NOTIFY_KEY = 'homeworkNewAssignmentNotificationEnabled';
+  const FOREGROUND_NEW_HOMEWORK_NOTIFY_KEY = 'homeworkForegroundNewAssignmentNotificationEnabled';
   const STATUS_KEY = 'homeworkBackgroundRefreshStatus';
   const KNOWN_ASSIGNMENTS_KEY = 'homeworkBackgroundKnownAssignments';
   const CACHE_KEY = 'popupFullscreenCourseCache';
@@ -52,8 +54,11 @@
   }
 
   async function hasFullscreenAppPage() {
-    const tabs = await chrome.tabs.query({}).catch(() => []);
-    return tabs.some((tab) => isFullscreenAppUrl(tab?.url));
+    const contexts = await chrome.runtime.getContexts({});
+    return contexts.some((context) => {
+      const url = String(context.documentUrl || '').split('?')[0];
+      return url === APP_URL || url === chrome.runtime.getURL('popup/popup.html');
+    });
   }
 
   async function setStatus(status, extra = {}) {
@@ -63,8 +68,9 @@
   }
 
   async function ensureAlarm() {
-    const stored = await chrome.storage.local.get([ENABLED_KEY, INTERVAL_KEY]).catch(() => ({}));
-    const enabled = stored?.[ENABLED_KEY] === true;
+    const stored = await chrome.storage.local.get([ENABLED_KEY, INTERVAL_KEY, PLATFORMS_KEY, NEW_HOMEWORK_NOTIFY_KEY]).catch(() => ({}));
+    const enabled = stored?.[ENABLED_KEY] === true
+      || (stored[NEW_HOMEWORK_NOTIFY_KEY] === true && (stored[PLATFORMS_KEY] || []).length > 0);
     if (!enabled) {
       await chrome.alarms.clear(ALARM_NAME).catch(() => false);
       return null;
@@ -81,14 +87,11 @@
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
     const stored = await chrome.storage.local.get([
-      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, XQ_CODE_KEY
+      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, XQ_CODE_KEY, PLATFORMS_KEY, NEW_HOMEWORK_NOTIFY_KEY, 'loginAccountHistory', 'platformEnabled', 'yktActivityTypes', 'moocActivityTypes'
     ]).catch(() => ({}));
-    if (stored?.[ENABLED_KEY] !== true) return { skipped: 'disabled' };
-    const account = String(stored?.[ACCOUNT_KEY] || '').trim();
-    if (!account) {
-      await setStatus('error', { error: '未选择后台维护账号' });
-      return { skipped: 'missing-account' };
-    }
+    const selected = new Set(stored[NEW_HOMEWORK_NOTIFY_KEY] === true ? stored[PLATFORMS_KEY] || [] : []);
+    if (stored?.[ENABLED_KEY] !== true && !selected.size) return { skipped: 'disabled' };
+    const account = globalThis.BjtuHomeworkReminders.selectedVeAccount(stored);
     if (await hasFullscreenAppPage()) {
       await setStatus('foreground-open', { account });
       return { skipped: 'foreground-open' };
@@ -97,14 +100,44 @@
     activeRefreshController = controller;
     await setStatus('loading', { account });
 
+    const failures = [];
+    let externalCount = 0;
+    const installed = await globalThis.BjtuModuleRegistry.ready;
+    for (const platform of selected) {
+      if (platform === 've' || !installed[platform] || stored.platformEnabled?.[platform] !== true
+          || stored[CACHE_KEY]?.platformLoginState?.[platform] !== 'online') continue;
+      controller.signal.throwIfAborted();
+      try {
+        const assignments = await globalThis.BjtuBackgroundHomeworkPlatforms[platform](stored);
+        controller.signal.throwIfAborted();
+        const savedAt = Date.now();
+        await globalThis.BjtuHomeworkReminders.update(async (state) => {
+          globalThis.BjtuHomeworkReminders.replaceSnapshot(state.snapshot, platform, '', assignments.filter((item) => item.deadline > savedAt), savedAt);
+        });
+        await notifyNewHomework({ platform, assignments });
+        externalCount += assignments.length;
+      } catch (error) {
+        controller.signal.throwIfAborted();
+        failures.push(`${globalThis.BjtuHomeworkReminders.labels[platform]}：${error?.message || error}`);
+      }
+    }
+    const refreshVe = stored[ENABLED_KEY] === true || (selected.has('ve') && stored.platformEnabled?.ve !== false
+      && stored[CACHE_KEY]?.platformLoginState?.ve === 'online');
+    if (!refreshVe) {
+      await setStatus(failures.length ? 'error' : 'complete', { account, homeworkCount: externalCount, error: failures.join('；') });
+      return { updated: true, homeworkCount: externalCount, failures };
+    }
+    if (!account) throw new Error('没有最后登录的智慧课程平台账号');
+
     const loginService = globalThis.BjtuVeLoginService;
     if (!loginService?.login || !loginService?.fetchCurrentUserInfo) {
       throw new Error('智慧课程平台登录服务未加载');
     }
-    const loginResult = await loginService.login({ loginName: account });
+    const loginResult = stored[ENABLED_KEY] === true ? await loginService.login({ loginName: account })
+      : { ok: true, userInfo: await loginService.fetchCurrentUserInfo() };
     controller.signal.throwIfAborted();
     if (!loginResult?.ok) throw new Error(String(loginResult?.message || '后台登录失败'));
-    const userInfo = loginResult?.userInfo || await loginService.fetchCurrentUserInfo();
+    const userInfo = loginResult?.userInfo;
     const currentAccount = String(userInfo?.loginName || '').trim();
     if (currentAccount !== account) throw new Error(`后台登录账号不匹配：${currentAccount || '未登录'}`);
 
@@ -168,10 +201,11 @@
       await chrome.storage.local.set({ [CACHE_KEY]: cache, [XQ_CODE_KEY]: xqCode });
       await notifyNewHomework({ account, assignments });
     });
-    await setStatus('complete', {
+    await setStatus(failures.length ? 'error' : 'complete', {
       account,
       courseCount: courses.length,
-      homeworkCount: assignments.length
+      homeworkCount: assignments.length + externalCount,
+      error: failures.join('；')
     });
     return { updated: true, account, courseCount: courses.length, homeworkCount: assignments.length };
     })().catch(async (error) => {
@@ -204,28 +238,37 @@
 
 
   async function notifyNewHomework(message) {
-    const stored = await chrome.storage.local.get([NEW_HOMEWORK_NOTIFY_KEY, KNOWN_ASSIGNMENTS_KEY]).catch(() => ({}));
+    return navigator.locks.request('bjtu-homework-new-assignments', () => recordNewHomework(message));
+  }
+
+  async function recordNewHomework(message) {
+    const notifyKey = message.foreground === true ? FOREGROUND_NEW_HOMEWORK_NOTIFY_KEY : NEW_HOMEWORK_NOTIFY_KEY;
+    const stored = await chrome.storage.local.get([notifyKey, KNOWN_ASSIGNMENTS_KEY, ACCOUNT_KEY, 'homeworkReminderOnlySelectedAccount', 'loginAccountHistory']).catch(() => ({}));
+    const platform = message.platform || 've';
     const account = String(message?.account || '').trim();
-    if (!account) return;
+    if (platform === 've' && !account) return;
+    const scopeKey = platform === 've' ? `${platform}|${account}` : platform;
     const knownByAccount = stored?.[KNOWN_ASSIGNMENTS_KEY] && typeof stored[KNOWN_ASSIGNMENTS_KEY] === 'object'
       ? { ...stored[KNOWN_ASSIGNMENTS_KEY] }
       : {};
-    const previousList = Array.isArray(knownByAccount[account]) ? knownByAccount[account] : null;
+    const previousList = Array.isArray(knownByAccount[scopeKey]) ? knownByAccount[scopeKey] : null;
     const previousKeys = new Set(previousList || []);
     const freshItems = Array.isArray(message?.assignments) ? message.assignments : [];
     const additions = freshItems.filter((item) => {
       const key = homeworkIdentity(item);
       return key && !previousKeys.has(key);
     });
-    knownByAccount[account] = [...new Set([
+    knownByAccount[scopeKey] = [...new Set([
       ...(previousList || []),
       ...freshItems.map(homeworkIdentity).filter(Boolean)
     ])].slice(-5000);
     await chrome.storage.local.set({ [KNOWN_ASSIGNMENTS_KEY]: knownByAccount }).catch(() => {});
-    if (!previousList || stored?.[NEW_HOMEWORK_NOTIFY_KEY] !== true) return;
+    if (!previousList || stored?.[notifyKey] !== true) return;
+    if (platform === 've' && stored.homeworkReminderOnlySelectedAccount !== false
+        && account !== globalThis.BjtuHomeworkReminders.selectedVeAccount(stored)) return;
     await Promise.all(additions.map((item) => {
-      const id = globalThis.BjtuHomeworkReminders.notificationId('new', 've', account, homeworkIdentity(item));
-      const createNotification = global.BjtuSystemNotifications?.create
+      const id = globalThis.BjtuHomeworkReminders.notificationId('new', platform, account, homeworkIdentity(item));
+      const createNotification = globalThis.BjtuSystemNotifications?.create
         || ((notificationId, options) => chrome.notifications.create(notificationId, options));
       return createNotification(id, {
         type: 'basic',
@@ -237,6 +280,16 @@
     }));
   }
 
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== 'HOMEWORK_FOREGROUND_DISCOVERED') return false;
+    if (!String(sender.url || '').startsWith(chrome.runtime.getURL(''))
+        || !Object.hasOwn(globalThis.BjtuHomeworkReminders.labels, message.payload?.platform)) return false;
+    notifyNewHomework({ ...message.payload, foreground: true })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    return true;
+  });
+
   function stopRefreshWhenFullscreenOpens(tab) {
     if (!activeRefreshController || !isFullscreenAppUrl(tab?.url)) return;
     activeRefreshController.abort('foreground-open');
@@ -247,8 +300,8 @@
     foregroundCloseResumeTimer = setTimeout(async () => {
       foregroundCloseResumeTimer = null;
       if (await hasFullscreenAppPage()) return;
-      const stored = await chrome.storage.local.get([ENABLED_KEY, STATUS_KEY]).catch(() => ({}));
-      if (stored?.[ENABLED_KEY] !== true) return;
+      const stored = await chrome.storage.local.get([ENABLED_KEY, STATUS_KEY, PLATFORMS_KEY]).catch(() => ({}));
+      if (stored?.[ENABLED_KEY] !== true && !(stored[PLATFORMS_KEY] || []).length) return;
       if (String(stored?.[STATUS_KEY]?.status || '') !== 'foreground-open') return;
       runBackgroundHomeworkRefresh().catch(() => {});
     }, 250);
@@ -272,9 +325,9 @@
   chrome.runtime.onInstalled.addListener(() => { void ensureAlarm(); });
   chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INTERVAL_KEY] && !changes[ACCOUNT_KEY])) return;
+    if (area !== 'local' || (!changes[ENABLED_KEY] && !changes[INTERVAL_KEY] && !changes[ACCOUNT_KEY] && !changes[PLATFORMS_KEY] && !changes[NEW_HOMEWORK_NOTIFY_KEY] && !changes.loginAccountHistory)) return;
     void ensureAlarm();
-    if (changes[ENABLED_KEY]?.newValue === true || changes[ACCOUNT_KEY]?.newValue) {
+    if (changes[ENABLED_KEY]?.newValue === true || changes[ACCOUNT_KEY] || changes[PLATFORMS_KEY] || changes.loginAccountHistory) {
       runBackgroundHomeworkRefresh().catch((error) => {
         setStatus('error', { error: String(error?.message || error) });
       });

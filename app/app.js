@@ -1157,6 +1157,7 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   void trackedPromise.finally(() => {
     if (window.platformLoadPromises?.[platform] === trackedPromise) {
       window.platformLoadPending[platform] = false;
+      scheduleHomeworkReminderSnapshotSave();
     }
   });
   return trackedPromise;
@@ -4507,6 +4508,7 @@ function setPlatformContentLoadProgress(platform, completed, total) {
   const size = Math.max(0, Number(total) || 0);
   if (!size || count >= size || !isPlatformEnabled(p)) {
     delete window.platformContentLoadProgress[p];
+    if (isPlatformEnabled(p)) scheduleHomeworkReminderSnapshotSave();
   } else {
     window.platformContentLoadProgress[p] = { completed: Math.min(count, size), total: size };
   }

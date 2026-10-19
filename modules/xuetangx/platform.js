@@ -1489,6 +1489,16 @@
       void stopQrLoginSocket();
     },
     getCourses: () => courses,
+    async fetchBackgroundCourses() {
+      const serial = ++loadSerial;
+      const [statuses, types] = await Promise.all([getVisibleStatuses(), getVisibleActivityTypes()]);
+      const response = await requestJson(COURSE_LIST_URL, serial);
+      if (response?.success !== true || !Array.isArray(response.data?.product_list)) throw new Error(response?.msg || '学堂在线登录已失效');
+      const result = response.data.product_list.filter((panel) => statuses.includes(Number(panel.status)))
+        .map(buildCourse).filter((course) => course.id && course.classroomId && course.sign);
+      await Promise.all(result.map((course) => loadCourseDetails(course, serial, types)));
+      return result;
+    },
     restore(value) {
       courses = Array.isArray(value) ? value : [];
     },
@@ -1587,7 +1597,7 @@
     login: (args) => xuetangxPageLogin(args)
   });
 
-  if (typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
+  if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type !== 'PAGE_API' || message?.payload?.module !== 'xuetangx') return false;
       const api = globalThis.BjtuXuetangxPageApi;
