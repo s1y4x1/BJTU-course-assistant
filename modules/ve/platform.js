@@ -10,13 +10,14 @@ function parseVeJson(text) {
 }
 
 async function fetchCurrentVeUserInfo() {
+  currentVeAccountInfo = null;
+  renderLoginAccountHistorySelect();
   try {
-    const userInfo = await globalThis.BjtuVeHomeworkCore.fetchCurrentUserInfo();
-    if (String(userInfo?.roleName || '').trim()) return userInfo;
-  } catch {}
-  try {
-    return await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.() || null;
-  } catch {}
+    currentVeAccountInfo = await globalThis.BjtuAccountLogin.getCurrentUserInfo();
+    return currentVeAccountInfo;
+  } catch {} finally {
+    renderLoginAccountHistorySelect(currentVeAccountInfo?.loginName || '');
+  }
   return null;
 }
 
@@ -36,10 +37,11 @@ function isVeTeacherUserInfo(userInfo) {
 
 async function refreshCurrentVeAccountFromSession({
   reloadCourses = false,
-  reloadResourceSpace = false
+  reloadResourceSpace = false,
+  knownUserInfo
 } = {}) {
   if (!isPlatformEnabled('ve')) return null;
-  const info = await fetchCurrentVeUserInfoOnce();
+  const info = knownUserInfo === undefined ? await fetchCurrentVeUserInfoOnce() : knownUserInfo;
   if (!info) return null;
   const userId = String(info.loginName || info.userId || '').trim();
   if (!userId) return null;
@@ -53,13 +55,14 @@ async function refreshCurrentVeAccountFromSession({
 
 async function reloadVePlatformFromSession({
   reloadCourses = true,
-  reloadResourceSpace = true
+  reloadResourceSpace = true,
+  knownUserInfo
 } = {}) {
   if (!isPlatformEnabled('ve')) return null;
-  const synced = await refreshCurrentVeAccountFromSession({ reloadCourses, reloadResourceSpace });
+  const synced = await refreshCurrentVeAccountFromSession({ reloadCourses, reloadResourceSpace, knownUserInfo });
   if (synced) return synced;
   const tasks = [];
-  if (reloadCourses) tasks.push(loadCourses().catch(() => {}));
+  if (reloadCourses) tasks.push(loadCourses({ knownUserInfo: null }).catch(() => {}));
   if (reloadResourceSpace) tasks.push(loadResourceSpaceForCurrentAccount().catch(() => {}));
   await Promise.allSettled(tasks);
   return null;
@@ -78,6 +81,7 @@ async function syncAccountInfoAndReloadVeCourses({
 
   const finalUser = String(userId || usernameInput.value || lastValidUsername || '').trim();
   if (knownUserInfo) {
+    currentVeAccountInfo = knownUserInfo;
     await globalThis.BjtuAccountLogin?.ensureCurrentAccountStored?.(knownUserInfo, {
       personalCenterResult: knownPersonalCenterResult
     }).catch(() => null);
@@ -113,7 +117,7 @@ async function syncAccountInfoAndReloadVeCourses({
 
   const reloadPromises = [syncJsessionidToUi().catch(() => {})];
   if (reloadCourses && isPlatformEnabled('ve')) {
-    reloadPromises.push(loadCourses().catch(() => {}));
+    reloadPromises.push(loadCourses(knownUserInfo ? { knownUserInfo } : {}).catch(() => {}));
   }
   if (reloadResourceSpace) {
     reloadPromises.push(loadResourceSpaceForCurrentAccount().catch(() => {}));
@@ -1985,7 +1989,7 @@ function mergeVeCourseLists(...lists) {
   return [...merged.values()];
 }
 
-async function loadCourses() {
+async function loadCourses({ knownUserInfo } = {}) {
   // 立即中止所有进行中的资源/回放请求
   abortAllCoursewareReplayFetches();
   const courseLoadVersion = bumpPlatformLoadVersion('ve');
@@ -2011,7 +2015,7 @@ async function loadCourses() {
     const xqCode = await ensureCurrentXqCode();
     const directBaseCoursesPromise = globalThis.BjtuVeHomeworkCore.fetchCourses(xqCode)
         .then((courses) => ({ courses, error: null }), (error) => ({ courses: [], error }));
-      const userInfo = await fetchCurrentVeUserInfo();
+      const userInfo = knownUserInfo === undefined ? await fetchCurrentVeUserInfoOnce() : knownUserInfo;
       if (!isPlatformEnabled('ve') || courseLoadVersion !== window.courseListLoadVersion) return;
       if (!userInfo) {
         const baseResult = await directBaseCoursesPromise;

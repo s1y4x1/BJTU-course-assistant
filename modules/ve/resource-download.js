@@ -994,7 +994,7 @@ function renderResourceSpaceList() {
   if (!resourceSpaceList) return;
   const list = Array.isArray(window.resourceSpaceItems) ? window.resourceSpaceItems : [];
   if (!list.length) {
-    resourceSpaceList.innerHTML = '<div style="font-size:12px; color:#999;">暂无资源文件</div>';
+    resourceSpaceList.innerHTML = '<div class="resource-space-status">暂无资源文件</div>';
     refreshResourceSelectAllButton();
     return;
   }

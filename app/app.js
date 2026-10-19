@@ -3106,6 +3106,7 @@ function updateTotalProgress() {
 }
 
 let currentVeUserInfoPromise = null;
+let currentVeAccountInfo = null;
 
 async function getLocalAccountInfo(userId = '') {
   const uid = String(userId || '').trim();
@@ -3206,10 +3207,11 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
   const list = normalizeLoginAccountHistoryList(loginAccountHistory);
   const emptyOpt = document.createElement('option');
   emptyOpt.value = '';
-  emptyOpt.textContent = '';
+  emptyOpt.textContent = isPlatformEnabled('ve') ? '加载中…' : '等待加载…';
   emptyOpt.hidden = true;
   accountHistorySelect.appendChild(emptyOpt);
-  const selectedRecord = list.find((it) => it.userId === current);
+  const selectedRecord = isPlatformEnabled('ve') && currentVeAccountInfo
+    ? list.find((it) => it.userId === current) : null;
   const selectedUserId = selectedRecord?.userId || '';
   if (selectedRecord) {
     const opt = document.createElement('option');
@@ -3223,7 +3225,6 @@ function renderLoginAccountHistorySelect(currentUserId = '') {
   }
 
   list
-    .filter((it) => it.userId !== selectedUserId)
     .forEach((it) => {
       const opt = document.createElement('option');
       opt.value = it.userId;
@@ -3282,7 +3283,7 @@ function renderCurrentXqSelect(list = currentXqOptions, preferredCode = currentX
   if (!normalizedList.length) {
     const empty = document.createElement('option');
     empty.value = String(preferredCode || '').trim();
-    empty.textContent = empty.value ? `已保存学期（${empty.value}）` : '暂无学期';
+    empty.textContent = '加载中…';
     empty.disabled = !empty.value;
     empty.selected = true;
     xqSelect.appendChild(empty);
@@ -3313,6 +3314,7 @@ function getCurrentXqCode() {
 
 async function loadCurrentXqOptions(forceReload = false) {
   if (currentXqLoadPromise && !forceReload) return currentXqLoadPromise;
+  renderCurrentXqSelect([], '');
   const task = (async () => {
     let savedCode = '';
     try {
@@ -3400,6 +3402,7 @@ async function loadLoginAccountHistory() {
   } catch {
     loginAccountHistory = [];
   }
+  renderLoginAccountHistorySelect();
 }
 
 async function saveLoginAccountHistory() {
@@ -3772,7 +3775,7 @@ if (loginModalClose instanceof HTMLButtonElement) {
   loginModalClose.addEventListener('click', () => dismissLoginModal());
 }
 
-async function handleLoginSuccess(username, { reloadPlatform = true } = {}) {
+async function handleLoginSuccess(username, { reloadPlatform = true, userInfo } = {}) {
   if (reloadPlatform && !isPlatformEnabled('ve')) {
     window.platformEnabled.ve = true;
     savePlatformEnabledToStorage().catch(() => { });
@@ -3788,6 +3791,8 @@ async function handleLoginSuccess(username, { reloadPlatform = true } = {}) {
 
   let finalUser = String(username || '').trim();
   usernameInput.value = finalUser;
+  if (userInfo !== undefined) currentVeAccountInfo = userInfo;
+  renderLoginAccountHistorySelect(finalUser);
   window.currentAccountLoginName = finalUser;
   suppressedUsernameChangeValue = finalUser;
   updateJsessionidState();
@@ -3799,7 +3804,8 @@ async function handleLoginSuccess(username, { reloadPlatform = true } = {}) {
     await loadAutoLoadCourseResourcesSetting().catch(() => { });
     await reloadVePlatformFromSession({
       reloadCourses: true,
-      reloadResourceSpace: true
+      reloadResourceSpace: true,
+      knownUserInfo: userInfo
     }).catch(() => { });
   } else {
     if (isPlatformEnabled('ve')) setPlatformLoginState('ve', 'online');
@@ -3926,7 +3932,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
         window.dispatchEvent(new CustomEvent('bjtu-ve-login-success', {
           detail: { account: username }
         }));
-        await handleLoginSuccess(username, { reloadPlatform });
+        await handleLoginSuccess(username, { reloadPlatform, userInfo: result.userInfo });
         return { ...result, account: username };
       }
       if (result?.reason === 'captcha') {
@@ -4336,6 +4342,7 @@ function setPlatformLoginState(platform, state) {
   const prev = String(window.platformLoginState?.[p] || '').trim();
   const s = (state === 'online' || state === 'offline') ? state : 'checking';
   window.platformLoginState[p] = s;
+  if (p === 've') renderLoginAccountHistorySelect();
   if (p === 've' && s === 'online') window.platformInteractiveLoginPending.ve = false;
   window.dispatchEvent(new CustomEvent('bjtu-platform-login-state-change', {
     detail: { platform: p, state: s, previousState: prev }
@@ -6905,7 +6912,7 @@ const appInitializationPromise = (async function init() {
   if (restoredPopupCache) {
     await loadLoginAccountHistory();
     if (isPlatformEnabled('ve')) {
-      const currentUser = await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.().catch(() => null);
+      const currentUser = await fetchCurrentVeUserInfoOnce().catch(() => null);
       if (currentUser) {
         await globalThis.BjtuAccountLogin?.ensureCurrentAccountStored?.(currentUser).catch(() => null);
       }

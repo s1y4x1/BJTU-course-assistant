@@ -1159,6 +1159,15 @@ chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
   }
 });
 
+let veLoginStatusRequest = null;
+function fetchVeLoginStatusOnce() {
+  if (!veLoginStatusRequest) {
+    veLoginStatusRequest = globalThis.BjtuVeLoginService.fetchCurrentUserInfo()
+      .finally(() => { veLoginStatusRequest = null; });
+  }
+  return veLoginStatusRequest;
+}
+
 function normalizePortalLoginAccountHistory(rawList) {
   const list = Array.isArray(rawList) ? rawList : [];
   return list
@@ -1406,7 +1415,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'VE_LOGIN_CHECK_STATUS') {
     (async () => {
       const loginName = String(message?.payload?.loginName || '').trim();
-      const currentUser = await globalThis.BjtuVeLoginService.fetchCurrentUserInfo();
+      const currentUser = await fetchVeLoginStatusOnce();
       sendResponse({
         ok: true,
         loggedIn: !!currentUser,
