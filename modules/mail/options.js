@@ -135,6 +135,10 @@
       </div>
       <iframe class="mail-message-preview-frame" title="邮件正文" sandbox="allow-same-origin" referrerpolicy="no-referrer" hidden></iframe>
     `;
+    const frame = card.querySelector('.mail-message-preview-frame');
+    frame.addEventListener('load', () => {
+      if (frame.hasAttribute('srcdoc')) bindMailPreviewLinks(frame.contentDocument);
+    });
     card.addEventListener('mouseleave', hideMailPreviewWhenOutside);
     document.body.appendChild(card);
     return card;
@@ -151,6 +155,7 @@
       const frame = card.querySelector('.mail-message-preview-frame');
       frame.hidden = true;
       frame.removeAttribute('src');
+      frame.removeAttribute('srcdoc');
     }
   }
 
@@ -198,6 +203,51 @@
     const result = await send('MAIL_DOWNLOAD_AUTHENTICATED_URL', { url: String(url || '') });
     setMessage(result?.ok ? '已开始下载邮件附件' : `邮件附件下载失败：${result?.message || '未知错误'}`, result?.ok === true);
     return result;
+  }
+
+  function buildMailPreviewDocument(content) {
+    const parsed = new DOMParser().parseFromString(content, 'text/html');
+    parsed.querySelectorAll('script, object, embed, iframe, frame, base, meta[http-equiv="refresh" i]').forEach((node) => node.remove());
+    const base = parsed.createElement('base');
+    base.href = 'https://mail.bjtu.edu.cn/';
+    const policy = parsed.createElement('meta');
+    policy.httpEquiv = 'Content-Security-Policy';
+    policy.content = "default-src 'none'; base-uri https://mail.bjtu.edu.cn; img-src https: http: data:; style-src 'unsafe-inline'; font-src https: data:";
+    const style = parsed.createElement('style');
+    style.textContent = 'html,body{margin:0;padding:8px;box-sizing:border-box;overflow-wrap:anywhere;color:#111827;background:#fff;font:13px/1.6 system-ui,sans-serif}img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}';
+    parsed.querySelectorAll('a[href]').forEach((anchor) => {
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+    });
+    parsed.head.prepend(policy, base, style);
+    return `<!doctype html>${parsed.documentElement.outerHTML}`;
+  }
+
+  function bindMailPreviewLinks(frameDocument) {
+    frameDocument?.addEventListener('click', (event) => {
+      const anchor = event.target.closest?.('a[href]');
+      if (!anchor) return;
+      let target;
+      try { target = new URL(anchor.getAttribute('href'), 'https://mail.bjtu.edu.cn/'); } catch { return; }
+      if (target.protocol === 'https:' && target.hostname === 'mail.bjtu.edu.cn' && target.pathname.startsWith('/coremail/')) {
+        event.preventDefault();
+        void downloadMailUrl(target.href);
+      }
+    });
+  }
+
+  async function fetchLegacyMailContent(mid, signal) {
+    const response = await fetch('https://mail.bjtu.edu.cn/coremail/XT/jsp/readMessage.jsp', {
+      method: 'POST', credentials: 'include', cache: 'no-store', signal,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: new URLSearchParams({ mid }).toString()
+    });
+    if (!response.ok) throw new Error(`旧接口 HTTP ${response.status}`);
+    const data = await response.json();
+    if (data?.code !== 'S_OK') throw new Error(`旧接口 ${data?.code || '无响应码'}${data?.message ? ` ${data.message}` : ''}`);
+    const content = data?.var?.mail?.mainPartData?.content;
+    if (typeof content !== 'string') throw new Error('旧接口响应中没有 var.mail.mainPartData.content');
+    return content;
   }
 
   function buildMailAttachmentUrl(mid, part) {
@@ -257,6 +307,7 @@
     if (frame instanceof HTMLIFrameElement) {
       frame.hidden = true;
       frame.removeAttribute('src');
+      frame.removeAttribute('srcdoc');
     }
     card.hidden = false;
     positionMailPreview(cell);
@@ -267,14 +318,21 @@
       const controller = new AbortController();
       mailPreviewController = controller;
       let previewDocument;
+      const showLegacyContent = async () => {
+        const content = await fetchLegacyMailContent(row.id, controller.signal);
+        if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
+        previewDocument?.close();
+        previewDocument = null;
+        frame.srcdoc = buildMailPreviewDocument(content);
+        frame.hidden = false;
+        positionMailPreview(cell);
+      };
       try {
-        let response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+        const response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: controller.signal });
         if (response.status === 500) {
           await response.body?.cancel();
-          const result = await send('MAIL_GET_MESSAGE_CONTENT', { mid: row.id });
-          if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
-          if (!result?.ok) throw new Error(result?.message || '旧接口读取正文失败');
-          response = new Response(result.content, { headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
+          await showLegacyContent();
+          return;
         }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
@@ -283,23 +341,24 @@
         previewDocument = frame.contentDocument;
         previewDocument.open();
         previewDocument.write('<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; base-uri https://mail.bjtu.edu.cn; img-src https: http: data:; style-src \'unsafe-inline\'; font-src https: data:"><base href="https://mail.bjtu.edu.cn/"><style>html,body{margin:0;padding:8px;overflow-wrap:anywhere;color:#111827;background:#fff;font:13px/1.6 system-ui,sans-serif}img{max-width:100%;height:auto}pre{white-space:pre-wrap}</style></head><body>');
-        previewDocument.addEventListener('click', (event) => {
-          const anchor = event.target.closest?.('a[href]');
-          if (!anchor) return;
-          const target = new URL(anchor.getAttribute('href'), 'https://mail.bjtu.edu.cn/');
-          if (target.protocol === 'https:' && target.hostname === 'mail.bjtu.edu.cn' && target.pathname.startsWith('/coremail/')) {
-            event.preventDefault();
-            void downloadMailUrl(target.href);
-          }
-        });
+        bindMailPreviewLinks(previewDocument);
         frame.hidden = false;
         positionMailPreview(cell);
         const reader = response.body.getReader();
+        let contentTail = '';
         try {
           while (true) {
             const { value, done } = await reader.read();
             if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
-            previewDocument.write(decoder.decode(value, { stream: !done }));
+            const chunk = decoder.decode(value, { stream: !done });
+            // 含 CID 引用时恢复旧接口正文，沿用原有图片地址和渲染方式。
+            if (/cid:/i.test(contentTail + chunk)) {
+              await reader.cancel();
+              await showLegacyContent();
+              return;
+            }
+            contentTail = (contentTail + chunk).slice(-3);
+            previewDocument.write(chunk);
             if (done) break;
           }
         } finally {
