@@ -32,7 +32,7 @@
     identity.hash = '';
     const key = `bjtuca-ve-video-role:${identity.href}`;
     const savedRole = sessionStorage.getItem(key);
-    createToggle('切换访问角色（userRole=2）', savedRole !== null && ownUrl.searchParams.get('userRole') === '2', (enabled) => {
+    createToggle('切换访问角色', savedRole !== null && ownUrl.searchParams.get('userRole') === '2', (enabled) => {
       const url = new URL(location.href);
       if (enabled) {
         sessionStorage.setItem(key, JSON.stringify(url.searchParams.get('userRole')));
