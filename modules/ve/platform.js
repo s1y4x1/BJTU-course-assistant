@@ -2470,7 +2470,7 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
         : 'rgba(255,243,224,0.72)')));
   if (courseLoading && (!key || !cache?.loaded || cache?.loading)) {
     const animationDelay = `-${Date.now() % 1000}ms`;
-    return `<div class="file-item homework-attachment-loading" style="padding:6px 8px;border:1px solid ${borderColor};border-radius:6px;background:${softBg};margin-top:6px;">
+    return `<div class="file-item homework-attachment-file homework-attachment-loading" style="padding:6px 8px;border:1px solid ${borderColor};border-radius:6px;background:${softBg};">
       <span class="spinner" aria-hidden="true" style="width:10px;height:10px;border-width:1px;border-color:#64748b;border-top-color:transparent;animation-delay:${animationDelay};"></span>
       <span>正在加载作业附件…</span>
     </div>`;
@@ -2499,7 +2499,7 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
     };
     registerHomeworkAttachmentItem(courseId, item);
     return `
-      <div class="file-item" data-resource-id="${escapeHtml(resourceId)}" style="padding:6px 8px; border:1px solid ${borderColor}; border-radius:6px; background:${softBg}; margin-top:6px;">
+      <div class="file-item homework-attachment-file" data-resource-id="${escapeHtml(resourceId)}" style="padding:6px 8px; border:1px solid ${borderColor}; border-radius:6px; background:${softBg};">
         <div class="resource-row-title" style="margin-bottom:4px; cursor:pointer;">
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(resourceId)}" ${checked} style="margin:0 4px 0 0;">
           <span style="color:#111827; font-weight:700;">${escapeHtml(fileNameNoExt)}</span>
