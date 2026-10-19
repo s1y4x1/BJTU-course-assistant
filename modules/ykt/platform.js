@@ -374,7 +374,40 @@ async function fetchYktExamPaper(courseId, examId) {
   return null;
 }
 
-function renderYktExamProblemsHtml(problemList) {
+async function fetchYktHomeworkDetail(homework) {
+  if (Number(homework?.__actype) !== 14) {
+    return fetchYktExamPaper(homework?.course_id || homework?.classroom_id, homework?.exam_id || '');
+  }
+  const lessonId = String(homework?.courseware_id || '').trim();
+  if (!lessonId) throw new Error('课堂缺少 courseware_id');
+  const response = await fetchYktJson(`${YKT_BASE}/api/v3/classroom-report/student/detail?lesson_id=${encodeURIComponent(lessonId)}`);
+  if (!response?.data || (response.errcode !== undefined && Number(response.errcode) !== 0) || response.success === false) {
+    throw new Error(response?.errmsg || response?.message || '课堂报告获取失败');
+  }
+  const problems = [];
+  for (const [key, label] of [['problem', '课堂练习'], ['quiz', '随堂测验']]) {
+    const students = response.data[key]?.studentList;
+    if (!Array.isArray(students)) continue;
+    for (const item of students) {
+      if (!item || typeof item !== 'object') continue;
+      let cover = '';
+      if (item.cover) {
+        try {
+          const url = new URL(String(item.cover), YKT_BASE);
+          if (/^https?:$/.test(url.protocol)) cover = url.href;
+        } catch { }
+      }
+      problems.push({
+        ...item,
+        TypeText: label,
+        Body: cover ? `<img src="${escapeHtml(cover)}" alt="${label}题目" loading="lazy">` : ''
+      });
+    }
+  }
+  return { problems };
+}
+
+function renderYktProblemsHtml(problemList) {
   const list = Array.isArray(problemList) ? problemList : [];
   if (!list.length) return '';
   return list.map((p, i) => {
@@ -384,6 +417,12 @@ function renderYktExamProblemsHtml(problemList) {
       index: Number(p?.index) || i + 1,
       typeText,
       score: p?.Score,
+      metaItems: [
+        p?.isAnswered === undefined || p?.isAnswered === null ? ''
+          : ([true, 1, '1', 'true'].includes(p.isAnswered) ? '已作答' : '未作答'),
+        p?.score === undefined || p?.score === null ? '' : `得分：${p.score}`,
+        p?.problemscore === undefined || p?.problemscore === null ? '' : `题目分值：${p.problemscore}`
+      ],
       bodyHtml: globalThis.BjtuHomeworkUi.sanitizeRichHtml(p?.Body || ''),
       options: rawOptions.map((option) => ({
         key: option?.key ?? option?.Key ?? '',
@@ -421,7 +460,7 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
       items = Array.isArray(standalone?.homeworks) ? standalone.homeworks : [];
     }
     const targets = items.filter((hw) => {
-      if (Number(hw?.__actype) !== 5) return false;
+      if (![5, 14].includes(Number(hw?.__actype))) return false;
       if (!['deferred', 'failed', ''].includes(String(hw?.exam_detail_state || '').trim())) return false;
       return groupKind === 'done' ? isYktHomeworkDone(hw) : isYktHomeworkOverdue(hw);
     });
@@ -438,16 +477,16 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
         renderYktStandaloneCourses();
         const detailKey = String(hw?.detail_cache_key || '').trim();
         try {
-          if (Number(hw?.__actype) === 5) {
-            const paper = await fetchYktExamPaper(hw?.course_id || hw?.classroom_id, hw?.exam_id || '');
+          if ([5, 14].includes(Number(hw?.__actype))) {
+            const paper = await fetchYktHomeworkDetail(hw);
             if (paper?.title) hw.title = paper.title;
-            hw.exam_problems = Array.isArray(paper?.problems) ? paper.problems : [];
+            hw.detail_problems = Array.isArray(paper?.problems) ? paper.problems : [];
           }
           hw.exam_detail_state = 'done';
           if (detailKey) {
             window.yktDetailCacheByKey[detailKey] = {
               state: 'done', title: hw.title,
-              exam_problems: Array.isArray(hw.exam_problems) ? hw.exam_problems : [],
+              detail_problems: Array.isArray(hw.detail_problems) ? hw.detail_problems : [],
               promise: null
             };
           }
@@ -504,9 +543,9 @@ function renderYktHomeworkItems(courseId, items) {
     const isClassroomActivity = actype === 14;
     const activityTypeLabel = YKT_ACTIVITY_TYPE_LABELS[actype] || '';
     const isExam = actype === 5;
-    const examDetail = isExam ? renderYktExamProblemsHtml(it?.exam_problems || []) : '';
+    const examDetail = isExam || isClassroomActivity ? renderYktProblemsHtml(it?.detail_problems || []) : '';
     let detailStatusHtml = '';
-    if (isExam && !examDetail) {
+    if ((isExam || isClassroomActivity) && !examDetail) {
       const state = String(it?.exam_detail_state || '').trim();
       if (state === 'loading') {
         detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>${globalThis.BjtuHomeworkUi.text.detailLoading}</div>`;
@@ -597,7 +636,8 @@ function buildYktEntryHomeworks(entry, acts) {
     const examId = a?.courseware_id ?? a?.exam_id ?? a?.examId ?? a?.id ?? '';
     const coursewareId = a?.courseware_id;
     const leafId = a?.content?.leaf_id ?? a?.leaf_id ?? '';
-    const detailKey = isExam ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}` : '';
+    const detailKey = isExam ? `5:${String(a?.course_id || entry.classroomId)}:${String(examId || '')}`
+      : isClassroomActivity ? `14:${String(entry.classroomId)}:${String(coursewareId || '')}` : '';
     const cache = detailKey ? window.yktDetailCacheByKey[detailKey] : null;
     return {
       title: a?.title || '雨课堂作业',
@@ -627,7 +667,7 @@ function buildYktEntryHomeworks(entry, acts) {
       id: a?.id,
       exam_id: examId,
       __actype: a?.__actype,
-      exam_problems: Array.isArray(cache?.exam_problems) ? cache.exam_problems : [],
+      detail_problems: Array.isArray(cache?.detail_problems) ? cache.detail_problems : [],
       detail_content: a?.content ?? null,
       exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
       detail_cache_key: detailKey,
@@ -818,7 +858,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     let queuedChanged = false;
     homeworks.forEach((hw) => {
       const actype = Number(hw?.__actype);
-      if (actype !== 5 || !String(hw?.exam_id || '').trim()) return;
+      if (![5, 14].includes(actype) || !String(actype === 14 ? hw?.courseware_id || '' : hw?.exam_id || '').trim()) return;
       if (!hw.exam_detail_state) {
         hw.exam_detail_state = 'queued';
         queuedChanged = true;
@@ -835,9 +875,9 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     const typeStates = new Map();
     requestedActypes.forEach((actype) => {
       const items = entry.homeworks.filter((homework) => Number(homework?.__actype) === actype);
-      const immediatelyComplete = actype === 14 || actype === 9
+      const immediatelyComplete = actype === 9
         ? items.length
-        : (actype === 5 ? items.filter((homework) => !String(homework?.exam_id || '').trim()).length : 0);
+        : ([5, 14].includes(actype) ? items.filter((homework) => !String(actype === 14 ? homework?.courseware_id || '' : homework?.exam_id || '').trim()).length : 0);
       typeStates.set(actype, { total: items.length, completed: immediatelyComplete });
     });
     return typeStates;
@@ -908,7 +948,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
 
     if (cache?.state === 'done') {
       if (cache.title) hw.title = cache.title;
-      hw.exam_problems = Array.isArray(cache.exam_problems) ? cache.exam_problems : [];
+      hw.detail_problems = Array.isArray(cache.detail_problems) ? cache.detail_problems : [];
       hw.exam_detail_state = 'done';
       rerenderEntryCard(entry);
       markHomeworkDetailLoaded(entry, hw);
@@ -920,7 +960,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       await cache.promise.catch(() => {});
       const latest = window.yktDetailCacheByKey[detailKey] || {};
       if (latest.title) hw.title = latest.title;
-      hw.exam_problems = Array.isArray(latest.exam_problems) ? latest.exam_problems : [];
+      hw.detail_problems = Array.isArray(latest.detail_problems) ? latest.detail_problems : [];
       hw.exam_detail_state = latest.state === 'done' ? 'done' : 'failed';
       rerenderEntryCard(entry);
       markHomeworkDetailLoaded(entry, hw);
@@ -936,16 +976,16 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           ...(window.yktDetailCacheByKey[detailKey] || {}),
           state: 'loading',
           title: hw.title,
-          exam_problems: Array.isArray(hw.exam_problems) ? hw.exam_problems : []
+          detail_problems: Array.isArray(hw.detail_problems) ? hw.detail_problems : []
         };
       }
 
       if (isStale() || !isPlatformEnabled('ykt')) return;
-      const p = fetchYktExamPaper(hw?.course_id || entry.classroomId, hw?.exam_id || '');
+      const p = fetchYktHomeworkDetail(hw);
       if (detailKey) window.yktDetailCacheByKey[detailKey].promise = p;
       const examPaper = await p;
       if (examPaper?.title) hw.title = examPaper.title;
-      hw.exam_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
+      hw.detail_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
 
       hw.exam_detail_state = 'done';
       if (detailKey) {
@@ -953,7 +993,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           ...(window.yktDetailCacheByKey[detailKey] || {}),
           state: 'done',
           title: hw.title,
-          exam_problems: Array.isArray(hw.exam_problems) ? hw.exam_problems : [],
+          detail_problems: Array.isArray(hw.detail_problems) ? hw.detail_problems : [],
           promise: null
         };
       }
@@ -1121,6 +1161,10 @@ async function yktPageCourseHomework(classroomId) {
     .filter((item) => Number(item?.__actype) === 15)
     .map((item) => item?.courseware_id)
     .filter((id) => String(id || '').trim());
+  await Promise.all(homework.filter((item) => Number(item.__actype) === 14 && item.courseware_id).map(async (item) => {
+    const detail = await fetchYktHomeworkDetail(item);
+    item.detail_problems = detail.problems;
+  }));
   if (videoCoursewareIds.length) {
     try {
       const listResp = await fetchYktJson(YKT_COURSE_LIST_API);

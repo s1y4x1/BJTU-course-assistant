@@ -1272,7 +1272,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文和已加载的考试题目；线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
+        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文及已加载的考试、课堂题目；课堂题目保留 cover 图片链接及接口返回的 isAnswered、problemscore、score 等字段，包括实际返回的随堂测验题目。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
@@ -1293,7 +1293,7 @@ name: 've.teachers_of_',
           totalScore: item?.total_score ?? item?.totalScore ?? '',
           details: serialize({
             content: item?.detail_content ?? null,
-            problems: Array.isArray(item?.exam_problems) ? item.exam_problems : []
+            problems: Array.isArray(item?.detail_problems) ? item.detail_problems : []
           }),
           link: String(item?.link || '')
         }));
