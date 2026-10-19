@@ -386,15 +386,12 @@
       const name = String(payload?.name || '').trim();
       const args = payload?.arguments;
       if (!name) throw Object.assign(new Error('缺少操作名'), { code: 'INVALID_ARGUMENT' });
-      if (args != null && (typeof args !== 'object' || Array.isArray(args))) {
-        throw Object.assign(new TypeError('arguments 必须是对象'), { code: 'INVALID_ARGUMENTS' });
-      }
       if (!api.get?.(name)) throw Object.assign(new Error(`未找到操作：${name}`), { code: 'OPERATION_NOT_FOUND' });
       if (!await operationApproval(name, '', signal)) {
         throw Object.assign(new Error(`用户拒绝执行操作「${name}」`), { code: 'USER_DENIED' });
       }
       signal?.throwIfAborted();
-      return api.run(name, args || {});
+      return api.run(name, args ?? {});
     }
     throw Object.assign(new Error(`未知 Bridge 请求：${action}`), { code: 'UNKNOWN_ACTION' });
   }

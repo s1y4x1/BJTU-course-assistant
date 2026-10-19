@@ -183,7 +183,7 @@
       if (type === 'BJTUCA_EXECUTE_CODE') {
         return global.BJTUCA.executeCode(message.payload?.mode, message.payload?.code);
       }
-      return global.BJTUCA.run(String(message.payload?.name || ''), message.payload?.arguments || {});
+      return global.BJTUCA.run(String(message.payload?.name || ''), message.payload?.arguments ?? {});
     })().then(sendResponse).catch((error) => sendResponse({
       ok: false, code: String(error?.code || 'OPERATION_FAILED'), error: String(error?.message || error),
       message: String(error?.message || error)

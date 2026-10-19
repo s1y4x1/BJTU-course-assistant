@@ -90,14 +90,6 @@ function extensionConnected() {
   return extensionSocket?.readyState === WebSocket.OPEN && extensionInfo?.authenticated === true;
 }
 
-function operationArguments(value) {
-  if (value == null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw Object.assign(new TypeError('arguments 必须是对象'), { code: 'INVALID_ARGUMENTS' });
-  }
-  return value;
-}
-
 function sendExtensionRequest(action, payload = {}, { printResult = true, signal } = {}) {
   signal?.throwIfAborted();
   if (!extensionConnected()) {
@@ -131,7 +123,7 @@ function sendExtensionRequest(action, payload = {}, { printResult = true, signal
 }
 
 async function prepareOperationArguments(name, value) {
-  const args = operationArguments(value);
+  const args = value ?? {};
   if (String(name || '').trim() !== 've.uploadFile' || !String(args?.filePath || '').trim()) return args;
   const resolvedPath = path.resolve(String(args.filePath));
   let info;
@@ -192,10 +184,13 @@ function parseTerminalOperation(line) {
   if (rawArgs.startsWith('(') && rawArgs.endsWith(')')) rawArgs = rawArgs.slice(1, -1).trim();
   let args = {};
   if (rawArgs) {
-    try { args = JSON5.parse(rawArgs.startsWith('{') || rawArgs.startsWith('[') ? rawArgs : `{${rawArgs}}`); }
-    catch { throw new Error('参数格式错误；请使用 键名:值，多项以逗号分隔，字符串使用单引号或双引号'); }
+    try { args = JSON5.parse(rawArgs); }
+    catch {
+      try { args = JSON5.parse(`{${rawArgs}}`); }
+      catch { throw new Error('参数格式错误；可使用布尔值、数组或 键名:值；多项以逗号分隔，字符串使用单引号或双引号'); }
+    }
   }
-  return { name: match[1], args: operationArguments(args) };
+  return { name: match[1], args };
 }
 
 function parseTerminalHelpOperations(line) {
@@ -393,7 +388,7 @@ function createMcpServer() {
     description: '调用一个已注册的扩展操作。是否允许执行由浏览器扩展决定。',
     inputSchema: {
       name: z.string().min(1),
-      arguments: z.record(z.unknown()).optional()
+      arguments: z.unknown().optional()
     }
   }, async ({ name, arguments: args }) => {
     try {

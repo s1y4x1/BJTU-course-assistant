@@ -72,6 +72,8 @@ ve.courseList({})
 
 命令等待用户授权时，按 `Ctrl+C` 可立即取消当前命令并撤销对应授权提示，随后继续输入其他命令。`bjtuca -c "操作"` 也支持取消；连接到已有 Bridge 时不会停止该 Bridge。
 
+操作参数按各操作的说明传入，不限于对象。例如 `reminder.enabled(true)` 开启提醒、`reminder.enabled(false)` 关闭提醒，`reminder.add([15,30])` 添加多个提醒节点；HTTP/MCP 调用时将对应值放入 `arguments` 字段即可。
+
 如需从同一局域网内的其他设备访问本机 Bridge，可在「本机 Bridge」中开启「允许局域网设备连接本机 Bridge」，然后将下文地址中的 `127.0.0.1` 替换为运行 Bridge 的电脑的局域网 IP。开启后本机 Bridge 会监听所有网络接口；除操作列表外，调用仍需携带其 `bridge.json` 中的 Bearer Token。系统防火墙可能会要求您允许 Node.js 接受专用网络连接。
 
 ### 连接另一台电脑上的扩展

@@ -2963,7 +2963,7 @@ name: 've.teachers_of_',
     }
     try {
       await assertPlatformEnabledForOperation(op);
-      const result = await op.run(args || {});
+      const result = await op.run(args ?? {});
       if (operationNeedsPlatformLogin(op)) {
         if (isLoginRequiredValue(result)) {
           throw Object.assign(new Error(String(result?.message || `${op.module} 需要登录`)), { code: 'LOGIN_REQUIRED' });
