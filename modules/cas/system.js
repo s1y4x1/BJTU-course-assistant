@@ -7,6 +7,7 @@
   const ACCOUNTS_KEY = 'casAccounts';
   const LOGIN_NAME_KEY = 'casLoginName';
   const SWITCH_MIS_LOGOUT_KEY = 'casSwitchMisLogoutEnabled';
+  const SSO_SWITCH_MIS_LOGOUT_KEY = 'ssoSwitchMisLogoutEnabled';
   const STATUS_TYPE = 'CAS_SYSTEM_STATUS';
   const MANUAL_CAPTCHA_TTL_MS = 5 * 60 * 1000;
   const MANUAL_CAPTCHA_SESSION_PREFIX = 'casManualCaptcha:';
@@ -265,6 +266,7 @@
     const accounts = await getCasAccounts();
     const secret = String(password || accounts[id]?.password || '');
     if (!secret) throw new Error('请输入 SSO 密码');
+    await logoutMisIfEnabled(SSO_SWITCH_MIS_LOGOUT_KEY);
     const logoutResponse = await fetch(SSO_LOGOUT_URL, { method: 'GET', credentials: 'include', cache: 'no-store' });
     if (!logoutResponse.ok) throw new Error(`SSO 退出登录 HTTP ${logoutResponse.status}`);
     const response = await fetch(SSO_ENTRY_URL, { credentials: 'include', cache: 'no-store' });
@@ -433,17 +435,17 @@
     return { ok: false, message: tishi || `CAS 登录失败（HTTP ${response.status}）` };
   }
 
-  // 勾选「切换 CAS 账号时同时切换 MIS」时，登录 CAS 前 GET slogout 退出 MIS，
+  // 勾选对应平台的「同时切换 MIS」时，登录前 GET slogout 退出 MIS，
   // 避免切换账号后仍残留旧账号的 MIS 会话。
-  async function logoutMisIfEnabled() {
+  async function logoutMisIfEnabled(key = SWITCH_MIS_LOGOUT_KEY) {
     try {
-      const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY]);
-      if (stored?.[SWITCH_MIS_LOGOUT_KEY] === false) return;
+      const stored = await chrome.storage.local.get([key]);
+      if (stored?.[key] === false) return;
       await fetch(MIS_SLOGOUT_URL, {
         credentials: 'include', cache: 'no-store', redirect: 'follow'
       });
     } catch {
-      // MIS 登出失败不阻塞 CAS 登录
+      // MIS 登出失败不阻塞统一身份认证登录
     }
   }
 

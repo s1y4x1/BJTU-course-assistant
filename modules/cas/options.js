@@ -3,8 +3,10 @@
 
   const LOGIN_NAME_KEY = 'casLoginName';
   const SWITCH_MIS_LOGOUT_KEY = 'casSwitchMisLogoutEnabled';
+  const SSO_SWITCH_MIS_LOGOUT_KEY = 'ssoSwitchMisLogoutEnabled';
   const PLATFORM_KEY = 'casLoginPlatform';
-  let platform = 'CAS';
+  const SSO_DEFAULT_APPLIED_KEY = 'casSsoDefaultApplied';
+  let platform = 'SSO';
 
   let initialized = false;
   let context = null;
@@ -15,7 +17,7 @@
     .catch((error) => ({ ok: false, message: String(error?.message || error) }));
 
   function applyPlatform(value) {
-    platform = value === 'SSO' ? 'SSO' : 'CAS';
+    platform = value === 'CAS' ? 'CAS' : 'SSO';
     document.querySelectorAll('input[name="casLoginPlatform"]').forEach((radio) => {
       radio.checked = radio.value === platform;
     });
@@ -216,12 +218,13 @@
     element('casLoginName')?.addEventListener('change', (event) => {
       chrome.storage.local.set({ [LOGIN_NAME_KEY]: String(event.currentTarget.value || '').trim() });
     });
-    element(SWITCH_MIS_LOGOUT_KEY)?.addEventListener('change', async (event) => {
-      const enabled = event.currentTarget.checked === true;
-      await chrome.storage.local.set({ [SWITCH_MIS_LOGOUT_KEY]: enabled });
-      setMessage(enabled
-        ? '切换 CAS 账号时会先退出 MIS 登录'
-        : '切换 CAS 账号时不再额外退出 MIS 登录');
+    [SWITCH_MIS_LOGOUT_KEY, SSO_SWITCH_MIS_LOGOUT_KEY].forEach((key) => {
+      element(key)?.addEventListener('change', async (event) => {
+        const enabled = event.currentTarget.checked === true;
+        await chrome.storage.local.set({ [key]: enabled });
+        const system = key === SSO_SWITCH_MIS_LOGOUT_KEY ? 'SSO' : 'CAS';
+        setMessage(`切换 ${system} 账号时${enabled ? '会先' : '不再额外'}退出 MIS 登录`);
+      });
     });
     element('casAccountSelect')?.addEventListener('change', async (event) => {
       const select = event.currentTarget;
@@ -276,10 +279,10 @@
       if (changes[LOGIN_NAME_KEY] && document.activeElement !== element('casLoginName')) {
         element('casLoginName').value = String(changes[LOGIN_NAME_KEY].newValue || '');
       }
-      if (changes[SWITCH_MIS_LOGOUT_KEY]) {
-        const checkbox = element(SWITCH_MIS_LOGOUT_KEY);
-        if (checkbox instanceof HTMLInputElement) {
-          checkbox.checked = changes[SWITCH_MIS_LOGOUT_KEY].newValue !== false;
+      for (const key of [SWITCH_MIS_LOGOUT_KEY, SSO_SWITCH_MIS_LOGOUT_KEY]) {
+        if (changes[key]) {
+          const checkbox = element(key);
+          if (checkbox instanceof HTMLInputElement) checkbox.checked = changes[key].newValue !== false;
         }
       }
     });
@@ -304,11 +307,15 @@
     if (initialized) return true;
     initialized = true;
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
-    const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY, PLATFORM_KEY]);
+    const stored = await chrome.storage.local.get([SWITCH_MIS_LOGOUT_KEY, SSO_SWITCH_MIS_LOGOUT_KEY, PLATFORM_KEY, SSO_DEFAULT_APPLIED_KEY]);
+    if (stored[SSO_DEFAULT_APPLIED_KEY] !== true) {
+      stored[PLATFORM_KEY] = 'SSO';
+      await chrome.storage.local.set({ [PLATFORM_KEY]: 'SSO', [SSO_DEFAULT_APPLIED_KEY]: true });
+    }
     applyPlatform(stored[PLATFORM_KEY]);
-    const misCheckbox = element(SWITCH_MIS_LOGOUT_KEY);
-    if (misCheckbox instanceof HTMLInputElement) {
-      misCheckbox.checked = stored[SWITCH_MIS_LOGOUT_KEY] !== false;
+    for (const key of [SWITCH_MIS_LOGOUT_KEY, SSO_SWITCH_MIS_LOGOUT_KEY]) {
+      const misCheckbox = element(key);
+      if (misCheckbox instanceof HTMLInputElement) misCheckbox.checked = stored[key] !== false;
     }
     bindEvents();
     bindMessages();
@@ -320,7 +327,7 @@
   async function reset() {
     await chrome.storage.local.remove([LOGIN_NAME_KEY, PLATFORM_KEY]);
     if (!initialized) return;
-    applyPlatform('CAS');
+    applyPlatform('SSO');
     element('casLoginName').value = '';
     element('casPassword').value = '';
     await refreshContext();

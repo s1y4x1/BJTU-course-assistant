@@ -18,11 +18,14 @@
   </div>
   <div class="cas-platform-choice" role="radiogroup" aria-label="平台选择">
     <span>平台选择：</span>
-    <label><input type="radio" name="casLoginPlatform" value="CAS" checked>CAS</label>
-    <label><input type="radio" name="casLoginPlatform" value="SSO">SSO</label>
+    <label><input type="radio" name="casLoginPlatform" value="CAS">CAS</label>
+    <label><input type="radio" name="casLoginPlatform" value="SSO" checked>SSO</label>
   </div>
-  <label class="cas-option-check" data-cas-platform="CAS">
+  <label class="cas-option-check" data-cas-platform="CAS" hidden>
     <input type="checkbox" id="casSwitchMisLogoutEnabled" checked>切换 CAS 账号时同时切换 MIS
+  </label>
+  <label class="cas-option-check" data-cas-platform="SSO">
+    <input type="checkbox" id="ssoSwitchMisLogoutEnabled" checked>切换 SSO 账号时同时切换 MIS
   </label>
   <label for="casAccountSelect">已保存账号</label>
   <div class="cas-account-row">
@@ -35,11 +38,11 @@
   <label for="casPassword">密码</label>
   <input id="casPassword" type="password" autocomplete="off"
     placeholder="留空时使用已保存的密码；登录成功后保存密码">
-  <div class="cas-login-actions" data-cas-platform="CAS">
+  <div class="cas-login-actions" data-cas-platform="CAS" hidden>
     <button id="casLoginBtn" type="button">登录统一身份认证中心（CAS）</button>
     <div class="tip">登录时会先读取 CAS 登录页以更新 CSRF Token，再自动识别验证码提交账号密码；未安装验证码识别模块或资源时会显示验证码供手工输入。账号密码会在登录成功后按账号保存在扩展本地存储中。在 CAS 页面自行登录时，扩展同样会捕获并保存账密。</div>
   </div>
-  <div class="cas-login-actions" data-cas-platform="SSO" hidden>
+  <div class="cas-login-actions" data-cas-platform="SSO">
     <button id="ssoLoginBtn" type="button">登录新版统一身份认证（SSO）</button>
     <div class="tip">与 CAS 共用账号、密码和已保存凭据，密码留空时使用该账号已保存的密码。在扩展后台读取 sso.bjtu.edu.cn 登录页，使用页面公钥进行 SM2 加密后提交；需要图片验证码时会弹窗要求输入。</div>
   </div>
