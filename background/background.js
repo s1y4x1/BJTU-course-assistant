@@ -361,6 +361,16 @@ tryImportModuleScripts('./account-upload.js');
 
 const OPTIONAL_CONTENT_SCRIPTS = [
   {
+    id: 'bjtu-sso-login-capture', module: 'cas',
+    matches: ['https://sso.bjtu.edu.cn/sso/login*', 'https://sso.bjtu.edu.cn/o/authorize*'],
+    js: ['modules/cas/sso-login-capture.js'], runAt: 'document_start'
+  },
+  {
+    id: 'bjtu-sso-login-capture-main', module: 'cas',
+    matches: ['https://sso.bjtu.edu.cn/sso/login*', 'https://sso.bjtu.edu.cn/o/authorize*'],
+    js: ['modules/cas/sso-login-capture-main.js'], runAt: 'document_idle', world: 'MAIN'
+  },
+  {
     id: 'bjtu-ve-login-response-detector',
     module: 've',
     matches: ['http://123.121.147.7:88/*'],

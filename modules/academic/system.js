@@ -776,7 +776,10 @@
     try {
       const url = new URL(String(value || ''), MIS_MODULE_URL);
       if (url.hostname === 'mis.bjtu.edu.cn') {
-        return /^\/auth\/sso\/?$/i.test(url.pathname);
+        return /^\/auth\/(?:sso|nsso)\/?$/i.test(url.pathname);
+      }
+      if (url.hostname === 'sso.bjtu.edu.cn') {
+        return /^\/(?:o\/authorize|sso\/login)(?:\/|$)/i.test(url.pathname);
       }
       if (url.hostname === 'cas.bjtu.edu.cn') {
         return /^\/o\/authorize\/?$/i.test(url.pathname)
@@ -792,22 +795,19 @@
     return Object.assign(new Error(String(message || 'MIS/CAS 登录失败')), { code: 'mis-auth-failed' });
   }
 
-  async function loginCasForMisFallback(casFallbackAttempted) {
-    if (casFallbackAttempted) throw misAuthenticationError('CAS 登录后仍未能登录 MIS');
+  async function loginIdentityForMisFallback(identityFallbackAttempted) {
+    if (identityFallbackAttempted) throw misAuthenticationError('统一身份认证登录后仍未能登录 MIS');
     const cas = global.BjtuCasSystemInternals;
-    if (!cas?.autoLoginSavedAccount) {
-      throw misAuthenticationError('MIS 尚未登录，且未安装 CAS 模块');
+    if (!cas?.loginSelectedSavedAccount) {
+      throw misAuthenticationError('MIS 尚未登录，且未安装统一身份认证模块');
     }
-    const result = await cas.autoLoginSavedAccount().catch((error) => ({
-      ok: false,
-      message: String(error?.message || error)
-    }));
-    if (!result?.ok) {
-      throw misAuthenticationError(`MIS 尚未登录，CAS 自动登录失败：${result?.message || '没有可用的已保存账号'}`);
-    }
+    await cas.loginSelectedSavedAccount().catch((error) => {
+      if (error?.code === 'identity-no-saved-account') throw error;
+      throw misAuthenticationError(String(error?.message || error));
+    });
   }
 
-  async function loginAcademicViaMis({ casFallbackAttempted = false, loginRequest = false } = {}) {
+  async function loginAcademicViaMis({ identityFallbackAttempted = false, loginRequest = false } = {}) {
     await clearAcademicCookies();
     academicAccountCache = null;
     academicSessionAccount = null;
@@ -821,8 +821,8 @@
     });
     const html = await response.text();
     if (isMisOrCasAuthenticationUrl(response.url)) {
-      await loginCasForMisFallback(casFallbackAttempted);
-      return loginAcademicViaMis({ casFallbackAttempted: true, loginRequest });
+      await loginIdentityForMisFallback(identityFallbackAttempted);
+      return loginAcademicViaMis({ identityFallbackAttempted: true, loginRequest });
     }
     if (!response.ok) throw new Error(`MIS 教务系统入口 HTTP ${response.status}`);
     const redirectForm = [...html.matchAll(/<form\b([^>]*)>[\s\S]*?<\/form>/gi)]
@@ -856,19 +856,20 @@
           });
           await redirectResponse.text();
           if (isMisOrCasAuthenticationUrl(redirectResponse.url)) {
-            await loginCasForMisFallback(casFallbackAttempted);
-            return loginAcademicViaMis({ casFallbackAttempted: true, loginRequest });
+            await loginIdentityForMisFallback(identityFallbackAttempted);
+            return loginAcademicViaMis({ identityFallbackAttempted: true, loginRequest });
           }
           if (redirectResponse.ok && isAcademicNoticeUrl(redirectResponse.url)) break;
         } catch (error) {
-          if (error?.code === 'mis-auth-failed') throw error;
+          if (['mis-auth-failed', 'identity-no-saved-account', 'identity-login-failed'].includes(error?.code)) throw error;
           // Token login may temporarily return 503 or another transient error.
         }
         await wait(1000);
       }
     } else if (!isAcademicNoticeUrl(response.url)
         && /统一身份认证|用户登录/u.test(html) && /password|loginname/i.test(html)) {
-      throw Object.assign(new Error('MIS 尚未登录，请先登录 MIS 后重试'), { code: 'mis-login-required' });
+      await loginIdentityForMisFallback(identityFallbackAttempted);
+      return loginAcademicViaMis({ identityFallbackAttempted: true, loginRequest });
     }
     // A successful token login is complete as soon as AA returns its notice page.
     // Do not keep the caller (and its disabled button) waiting for another page
@@ -2422,7 +2423,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
         runAcademicLogin(() => loginAcademicViaMis({ loginRequest: true }))
           .then((result) => sendResponse(result))
           .catch(async (error) => {
-            if (error?.code === 'mis-login-required') {
+            if (error?.code === 'identity-no-saved-account') {
               await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
             }
             sendResponse({ ok: false, message: String(error?.message || error) });

@@ -19,9 +19,30 @@
   })}`;
 
   const pendingCredentialsByTab = new Map();
+  const pendingSsoCredentialsByTab = new Map();
+  const pendingSsoRequestsByTab = new Map();
   const pendingManualCaptchas = new Map();
   let accountWritePromise = Promise.resolve();
   let loginOptionsPromise = null;
+  let selectedIdentityLoginPromise = null;
+
+  function loginSelectedSavedAccount() {
+    if (selectedIdentityLoginPromise) return selectedIdentityLoginPromise;
+    selectedIdentityLoginPromise = (async () => {
+      const stored = await chrome.storage.local.get([LOGIN_NAME_KEY, 'casLoginPlatform']);
+      const accounts = Object.values(await getCasAccounts()).filter((account) => account.password)
+        .sort((a, b) => (b.lastLoginAt || b.updatedAt) - (a.lastLoginAt || a.updatedAt));
+      const target = accounts.find((account) => account.loginName === stored[LOGIN_NAME_KEY]) || accounts[0];
+      if (!target) throw Object.assign(new Error('MIS 尚未登录，请先在「统一身份认证」中保存账号密码'), { code: 'identity-no-saved-account' });
+      const platform = stored.casLoginPlatform === 'CAS' ? 'CAS' : 'SSO';
+      const result = await (platform === 'SSO'
+        ? navigator.locks.request('bjtu-cas-sso-login', () => loginSso(target.loginName))
+        : loginSavedCasAccount(target.loginName));
+      if (!result?.ok) throw Object.assign(new Error(`${platform} 自动登录失败：${result?.message || '未知错误'}`), { code: 'identity-login-failed' });
+      return result;
+    })().finally(() => { selectedIdentityLoginPromise = null; });
+    return selectedIdentityLoginPromise;
+  }
 
   function openLoginOptions(sourceUrl) {
     if (sourceUrl && new URL(sourceUrl).pathname === '/options/options.html') return Promise.resolve();
@@ -706,6 +727,22 @@
     return loginName && password ? { loginName, password, capturedAt: Date.now() } : null;
   }
 
+  function extractSsoLoginRequest(details) {
+    if (details.method !== 'POST' || details.type !== 'main_frame') return null;
+    const url = new URL(details.url);
+    if (url.origin !== 'https://sso.bjtu.edu.cn' || !/^\/sso\/login\/?$/.test(url.pathname)) return null;
+    const params = new URLSearchParams((details.requestBody?.raw || [])
+      .map((part) => part.bytes ? new TextDecoder().decode(part.bytes) : '').join(''));
+    const value = (name) => String(details.requestBody?.formData?.[name]?.[0] ?? params.get(name) ?? '');
+    if (value('loginType') !== 'username_password') return null;
+    const loginName = value('username').trim();
+    const requestPassword = value('password');
+    return loginName && requestPassword ? {
+      loginName, requestPassword, flowId: value('flowId'),
+      requestId: details.requestId, capturedAt: Date.now(), redirected: false
+    } : null;
+  }
+
   function loginProgressReporter(message) {
     const requestId = String(message?.payload?.requestId || '');
     if (!requestId) return undefined;
@@ -714,6 +751,20 @@
 
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'CAS_CAPTURE_SSO_CREDENTIALS') {
+        const url = new URL(_sender.url || 'about:blank');
+        const data = message.payload;
+        if (_sender.id !== chrome.runtime.id || !Number.isInteger(_sender.tab?.id) || _sender.tab.id < 0
+            || _sender.frameId !== 0 || url.origin !== 'https://sso.bjtu.edu.cn' || !/^\/(?:sso\/login|o\/authorize)\/?$/.test(url.pathname)
+            || typeof data?.loginName !== 'string' || !data.loginName || typeof data.password !== 'string' || !data.password
+            || typeof data.requestPassword !== 'string' || !data.requestPassword || typeof data.flowId !== 'string') {
+          sendResponse({ ok: false });
+          return false;
+        }
+        pendingSsoCredentialsByTab.set(_sender.tab.id, { ...data, capturedAt: Date.now() });
+        sendResponse({ ok: true });
+        return false;
+      }
       if (message?.type === 'SSO_LOGIN_WITH_PASSWORD' || message?.type === 'SSO_AUTO_LOGIN') {
         if (_sender.id !== chrome.runtime.id || _sender.url && !String(_sender.url).startsWith(chrome.runtime.getURL(''))) {
           sendResponse({ ok: false, message: '仅允许扩展页面调用 SSO 登录' });
@@ -778,19 +829,30 @@
     // 即视为成功，保存捕获到的账密；账号与密码均未变化时不重复 toast。
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.status !== 'complete') return;
-      const pending = pendingCredentialsByTab.get(tabId);
-      if (!pending) return;
+      let pending = pendingCredentialsByTab.get(tabId);
+      const ssoCredentials = pendingSsoCredentialsByTab.get(tabId);
+      const ssoRequest = pendingSsoRequestsByTab.get(tabId);
+      const ssoVerified = ssoCredentials && ssoRequest?.redirected
+        && Date.now() - ssoCredentials.capturedAt < MANUAL_CAPTCHA_TTL_MS
+        && ssoCredentials.loginName === ssoRequest.loginName
+        && ssoCredentials.requestPassword === ssoRequest.requestPassword
+        && ssoCredentials.flowId === ssoRequest.flowId;
+      const system = ssoVerified ? 'SSO' : 'CAS';
+      if (ssoVerified) pending = ssoCredentials;
       pendingCredentialsByTab.delete(tabId);
+      pendingSsoCredentialsByTab.delete(tabId);
+      pendingSsoRequestsByTab.delete(tabId);
+      if (!pending) return;
       let parsed = null;
       try { parsed = new URL(String(changeInfo?.url || tab?.url || '')); } catch { parsed = null; }
       const stillOnLoginPage = parsed?.hostname === 'cas.bjtu.edu.cn'
         && /^\/auth\/login(?:\/|$)/i.test(parsed.pathname);
-      if (!parsed || stillOnLoginPage) return;
+      if (!parsed || stillOnLoginPage || (system === 'SSO' && (parsed.protocol !== 'https:' || parsed.hostname === 'sso.bjtu.edu.cn'))) return;
       void (async () => {
         const accounts = await getCasAccounts();
         const prior = accounts[pending.loginName];
         const unchanged = !!prior && prior.password === pending.password;
-        const profile = await fetchCasProfile().catch(() => null);
+        const profile = system === 'CAS' ? await fetchCasProfile().catch(() => null) : null;
         await saveCasAccount(pending.loginName, {
           password: pending.password,
           lastLoginAt: Date.now(),
@@ -798,6 +860,7 @@
         });
         await broadcastStatus({
           status: 'credentials-saved',
+          system,
           loginName: pending.loginName,
           userName: profile?.userName || '',
           unchanged,
@@ -814,7 +877,29 @@
 
     chrome.tabs.onRemoved.addListener((tabId) => {
       pendingCredentialsByTab.delete(tabId);
+      pendingSsoCredentialsByTab.delete(tabId);
+      pendingSsoRequestsByTab.delete(tabId);
     });
+
+    chrome.webRequest.onBeforeRequest.addListener((details) => {
+      if (details.tabId < 0) return;
+      const request = extractSsoLoginRequest(details);
+      if (request) pendingSsoRequestsByTab.set(details.tabId, request);
+    }, { urls: ['https://sso.bjtu.edu.cn/sso/login*'] }, ['requestBody']);
+
+    chrome.webRequest.onBeforeRedirect.addListener((details) => {
+      const pending = pendingSsoRequestsByTab.get(details.tabId);
+      if (!pending || pending.requestId !== details.requestId || ![302, 303].includes(details.statusCode)) return;
+      const target = new URL(details.redirectUrl);
+      pending.redirected = target.protocol === 'https:'
+        && !(target.hostname === 'sso.bjtu.edu.cn' && /^\/sso\/login(?:\/|$)/.test(target.pathname));
+    }, { urls: ['https://sso.bjtu.edu.cn/sso/login*'] });
+
+    chrome.webRequest.onErrorOccurred.addListener((details) => {
+      if (pendingSsoRequestsByTab.get(details.tabId)?.requestId !== details.requestId) return;
+      pendingSsoCredentialsByTab.delete(details.tabId);
+      pendingSsoRequestsByTab.delete(details.tabId);
+    }, { urls: ['https://sso.bjtu.edu.cn/sso/login*'] });
 
     chrome.webRequest.onBeforeRequest.addListener(
       (details) => {
@@ -830,11 +915,11 @@
 
   global.BjtuCasSystemInternals = {
     openLoginOptions,
+    loginSelectedSavedAccount,
     getContext: () => buildCasContext(),
     loginWithPassword: (args) => loginWithPassword(args?.loginName, args?.password),
     loginSavedAccount: (args) => loginSavedCasAccount(args?.loginName),
     autoLoginSavedAccount: () => autoLoginSavedCasAccount(),
-    loginSavedSsoAccount: (args) => navigator.locks.request('bjtu-cas-sso-login', () => loginSso(args?.loginName)),
     fetchProfile: () => fetchCasProfile(),
     extractLoginCredentials,
     parseProfilePage

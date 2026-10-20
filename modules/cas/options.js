@@ -266,7 +266,7 @@
       if (status.status === 'credentials-saved') {
         refreshContext();
         if (status.unchanged !== true) {
-          setMessage(`已捕获并保存 CAS 账号 ${status.loginName || ''} 的登录密码`);
+          setMessage(`已捕获并保存 ${status.system || 'CAS'} 账号 ${status.loginName || ''} 的登录密码`);
         }
       } else if (status.status === 'login-done' || status.status === 'login-error') {
         refreshContext();

@@ -98,30 +98,10 @@
   // 按统一身份认证的平台选择恢复登录，再重新经 MIS 换取邮箱会话。
   async function loginIdentityForMail() {
     const internals = global.BjtuCasSystemInternals;
-    const stored = await chrome.storage.local.get('casLoginPlatform');
-    const platform = stored.casLoginPlatform === 'CAS' ? 'CAS' : 'SSO';
-    const login = platform === 'CAS' ? internals?.loginSavedAccount : internals?.loginSavedSsoAccount;
-    if (!internals?.getContext || !login) {
+    if (!internals?.loginSelectedSavedAccount) {
       throw Object.assign(new Error('统一身份认证模块不可用，无法自动登录'), { code: 'not-logged-in' });
     }
-    const context = await internals.getContext().catch(() => null);
-    const accounts = Array.isArray(context?.accounts) ? context.accounts : [];
-    const preferred = String(context?.loginName || '').trim();
-    const account = accounts.find((item) => item.loginName === preferred && item.hasPassword)
-      || accounts.find((item) => item.hasPassword);
-    if (!account) {
-      throw Object.assign(
-        new Error(`${platform} 未登录且没有已保存的账号密码，请先在「统一身份认证」中登录`),
-        { code: 'not-logged-in' }
-      );
-    }
-    const result = await login({ loginName: account.loginName });
-    if (!result?.ok) {
-      throw Object.assign(
-        new Error(`${platform} 自动登录失败：${result?.message || '未知错误'}`),
-        { code: 'not-logged-in' }
-      );
-    }
+    await internals.loginSelectedSavedAccount();
     await wait(300);
   }
 
@@ -703,7 +683,7 @@
         getCurrentMailUser(message?.payload || {})
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch(async (error) => {
-            if (error?.code === 'mis-login-required') {
+            if (error?.code === 'identity-no-saved-account') {
               await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
             }
             sendResponse({ ok: false, code: String(error?.code || ''), message: String(error?.message || error) });
