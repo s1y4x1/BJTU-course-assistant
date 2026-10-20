@@ -1217,6 +1217,10 @@
   }
 
   function render() {
+    return globalThis.preserveCoursePlatformScroll(renderCourses);
+  }
+
+  function renderCourses() {
     if (!env?.courseList) return;
     const animationSnapshot = global.BjtuColors.captureAnimations(env.courseList, '.xuetangx-standalone-card .hw-card-item');
     clearCards();

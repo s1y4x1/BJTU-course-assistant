@@ -1344,6 +1344,10 @@ function rerenderAllHomeworkAreas() {
 }
 
 function renderEnabledExternalStandaloneCourses() {
+  return preserveCoursePlatformScroll(renderEnabledExternalStandaloneCoursesNow);
+}
+
+function renderEnabledExternalStandaloneCoursesNow() {
   if (isPlatformEnabled('ykt') && typeof renderYktStandaloneCourses === 'function') renderYktStandaloneCourses();
   if (isPlatformEnabled('mrjzy') && typeof renderMrjzyStandaloneCourses === 'function') renderMrjzyStandaloneCourses();
   if (isPlatformEnabled('jlgj') && typeof renderJlgjStandaloneCourses === 'function') renderJlgjStandaloneCourses();
@@ -1970,12 +1974,50 @@ function bindPlatformColumnResizer(resizer) {
   });
 }
 
+let coursePlatformScrollPreserving = false;
+
+function captureCoursePlatformScroll() {
+  if (!courseListDiv || !document.body.classList.contains('course-helper-focus')
+      || !document.body.classList.contains('course-platform-independent-scroll')) return null;
+  return new Map([...courseListDiv.querySelectorAll(':scope > .platform-course-column')].map((column) => [
+    column.dataset.platform, { top: column.scrollTop, left: column.scrollLeft }
+  ]));
+}
+
+function restoreCoursePlatformScroll(positions) {
+  if (!positions) return;
+  courseListDiv.querySelectorAll(':scope > .platform-course-column').forEach((column) => {
+    const position = positions.get(column.dataset.platform);
+    if (!position) return;
+    column.scrollTop = position.top;
+    column.scrollLeft = position.left;
+  });
+}
+
+function preserveCoursePlatformScroll(render) {
+  if (coursePlatformScrollPreserving || coursePlatformOrganizing) return render();
+  const positions = captureCoursePlatformScroll();
+  if (!positions) return render();
+  coursePlatformScrollPreserving = true;
+  try {
+    return render();
+  } finally {
+    try {
+      organizeCourseCardsByPlatform();
+      restoreCoursePlatformScroll(positions);
+    } finally {
+      coursePlatformScrollPreserving = false;
+    }
+  }
+}
+
 function organizeCourseCardsByPlatform() {
   if (!courseListDiv || coursePlatformOrganizing || coursePlatformColumnDragCleanup) return;
   if (shouldSuspendCourseHelperLayoutWork()) {
     courseHelperLayoutWorkPending = true;
     return;
   }
+  const scrollPositions = captureCoursePlatformScroll();
   coursePlatformOrganizing = true;
   try {
     const cards = [...courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]')];
@@ -2090,6 +2132,7 @@ function organizeCourseCardsByPlatform() {
     applyCourseHelperPlatformColumnWeights();
     if (structureChanged) sortCourseCards();
   } finally {
+    restoreCoursePlatformScroll(scrollPositions);
     coursePlatformOrganizing = false;
   }
 }
@@ -4263,6 +4306,10 @@ function sortCourseCardsInContainer(container, cards) {
 }
 
 function sortCourseCards() {
+  return preserveCoursePlatformScroll(sortCourseCardsNow);
+}
+
+function sortCourseCardsNow() {
   if (!courseListDiv) return;
   if (shouldSuspendCourseHelperLayoutWork()) {
     courseHelperLayoutWorkPending = true;

@@ -2205,14 +2205,28 @@ function autoLoadCourseResourcesForRenderedCourses() {
   });
 }
 
-function renderCourseList(courses, {
+function renderCourseList(courses, options = {}) {
+  return preserveCoursePlatformScroll(() => renderVeCourseList(courses, options));
+}
+
+function renderVeCourseList(courses, {
   cachedOnly = false,
   append = false,
   deferExternal = false,
   orderOffset = 0,
   progressGroups = null
 } = {}) {
-  if (!append) courseListDiv.innerHTML = '';
+  const preserveOtherPlatforms = document.body.classList.contains('course-helper-focus')
+    && document.body.classList.contains('course-platform-independent-scroll')
+    && courseListDiv.classList.contains('platform-split-grid');
+  if (!append) {
+    if (preserveOtherPlatforms) {
+      courseListDiv.querySelectorAll('.file-item[data-course-rankable="1"]').forEach((card) => {
+        if (getCourseCardPlatform(card) === 've') card.remove();
+      });
+    } else courseListDiv.innerHTML = '';
+  }
+  if (preserveOtherPlatforms) deferExternal = true;
   const homeworkLoadPromises = [];
   const allowNetworkLoad = !cachedOnly;
   const progressVersion = window.courseListLoadVersion;

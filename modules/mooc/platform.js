@@ -288,6 +288,10 @@ let moocLoginAssistOpening = null;
   }
 
   function render() {
+    return globalThis.preserveCoursePlatformScroll(renderCourses);
+  }
+
+  function renderCourses() {
     if (!env?.courseList) return;
     const animationSnapshot = globalThis.BjtuColors.captureAnimations(env.courseList, '.mooc-standalone-card .hw-card-item');
     clearCards();

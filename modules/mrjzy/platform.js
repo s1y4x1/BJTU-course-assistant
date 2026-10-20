@@ -638,6 +638,10 @@ function renderMrjzyHomeworkItems(items) {
 }
 
 function renderMrjzyStandaloneCourses() {
+  return preserveCoursePlatformScroll(renderMrjzyStandaloneCoursesNow);
+}
+
+function renderMrjzyStandaloneCoursesNow() {
   clearMrjzyStandaloneCards();
   const courses = window.mrjzyStandaloneCourses || [];
   if (!courses.length) {

@@ -245,6 +245,10 @@ function renderJlgjHomeworkItems(items) {
 }
 
 function renderJlgjStandaloneCourses() {
+  return preserveCoursePlatformScroll(renderJlgjStandaloneCoursesNow);
+}
+
+function renderJlgjStandaloneCoursesNow() {
   clearJlgjStandaloneCards();
   const courses = window.jlgjStandaloneCourses || [];
   if (!courses.length) {

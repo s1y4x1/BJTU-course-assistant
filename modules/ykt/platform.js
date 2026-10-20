@@ -590,6 +590,10 @@ function renderYktHomeworkItems(courseId, items) {
 }
 
 function renderYktStandaloneCourses() {
+  return preserveCoursePlatformScroll(renderYktStandaloneCoursesNow);
+}
+
+function renderYktStandaloneCoursesNow() {
   removeYktLoginSection();
   clearYktStandaloneCards();
   const courses = window.yktStandaloneCourses || [];
