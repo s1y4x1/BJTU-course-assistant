@@ -837,7 +837,7 @@
       }
     } else if (!isAcademicNoticeUrl(response.url)
         && /统一身份认证|用户登录/u.test(html) && /password|loginname/i.test(html)) {
-      throw new Error('MIS 尚未登录，请先登录 MIS 后重试');
+      throw Object.assign(new Error('MIS 尚未登录，请先登录 MIS 后重试'), { code: 'mis-login-required' });
     }
     // A successful token login is complete as soon as AA returns its notice page.
     // Do not keep the caller (and its disabled button) waiting for another page
@@ -2387,7 +2387,12 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
         // running schedule/score request that is retrying a transient response.
         loginAcademicViaMis()
           .then((result) => sendResponse(result))
-          .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+          .catch(async (error) => {
+            if (error?.code === 'mis-login-required') {
+              await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
+            }
+            sendResponse({ ok: false, message: String(error?.message || error) });
+          });
         return true;
       }
       if (message?.type === 'ACADEMIC_CHECK_SCORES') {

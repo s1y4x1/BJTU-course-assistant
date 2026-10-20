@@ -21,6 +21,23 @@
   const pendingCredentialsByTab = new Map();
   const pendingManualCaptchas = new Map();
   let accountWritePromise = Promise.resolve();
+  let loginOptionsPromise = null;
+
+  function openLoginOptions(sourceUrl) {
+    if (sourceUrl && new URL(sourceUrl).pathname === '/options/options.html') return Promise.resolve();
+    if (loginOptionsPromise) return loginOptionsPromise;
+    loginOptionsPromise = (async () => {
+      const url = chrome.runtime.getURL('modules/cas/options.html');
+      const tabs = await chrome.tabs.query({ url: `${url}*` });
+      if (tabs.length) {
+        await chrome.tabs.update(tabs[0].id, { active: true });
+        await chrome.windows.update(tabs[0].windowId, { focused: true });
+      } else {
+        await chrome.windows.create({ url, type: 'popup', width: 560, height: 720, focused: true });
+      }
+    })().finally(() => { loginOptionsPromise = null; });
+    return loginOptionsPromise;
+  }
 
   function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
@@ -812,6 +829,7 @@
   }
 
   global.BjtuCasSystemInternals = {
+    openLoginOptions,
     getContext: () => buildCasContext(),
     loginWithPassword: (args) => loginWithPassword(args?.loginName, args?.password),
     loginSavedAccount: (args) => loginSavedCasAccount(args?.loginName),

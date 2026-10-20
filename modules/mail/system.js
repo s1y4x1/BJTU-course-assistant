@@ -76,7 +76,7 @@
     try { parsed = new URL(String(response.url || '')); } catch { parsed = null; }
     if ((parsed?.hostname === 'sso.bjtu.edu.cn' && /^\/(?:o\/authorize|sso\/login)(?:\/|$)/i.test(parsed.pathname))
         || (parsed?.hostname === 'mis.bjtu.edu.cn' && /^\/auth\//i.test(parsed.pathname))) {
-      throw new Error('MIS 尚未登录，请先登录 MIS 后重试');
+      throw Object.assign(new Error('MIS 尚未登录，请先登录 MIS 后重试'), { code: 'mis-login-required' });
     }
     if (parsed?.hostname === 'cas.bjtu.edu.cn' && /^\/auth\/login(?:\/|$)/i.test(parsed.pathname)) {
       throw Object.assign(new Error('CAS 未登录'), { code: 'not-logged-in' });
@@ -699,11 +699,12 @@
       if (message?.type === 'MAIL_GET_USER_INFO') {
         getCurrentMailUser(message?.payload || {})
           .then((result) => sendResponse({ ok: true, ...result }))
-          .catch((error) => sendResponse({
-            ok: false,
-            code: String(error?.code || ''),
-            message: String(error?.message || error)
-          }));
+          .catch(async (error) => {
+            if (error?.code === 'mis-login-required') {
+              await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
+            }
+            sendResponse({ ok: false, code: String(error?.code || ''), message: String(error?.message || error) });
+          });
         return true;
       }
       // 纯探测：只检查能否取得 sid，不触发 CAS 自动登录。
