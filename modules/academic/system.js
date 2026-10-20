@@ -47,8 +47,9 @@
   }
 
   async function fetchAcademicWith503Retry(url, options = {}) {
-    const { on503, onRetry = on503, ...fetchOptions } = options;
+    const { on503, onRetry = on503, loginRequest = false, ...fetchOptions } = options;
     while (true) {
+      while (!loginRequest && academicLoginBarrier) await academicLoginBarrier;
       let response;
       try {
         response = await fetch(url, fetchOptions);
@@ -101,16 +102,41 @@
   const academicOptionsRequestPorts = new Map();
   let academicRequestJobSequence = 0;
   let academicRequestWorkerRunning = false;
+  let academicLoginBarrier = null;
+  let academicLoginTail = Promise.resolve();
+  let academicLoginCount = 0;
+  let releaseAcademicLogin = null;
+
+  function runAcademicLogin(task) {
+    if (!academicLoginBarrier) {
+      academicLoginBarrier = new Promise((resolve) => { releaseAcademicLogin = resolve; });
+    }
+    academicLoginCount += 1;
+    const result = academicLoginTail.then(task);
+    academicLoginTail = result.catch(() => {});
+    return result.finally(() => {
+      academicLoginCount -= 1;
+      if (!academicLoginCount) {
+        const release = releaseAcademicLogin;
+        academicLoginBarrier = null;
+        releaseAcademicLogin = null;
+        release();
+        void runAcademicRequestWorker();
+      }
+    });
+  }
 
   function hasBusyAcademicOptionsRequests() {
     return [...academicOptionsRequestPorts.values()].some(Boolean);
   }
 
   function canRunAcademicRequest(job) {
+    if (academicLoginBarrier) return false;
     return job?.priority !== ACADEMIC_REQUEST_PRIORITY.MONITOR || !hasBusyAcademicOptionsRequests();
   }
 
   function enqueueAcademicRequest(priority, task) {
+    if (priority === ACADEMIC_REQUEST_PRIORITY.LOGIN) return runAcademicLogin(task);
     return new Promise((resolve, reject) => {
       academicRequestJobs.push({
         priority: Number(priority) || 0,
@@ -656,12 +682,13 @@
     return source.includes('密码错误，登录失败') ? '账号或密码错误' : '教务系统登录失败';
   }
 
-  async function loginWithPassword(studentId, password) {
+  async function loginWithPassword(studentId, password, { loginRequest = false } = {}) {
     const id = String(studentId || '').trim();
     const secret = String(password || '').trim();
     if (!id) throw new Error('请输入用户名（学号）');
     if (!secret) throw new Error('请输入密码（身份证号后 6 位）');
     if (secret.length !== 6) throw new Error('密码必须为 6 个字符');
+    while (!loginRequest && academicLoginBarrier) await academicLoginBarrier;
     academicAccountCache = null;
     academicSessionAccount = null;
     await clearAcademicCookies();
@@ -670,6 +697,7 @@
       let result = { ok: false, message: 'CSRF Token 已失效，请重试' };
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const page = await fetchAcademicWith503Retry(LOGIN_URL, {
+          loginRequest,
           credentials: 'include', cache: 'no-store', redirect: 'follow'
         });
         if (!page.ok) {
@@ -699,6 +727,7 @@
           }
         }
         const response = await fetchAcademicWith503Retry(LOGIN_URL, {
+          loginRequest,
           method: 'POST', body, headers, credentials: 'include', cache: 'no-store', redirect: 'follow'
         });
         const html = await response.text();
@@ -778,11 +807,12 @@
     }
   }
 
-  async function loginAcademicViaMis({ casFallbackAttempted = false } = {}) {
+  async function loginAcademicViaMis({ casFallbackAttempted = false, loginRequest = false } = {}) {
     await clearAcademicCookies();
     academicAccountCache = null;
     academicSessionAccount = null;
     const response = await fetchAcademicWith503Retry(MIS_MODULE_URL, {
+      loginRequest,
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
@@ -792,7 +822,7 @@
     const html = await response.text();
     if (isMisOrCasAuthenticationUrl(response.url)) {
       await loginCasForMisFallback(casFallbackAttempted);
-      return loginAcademicViaMis({ casFallbackAttempted: true });
+      return loginAcademicViaMis({ casFallbackAttempted: true, loginRequest });
     }
     if (!response.ok) throw new Error(`MIS 教务系统入口 HTTP ${response.status}`);
     const redirectForm = [...html.matchAll(/<form\b([^>]*)>[\s\S]*?<\/form>/gi)]
@@ -817,6 +847,7 @@
       while (true) {
         try {
           const redirectResponse = await fetchAcademicWith503Retry(redirectUrl, {
+            loginRequest,
             method: 'GET',
             credentials: 'include',
             cache: 'no-store',
@@ -826,7 +857,7 @@
           await redirectResponse.text();
           if (isMisOrCasAuthenticationUrl(redirectResponse.url)) {
             await loginCasForMisFallback(casFallbackAttempted);
-            return loginAcademicViaMis({ casFallbackAttempted: true });
+            return loginAcademicViaMis({ casFallbackAttempted: true, loginRequest });
           }
           if (redirectResponse.ok && isAcademicNoticeUrl(redirectResponse.url)) break;
         } catch (error) {
@@ -856,7 +887,7 @@
       });
       academicSessionAccount = account;
     } else {
-      account = await fetchCurrentAcademicAccount();
+      account = await fetchCurrentAcademicAccount({ loginRequest });
       if (!account?.studentId) throw new Error('MIS 未能登录教务系统');
       academicSessionAccount = account;
     }
@@ -865,13 +896,13 @@
     return { ok: true, studentId: account.studentId, userName: account.userName };
   }
 
-  async function loginSavedAcademicAccount(studentId) {
+  async function loginSavedAcademicAccount(studentId, options) {
     const id = String(studentId || '').trim();
     const accounts = await getAcademicAccounts();
     const account = accounts[id];
     if (!account) throw new Error('未保存此教务系统账号');
     if (!account.password) throw new Error('此账号没有已保存的密码');
-    return loginWithPassword(id, account.password);
+    return loginWithPassword(id, account.password, options);
   }
   function isLoginPageResponse(responseUrl, html) {
     return /\/client\/login\/?(?:[?#]|$)/i.test(String(responseUrl || ''))
@@ -879,9 +910,10 @@
         && /name\s*=\s*["']loginname["']/i.test(String(html || ''));
   }
 
-  async function fetchCurrentAcademicAccount() {
+  async function fetchCurrentAcademicAccount({ loginRequest = false } = {}) {
     if (academicAccountCache) return academicAccountCache;
     const response = await fetchAcademicWith503Retry(TRAINING_PROGRAM_URL, {
+      loginRequest,
       credentials: 'include', cache: 'no-store', redirect: 'follow'
     });
     const html = await response.text();
@@ -1046,6 +1078,7 @@
   }
 
 async function fetchVeWeekContext() {
+    while (academicLoginBarrier) await academicLoginBarrier;
     let text = '';
     let response = null;
     if (global.BjtuVeHomeworkCore?.requestText) {
@@ -1097,6 +1130,7 @@ async function fetchVeWeekContext() {
   }
 
   async function fetchBksyWeekContext() {
+    while (academicLoginBarrier) await academicLoginBarrier;
     const response = await fetch(BKSY_SEMESTER_URL, {
       credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(8000)
     });
@@ -2376,7 +2410,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'ACADEMIC_LOGIN_WITH_PASSWORD') {
         enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, () => (
-          loginWithPassword(message?.payload?.studentId, message?.payload?.password)
+          loginWithPassword(message?.payload?.studentId, message?.payload?.password, { loginRequest: true })
         ))
           .then((result) => sendResponse(result))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
@@ -2385,7 +2419,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       if (message?.type === 'START_ACADEMIC_MIS_LOGIN') {
         // This is an explicit user action. It must not sit behind an already
         // running schedule/score request that is retrying a transient response.
-        loginAcademicViaMis()
+        runAcademicLogin(() => loginAcademicViaMis({ loginRequest: true }))
           .then((result) => sendResponse(result))
           .catch(async (error) => {
             if (error?.code === 'mis-login-required') {
@@ -2471,7 +2505,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       }
       if (message?.type === 'ACADEMIC_SWITCH_ACCOUNT') {
         enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, () => (
-          loginSavedAcademicAccount(message?.payload?.studentId)
+          loginSavedAcademicAccount(message?.payload?.studentId, { loginRequest: true })
         ))
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
@@ -2634,11 +2668,11 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     ),
     loginWithPassword: (args) => enqueueAcademicRequest(
       ACADEMIC_REQUEST_PRIORITY.LOGIN,
-      () => loginWithPassword(args?.studentId, args?.password)
+      () => loginWithPassword(args?.studentId, args?.password, { loginRequest: true })
     ),
     loginSavedAccount: (args) => enqueueAcademicRequest(
       ACADEMIC_REQUEST_PRIORITY.LOGIN,
-      () => loginSavedAcademicAccount(args?.studentId)
+      () => loginSavedAcademicAccount(args?.studentId, { loginRequest: true })
     ),
     extractLoginCredentials,
     parseCurrentAccountPage,
