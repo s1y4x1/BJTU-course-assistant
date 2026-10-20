@@ -74,6 +74,10 @@
     });
     let parsed = null;
     try { parsed = new URL(String(response.url || '')); } catch { parsed = null; }
+    if ((parsed?.hostname === 'sso.bjtu.edu.cn' && /^\/(?:o\/authorize|sso\/login)(?:\/|$)/i.test(parsed.pathname))
+        || (parsed?.hostname === 'mis.bjtu.edu.cn' && /^\/auth\//i.test(parsed.pathname))) {
+      throw new Error('MIS 尚未登录，请先登录 MIS 后重试');
+    }
     if (parsed?.hostname === 'cas.bjtu.edu.cn' && /^\/auth\/login(?:\/|$)/i.test(parsed.pathname)) {
       throw Object.assign(new Error('CAS 未登录'), { code: 'not-logged-in' });
     }
