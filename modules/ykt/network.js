@@ -1,7 +1,6 @@
 function isYktHomeworkDone(hw) {
   const actype = Number(hw?.__actype ?? hw?.actype);
   if (actype === 14) return hw?.attend_status === true;
-  if (actype === 5) return Number(hw?.unfinished) === 0;
   if (actype === 15) {
     if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
       return Number(hw.video_progress_ratio) >= 0.9995;
@@ -13,6 +12,7 @@ function isYktHomeworkDone(hw) {
   const progress = Number(hw?.progress ?? 0);
   const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
   if (problemCount > 0) return progress >= problemCount;
+  if (actype === 5) return hw?.unfinished != null && Number(hw.unfinished) === 0;
   if (hw && hw.done !== null && hw.done !== undefined) return !!hw.done;
   if (hw && hw.unfinished !== null && hw.unfinished !== undefined) {
     return Number(hw.unfinished) === 0;

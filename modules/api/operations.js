@@ -684,7 +684,6 @@
 
   function yktIsHomeworkDone(hw) {
     const actype = Number(hw?.__actype ?? hw?.actype);
-    if (actype === 5) return Number(hw?.unfinished) === 0;
     if (actype === 15) {
       const taskProgress = Number(hw?.progress);
       if (Number.isFinite(taskProgress)) return taskProgress >= 0.9995;
@@ -698,6 +697,7 @@
     const progress = Number(hw?.progress ?? 0);
     const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
     if (problemCount > 0) return progress >= problemCount;
+    if (actype === 5) return hw?.unfinished != null && Number(hw.unfinished) === 0;
     if (hw?.done != null) return !!hw?.done;
     if (hw?.unfinished != null) return Number(hw?.unfinished) === 0;
     return false;
