@@ -2937,8 +2937,8 @@ function normalizeHomeworkContent(raw) {
 
 function renderExpandableHtml(contentHtml, {
   emptyHtml = '<span style="color:#999;">无内容</span>',
-  expandText = globalThis.BjtuHomeworkUi?.text?.detailExpand || '点击查看作业详情',
-  collapseText = globalThis.BjtuHomeworkUi?.text?.detailCollapse || '点击收起作业详情',
+  expandText = globalThis.BjtuHomeworkUi?.text?.detailExpand || '查看作业详情',
+  collapseText = globalThis.BjtuHomeworkUi?.text?.detailCollapse || '收起作业详情',
   hideWhenEmpty = false,
   baseBg = 'rgba(255,255,255,0.3)',
   flatDisplay = false,

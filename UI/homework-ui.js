@@ -17,8 +17,8 @@
     exam: '考试'
   });
   const text = Object.freeze({
-    detailExpand: '点击查看作业详情',
-    detailCollapse: '点击收起作业详情',
+    detailExpand: '查看作业详情',
+    detailCollapse: '收起作业详情',
     detailLoading: '正在获取作业详情…',
     detailQueued: '正在排队等待…',
     detailFailed: '作业详情获取失败，可稍后重试',
