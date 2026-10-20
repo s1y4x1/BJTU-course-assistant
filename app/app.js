@@ -2954,11 +2954,12 @@ function renderExpandableHtml(contentHtml, {
   }
   const cid = escapeHtml(String(courseId || ''));
   const key = escapeHtml(String(expandKey || ''));
-  const expandedNow = !!expanded;
+  const unlimited = (detailKind === 'replay' ? window.replayDetailCollapsedLines : window.homeworkDetailCollapsedLines) === null;
+  const expandedNow = !unlimited && !!expanded;
   const modeClass = flatDisplay ? ' borderless' : '';
   const detailClass = detailKind === 'replay' ? ' expandable-box--replay' : ' expandable-box--homework';
   return `
-    <div class="expandable-box${detailClass}${modeClass}${expandedNow ? ' expanded' : ''}" data-expanded="${expandedNow ? '1' : '0'}" data-course-id="${cid}" data-expand-key="${key}" style="--expand-base:${baseBg};">
+    <div class="expandable-box${detailClass}${modeClass}${unlimited ? ' no-toggle' : ''}${expandedNow ? ' expanded' : ''}" data-expanded="${expandedNow ? '1' : '0'}" data-course-id="${cid}" data-expand-key="${key}" style="--expand-base:${baseBg};">
       <div class="expandable-body">${raw}</div>
       <div class="expandable-fade"></div>
       <div class="expandable-toggle" data-action="toggle-expand" data-open-text="${escapeHtml(expandText)}" data-close-text="${escapeHtml(collapseText)}">${escapeHtml(expandedNow ? collapseText : expandText)}</div>
@@ -3646,7 +3647,7 @@ function applyExpandableAutoToggle(root = document) {
     const prevOverflow = body.style.overflow;
     body.style.maxHeight = visibleLimit;
     body.style.overflow = 'auto';
-    const canFitInCollapsed = body.scrollHeight <= body.clientHeight + 2;
+    const canFitInCollapsed = collapsedLines === null || body.scrollHeight <= body.clientHeight + 2;
     box.classList.toggle('no-toggle', canFitInCollapsed);
     if (canFitInCollapsed) {
       box.classList.remove('expanded');
