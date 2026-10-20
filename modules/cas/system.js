@@ -834,6 +834,7 @@
     loginWithPassword: (args) => loginWithPassword(args?.loginName, args?.password),
     loginSavedAccount: (args) => loginSavedCasAccount(args?.loginName),
     autoLoginSavedAccount: () => autoLoginSavedCasAccount(),
+    loginSavedSsoAccount: (args) => navigator.locks.request('bjtu-cas-sso-login', () => loginSso(args?.loginName)),
     fetchProfile: () => fetchCasProfile(),
     extractLoginCredentials,
     parseProfilePage

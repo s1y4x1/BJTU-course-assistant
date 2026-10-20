@@ -95,11 +95,14 @@
     return sid;
   }
 
-  // 自动登录：使用「统一身份认证」模块中已保存的账号密码完成 CAS 登录。
-  async function casLoginForMail() {
+  // 按统一身份认证的平台选择恢复登录，再重新经 MIS 换取邮箱会话。
+  async function loginIdentityForMail() {
     const internals = global.BjtuCasSystemInternals;
-    if (!internals?.getContext || !internals?.loginSavedAccount) {
-      throw Object.assign(new Error('CAS 模块不可用，无法自动登录'), { code: 'not-logged-in' });
+    const stored = await chrome.storage.local.get('casLoginPlatform');
+    const platform = stored.casLoginPlatform === 'CAS' ? 'CAS' : 'SSO';
+    const login = platform === 'CAS' ? internals?.loginSavedAccount : internals?.loginSavedSsoAccount;
+    if (!internals?.getContext || !login) {
+      throw Object.assign(new Error('统一身份认证模块不可用，无法自动登录'), { code: 'not-logged-in' });
     }
     const context = await internals.getContext().catch(() => null);
     const accounts = Array.isArray(context?.accounts) ? context.accounts : [];
@@ -108,14 +111,14 @@
       || accounts.find((item) => item.hasPassword);
     if (!account) {
       throw Object.assign(
-        new Error('CAS 未登录且没有已保存的账号密码，请先在「统一身份认证」中登录'),
+        new Error(`${platform} 未登录且没有已保存的账号密码，请先在「统一身份认证」中登录`),
         { code: 'not-logged-in' }
       );
     }
-    const result = await internals.loginSavedAccount({ loginName: account.loginName });
+    const result = await login({ loginName: account.loginName });
     if (!result?.ok) {
       throw Object.assign(
-        new Error(`CAS 自动登录失败：${result?.message || '未知错误'}`),
+        new Error(`${platform} 自动登录失败：${result?.message || '未知错误'}`),
         { code: 'not-logged-in' }
       );
     }
@@ -128,8 +131,8 @@
       cachedSid = await resolveMailSid();
       return cachedSid;
     } catch (error) {
-      if (!allowRelogin || String(error?.code || '') !== 'not-logged-in') throw error;
-      await casLoginForMail();
+      if (!allowRelogin || !['not-logged-in', 'mis-login-required'].includes(error?.code)) throw error;
+      await loginIdentityForMail();
       cachedSid = await resolveMailSid();
       return cachedSid;
     }
@@ -359,7 +362,7 @@
   }
 
   async function getCurrentMailUser({ forceNewSid = false } = {}) {
-    // 强制重新经 osys_sso_email 换取新 sid（缓存失效后自动回退到已保存 CAS 凭据登录）。
+    // 强制重新经 osys_sso_email 换取新 sid，失效时按平台选择使用已保存凭据登录。
     if (forceNewSid) invalidateSid();
     while (true) {
       const sid = await getMailSid();
