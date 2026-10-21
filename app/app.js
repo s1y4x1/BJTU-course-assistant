@@ -322,7 +322,8 @@ async function initFullscreenModuleButtons() {
       : (moduleId === 'cas' ? fallbackRect || casPanelSourceRect : null);
     await Promise.all([
       animateWindowFromButton(view, targetRect, false),
-      shouldShowButton ? animateButton(button, true) : Promise.resolve()
+      shouldShowButton ? animateButton(button, true) : Promise.resolve(),
+      moduleId !== 'cas' && !hasDependentWindows() ? closeModuleWindow('cas', targetRect) : Promise.resolve()
     ]);
     if (moduleId === 'cas' && hasDependentWindows()) {
       delete view.dataset.closing;
@@ -332,7 +333,6 @@ async function initFullscreenModuleButtons() {
     delete view.dataset.closing;
     fullscreenWindowLayers.remove(view);
     moduleWindows.delete(moduleId);
-    if (moduleId !== 'cas' && !hasDependentWindows()) await closeModuleWindow('cas', targetRect);
     if (!shouldShowButton && button instanceof HTMLButtonElement) button.hidden = true;
     refreshButtonContainer();
   };
@@ -472,7 +472,7 @@ async function initFullscreenModuleButtons() {
       const view = await loadModuleView('cas');
       if (!hasDependentWindows()) return null;
       casPanelSourceRect = sourceRect;
-      if (moduleWindows.has('cas')) return view;
+      if (moduleWindows.has('cas')) return { view, animation: Promise.resolve() };
       moduleWindows.set('cas', view);
       const width = Math.min(420, Math.max(160, Math.round(window.innerWidth * 0.3)));
       view.style.width = `${width}px`;
@@ -483,8 +483,7 @@ async function initFullscreenModuleButtons() {
       view.hidden = false;
       clampWindow(view);
       bringToFront(view);
-      await animateWindowFromButton(view, sourceRect, true);
-      return view;
+      return { view, animation: animateWindowFromButton(view, sourceRect, true) };
     })().finally(() => { casPanelOpening = null; });
     return casPanelOpening;
   };
@@ -501,7 +500,10 @@ async function initFullscreenModuleButtons() {
       button.classList.add('is-loading');
     }
     try {
-      const view = await loadModuleView(moduleId);
+      const [view] = await Promise.all([
+        loadModuleView(moduleId),
+        available.cas ? loadModuleView('cas') : Promise.resolve()
+      ]);
       const sourceRect = button instanceof HTMLButtonElement ? button.getBoundingClientRect() : null;
       moduleWindows.set(moduleId, view);
       if (!view.dataset.positioned) {
@@ -511,7 +513,8 @@ async function initFullscreenModuleButtons() {
         view.style.left = `${Math.round(window.innerWidth * 0.125)}px`;
         view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
       }
-      const casView = await openCasPanel(sourceRect);
+      const casPanel = await openCasPanel(sourceRect);
+      const casView = casPanel?.view;
       if (view.dataset.closing === '1' || !moduleWindows.has(moduleId)) return;
       const rightSpace = window.innerWidth - (casView?.getBoundingClientRect().right || 0) - 24;
       const width = Math.max(160, Math.min(parseFloat(view.style.width), rightSpace));
@@ -522,7 +525,7 @@ async function initFullscreenModuleButtons() {
       clampWindow(view);
       bringToFront(view);
       const buttonAnimation = button instanceof HTMLButtonElement ? animateButton(button, false) : Promise.resolve();
-      await Promise.all([animateWindowFromButton(view, sourceRect, true), buttonAnimation]);
+      await Promise.all([animateWindowFromButton(view, sourceRect, true), buttonAnimation, casPanel?.animation]);
       refreshButtonContainer();
     } catch (error) {
       if (moduleWindows.get(moduleId)?.hidden) moduleWindows.delete(moduleId);
