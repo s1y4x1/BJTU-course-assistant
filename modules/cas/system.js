@@ -182,12 +182,20 @@
     return profile.userName ? profile : null;
   }
 
-  async function fetchSsoProfile(expectedLoginName = '') {
+  async function fetchSsoProfile(expectedLoginName = '', { allowSessionRetry = true } = {}) {
     const response = await fetch('https://uc.bjtu.edu.cn/api/uc/userinfo', {
       method: 'GET', credentials: 'include', cache: 'no-store'
     });
     if (!response.ok) throw new Error(`SSO 用户信息 HTTP ${response.status}`);
     const data = await response.json();
+    if (data?.code === 10600 && allowSessionRetry) {
+      const loginResponse = await fetch('https://uc.bjtu.edu.cn/user/login', {
+        method: 'GET', credentials: 'include', cache: 'no-store', redirect: 'follow'
+      });
+      if (!loginResponse.ok) throw new Error(`SSO 用户中心会话初始化 HTTP ${loginResponse.status}`);
+      await loginResponse.text();
+      return fetchSsoProfile(expectedLoginName, { allowSessionRetry: false });
+    }
     if (data?.code !== 0) throw new Error(`SSO 用户信息读取失败：${data?.message || data?.code || '无响应码'}`);
     const loginName = String(data?.data?.username || '').trim();
     const userName = String(data?.data?.name || '').trim();
