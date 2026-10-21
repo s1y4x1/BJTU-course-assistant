@@ -182,14 +182,18 @@
     return profile.userName ? profile : null;
   }
 
-  async function fetchSsoProfile() {
+  async function fetchSsoProfile(expectedLoginName = '') {
     const response = await fetch('https://uc.bjtu.edu.cn/api/uc/userinfo', {
       method: 'GET', credentials: 'include', cache: 'no-store'
     });
     if (!response.ok) throw new Error(`SSO 用户信息 HTTP ${response.status}`);
     const data = await response.json();
+    if (data?.code !== 0) throw new Error(`SSO 用户信息读取失败：${data?.message || data?.code || '无响应码'}`);
+    const loginName = String(data?.data?.username || '').trim();
     const userName = String(data?.data?.name || '').trim();
-    return userName ? { userName } : null;
+    if (!loginName || !userName) throw new Error('SSO 用户信息缺少 username 或 name');
+    if (expectedLoginName && loginName !== expectedLoginName) throw new Error('SSO 用户信息账号与登录账号不一致，未更新姓名');
+    return { loginName, userName };
   }
 
   function htmlAttribute(tag, name) {
@@ -304,7 +308,10 @@
     if (url.hostname !== 'uc.bjtu.edu.cn' || /\bid=["']loginForm["']/i.test(html)) {
       return { ok: false, message: 'SSO 登录未完成，可能需要进一步验证，请在 SSO 网站完成登录' };
     }
-    const profile = await fetchSsoProfile().catch(() => null);
+    const profile = await fetchSsoProfile(loginName).catch((error) => {
+      console.warn('[bjtu] SSO name lookup failed:', String(error?.message || error));
+      return null;
+    });
     await saveCasAccount(loginName, { password, lastLoginAt: Date.now(), ...(profile?.userName ? { userName: profile.userName } : {}) });
     return { ok: true };
   }
@@ -330,9 +337,13 @@
     if (!response.ok) throw new Error(`SSO 登录页 HTTP ${response.status}`);
     const page = parseSsoPage(await response.text());
     if (!page.fields.flowId) {
-      return new URL(response.url).hostname === 'uc.bjtu.edu.cn'
-        ? { ok: true, skipped: true }
-        : { ok: false, message: 'SSO 未返回登录表单' };
+      if (new URL(response.url).hostname !== 'uc.bjtu.edu.cn') return { ok: false, message: 'SSO 未返回登录表单' };
+      const profile = await fetchSsoProfile();
+      const account = (await getCasAccounts())[profile.loginName];
+      if (account && account.userName !== profile.userName) {
+        await saveCasAccount(profile.loginName, { userName: profile.userName });
+      }
+      return { ok: true, skipped: true };
     }
     const stored = await chrome.storage.local.get([LOGIN_NAME_KEY]);
     const accounts = Object.values(await getCasAccounts()).filter((account) => account.password);
@@ -863,7 +874,10 @@
         const accounts = await getCasAccounts();
         const prior = accounts[pending.loginName];
         const unchanged = !!prior && prior.password === pending.password;
-        const profile = await (system === 'CAS' ? fetchCasProfile() : fetchSsoProfile()).catch(() => null);
+        const profile = await (system === 'CAS' ? fetchCasProfile() : fetchSsoProfile(pending.loginName)).catch((error) => {
+          console.warn('[bjtu] identity name lookup failed:', String(error?.message || error));
+          return null;
+        });
         await saveCasAccount(pending.loginName, {
           password: pending.password,
           lastLoginAt: Date.now(),
