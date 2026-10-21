@@ -182,6 +182,16 @@
     return profile.userName ? profile : null;
   }
 
+  async function fetchSsoProfile() {
+    const response = await fetch('https://uc.bjtu.edu.cn/api/uc/userinfo', {
+      method: 'GET', credentials: 'include', cache: 'no-store'
+    });
+    if (!response.ok) throw new Error(`SSO 用户信息 HTTP ${response.status}`);
+    const data = await response.json();
+    const userName = String(data?.data?.name || '').trim();
+    return userName ? { userName } : null;
+  }
+
   function htmlAttribute(tag, name) {
     const escaped = String(name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const match = new RegExp(`\\b${escaped}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
@@ -294,7 +304,8 @@
     if (url.hostname !== 'uc.bjtu.edu.cn' || /\bid=["']loginForm["']/i.test(html)) {
       return { ok: false, message: 'SSO 登录未完成，可能需要进一步验证，请在 SSO 网站完成登录' };
     }
-    await saveCasAccount(loginName, { password, lastLoginAt: Date.now() });
+    const profile = await fetchSsoProfile().catch(() => null);
+    await saveCasAccount(loginName, { password, lastLoginAt: Date.now(), ...(profile?.userName ? { userName: profile.userName } : {}) });
     return { ok: true };
   }
 
@@ -852,7 +863,7 @@
         const accounts = await getCasAccounts();
         const prior = accounts[pending.loginName];
         const unchanged = !!prior && prior.password === pending.password;
-        const profile = system === 'CAS' ? await fetchCasProfile().catch(() => null) : null;
+        const profile = await (system === 'CAS' ? fetchCasProfile() : fetchSsoProfile()).catch(() => null);
         await saveCasAccount(pending.loginName, {
           password: pending.password,
           lastLoginAt: Date.now(),
