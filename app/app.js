@@ -265,6 +265,9 @@ async function initFullscreenModuleButtons() {
   const stored = await chrome.storage.local.get(keys);
   const moduleViewPromises = new Map();
   const moduleWindows = new Map();
+  let casPanelOpening = null;
+  const hasDependentWindows = () => ['mail', 'academic'].some((id) => moduleWindows.has(id)
+    && moduleWindows.get(id).dataset.closing !== '1');
 
   const showPanelMessage = (text, ok = true, options = {}) => {
     const type = options?.type === 'info' ? 'info' : (ok ? 'success' : 'error');
@@ -320,10 +323,15 @@ async function initFullscreenModuleButtons() {
       animateWindowFromButton(view, targetRect, false),
       shouldShowButton ? animateButton(button, true) : Promise.resolve()
     ]);
+    if (moduleId === 'cas' && hasDependentWindows()) {
+      delete view.dataset.closing;
+      return;
+    }
     view.hidden = true;
     delete view.dataset.closing;
     fullscreenWindowLayers.remove(view);
     moduleWindows.delete(moduleId);
+    if (moduleId !== 'cas' && !hasDependentWindows()) await closeModuleWindow('cas');
     if (!shouldShowButton && button instanceof HTMLButtonElement) button.hidden = true;
     refreshButtonContainer();
   };
@@ -331,21 +339,23 @@ async function initFullscreenModuleButtons() {
   window.addEventListener('bjtu-close-floating-windows', (event) => {
     const keep = event instanceof CustomEvent ? event.detail?.keep : null;
     for (const [moduleId, view] of moduleWindows) {
-      if (view !== keep) void closeModuleWindow(moduleId);
+      if (moduleId !== 'cas' && view !== keep) void closeModuleWindow(moduleId);
     }
   });
 
   const prepareWindowInteractions = (view, moduleId) => {
     const header = view.querySelector(':scope > .section-title');
     const scrollBody = view.querySelector(':scope > .fullscreen-module-window-body');
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'fullscreen-module-window-close';
-    close.textContent = '×';
-    close.title = '关闭';
-    close.setAttribute('aria-label', '关闭');
-    header?.appendChild(close);
-    close.addEventListener('click', () => { void closeModuleWindow(moduleId); });
+    if (moduleId !== 'cas') {
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'fullscreen-module-window-close';
+      close.textContent = '×';
+      close.title = '关闭';
+      close.setAttribute('aria-label', '关闭');
+      header?.appendChild(close);
+      close.addEventListener('click', () => { void closeModuleWindow(moduleId); });
+    }
 
     let drag = null;
     let resizing = false;
@@ -441,7 +451,7 @@ async function initFullscreenModuleButtons() {
       for (const script of [...(options.scripts || []), options.script]) {
         await globalThis.BjtuModuleRegistry.loadScript(`modules/${moduleId}/${script}`);
       }
-      const controller = moduleId === 'mail' ? globalThis.BjtuMailOptions : globalThis.BjtuAcademicOptions;
+      const controller = ({ mail: globalThis.BjtuMailOptions, academic: globalThis.BjtuAcademicOptions, cas: globalThis.BjtuCasOptions })[moduleId];
       if (!controller?.init) throw new Error('模块选项控制器未加载');
       await controller.init({ setMessage: showPanelMessage });
       globalThis.BjtuOptionTips?.setup?.();
@@ -452,6 +462,29 @@ async function initFullscreenModuleButtons() {
     });
     moduleViewPromises.set(moduleId, promise);
     return promise;
+  };
+
+  const openCasPanel = (sourceRect) => {
+    if (!available.cas) return Promise.resolve(null);
+    if (casPanelOpening) return casPanelOpening;
+    casPanelOpening = (async () => {
+      const view = await loadModuleView('cas');
+      if (!hasDependentWindows()) return null;
+      if (moduleWindows.has('cas')) return view;
+      moduleWindows.set('cas', view);
+      const width = Math.min(420, Math.max(160, Math.round(window.innerWidth * 0.3)));
+      view.style.width = `${width}px`;
+      view.style.minWidth = `${Math.min(320, width)}px`;
+      view.style.height = `${Math.round(window.innerHeight * 0.75)}px`;
+      view.style.left = '12px';
+      view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
+      view.hidden = false;
+      clampWindow(view);
+      bringToFront(view);
+      await animateWindowFromButton(view, sourceRect, true);
+      return view;
+    })().finally(() => { casPanelOpening = null; });
+    return casPanelOpening;
   };
 
   const openModulePanel = async (moduleId, config) => {
@@ -476,6 +509,13 @@ async function initFullscreenModuleButtons() {
         view.style.left = `${Math.round(window.innerWidth * 0.125)}px`;
         view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
       }
+      const casView = await openCasPanel(sourceRect);
+      if (view.dataset.closing === '1' || !moduleWindows.has(moduleId)) return;
+      const rightSpace = window.innerWidth - (casView?.getBoundingClientRect().right || 0) - 24;
+      const width = Math.max(160, Math.min(parseFloat(view.style.width), rightSpace));
+      view.style.width = `${width}px`;
+      view.style.minWidth = `${Math.min(320, width)}px`;
+      view.style.left = `${Math.max(12, window.innerWidth - width - 12)}px`;
       view.hidden = false;
       clampWindow(view);
       bringToFront(view);
@@ -483,6 +523,8 @@ async function initFullscreenModuleButtons() {
       await Promise.all([animateWindowFromButton(view, sourceRect, true), buttonAnimation]);
       refreshButtonContainer();
     } catch (error) {
+      if (moduleWindows.get(moduleId)?.hidden) moduleWindows.delete(moduleId);
+      if (!hasDependentWindows()) await closeModuleWindow('cas');
       showPanelMessage(`模块加载失败：${String(error?.message || error)}`, false);
     } finally {
       if (button instanceof HTMLButtonElement) {

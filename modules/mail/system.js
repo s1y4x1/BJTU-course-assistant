@@ -683,7 +683,7 @@
         getCurrentMailUser(message?.payload || {})
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch(async (error) => {
-            if (error?.code === 'identity-no-saved-account') {
+            if (error?.code === 'identity-no-saved-account' && message.payload?.identityPanelVisible !== true) {
               await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
             }
             sendResponse({ ok: false, code: String(error?.code || ''), message: String(error?.message || error) });

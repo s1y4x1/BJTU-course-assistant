@@ -2423,7 +2423,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
         runAcademicLogin(() => loginAcademicViaMis({ loginRequest: true }))
           .then((result) => sendResponse(result))
           .catch(async (error) => {
-            if (error?.code === 'identity-no-saved-account') {
+            if (error?.code === 'identity-no-saved-account' && message.payload?.identityPanelVisible !== true) {
               await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
             }
             sendResponse({ ok: false, message: String(error?.message || error) });
