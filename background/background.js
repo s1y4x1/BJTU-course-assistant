@@ -903,6 +903,7 @@ async function bindPortalUsernameInBackground(requestedLoginName = '') {
       status: 'done',
       background: true,
       quickUsername: String(result?.quickUsername || '').trim(),
+      quickUsernameChanged: result?.record?.quickUsernameChanged === true,
       userId,
       ts: Date.now()
     };
@@ -1953,6 +1954,7 @@ async function finalizePortalQuickUsernameBind(tabId, quickUsername, verifiedUse
         tabId,
         quickUsername,
         userId: String(record?.userId || '').trim(),
+        quickUsernameChanged: record?.quickUsernameChanged === true,
         ts: Date.now()
       });
       if (record && bindState) {

@@ -1692,7 +1692,7 @@ function setupPortalUsernameBindMessageListener() {
       }
       if (message?.type !== 'PORTAL_USERNAME_BIND_STATUS') return;
       const st = message.payload || {};
-      if (st.status !== 'done') return;
+      if (st.status !== 'done' || st.quickUsernameChanged !== true) return;
       showToast(`已绑定极速登录 username：${st.userId || st.quickUsername || ''}`, 'success', 1800);
       if (isPlatformEnabled('ve')) {
         await loadAutoLoadCourseResourcesSetting().catch(() => { });
