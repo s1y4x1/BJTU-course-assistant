@@ -14,8 +14,12 @@
   const LOGIN_HEADER_RULE_ID = 914303;
   const SSO_LOGIN_URL = 'https://sso.bjtu.edu.cn/sso/login';
   const SSO_LOGOUT_URL = 'https://uc.bjtu.edu.cn/api/logout';
+  const SSO_USER_CENTER_URL = 'https://uc.bjtu.edu.cn/user/login';
+  const SSO_USER_CENTER_LOGIN_URL = `https://uc.bjtu.edu.cn/api/login?${new URLSearchParams({
+    target: SSO_USER_CENTER_URL
+  })}`;
   const SSO_ENTRY_URL = `${SSO_LOGIN_URL}?${new URLSearchParams({
-    service: 'https://uc.bjtu.edu.cn/user/login', pageName: 'login'
+    service: SSO_USER_CENTER_LOGIN_URL, pageName: 'login'
   })}`;
 
   const pendingCredentialsByTab = new Map();
@@ -183,16 +187,23 @@
   }
 
   async function fetchSsoProfile(expectedLoginName = '', { allowSessionRetry = true } = {}) {
-    const response = await fetch('https://uc.bjtu.edu.cn/api/uc/userinfo', {
+    const response = await fetch(`https://uc.bjtu.edu.cn/api/uc/userinfo?selfTimestamp=${Date.now()}`, {
       method: 'GET', credentials: 'include', cache: 'no-store'
     });
     if (!response.ok) throw new Error(`SSO 用户信息 HTTP ${response.status}`);
     const data = await response.json();
     if (data?.code === 10600 && allowSessionRetry) {
-      const loginResponse = await fetch('https://uc.bjtu.edu.cn/user/login', {
+      // /user/login is a Vue page, not the ticket validation endpoint. Its
+      // script navigates to /api/login so UC can exchange the SSO ticket for
+      // its own session before /api/uc/userinfo is available.
+      const loginResponse = await fetch(SSO_USER_CENTER_LOGIN_URL, {
         method: 'GET', credentials: 'include', cache: 'no-store', redirect: 'follow'
       });
       if (!loginResponse.ok) throw new Error(`SSO 用户中心会话初始化 HTTP ${loginResponse.status}`);
+      const loginUrl = new URL(loginResponse.url);
+      if (loginUrl.origin !== 'https://uc.bjtu.edu.cn' || loginUrl.pathname !== '/user/login') {
+        throw new Error('SSO 用户中心会话初始化未完成，请重新登录 SSO');
+      }
       await loginResponse.text();
       return fetchSsoProfile(expectedLoginName, { allowSessionRetry: false });
     }
