@@ -1460,9 +1460,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const checkbox = document.getElementById('popupUseFullscreenCacheEnabled');
     container.classList.toggle('is-disabled', disabled);
     checkbox.disabled = disabled;
-    const sidePanelDisabled = !document.getElementById('openModeSidePanel').checked;
-    document.getElementById('sidePanelCacheContainer').classList.toggle('is-disabled', sidePanelDisabled);
-    document.getElementById('sidePanelUseFullscreenCacheEnabled').disabled = sidePanelDisabled;
   }
 
   function setChecked(id, checked) {
