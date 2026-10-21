@@ -266,6 +266,7 @@ async function initFullscreenModuleButtons() {
   const moduleViewPromises = new Map();
   const moduleWindows = new Map();
   let casPanelOpening = null;
+  let casPanelSourceRect = null;
   const hasDependentWindows = () => ['mail', 'academic'].some((id) => moduleWindows.has(id)
     && moduleWindows.get(id).dataset.closing !== '1');
 
@@ -307,7 +308,7 @@ async function initFullscreenModuleButtons() {
     view.style.bottom = 'auto';
   };
 
-  const closeModuleWindow = async (moduleId) => {
+  const closeModuleWindow = async (moduleId, fallbackRect = null) => {
     const view = moduleWindows.get(moduleId);
     if (!(view instanceof HTMLElement) || view.dataset.closing === '1') return;
     view.dataset.closing = '1';
@@ -318,7 +319,7 @@ async function initFullscreenModuleButtons() {
       && stored[config.key] !== false;
     const targetRect = shouldShowButton
       ? floatingWindowAnimations.measureVisibleButtonRect(button)
-      : null;
+      : (moduleId === 'cas' ? fallbackRect || casPanelSourceRect : null);
     await Promise.all([
       animateWindowFromButton(view, targetRect, false),
       shouldShowButton ? animateButton(button, true) : Promise.resolve()
@@ -331,7 +332,7 @@ async function initFullscreenModuleButtons() {
     delete view.dataset.closing;
     fullscreenWindowLayers.remove(view);
     moduleWindows.delete(moduleId);
-    if (moduleId !== 'cas' && !hasDependentWindows()) await closeModuleWindow('cas');
+    if (moduleId !== 'cas' && !hasDependentWindows()) await closeModuleWindow('cas', targetRect);
     if (!shouldShowButton && button instanceof HTMLButtonElement) button.hidden = true;
     refreshButtonContainer();
   };
@@ -470,6 +471,7 @@ async function initFullscreenModuleButtons() {
     casPanelOpening = (async () => {
       const view = await loadModuleView('cas');
       if (!hasDependentWindows()) return null;
+      casPanelSourceRect = sourceRect;
       if (moduleWindows.has('cas')) return view;
       moduleWindows.set('cas', view);
       const width = Math.min(420, Math.max(160, Math.round(window.innerWidth * 0.3)));
