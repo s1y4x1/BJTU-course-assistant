@@ -472,7 +472,9 @@ async function initFullscreenModuleButtons() {
       const view = await loadModuleView('cas');
       if (!hasDependentWindows()) return null;
       casPanelSourceRect = sourceRect;
-      if (moduleWindows.has('cas')) return { view, animation: Promise.resolve() };
+      if (moduleWindows.has('cas')) {
+        return { view, right: view.offsetLeft + view.offsetWidth, animation: Promise.resolve() };
+      }
       moduleWindows.set('cas', view);
       const width = Math.min(420, Math.max(160, Math.round(window.innerWidth * 0.3)));
       view.style.width = `${width}px`;
@@ -483,7 +485,11 @@ async function initFullscreenModuleButtons() {
       view.hidden = false;
       clampWindow(view);
       bringToFront(view);
-      return { view, animation: animateWindowFromButton(view, sourceRect, true) };
+      return {
+        view,
+        right: view.offsetLeft + view.offsetWidth,
+        animation: animateWindowFromButton(view, sourceRect, true)
+      };
     })().finally(() => { casPanelOpening = null; });
     return casPanelOpening;
   };
@@ -514,9 +520,8 @@ async function initFullscreenModuleButtons() {
         view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
       }
       const casPanel = await openCasPanel(sourceRect);
-      const casView = casPanel?.view;
       if (view.dataset.closing === '1' || !moduleWindows.has(moduleId)) return;
-      const rightSpace = window.innerWidth - (casView?.getBoundingClientRect().right || 0) - 24;
+      const rightSpace = window.innerWidth - (casPanel?.right || 0) - 24;
       const width = Math.max(160, Math.min(parseFloat(view.style.width), rightSpace));
       view.style.width = `${width}px`;
       view.style.minWidth = `${Math.min(320, width)}px`;
