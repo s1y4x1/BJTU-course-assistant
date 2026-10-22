@@ -1,6 +1,18 @@
+function isYktExamFinished(hw) {
+  if (hw?.is_finished === true) return true;
+  const deadline = getYktActivityDeadline(hw);
+  if (deadline === null || deadline === undefined || deadline === '') return false;
+  const numeric = Number(deadline);
+  const timestamp = Number.isFinite(numeric)
+    ? (numeric > 0 && numeric < 1e12 ? numeric * 1000 : numeric)
+    : Date.parse(String(deadline));
+  return Number.isFinite(timestamp) && timestamp > 0 && timestamp <= Date.now();
+}
+
 function isYktHomeworkDone(hw) {
   const actype = Number(hw?.__actype ?? hw?.actype);
   if (actype === 14) return hw?.attend_status === true;
+  if (actype === 5 && isYktExamFinished(hw)) return hw?.unfinished != null && Number(hw.unfinished) === 0;
   if (actype === 15) {
     if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
       return Number(hw.video_progress_ratio) >= 0.9995;
