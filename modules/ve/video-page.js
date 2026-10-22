@@ -92,7 +92,7 @@
       const savedRole = sessionStorage.getItem(key);
       if (enabled) {
         if (savedRole === null) sessionStorage.setItem(key, JSON.stringify(url.searchParams.get('userRole')));
-        url.searchParams.set('userRole', '2');
+        url.searchParams.set('userRole', '1');
       } else if (savedRole !== null) {
         const originalRole = JSON.parse(savedRole);
         if (originalRole === null) url.searchParams.delete('userRole');
