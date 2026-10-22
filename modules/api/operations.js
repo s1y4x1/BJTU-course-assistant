@@ -684,6 +684,7 @@
 
   function yktIsHomeworkDone(hw) {
     const actype = Number(hw?.__actype ?? hw?.actype);
+    if (actype === 14) return hw?.attend_status === true;
     if (actype === 15) {
       const taskProgress = Number(hw?.progress);
       if (Number.isFinite(taskProgress)) return taskProgress >= 0.9995;
@@ -1306,7 +1307,7 @@ name: 've.teachers_of_',
       doc: [
         '## ykt.assignments —— 全平台作业查询',
         '',
-        '直接筛选 ykt.login 完成后 app.html 已加载的雨课堂作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ykt.login()。考试根据 unfinished 判断是否已交，0 为已交；线上学习任务优先依据扩展获取的 0~1 进度判断。仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 考试 / 公告。',
+        '直接筛选 ykt.login 完成后 app.html 已加载的雨课堂作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ykt.login()。课堂（actype=14）依据 attend_status 判断是否已交，不使用进度；未交且 is_finished 为 true 时为 overdue。考试优先依据已完成题数与总题数判断，缺少总题数时依据 unfinished，0 为已交；线上学习任务优先依据扩展获取的 0~1 进度判断。非课堂任务仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 考试 / 公告。',
         '',
         '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|考试|公告，默认 all"}',
         '',
