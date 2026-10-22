@@ -358,7 +358,27 @@ async function fetchYktExamPaper(courseId, examId) {
 
       const text = await res.text();
       const data = JSON.parse(String(text || '{}'));
-      if (Number(data?.errcode) === 0) return data?.data || null;
+      if (Number(data?.errcode) === 0) {
+        const paper = data?.data;
+        if (!paper || !Array.isArray(paper.problems)) return null;
+        const resultsResponse = await fetch(`${examRequestBase}/exam_room/problem_results?exam_id=${encodeURIComponent(eid)}`, {
+          method: 'GET', credentials: 'include', cache: 'no-store',
+          headers: { Accept: 'application/json, text/plain, */*' }
+        });
+        if (!resultsResponse.ok) throw new Error(`考试作答结果 HTTP ${resultsResponse.status}`);
+        const results = await resultsResponse.json();
+        if (Number(results?.errcode) !== 0 || !Array.isArray(results?.data?.problem_results)) {
+          throw new Error(results?.errmsg || results?.message || '考试作答结果获取失败');
+        }
+        return {
+          ...paper,
+          problems: paper.problems.map((problem, index) => ({
+            ...problem,
+            grade: results.data.problem_results[index]?.grade ?? null,
+            finished: results.data.problem_results[index]?.finished ?? null
+          }))
+        };
+      }
 
       const errText = `${String(data?.errmsg || '')} ${String(data?.message || '')}`;
       if (!LOCK_MSG_RE.test(errText) || attempt >= MAX_ATTEMPTS) {
@@ -376,7 +396,9 @@ async function fetchYktExamPaper(courseId, examId) {
 
 async function fetchYktHomeworkDetail(homework) {
   if (Number(homework?.__actype) !== 14) {
-    return fetchYktExamPaper(homework?.course_id || homework?.classroom_id, homework?.exam_id || '');
+    const paper = await fetchYktExamPaper(homework?.course_id || homework?.classroom_id, homework?.exam_id || '');
+    if (!paper) throw new Error('考试详情或作答结果获取失败');
+    return paper;
   }
   const lessonId = String(homework?.courseware_id || '').trim();
   if (!lessonId) throw new Error('课堂缺少 courseware_id');
@@ -404,21 +426,23 @@ async function fetchYktHomeworkDetail(homework) {
   return { problems, classroom_report_signature: report.signature };
 }
 
-function renderYktProblemsHtml(problemList) {
+function renderYktProblemsHtml(problemList, isExam = false) {
   const list = Array.isArray(problemList) ? problemList : [];
   if (!list.length) return '';
   return list.map((p, i) => {
     const typeText = String(p?.TypeText || p?.Type || '题目类型').trim();
     const rawOptions = Array.isArray(p?.Options) ? p.Options : [];
+    const answered = isExam ? p?.finished : p?.isAnswered;
+    const totalScore = isExam ? p?.Score ?? p?.score : p?.problemscore;
     return globalThis.BjtuHomeworkUi.questionDetailHtml({
       index: Number(p?.index) || i + 1,
       typeText,
-      score: p?.Score,
+      score: isExam ? p?.grade : p?.Score,
       metaItems: [
-        p?.isAnswered === undefined || p?.isAnswered === null ? ''
-          : ([true, 1, '1', 'true'].includes(p.isAnswered) ? '已作答' : '未作答'),
-        p?.score === undefined || p?.score === null ? '' : `得分：${p.score}`,
-        p?.problemscore === undefined || p?.problemscore === null ? '' : `题目分值：${p.problemscore}`
+        answered === undefined || answered === null ? ''
+          : ([true, 1, '1', 'true'].includes(answered) ? '已作答' : '未作答'),
+        isExam || p?.score === undefined || p?.score === null ? '' : `得分：${p.score}`,
+        totalScore === undefined || totalScore === null ? '' : `题目分值：${totalScore}`
       ],
       bodyHtml: globalThis.BjtuHomeworkUi.sanitizeRichHtml(p?.Body || ''),
       options: rawOptions.map((option) => ({
@@ -542,7 +566,7 @@ function renderYktHomeworkItems(courseId, items) {
     const isClassroomActivity = actype === 14;
     const activityTypeLabel = YKT_ACTIVITY_TYPE_LABELS[actype] || '';
     const isExam = actype === 5;
-    const examDetail = isExam || isClassroomActivity ? renderYktProblemsHtml(it?.detail_problems || []) : '';
+    const examDetail = isExam || isClassroomActivity ? renderYktProblemsHtml(it?.detail_problems || [], isExam) : '';
     let detailStatusHtml = '';
     if ((isExam || isClassroomActivity) && !examDetail) {
       const state = String(it?.exam_detail_state || '').trim();

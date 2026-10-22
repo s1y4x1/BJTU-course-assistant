@@ -1274,7 +1274,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`ykt.assignments_of_({classroomId: "xxx"})`',
         '',
-        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文及已加载的考试、课堂题目；课堂题目保留 cover 图片链接及接口返回的 isAnswered、problemscore、score 等字段，包括实际返回的随堂测验题目。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
+        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文及已加载的考试、课堂题目；考试题目的 grade 为 problem_results 接口返回的实际得分，finished 为是否已作答，score/Score 仅表示题目总分；课堂题目保留 cover 图片链接及接口返回的 isAnswered、problemscore、score 等字段，包括实际返回的随堂测验题目。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
       ].join('\n'),
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
