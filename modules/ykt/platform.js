@@ -433,16 +433,16 @@ function renderYktProblemsHtml(problemList, isExam = false) {
     const typeText = String(p?.TypeText || p?.Type || '题目类型').trim();
     const rawOptions = Array.isArray(p?.Options) ? p.Options : [];
     const answered = isExam ? p?.finished : p?.isAnswered;
-    const totalScore = isExam ? p?.Score ?? p?.score : p?.problemscore;
+    const totalScore = isExam ? p?.Score ?? p?.score : p?.problemscore ?? p?.Score;
+    const earnedScore = isExam ? p?.grade : p?.score;
     return globalThis.BjtuHomeworkUi.questionDetailHtml({
       index: Number(p?.index) || i + 1,
       typeText,
-      score: isExam ? p?.grade : p?.Score,
+      score: totalScore,
       metaItems: [
         answered === undefined || answered === null ? ''
           : ([true, 1, '1', 'true'].includes(answered) ? '已作答' : '未作答'),
-        isExam || p?.score === undefined || p?.score === null ? '' : `得分：${p.score}`,
-        totalScore === undefined || totalScore === null ? '' : `题目分值：${totalScore}`
+        earnedScore === undefined || earnedScore === null ? '' : `得分：${earnedScore}`
       ],
       bodyHtml: globalThis.BjtuHomeworkUi.sanitizeRichHtml(p?.Body || ''),
       options: rawOptions.map((option) => ({
@@ -537,7 +537,10 @@ function renderYktHomeworkItems(courseId, items) {
     const overdue = !done && isYktHomeworkOverdue(it);
     const progress = Number(it?.progress ?? 0);
     const problemCount = Number(it?.problem_count ?? 0);
-    const progressText = problemCount > 0 ? `${progress}/${problemCount}` : '';
+    const examProgress = Number(it?.__actype) === 5 ? getYktExamProgress(it) : null;
+    const progressText = Number(it?.__actype) === 5
+      ? (examProgress ? `${examProgress.completed}/${examProgress.total}` : '')
+      : (problemCount > 0 ? `${progress}/${problemCount}` : '');
     const isVideoActivity = Number(it?.__actype) === 15;
     const progressHtml = isVideoActivity
       ? globalThis.BjtuHomeworkUi.progressHtml({
@@ -672,6 +675,7 @@ function buildYktEntryHomeworks(entry, acts) {
       type: a?.type,
       done: (a?.view && a?.view?.done) !== undefined ? !!(a?.view && a?.view?.done) : undefined,
       unfinished: a?.unfinished,
+      total: a?.total,
       progress: a?.progress,
       problem_count: a?.problem_count,
       score: a?.score,
@@ -1104,6 +1108,9 @@ function yktHomeworkForPageApi(homework) {
   const output = stripYktLeafId(source);
   output.done = isYktHomeworkDone(source);
   output.overdue = isYktHomeworkOverdue(source);
+  if (Number(source?.__actype ?? source?.actype) === 5) {
+    output.progress = getYktExamProgress(source)?.completed ?? null;
+  }
   if (Number(source?.__actype ?? source?.actype) === 15) {
     const rawRatio = source?.video_progress_ratio;
     let ratio = rawRatio === null || rawRatio === undefined ? NaN : Number(rawRatio);
@@ -1167,6 +1174,7 @@ async function yktPageCourseHomework(classroomId) {
       activityType: YKT_ACTIVITY_TYPE_LABELS[Number(a?.__actype)] || '',
       done: (a?.view && a?.view?.done) !== undefined ? !!(a?.view && a?.view?.done) : undefined,
       unfinished: a?.unfinished,
+      total: a?.total,
       progress: a?.progress,
       problem_count: a?.problem_count,
       score: a?.score,

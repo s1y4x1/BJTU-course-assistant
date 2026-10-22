@@ -1,18 +1,15 @@
-function isYktExamFinished(hw) {
-  if (hw?.is_finished === true) return true;
-  const deadline = getYktActivityDeadline(hw);
-  if (deadline === null || deadline === undefined || deadline === '') return false;
-  const numeric = Number(deadline);
-  const timestamp = Number.isFinite(numeric)
-    ? (numeric > 0 && numeric < 1e12 ? numeric * 1000 : numeric)
-    : Date.parse(String(deadline));
-  return Number.isFinite(timestamp) && timestamp > 0 && timestamp <= Date.now();
+function getYktExamProgress(hw) {
+  const total = Number(hw?.total ?? hw?.problem_count ?? hw?.problemCount ?? 0);
+  if (!Number.isFinite(total) || total <= 0 || hw?.unfinished == null || String(hw.unfinished).trim() === '') return null;
+  const unfinished = Number(hw.unfinished);
+  if (!Number.isFinite(unfinished)) return null;
+  return { completed: total - unfinished, total };
 }
 
 function isYktHomeworkDone(hw) {
   const actype = Number(hw?.__actype ?? hw?.actype);
   if (actype === 14) return hw?.attend_status === true;
-  if (actype === 5 && isYktExamFinished(hw)) return hw?.unfinished != null && Number(hw.unfinished) === 0;
+  if (actype === 5) return hw?.unfinished != null && Number(hw.unfinished) === 0;
   if (actype === 15) {
     if (hw?.video_progress_ratio !== null && hw?.video_progress_ratio !== undefined) {
       return Number(hw.video_progress_ratio) >= 0.9995;
@@ -24,7 +21,6 @@ function isYktHomeworkDone(hw) {
   const progress = Number(hw?.progress ?? 0);
   const problemCount = Number(hw?.problem_count ?? hw?.problemCount ?? 0);
   if (problemCount > 0) return progress >= problemCount;
-  if (actype === 5) return hw?.unfinished != null && Number(hw.unfinished) === 0;
   if (hw && hw.done !== null && hw.done !== undefined) return !!hw.done;
   if (hw && hw.unfinished !== null && hw.unfinished !== undefined) {
     return Number(hw.unfinished) === 0;
