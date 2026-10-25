@@ -191,7 +191,7 @@
         assets ? assets.getMisAssetsStatus() : Promise.resolve({ files: {}, downloading: [], installed: false }),
         chrome.storage.local.get([MIS_CAPTCHA_ENABLED_KEY]).catch(() => ({}))
       ]);
-      const enabled = stored[MIS_CAPTCHA_ENABLED_KEY] !== false;
+      const enabled = stored[MIS_CAPTCHA_ENABLED_KEY] === true;
       const missing = [];
       let installedCount = 0;
       if (assets) {

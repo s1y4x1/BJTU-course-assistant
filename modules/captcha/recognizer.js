@@ -54,11 +54,11 @@
   async function isMisRecognitionEnabled() {
     try {
       const enabledKey = globalThis.BjtuMisAssets?.MIS_CAPTCHA_ENABLED_KEY || '';
-      if (!enabledKey) return true;
+      if (!enabledKey) return false;
       const stored = await chrome.storage.local.get([enabledKey]);
-      return stored[enabledKey] !== false;
+      return stored[enabledKey] === true;
     } catch {
-      return true;
+      return false;
     }
   }
 
