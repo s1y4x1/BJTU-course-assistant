@@ -1,6 +1,9 @@
 // -------------------- Upload --------------------
 const VE_SUPPORTED_UPLOAD_ACCEPT = globalThis.BjtuVeUploadCommon.accept;
 let veUploadSessionCheckPromise = null;
+const veUploadJobs = new Set();
+let veUploadHashOrder = 0;
+let veDuplicateDialog = null;
 
 function applyVeUploadAccountInfo(userInfo) {
   const info = userInfo && typeof userInfo === 'object' ? userInfo : null;
@@ -119,26 +122,51 @@ function findAlreadyUploadedFile(file, sha256) {
   return null;
 }
 
-async function promptDuplicateUploadConfirmation(entries) {
-  const list = Array.isArray(entries) ? entries : [];
-  if (!list.length) return Promise.resolve(new Set());
+async function promptDuplicateUploadConfirmation(entry) {
+  if (veDuplicateDialog) return veDuplicateDialog.add(entry);
+  const entries = [];
+  let listEl;
+  let closeDialog = () => {};
+  const add = (value) => new Promise((resolve) => {
+    entries.push({ ...value, resolve });
+    if (listEl) renderEntry(entries.at(-1), entries.length - 1);
+  });
+  const result = add(entry);
+  veDuplicateDialog = { add, remove(job) {
+    const index = entries.findIndex((item) => item.job === job && !item.withdrawn);
+    if (index < 0) return;
+    entries[index].withdrawn = true;
+    entries[index].resolve(null);
+    listEl?.querySelector(`[data-duplicate-index="${index}"]`)?.closest('label')?.remove();
+    if (entries.every((item) => item.withdrawn)) closeDialog();
+  } };
   void chrome.runtime.sendMessage({ type: 'VE_UPLOAD_CONFIRMATION_FOCUS' }).catch(() => {});
-  await globalThis.__bjtuUploadDuplicateDialogReady;
+  try {
+    await globalThis.__bjtuUploadDuplicateDialogReady;
+  } catch (error) {
+    veDuplicateDialog = null;
+    entries.forEach((item) => item.resolve(null));
+    showToast(`重复文件确认界面加载失败：${error?.message || error}`, 'error');
+    return result;
+  }
   const modal = document.getElementById('upload-duplicate-modal');
-  const listEl = document.getElementById('upload-duplicate-list');
+  listEl = document.getElementById('upload-duplicate-list');
   const invertBtn = document.getElementById('upload-duplicate-invert');
   const cancelBtn = document.getElementById('upload-duplicate-cancel');
   const confirmBtn = document.getElementById('upload-duplicate-confirm');
   if (!(modal instanceof HTMLElement) || !(listEl instanceof HTMLElement) || !(confirmBtn instanceof HTMLButtonElement)) {
-    return Promise.resolve(new Set());
+    veDuplicateDialog = null;
+    entries.forEach((item) => item.resolve(null));
+    return result;
   }
 
-  listEl.innerHTML = list.map((entry, idx) => {
+  function renderEntry(entry, idx) {
+    if (entry.withdrawn) return;
     const file = entry?.file;
     const known = entry?.known || {};
     const name = String(file?.name || known.fileName || '(未命名)').trim();
     const sizeBytes = Number(file?.size || known.fileSize || 0);
-    return `
+    listEl.insertAdjacentHTML('beforeend', `
       <label class="upload-duplicate-row">
         <input type="checkbox" data-duplicate-index="${idx}">
         <span class="upload-duplicate-fileline">
@@ -146,18 +174,22 @@ async function promptDuplicateUploadConfirmation(entries) {
           <span class="upload-duplicate-size">${renderFileSizeText(sizeBytes)}</span>
         </span>
       </label>
-    `;
-  }).join('');
+    `);
+  }
+  listEl.replaceChildren();
+  entries.forEach(renderEntry);
 
-  return new Promise((resolve) => {
+  {
     const cleanup = () => {
       modal.style.display = 'none';
+      veDuplicateDialog = null;
       confirmBtn.removeEventListener('click', onConfirm);
       if (invertBtn instanceof HTMLButtonElement) invertBtn.removeEventListener('click', onInvert);
       if (cancelBtn instanceof HTMLButtonElement) cancelBtn.removeEventListener('click', onCancel);
       modal.removeEventListener('mousedown', onMaskPointerDown);
       modal.removeEventListener('mouseup', onMaskPointerUp);
     };
+    closeDialog = cleanup;
     const onInvert = () => {
       listEl.querySelectorAll('input[type="checkbox"][data-duplicate-index]').forEach((el) => {
         if (el instanceof HTMLInputElement) el.checked = !el.checked;
@@ -169,11 +201,11 @@ async function promptDuplicateUploadConfirmation(entries) {
         if (el instanceof HTMLInputElement) selected.add(Number(el.dataset.duplicateIndex));
       });
       cleanup();
-      resolve(selected);
+      entries.forEach((entry, index) => entry.resolve(selected.has(index)));
     };
     const onCancel = () => {
       cleanup();
-      resolve(null);
+      entries.forEach((entry) => entry.resolve(null));
     };
     const onMaskPointerDown = (e) => {
       modal.dataset.mdownMask = e.target === modal ? '1' : '0';
@@ -190,7 +222,9 @@ async function promptDuplicateUploadConfirmation(entries) {
     modal.addEventListener('mousedown', onMaskPointerDown);
     modal.addEventListener('mouseup', onMaskPointerUp);
     modal.style.display = 'flex';
-  });
+    if (entries.every((item) => item.withdrawn)) cleanup();
+  }
+  return result;
 }
 
 function renderAlreadyUploadedFile(file, fileId, known) {
@@ -245,11 +279,41 @@ function renderAlreadyUploadedFile(file, fileId, known) {
 
 function enqueueUploadFile(file) {
   const fileId = Math.random().toString(36).slice(2);
+  const job = { file, fileId, cancelled: false, sha256: '', pause() {} };
+  veUploadJobs.add(job);
+  job.hash = globalThis.BjtuVeUploadCommon.fileHash(file).then((sha256) => {
+    job.sha256 = sha256;
+    job.hashOrder = ++veUploadHashOrder;
+    return sha256;
+  });
+  job.validation = (async () => {
+    const sha256 = await job.hash;
+    if (job.cancelled) return { action: 'cancel' };
+    // The first completed hash is the original, so unrelated slow hashes never
+    // delay detection and duplicate dependencies cannot form a cycle.
+    const previous = [...veUploadJobs].find((other) => !other.cancelled
+      && other.hashOrder < job.hashOrder && other.sha256 === sha256);
+    const known = findAlreadyUploadedFile(file, sha256);
+    if (!known && !previous) return { action: 'continue' };
+    job.pause();
+    const selected = await promptDuplicateUploadConfirmation({ file, known, job });
+    if (job.cancelled || selected === null) return { action: 'cancel' };
+    if (selected) return { action: 'continue' };
+    const reused = known || await previous.result.catch(() => null);
+    // The original might itself fail or be cancelled while confirmation is open.
+    if (!reused?.visitName) return { action: 'continue' };
+    return { action: 'reuse', known: { ...reused, sha256 } };
+  })();
+  // Install the rejection handler before starting network I/O.
+  job.validation.catch(() => {});
   window.filesData[fileId] = { size: file.size, uploaded: 0 };
-  return uploadFile(file, fileId);
+  const completion = uploadFile(file, fileId, job);
+  job.result = completion.catch(() => null);
+  completion.finally(() => veUploadJobs.delete(job)).catch(() => {});
+  return completion;
 }
 
-function uploadFile(file, fileId) {
+function uploadFile(file, fileId, job) {
   let completionSettled = false;
   let resolveCompletion;
   let rejectCompletion;
@@ -263,6 +327,8 @@ function uploadFile(file, fileId) {
     resolveCompletion(value);
   };
   const failUpload = (message, code = '') => {
+    job.cancelled = true;
+    veDuplicateDialog?.remove(job);
     if (completionSettled) return;
     completionSettled = true;
     rejectCompletion(Object.assign(new Error(String(message || '上传失败')), { code: String(code || '') }));
@@ -306,6 +372,59 @@ function uploadFile(file, fileId) {
   let xhrRef = null;
   let autoRetryQueuedByLogin = false;
   let authRetryCount = 0;
+  let duplicatePaused = false;
+  let resumeAfterPause = false;
+  let validationResult = null;
+
+  const resumeValidatedUpload = () => {
+    if (cancelRequested || completionSettled) return;
+    duplicatePaused = false;
+    if (isRunning) resumeAfterPause = true;
+    else {
+      uploadQueue.push(performUpload);
+      processQueue();
+    }
+  };
+  const reuseValidatedUpload = (known) => {
+    if (completionSettled) return;
+    item.remove();
+    renderAlreadyUploadedFile(file, fileId, known);
+    completeUpload({ fileName: file.name, fileSize: file.size, mimeType: file.type || '',
+      url: known.url, visitName: known.visitName, reused: true });
+  };
+  job.pause = () => {
+    duplicatePaused = true;
+    setInlineStatus('检测到重复文件，等待选择…', 'warning');
+    setSpeedDisplay(speedDisplay, 0, '');
+    if (etaDisplay) etaDisplay.textContent = '';
+    delete window.activeSpeeds[fileId];
+    updateTotalSpeed();
+    const index = uploadQueue.indexOf(performUpload);
+    if (index >= 0) uploadQueue.splice(index, 1);
+    if (xhrRef) xhrRef.abort();
+  };
+  job.validation.then((decision) => {
+    validationResult = decision;
+    if (job.cancelled || completionSettled) return;
+    if (decision.action === 'cancel') {
+      cancelRequested = true;
+      job.cancelled = true;
+      setInlineStatus('已取消重复文件上传', 'warning');
+      cancelBtn.style.display = 'none';
+      delete window.filesData[fileId];
+      updateTotalProgress();
+      completeUpload({ cancelled: true, message: '用户取消了重复文件上传；已发送到服务器的数据无法撤回。' });
+    } else if (decision.action === 'reuse') {
+      reuseValidatedUpload(decision.known);
+    } else if (duplicatePaused) {
+      resumeValidatedUpload();
+    }
+  }, (error) => {
+    job.pause();
+    setInlineStatus(`计算文件散列失败：${error?.message || error}`, 'error');
+    showRetry();
+    failUpload(error?.message || '计算文件散列失败');
+  });
 
   const showRetry = () => {
     cancelBtn.style.display = 'none';
@@ -369,6 +488,11 @@ function uploadFile(file, fileId) {
   };
 
   retryBtn.onclick = () => {
+    if (completionSettled) {
+      item.remove();
+      enqueueUploadFile(file).catch(() => {});
+      return;
+    }
     autoRetryQueuedByLogin = false;
     retryBtn.style.display = 'none';
     cancelBtn.style.display = 'inline-block';
@@ -386,6 +510,13 @@ function uploadFile(file, fileId) {
   };
 
   cancelBtn.onclick = () => {
+    job.cancelled = true;
+    veDuplicateDialog?.remove(job);
+    if (duplicatePaused) {
+      cancelRequested = true;
+      doCancelUiAndAccounting();
+      return;
+    }
     autoRetryQueuedByLogin = false;
     if (!isRunning) {
       cancelRequested = true;
@@ -398,10 +529,21 @@ function uploadFile(file, fileId) {
     cancelRequested = true;
     if (xhrRef) {
       try { xhrRef.abort(); } catch {}
-    }
+    } else doCancelUiAndAccounting();
   };
 
   const performUpload = async () => {
+    let slotReleased = false;
+    const releaseSlot = () => {
+      if (slotReleased) return;
+      slotReleased = true;
+      activeUploads--;
+      processQueue();
+    };
+    if (duplicatePaused || job.cancelled || completionSettled) {
+      releaseSlot();
+      return;
+    }
     cancelRequested = false;
     isRunning = true;
     try {
@@ -411,12 +553,24 @@ function uploadFile(file, fileId) {
       showRetry();
       isRunning = false;
       xhrRef = null;
-      activeUploads--; processQueue();
+      releaseSlot();
       failUpload(error?.message || '请先登录智慧课程平台', error?.code || 'LOGIN_REQUIRED');
+      return;
+    }
+    if (duplicatePaused || job.cancelled || completionSettled) {
+      isRunning = false;
+      releaseSlot();
+      if (resumeAfterPause) { resumeAfterPause = false; resumeValidatedUpload(); }
       return;
     }
     const manualJsessionMode = !usernameInput.value.trim();
     const jsid = (jsessionidInput.value.trim() || await getLocal('jsessionid', '')).trim();
+    if (duplicatePaused || job.cancelled || completionSettled) {
+      isRunning = false;
+      releaseSlot();
+      if (resumeAfterPause) { resumeAfterPause = false; resumeValidatedUpload(); }
+      return;
+    }
     if (manualJsessionMode && !jsid) {
       setInlineStatus('等待登录…', 'warning');
       if (etaDisplay) etaDisplay.textContent = '';
@@ -424,11 +578,17 @@ function uploadFile(file, fileId) {
       showRetry();
       isRunning = false;
       xhrRef = null;
-      activeUploads--; processQueue();
+      releaseSlot();
       return;
     }
 
+    // A duplicate decision may arrive while session preparation is pending.
+    // This run can continue directly because no request has been aborted yet.
+    resumeAfterPause = false;
     setInlineStatus('上传中…', 'normal');
+    if (window.filesData[fileId]) window.filesData[fileId].uploaded = 0;
+    progressBar.style.width = '0%';
+    sizeProgressDisplay.innerHTML = `(${renderFileSizePair(0, file.size)})`;
     progressBar.style.backgroundColor = '#4CAF50';
 
     const fd = new FormData();
@@ -459,7 +619,8 @@ function uploadFile(file, fileId) {
       xhr.setRequestHeader('Upgrade-Insecure-Requests', '1');
 
       xhr.onabort = () => {
-        doCancelUiAndAccounting();
+        finishUploadTransfer();
+        if (!duplicatePaused) doCancelUiAndAccounting();
         xhrRef = null;
         resolve();
       };
@@ -517,6 +678,9 @@ function uploadFile(file, fileId) {
       xhr.onload = async () => {
         xhrRef = null;
         finishUploadTransfer();
+        // Hashing or a duplicate choice must not occupy a network concurrency
+        // slot, especially when reusing a file still waiting in the queue.
+        releaseSlot();
         if (globalThis.isVeSessionInvalidResponse?.(xhr.responseText, xhr.responseURL)) {
           if (authRetryCount < 1) {
             authRetryCount += 1;
@@ -549,6 +713,9 @@ function uploadFile(file, fileId) {
         try {
           const data = JSON.parse(xhr.responseText || '{}');
           if (data.visitName) {
+            setInlineStatus('上传完成，等待散列校验…');
+            const decision = validationResult || await job.validation;
+            if (job.cancelled || completionSettled || decision.action !== 'continue') { resolve(); return; }
             const convertedUrl = convertVisitNameToUrl(data.visitName);
             progressBar.style.width = '100%';
             progressBar.textContent = '';
@@ -668,7 +835,8 @@ function uploadFile(file, fileId) {
 
     isRunning = false;
     xhrRef = null;
-    activeUploads--; processQueue();
+    releaseSlot();
+    if (resumeAfterPause) { resumeAfterPause = false; resumeValidatedUpload(); }
   };
 
   uploadQueue.push(performUpload);
@@ -883,83 +1051,19 @@ async function processFilesForUpload(files, { waitForCompletion = false } = {}) 
     return [];
   }
 
-  const pendingFiles = [];
-  const duplicateEntries = [];
-  try {
-    for (const f of filesList) {
-      const sha256 = await globalThis.BjtuVeUploadCommon.fileHash(f);
-      const known = findAlreadyUploadedFile(f, sha256);
-      if (known) duplicateEntries.push({ file: f, known });
-      else pendingFiles.push(f);
-    }
-  } catch (error) {
-    showToast(`计算文件散列失败：${error?.message || error}`, 'error');
-    if (waitForCompletion) throw error;
-    return [];
-  }
-
-  let skippedDuplicateCount = 0;
-  const reusedResults = [];
-  if (duplicateEntries.length > 0) {
-    const selectedDuplicateIndexes = await promptDuplicateUploadConfirmation(duplicateEntries);
-    if (selectedDuplicateIndexes === null) {
-      updateTotalProgress();
-      return waitForCompletion
-        ? { fileList: [], message: '用户取消了重复文件确认，本次所选文件未上传。' }
-        : [];
-    }
-    if (selectedDuplicateIndexes instanceof Set) {
-      duplicateEntries.forEach((entry, idx) => {
-        if (selectedDuplicateIndexes.has(idx)) {
-          pendingFiles.push(entry.file);
-          return;
-        }
-        const fileId = Math.random().toString(36).slice(2);
-        if (renderAlreadyUploadedFile(entry.file, fileId, entry.known)) {
-          skippedDuplicateCount++;
-          reusedResults.push({
-            fileName: String(entry.file?.name || entry.known?.fileName || ''),
-            fileSize: Number(entry.file?.size || entry.known?.fileSize || 0),
-            mimeType: String(entry.file?.type || ''),
-            url: String(entry.known?.url || ''),
-            visitName: String(entry.known?.visitName || ''),
-            reused: true
-          });
-        }
-      });
-    }
-  }
-
-  if (skippedDuplicateCount > 0) {
-    showToast(`已复用 ${skippedDuplicateCount} 个已上传文件`, 'success', 1800);
-  }
-  if (!pendingFiles.length) {
-    updateTotalProgress();
-    return reusedResults;
-  }
-
-  if (!isLoginSessionValid) {
-    if (waitForCompletion) {
-      return new Promise((resolve, reject) => {
-        handleLoginRequired(() => {
-          const tasks = pendingFiles.map(enqueueUploadFile);
-          updateTotalProgress();
-          Promise.all(tasks).then((results) => resolve([...reusedResults, ...results]), reject);
-        });
-      });
-    }
-    handleLoginRequired(() => {
-      pendingFiles.map(enqueueUploadFile).forEach((task) => task.catch(() => {}));
-      updateTotalProgress();
-    });
-    return reusedResults;
-  }
-
-  const tasks = pendingFiles.map(enqueueUploadFile);
+  const tasks = filesList.map(enqueueUploadFile);
   updateTotalProgress();
-  if (waitForCompletion) return [...reusedResults, ...await Promise.all(tasks)];
+  if (waitForCompletion) {
+    const results = await Promise.all(tasks);
+    const uploaded = results.filter((result) => !result?.cancelled);
+    if (results.some((result) => result?.cancelled)) {
+      return { fileList: uploadResultsToFileList(uploaded),
+        message: '用户取消了重复文件上传；其他文件不受影响，已发送到服务器的数据无法撤回。' };
+    }
+    return uploaded;
+  }
   tasks.forEach((task) => task.catch(() => {}));
-  return reusedResults;
+  return [];
 }
 
 function uploadResultsToFileList(uploaded) {
