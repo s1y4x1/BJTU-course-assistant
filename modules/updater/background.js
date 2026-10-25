@@ -156,14 +156,18 @@
     return message.length > 1800 ? `${message.slice(0, 1799)}…` : message;
   }
 
+  function notificationVersion(release) {
+    const version = String(release?.version || '').trim();
+    return release?.hasName ? `${release.name} (${version})` : (version || '新版本');
+  }
+
   async function notifyUpdateDetected(release, lastNotifiedVersion = '', installUpdate = false, previousDescription = '') {
     if (normalizeVersion(lastNotifiedVersion) === normalizeVersion(release?.version)) return false;
     try {
       const notificationId = `${DETECTED_NOTIFICATION_PREFIX}${normalizeVersion(release?.version) || 'unknown'}`;
       const titlePrefix = installUpdate
         ? (release?.force ? '正在更新：' : '安装非强制更新：') : '发现新版本：';
-      const version = String(release?.version || '').trim();
-      const titleVersion = release?.hasName ? `${release.name} (${version})` : (version || '新版本');
+      const titleVersion = notificationVersion(release);
       await createSystemNotification(notificationId, {
         type: 'basic',
         iconUrl: 'icons/128.png',
@@ -189,7 +193,7 @@
       type: 'basic',
       iconUrl: 'icons/128.png',
       title: 'BJTU 课程助手已后台更新',
-      message: String(message || `已更新到 ${release?.name || release?.version || '新版本'}。`),
+      message: String(message || `已更新到 ${notificationVersion(release)}。`),
       priority: 1
     }, 'background-update-complete', true);
     return notificationId;
@@ -1068,8 +1072,8 @@
         await notifyUpdateComplete(
           release,
           refreshedAppCount > 0
-            ? `已更新到 ${release.name}，并自动刷新已打开的课程助手页面。`
-            : `已更新到 ${release.name}，下次打开课程助手页面时生效。`
+            ? `已更新到 ${notificationVersion(release)}，并自动刷新已打开的课程助手页面。`
+            : `已更新到 ${notificationVersion(release)}，下次打开课程助手页面时生效。`
         ).catch(() => {});
         return { updated: true, reloaded: false, release, fileCount };
       }
@@ -1077,7 +1081,7 @@
       const appWasOpen = (await chrome.tabs.query({})).some((tab) => String(tab?.url || '').startsWith(appUrl));
       const completionNotificationId = await notifyUpdateComplete(
         release,
-        `已更新到 ${release.name}，正在自动重新加载扩展。`
+        `已更新到 ${notificationVersion(release)}，正在自动重新加载扩展。`
       ).catch(() => `${COMPLETE_NOTIFICATION_PREFIX}${normalizeVersion(release.version) || 'unknown'}`);
       await chrome.storage.local.set({
         [PENDING_RELOAD_KEY]: { ...record, autoReloadRequestedAt: Date.now() },
@@ -1088,6 +1092,7 @@
         },
         [RELOAD_HANDOFF_KEY]: {
           ...record,
+          hasName: release.hasName,
           requestedAt: Date.now(),
           reopenApp: appWasOpen,
           completionNotificationId

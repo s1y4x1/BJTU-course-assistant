@@ -691,7 +691,7 @@ async function restoreAppAfterAutomaticExtensionReload() {
       type: 'basic',
       iconUrl: 'icons/128.png',
       title: 'BJTU 课程助手已后台更新',
-      message: `已更新到 ${String(handoff.name || handoff.ver || '新版本')} 并自动重新加载扩展。`,
+      message: `已更新到 ${handoff.hasName ? `${handoff.name} (${handoff.ver})` : String(handoff.ver || '新版本')} 并自动重新加载扩展。`,
       priority: 1
     }, 'background-update-complete', true).catch(() => {});
   }
