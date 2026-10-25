@@ -74,7 +74,10 @@
 .academic-schedule-controls button { width:auto; height:32px; margin:0; padding:4px 10px; }
 .academic-schedule-table { min-width:0; table-layout:auto; }
 .academic-schedule-table th, .academic-schedule-table td { width:auto; height:auto; padding:6px; white-space:normal !important; }
-.academic-schedule-period strong, .academic-schedule-period span { display:block; white-space:nowrap; }
+.academic-schedule-period strong, .academic-schedule-period span { display:block; }
+.academic-layout-wide .academic-schedule-period strong,
+.academic-layout-wide .academic-schedule-period span,
+.academic-layout-wide .academic-schedule-course-code { white-space:nowrap; overflow-wrap:normal; }
 .academic-schedule-period span { margin-top:3px; color:#64748b; font-size:11px; }
 .academic-schedule-course { position:relative; min-width:0; padding:3px 0 7px; line-height:1.45; overflow-wrap:anywhere; }
 .academic-schedule-course + .academic-schedule-course { margin-top:5px; padding-top:7px; border-top:1px dashed #cbd5e1; }

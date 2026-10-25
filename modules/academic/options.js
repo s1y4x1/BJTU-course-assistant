@@ -184,6 +184,7 @@
 
   function applyWideOption(enabled) {
     const section = element('academic-system-section');
+    section?.classList.toggle('academic-layout-wide', enabled === true);
     const slot = section?.closest('[data-options-module="academic"]');
     if (slot instanceof HTMLElement && slot.parentElement?.id === 'options-controlled-content') {
       slot.classList.toggle('options-wide-card', enabled === true);
