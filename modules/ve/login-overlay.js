@@ -330,7 +330,8 @@ async function openBjtuPortalLogin() {
     loginRunning = false;
     if (response?.ok) {
       close();
-      location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
+      if (isTimeoutPage) location.reload();
+      else location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
       return;
     }
     const startManualWithCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';
