@@ -155,7 +155,8 @@
     const xqCode = core.chooseTermCode(terms, stored?.[XQ_CODE_KEY]);
     if (!xqCode) throw new Error('未获取到当前学期');
     const courses = await core.fetchCourses(xqCode, { signal: controller.signal });
-    const previousCache = stored?.[CACHE_KEY] && typeof stored[CACHE_KEY] === 'object' ? stored[CACHE_KEY] : {};
+    const latestCache = await chrome.storage.local.get(CACHE_KEY);
+    const previousCache = latestCache[CACHE_KEY] || {};
     const previousHomework = previousCache.courseHomeworkData || {};
     const courseHomeworkData = {};
     const attachmentCache = {};

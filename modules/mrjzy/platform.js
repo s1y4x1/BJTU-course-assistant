@@ -641,6 +641,29 @@ function renderMrjzyStandaloneCourses() {
   return preserveCoursePlatformScroll(renderMrjzyStandaloneCoursesNow);
 }
 
+function applyMrjzyCourseGroups(groups, updatedAt = Date.now()) {
+  return preserveCoursePlatformScroll(() => {
+    window.mrjzySnapshotUpdatedAt = updatedAt;
+    window.mrjzyCourseGroupsSnapshot = groups.map((group) => ({ ...group, token: normalizeCourseNameToken(group.divClass) }));
+    window.mrjzyMatchedHomeworkByCourseId = {};
+    window.mrjzyStandaloneCourses = window.mrjzyCourseGroupsSnapshot;
+    rematchExternalByVeCourses('mrjzy');
+    rerenderAllHomeworkAreas();
+    renderMrjzyStandaloneCourses();
+  });
+}
+
+function applyMrjzyCachedSnapshot(cache) {
+  if (!isPlatformEnabled('mrjzy') || mrjzyActiveRuntimeCtx
+      || !Array.isArray(cache?.mrjzyCourseGroupsSnapshot)
+      || !(Number(cache.mrjzySnapshotUpdatedAt) > Number(window.mrjzySnapshotUpdatedAt || 0))) return;
+  window.platformLoadedOnce.mrjzy = true;
+  setPlatformLoginState('mrjzy', 'online');
+  applyMrjzyCourseGroups(cache.mrjzyCourseGroupsSnapshot, cache.mrjzySnapshotUpdatedAt);
+  const homeworks = cache.mrjzyCourseGroupsSnapshot.flatMap((group) => group.homeworks);
+  setPlatformContentLoadProgress('mrjzy', homeworks.filter((homework) => !homework.loadingMeta).length, homeworks.length);
+}
+
 function renderMrjzyStandaloneCoursesNow() {
   clearMrjzyStandaloneCards();
   const courses = window.mrjzyStandaloneCourses || [];
@@ -701,15 +724,6 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     if (mrjzyActiveRuntimeCtx === mrjzyRuntimeCtx) mrjzyActiveRuntimeCtx = null;
   };
 
-  const pickMrjzyCourseName = (w) => {
-    const v = String(w?.divClass || w?.className || w?.courseName || w?.course_name || w?.workClass || '').trim();
-    return v || '每日交作业课程';
-  };
-  const pickMrjzyTeacherName = (w) => String(w?.teacherName || w?.teacher_name || w?.teacherRealName || w?.userRealName || w?.teacher || '').trim();
-  const pickMrjzyDeadline = (w) => String(w?.workRemark || w?.endTime || w?.end || w?.deadline || '').trim();
-  const pickMrjzyTitle = (w) => String(w?.workDetail || w?.title || '').trim() || `作业 ${w?.workId || ''}`;
-
-  const matchMap = new Map();
   const endTime = todayEndDateTimeString();
   const listResp = await postMrjzyForm(MRJZY_WORK_LIST_API, {
     start: 0,
@@ -763,72 +777,26 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   window.platformLoadedOnce.mrjzy = true;
   const works = Array.isArray(listResp.data.data) ? listResp.data.data : [];
   if (!works.length) {
+    window.mrjzySnapshotUpdatedAt = Date.now();
     setPlatformContentLoadProgress('mrjzy', 0, 0);
     await finishMrjzyRuntime();
     renderMrjzyStandaloneCourses();
+    scheduleFullscreenCourseCacheSave();
     return;
   }
 
-  // First paint: render homework titles immediately with loading placeholders.
-  const groupedLoading = new Map();
-  works.forEach((w) => {
-    const realDivClass = pickMrjzyCourseName(w);
-    const key = String(realDivClass || w.classNum || `work-${w.workId}`).trim();
-    if (!groupedLoading.has(key)) {
-      groupedLoading.set(key, {
-        divClass: '正在加载……',
-        classNum: w.classNum,
-        teacherName: '正在加载……',
-        realDivClass,
-        homeworks: []
-      });
-    }
-    const g = groupedLoading.get(key);
-    g.homeworks.push({
-      workId: w.workId,
-      title: pickMrjzyTitle(w),
-      end: '正在加载……',
-      start: '',
-      submit: Number(w.submit || 0),
-      isSubmit: Number(w.isSubmit || 0),
-      done: Number(w.submit || 0) > 0,
-      loadingMeta: true,
-      link: `${MRJZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(w.workId || ''))}`
-    });
-  });
-
-  groupedLoading.forEach((courseGroup) => {
-    const token = normalizeCourseNameToken(courseGroup.realDivClass || '');
-    const matched = token ? matchMap.get(token) : null;
-    if (matched?.courseId) {
-      if (!window.mrjzyMatchedHomeworkByCourseId[matched.courseId]) {
-        window.mrjzyMatchedHomeworkByCourseId[matched.courseId] = [];
-      }
-      window.mrjzyMatchedHomeworkByCourseId[matched.courseId].push(...courseGroup.homeworks);
-    } else {
-      window.mrjzyStandaloneCourses.push({
-        divClass: courseGroup.divClass,
-        classNum: courseGroup.classNum,
-        teacherName: courseGroup.teacherName,
-        loadingMeta: true,
-        homeworks: courseGroup.homeworks
-      });
-    }
-  });
-
-  Object.keys(window.mrjzyMatchedHomeworkByCourseId).forEach((courseId) => {
-    renderHomeworkList(courseId);
-  });
-  renderMrjzyStandaloneCourses();
+  const detailsByWorkId = new Map();
+  applyMrjzyCourseGroups(buildMrjzyCourseGroups(works, detailsByWorkId, true));
 
   let completedDetailLoads = 0;
   setPlatformContentLoadProgress('mrjzy', 0, works.length);
   const detailTasks = works.map(async (w) => {
     const dr = await postMrjzyForm(MRJZY_WORK_DETAIL_API, { workId: w.workId }, mrjzyRuntimeCtx);
-    const teacherName = dr?.data?.data?.teacher?.userRealName || '';
-    return { workId: w.workId, teacherName, details: dr?.data?.data ?? null };
+    if (shouldAbort()) return;
+    detailsByWorkId.set(w.workId, dr?.data?.data ?? null);
+    applyMrjzyCourseGroups(buildMrjzyCourseGroups(works, detailsByWorkId, true));
   });
-  const detailSettled = await Promise.allSettled(detailTasks.map((task) => task.finally(() => {
+  await Promise.allSettled(detailTasks.map((task) => task.finally(() => {
     if (shouldAbort()) return;
     completedDetailLoads += 1;
     setPlatformContentLoadProgress('mrjzy', completedDetailLoads, works.length);
@@ -837,73 +805,8 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     await finishMrjzyRuntime();
     return;
   }
-  const teacherByWorkId = new Map();
-  const detailsByWorkId = new Map();
-  detailSettled.forEach((r) => {
-    if (r.status === 'fulfilled') {
-      teacherByWorkId.set(r.value.workId, r.value.teacherName || '');
-      detailsByWorkId.set(r.value.workId, r.value.details ?? null);
-    }
-  });
-
-  const grouped = new Map();
-  works.forEach((w) => {
-    const key = pickMrjzyCourseName(w);
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        divClass: key,
-        classNum: w.classNum,
-        teacherName: '',
-        homeworks: []
-      });
-    }
-    const g = grouped.get(key);
-    const teacherName = String(teacherByWorkId.get(w.workId) || pickMrjzyTeacherName(w) || '').trim();
-    if (!g.teacherName && teacherName) g.teacherName = teacherName;
-    g.homeworks.push({
-      workId: w.workId,
-      title: pickMrjzyTitle(w),
-      end: pickMrjzyDeadline(w),
-      start: w?.workTime ?? '',
-      submit: Number(w.submit || 0),
-      isSubmit: Number(w.isSubmit || 0),
-      done: Number(w.submit || 0) > 0,
-      details: detailsByWorkId.get(w.workId) ?? null,
-      loadingMeta: false,
-      link: `${MRJZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(w.workId || ''))}`
-    });
-  });
-
-  // Replace first-stage placeholder data with hydrated data instead of appending.
-  window.mrjzyMatchedHomeworkByCourseId = {};
-  window.mrjzyStandaloneCourses = [];
-  window.mrjzyCourseGroupsSnapshot = [];
-
-  grouped.forEach((courseGroup) => {
-    const token = normalizeCourseNameToken(courseGroup.divClass);
-    window.mrjzyCourseGroupsSnapshot.push({
-      token,
-      divClass: courseGroup.divClass,
-      classNum: courseGroup.classNum,
-      teacherName: courseGroup.teacherName,
-      homeworks: courseGroup.homeworks
-    });
-    const matched = matchMap.get(token);
-    if (matched?.courseId) {
-      if (!window.mrjzyMatchedHomeworkByCourseId[matched.courseId]) {
-        window.mrjzyMatchedHomeworkByCourseId[matched.courseId] = [];
-      }
-      window.mrjzyMatchedHomeworkByCourseId[matched.courseId].push(...courseGroup.homeworks);
-    } else {
-      window.mrjzyStandaloneCourses.push(courseGroup);
-    }
-  });
-
-  Object.keys(window.mrjzyMatchedHomeworkByCourseId).forEach((courseId) => {
-    renderHomeworkList(courseId);
-  });
-  renderMrjzyStandaloneCourses();
-
+  applyMrjzyCourseGroups(buildMrjzyCourseGroups(works, detailsByWorkId));
+  scheduleFullscreenCourseCacheSave();
   await finishMrjzyRuntime();
 }
 

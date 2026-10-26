@@ -3,6 +3,33 @@ const MRJZY_WEB_BASE = 'https://zuoye.lulufind.com';
 const MRJZY_WORK_LIST_API = `${MRJZY_API_BASE}/mrzy/mrzypc/findWorkNewVersion`;
 const MRJZY_WORK_DETAIL_API = `${MRJZY_API_BASE}/mrzy/mrzypc/getWorkDetail`;
 
+function buildMrjzyCourseGroups(works, detailsByWorkId, loading = false) {
+  const grouped = new Map();
+  for (const work of works) {
+    const name = String(work.divClass || work.className || work.courseName || work.course_name || work.workClass || '').trim() || '每日交作业课程';
+    if (!grouped.has(name)) grouped.set(name, { divClass: name, classNum: work.classNum, teacherName: '', loadingMeta: loading, homeworks: [] });
+    const group = grouped.get(name);
+    const details = detailsByWorkId.get(work.workId) ?? null;
+    const pending = loading && !detailsByWorkId.has(work.workId);
+    if (!pending) group.loadingMeta = false;
+    const teacherName = String(details?.teacher?.userRealName || work.teacherName || work.teacher_name || work.teacherRealName || work.userRealName || '').trim();
+    if (!group.teacherName && teacherName) group.teacherName = teacherName;
+    group.homeworks.push({
+      workId: work.workId,
+      title: String(work.workDetail || work.title || '').trim() || `作业 ${work.workId || ''}`,
+      end: String(work.workRemark || work.endTime || work.end || work.deadline || '').trim(),
+      start: work.workTime ?? '',
+      submit: Number(work.submit || 0),
+      isSubmit: Number(work.isSubmit || 0),
+      done: Number(work.submit || 0) > 0,
+      details,
+      loadingMeta: pending,
+      link: `${MRJZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(String(work.workId || ''))}`
+    });
+  }
+  return [...grouped.values()];
+}
+
 const MRJZY_HEADER_RULE_ID = 914306;
 
 let mrjzyHeaderRulePromise = null;

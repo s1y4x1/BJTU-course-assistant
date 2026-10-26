@@ -286,6 +286,7 @@ function restoreFullscreenCacheStateForBackground(cache) {
   window.mrjzyMatchedHomeworkByCourseId = cache.mrjzyMatchedHomeworkByCourseId || {};
   window.mrjzyStandaloneCourses = Array.isArray(cache.mrjzyStandaloneCourses) ? cache.mrjzyStandaloneCourses : [];
   window.mrjzyCourseGroupsSnapshot = Array.isArray(cache.mrjzyCourseGroupsSnapshot) ? cache.mrjzyCourseGroupsSnapshot : [];
+  window.mrjzySnapshotUpdatedAt = Number(cache.mrjzySnapshotUpdatedAt || 0);
   window.jlgjMatchedHomeworkByCourseId = cache.jlgjMatchedHomeworkByCourseId || {};
   window.jlgjStandaloneCourses = Array.isArray(cache.jlgjStandaloneCourses) ? cache.jlgjStandaloneCourses : [];
   window.jlgjCourseGroupsSnapshot = Array.isArray(cache.jlgjCourseGroupsSnapshot) ? cache.jlgjCourseGroupsSnapshot : [];
@@ -340,6 +341,7 @@ async function saveFullscreenCourseCache({ force = false } = {}) {
     mrjzyMatchedHomeworkByCourseId: safeStorageClone(window.mrjzyMatchedHomeworkByCourseId, {}),
     mrjzyStandaloneCourses: safeStorageClone(window.mrjzyStandaloneCourses, []),
     mrjzyCourseGroupsSnapshot: safeStorageClone(window.mrjzyCourseGroupsSnapshot, []),
+    mrjzySnapshotUpdatedAt: Number(window.mrjzySnapshotUpdatedAt || 0),
     jlgjMatchedHomeworkByCourseId: safeStorageClone(window.jlgjMatchedHomeworkByCourseId, {}),
     jlgjStandaloneCourses: safeStorageClone(window.jlgjStandaloneCourses, []),
     jlgjCourseGroupsSnapshot: safeStorageClone(window.jlgjCourseGroupsSnapshot, []),
@@ -495,6 +497,13 @@ async function scheduleForegroundHomeworkRefresh() {
   }, minutes * 60000);
 }
 chrome.storage.onChanged.addListener((changes, area) => {
+  const cached = changes[POPUP_FULLSCREEN_CACHE_KEY]?.newValue;
+  if (area === 'local' && cached?.mrjzySnapshotUpdatedAt
+      && (!popupMode || window.__popupUsingFullscreenCache)) {
+    void Promise.resolve(window.__bjtuPlatformModulesReady).then(() => {
+      window.applyMrjzyCachedSnapshot?.(cached);
+    }).catch((error) => console.warn('[bjtu] synchronize MRJZY homework failed:', error));
+  }
   if (area === 'local' && (changes.homeworkForegroundNewAssignmentNotificationEnabled
       || changes.homeworkBackgroundRefreshIntervalMinutes || changes.homeworkBackgroundRefreshPlatforms)) {
     void scheduleForegroundHomeworkRefresh();
@@ -620,6 +629,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.mrjzyMatchedHomeworkByCourseId = cache.mrjzyMatchedHomeworkByCourseId || {};
   window.mrjzyStandaloneCourses = Array.isArray(cache.mrjzyStandaloneCourses) ? cache.mrjzyStandaloneCourses : [];
   window.mrjzyCourseGroupsSnapshot = Array.isArray(cache.mrjzyCourseGroupsSnapshot) ? cache.mrjzyCourseGroupsSnapshot : [];
+  window.mrjzySnapshotUpdatedAt = Number(cache.mrjzySnapshotUpdatedAt || 0);
   window.jlgjMatchedHomeworkByCourseId = cache.jlgjMatchedHomeworkByCourseId || {};
   window.jlgjStandaloneCourses = Array.isArray(cache.jlgjStandaloneCourses) ? cache.jlgjStandaloneCourses : [];
   window.jlgjCourseGroupsSnapshot = Array.isArray(cache.jlgjCourseGroupsSnapshot) ? cache.jlgjCourseGroupsSnapshot : [];

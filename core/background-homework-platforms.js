@@ -58,14 +58,36 @@
     const endTime = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())} 23:59:59`;
     const response = await postMrjzyForm(MRJZY_WORK_LIST_API, { start: 0, num: 12, beginTime: '1990-01-01 00:00:00', endTime, limit: 1 });
     if (Number(response.data?.code) !== 200 || !Array.isArray(response.data.data)) throw new Error(response.data?.desc || '每日交作业登录已失效');
-    return (await Promise.all(response.data.data.map(async (work) => {
+    const works = response.data.data;
+    const detailsByWorkId = new Map();
+    const assignments = (await Promise.all(works.map(async (work) => {
       const result = await postMrjzyForm(MRJZY_WORK_DETAIL_API, { workId: work.workId });
       if (Number(result.data?.code) !== 200) throw new Error(result.data?.desc || '每日交作业详情获取失败');
+      detailsByWorkId.set(work.workId, result.data.data ?? null);
       return item('mrjzy', work.divClass || work.className || '', work.workDetail || work.title || '作业',
         work.workRemark || work.endTime || work.end || work.deadline, Number(work.submit || 0) > 0,
         result.data.data?.work?.workDetail || result.data.data?.workDetail || '',
         `${MRJZY_WEB_BASE}/#/studentsSubmitWork?id=${encodeURIComponent(work.workId)}`);
     }))).filter(Boolean);
+    const groups = buildMrjzyCourseGroups(works, detailsByWorkId);
+    await global.BjtuHomeworkReminders.update(async () => {
+      const key = 'popupFullscreenCourseCache';
+      const stored = await chrome.storage.local.get(key);
+      const cache = stored[key] || {};
+      await chrome.storage.local.set({ [key]: {
+        ...cache,
+        savedAt: Date.now(),
+        mrjzySnapshotUpdatedAt: Date.now(),
+        mrjzyCourseGroupsSnapshot: groups,
+        mrjzyStandaloneCourses: groups,
+        mrjzyMatchedHomeworkByCourseId: {},
+        platformLoginState: { ...cache.platformLoginState, mrjzy: 'online' },
+        platformLoginChecked: { ...cache.platformLoginChecked, mrjzy: true },
+        platformLoadedOnce: { ...cache.platformLoadedOnce, mrjzy: true },
+        platformNeedLogin: { ...cache.platformNeedLogin, mrjzy: false }
+      } });
+    });
+    return assignments;
   }
 
   async function jlgj() {
