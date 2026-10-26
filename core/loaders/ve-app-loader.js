@@ -3,6 +3,7 @@
 
   const scripts = [
     'modules/ve/address.js',
+    'modules/ve/file-preview.js',
     'modules/ve/vendor/main2.min.js',
     'modules/ve/login-utils.js',
     'modules/ve/login-credentials-dialog.js',

@@ -240,6 +240,9 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
   break-inside: avoid;
   page-break-inside: avoid;
 }
+#veOnlinePreviewTypes { display:flex; flex-wrap:wrap; gap:0 12px; margin-left:22px; }
+#veOnlinePreviewTypes label { display:inline-flex; align-items:center; gap:5px; }
+#veOnlinePreviewTypes input { width:auto; margin:0; }
 .options-wide-card { column-span: all; }
 #options-module-slots { display:none; }
 #options-controlled-content > .options-wide-card {

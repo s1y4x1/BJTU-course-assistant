@@ -738,6 +738,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   await globalThis.__bjtuOptionsModulesReady;
   globalThis.BjtuOptionTips?.setup?.();
   await globalThis.__bjtuVeOptionsReady;
+  if ((await globalThis.BjtuModuleRegistry.ready).ve) {
+    await globalThis.BjtuModuleRegistry.loadScript('modules/ve/file-preview.js');
+    await globalThis.BjtuVeFilePreview.initOptions();
+  }
   await globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg });
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
@@ -2680,6 +2684,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await chrome.storage.local.set({ saveUploadedFilesEnabled: DEFAULT_SAVE_UPLOADS_ENABLED });
     await chrome.storage.local.set({ downloadInExtensionEnabled: DEFAULT_DOWNLOAD_IN_EXTENSION_ENABLED });
     await chrome.storage.local.set({ linkQrEnabled: DEFAULT_LINK_QR_ENABLED });
+    await globalThis.BjtuVeFilePreview?.resetOptions();
     await chrome.storage.local.set({ popupUseFullscreenCacheEnabled: DEFAULT_POPUP_CACHE_ENABLED });
     await chrome.storage.local.set({ sidePanelUseFullscreenCacheEnabled: DEFAULT_SIDE_PANEL_CACHE_ENABLED });
     await chrome.storage.local.set({
