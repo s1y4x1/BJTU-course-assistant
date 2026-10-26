@@ -267,6 +267,8 @@ async function initFullscreenModuleButtons() {
   const moduleWindows = new Map();
   let casPanelOpening = null;
   let casPanelSourceRect = null;
+  let portraitGroup = null;
+  const groupAnimations = new WeakMap();
   const hasDependentWindows = () => ['mail', 'academic'].some((id) => moduleWindows.has(id)
     && moduleWindows.get(id).dataset.closing !== '1');
 
@@ -280,7 +282,7 @@ async function initFullscreenModuleButtons() {
   };
 
   const bringToFront = (view) => {
-    fullscreenWindowLayers.bringToFront(view);
+    fullscreenWindowLayers.bringToFront(view.parentElement === portraitGroup ? portraitGroup : view);
   };
 
   const animateButton = (button, showing) => {
@@ -288,12 +290,27 @@ async function initFullscreenModuleButtons() {
       .finally(refreshButtonContainer);
   };
 
-  const animateWindowFromButton = (view, buttonRect, opening) => (
-    floatingWindowAnimations.animateWindowFromButton(view, buttonRect, opening)
-  );
+  const animateWindowFromButton = (view, buttonRect, opening) => {
+    const grouped = view.parentElement === portraitGroup;
+    const target = grouped && (opening ? portraitGroup.dataset.opening === '1' : !hasDependentWindows())
+      ? portraitGroup : view;
+    if (target === portraitGroup) {
+      const existing = groupAnimations.get(target);
+      if (existing?.opening === opening) return existing.promise;
+      const promise = floatingWindowAnimations.animateWindowFromButton(target, buttonRect, opening).finally(() => {
+        if (groupAnimations.get(target)?.promise !== promise) return;
+        groupAnimations.delete(target);
+        delete target.dataset.opening;
+      });
+      groupAnimations.set(target, { opening, promise });
+      return promise;
+    }
+    return floatingWindowAnimations.animateWindowFromButton(target, buttonRect, opening);
+  };
 
   const clampWindow = (view, edgeGap = 12) => {
     if (!(view instanceof HTMLElement) || view.hidden) return;
+    if (view.parentElement === portraitGroup) return;
     const availableWidth = Math.max(240, window.innerWidth - edgeGap * 2);
     const availableHeight = Math.max(200, window.innerHeight - edgeGap * 2);
     const rect = view.getBoundingClientRect();
@@ -306,6 +323,54 @@ async function initFullscreenModuleButtons() {
     view.style.top = `${top}px`;
     view.style.right = 'auto';
     view.style.bottom = 'auto';
+  };
+
+  const isPortraitWindow = () => window.innerHeight > window.innerWidth;
+  const syncPortraitGroup = () => {
+    const casView = moduleWindows.get('cas');
+    if (isPortraitWindow() && casView && hasDependentWindows()) {
+      if (!portraitGroup) {
+        portraitGroup = document.createElement('div');
+        portraitGroup.className = 'fullscreen-module-portrait-group floating-launcher-window';
+        portraitGroup.dataset.opening = '1';
+        document.body.appendChild(portraitGroup);
+      }
+      const views = [casView, ...['mail', 'academic'].map((id) => moduleWindows.get(id)).filter(Boolean)];
+      views.slice(1).forEach((view, index) => view.style.setProperty('--portrait-close-offset', `${index * 36}px`));
+      for (const view of views) {
+        if (view.parentElement === portraitGroup) continue;
+        fullscreenWindowLayers.remove(view);
+        portraitGroup.appendChild(view);
+      }
+      fullscreenWindowLayers.bringToFront(portraitGroup);
+    } else if (portraitGroup) {
+      for (const view of [...portraitGroup.children]) {
+        document.body.appendChild(view);
+        if (!view.hidden) fullscreenWindowLayers.bringToFront(view);
+      }
+      fullscreenWindowLayers.remove(portraitGroup);
+      portraitGroup.remove();
+      portraitGroup = null;
+    }
+  };
+  const positionCasPanel = (view) => {
+    const width = Math.min(420, Math.max(160, Math.round(window.innerWidth * 0.3)));
+    const height = Math.round(window.innerHeight * 0.75);
+    view.style.width = `${width}px`;
+    view.style.minWidth = `${Math.min(320, width)}px`;
+    view.style.height = `${height}px`;
+    view.style.minHeight = `${Math.min(240, height)}px`;
+    view.style.left = '12px';
+    view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
+  };
+  const positionDependentPanel = (view, casView) => {
+    if (view.parentElement === portraitGroup) return;
+    const rightSpace = window.innerWidth - (casView ? casView.offsetLeft + casView.offsetWidth : 0) - 24;
+    const width = Math.max(160, Math.min(parseFloat(view.style.width), rightSpace));
+    view.style.width = `${width}px`;
+    view.style.minWidth = `${Math.min(320, width)}px`;
+    view.style.minHeight = '240px';
+    view.style.left = `${Math.max(12, window.innerWidth - width - 12)}px`;
   };
 
   const closeModuleWindow = async (moduleId, fallbackRect = null) => {
@@ -333,6 +398,8 @@ async function initFullscreenModuleButtons() {
     delete view.dataset.closing;
     fullscreenWindowLayers.remove(view);
     moduleWindows.delete(moduleId);
+    if (view.parentElement === portraitGroup) document.body.appendChild(view);
+    syncPortraitGroup();
     if (!shouldShowButton && button instanceof HTMLButtonElement) button.hidden = true;
     refreshButtonContainer();
   };
@@ -352,8 +419,8 @@ async function initFullscreenModuleButtons() {
       close.type = 'button';
       close.className = 'fullscreen-module-window-close';
       close.textContent = '×';
-      close.title = '关闭';
-      close.setAttribute('aria-label', '关闭');
+      close.title = `关闭${FULLSCREEN_MODULE_BUTTONS[moduleId].label}`;
+      close.setAttribute('aria-label', close.title);
       header?.appendChild(close);
       close.addEventListener('click', () => { void closeModuleWindow(moduleId); });
     }
@@ -363,6 +430,7 @@ async function initFullscreenModuleButtons() {
     let preservedScroll = null;
     view.addEventListener('pointerdown', () => bringToFront(view), true);
     header?.addEventListener('pointerdown', (event) => {
+      if (view.parentElement === portraitGroup) return;
       if (event.button !== 0 || event.target.closest('button, input, select, textarea, a')) return;
       const rect = view.getBoundingClientRect();
       drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
@@ -380,6 +448,7 @@ async function initFullscreenModuleButtons() {
     });
     window.addEventListener('pointerup', () => { drag = null; });
     view.addEventListener('pointerdown', (event) => {
+      if (view.parentElement === portraitGroup) return;
       const rect = view.getBoundingClientRect();
       resizing = event.clientX >= rect.right - 20 && event.clientY >= rect.bottom - 20;
       if (!resizing) return;
@@ -473,22 +542,16 @@ async function initFullscreenModuleButtons() {
       if (!hasDependentWindows()) return null;
       casPanelSourceRect = sourceRect;
       if (moduleWindows.has('cas')) {
-        return { view, right: view.offsetLeft + view.offsetWidth, animation: Promise.resolve() };
+        return { view, animation: Promise.resolve() };
       }
       moduleWindows.set('cas', view);
-      const width = Math.min(420, Math.max(160, Math.round(window.innerWidth * 0.3)));
-      view.style.width = `${width}px`;
-      view.style.minWidth = `${Math.min(320, width)}px`;
-      view.style.height = `${Math.round(window.innerHeight * 0.75)}px`;
-      view.style.left = '12px';
-      view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
+      positionCasPanel(view);
       view.hidden = false;
       clampWindow(view);
       bringToFront(view);
       return {
         view,
-        right: view.offsetLeft + view.offsetWidth,
-        animation: animateWindowFromButton(view, sourceRect, true)
+        animation: isPortraitWindow() ? Promise.resolve() : animateWindowFromButton(view, sourceRect, true)
       };
     })().finally(() => { casPanelOpening = null; });
     return casPanelOpening;
@@ -521,11 +584,8 @@ async function initFullscreenModuleButtons() {
       }
       const casPanel = await openCasPanel(sourceRect);
       if (view.dataset.closing === '1' || !moduleWindows.has(moduleId)) return;
-      const rightSpace = window.innerWidth - (casPanel?.right || 0) - 24;
-      const width = Math.max(160, Math.min(parseFloat(view.style.width), rightSpace));
-      view.style.width = `${width}px`;
-      view.style.minWidth = `${Math.min(320, width)}px`;
-      view.style.left = `${Math.max(12, window.innerWidth - width - 12)}px`;
+      syncPortraitGroup();
+      positionDependentPanel(view, casPanel?.view);
       view.hidden = false;
       clampWindow(view);
       bringToFront(view);
@@ -578,7 +638,21 @@ async function initFullscreenModuleButtons() {
     }
     refreshButtonContainer();
   };
-  window.addEventListener('resize', () => moduleWindows.forEach((view) => clampWindow(view)));
+  let wasPortrait = isPortraitWindow();
+  window.addEventListener('resize', () => {
+    const portrait = isPortraitWindow();
+    const casView = moduleWindows.get('cas');
+    syncPortraitGroup();
+    if (casView && (portrait || portrait !== wasPortrait)) {
+      positionCasPanel(casView);
+      clampWindow(casView);
+      for (const [id, view] of moduleWindows) {
+        if (id !== 'cas') positionDependentPanel(view, casView);
+      }
+    }
+    moduleWindows.forEach((view) => clampWindow(view));
+    wasPortrait = portrait;
+  });
   apply(stored);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !keys.some((key) => changes[key])) return;
