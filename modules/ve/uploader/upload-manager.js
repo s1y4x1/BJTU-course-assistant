@@ -299,6 +299,7 @@ function enqueueUploadFile(file) {
     const selected = await promptDuplicateUploadConfirmation({ file, known, job });
     if (job.cancelled || selected === null) return { action: 'cancel' };
     if (selected) return { action: 'continue' };
+    if (!known) job.waitForExistingUpload();
     const reused = known || await previous.result.catch(() => null);
     // The original might itself fail or be cancelled while confirmation is open.
     if (!reused?.visitName) return { action: 'continue' };
@@ -375,6 +376,10 @@ function uploadFile(file, fileId, job) {
   let duplicatePaused = false;
   let resumeAfterPause = false;
   let validationResult = null;
+
+  job.waitForExistingUpload = () => {
+    setInlineStatus('等待已有上传任务完成后显示', 'warning');
+  };
 
   const resumeValidatedUpload = () => {
     if (cancelRequested || completionSettled) return;

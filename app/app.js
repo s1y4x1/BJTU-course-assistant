@@ -2705,9 +2705,15 @@ function pushAndCalcRecentSpeed(samples, loaded, now = Date.now(), windowMs = RE
 
 // -------------------- Storage helpers --------------------
 
+async function openVeAccountPanel() {
+  if (!await globalThis.__bjtuVeAppReady) throw new Error('智慧课程平台模块未就绪');
+  await globalThis.BjtuModuleRegistry.loadScript('modules/ve/login-overlay.js');
+  await globalThis.BjtuVeAccountPanel.open();
+}
+
 function promptLoginIfPossible(message) {
   const defaultNeedLoginMsg = globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve');
-  // If username is empty, do not pop modal; direct user to platform login entry.
+  // An empty account opens the account panel through the login-required toast.
   if (!usernameInput.value.trim()) {
     showToast(message || defaultNeedLoginMsg, 'warning', 3500, true);
     return;
@@ -2735,6 +2741,9 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
   }
 
   const text = String(message || '');
+  if (text === globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve')) {
+    void openVeAccountPanel().catch((error) => showToast(String(error?.message || error), 'error'));
+  }
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.title = '点击复制通知内容并关闭';
@@ -6871,11 +6880,7 @@ if (accountHistorySelect instanceof HTMLSelectElement) {
     const picked = String(accountHistorySelect.value || '').trim();
     if (picked === '__open_account_panel__') {
       renderLoginAccountHistorySelect(usernameInput?.value || '');
-      void (async () => {
-        if (!await globalThis.__bjtuVeAppReady) throw new Error('智慧课程平台模块未就绪');
-        await globalThis.BjtuModuleRegistry.loadScript('modules/ve/login-overlay.js');
-        await globalThis.BjtuVeAccountPanel.open();
-      })().catch((error) => showToast(String(error?.message || error), 'error'));
+      void openVeAccountPanel().catch((error) => showToast(String(error?.message || error), 'error'));
       return;
     }
     if (!picked) return;
