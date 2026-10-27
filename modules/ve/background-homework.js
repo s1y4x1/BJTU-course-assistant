@@ -270,10 +270,13 @@
     });
     if (platform === 'ykt') {
       const reports = { ...(knownByAccount.yktClassroomReports || {}) };
-      for (const item of allItems.filter((entry) => entry.monitorOnly && entry.classroomReportKey && entry.classroomReportSignature)) {
+      for (const item of allItems.filter((entry) => entry.monitorOnly && entry.classroomReportKey
+        && Number.isInteger(entry.classroomReportQuestionCount) && entry.classroomReportQuestionCount >= 0)) {
         const old = reports[item.classroomReportKey];
-        if (old && old !== item.classroomReportSignature && !additions.some((added) => homeworkIdentity(added) === homeworkIdentity(item))) additions.push(item);
-        reports[item.classroomReportKey] = item.classroomReportSignature;
+        const count = item.classroomReportQuestionCount;
+        if (old === undefined || (Number.isInteger(old) && count > old)) additions.push(item);
+        // A temporarily incomplete report must not make the same questions "new" again.
+        reports[item.classroomReportKey] = Number.isInteger(old) ? Math.max(old, count) : count;
       }
       knownByAccount.yktClassroomReports = Object.fromEntries(Object.entries(reports).slice(-5000));
     }
@@ -286,14 +289,15 @@
     if (platform === 've' && stored.homeworkReminderOnlySelectedAccount !== false
         && account !== globalThis.BjtuHomeworkReminders.selectedVeAccount(stored)) return;
     await Promise.all(additions.map((item) => {
-      const id = globalThis.BjtuHomeworkReminders.notificationId('new', platform, account, `${homeworkIdentity(item)}${item.classroomReportSignature || ''}`);
+      const id = globalThis.BjtuHomeworkReminders.notificationId('new', platform, account,
+        item.monitorOnly ? `${item.classroomReportKey}|${item.classroomReportQuestionCount}` : homeworkIdentity(item));
       const createNotification = globalThis.BjtuSystemNotifications?.create
         || ((notificationId, options) => chrome.notifications.create(notificationId, options));
       return createNotification(id, {
         type: 'basic',
         iconUrl: 'icons/128.png',
         title: `发现新作业：${String(item?.courseName || '未知课程')}`,
-        message: item.monitorOnly ? `雨课堂 · ${item.title}\n课堂题目或作答、得分信息发生变化`
+        message: item.monitorOnly ? `雨课堂 · ${item.title}\n课堂题目数量：${item.classroomReportQuestionCount}`
           : `${String(item?.platform || '课程平台')} · ${String(item?.title || '未命名作业')}\n截止时间：${formatDeadline(item?.deadline)}`,
         priority: 2
       }, 'new-homework');

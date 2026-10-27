@@ -423,7 +423,7 @@ async function fetchYktHomeworkDetail(homework) {
       });
     }
   }
-  return { problems, classroom_report_signature: report.signature };
+  return { problems, classroom_report_question_count: report.questionCount };
 }
 
 function renderYktProblemsHtml(problemList, isExam = false) {
@@ -502,14 +502,14 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
             const paper = await fetchYktHomeworkDetail(hw);
             if (paper?.title) hw.title = paper.title;
             hw.detail_problems = Array.isArray(paper?.problems) ? paper.problems : [];
-            hw.classroom_report_signature = paper?.classroom_report_signature;
+            hw.classroom_report_question_count = paper?.classroom_report_question_count;
           }
           hw.exam_detail_state = 'done';
           if (detailKey) {
             window.yktDetailCacheByKey[detailKey] = {
               state: 'done', title: hw.title,
               detail_problems: Array.isArray(hw.detail_problems) ? hw.detail_problems : [],
-              classroom_report_signature: hw.classroom_report_signature,
+              classroom_report_question_count: hw.classroom_report_question_count,
               promise: null
             };
           }
@@ -699,7 +699,7 @@ function buildYktEntryHomeworks(entry, acts) {
       exam_id: examId,
       __actype: a?.__actype,
       detail_problems: Array.isArray(cache?.detail_problems) ? cache.detail_problems : [],
-      classroom_report_signature: cache?.classroom_report_signature,
+      classroom_report_question_count: cache?.classroom_report_question_count,
       detail_content: a?.content ?? null,
       exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
       detail_cache_key: detailKey,
@@ -993,7 +993,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       const latest = window.yktDetailCacheByKey[detailKey] || {};
       if (latest.title) hw.title = latest.title;
       hw.detail_problems = Array.isArray(latest.detail_problems) ? latest.detail_problems : [];
-      hw.classroom_report_signature = latest.classroom_report_signature;
+      hw.classroom_report_question_count = latest.classroom_report_question_count;
       hw.exam_detail_state = latest.state === 'done' ? 'done' : 'failed';
       rerenderEntryCard(entry);
       markHomeworkDetailLoaded(entry, hw);
@@ -1019,7 +1019,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       const examPaper = await p;
       if (examPaper?.title) hw.title = examPaper.title;
       hw.detail_problems = Array.isArray(examPaper?.problems) ? examPaper.problems : [];
-      hw.classroom_report_signature = examPaper?.classroom_report_signature;
+      hw.classroom_report_question_count = examPaper?.classroom_report_question_count;
 
       hw.exam_detail_state = 'done';
       if (detailKey) {
@@ -1028,7 +1028,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           state: 'done',
           title: hw.title,
           detail_problems: Array.isArray(hw.detail_problems) ? hw.detail_problems : [],
-          classroom_report_signature: hw.classroom_report_signature,
+          classroom_report_question_count: hw.classroom_report_question_count,
           promise: null
         };
       }
@@ -1203,7 +1203,7 @@ async function yktPageCourseHomework(classroomId) {
   await Promise.all(homework.filter((item) => Number(item.__actype) === 14 && item.courseware_id).map(async (item) => {
     const detail = await fetchYktHomeworkDetail(item);
     item.detail_problems = detail.problems;
-    item.classroom_report_signature = detail.classroom_report_signature;
+    item.classroom_report_question_count = detail.classroom_report_question_count;
   }));
   if (videoCoursewareIds.length) {
     try {

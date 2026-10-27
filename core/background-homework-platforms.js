@@ -32,11 +32,12 @@
       const progress = videos.length ? await fetchYktCoursewareProgress(cid, videos.map((a) => a.courseware_id), pickYktUniversityId(course, response.data)) : {};
       const classroomReports = await Promise.all(activities.filter((a) => a.__actype === 14 && a.courseware_id).map(async (a) => {
         const report = await fetchYktClassroomReport(a.courseware_id);
-        return { monitorOnly: true, classroomReportKey: `${cid}|${a.courseware_id}`, classroomReportSignature: report.signature,
+        return { monitorOnly: true, classroomReportKey: `${cid}|${a.courseware_id}`, classroomReportQuestionCount: report.questionCount,
           platform: '雨课堂', courseName: course.course?.name || course.name || '', title: a.title || '课堂',
           actionUrl: yktClassroomReportLink(cid, a.courseware_id, a.id) };
       }));
       return activities.map((a) => {
+        if (a.__actype === 14) return null; // Classroom discovery is tracked by stable lesson ID and question count.
         const leaf = a.content?.leaf_id ?? a.leaf_id;
         const video = a.__actype === 15 ? normalizeYktVideoProgress(progress[String(a.courseware_id)], leaf) : null;
         if (a.__actype === 15 && !video) throw new Error('雨课堂未返回线上学习完成进度');

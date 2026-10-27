@@ -95,10 +95,7 @@ async function fetchYktClassroomReport(lessonId) {
   }
   const report = Object.fromEntries(['problem', 'quiz'].map((key) => [key,
     Array.isArray(response.data[key]?.studentList) ? response.data[key].studentList : []]));
-  const canonical = (value) => Array.isArray(value) ? value.map(canonical)
-    : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonical(report))));
-  return { ...report, signature: [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('') };
+  return { ...report, questionCount: report.problem.length + report.quiz.length };
 }
 
 async function fetchYktJson(url) {
