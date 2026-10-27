@@ -38,7 +38,8 @@
     });
   }
 
-  async function applyCredentialEventsToCache(result) {
+  function applyCredentialEventsToCache(result) {
+    if (result?.ok && result.sessionId) global.BjtuVeHomeworkCore?.setSessionId(result.sessionId);
     const events = Array.isArray(result?.credentialEvents) ? result.credentialEvents : [];
     events.forEach((event) => {
       const loginName = String(event?.loginName || '').trim();
@@ -47,11 +48,20 @@
       if (event?.type === 'quickUsername-cleared') accountCache.set(loginName, { ...current, quickUsername: '' });
       if (event?.type === 'password-cleared') accountCache.set(loginName, { ...current, password: '' });
     });
-    if (result?.ok) {
-      if (!global.BjtuVeHomeworkCore) await global.BjtuModuleRegistry.loadScript('modules/ve/homework-core.js');
-      return global.BjtuVeHomeworkCore.completePageLogin(result);
-    }
     return result;
+  }
+
+  async function fetchCourses(xqCode, { boy = '' } = {}) {
+    const response = await sendRuntimeMessage({ type: 'VE_GET_COURSES', payload: { xqCode, boy } });
+    if (!response?.ok) {
+      throw Object.assign(new Error(response?.message || '智慧课程平台课程列表获取失败'), {
+        loginRequired: response?.loginRequired === true,
+        httpStatus: Number(response?.httpStatus || 0),
+        code: String(response?.code || '')
+      });
+    }
+    if (response.sessionId) global.BjtuVeHomeworkCore?.setSessionId(response.sessionId);
+    return response.courses;
   }
 
   function isAdminLoginName(value) {
@@ -1692,6 +1702,7 @@
   }
 
   global.BjtuAccountLogin = {
+    fetchCourses,
     load,
     initialize,
     migratePasswords,

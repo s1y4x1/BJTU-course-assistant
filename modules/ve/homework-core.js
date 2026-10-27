@@ -84,7 +84,13 @@
   }
 
   async function initializePlatformSession(redirectUrl) {
-    const initial = new URL(redirectUrl);
+    let initial;
+    try {
+      if (typeof redirectUrl !== 'string' || !redirectUrl.trim()) throw new Error();
+      initial = new URL(redirectUrl);
+    } catch {
+      throw new Error('登录响应未包含有效的智慧课程平台跳转地址');
+    }
     if (initial.origin !== BASE || !initial.pathname.startsWith('/ve/')) throw new Error('智慧课程平台登录跳转地址无效');
     let url = initial.href;
     const visited = new Set();
@@ -93,9 +99,20 @@
       const { text, response } = await requestText(url, { omitSessionId: true });
       if (!response.ok) throw new Error(`初始化智慧课程平台会话失败：HTTP ${response.status}`);
       const destination = new URL(response.url || url);
-      const sessionId = destination.searchParams.get('sessionId');
-      if (sessionId) return setSessionId(sessionId);
       const source = text.replace(/<!--[\s\S]*?-->/g, '');
+      if (destination.searchParams.get('sessionId')) {
+        // The URL identifies the navigation module, not the sessionId header
+        // used by course APIs. Read the header from the homepage's own request.
+        const start = source.search(/function\s+getCourseList\s*\(/);
+        const courseScript = start < 0 ? '' : source.slice(start);
+        const header = /setRequestHeader\s*\(\s*(['"])sessionId\1\s*,\s*(['"])([^'"]+)\2\s*\)/i.exec(courseScript);
+        if (header) return setSessionId(header[3]);
+        if (destination.searchParams.get('method') === 'toCoursePlatformIndex') {
+          throw new Error('智慧课程平台首页未返回课程接口需要的 sessionId 请求头');
+        }
+        // Some administrative accounts open a different homepage with no course API.
+        return '';
+      }
       const redirect = /location(?:\.href)?\s*=\s*(['"])([^'"]+)\1/i.exec(source)
         || /location\.(?:replace|assign)\s*\(\s*(['"])([^'"]+)\1/i.exec(source);
       if (!redirect) break;
@@ -104,13 +121,6 @@
       url = next.href;
     }
     throw new Error('登录成功，但未获取到智慧课程平台 sessionId');
-  }
-
-  async function completePageLogin(result) {
-    if (!result?.ok) return result;
-    const sessionId = await initializePlatformSession(result.redirectUrl);
-    await chrome.runtime.sendMessage({ type: 'VE_PLATFORM_SESSION_READY', payload: { sessionId } });
-    return { ...result, sessionId };
   }
 
   async function fetchCurrentUserInfo(options = {}) {
@@ -525,7 +535,6 @@
     isLoginResponse,
     requestText,
     initializePlatformSession,
-    completePageLogin,
     fetchCurrentUserInfo,
     normalizeTerms,
     chooseTermCode,

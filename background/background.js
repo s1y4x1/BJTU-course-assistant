@@ -393,7 +393,6 @@ const OPTIONAL_CONTENT_SCRIPTS = [
     matches: ['http://123.121.147.7:88/ve/*'],
     js: [
       'modules/ve/vendor/main2.min.js',
-      'modules/ve/homework-core.js',
       'modules/ve/login-credentials-dialog.js',
       'modules/ve/login-overlay.js'
     ],
@@ -1432,10 +1431,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }));
     return true;
   }
-  if (message?.type === 'VE_PLATFORM_SESSION_READY') {
-    globalThis.BjtuVeHomeworkCore.setSessionId(message.payload?.sessionId);
-    sendResponse({ ok: true });
-    return false;
+  if (message?.type === 'VE_GET_COURSES') {
+    const core = globalThis.BjtuVeHomeworkCore;
+    core.fetchCourses(message.payload?.xqCode, { boy: message.payload?.boy })
+      .then((courses) => sendResponse({ ok: true, courses, sessionId: core.getSessionId() }))
+      .catch((error) => sendResponse({
+        ok: false,
+        message: String(error?.message || error),
+        loginRequired: error?.loginRequired === true,
+        httpStatus: Number(error?.httpStatus || 0),
+        code: String(error?.code || '')
+      }));
+    return true;
   }
   if (message?.type === 'VE_LOGIN_REQUEST') {
     globalThis.BjtuVeLoginService.login(message?.payload)

@@ -329,18 +329,8 @@ async function openBjtuPortalLogin() {
     });
     loginRunning = false;
     if (response?.ok) {
-      if (isTimeoutPage) {
-        try {
-          loginRunning = true;
-          await globalThis.BjtuVeHomeworkCore.completePageLogin(response);
-        } catch (error) {
-          setStatus(String(error?.message || error), 'error');
-          return;
-        } finally { loginRunning = false; }
-      }
       close();
-      if (isTimeoutPage) location.reload();
-      else location.href = response.redirectUrl;
+      location.href = response.redirectUrl;
       return;
     }
     const startManualWithCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';

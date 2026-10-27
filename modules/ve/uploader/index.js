@@ -45,7 +45,6 @@
         payload: { loginName, skipCurrentCheck: true, allowStoredCredentials: true }
       });
       if (result?.ok && result?.userInfo?.loginName === loginName) {
-        await globalThis.BjtuVeHomeworkCore.completePageLogin(result);
         return result.userInfo;
       }
       throw new Error(result?.message || '智慧课程平台登录失败，请先在网页中登录');

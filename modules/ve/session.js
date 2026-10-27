@@ -188,22 +188,6 @@ async function syncJsessionidToUi() {
   return jsid;
 }
 
-async function forceSyncJsessionidAfterLogin() {
-  let jsid = '';
-  for (let i = 0; i < 8; i++) {
-    jsid = String(await getLatestResponseJsessionid(30000) || '').trim();
-    if (jsid) break;
-    jsid = String(await getCookieJsessionid() || '').trim();
-    if (jsid) break;
-    await new Promise((r) => setTimeout(r, 120));
-  }
-  if (!jsid) return '';
-  await reconcileJsessionidCookies(jsid);
-  await setLocal('jsessionid', jsid);
-  if (jsessionidInput) jsessionidInput.value = jsid;
-  return jsid;
-}
-
 async function setCookieJsessionid(value) {
   const v = String(value || '').trim();
   if (!v) return;

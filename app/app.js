@@ -4005,7 +4005,7 @@ async function handleLoginSuccess(username, { reloadPlatform = true, userInfo } 
   isLoginSessionValid = true;
   loginCancelRequested = false;
   hideLoginModal();
-  void forceSyncJsessionidAfterLogin().catch(() => { });
+  await syncJsessionidToUi();
 
   let finalUser = String(username || '').trim();
   usernameInput.value = finalUser;

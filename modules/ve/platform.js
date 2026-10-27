@@ -2013,7 +2013,7 @@ async function loadCourses({ knownUserInfo } = {}) {
     }
 
     const xqCode = await ensureCurrentXqCode();
-    const directBaseCoursesPromise = globalThis.BjtuVeHomeworkCore.fetchCourses(xqCode)
+    const directBaseCoursesPromise = globalThis.BjtuAccountLogin.fetchCourses(xqCode)
         .then((courses) => ({ courses, error: null }), (error) => ({ courses: [], error }));
       const userInfo = knownUserInfo === undefined ? await fetchCurrentVeUserInfoOnce() : knownUserInfo;
       if (!isPlatformEnabled('ve') || courseLoadVersion !== window.courseListLoadVersion) return;
@@ -2029,7 +2029,7 @@ async function loadCourses({ knownUserInfo } = {}) {
         setPlatformContentLoadProgress('ve', teacherAccount ? 0 : 1, 2);
       }
       const teacherCoursesPromise = teacherAccount
-        ? globalThis.BjtuVeHomeworkCore.fetchCourses(xqCode, { boy: '2' })
+        ? globalThis.BjtuAccountLogin.fetchCourses(xqCode, { boy: '2' })
         : Promise.resolve([]);
       const [baseResult, teacherCourses] = await Promise.all([directBaseCoursesPromise, teacherCoursesPromise]);
       if (baseResult.error) throw baseResult.error;
