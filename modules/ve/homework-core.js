@@ -83,8 +83,10 @@
     return Object.assign(new Error('LOGIN_REQUIRED'), { loginRequired: true });
   }
 
-  async function initializePlatformSession() {
-    let url = `${BASE_VE}back/core/main/index.shtml?method=index&type=qxkt`;
+  async function initializePlatformSession(redirectUrl) {
+    const initial = new URL(redirectUrl);
+    if (initial.origin !== BASE || !initial.pathname.startsWith('/ve/')) throw new Error('智慧课程平台登录跳转地址无效');
+    let url = initial.href;
     const visited = new Set();
     while (!visited.has(url)) {
       visited.add(url);
@@ -102,6 +104,13 @@
       url = next.href;
     }
     throw new Error('登录成功，但未获取到智慧课程平台 sessionId');
+  }
+
+  async function completePageLogin(result) {
+    if (!result?.ok) return result;
+    const sessionId = await initializePlatformSession(result.redirectUrl);
+    await chrome.runtime.sendMessage({ type: 'VE_PLATFORM_SESSION_READY', payload: { sessionId } });
+    return { ...result, sessionId };
   }
 
   async function fetchCurrentUserInfo(options = {}) {
@@ -154,25 +163,32 @@
     const params = new URLSearchParams({ method: 'getCourseList', pagesize: '100' });
     params.set('xqCode', String(xqCode || ''));
     if (boy) params.set('boy', boy);
-    const url = `${BASE_VE}back/coursePlatform/course.shtml?${params.toString()}`;
-    const { text, response } = await requestText(url, {
-      ...requestOptions,
-      headers: { Accept: 'application/json, text/javascript, */*; q=0.01', ...(requestOptions.headers || {}) }
-    });
-    const httpStatus = Number(response?.status || 0);
-    if (httpStatus >= 500) {
-      const error = httpStatus === 500 ? loginError() : new Error(`HTTP ${httpStatus}`);
-      error.httpStatus = httpStatus;
-      throw error;
-    }
-    if (isLoginResponse(text, response)) throw loginError();
-    let data;
-    try { data = parseJson(text); } catch { throw loginError(); }
-    if (String(data?.STATUS) !== '0') {
-      const message = String(data?.ERRMSG || data?.message || '课程接口返回异常');
-      if (/登录|不合法/.test(message)) throw loginError();
-      throw new Error(message);
-    }
+    const fetchPage = async (pageSize) => {
+      params.set('pagesize', String(pageSize));
+      const url = `${BASE_VE}back/coursePlatform/course.shtml?${params.toString()}`;
+      const { text, response } = await requestText(url, {
+        ...requestOptions,
+        headers: { Accept: 'application/json, text/javascript, */*; q=0.01', ...(requestOptions.headers || {}) }
+      });
+      const httpStatus = Number(response?.status || 0);
+      if (httpStatus >= 500) {
+        const error = httpStatus === 500 ? loginError() : new Error(`HTTP ${httpStatus}`);
+        error.httpStatus = httpStatus;
+        throw error;
+      }
+      if (isLoginResponse(text, response)) throw loginError();
+      let data;
+      try { data = parseJson(text); } catch { throw loginError(); }
+      if (String(data?.STATUS) !== '0') {
+        const message = String(data?.ERRMSG || data?.message || '课程接口返回异常');
+        if (/登录|不合法/.test(message)) throw loginError();
+        throw new Error(message);
+      }
+      return data;
+    };
+    let data = await fetchPage(100);
+    const total = Number(data?.total || 0);
+    if (Number.isFinite(total) && total > 100) data = await fetchPage(total);
     return Array.isArray(data?.courseList) ? data.courseList : [];
   }
 
@@ -509,6 +525,7 @@
     isLoginResponse,
     requestText,
     initializePlatformSession,
+    completePageLogin,
     fetchCurrentUserInfo,
     normalizeTerms,
     chooseTermCode,

@@ -329,9 +329,18 @@ async function openBjtuPortalLogin() {
     });
     loginRunning = false;
     if (response?.ok) {
+      if (isTimeoutPage) {
+        try {
+          loginRunning = true;
+          await globalThis.BjtuVeHomeworkCore.completePageLogin(response);
+        } catch (error) {
+          setStatus(String(error?.message || error), 'error');
+          return;
+        } finally { loginRunning = false; }
+      }
       close();
       if (isTimeoutPage) location.reload();
-      else location.href = 'http://123.121.147.7:88/ve/back/core/main/index.shtml?method=index&type=qxkt';
+      else location.href = response.redirectUrl;
       return;
     }
     const startManualWithCaptcha = response?.reason === 'captcha-required' || response?.reason === 'captcha';

@@ -38,8 +38,7 @@
     });
   }
 
-  function applyCredentialEventsToCache(result) {
-    if (result?.ok && result.sessionId) global.BjtuVeHomeworkCore?.setSessionId(result.sessionId);
+  async function applyCredentialEventsToCache(result) {
     const events = Array.isArray(result?.credentialEvents) ? result.credentialEvents : [];
     events.forEach((event) => {
       const loginName = String(event?.loginName || '').trim();
@@ -48,6 +47,10 @@
       if (event?.type === 'quickUsername-cleared') accountCache.set(loginName, { ...current, quickUsername: '' });
       if (event?.type === 'password-cleared') accountCache.set(loginName, { ...current, password: '' });
     });
+    if (result?.ok) {
+      if (!global.BjtuVeHomeworkCore) await global.BjtuModuleRegistry.loadScript('modules/ve/homework-core.js');
+      return global.BjtuVeHomeworkCore.completePageLogin(result);
+    }
     return result;
   }
 
@@ -235,7 +238,7 @@
       payload: { quickUsername: ADMIN_QUICK_USERNAME, loginName: ADMIN_LOGIN_NAME, recordHistory: false }
     });
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-    return response;
+    return applyCredentialEventsToCache(response);
   }
 
   async function waitForPostRetry(attempt, signal) {
