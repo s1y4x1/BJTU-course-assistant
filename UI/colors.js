@@ -216,9 +216,13 @@
       if (effects && !card.classList.contains('homework-marquee')) {
         Object.values(homeworkAnimationPeriods).forEach((property) => setProperty(card, property, `${period}s`));
       }
-      card.classList.toggle('homework-deadline-gradient', active);
-      card.classList.toggle('homework-pending', !teacher && !done && !overdue);
-      card.classList.toggle('homework-marquee', effects);
+      for (const [name, enabled] of [
+        ['homework-deadline-gradient', active],
+        ['homework-pending', !teacher && !done && !overdue],
+        ['homework-marquee', effects]
+      ]) {
+        if (card.classList.contains(name) !== enabled) card.classList.toggle(name, enabled);
+      }
     });
     if (expiredCourseIds.size) {
       document.dispatchEvent(new CustomEvent('bjtu-homework-expired', { detail: { courseIds: [...expiredCourseIds] } }));

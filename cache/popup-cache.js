@@ -320,7 +320,34 @@ function collectOmniboxSearchIndex() {
     platform: item.platform, courseName: item.courseName, url: item.actionUrl })));
 }
 
-async function saveFullscreenCourseCache({ force = false } = {}) {
+let fullscreenCourseCacheSavePromise = null;
+let fullscreenCourseCacheSaveRequested = false;
+let fullscreenCourseCacheForceRequested = false;
+
+function saveFullscreenCourseCache({ force = false } = {}) {
+  if (popupMode || (!force && !shouldSaveFullscreenCourseCache()) || !courseListDiv) return Promise.resolve();
+  fullscreenCourseCacheSaveRequested = true;
+  fullscreenCourseCacheForceRequested ||= force;
+  if (!fullscreenCourseCacheSavePromise) {
+    fullscreenCourseCacheSavePromise = (async () => {
+      // Save only the newest state after an outstanding write. Never enqueue copies
+      // of every platform's full homework data behind a slow storage/reminder lock.
+      try {
+        while (fullscreenCourseCacheSaveRequested) {
+          const nextForce = fullscreenCourseCacheForceRequested;
+          fullscreenCourseCacheSaveRequested = false;
+          fullscreenCourseCacheForceRequested = false;
+          await writeFullscreenCourseCache({ force: nextForce });
+        }
+      } finally {
+        fullscreenCourseCacheSavePromise = null;
+      }
+    })();
+  }
+  return fullscreenCourseCacheSavePromise;
+}
+
+async function writeFullscreenCourseCache({ force = false } = {}) {
   if (popupMode || (!force && !shouldSaveFullscreenCourseCache()) || !courseListDiv) return;
   const cache = {
     version: 1,
@@ -424,11 +451,12 @@ function collectHomeworkReminderSnapshot() {
 let homeworkReminderSnapshotTimer = null;
 
 async function saveHomeworkReminderSnapshotNow() {
-  const now = Date.now();
-  const account = String(window.currentAccountLoginName || '').trim();
-  const currentItems = collectHomeworkReminderSnapshot();
   const reminders = window.BjtuHomeworkReminders;
   return reminders.update(async ({ snapshot }) => {
+    // Read the latest DOM only after acquiring the lock, not before waiting for it.
+    const now = Date.now();
+    const account = String(window.currentAccountLoginName || '').trim();
+    const currentItems = collectHomeworkReminderSnapshot();
     for (const [platform, label] of Object.entries(reminders.labels)) {
       const loaded = window.platformLoadedOnce?.[platform] === true;
       if (window.platformLoginState?.[platform] !== 'online' || !loaded) continue;
@@ -541,6 +569,9 @@ function setupFullscreenCourseCacheObserver() {
     const mo = new MutationObserver((mutations) => {
       const relevant = mutations.some((mutation) => {
         const target = mutation.target instanceof Element ? mutation.target : mutation.target?.parentElement;
+        // Breathing/gradient colors and list-height animations change inline style
+        // continuously. Those visual frames are not part of the structured cache.
+        if (mutation.type === 'attributes' && mutation.attributeName === 'style') return false;
         return !(target instanceof Element && target.closest('.deadline-countdown'));
       });
       if (relevant) scheduleFullscreenCourseCacheSave();
