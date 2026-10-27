@@ -2785,6 +2785,23 @@ async function openVeAccountPanel() {
   await globalThis.BjtuVeAccountPanel.open();
 }
 
+async function hasVeAutomaticLoginAccount() {
+  if (!await globalThis.__bjtuVeAppReady) return false;
+  const store = globalThis.BjtuAccountStore;
+  const stored = await chrome.storage.local.get(['username', 'loginAccountHistory']);
+  const candidates = new Set([
+    usernameInput?.value, window.currentAccountLoginName, stored.username,
+    ...(stored.loginAccountHistory || []).map((account) => account.loginName || account.userId)
+  ].map((value) => String(value || '').trim()).filter(Boolean));
+  const usable = (account) => !!(account?.password || account?.quickUsername
+    || (account?.passwordMd5 && typeof md5 === 'function'
+      && String(md5('Bjtu@' + account.loginName)).toLowerCase() === String(account.passwordMd5).toLowerCase()));
+  for (const loginName of candidates) {
+    if (usable(await store.get(loginName)) || await store.resolveAesQuickUsername(loginName)) return true;
+  }
+  return (await store.getCredentialAccounts()).some(usable);
+}
+
 function promptLoginIfPossible(message) {
   const defaultNeedLoginMsg = globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve');
   // An empty account opens the account panel through the login-required toast.
@@ -2807,6 +2824,20 @@ function dismissToastAfterCopy(toast) {
 }
 
 function showToast(message, type = 'success', duration = 3000, allowHtml = false, options = {}) {
+  if (String(message || '') === globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve')) {
+    void (async () => {
+      if (activeLoginFlowPromise) return;
+      const canAutoLogin = await hasVeAutomaticLoginAccount();
+      if (canAutoLogin || activeLoginFlowPromise || window.platformLoginState?.ve === 'online') return;
+      renderAppToast(message, type, duration, allowHtml, options);
+      await openVeAccountPanel();
+    })().catch((error) => showToast(String(error?.message || error), 'error'));
+    return;
+  }
+  return renderAppToast(message, type, duration, allowHtml, options);
+}
+
+function renderAppToast(message, type = 'success', duration = 3000, allowHtml = false, options = {}) {
   const container = document.getElementById('toast-container');
   const preserveInfoToasts = !!options?.preserveInfoToasts;
   if (!preserveInfoToasts) {
@@ -2815,9 +2846,6 @@ function showToast(message, type = 'success', duration = 3000, allowHtml = false
   }
 
   const text = String(message || '');
-  if (text === globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve')) {
-    void openVeAccountPanel().catch((error) => showToast(String(error?.message || error), 'error'));
-  }
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.title = '点击复制通知内容并关闭';
