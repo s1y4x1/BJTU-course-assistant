@@ -39,6 +39,7 @@
   }
 
   function applyCredentialEventsToCache(result) {
+    if (result?.ok && result.sessionId) global.BjtuVeHomeworkCore?.setSessionId(result.sessionId);
     const events = Array.isArray(result?.credentialEvents) ? result.credentialEvents : [];
     events.forEach((event) => {
       const loginName = String(event?.loginName || '').trim();

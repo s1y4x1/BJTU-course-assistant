@@ -180,11 +180,12 @@
 
   async function completeSuccessfulLogin(result, fallbackLoginName, { recordHistory = true, passwordPlain = '' } = {}) {
     if (!result?.ok) return result;
+    const sessionId = await global.BjtuVeHomeworkCore.initializePlatformSession();
     const userInfo = await fetchCurrentUserInfo();
     const loginName = String(userInfo?.loginName || fallbackLoginName || '').trim();
     if (passwordPlain && loginName) await rememberPlainPassword(loginName, passwordPlain, userInfo);
     if (recordHistory && loginName) await rememberLogin(loginName);
-    return { ...result, userInfo: userInfo || null };
+    return { ...result, userInfo: userInfo || null, sessionId };
   }
 
   async function loginWithQuickUsername(quickUsername, options = {}) {

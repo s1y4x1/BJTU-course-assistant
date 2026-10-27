@@ -83,6 +83,27 @@
     return Object.assign(new Error('LOGIN_REQUIRED'), { loginRequired: true });
   }
 
+  async function initializePlatformSession() {
+    let url = `${BASE_VE}back/core/main/index.shtml?method=index&type=qxkt`;
+    const visited = new Set();
+    while (!visited.has(url)) {
+      visited.add(url);
+      const { text, response } = await requestText(url, { omitSessionId: true });
+      if (!response.ok) throw new Error(`初始化智慧课程平台会话失败：HTTP ${response.status}`);
+      const destination = new URL(response.url || url);
+      const sessionId = destination.searchParams.get('sessionId');
+      if (sessionId) return setSessionId(sessionId);
+      const source = text.replace(/<!--[\s\S]*?-->/g, '');
+      const redirect = /location(?:\.href)?\s*=\s*(['"])([^'"]+)\1/i.exec(source)
+        || /location\.(?:replace|assign)\s*\(\s*(['"])([^'"]+)\1/i.exec(source);
+      if (!redirect) break;
+      const next = new URL(redirect[2].replace(/&amp;/g, '&'), destination);
+      if (next.origin !== BASE || !next.pathname.startsWith('/ve/')) break;
+      url = next.href;
+    }
+    throw new Error('登录成功，但未获取到智慧课程平台 sessionId');
+  }
+
   async function fetchCurrentUserInfo(options = {}) {
     const { text, response } = await requestText(
       `${BASE_VE}back/coursePlatform/coursePlatform.shtml?method=getUserInfo`,
@@ -487,6 +508,7 @@
     parseJson,
     isLoginResponse,
     requestText,
+    initializePlatformSession,
     fetchCurrentUserInfo,
     normalizeTerms,
     chooseTermCode,
