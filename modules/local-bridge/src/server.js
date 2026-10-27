@@ -14,6 +14,20 @@ import { z } from 'zod';
 import JSON5 from 'json5';
 import { loadConfig, normalizePort, saveConfig, configPath } from './config.js';
 
+function readCmdSingleCommand(rawArguments) {
+  const match = /(?:^|\s)-c(?:\s+([\s\S]*))?$/.exec(String(rawArguments || ''));
+  if (!match) return null;
+  let command = String(match[1] || '').trim();
+  if (command.startsWith('"') && command.endsWith('"') && command.length >= 2) {
+    command = command.slice(1, -1);
+    // Accept both raw JSON quotes and the escaped quotes used in quoted CMD arguments.
+    if (!/(?<!\\)"/.test(command)) {
+      command = command.replace(/(\\+)"/g, (_match, slashes) => '\\'.repeat(Math.floor(slashes.length / 2)) + '"');
+    }
+  }
+  return command.trim();
+}
+
 async function main() {
 process.title = 'BJTUCA-bridge';
 const config = await loadConfig();
@@ -26,10 +40,12 @@ function issuePairingCode() {
   if (!singleCommand) process.stdout.write(`扩展配对码：${pairingCode}（5 分钟内有效，仅可使用一次；输入 pair 生成新码）。\n`);
 }
 const commandArgIndex = process.argv.indexOf('-c');
-const singleCommand = (commandArgIndex >= 0
+const rawSingleCommand = readCmdSingleCommand(process.env.BJTUCA_RAW_ARGUMENTS);
+delete process.env.BJTUCA_RAW_ARGUMENTS;
+const singleCommand = (rawSingleCommand ?? (commandArgIndex >= 0
   ? process.argv.slice(commandArgIndex + 1).join(' ')
-  : String(process.env.BJTUCA_RUN_COMMAND || '')).trim();
-if (commandArgIndex >= 0 && !singleCommand) throw new Error('-c 后必须提供命令');
+  : String(process.env.BJTUCA_RUN_COMMAND || ''))).trim();
+if ((commandArgIndex >= 0 || rawSingleCommand !== null) && !singleCommand) throw new Error('-c 后必须提供命令');
 let singleCommandStarted = false;
 let singleCommandConnectionTimer = null;
 const requestedPortArg = process.argv.find((arg) => arg.startsWith('--port='));

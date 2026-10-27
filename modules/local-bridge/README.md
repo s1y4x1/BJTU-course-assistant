@@ -67,6 +67,14 @@ BJTUCA -c "help ve.login ykt.assignments"
 BJTUCA -c 'api.getDocs {"module":"ve","name":"login"}'
 ```
 
+在 cmd 中也可以直接使用双引号参数；命令入口会保留原始文本，避免经 PowerShell 转发时丢失引号而被误当作 JavaScript：
+
+```cmd
+BJTUCA -c api.getDocs({name:"courseList"})
+```
+
+注册生成的 PowerShell 命令与协议入口使用带 BOM 的 UTF-8 编码，同时支持 Windows PowerShell 5 和 PowerShell 7 的中文输出及中文路径；仓库中的 PowerShell 模板仍使用 ANSI 编码。
+
 若 Bridge 已在运行，会直接通过它执行，不会关闭该 Bridge。否则临时启动服务，等待扩展连接后执行，结束时关闭临时服务。端口参数放在 `-c` 之前，例如 `BJTUCA --port=1000 -c "ve.courseList"`。成功时退出码为 0，执行出错时为 1。
 
 浏览器扩展连接成功后，Bridge 会在启动窗口显示紫红色的 `BJTUCA>` 提示符（不支持颜色的终端显示普通文本）。可直接输入操作名，或附上对象参数。键名无需引号，外层 `{}` 可省略；字符串支持单引号或双引号，多项参数以逗号分隔：

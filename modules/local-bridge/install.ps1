@@ -3,7 +3,7 @@ param(
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.9'
+$InstallerVersion = '1.0.10'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -51,13 +51,14 @@ $launcherText = $launcherText.Replace(
   '$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path',
   "`$BJTUCACommandVersion = '$InstallerVersion'`r`n`$bridgeRoot = '$escapedBridgeRoot'"
 )
+$launcherEncoding = [System.Text.UTF8Encoding]::new($true)
 foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
   $commandLauncherPath = Join-Path $commandDirectory ($commandName + '.ps1')
   $commandShimPath = Join-Path $commandDirectory ($commandName + '.cmd')
-  [System.IO.File]::WriteAllText($commandLauncherPath, $launcherText, [System.Text.Encoding]::GetEncoding(936))
+  [System.IO.File]::WriteAllText($commandLauncherPath, $launcherText, $launcherEncoding)
   [System.IO.File]::WriteAllText(
     $commandShimPath,
-    "@echo off`r`nsetlocal`r`nset `"BJTUCA_COMMAND_NAME=%~n0`"`r`n(goto) 2>nul & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$commandName.ps1`" %*`r`n",
+    "@echo off`r`nset `"BJTUCA_COMMAND_NAME=%~n0`"`r`nset BJTUCA_RAW_ARGUMENTS=%*`r`n(goto) 2>nul & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$commandName.ps1`" %* & call set `"BJTUCA_COMMAND_EXIT=%%errorlevel%%`" & set `"BJTUCA_RAW_ARGUMENTS=`" & set `"BJTUCA_COMMAND_NAME=`" & call cmd.exe /d /c exit %%BJTUCA_COMMAND_EXIT%%`r`n",
     [System.Text.Encoding]::ASCII
   )
 }
@@ -68,7 +69,7 @@ $protocolText = $protocolText.Replace(
   '$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path',
   "`$bridgeRoot = '$escapedBridgeRoot'"
 )
-[System.IO.File]::WriteAllText($protocolScriptPath, $protocolText, [System.Text.Encoding]::GetEncoding(936))
+[System.IO.File]::WriteAllText($protocolScriptPath, $protocolText, $launcherEncoding)
 $protocolKey = 'HKCU:\Software\Classes\bjtuca'
 New-Item -Path $protocolKey -Force | Out-Null
 Set-Item -LiteralPath $protocolKey -Value 'URL:BJTUCA Bridge Protocol'
