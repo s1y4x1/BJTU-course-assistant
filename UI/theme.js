@@ -80,7 +80,20 @@
     if (!document.getAnimations) return;
     const rate = isAnimationEnabled() ? animationSpeed : 1;
     document.getAnimations().forEach((animation) => {
-      try { animation.updatePlaybackRate(isPersistentStatusAnimation(animation) ? 1 : rate); } catch {}
+      const nextRate = isPersistentStatusAnimation(animation) ? 1 : rate;
+      // updatePlaybackRate schedules playback work even when the rate is unchanged.
+      if (animation.playbackRate !== nextRate) {
+        try { animation.updatePlaybackRate(nextRate); } catch {}
+      }
+    });
+  }
+
+  let playbackRateFrame = 0;
+  function schedulePlaybackRate() {
+    if (playbackRateFrame) return;
+    playbackRateFrame = requestAnimationFrame(() => {
+      playbackRateFrame = 0;
+      applyPlaybackRate();
     });
   }
 
@@ -255,7 +268,7 @@
   else if (typeof reducedMotionMedia?.addListener === 'function') reducedMotionMedia.addListener(onSystemMotionChange);
 
   ['animationstart', 'transitionrun'].forEach((eventName) => {
-    document.addEventListener(eventName, () => requestAnimationFrame(applyPlaybackRate), true);
+    document.addEventListener(eventName, schedulePlaybackRate, true);
   });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installFontSizeCategories, { once: true });
