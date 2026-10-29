@@ -75,10 +75,6 @@
     return template.innerHTML.trim();
   }
 
-  function statusHtml() {
-    return '';
-  }
-
   function actionLabel(platform, action, { lead } = {}) {
     const platformName = PLATFORM_NAMES[String(platform || '')] || '';
     const actionName = ACTION_NAMES[String(action || '')] || String(action || '');
@@ -112,13 +108,11 @@
     done = false,
     overdue = false,
     loading = false,
-    showStatus = true,
     showCountdown = true,
     suffixHtml = '',
     tailHtml = '',
     escape = (value) => String(value ?? '')
   } = {}) {
-    const status = showStatus ? statusHtml({ done, overdue }) : '';
     const countdown = showCountdown && !done && !overdue && !loading && deadline
       ? `<span class="deadline-countdown" data-deadline="${escape(String(deadline))}"></span>`
       : '';
@@ -138,8 +132,8 @@
     const timeHtml = deadlineHtml || startHtml
       ? `<span class="homework-time-group">${deadlineHtml}${startHtml}</span>`
       : '';
-    const otherHtml = status || tailHtml
-      ? `<span class="homework-meta-tail">${status}${tailHtml}</span>`
+    const otherHtml = tailHtml
+      ? `<span class="homework-meta-tail">${tailHtml}</span>`
       : '';
     if (!timeHtml && !otherHtml) return '';
     return `<div class="homework-deadline-meta">${timeHtml}${otherHtml}</div>`;
@@ -261,7 +255,6 @@
     spinnerPhaseStyle,
     typeLoadingHtml,
     sanitizeRichHtml,
-    statusHtml,
     actionLabel,
     renderActionLink,
     homeworkPalette,

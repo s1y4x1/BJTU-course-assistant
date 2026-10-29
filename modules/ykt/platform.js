@@ -260,10 +260,6 @@ function openYktLoginAssistPopup(force = false) {
   });
 }
 
-function ensureYktSection() {
-  return null;
-}
-
 function renderYktNeedLoginMessage() {
   const shouldOpenAssist = !!window.platformInteractiveLoginPending?.ykt
     || globalThis.shouldAutoLoginAfterExpiry?.('ykt') === true;
@@ -733,7 +729,6 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     return;
   }
   setPlatformLoginState('ykt', 'checking');
-  ensureYktSection();
   const strictMatchMap = new Map();
 
   let listResp;

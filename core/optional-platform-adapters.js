@@ -36,7 +36,6 @@
 
     if (!available.mrjzy) {
       defineFunction('formatMrjzyDateTime', (value) => String(value || ''));
-      defineFunction('removeMrjzyLoginTip', noop);
       defineFunction('closeMrjzyLoginAssistPopup', noop);
       defineFunction('clearMrjzyStandaloneCards', noop);
       defineFunction('renderMrjzyNeedLoginMessage', noop);

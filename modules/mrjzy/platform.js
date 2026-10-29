@@ -36,14 +36,6 @@ function formatMrjzyDateTime(dt) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-function ensureMrjzyLoginTip() {
-  return null;
-}
-
-function removeMrjzyLoginTip() {
-  // no-op: use toast messages instead of fixed top tip.
-}
-
 function stopMrjzyLoginAssistPolling() {
   if (mrjzyLoginAssistPollTimer) {
     clearInterval(mrjzyLoginAssistPollTimer);

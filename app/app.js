@@ -4722,8 +4722,6 @@ function setPlatformContentLoadProgress(platform, completed, total) {
 window.setPlatformContentLoadProgress = setPlatformContentLoadProgress;
 
 function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
-  removeMrjzyLoginTip();
-
   const apply = (btn, state, label) => {
     if (!btn) return;
     btn.classList.remove('checking', 'offline', 'online', 'content-loading', 'unselected-checked-online', 'unselected-checked-offline', 'unselected-checked-checking');
@@ -5428,11 +5426,6 @@ function recomputeCourseHomeworkState(courseId) {
   updateCourseCardRank(courseId, { deferWhileActionAnimating: !hasAnyHomework });
 }
 
-function updateHomeworkToggleButton(courseId) {
-  // Kept for compatibility with existing call sites.
-  void courseId;
-}
-
 function setHomeworkVisibility(courseId, key, value) {
   const cid = String(courseId || '').trim();
   if (!cid) return;
@@ -5916,7 +5909,6 @@ function renderHomeworkList(courseId) {
         startFormatted: hw.open_date ?? hw.openDate ?? '',
         done: isDone,
         overdue,
-        showStatus: !isTeacherMode,
         showCountdown: !isTeacherMode,
         tailHtml: submitCountHtml,
         escape: escapeHtml
