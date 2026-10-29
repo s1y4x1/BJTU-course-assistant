@@ -5995,7 +5995,7 @@ function renderHomeworkList(courseId) {
   BjtuColors.restoreAnimations(area, homeworkAnimationSnapshot);
   applyDoneEnterAnimation();
   refreshUploadSelectVisibility();
-  setTimeout(() => typeof updateAllCountdowns === 'function' && updateAllCountdowns(), 0);
+  updateAllCountdowns(area);
 }
 
 // Videos (best-effort implementation)

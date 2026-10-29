@@ -53,6 +53,28 @@
     return countdownStyle === 'normal' ? renderNormalTime(text) : renderSevenSegmentTime(text);
   }
 
+  function countdownContent(deadline) {
+    if (countdownStyle === 'none' || !deadline) return '';
+    const timestamp = typeof global.parseDeadlineToTs === 'function'
+      ? global.parseDeadlineToTs(deadline)
+      : Number(deadline || 0);
+    const difference = timestamp - Date.now();
+    if (!Number.isFinite(difference) || difference <= 0) return '';
+    const days = Math.floor(difference / 86400000);
+    const hours = Math.floor(difference / 3600000) % 24;
+    const minutes = Math.floor(difference / 60000) % 60;
+    const seconds = Math.floor(difference / 1000) % 60;
+    const pad = (value) => String(value).padStart(2, '0');
+    return renderCountdownTime(`${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
+  }
+
+  function renderCountdownHtml(deadline) {
+    const content = countdownContent(deadline);
+    const prefix = content ? '<span class="deadline-countdown-prefix">剩</span>' : '';
+    const normalClass = countdownStyle === 'normal' ? ' deadline-countdown--normal' : '';
+    return `${prefix}<span class="deadline-countdown${normalClass}" data-deadline="${escapeAttribute(deadline)}"${content ? '' : ' style="display:none"'}>${content}</span>`;
+  }
+
   function syncCountdownPrefix(span, visible) {
     const previous = span.previousElementSibling;
     const existing = previous?.classList?.contains('deadline-countdown-prefix') ? previous : null;
@@ -67,48 +89,22 @@
     span.before(prefix);
   }
 
-  function updateAllCountdowns() {
-    document.querySelectorAll('.deadline-countdown').forEach((span) => {
+  function updateAllCountdowns(root = document) {
+    root.querySelectorAll('.deadline-countdown').forEach((span) => {
       const normalStyle = countdownStyle === 'normal';
-      span.classList.toggle('deadline-countdown--normal', normalStyle);
-      if (countdownStyle === 'none') {
-        syncCountdownPrefix(span, false);
-        span.innerHTML = '';
-        span.style.display = 'none';
-        return;
+      if (span.classList.contains('deadline-countdown--normal') !== normalStyle) {
+        span.classList.toggle('deadline-countdown--normal', normalStyle);
       }
-      const deadline = span.dataset.deadline;
-      if (!deadline) {
+      const nextHtml = countdownContent(span.dataset.deadline);
+      if (!nextHtml) {
         syncCountdownPrefix(span, false);
-        return;
-      }
-      const timestamp = typeof global.parseDeadlineToTs === 'function'
-        ? global.parseDeadlineToTs(deadline)
-        : Number(deadline || 0);
-      if (!timestamp) {
-        syncCountdownPrefix(span, false);
-        return;
-      }
-      const difference = timestamp - Date.now();
-      if (difference <= 0) {
-        syncCountdownPrefix(span, false);
-        if (span.innerHTML !== '') {
-          span.innerHTML = '';
-          span.style.fontFamily = 'inherit';
-          span.style.fontSize = 'inherit';
-        }
+        if (span.innerHTML !== '') span.innerHTML = '';
         span.style.display = 'none';
         return;
       }
 
       span.style.display = '';
       syncCountdownPrefix(span, true);
-      const days = Math.floor(difference / 86400000);
-      const hours = Math.floor(difference / 3600000) % 24;
-      const minutes = Math.floor(difference / 60000) % 60;
-      const seconds = Math.floor(difference / 1000) % 60;
-      const pad = (value) => String(value).padStart(2, '0');
-      const nextHtml = renderCountdownTime(`${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
       if (span.innerHTML !== nextHtml) span.innerHTML = nextHtml;
     });
   }
@@ -131,6 +127,7 @@
 
   global.renderSevenSegmentTime = renderSevenSegmentTime;
   global.renderDeadlineCountdownTime = renderCountdownTime;
+  global.renderDeadlineCountdownHtml = renderCountdownHtml;
   global.updateAllCountdowns = updateAllCountdowns;
   if (global.__deadlineCountdownTimer) clearInterval(global.__deadlineCountdownTimer);
   global.__deadlineCountdownTimer = setInterval(updateAllCountdowns, 1000);

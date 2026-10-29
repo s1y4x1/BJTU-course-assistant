@@ -114,7 +114,7 @@
     escape = (value) => String(value ?? '')
   } = {}) {
     const countdown = showCountdown && !done && !overdue && !loading && deadline
-      ? `<span class="deadline-countdown" data-deadline="${escape(String(deadline))}"></span>`
+      ? global.renderDeadlineCountdownHtml(deadline)
       : '';
     const isVisibleTime = (raw, text) => {
       if (raw !== null && raw !== undefined && String(raw).trim() && Number(raw) !== 0) return true;
