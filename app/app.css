@@ -256,12 +256,16 @@ input[type="text"], input[type="number"], input[type="password"] { padding: 8px;
     aspect-ratio: 1 / 1;
     box-sizing: border-box;
     flex: 0 0 auto;
-    border: 2px solid rgba(255,255,255,0.3);
+    /* A single ring style also covers spinners created by platform modules. */
+    border: 2px solid var(--app-loading-color) !important;
     border-radius: 50%;
-    border-top-color: #fff;
+    border-top-color: transparent !important;
     animation: spin 1s ease-in-out infinite;
     margin-left: 5px;
     vertical-align: middle;
+}
+.hw-card-item .spinner {
+    --app-loading-color: var(--homework-card-foreground, #111827);
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 

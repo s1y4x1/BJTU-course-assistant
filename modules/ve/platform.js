@@ -2483,9 +2483,8 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
         ? 'rgba(254,242,242,0.78)'
         : 'rgba(255,243,224,0.72)')));
   if (courseLoading && (!key || !cache?.loaded || cache?.loading)) {
-    const animationDelay = `-${Date.now() % 1000}ms`;
     return `<div class="file-item homework-attachment-file homework-attachment-loading" style="padding:6px 8px;border:1px solid ${borderColor};border-radius:6px;background:${softBg};">
-      <span class="spinner" aria-hidden="true" style="width:10px;height:10px;border-width:1px;border-color:#64748b;border-top-color:transparent;animation-delay:${animationDelay};"></span>
+      <span class="spinner" aria-hidden="true" style="${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>
       <span>正在加载作业附件…</span>
     </div>`;
   }
