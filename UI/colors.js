@@ -23,7 +23,7 @@
   let settings = {};
   let gradientEnabled = true;
   let marqueeEnabled = true;
-  const reportedExpiredCards = new WeakSet();
+  const reportedExpiredCourses = new WeakMap();
   const homeworkAnimationPeriods = {
     homeworkUrgencyBreathe: '--homework-breathe-period',
     homeworkUrgencyBlink: '--homework-blink-period',
@@ -112,7 +112,7 @@
   function deadlineTime(value) {
     const raw = String(value ?? '').trim();
     if (!raw) return NaN;
-    if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    if (/^[+-]?\d+(?:\.\d+)?$/.test(raw)) {
       const n = Number(raw);
       return n > 0 ? (n < 1e12 ? n * 1000 : n) : NaN;
     }
@@ -188,10 +188,19 @@
       const time = deadlineTime(card.dataset.homeworkDeadline);
       const expired = !done && Number.isFinite(time) && time <= now;
       const overdue = card.dataset.homeworkOverdue === '1' || expired;
-      if (expired && card.dataset.homeworkOverdue !== '1' && !reportedExpiredCards.has(card)) {
-        reportedExpiredCards.add(card);
-        const courseId = card.closest('.file-item[data-course-rankable="1"]')?.dataset.courseId;
-        if (courseId) expiredCourseIds.add(courseId);
+      if (expired && card.dataset.homeworkOverdue !== '1') {
+        const course = card.closest('.file-item[data-course-rankable="1"]');
+        if (course?.dataset.courseId) {
+          let reported = reportedExpiredCourses.get(course);
+          if (!reported) reportedExpiredCourses.set(course, reported = new Set());
+          const key = homeworkAnimationKey(card);
+          // A homework-area rerender creates new card nodes. Keep expiry identity
+          // on the owning course so replacement nodes cannot recursively notify.
+          if (!reported.has(key)) {
+            reported.add(key);
+            expiredCourseIds.add(course.dataset.courseId);
+          }
+        }
       }
       const active = gradientEnabled && !teacher && card.dataset.homeworkGradient !== '0'
         && !done && !overdue && Number.isFinite(time) && time > now;

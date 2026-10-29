@@ -4332,22 +4332,10 @@ function todayEndDateTimeString() {
 }
 
 function parseDeadlineToTs(v) {
-  if (v === null || v === undefined) return 0;
-  if (typeof v === 'number') {
-    const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    return n < 1e12 ? n * 1000 : n;
-  }
-  const s = String(v || '').trim();
-  if (!s) return 0;
-  if (/^\d+$/.test(s)) {
-    const n = Number(s);
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    return n < 1e12 ? n * 1000 : n;
-  }
-  const normalized = s.replace(/\//g, '-').replace(/\./g, '-').replace('T', ' ');
-  const ts = Date.parse(normalized);
-  return Number.isFinite(ts) ? ts : 0;
+  // Classification, countdowns and expiry effects must agree. Replacing every
+  // period turns SQL timestamps such as "10:00:00.0" into a timezone suffix.
+  const ts = BjtuColors.deadlineTime(v);
+  return Number.isFinite(ts) && ts > 0 ? ts : 0;
 }
 
 function isDeadlinePassed(v) {
