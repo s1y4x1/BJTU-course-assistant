@@ -382,9 +382,10 @@ async function fetchYktExamPaper(courseId, examId) {
 
       const errText = `${String(data?.errmsg || '')} ${String(data?.message || '')}`;
       if (!LOCK_MSG_RE.test(errText) || attempt >= MAX_ATTEMPTS) {
-        return null;
+        throw Object.assign(new Error(String(data?.errmsg || data?.message || '考试详情获取失败')), { yktApiError: true });
       }
-    } catch {
+    } catch (error) {
+      if (error?.yktApiError) throw error;
       if (attempt >= MAX_ATTEMPTS) return null;
     }
 
@@ -513,9 +514,10 @@ async function loadDeferredYktHomeworkDetails(courseId, kind) {
               promise: null
             };
           }
-        } catch {
+        } catch (error) {
           hw.exam_detail_state = 'failed';
-          if (detailKey) window.yktDetailCacheByKey[detailKey] = { ...(window.yktDetailCacheByKey[detailKey] || {}), state: 'failed', promise: null };
+          hw.exam_detail_error = String(error?.message || '');
+          if (detailKey) window.yktDetailCacheByKey[detailKey] = { ...(window.yktDetailCacheByKey[detailKey] || {}), state: 'failed', error: hw.exam_detail_error, promise: null };
         }
         rerenderAllHomeworkAreas();
         renderYktStandaloneCourses();
@@ -578,7 +580,7 @@ function renderYktHomeworkItems(courseId, items) {
       } else if (state === 'queued') {
         detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:${done ? '#166534' : '#9a3412'}; display:flex; align-items:center; gap:6px;"><span class="spinner" style="width:10px; height:10px; border-width:1px; border-color:${done ? '#16a34a' : '#ea580c'}; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>${globalThis.BjtuHomeworkUi.text.detailQueued}</div>`;
       } else if (state === 'failed') {
-        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:#b45309;">${globalThis.BjtuHomeworkUi.text.detailFailed}</div>`;
+        detailStatusHtml = `<div style="margin-top:6px; font-size:12px; color:#b45309;">${escapeHtml(it?.exam_detail_error || globalThis.BjtuHomeworkUi.text.detailFailed)}</div>`;
       }
     }
     const detailExpandable = examDetail
@@ -702,6 +704,7 @@ function buildYktEntryHomeworks(entry, acts) {
       classroom_report_question_count: cache?.classroom_report_question_count,
       detail_content: a?.content ?? null,
       exam_detail_state: cache?.state === 'done' ? 'done' : (cache?.state === 'failed' ? 'failed' : ''),
+      exam_detail_error: cache?.error || '',
       detail_cache_key: detailKey,
       course_id: a?.course_id || entry.classroomId,
       classroom_id: entry.classroomId
@@ -995,6 +998,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       hw.detail_problems = Array.isArray(latest.detail_problems) ? latest.detail_problems : [];
       hw.classroom_report_question_count = latest.classroom_report_question_count;
       hw.exam_detail_state = latest.state === 'done' ? 'done' : 'failed';
+      hw.exam_detail_error = latest.error || '';
       rerenderEntryCard(entry);
       markHomeworkDetailLoaded(entry, hw);
       continue;
@@ -1032,12 +1036,14 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           promise: null
         };
       }
-    } catch {
+    } catch (error) {
       hw.exam_detail_state = 'failed';
+      hw.exam_detail_error = String(error?.message || '');
       if (detailKey) {
         window.yktDetailCacheByKey[detailKey] = {
           ...(window.yktDetailCacheByKey[detailKey] || {}),
           state: 'failed',
+          error: hw.exam_detail_error,
           promise: null
         };
       }

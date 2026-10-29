@@ -967,7 +967,7 @@ function openVersionNoticeModal(overrideMode) {
     const reloadedEl = modal.querySelector('#version-runtime-reloaded');
     const manifest = chrome.runtime.getManifest();
     if (currentEl instanceof HTMLElement) {
-      currentEl.textContent = versionButtonLocalVersion || manifest.version_name || manifest.version || '未知';
+      currentEl.textContent = manifest.version_name || versionButtonLocalVersion || manifest.version || '未知';
     }
     chrome.storage.local.get(['extensionInstalledAt', 'extensionLastReloadedAt'])
       .then((stored) => {
@@ -980,7 +980,11 @@ function openVersionNoticeModal(overrideMode) {
       });
   }
   if (titleEl instanceof HTMLElement) {
-    const versionLabel = escapeHtml(String(versionButtonLatestDisplayVersion || versionButtonLatestVersion || '').trim() || '--');
+    const manifest = chrome.runtime.getManifest();
+    const titleVersion = mode === 'latest'
+      ? (manifest.version_name || versionButtonLocalVersion || manifest.version)
+      : [versionButtonLatestVersion, versionButtonLatestDisplayVersion !== versionButtonLatestVersion ? versionButtonLatestDisplayVersion : ''].filter(Boolean).join(' ');
+    const versionLabel = escapeHtml(String(titleVersion || '').trim() || '--');
     const publishedText = escapeHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
     const timeHtml = publishedText ? `<span class="version-notice-title-time">${publishedText}</span>` : '';
     if (mode === 'failure') {
@@ -988,7 +992,7 @@ function openVersionNoticeModal(overrideMode) {
     } else if (mode === 'latest') {
       titleEl.innerHTML = `<span class="version-notice-title-main">已是最新版本：${versionLabel}</span>${timeHtml}`;
     } else if (mode === 'ahead') {
-      const localLabel = escapeHtml(String(versionButtonLocalReleaseVersion || versionButtonLocalVersion || '').trim() || '--');
+      const localLabel = escapeHtml(String(manifest.version_name || versionButtonLocalReleaseVersion || versionButtonLocalVersion || '').trim() || '--');
       const localPublishedText = escapeHtml(formatReleasePublishedAt(versionButtonLocalPublishedAt));
       const localTimeHtml = localPublishedText ? `<span class="version-notice-title-time">${localPublishedText}</span>` : '';
       titleEl.innerHTML = `<span class="version-notice-title-main">当前为开发预览版本：${localLabel}</span>${localTimeHtml}`;
