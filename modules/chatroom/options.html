@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>局域网聊天室选项</title>
+  <script src="../../UI/options-message.js"></script>
+  <script src="../../UI/theme.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="chatroom">
+<section class="chatroom-options-card" data-options-fragment>
+  <div class="section-title"><a class="module-options-page-link" data-module-options-link="chatroom" href="options.html">局域网聊天室</a></div>
+  <label class="chatroom-option-check"><input id="chatroomFullscreenButtonEnabled" type="checkbox" checked><span>在扩展全屏页面上显示「局域网聊天室」按钮</span></label>
+  <div class="option-divider" role="separator"></div>
+  <label for="chatroomSignalingUrl">在线发现服务器</label>
+  <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="wss://public.localsend.org/v1/ws">
+  <p class="tip">仅在聊天室点击「刷新发现」后连接，服务器会接触网络地址、昵称和设备标识；消息、文件和屏幕通过加密直连传输。公共服务不保证可用，无法连接时可交换连接码。网页不能直接扫描局域网或读取电脑用户名。</p>
+  <a id="chatroomOpen" class="option-action-link" href="chat.html">打开局域网聊天室</a>
+</section>
+<div id="msg"></div>
+<script src="launch.js"></script>
+<script src="options.js"></script>
+<script src="../../core/option-tips.js"></script>
+<script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>

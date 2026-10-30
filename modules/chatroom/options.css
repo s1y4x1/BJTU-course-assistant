@@ -1,0 +1,7 @@
+.chatroom-options-card { box-sizing:border-box; margin:0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:var(--bjtu-card-background,#f9fafb); }
+.chatroom-option-check { display:flex; align-items:center; gap:8px; }
+.chatroom-option-check input { width:auto; flex:0 0 auto; margin:0; }
+.chatroom-options-card #chatroomSignalingUrl { width:100%; box-sizing:border-box; }
+.chatroom-options-card .option-action-link { color:#1976d2; text-decoration:none; font-size:var(--bjtu-font-size-body,13px); }
+html[data-color-scheme="dark"] .chatroom-options-card { border-color:#334155; }
+html[data-color-scheme="dark"] .chatroom-options-card .option-action-link { color:#60a5fa; }

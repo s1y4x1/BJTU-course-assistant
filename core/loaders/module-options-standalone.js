@@ -39,6 +39,7 @@
       campusnet: global.BjtuCampusnetOptions,
       captcha: global.BjtuCaptchaOptions,
       cas: global.BjtuCasOptions,
+      chatroom: global.BjtuChatroomOptions,
       mail: global.BjtuMailOptions,
       'local-bridge': global.BjtuLocalBridgeOptions,
       MJ: global.BjtuMjOptions,
