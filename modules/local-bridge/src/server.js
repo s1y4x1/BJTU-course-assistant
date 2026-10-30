@@ -806,4 +806,14 @@ process.on('SIGINT', handleTerminalInterrupt);
 process.on('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
 }
 
-await main();
+if (process.argv[2] === 'chatroom' || process.argv.slice(2).includes('--chatroom')) {
+  try {
+    const { runChatroomServer } = await import('./chatroom-server.js');
+    await runChatroomServer();
+  } catch (error) {
+    process.stderr.write(`聊天室服务器启动失败：${String(error?.message || error)}\n`);
+    process.exitCode = 1;
+  }
+} else {
+  await main();
+}

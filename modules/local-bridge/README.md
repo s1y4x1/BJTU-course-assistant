@@ -108,6 +108,25 @@ ve.courseList({})
 
 认证失败后保留 token，按所选「重试间隔」等待后重连，不再每次查询状态都读取配置或重建连接。重连时配置文件读取间隔至少 10 秒；普通网络断连也按所选重试间隔处理。Bridge 发送「知行」，扩展回复「合一」。
 
+## 独立聊天室 LAN 信令服务器
+
+在 `modules/local-bridge` 目录执行（无需连接浏览器扩展）：
+
+```powershell
+node src/server.js --chatroom
+node src/server.js chatroom --port=1898
+```
+
+命令入口也可将 `bjtuca chatroom [--port=N]` 转交至上述服务。默认监听 `0.0.0.0:1897` 的 WebSocket `/chatroom`，与常规 Bridge 的 `1896` 完全独立，可同时运行；不读取或修改 `bridge.json`、不生成配对码、不开放 MCP/扩展操作接口。将聊天室在线发现地址设为 `ws://运行服务的电脑的LANIP:1897/chatroom`（客户端须支持 LAN `ws:`），并允许防火墙的专用网络入站连接。客户端按 LocalSend 格式在 URL 的 `d` 参数提交 base64url 编码的设备信息。
+
+服务仅处理 HELLO/JOIN/LEFT、UPDATE 发现信息和 OFFER/ANSWER SDP 信令，不转发聊天或文件内容；设备 ID 由服务器分配，转发身份由服务器填入，ANSWER 必须匹配原 OFFER 的双方及会话。目录信息和 token 不代表已验证身份，签名鉴权仍由 `link.js` 在端到端连接上完成。明文 `ws:` 仅适用于可信局域网，不应直接暴露到公网。
+
+默认上限：128 个 TCP/WS 连接、每 IP 16 个连接、每 IP 每分钟 60 次升级请求、每连接每 10 秒 40 条消息（含空保活）、单条 256 KiB、发送队列 1 MiB；未完成会话最多 512 个且每设备最多 16 个，5 分钟过期。每 30 秒检测连接存活并清理离线设备。端口占用会提示换用 `--port=N`；按 `Ctrl+C` 关闭服务并清理连接。
+
+只读 `GET /health` 返回 `{ "ok": true, "service": "bjtuca-chatroom", "port": 1897 }`（端口为实际监听值），供命令/协议入口识别现有服务、避免重复启动；此端点不依赖扩展连接。
+
+测试可直接导入 `src/chatroom-server.js` 的 `startChatroomServer({ port: 0, host: '127.0.0.1', limits: {} })`，返回 `{ server, wss, port, host, close }`；`close()` 可重复调用，不注册进程信号处理器。另导出 `parseChatroomPort`、`runChatroomServer`、`DEFAULT_CHATROOM_PORT` 和 `CHATROOM_LIMITS`。
+
 ## 连接 Codex
 
 连接完成后，将下面的 TOML 加入 `~/.codex/config.toml`：
