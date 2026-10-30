@@ -761,9 +761,6 @@ function uploadFile(file, fileId, job) {
               a.style.textDecoration = 'none';
               const btn = document.createElement('button');
               btn.className = 'btn';
-              btn.style.padding = '2px 8px';
-              btn.style.fontSize = '12px';
-              btn.style.whiteSpace = 'nowrap';
               btn.textContent = '复制';
               btn.addEventListener('click', () => {
                 navigator.clipboard.writeText(convertedUrl).then(() => {

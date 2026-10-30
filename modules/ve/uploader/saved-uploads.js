@@ -142,6 +142,8 @@ function getSelectedSavedUploadIds() {
 }
 
 let savedUploadsMutationBusy = false;
+let savedUploadsToolbarMarkup = '';
+let savedUploadsUiReady;
 
 function refreshSavedUploadActions() {
   const section = document.getElementById('saved-uploads-section');
@@ -153,32 +155,12 @@ function refreshSavedUploadActions() {
   if (feedback) feedback.textContent = `已选 ${count} 个文件`;
 }
 
-function savedUploadsToolbarHtml() {
-  return `<div class="saved-uploads-toolbar">
-    <button type="button" class="btn" data-action="import-saved-uploads">导入 JSON（避免重复）</button>
-    <button type="button" class="btn" data-action="export-saved-uploads" disabled>导出 JSON（仅勾选）</button>
-    <button type="button" class="btn" data-action="delete-selected-saved-uploads" title="仅删除本地记录，不删除远程文件" disabled>删除选中文件</button>
-    <span class="saved-uploads-selection" role="status" aria-live="polite">已选 0 个文件</span>
-    <input type="file" class="saved-uploads-import-input" accept=".json,application/json" hidden>
-  </div>`;
-}
-
-function exportSelectedSavedUploads() {
+async function exportSelectedSavedUploads() {
   const ids = getSelectedSavedUploadIds();
   const list = (window.savedUploadedFiles || []).filter((item) => ids.has(item.id));
   if (!list.length) return;
-  const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  try {
-    link.href = url;
-    link.download = `saved-uploads-${Date.now()}.json`;
-    document.body.append(link);
-    link.click();
-  } finally {
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  await navigator.clipboard.writeText(JSON.stringify(list, null, 2));
+  showToast(`已复制 ${list.length} 个文件的记录`, 'success', 2000);
 }
 
 let savedUploadsToggleAnimationSerial = 0;
@@ -248,7 +230,7 @@ function renderSavedUploadsSection() {
   const count = list.length;
   const selectedIds = getSelectedSavedUploadIds();
   if (count === 0) {
-    section.innerHTML = `<div class="saved-uploads-list">${savedUploadsToolbarHtml()}</div>`;
+    section.innerHTML = `<div class="saved-uploads-list">${savedUploadsToolbarMarkup}</div>`;
     section.dataset.expanded = '0';
     if (typeof refreshUploadedFileActions === 'function') refreshUploadedFileActions();
     return;
@@ -307,8 +289,8 @@ function renderSavedUploadsSection() {
         </div>
         <div class="upload-link-row">
           <a class="url-link" href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>
-          <button type="button" class="btn saved-upload-copy" data-action="copy-saved-upload" data-saved-upload-id="${safeEntryId}" style="padding:2px 8px; font-size:12px; white-space:nowrap;">复制</button>
-          <button type="button" class="btn saved-upload-download" data-action="download-saved-upload" data-saved-upload-id="${safeEntryId}" data-url="${safeHref}" data-filename="${escapeHtml(it.fileName || '')}" style="padding:2px 8px; font-size:12px; white-space:nowrap; background:#1e3a8a;">下载</button>
+          <button type="button" class="btn saved-upload-copy" data-action="copy-saved-upload" data-saved-upload-id="${safeEntryId}">复制</button>
+          <button type="button" class="btn saved-upload-download" data-action="download-saved-upload" data-saved-upload-id="${safeEntryId}" data-url="${safeHref}" data-filename="${escapeHtml(it.fileName || '')}">下载</button>
         </div>
         <div class="resource-download-progress" style="display:none;">
           <div class="progress-bar-container"><div class="progress-bar"></div></div>
@@ -331,7 +313,7 @@ function renderSavedUploadsSection() {
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
       </button>
     </div>
-    ${expanded ? `<div class="saved-uploads-list">${savedUploadsToolbarHtml()}${cardsHtml}<div class="saved-uploads-divider" aria-hidden="true"></div></div>` : ''}
+    ${expanded ? `<div class="saved-uploads-list">${savedUploadsToolbarMarkup}${cardsHtml}<div class="saved-uploads-divider" aria-hidden="true"></div></div>` : ''}
   `;
   if (typeof refreshUploadSelectVisibility === 'function') {
     refreshUploadSelectVisibility();
@@ -339,6 +321,52 @@ function renderSavedUploadsSection() {
 }
 
 function setupSavedUploadsUi() {
+  return savedUploadsUiReady ||= initializeSavedUploadsUi();
+}
+
+async function initializeSavedUploadsUi() {
+  const response = await fetch(chrome.runtime.getURL('modules/ve/uploader/saved-uploads.html'));
+  if (!response.ok) throw new Error(`已上传文件界面加载失败：HTTP ${response.status}`);
+  const markup = new DOMParser().parseFromString(await response.text(), 'text/html');
+  savedUploadsToolbarMarkup = markup.getElementById('saved-uploads-toolbar-template').innerHTML;
+  const modal = document.importNode(markup.getElementById('saved-uploads-import-modal'), true);
+  document.body.append(modal);
+  const input = modal.querySelector('textarea');
+  const importError = modal.querySelector('.saved-uploads-import-error');
+  modal.querySelectorAll('[data-action="close"]').forEach(button => button.addEventListener('click', () => {
+    if (!savedUploadsMutationBusy) modal.close();
+  }));
+  modal.addEventListener('cancel', event => { if (savedUploadsMutationBusy) event.preventDefault(); });
+  modal.querySelector('form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (savedUploadsMutationBusy) return;
+    savedUploadsMutationBusy = true;
+    const submit = modal.querySelector('[type="submit"]');
+    submit.disabled = true;
+    input.readOnly = true;
+    importError.hidden = true;
+    refreshSavedUploadActions();
+    try {
+      const imported = validateSavedUploadsImport(JSON.parse(input.value.replace(/^\uFEFF/, '')));
+      const result = mergeSavedUploadsImport(window.savedUploadedFiles || [], imported);
+      if (result.added) {
+        await persistSavedUploads(result.list, true);
+        window.savedUploadedFiles = result.list;
+        document.getElementById('saved-uploads-section').dataset.expanded = '1';
+        renderSavedUploadsSection();
+      }
+      modal.close();
+      showToast(`已导入 ${result.added} 个文件，跳过 ${result.skipped} 个重复记录`, 'success', 2500);
+    } catch (error) {
+      importError.textContent = `导入失败：${String(error?.message || error)}`;
+      importError.hidden = false;
+    } finally {
+      savedUploadsMutationBusy = false;
+      submit.disabled = false;
+      input.readOnly = false;
+      refreshSavedUploadActions();
+    }
+  });
   const cb = document.getElementById('save-uploads-enabled');
   if (cb instanceof HTMLInputElement) {
     cb.checked = !!window.saveUploadedFilesEnabled;
@@ -357,32 +385,6 @@ function setupSavedUploadsUi() {
   }
   const section = document.getElementById('saved-uploads-section');
   if (section instanceof HTMLElement) {
-    section.addEventListener('change', async (event) => {
-      const input = event.target;
-      if (!(input instanceof HTMLInputElement) || !input.matches('.saved-uploads-import-input') || savedUploadsMutationBusy) return;
-      const file = input.files?.[0];
-      if (!file) return;
-      savedUploadsMutationBusy = true;
-      refreshSavedUploadActions();
-      try {
-        if (file.size > 10 * 1024 * 1024) throw new Error('JSON 文件不能超过 10 MB');
-        const imported = validateSavedUploadsImport(JSON.parse((await file.text()).replace(/^\uFEFF/, '')));
-        const result = mergeSavedUploadsImport(window.savedUploadedFiles || [], imported);
-        if (result.added) {
-          await persistSavedUploads(result.list, true);
-          window.savedUploadedFiles = result.list;
-          section.dataset.expanded = '1';
-          renderSavedUploadsSection();
-        }
-        showToast(`已导入 ${result.added} 个文件，跳过 ${result.skipped} 个重复记录`, 'success', 2500);
-      } catch (error) {
-        showToast(`导入失败：${String(error?.message || error)}`, 'error', 3000);
-      } finally {
-        savedUploadsMutationBusy = false;
-        input.value = '';
-        refreshSavedUploadActions();
-      }
-    });
     section.addEventListener('click', async (e) => {
       const t = e.target;
       if (!(t instanceof Element)) return;
@@ -393,11 +395,18 @@ function setupSavedUploadsUi() {
         const action = String(actionEl.dataset.action || '').trim();
         if (actionEl instanceof HTMLButtonElement && actionEl.disabled) return;
         if (action === 'import-saved-uploads') {
-          section.querySelector('.saved-uploads-import-input')?.click();
+          input.value = '';
+          importError.hidden = true;
+          modal.showModal();
+          input.focus();
+          try {
+            const clipboard = await navigator.clipboard.readText();
+            if (modal.open && !input.value) input.value = clipboard.slice(0, input.maxLength);
+          } catch { /* Manual input remains available without clipboard permission. */ }
           return;
         }
         if (action === 'export-saved-uploads') {
-          try { exportSelectedSavedUploads(); }
+          try { await exportSelectedSavedUploads(); }
           catch (error) { showToast(`导出失败：${String(error?.message || error)}`, 'error', 2500); }
           return;
         }

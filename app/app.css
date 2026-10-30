@@ -1031,6 +1031,17 @@ body.platform-column-resizing {
 .upload-link-row { margin: 0; word-break: break-all; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .upload-link-row .url-link { color: #4CAF50; text-decoration: none; font-weight: bold; font-size: 14px; flex: 1; }
 .upload-link-row .url-link:hover { text-decoration: underline; }
+.upload-link-row .btn,
+.resource-link-row :is(.resource-copy-btn,.resource-download-btn) {
+    margin: 0;
+    padding: 2px 8px;
+    font-size: 12px;
+    line-height: normal;
+    height: auto;
+    min-height: 0;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
 .file-item strong { font-size: 15px; }
 #file-list .upload-file-head-row strong,
 .saved-uploads-list .saved-upload-name,

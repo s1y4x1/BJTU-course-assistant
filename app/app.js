@@ -7178,7 +7178,7 @@ const appInitializationPromise = (async function init() {
       }
     }
     await loadSavedUploadsFromStorage();
-    setupSavedUploadsUi();
+    await setupSavedUploadsUi();
     lastValidUsername = (await getLocal('username', '')).trim();
     usernameInput.value = lastValidUsername;
     renderLoginAccountHistorySelect(lastValidUsername);
@@ -7215,7 +7215,7 @@ const appInitializationPromise = (async function init() {
 
   // 本地保存已上传文件：加载并绑定 UI
   await loadSavedUploadsFromStorage();
-  setupSavedUploadsUi();
+  await setupSavedUploadsUi();
 
   // 不默认使用本地保存账号。
   lastValidUsername = (await getLocal('username', '')).trim();

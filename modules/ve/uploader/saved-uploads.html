@@ -1,0 +1,21 @@
+<template id="saved-uploads-toolbar-template">
+  <div class="saved-uploads-toolbar">
+    <button type="button" class="btn" data-action="import-saved-uploads">导入</button>
+    <button type="button" class="btn" data-action="export-saved-uploads" disabled>导出选中文件</button>
+    <button type="button" class="btn" data-action="delete-selected-saved-uploads" title="仅删除本地记录，不删除远程文件" disabled>删除选中文件</button>
+    <span class="saved-uploads-selection" role="status" aria-live="polite">已选 0 个文件</span>
+  </div>
+</template>
+<dialog id="saved-uploads-import-modal" class="saved-uploads-import-modal" aria-labelledby="saved-uploads-import-title">
+  <form class="account-progress-card reset-confirm-card settings-import-card">
+    <button class="reset-confirm-close" data-action="close" type="button" title="关闭" aria-label="关闭">×</button>
+    <div id="saved-uploads-import-title" class="account-progress-title">导入已上传文件</div>
+    <p class="settings-import-description">请粘贴由「导出选中文件」复制的 JSON；已有文件会自动跳过。</p>
+    <textarea id="saved-uploads-import-input" class="settings-import-input" spellcheck="false" aria-label="已上传文件 JSON" maxlength="10485760" required></textarea>
+    <p class="saved-uploads-import-error" role="alert" hidden></p>
+    <div class="reset-confirm-actions">
+      <button class="btn" data-action="close" type="button">取消</button>
+      <button class="btn" type="submit">导入</button>
+    </div>
+  </form>
+</dialog>

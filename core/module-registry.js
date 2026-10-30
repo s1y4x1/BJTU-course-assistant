@@ -4,7 +4,7 @@
   const MODULES = Object.freeze({
     ve: {
       label: '智慧课程平台',
-      styles: ['platform.css'],
+      styles: ['platform.css', 'uploader/saved-uploads.css'],
       files: [
         'vendor/main2.min.js', 'password-cipher.js', 'login-utils.js',
         'login-credentials-dialog.js', 'login-overlay.js', 'account-store.js',
@@ -13,7 +13,7 @@
         'resource-download.js', 'file-preview.js', 'login-service.js', 'background-homework.js',
         'uploader/duplicate-dialog-loader.js', 'uploader/duplicate-dialog.css',
         'uploader/duplicate-dialog.html', 'uploader/saved-uploads.js',
-        'uploader/upload-manager.js', 'uploader/upload-common.js',
+        'uploader/upload-manager.js', 'uploader/upload-common.js', 'uploader/saved-uploads.html',
         'uploader/index.html', 'uploader/index.css', 'uploader/index.js'
       ]
     },
