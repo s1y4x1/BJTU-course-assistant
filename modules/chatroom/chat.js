@@ -62,7 +62,8 @@
   }
   function permitted(id) {
     const peer = state.peers.find((p) => p.id === id);
-    return !!peer && !peer.blocked && (!state.settings.requireFriend || peer.friend);
+    const sharedGroup = state.rooms.some((room) => room.members?.includes(state.self.id) && room.members.includes(id));
+    return !!peer && !peer.blocked && (!state.settings.requireFriend || peer.friend || sharedGroup);
   }
   function connectionStatus(text, ready) {
     online = ready;
