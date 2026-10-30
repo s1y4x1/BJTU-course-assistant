@@ -542,6 +542,7 @@ function uploadFile(file, fileId, job) {
       slotReleased = true;
       activeUploads--;
       processQueue();
+      updateTotalSpeed();
     };
     if (duplicatePaused || job.cancelled || completionSettled) {
       releaseSlot();

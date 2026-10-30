@@ -1028,7 +1028,7 @@ body.platform-column-resizing {
     margin-bottom: 6px;
 }
 
-.upload-link-row { margin-top: 5px; word-break: break-all; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.upload-link-row { margin: 0; word-break: break-all; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .upload-link-row .url-link { color: #4CAF50; text-decoration: none; font-weight: bold; font-size: 14px; flex: 1; }
 .upload-link-row .url-link:hover { text-decoration: underline; }
 .file-item strong { font-size: 15px; }
