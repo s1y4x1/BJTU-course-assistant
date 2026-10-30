@@ -1,5 +1,6 @@
 (function initAcademicOptionsModule(global) {
   'use strict';
+  const functionalPage = !!document.querySelector('[data-module-page="academic"]');
 
   const DEFAULT_MONITOR_INTERVAL_MINUTES = 1;
   const DEFAULT_CLASS_REMINDER_LEAD_MINUTES = 10;
@@ -65,7 +66,7 @@
   let academicBackgroundRefreshActive = false;
   let academicRequestBusyDepth = 0;
   let academicRequestIdleTimer = 0;
-  const academicRequestPort = chrome.runtime.connect({ name: ACADEMIC_OPTIONS_REQUEST_PORT });
+  const academicRequestPort = functionalPage ? chrome.runtime.connect({ name: ACADEMIC_OPTIONS_REQUEST_PORT }) : null;
   let setMessage = () => {};
   let assessmentScriptInstalled = false;
   let assessmentScriptEnabled = false;
@@ -86,6 +87,7 @@
   const academicCacheStore = global.BjtuAcademicCacheStore;
 
   function beginAcademicOptionsRequest() {
+    if (!academicRequestPort) return;
     if (academicRequestIdleTimer) {
       clearTimeout(academicRequestIdleTimer);
       academicRequestIdleTimer = 0;
@@ -95,6 +97,7 @@
   }
 
   function endAcademicOptionsRequest() {
+    if (!academicRequestPort) return;
     academicRequestBusyDepth = Math.max(0, academicRequestBusyDepth - 1);
     if (academicRequestBusyDepth > 0) return;
     academicRequestIdleTimer = setTimeout(() => {
@@ -1938,9 +1941,11 @@
     if (studentId instanceof HTMLInputElement && document.activeElement !== studentId) {
       studentId.value = String(context?.studentId || '');
     }
-    element('academicScoreMonitorEnabled').checked = context?.monitorEnabled !== false;
-    element('academicExamMonitorEnabled').checked = context?.examMonitorEnabled !== false;
-    element('academicClassReminderEnabled').checked = context?.classReminderEnabled === true;
+    if (!functionalPage) {
+      element('academicScoreMonitorEnabled').checked = context?.monitorEnabled !== false;
+      element('academicExamMonitorEnabled').checked = context?.examMonitorEnabled !== false;
+      element('academicClassReminderEnabled').checked = context?.classReminderEnabled === true;
+    }
     renderAccounts(context);
     renderMonitorStatus(context?.monitorStatus);
     renderExamStatus(context?.examMonitorStatus);
@@ -2854,6 +2859,7 @@
 
   function bindMessages() {
     chrome.runtime.onMessage.addListener((message) => {
+      if (!functionalPage) return;
       if (message?.type === 'ACADEMIC_DATA_UPDATED') {
         const payload = message.payload || {};
         const payloadStudentId = String(payload.studentId || '').trim();
@@ -2940,18 +2946,18 @@
         select.value = [...select.options].some((option) => option.value === value) ? value : 'all';
         renderSchedule();
       }
-      if (changes.academicScheduleSemester) {
+      if (functionalPage && changes.academicScheduleSemester) {
         scheduleSemesterPreference = String(changes.academicScheduleSemester.newValue || '');
         renderCachedScheduleData();
       }
-      if (changes.academicScoreSemester) {
+      if (functionalPage && changes.academicScoreSemester) {
         scoreSemesterPreference = String(changes.academicScoreSemester.newValue || '');
         renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
         renderCachedSharedData();
       }
       if (changes.academicOptionsWideEnabled) {
         const enabled = changes.academicOptionsWideEnabled.newValue !== false;
-        element('academicOptionsWideEnabled').checked = enabled;
+        if (element('academicOptionsWideEnabled')) element('academicOptionsWideEnabled').checked = enabled;
         applyWideOption(enabled);
       }
       if (changes[ACADEMIC_FULLSCREEN_BUTTON_KEY] && element(ACADEMIC_FULLSCREEN_BUTTON_KEY)) {
@@ -3008,16 +3014,18 @@
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
     await chrome.storage.local.remove(['academicScheduleType', 'academicExamSemester']);
     const stored = await chrome.storage.local.get([...Object.keys(DEFAULTS), ACADEMIC_STUDENT_ID_KEY]);
-    element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = stored[ACADEMIC_FULLSCREEN_BUTTON_KEY] !== false;
-    element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = stored[ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY] === 'system'
-      ? 'system'
-      : 'graduation';
-    element('academicOptionsWideEnabled').checked = stored.academicOptionsWideEnabled !== false;
+    if (!functionalPage) {
+      element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = stored[ACADEMIC_FULLSCREEN_BUTTON_KEY] !== false;
+      element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = stored[ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY] === 'system'
+        ? 'system'
+        : 'graduation';
+      element('academicOptionsWideEnabled').checked = stored.academicOptionsWideEnabled !== false;
+      element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled !== false;
+      element('academicExamMonitorEnabled').checked = stored.academicExamMonitorEnabled !== false;
+      element('academicClassReminderEnabled').checked = stored.academicClassReminderEnabled === true;
+      renderBbSettings(stored);
+    }
     applyWideOption(stored.academicOptionsWideEnabled !== false);
-    element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled !== false;
-    element('academicExamMonitorEnabled').checked = stored.academicExamMonitorEnabled !== false;
-    element('academicClassReminderEnabled').checked = stored.academicClassReminderEnabled === true;
-    renderBbSettings(stored);
     scheduleSemesterPreference = String(stored.academicScheduleSemester || '');
     scoreSemesterPreference = String(stored.academicScoreSemester || '');
     setIntervalEditor('academicScoreMonitorInterval', stored.academicScoreMonitorIntervalMinutes,
@@ -3027,7 +3035,10 @@
     bindEvents();
     bindMessages();
     updateDisabledState();
-    EXTERNAL_SCRIPTS.forEach((script) => { void refreshExternalScriptState(script); });
+    if (!functionalPage) {
+      EXTERNAL_SCRIPTS.forEach((script) => { void refreshExternalScriptState(script); });
+      return true;
+    }
     const cachedStudentId = String(stored[ACADEMIC_STUDENT_ID_KEY] || '').trim();
     if (cachedStudentId) {
       context = { studentId: cachedStudentId };
@@ -3049,7 +3060,7 @@
 
   async function reset() {
     await chrome.storage.local.set(DEFAULTS);
-    if (!initialized) return;
+    if (!initialized || functionalPage) return;
     invalidateAcademicCaches({ removeStored: true });
     element('academicScoreMonitorEnabled').checked = true;
     element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = true;
@@ -3059,9 +3070,6 @@
     element('academicExamMonitorEnabled').checked = true;
     element('academicClassReminderEnabled').checked = false;
     renderBbSettings(DEFAULTS);
-    element('academicScheduleWeek').value = 'all';
-    renderDataSemesterOptions('academicScheduleSemester', 'academicScheduleCurrentSemesterBtn', [], '', '');
-    renderScoreSemesterOptions([], '', '');
     scheduleSemesterPreference = '';
     scoreSemesterPreference = '';
     setIntervalEditor('academicScoreMonitorInterval', DEFAULT_MONITOR_INTERVAL_MINUTES,

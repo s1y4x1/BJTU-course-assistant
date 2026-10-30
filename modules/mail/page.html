@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <script src="../../UI/options-message.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BJTU 邮件系统</title>
+  <script src="../../UI/theme.js"></script>
+  <script src="../../UI/file-size-emphasis.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="../../UI/file-size-emphasis.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="mail">
+<section id="mail-system-section" class="mail-options-card" data-options-fragment data-module-page="mail">
+  <div class="section-title">BJTU 邮件系统</div>
+  <div class="mail-login-actions">
+    <button id="bindMailSystemBtn" type="button">🔗 通过 MIS 登录邮箱</button>
+    <span id="mailUserInfo" class="mail-user-info">尚未读取用户信息。</span>
+  </div>
+  <div class="mail-score-header mail-schedule-header">
+    <strong>收件箱</strong>
+    <span class="mail-schedule-controls">
+      <label for="mailListLimit" class="mail-limit-label">加载</label>
+      <input type="number" id="mailListLimit" min="0" step="1" placeholder="∞"
+        aria-label="收件箱加载条数，留空加载全部">
+      <span class="mail-limit-label">条</span>
+      <span class="mail-score-header-meta">
+        <time id="mailCheckedAt"></time>
+        <span id="mailCount" class="mail-score-count"></span>
+      </span>
+    </span>
+  </div>
+  <div id="mailLoading" class="mail-loading">
+    <span class="options-page-spinner"></span><span>正在读取收件箱…</span>
+  </div>
+  <div id="mailTableWrap" class="mail-table-wrap mail-data-table">
+    <table class="mail-thread-table">
+      <thead><tr>
+        <th>主题</th><th>摘要</th><th>发件人</th><th>时间</th>
+      </tr></thead>
+      <tbody id="mailTableBody"></tbody>
+    </table>
+  </div>
+  <div id="mailStatus" class="option-status mail-status"></div>
+</section>
+<div id="msg"></div>
+<script src="options.js"></script>
+<script src="../../core/option-tips.js"></script>
+<script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>

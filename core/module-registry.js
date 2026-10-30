@@ -41,7 +41,8 @@
     academic: {
       label: '教务系统',
       styles: ['options.css'],
-      files: ['system.js', 'cache-store.js', 'score-statistics.js', 'options.html', 'options.js'],
+      files: ['system.js', 'cache-store.js', 'score-statistics.js', 'options.html', 'options.js', 'page.html'],
+      page: { fragment: 'page.html', style: 'options.css', script: 'options.js', scripts: ['cache-store.js', 'score-statistics.js'] },
       options: {
         fragment: 'options.html',
         style: 'options.css',
@@ -59,7 +60,8 @@
     mail: {
       label: 'BJTU 邮件系统',
       styles: ['options.css'],
-      files: ['system.js', 'options.html', 'options.js'],
+      files: ['system.js', 'options.html', 'options.js', 'page.html'],
+      page: { fragment: 'page.html', style: 'options.css', script: 'options.js' },
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     },
     MJ: {

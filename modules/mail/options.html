@@ -32,10 +32,6 @@
     <input type="checkbox" id="mailMonitorEnabled">监控收件箱并通知
   </label>
   <div class="tip">检测时会按「统一身份认证」中的平台选择，使用已保存的账号密码恢复登录，再通过 MIS 登录邮箱；首次检测仅建立基线，已读的新邮件不会发送通知。</div>
-  <div class="mail-login-actions">
-    <button id="bindMailSystemBtn" type="button">🔗 通过 MIS 登录邮箱</button>
-    <span id="mailUserInfo" class="mail-user-info">尚未读取用户信息。</span>
-  </div>
   <div id="mailMonitorIntervalEditor" class="schedule-interval-editor">
     <span>检查间隔</span>
     <input type="number" id="mailMonitorIntervalValue" min="1" step="1" value="10"
@@ -46,31 +42,7 @@
       <option value="1440">天</option>
     </select>
   </div>
-  <div class="mail-score-header mail-schedule-header">
-    <strong>收件箱</strong>
-    <span class="mail-schedule-controls">
-      <label for="mailListLimit" class="mail-limit-label">加载</label>
-      <input type="number" id="mailListLimit" min="0" step="1" placeholder="∞"
-        aria-label="收件箱加载条数，留空加载全部">
-      <span class="mail-limit-label">条</span>
-      <span class="mail-score-header-meta">
-        <time id="mailCheckedAt"></time>
-        <span id="mailCount" class="mail-score-count"></span>
-      </span>
-    </span>
-  </div>
-  <div id="mailLoading" class="mail-loading">
-    <span class="options-page-spinner"></span><span>正在读取收件箱…</span>
-  </div>
-  <div id="mailTableWrap" class="mail-table-wrap mail-data-table">
-    <table class="mail-thread-table">
-      <thead><tr>
-        <th>主题</th><th>摘要</th><th>发件人</th><th>时间</th>
-      </tr></thead>
-      <tbody id="mailTableBody"></tbody>
-    </table>
-  </div>
-  <div id="mailStatus" class="option-status mail-status"></div>
+  <a class="module-functional-page-link" data-module-page-link="mail" href="/modules/mail/page.html">打开 BJTU 邮件系统</a>
 </section>
 <div id="msg"></div>
 <script src="options.js"></script>

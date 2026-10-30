@@ -49,6 +49,9 @@
         link.removeAttribute('target');
         link.removeAttribute('rel');
       });
+      slot.querySelectorAll('[data-module-page-link]').forEach((link) => {
+        link.href = chrome.runtime.getURL(`modules/${id}/${definition.page.fragment}`);
+      });
       host.before(slot);
       if (options.style) await global.BjtuModuleRegistry.loadStyle(`modules/${id}/${options.style}`);
       for (const extraStyle of options.styles || []) {

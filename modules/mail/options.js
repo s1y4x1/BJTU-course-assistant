@@ -1,5 +1,6 @@
 (function initMailOptionsModule(global) {
   'use strict';
+  const functionalPage = !!document.querySelector('[data-module-page="mail"]');
 
   const DEFAULT_INTERVAL_MINUTES = 10;
   const MAX_INTERVAL_MINUTES = 525600;
@@ -72,6 +73,7 @@
   }
 
   function renderSummary({ total = null, unreadCount = null, checkedAt = 0 } = {}) {
+    if (!functionalPage) return;
     renderCheckedAt(element('mailCheckedAt'), checkedAt);
     const parts = [];
     if (Number.isFinite(Number(total))) parts.push(`共 ${Number(total)} 封`);
@@ -466,6 +468,7 @@
   }
 
   async function loadThreads() {
+    if (!functionalPage) return;
     element('mailLoading').style.display = 'flex';
     element('mailTableWrap').style.display = 'none';
     clearError();
@@ -498,7 +501,7 @@
     }
     updateDisabledState();
     if (!context?.ok) return null;
-    element(ENABLED_KEY).checked = context.enabled === true;
+    if (element(ENABLED_KEY)) element(ENABLED_KEY).checked = context.enabled === true;
     setIntervalEditor(context.intervalMinutes, DEFAULT_INTERVAL_MINUTES);
     const limitInput = element(LIST_LIMIT_INPUT_ID);
     if (limitInput instanceof HTMLInputElement && document.activeElement !== limitInput) {
@@ -616,7 +619,7 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes[ENABLED_KEY]) {
-        element(ENABLED_KEY).checked = changes[ENABLED_KEY].newValue === true;
+        if (element(ENABLED_KEY)) element(ENABLED_KEY).checked = changes[ENABLED_KEY].newValue === true;
         updateDisabledState();
       }
       if (changes[INTERVAL_KEY]) {
@@ -642,6 +645,7 @@
       }
     });
     chrome.runtime.onMessage.addListener((message) => {
+      if (!functionalPage) return;
       if (message?.type !== 'MAIL_DATA_UPDATED') return;
       const payload = message.payload || {};
       if (payload.kind === 'threads') {
@@ -659,8 +663,10 @@
     setMessage = typeof options.setMessage === 'function' ? options.setMessage : setMessage;
     bindEvents();
     await refreshContext();
-    void loadUserInfo();
-    void loadThreads();
+    if (functionalPage) {
+      void loadUserInfo();
+      void loadThreads();
+    }
     return true;
   }
 
@@ -673,7 +679,7 @@
       [FULLSCREEN_BUTTON_ICON_KEY]: 'envelope'
     });
     await chrome.storage.local.remove([STATUS_KEY]);
-    if (!initialized) return;
+    if (!initialized || functionalPage) return;
     element(ENABLED_KEY).checked = true;
     element(FULLSCREEN_BUTTON_KEY).checked = true;
     element(FULLSCREEN_BUTTON_ICON_KEY).value = 'envelope';

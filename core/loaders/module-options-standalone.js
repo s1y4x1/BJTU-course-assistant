@@ -22,6 +22,9 @@
       return;
     }
     const id = String(document.body?.dataset?.optionsModule || '');
+    document.querySelectorAll('[data-module-page-link]').forEach(link => {
+      link.href = chrome.runtime.getURL(`modules/${id}/page.html`);
+    });
     if (!global.BjtuModuleRegistry) {
       await new Promise((resolve, reject) => {
         const script = document.createElement('script');

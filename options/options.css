@@ -46,6 +46,8 @@ button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; 
   font-size:12px;
   font-weight:600;
 }
+.module-functional-page-link { display:inline-block; margin-top:8px; color:#1976d2; text-decoration:none; font-size:var(--bjtu-font-size-body,13px); }
+html[data-color-scheme="dark"] .module-functional-page-link { color:#60a5fa; }
 .module-options-page-link:hover,
 .module-options-page-link:focus-visible {
   color:#1976d2;

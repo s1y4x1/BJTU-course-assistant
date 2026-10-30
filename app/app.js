@@ -516,7 +516,7 @@ async function initFullscreenModuleButtons() {
         return view;
       }
       const definition = globalThis.BjtuModuleRegistry.definitions[moduleId];
-      const options = definition?.options;
+      const options = definition?.page || definition?.options;
       if (!options?.fragment || !options?.script) throw new Error(`模块 ${moduleId} 没有可加载的选项片段`);
       const stylePaths = [options.style, ...(options.styles || [])].filter(Boolean);
       for (const style of stylePaths) {

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <script src="../../UI/options-message.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>教务系统</title>
+  <script src="../../UI/theme.js"></script>
+  <script src="../../UI/file-size-emphasis.js"></script>
+  <link rel="stylesheet" href="../../options/options.css">
+  <link rel="stylesheet" href="../../UI/theme.css">
+  <link rel="stylesheet" href="../../UI/file-size-emphasis.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="module-options-standalone" data-options-module="academic">
+<section id="academic-system-section" class="academic-options-card" data-options-fragment data-module-page="academic">
+  <div class="section-title">教务系统</div>
+  <label for="academicAccountSelect">已保存账号</label>
+  <div class="academic-account-row">
+    <select id="academicAccountSelect" aria-label="已保存的教务系统账号">
+      <option value="">暂无已保存账号</option>
+    </select>
+  </div>
+  <label for="academicStudentId">用户名（学号）</label>
+  <input id="academicStudentId" type="text" autocomplete="username" placeholder="自动使用智慧课程平台账号">
+  <label for="academicPassword">密码（身份证号后六位）</label>
+  <input id="academicPassword" type="password" maxlength="6" autocomplete="off"
+    placeholder="登录成功后保存在扩展本地存储">
+  <div class="academic-login-actions">
+    <button id="academicLoginBtn" type="button">登录教务系统</button>
+    <button id="bindAcademicSystemBtn" type="button">🔗 通过 MIS 登录教务系统</button>
+  </div>
+  <div class="tip">账号密码会在登录成功后按学号保存在扩展本地存储中，用于切换账号和恢复登录。</div>
+  <div class="academic-score-header academic-schedule-header">
+    <strong>课表</strong>
+    <span class="academic-schedule-controls">
+      <label for="academicScheduleSemester">学期</label>
+      <select id="academicScheduleSemester" aria-label="课表学期"></select>
+      <button id="academicScheduleCurrentSemesterBtn" type="button" disabled style="display:none">本学期</button>
+      <label for="academicScheduleWeek">周数</label>
+      <select id="academicScheduleWeek" aria-label="课表周数">
+        <option value="all" selected>全部</option>
+      </select>
+      <button id="academicScheduleCurrentWeekBtn" type="button">本周</button>
+    </span>
+  </div>
+  <div id="academicScheduleLoading" class="academic-score-loading">
+    <span class="options-page-spinner"></span><span>正在读取课表…</span>
+  </div>
+  <div id="academicScheduleEmpty" class="option-status academic-data-empty">暂无课表数据</div>
+  <div id="academicScheduleTableWrap" class="academic-score-table-wrap academic-data-table">
+    <table class="academic-score-table academic-schedule-table">
+      <thead><tr>
+        <th>节次</th><th>星期一</th><th>星期二</th><th>星期三</th>
+        <th>星期四</th><th>星期五</th><th>星期六</th><th>星期日</th>
+      </tr></thead>
+      <tbody id="academicScheduleTableBody"></tbody>
+    </table>
+  </div>
+  <div id="academicScheduleStatus" class="option-status academic-schedule-status"></div>
+
+  <div class="academic-score-header academic-schedule-header">
+    <strong>考务考试信息与成绩</strong>
+    <span class="academic-schedule-controls">
+      <label for="academicScoreSemester">学期</label>
+      <select id="academicScoreSemester" aria-label="成绩与考试学期">
+        <option value="__all__" selected>全部</option>
+      </select>
+      <button id="academicScoreCurrentSemesterBtn" type="button" disabled>本学期</button>
+    </span>
+  </div>
+
+  <div id="academicExamTableWrap" class="academic-score-table-wrap academic-data-table">
+    <table class="academic-score-table academic-exam-table">
+      <thead><tr>
+        <th>学期</th><th>考试</th><th>课程</th><th>时间地点</th><th>考试方式</th>
+        <th>备注</th><th>报名信息</th><th>考试状态</th><th>操作</th>
+      </tr></thead>
+      <tbody id="academicExamTableBody"></tbody>
+    </table>
+  </div>
+  <div id="academicExamLoading" class="academic-score-loading">
+    <span class="options-page-spinner"></span><span id="academicExamLoadingText">正在读取考试信息…</span>
+  </div>
+  <div id="academicExamStatus" class="option-status academic-exam-status"></div>
+
+  <div id="academicScoreStatistics" class="academic-score-statistics" style="display:none">
+    <span>平均学分绩点 <strong id="academicAverageGpa">-</strong></span>
+    <span>加权平均成绩 <strong id="academicWeightedAverageScore">-</strong></span>
+  </div>
+  <div id="academicScoreTableWrap" class="academic-score-table-wrap academic-data-table">
+    <table class="academic-score-table">
+      <thead><tr>
+        <th>学期</th><th>课程</th><th>学分</th>
+        <th>成绩</th><th>加分成绩</th><th>上课教师</th><th>详细信息</th>
+      </tr></thead>
+      <tbody id="academicScoreTableBody"></tbody>
+    </table>
+  </div>
+  <div id="academicScoreLoading" class="academic-score-loading">
+    <span class="options-page-spinner"></span><span id="academicScoreLoadingText">正在读取成绩…</span>
+  </div>
+  <div id="academicSystemStatus" class="option-status academic-score-status"></div>
+</section>
+<div id="msg"></div>
+<script src="../../core/module-registry.js"></script>
+<script src="../../UI/deadline-countdown.js"></script>
+<script src="cache-store.js"></script>
+<script src="score-statistics.js"></script>
+<script src="options.js"></script>
+<script src="../../core/option-tips.js"></script>
+<script src="../../core/loaders/module-options-standalone.js"></script>
+</body>
+</html>
