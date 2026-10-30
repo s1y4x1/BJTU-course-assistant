@@ -74,8 +74,10 @@
                         <div id="total-server-bar" class="progress-bar"></div>
                     </div>
                 </div>
-                <button id="copy-all-btn" class="btn" disabled>复制选中链接</button>
-                <button id="download-selected-uploads-btn" class="btn" type="button" disabled>下载选中文件</button>
+                <div class="selected-file-actions">
+                    <button id="copy-all-btn" class="btn" disabled>复制选中链接</button>
+                    <button id="download-selected-uploads-btn" class="btn" type="button" disabled>下载选中文件</button>
+                </div>
             </div>
 
             <div id="drop-zone" style="display:flex; align-items:stretch;">
@@ -127,7 +129,7 @@
                             <div id="resource-download-total-bar" class="progress-bar"></div>
                         </div>
                     </div>
-                    <div class="resource-space-actions">
+                    <div class="resource-space-actions selected-file-actions">
                         <button id="resource-copy-selected-btn" class="btn" type="button" disabled>复制选中链接</button>
                         <button id="resource-download-selected-btn" class="btn" type="button" disabled>下载选中文件</button>
                     </div>

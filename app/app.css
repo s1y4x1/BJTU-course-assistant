@@ -756,7 +756,7 @@ body.platform-column-resizing {
 }
     color: #6b7280;
 }
-.resource-space-actions {
+.selected-file-actions {
     display: flex;
     align-items: center;
     gap: 6px;
