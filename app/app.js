@@ -1836,7 +1836,54 @@ function refreshUploadSelectVisibility() {
   wraps.forEach((wrap) => {
     wrap.style.display = 'inline-flex';
   });
+  refreshUploadedFileActions();
 }
+
+// Share the same visible checkbox scope as the existing copy/attachment UI.
+function getSelectedUploadDownloadItems() {
+  return Array.from(document.querySelectorAll('#file-list .submit-file-check:checked, #saved-uploads-section[data-expanded="1"] .submit-file-check:checked')).flatMap((checkbox) => {
+    const id = checkbox.dataset.fileId;
+    const card = checkbox.closest('.file-item');
+    const meta = window.uploadedFileMetaById?.[id];
+    const link = card?.querySelector('.url-link');
+    const url = link?.href || meta?.url;
+    if (!url || !id) return [];
+    const name = card?.querySelector('strong')?.textContent || meta?.fileName || '下载';
+    const size = Math.max(0, Number(meta?.fileSize) || 0);
+    return [{ id, name, url, extName: splitFileName(name).fileExtName, sizeMbRaw: size / (1024 * 1024), sizeMb: size ? formatSize(size) : '-', inputTime: '' }];
+  });
+}
+
+function refreshUploadedFileActions() {
+  const count = getSelectedUploadDownloadItems().length;
+  if (copyAllBtn) copyAllBtn.disabled = count === 0;
+  const download = document.getElementById('download-selected-uploads-btn');
+  if (download) download.disabled = count === 0 || download.dataset.busy === '1';
+  if (typeof refreshSavedUploadActions === 'function') refreshSavedUploadActions();
+}
+
+document.addEventListener('change', (event) => {
+  if (event.target instanceof Element && event.target.matches('.submit-file-check')) refreshUploadedFileActions();
+});
+
+document.getElementById('download-selected-uploads-btn')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const items = getSelectedUploadDownloadItems();
+  if (!items.length) return;
+  button.dataset.busy = '1';
+  refreshUploadedFileActions();
+  try {
+    // Enqueue together so the existing shared concurrency limit remains in control.
+    const results = await Promise.allSettled(items.map((item) => Promise.resolve().then(() => enqueueResourceDownload(item))));
+    const failed = results.filter((result) => result.status === 'rejected');
+    showToast(failed.length ? `下载完成 ${items.length - failed.length} 个，失败 ${failed.length} 个：${String(failed[0].reason?.message || failed[0].reason)}` : `已完成 ${items.length} 个文件下载`, failed.length ? 'error' : 'success', 2500);
+  } catch (error) {
+    showToast(`下载失败：${String(error?.message || error)}`, 'error', 2500);
+  } finally {
+    delete button.dataset.busy;
+    refreshUploadedFileActions();
+  }
+});
 
 const COURSE_PLATFORM_COLUMNS = Object.freeze([
   { id: 've', label: '智慧课程平台' },
@@ -6147,11 +6194,20 @@ window.__fetchVideoDetail = async function (rpId, courseId, xkhId, teacherId, bt
   }
 };
 
+function refreshResourceSelectedActions() {
+  const selected = typeof getSelectableDownloadItems === 'function'
+    ? getSelectableDownloadItems().filter((item) => window.resourceSpaceSelected.has(String(item.id || '')))
+    : [];
+  if (resourceCopySelectedBtn) resourceCopySelectedBtn.disabled = selected.length === 0;
+  if (resourceDownloadSelectedBtn) {
+    resourceDownloadSelectedBtn.disabled = !selected.some((item) => !isResourceDownloadActive(String(item.id || '').trim()));
+  }
+}
+
 if (resourceCopySelectedBtn) {
   resourceCopySelectedBtn.addEventListener('click', () => {
     const selected = getSelectableDownloadItems().filter((it) => window.resourceSpaceSelected.has(String(it.id || '')));
     if (!selected.length) {
-      showToast('请先选择文件', 'warning', 1200);
       return;
     }
     let text = '';
@@ -6212,7 +6268,6 @@ if (resourceDownloadSelectedBtn) {
       return window.resourceSpaceSelected.has(rid) && !isResourceDownloadActive(rid);
     });
     if (!selected.length) {
-      showToast('请先选择文件', 'warning', 1200);
       return;
     }
 

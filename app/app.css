@@ -1032,6 +1032,11 @@ body.platform-column-resizing {
 .upload-link-row .url-link { color: #4CAF50; text-decoration: none; font-weight: bold; font-size: 14px; flex: 1; }
 .upload-link-row .url-link:hover { text-decoration: underline; }
 .file-item strong { font-size: 15px; }
+#file-list .upload-file-head-row strong,
+.saved-uploads-list .saved-upload-name,
+:is(#file-list,.saved-uploads-list) .upload-link-row .url-link {
+    font-size: var(--bjtu-font-size-body, 13px);
+}
 .file-item .course-card-title > strong {
     font-size: inherit !important;
 }
@@ -1192,9 +1197,10 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     color: #000;
     font-weight: 700;
 }
-#copy-all-btn {
+#copy-all-btn,
+#download-selected-uploads-btn {
     padding: 5px 10px;
-    font-size: 12px;
+    font-size: var(--bjtu-font-size-body, 13px);
     white-space: nowrap;
     background-color: #4CAF50;
 }
@@ -2008,8 +2014,8 @@ html[data-custom-color-button] :is(.course-actions .btn,.homework-card-actions .
 #course-list button[data-action="videos"] { background:var(--bjtu-color-replay) !important; color:var(--bjtu-color-replay-foreground) !important; }
 #course-list button[data-action="assessment"] { background:var(--bjtu-color-assessment) !important; color:var(--bjtu-color-assessment-foreground) !important; }
 #course-list button[data-action="archive"] { background:var(--bjtu-color-archive) !important; color:var(--bjtu-color-archive-foreground) !important; }
-html:root :is(.resource-copy-btn,.saved-upload-copy,#resource-copy-selected-btn) { background:var(--bjtu-color-copy) !important; color:var(--bjtu-color-copy-foreground) !important; }
-html:root :is(.resource-download-btn:not(.is-cancel),.saved-upload-download:not(.is-cancel),#resource-download-selected-btn) { background:var(--bjtu-color-download) !important; color:var(--bjtu-color-download-foreground) !important; }
+html:root :is(.resource-copy-btn,.saved-upload-copy,#resource-copy-selected-btn,#copy-all-btn) { background:var(--bjtu-color-copy) !important; color:var(--bjtu-color-copy-foreground) !important; }
+html:root :is(.resource-download-btn:not(.is-cancel),.saved-upload-download:not(.is-cancel),#resource-download-selected-btn,#download-selected-uploads-btn) { background:var(--bjtu-color-download) !important; color:var(--bjtu-color-download-foreground) !important; }
 html[data-custom-color-coursecard] #course-list .file-item[data-course-rankable="1"] { background:var(--bjtu-color-courseCard) !important; color:var(--bjtu-color-courseCard-foreground); }
 html[data-custom-color-coursecard] #course-list .file-item[data-course-rankable="1"] :is(.course-card-title,.course-card-title strong,.course-card-identity > :not(.course-card-title),.mooc-course-identity > :not(.course-card-title),.xuetangx-course-identity > :not(.course-card-title)) { color:var(--bjtu-color-courseCard-foreground) !important; }
 html[data-custom-color-filecard] :is(#file-list,.resource-space-list,.saved-uploads-list,.result-area) .file-item:not([data-course-rankable="1"]) { background:var(--bjtu-color-fileCard) !important; color:var(--bjtu-color-fileCard-foreground); }
@@ -2045,6 +2051,11 @@ html[data-color-scheme="dark"] .platform-status-btn.platform-text-load.unselecte
 /* Saved uploads list (in 本地保存本次上传过的文件) — 与下方新上传列表保持一致 */
 #saved-uploads-section { margin-top: 8px; }
 .saved-uploads-list { display: flow-root; }
+.saved-uploads-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
+.saved-uploads-toolbar .btn { padding:5px 10px; font-size:var(--bjtu-font-size-body, 13px); background:var(--bjtu-color-button, #475569); color:var(--bjtu-color-button-foreground, #fff); }
+.saved-uploads-toolbar [data-action="delete-selected-saved-uploads"] { background:var(--bjtu-color-danger, #dc2626); }
+.saved-uploads-selection { font-size:var(--bjtu-font-size-body, 13px); color:inherit; }
+:is(#copy-all-btn,#download-selected-uploads-btn,#resource-copy-selected-btn,#resource-download-selected-btn,.saved-uploads-toolbar .btn):disabled { opacity:.5; cursor:not-allowed; }
 .saved-uploads-list > .file-item,
 .file-item.homework-attachment-file { margin-bottom: 5px; }
 .saved-uploads-divider { display:none; height:0; margin:12px 0; border-top:1px solid #e5e7eb; }

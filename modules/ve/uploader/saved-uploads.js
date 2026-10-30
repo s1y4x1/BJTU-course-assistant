@@ -15,10 +15,11 @@ async function loadSavedUploadsFromStorage() {
   }
 }
 
-async function persistSavedUploads() {
+async function persistSavedUploads(list = window.savedUploadedFiles, strict = false) {
   try {
-    await chrome.storage.local.set({ [SAVED_UPLOADS_KEY]: window.savedUploadedFiles });
-  } catch {
+    await chrome.storage.local.set({ [SAVED_UPLOADS_KEY]: list });
+  } catch (error) {
+    if (strict) throw error;
     // ignore quota / IO errors
   }
 }
@@ -61,14 +62,123 @@ async function addSavedUpload(file, serverData, convertedUrl) {
 async function removeSavedUpload(id) {
   const target = String(id || '').trim();
   if (!target) return;
+  await removeSavedUploads(new Set([target]));
+}
+
+async function removeSavedUploads(ids) {
   const list = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles : [];
-  window.savedUploadedFiles = list.filter((it) => it && it.id !== target);
+  const next = list.filter((it) => it && !ids.has(it.id));
+  await persistSavedUploads(next, true);
+  window.savedUploadedFiles = next;
   // Clean up the synthesized meta entry so the checkbox can no longer find the file.
-  if (window.uploadedFileMetaById) {
-    delete window.uploadedFileMetaById[`saved_${target}`];
+  for (const id of ids) {
+    if (window.uploadedFileMetaById) delete window.uploadedFileMetaById[`saved_${id}`];
   }
-  await persistSavedUploads();
   renderSavedUploadsSection();
+}
+
+function normalizeSavedUploadUrl(value) {
+  if (typeof value !== 'string' || !value.trim() || /[\u0000-\u0020\u007f\\]/.test(value)) throw new Error('URL 必须是有效的 HTTP(S) 地址');
+  if (!/^https?:\/\//i.test(value)) throw new Error('URL 仅支持 HTTP(S)');
+  const url = new URL(value);
+  if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) throw new Error('URL 不允许包含账号或密码');
+  url.hash = '';
+  url.searchParams.sort();
+  return url.href;
+}
+
+function validateSavedUploadsImport(data) {
+  // Export uses the storage array verbatim; also accept a chrome.storage-style envelope.
+  const list = Array.isArray(data) ? data
+    : data && typeof data === 'object' && Object.keys(data).length === 1 ? data[SAVED_UPLOADS_KEY] : null;
+  if (!Array.isArray(list)) throw new Error('JSON 必须是文件记录数组或 savedUploadedFiles 对象');
+  if (list.length > 10000) throw new Error('一次最多导入 10000 条记录');
+  const allowed = new Set(['id', 'fileName', 'fileSize', 'sha256', 'visitName', 'url', 'savedAt']);
+  return list.map((item, index) => {
+    try {
+      if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some((key) => !allowed.has(key))) throw new Error('记录结构或字段不正确');
+      for (const key of ['id', 'fileName', 'visitName', 'url']) {
+        if (typeof item[key] !== 'string' || !item[key].trim() || /[\u0000-\u001f\u007f]/.test(item[key])) throw new Error(`${key} 必须是非空字符串`);
+      }
+      if (!Number.isSafeInteger(item.fileSize) || item.fileSize < 0) throw new Error('fileSize 必须是非负安全整数');
+      if (!Number.isSafeInteger(item.savedAt) || item.savedAt < 0 || item.savedAt > 8640000000000000) throw new Error('savedAt 必须是有效时间戳');
+      if (item.sha256 !== undefined && (typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256))) throw new Error('sha256 必须是 64 位十六进制散列');
+      normalizeSavedUploadUrl(item.url);
+      // Keep the actual URL intact: rewriting query encoding can invalidate signed links.
+      return { id: item.id.trim(), fileName: item.fileName.trim(), fileSize: item.fileSize, visitName: item.visitName.trim(), url: item.url, savedAt: item.savedAt, ...(item.sha256 === undefined ? {} : { sha256: item.sha256.toLowerCase() }) };
+    } catch (error) {
+      throw new Error(`第 ${index + 1} 条记录：${error.message}`);
+    }
+  });
+}
+
+function mergeSavedUploadsImport(current, imported) {
+  const visits = new Set();
+  const urls = new Set();
+  const hashes = new Set();
+  const ids = new Set(current.map((item) => item.id));
+  const remember = (item) => {
+    visits.add(String(item.visitName || '').trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/'));
+    try { urls.add(normalizeSavedUploadUrl(item.url)); } catch { /* Preserve legacy records. */ }
+    if (item.sha256) hashes.add(String(item.sha256).toLowerCase());
+  };
+  current.forEach(remember);
+  const added = [];
+  for (const item of imported) {
+    const visit = item.visitName.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+    if (visits.has(visit) || urls.has(normalizeSavedUploadUrl(item.url)) || (item.sha256 && hashes.has(item.sha256))) continue;
+    let id = item.id;
+    while (ids.has(id)) id = `up_${globalThis.crypto.randomUUID()}`;
+    const entry = { ...item, id };
+    ids.add(id);
+    remember(entry);
+    added.push(entry);
+  }
+  return { list: [...added, ...current], added: added.length, skipped: imported.length - added.length };
+}
+
+function getSelectedSavedUploadIds() {
+  return new Set(Array.from(document.querySelectorAll('#saved-uploads-section[data-expanded="1"] .submit-file-check:checked'), (checkbox) => checkbox.dataset.fileId.slice('saved_'.length)));
+}
+
+let savedUploadsMutationBusy = false;
+
+function refreshSavedUploadActions() {
+  const section = document.getElementById('saved-uploads-section');
+  if (!section) return;
+  const count = getSelectedSavedUploadIds().size;
+  section.querySelectorAll('[data-action="export-saved-uploads"], [data-action="delete-selected-saved-uploads"]').forEach((button) => { button.disabled = savedUploadsMutationBusy || count === 0; });
+  section.querySelectorAll('[data-action="import-saved-uploads"], [data-action="delete-saved-upload"]').forEach((button) => { button.disabled = savedUploadsMutationBusy; });
+  const feedback = section.querySelector('.saved-uploads-selection');
+  if (feedback) feedback.textContent = `已选 ${count} 个文件`;
+}
+
+function savedUploadsToolbarHtml() {
+  return `<div class="saved-uploads-toolbar">
+    <button type="button" class="btn" data-action="import-saved-uploads">导入 JSON（避免重复）</button>
+    <button type="button" class="btn" data-action="export-saved-uploads" disabled>导出 JSON（仅勾选）</button>
+    <button type="button" class="btn" data-action="delete-selected-saved-uploads" title="仅删除本地记录，不删除远程文件" disabled>删除选中文件</button>
+    <span class="saved-uploads-selection" role="status" aria-live="polite">已选 0 个文件</span>
+    <input type="file" class="saved-uploads-import-input" accept=".json,application/json" hidden>
+  </div>`;
+}
+
+function exportSelectedSavedUploads() {
+  const ids = getSelectedSavedUploadIds();
+  const list = (window.savedUploadedFiles || []).filter((item) => ids.has(item.id));
+  if (!list.length) return;
+  const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  try {
+    link.href = url;
+    link.download = `saved-uploads-${Date.now()}.json`;
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 
 let savedUploadsToggleAnimationSerial = 0;
@@ -136,9 +246,11 @@ function renderSavedUploadsSection() {
   if (!(section instanceof HTMLElement)) return;
   const list = Array.isArray(window.savedUploadedFiles) ? window.savedUploadedFiles : [];
   const count = list.length;
+  const selectedIds = getSelectedSavedUploadIds();
   if (count === 0) {
-    section.innerHTML = '';
+    section.innerHTML = `<div class="saved-uploads-list">${savedUploadsToolbarHtml()}</div>`;
     section.dataset.expanded = '0';
+    if (typeof refreshUploadedFileActions === 'function') refreshUploadedFileActions();
     return;
   }
   const expanded = section.dataset.expanded === '1';
@@ -183,11 +295,10 @@ function renderSavedUploadsSection() {
         <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
           <div class="saved-upload-main">
             <label class="upload-select-wrap">
-              <input type="checkbox" class="submit-file-check" data-file-id="${safeSynthFileId}">
+              <input type="checkbox" class="submit-file-check" data-file-id="${safeSynthFileId}" ${selectedIds.has(entryId) ? 'checked' : ''}>
               作为作业附件
             </label>
             <strong class="saved-upload-name">${name}</strong>
-            <span class="inline-status" style="font-size:12px; margin-left:8px; color:#2e7d32;">已上传</span>
             <span class="size-progress" style="margin-left:5px;">${size}</span>${timeHtml}
           </div>
           <div class="saved-upload-actions">
@@ -220,7 +331,7 @@ function renderSavedUploadsSection() {
         <span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>
       </button>
     </div>
-    ${expanded ? `<div class="saved-uploads-list">${cardsHtml}<div class="saved-uploads-divider" aria-hidden="true"></div></div>` : ''}
+    ${expanded ? `<div class="saved-uploads-list">${savedUploadsToolbarHtml()}${cardsHtml}<div class="saved-uploads-divider" aria-hidden="true"></div></div>` : ''}
   `;
   if (typeof refreshUploadSelectVisibility === 'function') {
     refreshUploadSelectVisibility();
@@ -241,10 +352,37 @@ function setupSavedUploadsUi() {
     invertBtn.addEventListener('click', () => {
       document.querySelectorAll('#file-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
       document.querySelectorAll('#saved-uploads-section[data-expanded="1"] .saved-uploads-list > .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
+      if (typeof refreshUploadedFileActions === 'function') refreshUploadedFileActions();
     });
   }
   const section = document.getElementById('saved-uploads-section');
   if (section instanceof HTMLElement) {
+    section.addEventListener('change', async (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || !input.matches('.saved-uploads-import-input') || savedUploadsMutationBusy) return;
+      const file = input.files?.[0];
+      if (!file) return;
+      savedUploadsMutationBusy = true;
+      refreshSavedUploadActions();
+      try {
+        if (file.size > 10 * 1024 * 1024) throw new Error('JSON 文件不能超过 10 MB');
+        const imported = validateSavedUploadsImport(JSON.parse((await file.text()).replace(/^\uFEFF/, '')));
+        const result = mergeSavedUploadsImport(window.savedUploadedFiles || [], imported);
+        if (result.added) {
+          await persistSavedUploads(result.list, true);
+          window.savedUploadedFiles = result.list;
+          section.dataset.expanded = '1';
+          renderSavedUploadsSection();
+        }
+        showToast(`已导入 ${result.added} 个文件，跳过 ${result.skipped} 个重复记录`, 'success', 2500);
+      } catch (error) {
+        showToast(`导入失败：${String(error?.message || error)}`, 'error', 3000);
+      } finally {
+        savedUploadsMutationBusy = false;
+        input.value = '';
+        refreshSavedUploadActions();
+      }
+    });
     section.addEventListener('click', async (e) => {
       const t = e.target;
       if (!(t instanceof Element)) return;
@@ -253,6 +391,33 @@ function setupSavedUploadsUi() {
       const actionEl = t.closest('[data-action]');
       if (actionEl instanceof HTMLElement) {
         const action = String(actionEl.dataset.action || '').trim();
+        if (actionEl instanceof HTMLButtonElement && actionEl.disabled) return;
+        if (action === 'import-saved-uploads') {
+          section.querySelector('.saved-uploads-import-input')?.click();
+          return;
+        }
+        if (action === 'export-saved-uploads') {
+          try { exportSelectedSavedUploads(); }
+          catch (error) { showToast(`导出失败：${String(error?.message || error)}`, 'error', 2500); }
+          return;
+        }
+        if (action === 'delete-selected-saved-uploads' || action === 'delete-saved-upload') {
+          if (savedUploadsMutationBusy) return;
+          const ids = action === 'delete-saved-upload' ? new Set([actionEl.dataset.savedUploadId]) : getSelectedSavedUploadIds();
+          if (!ids.size) return;
+          savedUploadsMutationBusy = true;
+          refreshSavedUploadActions();
+          try {
+            await removeSavedUploads(ids);
+            showToast(`已删除 ${ids.size} 条本地记录，远程文件不受影响`, 'success', 2000);
+          } catch (error) {
+            showToast(`删除失败：${String(error?.message || error)}`, 'error', 2500);
+          } finally {
+            savedUploadsMutationBusy = false;
+            refreshSavedUploadActions();
+          }
+          return;
+        }
         if (action === 'toggle-saved-uploads') {
           const expanded = section.dataset.expanded === '1';
           const serial = ++savedUploadsToggleAnimationSerial;
@@ -265,16 +430,12 @@ function setupSavedUploadsUi() {
             return;
           }
           section.dataset.expanded = '0';
+          if (typeof refreshUploadedFileActions === 'function') refreshUploadedFileActions();
           updateSavedUploadsToggleButton(section, false);
           await animateSavedUploadsItems(section, false);
           if (serial === savedUploadsToggleAnimationSerial && section.dataset.expanded === '0') {
             renderSavedUploadsSection();
           }
-          return;
-        }
-        if (action === 'delete-saved-upload') {
-          const id = String(actionEl.dataset.savedUploadId || '').trim();
-          if (id) removeSavedUpload(id);
           return;
         }
         if (action === 'copy-saved-upload') {

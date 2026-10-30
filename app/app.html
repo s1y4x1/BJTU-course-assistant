@@ -74,7 +74,8 @@
                         <div id="total-server-bar" class="progress-bar"></div>
                     </div>
                 </div>
-                <button id="copy-all-btn" class="btn">复制选中链接</button>
+                <button id="copy-all-btn" class="btn" disabled>复制选中链接</button>
+                <button id="download-selected-uploads-btn" class="btn" type="button" disabled>下载选中文件</button>
             </div>
 
             <div id="drop-zone" style="display:flex; align-items:stretch;">
@@ -127,8 +128,8 @@
                         </div>
                     </div>
                     <div class="resource-space-actions">
-                        <button id="resource-copy-selected-btn" class="btn">复制选中链接</button>
-                        <button id="resource-download-selected-btn" class="btn">下载选中文件</button>
+                        <button id="resource-copy-selected-btn" class="btn" type="button" disabled>复制选中链接</button>
+                        <button id="resource-download-selected-btn" class="btn" type="button" disabled>下载选中文件</button>
                     </div>
                 </div>
                 <div id="resource-space-status" class="resource-space-status">等待加载…</div>
@@ -340,6 +341,7 @@
     <script src="../modules/ve/uploader/upload-manager.js"></script>
     <script src="../core/loaders/updater-loader.js"></script>
     <script src="../core/loaders/qwen-app-loader.js"></script>
+    <script src="../core/loaders/chatroom-loader.js"></script>
     <script src="../core/toolbar-pin.js"></script>
 
 </body>

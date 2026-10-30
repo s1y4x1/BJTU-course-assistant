@@ -83,6 +83,7 @@ function getResourceSpaceSelectableIds() {
 }
 
 function refreshResourceSelectAllButton() {
+  refreshResourceSelectedActions();
   if (!(resourceSelectAllBtn instanceof HTMLButtonElement)) return;
   const ids = getResourceSpaceSelectableIds();
   resourceSelectAllBtn.textContent = '反选';
@@ -364,7 +365,7 @@ function isResourceDownloadActive(resourceId) {
 
 function setResourceItemDownloadingState(resourceId, downloading) {
   const row = findResourceItemElementById(resourceId);
-  if (!row) return;
+  if (!row) { refreshResourceSelectedActions(); return; }
   const checkbox = row.querySelector('input[data-action="resource-check"]');
   const downloadBtn = row.querySelector('button.resource-download-btn') || row.querySelector('button.saved-upload-download');
 
@@ -396,6 +397,8 @@ function setResourceItemDownloadingState(resourceId, downloading) {
       downloadBtn.disabled = false;
     }
   }
+  refreshResourceSelectedActions();
+  refreshUploadedFileActions();
 }
 
 function updateResourceDownloadTotals() {

@@ -241,7 +241,6 @@ function renderAlreadyUploadedFile(file, fileId, known) {
   item.className = 'file-item';
   item.dataset.uploadFileId = fileId;
   item.dataset.duplicateUpload = '1';
-  const source = escapeHtml(String(known?.source || '已上传').trim());
   const safeName = escapeHtml(String(file?.name || known?.fileName || '(未命名)').trim());
   const safeUrl = escapeHtml(url);
   const sizeBytes = Number(file?.size || known?.fileSize || 0);
@@ -253,7 +252,6 @@ function renderAlreadyUploadedFile(file, fileId, known) {
       <div>
         ${checkboxHtml}
         <strong>${safeName}</strong>
-        <span class="inline-status" style="font-size:12px; margin-left:8px; color:#2e7d32;">${source}</span>
         <span class="size-progress" style="margin-left:5px;">(${renderFileSizeText(sizeBytes)})</span>
       </div>
       <div></div>
@@ -781,6 +779,7 @@ function uploadFile(file, fileId, job) {
               updateTotalProgress();
             }
             cancelBtn.style.display = 'none';
+            inlineStatus?.remove();
             completeUpload({
               fileName: String(file.name || ''),
               fileSize: Number(file.size || 0),
@@ -1235,10 +1234,11 @@ copyAllBtn.addEventListener('click', () => {
   if (savedSection) appendChecked(savedSection);
   textToCopy = textToCopy.trim();
   if (!textToCopy) {
-    showToast('请先选择文件', 'warning', 1200);
     return;
   }
   navigator.clipboard.writeText(textToCopy).then(() => {
     showToast('已复制选中链接', 'success', 1200);
+  }).catch(() => {
+    showToast('复制失败，请手动复制链接', 'error', 2000);
   });
 });
