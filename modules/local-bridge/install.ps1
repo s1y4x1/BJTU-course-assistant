@@ -1,11 +1,28 @@
 param(
-  [int]$Port = 1896,
+  [ValidateRange(1, 65535)][int]$Port = 1896,
   [switch]$SkipStart
 )
 
-$InstallerVersion = '1.0.10'
+# ASCII bootstrap: repository templates are GBK/936, installed launchers UTF-8 BOM.
+# Decode before using any localized strings, including in pwsh (UTF-8 by default).
+if ($BJTUCAEncodingReloadedPath -ne $PSCommandPath) {
+  $sourceBytes = [System.IO.File]::ReadAllBytes($PSCommandPath)
+  if ($sourceBytes.Length -lt 3 -or $sourceBytes[0] -ne 239 -or $sourceBytes[1] -ne 187 -or $sourceBytes[2] -ne 191) {
+    $BJTUCAEncodingReloadedPath = $PSCommandPath
+    $sourceText = [System.IO.File]::ReadAllText($PSCommandPath, [System.Text.Encoding]::GetEncoding(936))
+    $sourceTokens = $null; $sourceErrors = $null
+    $sourceAst = [System.Management.Automation.Language.Parser]::ParseInput($sourceText, $PSCommandPath, [ref]$sourceTokens, [ref]$sourceErrors)
+    if ($sourceErrors.Count) { throw $sourceErrors[0] }
+    $sourceArguments = @()
+    if ($args.Count) { $sourceArguments = @($args) }
+    & $sourceAst.GetScriptBlock() @PSBoundParameters @sourceArguments
+    return
+  }
+}
+
+$InstallerVersion = '1.0.12'
 $ErrorActionPreference = 'Stop'
-$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$bridgeRoot = Split-Path -Parent $PSCommandPath
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw '未找到 Node.js，请先安装 Node.js 20 或更高版本。'
@@ -48,7 +65,7 @@ $commandScriptPath = Join-Path $bridgeRoot 'command.ps1'
 $escapedBridgeRoot = $bridgeRoot.Replace("'", "''")
 $launcherText = [System.IO.File]::ReadAllText($commandScriptPath, [System.Text.Encoding]::GetEncoding(936))
 $launcherText = $launcherText.Replace(
-  '$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path',
+  '$bridgeRoot = Split-Path -Parent $PSCommandPath',
   "`$BJTUCACommandVersion = '$InstallerVersion'`r`n`$bridgeRoot = '$escapedBridgeRoot'"
 )
 $launcherEncoding = [System.Text.UTF8Encoding]::new($true)
@@ -66,7 +83,7 @@ foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
 $protocolScriptPath = Join-Path $commandDirectory 'protocol.ps1'
 $protocolText = [System.IO.File]::ReadAllText((Join-Path $bridgeRoot 'protocol.ps1'), [System.Text.Encoding]::GetEncoding(936))
 $protocolText = $protocolText.Replace(
-  '$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path',
+  '$bridgeRoot = Split-Path -Parent $PSCommandPath',
   "`$bridgeRoot = '$escapedBridgeRoot'"
 )
 [System.IO.File]::WriteAllText($protocolScriptPath, $protocolText, $launcherEncoding)

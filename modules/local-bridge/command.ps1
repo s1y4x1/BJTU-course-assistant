@@ -3,9 +3,25 @@ param(
   [Alias('v')][switch]$ShowVersion
 )
 
+# ASCII bootstrap: repository templates are GBK/936, installed launchers UTF-8 BOM.
+if ($BJTUCAEncodingReloadedPath -ne $PSCommandPath) {
+  $sourceBytes = [System.IO.File]::ReadAllBytes($PSCommandPath)
+  if ($sourceBytes.Length -lt 3 -or $sourceBytes[0] -ne 239 -or $sourceBytes[1] -ne 187 -or $sourceBytes[2] -ne 191) {
+    $BJTUCAEncodingReloadedPath = $PSCommandPath
+    $sourceText = [System.IO.File]::ReadAllText($PSCommandPath, [System.Text.Encoding]::GetEncoding(936))
+    $sourceTokens = $null; $sourceErrors = $null
+    $sourceAst = [System.Management.Automation.Language.Parser]::ParseInput($sourceText, $PSCommandPath, [ref]$sourceTokens, [ref]$sourceErrors)
+    if ($sourceErrors.Count) { throw $sourceErrors[0] }
+    $sourceArguments = @()
+    if ($args.Count) { $sourceArguments = @($args) }
+    & $sourceAst.GetScriptBlock() @PSBoundParameters @sourceArguments
+    return
+  }
+}
+
 $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$bridgeRoot = Split-Path -Parent $PSCommandPath
 $commandDirectory = Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant'
 $displayCommand = if ($env:BJTUCA_COMMAND_NAME) {
   $env:BJTUCA_COMMAND_NAME
@@ -14,6 +30,7 @@ $displayCommand = if ($env:BJTUCA_COMMAND_NAME) {
 } else { 'BJTUCA' }
 if ($BridgeArguments.Count -eq 1 -and $BridgeArguments[0] -eq '') { $BridgeArguments = @() }
 $action = if ($ShowVersion) { '--version' } elseif ($BridgeArguments.Count) { $BridgeArguments[0] } else { 'start' }
+if ($action -eq '--chatroom') { $action = 'chatroom' }
 if ($action -in @('uninstall', 'uninst', 'unist', 'u')) {
   if ($BridgeArguments.Count -gt 2 -or ($BridgeArguments.Count -eq 2 -and $BridgeArguments[1] -ne '-r')) {
     throw "卸载命令仅接受 -r 参数（只取消注册），如 $displayCommand u -r"
@@ -25,6 +42,7 @@ switch ($action) {
   { $_ -in @('help', '--help', '-h', '-?', '/?') } {
     Write-Output @"
 用法：$displayCommand [start] [--port=端口]
+      $displayCommand chatroom [--port=端口]
       $displayCommand --show-token
       $displayCommand -c "ve.courseList"
       $displayCommand -c "help ve.login ykt.assignments"
@@ -37,7 +55,9 @@ switch ($action) {
 bjtuca-bridge 和 BJTUCA 支持相同参数。
 
 start          启动本地 Bridge（默认操作，端口读取 bridge.json，初始为 1896）
---port=N       本次启动使用端口 N（1 至 65535），并写回 bridge.json
+chatroom       启动独立聊天室服务器（默认端口 1897，不等待扩展连接）
+--port=N       指定端口 N（1 至 65535）：普通 Bridge 会写回 bridge.json；
+               chatroom 仅影响该独立服务，不写入 bridge.json
 --show-token   显示 bridge.json 中的 Bearer Token，不启动服务
 -c 命令        执行一条终端命令并退出；复用正在运行的 Bridge，否则临时启动并等待扩展连接
 uninstall      删除注册的命令并从用户 PATH 移除命令目录，且删除 Bridge 本身及配置（简写 u/uninst/unist）
@@ -97,7 +117,7 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
     }
     return
   }
-  'start' {
+  { $_ -in @('start', 'chatroom') } {
     $startArguments = if ($BridgeArguments.Count -gt 1) {
       @($BridgeArguments[1..($BridgeArguments.Count - 1)])
     } else { @() }
@@ -109,19 +129,21 @@ $startArguments = @($startArguments)
 $singleCommandIndex = [Array]::IndexOf($startArguments, '-c')
 $singleCommandText = $null
 if ($singleCommandIndex -ge 0) {
+  if ($action -eq 'chatroom') { throw 'chatroom 不支持 -c' }
   if ($singleCommandIndex -eq $startArguments.Count - 1) { throw '-c 后必须提供命令' }
   $singleCommandText = ($startArguments[($singleCommandIndex + 1)..($startArguments.Count - 1)] -join ' ').Trim()
   if (-not $singleCommandText) { throw '-c 后必须提供命令' }
   $startArguments = if ($singleCommandIndex) { @($startArguments[0..($singleCommandIndex - 1)]) } else { @() }
 }
 foreach ($argument in $startArguments) {
-  if ($argument -notmatch '^--port=([0-9]+)$' -and $argument -ne '--show-token') {
+  if ($argument -notmatch '\A--port=([0-9]{1,5})\z' -and ($argument -ne '--show-token' -or $action -eq 'chatroom')) {
     throw "不支持的参数：$argument。运行 $displayCommand --help 查看用法。"
   }
-  if ($argument -match '^--port=([0-9]+)$' -and ([int64]$Matches[1] -lt 1 -or [int64]$Matches[1] -gt 65535)) {
+  if ($argument -match '\A--port=([0-9]{1,5})\z' -and ([int]$Matches[1] -lt 1 -or [int]$Matches[1] -gt 65535)) {
     throw '端口必须是 1 至 65535 的整数'
   }
 }
+if (@($startArguments | Where-Object { $_ -like '--port=*' }).Count -gt 1) { throw '只能指定一个端口' }
 if ($startArguments -contains '--show-token' -and $startArguments.Count -ne 1) {
   throw '--show-token 不能与其他参数一起使用'
 }
@@ -140,9 +162,14 @@ if ($startArguments -notcontains '--show-token') {
   }
 }
 $previousRunCommand = $env:BJTUCA_RUN_COMMAND
+$previousRawArguments = $env:BJTUCA_RAW_ARGUMENTS
 try {
   $env:BJTUCA_RUN_COMMAND = $singleCommandText
-  if ($singleCommandText) {
+  if ($action -eq 'chatroom') {
+    # Do not inherit a stale single-command request from a parent CMD launcher.
+    $env:BJTUCA_RAW_ARGUMENTS = $null
+    & node (Join-Path $bridgeRoot 'src\server.js') --chatroom @startArguments
+  } elseif ($singleCommandText) {
     & npm --silent --prefix $bridgeRoot start -- @startArguments
   } elseif ($startArguments.Count) {
     & npm --silent --prefix $bridgeRoot start -- @startArguments
@@ -151,5 +178,6 @@ try {
   }
 } finally {
   $env:BJTUCA_RUN_COMMAND = $previousRunCommand
+  $env:BJTUCA_RAW_ARGUMENTS = $previousRawArguments
 }
 exit $LASTEXITCODE

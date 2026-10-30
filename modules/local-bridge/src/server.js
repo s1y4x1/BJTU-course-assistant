@@ -806,7 +806,10 @@ process.on('SIGINT', handleTerminalInterrupt);
 process.on('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
 }
 
-if (process.argv[2] === 'chatroom' || process.argv.slice(2).includes('--chatroom')) {
+// Service subcommands are selected only at the entry position. In particular,
+// explicit `-c chatroom` remains a one-shot operation, not a server startup.
+const entryArguments = process.argv.slice(2);
+if (['chatroom', '--chatroom'].includes(entryArguments[0]) && !entryArguments.includes('-c')) {
   try {
     const { runChatroomServer } = await import('./chatroom-server.js');
     await runChatroomServer();

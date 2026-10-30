@@ -3,11 +3,48 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($args.Count -or $Uri -notmatch '^bjtuca://(?:start)?/?$') {
-  throw 'Only bjtuca://start is supported. Commands, code and query parameters are not accepted.'
+if ($args.Count) { throw 'Extra protocol arguments are not accepted.' }
+$isChatroom = $false
+$chatroomPort = 1897
+$portArgument = @()
+if ($Uri -match '\Abjtuca://chatroom/?(?:\?port=([0-9]{1,5}))?\z') {
+  $isChatroom = $true
+  if ($Matches[1]) {
+    $chatroomPort = [int]$Matches[1]
+    if ($chatroomPort -lt 1 -or $chatroomPort -gt 65535) { throw 'Port must be between 1 and 65535.' }
+    $portArgument = @("--port=$chatroomPort")
+  }
+} elseif ($Uri -notmatch '\Abjtuca://(?:start)?/?\z') {
+  throw 'Only bjtuca://start and bjtuca://chatroom[?port=1..65535] are supported. Commands and code are not accepted.'
 }
 
-$bridgeRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$bridgeRoot = Split-Path -Parent $PSCommandPath
+if ($isChatroom) {
+  # Never route URL text through CMD, Invoke-Expression, or the -c command path.
+  # Keep concurrent protocol activations from racing before node starts listening.
+  $chatroomMutex = [Threading.Mutex]::new($false, "Local\BJTUCA-Protocol-Chatroom-$chatroomPort")
+  $ownsChatroomMutex = $false
+  $previousRunCommand = $env:BJTUCA_RUN_COMMAND
+  $previousRawArguments = $env:BJTUCA_RAW_ARGUMENTS
+  try {
+    try { $ownsChatroomMutex = $chatroomMutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $ownsChatroomMutex = $true }
+    if (-not $ownsChatroomMutex) { return }
+    $health = $null
+    try { $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$chatroomPort/health" -TimeoutSec 2 }
+    catch { }
+    if ($health.ok -eq $true -and $health.service -ceq 'bjtuca-chatroom') { return }
+    $env:BJTUCA_RUN_COMMAND = $null
+    $env:BJTUCA_RAW_ARGUMENTS = $null
+    & node (Join-Path $bridgeRoot 'src\server.js') --chatroom @portArgument
+  } finally {
+    $env:BJTUCA_RUN_COMMAND = $previousRunCommand
+    $env:BJTUCA_RAW_ARGUMENTS = $previousRawArguments
+    if ($ownsChatroomMutex) { $chatroomMutex.ReleaseMutex() }
+    $chatroomMutex.Dispose()
+  }
+  exit $LASTEXITCODE
+}
 $startMutex = [Threading.Mutex]::new($false, 'Local\BJTUCA-Protocol-Start')
 $ownsMutex = $false
 try {
@@ -26,7 +63,7 @@ try {
   catch { }
   if ($health.ok -eq $true) { return }
 
-  $launcher = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'BJTUCA.ps1'
+  $launcher = Join-Path (Split-Path -Parent $PSCommandPath) 'BJTUCA.ps1'
   if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
     throw 'BJTUCA is not installed. Run modules/local-bridge/install.ps1 first.'
   }
