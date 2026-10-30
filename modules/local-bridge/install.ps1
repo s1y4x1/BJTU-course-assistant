@@ -99,7 +99,7 @@ if (Test-Path -LiteralPath $legacyCommandDirectory -PathType Container) {
 }
 
 Write-Host "Bridge 已安装到当前目录：$bridgeRoot"
-Write-Host '已注册 bjtuca-bridge 和 BJTUCA 命令及 bjtuca://start 协议，可在任意目录或从浏览器启动。'
+Write-Host '已注册 bjtuca-bridge 和 BJTUCA 命令及 bjtuca:// 协议，可在任意目录或从浏览器启动。'
 if ($SkipStart) { return }
 Write-Host 'Bridge 正在运行；按 Ctrl+C 可停止。'
 if ($Port -eq 1896) {
