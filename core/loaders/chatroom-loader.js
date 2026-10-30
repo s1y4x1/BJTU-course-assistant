@@ -8,6 +8,7 @@
   if (!container) return;
   const button = document.createElement('button');
   button.id = 'chatroom-fullscreen-button';
+  button.dataset.bound = '1';
   button.className = 'fullscreen-module-button floating-launcher-button';
   button.type = 'button';
   button.title = '局域网聊天室';
@@ -19,11 +20,4 @@
   button.addEventListener('click', () => void globalThis.BjtuChatroomLauncher.open().catch(error => globalThis.showToast?.(error.message,'error')));
   button.hidden = (await chrome.storage.local.get('chatroomFullscreenButtonEnabled')).chatroomFullscreenButtonEnabled === false;
   globalThis.BjtuSyncFloatingLauncherContainer?.();
-  chrome.storage.onChanged.addListener((changes,area) => {
-    if (area !== 'local' || !changes.chatroomFullscreenButtonEnabled) return;
-    const show = changes.chatroomFullscreenButtonEnabled.newValue !== false;
-    if (globalThis.BjtuFloatingWindowAnimations) void globalThis.BjtuFloatingWindowAnimations.animateButton(button,show);
-    else button.hidden = !show;
-    globalThis.BjtuSyncFloatingLauncherContainer?.();
-  });
 })().catch(console.error);

@@ -77,14 +77,33 @@
     return copy({ self: publicIdentity, settings: data.settings, peers: data.peers, rooms: data.rooms, requests: data.requests, messages: data.messages });
   }
   const storage = G.browser?.storage?.local || G.chrome?.storage?.local;
-  async function save() { await storage.set({ [KEY]: data }); }
+  const storageEvents = (G.browser || G.chrome)?.storage?.onChanged;
+  let lastSaved = '';
+  function locked(fn) {
+    return G.navigator?.locks ? G.navigator.locks.request('bjtuca-chatroom-state', fn) : fn();
+  }
+  function applyStored(value) {
+    if (!value || value.schema !== 1 || value.identity?.publicKey?.x !== data.identity.publicKey.x
+        || value.identity?.publicKey?.y !== data.identity.publicKey.y) fail('聊天室身份存储已更改，请重新打开聊天室。');
+    data = copy(value);
+    publicIdentity.nickname = data.settings.nickname;
+  }
+  async function save() {
+    lastSaved = JSON.stringify(data);
+    await storage.set({ [KEY]: data });
+  }
+  function linkedPeers() {
+    return data.peers.filter(p => !p.blocked && p.online && link && (!link.isConnected || link.isConnected(p.id))).map(p => p.id);
+  }
   function serial(fn) {
     const task = queue.then(() => ready).then(fn);
     queue = task.catch(() => {});
     return task;
   }
   async function commit(fn) {
-    return serial(async () => {
+    return serial(() => locked(async () => {
+      const stored = (await storage.get(KEY))[KEY];
+      if (stored) applyStored(stored);
       const before = copy(data), identityBefore = copy(publicIdentity), effects = [];
       try {
         const result = await fn(effects);
@@ -93,7 +112,7 @@
         if (result?.event) emit(result.event);
         return { result, effects };
       } catch (error) { data = before; publicIdentity = identityBefore; throw error; }
-    });
+    }));
   }
   async function deliver(effects) {
     const results = await Promise.allSettled(effects.map(async ({ peerId, type, payload }) => {
@@ -197,11 +216,25 @@
     if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, proof), proof)) fail('持久身份密钥不匹配。');
     data.peers.forEach((p) => { p.online = false; });
     trimHistory();
-    await save();
+    if (!stored) await save();
   }
-  const ready = initialize();
+  const ready = locked(initialize);
   // Attach a handler without changing the rejecting ready Promise exposed to callers.
   ready.catch((error) => emit({ type: 'error', error: error.message }));
+  const onStorageChanged = (changes, area) => {
+    if (area !== 'local' || !changes[KEY]?.newValue || JSON.stringify(changes[KEY].newValue) === lastSaved) return;
+    void serial(async () => {
+      const nickname = publicIdentity.nickname;
+      applyStored((await storage.get(KEY))[KEY]);
+      emit({ type: 'state', state: snapshot() });
+      return nickname !== publicIdentity.nickname;
+    }).then(changed => {
+      if (!changed) return;
+      return deliver(linkedPeers().map(peerId => ({peerId, type:'profile', payload:{}})));
+    }).catch(error => emit({ type: 'error', error: error.message }));
+  };
+  storageEvents?.addListener(onStorageChanged);
+  G.addEventListener?.('pagehide', () => storageEvents?.removeListener(onStorageChanged), {once:true});
 
   async function makePacket(type, payload = {}) {
     await ready;
@@ -270,7 +303,7 @@
         if (args.requireFriend !== undefined) { if (typeof args.requireFriend !== 'boolean') fail('无效好友策略。'); data.settings.requireFriend = args.requireFriend; }
         if (args.invitePolicy !== undefined) { if (!['ask', 'allow', 'deny'].includes(args.invitePolicy)) fail('无效邀请策略。'); data.settings.invitePolicy = args.invitePolicy; }
         publicIdentity.nickname = data.settings.nickname;
-        fanout(effects, data.peers.map((p) => p.id), 'profile', {});
+        fanout(effects, linkedPeers(), 'profile', {});
         if (data.settings.invitePolicy === 'deny') data.requests = data.requests.filter((r) => r.type !== 'group');
         return {};
       }

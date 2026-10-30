@@ -3,6 +3,12 @@
   if (global.BjtuChatroomLauncher) return;
   let opening;
   async function open() {
+    if (location.pathname.endsWith('/app/app.html')) {
+      if (!global.BjtuFullscreenModuleWindows) {
+        await new Promise(resolve => global.addEventListener('bjtu-fullscreen-module-windows-ready', resolve, {once:true}));
+      }
+      return global.BjtuFullscreenModuleWindows.open('chatroom');
+    }
     if (opening) return opening;
     opening = (async () => {
       const url = chrome.runtime.getURL('modules/chatroom/chat.html');

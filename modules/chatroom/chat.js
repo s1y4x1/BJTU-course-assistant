@@ -5,9 +5,28 @@
  * explicit opt-in online discovery and offline pairing. No local bridge needed.
  * RTC payload protocol below is independent of the transport implementation.
  */
-(() => {
+(async () => {
   'use strict';
   const $ = (id) => document.getElementById(id);
+  const embedded = new URLSearchParams(location.search).get('embedded') === '1';
+  let embeddedVisible = true;
+  document.body.classList.toggle('chatroom-embedded', embedded);
+  if (embedded) document.addEventListener('pointerdown', () => {
+    try { parent.BjtuFullscreenModuleWindows?.focus('chatroom'); } catch {}
+  }, {capture:true});
+  // Import only the shared controls, without the options page shell or scripts.
+  const response = await fetch(new URL('options.html', location.href));
+  if (!response.ok) throw new Error('无法加载聊天室联系人和设置。');
+  const source = new DOMParser().parseFromString(await response.text(), 'text/html');
+  const start = source.querySelector('[data-chatroom-sidebar-start]');
+  const end = source.querySelector('[data-chatroom-sidebar-end]');
+  if (!start || !end) throw new Error('聊天室联系人和设置模板缺失。');
+  const fragment = document.createDocumentFragment();
+  for (let control = start.nextSibling; control && control !== end; control = control.nextSibling) {
+    fragment.append(document.importNode(control, true));
+  }
+  $('sidebar-host').replaceChildren(fragment);
+  $('sidebar-host').removeAttribute('aria-busy');
   const LIMIT = { messages: 600, peers: 500, rooms: 100, requests: 100, sessions: 8, history: 32, memory: 128 * 1024 * 1024, chunk: 32 * 1024 };
   const PROTOCOL = 'bjtu-chatroom-rtc-v1';
   let state = { self: {}, peers: [], rooms: [], messages: [], requests: [], settings: {} };
@@ -15,10 +34,10 @@
   let transport, unsubscribe, stopped = false, online = false, stateTimer, statePromise, stateDirty = false;
   let capture = null, sharingPending = false, memoryReserved = 0;
   const sessions = new Map(), transferHistory = [], drafts = new Map(), scrollPositions = new Map();
-  const peerNodes = new Map(), roomNodes = new Map(), requestNodes = new Map(), messageNodes = new Map();
+  const messageNodes = new Map();
   const pendingSignals = new Map(), closedSessions = new Map();
   const uiAbort = new AbortController();
-  let lastToast = { text: '', at: 0 }, messageConversation = '', pairingBusy = false;
+  let lastToast = { text: '', at: 0 }, messageConversation = '';
 
   function node(tag, text, cls) {
     const el = document.createElement(tag);
@@ -68,8 +87,8 @@
   function connectionStatus(text, ready) {
     online = ready;
     $('connection-status').textContent = text;
-    for (const id of ['send', 'scan', 'create-group']) $(id).disabled = !ready;
-    for (const id of ['pair-create', 'pair-accept', 'pair-complete']) $(id).disabled = !ready || pairingBusy || typeof globalThis.BjtuChatroomLink?.pairCreate !== 'function';
+    $('send').disabled = !ready;
+    sidebar.setReady(ready);
     updateConversation();
   }
   async function action(name, args = {}) {
@@ -111,7 +130,6 @@
       if (result?.ok === false || result?.error) throw new Error('无法读取聊天室状态。');
       mergeState(result);
       connectionStatus('本机引擎就绪 · 扫描或离线配对后与对方直连；不使用 STUN / TURN。', true);
-      if ($('pair-status').textContent === '等待连接引擎。') $('pair-status').textContent = '引擎已就绪。可生成邀请，或接收对方邀请。';
     })();
     try { await statePromise; } finally { statePromise = null; if (stateDirty) scheduleState(); }
   }
@@ -179,47 +197,11 @@
     for (const [key, item] of cache) if (!keep.has(key)) { item.el.remove(); cache.delete(key); }
   }
   function renderState() {
-    reconcile($('conversations'), roomNodes, [{ id: 'public', name: '公共群聊' }, ...state.rooms], (r) => r.id, (room) => {
-      const el = button(room.name || '未命名群聊', () => chooseConversation(room.id), 'conversation-link');
-      el.dataset.conversation = room.id;
-      return el;
-    });
-    reconcile($('peers'), peerNodes, state.peers, (p) => p.id, (peer) => {
-      const el = node('article', undefined, 'peer');
-      const title = node('strong', nameOf(peer.id));
-      const status = node('p', `${peer.online ? '在线' : '离线'}${peer.friend ? ' · 好友' : ''}${peer.blocked ? ' · 已屏蔽' : ''}`, 'muted');
-      const actions = node('div', undefined, 'actions');
-      actions.append(button('私聊', () => chooseConversation(`peer:${peer.id}`)), button('备注', () => editText('用户备注', '备注', peer.remark || '', (remark) => mutate('remark', { peerId: peer.id, remark }), 80)), button(peer.blocked ? '取消拉黑' : '拉黑', async () => {
-        await mutate('block', { peerId: peer.id, blocked: !peer.blocked });
-        if (!peer.blocked) for (const s of [...sessions.values()]) if (s.peerId === peer.id) endSession(s, '用户已被拉黑', true);
-      }));
-      if (!peer.friend && !peer.blocked) actions.append(button('加好友', async () => { await mutate('friend-request', { peerId: peer.id }); toast('好友请求已发送。', true); }));
-      el.append(title, status, node('p', `身份 ID / 指纹：${peer.id}`, 'muted'), actions);
-      return el;
-    });
-    reconcile($('requests'), requestNodes, state.requests, (r) => r.id, (request) => {
-      const el = node('article', undefined, 'request'), actions = node('div', undefined, 'actions');
-      const from = typeof request.from === 'object' ? request.from.id : request.from;
-      el.append(node('p', request.type === 'friend' ? `${nameOf(from)} 请求添加好友` : `${nameOf(from)} 邀请你加入 ${request.room?.name || request.room || '群聊'}`));
-      const respond = (allow, extra = {}) => mutate(request.type === 'friend' ? 'friend-response' : 'group-response', { requestId: request.id, allow, ...extra });
-      actions.append(button('接受', () => respond(true)), button('拒绝', () => respond(false)));
-      if (request.type === 'group') actions.append(button('拒绝且永不接受此人', () => respond(false, { blockSender: true })), button('拒绝全部邀请', () => respond(false, { blockAll: true })));
-      else actions.append(button('拒绝并拉黑', async () => { await respond(false); await mutate('block', { peerId: from, blocked: true }); }));
-      el.append(actions);
-      return el;
-    });
-    // Never overwrite a dirty setting while a state event arrives.
-    if (!$('settings-form').dataset.dirty) {
-      $('nickname').value = state.settings.nickname || state.self.nickname || '';
-      $('require-friend').checked = !!state.settings.requireFriend;
-      $('invite-policy').value = state.settings.invitePolicy || 'ask';
-    }
-    $('self-info').textContent = [state.self.nickname, state.self.id ? `身份 ID ${state.self.id}` : '', state.self.fingerprint ? `身份指纹 ${state.self.fingerprint}` : ''].filter(Boolean).join(' · ');
-    updateConversation(); renderMessages(); updateRequestCount();
+    sidebar.render(); updateConversation(); renderMessages(); updateRequestCount();
   }
   function updateRequestCount() {
     const incoming = [...sessions.values()].filter((s) => s.status === 'invited' && !s.outgoing).length;
-    $('request-count').textContent = String(state.requests.length + incoming);
+    $('rtc-request-count').textContent = String(incoming);
   }
   function chooseConversation(id) {
     if (id === selected) return;
@@ -239,9 +221,6 @@
     $('invite-group').hidden = $('leave-group').hidden = !room;
     $('pick-file').disabled = !online || !recipients().length;
     $('share-screen').disabled = !online || !recipients().length || !!capture || sharingPending;
-    for (const el of $('conversations').querySelectorAll('[data-conversation]')) {
-      if (el.dataset.conversation === selected) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
-    }
   }
   function renderMessages() {
     const container = $('messages'), changed = messageConversation !== selected;
@@ -264,42 +243,6 @@
     else if (anchor?.el.isConnected) container.scrollTop = oldTop + anchor.el.getBoundingClientRect().top - anchorOffset;
     else container.scrollTop = Math.max(0, oldTop + container.scrollHeight - oldHeight);
   }
-  function editText(title, labelText, initial, submit, maxLength = 80) {
-    openEditor(title, (fields) => {
-      const label = node('label', labelText), input = node('input');
-      input.value = initial; input.maxLength = maxLength;
-      label.append(input); fields.append(label);
-      return () => submit(input.value.trim());
-    });
-  }
-  let editorSubmit = null;
-  function openEditor(title, build) {
-    if ($('editor').open) return;
-    $('editor-title').textContent = title;
-    $('editor-fields').replaceChildren();
-    editorSubmit = build($('editor-fields'));
-    $('editor').showModal();
-  }
-  function groupEditor(invite = false) {
-    const roomId = selected;
-    openEditor(invite ? '邀请成员' : '新建群聊', (fields) => {
-      const input = node('input'); input.placeholder = '群聊名称'; input.maxLength = 60; input.required = !invite;
-      if (!invite) { const label = node('label', '群聊名称'); label.append(input); fields.append(label); }
-      const boxes = [];
-      const room = state.rooms.find((r) => r.id === roomId);
-      for (const peer of state.peers.filter((p) => !p.blocked && p.online && (!invite || !room?.members?.includes(p.id)))) {
-        const label = node('label', undefined, 'check'), box = node('input'); box.type = 'checkbox'; box.value = peer.id;
-        boxes.push(box); label.append(box, document.createTextNode(nameOf(peer.id))); fields.append(label);
-      }
-      fields.append(node('p', '对方可能需要确认后才会加入。', 'muted'));
-      return async () => {
-        const peerIds = boxes.filter((b) => b.checked).map((b) => b.value);
-        if (!peerIds.length) throw new Error('请选择至少一位成员。');
-        await mutate(invite ? 'group-invite' : 'group-create', invite ? { roomId, peerIds } : { name: input.value.trim(), peerIds });
-      };
-    });
-  }
-
   // Each file/screen has its own PC and unpredictable session id. Invitations
   // do not construct a receiving PC or open a file until the user accepts.
   function signal(s, kind, extra = {}) { return action('signal', { peerId: s.peerId, payload: { protocol: PROTOCOL, sid: s.id, kind, ...extra } }); }
@@ -608,7 +551,7 @@
     sharingPending = true; updateConversation();
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      if (stopped || !online) { stream.getTracks().forEach((t) => t.stop()); return; }
+      if (stopped || !online || (embedded && !embeddedVisible)) { stream.getTracks().forEach((t) => t.stop()); return; }
       capture = stream; $('stop-screen').hidden = false;
       for (const track of stream.getTracks()) track.onended = stopCapture;
       const preview = node('article', undefined, 'screen'); preview.id = 'local-preview';
@@ -633,11 +576,6 @@
   }
 
   listen('retry', 'click', () => attachTransport().catch(report));
-  listen('scan', 'click', async () => {
-    $('scan').disabled = true; $('discovery-status').textContent = '正在连接在线信令服务…';
-    try { await action('scan'); } catch (error) { $('discovery-status').textContent = error.message; report(error); }
-    finally { $('scan').disabled = !online; }
-  });
   async function disconnect() {
     await globalThis.BjtuChatroomLink?.close();
     stopCapture(); for (const s of [...sessions.values()]) endSession(s, '连接已断开');
@@ -646,30 +584,6 @@
     scheduleState();
   }
   listen('disconnect', 'click', () => disconnect().catch(report));
-  listen('stop-scan', 'click', () => disconnect().catch(report));
-  window.addEventListener('bjtu-chatroom-link-status', ({ detail }) => {
-    if (stopped || !detail) return;
-    if (detail.type === 'scanning' || detail.type === 'discovery') {
-      $('discovery-status').textContent = detail.deviceId ? `在线发现已启用 · 本机临时设备 ID：${detail.deviceId}` : '在线发现已连接，等待服务器分配设备 ID…';
-      $('stop-scan').hidden = false;
-      if (detail.peers) {
-        $('discovered-peers').replaceChildren(...detail.peers.map(peer => {
-          const el = node('article', undefined, 'peer');
-          el.append(node('p', `设备 ${peer.id}`), button('连接', () => mutate('connect', { peerId: peer.id })));
-          return el;
-        }));
-      }
-    } else if (detail.type === 'scan-closed') {
-      $('discovery-status').textContent = '在线发现已停止。'; $('stop-scan').hidden = true; $('discovered-peers').replaceChildren();
-    } else if (detail.type === 'peer-online') { $('pair-status').textContent = '身份验证完成，已建立直连。'; scheduleState(); }
-    else if (detail.type === 'error') report(new Error(detail.message));
-  }, { signal: uiAbort.signal });
-  listen('connect-form', 'submit', (event) => {
-    event.preventDefault();
-    const peerId = $('device-id').value.trim();
-    if (!peerId) return;
-    mutate('connect', { peerId }).then(() => toast('连接请求已发送。', true)).catch(report);
-  });
   listen('message-form', 'submit', async (event) => {
     event.preventDefault(); const input = $('message'), text = input.value.trim(), conversationId = selected;
     if (!text || $('send').disabled) return;
@@ -681,51 +595,18 @@
     } catch (error) { report(error); } finally { $('send').disabled = !online; }
   });
   listen('message', 'keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('message-form').requestSubmit(); } });
-  listen('settings-form', 'input', () => { $('settings-form').dataset.dirty = 'true'; });
-  listen('settings-form', 'submit', async (event) => {
-    event.preventDefault();
-    const settings = { nickname: $('nickname').value.trim(), requireFriend: $('require-friend').checked, invitePolicy: $('invite-policy').value };
-    if (!settings.nickname) return;
-    const before = JSON.stringify(settings);
-    try {
-      await mutate('settings', settings);
-      if (JSON.stringify({ nickname: $('nickname').value.trim(), requireFriend: $('require-friend').checked, invitePolicy: $('invite-policy').value }) === before) delete $('settings-form').dataset.dirty;
-      toast('设置已保存。', true);
-    } catch (error) { report(error); }
-  });
-  listen('create-group', 'click', () => groupEditor(false));
-  listen('invite-group', 'click', () => groupEditor(true));
-  listen('leave-group', 'click', () => {
-    const roomId = selected;
-    openEditor('退出群聊', (fields) => { fields.append(node('p', '确定退出当前群聊？')); return async () => { await mutate('group-leave', { roomId }); if (selected === roomId) chooseConversation('public'); }; });
-  });
-  listen('editor-cancel', 'click', () => $('editor').close());
-  listen('editor', 'close', () => { editorSubmit = null; $('editor-fields').replaceChildren(); });
-  listen('editor-form', 'submit', async (event) => {
-    event.preventDefault(); const submit = $('editor-form').querySelector('[type="submit"]'); submit.disabled = true;
-    try { await editorSubmit?.(); $('editor').close(); } catch (error) { report(error); } finally { submit.disabled = false; }
-  });
+  listen('invite-group', 'click', () => sidebar.groupEditor(true));
+  listen('leave-group', 'click', () => sidebar.leaveGroup());
   listen('pick-file', 'click', () => $('file-picker').click());
   listen('file-picker', 'change', () => { const files = Array.from($('file-picker').files || []); $('file-picker').value = ''; if (files.length) offerFiles(files).catch(report); });
   listen('share-screen', 'click', () => { shareScreen().catch(report); });
   listen('stop-screen', 'click', stopCapture);
-  listen('pair-copy', 'click', () => { if ($('pair-output').value) navigator.clipboard.writeText($('pair-output').value).then(() => toast('连接信息已复制，仅分享给可信的人。', true)).catch(() => toast('无法访问剪贴板，请手动选择并复制。')); });
-  async function pair(name) {
-    if (pairingBusy) return;
-    pairingBusy = true;
-    for (const id of ['pair-create', 'pair-accept', 'pair-complete']) $(id).disabled = true;
-    $('pair-status').textContent = '正在收集本地候选 / 处理配对，请稍候…';
-    if (name !== 'pair-complete') $('pair-output').value = '';
-    try {
-      const result = await mutate(name, { code: $('pair-input').value.trim() });
-      if (typeof result?.code === 'string') $('pair-output').value = result.code;
-      $('pair-status').textContent = name === 'pair-create' ? '请复制本机邀请发给对方，收到应答后粘贴并提交。' : name === 'pair-accept' ? '请复制本机应答发回邀请方，等待对方提交。' : '应答已提交，等待直连和身份验证。';
-    } catch (error) { $('pair-status').textContent = error.message; report(error); }
-    finally { pairingBusy = false; for (const id of ['pair-create', 'pair-accept', 'pair-complete']) $(id).disabled = !online; }
-  }
-  listen('pair-create', 'click', () => pair('pair-create'));
-  listen('pair-accept', 'click', () => pair('pair-accept'));
-  listen('pair-complete', 'click', () => pair('pair-complete'));
+  if (embedded) window.addEventListener('message', event => {
+    if (event.source !== parent || event.origin !== location.origin) return;
+    if (event.data?.type !== 'BJTU_CHATROOM_WINDOW_VISIBILITY') return;
+    if (event.data.visible === false) { embeddedVisible = false; stopCapture(); }
+    else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); }
+  }, { signal: uiAbort.signal });
   window.addEventListener('bjtu-chatroom-transport-ready', () => attachTransport().catch(report), { signal: uiAbort.signal });
   window.addEventListener('beforeunload', (event) => {
     if (sessions.size || memoryReserved || capture) { event.preventDefault(); event.returnValue = ''; }
@@ -738,7 +619,20 @@
     for (const s of [...sessions.values()]) endSession(s, '页面已关闭');
     for (const s of transferHistory) releaseResources(s);
     pendingSignals.clear(); closedSessions.clear(); drafts.clear(); scrollPositions.clear();
-    if ($('editor').open) $('editor').close();
+    sidebar.destroy();
   }, { once: true });
+  const sidebar = globalThis.BjtuChatroomSidebar.mount({
+    root: $('sidebar-host'),
+    getState: () => state,
+    mutate: async (name, args) => {
+      const result = await mutate(name, args);
+      await refreshState();
+      return result;
+    },
+    onSelect: chooseConversation,
+    onDisconnect: disconnect, report
+  });
   renderState(); connectionStatus('正在等待聊天室连接引擎…', false); attachTransport().catch(report);
-})();
+})().catch(error => {
+  document.getElementById('connection-status').textContent = error?.message || '聊天室初始化失败，请刷新重试。';
+});

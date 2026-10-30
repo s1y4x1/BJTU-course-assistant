@@ -181,7 +181,7 @@
     opening = (async () => {
       const stored = await globalThis.chrome?.storage?.local?.get('chatroomSignalingUrl');
       const url = new URL(stored?.chatroomSignalingUrl || 'wss://public.localsend.org/v1/ws');
-      if (url.protocol !== 'wss:' || url.username || url.password || url.hash) throw new Error('信令地址必须是不含凭据的 wss URL。');
+      if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error('信令地址必须是不含凭据的 ws:// 或 wss:// URL。');
       const info = await publicInfo();
       if (epoch !== generation) throw new Error('发现已取消。');
       url.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
@@ -224,6 +224,7 @@
     for (const s of [...sessions.values()]) if (!peerId || s.peerId === peerId || s.id === peerId) drop(s);
   }
   globalThis.BjtuChatroomLink = { scan, connect, pairCreate, pairAccept, pairComplete, sendPeer, close,
+    isConnected(peerId) { return [...sessions.values()].some(s => s.authenticated && s.peerId === peerId && !s.closed); },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } };
   globalThis.addEventListener?.('pagehide', () => { close(); listeners.clear(); }, { once: true });
 })();

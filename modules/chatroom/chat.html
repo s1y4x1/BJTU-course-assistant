@@ -3,49 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>局域网聊天室 · 交大课程助手</title>
+  <title>局域网聊天室</title>
   <script src="../../UI/theme.js"></script>
   <script src="../../UI/file-size-emphasis.js"></script>
   <link rel="stylesheet" href="../../options/options.css">
   <link rel="stylesheet" href="../../UI/theme.css">
   <link rel="stylesheet" href="../../UI/file-size-emphasis.css">
   <link rel="stylesheet" href="../../UI/toast.css">
+  <link rel="stylesheet" href="options.css">
   <link rel="stylesheet" href="chat.css">
 </head>
 <body class="chatroom-page">
-  <header class="page-header"><div><h1>局域网聊天室</h1><p class="muted">同一网络，相聚此刻。消息、文件与屏幕点对点直连。</p></div><div class="actions"><a href="options.html">聊天室选项</a><button id="disconnect" type="button" class="secondary">断开全部连接</button><button id="retry" type="button">重试引擎</button></div></header>
+  <header class="page-header"><div><h1>局域网聊天室</h1><p class="muted">同一网络，相聚此刻。消息、文件与屏幕点对点直连。</p></div><div class="actions"><button id="disconnect" type="button" class="secondary">断开全部连接</button><button id="retry" type="button">重试引擎</button></div></header>
   <section id="connection-status" class="notice" role="status">正在等待聊天室连接引擎…</section>
   <main class="chat-layout">
-    <aside class="sidebar card" aria-label="联系人和会话">
-      <div class="section-heading"><h2>会话</h2><button id="create-group" type="button" class="secondary">新建群聊</button></div>
-      <nav id="conversations" aria-label="群聊和公共频道"></nav>
-      <div class="section-heading"><h2>在线用户</h2><button id="scan" type="button" class="secondary">刷新发现</button></div>
-      <p class="muted">浏览器不能扫描局域网。点击扫描才连接已配置的在线信令服务，向服务提供方暴露公网 IP 和临时设备标识；同服务中的聊天室用户可发现你。无需在线服务可使用下方离线配对。直连不使用 STUN / TURN，跨网络可能失败。</p>
-      <p id="discovery-status" class="muted" role="status">在线发现未启用。</p><button id="stop-scan" type="button" class="secondary" hidden>停止发现并断开全部直连</button>
-      <form id="connect-form" class="inline-form"><input id="device-id" aria-label="对方在线设备 ID" placeholder="对方在线设备 ID（扫描后）" maxlength="160" required><button type="submit">连接</button></form>
-      <div id="discovered-peers"></div>
-      <div id="peers"></div>
-      <details id="pairing-panel"><summary>离线邀请 / 应答配对</summary><p class="muted">无需本地程序或在线信令。甲生成邀请发给乙；乙粘贴邀请并生成应答发回甲；甲提交应答。每份信息 5 分钟内有效，含本地网络候选与身份，仅分享给可信的人。</p><div class="actions"><button id="pair-create" type="button" class="secondary" disabled>生成邀请</button><button id="pair-copy" type="button" class="secondary">复制本机连接信息</button></div><label>本机邀请 / 应答<textarea id="pair-output" rows="4" readonly placeholder="点击生成邀请，或粘贴邀请后生成应答"></textarea></label><label>对方邀请 / 应答<textarea id="pair-input" rows="4" maxlength="262144" placeholder="粘贴对方发送的完整 JSON 信息"></textarea></label><div class="actions"><button id="pair-accept" type="button" disabled>接收邀请并生成应答</button><button id="pair-complete" type="button" class="secondary" disabled>提交对方应答</button></div><p id="pair-status" class="muted" role="status">等待连接引擎。</p></details>
-      <details id="settings-panel"><summary>个人设置与隐私</summary><form id="settings-form">
-        <label>昵称<input id="nickname" maxlength="40" autocomplete="nickname" required></label>
-        <label class="check"><input id="require-friend" type="checkbox">仅好友可以联系我</label>
-        <label>群邀请策略<select id="invite-policy"><option value="ask">每次询问</option><option value="allow">允许邀请</option><option value="deny">拒绝全部邀请</option></select></label>
-        <button type="submit">保存设置</button>
-      </form><p id="self-info" class="muted"></p><p class="muted">局域网发现不等于身份认证，请核对对方身份。直连会向对方暴露网络地址。</p></details>
-    </aside>
+    <div id="sidebar-host" aria-busy="true"><p class="muted">正在加载联系人和设置…</p></div>
     <section class="conversation card" aria-label="聊天内容">
       <header class="conversation-header"><div><h2 id="conversation-title">公共群聊</h2><span id="conversation-detail" class="muted">所有在线用户</span></div><div class="actions"><button id="invite-group" class="secondary" hidden>邀请成员</button><button id="leave-group" class="secondary" hidden>退出群聊</button></div></header>
-      <details id="requests-panel" open><summary>邀请与确认 <span id="request-count">0</span></summary><div id="requests"></div><div id="rtc-requests"></div></details>
+      <details id="requests-panel" open><summary>邀请与确认 <span id="rtc-request-count">0</span></summary><div id="rtc-requests"></div></details>
       <div id="messages" class="messages" role="log" aria-label="消息记录" aria-live="polite" aria-relevant="additions"><p class="empty">欢迎来到公共群聊。</p></div>
       <section id="media-area" hidden aria-label="屏幕观看与文件传输"><div id="screens"></div><div id="transfers"></div></section>
       <form id="message-form" class="composer"><label for="message">消息</label><textarea id="message" rows="3" maxlength="8000" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea><div class="composer-footer"><div class="actions"><button id="pick-file" type="button" class="secondary">发送文件</button><input id="file-picker" type="file" multiple hidden><button id="share-screen" type="button" class="secondary">共享屏幕</button><button id="stop-screen" type="button" class="danger" hidden>停止共享</button></div><button id="send" type="submit">发送</button></div><p class="muted">文件与屏幕请在私聊或群聊中发送。屏幕仅在对方确认观看后连接，不提供远程控制。</p></form>
     </section>
   </main>
-  <dialog id="editor"><form id="editor-form"><h2 id="editor-title"></h2><div id="editor-fields"></div><div class="actions"><button id="editor-cancel" type="button" class="secondary">取消</button><button type="submit">确定</button></div></form></dialog>
+
   <div id="msg" role="status" aria-live="polite"></div>
   <script src="../../UI/options-message.js"></script>
   <script src="transport.js"></script>
   <script src="link.js"></script>
+  <script src="sidebar.js"></script>
   <script src="chat.js"></script>
 </body>
 </html>

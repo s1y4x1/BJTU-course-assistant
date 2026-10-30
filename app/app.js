@@ -248,6 +248,11 @@ const FULLSCREEN_MODULE_BUTTONS = Object.freeze({
     key: 'academicFullscreenButtonEnabled',
     iconKey: 'academicFullscreenButtonIcon',
     label: '教务系统'
+  },
+  chatroom: {
+    id: 'chatroom-fullscreen-button',
+    key: 'chatroomFullscreenButtonEnabled',
+    label: '局域网聊天室'
   }
 });
 
@@ -377,6 +382,7 @@ async function initFullscreenModuleButtons() {
     const view = moduleWindows.get(moduleId);
     if (!(view instanceof HTMLElement) || view.dataset.closing === '1') return;
     view.dataset.closing = '1';
+    if (moduleId === 'chatroom') view.querySelector('iframe')?.contentWindow?.postMessage({type:'BJTU_CHATROOM_WINDOW_VISIBILITY', visible:false}, location.origin);
     const config = FULLSCREEN_MODULE_BUTTONS[moduleId];
     const button = config && document.getElementById(config.id);
     const shouldShowButton = button instanceof HTMLButtonElement
@@ -488,6 +494,27 @@ async function initFullscreenModuleButtons() {
   const loadModuleView = (moduleId) => {
     if (moduleViewPromises.has(moduleId)) return moduleViewPromises.get(moduleId);
     const promise = (async () => {
+      if (moduleId === 'chatroom') {
+        const view = document.createElement('section');
+        view.id = 'chatroom-module-window';
+        view.className = 'fullscreen-module-window floating-launcher-window chatroom-module-window';
+        view.dataset.module = moduleId;
+        view.hidden = true;
+        const header = document.createElement('div');
+        header.className = 'section-title';
+        header.textContent = '局域网聊天室';
+        const body = document.createElement('div');
+        body.className = 'fullscreen-module-window-body';
+        const frame = document.createElement('iframe');
+        frame.title = '局域网聊天室';
+        frame.allow = 'display-capture; clipboard-read; clipboard-write';
+        frame.src = chrome.runtime.getURL('modules/chatroom/chat.html?embedded=1');
+        body.append(frame);
+        view.append(header, body);
+        document.body.append(view);
+        prepareWindowInteractions(view, moduleId);
+        return view;
+      }
       const definition = globalThis.BjtuModuleRegistry.definitions[moduleId];
       const options = definition?.options;
       if (!options?.fragment || !options?.script) throw new Error(`模块 ${moduleId} 没有可加载的选项片段`);
@@ -569,9 +596,10 @@ async function initFullscreenModuleButtons() {
       button.classList.add('is-loading');
     }
     try {
+      const usesCas = moduleId === 'mail' || moduleId === 'academic';
       const [view] = await Promise.all([
         loadModuleView(moduleId),
-        available.cas ? loadModuleView('cas') : Promise.resolve()
+        usesCas && available.cas ? loadModuleView('cas') : Promise.resolve()
       ]);
       const sourceRect = button instanceof HTMLButtonElement ? button.getBoundingClientRect() : null;
       moduleWindows.set(moduleId, view);
@@ -582,13 +610,14 @@ async function initFullscreenModuleButtons() {
         view.style.left = `${Math.round(window.innerWidth * 0.125)}px`;
         view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
       }
-      const casPanel = await openCasPanel(sourceRect);
+      const casPanel = usesCas ? await openCasPanel(sourceRect) : null;
       if (view.dataset.closing === '1' || !moduleWindows.has(moduleId)) return;
       syncPortraitGroup();
-      positionDependentPanel(view, casPanel?.view);
+      if (usesCas) positionDependentPanel(view, casPanel?.view);
       view.hidden = false;
       clampWindow(view);
       bringToFront(view);
+      if (moduleId === 'chatroom') view.querySelector('iframe')?.contentWindow?.postMessage({type:'BJTU_CHATROOM_WINDOW_VISIBILITY', visible:true}, location.origin);
       const buttonAnimation = button instanceof HTMLButtonElement ? animateButton(button, false) : Promise.resolve();
       await Promise.all([animateWindowFromButton(view, sourceRect, true), buttonAnimation, casPanel?.animation]);
       refreshButtonContainer();
@@ -647,13 +676,21 @@ async function initFullscreenModuleButtons() {
       positionCasPanel(casView);
       clampWindow(casView);
       for (const [id, view] of moduleWindows) {
-        if (id !== 'cas') positionDependentPanel(view, casView);
+        if (id === 'mail' || id === 'academic') positionDependentPanel(view, casView);
       }
     }
     moduleWindows.forEach((view) => clampWindow(view));
     wasPortrait = portrait;
   });
   apply(stored);
+  globalThis.BjtuFullscreenModuleWindows = {
+    open(id) {
+      if (!available[id] || !FULLSCREEN_MODULE_BUTTONS[id]) return Promise.reject(new Error('模块未安装'));
+      return openModulePanel(id, FULLSCREEN_MODULE_BUTTONS[id]);
+    },
+    focus(id) { const view = moduleWindows.get(id); if (view && !view.hidden) bringToFront(view); }
+  };
+  window.dispatchEvent(new Event('bjtu-fullscreen-module-windows-ready'));
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !keys.some((key) => changes[key])) return;
     for (const key of keys) {

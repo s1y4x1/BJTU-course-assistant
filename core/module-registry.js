@@ -96,15 +96,15 @@
     },
     chatroom: {
       label: '局域网聊天室',
-      files: ['chat.html', 'chat.css', 'chat.js', 'transport.js', 'link.js', 'launch.js', 'options.html', 'options.css', 'options.js'],
-      options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
+      files: ['chat.html', 'chat.css', 'chat.js', 'sidebar.js', 'transport.js', 'link.js', 'launch.js', 'options.html', 'options.css', 'options.js'],
+      options: { fragment: 'options.html', style: 'options.css', scripts: ['transport.js', 'link.js', 'sidebar.js'], script: 'options.js' }
     },
     'local-bridge': {
       label: '本地程序桥接',
       dependencies: ['api'],
       files: [
         'client.js', 'README.md', 'install.ps1', 'package.json', 'package-lock.json',
-        'src/config.js', 'src/server.js', 'src/check-dependencies.js', 'options.html', 'options.css', 'options.js'
+        'src/config.js', 'src/server.js', 'src/chatroom-server.js', 'src/check-dependencies.js', 'options.html', 'options.css', 'options.js'
       ],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     }
