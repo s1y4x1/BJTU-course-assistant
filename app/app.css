@@ -1355,17 +1355,21 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     flex-wrap: wrap;
 }
 .homework-toggle-btn {
-    border: 0;
-    background: transparent;
+    box-sizing: border-box;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    background: color-mix(in srgb, currentColor 5%, transparent);
     color: #0369a1;
     font-size: 12px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    padding: 0;
-    border-radius: 0;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    width: 100%;
+    flex: 1 1 100%;
+    max-width: 100%;
     line-height: 1.4;
     min-height: 18px;
     box-shadow: none;
@@ -1374,17 +1378,18 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    width: 66px;
-    flex: 0 1 66px;
-    min-width: 34px;
+    gap: 0;
+    width: auto;
+    flex: 0 0 auto;
+    min-width: 0;
     color: inherit;
 }
 .homework-toggle-label {
-    white-space: nowrap;
+    white-space: normal;
 }
+.homework-toggle-side:first-child { display:none; }
 .homework-toggle-line {
-    display: inline-block;
+    display: none;
     height: 1px;
     min-width: 10px;
     flex: 1 1 0;
@@ -1411,7 +1416,7 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     color: #475569;
 }
 .homework-toggle-btn:hover {
-    background: transparent;
+    background: color-mix(in srgb, currentColor 10%, transparent);
     color: #0284c7;
 }
 :is(.homework-toggle-row--done, .homework-toggle-row--overdue) .homework-toggle-btn.is-expanded { color:#0369a1; }
