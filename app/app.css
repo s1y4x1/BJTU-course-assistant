@@ -1487,11 +1487,11 @@ html[data-color-scheme="dark"] :is(.homework-toggle-row--done, .homework-toggle-
 .deadline-countdown-label {
     font-weight: normal;
 }
-.homework-deadline-meta { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-top:2px; font-size:12px; line-height:1.4; color:#666; }
-.homework-time-group { display:flex; align-items:baseline; justify-content:flex-start; gap:12px; min-width:0; text-align:left; }
-.homework-time-item { min-width:0; }
+.homework-deadline-meta { display:block; margin-top:2px; font-size:12px; line-height:1.4; color:#666; overflow-wrap:anywhere; }
+.homework-time-group { display:inline; text-align:left; }
+.homework-time-item { display:inline; }
 .homework-time-start { text-align:left; }
-.homework-meta-tail { flex:0 0 auto; margin-left:auto; text-align:right; }
+.homework-meta-tail { display:inline; margin-left:8px; text-align:left; white-space:normal; }
 .homework-deadline-value { font-size:12px; font-weight:700; line-height:inherit; color:#000; }
 .homework-score-badge { color:#e91e63; font-size:12px; font-weight:700; line-height:1; white-space:nowrap; }
 .homework-card-title { font-size:var(--bjtu-font-size-secondaryTitle, 16px); font-weight:700; overflow-wrap:anywhere; }

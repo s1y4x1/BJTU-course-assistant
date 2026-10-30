@@ -130,7 +130,7 @@
       ? `<span class="homework-time-item homework-time-start">开始：<span class="homework-deadline-value">${escape(startFormatted || startTime)}</span></span>`
       : '';
     const timeHtml = deadlineHtml || startHtml
-      ? `<span class="homework-time-group">${deadlineHtml}${startHtml}</span>`
+      ? `<span class="homework-time-group">${deadlineHtml}${deadlineHtml && startHtml ? ' ' : ''}${startHtml}</span>`
       : '';
     const otherHtml = tailHtml
       ? `<span class="homework-meta-tail">${tailHtml}</span>`
