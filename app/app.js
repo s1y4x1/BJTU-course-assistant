@@ -2708,7 +2708,22 @@ function setupRightColumnResizer() {
 
   window.addEventListener('scroll', scheduleResizerSync, true);
   if (typeof ResizeObserver !== 'undefined') {
-    const ro = new ResizeObserver(() => scheduleResizerSync());
+    const widths = new WeakMap();
+    let detailMeasurementFrame = 0;
+    const ro = new ResizeObserver(entries => {
+      scheduleResizerSync();
+      let widthChanged = false;
+      for (const entry of entries) {
+        const previous = widths.get(entry.target);
+        widths.set(entry.target, entry.contentRect.width);
+        widthChanged ||= previous === undefined || Math.abs(previous - entry.contentRect.width) > 0.5;
+      }
+      if (!widthChanged || detailMeasurementFrame) return;
+      detailMeasurementFrame = requestAnimationFrame(() => {
+        detailMeasurementFrame = 0;
+        if (courseListDiv) applyExpandableAutoToggle(courseListDiv);
+      });
+    });
     ro.observe(rightColumn);
     if (courseListDiv) ro.observe(courseListDiv);
   }
@@ -3935,10 +3950,18 @@ function applyExpandableAutoToggle(root = document) {
       : window.homeworkDetailCollapsedLines;
     const visibleLimit = detailVisibleMaxHeight(collapsedLines);
     const prev = body.style.maxHeight;
+    const prevHeight = body.style.height;
     const prevOverflow = body.style.overflow;
+    const prevTransition = body.style.transition;
+    // Measure natural content at the current width, without a stale animated
+    // height or a scrollbar changing the wrapping width during measurement.
+    body.style.transition = 'none';
+    body.style.height = 'auto';
+    body.style.overflow = 'hidden';
+    body.style.maxHeight = 'none';
+    const fullHeight = body.getBoundingClientRect().height;
     body.style.maxHeight = visibleLimit;
-    body.style.overflow = 'auto';
-    const canFitInCollapsed = collapsedLines === null || body.scrollHeight <= body.clientHeight + 2;
+    const canFitInCollapsed = collapsedLines === null || fullHeight <= body.getBoundingClientRect().height + 2;
     box.classList.toggle('no-toggle', canFitInCollapsed);
     if (canFitInCollapsed) {
       box.classList.remove('expanded');
@@ -3947,6 +3970,8 @@ function applyExpandableAutoToggle(root = document) {
     body.style.maxHeight = box.classList.contains('expanded') || box.__detailCollapseState || box.__detailExpandState
       ? prev : visibleLimit;
     body.style.overflow = prevOverflow;
+    body.style.height = prevHeight;
+    body.style.transition = prevTransition;
   });
 }
 
