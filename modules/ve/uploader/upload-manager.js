@@ -245,7 +245,7 @@ function renderAlreadyUploadedFile(file, fileId, known) {
   const safeUrl = escapeHtml(url);
   const sizeBytes = Number(file?.size || known?.fileSize || 0);
   const checkboxHtml = hasVisitName
-    ? `<label class="upload-select-wrap"><input type="checkbox" class="submit-file-check" data-file-id="${escapeHtml(fileId)}"> 作为作业附件</label>`
+    ? `<label class="upload-select-wrap"><input type="checkbox" class="submit-file-check" data-file-id="${escapeHtml(fileId)}"><span class="upload-select-caption">作为作业附件</span></label>`
     : '<span class="upload-select-wrap" style="display:none;"></span>';
   item.innerHTML = `
     <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
@@ -340,7 +340,7 @@ function uploadFile(file, fileId, job) {
       <div>
         <label class="upload-select-wrap" style="display:none;">
           <input type="checkbox" class="submit-file-check" data-file-id="${fileId}">
-          作为作业附件
+          <span class="upload-select-caption">作为作业附件</span>
         </label>
         <strong>${file.name}</strong>
         <span class="inline-status" style="font-size:12px; margin-left:8px; color:#6b7280;">排队中…</span>

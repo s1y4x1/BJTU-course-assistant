@@ -278,7 +278,7 @@ function renderSavedUploadsSection() {
           <div class="saved-upload-main">
             <label class="upload-select-wrap">
               <input type="checkbox" class="submit-file-check" data-file-id="${safeSynthFileId}" ${selectedIds.has(entryId) ? 'checked' : ''}>
-              作为作业附件
+              <span class="upload-select-caption">作为作业附件</span>
             </label>
             <strong class="saved-upload-name">${name}</strong>
             <span class="size-progress" style="margin-left:5px;">${size}</span>${timeHtml}

@@ -1897,6 +1897,44 @@ function refreshUploadedFileActions() {
   const download = document.getElementById('download-selected-uploads-btn');
   if (download) download.disabled = count === 0 || download.dataset.busy === '1';
   if (typeof refreshSavedUploadActions === 'function') refreshSavedUploadActions();
+  refreshSubmissionAttachments();
+}
+
+function refreshSubmissionAttachments() {
+  const panels = [...document.querySelectorAll('.submit-panel[data-submit-panel="1"]')];
+  document.body.classList.toggle('homework-submission-open', panels.some(panel => panel.style.display !== 'none' && panel.getClientRects().length));
+  const selected = [...document.querySelectorAll('.submit-file-check:checked')].flatMap(checkbox => {
+    const fileId = checkbox.dataset.fileId;
+    const meta = window.uploadedFileMetaById?.[fileId];
+    if (!meta?.visitName) return [];
+    return [{fileId, name: meta.fileName || checkbox.closest('.file-item')?.querySelector('strong')?.textContent
+      || [meta.fileNameNoExt, meta.fileExtName].filter(Boolean).join('.') || '未命名文件'}];
+  });
+  for (const panel of panels) {
+    const hint = panel.querySelector('.hint');
+    if (!hint) continue;
+    hint.replaceChildren();
+    hint.classList.toggle('has-selected-files', selected.length > 0);
+    if (!selected.length) {
+      hint.textContent = '可勾选已上传文件作为作业附件一并提交；不勾选则仅提交文本内容。';
+      continue;
+    }
+    for (const file of selected) {
+      const chip = document.createElement('span');
+      chip.className = 'submit-attachment-chip';
+      const name = document.createElement('span');
+      name.textContent = file.name;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.dataset.action = 'remove-submit-file';
+      remove.dataset.fileId = file.fileId;
+      remove.textContent = '×';
+      remove.title = `取消选择附件：${file.name}`;
+      remove.setAttribute('aria-label', remove.title);
+      chip.append(name, remove);
+      hint.append(chip);
+    }
+  }
 }
 
 document.addEventListener('change', (event) => {
@@ -6722,6 +6760,15 @@ courseListDiv.addEventListener('click', async (e) => {
     const courseId = String(actionEl.dataset.courseId || '').trim();
     const teacherId = String(actionEl.dataset.teacherId || window.veTeacherMetaByCourseId?.[courseId]?.teacherId || '').trim();
     await switchToTeacherAccount(teacherId);
+    return;
+  }
+
+  if (action === 'remove-submit-file') {
+    document.querySelectorAll('.submit-file-check').forEach(checkbox => {
+      if (checkbox.dataset.fileId !== actionEl.dataset.fileId) return;
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event('change', {bubbles:true}));
+    });
     return;
   }
 
