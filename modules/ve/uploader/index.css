@@ -3,7 +3,7 @@ body.ve-uploader-page { display: block; margin: 0; padding: 16px; background: #f
 body.ve-uploader-page main { width: 100%; max-width: none; margin: 0; padding: 0; }
 body.ve-uploader-page .upload-section-header { display: flex; align-items: center; justify-content: space-between; margin: 0 0 10px; }
 body.ve-uploader-page .upload-section-header h1 { margin: 0; }
-body.ve-uploader-page .upload-summary-area { margin-bottom: 15px; }
+body.ve-uploader-page .upload-summary-area { margin-bottom: 4px; }
 body.ve-uploader-page #total-percent { display: none; }
 body.ve-uploader-page #drop-zone { display: flex; align-items: stretch; }
 body.ve-uploader-page .drop-zone-main { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; }

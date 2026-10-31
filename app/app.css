@@ -1114,7 +1114,7 @@ body.platform-column-resizing {
     opacity: 1;
 }
 .upload-summary-area {
-    margin-bottom: 15px;
+    margin-bottom: 4px;
     padding: 0;
     display: flex;
     align-items: center;
@@ -2072,7 +2072,7 @@ html[data-color-scheme="dark"] .platform-status-btn.platform-text-load.unselecte
 /* Saved uploads list (in 本地保存本次上传过的文件) — 与下方新上传列表保持一致 */
 #saved-uploads-section { margin-top: 8px; }
 .saved-uploads-list { display: flow-root; }
-.saved-uploads-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
+.saved-uploads-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 8px; }
 .saved-uploads-toolbar .btn { padding:5px 10px; font-size:var(--bjtu-font-size-body, 13px); background:var(--bjtu-color-button, #475569); color:var(--bjtu-color-button-foreground, #fff); }
 .saved-uploads-toolbar [data-action="delete-selected-saved-uploads"] { background:var(--bjtu-color-danger, #dc2626); }
 .saved-uploads-selection { font-size:var(--bjtu-font-size-body, 13px); color:inherit; }
