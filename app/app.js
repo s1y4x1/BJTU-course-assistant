@@ -360,13 +360,13 @@ async function initFullscreenModuleButtons() {
   };
   const positionCasPanel = (view) => {
     const width = Math.min(420, Math.max(160, Math.round(window.innerWidth * 0.3)));
-    const height = Math.round(window.innerHeight * 0.75);
+    const height = Math.round(window.innerHeight * 0.9);
     view.style.width = `${width}px`;
     view.style.minWidth = `${Math.min(320, width)}px`;
     view.style.height = `${height}px`;
     view.style.minHeight = `${Math.min(240, height)}px`;
     view.style.left = '12px';
-    view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
+    view.style.top = `${Math.round(window.innerHeight * 0.05)}px`;
   };
   const positionDependentPanel = (view, casView) => {
     if (view.parentElement === portraitGroup) return;
@@ -606,9 +606,9 @@ async function initFullscreenModuleButtons() {
       if (!view.dataset.positioned) {
         view.dataset.positioned = '1';
         view.style.width = `${Math.round(window.innerWidth * 0.75)}px`;
-        view.style.height = `${Math.round(window.innerHeight * 0.75)}px`;
+        view.style.height = `${Math.round(window.innerHeight * 0.9)}px`;
         view.style.left = `${Math.round(window.innerWidth * 0.125)}px`;
-        view.style.top = `${Math.round(window.innerHeight * 0.125)}px`;
+        view.style.top = `${Math.round(window.innerHeight * 0.05)}px`;
       }
       const casPanel = usesCas ? await openCasPanel(sourceRect) : null;
       if (view.dataset.closing === '1' || !moduleWindows.has(moduleId)) return;
@@ -864,7 +864,7 @@ window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: bool
 const PLATFORM_IDS = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
 window.platformOrder = [...PLATFORM_IDS];
 window.platformNeedLogin = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
-window.platformLoginState = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 'checking'])); // checking|offline|online
+window.platformLoginState = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 'unselected'])); // unselected|checking|offline|online
 window.platformLoginChecked = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
 window.platformInteractiveLoginPending = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false, xuetangx: false };
 const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
@@ -4878,7 +4878,7 @@ function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
       ? 've'
       : (id.includes('mrjzy-status-btn') ? 'mrjzy' : (id.includes('jlgj-status-btn') ? 'jlgj' : (id.includes('mooc-status-btn') ? 'mooc' : 'ykt'))));
     const enabled = isPlatformEnabled(platform);
-    const treatAsUnselected = !enabled || state === 'offline';
+    const treatAsUnselected = !enabled || state === 'offline' || state === 'unselected';
     if (!treatAsUnselected) {
       btn.classList.add(state);
     } else if (window.platformLoginChecked?.[platform]) {

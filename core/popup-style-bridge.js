@@ -13,6 +13,15 @@
     });
     observer.observe(document.documentElement, { childList: true });
   }
+  // app.html 默认采用全屏左栏顶栏布局；弹出页仍保留自己的顶栏位置。
+  const restorePopupHeader = () => {
+    document.body.classList.remove('page-top-config-in-left-column', 'course-header-sticky');
+    const topConfig = document.querySelector('.page-top-config');
+    const layout = document.querySelector('.layout-container');
+    if (topConfig && layout) layout.before(topConfig);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', restorePopupHeader, {once: true});
+  else restorePopupHeader();
   if (window === window.parent) return;
   try {
     const source = window.parent.document.querySelector('link[data-popup-content-style]');

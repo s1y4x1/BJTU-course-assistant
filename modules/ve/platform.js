@@ -2000,7 +2000,6 @@ async function loadCourses({ knownUserInfo } = {}) {
   window.homeworkAttachmentItemsByCourseId = {};
 
   if (courseLoadingStatus) courseLoadingStatus.style.display = 'none';
-  setPlatformLoginState('ve', isPlatformEnabled('ve') ? 'checking' : 'checking');
   try {
     if (!isPlatformEnabled('ve')) {
       window.currentVeCourseList = [];
@@ -2013,6 +2012,7 @@ async function loadCourses({ knownUserInfo } = {}) {
       return;
     }
 
+    setPlatformLoginState('ve', 'checking');
     const xqCode = await ensureCurrentXqCode();
     const directBaseCoursesPromise = globalThis.BjtuAccountLogin.fetchCourses(xqCode)
         .then((courses) => ({ courses, error: null }), (error) => ({ courses: [], error }));

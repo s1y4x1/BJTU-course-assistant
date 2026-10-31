@@ -16,9 +16,11 @@
     <link rel="stylesheet" href="../UI/theme.css">
 </head>
 
-<body>
+<body class="page-top-config-in-left-column course-header-sticky">
     <div id="toast-container"></div>
 
+    <div class="layout-container">
+        <div class="left-column">
     <div class="page-top-config">
         <div class="top-inline-controls">
             <div id="version-info" class="version-info">
@@ -43,8 +45,6 @@
         </div>
     </div>
 
-    <div class="layout-container">
-        <div class="left-column">
             <div class="upload-section-header" style="display:flex; align-items:center; justify-content:space-between; margin: 0 0 10px;">
                 <h1 class="zero-title" style="margin: 0;">文件上传</h1>
                 <div class="upload-header-controls" style="display:flex; align-items:center; gap:8px;">
@@ -149,37 +149,37 @@
                 <button id="course-helper-even-widths" class="course-helper-even-widths" type="button" hidden>平均分配宽度</button>
                 <span class="options-controlled-slot platform-options-slot">
                 <span class="platform-status-actions" data-options-controlled>
-                    <span id="ve-status-btn" class="platform-status-btn checking" title="智慧课程平台加载中" data-module="ve">
+                    <span id="ve-status-btn" class="platform-status-btn unselected" title="智慧课程平台未启用" data-module="ve">
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="ve"
                             aria-label="切换智慧课程平台"></button>
                         <a class="platform-link" href="http://123.121.147.7:88/ve/" target="_blank"
                             rel="noopener noreferrer">智慧课程平台</a>
                     </span>
-                    <span id="ykt-status-btn" class="platform-status-btn checking" title="雨课堂登录状态检测中" data-module="ykt" hidden>
+                    <span id="ykt-status-btn" class="platform-status-btn unselected" title="雨课堂未启用" data-module="ykt" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="ykt"
                             aria-label="切换雨课堂"></button>
                         <a class="platform-link" href="https://www.yuketang.cn/web" target="_blank"
                             rel="noopener noreferrer">雨课堂</a>
                     </span>
-                    <span id="mrjzy-status-btn" class="platform-status-btn checking" title="每日交作业登录状态检测中" data-module="mrjzy" hidden>
+                    <span id="mrjzy-status-btn" class="platform-status-btn unselected" title="每日交作业未启用" data-module="mrjzy" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="mrjzy"
                             aria-label="切换每日交作业"></button>
                         <a class="platform-link" href="https://zuoye.lulufind.com/" target="_blank"
                             rel="noopener noreferrer">每日交作业</a>
                     </span>
-                    <span id="jlgj-status-btn" class="platform-status-btn checking" title="接龙管家登录状态检测中" data-module="jlgj" hidden>
+                    <span id="jlgj-status-btn" class="platform-status-btn unselected" title="接龙管家未启用" data-module="jlgj" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="jlgj"
                             aria-label="切换接龙管家"></button>
                         <a class="platform-link" href="https://i.jielong.com/my-class" target="_blank"
                             rel="noopener noreferrer">接龙管家</a>
                     </span>
-                    <span id="mooc-status-btn" class="platform-status-btn checking" title="中国大学MOOC登录状态检测中" data-module="mooc" hidden>
+                    <span id="mooc-status-btn" class="platform-status-btn unselected" title="中国大学MOOC未启用" data-module="mooc" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="mooc"
                             aria-label="切换中国大学MOOC"></button>
                         <a class="platform-link" href="https://www.icourse163.org/" target="_blank"
                             rel="noopener noreferrer">中国大学MOOC</a>
                     </span>
-                    <span id="xuetangx-status-btn" class="platform-status-btn checking" title="学堂在线登录状态检测中" data-module="xuetangx" hidden>
+                    <span id="xuetangx-status-btn" class="platform-status-btn unselected" title="学堂在线未启用" data-module="xuetangx" hidden>
                         <button type="button" class="dot" data-action="toggle-platform" data-platform="xuetangx"
                             aria-label="切换学堂在线"></button>
                         <a class="platform-link" href="https://www.xuetangx.com/" target="_blank"

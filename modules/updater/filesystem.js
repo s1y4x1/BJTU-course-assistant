@@ -240,14 +240,25 @@
 
   async function readArchive(url, version) {
     const cache = await caches.open('bjtu-ca-update-archive');
-    const response = await cache.match(archiveCacheKey(url, version));
+    const key = archiveCacheKey(url, version);
+    const response = await cache.match(key);
+    // 分支压缩包 URL 和版本号可能保持不变；开发包最多复用 5 分钟。
+    if (response && /\/zip\/refs\/heads\//.test(url)) {
+      const savedAt = Number(response.headers.get('X-BJTUCA-Cached-At'));
+      if (!savedAt || Date.now() - savedAt >= 5 * 60 * 1000) {
+        await cache.delete(key);
+        return null;
+      }
+    }
     return response ? new Uint8Array(await response.arrayBuffer()) : null;
   }
 
   async function storeArchive(url, version, bytes) {
     const cache = await caches.open('bjtu-ca-update-archive');
     const key = archiveCacheKey(url, version);
-    await cache.put(key, new Response(bytes, { headers: { 'Content-Type': 'application/zip' } }));
+    await cache.put(key, new Response(bytes, { headers: {
+      'Content-Type': 'application/zip', 'X-BJTUCA-Cached-At': String(Date.now())
+    } }));
     for (const request of await cache.keys()) {
       if (request.url !== key) await cache.delete(request);
     }
