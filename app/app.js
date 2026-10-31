@@ -7260,6 +7260,9 @@ const appInitializationPromise = (async function init() {
   document.documentElement.classList.remove('app-options-loading');
   if (showAutoLoadResourcesDisabledNotice) showAutoLoadCourseResourcesDisabledNotice();
   setupPortalUsernameBindMessageListener();
+  // 本地上传记录不依赖登录状态或学期接口，先显示并绑定操作。
+  await loadSavedUploadsFromStorage();
+  await setupSavedUploadsUi();
   if (!popupMode && !forceAccountPasswordMigration
     && await globalThis.BjtuAccountStore?.needsPasswordFieldMigration?.()) {
     const migrationUrl = new URL(location.href);
@@ -7286,8 +7289,6 @@ const appInitializationPromise = (async function init() {
         await globalThis.BjtuAccountLogin?.ensureCurrentAccountStored?.(currentUser).catch(() => null);
       }
     }
-    await loadSavedUploadsFromStorage();
-    await setupSavedUploadsUi();
     lastValidUsername = (await getLocal('username', '')).trim();
     usernameInput.value = lastValidUsername;
     renderLoginAccountHistorySelect(lastValidUsername);
@@ -7321,10 +7322,6 @@ const appInitializationPromise = (async function init() {
     : triggerInitialPlatformLoads();
 
   await loadCurrentXqOptions().catch(() => { });
-
-  // 本地保存已上传文件：加载并绑定 UI
-  await loadSavedUploadsFromStorage();
-  await setupSavedUploadsUi();
 
   // 不默认使用本地保存账号。
   lastValidUsername = (await getLocal('username', '')).trim();
