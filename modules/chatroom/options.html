@@ -15,15 +15,13 @@
   <div class="section-title"><a class="module-options-page-link" data-module-options-link="chatroom" href="options.html">局域网聊天室</a></div>
   <label class="chatroom-option-check"><input id="chatroomFullscreenButtonEnabled" type="checkbox" checked><span>在扩展全屏页面上显示「局域网聊天室」按钮</span></label>
   <div class="option-divider" role="separator"></div>
-  <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器<span class="tip" data-tip-target="#chatroomSignalingLabel">仅在当前页点击「刷新发现」后连接，服务器会接触网络地址、昵称和设备标识；消息、文件和屏幕通过加密直连传输。公共服务不保证可用，无法连接时可交换连接码。网页不能直接扫描局域网或读取电脑用户名。本机服务器启动后，可填写 ws://局域网IP:1897/chatroom，也支持 wss://；默认公共服务保持不变。</span></label>
-  <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="wss://public.localsend.org/v1/ws">
-  <a class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>
-  <a id="chatroomOpen" class="option-action-link" href="chat.html">打开局域网聊天室</a>
   <template data-chatroom-sidebar-start></template>
       <div class="section-heading"><h2>会话</h2><button id="create-group" type="button" class="secondary">新建群聊</button></div>
       <nav id="conversations" aria-label="群聊和公共频道"></nav>
       <div class="section-heading"><h2>在线用户</h2><button id="scan" type="button" class="secondary">刷新发现</button></div>
-      <p class="muted">浏览器不能扫描局域网。点击扫描才连接已配置的在线信令服务，向服务提供方暴露公网 IP 和临时设备标识；同服务中的聊天室用户可发现你。无需在线服务可使用下方离线配对。直连不使用 STUN / TURN，跨网络可能失败。</p>
+      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器<span class="tip" data-tip-target="#chatroomSignalingLabel">打开聊天室时自动连接。服务器会接触网络地址、昵称和设备标识；消息、文件和屏幕通过加密直连传输。公共服务不保证可用，无法连接时可交换连接码。本机服务器启动后可填写 ws://局域网IP:1897/chatroom，也支持 wss://。</span></label>
+      <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="wss://public.localsend.org/v1/ws">
+      <p class="muted">浏览器不能扫描局域网，同一在线发现服务中的聊天室用户可发现你。无需在线服务可使用下方离线配对。直连不使用 STUN / TURN，跨网络可能失败。</p>
       <p id="discovery-status" class="muted" role="status">在线发现未启用。</p><button id="stop-scan" type="button" class="secondary" hidden>停止发现并断开全部直连</button>
       <form id="connect-form" class="inline-form"><input id="device-id" aria-label="对方在线设备 ID" placeholder="对方在线设备 ID（扫描后）" maxlength="160" required><button type="submit">连接</button></form>
       <div id="discovered-peers"></div>
@@ -33,6 +31,13 @@
         <label>昵称<input id="nickname" maxlength="40" autocomplete="nickname" required></label>
         <label class="check"><input id="require-friend" type="checkbox">仅好友可以联系我</label>
         <label>群邀请策略<select id="invite-policy"><option value="ask">每次询问</option><option value="allow">允许邀请</option><option value="deny">拒绝全部邀请</option></select></label>
+        <div class="chatroom-auto-save-option">
+          <label class="check"><input id="chatroomAutoSaveEnabled" type="checkbox" checked><span>自动保存小于</span></label>
+          <input id="chatroomAutoSaveValue" type="number" min="0" step="any" placeholder="∞" aria-label="自动保存的文件大小上限，留空表示不设限制">
+          <select id="chatroomAutoSaveUnit" aria-label="文件大小单位"><option>B</option><option>KB</option><option selected>MB</option><option>GB</option></select>
+          <span>的文件到扩展目录/downloads/</span>
+        </div>
+        <button id="chatroomAuthorizeDownloads" type="button" class="secondary">授权扩展目录</button>
         <p id="settings-status" class="muted" role="status">更改后自动保存。</p>
       </form><p id="self-info" class="muted"></p><p class="muted">局域网发现不等于身份认证，请核对对方身份。直连会向对方暴露网络地址。</p></details>
       <div class="actions"><button id="sidebar-invite-group" type="button" class="secondary" hidden>邀请成员</button><button id="sidebar-leave-group" type="button" class="secondary" hidden>退出群聊</button></div>
@@ -42,11 +47,14 @@
       <button id="sidebar-retry" type="button" class="secondary">重试连接引擎</button>
   <dialog id="editor"><form id="editor-form"><h2 id="editor-title"></h2><div id="editor-fields"></div><div class="actions"><button id="editor-cancel" type="button" class="secondary">取消</button><button type="submit">确定</button></div></form></dialog>
   <template data-chatroom-sidebar-end></template>
+  <a class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>
+  <a id="chatroomOpen" class="option-action-link" href="/modules/chatroom/chat.html">打开局域网聊天室</a>
 </section>
 <div id="msg"></div>
 <script src="launch.js"></script>
 <script src="transport.js"></script>
 <script src="link.js"></script>
+  <script src="settings.js"></script>
 <script src="sidebar.js"></script>
 <script src="options.js"></script>
 <script src="../../core/option-tips.js"></script>

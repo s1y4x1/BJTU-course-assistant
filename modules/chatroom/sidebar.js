@@ -15,7 +15,7 @@
     const peerNodes = new Map(), roomNodes = new Map(), requestNodes = new Map(), dirty = new Map();
     let state = {self:{},settings:{},peers:[],rooms:[],requests:[]}, selected = 'public';
     let online = false, pairingBusy = false, destroyed = false, transport, unsubscribe;
-    let refreshPromise, refreshAgain = false, nicknameTimer, saveQueue = Promise.resolve(), revision = 0;
+    let refreshPromise, refreshAgain = false, nicknameTimer, saveQueue = Promise.resolve(), revision = 0, settings;
     function node(tag, text, cls) {
       const el = document.createElement(tag);
       if (text !== undefined) el.textContent = String(text);
@@ -307,6 +307,7 @@
       clearTimeout(nicknameTimer);
       for (const id of dirty.keys()) saveSetting(id);
       destroyed = true; uiAbort.abort(); unsubscribe?.();
+      settings?.destroy();
       if ($('editor').open) $('editor').close();
       instances.delete(root);
     }
@@ -314,7 +315,12 @@
     setReady(false); render();
     const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,destroy};
     instances.set(root,controller);
-    controller.ready = getState ? Promise.resolve() : attachTransport().catch(error => { setReady(false, '连接引擎不可用，请重试。'); report(error); });
+    controller.ready = (async () => {
+      settings = await global.BjtuChatroomSettings.mount(root, report);
+      if (destroyed) { settings.destroy(); return; }
+      global.BjtuOptionTips?.setup();
+      if (!getState) await attachTransport().catch(error => { setReady(false, '连接引擎不可用，请重试。'); report(error); });
+    })();
     return controller;
   }
   global.BjtuChatroomSidebar = {mount};
