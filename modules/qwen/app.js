@@ -169,26 +169,7 @@
     if (qwenMarkdownParser) return qwenMarkdownParser;
     const markedApi = global.marked;
     if (!markedApi?.Marked || !markedApi?.Renderer) return null;
-    const renderer = new markedApi.Renderer();
-    renderer.html = ({ text }) => {
-      const value = String(text || '').trim();
-      if (/^<br\s*\/?\s*>$/i.test(value)) return '<br>';
-      return escapeHtmlQwen(text);
-    };
-    renderer.link = function renderSafeLink({ href, title, tokens }) {
-      const text = this.parser.parseInline(tokens || []);
-      const safeHref = safeUrlQwen(href, new Set(['http:', 'https:', 'mailto:']));
-      if (!safeHref) return text;
-      const titleAttribute = title ? ` title="${escapeHtmlQwen(title)}"` : '';
-      return `<a href="${escapeHtmlQwen(safeHref)}"${titleAttribute} target="_blank" rel="noopener noreferrer">${text}</a>`;
-    };
-    renderer.image = ({ href, title, text }) => {
-      const safeSrc = safeUrlQwen(href, new Set(['http:', 'https:']));
-      if (!safeSrc) return escapeHtmlQwen(String(text || ''));
-      const titleAttribute = title ? ` title="${escapeHtmlQwen(title)}"` : '';
-      return `<img src="${escapeHtmlQwen(safeSrc)}" alt="${escapeHtmlQwen(String(text || ''))}"${titleAttribute} loading="lazy">`;
-    };
-    renderer.codespan = ({ text }) => `<code class="bjtu-md-inline-code" role="button" tabindex="0" title="点击复制">${escapeHtmlQwen(text)}</code>`;
+    const renderer = global.BjtuMarkdown.createRenderer(markedApi);
     renderer.code = ({ text, lang }) => {
       const languageInfo = String(lang || '').trim();
       const language = languageInfo.split(/\s+/)[0];

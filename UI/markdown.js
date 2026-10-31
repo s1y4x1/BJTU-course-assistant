@@ -16,6 +16,28 @@
     return `<div class="bjtu-md-codeblock-wrap"${attribute}><div class="bjtu-md-codeblock-toolbar"><span class="bjtu-md-codeblock-language">${escapeHtml(label)}</span><button type="button" class="bjtu-md-codeblock-copy" title="复制代码">复制</button></div><pre class="bjtu-md-codeblock"><code>${escapeHtml(String(text || ''))}</code></pre></div>`;
   }
 
+  function createRenderer(markedApi = global.marked) {
+    const renderer = new markedApi.Renderer();
+    const safeUrl = (href, protocols) => {
+      try {
+        const url = new URL(href, global.location.href);
+        return protocols.includes(url.protocol) ? url.href : '';
+      } catch { return ''; }
+    };
+    renderer.html = ({text}) => /^<br\s*\/?\s*>$/i.test(String(text).trim()) ? '<br>' : escapeHtml(text);
+    renderer.link = function({href, title, tokens}) {
+      const text = this.parser.parseInline(tokens || []), url = safeUrl(href, ['http:', 'https:', 'mailto:']);
+      return url ? `<a href="${escapeHtml(url)}"${title ? ` title="${escapeHtml(title)}"` : ''} target="_blank" rel="noopener noreferrer">${text}</a>` : text;
+    };
+    renderer.image = ({href, title, text}) => {
+      const url = safeUrl(href, ['http:', 'https:']);
+      return url ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(text || '')}"${title ? ` title="${escapeHtml(title)}"` : ''} loading="lazy">` : escapeHtml(text || '');
+    };
+    renderer.codespan = ({text}) => `<code class="bjtu-md-inline-code" role="button" tabindex="0" title="点击复制">${escapeHtml(text)}</code>`;
+    renderer.code = ({text, lang}) => renderCodeBlock(text, lang);
+    return renderer;
+  }
+
   async function copyText(text, target) {
     const value = String(text || '');
     try {
@@ -71,5 +93,5 @@
     });
   }
 
-  global.BjtuMarkdown = Object.freeze({ escapeHtml, renderCodeBlock, copyText, bindCopy });
+  global.BjtuMarkdown = Object.freeze({ escapeHtml, renderCodeBlock, createRenderer, copyText, bindCopy });
 })(globalThis);
