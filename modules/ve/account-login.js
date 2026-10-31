@@ -203,8 +203,9 @@
       const html = String(personalCenter.html || '');
       let password = '';
       try {
-        const document = new DOMParser().parseFromString(String(html || ''), 'text/html');
-        password = String(document.querySelector('input#odbcPassword')?.getAttribute('value') || '').trim();
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        password = String(template.content.querySelector('input#odbcPassword')?.getAttribute('value') || '').trim();
       } catch {
         password = '';
       }

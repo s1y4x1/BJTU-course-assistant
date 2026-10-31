@@ -508,8 +508,9 @@ function parseVeReplayViewLinks(data, requestedViews) {
   const links = Object.fromEntries(requestedViews.map((view) => [view, '']));
   const html = String(data?.html || '').trim();
   if (html) {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    doc.querySelectorAll('a').forEach((anchor, index) => {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    template.content.querySelectorAll('a').forEach((anchor, index) => {
       const url = absoluteVeReplayUrl(anchor.getAttribute('href'));
       if (!url) return;
       const labeledView = replayViewFromLabel([
@@ -3044,7 +3045,10 @@ async function fetchHomeworkScore(upId, snId, signal) {
     throw new Error('LOGIN_REQUIRED');
   }
 
-  const doc = new DOMParser().parseFromString(String(text || ''), 'text/html');
+  // 只读取字段；template 中的网页标记不会触发 body onload、图片 onerror 等内联事件。
+  const template = document.createElement('template');
+  template.innerHTML = String(text || '');
+  const doc = template.content;
   return {
     score: doc.querySelector('input#oldScore, input[name="oldScore"]')?.value ?? null,
     comment: doc.querySelector('textarea#pigaiContent')?.value || ''
