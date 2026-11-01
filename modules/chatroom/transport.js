@@ -275,6 +275,7 @@
         data.peers.push(p);
       }
       p.nickname = identity.nickname;
+      if (typeof value?.ip === 'string') p.ip = str(value.ip, 64, true);
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
       p.online = !p.blocked; p.lastSeen = Date.now();

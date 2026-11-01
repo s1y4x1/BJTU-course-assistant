@@ -1,7 +1,7 @@
 (function(global) {
   'use strict';
   const defaults = Object.freeze({
-    chatroomSignalingUrl: 'wss://public.localsend.org/v1/ws',
+    chatroomSignalingUrl: 'ws://127.0.0.1:1897/chatroom',
     chatroomAutoSaveEnabled: true,
     chatroomAutoSaveMaxBytes: 100000000
   });
@@ -82,6 +82,10 @@
     const abort = new AbortController();
     const dirty = new Set(), revisions = new Map();
     let values = await chrome.storage.local.get(defaults), saveQueue = Promise.resolve();
+    if (/^wss?:\/\/public\.localsend\.org(?:[:/]|$)/i.test(values.chatroomSignalingUrl)) {
+      values.chatroomSignalingUrl = defaults.chatroomSignalingUrl;
+      await chrome.storage.local.set({chatroomSignalingUrl: defaults.chatroomSignalingUrl});
+    }
     function render() {
       if (!dirty.has('url')) $('chatroomSignalingUrl').value = values.chatroomSignalingUrl;
       $('chatroomAutoSaveEnabled').checked = values.chatroomAutoSaveEnabled !== false;

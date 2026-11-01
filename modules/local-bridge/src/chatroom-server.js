@@ -19,6 +19,10 @@ function publicInfo(info) {
     if (typeof info[key] !== 'string' || !info[key].length || Buffer.byteLength(info[key]) > max) throw new Error(`Invalid ${key}`);
     result[key] = info[key];
   }
+  if (info.identityId !== undefined) {
+    if (!/^[a-f0-9]{64}$/.test(info.identityId)) throw new Error('Invalid identity');
+    result.identityId = info.identityId;
+  }
   // The directory is untrusted discovery metadata, never an identity authority.
   return result;
 }
@@ -83,6 +87,14 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
   function broadcast(message, except) {
     for (const peer of peers.values()) if (peer !== except) send(peer, message);
   }
+  const describe = p => ({ ...p.info, id: p.id, ip: p.ip });
+  function arrangeConnection(a, b) {
+    if (a === b || a.info.deviceModel !== b.info.deviceModel ||
+        (a.info.identityId && a.info.identityId === b.info.identityId)) return;
+    // The server selects exactly one initiator for each pair, including refreshes.
+    const [from, to] = a.id < b.id ? [a, b] : [b, a];
+    send(from, {type: 'CONNECT', peer: describe(to)});
+  }
   const fail = (peer, code) => send(peer, { type: 'ERROR', code });
   function pruneSessions(now = Date.now()) {
     for (const [id, session] of sessions) if (session.expires <= now) sessions.delete(id);
@@ -124,8 +136,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     } catch { reject(socket, '400 Bad Request'); return; }
     wss.handleUpgrade(req, socket, head, ws => {
       socket.setTimeout(0);
-      const peer = { id: randomUUID(), info, ws, alive: true, count: 0, windowStart: now };
-      const describe = p => ({ ...p.info, id: p.id });
+      const peer = { id: randomUUID(), info, ws, ip: String(socket.remoteAddress || '').replace(/^::ffff:/, ''), alive: true, count: 0, windowStart: now };
       const existing = [...peers.values()].map(describe);
       peers.set(peer.id, peer);
       ws.on('error', () => {
@@ -153,6 +164,10 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
           broadcast({ type: 'UPDATE', peer: describe(peer) }, peer);
           return;
         }
+        if (message.type === 'DISCOVER') {
+          for (const other of peers.values()) arrangeConnection(peer, other);
+          return;
+        }
         if (message.type !== 'OFFER' && message.type !== 'ANSWER') { fail(peer, 'INVALID_TYPE'); return; }
         // Construct a fresh envelope: client-supplied peer/from/id never reaches recipients.
         const { target, sessionId, sdp, type } = message;
@@ -175,8 +190,9 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
         }
         send(recipient, { type, peer: describe(peer), sessionId, sdp });
       });
-      send(peer, { type: 'HELLO', client: describe(peer), peers: existing });
+      send(peer, { type: 'HELLO', service: 'bjtuca-chatroom', client: describe(peer), peers: existing });
       if (peers.has(peer.id)) broadcast({ type: 'JOIN', peer: describe(peer) }, peer);
+      for (const other of peers.values()) arrangeConnection(peer, other);
     });
   });
   function close() {

@@ -1,10 +1,7 @@
 /* Browser-only link adapter. No socket or RTC connection is opened on load.
- * LocalSend signaling reference (checked 2026-10-30):
- * https://github.com/localsend/web/blob/main/app/services/signaling.ts
- * https://github.com/localsend/web/blob/main/app/services/webrtc.ts
+ * BJTUCA Bridge owns discovery and chooses the initiator of each RTC pair.
  * scan/connect/pairCreate/pairAccept/pairComplete/sendPeer/close return promises.
  * Pair methods return {code, sessionId}. setLink() is owned by transport/loader.
- * This uses LocalSend discovery/SDP envelopes, NOT its native file protocol.
  */
 (() => {
   'use strict';
@@ -104,7 +101,7 @@
           if (!valid || frame.packet.type !== 'link-auth' || frame.packet.from !== s.remoteIdentity.id || frame.packet?.payload?.nonce !== s.localNonce || frame.packet?.payload?.sessionId !== s.id ||
               frame.packet.payload.senderFingerprint !== fingerprint(s.pc.remoteDescription) || frame.packet.payload.receiverFingerprint !== fingerprint(s.pc.localDescription)) throw new Error('身份验证失败。');
           s.peerId = s.remoteIdentity.id; s.authenticated = true; clearTimeout(s.timer);
-          const result = await engine().peerOnline({ identity: frame.packet.identity, authenticated: true });
+          const result = await engine().peerOnline({ identity: frame.packet.identity, authenticated: true, ip: s.ip || '' });
           if (result?.ok === false) throw new Error('对方已被屏蔽。');
           emit('peer-online', { peerId: s.peerId });
         } else if (frame.type === 'packet' && s.authenticated) {
@@ -144,14 +141,8 @@
     try { await s.pc.setRemoteDescription({ type: 'answer', sdp: value.sdp }); return { sessionId: s.id }; } catch (e) { drop(s); throw e; }
   }
   async function publicInfo() {
-    // LocalSend's timestamped, signed token; separate ephemeral signing key to
-    // avoid publishing the persistent chat identity to the public directory.
-    const salt = new Uint8Array(8); new DataView(salt.buffer).setBigUint64(0, BigInt(Math.floor(Date.now() / 1000)), true);
-    // Use the officially supported RSA-PSS token algorithm.
-    const rsa = await crypto.subtle.generateKey({ name: 'RSA-PSS', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
-    const der = new Uint8Array(await crypto.subtle.exportKey('spki', rsa.publicKey)), input = new Uint8Array(der.length + 8); input.set(der); input.set(salt, der.length);
-    const hash = await crypto.subtle.digest('SHA-256', input), sig = await crypto.subtle.sign({ name: 'RSA-PSS', saltLength: 32 }, rsa.privateKey, hash);
-    return { alias: 'BJTU Chatroom', version: '2.3', deviceModel: VERSION, deviceType: 'WEB', token: ['sha256', b64(new Uint8Array(hash)), b64(salt), 'rsa-pss', b64(new Uint8Array(sig))].join('.') };
+    const info = await identity();
+    return { alias: info.nickname, identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', token: crypto.randomUUID() };
   }
   function signalSend(message) { if (socket?.readyState !== 1) throw new Error('请先点击扫描设备，启用在线发现。'); socket.send(JSON.stringify(message)); }
   function remember(peer) {
@@ -159,12 +150,20 @@
     discovered.set(peer.id, peer); emit('discovery', { peers: [...discovered.values()], deviceId: socketId });
   }
   async function onSignal(message) {
-    if (message.type === 'HELLO') { socketId = message.client?.id || ''; for (const p of (message.peers || []).slice(0, 500)) remember(p); emit('scanning', { deviceId: socketId }); }
+    if (message.type === 'HELLO') {
+      if (message.service !== 'bjtuca-chatroom') { socket?.close(); throw new Error('请使用 BJTUCA Bridge 聊天室服务器。'); }
+      socketId = message.client?.id || '';
+      for (const p of (message.peers || []).slice(0, 500)) remember(p);
+      emit('scanning', { deviceId: socketId });
+    }
+    else if (message.type === 'CONNECT') { remember(message.peer); await connect(message.peer?.id); }
     else if (message.type === 'JOIN' || message.type === 'UPDATE') remember(message.peer);
     else if (message.type === 'LEFT') { discovered.delete(message.peerId); emit('discovery', { peers: [...discovered.values()], deviceId: socketId }); }
     else if (message.type === 'OFFER' && message.peer?.deviceModel === VERSION) {
       if (typeof message.sessionId !== 'string' || message.sessionId.length > 80 || sessions.has(message.sessionId)) return;
-      const s = makeSession(message.sessionId); s.target = message.peer.id;
+      if ([...sessions.values()].some(s => s.target === message.peer.id && !s.closed)) return;
+      const s = makeSession(message.sessionId); s.target = message.peer.id; s.ip = message.peer.ip;
+      if (message.peer.identityId) s.expectedIdentity = {id: message.peer.identityId};
       try { await s.pc.setRemoteDescription({ type: 'offer', sdp: await codec(message.sdp, false) }); await s.pc.setLocalDescription(await s.pc.createAnswer()); await gather(s); signalSend({ type: 'ANSWER', target: s.target, sessionId: s.id, sdp: await codec(s.pc.localDescription.sdp, true) }); }
       catch (e) { drop(s); throw e; }
     } else if (message.type === 'ANSWER') {
@@ -175,13 +174,29 @@
     } else if (message.type === 'ERROR') emit('error', { message: `信令服务器拒绝请求（${message.code}）。` });
   }
   async function scan() {
-    if (socket?.readyState === 1) return { peers: [...discovered.values()], deviceId: socketId };
     if (opening) return opening;
     const epoch = generation;
     opening = (async () => {
       const stored = await globalThis.chrome?.storage?.local?.get('chatroomSignalingUrl');
-      const url = new URL(stored?.chatroomSignalingUrl || 'wss://public.localsend.org/v1/ws');
+      let address = stored?.chatroomSignalingUrl || 'ws://127.0.0.1:1897/chatroom';
+      if (/^wss?:\/\/public\.localsend\.org(?:[:/]|$)/i.test(address)) {
+        address = 'ws://127.0.0.1:1897/chatroom';
+        await chrome.storage.local.set({chatroomSignalingUrl: address});
+      }
+      const url = new URL(address);
       if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error('信令地址必须是不含凭据的 ws:// 或 wss:// URL。');
+      if (epoch !== generation) throw new Error('发现已取消。');
+      if (socket?.readyState === 1) {
+        const previous = new URL(socket.url); previous.searchParams.delete('d');
+        if (previous.href === url.href) {
+          signalSend({type: 'DISCOVER'});
+          return {peers: [...discovered.values()], deviceId: socketId};
+        }
+        const old = socket; socket = null; old.close(); clearInterval(ping); clearInterval(rotate);
+        discovered.clear(); socketId = '';
+        for (const session of [...sessions.values()]) drop(session);
+        emit('scan-closed');
+      }
       const info = await publicInfo();
       if (epoch !== generation) throw new Error('发现已取消。');
       url.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
@@ -206,7 +221,15 @@
   async function connect(input) {
     const id = typeof input === 'string' ? input : input?.peerId;
     if (!id || id === socketId || !discovered.has(id)) throw new Error('请先扫描，并填写或选择对方的在线设备 ID。');
-    const s = makeSession(); s.target = id;
+    const existing = [...sessions.values()].find(s => s.target === id && !s.closed);
+    if (existing) return {sessionId: existing.id};
+    const peer = discovered.get(id);
+    const own = await identity();
+    if (peer.identityId === own.id) return {};
+    const pending = [...sessions.values()].find(s => s.target === id && !s.closed);
+    if (pending) return {sessionId: pending.id};
+    const s = makeSession(); s.target = id; s.ip = peer.ip;
+    if (peer.identityId) s.expectedIdentity = {id: peer.identityId};
     try { bind(s, s.pc.createDataChannel(LABEL, { ordered: true })); await s.pc.setLocalDescription(await s.pc.createOffer()); await gather(s); signalSend({ type: 'OFFER', target: id, sessionId: s.id, sdp: await codec(s.pc.localDescription.sdp, true) }); return { sessionId: s.id }; }
     catch (e) { drop(s); throw e; }
   }
