@@ -1,9 +1,10 @@
 (function(global) {
   'use strict';
-  const defaults = { chatroomFullscreenButtonEnabled:true };
+  const defaults = { chatroomFullscreenButtonEnabled:true, chatroomNotifyNewMessages:true };
   const instances = new WeakMap();
   function render(root, values) {
     root.querySelector('#chatroomFullscreenButtonEnabled').checked = values.chatroomFullscreenButtonEnabled !== false;
+    root.querySelector('#chatroomNotifyNewMessages').checked = values.chatroomNotifyNewMessages !== false;
   }
   async function init({setMessage = (text, ok) => global.BjtuOptionsMessage?.show(text, ok)} = {}) {
     const root = document.querySelector('.chatroom-options-card[data-options-fragment]');
@@ -13,8 +14,8 @@
     instances.set(root,entry);
     entry.ready = (async () => {
       render(root,await chrome.storage.local.get(defaults));
-      root.querySelector('#chatroomFullscreenButtonEnabled').addEventListener('change', event => {
-        void chrome.storage.local.set({chatroomFullscreenButtonEnabled:event.target.checked}).catch(e => setMessage(e.message,false));
+      for (const key of Object.keys(defaults)) root.querySelector('#'+key).addEventListener('change', event => {
+        void chrome.storage.local.set({[key]:event.target.checked}).catch(e => setMessage(e.message,false));
       });
       root.querySelector('#chatroomOpen').addEventListener('click', async event => {
         event.preventDefault();

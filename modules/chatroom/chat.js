@@ -9,7 +9,7 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const embedded = new URLSearchParams(location.search).get('embedded') === '1';
-  let embeddedVisible = true;
+  let embeddedVisible = !embedded;
   document.body.classList.toggle('chatroom-embedded', embedded);
   if (embedded) document.addEventListener('pointerdown', () => {
     try { parent.BjtuFullscreenModuleWindows?.focus('chatroom'); } catch {}
@@ -29,7 +29,7 @@
   $('sidebar-host').removeAttribute('aria-busy');
   const LIMIT = { messages: 600, peers: 500, rooms: 100, requests: 100, sessions: 8, history: 32, memory: 128 * 1024 * 1024, chunk: 32 * 1024 };
   const PROTOCOL = 'bjtu-chatroom-rtc-v1';
-  let state = { self: {}, peers: [], rooms: [], messages: [], requests: [], settings: {} };
+  let state = { self: {}, peers: [], rooms: [], messages: [], requests: [], settings: {}, conversations: {} };
   let selected = 'public';
   let transport, unsubscribe, stopped = false, online = false, stateTimer, statePromise, stateDirty = false;
   let capture = null, sharingPending = false, memoryReserved = 0;
@@ -41,6 +41,7 @@
   let lastToast = { text: '', at: 0 }, messageConversation = '';
   let membersSignature = '';
   const expandedMembers = new Set();
+  let markingRead = false;
   const markdown = new marked.Marked({gfm: true, breaks: true, renderer: BjtuMarkdown.createRenderer()});
   BjtuMarkdown.bindCopy($('messages'), {onError: report});
 
@@ -89,11 +90,12 @@
     const sharedGroup = state.rooms.some((room) => room.members?.includes(state.self.id) && room.members.includes(id));
     return !!peer && !peer.blocked && (!state.settings.requireFriend || peer.friend || sharedGroup);
   }
-  function connectionStatus(text, ready) {
+  function connectionStatus(ready) {
     online = ready;
     $('send').disabled = !ready;
-    sidebar.setReady(ready, text);
+    sidebar.setReady(ready);
     updateConversation();
+    if (ready) void markConversationRead();
   }
   async function action(name, args = {}) {
     if (!transport || !online) throw new Error('连接引擎尚未就绪，请稍后重新连接。');
@@ -103,6 +105,7 @@
   }
   async function mutate(name, args) {
     const result = await action(name, args);
+    if (name === 'conversation-clear' || name === 'conversation-delete') clearLocalMedia(args.conversationId);
     scheduleState();
     return result;
   }
@@ -110,7 +113,7 @@
   function mergeState(value) {
     if (!value || typeof value !== 'object') return;
     const source = value.state || value;
-    for (const key of ['self', 'settings']) if (source[key]) state[key] = { ...state[key], ...source[key] };
+    for (const key of ['self', 'settings', 'conversations']) if (source[key]) state[key] = { ...source[key] };
     for (const [key, max] of Object.entries({ peers: LIMIT.peers, rooms: LIMIT.rooms, messages: LIMIT.messages, requests: LIMIT.requests })) {
       if (Array.isArray(source[key])) state[key] = bounded(source[key], max);
     }
@@ -133,7 +136,7 @@
       if (stopped || owner !== transport) return;
       if (result?.ok === false || result?.error) throw new Error('无法读取聊天室状态。');
       mergeState(result);
-      connectionStatus('本机引擎就绪 · 扫描或离线配对后与对方直连；不使用 STUN / TURN。', true);
+      connectionStatus(true);
     })();
     try { await statePromise; } finally { statePromise = null; if (stateDirty) scheduleState(); }
   }
@@ -141,7 +144,8 @@
     if (stopped) return;
     const next = globalThis.BjtuChatroomTransport;
     if (!next || typeof next.action !== 'function' || typeof next.state !== 'function' || typeof next.subscribe !== 'function') {
-      connectionStatus('连接引擎尚未加载。无需安装本地程序；请等待引擎就绪或点击重新连接。', false);
+      connectionStatus(false);
+      toast('聊天室连接组件未加载，请重新打开聊天室。');
       return;
     }
     if (next !== transport) {
@@ -153,7 +157,7 @@
       const cleanup = transport.subscribe(onEvent);
       if (typeof cleanup === 'function') unsubscribe = cleanup;
     }
-    try { await refreshState(); } catch (error) { connectionStatus('连接暂不可用，请检查配对状态后重试。', false); report(error); }
+    try { await refreshState(); } catch (error) { connectionStatus(false); report(error); }
   }
   function onEvent(event) {
     if (stopped || !event) return;
@@ -171,7 +175,7 @@
     } else if (event.type === 'error') {
       toast('连接引擎报告错误，请检查连接状态。');
     } else if (event.type === 'disconnected') {
-      connectionStatus('连接已断开。可重新配对或重试。', false);
+      connectionStatus(false);
       stopCapture();
       for (const s of [...sessions.values()]) endSession(s, '连接已断开');
     } else {
@@ -202,6 +206,18 @@
   }
   function renderState() {
     sidebar.render(); updateConversation(); renderMessages();
+    void markConversationRead();
+  }
+  async function markConversationRead() {
+    const view = state.conversations?.[selected];
+    let focused = document.hasFocus();
+    if (embedded) { try { focused ||= parent.document.hasFocus(); } catch {} }
+    if (stopped || markingRead || !online || !view?.unread || document.visibilityState !== 'visible' ||
+        !focused || (embedded && !embeddedVisible)) return;
+    markingRead = true;
+    try { await action('conversation-read', {conversationId:selected,lastMessageId:view.lastMessageId}); }
+    catch(error) { report(error); }
+    finally { markingRead = false; scheduleState(); }
   }
   function chooseConversation(id) {
     if (id === selected) return;
@@ -213,12 +229,21 @@
     $('message').value = drafts.get(id) || '';
     updateConversation(); renderMessages();
     $('message').focus();
+    void markConversationRead();
   }
   function updateConversation() {
     const room = currentRoom(), peerId = selected.startsWith('peer:') ? selected.slice(5) : null;
-    $('conversation-title').textContent = selected === 'public' ? '公共群聊' : peerId ? nameOf(peerId) : room?.name || '群聊已结束';
+    $('conversation-title').textContent = !selected ? '请选择会话' : selected === 'public' ? '公共群聊' : peerId ? nameOf(peerId) : room?.name || '群聊已结束';
+    const peer = state.peers.find(item => item.id === peerId);
+    $('conversation-title').classList.toggle('editable',!!peerId);
+    $('conversation-detail').hidden = !selected || !!peerId;
+    $('block-peer').hidden = !peer; $('block-peer').textContent = peer?.blocked ? '取消拉黑' : '拉黑';
+    $('delete-friend').hidden = !peer?.friend;
+    $('mute-conversation').checked = state.conversations?.[selected]?.muted === true;
+    $('mute-conversation').disabled = $('clear-history').disabled = !selected;
+    $('send').disabled = !online || !selected;
     const ids = selected === 'public' ? [state.self.id, ...state.peers.filter(p => p.online && !p.blocked).map(p => p.id)]
-      : peerId ? [state.self.id, peerId] : room?.members || [];
+      : peerId ? [] : room?.members || [];
     const members = [...new Set(ids)].filter(Boolean).map(id => ({id, name: nameOf(id), ip: state.peers.find(p => p.id === id)?.ip || ''}));
     const signature = JSON.stringify([selected, members]);
     if (signature !== membersSignature) {
@@ -261,7 +286,7 @@
     const anchor = [...messageNodes.values()].find((v) => v.el.offsetTop >= container.offsetTop + oldTop);
     const anchorOffset = anchor ? anchor.el.getBoundingClientRect().top : 0;
     if (changed) { container.replaceChildren(); messageNodes.clear(); messageConversation = selected; }
-    const items = [...state.messages.map(message => ({...message, displayName: nameOf(message.senderId)})), ...[...mediaMessages.values()].map(s => ({
+    const items = [...state.messages.filter(message => !mediaMessages.has(message.id)).map(message => ({...message, displayName: nameOf(message.senderId)})), ...[...mediaMessages.values()].map(s => ({
       id: s.id, conversationId: s.conversationId, senderId: s.senderId, createdAt: s.createdAt, media: true
     }))].filter((m) => m.conversationId === selected).sort((a,b) => a.createdAt - b.createdAt);
     container.querySelector('.empty')?.remove();
@@ -301,6 +326,8 @@
       message.card = node('article', undefined, `message media-message${s.outgoing ? ' mine' : ''}`);
       message.card.append(messageHeader(s.senderId, s.createdAt));
       mediaMessages.set(id, message);
+      void mutate('media-message', {conversationId:s.conversationId,senderId:s.senderId,messageId:s.messageId,
+        text:s.type === 'file' ? `[文件] ${s.name}` : '[屏幕共享]'}).catch(report);
     }
     if (message.type !== s.type || message.conversationId !== s.conversationId) throw new Error('传输消息不匹配。');
     s.message = message; s.card = message.card; message.sessions.set(s.id, s);
@@ -692,6 +719,14 @@
     if (s.reserved) { memoryReserved -= s.reserved; s.reserved = 0; }
     s.chunks.length = 0;
   }
+  function clearLocalMedia(conversationId) {
+    for (const message of [...mediaMessages.values()]) {
+      if (message.conversationId !== conversationId) continue;
+      for (const task of message.sessions.values()) { endSession(task, '会话记录已清空', true); releaseResources(task); }
+      mediaMessages.delete(message.id); message.card.remove();
+      const index = transferHistory.indexOf(message); if (index >= 0) transferHistory.splice(index,1);
+    }
+  }
   function archiveMediaMessage(message) {
     if (!message || message.archived || message.sessions.size < message.plannedCount ||
         [...message.sessions.values()].some(task => !task.ended)) return;
@@ -788,7 +823,14 @@
     $('stop-screen').hidden = true; updateConversation();
   }
 
-  listen('retry', 'click', () => attachTransport().catch(report));
+  listen('conversation-title','click', () => { if (selected.startsWith('peer:')) sidebar.editPerson(selected.slice(5)); });
+  listen('block-peer','click', () => {
+    const peerId = selected.slice(5), peer = state.peers.find(item => item.id === peerId);
+    if (peer) void mutate('block',{peerId,blocked:!peer.blocked}).catch(report);
+  });
+  listen('delete-friend','click', () => { if (selected.startsWith('peer:')) void mutate('friend-delete',{peerId:selected.slice(5)}).catch(report); });
+  listen('clear-history','click', () => { if (selected) void mutate('conversation-clear',{conversationId:selected}).catch(report); });
+  listen('mute-conversation','change', () => { if (selected) void mutate('conversation-mute',{conversationId:selected,muted:$('mute-conversation').checked}).catch(report); });
   listen('conversation-members-toggle', 'click', () => {
     if (expandedMembers.has(selected)) expandedMembers.delete(selected); else expandedMembers.add(selected);
     $('conversation-members').classList.toggle('expanded', expandedMembers.has(selected)); updateMembersToggle();
@@ -808,7 +850,6 @@
     $('pair-status').textContent = '已断开。可重新生成邀请或点击扫描。';
     scheduleState();
   }
-  listen('disconnect', 'click', () => disconnect().catch(report));
   listen('message-form', 'submit', async (event) => {
     event.preventDefault(); const input = $('message'), text = input.value.trim(), conversationId = selected;
     if (!text || $('send').disabled) return;
@@ -830,9 +871,11 @@
     if (event.source !== parent || event.origin !== location.origin) return;
     if (event.data?.type !== 'BJTU_CHATROOM_WINDOW_VISIBILITY') return;
     if (event.data.visible === false) { embeddedVisible = false; stopCapture(); }
-    else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); if (online) void action('scan').catch(report); }
+    else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); if (online) void action('scan').catch(report); void markConversationRead(); }
   }, { signal: uiAbort.signal });
   window.addEventListener('bjtu-chatroom-transport-ready', () => attachTransport().catch(report), { signal: uiAbort.signal });
+  window.addEventListener('focus', () => { void markConversationRead(); }, {signal:uiAbort.signal});
+  document.addEventListener('visibilitychange', () => { void markConversationRead(); }, {signal:uiAbort.signal});
   window.addEventListener('beforeunload', (event) => {
     if (sessions.size || memoryReserved || capture) { event.preventDefault(); event.returnValue = ''; }
   }, { signal: uiAbort.signal });
@@ -858,8 +901,19 @@
     onDisconnect: disconnect, report
   });
   await sidebar.ready;
-  renderState(); connectionStatus('正在等待聊天室连接引擎…', false);
+  renderState(); connectionStatus(false);
   await attachTransport();
+  const requestedConversation = new URLSearchParams(location.search).get('conversation');
+  if (requestedConversation) chooseConversation(requestedConversation);
+  const consumeNavigation = async navigation => {
+    const tab = await chrome.tabs.getCurrent();
+    if (navigation?.tabId === tab?.id) chooseConversation(navigation.conversationId);
+  };
+  const onNavigation = (changes,area) => {
+    if (area==='local' && changes.chatroomNavigation) void consumeNavigation(changes.chatroomNavigation.newValue).catch(report);
+  };
+  chrome.storage.onChanged.addListener(onNavigation);
+  window.addEventListener('pagehide', () => chrome.storage.onChanged.removeListener(onNavigation), {once:true});
   if (online) await action('scan').catch(report);
 })().catch(error => {
   globalThis.BjtuOptionsMessage?.show(error?.message || '聊天室初始化失败，请刷新重试。', false);

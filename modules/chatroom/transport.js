@@ -14,7 +14,8 @@
  * setLink({scan, connect, pairCreate, pairAccept, pairComplete, sendPeer, close});
  * sendPeer(peerId, signedPacket); other adapter methods receive action args.
  * action names: scan/connect/pair-create/pair-accept/pair-complete/close,
- * settings/remark/block/friend-request/friend-response/group-create/
+ * settings/remark/block/friend-request/friend-response/friend-delete/conversation-read/
+ * conversation-mute/conversation-clear/conversation-delete/media-message/group-create/
  * group-invite/group-response/group-leave/send-message/signal.
  * subscribe(fn) -> unsubscribe; state() -> isolated domain snapshot.
  * Events: {type:'state',state}, {type:'signal',peerId,payload}, {type:'error',error}.
@@ -30,7 +31,7 @@
   const G = globalThis, KEY = 'chatroomState', PROTOCOL = 'bjtu-chatroom-v1';
   const MAX = { peers: 500, rooms: 100, requests: 100, messages: 600, historyBytes: 2 * 1024 * 1024, seen: 2048, packet: 262144, members: 100 };
   const encoder = new TextEncoder(), listeners = new Set(), keyCache = new Map();
-  const domainTypes = new Set(['profile', 'message', 'signal', 'friend-request', 'friend-response', 'group-invite', 'group-response', 'group-invite-request', 'group-state', 'group-leave']);
+  const domainTypes = new Set(['profile', 'message', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-invite-request', 'group-state', 'group-leave']);
   let data, privateKey, publicIdentity, link, queue = Promise.resolve();
 
   const copy = (v) => JSON.parse(JSON.stringify(v));
@@ -74,7 +75,7 @@
     for (const fn of [...listeners]) { try { fn(copy(event)); } catch { /* Subscriber cannot break protocol. */ } }
   }
   function snapshot() {
-    return copy({ self: publicIdentity, settings: data.settings, peers: data.peers, rooms: data.rooms, requests: data.requests, messages: data.messages });
+    return copy({ self: publicIdentity, settings: data.settings, peers: data.peers, rooms: data.rooms, requests: data.requests, messages: data.messages, conversations: data.conversations || {} });
   }
   const storage = G.browser?.storage?.local || G.chrome?.storage?.local;
   const storageEvents = (G.browser || G.chrome)?.storage?.onChanged;
@@ -152,9 +153,21 @@
     for (const target of new Set(ids)) if (target !== publicIdentity.id && allowed(target, false) && peer(target).online) enqueue(effects, target, type, payload);
   }
   function history(message) {
+    const view = conversationView(message.conversationId);
+    view.hidden = false; view.lastText = message.text; view.lastMessageId = message.id;
+    view.lastAt = Date.now(); view.lastSenderId = message.senderId;
+    view.lastOwn = message.senderId === publicIdentity.id;
+    if (message.senderId !== publicIdentity.id) view.unread = Math.min(999999, view.unread + 1);
     data.messages.push(message);
     if (data.messages.length > MAX.messages) data.messages.splice(0, data.messages.length - MAX.messages);
     trimHistory();
+  }
+  function conversationView(conversationId) {
+    data.conversations ||= {};
+    if (!Object.hasOwn(data.conversations, conversationId)) Object.defineProperty(data.conversations, conversationId, {
+      enumerable: true, configurable: true, writable: true, value: {unread: 0, muted: false, hidden: false}
+    });
+    return data.conversations[conversationId];
   }
   function trimHistory() {
     let bytes = 0, start = data.messages.length;
@@ -266,7 +279,7 @@
     await ready;
     const identity = copy(value?.identity || value);
     await importIdentity(identity);
-    return commit(() => {
+    return commit((effects) => {
       if (identity.id === publicIdentity.id) fail('不能连接自身。');
       let p = peer(identity.id);
       if (!p) {
@@ -279,8 +292,11 @@
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
       p.online = !p.blocked; p.lastSeen = Date.now();
+      if (p.pendingFriendDelete && p.online) {
+        enqueue(effects, p.id, 'friend-delete', {}); p.pendingFriendDelete = false;
+      }
       return { ok: !p.blocked, peerId: p.id };
-    }).then(({ result }) => result);
+    }).then(async ({ result, effects }) => { await deliver(effects); return result; });
   }
   async function peerOffline(peerId) {
     return commit(() => { const p = peer(peerId); if (p) p.online = false; return { ok: true }; }).then(({ result }) => result);
@@ -299,6 +315,32 @@
   }
   function localAction(name, args, effects) {
     switch (name) {
+      case 'conversation-read': {
+        const view = conversationView(token(args.conversationId));
+        if (view.lastMessageId === args.lastMessageId) view.unread = 0;
+        return {};
+      }
+      case 'conversation-mute': {
+        if (typeof args.muted !== 'boolean') fail('无效免打扰状态。');
+        conversationView(token(args.conversationId)).muted = args.muted; return {};
+      }
+      case 'conversation-clear':
+      case 'conversation-delete': {
+        const id = token(args.conversationId), view = conversationView(id);
+        data.messages = data.messages.filter(message => message.conversationId !== id);
+        Object.assign(view, {unread: 0, lastText: '', lastAt: 0, lastMessageId: '', lastSenderId: ''});
+        if (name === 'conversation-delete') view.hidden = true;
+        return {};
+      }
+      case 'media-message': {
+        const conversationId = token(args.conversationId), senderId = id(args.senderId);
+        if (senderId !== publicIdentity.id && !peer(senderId)) fail('未知媒体消息发送者。');
+        const messageId = senderId + ':' + token(args.messageId);
+        if (!data.messages.some(message => message.id === messageId)) history({
+          id: messageId, senderId, conversationId, text: str(args.text, 240), createdAt: Date.now(), media: true
+        });
+        return {};
+      }
       case 'settings': {
         if (args.nickname !== undefined) data.settings.nickname = str(args.nickname, 40).trim();
         if (args.requireFriend !== undefined) { if (typeof args.requireFriend !== 'boolean') fail('无效好友策略。'); data.settings.requireFriend = args.requireFriend; }
@@ -316,6 +358,8 @@
         const p = peer(args.peerId); if (!p) fail('联系人不存在。');
         if (typeof args.blocked !== 'boolean') fail('无效拉黑状态。');
         p.blocked = args.blocked;
+        if (p.blocked) p.online = false;
+        else if (typeof link?.isConnected === 'function') p.online = link.isConnected(p.id);
         if (p.blocked) {
           data.requests = data.requests.filter((r) => r.from !== p.id);
           data.outgoing = data.outgoing.filter((r) => r.to !== p.id);
@@ -329,6 +373,14 @@
         const requestId = crypto.randomUUID();
         pushRequest({ id: requestId, type: 'friend', to: p.id, createdAt: Date.now() }, true);
         enqueue(effects, p.id, name, { requestId }); return { requestId };
+      }
+      case 'friend-delete': {
+        const p = peer(args.peerId); if (!p) fail('联系人不存在。');
+        p.friend = false;
+        data.outgoing = data.outgoing.filter(request => request.type !== 'friend' || request.to !== p.id);
+        data.requests = data.requests.filter(request => request.type !== 'friend' || request.from !== p.id);
+        if (p.online) enqueue(effects, p.id, 'friend-delete', {}); else p.pendingFriendDelete = true;
+        return {};
       }
       case 'friend-response':
       case 'group-response': {
@@ -374,6 +426,7 @@
         data.rooms = data.rooms.filter((v) => v.id !== r.id);
         data.outgoing = data.outgoing.filter((v) => v.roomId !== r.id);
         data.requests = data.requests.filter((v) => v.room?.id !== r.id);
+        if (data.conversations) delete data.conversations[r.id];
         return {};
       }
       case 'send-message': {
@@ -395,6 +448,7 @@
     const from = packet.from, payload = packet.payload;
     if (!allowed(from, false)) fail('接收策略拒绝此用户。');
     switch (packet.type) {
+      case 'friend-delete': peer(from).friend = false; break;
       case 'profile': peer(from).nickname = packet.identity.nickname; break;
       case 'message': {
         str(payload.text, 8000); token(payload.id); token(payload.conversationId);

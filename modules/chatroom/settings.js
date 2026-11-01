@@ -140,7 +140,7 @@
       render();
     };
     chrome.storage.onChanged.addListener(changed); render();
-    return {destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
+    return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
   global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload};
 })(globalThis);

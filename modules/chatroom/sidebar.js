@@ -13,9 +13,10 @@
     const $ = id => root.querySelector('#' + id);
     const uiAbort = new AbortController();
     const roomNodes = new Map(), requestNodes = new Map(), dirty = new Map();
-    let state = {self:{},settings:{},peers:[],rooms:[],requests:[]}, selected = 'public';
+    let state = {self:{},settings:{},peers:[],rooms:[],requests:[],messages:[],conversations:{}}, selected = 'public';
     let online = false, pairingBusy = false, destroyed = false, transport, unsubscribe;
     let refreshPromise, refreshAgain = false, nicknameTimer, saveQueue = Promise.resolve(), revision = 0, settings;
+    let activeHold;
     function node(tag, text, cls) {
       const el = document.createElement(tag);
       if (text !== undefined) el.textContent = String(text);
@@ -52,9 +53,8 @@
       return result;
     }
     function scheduleState() { if (!getState) refresh().catch(report); }
-    function setReady(ready, text) {
+    function setReady(ready) {
       online = ready;
-      $('sidebar-engine-status').textContent = text || (ready ? '当前页连接引擎已就绪。' : '等待当前页连接引擎。');
       for (const id of ['scan','create-group','nickname','require-friend','invite-policy']) $(id).disabled = !ready;
       for (const id of ['pair-create','pair-accept','pair-complete']) $(id).disabled = !ready || pairingBusy || typeof global.BjtuChatroomLink?.pairCreate !== 'function';
       if (ready && $('pair-status').textContent === '等待连接引擎。') $('pair-status').textContent = '引擎已就绪。可生成邀请，或接收对方邀请。';
@@ -78,14 +78,14 @@
     async function attachTransport() {
       if (getState || destroyed) return;
       const next = global.BjtuChatroomTransport;
-      if (!next?.state || !next?.action || !next?.subscribe) { setReady(false, '当前页连接引擎未加载，请重试。'); return; }
+      if (!next?.state || !next?.action || !next?.subscribe) { setReady(false); return; }
       await next.ready;
       if (destroyed) return;
       if (next !== transport) {
         unsubscribe?.(); transport = next;
         if (global.BjtuChatroomLink && typeof next.setLink === 'function') next.setLink(global.BjtuChatroomLink);
         unsubscribe = next.subscribe(event => {
-          if (event.type === 'disconnected') setReady(false, '连接已断开，请在当前页重新配对。');
+          if (event.type === 'disconnected') setReady(false);
           else if (event.type !== 'signal') scheduleState();
         });
       }
@@ -121,20 +121,58 @@
   function render() {
     if (destroyed) return;
     state = getState ? getState() : state;
-    const entries = [{id: 'public', name: '公共群聊', kind: 'group'},
+    const entries = [{id: 'public', name: '公共群聊', kind: 'group', members: [state.self.id, ...state.peers.filter(peer => peer.online && !peer.blocked).map(peer => peer.id)].filter(Boolean)},
       ...state.rooms.map(room => ({...room, kind: 'group'})),
-      ...state.peers.map(peer => ({...peer, id: `peer:${peer.id}`, peerId: peer.id, name: nameOf(peer.id), kind: 'private'}))];
+      ...state.peers.map(peer => ({...peer, id: `peer:${peer.id}`, peerId: peer.id, name: nameOf(peer.id), kind: 'private'}))]
+      .map(entry => ({...entry, view: state.conversations?.[entry.id] || {},
+        onlineCount: entry.members?.filter(id => id === state.self.id || state.peers.some(peer => peer.id === id && peer.online)).length || 0}))
+      .filter(entry => !entry.view.hidden).sort((a,b) => (b.view.lastAt || 0) - (a.view.lastAt || 0));
     reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
       const el = node('div', undefined, 'conversation-entry');
-      const link = button(`${entry.kind === 'group' ? '👥' : '👤'} ${entry.name}`, () => chooseConversation(entry.id), 'conversation-link');
+      const link = button('', () => { if (performance.now() >= (link.suppressClickUntil || 0)) chooseConversation(entry.id); }, 'conversation-link');
       link.dataset.conversation = entry.id;
-      const status = entry.kind === 'group' ? '群聊'
-        : `私聊 · ${entry.online ? '在线' : '离线'}${entry.friend ? ' · 好友' : ' · 陌生设备'}${entry.blocked ? ' · 已屏蔽' : ''}${!entry.friend && entry.ip && entry.name !== entry.ip ? ` · ${entry.ip}` : ''}`;
-      link.append(node('span', status, 'muted conversation-kind'));
+      link.title = '长按 2 秒删除会话及本地记录';
+      const avatar = node('span', entry.kind === 'group' ? '👥' : '👤', 'conversation-avatar');
+      avatar.setAttribute('aria-hidden', 'true');
+      if (entry.kind === 'private') avatar.append(node('span', undefined, `conversation-online-dot${entry.online ? ' online' : ''}`));
+      else avatar.append(node('span', `${entry.onlineCount}/${entry.members?.length || 0}`, 'conversation-group-count'));
+      const content = node('span', undefined, 'conversation-preview'), name = node('span', entry.name, 'conversation-name');
+      if (entry.kind === 'private') {
+        name.title = '修改备注';
+        name.addEventListener('click', event => { event.stopPropagation(); if (performance.now() >= (link.suppressClickUntil || 0)) editPerson(entry.peerId); }, {signal:uiAbort.signal});
+      }
+      const summary = String(entry.view.lastText || '').replace(/```[\s\S]*?```/g,' [代码] ').replace(/[*_`>#]/g,'').replace(/\s+/g,' ').slice(0,160);
+      content.append(name, node('span', summary, 'muted conversation-kind'));
+      link.append(avatar, content);
+      if (entry.view.muted) link.append(node('span', '🔕', 'conversation-muted-icon'));
+      if (entry.view.unread) link.append(node('span', entry.view.unread > 99 ? '99+' : entry.view.unread, 'conversation-unread-badge'));
+      link.append(node('span', undefined, 'conversation-delete-progress'));
+      link.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        cancelHold();
+        activeHold = {el:link,id:entry.id,x:event.clientX,y:event.clientY,start:performance.now()};
+        const tick = now => {
+          const hold = activeHold;
+          if (!hold || !hold.el.isConnected) { cancelHold(); return; }
+          const progress = Math.min(1,(now-hold.start)/2000);
+          hold.el.style.setProperty('--conversation-delete-progress',String(progress));
+          if (progress < 1) hold.frame = requestAnimationFrame(tick);
+          else {
+            hold.el.suppressClickUntil = now+800; cancelHold();
+            mutate('conversation-delete',{conversationId:hold.id}).catch(report);
+          }
+        };
+        activeHold.frame = requestAnimationFrame(tick);
+      }, {signal:uiAbort.signal});
+      link.addEventListener('pointermove', event => { if (activeHold && Math.hypot(event.clientX-activeHold.x,event.clientY-activeHold.y)>8) cancelHold(); }, {signal:uiAbort.signal});
+      link.addEventListener('pointerleave', cancelHold, {signal:uiAbort.signal});
+      link.addEventListener('contextmenu', event => event.preventDefault(), {signal:uiAbort.signal});
       el.append(link);
-      if (entry.kind === 'private') el.append(button('⋯', () => editPerson(entry.peerId), 'secondary conversation-person-edit'));
       return el;
     });
+    if (!entries.some(entry => entry.id === selected)) {
+      selected = entries[0]?.id || ''; onSelect?.(selected);
+    }
     reconcile($('requests'), requestNodes, state.requests, (r) => r.id, (request) => {
       const el = node('article', undefined, 'request'), actions = node('div', undefined, 'actions');
       const from = typeof request.from === 'object' ? request.from.id : request.from;
@@ -156,7 +194,6 @@
       else $(id).value = value;
     }
     $('self-info').textContent = [state.self.nickname, state.self.id ? `身份 ID ${state.self.id}` : '', state.self.fingerprint ? `身份指纹 ${state.self.fingerprint}` : ''].filter(Boolean).join(' · ');
-    if (selected !== 'public' && !selected.startsWith('peer:') && !state.rooms.some(r => r.id === selected)) chooseConversation('public');
     $('request-count').textContent = String(state.requests.length);
     $('sidebar-invite-group').hidden = $('sidebar-leave-group').hidden = !state.rooms.some(r => r.id === selected);
     for (const el of $('conversations').querySelectorAll('[data-conversation]')) {
@@ -184,12 +221,8 @@
       input.value = peer.remark || ''; input.maxLength = 80;
       label.append(input); fields.append(label);
       const actions = node('div', undefined, 'actions');
-      actions.append(button('私聊', () => { $('editor').close(); chooseConversation(`peer:${peerId}`); }));
       if (!peer.friend && !peer.blocked) actions.append(button('发送好友申请', async () => {
         await mutate('friend-request', {peerId}); toast('好友请求已发送。', true); $('editor').close();
-      }));
-      actions.append(button(peer.blocked ? '取消拉黑' : '拉黑', async () => {
-        await mutate('block', {peerId, blocked: !peer.blocked}); $('editor').close();
       }));
       fields.append(actions);
       return () => mutate('remark', {peerId, remark: input.value.trim()});
@@ -240,8 +273,8 @@
     if (destroyed || !detail) return;
     if (detail.type === 'scanning' || detail.type === 'discovery') {
       $('discovery-status').textContent = detail.deviceId ? `在线发现已启用 · 本机临时设备 ID：${detail.deviceId}` : '在线发现已连接，等待服务器分配设备 ID…';
-      $('stop-scan').hidden = false;
       $('chatroomStartServer').hidden = true;
+      $('chatroomServerActions').hidden = false;
       if (detail.peers) {
         $('discovered-peers').replaceChildren(...detail.peers.map(peer => {
           const el = node('p', `${peer.ip || '未知 IP'} · ${peer.alias || '陌生设备'}`, 'muted');
@@ -249,8 +282,9 @@
         }));
       }
     } else if (detail.type === 'scan-closed') {
-      $('discovery-status').textContent = '未连接聊天室服务器。'; $('stop-scan').hidden = true; $('discovered-peers').replaceChildren();
+      $('discovery-status').textContent = '未连接聊天室服务器。'; $('discovered-peers').replaceChildren();
       $('chatroomStartServer').hidden = false;
+      $('chatroomServerActions').hidden = true;
     } else if (detail.type === 'peer-online') { $('pair-status').textContent = '身份验证完成，已建立直连。'; scheduleState(); }
     else if (detail.type === 'error') report(new Error(detail.message));
   }, { signal: uiAbort.signal });
@@ -305,11 +339,20 @@
     listen('create-group','click', () => groupEditor(false));
     listen('sidebar-invite-group','click', () => groupEditor(true));
     listen('sidebar-leave-group','click', leaveGroup);
-    listen('stop-scan','click', () => disconnect().catch(report));
-    listen('sidebar-retry','click', () => {
-      if (getState) global.dispatchEvent(new Event('bjtu-chatroom-transport-ready'));
-      else attachTransport().catch(report);
+    listen('disconnect','click', () => disconnect().catch(report));
+    listen('chatroomSignalingUrl','keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      $('chatroomSignalingUrl').blur();
+      if (!$('chatroomSignalingUrl').checkValidity()) return;
+      Promise.resolve(settings?.flush?.()).then(() => action('scan')).catch(report);
     });
+    function cancelHold() {
+      if (!activeHold) return;
+      cancelAnimationFrame(activeHold.frame); activeHold.el.style.removeProperty('--conversation-delete-progress'); activeHold = null;
+    }
+    global.addEventListener('pointerup',cancelHold,{signal:uiAbort.signal});
+    global.addEventListener('pointercancel',cancelHold,{signal:uiAbort.signal});
     listen('editor-cancel','click', () => $('editor').close());
     listen('editor','close', () => { editorSubmit = null; $('editor-fields').replaceChildren(); });
     listen('editor-form','submit', async event => {
@@ -321,6 +364,7 @@
     function destroy() {
       if (destroyed) return;
       clearTimeout(nicknameTimer);
+      cancelHold();
       for (const id of dirty.keys()) saveSetting(id);
       destroyed = true; uiAbort.abort(); unsubscribe?.();
       settings?.destroy();
@@ -335,7 +379,7 @@
       settings = await global.BjtuChatroomSettings.mount(root, report);
       if (destroyed) { settings.destroy(); return; }
       global.BjtuOptionTips?.setup();
-      if (!getState) await attachTransport().catch(error => { setReady(false, '连接引擎不可用，请重试。'); report(error); });
+      if (!getState) await attachTransport().catch(error => { setReady(false); report(error); });
     })();
     return controller;
   }
