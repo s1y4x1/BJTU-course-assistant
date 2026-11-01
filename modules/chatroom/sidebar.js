@@ -12,7 +12,7 @@
     if (instances.has(root)) return instances.get(root);
     const $ = id => root.querySelector('#' + id);
     const uiAbort = new AbortController();
-    const peerNodes = new Map(), roomNodes = new Map(), requestNodes = new Map(), dirty = new Map();
+    const roomNodes = new Map(), requestNodes = new Map(), dirty = new Map();
     let state = {self:{},settings:{},peers:[],rooms:[],requests:[]}, selected = 'public';
     let online = false, pairingBusy = false, destroyed = false, transport, unsubscribe;
     let refreshPromise, refreshAgain = false, nicknameTimer, saveQueue = Promise.resolve(), revision = 0, settings;
@@ -37,7 +37,7 @@
     function nameOf(id) {
       if (id === state.self.id) return state.self.nickname || '我';
       const peer = state.peers.find(p => p.id === id);
-      return peer?.remark || peer?.nickname || peer?.hostname || String(id || '未知用户').slice(0,80);
+      return peer?.remark || (peer?.friend ? peer.nickname : peer?.ip) || peer?.nickname || String(id || '未知用户').slice(0,80);
     }
     async function action(name, args = {}) {
       if (!online) throw new Error('当前页连接引擎尚未就绪，请重试。');
@@ -121,21 +121,18 @@
   function render() {
     if (destroyed) return;
     state = getState ? getState() : state;
-    reconcile($('conversations'), roomNodes, [{ id: 'public', name: '公共群聊' }, ...state.rooms], (r) => r.id, (room) => {
-      const el = button(room.name || '未命名群聊', () => chooseConversation(room.id), 'conversation-link');
-      el.dataset.conversation = room.id;
-      return el;
-    });
-    reconcile($('peers'), peerNodes, state.peers, (p) => p.id, (peer) => {
-      const el = node('article', undefined, 'peer');
-      const title = node('strong', nameOf(peer.id));
-      const status = node('p', `${peer.online ? '在线' : '离线'}${peer.friend ? ' · 好友' : ''}${peer.blocked ? ' · 已屏蔽' : ''}`, 'muted');
-      const actions = node('div', undefined, 'actions');
-      actions.append(button('私聊', () => chooseConversation(`peer:${peer.id}`)), button('备注', () => editText('用户备注', '备注', peer.remark || '', (remark) => mutate('remark', { peerId: peer.id, remark }), 80)), button(peer.blocked ? '取消拉黑' : '拉黑', async () => {
-        await mutate('block', { peerId: peer.id, blocked: !peer.blocked });
-      }));
-      if (!peer.friend && !peer.blocked) actions.append(button('加好友', async () => { await mutate('friend-request', { peerId: peer.id }); toast('好友请求已发送。', true); }));
-      el.append(title, status, node('p', `身份 ID / 指纹：${peer.id}`, 'muted'), actions);
+    const entries = [{id: 'public', name: '公共群聊', kind: 'group'},
+      ...state.rooms.map(room => ({...room, kind: 'group'})),
+      ...state.peers.map(peer => ({...peer, id: `peer:${peer.id}`, peerId: peer.id, name: nameOf(peer.id), kind: 'private'}))];
+    reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
+      const el = node('div', undefined, 'conversation-entry');
+      const link = button(`${entry.kind === 'group' ? '👥' : '👤'} ${entry.name}`, () => chooseConversation(entry.id), 'conversation-link');
+      link.dataset.conversation = entry.id;
+      const status = entry.kind === 'group' ? '群聊'
+        : `私聊 · ${entry.online ? '在线' : '离线'}${entry.friend ? ' · 好友' : ' · 陌生设备'}${entry.blocked ? ' · 已屏蔽' : ''}${!entry.friend && entry.ip && entry.name !== entry.ip ? ` · ${entry.ip}` : ''}`;
+      link.append(node('span', status, 'muted conversation-kind'));
+      el.append(link);
+      if (entry.kind === 'private') el.append(button('⋯', () => editPerson(entry.peerId), 'secondary conversation-person-edit'));
       return el;
     });
     reconcile($('requests'), requestNodes, state.requests, (r) => r.id, (request) => {
@@ -172,6 +169,30 @@
       input.value = initial; input.maxLength = maxLength;
       label.append(input); fields.append(label);
       return () => submit(input.value.trim());
+    });
+  }
+  function editPerson(peerId) {
+    if (peerId === state.self.id) {
+      editText('修改昵称', '昵称', state.self.nickname || '', value => mutate('settings', {nickname: value}), 40);
+      return;
+    }
+    const peer = state.peers.find(item => item.id === peerId);
+    if (!peer) return;
+    openEditor('联系人', fields => {
+      fields.append(node('p', [peer.nickname, peer.ip].filter(Boolean).join(' · '), 'muted'));
+      const label = node('label', '备注'), input = node('input');
+      input.value = peer.remark || ''; input.maxLength = 80;
+      label.append(input); fields.append(label);
+      const actions = node('div', undefined, 'actions');
+      actions.append(button('私聊', () => { $('editor').close(); chooseConversation(`peer:${peerId}`); }));
+      if (!peer.friend && !peer.blocked) actions.append(button('发送好友申请', async () => {
+        await mutate('friend-request', {peerId}); toast('好友请求已发送。', true); $('editor').close();
+      }));
+      actions.append(button(peer.blocked ? '取消拉黑' : '拉黑', async () => {
+        await mutate('block', {peerId, blocked: !peer.blocked}); $('editor').close();
+      }));
+      fields.append(actions);
+      return () => mutate('remark', {peerId, remark: input.value.trim()});
     });
   }
   let editorSubmit = null;
@@ -220,24 +241,19 @@
     if (detail.type === 'scanning' || detail.type === 'discovery') {
       $('discovery-status').textContent = detail.deviceId ? `在线发现已启用 · 本机临时设备 ID：${detail.deviceId}` : '在线发现已连接，等待服务器分配设备 ID…';
       $('stop-scan').hidden = false;
+      $('chatroomStartServer').hidden = true;
       if (detail.peers) {
         $('discovered-peers').replaceChildren(...detail.peers.map(peer => {
-          const el = node('article', undefined, 'peer');
-          el.append(node('p', `设备 ${peer.id}`), button('连接', () => mutate('connect', { peerId: peer.id })));
+          const el = node('p', `${peer.ip || '未知 IP'} · ${peer.alias || '陌生设备'}`, 'muted');
           return el;
         }));
       }
     } else if (detail.type === 'scan-closed') {
-      $('discovery-status').textContent = '在线发现已停止。'; $('stop-scan').hidden = true; $('discovered-peers').replaceChildren();
+      $('discovery-status').textContent = '未连接聊天室服务器。'; $('stop-scan').hidden = true; $('discovered-peers').replaceChildren();
+      $('chatroomStartServer').hidden = false;
     } else if (detail.type === 'peer-online') { $('pair-status').textContent = '身份验证完成，已建立直连。'; scheduleState(); }
     else if (detail.type === 'error') report(new Error(detail.message));
   }, { signal: uiAbort.signal });
-  listen('connect-form', 'submit', (event) => {
-    event.preventDefault();
-    const peerId = $('device-id').value.trim();
-    if (!peerId) return;
-    mutate('connect', { peerId }).then(() => toast('连接请求已发送。', true)).catch(report);
-  });
   listen('pair-copy', 'click', () => { if ($('pair-output').value) navigator.clipboard.writeText($('pair-output').value).then(() => toast('连接信息已复制，仅分享给可信的人。', true)).catch(() => toast('无法访问剪贴板，请手动选择并复制。')); });
   async function pair(name) {
     if (pairingBusy) return;
@@ -313,7 +329,7 @@
     }
     global.addEventListener('pagehide', destroy, {once:true,signal:uiAbort.signal});
     setReady(false); render();
-    const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,destroy};
+    const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,editPerson,destroy};
     instances.set(root,controller);
     controller.ready = (async () => {
       settings = await global.BjtuChatroomSettings.mount(root, report);

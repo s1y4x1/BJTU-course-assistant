@@ -39,6 +39,8 @@
   const pendingSignals = new Map(), closedSessions = new Map();
   const uiAbort = new AbortController();
   let lastToast = { text: '', at: 0 }, messageConversation = '';
+  let membersSignature = '';
+  const expandedMembers = new Set();
   const markdown = new marked.Marked({gfm: true, breaks: true, renderer: BjtuMarkdown.createRenderer()});
   BjtuMarkdown.bindCopy($('messages'), {onError: report});
 
@@ -71,7 +73,7 @@
   function nameOf(id) {
     if (id === state.self.id) return state.self.nickname || '我';
     const peer = state.peers.find((p) => p.id === id);
-    return peer?.remark || peer?.nickname || peer?.hostname || String(id || '未知用户').slice(0, 80);
+    return peer?.remark || (peer?.friend ? peer.nickname : peer?.ip) || peer?.nickname || String(id || '未知用户').slice(0, 80);
   }
   function safeName(value) { return String(value || '未命名文件').split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '_').replace(/[. ]+$/, '').slice(0, 180) || '未命名文件'; }
   function uuid() { return crypto.randomUUID(); }
@@ -215,29 +217,60 @@
   function updateConversation() {
     const room = currentRoom(), peerId = selected.startsWith('peer:') ? selected.slice(5) : null;
     $('conversation-title').textContent = selected === 'public' ? '公共群聊' : peerId ? nameOf(peerId) : room?.name || '群聊已结束';
-    $('conversation-detail').textContent = selected === 'public' ? '所有在线用户' : peerId ? '私聊 · 屏幕自动接受，文件按设置接收' : `${room?.members?.length || 0} 位成员`;
+    const ids = selected === 'public' ? [state.self.id, ...state.peers.filter(p => p.online && !p.blocked).map(p => p.id)]
+      : peerId ? [state.self.id, peerId] : room?.members || [];
+    const members = [...new Set(ids)].filter(Boolean).map(id => ({id, name: nameOf(id), ip: state.peers.find(p => p.id === id)?.ip || ''}));
+    const signature = JSON.stringify([selected, members]);
+    if (signature !== membersSignature) {
+      membersSignature = signature;
+      $('conversation-members').replaceChildren(...members.map(member => {
+        const el = button(member.name, () => sidebar.editPerson(member.id), 'conversation-member');
+        el.title = member.ip || member.name; el.dataset.peerId = member.id; return el;
+      }));
+      $('conversation-members').classList.toggle('expanded', expandedMembers.has(selected));
+      requestAnimationFrame(updateMembersToggle);
+    }
     $('invite-group').hidden = $('leave-group').hidden = !room;
     $('pick-file').disabled = !online || !recipients().length;
     $('share-screen').disabled = !online || !recipients().length || !!capture || sharingPending;
   }
+  function updateMembersToggle() {
+    const row = $('conversation-members'), toggle = $('conversation-members-toggle'), expanded = expandedMembers.has(selected);
+    toggle.hidden = !expanded && row.scrollWidth <= row.clientWidth + 1;
+    toggle.textContent = expanded ? '收起成员' : '展开成员';
+    toggle.setAttribute('aria-expanded', String(expanded));
+  }
+  function messageHeader(senderId, createdAt) {
+    const date = new Date(createdAt);
+    const el = node('div', `${nameOf(senderId)} · ${Number.isFinite(date.getTime()) ? date.toLocaleString() : ''}`, 'muted message-author');
+    el.dataset.senderId = senderId; el.tabIndex = 0; el.setAttribute('role', 'button');
+    el.title = senderId === state.self.id ? '修改昵称' : '修改备注及联系人操作';
+    return el;
+  }
   function renderMessages() {
+    for (const message of mediaMessages.values()) {
+      const header = message.card.querySelector(':scope > .message-author');
+      if (header) {
+        const text = `${nameOf(message.senderId)} · ${new Date(message.createdAt).toLocaleString()}`;
+        if (header.textContent !== text) header.textContent = text;
+      }
+    }
     const container = $('messages'), changed = messageConversation !== selected;
     const nearBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 64;
     const oldTop = container.scrollTop, oldHeight = container.scrollHeight;
     const anchor = [...messageNodes.values()].find((v) => v.el.offsetTop >= container.offsetTop + oldTop);
     const anchorOffset = anchor ? anchor.el.getBoundingClientRect().top : 0;
     if (changed) { container.replaceChildren(); messageNodes.clear(); messageConversation = selected; }
-    const items = [...state.messages, ...[...mediaMessages.values()].map(s => ({
+    const items = [...state.messages.map(message => ({...message, displayName: nameOf(message.senderId)})), ...[...mediaMessages.values()].map(s => ({
       id: s.id, conversationId: s.conversationId, senderId: s.senderId, createdAt: s.createdAt, media: true
     }))].filter((m) => m.conversationId === selected).sort((a,b) => a.createdAt - b.createdAt);
     container.querySelector('.empty')?.remove();
     reconcile(container, messageNodes, items, (m) => m.id, (message) => {
       if (message.media) return mediaMessages.get(message.id).card;
       const el = node('article', undefined, `message${message.senderId === state.self.id ? ' mine' : ''}`);
-      const date = new Date(message.createdAt);
       const content = node('div', undefined, 'message-text bjtu-markdown');
       content.innerHTML = markdown.parse(String(message.text || '').slice(0, 8000));
-      el.append(node('div', `${nameOf(message.senderId)} · ${Number.isFinite(date.getTime()) ? date.toLocaleString() : ''}`, 'muted'), content);
+      el.append(messageHeader(message.senderId, message.createdAt), content);
       return el;
     });
     if (!items.length) container.append(node('p', '还没有消息，打个招呼吧。', 'empty'));
@@ -256,18 +289,60 @@
     if (sessions.has(id)) return sessions.get(id);
     if (sessions.size >= LIMIT.sessions) throw new Error('同时最多 8 个文件 / 屏幕会话，请先结束部分会话。');
     const s = { id, peerId, type, outgoing, status: 'invited', done: 0, chunks: [], candidates: [], chain: Promise.resolve(),
-      createdAt: Date.now(), conversationId: outgoing ? selected : `peer:${peerId}`, senderId: outgoing ? state.self.id : peerId, ...meta };
+      messageId: id, createdAt: Date.now(), conversationId: outgoing ? selected : `peer:${peerId}`, senderId: outgoing ? state.self.id : peerId, ...meta };
     sessions.set(id, s); touch(s); return s;
   }
   function createMediaMessage(s) {
-    if (s.card) return;
-    s.card = node('article', undefined, `message media-message${s.outgoing ? ' mine' : ''}`);
-    s.card.append(node('div', `${nameOf(s.senderId)} · ${new Date(s.createdAt).toLocaleString()}`, 'muted'));
-    mediaMessages.set(s.id, s);
+    if (s.message) return;
+    const id = `${s.senderId}:${s.messageId}`;
+    let message = mediaMessages.get(id);
+    if (!message) {
+      message = {id, senderId: s.senderId, createdAt: s.createdAt, conversationId: s.conversationId, type: s.type, sessions: new Map(), plannedCount: s.recipientsCount || 1};
+      message.card = node('article', undefined, `message media-message${s.outgoing ? ' mine' : ''}`);
+      message.card.append(messageHeader(s.senderId, s.createdAt));
+      mediaMessages.set(id, message);
+    }
+    if (message.type !== s.type || message.conversationId !== s.conversationId) throw new Error('传输消息不匹配。');
+    s.message = message; s.card = message.card; message.sessions.set(s.id, s);
     renderMessages();
+  }
+  function styledBytes(value, suffix = '') {
+    const span = node('span', bytes(value) + suffix, 'file-size-emphasis');
+    span.dataset.fileSizeBytes = String(value); globalThis.BjtuFileSizeEmphasis?.applyBytes(span, value); return span;
+  }
+  function updateTransferSummary(message) {
+    if (!message.progress) return;
+    const items = [...message.sessions.values()];
+    const total = items.reduce((n, s) => n + s.size, 0), done = items.reduce((n, s) => n + s.done, 0);
+    const completed = items.filter(s => s.completed).length;
+    const settled = items.every(s => s.completed || s.ended);
+    message.progress.max = total || 1; message.progress.value = total ? done : completed === items.length ? 1 : 0;
+    const parts = [document.createTextNode(`${settled ? (completed === items.length ? '传输完成' : '传输已结束') : '传输中'} · ${items.length} 个接收任务 · `),
+      styledBytes(done), document.createTextNode(' / '), styledBytes(total), document.createTextNode(` · ${total ? Math.floor(done / total * 100) : completed === items.length ? 100 : 0}%`)];
+    if (!settled) {
+      const active = items.filter(s => !s.completed && !s.ended), rate = active.reduce((n, s) => n + (s.rate || 0), 0);
+      const remaining = active.reduce((n, s) => n + s.size - s.done, 0), seconds = rate > 0 ? Math.ceil(remaining / rate) : null;
+      parts.push(document.createTextNode(' · '), styledBytes(rate, '/s'), document.createTextNode(seconds === null ? ' · 剩余时间估算中…' : ` · 剩余 ${Math.floor(seconds / 60)}分${seconds % 60}秒`));
+    }
+    message.summary.replaceChildren(...parts);
+    message.detailsSummary.textContent = `传输详情（${completed}/${items.length} 已完成）`;
+    message.cancel.hidden = settled;
   }
   function renderTransfer(s) {
     createMediaMessage(s);
+    const message = s.message;
+    if (!message.progress) {
+      const heading = node('div', s.name, 'transfer-heading');
+      const size = node('span', bytes(s.size), 'file-size-emphasis');
+      size.dataset.fileSizeBytes = String(s.size); globalThis.BjtuFileSizeEmphasis?.applyBytes(size, s.size);
+      heading.append(document.createTextNode(' · '), size);
+      message.progress = node('progress'); message.progress.className = 'transfer-total-progress';
+      message.summary = node('p', undefined, 'muted');
+      message.details = node('details', undefined, 'transfer-details');
+      message.detailsSummary = node('summary', '传输详情'); message.details.append(message.detailsSummary);
+      message.cancel = button('取消传输', () => { for (const task of [...message.sessions.values()]) endSession(task, '已取消', true); });
+      message.card.append(heading, message.progress, message.summary, message.cancel, message.details);
+    }
     if (!s.progress) {
       s.controls?.remove();
       const transfer = node('div', undefined, 'transfer');
@@ -276,12 +351,13 @@
       s.info = node('p', undefined, 'muted'); s.controls = node('div', undefined, 'actions');
       s.cancelButton = button('取消', () => endSession(s, '已取消', true));
       s.controls.append(s.cancelButton); transfer.append(s.heading, document.createTextNode(' · '), s.sizeEl, s.progress, s.info, s.controls);
-      s.card.append(transfer);
+      message.details.append(transfer);
     }
     s.heading.textContent = `${s.outgoing ? '发送给' : '来自'} ${nameOf(s.peerId)} · ${s.name}`;
     s.sizeEl.textContent = bytes(s.size); s.sizeEl.dataset.fileSizeBytes = String(s.size);
     globalThis.BjtuFileSizeEmphasis?.applyBytes(s.sizeEl, s.size);
     updateTransfer(s);
+    updateTransferSummary(message);
   }
   function updateTransfer(s, text) {
     if (!s.progress) return;
@@ -292,18 +368,15 @@
       s.rate = Math.max(0, (s.done - (s.rateBytes || 0)) * 1000 / (now - (s.rateAt || s.startedAt)));
       s.rateAt = now; s.rateBytes = s.done;
     }
-    const styled = (value, suffix = '') => {
-      const span = node('span', bytes(value) + suffix, 'file-size-emphasis');
-      span.dataset.fileSizeBytes = String(value); globalThis.BjtuFileSizeEmphasis?.applyBytes(span, value); return span;
-    };
-    const parts = [document.createTextNode(`${text || (s.status === 'invited' ? '等待对方确认' : s.status)} · `), styled(s.done), document.createTextNode(' / '), styled(s.size)];
+    const parts = [document.createTextNode(`${text || (s.status === 'invited' ? '等待对方确认' : s.status)} · `), styledBytes(s.done), document.createTextNode(' / '), styledBytes(s.size)];
     if (s.size) parts.push(document.createTextNode(` · ${Math.floor(s.done / s.size * 100)}%`));
     if (s.startedAt && !s.completed && !s.ended && s.done < s.size) {
-      parts.push(document.createTextNode(' · '), styled(s.rate || 0, '/s'));
+      parts.push(document.createTextNode(' · '), styledBytes(s.rate || 0, '/s'));
       const seconds = s.rate > 0 ? Math.ceil((s.size - s.done) / s.rate) : null;
       parts.push(document.createTextNode(seconds === null ? ' · 剩余时间估算中…' : ` · 剩余 ${Math.floor(seconds / 60)}分${seconds % 60}秒`));
     }
     s.info.replaceChildren(...parts);
+    updateTransferSummary(s.message);
   }
   function showInvitation(s) {
     const card = node('article', undefined, 'request'), controls = node('div', undefined, 'actions');
@@ -361,11 +434,14 @@
     const targets = recipients();
     if (!targets.length) throw new Error('请选择有在线成员的私聊或群聊。');
     if (files.length * targets.length + sessions.size > LIMIT.sessions) throw new Error('一次发送最多支持 8 个接收会话，请减少文件或接收成员。');
-    for (const file of files) for (const peerId of targets) {
-      const s = makeSession(uuid(), peerId, 'file', true, { file, name: safeName(file.name), size: file.size, conversationId });
-      renderTransfer(s);
-      try { await signal(s, 'invite', { media: 'file', name: s.name, size: s.size, conversationId }); }
-      catch (error) { endSession(s, '邀请发送失败'); report(error); }
+    for (const file of files) {
+      const messageId = uuid();
+      const tasks = targets.map(peerId => makeSession(uuid(), peerId, 'file', true, {messageId, recipientsCount: targets.length, file, name: safeName(file.name), size: file.size, conversationId}));
+      tasks.forEach(renderTransfer);
+      for (const s of tasks) {
+        try { await signal(s, 'invite', { media: 'file', name: s.name, size: s.size, conversationId, messageId }); }
+        catch (error) { endSession(s, '邀请发送失败'); report(error); }
+      }
     }
   }
   function createPC(s) {
@@ -413,10 +489,12 @@
     if (s && s.peerId !== peerId) return;
     if (kind === 'invite') {
       if (s || closedSessions.has(sid) || !['file', 'screen'].includes(payload.media) || sessions.size >= LIMIT.sessions) return;
+      if (typeof payload.messageId !== 'string' || !payload.messageId || payload.messageId.length > 80) return;
+      if (mediaMessages.has(`${peerId}:${payload.messageId}`)) return;
       if (payload.media === 'file' && (!Number.isSafeInteger(payload.size) || payload.size < 0)) return;
       const conversationId = payload.conversationId === 'public' ? 'public'
         : state.rooms.some(room => room.id === payload.conversationId && room.members?.includes(peerId)) ? payload.conversationId : `peer:${peerId}`;
-      s = makeSession(sid, peerId, payload.media, false, { name: safeName(payload.name), size: payload.size || 0, conversationId });
+      s = makeSession(sid, peerId, payload.media, false, { messageId: payload.messageId, name: safeName(payload.name), size: payload.size || 0, conversationId });
       try {
         if (s.type === 'screen') {
           await acceptInvitation(s);
@@ -575,10 +653,10 @@
   const TEXT_EXTENSIONS = new Set('txt md csv log json js mjs cjs ts tsx jsx css html htm xml svg yml yaml toml ini conf py ps1 sh bat c cpp h java rs go sql'.split(' '));
   function previewType(name) { return PREVIEW_TYPES[String(name).split('.').pop().toLowerCase()] || ''; }
   async function previewFile(s, file) {
-    if (!file || !s.card || s.preview || stopped) return;
+    if (!file || !s.card || s.message.preview || stopped) return;
     const ext = s.name.split('.').pop().toLowerCase(), type = previewType(s.name);
     if (!type && !TEXT_EXTENSIONS.has(ext)) return;
-    const preview = node('div', undefined, 'file-preview'); s.preview = preview;
+    const preview = node('div', undefined, 'file-preview'); s.preview = preview; s.message.preview = preview;
     if (type) {
       s.previewURL = URL.createObjectURL(file.slice(0, file.size, type));
       const media = node(type.startsWith('image/') ? 'img' : type.startsWith('audio/') ? 'audio' : type.startsWith('video/') ? 'video' : 'iframe');
@@ -592,11 +670,11 @@
     } else {
       // Plain text is never interpreted as HTML or executable code.
       const max = 256 * 1024, text = await file.slice(0, max).text();
-      if (stopped || !mediaMessages.has(s.id)) return;
+      if (stopped || !mediaMessages.has(s.message.id)) return;
       preview.append(node('pre', text));
       if (file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
     }
-    if (stopped || !mediaMessages.has(s.id)) return;
+    if (stopped || !mediaMessages.has(s.message.id)) return;
     const nearBottom = $('messages').scrollHeight - $('messages').clientHeight - $('messages').scrollTop < 64;
     s.card.append(preview);
     if (nearBottom) $('messages').scrollTop = $('messages').scrollHeight;
@@ -614,6 +692,19 @@
     if (s.reserved) { memoryReserved -= s.reserved; s.reserved = 0; }
     s.chunks.length = 0;
   }
+  function archiveMediaMessage(message) {
+    if (!message || message.archived || message.sessions.size < message.plannedCount ||
+        [...message.sessions.values()].some(task => !task.ended)) return;
+    message.archived = true; transferHistory.push(message);
+    if (message.screenInfo) {
+      message.screenInfo.textContent = '屏幕共享已结束'; message.screenStop.disabled = true;
+    }
+    while (transferHistory.length > LIMIT.history) {
+      const old = transferHistory.shift();
+      for (const task of old.sessions.values()) releaseResources(task);
+      old.card.remove(); mediaMessages.delete(old.id);
+    }
+  }
   function endSession(s, reason = '已结束', notify = false) {
     if (!s || s.ended) return;
     if (notify && online) signal(s, 'cancel').catch(() => {});
@@ -622,7 +713,7 @@
     while (closedSessions.size > 128) closedSessions.delete(closedSessions.keys().next().value);
     s.rejectWait?.(); s.wake = null; s.file = null; s.candidates.length = 0;
     s.inviteCard?.remove();
-    if (s.video) s.video.srcObject = null;
+    if (s.video && (!s.outgoing || ![...s.message.sessions.values()].some(task => task !== s && !task.ended))) s.video.srcObject = null;
     s.remoteStream?.getTracks().forEach((t) => { t.onended = null; t.stop(); });
     if (s.channel) { s.channel.onopen = s.channel.onmessage = s.channel.onclose = s.channel.onerror = null; s.channel.close(); }
     if (s.pc) { s.pc.onicecandidate = s.pc.onconnectionstatechange = s.pc.ontrack = s.pc.ondatachannel = null; s.pc.close(); }
@@ -631,32 +722,35 @@
     if (!s.completed) releaseResources(s);
     sessions.delete(s.id); updateTransfer(s, reason);
     if (s.card) {
-      s.cancelButton?.remove(); transferHistory.push(s);
-      if (s.screenInfo) s.screenInfo.textContent = reason;
-      else if (!s.progress) s.card.append(node('p', `文件「${s.name}」 · ${reason}`, 'muted'));
-      if (s.type === 'screen') s.controls.firstElementChild.disabled = true;
-      while (transferHistory.length > LIMIT.history) { const old = transferHistory.shift(); releaseResources(old); old.card.remove(); mediaMessages.delete(old.id); }
+      s.cancelButton?.remove();
+      if (s.type === 'file' && !s.progress) s.card.append(node('p', `文件「${s.name}」 · ${reason}`, 'muted'));
+      archiveMediaMessage(s.message);
     }
     if (s.type === 'screen' && s.outgoing && capture && !sharingPending && ![...sessions.values()].some((item) => item.type === 'screen' && item.outgoing)) stopCapture();
     renderMessages();
   }
   function renderScreenMessage(s) {
     createMediaMessage(s);
-    if (s.screenCard) return;
-    s.screenCard = node('div', undefined, 'screen');
-    s.screenInfo = node('p', s.outgoing ? '正在共享屏幕' : '正在连接屏幕…', 'muted');
-    s.controls = node('div', undefined, 'actions');
-    s.controls.append(button(s.outgoing ? '停止共享' : '停止观看', () => endSession(s, '屏幕共享已停止', true)));
-    s.screenCard.append(node('strong', s.outgoing ? '共享屏幕' : `${nameOf(s.peerId)} 的屏幕`), s.screenInfo, s.controls);
-    s.card.append(s.screenCard);
+    const message = s.message;
+    if (!message.screenCard) {
+      message.screenCard = node('div', undefined, 'screen');
+      message.screenInfo = node('p', s.outgoing ? '正在共享屏幕' : '正在连接屏幕…', 'muted');
+      message.screenStop = button(s.outgoing ? '停止共享' : '停止观看', () => {
+        for (const task of message.sessions.values()) endSession(task, '屏幕共享已停止', true);
+      });
+      message.screenCard.append(node('strong', s.outgoing ? '共享屏幕' : `${nameOf(s.peerId)} 的屏幕`), message.screenInfo, message.screenStop);
+      message.card.append(message.screenCard);
+    }
+    s.screenCard = message.screenCard; s.screenInfo = message.screenInfo;
   }
   function showScreen(s, stream) {
     renderScreenMessage(s);
-    if (!s.video) {
-      s.video = node('video'); s.video.autoplay = true; s.video.playsInline = true; s.video.controls = true;
-      s.video.muted = s.outgoing;
-      s.screenCard.insertBefore(s.video, s.screenInfo);
+    if (!s.message.video) {
+      const video = node('video'); video.autoplay = true; video.playsInline = true; video.controls = true;
+      video.muted = s.outgoing; s.message.video = video;
+      s.screenCard.insertBefore(video, s.screenInfo);
     }
+    s.video = s.message.video;
     s.screenInfo.textContent = s.outgoing ? '正在共享你的屏幕' : '正在观看屏幕';
     s.video.srcObject = stream;
     s.video.play().catch(() => toast('请点击视频上的播放按钮开始观看。', true));
@@ -675,11 +769,12 @@
       if (stopped || !online || (embedded && !embeddedVisible)) { stream.getTracks().forEach((t) => t.stop()); return; }
       capture = stream; $('stop-screen').hidden = false;
       for (const track of stream.getTracks()) track.onended = stopCapture;
-      for (const peerId of targets) {
+      const messageId = uuid();
+      const tasks = targets.map(peerId => makeSession(uuid(), peerId, 'screen', true, {conversationId, messageId, recipientsCount: targets.length}));
+      for (const task of tasks) showScreen(task, stream);
+      for (const s of tasks) {
         if (!capture) break;
-        const s = makeSession(uuid(), peerId, 'screen', true, {conversationId});
-        showScreen(s, stream);
-        try { await signal(s, 'invite', { media: 'screen', conversationId }); } catch (error) { endSession(s, '共享邀请失败'); report(error); }
+        try { await signal(s, 'invite', { media: 'screen', conversationId, messageId }); } catch (error) { endSession(s, '共享邀请失败'); report(error); }
       }
     } finally {
       sharingPending = false; updateConversation();
@@ -694,6 +789,18 @@
   }
 
   listen('retry', 'click', () => attachTransport().catch(report));
+  listen('conversation-members-toggle', 'click', () => {
+    if (expandedMembers.has(selected)) expandedMembers.delete(selected); else expandedMembers.add(selected);
+    $('conversation-members').classList.toggle('expanded', expandedMembers.has(selected)); updateMembersToggle();
+  });
+  const membersObserver = new ResizeObserver(updateMembersToggle);
+  membersObserver.observe($('conversation-members'));
+  const editMessageAuthor = event => {
+    const header = event.target.closest?.('.message-author');
+    if (header) { event.preventDefault(); sidebar.editPerson(header.dataset.senderId); }
+  };
+  listen('messages', 'click', editMessageAuthor);
+  listen('messages', 'keydown', event => { if (event.key === 'Enter' || event.key === ' ') editMessageAuthor(event); });
   async function disconnect() {
     await globalThis.BjtuChatroomLink?.close();
     stopCapture(); for (const s of [...sessions.values()]) endSession(s, '连接已断开');
@@ -730,12 +837,12 @@
     if (sessions.size || memoryReserved || capture) { event.preventDefault(); event.returnValue = ''; }
   }, { signal: uiAbort.signal });
   window.addEventListener('pagehide', () => {
-    stopped = true; clearTimeout(stateTimer); uiAbort.abort();
+    stopped = true; clearTimeout(stateTimer); uiAbort.abort(); membersObserver.disconnect();
     globalThis.BjtuChatroomLink?.close();
     try { unsubscribe?.(); } catch {}
     unsubscribe = null; stopCapture();
     for (const s of [...sessions.values()]) endSession(s, '页面已关闭');
-    for (const s of transferHistory) releaseResources(s);
+    for (const message of transferHistory) for (const s of message.sessions.values()) releaseResources(s);
     pendingSignals.clear(); closedSessions.clear(); drafts.clear(); scrollPositions.clear(); mediaMessages.clear();
     sidebar.destroy();
   }, { once: true });

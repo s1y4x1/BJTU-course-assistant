@@ -16,16 +16,15 @@
   <label class="chatroom-option-check"><input id="chatroomFullscreenButtonEnabled" type="checkbox" checked><span>在扩展全屏页面上显示「局域网聊天室」按钮</span></label>
   <div class="option-divider" role="separator"></div>
   <template data-chatroom-sidebar-start></template>
-      <div class="section-heading"><h2>会话</h2><button id="create-group" type="button" class="secondary">新建群聊</button></div>
-      <nav id="conversations" aria-label="群聊和公共频道"></nav>
-      <div class="section-heading"><h2>在线用户</h2><button id="scan" type="button" class="secondary">刷新发现</button></div>
-      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器<span class="tip" data-tip-target="#chatroomSignalingLabel">打开聊天室时自动连接。服务器会接触网络地址、昵称和设备标识；消息、文件和屏幕通过加密直连传输。公共服务不保证可用，无法连接时可交换连接码。本机服务器启动后可填写 ws://局域网IP:1897/chatroom，也支持 wss://。</span></label>
-      <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="wss://public.localsend.org/v1/ws">
-      <p class="muted">浏览器不能扫描局域网，同一在线发现服务中的聊天室用户可发现你。无需在线服务可使用下方离线配对。直连不使用 STUN / TURN，跨网络可能失败。</p>
+      <div class="chatroom-conversation-actions"><button id="create-group" type="button" class="secondary">新建群聊</button></div>
+      <nav id="conversations" aria-label="群聊和私聊会话"></nav>
+      <div class="section-heading"><h2>服务器与设备发现</h2><button id="scan" type="button" class="secondary">刷新发现</button></div>
+      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器<span class="tip" data-tip-target="#chatroomSignalingLabel">使用 BJTUCA Bridge 聊天室服务器。打开聊天室时自动连接，由服务器为设备安排直连。跨电脑时请填写同一台服务器的局域网地址，如 ws://192.168.1.2:1897/chatroom。消息、文件与屏幕通过加密直连传输。</span></label>
+      <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="ws://127.0.0.1:1897/chatroom">
+      <a id="chatroomStartServer" class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>
+      <p class="muted">所有参与者应使用同一个 Bridge 聊天室服务器；无需手动连接设备。跨网络直连可能受防火墙或网络隔离限制。</p>
       <p id="discovery-status" class="muted" role="status">在线发现未启用。</p><button id="stop-scan" type="button" class="secondary" hidden>停止发现并断开全部直连</button>
-      <form id="connect-form" class="inline-form"><input id="device-id" aria-label="对方在线设备 ID" placeholder="对方在线设备 ID（扫描后）" maxlength="160" required><button type="submit">连接</button></form>
       <div id="discovered-peers"></div>
-      <div id="peers"></div>
       <details id="pairing-panel"><summary>离线邀请 / 应答配对</summary><p class="muted">无需本地程序或在线信令。甲生成邀请发给乙；乙粘贴邀请并生成应答发回甲；甲提交应答。每份信息 5 分钟内有效，含本地网络候选与身份，仅分享给可信的人。</p><div class="actions"><button id="pair-create" type="button" class="secondary" disabled>生成邀请</button><button id="pair-copy" type="button" class="secondary">复制本机连接信息</button></div><label>本机邀请 / 应答<textarea id="pair-output" rows="4" readonly placeholder="点击生成邀请，或粘贴邀请后生成应答"></textarea></label><label>对方邀请 / 应答<textarea id="pair-input" rows="4" maxlength="262144" placeholder="粘贴对方发送的完整 JSON 信息"></textarea></label><div class="actions"><button id="pair-accept" type="button" disabled>接收邀请并生成应答</button><button id="pair-complete" type="button" class="secondary" disabled>提交对方应答</button></div><p id="pair-status" class="muted" role="status">等待连接引擎。</p></details>
       <details id="settings-panel"><summary>个人设置与隐私</summary><form id="settings-form">
         <label>昵称<input id="nickname" maxlength="40" autocomplete="nickname" required></label>
@@ -47,7 +46,6 @@
       <button id="sidebar-retry" type="button" class="secondary">重试连接引擎</button>
   <dialog id="editor"><form id="editor-form"><h2 id="editor-title"></h2><div id="editor-fields"></div><div class="actions"><button id="editor-cancel" type="button" class="secondary">取消</button><button type="submit">确定</button></div></form></dialog>
   <template data-chatroom-sidebar-end></template>
-  <a class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>
   <a id="chatroomOpen" class="option-action-link" href="/modules/chatroom/chat.html">打开局域网聊天室</a>
 </section>
 <div id="msg"></div>

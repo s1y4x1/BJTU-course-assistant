@@ -14,6 +14,13 @@ html[data-color-scheme="dark"] .chatroom-options-card .option-action-link { colo
 }
 :is(.chatroom-options-card,#sidebar-host) #chatroomSignalingLabel { display:flex; align-items:center; gap:0; }
 .chatroom-options-card > .option-action-link { display:inline-block; margin:10px 12px 0 0; }
+.chatroom-options-card > #chatroomOpen { display:block; width:fit-content; }
+.chatroom-conversation-actions { display:flex; justify-content:flex-end; }
+.conversation-entry { display:flex; align-items:center; }
+.conversation-entry .conversation-link { flex:1; min-width:0; }
+.conversation-kind { display:block; margin-top:3px; }
+.conversation-person-edit { flex:none; }
+:is(.chatroom-options-card,#sidebar-host) #chatroomStartServer { color:var(--chat-accent); text-decoration:none; font-size:var(--bjtu-font-size-body,13px); }
 :is(.chatroom-options-card,#sidebar-host) * { box-sizing:border-box; }
 :is(.chatroom-options-card,#sidebar-host) [hidden] { display:none !important; }
 :is(.chatroom-options-card,#sidebar-host) h2 { margin:0; font-size:var(--bjtu-font-size-secondaryTitle,16px); }
@@ -27,15 +34,11 @@ html[data-color-scheme="dark"] .chatroom-options-card .option-action-link { colo
 :is(.chatroom-options-card,#sidebar-host) .actions { display:flex; flex-wrap:wrap; gap:6px; }
 :is(.chatroom-options-card,#sidebar-host) .section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0 10px; }
 :is(.chatroom-options-card,#sidebar-host) .section-heading:not(:first-child) { margin-top:22px; }
-:is(.chatroom-options-card,#sidebar-host) .inline-form { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
-:is(.chatroom-options-card,#sidebar-host) #device-id { flex:1; min-width:100px; }
 :is(.chatroom-options-card,#sidebar-host) #pairing-panel label { display:grid; gap:6px; margin-top:10px; }
 :is(.chatroom-options-card,#sidebar-host) textarea { width:100%; resize:vertical; min-height:60px; max-height:200px; border:1px solid var(--chat-line); border-radius:8px; padding:10px; background:var(--bjtu-card-background,#fff); color:inherit; }
 :is(.chatroom-options-card,#sidebar-host) #pairing-panel textarea { font-family:ui-monospace,monospace; font-size:11px; }
 :is(.chatroom-options-card,#sidebar-host) #discovered-peers { overflow-wrap:anywhere; }
-:is(.chatroom-options-card,#sidebar-host) :is(.peer,.request) { padding:10px; border:1px solid var(--chat-line); border-radius:8px; margin:8px 0; overflow-wrap:anywhere; }
-:is(.chatroom-options-card,#sidebar-host) .peer .actions { margin-top:8px; }
-:is(.chatroom-options-card,#sidebar-host) .peer button { padding:5px 8px; }
+:is(.chatroom-options-card,#sidebar-host) .request { padding:10px; border:1px solid var(--chat-line); border-radius:8px; margin:8px 0; overflow-wrap:anywhere; }
 :is(.chatroom-options-card,#sidebar-host) .conversation-link { display:block; width:100%; margin:5px 0; text-align:left; background:transparent; color:inherit; border:1px solid transparent; overflow-wrap:anywhere; }
 :is(.chatroom-options-card,#sidebar-host) .conversation-link[aria-current="page"] { background:var(--chat-soft); border-color:var(--chat-accent); }
 :is(.chatroom-options-card,#sidebar-host) details { border-top:1px solid var(--chat-line); padding:12px 0; margin-top:14px; }
