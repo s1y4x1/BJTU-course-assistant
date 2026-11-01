@@ -17,6 +17,16 @@
   button.style.color = '#fff';
   button.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H5l-4 3V11a9 9 0 0 1 19 0Z"/><path d="M7 10h8M7 14h5"/></svg>';
   container.append(button);
+  const unreadBadge = document.createElement('span');
+  unreadBadge.className = 'chatroom-unread-badge'; unreadBadge.hidden = true;
+  button.append(unreadBadge);
+  const updateUnread = state => {
+    const count = Object.values(state?.conversations || {}).reduce((total,view) => total + (Number(view.unread)||0),0);
+    unreadBadge.hidden = count === 0; unreadBadge.textContent = count > 99 ? '99+' : String(count);
+    button.title = count ? `局域网聊天室 · ${count} 条未读消息` : '局域网聊天室';
+  };
+  updateUnread((await chrome.storage.local.get('chatroomState')).chatroomState);
+  chrome.storage.onChanged.addListener((changes,area) => { if (area==='local' && changes.chatroomState) updateUnread(changes.chatroomState.newValue); });
   button.addEventListener('click', () => void globalThis.BjtuChatroomLauncher.open().catch(error => globalThis.showToast?.(error.message,'error')));
   button.hidden = (await chrome.storage.local.get('chatroomFullscreenButtonEnabled')).chatroomFullscreenButtonEnabled === false;
   globalThis.BjtuSyncFloatingLauncherContainer?.();

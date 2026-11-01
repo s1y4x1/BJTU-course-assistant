@@ -2103,6 +2103,8 @@ html[data-color-scheme="dark"] .platform-status-btn.platform-text-load.unselecte
 }
 .fullscreen-module-buttons[hidden],
 .fullscreen-module-button[hidden] { display: none !important; }
+.chatroom-unread-badge { position:absolute; top:-3px; right:-3px; min-width:18px; height:18px; box-sizing:border-box; padding:0 4px; border-radius:10px; background:#dc2626; color:#fff; font:bold 11px/18px system-ui,sans-serif; text-align:center; pointer-events:none; }
+.chatroom-unread-badge[hidden] { display:none; }
 .fullscreen-module-button {
     position: relative;
     display: inline-flex;

@@ -509,6 +509,7 @@ async function initFullscreenModuleButtons() {
         frame.title = '局域网聊天室';
         frame.allow = 'display-capture; clipboard-read; clipboard-write';
         frame.src = chrome.runtime.getURL('modules/chatroom/chat.html?embedded=1');
+        frame.addEventListener('load', () => frame.contentWindow?.postMessage({type:'BJTU_CHATROOM_WINDOW_VISIBILITY',visible:!view.hidden && moduleWindows.has('chatroom')},location.origin));
         body.append(frame);
         view.append(header, body);
         document.body.append(view);

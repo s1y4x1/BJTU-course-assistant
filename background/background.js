@@ -339,6 +339,7 @@ if (academicBackgroundReady) void globalThis.BjtuAcademicCacheStore.readAll().ca
 tryImportModuleScripts('../modules/cas/vendor/sm2.min.js', '../modules/cas/system.js');
 tryImportModuleScripts('../modules/mail/system.js');
 tryImportModuleScripts('../modules/campusnet/background.js');
+tryImportModuleScripts('../modules/chatroom/background.js');
 tryImportModuleScripts('../modules/updater/filesystem.js', '../modules/updater/background.js');
 tryImportModuleScripts('../modules/jlgj/background.js');
 tryImportModuleScripts('../modules/mooc/background.js');
