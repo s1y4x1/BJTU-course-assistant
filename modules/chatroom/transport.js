@@ -318,6 +318,14 @@
       case 'conversation-read': {
         const view = conversationView(token(args.conversationId));
         if (view.lastMessageId === args.lastMessageId) view.unread = 0;
+        return {unread:view.unread,lastMessageId:view.lastMessageId};
+      }
+      case 'conversation-remark': {
+        const conversationId = token(args.conversationId), remark = str(args.remark,80,true).trim();
+        if (conversationId.startsWith('peer:')) {
+          const p = peer(conversationId.slice(5)); if (!p) fail('联系人不存在。');
+          p.remark = remark;
+        } else conversationView(conversationId).remark = remark;
         return {};
       }
       case 'conversation-mute': {

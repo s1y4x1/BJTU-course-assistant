@@ -23,8 +23,8 @@
     const state = stored.chatroomState, view = state?.conversations?.[conversationId];
     if (stored.chatroomNotifyNewMessages === false || !view?.unread || view.muted || view.hidden || view.lastOwn || view.lastMessageId !== messageId) return;
     const peer = state.peers?.find(peer => peer.id === view.lastSenderId);
-    const title = conversationId === 'public' ? '公共群聊' : conversationId.startsWith('peer:')
-      ? peer?.remark || peer?.ip || peer?.nickname || '私聊' : state.rooms?.find(room => room.id === conversationId)?.name || '群聊';
+    const title = conversationId === 'public' ? view.remark || '公共群聊' : conversationId.startsWith('peer:')
+      ? peer?.remark || peer?.ip || peer?.nickname || '私聊' : view.remark || state.rooms?.find(room => room.id === conversationId)?.name || '群聊';
     const create = global.BjtuSystemNotifications?.create || ((id,options)=>chrome.notifications.create(id,options));
     await create(prefix+encodeURIComponent(conversationId), {
       type:'basic', iconUrl:chrome.runtime.getURL('icons/128.png'), title:`${title} · ${view.unread} 条新消息`, message:plain(view.lastText)

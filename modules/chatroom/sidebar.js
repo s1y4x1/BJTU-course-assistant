@@ -7,6 +7,40 @@
 (function(global) {
   'use strict';
   const instances = new WeakMap();
+  function bindHold(element, {onConfirm,signal} = {}) {
+    let hold;
+    element.classList.add('hold-confirm');
+    if (!element.querySelector('.hold-confirm-progress')) {
+      const progress = document.createElement('span'); progress.className = 'hold-confirm-progress';
+      progress.setAttribute('aria-hidden','true'); element.append(progress);
+    }
+    function cancel() {
+      if (!hold) return;
+      cancelAnimationFrame(hold.frame); hold = null;
+      element.style.removeProperty('--hold-confirm-progress');
+      global.removeEventListener('pointerup',cancel); global.removeEventListener('pointercancel',cancel);
+      signal?.removeEventListener('abort',cancel);
+    }
+    element.addEventListener('pointerdown',event => {
+      if (event.button !== 0 || element.disabled) return;
+      cancel(); hold = {start:performance.now(),x:event.clientX,y:event.clientY};
+      global.addEventListener('pointerup',cancel); global.addEventListener('pointercancel',cancel);
+      signal?.addEventListener('abort',cancel,{once:true});
+      const tick = now => {
+        if (!hold) return;
+        if (!element.isConnected || element.disabled) { cancel(); return; }
+        const progress = Math.min(1,(now-hold.start)/2000);
+        element.style.setProperty('--hold-confirm-progress',String(progress));
+        if (progress < 1) hold.frame = requestAnimationFrame(tick);
+        else { element.suppressClickUntil = now+800; cancel(); onConfirm(); }
+      };
+      hold.frame = requestAnimationFrame(tick);
+    },{signal});
+    element.addEventListener('pointermove',event => { if (hold && Math.hypot(event.clientX-hold.x,event.clientY-hold.y)>8) cancel(); },{signal});
+    element.addEventListener('pointerleave',cancel,{signal});
+    element.addEventListener('contextmenu',event => event.preventDefault(),{signal});
+    return {cancel};
+  }
   function mount({root, getState, mutate: hostMutate, onSelect, onDisconnect, report: hostReport} = {}) {
     if (!root) throw new Error('缺少聊天室 sidebar 容器。');
     if (instances.has(root)) return instances.get(root);
@@ -16,7 +50,6 @@
     let state = {self:{},settings:{},peers:[],rooms:[],requests:[],messages:[],conversations:{}}, selected = 'public';
     let online = false, pairingBusy = false, destroyed = false, transport, unsubscribe;
     let refreshPromise, refreshAgain = false, nicknameTimer, saveQueue = Promise.resolve(), revision = 0, settings;
-    let activeHold;
     function node(tag, text, cls) {
       const el = document.createElement(tag);
       if (text !== undefined) el.textContent = String(text);
@@ -91,7 +124,7 @@
       }
       await refresh();
     }
-    function chooseConversation(id) { selected = id; onSelect?.(id); render(); }
+    function chooseConversation(id) { selected = id; onSelect?.(id,{interactive:true}); render(); }
     function leaveGroup() {
       const roomId = selected;
       openEditor('退出群聊', fields => {
@@ -124,7 +157,7 @@
     const entries = [{id: 'public', name: '公共群聊', kind: 'group', members: [state.self.id, ...state.peers.filter(peer => peer.online && !peer.blocked).map(peer => peer.id)].filter(Boolean)},
       ...state.rooms.map(room => ({...room, kind: 'group'})),
       ...state.peers.map(peer => ({...peer, id: `peer:${peer.id}`, peerId: peer.id, name: nameOf(peer.id), kind: 'private'}))]
-      .map(entry => ({...entry, view: state.conversations?.[entry.id] || {},
+      .map(entry => ({...entry, name: entry.kind === 'group' ? state.conversations?.[entry.id]?.remark || entry.name : entry.name, view: state.conversations?.[entry.id] || {},
         onlineCount: entry.members?.filter(id => id === state.self.id || state.peers.some(peer => peer.id === id && peer.online)).length || 0}))
       .filter(entry => !entry.view.hidden).sort((a,b) => (b.view.lastAt || 0) - (a.view.lastAt || 0));
     reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
@@ -137,36 +170,19 @@
       if (entry.kind === 'private') avatar.append(node('span', undefined, `conversation-online-dot${entry.online ? ' online' : ''}`));
       else avatar.append(node('span', `${entry.onlineCount}/${entry.members?.length || 0}`, 'conversation-group-count'));
       const content = node('span', undefined, 'conversation-preview'), name = node('span', entry.name, 'conversation-name');
-      if (entry.kind === 'private') {
-        name.title = '修改备注';
-        name.addEventListener('click', event => { event.stopPropagation(); if (performance.now() >= (link.suppressClickUntil || 0)) editPerson(entry.peerId); }, {signal:uiAbort.signal});
-      }
+      name.title = '修改备注';
+      name.addEventListener('click', event => {
+        event.stopPropagation();
+        if (performance.now() < (link.suppressClickUntil || 0)) return;
+        if (entry.kind === 'private') editPerson(entry.peerId);
+        else editText('修改群聊备注','备注',entry.view.remark || '',remark => mutate('conversation-remark',{conversationId:entry.id,remark}),80);
+      }, {signal:uiAbort.signal});
       const summary = String(entry.view.lastText || '').replace(/```[\s\S]*?```/g,' [代码] ').replace(/[*_`>#]/g,'').replace(/\s+/g,' ').slice(0,160);
       content.append(name, node('span', summary, 'muted conversation-kind'));
       link.append(avatar, content);
       if (entry.view.muted) link.append(node('span', '🔕', 'conversation-muted-icon'));
       if (entry.view.unread) link.append(node('span', entry.view.unread > 99 ? '99+' : entry.view.unread, 'conversation-unread-badge'));
-      link.append(node('span', undefined, 'conversation-delete-progress'));
-      link.addEventListener('pointerdown', event => {
-        if (event.button !== 0) return;
-        cancelHold();
-        activeHold = {el:link,id:entry.id,x:event.clientX,y:event.clientY,start:performance.now()};
-        const tick = now => {
-          const hold = activeHold;
-          if (!hold || !hold.el.isConnected) { cancelHold(); return; }
-          const progress = Math.min(1,(now-hold.start)/2000);
-          hold.el.style.setProperty('--conversation-delete-progress',String(progress));
-          if (progress < 1) hold.frame = requestAnimationFrame(tick);
-          else {
-            hold.el.suppressClickUntil = now+800; cancelHold();
-            mutate('conversation-delete',{conversationId:hold.id}).catch(report);
-          }
-        };
-        activeHold.frame = requestAnimationFrame(tick);
-      }, {signal:uiAbort.signal});
-      link.addEventListener('pointermove', event => { if (activeHold && Math.hypot(event.clientX-activeHold.x,event.clientY-activeHold.y)>8) cancelHold(); }, {signal:uiAbort.signal});
-      link.addEventListener('pointerleave', cancelHold, {signal:uiAbort.signal});
-      link.addEventListener('contextmenu', event => event.preventDefault(), {signal:uiAbort.signal});
+      bindHold(link,{signal:uiAbort.signal,onConfirm:() => mutate('conversation-delete',{conversationId:entry.id}).catch(report)});
       el.append(link);
       return el;
     });
@@ -347,12 +363,6 @@
       if (!$('chatroomSignalingUrl').checkValidity()) return;
       Promise.resolve(settings?.flush?.()).then(() => action('scan')).catch(report);
     });
-    function cancelHold() {
-      if (!activeHold) return;
-      cancelAnimationFrame(activeHold.frame); activeHold.el.style.removeProperty('--conversation-delete-progress'); activeHold = null;
-    }
-    global.addEventListener('pointerup',cancelHold,{signal:uiAbort.signal});
-    global.addEventListener('pointercancel',cancelHold,{signal:uiAbort.signal});
     listen('editor-cancel','click', () => $('editor').close());
     listen('editor','close', () => { editorSubmit = null; $('editor-fields').replaceChildren(); });
     listen('editor-form','submit', async event => {
@@ -364,7 +374,6 @@
     function destroy() {
       if (destroyed) return;
       clearTimeout(nicknameTimer);
-      cancelHold();
       for (const id of dirty.keys()) saveSetting(id);
       destroyed = true; uiAbort.abort(); unsubscribe?.();
       settings?.destroy();
@@ -383,5 +392,5 @@
     })();
     return controller;
   }
-  global.BjtuChatroomSidebar = {mount};
+  global.BjtuChatroomSidebar = {mount,bindHold};
 })(globalThis);

@@ -42,6 +42,7 @@
   let membersSignature = '';
   const expandedMembers = new Set();
   let markingRead = false;
+  let pendingTitle, clearHold;
   const markdown = new marked.Marked({gfm: true, breaks: true, renderer: BjtuMarkdown.createRenderer()});
   BjtuMarkdown.bindCopy($('messages'), {onError: report});
 
@@ -208,19 +209,30 @@
     sidebar.render(); updateConversation(); renderMessages();
     void markConversationRead();
   }
-  async function markConversationRead() {
+  async function markConversationRead({interactive = false} = {}) {
     const view = state.conversations?.[selected];
     let focused = document.hasFocus();
     if (embedded) { try { focused ||= parent.document.hasFocus(); } catch {} }
     if (stopped || markingRead || !online || !view?.unread || document.visibilityState !== 'visible' ||
-        !focused || (embedded && !embeddedVisible)) return;
+        (!focused && !interactive) || (embedded && !embeddedVisible)) return;
     markingRead = true;
-    try { await action('conversation-read', {conversationId:selected,lastMessageId:view.lastMessageId}); }
+    const conversationId = selected;
+    try {
+      const result = await action('conversation-read', {conversationId,lastMessageId:view.lastMessageId});
+      if (state.conversations[conversationId]?.lastMessageId === result.lastMessageId) {
+        state.conversations[conversationId].unread = result.unread;
+        sidebar.render();
+      }
+    }
     catch(error) { report(error); }
     finally { markingRead = false; scheduleState(); }
   }
-  function chooseConversation(id) {
-    if (id === selected) return;
+  function chooseConversation(id, {interactive = false} = {}) {
+    if (id === selected) {
+      if (interactive) { $('message').focus(); void markConversationRead({interactive:true}); }
+      return;
+    }
+    clearHold?.cancel();
     drafts.set(selected, $('message').value);
     scrollPositions.set(selected, $('messages').scrollTop);
     while (drafts.size > 100) drafts.delete(drafts.keys().next().value);
@@ -229,13 +241,19 @@
     $('message').value = drafts.get(id) || '';
     updateConversation(); renderMessages();
     $('message').focus();
-    void markConversationRead();
+    void markConversationRead({interactive});
   }
   function updateConversation() {
     const room = currentRoom(), peerId = selected.startsWith('peer:') ? selected.slice(5) : null;
-    $('conversation-title').textContent = !selected ? '请选择会话' : selected === 'public' ? '公共群聊' : peerId ? nameOf(peerId) : room?.name || '群聊已结束';
+    const title = $('conversation-title');
+    const displayName = !selected ? '' : peerId ? nameOf(peerId)
+      : state.conversations?.[selected]?.remark || (selected === 'public' ? '公共群聊' : room?.name || '群聊已结束');
+    if (title.dataset.conversationId !== selected || document.activeElement !== title) {
+      title.value = pendingTitle?.id === selected ? pendingTitle.value : displayName;
+      title.dataset.conversationId = selected; title.dataset.initialValue = title.value;
+    }
+    title.placeholder = '请选择会话'; title.disabled = !selected;
     const peer = state.peers.find(item => item.id === peerId);
-    $('conversation-title').classList.toggle('editable',!!peerId);
     $('conversation-detail').hidden = !selected || !!peerId;
     $('block-peer').hidden = !peer; $('block-peer').textContent = peer?.blocked ? '取消拉黑' : '拉黑';
     $('delete-friend').hidden = !peer?.friend;
@@ -690,7 +708,9 @@
       media.src = s.previewURL;
       if (media instanceof HTMLImageElement) { media.alt = s.name; media.loading = 'lazy'; }
       if (media instanceof HTMLMediaElement) { media.controls = true; media.preload = 'metadata'; }
-      if (media instanceof HTMLIFrameElement) { media.title = s.name; media.setAttribute('sandbox', ''); }
+      // PDF Blob has a fixed application/pdf MIME type. Chromium's native PDF
+      // viewer cannot run in a sandboxed iframe (plugins are disabled there).
+      if (media instanceof HTMLIFrameElement) media.title = s.name;
       preview.append(media);
       const open = node('a', '打开预览'); open.href = s.previewURL; open.target = '_blank'; open.rel = 'noopener noreferrer';
       preview.append(open);
@@ -823,13 +843,28 @@
     $('stop-screen').hidden = true; updateConversation();
   }
 
-  listen('conversation-title','click', () => { if (selected.startsWith('peer:')) sidebar.editPerson(selected.slice(5)); });
+  listen('conversation-title','change', () => {
+    const input = $('conversation-title'), id = input.dataset.conversationId, value = input.value.trim();
+    if (!id || value === input.dataset.initialValue) return;
+    const pending = {id,value}; pendingTitle = pending;
+    void mutate('conversation-remark',{conversationId:id,remark:value}).then(() => refreshState()).catch(report).finally(() => {
+      if (pendingTitle === pending) pendingTitle = null;
+      updateConversation();
+    });
+  });
+  listen('conversation-title','keydown', event => {
+    if (event.isComposing) return;
+    if (event.key === 'Escape') { $('conversation-title').value = $('conversation-title').dataset.initialValue || ''; $('conversation-title').blur(); }
+    else if (event.key === 'Enter') { event.preventDefault(); $('conversation-title').blur(); $('message').focus(); }
+  });
   listen('block-peer','click', () => {
     const peerId = selected.slice(5), peer = state.peers.find(item => item.id === peerId);
     if (peer) void mutate('block',{peerId,blocked:!peer.blocked}).catch(report);
   });
   listen('delete-friend','click', () => { if (selected.startsWith('peer:')) void mutate('friend-delete',{peerId:selected.slice(5)}).catch(report); });
-  listen('clear-history','click', () => { if (selected) void mutate('conversation-clear',{conversationId:selected}).catch(report); });
+  clearHold = globalThis.BjtuChatroomSidebar.bindHold($('clear-history'),{
+    signal:uiAbort.signal,onConfirm:() => { if (selected) void mutate('conversation-clear',{conversationId:selected}).catch(report); }
+  });
   listen('mute-conversation','change', () => { if (selected) void mutate('conversation-mute',{conversationId:selected,muted:$('mute-conversation').checked}).catch(report); });
   listen('conversation-members-toggle', 'click', () => {
     if (expandedMembers.has(selected)) expandedMembers.delete(selected); else expandedMembers.add(selected);
@@ -903,6 +938,7 @@
   await sidebar.ready;
   renderState(); connectionStatus(false);
   await attachTransport();
+  if (embedded) parent.postMessage({type:'BJTU_CHATROOM_WINDOW_READY'},location.origin);
   const requestedConversation = new URLSearchParams(location.search).get('conversation');
   if (requestedConversation) chooseConversation(requestedConversation);
   const consumeNavigation = async navigation => {

@@ -22,7 +22,8 @@
 .conversation { display:flex; flex-direction:column; height:calc(100dvh - 48px); min-height:540px; }
 .conversation-header { padding:18px; border-bottom:1px solid var(--chat-line); }
 .conversation-heading { flex:1; min-width:0; }
-.conversation-heading .editable { cursor:pointer; }
+.chatroom-page #conversation-title { field-sizing:content; width:auto; max-width:100%; min-width:1em; padding:2px 3px; margin:0; border:1px solid transparent; border-radius:4px; background:transparent; color:inherit; font-size:var(--bjtu-font-size-secondaryTitle,16px); font-weight:600; }
+.chatroom-page #conversation-title:hover { border-color:var(--chat-line); }
 .conversation-mute { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; margin:0; }
 .conversation-header-actions { justify-content:flex-end; }
 .conversation-members { white-space:nowrap; overflow:hidden; line-height:1.8; }

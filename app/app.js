@@ -509,7 +509,10 @@ async function initFullscreenModuleButtons() {
         frame.title = '局域网聊天室';
         frame.allow = 'display-capture; clipboard-read; clipboard-write';
         frame.src = chrome.runtime.getURL('modules/chatroom/chat.html?embedded=1');
-        frame.addEventListener('load', () => frame.contentWindow?.postMessage({type:'BJTU_CHATROOM_WINDOW_VISIBILITY',visible:!view.hidden && moduleWindows.has('chatroom')},location.origin));
+        const syncChatroomVisibility = () => frame.contentWindow?.postMessage({type:'BJTU_CHATROOM_WINDOW_VISIBILITY',visible:!view.hidden && moduleWindows.has('chatroom')},location.origin);
+        window.addEventListener('message', event => {
+          if (event.source === frame.contentWindow && event.origin === location.origin && event.data?.type === 'BJTU_CHATROOM_WINDOW_READY') syncChatroomVisibility();
+        });
         body.append(frame);
         view.append(header, body);
         document.body.append(view);
