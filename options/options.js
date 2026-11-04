@@ -798,8 +798,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('enableMooc').checked = !!effectiveEnabled.mooc;
   document.getElementById('enableXuetangx').checked = !!effectiveEnabled.xuetangx;
   document.getElementById('enableCitel').checked = !!effectiveEnabled.citel;
-  const citelSettings = await chrome.storage.local.get(['citelActivityTypes', 'citelUsername', 'citelAutoLoginOnExpiry']);
-  document.getElementById('citelUsername').value = String(citelSettings.citelUsername || '');
+  const citelSettings = await chrome.storage.local.get(['citelActivityTypes', 'citelUsername', 'citelLoginUsername', 'citelAutoLoginOnExpiry']);
+  document.getElementById('citelUsername').value = String(citelSettings.citelLoginUsername || '');
   document.getElementById('citelAutoLoginOnExpiry').checked = citelSettings.citelAutoLoginOnExpiry !== false;
   const citelTypes = new Set(Array.isArray(citelSettings.citelActivityTypes) ? citelSettings.citelActivityTypes : ['workshop', 'programming']);
   document.querySelectorAll('.citel-activity-type').forEach((input) => { input.checked = citelTypes.has(input.value); });
@@ -1829,7 +1829,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('enableXuetangx').addEventListener('change', applyPlatform);
   document.getElementById('enableCitel').addEventListener('change', applyPlatform);
   document.getElementById('citelUsername').addEventListener('change', async (event) => {
-    await chrome.storage.local.set({ citelUsername: event.target.value.trim() }); setMsg('已应用更改');
+    const value = event.target.value.trim();
+    if (value) await chrome.storage.local.set({ citelLoginUsername: value });
+    else await chrome.storage.local.remove('citelLoginUsername');
+    setMsg('已应用更改');
   });
   document.getElementById('citelAutoLoginOnExpiry').addEventListener('change', async (event) => {
     await chrome.storage.local.set({ citelAutoLoginOnExpiry: event.target.checked }); setMsg('已应用更改');
@@ -2550,6 +2553,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       xuetangxCourseStatuses: [1],
       citelActivityTypes: ['workshop', 'programming'],
       citelUsername: '',
+      citelLoginUsername: '',
       citelAutoLoginOnExpiry: true,
       xuetangxActivityTypes: [...DEFAULT_XUETANGX_ACTIVITY_TYPES],
       xuetangxSecondCsrfToken: '',
