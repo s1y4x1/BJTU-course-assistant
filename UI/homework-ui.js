@@ -113,6 +113,7 @@
     showCountdown = true,
     suffixHtml = '',
     tailHtml = '',
+    extraTimes = [],
     escape = (value) => String(value ?? '')
   } = {}) {
     const countdown = showCountdown && !done && !overdue && !loading && deadline
@@ -131,8 +132,11 @@
     const startHtml = hasStart
       ? `<span class="homework-time-item homework-time-start">开始：<span class="homework-deadline-value">${escape(startFormatted || startTime)}</span></span>`
       : '';
-    const timeHtml = deadlineHtml || startHtml
-      ? `<span class="homework-time-group">${deadlineHtml}${deadlineHtml && startHtml ? ' ' : ''}${startHtml}</span>`
+    const extraTimeHtml = extraTimes.filter((item) => isVisibleTime(item.value, item.formatted))
+      .map((item) => `<span class="homework-time-item homework-time-extra">${escape(item.label)}：<span class="homework-deadline-value">${escape(item.formatted || item.value)}</span></span>`);
+    const times = [deadlineHtml, startHtml, ...extraTimeHtml].filter(Boolean);
+    const timeHtml = times.length
+      ? `<span class="homework-time-group">${times.join(' ')}</span>`
       : '';
     const otherHtml = tailHtml
       ? `<span class="homework-meta-tail">${tailHtml}</span>`

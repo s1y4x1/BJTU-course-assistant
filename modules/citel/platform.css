@@ -1,12 +1,13 @@
 .citel-course-head, .citel-task-head { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; }
 .citel-task-main { flex:1; min-width:0; }
-.citel-standalone-card a { color:#166b63; text-decoration:none; overflow-wrap:anywhere; }
+.citel-standalone-card a { text-decoration:none; overflow-wrap:anywhere; }
+.citel-standalone-card .course-card-title a, .citel-task-detail a { color:#F98012; }
 .citel-task { padding:8px; margin-top:8px; border:1px solid; border-radius:6px; }
 .citel-task-actions { display:flex; flex:0 0 auto; }
 .citel-task-meta { font-size:var(--bjtu-font-size-auxiliary, 11px); color:var(--text-secondary, #64748b); line-height:1.5; margin-top:4px; }
 .citel-task .citel-task-meta { color:#475569; }
-.citel-task-detail, .citel-schedule { overflow-wrap:anywhere; }
-.citel-task-detail-text, .citel-schedule { white-space:pre-wrap; }
+.citel-task-detail { overflow-wrap:anywhere; }
+.citel-task-detail-text { white-space:pre-wrap; }
 .citel-task-detail img { max-width:100%; height:auto; }
 .citel-task-detail pre { overflow:auto; }
 .citel-task-detail { font-size:var(--bjtu-font-size-body, 13px); margin-top:6px; }
@@ -16,3 +17,4 @@
 .citel-login-dialog label { display:flex; flex-direction:column; gap:5px; margin:12px 0; }
 .citel-login-dialog input { padding:8px; }
 .citel-login-dialog p { font-size:var(--bjtu-font-size-auxiliary, 11px); }
+.citel-login-dialog button[type="submit"] { background:#F98012; color:#fff; }

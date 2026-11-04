@@ -120,10 +120,10 @@
 
   function renderEntrances(courseId) {
     const id = escape(courseId);
-    return `<span class="citel-participants-entries">${['teachers', 'students'].map((kind) => {
+    return `<div class="citel-participants-entries">${['teachers', 'students'].map((kind) => {
       const label = kind === 'teachers' ? '老师' : '学生';
       return `<span class="citel-participants-wrap" data-citel-participants="${kind}" data-course-id="${id}"><button type="button" class="citel-participants-trigger" aria-expanded="false">${label}</button><span class="citel-participants-pop" role="region" aria-label="${label}列表" hidden><span class="citel-participants-status" role="status">悬停加载${label}列表…</span></span></span>`;
-    }).join('')}</span>`;
+    }).join('<span aria-hidden="true">·</span>')}</div>`;
   }
 
   function tableHtml(items) {

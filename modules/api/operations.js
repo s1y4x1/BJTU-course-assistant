@@ -2375,7 +2375,7 @@ name: 've.teachers_of_',
         } }
     ].map((entry) => ({ module: 'citel', name: `citel.${entry.name}`, summary: entry.summary, run: entry.run,
       doc: [`## citel.${entry.name} —— ${entry.summary}`, '', '仅 login 可启用平台；其他操作不会自动启用或登录；课程和活动操作只读已加载缓存，教师/学生操作按需请求参与者页面。请先通过 citel.login() 的用户输入窗口登录，或在 CITEL 网页登录后启用平台。密码不保存；无预置真实账号。', '',
-        entry.description || '互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按选项设置加载。互评须本人提交区有明确证据，编程按 result.php 判断；失败时为 unknown，不冒充未交。status=resource 表示无提交状态的资源。时间戳单位为毫秒，关闭时间为编程截止，折扣时间保留在 schedule 中。返回课程/活动数组，无额外外层包装。', '',
+        entry.description || '互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按选项设置加载。互评须本人提交区有明确证据，编程按页面结果导航链接判断；失败时为 unknown，不冒充未交。status=resource 表示无提交状态的资源。时间戳单位为毫秒，startTime 为开始时间，deadline 为截止时间（编程采用关闭时间），assessmentEnd 为评分结束时间，discountTime 为折扣时间；未提供的时间为 0。返回课程/活动数组，无额外外层包装。', '',
         `参数：${entry.parameters}`, '', `调用示例：\`${entry.example}\``, ...(entry.returns ? ['', `返回示例：${entry.returns}`] : [])].join('\n') })),
     {
       module: 'xuetangx',

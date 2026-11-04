@@ -105,11 +105,11 @@
   }
 
   function readDates(root) {
-    const rows = [...(root?.querySelectorAll('tr, [data-region="activity-date"], .activity-dates > div') || [])];
+    const rows = [...(root?.querySelectorAll('tr, [data-region="activity-date"], .activity-dates > div, [data-region="activity-dates"] > div') || [])];
     const lines = (rows.length ? rows.map(text) : [text(root)]).filter(Boolean);
-    const find = (label) => {
+    const find = (label, discount = false) => {
       for (const line of lines) {
-        if (/折扣|discount/i.test(line)) continue;
+        if (!discount && /折扣|discount/i.test(line)) continue;
         const found = line.match(label);
         if (!found) continue;
         const value = parseDate(line.slice(found.index + found[0].length));
@@ -121,7 +121,7 @@
       startTime: find(/开始提交|开启时间|开放时间|开始时间|opens?|submission open(?:s| from)?/i),
       deadline: find(/提交截止|关闭时间|截止时间|closes?|submission deadline/i),
       assessmentEnd: find(/评分结束|评估结束|assessment end/i),
-      schedule: lines.join('\n')
+      discountTime: find(/折扣(?:时间)?|discount(?: time)?/i, true)
     };
   }
 
@@ -137,7 +137,7 @@
       const titleNode = (node.querySelector('.instancename') || link)?.cloneNode(true);
       titleNode?.querySelectorAll('.accesshide, .sr-only').forEach((n) => n.remove());
       return [{ id, type, typeLabel: TYPES[type], title: text(titleNode) || TYPES[type], url,
-        ...readDates(node.querySelector('.activity-dates')), description: '', done: false,
+        ...readDates(node.querySelector('[data-region="activity-dates"], .activity-dates')), description: '', done: false,
         statusKnown: false, actionable: type === 'workshop' || type === 'programming' }];
     });
   }
@@ -150,7 +150,7 @@
       task.done = !!own?.querySelector('.submission-summary');
       if (!task.done && !/您还没有提交您的作品|添加提交/.test(text(own))) throw error('互评页面缺少明确的本人提交状态');
       task.description = text(doc.querySelector('#intro, .generalbox .no-overflow'));
-      const dates = readDates(doc.querySelector('.activity-dates'));
+      const dates = readDates(doc.querySelector('[data-region="activity-dates"], .activity-dates'));
       for (const field of ['startTime', 'deadline', 'assessmentEnd']) if (dates[field]) task[field] = dates[field];
     } else {
       const description = doc.querySelector('#description');
@@ -238,13 +238,16 @@
     return global.BjtuHomeworkUi.renderHomeworkCard({
       done, overdue, deadline: task.deadline, className: 'citel-task',
       background: palette.background, border: palette.border,
-      headClass: 'citel-task-head', mainClass: 'citel-task-main', actionsClass: 'citel-task-actions',
+      headClass: 'citel-task-head', mainClass: 'citel-task-main', actionsClass: 'homework-card-actions citel-task-actions',
       titleHtml: global.BjtuHomeworkUi.titleHtml({ title: task.title, typeLabel: task.typeLabel, href: task.url, typeHref: task.url, color: palette.foreground, escape }),
       metaHtml: global.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done, overdue,
         showCountdown: task.actionable, escape,
-        tailHtml: task.assessmentEnd ? `评分结束：${escape(formatTime(task.assessmentEnd))}` : '' }),
+        extraTimes: [
+          {label:'评分结束', value:task.assessmentEnd, formatted:formatTime(task.assessmentEnd)},
+          {label:'折扣时间', value:task.discountTime, formatted:formatTime(task.discountTime)}
+        ] }),
       attributes: `data-citel-status="${state}"`,
-      actionsHtml: global.BjtuHomeworkUi.renderActionLink({ href: task.url, label: task.actionable ? '去提交' : '查看', color: palette.action, className: 'btn', escape }),
+      actionsHtml: global.BjtuHomeworkUi.renderActionLink({ href: task.url, label: task.actionable ? '前往CITEL提交' : '查看', color: palette.action, className: 'btn', escape }),
       detailHtml: renderDetail(task, course)
     });
   }
@@ -266,7 +269,7 @@
       container.append(fragment);
       description = global.BjtuHomeworkUi.sanitizeRichHtml(container.innerHTML);
     }
-    const detail = `${description ? `<div class="citel-task-detail${task.descriptionHtml ? '' : ' citel-task-detail-text'}">${description}</div>` : ''}${task.schedule ? `<div class="citel-task-meta citel-schedule">${escape(task.schedule)}</div>` : ''}${task.loadError ? `<div class="citel-error">详情加载失败：${escape(task.loadError)}</div>` : ''}`;
+    const detail = `${description ? `<div class="citel-task-detail${task.descriptionHtml ? '' : ' citel-task-detail-text'}">${description}</div>` : ''}${task.loadError ? `<div class="citel-error">详情加载失败：${escape(task.loadError)}</div>` : ''}`;
     const courseId = `citel-${course.id}`;
     const expandKey = `citel:${task.type}:${task.id}`;
     return env?.renderExpandable ? env.renderExpandable(detail, { courseId, expandKey, expanded: env.isDetailExpanded?.(courseId, expandKey), hideWhenEmpty: true }) : detail;
@@ -294,8 +297,8 @@
       const card = global.BjtuCourseCardUi.createCourseCard({
         courseId: `citel-${course.id}`, className: 'citel-standalone-card', order: 260000 + index,
         rank: pending.some((t) => t.actionable) ? 0 : course.tasks.some((t) => status(t) === 'overdue') ? 2 : course.tasks.length ? 4 : 7,
-        titleHtml: `<a href="${escape(course.url)}" target="_blank" rel="noopener noreferrer">${escape(course.name)}</a>${global.BjtuCitelParticipants?.renderEntrances(course.id) || ''}`,
-        metaHtml: '<div class="citel-task-meta">CITEL</div>',
+        titleHtml: `<a href="${escape(course.url)}" target="_blank" rel="noopener noreferrer">${escape(course.name)}</a>`,
+        metaHtml: global.BjtuCitelParticipants?.renderEntrances(course.id) || '',
         contentHtml: `${loadingHtml}${course.loadError ? `<div class="citel-error">${escape(course.loadError)}</div>` : ''}${content || (course.detailLoaded ? '暂无所选类型活动' : '')}`,
         headerClass: 'citel-course-head', identityClass: 'course-card-identity', homeworkClass: 'homework-area', includeResultArea: false, wrapActions: false
       });
@@ -474,7 +477,7 @@
       return result;
     },
     restore(value) { courses = Array.isArray(value) ? value : []; },
-    themeColor: '#166b63',
+    themeColor: '#F98012',
     // Pure parsers are also used by offline fixture tests.
     parsers: Object.freeze({ parseDate, readDates, parseActivities, readSesskey, isLoginPage, hasProfile, status })
   };
