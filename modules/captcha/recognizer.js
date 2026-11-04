@@ -18,6 +18,8 @@
   const MIS_CAPTCHA_FEATURE_LABEL = globalThis.BjtuMisAssets?.MIS_CAPTCHA_FEATURE_LABEL || '';
   let creatingDocument = null;
   let offscreenReadyPromise = null;
+  if (!global.BjtuOffscreenManager && typeof importScripts === 'function')
+    importScripts(chrome.runtime.getURL('core/offscreen-manager.js'));
 
   async function runtimeFilesState() {
     const results = await Promise.all(REQUIRED_RUNTIME_FILES.map(async (path) => {
@@ -64,6 +66,11 @@
 
   async function ensureOffscreenDocument() {
     if (!chrome.offscreen) throw new Error('当前浏览器不支持本地验证码识别');
+    if (global.BjtuOffscreenManager) {
+      await global.BjtuOffscreenManager.ensure('captcha');
+      await waitForOffscreenReady();
+      return;
+    }
     if (!(await chrome.offscreen.hasDocument?.())) {
       if (!creatingDocument) {
         creatingDocument = chrome.offscreen.createDocument({
@@ -101,9 +108,14 @@
 
   async function resetOffscreenDocument() {
     offscreenReadyPromise = null;
+    if (global.BjtuOffscreenManager) {
+      await global.BjtuOffscreenManager.reset('captcha').catch(() => {});
+      return;
+    }
     if (!chrome.offscreen?.hasDocument || !chrome.offscreen?.closeDocument) return;
     try {
-      if (await chrome.offscreen.hasDocument()) await chrome.offscreen.closeDocument();
+      const own = await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[chrome.runtime.getURL(OFFSCREEN_URL)]});
+      if (own.length) await chrome.offscreen.closeDocument();
     } catch {
       // Best effort only; the next ensure call will surface any persistent error.
     }
@@ -255,9 +267,13 @@
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== 'CAPTCHA_MODEL_VERSION_CHANGED') return false;
+    if (global.BjtuOffscreenManager) {
+      void global.BjtuOffscreenManager.reset('captcha').catch(() => {});
+      return false;
+    }
     if (chrome.offscreen?.hasDocument && chrome.offscreen?.closeDocument) {
       void chrome.offscreen.hasDocument().then((exists) => {
-        if (exists) return chrome.offscreen.closeDocument();
+        if (exists) return resetOffscreenDocument();
         return undefined;
       }).catch(() => {});
     }
