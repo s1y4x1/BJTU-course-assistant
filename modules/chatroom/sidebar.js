@@ -1,6 +1,6 @@
 /* Shared sidebar. Static markup lives only in options.html.
  * Dependencies: transport.js -> link.js -> sidebar.js. Each page owns its Link.
- * mount({root,getState?,mutate?,onSelect?,onDisconnect?,report?}) returns
+ * mount({root,getState?,getSelected?,mutate?,onSelect?,onDisconnect?,report?}) returns
  * {ready,render,setReady,groupEditor,leaveGroup,destroy}. Without host callbacks,
  * the controller subscribes to this page's transport; it never borrows other RTC.
  */
@@ -41,7 +41,7 @@
     element.addEventListener('contextmenu',event => event.preventDefault(),{signal});
     return {cancel};
   }
-  function mount({root, getState, mutate: hostMutate, onSelect, onDisconnect, report: hostReport} = {}) {
+  function mount({root, getState, getSelected, mutate: hostMutate, onSelect, onDisconnect, report: hostReport} = {}) {
     if (!root) throw new Error('缺少聊天室 sidebar 容器。');
     if (instances.has(root)) return instances.get(root);
     const $ = id => root.querySelector('#' + id);
@@ -124,7 +124,10 @@
       }
       await refresh();
     }
-    function chooseConversation(id) { selected = id; onSelect?.(id,{interactive:true}); render(); }
+    function chooseConversation(id) {
+      selected = id;
+      try { onSelect?.(id,{interactive:true}); } finally { render(); }
+    }
     function leaveGroup() {
       const roomId = selected;
       openEditor('退出群聊', fields => {
@@ -154,6 +157,7 @@
   function render() {
     if (destroyed) return;
     state = getState ? getState() : state;
+    if (getSelected) selected = getSelected();
     const entries = [{id: 'public', name: '公共群聊', kind: 'group', members: [state.self.id, ...state.peers.filter(peer => peer.online && !peer.blocked).map(peer => peer.id)].filter(Boolean)},
       ...state.rooms.map(room => ({...room, kind: 'group'})),
       ...state.peers.map(peer => ({...peer, id: `peer:${peer.id}`, peerId: peer.id, name: nameOf(peer.id), kind: 'private'}))]

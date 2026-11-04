@@ -31,6 +31,7 @@
   const PROTOCOL = 'bjtu-chatroom-rtc-v1';
   let state = { self: {}, peers: [], rooms: [], messages: [], requests: [], settings: {}, conversations: {} };
   let selected = 'public';
+  let sidebar;
   let transport, unsubscribe, stopped = false, online = false, stateTimer, statePromise, stateDirty = false;
   let capture = null, sharingPending = false, memoryReserved = 0;
   const sessions = new Map(), transferHistory = [], drafts = new Map(), scrollPositions = new Map();
@@ -239,6 +240,7 @@
     while (scrollPositions.size > 100) scrollPositions.delete(scrollPositions.keys().next().value);
     selected = id;
     $('message').value = drafts.get(id) || '';
+    sidebar?.render();
     updateConversation(); renderMessages();
     $('message').focus();
     void markConversationRead({interactive});
@@ -309,7 +311,9 @@
     }))].filter((m) => m.conversationId === selected).sort((a,b) => a.createdAt - b.createdAt);
     container.querySelector('.empty')?.remove();
     reconcile(container, messageNodes, items, (m) => m.id, (message) => {
-      if (message.media) return mediaMessages.get(message.id).card;
+      // Persisted media summaries survive reloads, but live cards do not.
+      const liveMedia = mediaMessages.get(message.id);
+      if (liveMedia) return liveMedia.card;
       const el = node('article', undefined, `message${message.senderId === state.self.id ? ' mine' : ''}`);
       const content = node('div', undefined, 'message-text bjtu-markdown');
       content.innerHTML = markdown.parse(String(message.text || '').slice(0, 8000));
@@ -924,9 +928,10 @@
     pendingSignals.clear(); closedSessions.clear(); drafts.clear(); scrollPositions.clear(); mediaMessages.clear();
     sidebar.destroy();
   }, { once: true });
-  const sidebar = globalThis.BjtuChatroomSidebar.mount({
+  sidebar = globalThis.BjtuChatroomSidebar.mount({
     root: $('sidebar-host'),
     getState: () => state,
+    getSelected: () => selected,
     mutate: async (name, args) => {
       const result = await mutate(name, args);
       await refreshState();
