@@ -157,12 +157,14 @@
       task.descriptionHtml = description?.innerHTML || '';
       const dates = readDates(doc.querySelector('#time-table'));
       Object.assign(task, dates);
-      const resultUrl = new URL('result.php', task.url);
-      resultUrl.searchParams.set('id', task.id);
+      const resultUrl = [...doc.querySelectorAll('.nav-item a.nav-link[href]')]
+        .map((link) => safeUrl(link.getAttribute('href'), task.url))
+        .find((url) => url && new URL(url).pathname === '/mlsv3/mod/programming/result.php');
+      if (!resultUrl) throw error('编程练习页面未找到结果链接');
       // A programming result can legitimately contain .errorbox/.errorcode
       // (for example compiler errors). Those are submission results, not a
       // failed Moodle page request, and must not leave its status unknown.
-      const result = parse(await request(resultUrl.href, version));
+      const result = parse(await request(resultUrl, version));
       if (isLoginPage(result)) throw loginRequired();
       task.done = !/找不到您的程序/.test(text(result.body));
     }
