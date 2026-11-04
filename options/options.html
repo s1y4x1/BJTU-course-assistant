@@ -335,9 +335,11 @@
       <div class="platform-option" data-module="citel" hidden><label><input type="checkbox" id="showCitel" style="width:auto;" checked />CITEL</label></div>
       <div id="citelPlatformDetail" class="platform-option-detail" data-module="citel" hidden>
         <label><input type="checkbox" id="enableCitel" style="width:auto;" />启用 CITEL</label>
-        <label><input type="checkbox" id="citelAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
-        <input type="text" id="citelUsername" autocomplete="username" placeholder="用户名，留空为上次登录的账号" />
-        <div class="tip">默认密码为 用户名@Bjtu。启用平台时可在登录窗口输入自定义密码；密码不保存。也可前往 CITEL 网页登录。</div>
+        <div class="citel-auto-login-row">
+          <label><input type="checkbox" id="citelAutoLoginOnExpiry" style="width:auto;" checked />登录失效后自动登录</label>
+          <input type="text" id="citelUsername" autocomplete="username" placeholder="用户名，留空为上次登录的账号" />
+          <div class="tip">默认密码为 用户名@Bjtu。启用平台时可在登录窗口输入自定义密码；密码不保存。也可前往 CITEL 网页登录。</div>
+        </div>
         <div class="platform-option-divider" role="separator"></div>
         <div class="platform-option-subtitle">要显示的作业类型</div>
         <div class="platform-activity-type-options">
