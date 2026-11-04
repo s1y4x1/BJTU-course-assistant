@@ -2,8 +2,8 @@ function setMsg(text, ok = true, options = {}) {
   globalThis.BjtuOptionsMessage.show(text, ok, options);
 }
 
-const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
-const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false, citel: false };
+const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true, citel: true };
 const PLATFORM_AUTO_LOGIN_OPTION_IDS = Object.freeze({
   ve: 'veAutoLoginOnExpiry',
   ykt: 'yktAutoLoginOnExpiry',
@@ -127,9 +127,10 @@ function normalizePlatformEnabled(raw) {
     mrjzy: typeof src.mrjzy === 'boolean' ? src.mrjzy : DEFAULT_PLATFORM_ENABLED.mrjzy,
     ve: typeof src.ve === 'boolean' ? src.ve : DEFAULT_PLATFORM_ENABLED.ve,
     ykt: typeof src.ykt === 'boolean' ? src.ykt : DEFAULT_PLATFORM_ENABLED.ykt,
-    xuetangx: typeof src.xuetangx === 'boolean' ? src.xuetangx : DEFAULT_PLATFORM_ENABLED.xuetangx
+    xuetangx: typeof src.xuetangx === 'boolean' ? src.xuetangx : DEFAULT_PLATFORM_ENABLED.xuetangx,
+    citel: typeof src.citel === 'boolean' ? src.citel : DEFAULT_PLATFORM_ENABLED.citel
   };
-  ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'].forEach((id) => {
+  ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'].forEach((id) => {
     if (globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(id)) result[id] = false;
   });
   return result;
@@ -185,14 +186,15 @@ function updateMoocPeerReviewState() {
 }
 
 const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:cas', 'module:mail', 'module:api', 'module:qwen'];
-const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
+const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'];
 const PLATFORM_ORDER_LABELS = {
   ve: '智慧课程平台',
   ykt: '雨课堂',
   mrjzy: '每日交作业',
   jlgj: '接龙管家',
   mooc: '中国大学MOOC',
-  xuetangx: '学堂在线'
+  xuetangx: '学堂在线',
+  citel: 'CITEL'
 };
 let currentOptionsSectionOrder = [...FALLBACK_OPTIONS_SECTION_ORDER];
 let currentPlatformOrder = [...FALLBACK_PLATFORM_ORDER];
@@ -476,7 +478,7 @@ window.addEventListener('bjtu-theme-change', () => {
   }
 });
 
-const INSTALLABLE_PLATFORM_MODULE_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
+const INSTALLABLE_PLATFORM_MODULE_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'];
 
 // 已安装模块列表遵循「排序」编辑器的顺序：六个平台在「平台显示与加载」所在位置展开，
 // 更新组件在「更新」所在位置，其余模块在各自模块选项所在位置。
@@ -795,6 +797,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('enableJlgj').checked = !!effectiveEnabled.jlgj;
   document.getElementById('enableMooc').checked = !!effectiveEnabled.mooc;
   document.getElementById('enableXuetangx').checked = !!effectiveEnabled.xuetangx;
+  document.getElementById('enableCitel').checked = !!effectiveEnabled.citel;
+  const citelSettings = await chrome.storage.local.get(['citelActivityTypes', 'citelUsername', 'citelAutoLoginOnExpiry']);
+  document.getElementById('citelUsername').value = String(citelSettings.citelUsername || '');
+  document.getElementById('citelAutoLoginOnExpiry').checked = citelSettings.citelAutoLoginOnExpiry !== false;
+  const citelTypes = new Set(Array.isArray(citelSettings.citelActivityTypes) ? citelSettings.citelActivityTypes : ['workshop', 'programming']);
+  document.querySelectorAll('.citel-activity-type').forEach((input) => { input.checked = citelTypes.has(input.value); });
   document.getElementById('xuetangxSecondCsrfToken').value = String(xuetangxSecondCsrfToken || '');
   document.getElementById('xuetangxSecondSessionId').value = String(xuetangxSecondSessionId || '');
   const platformAutoLoginValues = { veAutoLoginOnExpiry, yktAutoLoginOnExpiry, jlgjAutoLoginOnExpiry, moocAutoLoginOnExpiry, xuetangxAutoLoginOnExpiry };
@@ -1179,7 +1187,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const selected = new Set(stored.homeworkBackgroundRefreshPlatforms || []);
     const cached = stored.popupFullscreenCourseCache || {};
     const enabled = normalizePlatformEnabled(stored.platformEnabled);
-    const labels = { ve:'智慧课程平台', ykt:'雨课堂', mooc:'中国大学MOOC', xuetangx:'学堂在线', mrjzy:'每日交作业', jlgj:'接龙管家' };
+    const labels = { ve:'智慧课程平台', ykt:'雨课堂', mooc:'中国大学MOOC', xuetangx:'学堂在线', mrjzy:'每日交作业', jlgj:'接龙管家', citel:'CITEL' };
     const container = document.getElementById('homeworkBackgroundRefreshPlatforms');
     container.replaceChildren();
     for (const [id, name] of Object.entries(labels)) {
@@ -1283,7 +1291,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       mrjzy: !!document.getElementById('showMrjzy').checked && !!document.getElementById('enableMrjzy').checked,
       jlgj: !!document.getElementById('showJlgj').checked && !!document.getElementById('enableJlgj').checked,
       mooc: !!document.getElementById('showMooc').checked && !!document.getElementById('enableMooc').checked,
-      xuetangx: !!document.getElementById('showXuetangx').checked && !!document.getElementById('enableXuetangx').checked
+      xuetangx: !!document.getElementById('showXuetangx').checked && !!document.getElementById('enableXuetangx').checked,
+      citel: !!document.getElementById('showCitel').checked && !!document.getElementById('enableCitel').checked
     };
     await chrome.storage.local.set({ platformEnabled: pe });
     await chrome.storage.sync.remove(['platformEnabled']).catch(() => {});
@@ -1371,7 +1380,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   const updatePlatformDetailDisabled = () => {
     const visibleState = {};
-    ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'].forEach((key) => {
+    ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'].forEach((key) => {
       const cap = key.charAt(0).toUpperCase() + key.slice(1);
       const shown = !!document.getElementById(`show${cap}`).checked;
       visibleState[key] = shown;
@@ -1391,6 +1400,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       input.closest('label')?.classList.toggle('is-disabled', !visibleState[platform]);
     });
     updateMrjzyAutoLoginDisabled();
+    document.querySelectorAll('#citelPlatformDetail input:not(#enableCitel)').forEach((input) => { input.disabled = !visibleState.citel; });
     document.querySelectorAll('.ykt-activity-type').forEach((input) => {
       input.disabled = !visibleState.ykt;
       input.closest('label')?.classList.toggle('is-disabled', !visibleState.ykt);
@@ -1422,7 +1432,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const applyPlatformVisible = async () => {
     const value = {};
     const enabledValue = {};
-    ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'].forEach((key) => {
+    ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'].forEach((key) => {
       const cap = key.charAt(0).toUpperCase() + key.slice(1);
       const shown = !!document.getElementById(`show${cap}`).checked;
       const enableInput = document.getElementById(`enable${cap}`);
@@ -1486,6 +1496,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     setChecked('enableJlgj', enabled.jlgj);
     setChecked('enableMooc', enabled.mooc);
     setChecked('enableXuetangx', enabled.xuetangx);
+    setChecked('enableCitel', enabled.citel);
   }
 
   function applyPlatformVisibleUi(raw) {
@@ -1816,6 +1827,17 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('enableJlgj').addEventListener('change', applyPlatform);
   document.getElementById('enableMooc').addEventListener('change', applyPlatform);
   document.getElementById('enableXuetangx').addEventListener('change', applyPlatform);
+  document.getElementById('enableCitel').addEventListener('change', applyPlatform);
+  document.getElementById('citelUsername').addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ citelUsername: event.target.value.trim() }); setMsg('已应用更改');
+  });
+  document.getElementById('citelAutoLoginOnExpiry').addEventListener('change', async (event) => {
+    await chrome.storage.local.set({ citelAutoLoginOnExpiry: event.target.checked }); setMsg('已应用更改');
+  });
+  document.querySelectorAll('.citel-activity-type').forEach((input) => input.addEventListener('change', async () => {
+    await chrome.storage.local.set({ citelActivityTypes: [...document.querySelectorAll('.citel-activity-type:checked')].map((item) => item.value) });
+    setMsg('已应用更改');
+  }));
   document.getElementById('xuetangxSecondCsrfToken').addEventListener('change', async (event) => {
     const value = String(event.currentTarget.value || '').trim();
     event.currentTarget.value = value;
@@ -1870,7 +1892,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         : `已关闭${PLATFORM_ORDER_LABELS[platform]}登录失效后自动登录`);
     });
   });
-  ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc', 'showXuetangx'].forEach((id) => {
+  ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc', 'showXuetangx', 'showCitel'].forEach((id) => {
     document.getElementById(id).addEventListener('change', applyPlatformVisible);
   });
   document.getElementById('injectMoocHelperEnabled').addEventListener('change', async () => {
@@ -2511,7 +2533,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   // Reset: restore defaults. Platform display/load should only check VE.
   const restoreDefaultSettings = async () => {
     await globalThis.BjtuOptionsModules?.resetAll();
-    const defaultPlatform = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
+    const defaultPlatform = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false, citel: false };
     await chrome.storage.local.set({
       platformEnabled: defaultPlatform,
       platformButtonTextAction: 'load',
@@ -2526,6 +2548,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       yktActivityTypes: [...DEFAULT_YKT_ACTIVITY_TYPES],
       moocActivityTypes: [...DEFAULT_MOOC_ACTIVITY_TYPES],
       xuetangxCourseStatuses: [1],
+      citelActivityTypes: ['workshop', 'programming'],
+      citelUsername: '',
+      citelAutoLoginOnExpiry: true,
       xuetangxActivityTypes: [...DEFAULT_XUETANGX_ACTIVITY_TYPES],
       xuetangxSecondCsrfToken: '',
       xuetangxSecondSessionId: '',
@@ -2589,12 +2614,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     document.getElementById('enableJlgj').checked = false;
     document.getElementById('enableMooc').checked = false;
     document.getElementById('enableXuetangx').checked = false;
+    document.getElementById('enableCitel').checked = false;
+    document.getElementById('citelUsername').value = '';
+    document.getElementById('citelAutoLoginOnExpiry').checked = true;
+    document.querySelectorAll('.citel-activity-type').forEach((input) => { input.checked = ['workshop', 'programming'].includes(input.value); });
     document.getElementById('xuetangxSecondCsrfToken').value = '';
     document.getElementById('xuetangxSecondSessionId').value = '';
     document.querySelectorAll('.xuetangx-secret-toggle').forEach((button) => {
       setXuetangxSecretVisibility(String(button.dataset.secretInput || ''), button, false);
     });
-    ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc', 'showXuetangx'].forEach((id) => {
+    ['showVe', 'showYkt', 'showMrjzy', 'showJlgj', 'showMooc', 'showXuetangx', 'showCitel'].forEach((id) => {
       document.getElementById(id).checked = true;
     });
     document.querySelectorAll('.xuetangx-course-status').forEach((input) => {

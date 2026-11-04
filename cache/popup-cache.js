@@ -262,6 +262,9 @@ async function renderPopupCachedCoursesProgressively({
     isPlatformEnabled('xuetangx') && window.platformLoadedOnce?.xuetangx
       ? () => window.BjtuXuetangxPlatform?.render()
       : null,
+    isPlatformEnabled('citel') && window.platformLoadedOnce?.citel
+      ? () => window.BjtuCitelPlatform?.render()
+      : null,
     isPlatformEnabled('mooc')
       ? () => window.BjtuMoocPlatform?.render()
       : null
@@ -292,6 +295,7 @@ function restoreFullscreenCacheStateForBackground(cache) {
   window.jlgjCourseGroupsSnapshot = Array.isArray(cache.jlgjCourseGroupsSnapshot) ? cache.jlgjCourseGroupsSnapshot : [];
   window.BjtuMoocPlatform?.restore(cache.moocCourses || []);
   window.BjtuXuetangxPlatform?.restore(cache.xuetangxCourses || []);
+  window.BjtuCitelPlatform?.restore(cache.citelCourses || []);
   window.courseCardStateById = cache.courseCardStateById || {};
   window.videoReplayCacheByCourseId = cache.videoReplayCacheByCourseId || {};
   window.coursewareCacheByCourseId = cache.coursewareCacheByCourseId || {};
@@ -374,6 +378,7 @@ async function writeFullscreenCourseCache({ force = false } = {}) {
     jlgjCourseGroupsSnapshot: safeStorageClone(window.jlgjCourseGroupsSnapshot, []),
     moocCourses: safeStorageClone(window.BjtuMoocPlatform?.getCourses?.(), []),
     xuetangxCourses: safeStorageClone(window.BjtuXuetangxPlatform?.getCourses?.(), []),
+    citelCourses: safeStorageClone(window.BjtuCitelPlatform?.getCourses?.(), []),
     courseCardStateById: safeStorageClone(window.courseCardStateById, {}),
     videoReplayCacheByCourseId: safeStorageClone(window.videoReplayCacheByCourseId, {}),
     coursewareCacheByCourseId: safeStorageClone(window.coursewareCacheByCourseId, {}),
@@ -403,6 +408,7 @@ async function writeFullscreenCourseCache({ force = false } = {}) {
 
 function detectReminderPlatform(item, courseCard) {
   if (item.classList.contains('xuetangx-task') || String(courseCard?.id || '').startsWith('course-xuetangx-')) return '学堂在线';
+  if (item.classList.contains('citel-task') || String(courseCard?.id || '').startsWith('course-citel-')) return 'CITEL';
   if (item.classList.contains('mooc-task') || String(courseCard?.id || '').startsWith('course-mooc-')) return '中国大学MOOC';
   const hrefs = Array.from(item.querySelectorAll('a[href]')).map((link) => String(link.href || '')).join(' ');
   if (/yuketang\.cn|examination\.xuetangx\.com/i.test(hrefs)) return '雨课堂';
@@ -418,6 +424,7 @@ function collectPendingHomeworkItems({ futureDeadlineOnly = false } = {}) {
   const seen = new Set();
   const items = [];
   courseListDiv.querySelectorAll('.hw-card-item').forEach((homework) => {
+    if (homework.matches('.citel-task[data-citel-status="unknown"], .citel-task[data-citel-status="resource"]')) return;
     const countdown = homework.querySelector('.deadline-countdown[data-deadline]');
     const deadline = countdown
       ? (typeof parseDeadlineToTs === 'function'
@@ -619,7 +626,8 @@ async function restorePopupFullscreenCacheIfNeeded() {
     cache?.jlgjCourseGroupsSnapshot,
     cache?.jlgjStandaloneCourses,
     cache?.moocCourses,
-    cache?.xuetangxCourses
+    cache?.xuetangxCourses,
+    cache?.citelCourses
   ].some((list) => Array.isArray(list) && list.length > 0);
   const canRenderStructuredVeCache = veModuleAvailable
     && hasStructuredVeData
@@ -667,6 +675,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
   window.jlgjCourseGroupsSnapshot = Array.isArray(cache.jlgjCourseGroupsSnapshot) ? cache.jlgjCourseGroupsSnapshot : [];
   window.BjtuMoocPlatform?.restore(cache.moocCourses || []);
   window.BjtuXuetangxPlatform?.restore(cache.xuetangxCourses || []);
+  window.BjtuCitelPlatform?.restore(cache.citelCourses || []);
   window.courseCardStateById = cache.courseCardStateById || {};
   window.videoReplayCacheByCourseId = cache.videoReplayCacheByCourseId || {};
   window.coursewareCacheByCourseId = cache.coursewareCacheByCourseId || {};

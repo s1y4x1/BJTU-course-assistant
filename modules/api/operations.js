@@ -2336,6 +2336,35 @@ name: 've.teachers_of_',
         return compactLoginResult(await pageInvoke('jlgj', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
     },
+    ...[
+      { name: 'status', summary: '获取 CITEL 登录状态', parameters: '{}', example: 'citel.status()',
+        run: (args) => pageInvoke('citel', 'status', args, 60000) },
+      { name: 'login', summary: '登录 CITEL 并加载课程活动', parameters: '{username?: 用户输入的用户名, password?: 密码，留空使用用户名@Bjtu}', example: 'citel.login()',
+        run: async (args) => compactLoginResult(await pageInvoke('citel', 'login', args, Number.POSITIVE_INFINITY)) },
+      { name: 'courseList', summary: '读取 CITEL 已加载课程缓存', parameters: '{}', example: 'citel.courseList()',
+        run: (args) => pageInvoke('citel', 'courseList', args, 120000) },
+      { name: 'assignments_of_', summary: '读取 CITEL 指定课程活动缓存', parameters: '{courseId: 必填, status?: all|pending|submitted|overdue|unknown|resource, type?: all|workshop|programming|resource|url|forum 或中文类型名}', example: 'citel.assignments_of_({courseId:"123",status:"pending"})',
+        async run(args) {
+          if (!args.courseId) throw new Error('缺少参数 courseId，请先调用 citel.courseList');
+          const course = await pageInvoke('citel', 'homework_of_', { courseId: args.courseId }, 120000);
+          if (course.loadError) throw new Error(course.loadError);
+          return filterCitelAssignments(course.homework, args).map((task) => ({ ...task, courseId: course.courseId, courseName: course.name }));
+        } },
+      { name: 'assignments', summary: '按状态与类型查询 CITEL 已加载活动缓存', parameters: '{status?: all|pending|submitted|overdue|unknown|resource, type?: all|workshop|programming|resource|url|forum 或中文类型名}', example: 'citel.assignments({status:"pending",type:"编程练习"})',
+        async run(args) {
+          const courses = await pageInvoke('citel', 'courseList', {}, 120000);
+          const result = [];
+          for (const course of courses) {
+            const data = await pageInvoke('citel', 'homework_of_', { courseId: course.courseId }, 120000);
+            if (data.loadError) throw new Error(data.loadError);
+            result.push(...filterCitelAssignments(data.homework, args).map((task) => ({ ...task, courseId: course.courseId, courseName: course.name })));
+          }
+          return result;
+        } }
+    ].map((entry) => ({ module: 'citel', name: `citel.${entry.name}`, summary: entry.summary, run: entry.run,
+      doc: [`## citel.${entry.name} —— ${entry.summary}`, '', '仅 login 可启用平台；其他操作不会自动启用或登录，也不重新请求平台数据。请先通过 citel.login() 的用户输入窗口登录，或在 CITEL 网页登录后启用平台。密码不保存；无预置真实账号。', '',
+        '互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按选项设置加载。互评须本人提交区有明确证据，编程按 result.php 判断；失败时为 unknown，不冒充未交。status=resource 表示无提交状态的资源。时间戳单位为毫秒，关闭时间为编程截止，折扣时间保留在 schedule 中。返回课程/活动数组，无额外外层包装。', '',
+        `参数：${entry.parameters}`, '', `调用示例：\`${entry.example}\``].join('\n') })),
     {
       module: 'xuetangx',
       name: 'xuetangx.courseList',
@@ -2845,6 +2874,7 @@ name: 've.teachers_of_',
     { id: 'mrjzy', label: '每日交作业', operations: OPERATIONS.filter((op) => op.module === 'mrjzy') },
     { id: 'jlgj', label: '接龙管家', operations: OPERATIONS.filter((op) => op.module === 'jlgj') },
     { id: 'xuetangx', label: '学堂在线', operations: OPERATIONS.filter((op) => op.module === 'xuetangx') },
+    { id: 'citel', label: 'CITEL', operations: OPERATIONS.filter((op) => op.module === 'citel') },
     { id: 'campusnet', label: '校园网重连', operations: OPERATIONS.filter((op) => op.module === 'campusnet') },
     { id: 'captcha', label: '本地验证码识别', operations: OPERATIONS.filter((op) => op.module === 'captcha') },
     { id: 'theme', label: '外观', operations: OPERATIONS.filter((op) => op.module === 'theme') },
@@ -2860,14 +2890,23 @@ name: 've.teachers_of_',
     return OPERATIONS.find((op) => op.name === name) || null;
   }
 
-  const LOGIN_GUARDED_PLATFORMS = new Set(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
+  function filterCitelAssignments(items, args) {
+    const status = String(args.status || 'all');
+    const type = String(args.type || 'all');
+    if (!['all', 'pending', 'submitted', 'overdue', 'unknown', 'resource'].includes(status)) throw new Error('CITEL status 参数无效');
+    if (!['all', 'workshop', 'programming', 'resource', 'url', 'forum', '互评', '编程练习', '文件', '网页地址', '讨论区'].includes(type)) throw new Error('CITEL type 参数无效');
+    return (items || []).filter((task) => (status === 'all' || task.status === status) && (type === 'all' || task.type === type || task.typeLabel === type));
+  }
+
+  const LOGIN_GUARDED_PLATFORMS = new Set(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel']);
   const PLATFORM_ENABLED_DEFAULTS = Object.freeze({
     ve: true,
     ykt: false,
     mrjzy: false,
     jlgj: false,
     mooc: false,
-    xuetangx: false
+    xuetangx: false,
+    citel: false
   });
   const PLATFORM_LABELS = Object.freeze({
     ve: '智慧课程平台',
@@ -2875,7 +2914,8 @@ name: 've.teachers_of_',
     mrjzy: '每日交作业',
     jlgj: '接龙管家',
     mooc: '中国大学MOOC',
-    xuetangx: '学堂在线'
+    xuetangx: '学堂在线',
+    citel: 'CITEL'
   });
 
   async function assertPlatformEnabledForOperation(op) {
@@ -2912,7 +2952,7 @@ name: 've.teachers_of_',
       || String(error?.message || '') === 'LOGIN_REQUIRED';
   }
 
-  const PLATFORM_GROUP_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'];
+  const PLATFORM_GROUP_IDS = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'];
 
   // 非模块区块与操作分组的对应关系：「外观」即外观颜色模式，「作业截止提醒」即提醒设置。
   const SECTION_GROUP_IDS = {

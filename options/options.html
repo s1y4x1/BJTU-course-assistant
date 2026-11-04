@@ -332,6 +332,22 @@
           <label><input type="checkbox" class="xuetangx-activity-type" value="12" style="width:auto;" checked />考试</label>
         </div>
       </div>
+      <div class="platform-option" data-module="citel" hidden><label><input type="checkbox" id="showCitel" style="width:auto;" checked />CITEL</label></div>
+      <div id="citelPlatformDetail" class="platform-option-detail" data-module="citel" hidden>
+        <label><input type="checkbox" id="enableCitel" style="width:auto;" />启用 CITEL</label>
+        <label for="citelUsername">CITEL 用户名</label>
+        <input type="text" id="citelUsername" autocomplete="username" placeholder="请输入用户名，不预置账号" />
+        <label><input type="checkbox" id="citelAutoLoginOnExpiry" style="width:auto;" checked />登录失效后使用默认密码自动登录</label>
+        <div class="tip">默认密码为 用户名@Bjtu。启用平台时可在登录窗口输入自定义密码；密码不保存。也可前往 CITEL 网页登录。</div>
+        <div class="platform-option-subtitle">要显示的活动类型</div>
+        <div class="platform-activity-type-options">
+          <label><input type="checkbox" class="citel-activity-type" value="workshop" style="width:auto;" checked />互评</label>
+          <label><input type="checkbox" class="citel-activity-type" value="programming" style="width:auto;" checked />编程练习</label>
+          <label><input type="checkbox" class="citel-activity-type" value="resource" style="width:auto;" />文件</label>
+          <label><input type="checkbox" class="citel-activity-type" value="url" style="width:auto;" />网页地址</label>
+          <label><input type="checkbox" class="citel-activity-type" value="forum" style="width:auto;" />讨论区</label>
+        </div>
+      </div>
       <div class="tip" data-tip-target="#platform-options-title">上层复选框控制平台按钮是否显示；仅显示按钮时，才能修改该平台是否启用。启用的平台会异步加载课程和作业。</div>
     </div>
 

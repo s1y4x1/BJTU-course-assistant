@@ -12,10 +12,11 @@
     const available = await global.BjtuModuleRegistry.ready;
     const autoUpdateParam = new URLSearchParams(global.location?.search || '').get('autoUpdate');
     if (autoUpdateParam === '1' || autoUpdateParam === '2') {
-      for (const id of ['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']) {
+      for (const id of ['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel']) {
         if (!available[id]) continue;
         if (id === 'mooc') global.BjtuMoocPlatform = null;
         if (id === 'xuetangx') global.BjtuXuetangxPlatform = null;
+        if (id === 'citel') global.BjtuCitelPlatform = null;
       }
     }
     await global.__bjtuPlatformModulesReady;
@@ -66,6 +67,7 @@
       global.BjtuMoocPlatform = null;
     }
 
+    if (!available.citel) global.BjtuCitelPlatform = null;
     if (!available.xuetangx) {
       global.BjtuXuetangxPlatform = null;
     }

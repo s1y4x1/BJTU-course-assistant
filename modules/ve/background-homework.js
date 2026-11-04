@@ -87,7 +87,7 @@
     if (runningPromise) return runningPromise;
     runningPromise = (async () => {
     const stored = await chrome.storage.local.get([
-      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, XQ_CODE_KEY, PLATFORMS_KEY, NEW_HOMEWORK_NOTIFY_KEY, 'loginAccountHistory', 'platformEnabled', 'yktActivityTypes', 'moocActivityTypes'
+      ENABLED_KEY, ACCOUNT_KEY, CACHE_KEY, XQ_CODE_KEY, PLATFORMS_KEY, NEW_HOMEWORK_NOTIFY_KEY, 'loginAccountHistory', 'platformEnabled', 'yktActivityTypes', 'moocActivityTypes', 'citelActivityTypes'
     ]).catch(() => ({}));
     const selected = new Set(stored[NEW_HOMEWORK_NOTIFY_KEY] === true ? stored[PLATFORMS_KEY] || [] : []);
     if (stored?.[ENABLED_KEY] !== true && !selected.size) return { skipped: 'disabled' };

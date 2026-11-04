@@ -32,6 +32,7 @@
       color: '#00cc7e',
       content: '课程'
     }),
+    citel: Object.freeze({ name: 'CITEL', url: 'https://citel.bjtu.edu.cn/mlsv3/', color: '#166b63', content: '课程' }),
     xuetangx: Object.freeze({
       name: '学堂在线',
       url: 'https://www.xuetangx.com/',

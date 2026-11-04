@@ -348,6 +348,7 @@ tryImportModuleScripts('../modules/ykt/network.js');
 tryImportModuleScripts('../modules/mrjzy/network.js');
 tryImportModuleScripts('../modules/jlgj/network.js');
 tryImportModuleScripts('../modules/xuetangx/platform.js');
+tryImportModuleScripts('../modules/citel/background.js');
 tryImportModuleScripts('../core/background-homework-platforms.js');
 tryImportModuleScripts('../core/module-registry.js');
 tryImportModuleScripts('../modules/api/operations.js', '../modules/api/background.js');

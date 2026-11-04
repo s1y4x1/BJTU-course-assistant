@@ -1,7 +1,7 @@
 /* 地址栏 bjtuca + Tab：搜索本地课程、未交作业，或打开扩展页面。 */
 (function () {
   const labels = { ve: '智慧课程平台', ykt: '雨课堂', mrjzy: '每日交作业',
-    jlgj: '接龙管家', mooc: '中国大学MOOC', xuetangx: '学堂在线' };
+    jlgj: '接龙管家', mooc: '中国大学MOOC', xuetangx: '学堂在线', citel: 'CITEL' };
   const pages = [
     { title: '课程助手', url: chrome.runtime.getURL('app/app.html') },
     { title: '扩展选项 设置', url: chrome.runtime.getURL('options/options.html') }

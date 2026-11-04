@@ -1,7 +1,7 @@
 (function initHomeworkReminders(global) {
   'use strict';
 
-  const labels = Object.freeze({ ve: '智慧课程平台', ykt: '雨课堂', mrjzy: '每日交作业', jlgj: '接龙管家', mooc: '中国大学MOOC', xuetangx: '学堂在线' });
+  const labels = Object.freeze({ ve: '智慧课程平台', ykt: '雨课堂', mrjzy: '每日交作业', jlgj: '接龙管家', mooc: '中国大学MOOC', xuetangx: '学堂在线', citel: 'CITEL' });
   const keys = Object.freeze({ snapshot: 'homeworkReminderSnapshot', observed: 'homeworkReminderObserved', notified: 'homeworkReminderNotified' });
   const notificationPrefix = 'bjtu-homework-reminder:';
 

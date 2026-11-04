@@ -154,5 +154,11 @@
     })).filter(Boolean);
   }
 
-  global.BjtuBackgroundHomeworkPlatforms = { ykt, mrjzy, jlgj, mooc, xuetangx };
+  async function citel(settings) {
+    const courses = await global.BjtuCitelBackground.fetchCourses(settings);
+    return courses.flatMap((course) => course.tasks.filter((task) => task.actionable && task.statusKnown)
+      .map((task) => item('citel', course.name, task.title, task.deadline, task.done, task.description || '', task.url))).filter(Boolean);
+  }
+
+  global.BjtuBackgroundHomeworkPlatforms = { ykt, mrjzy, jlgj, mooc, xuetangx, citel };
 })(globalThis);

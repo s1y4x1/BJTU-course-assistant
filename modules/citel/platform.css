@@ -1,0 +1,15 @@
+.citel-course-head, .citel-task-head { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; }
+.citel-task-main { flex:1; min-width:0; }
+.citel-standalone-card a { color:#166b63; text-decoration:none; overflow-wrap:anywhere; }
+.citel-task { padding:8px; margin-top:8px; border:1px solid; border-radius:6px; }
+.citel-task-actions { display:flex; flex:0 0 auto; }
+.citel-task-meta { font-size:var(--bjtu-font-size-auxiliary, 11px); color:var(--text-secondary, #64748b); line-height:1.5; margin-top:4px; }
+.citel-task .citel-task-meta { color:#475569; }
+.citel-task-detail, .citel-schedule { white-space:pre-wrap; overflow-wrap:anywhere; }
+.citel-task-detail { font-size:var(--bjtu-font-size-body, 13px); margin-top:6px; }
+.citel-error { color:#b45309; font-size:var(--bjtu-font-size-body, 13px); }
+.citel-login-dialog { border:1px solid #94a3b8; border-radius:10px; padding:20px; width:min(360px, 80vw); background:var(--bg-color, white); color:var(--text-color, #1e293b); }
+.citel-login-dialog::backdrop { background:#0006; }
+.citel-login-dialog label { display:flex; flex-direction:column; gap:5px; margin:12px 0; }
+.citel-login-dialog input { padding:8px; }
+.citel-login-dialog p { font-size:var(--bjtu-font-size-auxiliary, 11px); }

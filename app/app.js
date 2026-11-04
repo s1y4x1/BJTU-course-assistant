@@ -65,6 +65,7 @@ const mrjzyStatusBtn = document.getElementById('mrjzy-status-btn');
 const jlgjStatusBtn = document.getElementById('jlgj-status-btn');
 const moocStatusBtn = document.getElementById('mooc-status-btn');
 const xuetangxStatusBtn = document.getElementById('xuetangx-status-btn');
+const citelStatusBtn = document.getElementById('citel-status-btn');
 const popupOpenFullscreenBtn = document.getElementById('popup-open-fullscreen');
 
 // Login modal
@@ -865,14 +866,14 @@ window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomework
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.veReplayScheduleByCourseId = {}; // {courseId: {list,promise,loaded,error}}
 window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
-const PLATFORM_IDS = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
+const PLATFORM_IDS = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel']);
 window.platformOrder = [...PLATFORM_IDS];
 window.platformNeedLogin = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
 window.platformLoginState = Object.fromEntries(PLATFORM_IDS.map((id) => [id, 'unselected'])); // unselected|checking|offline|online
 window.platformLoginChecked = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
 window.platformInteractiveLoginPending = { ve: false, ykt: false, mrjzy: false, jlgj: false, mooc: false, xuetangx: false };
-const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false };
-const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true };
+const DEFAULT_PLATFORM_ENABLED = { jlgj: false, mooc: false, mrjzy: false, ve: true, ykt: false, xuetangx: false, citel: false };
+const DEFAULT_PLATFORM_VISIBLE = { jlgj: true, mooc: true, mrjzy: true, ve: true, ykt: true, xuetangx: true, citel: true };
 const PLATFORM_AUTO_LOGIN_STORAGE_KEYS = Object.freeze({
   ve: 'veAutoLoginOnExpiry',
   ykt: 'yktAutoLoginOnExpiry',
@@ -1001,7 +1002,8 @@ function sanitizePlatformEnabled(raw, fallback = DEFAULT_PLATFORM_ENABLED) {
     mrjzy: typeof src?.mrjzy === 'boolean' ? src.mrjzy : !!fallback.mrjzy,
     ve: typeof src?.ve === 'boolean' ? src.ve : !!fallback.ve,
     ykt: typeof src?.ykt === 'boolean' ? src.ykt : !!fallback.ykt,
-    xuetangx: typeof src?.xuetangx === 'boolean' ? src.xuetangx : !!fallback.xuetangx
+    xuetangx: typeof src?.xuetangx === 'boolean' ? src.xuetangx : !!fallback.xuetangx,
+    citel: typeof src?.citel === 'boolean' ? src.citel : !!fallback.citel
   };
   PLATFORM_IDS.forEach((id) => {
     if (globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(id)) result[id] = false;
@@ -1041,7 +1043,7 @@ async function loadPlatformOrderFromStorage() {
 }
 
 function applyPlatformVisibility() {
-  const buttons = { ve: veStatusBtn, ykt: yktStatusBtn, mrjzy: mrjzyStatusBtn, jlgj: jlgjStatusBtn, mooc: moocStatusBtn, xuetangx: xuetangxStatusBtn };
+  const buttons = { ve: veStatusBtn, ykt: yktStatusBtn, mrjzy: mrjzyStatusBtn, jlgj: jlgjStatusBtn, mooc: moocStatusBtn, xuetangx: xuetangxStatusBtn, citel: citelStatusBtn };
   Object.entries(buttons).forEach(([key, button]) => {
     if (!button) return;
     const moduleMissing = globalThis.BjtuModuleRegistry && !globalThis.BjtuModuleRegistry.has(key);
@@ -1241,6 +1243,8 @@ function clearPlatformData(platform) {
     window.BjtuMoocPlatform?.clear();
   } else if (platform === 'xuetangx') {
     window.BjtuXuetangxPlatform?.clear();
+  } else if (platform === 'citel') {
+    window.BjtuCitelPlatform?.clear();
   }
 }
 
@@ -1290,7 +1294,7 @@ if (popupOpenFullscreenBtn) {
 
 function triggerExternalPlatformLoad(platform, forceReload = false) {
   platform = normalizePlatformId(platform);
-  if (!['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx'].includes(platform)) return Promise.resolve();
+  if (!['ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'].includes(platform)) return Promise.resolve();
   if (!isPlatformEnabled(platform)) return Promise.resolve();
   if (!forceReload && window.platformLoadedOnce?.[platform]) return window.platformLoadPromises?.[platform] || Promise.resolve();
 
@@ -1340,6 +1344,9 @@ function triggerExternalPlatformLoad(platform, forceReload = false) {
   } else if (platform === 'mooc') {
     setPlatformLoginState('mooc', 'checking');
     loadPromise = window.BjtuMoocPlatform?.load().catch(() => { });
+  } else if (platform === 'citel') {
+    setPlatformLoginState('citel', 'checking');
+    loadPromise = window.BjtuCitelPlatform?.load();
   } else {
     setPlatformLoginState('xuetangx', 'checking');
     loadPromise = window.BjtuXuetangxPlatform?.load().catch(() => { });
@@ -1364,6 +1371,7 @@ async function triggerInitialPlatformLoads() {
   if (isPlatformEnabled('mrjzy')) triggerExternalPlatformLoad('mrjzy', false);
   if (isPlatformEnabled('jlgj')) triggerExternalPlatformLoad('jlgj', false);
   if (isPlatformEnabled('xuetangx')) triggerExternalPlatformLoad('xuetangx', false);
+  if (isPlatformEnabled('citel')) triggerExternalPlatformLoad('citel', false);
   let veStartupResult = null;
   if (isPlatformEnabled('ve')) {
     veStartupResult = await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
@@ -1548,6 +1556,7 @@ function renderEnabledExternalStandaloneCoursesNow() {
   if (isPlatformEnabled('jlgj') && typeof renderJlgjStandaloneCourses === 'function') renderJlgjStandaloneCourses();
   if (isPlatformEnabled('mooc') && window.platformLoadedOnce?.mooc) window.BjtuMoocPlatform?.render();
   if (isPlatformEnabled('xuetangx') && window.platformLoadedOnce?.xuetangx) window.BjtuXuetangxPlatform?.render();
+  if (isPlatformEnabled('citel') && window.platformLoadedOnce?.citel) window.BjtuCitelPlatform?.render();
 }
 globalThis.renderEnabledExternalStandaloneCourses = renderEnabledExternalStandaloneCourses;
 
@@ -1692,7 +1701,7 @@ function togglePlatformSelection(platform, options = {}) {
     return;
   }
 
-  if (platform === 'ykt' || platform === 'mrjzy' || platform === 'jlgj' || platform === 'mooc' || platform === 'xuetangx') {
+  if (platform === 'ykt' || platform === 'mrjzy' || platform === 'jlgj' || platform === 'mooc' || platform === 'xuetangx' || platform === 'citel') {
     window.platformInteractiveLoginPending[platform] = !!interactive;
   }
 
@@ -1734,6 +1743,11 @@ function setupOptionsStorageLiveSync() {
       window.platformOrder = normalizePlatformOrderForApp(changes.platformOrder.newValue);
       applyPlatformOrderInApp();
       scheduleCourseCardsByPlatform();
+    }
+    if (changes.citelActivityTypes && isPlatformEnabled('citel')) {
+      clearPlatformData('citel');
+      window.platformLoadedOnce.citel = false;
+      triggerExternalPlatformLoad('citel', true);
     }
     if ((changes.xuetangxCourseStatuses || changes.xuetangxActivityTypes) && isPlatformEnabled('xuetangx')) {
       clearPlatformData('xuetangx');
@@ -2006,7 +2020,8 @@ const COURSE_PLATFORM_COLUMNS = Object.freeze([
   { id: 'mrjzy', label: '每日交作业' },
   { id: 'jlgj', label: '接龙管家' },
   { id: 'mooc', label: '中国大学MOOC' },
-  { id: 'xuetangx', label: '学堂在线' }
+  { id: 'xuetangx', label: '学堂在线' },
+  { id: 'citel', label: 'CITEL' }
 ]);
 function getOrderedCoursePlatformColumns() {
   const byId = new Map(COURSE_PLATFORM_COLUMNS.map((item) => [item.id, item]));
@@ -2117,6 +2132,7 @@ function getCourseCardPlatform(card) {
   if (courseId.startsWith('jlgj-') || card.classList.contains('jlgj-standalone-card')) return 'jlgj';
   if (courseId.startsWith('mooc-') || card.classList.contains('mooc-standalone-card')) return 'mooc';
   if (courseId.startsWith('xuetangx-') || card.classList.contains('xuetangx-standalone-card')) return 'xuetangx';
+  if (courseId.startsWith('citel-') || card.classList.contains('citel-standalone-card')) return 'citel';
   return 've';
 }
 
@@ -4538,12 +4554,13 @@ function isDeadlinePassed(v) {
 document.addEventListener('bjtu-homework-expired', (event) => {
   const courseIds = event.detail.courseIds;
   for (const courseId of courseIds) {
-    if (courseId.startsWith('mooc-') || courseId.startsWith('xuetangx-')) continue;
+    if (courseId.startsWith('mooc-') || courseId.startsWith('xuetangx-') || courseId.startsWith('citel-')) continue;
     renderHomeworkList(courseId);
     updateCourseCardRank(courseId);
   }
   if (courseIds.some((id) => id.startsWith('mooc-'))) window.BjtuMoocPlatform.render();
   if (courseIds.some((id) => id.startsWith('xuetangx-'))) window.BjtuXuetangxPlatform.render();
+  if (courseIds.some((id) => id.startsWith('citel-'))) window.BjtuCitelPlatform?.render();
 });
 
 function sortHomeworkItemsByDeadline(items, pickDeadline) {
@@ -4706,6 +4723,7 @@ function isAnyExternalPlatformChecking() {
     || isPlatformEnabled('jlgj') && window.platformLoginState?.jlgj === 'checking'
     || isPlatformEnabled('mooc') && window.platformLoginState?.mooc === 'checking'
     || isPlatformEnabled('xuetangx') && window.platformLoginState?.xuetangx === 'checking'
+    || isPlatformEnabled('citel') && window.platformLoginState?.citel === 'checking'
   );
 }
 
@@ -4767,6 +4785,7 @@ function setPlatformLoginState(platform, state) {
   if (p === 'xuetangx' && s === 'online') {
     window.platformInteractiveLoginPending.xuetangx = false;
   }
+  if (p === 'citel' && s === 'online') window.platformInteractiveLoginPending.citel = false;
   if (s === 'online' || s === 'offline') {
     window.platformLoginChecked[p] = true;
   }
@@ -4954,6 +4973,7 @@ function refreshPlatformLoginTip({ scheduleLayout = true } = {}) {
   apply(jlgjStatusBtn, window.platformLoginState?.jlgj || 'checking', '接龙管家');
   apply(moocStatusBtn, window.platformLoginState?.mooc || 'checking', '中国大学MOOC');
   apply(xuetangxStatusBtn, window.platformLoginState?.xuetangx || 'checking', '学堂在线');
+  apply(citelStatusBtn, window.platformLoginState?.citel || 'checking', 'CITEL');
   applyPlatformVisibility();
   if (scheduleLayout && shouldUseCoursePlatformColumns()) scheduleCourseCardsByPlatform();
 
@@ -7290,6 +7310,19 @@ const appInitializationPromise = (async function init() {
     isDetailExpanded: isHomeworkDetailExpanded,
     updateCountdowns: updateAllCountdowns,
     animateHomeworkGroupVisibility,
+    sortCourseCards: () => sortCourseCardsWithGuard()
+  });
+  window.BjtuCitelPlatform?.init({
+    courseList: courseListDiv,
+    renderExpandable: renderExpandableHtml,
+    isDetailExpanded: isHomeworkDetailExpanded,
+    toast: showToast,
+    setState: (state) => setPlatformLoginState('citel', state),
+    setLoaded: (loaded) => { window.platformLoadedOnce.citel = !!loaded; },
+    setProgress: (completed, total) => setPlatformContentLoadProgress('citel', completed, total),
+    updateEmpty: updateCourseListEmptyPlaceholder,
+    scheduleCache: () => scheduleFullscreenCourseCacheSave(200),
+    updateCountdowns: updateAllCountdowns,
     sortCourseCards: () => sortCourseCardsWithGuard()
   });
   await loadCourseHelperLayoutSettings();

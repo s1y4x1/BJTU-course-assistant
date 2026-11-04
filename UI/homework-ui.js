@@ -7,7 +7,8 @@
     mrjzy: '每日交作业',
     jlgj: '接龙管家',
     mooc: '中国大学MOOC',
-    xuetangx: '学堂在线'
+    xuetangx: '学堂在线',
+    citel: 'CITEL'
   });
   const ACTION_NAMES = Object.freeze({
     view: '查看',

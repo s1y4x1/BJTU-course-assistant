@@ -15,7 +15,7 @@
     'module:api',
     'module:qwen'
   ]);
-  const DEFAULT_PLATFORM_ORDER = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx']);
+  const DEFAULT_PLATFORM_ORDER = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel']);
 
   function getOptionsSectionIds() {
     const discoveredModules = Object.entries(global.BjtuModuleRegistry?.definitions || {})
