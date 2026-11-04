@@ -9,6 +9,7 @@
   const MAX = 262144, MAX_LINKS = 16, TTL = 5 * 60 * 1000;
   const sessions = new Map(), discovered = new Map(), listeners = new Set();
   let socket = null, opening = null, ping, rotate, socketId = '', generation = 0;
+  let localIP = '';
   const engine = () => globalThis.BjtuChatroomTransport;
   function emit(type, detail = {}) {
     for (const fn of listeners) { try { fn({ type, ...detail }); } catch {} }
@@ -142,7 +143,7 @@
   }
   async function publicInfo() {
     const info = await identity();
-    return { alias: info.nickname, identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', token: crypto.randomUUID() };
+    return { alias: info.nickname || localIP || '默认IP', identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', token: crypto.randomUUID() };
   }
   function signalSend(message) { if (socket?.readyState !== 1) throw new Error('请先点击扫描设备，启用在线发现。'); socket.send(JSON.stringify(message)); }
   function remember(peer) {
@@ -153,6 +154,11 @@
     if (message.type === 'HELLO') {
       if (message.service !== 'bjtuca-chatroom') { socket?.close(); throw new Error('请使用 BJTUCA Bridge 聊天室服务器。'); }
       socketId = message.client?.id || '';
+      if (typeof message.client?.ip === 'string') {
+        localIP = message.client.ip;
+        await engine().setLocalIP?.(localIP);
+        signalSend({type:'UPDATE', info:await publicInfo()});
+      }
       for (const p of (message.peers || []).slice(0, 500)) remember(p);
       emit('scanning', { deviceId: socketId });
     }

@@ -69,7 +69,7 @@
     }
     function listen(id, type, callback) { $(id).addEventListener(type, callback, {signal:uiAbort.signal}); }
     function nameOf(id) {
-      if (id === state.self.id) return state.self.nickname || '我';
+      if (id === state.self.id) return state.self.nickname || state.self.ip || '我';
       const peer = state.peers.find(p => p.id === id);
       return peer?.remark || peer?.nickname || peer?.ip || String(id || '未知用户').slice(0,80);
     }
@@ -227,7 +227,7 @@
       else $(id).value = value;
     }
     $('nickname').placeholder = state.self.ip || state.self.nickname || '默认使用本机 IP';
-    $('self-info').textContent = [state.self.nickname, state.self.id ? `身份 ID ${state.self.id}` : '', state.self.fingerprint ? `身份指纹 ${state.self.fingerprint}` : ''].filter(Boolean).join(' · ');
+    $('self-info').textContent = [state.self.nickname || state.self.ip, state.self.id ? `身份 ID ${state.self.id}` : '', state.self.fingerprint ? `身份指纹 ${state.self.fingerprint}` : ''].filter(Boolean).join(' · ');
     $('request-count').textContent = String(state.requests.length);
     $('sidebar-invite-group').hidden = $('sidebar-leave-group').hidden = !state.rooms.some(r => r.id === selected);
     for (const el of $('conversations').querySelectorAll('[data-conversation]')) {
