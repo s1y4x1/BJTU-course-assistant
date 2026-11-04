@@ -197,6 +197,7 @@
         for (const session of [...sessions.values()]) drop(session);
         emit('scan-closed');
       }
+      emit('scan-start');
       const info = await publicInfo();
       if (epoch !== generation) throw new Error('发现已取消。');
       url.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
@@ -216,7 +217,9 @@
       emit('scanning', { deviceId: socketId });
       return { peers: [...discovered.values()], deviceId: socketId };
     })();
-    try { return await opening; } finally { opening = null; }
+    try { return await opening; }
+    catch (error) { if (epoch === generation && socket?.readyState !== 1) emit('scan-closed'); throw error; }
+    finally { opening = null; }
   }
   async function connect(input) {
     const id = typeof input === 'string' ? input : input?.peerId;
@@ -247,6 +250,7 @@
     for (const s of [...sessions.values()]) if (!peerId || s.peerId === peerId || s.id === peerId) drop(s);
   }
   globalThis.BjtuChatroomLink = { scan, connect, pairCreate, pairAccept, pairComplete, sendPeer, close,
+    get discoveryStatus() { return socket?.readyState === 1 ? 'connected' : opening || socket?.readyState === 0 ? 'connecting' : 'disconnected'; },
     isConnected(peerId) { return [...sessions.values()].some(s => s.authenticated && s.peerId === peerId && !s.closed); },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } };
   globalThis.addEventListener?.('pagehide', () => { close(); listeners.clear(); }, { once: true });

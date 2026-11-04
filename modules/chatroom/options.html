@@ -20,7 +20,7 @@
       <div class="section-heading chatroom-conversation-heading"><h2>会话</h2><button id="create-group" type="button" class="secondary">新建群聊</button></div>
       <nav id="conversations" aria-label="群聊和私聊会话"></nav>
       <div class="section-heading"><h2>服务器与设备发现</h2></div>
-      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器<span class="tip" data-tip-target="#chatroomSignalingLabel">使用 BJTUCA Bridge 聊天室服务器。打开聊天室时自动连接，由服务器为设备安排直连；未连接时可在地址输入框回车重连。跨电脑时请填写同一台服务器的局域网地址，如 ws://192.168.1.2:1897/chatroom。消息、文件与屏幕通过加密直连传输。</span></label>
+      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器 <span id="chatroomSignalingStatus" class="chatroom-server-status" data-state="disconnected" role="status">未连接</span><span class="tip" data-tip-target="#chatroomSignalingLabel">使用 BJTUCA Bridge 聊天室服务器。打开聊天室时自动连接，由服务器为设备安排直连；未连接时可在地址输入框回车重连。跨电脑时请填写同一台服务器的局域网地址，如 ws://192.168.1.2:1897/chatroom。消息、文件与屏幕通过加密直连传输。</span></label>
       <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="ws://127.0.0.1:1897/chatroom">
       <div id="chatroomServerActions" class="actions chatroom-server-actions" hidden><button id="disconnect" type="button" class="secondary">断开连接</button><button id="scan" type="button" class="secondary">刷新发现</button></div>
       <a id="chatroomStartServer" class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>

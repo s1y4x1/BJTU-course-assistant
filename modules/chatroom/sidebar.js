@@ -92,6 +92,13 @@
       for (const id of ['pair-create','pair-accept','pair-complete']) $(id).disabled = !ready || pairingBusy || typeof global.BjtuChatroomLink?.pairCreate !== 'function';
       if (ready && $('pair-status').textContent === '等待连接引擎。') $('pair-status').textContent = '引擎已就绪。可生成邀请，或接收对方邀请。';
     }
+    function setServerStatus(status) {
+      const label = $('chatroomSignalingStatus');
+      label.dataset.state = status;
+      label.textContent = {connected:'已连接',connecting:'连接中…',disconnected:'未连接'}[status];
+      $('chatroomStartServer').hidden = status === 'connected';
+      $('chatroomServerActions').hidden = status !== 'connected';
+    }
     async function refresh() {
       if (destroyed || !transport) return;
       if (refreshPromise) { refreshAgain = true; return refreshPromise; }
@@ -291,10 +298,11 @@
   });
   window.addEventListener('bjtu-chatroom-link-status', ({ detail }) => {
     if (destroyed || !detail) return;
-    if (detail.type === 'scanning' || detail.type === 'discovery') {
+    if (detail.type === 'scan-start') {
+      setServerStatus('connecting');
+    } else if (detail.type === 'scanning' || detail.type === 'discovery') {
+      setServerStatus('connected');
       $('discovery-status').textContent = detail.deviceId ? `在线发现已启用 · 本机临时设备 ID：${detail.deviceId}` : '在线发现已连接，等待服务器分配设备 ID…';
-      $('chatroomStartServer').hidden = true;
-      $('chatroomServerActions').hidden = false;
       if (detail.peers) {
         $('discovered-peers').replaceChildren(...detail.peers.map(peer => {
           const el = node('p', `${peer.ip || '未知 IP'} · ${peer.alias || '陌生设备'}`, 'muted');
@@ -302,9 +310,8 @@
         }));
       }
     } else if (detail.type === 'scan-closed') {
+      setServerStatus('disconnected');
       $('discovery-status').textContent = '未连接聊天室服务器。'; $('discovered-peers').replaceChildren();
-      $('chatroomStartServer').hidden = false;
-      $('chatroomServerActions').hidden = true;
     } else if (detail.type === 'peer-online') { $('pair-status').textContent = '身份验证完成，已建立直连。'; scheduleState(); }
     else if (detail.type === 'error') report(new Error(detail.message));
   }, { signal: uiAbort.signal });
@@ -386,6 +393,7 @@
     }
     global.addEventListener('pagehide', destroy, {once:true,signal:uiAbort.signal});
     setReady(false); render();
+    setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected');
     const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,editPerson,destroy};
     instances.set(root,controller);
     controller.ready = (async () => {
