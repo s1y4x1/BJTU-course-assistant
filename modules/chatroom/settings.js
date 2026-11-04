@@ -81,6 +81,12 @@
     const $ = id => root.querySelector('#' + id);
     const abort = new AbortController();
     const dirty = new Set(), revisions = new Map();
+    let permissionRevision = 0;
+    async function refreshAuthorization() {
+      const version = ++permissionRevision;
+      const granted = await authorizedDirectory().then(() => true, () => false);
+      if (!abort.signal.aborted && version === permissionRevision) $('chatroomAuthorizeDownloads').hidden = granted;
+    }
     let values = await chrome.storage.local.get(defaults), saveQueue = Promise.resolve();
     if (/^wss?:\/\/public\.localsend\.org(?:[:/]|$)/i.test(values.chatroomSignalingUrl)) {
       values.chatroomSignalingUrl = defaults.chatroomSignalingUrl;
@@ -132,14 +138,20 @@
       void save({chatroomAutoSaveEnabled: event.target.checked});
     }, {signal: abort.signal});
     $('chatroomAuthorizeDownloads').addEventListener('click', () => {
-      authorize().then(() => global.BjtuOptionsMessage?.show('已授权，文件将保存到扩展目录 downloads/。', true)).catch(report);
+      authorize().then(async () => {
+        await refreshAuthorization();
+        global.BjtuOptionsMessage?.show('已授权，文件将保存到扩展目录 downloads/。', true);
+      }).catch(report);
     }, {signal: abort.signal});
+    global.addEventListener('focus', refreshAuthorization, {signal: abort.signal});
+    root.querySelector('#settings-panel')?.addEventListener('toggle', refreshAuthorization, {signal: abort.signal});
     const changed = (changes, area) => {
       if (area !== 'local') return;
       for (const key of Object.keys(defaults)) if (changes[key]) values[key] = changes[key].newValue === undefined ? defaults[key] : changes[key].newValue;
       render();
     };
     chrome.storage.onChanged.addListener(changed); render();
+    await refreshAuthorization();
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
   global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload};

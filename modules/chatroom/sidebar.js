@@ -71,7 +71,7 @@
     function nameOf(id) {
       if (id === state.self.id) return state.self.nickname || '我';
       const peer = state.peers.find(p => p.id === id);
-      return peer?.remark || (peer?.friend ? peer.nickname : peer?.ip) || peer?.nickname || String(id || '未知用户').slice(0,80);
+      return peer?.remark || peer?.nickname || peer?.ip || String(id || '未知用户').slice(0,80);
     }
     async function action(name, args = {}) {
       if (!online) throw new Error('当前页连接引擎尚未就绪，请重试。');
@@ -92,12 +92,18 @@
       for (const id of ['pair-create','pair-accept','pair-complete']) $(id).disabled = !ready || pairingBusy || typeof global.BjtuChatroomLink?.pairCreate !== 'function';
       if (ready && $('pair-status').textContent === '等待连接引擎。') $('pair-status').textContent = '引擎已就绪。可生成邀请，或接收对方邀请。';
     }
-    function setServerStatus(status) {
+    let discoveryDeviceId = '';
+    function setServerStatus(status, deviceId) {
+      if (status !== 'connected') discoveryDeviceId = '';
+      else if (deviceId !== undefined) discoveryDeviceId = deviceId;
       const label = $('chatroomSignalingStatus');
       label.dataset.state = status;
       label.textContent = {connected:'已连接',connecting:'连接中…',disconnected:'未连接'}[status];
       $('chatroomStartServer').hidden = status === 'connected';
       $('chatroomServerActions').hidden = status !== 'connected';
+      $('discovery-status').textContent = status === 'connected'
+        ? discoveryDeviceId ? `在线发现已启用 · 本机临时设备 ID：${discoveryDeviceId}` : '在线发现已连接，等待服务器分配设备 ID…'
+        : status === 'connecting' ? '正在连接在线信令服务…' : '未连接聊天室服务器。';
     }
     async function refresh() {
       if (destroyed || !transport) return;
@@ -212,7 +218,7 @@
       return el;
     });
     for (const [id, value] of Object.entries({
-      nickname: state.settings.nickname || state.self.nickname || '',
+      nickname: state.settings.nickname ?? '',
       'require-friend': !!state.settings.requireFriend,
       'invite-policy': state.settings.invitePolicy || 'ask'
     })) {
@@ -220,6 +226,7 @@
       if ($(id).type === 'checkbox') $(id).checked = value;
       else $(id).value = value;
     }
+    $('nickname').placeholder = state.self.ip || state.self.nickname || '默认使用本机 IP';
     $('self-info').textContent = [state.self.nickname, state.self.id ? `身份 ID ${state.self.id}` : '', state.self.fingerprint ? `身份指纹 ${state.self.fingerprint}` : ''].filter(Boolean).join(' · ');
     $('request-count').textContent = String(state.requests.length);
     $('sidebar-invite-group').hidden = $('sidebar-leave-group').hidden = !state.rooms.some(r => r.id === selected);
@@ -227,31 +234,32 @@
       if (el.dataset.conversation === selected) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
     }
   }
-  function editText(title, labelText, initial, submit, maxLength = 80) {
+  function editText(title, labelText, initial, submit, maxLength = 80, placeholder = '') {
     openEditor(title, (fields) => {
       const label = node('label', labelText), input = node('input');
       input.value = initial; input.maxLength = maxLength;
+      input.placeholder = placeholder;
       label.append(input); fields.append(label);
       return () => submit(input.value.trim());
     });
   }
   function editPerson(peerId) {
     if (peerId === state.self.id) {
-      editText('修改昵称', '昵称', state.self.nickname || '', value => mutate('settings', {nickname: value}), 40);
+      editText('修改昵称', '昵称（留空恢复默认 IP）', state.settings.nickname || '', value => mutate('settings', {nickname: value}), 40, state.self.ip || state.self.nickname || '默认使用本机 IP');
       return;
     }
     const peer = state.peers.find(item => item.id === peerId);
     if (!peer) return;
-    openEditor('联系人', fields => {
-      fields.append(node('p', [peer.nickname, peer.ip].filter(Boolean).join(' · '), 'muted'));
+    openEditor([...new Set([peer.nickname, peer.ip].filter(Boolean))].join(' · ') || peer.id, fields => {
       const label = node('label', '备注'), input = node('input');
       input.value = peer.remark || ''; input.maxLength = 80;
+      input.placeholder = peer.nickname || peer.ip || peer.id;
       label.append(input); fields.append(label);
       const actions = node('div', undefined, 'actions');
       if (!peer.friend && !peer.blocked) actions.append(button('发送好友申请', async () => {
         await mutate('friend-request', {peerId}); toast('好友请求已发送。', true); $('editor').close();
       }));
-      fields.append(actions);
+      if (actions.childElementCount) fields.append(actions);
       return () => mutate('remark', {peerId, remark: input.value.trim()});
     });
   }
@@ -291,27 +299,25 @@
       $('pair-status').textContent = '已断开。可重新生成邀请或点击刷新发现。';
       scheduleState();
     }
-  listen('scan', 'click', async () => {
+  async function scan() {
     $('scan').disabled = true; $('discovery-status').textContent = '正在连接在线信令服务…';
-    try { await action('scan'); } catch (error) { $('discovery-status').textContent = error.message; report(error); }
+    try {
+      const result = await action('scan');
+      if (!destroyed) setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'connected', result?.deviceId);
+    } catch (error) {
+      if (!destroyed) { setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected'); $('discovery-status').textContent = error.message; report(error); }
+    }
     finally { $('scan').disabled = !online; }
-  });
+  }
+  listen('scan', 'click', scan);
   window.addEventListener('bjtu-chatroom-link-status', ({ detail }) => {
     if (destroyed || !detail) return;
     if (detail.type === 'scan-start') {
       setServerStatus('connecting');
     } else if (detail.type === 'scanning' || detail.type === 'discovery') {
-      setServerStatus('connected');
-      $('discovery-status').textContent = detail.deviceId ? `在线发现已启用 · 本机临时设备 ID：${detail.deviceId}` : '在线发现已连接，等待服务器分配设备 ID…';
-      if (detail.peers) {
-        $('discovered-peers').replaceChildren(...detail.peers.map(peer => {
-          const el = node('p', `${peer.ip || '未知 IP'} · ${peer.alias || '陌生设备'}`, 'muted');
-          return el;
-        }));
-      }
+      setServerStatus('connected', detail.deviceId);
     } else if (detail.type === 'scan-closed') {
       setServerStatus('disconnected');
-      $('discovery-status').textContent = '未连接聊天室服务器。'; $('discovered-peers').replaceChildren();
     } else if (detail.type === 'peer-online') { $('pair-status').textContent = '身份验证完成，已建立直连。'; scheduleState(); }
     else if (detail.type === 'error') report(new Error(detail.message));
   }, { signal: uiAbort.signal });
@@ -340,7 +346,6 @@
       const version = dirty.get(id);
       if (!version) return;
       const value = settingsValue(id), key = {nickname:'nickname','require-friend':'requireFriend','invite-policy':'invitePolicy'}[id];
-      if (id === 'nickname' && !value) { $('settings-status').textContent = '昵称不能为空，尚未保存。'; return; }
       $('settings-status').textContent = '正在自动保存…';
       saveQueue = saveQueue.catch(() => {}).then(async () => {
         if (dirty.get(id) !== version) return;
@@ -372,7 +377,19 @@
       event.preventDefault();
       $('chatroomSignalingUrl').blur();
       if (!$('chatroomSignalingUrl').checkValidity()) return;
-      Promise.resolve(settings?.flush?.()).then(() => action('scan')).catch(report);
+      Promise.resolve(settings?.flush?.()).then(scan).catch(report);
+    });
+    $('nickname').required = false;
+    let backdropPressed = false;
+    function onBackdrop(event) {
+      if (event.target !== $('editor')) return false;
+      const rect = $('editor').getBoundingClientRect();
+      return event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
+    }
+    listen('editor','pointerdown', event => { backdropPressed = onBackdrop(event); });
+    listen('editor','click', event => {
+      if (backdropPressed && onBackdrop(event)) $('editor').close();
+      backdropPressed = false;
     });
     listen('editor-cancel','click', () => $('editor').close());
     listen('editor','close', () => { editorSubmit = null; $('editor-fields').replaceChildren(); });
