@@ -7314,6 +7314,7 @@ const appInitializationPromise = (async function init() {
   });
   window.BjtuCitelPlatform?.init({
     courseList: courseListDiv,
+    animateHomeworkGroupVisibility,
     renderExpandable: renderExpandableHtml,
     isDetailExpanded: isHomeworkDetailExpanded,
     toast: showToast,

@@ -152,13 +152,19 @@
       const dates = readDates(doc.querySelector('.activity-dates'));
       for (const field of ['startTime', 'deadline', 'assessmentEnd']) if (dates[field]) task[field] = dates[field];
     } else {
-      task.description = text(doc.querySelector('#description'));
+      const description = doc.querySelector('#description');
+      task.description = text(description);
+      task.descriptionHtml = description?.innerHTML || '';
       const dates = readDates(doc.querySelector('#time-table'));
       Object.assign(task, dates);
       const resultUrl = new URL('result.php', task.url);
       resultUrl.searchParams.set('id', task.id);
-      const result = await page(resultUrl.href, version);
-      task.done = !/找不到您的程序/.test(text(result.doc.body));
+      // A programming result can legitimately contain .errorbox/.errorcode
+      // (for example compiler errors). Those are submission results, not a
+      // failed Moodle page request, and must not leave its status unknown.
+      const result = parse(await request(resultUrl.href, version));
+      if (isLoginPage(result)) throw loginRequired();
+      task.done = !/找不到您的程序/.test(text(result.body));
     }
     task.statusKnown = true;
   }
@@ -219,15 +225,14 @@
     const done = state === 'submitted';
     const overdue = state === 'overdue';
     const palette = global.BjtuHomeworkUi.homeworkPalette({ done, overdue });
-    const label = { submitted: '已交', pending: '未交', overdue: '逾期未交', unknown: '状态未知', resource: '资源' }[state];
     return global.BjtuHomeworkUi.renderHomeworkCard({
       done, overdue, deadline: task.deadline, className: 'citel-task',
       background: palette.background, border: palette.border,
       headClass: 'citel-task-head', mainClass: 'citel-task-main', actionsClass: 'citel-task-actions',
       titleHtml: global.BjtuHomeworkUi.titleHtml({ title: task.title, typeLabel: task.typeLabel, href: task.url, typeHref: task.url, color: palette.foreground, escape }),
       metaHtml: global.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done, overdue,
-        showCountdown: task.actionable && task.statusKnown, escape,
-        tailHtml: `${label}${task.assessmentEnd ? ` · 评分结束：${escape(formatTime(task.assessmentEnd))}` : ''}` }),
+        showCountdown: task.actionable, escape,
+        tailHtml: task.assessmentEnd ? `评分结束：${escape(formatTime(task.assessmentEnd))}` : '' }),
       attributes: `data-citel-status="${state}"`,
       actionsHtml: global.BjtuHomeworkUi.renderActionLink({ href: task.url, label: task.actionable ? '去提交' : '查看', color: palette.action, className: 'btn', escape }),
       detailHtml: renderDetail(task, course)
@@ -235,7 +240,23 @@
   }
 
   function renderDetail(task, course) {
-    const detail = `${task.description ? `<div class="citel-task-detail">${escape(task.description)}</div>` : ''}${task.schedule ? `<div class="citel-task-meta citel-schedule">${escape(task.schedule)}</div>` : ''}${task.loadError ? `<div class="citel-error">详情加载失败：${escape(task.loadError)}</div>` : ''}`;
+    let description = escape(task.description || '');
+    if (task.descriptionHtml) {
+      const fragment = global.BjtuInertHtml.parseFragment(task.descriptionHtml);
+      fragment.querySelectorAll('[src],[href]').forEach((node) => {
+        for (const attribute of ['src', 'href']) {
+          const value = node.getAttribute(attribute);
+          if (value) {
+            try { node.setAttribute(attribute, new URL(value, task.url).href); }
+            catch { node.removeAttribute(attribute); }
+          }
+        }
+      });
+      const container = fragment.ownerDocument.createElement('div');
+      container.append(fragment);
+      description = global.BjtuHomeworkUi.sanitizeRichHtml(container.innerHTML);
+    }
+    const detail = `${description ? `<div class="citel-task-detail${task.descriptionHtml ? '' : ' citel-task-detail-text'}">${description}</div>` : ''}${task.schedule ? `<div class="citel-task-meta citel-schedule">${escape(task.schedule)}</div>` : ''}${task.loadError ? `<div class="citel-error">详情加载失败：${escape(task.loadError)}</div>` : ''}`;
     const courseId = `citel-${course.id}`;
     const expandKey = `citel:${task.type}:${task.id}`;
     return env?.renderExpandable ? env.renderExpandable(detail, { courseId, expandKey, expanded: env.isDetailExpanded?.(courseId, expandKey), hideWhenEmpty: true }) : detail;
@@ -247,13 +268,16 @@
     courses.forEach((course, index) => {
       const pending = course.tasks.filter((t) => ['pending', 'unknown', 'resource'].includes(status(t)))
         .sort((a, b) => (a.deadline || Infinity) - (b.deadline || Infinity));
-      const group = (kind, label) => {
+      const group = (kind) => {
         const tasks = course.tasks.filter((t) => status(t) === kind);
         if (!tasks.length) return '';
         const key = `${course.id}:${kind}`;
-        return `<button type="button" class="btn homework-toggle-btn" data-citel-toggle="${escape(key)}" aria-expanded="${expanded.has(key)}">${label} (${tasks.length})</button><div class="homework-group${expanded.has(key) ? '' : ' is-hidden'}" aria-hidden="${!expanded.has(key)}">${tasks.map((task) => renderTask(task, course)).join('')}</div>`;
+        const open = expanded.has(key), groupKind = kind === 'submitted' ? 'done' : 'overdue';
+        const labels = global.BjtuHomeworkUi.toggleLabels(groupKind);
+        const side = '<span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>';
+        return `<div class="homework-toggle-row homework-toggle-row--${groupKind}"><button type="button" class="btn homework-toggle-btn ${open ? 'is-expanded homework-toggle-btn--up' : 'homework-toggle-btn--down'}" data-citel-toggle="${escape(key)}" data-count="${tasks.length}" data-collapsed-text="${escape(labels.collapsed)}" data-expanded-text="${escape(labels.expanded)}" aria-expanded="${open}">${side}<span class="homework-toggle-label">${escape(open ? labels.expanded : labels.collapsed)} (${tasks.length})</span>${side}</button></div><div class="homework-group homework-group--${groupKind}${open ? '' : ' is-hidden'}" data-citel-group="${escape(key)}" data-expanded="${open ? '1' : '0'}" aria-hidden="${!open}">${tasks.map((task) => renderTask(task, course)).join('')}</div>`;
       };
-      const content = pending.map((task) => renderTask(task, course)).join('') + group('overdue', '逾期未交') + group('submitted', '已交');
+      const content = pending.map((task) => renderTask(task, course)).join('') + group('overdue') + group('submitted');
       const loadingHtml = global.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels || [], { escape });
       const card = global.BjtuCourseCardUi.createCourseCard({
         courseId: `citel-${course.id}`, className: 'citel-standalone-card', order: 260000 + index,
@@ -402,7 +426,19 @@
         const button = event.target.closest('[data-citel-toggle]');
         if (!button) return;
         const key = button.dataset.citelToggle;
-        expanded.has(key) ? expanded.delete(key) : expanded.add(key); render();
+        const open = !expanded.has(key);
+        open ? expanded.add(key) : expanded.delete(key);
+        const group = button.closest('.citel-standalone-card')?.querySelector(`[data-citel-group="${CSS.escape(key)}"]`);
+        if (!group || !env.animateHomeworkGroupVisibility) { render(); return; }
+        button.classList.toggle('is-expanded', open);
+        button.classList.toggle('homework-toggle-btn--up', open);
+        button.classList.toggle('homework-toggle-btn--down', !open);
+        button.setAttribute('aria-expanded', String(open));
+        button.querySelector('.homework-toggle-label').textContent = `${open ? button.dataset.expandedText : button.dataset.collapsedText} (${button.dataset.count})`;
+        group.dataset.expanded = open ? '1' : '0';
+        group.setAttribute('aria-hidden', String(!open));
+        void env.animateHomeworkGroupVisibility(group, open);
+        env.scheduleCache?.();
       });
     },
     load, render, login, openLogin,
