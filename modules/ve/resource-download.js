@@ -1024,7 +1024,7 @@ function renderResourceSpaceList() {
                 <span class="resource-time-inline">上传时间: ${escapeHtml(uploadTime)}</span>
               </div>
               <div class="resource-link-row">
-                <a class="resource-url" href="${escapeHtml(url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
+                <a class="resource-url" data-filename="${escapeHtml(ensureResourceDownloadFileName(it, url))}" href="${escapeHtml(url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
                 <button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>
                 <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(id)}">下载</button>
               </div>

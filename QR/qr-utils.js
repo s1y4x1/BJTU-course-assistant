@@ -75,12 +75,12 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
 }
 
 (async function initDownloadQRTooltips() {
-  window.__linkQrEnabled = false;
+  window.__linkQrEnabled = true;
   try {
     const { linkQrEnabled } = await chrome.storage.local.get(['linkQrEnabled']);
-    window.__linkQrEnabled = linkQrEnabled === true;
+    window.__linkQrEnabled = linkQrEnabled !== false;
   } catch {
-    // Keep the default disabled when storage cannot be read.
+    // Use the default when storage cannot be read.
   }
   if (typeof qrcode !== 'function') return;
 
@@ -89,22 +89,23 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
   if (!tooltip) {
     tooltip = document.createElement('div');
     tooltip.id = TOOLTIP_ID;
-    tooltip.style.cssText = 'position:fixed;z-index:99999;padding:8px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);display:none;pointer-events:none;flex-direction:column;align-items:center;';
+    tooltip.style.cssText = 'position:fixed;z-index:99999;padding:8px;background:#fff;color:#172033;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);display:none;flex-direction:column;align-items:center;gap:8px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;';
     document.body.appendChild(tooltip);
-
-    const qrImg = document.createElement('img');
-    qrImg.style.cssText = 'display:block;width:130px;height:130px;image-rendering:pixelated;';
-    tooltip.appendChild(qrImg);
   }
-
-  const qrImg = tooltip.querySelector('img');
+  const codes = document.createElement('div');
+  codes.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:8px;';
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button'; dismiss.className = 'btn'; dismiss.textContent = '不再显示';
+  dismiss.addEventListener('click', () => chrome.storage.local.set({linkQrEnabled:false}));
+  tooltip.replaceChildren(codes,dismiss);
   let hideTimer = null;
+  let activeLink = null;
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes.linkQrEnabled) return;
       window.__linkQrEnabled = changes.linkQrEnabled.newValue === undefined
-        ? false
+        ? true
         : !!changes.linkQrEnabled.newValue;
       if (!window.__linkQrEnabled) tooltip.style.display = 'none';
     });
@@ -123,18 +124,26 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
     const url = getQrUrl(link);
     if (!url || url === '#' || /^javascript:/i.test(url)) return;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    if (activeLink === link && tooltip.style.display !== 'none') return;
+    activeLink = link;
     const rect = link.getBoundingClientRect();
 
     try {
-      applyQrImageToElement(qrImg, url, 130);
+      codes.replaceChildren();
+      const row = link.closest('.file-item');
+      const name = link.dataset.filename || row?.querySelector('.resource-name,.saved-upload-name,strong')?.textContent || '';
+      const preview = globalThis.BjtuVeFilePreview?.previewUrl(url,name);
+      for (const [label,href] of [['原链接',url],...(preview ? [['在线预览',preview]] : [])]) {
+        const column = document.createElement('div'), title = document.createElement('a'), image = document.createElement('img');
+        column.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;';
+        title.textContent = label; title.href = href; title.target = '_blank'; title.rel = 'noopener noreferrer';
+        image.alt = `${label}二维码`; image.style.imageRendering = 'pixelated';
+        applyQrImageToElement(image, href, 130); column.append(title,image); codes.append(column);
+      }
     } catch (e) {
-      qrImg.alt = 'QR失败';
-      qrImg.style.display = 'none';
-      qrImg.src = '';
       tooltip.style.display = 'none';
       return;
     }
-    qrImg.style.display = 'block';
     tooltip.style.display = 'flex';
     let top = rect.bottom + 8;
     let left = rect.left;
@@ -146,11 +155,17 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
     tooltip.style.top = top + 'px';
     tooltip.style.left = left + 'px';
   };
+  tooltip.addEventListener('mouseenter', () => { clearTimeout(hideTimer); });
+  tooltip.addEventListener('mouseleave', (event) => {
+    if (activeLink?.contains(event.relatedTarget)) return;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => { tooltip.style.display = 'none'; activeLink = null; }, 160);
+  });
 
   const maybeHide = (fromLink, toNode) => {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
     if (toNode && (fromLink.contains(toNode) || (tooltip.style.display !== 'none' && tooltip.contains(toNode)))) return;
-    hideTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 80);
+    hideTimer = setTimeout(() => { tooltip.style.display = 'none'; activeLink = null; }, 160);
   };
 
   document.addEventListener('mouseover', (e) => {

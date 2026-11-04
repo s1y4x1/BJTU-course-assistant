@@ -43,7 +43,8 @@
     const group = Object.keys(groups).find((key) => groups[key].extensions.includes(extension));
     if (!selectedTypes.has(group)) return '';
     const base64 = btoa(Array.from(new TextEncoder().encode(href), (byte) => String.fromCharCode(byte)).join(''));
-    return `http://123.121.147.7:1936/kk/onlinePreview?url=${encodeURIComponent(base64)}`;
+    return global.BjtuVeAddress?.replace(`http://123.121.147.7:1936/kk/onlinePreview?url=${encodeURIComponent(base64)}`)
+      || `http://123.121.147.7:1936/kk/onlinePreview?url=${encodeURIComponent(base64)}`;
   }
 
   function onFileClick(event) {

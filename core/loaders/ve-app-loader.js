@@ -12,7 +12,8 @@
     'modules/ve/homework-core.js',
     'modules/ve/platform.js',
     'modules/ve/session.js',
-    'modules/ve/resource-download.js'
+    'modules/ve/resource-download.js',
+    'modules/ve/header-qr.js'
   ];
 
   global.__bjtuVeAppReady = (async () => {
