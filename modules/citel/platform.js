@@ -370,15 +370,19 @@
     }
   }
 
-  async function login(args = {}) {
-    const version = ++serial;
-    await authenticate(args.username, args.password, version);
+  async function finishLogin(version) {
     if (typeof global.isPlatformEnabled === 'function' && !global.isPlatformEnabled('citel')) {
       global.togglePlatformSelection('citel', { interactive: false });
       await global.platformLoadPromises?.citel;
     } else if (typeof global.triggerExternalPlatformLoad === 'function') {
       await global.triggerExternalPlatformLoad('citel', true);
     } else await load();
+  }
+
+  async function login(args = {}) {
+    const version = ++serial;
+    await authenticate(args.username, args.password, version);
+    await finishLogin(version);
     return { loggedIn: global.platformLoginState?.citel === 'online', ready: !!global.platformLoadedOnce?.citel, loginState: global.platformLoginState?.citel };
   }
 
@@ -392,6 +396,7 @@
       dialog.innerHTML = `<div class="version-modal-header"><div class="citel-login-title" id="citel-login-title">登录 CITEL</div><button type="button" class="btn version-close-btn" data-citel-cancel aria-label="关闭" title="关闭">×</button></div><div class="platform-qr-login-body citel-login-body"><form class="citel-login-form"><label>用户名<input name="username" autocomplete="username" required value="${escape(stored.citelLoginUsername || stored.citelUsername || '')}"></label><label>密码<input name="password" type="password" autocomplete="current-password" placeholder="留空使用 用户名@Bjtu"></label><p class="citel-login-tip">密码仅用于本次登录，不保存。</p><p class="citel-error" role="alert"></p><button type="submit" class="btn citel-login-submit">登录</button></form></div>`;
       document.body.appendChild(dialog); dialog.showModal();
       dialog.querySelector('input[name="username"]')?.focus();
+      let submitPromise = null;
       await new Promise((resolve) => {
         dialog.addEventListener('close', resolve, { once: true });
         dialog.querySelector('[data-citel-cancel]').addEventListener('click', () => { serial++; dialog.close(); });
@@ -407,18 +412,35 @@
           if (backdropPressed && isBackdrop(event)) { serial++; dialog.close(); }
           backdropPressed = false;
         });
-        dialog.querySelector('form').addEventListener('submit', async (event) => {
-          event.preventDefault(); const button = dialog.querySelector('[type="submit"]');
+        dialog.querySelector('form').addEventListener('submit', (event) => {
+          event.preventDefault();
+          const button = dialog.querySelector('[type="submit"]');
           button.disabled = true;
-          try {
-            const data = new FormData(event.target);
-            const result = await login({ username: data.get('username'), password: data.get('password') });
-            if (!result.loggedIn) throw error('CITEL 登录或加载失败，请重试');
-            dialog.close();
-          } catch (e) { dialog.querySelector('[role="alert"]').textContent = e.message; }
-          finally { button.disabled = false; }
+          submitPromise = (async () => {
+            let authenticated = false;
+            try {
+              const data = new FormData(event.target);
+              const version = ++serial;
+              await authenticate(data.get('username'), data.get('password'), version);
+              authenticated = true;
+              // Authentication is the point the user is waiting for; loading the
+              // course list continues in the background after the dialog closes.
+              dialog.close();
+              await finishLogin(version);
+            } catch (e) {
+              if (!authenticated) {
+                if (dialog.isConnected) {
+                  dialog.querySelector('[role="alert"]').textContent = e.message;
+                  button.disabled = false;
+                }
+              } else {
+                env?.toast?.(e.message, 'error', 4500);
+              }
+            }
+          })();
         });
       });
+      await submitPromise;
       dialog.remove(); loginDialog = null;
     })().finally(() => { loginPromise = null; });
     return loginPromise;
