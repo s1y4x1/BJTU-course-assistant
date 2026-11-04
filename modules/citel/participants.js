@@ -120,15 +120,70 @@
 
   function renderEntrances(courseId) {
     const id = escape(courseId);
+    const cached = cache.get(String(courseId ?? ''));
+    const triggerText = (kind) => {
+      const label = kind === 'teachers' ? '教师' : '学生';
+      return cached ? `${cached[kind].length} ${label}` : label;
+    };
     return `<div class="citel-participants-entries">${['teachers', 'students'].map((kind) => {
-      const label = kind === 'teachers' ? '老师' : '学生';
-      return `<span class="citel-participants-wrap" data-citel-participants="${kind}" data-course-id="${id}"><button type="button" class="citel-participants-trigger" aria-expanded="false">${label}</button><span class="citel-participants-pop" role="region" aria-label="${label}列表" hidden><span class="citel-participants-status" role="status">悬停加载${label}列表…</span></span></span>`;
-    }).join('<span aria-hidden="true">·</span>')}</div>`;
+      const label = kind === 'teachers' ? '教师' : '学生';
+      return `<span class="citel-participants-wrap" data-citel-participants="${kind}" data-course-id="${id}"><button type="button" class="citel-participants-trigger" aria-expanded="false">${triggerText(kind)}</button><span class="citel-participants-pop" role="region" aria-label="${label}列表" hidden><span class="citel-participants-status" role="status">悬停加载${label}列表…</span></span></span>`;
+    }).join('<span class="citel-participants-sep" aria-hidden="true">·</span>')}</div>`;
+  }
+
+  // Both counts come from the same participants payload, so show them together
+  // instead of updating only the hovered button.
+  function updateCounts(container, result) {
+    if (!container) return;
+    for (const kind of ['teachers', 'students']) {
+      const button = container.querySelector(`[data-citel-participants="${kind}"] .citel-participants-trigger`);
+      if (button) button.textContent = `${result[kind].length} ${kind === 'teachers' ? '教师' : '学生'}`;
+    }
+  }
+
+  // Moodle prints relative access times such as "1 天 13 小时" or "从未". A
+  // smaller number means a more recent visit, so ascending order is 由近到远.
+  function lastAccessRank(value) {
+    const raw = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!raw) return Number.POSITIVE_INFINITY;
+    if (/现在|刚刚|just\s*now|now/i.test(raw)) return 0;
+    if (/从未|never|无(?:访问|记录)/i.test(raw)) return Number.POSITIVE_INFINITY;
+    const units = { 年: 31536000, 个月: 2592000, 月: 2592000, 周: 604800, 天: 86400, 小时: 3600, 分钟: 60, 秒: 1 };
+    const english = { year: 31536000, month: 2592000, week: 604800, day: 86400, hour: 3600, minute: 60, second: 1 };
+    const pattern = /(\d+)\s*(个月|月|年|周|天|小时|分钟|秒|years?|months?|weeks?|days?|hours?|minutes?|seconds?)/gi;
+    let total = 0;
+    let matched = false;
+    for (const match of raw.matchAll(pattern)) {
+      const unit = match[2].toLowerCase();
+      const seconds = units[unit] ?? english[unit.replace(/s$/, '')];
+      if (!seconds) continue;
+      matched = true;
+      total += Number(match[1]) * seconds;
+    }
+    return matched ? total : Number.POSITIVE_INFINITY;
   }
 
   function tableHtml(items) {
     if (!items.length) return '<span class="citel-participants-status">暂无参与者</span>';
-    return `<table><thead><tr><th>姓名</th><th>角色</th><th>组</th><th>最后访问</th></tr></thead><tbody>${items.map((item) => `<tr><td><a href="${escape(item.profileURL)}" target="_blank" rel="noopener noreferrer">${escape(item.name)}</a></td><td>${escape(item.role) || '—'}</td><td>${escape(item.group) || '—'}</td><td>${escape(item.lastAccess) || '—'}</td></tr>`).join('')}</tbody></table>`;
+    const groups = new Map();
+    for (const item of items) {
+      const group = item.group || '—';
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(item);
+    }
+    const ordered = [...groups.entries()].map(([group, members]) => {
+      members.sort((a, b) => lastAccessRank(a.lastAccess) - lastAccessRank(b.lastAccess)
+        || a.name.localeCompare(b.name, 'zh-CN'));
+      return { group, members, rank: lastAccessRank(members[0].lastAccess) };
+    }).sort((a, b) => a.rank - b.rank || a.group.localeCompare(b.group, 'zh-CN'));
+    const rows = [];
+    for (const { group, members } of ordered) {
+      members.forEach((item, index) => {
+        const groupCell = index === 0 ? `<td rowspan="${members.length}">${escape(group)}</td>` : '';
+        rows.push(`<tr><td><a href="${escape(item.profileURL)}" target="_blank" rel="noopener noreferrer">${escape(item.name)}</a></td>${groupCell}<td>${escape(item.lastAccess) || '—'}</td></tr>`);
+      });
+    }
+    return `<table><thead><tr><th>姓名</th><th>小组</th><th>最近课程访问</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
   }
 
   function bind(root) {
@@ -161,15 +216,15 @@
         active = true;
         const token = ++attempt;
         pop.hidden = false; trigger.setAttribute('aria-expanded', 'true');
-        pop.innerHTML = '<span class="citel-participants-status" role="status">正在加载…</span>';
+        pop.innerHTML = '<span class="citel-participants-status" role="status"><span class="spinner" aria-hidden="true"></span>正在加载参与人…</span>';
         position();
         global.addEventListener('resize', position);
         global.addEventListener('scroll', position, true);
         try {
           const result = await load(wrap.dataset.courseId);
+          updateCounts(wrap.parentElement, result);
           if (!active || token !== attempt) return;
           pop.innerHTML = tableHtml(result[kind]);
-          trigger.textContent = `${kind === 'teachers' ? '老师' : '学生'} (${result[kind].length})`;
         } catch (e) {
           if (!active || token !== attempt) return;
           pop.innerHTML = `<span class="citel-participants-status citel-participants-error" role="status">${escape(e.message)}；移开后重新悬停重试</span>`;
@@ -180,7 +235,21 @@
       const leave = () => { closeTimer = setTimeout(() => { if (!wrap.contains(document.activeElement)) hide(); }, 120); };
       const focusout = (event) => { if (!wrap.contains(event.relatedTarget)) hide(); };
       const keydown = (event) => { if (event.key === 'Escape') { hide(); event.stopPropagation(); } };
-      const reset = () => { hide(); trigger.textContent = kind === 'teachers' ? '老师' : '学生'; pop.innerHTML = ''; };
+      const reset = () => {
+        hide();
+        const container = wrap.parentElement;
+        if (container) {
+          container.querySelectorAll('[data-citel-participants]').forEach((node) => {
+            const button = node.querySelector('.citel-participants-trigger');
+            if (button) button.textContent = node.dataset.citelParticipants === 'teachers' ? '教师' : '学生';
+            const box = node.querySelector('.citel-participants-pop');
+            if (box) box.innerHTML = '';
+          });
+        } else {
+          trigger.textContent = kind === 'teachers' ? '教师' : '学生';
+          pop.innerHTML = '';
+        }
+      };
       const dispose = () => {
         hide();
         wrap.removeEventListener('mouseenter', show); wrap.removeEventListener('mouseleave', leave);
