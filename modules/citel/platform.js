@@ -228,7 +228,7 @@
     env?.courseList?.querySelectorAll('.citel-standalone-card, .citel-login-notice').forEach((n) => n.remove());
     if (env?.courseList) global.BjtuCitelParticipants?.bind(env.courseList);
   }
-  const formatTime = (value) => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '无期限';
+  const formatTime = (value) => value ? new Date(value).toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai', hour12: false }) : '无期限';
 
   function renderTask(task, course) {
     const state = status(task);
