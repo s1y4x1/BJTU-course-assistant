@@ -28,6 +28,11 @@
   chrome.runtime.onInstalled.addListener(() => { void reconcile().catch(report); });
   chrome.runtime.onMessage.addListener((message,sender,respond) => {
     if (sender.id !== chrome.runtime.id) return false;
+    if (message?.type === 'BJTU_CHATROOM_OPTIONS_STATUS') {
+      void chrome.runtime.sendMessage({type:'BJTU_CHATROOM_ENGINE_DISCOVER'}).then(
+        result => respond(result),() => respond({discoveryStatus:'disconnected'}));
+      return true;
+    }
     if (message?.type === 'BJTU_CHATROOM_OPTIONS_ACTION') {
       const actions = new Set(['settings','remark','conversation-remark','block','friend-request','friend-response','friend-delete',
         'conversation-mute','conversation-clear','conversation-delete','group-create','group-invite','group-response','group-leave',

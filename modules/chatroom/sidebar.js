@@ -294,7 +294,7 @@
 
     async function disconnect() {
       if (onDisconnect) await onDisconnect();
-      else await global.BjtuChatroomLink?.close();
+      else await mutate('close');
       $('pair-output').value = ''; $('pair-input').value = '';
       $('pair-status').textContent = '已断开。可重新生成邀请或点击刷新发现。';
       scheduleState();
@@ -303,7 +303,7 @@
     $('scan').disabled = true; $('discovery-status').textContent = '正在连接在线信令服务…';
     try {
       const result = await action('scan');
-      if (!destroyed) setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'connected', result?.deviceId);
+      if (!destroyed) setServerStatus(result?.discoveryStatus || global.BjtuChatroomLink?.discoveryStatus || 'connected', result?.deviceId);
     } catch (error) {
       if (!destroyed) { setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected'); $('discovery-status').textContent = error.message; report(error); }
     }
