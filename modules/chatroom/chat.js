@@ -39,6 +39,7 @@
   let capture = null, sharingPending = false, memoryReserved = 0;
   const sessions = new Map(), transferHistory = [], drafts = new Map(), scrollPositions = new Map();
   const mediaMessages = new Map();
+  const savedPreviews = new Map();
   const messageNodes = new Map();
   const pendingSignals = new Map(), closedSessions = new Map();
   globalThis.BjtuChatroomEngineLease?.setCanYield(() => !sessions.size && !pendingSignals.size && !statePromise && !stateTimer);
@@ -105,6 +106,7 @@
   }
   async function action(name, args = {}) {
     if (!transport || !online) throw new Error('连接引擎尚未就绪，请稍后重新连接。');
+    if (name === 'scan') backgroundMode?.resumeReconnect?.();
     const result = await transport.action(name, args);
     if (result?.ok === false || result?.error) throw new Error(typeof result.error === 'string' ? result.error : result.error?.message || '操作被连接引擎拒绝。');
     return result;
@@ -118,11 +120,14 @@
   function bounded(items, max) { return Array.isArray(items) ? items.slice(-max) : []; }
   function mergeState(value) {
     if (!value || typeof value !== 'object') return;
+    const previousMessages = state.messages;
     const source = value.state || value;
     for (const key of ['self', 'settings', 'conversations']) if (source[key]) state[key] = { ...source[key] };
     for (const [key, max] of Object.entries({ peers: LIMIT.peers, rooms: LIMIT.rooms, messages: LIMIT.messages, requests: LIMIT.requests })) {
       if (Array.isArray(source[key])) state[key] = bounded(source[key], max);
     }
+    const retained = new Set(state.messages.map(m => m.id));
+    for (const message of previousMessages) if (!retained.has(message.id) && mediaMessages.has(message.id)) removeLocalMedia(mediaMessages.get(message.id));
     for (const s of [...sessions.values()]) if (!permitted(s.peerId)) endSession(s, '对方已被屏蔽或不符合好友策略', true);
     renderState();
   }
@@ -301,7 +306,14 @@
     return el;
   }
   function renderMessages() {
+    for (const [id, task] of savedPreviews) {
+      if (task.conversationId !== selected || !state.messages.some(m => m.id === id)) {
+        releaseResources(task); savedPreviews.delete(id);
+      }
+    }
     for (const message of mediaMessages.values()) {
+      if (message.conversationId !== selected) for (const task of message.sessions.values()) releasePreview(task);
+      else for (const task of message.sessions.values()) if (task.outgoing && task.previewSource && !message.preview) void previewFile(task, task.previewSource).catch(report);
       const header = message.card.querySelector(':scope > .message-author');
       if (header) {
         const name = header.querySelector('.message-author-name');
@@ -329,8 +341,14 @@
         el.classList.remove('mine'); el.classList.add('system');
         content.textContent = message.text; el.append(content);
       } else {
-        content.innerHTML = markdown.parse(String(message.text || '').slice(0, 8000));
+        if (message.file) content.append(document.createTextNode(message.file.name + ' · '), styledBytes(message.file.size));
+        else content.innerHTML = markdown.parse(String(message.text || '').slice(0, 8000));
         el.append(messageHeader(message.senderId, message.createdAt), content);
+      }
+      if (message.file && message.fileHandleRef) {
+        addSavedFileAction(el, message);
+        const task = savedPreviews.get(message.id);
+        if (task) { task.card = el; if (task.preview) el.append(task.preview); }
       }
       if (message.senderId === state.self.id && message.delivery) {
         const status = {queued:'等待连接恢复后自动重试…',sending:'正在发送…',rejected:'发送被拒绝',withdrawn:'已取消未送达的发送'}[message.status];
@@ -359,6 +377,22 @@
     else if (nearBottom) container.scrollTop = container.scrollHeight;
     else if (anchor?.el.isConnected) container.scrollTop = oldTop + anchor.el.getBoundingClientRect().top - anchorOffset;
     else container.scrollTop = Math.max(0, oldTop + container.scrollHeight - oldHeight);
+  }
+  function addSavedFileAction(card, message) {
+    const view = button('查看文件', async () => {
+      if (card.querySelector(':scope > .file-preview')) return;
+      view.disabled = true;
+      const task = {name:message.file.name, conversationId:message.conversationId, card,
+        message:{id:message.id}, chunks:[]};
+      savedPreviews.set(message.id, task);
+      try {
+        const file = await globalThis.BjtuChatroomSettings.loadReceivedFile(message.fileHandleRef, true);
+        if (savedPreviews.get(message.id) !== task || stopped || selected !== task.conversationId) return;
+        await previewFile(task, file);
+      } catch (error) { report(error); }
+      finally { view.disabled = false; }
+    }, 'secondary file-view');
+    card.append(view);
   }
   // Each file/screen has its own PC and unpredictable session id.
   function signal(s, kind, extra = {}) { return action('signal', { peerId: s.peerId, payload: { protocol: PROTOCOL, sid: s.id, kind, ...extra } }); }
@@ -723,8 +757,21 @@
     if (s.done !== s.size || s.queued) throw new Error('文件不完整，已取消保存。');
     let file;
     if (s.writer) {
-      await s.writer.close(); s.writer = null; if (s.ended) return;
-      file = await s.handle.getFile();
+      await s.writer.close(); s.writer = null; s.saved = true; if (s.ended) return;
+      // A closed writer is the durability boundary. Never store file bytes in
+      // extension storage; only the local IndexedDB handle and small metadata.
+      let ref;
+      try {
+        ref = await globalThis.BjtuChatroomSettings.saveReceivedFile(s.message.id, s.handle);
+        const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref};
+        await mutate('media-file-saved', metadata);
+        Object.assign(s.message, metadata);
+        addSavedFileAction(s.card, s.message);
+      } catch (error) {
+        if (ref) await globalThis.BjtuChatroomSettings.removeReceivedFile(ref).catch(report);
+        report(new Error('文件已保存，但保存历史引用失败：' + error.message));
+      }
+      file = await s.handle.getFile().catch(error => { report(error); return null; });
     }
     else {
       const blob = new Blob(s.chunks, { type: previewType(s.name) || 'application/octet-stream' });
@@ -760,7 +807,8 @@
   function previewType(name) { return PREVIEW_TYPES[String(name).split('.').pop().toLowerCase()] || ''; }
   async function previewFile(s, file) {
     if (background) return;
-    if (!file || !s.card || s.message.preview || stopped) return;
+    if (!file || !s.card || s.message.preview || stopped || s.conversationId !== selected) return;
+    if (s.outgoing) s.previewSource = file;
     const ext = s.name.split('.').pop().toLowerCase(), type = previewType(s.name);
     const preview = node('div', undefined, 'file-preview'); s.preview = preview; s.message.preview = preview;
     if (type) {
@@ -778,43 +826,56 @@
     } else if (TEXT_EXTENSIONS.has(ext)) {
       // Plain text is never interpreted as HTML or executable code.
       const max = 256 * 1024, text = await file.slice(0, max).text();
-      if (stopped || !mediaMessages.has(s.message.id)) return;
+      if (!previewCurrent(s, preview)) return;
       if (ext === 'md') {
         const content = node('div', undefined, 'message-text bjtu-markdown');
         content.innerHTML = markdown.parse(text); preview.append(content);
       } else preview.append(node('pre', text));
       if (file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
     } else {
-      s.previewURL = URL.createObjectURL(file);
+      s.previewURL = URL.createObjectURL(file.slice(0, file.size, 'application/octet-stream'));
       const open = button('打开', () => window.open(s.previewURL, '_blank', 'noopener,noreferrer'), 'secondary file-open');
       preview.append(open);
     }
-    if (stopped || !mediaMessages.has(s.message.id)) return;
+    if (!previewCurrent(s, preview)) { if (s.preview === preview) releasePreview(s); return; }
     const nearBottom = $('messages').scrollHeight - $('messages').clientHeight - $('messages').scrollTop < 64;
     s.card.append(preview);
     if (nearBottom) $('messages').scrollTop = $('messages').scrollHeight;
   }
+  function previewCurrent(s, preview) {
+    return !stopped && s.preview === preview && s.conversationId === selected &&
+      (savedPreviews.get(s.message.id) === s || mediaMessages.get(s.message.id) === s.message);
+  }
   async function discardPartialDownload(s) {
     if (s.writer) { const writer = s.writer; s.writer = null; await writer.abort().catch(() => {}); }
-    if (s.autoSaved && !s.completed && s.downloads && s.filename) {
+    if (s.autoSaved && !s.completed && !s.saved && s.downloads && s.filename) {
       await s.downloads.removeEntry(s.filename).catch(() => {});
     }
   }
-  function releaseResources(s) {
-    if (s.url) { URL.revokeObjectURL(s.url); s.url = null; }
+  function releasePreview(s) {
     if (s.previewURL) { URL.revokeObjectURL(s.previewURL); s.previewURL = null; }
     if (s.message?.preview === s.preview) s.message.preview = null;
     s.preview?.remove(); s.preview = null;
+  }
+  function releaseResources(s) {
+    s.previewSource = null;
+    if (s.url) { URL.revokeObjectURL(s.url); s.url = null; }
+    releasePreview(s);
     if (s.reserved) { memoryReserved -= s.reserved; s.reserved = 0; }
     s.chunks.length = 0;
   }
   function clearLocalMedia(conversationId) {
+    for (const [id, task] of savedPreviews) if (task.conversationId === conversationId) { releaseResources(task); savedPreviews.delete(id); }
     for (const message of [...mediaMessages.values()]) {
       if (message.conversationId !== conversationId) continue;
-      for (const task of message.sessions.values()) { endSession(task, '会话记录已清空', true); releaseResources(task); }
-      mediaMessages.delete(message.id); message.card.remove();
-      const index = transferHistory.indexOf(message); if (index >= 0) transferHistory.splice(index,1);
+      removeLocalMedia(message);
     }
+  }
+  function removeLocalMedia(message) {
+    mediaMessages.delete(message.id);
+    for (const task of message.sessions.values()) { endSession(task, '会话记录已清空', true); releaseResources(task); }
+    message.card.remove();
+    const index = transferHistory.indexOf(message); if (index >= 0) transferHistory.splice(index,1);
   }
   function archiveMediaMessage(message) {
     if (!message || message.archived || message.sessions.size < message.plannedCount ||
@@ -948,6 +1009,7 @@
   listen('messages', 'click', editMessageAuthor);
   listen('messages', 'keydown', event => { if (event.key === 'Enter' || event.key === ' ') editMessageAuthor(event); });
   async function disconnect() {
+    backgroundMode?.pauseReconnect?.();
     await globalThis.BjtuChatroomLink?.close();
     stopCapture(); for (const s of [...sessions.values()]) endSession(s, '连接已断开');
     $('pair-output').value = ''; $('pair-input').value = '';
@@ -991,6 +1053,8 @@
     unsubscribe = null; stopCapture();
     for (const s of [...sessions.values()]) endSession(s, '页面已关闭');
     for (const message of transferHistory) for (const s of message.sessions.values()) releaseResources(s);
+    for (const task of savedPreviews.values()) releaseResources(task);
+    savedPreviews.clear();
     pendingSignals.clear(); closedSessions.clear(); drafts.clear(); scrollPositions.clear(); mediaMessages.clear();
     sidebar.destroy();
   }, { once: true });
@@ -1009,6 +1073,7 @@
   await sidebar.ready;
   renderState(); connectionStatus(false);
   await attachTransport();
+  backgroundMode?.markReady();
   if (embedded) parent.postMessage({type:'BJTU_CHATROOM_WINDOW_READY'},location.origin);
   const requestedConversation = new URLSearchParams(location.search).get('conversation');
   if (requestedConversation) chooseConversation(requestedConversation);

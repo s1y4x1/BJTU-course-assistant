@@ -3,8 +3,51 @@
   const defaults = Object.freeze({
     chatroomSignalingUrl: 'ws://127.0.0.1:1897/chatroom',
     chatroomAutoSaveEnabled: true,
-    chatroomAutoSaveMaxBytes: 100000000
+    chatroomAutoSaveMaxBytes: 100000000,
+    chatroomNotifyNewMessages: true,
+    chatroomBackgroundEnabled: true,
+    chatroomBackgroundReceiveFiles: true,
+    chatroomAutoReconnectEnabled: true,
+    chatroomReconnectIntervalSeconds: 5
   });
+  const preferenceKeys = ['chatroomNotifyNewMessages', 'chatroomBackgroundEnabled', 'chatroomBackgroundReceiveFiles', 'chatroomAutoReconnectEnabled'];
+  const filePrefix = 'chatroom-file:';
+  async function fileHandleEntry(key, operation, handle) {
+    if (!key.startsWith(filePrefix)) throw new Error('无效本地文件引用。');
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('BJTUCA-FileSystem', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('handles');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction('handles', operation === 'get' ? 'readonly' : 'readwrite');
+        const store = tx.objectStore('handles');
+        const request = operation === 'put' ? store.put(handle, key) : store[operation](key);
+        tx.oncomplete = () => resolve(request.result);
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error('无法保存本地文件引用。'));
+      });
+    } finally { db.close(); }
+  }
+  async function saveReceivedFile(messageId, handle) {
+    const key = filePrefix + messageId;
+    await fileHandleEntry(key, 'put', handle);
+    return key;
+  }
+  async function loadReceivedFile(key, requestPermission = false) {
+    const handle = await fileHandleEntry(key, 'get');
+    if (!handle) throw new Error('本地文件引用已丢失或已清除，无法查看文件。');
+    let permission = await handle.queryPermission({mode: 'read'});
+    if (permission !== 'granted' && requestPermission) permission = await handle.requestPermission({mode: 'read'});
+    if (permission !== 'granted') throw new Error('本地文件读取权限未授予或已撤销，请重新授权后查看。');
+    try { return await handle.getFile(); }
+    catch (error) {
+      if (error.name === 'NotFoundError') throw new Error('本地文件已移动或删除，无法查看文件。');
+      if (error.name === 'NotAllowedError') throw new Error('本地文件读取权限已撤销，请重新授权后查看。');
+      throw error;
+    }
+  }
   const units = ['B', 'KB', 'MB', 'GB'];
   function normalizeLimit(text, unit) {
     if (String(text).trim() === '') return null;
@@ -93,6 +136,10 @@
       await chrome.storage.local.set({chatroomSignalingUrl: defaults.chatroomSignalingUrl});
     }
     function render() {
+      for (const key of preferenceKeys) $(key).checked = values[key] !== false;
+      $('chatroomBackgroundReceiveFiles').disabled = values.chatroomBackgroundEnabled === false;
+      $('chatroomReconnectIntervalSeconds').disabled = values.chatroomAutoReconnectEnabled === false;
+      if (!dirty.has('reconnect')) $('chatroomReconnectIntervalSeconds').value = values.chatroomReconnectIntervalSeconds;
       if (!dirty.has('url')) $('chatroomSignalingUrl').value = values.chatroomSignalingUrl;
       $('chatroomAutoSaveEnabled').checked = values.chatroomAutoSaveEnabled !== false;
       if (!dirty.has('limit')) {
@@ -137,6 +184,22 @@
     $('chatroomAutoSaveEnabled').addEventListener('change', event => {
       void save({chatroomAutoSaveEnabled: event.target.checked});
     }, {signal: abort.signal});
+    for (const key of preferenceKeys) $(key).addEventListener('change', event => {
+      if (key === 'chatroomBackgroundEnabled') $('chatroomBackgroundReceiveFiles').disabled = !event.target.checked;
+      if (key === 'chatroomAutoReconnectEnabled') $('chatroomReconnectIntervalSeconds').disabled = !event.target.checked;
+      void save({[key]: event.target.checked});
+    }, {signal: abort.signal});
+    $('chatroomReconnectIntervalSeconds').addEventListener('input', () => {
+      markDirty('reconnect'); $('chatroomReconnectIntervalSeconds').setCustomValidity('');
+    }, {signal: abort.signal});
+    $('chatroomReconnectIntervalSeconds').addEventListener('change', () => {
+      const input = $('chatroomReconnectIntervalSeconds'), seconds = Number(input.value);
+      if (input.validity.badInput || !Number.isFinite(seconds) || seconds < 0.1 || seconds > 60 || Math.abs(seconds * 10 - Math.round(seconds * 10)) > 1e-8) {
+        const message = '重连间隔必须为 0.1 至 60 秒，步长为 0.1 秒。';
+        input.setCustomValidity(message); report(new Error(message)); return;
+      }
+      input.setCustomValidity(''); void save({chatroomReconnectIntervalSeconds: seconds}, 'reconnect');
+    }, {signal: abort.signal});
     $('chatroomAuthorizeDownloads').addEventListener('click', () => {
       authorize().then(async () => {
         await refreshAuthorization();
@@ -154,5 +217,6 @@
     await refreshAuthorization();
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
-  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload};
+  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload,
+    saveReceivedFile, loadReceivedFile, removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);

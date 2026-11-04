@@ -38,6 +38,7 @@
 (() => {
   'use strict';
   const G = globalThis, KEY = 'chatroomState', PROTOCOL = 'bjtu-chatroom-v1';
+  const passiveOptions = !!G.location && !G.location.pathname.endsWith('/modules/chatroom/chat.html');
   const MAX = { peers: 500, rooms: 100, requests: 100, messages: 600, historyBytes: 2 * 1024 * 1024, seen: 2048, packet: 262144, members: 100 };
   const encoder = new TextEncoder(), listeners = new Set(), keyCache = new Map();
   const domainTypes = new Set(['profile', 'message', 'message-result', 'peer-policy', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-invite-request', 'group-state', 'group-leave']);
@@ -114,6 +115,28 @@
     queue = task.catch(() => {});
     return task;
   }
+  async function evictFileHandles(previous) {
+    const keep = new Set(data.messages.map(m => m.fileHandleRef));
+    const removed = [...new Set(previous.map(m => m.fileHandleRef).filter(key =>
+      typeof key === 'string' && key.startsWith('chatroom-file:') && !keep.has(key)))];
+    if (!removed.length) return;
+    let db;
+    try {
+      db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('BJTUCA-FileSystem', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('handles');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('handles', 'readwrite'), store = tx.objectStore('handles');
+        for (const key of removed) store.delete(key);
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error);
+      });
+    } catch (error) { emit({type:'error', error:'清理本地文件引用失败：' + (error?.message || '存储不可用')}); }
+    finally { db?.close(); }
+  }
   async function commit(fn) {
     return serial(() => locked(async () => {
       const stored = (await storage.get(KEY))[KEY];
@@ -122,6 +145,7 @@
       try {
         const result = await fn(effects);
         await save();
+        await evictFileHandles(before.messages);
         emit({ type: 'state', state: snapshot() });
         if (result?.event) emit(result.event);
         return { result, effects };
@@ -297,6 +321,7 @@
       privateKey = pair.privateKey;
       data = { schema: 1, identity: { privateKey: await crypto.subtle.exportKey('jwk', pair.privateKey), publicKey: await crypto.subtle.exportKey('jwk', pair.publicKey) }, settings: { nickname: '', requireFriend: false, invitePolicy: 'ask' }, peers: [], rooms: [], requests: [], outgoing: [], messages: [], seen: [] };
     }
+    const previousMessages = Array.isArray(data.messages) ? data.messages.slice() : [];
     for (const [name, limit] of Object.entries({ peers: MAX.peers, rooms: MAX.rooms, requests: MAX.requests, outgoing: MAX.requests, messages: MAX.messages, seen: MAX.seen })) {
       if (!Array.isArray(data[name])) fail('聊天室存储数据损坏，未覆盖原数据。');
       data[name] = data[name].slice(-limit);
@@ -309,17 +334,20 @@
     await importIdentity(publicIdentity);
     const proof = encoder.encode('bjtu-chatroom-identity-check');
     if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, proof), proof)) fail('持久身份密钥不匹配。');
-    data.peers.forEach((p) => { p.online = false; });
+    if (!passiveOptions) data.peers.forEach((p) => { p.online = false; });
     data.receipts ||= [];
-    for (const m of data.messages) if (m.delivery) {
+    for (const m of data.messages) if (!passiveOptions && m.delivery) {
       for (const d of Object.values(m.delivery)) if (d.status === 'sending') { d.status = 'queued'; d.nextRetryAt = 0; }
       messageStatus(m);
     }
     trimHistory();
-    await save();
+    if (!stored || !passiveOptions) {
+      await save();
+      await evictFileHandles(previousMessages);
+    }
   }
   const ready = locked(initialize);
-  ready.then(() => { retryTimer = setInterval(() => void flushOutbox(), 1000); retryTimer.unref?.(); }).catch(() => {});
+  ready.then(() => { if (!passiveOptions) { retryTimer = setInterval(() => void flushOutbox(), 1000); retryTimer.unref?.(); } }).catch(() => {});
   // Attach a handler without changing the rejecting ready Promise exposed to callers.
   ready.catch((error) => emit({ type: 'error', error: error.message }));
   const onStorageChanged = (changes, area) => {
@@ -330,7 +358,7 @@
       emit({ type: 'state', state: snapshot() });
       return nickname !== publicIdentity.nickname;
     }).then(changed => {
-      if (!changed) return;
+      if (!changed || passiveOptions) return;
       return deliver(linkedPeers().map(peerId => ({peerId, type:'profile', payload:{}})));
     }).catch(error => emit({ type: 'error', error: error.message }));
   };
@@ -440,6 +468,16 @@
         if (!data.messages.some(message => message.id === messageId)) history({
           id: messageId, senderId, conversationId, text: str(args.text, 240), createdAt: Date.now(), media: true
         });
+        return {};
+      }
+      case 'media-file-saved': {
+        const message = data.messages.find(m => m.id === str(args.id, 201));
+        if (!message?.media || message.senderId === publicIdentity.id) fail('接收文件记录已清除或无效。');
+        const name = str(args.file?.name, 180), size = args.file?.size;
+        if (!Number.isSafeInteger(size) || size < 0 || args.fileHandleRef !== 'chatroom-file:' + message.id) fail('无效本地文件记录。');
+        message.file = {name, size}; message.fileHandleRef = args.fileHandleRef;
+        trimHistory();
+        if (!data.messages.includes(message)) fail('文件记录超出历史记录上限。');
         return {};
       }
       case 'settings': {

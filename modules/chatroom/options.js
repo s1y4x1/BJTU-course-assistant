@@ -1,10 +1,9 @@
 (function(global) {
   'use strict';
-  const defaults = { chatroomFullscreenButtonEnabled:true, chatroomNotifyNewMessages:true };
+  const defaults = { chatroomFullscreenButtonEnabled:true };
   const instances = new WeakMap();
   function render(root, values) {
-    root.querySelector('#chatroomFullscreenButtonEnabled').checked = values.chatroomFullscreenButtonEnabled !== false;
-    root.querySelector('#chatroomNotifyNewMessages').checked = values.chatroomNotifyNewMessages !== false;
+    for (const key of Object.keys(defaults)) root.querySelector('#'+key).checked = values[key] !== false;
   }
   async function init({setMessage = (text, ok) => global.BjtuOptionsMessage?.show(text, ok)} = {}) {
     const root = document.querySelector('.chatroom-options-card[data-options-fragment]');
