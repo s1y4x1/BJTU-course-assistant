@@ -6,7 +6,10 @@
 .citel-participants-pop[hidden] { display:none; }
 .citel-participants-pop table { border-collapse:collapse; width:max-content; table-layout:auto; }
 .citel-participants-pop th, .citel-participants-pop td { padding:4px 6px; border:1px solid #94a3b8; text-align:left; vertical-align:middle; white-space:nowrap; }
+.citel-participants-pop tbody td:first-child a { color:#F98012; }
+.citel-participants-pop tbody td:first-child a:hover { color:#c86400; }
 .citel-participants-pop th { background:#f8fafc; color:#334155; font-weight:700; }
+.citel-participants-status .spinner { margin:0 6px 0 0; }
 .citel-participants-status { display:block; max-width:min(360px, calc(100vw - 48px)); white-space:normal; overflow-wrap:anywhere; color:var(--text-secondary, #64748b); }
 .citel-participants-error { color:#b45309; }
 html[data-color-scheme="dark"] .citel-participants-pop { background:rgba(15,23,42,.75); color:#e5e7eb; border-color:#334155; }
