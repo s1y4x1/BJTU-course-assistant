@@ -328,6 +328,8 @@ function uploadFile(file, fileId, job) {
   const failUpload = (message, code = '') => {
     job.cancelled = true;
     veDuplicateDialog?.remove(job);
+    if (window.filesData[fileId]) { delete window.filesData[fileId]; updateTotalProgress(); }
+    if (/上传文件类型不支持/.test(String(message))) compressChoice.style.display = 'inline-flex';
     if (completionSettled) return;
     completionSettled = true;
     rejectCompletion(Object.assign(new Error(String(message || '上传失败')), { code: String(code || '') }));
@@ -342,13 +344,14 @@ function uploadFile(file, fileId, job) {
           <input type="checkbox" class="submit-file-check" data-file-id="${fileId}">
           <span class="upload-select-caption">作为作业附件</span>
         </label>
-        <strong>${file.name}</strong>
+        <strong>${escapeHtml(file.name)}</strong>
         <span class="inline-status" style="font-size:12px; margin-left:8px; color:#6b7280;">排队中…</span>
         <span class="size-progress" style="margin-left:5px;">(${renderFileSizePair(0, file.size)})</span>
         <span class="speed-display" style="font-size:12px; color:#666; margin-left:10px;"></span>
         <span class="eta-display" style="font-size:12px; color:#6b7280; margin-left:10px;"></span>
       </div>
       <div>
+        <label class="compress-upload-choice" style="display:none;align-items:center;gap:4px;margin-right:5px;"><input class="compress-upload-check" type="checkbox" style="width:auto;">压缩</label>
         <button class="btn retry-btn" style="padding:2px 8px; font-size:12px; background-color:#2196F3; display:none; margin-right:5px;">重试</button>
         <button class="btn cancel-btn" style="padding:2px 8px; font-size:12px; background-color:#f44336;">取消</button>
       </div>
@@ -361,6 +364,8 @@ function uploadFile(file, fileId, job) {
   const inlineStatus = item.querySelector('.inline-status');
   const cancelBtn = item.querySelector('.cancel-btn');
   const retryBtn = item.querySelector('.retry-btn');
+  const compressChoice = item.querySelector('.compress-upload-choice');
+  const compressCheck = item.querySelector('.compress-upload-check');
   const speedDisplay = item.querySelector('.speed-display');
   const etaDisplay = item.querySelector('.eta-display');
   const sizeProgressDisplay = item.querySelector('.size-progress');
@@ -490,7 +495,20 @@ function uploadFile(file, fileId, job) {
     }, '登录已失效，请输入账号登录');
   };
 
-  retryBtn.onclick = () => {
+  retryBtn.onclick = async () => {
+    if (compressCheck.checked) {
+      retryBtn.disabled = true; compressCheck.disabled = true;
+      setInlineStatus('正在压缩…');
+      try {
+        const zipped = await globalThis.BjtuVeUploadCommon.zipFile(file);
+        item.remove();
+        // enqueueUploadFile hashes and checks the actual ZIP, including active jobs.
+        enqueueUploadFile(zipped).catch(() => {});
+      } catch(error) {
+        setInlineStatus(`压缩失败：${error?.message || error}`,'error');
+      } finally { retryBtn.disabled = false; compressCheck.disabled = false; }
+      return;
+    }
     if (completionSettled) {
       item.remove();
       enqueueUploadFile(file).catch(() => {});

@@ -171,7 +171,7 @@
     fileList.replaceChildren();
     const rows = selected.map(createFileRow);
     const loadedBytes = selected.map(() => 0);
-    const totalBytes = selected.reduce((sum, file) => sum + file.size, 0);
+    let totalBytes = selected.reduce((sum, file) => sum + file.size, 0);
     let lastProgressTime = Date.now();
     let lastProgressBytes = 0;
     const updateSummary = () => {
@@ -220,6 +220,7 @@
             knownFiles.push({ ...result, sha256 });
           }
         } catch (error) {
+          totalBytes -= selected[index].size; loadedBytes[index] = 0; updateSummary();
           rows[index].state.textContent = String(error?.message || error);
           rows[index].state.classList.add('error');
           throw error;
