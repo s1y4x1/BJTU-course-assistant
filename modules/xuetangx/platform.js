@@ -690,6 +690,11 @@
       delete modal.dataset.pointerStartedOnMask;
       if (shouldClose) cancelQrLogin();
     });
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !modal.classList.contains('show')) return;
+      event.preventDefault();
+      cancelQrLogin();
+    });
     document.body.appendChild(modal);
     return modal;
   }

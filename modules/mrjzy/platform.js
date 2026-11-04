@@ -127,6 +127,11 @@ function ensureMrjzyLoginAssistPopup() {
     }
     delete mask.dataset.pointerStartedOnMask;
   });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !mask.classList.contains('show')) return;
+    event.preventDefault();
+    closeMrjzyLoginAssistPopup(true);
+  });
 
   const qr = mask.querySelector('#mrjzy-login-assist-qr');
   if (qr instanceof HTMLImageElement) {
