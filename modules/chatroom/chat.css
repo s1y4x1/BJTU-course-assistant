@@ -31,6 +31,8 @@
 .chatroom-page .conversation-member { display:inline; min-height:0; padding:0 4px; margin:0 2px 0 0; border:0; background:transparent; color:var(--chat-accent); font:inherit; cursor:pointer; }
 .chatroom-page #conversation-members-toggle { min-height:0; padding:2px 4px; font:inherit; }
 .message-author { cursor:pointer; }
+.message-author-name { color:#172033; font-weight:600; }
+html[data-color-scheme="dark"] .message-author-name { color:#e5e7eb; }
 .message-author:hover { color:var(--chat-accent); }
 .messages { flex:1; min-height:100px; overflow:auto; padding:18px; overscroll-behavior:contain; overflow-anchor:none; }
 .message { padding:10px 12px; max-width:90%; width:fit-content; margin-bottom:12px; border:1px solid var(--chat-line); background:var(--chat-soft); border-radius:10px; overflow-wrap:anywhere; }

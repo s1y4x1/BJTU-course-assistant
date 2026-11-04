@@ -76,7 +76,7 @@
   function nameOf(id) {
     if (id === state.self.id) return state.self.nickname || '我';
     const peer = state.peers.find((p) => p.id === id);
-    return peer?.remark || (peer?.friend ? peer.nickname : peer?.ip) || peer?.nickname || String(id || '未知用户').slice(0, 80);
+    return peer?.remark || peer?.nickname || peer?.ip || String(id || '未知用户').slice(0, 80);
   }
   function safeName(value) { return String(value || '未命名文件').split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '_').replace(/[. ]+$/, '').slice(0, 180) || '未命名文件'; }
   function uuid() { return crypto.randomUUID(); }
@@ -287,7 +287,8 @@
   }
   function messageHeader(senderId, createdAt) {
     const date = new Date(createdAt);
-    const el = node('div', `${nameOf(senderId)} · ${Number.isFinite(date.getTime()) ? date.toLocaleString() : ''}`, 'muted message-author');
+    const el = node('div', undefined, 'muted message-author');
+    el.append(node('strong', nameOf(senderId), 'message-author-name'), document.createTextNode(` · ${Number.isFinite(date.getTime()) ? date.toLocaleString() : ''}`));
     el.dataset.senderId = senderId; el.tabIndex = 0; el.setAttribute('role', 'button');
     el.title = senderId === state.self.id ? '修改昵称' : '修改备注及联系人操作';
     return el;
@@ -296,8 +297,8 @@
     for (const message of mediaMessages.values()) {
       const header = message.card.querySelector(':scope > .message-author');
       if (header) {
-        const text = `${nameOf(message.senderId)} · ${new Date(message.createdAt).toLocaleString()}`;
-        if (header.textContent !== text) header.textContent = text;
+        const name = header.querySelector('.message-author-name');
+        if (name && name.textContent !== nameOf(message.senderId)) name.textContent = nameOf(message.senderId);
       }
     }
     const container = $('messages'), changed = messageConversation !== selected;
@@ -366,6 +367,8 @@
     const completed = items.filter(s => s.completed).length;
     const settled = items.every(s => s.completed || s.ended);
     message.progress.max = total || 1; message.progress.value = total ? done : completed === items.length ? 1 : 0;
+    message.cancel.hidden = settled;
+    if (message.conversationId.startsWith('peer:')) return;
     const parts = [document.createTextNode(`${settled ? (completed === items.length ? '传输完成' : '传输已结束') : '传输中'} · ${items.length} 个接收任务 · `),
       styledBytes(done), document.createTextNode(' / '), styledBytes(total), document.createTextNode(` · ${total ? Math.floor(done / total * 100) : completed === items.length ? 100 : 0}%`)];
     if (!settled) {
@@ -387,24 +390,34 @@
       heading.append(document.createTextNode(' · '), size);
       message.progress = node('progress'); message.progress.className = 'transfer-total-progress';
       message.summary = node('p', undefined, 'muted');
-      message.details = node('details', undefined, 'transfer-details');
-      message.detailsSummary = node('summary', '传输详情'); message.details.append(message.detailsSummary);
+      if (!message.conversationId.startsWith('peer:')) {
+        message.details = node('details', undefined, 'transfer-details');
+        message.detailsSummary = node('summary', '传输详情'); message.details.append(message.detailsSummary);
+      }
       message.cancel = button('取消传输', () => { for (const task of [...message.sessions.values()]) endSession(task, '已取消', true); });
-      message.card.append(heading, message.progress, message.summary, message.cancel, message.details);
+      message.card.append(heading, message.progress, message.summary, message.cancel);
+      if (message.details) message.card.append(message.details);
     }
     if (!s.progress) {
       s.controls?.remove();
-      const transfer = node('div', undefined, 'transfer');
-      s.heading = node('strong'); s.sizeEl = node('span', undefined, 'file-size-emphasis');
-      s.progress = node('progress'); s.progress.max = s.size || 1; s.progress.value = 0;
-      s.info = node('p', undefined, 'muted'); s.controls = node('div', undefined, 'actions');
-      s.cancelButton = button('取消', () => endSession(s, '已取消', true));
-      s.controls.append(s.cancelButton); transfer.append(s.heading, document.createTextNode(' · '), s.sizeEl, s.progress, s.info, s.controls);
-      message.details.append(transfer);
+      if (!message.details) {
+        s.progress = message.progress; s.info = message.summary;
+        s.controls = node('div', undefined, 'actions'); message.card.append(s.controls);
+      } else {
+        const transfer = node('div', undefined, 'transfer');
+        s.heading = node('strong'); s.sizeEl = node('span', undefined, 'file-size-emphasis');
+        s.progress = node('progress'); s.progress.max = s.size || 1; s.progress.value = 0;
+        s.info = node('p', undefined, 'muted'); s.controls = node('div', undefined, 'actions');
+        s.cancelButton = button('取消', () => endSession(s, '已取消', true));
+        s.controls.append(s.cancelButton); transfer.append(s.heading, document.createTextNode(' · '), s.sizeEl, s.progress, s.info, s.controls);
+        message.details.append(transfer);
+      }
     }
-    s.heading.textContent = `${s.outgoing ? '发送给' : '来自'} ${nameOf(s.peerId)} · ${s.name}`;
-    s.sizeEl.textContent = bytes(s.size); s.sizeEl.dataset.fileSizeBytes = String(s.size);
-    globalThis.BjtuFileSizeEmphasis?.applyBytes(s.sizeEl, s.size);
+    if (s.heading) s.heading.textContent = `${s.outgoing ? '发送给' : '来自'} ${nameOf(s.peerId)} · ${s.name}`;
+    if (s.sizeEl) {
+      s.sizeEl.textContent = bytes(s.size); s.sizeEl.dataset.fileSizeBytes = String(s.size);
+      globalThis.BjtuFileSizeEmphasis?.applyBytes(s.sizeEl, s.size);
+    }
     updateTransfer(s);
     updateTransferSummary(message);
   }
@@ -704,7 +717,6 @@
   async function previewFile(s, file) {
     if (!file || !s.card || s.message.preview || stopped) return;
     const ext = s.name.split('.').pop().toLowerCase(), type = previewType(s.name);
-    if (!type && !TEXT_EXTENSIONS.has(ext)) return;
     const preview = node('div', undefined, 'file-preview'); s.preview = preview; s.message.preview = preview;
     if (type) {
       s.previewURL = URL.createObjectURL(file.slice(0, file.size, type));
@@ -718,12 +730,19 @@
       preview.append(media);
       const open = node('a', '打开预览'); open.href = s.previewURL; open.target = '_blank'; open.rel = 'noopener noreferrer';
       preview.append(open);
-    } else {
+    } else if (TEXT_EXTENSIONS.has(ext)) {
       // Plain text is never interpreted as HTML or executable code.
       const max = 256 * 1024, text = await file.slice(0, max).text();
       if (stopped || !mediaMessages.has(s.message.id)) return;
-      preview.append(node('pre', text));
+      if (ext === 'md') {
+        const content = node('div', undefined, 'message-text bjtu-markdown');
+        content.innerHTML = markdown.parse(text); preview.append(content);
+      } else preview.append(node('pre', text));
       if (file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
+    } else {
+      s.previewURL = URL.createObjectURL(file);
+      const open = button('打开', () => window.open(s.previewURL, '_blank', 'noopener,noreferrer'), 'secondary file-open');
+      preview.append(open);
     }
     if (stopped || !mediaMessages.has(s.message.id)) return;
     const nearBottom = $('messages').scrollHeight - $('messages').clientHeight - $('messages').scrollTop < 64;
@@ -739,6 +758,7 @@
   function releaseResources(s) {
     if (s.url) { URL.revokeObjectURL(s.url); s.url = null; }
     if (s.previewURL) { URL.revokeObjectURL(s.previewURL); s.previewURL = null; }
+    if (s.message?.preview === s.preview) s.message.preview = null;
     s.preview?.remove(); s.preview = null;
     if (s.reserved) { memoryReserved -= s.reserved; s.reserved = 0; }
     s.chunks.length = 0;
