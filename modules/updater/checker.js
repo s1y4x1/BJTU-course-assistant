@@ -744,6 +744,13 @@ function ensureVersionNoticeModal() {
     }
     delete modal.dataset.mdownMask;
   });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (window.getComputedStyle(modal).display === 'none') return;
+    event.preventDefault();
+    cancelVersionNoticeForceCountdown();
+    modal.style.display = 'none';
+  });
 
   const sourceSelect = modal.querySelector('#version-source-select');
   if (sourceSelect instanceof HTMLSelectElement) {

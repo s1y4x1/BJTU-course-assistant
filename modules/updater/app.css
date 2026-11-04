@@ -181,15 +181,21 @@ html[data-color-scheme="dark"] .toolbar-pin-never:hover { background: #b91c1c; }
     flex-direction: row;
     align-items: baseline;
     gap: 8px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    min-width: 0;
     line-height: 1.2;
 }
+.version-notice-modal .version-modal-header { align-items: flex-start; }
+.version-notice-modal .version-modal-header > .version-notice-title { flex: 1 1 auto; min-width: 0; }
+.version-notice-modal .version-modal-header > .version-close-btn { flex: 0 0 auto; }
 .version-notice-title-main {
     font-size: inherit;
     font-weight: 800;
     color: inherit;
     line-height: 1.2;
-    white-space: nowrap;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .version-notice-title-time {
     font-size: 12px;
