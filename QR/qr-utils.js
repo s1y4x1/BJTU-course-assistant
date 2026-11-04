@@ -74,6 +74,14 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
   return qrImage;
 }
 
+function createQrDismissButton(settingKey) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'qr-dismiss-btn'; button.textContent = '不再显示';
+  button.style.cssText = 'background:#dc2626;color:#fff;border:0;border-radius:4px;padding:3px 8px;min-height:0;width:auto;font-size:var(--bjtu-font-size-body,13px);line-height:1.4;cursor:pointer;';
+  button.addEventListener('click', () => chrome.storage.local.set({[settingKey]:false}));
+  return button;
+}
+
 (async function initDownloadQRTooltips() {
   window.__linkQrEnabled = true;
   try {
@@ -94,9 +102,7 @@ function applyQrImageToElement(image, content, size = QR_MIN_DISPLAY_SIZE, resiz
   }
   const codes = document.createElement('div');
   codes.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:8px;';
-  const dismiss = document.createElement('button');
-  dismiss.type = 'button'; dismiss.className = 'btn'; dismiss.textContent = '不再显示';
-  dismiss.addEventListener('click', () => chrome.storage.local.set({linkQrEnabled:false}));
+  const dismiss = createQrDismissButton('linkQrEnabled');
   tooltip.replaceChildren(codes,dismiss);
   let hideTimer = null;
   let activeLink = null;

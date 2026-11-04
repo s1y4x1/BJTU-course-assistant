@@ -8,8 +8,7 @@
   const status = document.createElement('div'), spinner = document.createElement('span'), image = document.createElement('img'), link = document.createElement('a');
   spinner.className = 'options-page-spinner'; image.hidden = true; image.alt = '内容分享二维码';
   link.textContent = '打开分享页面'; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.hidden = true;
-  const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'btn'; dismiss.textContent = '不再显示';
-  dismiss.addEventListener('click', () => chrome.storage.local.set({headerQrEnabled:false}));
+  const dismiss = createQrDismissButton('headerQrEnabled');
   tooltip.append(status,spinner,image,link,dismiss); document.body.append(tooltip);
   let activeHeader = null, hideTimer;
   function snapshot(section) {
