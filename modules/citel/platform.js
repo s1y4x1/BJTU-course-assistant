@@ -225,7 +225,7 @@
   function renderTask(task, course) {
     const state = status(task);
     const done = state === 'submitted';
-    const overdue = state === 'overdue';
+    const overdue = state === 'overdue' || (!done && task.deadline > 0 && task.deadline <= Date.now());
     const palette = global.BjtuHomeworkUi.homeworkPalette({ done, overdue });
     return global.BjtuHomeworkUi.renderHomeworkCard({
       done, overdue, deadline: task.deadline, className: 'citel-task',
@@ -266,6 +266,8 @@
 
   function renderCourses() {
     if (!env?.courseList) return;
+    const animationSelector = '.citel-standalone-card .hw-card-item';
+    const animations = global.BjtuColors?.captureAnimations(env.courseList, animationSelector);
     clearCards();
     courses.forEach((course, index) => {
       const pending = course.tasks.filter((t) => ['pending', 'unknown', 'resource'].includes(status(t)))
@@ -291,6 +293,7 @@
       });
       env.courseList.appendChild(card);
     });
+    if (animations) global.BjtuColors.restoreAnimations(env.courseList, animations, animationSelector);
     env.updateEmpty?.(); env.sortCourseCards?.(); env.scheduleCache?.(); env.updateCountdowns?.();
   }
   function render() { return global.preserveCoursePlatformScroll ? global.preserveCoursePlatformScroll(renderCourses) : renderCourses(); }
