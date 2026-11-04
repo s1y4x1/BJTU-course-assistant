@@ -41,7 +41,9 @@ async function refreshCurrentVeAccountFromSession({
   knownUserInfo
 } = {}) {
   if (!isPlatformEnabled('ve')) return null;
+  const version = Number(window.platformLoadVersion.ve || 0);
   const info = knownUserInfo === undefined ? await fetchCurrentVeUserInfoOnce() : knownUserInfo;
+  if (!isPlatformEnabled('ve') || version !== Number(window.platformLoadVersion.ve || 0)) return null;
   if (!info) return null;
   const userId = String(info.loginName || info.userId || '').trim();
   if (!userId) return null;
@@ -59,8 +61,10 @@ async function reloadVePlatformFromSession({
   knownUserInfo
 } = {}) {
   if (!isPlatformEnabled('ve')) return null;
+  const version = Number(window.platformLoadVersion.ve || 0);
   const synced = await refreshCurrentVeAccountFromSession({ reloadCourses, reloadResourceSpace, knownUserInfo });
   if (synced) return synced;
+  if (!isPlatformEnabled('ve') || version !== Number(window.platformLoadVersion.ve || 0)) return null;
   const tasks = [];
   if (reloadCourses) tasks.push(loadCourses({ knownUserInfo: null }).catch(() => {}));
   if (reloadResourceSpace) tasks.push(loadResourceSpaceForCurrentAccount().catch(() => {}));
@@ -78,6 +82,9 @@ async function syncAccountInfoAndReloadVeCourses({
   knownPersonalCenterResult = null
 } = {}) {
   if (reloadCourses) prioritizeAccountSwitch();
+  const version = Number(window.platformLoadVersion.ve || 0);
+  const isCurrent = () => isPlatformEnabled('ve') && version === Number(window.platformLoadVersion.ve || 0);
+  if (!isCurrent()) return null;
 
   const finalUser = String(userId || usernameInput.value || lastValidUsername || '').trim();
   if (knownUserInfo) {
@@ -87,6 +94,7 @@ async function syncAccountInfoAndReloadVeCourses({
     }).catch(() => null);
   }
   const localInfo = await getLocalAccountInfo(finalUser);
+  if (!isCurrent()) return null;
   const info = knownUserInfo
     ? {
         ...(localInfo || {}),
@@ -101,6 +109,7 @@ async function syncAccountInfoAndReloadVeCourses({
   if (finalUser) {
     usernameInput.value = finalUser;
     await setLocal('username', finalUser);
+    if (!isCurrent()) return null;
     lastValidUsername = finalUser;
     isLoginSessionValid = true;
   }
@@ -114,6 +123,7 @@ async function syncAccountInfoAndReloadVeCourses({
   setWelcomeMessage(info);
 
   if (finalUser) await rememberLoggedInAccount(finalUser, info);
+  if (!isCurrent()) return null;
 
   const reloadPromises = [syncJsessionidToUi().catch(() => {})];
   if (reloadCourses && isPlatformEnabled('ve')) {
@@ -508,9 +518,8 @@ function parseVeReplayViewLinks(data, requestedViews) {
   const links = Object.fromEntries(requestedViews.map((view) => [view, '']));
   const html = String(data?.html || '').trim();
   if (html) {
-    const template = document.createElement('template');
-    template.innerHTML = html;
-    template.content.querySelectorAll('a').forEach((anchor, index) => {
+    const fragment = globalThis.BjtuInertHtml.parseFragment(html);
+    fragment.querySelectorAll('a').forEach((anchor, index) => {
       const url = absoluteVeReplayUrl(anchor.getAttribute('href'));
       if (!url) return;
       const labeledView = replayViewFromLabel([
@@ -3045,10 +3054,8 @@ async function fetchHomeworkScore(upId, snId, signal) {
     throw new Error('LOGIN_REQUIRED');
   }
 
-  // 只读取字段；template 中的网页标记不会触发 body onload、图片 onerror 等内联事件。
-  const template = document.createElement('template');
-  template.innerHTML = String(text || '');
-  const doc = template.content;
+  // 只读取字段，在无浏览上下文的惰性文档中解析，避免编译内联事件。
+  const doc = globalThis.BjtuInertHtml.parseFragment(text);
   return {
     score: doc.querySelector('input#oldScore, input[name="oldScore"]')?.value ?? null,
     comment: doc.querySelector('textarea#pigaiContent')?.value || ''

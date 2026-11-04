@@ -203,9 +203,8 @@
       const html = String(personalCenter.html || '');
       let password = '';
       try {
-        const template = document.createElement('template');
-        template.innerHTML = html;
-        password = String(template.content.querySelector('input#odbcPassword')?.getAttribute('value') || '').trim();
+        const fragment = global.BjtuInertHtml.parseFragment(html);
+        password = String(fragment.querySelector('input#odbcPassword')?.getAttribute('value') || '').trim();
       } catch {
         password = '';
       }

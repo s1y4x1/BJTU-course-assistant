@@ -1050,22 +1050,50 @@ function applyPlatformVisibility() {
   });
 }
 
+let platformEnabledStorageRevision = 0;
+let platformEnabledWritesPending = 0;
+let platformEnabledWriteTail = Promise.resolve();
+
 async function loadPlatformEnabledFromStorage() {
+  const revision = platformEnabledStorageRevision;
   try {
     const localData = await chrome.storage.local.get(['platformEnabled']);
+    if (revision !== platformEnabledStorageRevision) return;
     const saved = localData?.platformEnabled ?? null;
     window.platformEnabled = sanitizePlatformEnabled(saved, DEFAULT_PLATFORM_ENABLED);
     chrome.storage.sync.remove(['platformEnabled']).catch(() => { });
   } catch {
-    window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
+    if (revision === platformEnabledStorageRevision) window.platformEnabled = { ...DEFAULT_PLATFORM_ENABLED };
   }
+}
+
+async function reconcilePlatformEnabledFromStorage() {
+  const revision = ++platformEnabledStorageRevision;
+  // Never replay an older whole-object notification over newer local intent.
+  if (platformEnabledWritesPending) return;
+  const data = await chrome.storage.local.get(['platformEnabled']);
+  if (revision !== platformEnabledStorageRevision || platformEnabledWritesPending) return;
+  applyPlatformEnabledSettingFromStorage(data?.platformEnabled);
 }
 
 async function savePlatformEnabledToStorage() {
   const normalized = sanitizePlatformEnabled(window.platformEnabled);
-  await chrome.storage.local.set({ platformEnabled: normalized });
-  await chrome.storage.sync.remove(['platformEnabled']).catch(() => { });
-  scheduleFullscreenCourseCacheSave(200);
+  ++platformEnabledStorageRevision;
+  ++platformEnabledWritesPending;
+  const write = platformEnabledWriteTail.catch(() => {}).then(async () => {
+    await chrome.storage.local.set({ platformEnabled: normalized });
+    await chrome.storage.sync.remove(['platformEnabled']).catch(() => { });
+    scheduleFullscreenCourseCacheSave(200);
+  });
+  platformEnabledWriteTail = write;
+  try {
+    await write;
+  } finally {
+    --platformEnabledWritesPending;
+  }
+  if (!platformEnabledWritesPending) {
+    void reconcilePlatformEnabledFromStorage().catch(() => {});
+  }
 }
 
 function disablePlatformAfterLoginFailure(platform) {
@@ -1540,8 +1568,10 @@ function togglePlatformSelection(platform, options = {}) {
   if (!platform || !PLATFORM_IDS.includes(platform)) return;
   const interactive = options?.interactive !== false;
   const persist = options?.persist !== false;
+  if (isPlatformEnabled(platform)) window.platformInteractiveLoginPending[platform] = false;
   if (isPlatformChecking(platform)) {
     if (platform === 've') {
+      window.resourceSpaceLoadVersion = Number(window.resourceSpaceLoadVersion || 0) + 1;
       window.platformInteractiveLoginPending.ve = false;
       if (loginModal?.style.display !== 'none') dismissLoginModal();
     }
@@ -1596,6 +1626,10 @@ function togglePlatformSelection(platform, options = {}) {
 
   if (!enabled) {
     bumpPlatformLoadVersion(platform);
+    if (platform === 've') {
+      if (loginModal?.style.display !== 'none') dismissLoginModal();
+      window.resourceSpaceLoadVersion = Number(window.resourceSpaceLoadVersion || 0) + 1;
+    }
     if (platform === 'ykt') {
       window.platformInteractiveLoginPending.ykt = false;
       closeYktLoginAssistPopup(true);
@@ -1648,8 +1682,10 @@ function togglePlatformSelection(platform, options = {}) {
       rerenderAllHomeworkAreas();
     }
     if (isPlatformEnabled('ve')) {
+      const version = Number(window.platformLoadVersion.ve || 0);
       void (async () => {
         await loadAutoLoadCourseResourcesSetting();
+        if (!isPlatformEnabled('ve') || version !== Number(window.platformLoadVersion.ve || 0)) return;
         await reloadVePlatformFromSession({ reloadCourses: true, reloadResourceSpace: true });
       })();
     }
@@ -1685,7 +1721,7 @@ function setupOptionsStorageLiveSync() {
     }
 
     if (changes.platformEnabled) {
-      applyPlatformEnabledSettingFromStorage(changes.platformEnabled.newValue);
+      void reconcilePlatformEnabledFromStorage().catch(() => {});
     }
     if (changes.platformVisible) {
       window.platformVisible = sanitizePlatformVisible(changes.platformVisible.newValue, window.platformVisible);
@@ -4227,6 +4263,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
   usernameChangeVersion += 1;
   try { usernameChangeAbortController?.abort(); } catch { }
   if (reloadPlatform) prioritizeAccountSwitch();
+  const platformVersion = Number(window.platformLoadVersion.ve || 0);
   const wasSwitchingAccount = !!pendingUsernameChange;
   let restoredAfterFailure = false;
   const restoreAfterFailure = async () => {
@@ -4285,6 +4322,9 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
       }
 
       if (result?.ok) {
+        if (reloadPlatform && platformVersion !== Number(window.platformLoadVersion.ve || 0)) {
+          return { ok: false, reason: 'cancelled', message: '平台加载已取消' };
+        }
         const resultLoginName = String(result?.userInfo?.loginName || '').trim();
         if (resultLoginName && resultLoginName !== username) {
           await restoreAfterFailure();
@@ -4678,10 +4718,8 @@ function suffixAfterDash(v) {
 function completeExternalLoginAssist(platform, forceReload = true) {
   const p = normalizePlatformId(platform);
   if (!['ykt', 'mrjzy', 'jlgj', 'mooc'].includes(p)) return;
-  if (!window.platformEnabled?.[p]) {
-    window.platformEnabled[p] = true;
-    savePlatformEnabledToStorage().catch(() => { });
-  }
+  // A login window can finish after the user has disabled this platform.
+  if (!isPlatformEnabled(p)) return;
   window.platformInteractiveLoginPending[p] = false;
   setPlatformLoginState(p, 'checking');
   triggerExternalPlatformLoad(p, forceReload);

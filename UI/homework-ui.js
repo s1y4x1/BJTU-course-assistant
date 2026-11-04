@@ -50,12 +50,11 @@
   }
 
   function sanitizeRichHtml(value) {
-    const template = document.createElement('template');
-    template.innerHTML = String(value || '');
-    template.content
+    const fragment = global.BjtuInertHtml.parseFragment(value);
+    fragment
       .querySelectorAll('script,style,iframe,object,embed,form,input,button,textarea,select,meta,link')
       .forEach((node) => node.remove());
-    template.content.querySelectorAll('*').forEach((node) => {
+    fragment.querySelectorAll('*').forEach((node) => {
       for (const attr of [...node.attributes]) {
         const name = attr.name.toLowerCase();
         const raw = String(attr.value || '').trim();
@@ -72,7 +71,9 @@
         node.setAttribute('rel', 'noopener noreferrer');
       }
     });
-    return template.innerHTML.trim();
+    const container = fragment.ownerDocument.createElement('div');
+    container.appendChild(fragment);
+    return container.innerHTML.trim();
   }
 
   function actionLabel(platform, action, { lead } = {}) {

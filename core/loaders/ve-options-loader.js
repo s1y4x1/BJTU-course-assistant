@@ -12,6 +12,7 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.veDecimalAddressEnabled) addressOption.checked = changes.veDecimalAddressEnabled.newValue === true;
     });
+    await global.BjtuModuleRegistry.loadScript('core/inert-html.js');
     await global.BjtuModuleRegistry.loadScript('modules/ve/account-store.js');
     await global.BjtuModuleRegistry.loadScript('modules/ve/account-login.js');
     return true;

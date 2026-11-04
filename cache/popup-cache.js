@@ -627,7 +627,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
   if (!cache || (!canRenderStructuredVeCache
       && !hasStructuredExternalData
       && !String(cache.courseListHtml || '').trim())) {
-    window.platformEnabled = sanitizePlatformEnabled(cache?.platformEnabled || window.platformEnabled, window.platformEnabled);
+    // Selection comes from current local settings, never from a content cache.
     restorePopupPlatformStates(cache);
     refreshPlatformLoginTip();
     showPopupCacheNotice(cache);
@@ -638,7 +638,7 @@ async function restorePopupFullscreenCacheIfNeeded() {
     return true;
   }
 
-  window.platformEnabled = sanitizePlatformEnabled(cache.platformEnabled || {}, window.platformEnabled);
+  // Keep the current selection even when this content snapshot is older.
   restorePopupPlatformStates(cache);
   window.currentVeCourseList = veModuleAvailable && Array.isArray(cache.currentVeCourseList)
     ? cache.currentVeCourseList
