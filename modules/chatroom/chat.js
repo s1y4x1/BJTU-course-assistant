@@ -7,6 +7,9 @@
  */
 (async () => {
   'use strict';
+  const backgroundMode = globalThis.BjtuChatroomBackgroundMode;
+  const background = backgroundMode?.enabled === true;
+  if (globalThis.BjtuChatroomEngineLease && !await globalThis.BjtuChatroomEngineLease.acquire()) return;
   const $ = (id) => document.getElementById(id);
   const embedded = new URLSearchParams(location.search).get('embedded') === '1';
   let embeddedVisible = !embedded;
@@ -38,6 +41,7 @@
   const mediaMessages = new Map();
   const messageNodes = new Map();
   const pendingSignals = new Map(), closedSessions = new Map();
+  globalThis.BjtuChatroomEngineLease?.setCanYield(() => !sessions.size && !pendingSignals.size && !statePromise && !stateTimer);
   const uiAbort = new AbortController();
   let lastToast = { text: '', at: 0 }, messageConversation = '';
   let membersSignature = '';
@@ -74,7 +78,7 @@
     if (error?.name !== 'AbortError') toast(error?.message || '操作未完成，请检查连接后重试。');
   }
   function nameOf(id) {
-    if (id === state.self.id) return state.self.nickname || '我';
+    if (id === state.self.id) return state.self.nickname || state.self.ip || '我';
     const peer = state.peers.find((p) => p.id === id);
     return peer?.remark || peer?.nickname || peer?.ip || String(id || '未知用户').slice(0, 80);
   }
@@ -90,7 +94,7 @@
   function permitted(id) {
     const peer = state.peers.find((p) => p.id === id);
     const sharedGroup = state.rooms.some((room) => room.members?.includes(state.self.id) && room.members.includes(id));
-    return !!peer && !peer.blocked && (!state.settings.requireFriend || peer.friend || sharedGroup);
+    return !!peer && !peer.blocked && !peer.blockedByPeer && (!state.settings.requireFriend || peer.friend || sharedGroup);
   }
   function connectionStatus(ready) {
     online = ready;
@@ -211,6 +215,7 @@
     void markConversationRead();
   }
   async function markConversationRead({interactive = false} = {}) {
+    if (background) return;
     const view = state.conversations?.[selected];
     let focused = document.hasFocus();
     if (embedded) { try { focused ||= parent.document.hasFocus(); } catch {} }
@@ -288,9 +293,11 @@
   function messageHeader(senderId, createdAt) {
     const date = new Date(createdAt);
     const el = node('div', undefined, 'muted message-author');
-    el.append(node('strong', nameOf(senderId), 'message-author-name'), document.createTextNode(` · ${Number.isFinite(date.getTime()) ? date.toLocaleString() : ''}`));
-    el.dataset.senderId = senderId; el.tabIndex = 0; el.setAttribute('role', 'button');
-    el.title = senderId === state.self.id ? '修改昵称' : '修改备注及联系人操作';
+    const name = node('strong', nameOf(senderId), 'message-author-name');
+    name.tabIndex = 0; name.setAttribute('role', 'button');
+    name.title = senderId === state.self.id ? '修改昵称' : '修改备注及联系人操作';
+    el.append(name, document.createTextNode(` · ${Number.isFinite(date.getTime()) ? date.toLocaleString() : ''}`));
+    el.dataset.senderId = senderId;
     return el;
   }
   function renderMessages() {
@@ -316,9 +323,35 @@
       const liveMedia = mediaMessages.get(message.id);
       if (liveMedia) return liveMedia.card;
       const el = node('article', undefined, `message${message.senderId === state.self.id ? ' mine' : ''}`);
+      el.dataset.messageId = message.id;
       const content = node('div', undefined, 'message-text bjtu-markdown');
-      content.innerHTML = markdown.parse(String(message.text || '').slice(0, 8000));
-      el.append(messageHeader(message.senderId, message.createdAt), content);
+      if (message.system) {
+        el.classList.remove('mine'); el.classList.add('system');
+        content.textContent = message.text; el.append(content);
+      } else {
+        content.innerHTML = markdown.parse(String(message.text || '').slice(0, 8000));
+        el.append(messageHeader(message.senderId, message.createdAt), content);
+      }
+      if (message.senderId === state.self.id && message.delivery) {
+        const status = {queued:'等待连接恢复后自动重试…',sending:'正在发送…',rejected:'发送被拒绝',withdrawn:'已取消未送达的发送'}[message.status];
+        if (status) {
+          const errors = [...new Set(Object.values(message.delivery).map(value => value.error).filter(Boolean))];
+          el.append(node('div', [status,...errors].join(' · ').slice(0,500), `message-delivery-status${message.status === 'rejected' ? ' error' : ''}`));
+        }
+        if (['queued','sending','rejected'].includes(message.status)) {
+          el.classList.add('has-delivery-actions');
+          const actions = node('div', undefined, 'message-delivery-actions');
+          for (const [name,label] of [['retry','重试'],['withdraw','撤回']]) {
+            const control = button(label, async () => {
+              control.disabled = true;
+              try { await mutate(name,{messageId:message.id}); await refreshState(); }
+              finally { control.disabled = false; }
+            });
+            control.disabled = name === 'retry' && message.status === 'sending'; actions.append(control);
+          }
+          el.append(actions);
+        }
+      }
       return el;
     });
     if (!items.length) container.append(node('p', '还没有消息，打个招呼吧。', 'empty'));
@@ -465,6 +498,10 @@
           s.autoSaved = true;
         } catch(error) {
           s.accepting = false;
+          if (background) {
+            await backgroundMode.notifyInvitation({peerId:s.peerId,media:s.type,name:s.name,reason:error.message,sid:s.id});
+            endSession(s,'后台无法自动保存，请打开聊天室接收',true); return;
+          }
           if (!s.ended) { showInvitation(s); report(error); }
           return;
         }
@@ -500,6 +537,7 @@
       const messageId = uuid();
       const tasks = targets.map(peerId => makeSession(uuid(), peerId, 'file', true, {messageId, recipientsCount: targets.length, file, name: safeName(file.name), size: file.size, conversationId}));
       tasks.forEach(renderTransfer);
+      void previewFile(tasks[0], file).catch(report);
       for (const s of tasks) {
         try { await signal(s, 'invite', { media: 'file', name: s.name, size: s.size, conversationId, messageId }); }
         catch (error) { endSession(s, '邀请发送失败'); report(error); }
@@ -558,6 +596,13 @@
         : state.rooms.some(room => room.id === payload.conversationId && room.members?.includes(peerId)) ? payload.conversationId : `peer:${peerId}`;
       s = makeSession(sid, peerId, payload.media, false, { messageId: payload.messageId, name: safeName(payload.name), size: payload.size || 0, conversationId });
       try {
+        if (background) {
+          if (s.type !== 'file' || !await backgroundMode.canReceiveFile(s.size)) {
+            await backgroundMode.notifyInvitation({peerId,media:s.type,name:s.name,reason:'请打开聊天室处理',sid});
+            endSession(s,'后台不接受此传输，请打开聊天室处理',true); return;
+          }
+          await acceptInvitation(s,true); return;
+        }
         if (s.type === 'screen') {
           await acceptInvitation(s);
         } else {
@@ -616,7 +661,6 @@
           else if (control.type === 'complete' && s.done === s.size && s.sentEnd) {
             channel.send(JSON.stringify({ type: 'complete-ack' }));
             s.completed = true; s.status = '对方已完整接收'; updateTransfer(s);
-            void previewFile(s, s.file).catch(report);
             clearTimeout(s.timer); s.timer = setTimeout(() => endSession(s, s.status), 1000);
           }
         } else if (control.type === 'complete-ack' && s.completed) {
@@ -715,6 +759,7 @@
   const TEXT_EXTENSIONS = new Set('txt md csv log json js mjs cjs ts tsx jsx css html htm xml svg yml yaml toml ini conf py ps1 sh bat c cpp h java rs go sql'.split(' '));
   function previewType(name) { return PREVIEW_TYPES[String(name).split('.').pop().toLowerCase()] || ''; }
   async function previewFile(s, file) {
+    if (background) return;
     if (!file || !s.card || s.message.preview || stopped) return;
     const ext = s.name.split('.').pop().toLowerCase(), type = previewType(s.name);
     const preview = node('div', undefined, 'file-preview'); s.preview = preview; s.message.preview = preview;
@@ -897,7 +942,7 @@
   const membersObserver = new ResizeObserver(updateMembersToggle);
   membersObserver.observe($('conversation-members'));
   const editMessageAuthor = event => {
-    const header = event.target.closest?.('.message-author');
+    const header = event.target.closest?.('.message-author-name')?.closest('.message-author');
     if (header) { event.preventDefault(); sidebar.editPerson(header.dataset.senderId); }
   };
   listen('messages', 'click', editMessageAuthor);
@@ -936,6 +981,7 @@
   window.addEventListener('focus', () => { void markConversationRead(); }, {signal:uiAbort.signal});
   document.addEventListener('visibilitychange', () => { void markConversationRead(); }, {signal:uiAbort.signal});
   window.addEventListener('beforeunload', (event) => {
+    if (background) return;
     if (sessions.size || memoryReserved || capture) { event.preventDefault(); event.returnValue = ''; }
   }, { signal: uiAbort.signal });
   window.addEventListener('pagehide', () => {
@@ -967,6 +1013,7 @@
   const requestedConversation = new URLSearchParams(location.search).get('conversation');
   if (requestedConversation) chooseConversation(requestedConversation);
   const consumeNavigation = async navigation => {
+    if (background) return;
     const tab = await chrome.tabs.getCurrent();
     if (navigation?.tabId === tab?.id) chooseConversation(navigation.conversationId);
   };
