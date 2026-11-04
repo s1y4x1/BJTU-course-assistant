@@ -88,7 +88,7 @@ api.getDocs(module:'ve', name:'courseList')
 ve.courseList({})
 ```
 
-本地文件上传可传 `filePath:'C:\\path\\file.pdf'`。命令行使用 JSON5 解析参数，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。HTTP/MCP 请求仍使用标准 JSON 对象。通过命令行、HTTP 或 MCP 发起的操作会在 Bridge 窗口直接打印完整返回结果，不另加操作名或结果标题。输入 `help` 查看示例；输入 `help ve.courseList ykt.assignments` 或 `help(ve.courseList)` 查看指定操作说明；输入 `exit`、`quit` 或在空闲时按 `Ctrl+C` 停止 Bridge。
+本地文件上传可传 `filePath:'C:\\path\\file.pdf'`。命令行使用 JSON5 解析参数，不执行任意 JavaScript；调用仍受浏览器扩展的操作启用与批准规则约束。HTTP/MCP 请求仍使用标准 JSON 对象。通过命令行、HTTP 或 MCP 发起的操作会在 Bridge 窗口直接打印完整返回结果，不另加操作名或结果标题。输入 `help` 查看示例；输入 `help ve.courseList ykt.assignments` 或 `help(ve.courseList)` 查看指定操作说明；输入 `clear`（或 `cls`）清屏；输入 `exit`、`quit` 或在空闲时按 `Ctrl+C` 停止 Bridge。
 
 命令等待用户授权时，按 `Ctrl+C` 可立即取消当前命令并撤销对应授权提示，随后继续输入其他命令。`bjtuca -c "操作"` 也支持取消；连接到已有 Bridge 时不会停止该 Bridge。
 
@@ -176,4 +176,4 @@ $body = @{
 Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:1896/api/v1/call' -Headers $headers -ContentType 'application/json' -Body $body
 ```
 
-`arguments` 必须是 JSON 对象；无参数操作可省略该字段或传 `{}`。操作是否启用、是否始终允许及需要浏览器交互的确认，均由扩展决定。Bridge 不提供任意 JavaScript 执行接口。
+`arguments` 必须是 JSON 对象；无参数操作可省略该字段或传 `{}`。操作是否启用、是否始终允许及需要浏览器交互的确认，均由扩展决定。通过 `call` 的 `code` 传入的 JavaScript 由扩展在 app 环境执行并询问授权，Bridge 本身不执行代码。
