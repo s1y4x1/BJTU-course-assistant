@@ -182,8 +182,9 @@
   async function enrolledCourses(version, stored) {
     let home;
     try { home = await page(BASE, version); } catch (e) {
-      if (e.code !== 'LOGIN_REQUIRED' || !stored.citelUsername || stored.citelAutoLoginOnExpiry === false) throw e;
-      await authenticate(stored.citelUsername, '', version);
+      const autoLoginUsername = stored.citelLoginUsername || stored.citelUsername;
+      if (e.code !== 'LOGIN_REQUIRED' || !autoLoginUsername || stored.citelAutoLoginOnExpiry === false) throw e;
+      await authenticate(autoLoginUsername, '', version);
       home = await page(BASE, version);
     }
     const sesskey = readSesskey(home.html);
@@ -314,7 +315,7 @@
     const version = ++serial;
     env?.setLoaded?.(false); env?.setState?.('checking');
     try {
-      const stored = await chrome.storage.local.get(['citelActivityTypes', 'citelUsername', 'citelAutoLoginOnExpiry']);
+      const stored = await chrome.storage.local.get(['citelActivityTypes', 'citelUsername', 'citelLoginUsername', 'citelAutoLoginOnExpiry']);
       const types = new Set(Array.isArray(stored.citelActivityTypes) ? stored.citelActivityTypes : DEFAULT_TYPES);
       const result = await enrolledCourses(version, stored);
       assertCurrent(version); courses = result;
@@ -384,15 +385,28 @@
   function openLogin() {
     if (loginPromise) return loginPromise;
     loginPromise = (async () => {
-      const stored = await chrome.storage.local.get('citelUsername');
+      const stored = await chrome.storage.local.get(['citelUsername', 'citelLoginUsername']);
       const dialog = document.createElement('dialog');
-      loginDialog = dialog; dialog.className = 'citel-login-dialog';
-      dialog.innerHTML = `<form><h3>CITEL 登录</h3><label>用户名<input name="username" autocomplete="username" required value="${escape(stored.citelUsername || '')}"></label><label>密码<input name="password" type="password" autocomplete="current-password" placeholder="留空使用 用户名@Bjtu"></label><p>密码仅用于本次登录，不保存。</p><p class="citel-error" role="alert"></p><button type="submit" class="btn">登录</button> <button type="button" data-citel-cancel>取消</button></form>`;
+      loginDialog = dialog; dialog.className = 'citel-login-dialog version-modal-card platform-qr-login-card';
+      dialog.setAttribute('aria-labelledby', 'citel-login-title');
+      dialog.innerHTML = `<div class="version-modal-header"><div class="citel-login-title" id="citel-login-title">CITEL 登录</div><button type="button" class="citel-login-close" data-citel-cancel aria-label="关闭" title="关闭">×</button></div><div class="platform-qr-login-body citel-login-body"><form class="citel-login-form"><label>用户名<input name="username" autocomplete="username" required value="${escape(stored.citelLoginUsername || stored.citelUsername || '')}"></label><label>密码<input name="password" type="password" autocomplete="current-password" placeholder="留空使用 用户名@Bjtu"></label><p class="citel-login-tip">密码仅用于本次登录，不保存。</p><p class="citel-error" role="alert"></p><button type="submit" class="btn citel-login-submit">登录</button></form></div>`;
       document.body.appendChild(dialog); dialog.showModal();
+      dialog.querySelector('input[name="username"]')?.focus();
       await new Promise((resolve) => {
         dialog.addEventListener('close', resolve, { once: true });
         dialog.querySelector('[data-citel-cancel]').addEventListener('click', () => { serial++; dialog.close(); });
         dialog.addEventListener('cancel', () => { serial++; });
+        let backdropPressed = false;
+        const isBackdrop = (event) => {
+          const rect = dialog.getBoundingClientRect();
+          return event.target === dialog
+            && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom);
+        };
+        dialog.addEventListener('pointerdown', (event) => { backdropPressed = isBackdrop(event); });
+        dialog.addEventListener('pointerup', (event) => {
+          if (backdropPressed && isBackdrop(event)) { serial++; dialog.close(); }
+          backdropPressed = false;
+        });
         dialog.querySelector('form').addEventListener('submit', async (event) => {
           event.preventDefault(); const button = dialog.querySelector('[type="submit"]');
           button.disabled = true;

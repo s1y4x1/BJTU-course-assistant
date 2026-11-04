@@ -12,9 +12,25 @@
 .citel-task-detail pre { overflow:auto; }
 .citel-task-detail { font-size:var(--bjtu-font-size-body, 13px); margin-top:6px; }
 .citel-error { color:#b45309; font-size:var(--bjtu-font-size-body, 13px); }
-.citel-login-dialog { border:1px solid #94a3b8; border-radius:10px; padding:20px; width:min(360px, 80vw); background:var(--bg-color, white); color:var(--text-color, #1e293b); }
-.citel-login-dialog::backdrop { background:#0006; }
-.citel-login-dialog label { display:flex; flex-direction:column; gap:5px; margin:12px 0; }
-.citel-login-dialog input { padding:8px; }
-.citel-login-dialog p { font-size:var(--bjtu-font-size-auxiliary, 11px); }
-.citel-login-dialog button[type="submit"] { background:#F98012; color:#fff; }
+.citel-login-dialog { width:min(420px,calc(100vw - 32px)); max-height:calc(100vh - 32px); box-sizing:border-box; padding:16px; }
+.citel-login-dialog::backdrop { background:rgba(15,23,42,.45); }
+.citel-login-title { color:#F98012; font-size:var(--bjtu-font-size-primaryTitle, 20px); font-weight:700; }
+.citel-login-close { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:0; border-radius:6px; background:transparent; color:#64748b; font-size:22px; line-height:1; cursor:pointer; }
+.citel-login-close:hover { background:#f1f5f9; color:#0f172a; }
+.citel-login-body { display:flex; flex-direction:column; gap:10px; padding-top:8px; overflow:auto; }
+.citel-login-form { display:flex; flex-direction:column; gap:10px; }
+.citel-login-form label { display:flex; flex-direction:column; gap:6px; color:#334155; font-size:13px; }
+.citel-login-form input { height:34px; padding:6px 8px; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#111827; font:inherit; }
+.citel-login-form input:focus { border-color:#F98012; outline:2px solid #F98012; outline-offset:1px; }
+.citel-login-tip { margin:0; color:#64748b; font-size:11px; line-height:1.45; }
+.citel-login-form .citel-error { min-height:18px; margin:0; color:#dc2626; font-size:12px; line-height:1.45; }
+.citel-login-submit { align-self:flex-end; height:34px; padding:6px 16px; background:#F98012; color:#fff; }
+.citel-login-submit:hover { background:#d96a00; }
+html[data-color-scheme="dark"] .citel-login-title { color:#fb923c; }
+html[data-color-scheme="dark"] .citel-login-close { color:#cbd5e1; }
+html[data-color-scheme="dark"] .citel-login-close:hover { background:#1e293b; color:#fff; }
+html[data-color-scheme="dark"] .citel-login-form label { color:#cbd5e1; }
+html[data-color-scheme="dark"] .citel-login-form input { border-color:#475569; background:#0f172a; color:#f8fafc; }
+html[data-color-scheme="dark"] .citel-login-form input::placeholder { color:#94a3b8; }
+html[data-color-scheme="dark"] .citel-login-tip { color:#94a3b8; }
+html[data-color-scheme="dark"] .citel-login-form .citel-error { color:#fca5a5; }
