@@ -67,6 +67,7 @@
   async function authenticate(username, password, version) {
     username = String(username || '').trim();
     if (!username) throw error('请输入 CITEL 用户名');
+    global.BjtuCitelParticipants?.clear();
     const login = parse(await request('login/index.php', version));
     const token = login.querySelector('input[name="logintoken"]')?.value;
     if (!token) {
@@ -187,6 +188,10 @@
     }
     const sesskey = readSesskey(home.html);
     if (!hasProfile(home.doc) || !sesskey) throw loginRequired();
+    const profile = [...home.doc.querySelectorAll('.logininfo a[href]')]
+      .map((link) => safeUrl(link.getAttribute('href')))
+      .find((url) => /\/user\/(profile|view)\.php(?:\?|$)/.test(url));
+    global.BjtuCitelParticipants?.setAccount(profile);
     const result = [];
     const ids = new Set();
     let offset = 0;
@@ -219,7 +224,10 @@
     return task.done ? 'submitted' : (task.deadline && task.deadline <= Date.now() ? 'overdue' : 'pending');
   }
 
-  function clearCards() { env?.courseList?.querySelectorAll('.citel-standalone-card, .citel-login-notice').forEach((n) => n.remove()); }
+  function clearCards() {
+    env?.courseList?.querySelectorAll('.citel-standalone-card, .citel-login-notice').forEach((n) => n.remove());
+    if (env?.courseList) global.BjtuCitelParticipants?.bind(env.courseList);
+  }
   const formatTime = (value) => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '无期限';
 
   function renderTask(task, course) {
@@ -286,12 +294,13 @@
       const card = global.BjtuCourseCardUi.createCourseCard({
         courseId: `citel-${course.id}`, className: 'citel-standalone-card', order: 260000 + index,
         rank: pending.some((t) => t.actionable) ? 0 : course.tasks.some((t) => status(t) === 'overdue') ? 2 : course.tasks.length ? 4 : 7,
-        titleHtml: `<a href="${escape(course.url)}" target="_blank" rel="noopener noreferrer">${escape(course.name)}</a>`,
+        titleHtml: `<a href="${escape(course.url)}" target="_blank" rel="noopener noreferrer">${escape(course.name)}</a>${global.BjtuCitelParticipants?.renderEntrances(course.id) || ''}`,
         metaHtml: '<div class="citel-task-meta">CITEL</div>',
         contentHtml: `${loadingHtml}${course.loadError ? `<div class="citel-error">${escape(course.loadError)}</div>` : ''}${content || (course.detailLoaded ? '暂无所选类型活动' : '')}`,
         headerClass: 'citel-course-head', identityClass: 'course-card-identity', homeworkClass: 'homework-area', includeResultArea: false, wrapActions: false
       });
       env.courseList.appendChild(card);
+      global.BjtuCitelParticipants?.bind(card);
     });
     if (animations) global.BjtuColors.restoreAnimations(env.courseList, animations, animationSelector);
     env.updateEmpty?.(); env.sortCourseCards?.(); env.scheduleCache?.(); env.updateCountdowns?.();
@@ -346,7 +355,7 @@
       if (e.code === 'LOGIN_REQUIRED') {
         const interactive = !!global.platformInteractiveLoginPending?.citel;
         // Invalidate peer workers before the core offline handler clears data.
-        serial++; courses = []; clearCards(); env?.setState?.('offline');
+        serial++; courses = []; clearCards(); global.BjtuCitelParticipants?.clear(); env?.setState?.('offline');
         if (e.message !== 'CITEL 未登录或登录已失效') env?.toast?.(e.message, 'error', 4500);
         if (interactive) void openLogin();
       } else {
@@ -403,6 +412,7 @@
     if (global.waitForPlatformDataReady && !await global.waitForPlatformDataReady('citel', 120000)) throw error('CITEL 课程与活动尚未加载完毕');
   }
   const pageApi = {
+    ...global.BjtuCitelParticipants?.pageApi,
     status: () => ({ loginState: global.platformLoginState?.citel || 'unselected', loggedIn: global.platformLoginState?.citel === 'online', loaded: !!global.platformLoadedOnce?.citel }),
     async courseList() { await ready(); return courses.map(({ id, name, url, tasks, loadError }) => ({ courseId: id, name, url, taskCount: tasks.length, loadError })); },
     async homework_of_(args) {
@@ -427,6 +437,7 @@
   global.BjtuCitelPlatform = {
     init(context) {
       env = context;
+      global.BjtuCitelParticipants?.init({page: (path) => page(path, serial), ready, getCourses: () => courses});
       env.courseList?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-citel-toggle]');
         if (!button) return;
@@ -447,7 +458,7 @@
       });
     },
     load, render, login, openLogin,
-    clear() { serial++; courses = []; expanded.clear(); if (!global.isPlatformEnabled?.('citel')) loginDialog?.close(); clearCards(); env?.setProgress?.(0, 0); },
+    clear() { serial++; courses = []; expanded.clear(); if (!global.isPlatformEnabled?.('citel')) loginDialog?.close(); clearCards(); global.BjtuCitelParticipants?.clear(); env?.setProgress?.(0, 0); },
     getCourses: () => courses,
     async fetchBackgroundCourses(stored = {}) {
       const version = ++serial;

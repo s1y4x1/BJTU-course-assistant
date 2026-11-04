@@ -2343,6 +2343,18 @@ name: 've.teachers_of_',
         run: async (args) => compactLoginResult(await pageInvoke('citel', 'login', args, Number.POSITIVE_INFINITY)) },
       { name: 'courseList', summary: '读取 CITEL 已加载课程缓存', parameters: '{}', example: 'citel.courseList()',
         run: (args) => pageInvoke('citel', 'courseList', args, 120000) },
+      ...['teachers', 'students'].map((kind) => ({
+        name: `${kind}_of_`, summary: `获取 CITEL 指定课程的${kind === 'teachers' ? '教师' : '学生'}列表`,
+        parameters: '{courseId: 课程ID，必填，先调用 citel.courseList 获取}',
+        example: `citel.${kind}_of_({courseId:"123"})`,
+        description: '按需 GET /mlsv3/user/index.php?id=courseId&perpage=100；参与者总数超过100时以总数重新请求。教师含助教；按角色区分，忽略空行并按个人资料用户ID去重。教师和学生共享成功缓存及并发请求；失败不缓存，可重试；账号切换或平台 clear 时清理。仅访问当前已加载课程，不自动登录。',
+        returns: '[{"name":"张三","profileURL":"https://citel.bjtu.edu.cn/mlsv3/user/view.php?id=123&course=456","role":"教师","group":"无组","lastAccess":"1天前"}]（学生接口结构相同；无 platform 字段）',
+        async run(args) {
+          const courseId = String(args?.courseId || '').trim();
+          if (!/^\d+$/.test(courseId) || Number(courseId) <= 0) throw new Error('缺少或无效参数 courseId，请先调用 citel.courseList');
+          return pageInvoke('citel', `${kind}_of_`, { courseId }, 120000);
+        }
+      })),
       { name: 'assignments_of_', summary: '读取 CITEL 指定课程活动缓存', parameters: '{courseId: 必填, status?: all|pending|submitted|overdue|unknown|resource, type?: all|workshop|programming|resource|url|forum 或中文类型名}', example: 'citel.assignments_of_({courseId:"123",status:"pending"})',
         async run(args) {
           if (!args.courseId) throw new Error('缺少参数 courseId，请先调用 citel.courseList');
@@ -2362,9 +2374,9 @@ name: 've.teachers_of_',
           return result;
         } }
     ].map((entry) => ({ module: 'citel', name: `citel.${entry.name}`, summary: entry.summary, run: entry.run,
-      doc: [`## citel.${entry.name} —— ${entry.summary}`, '', '仅 login 可启用平台；其他操作不会自动启用或登录，也不重新请求平台数据。请先通过 citel.login() 的用户输入窗口登录，或在 CITEL 网页登录后启用平台。密码不保存；无预置真实账号。', '',
-        '互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按选项设置加载。互评须本人提交区有明确证据，编程按 result.php 判断；失败时为 unknown，不冒充未交。status=resource 表示无提交状态的资源。时间戳单位为毫秒，关闭时间为编程截止，折扣时间保留在 schedule 中。返回课程/活动数组，无额外外层包装。', '',
-        `参数：${entry.parameters}`, '', `调用示例：\`${entry.example}\``].join('\n') })),
+      doc: [`## citel.${entry.name} —— ${entry.summary}`, '', '仅 login 可启用平台；其他操作不会自动启用或登录；课程和活动操作只读已加载缓存，教师/学生操作按需请求参与者页面。请先通过 citel.login() 的用户输入窗口登录，或在 CITEL 网页登录后启用平台。密码不保存；无预置真实账号。', '',
+        entry.description || '互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按选项设置加载。互评须本人提交区有明确证据，编程按 result.php 判断；失败时为 unknown，不冒充未交。status=resource 表示无提交状态的资源。时间戳单位为毫秒，关闭时间为编程截止，折扣时间保留在 schedule 中。返回课程/活动数组，无额外外层包装。', '',
+        `参数：${entry.parameters}`, '', `调用示例：\`${entry.example}\``, ...(entry.returns ? ['', `返回示例：${entry.returns}`] : [])].join('\n') })),
     {
       module: 'xuetangx',
       name: 'xuetangx.courseList',

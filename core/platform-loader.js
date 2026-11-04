@@ -6,7 +6,7 @@
     jlgj: ['modules/jlgj/network.js', 'modules/jlgj/platform.js'],
     mooc: ['modules/mooc/platform.js'],
     xuetangx: ['modules/xuetangx/platform.js'],
-    citel: ['modules/citel/platform.js']
+    citel: ['modules/citel/participants.js', 'modules/citel/platform.js']
   };
   global.__bjtuPlatformModulesReady = (async () => {
     const autoUpdateParam = new URLSearchParams(global.location?.search || '').get('autoUpdate');

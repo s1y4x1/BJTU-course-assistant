@@ -22,7 +22,7 @@
     jlgj: { label: '接龙管家', files: ['network.js', 'platform.js', 'background.js', 'theme.js'] },
     mooc: { label: '中国大学MOOC', styles: ['platform.css'], files: ['platform.js', 'background.js', 'inject.js'] },
     xuetangx: { label: '学堂在线', styles: ['platform.css'], files: ['platform.js'] },
-    citel: { label: 'CITEL', styles: ['platform.css'], files: ['platform.js', 'background.js', 'background.html', 'background-page.js'] },
+    citel: { label: 'CITEL', styles: ['platform.css', 'participants.css'], files: ['participants.js', 'platform.js', 'background.js', 'background.html', 'background-page.js'] },
     campusnet: {
       label: '校园网自动重连',
       styles: ['options.css'],
