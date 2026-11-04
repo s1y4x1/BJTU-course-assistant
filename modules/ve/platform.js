@@ -2327,12 +2327,12 @@ function renderVeCourseList(courses, {
                 <div class="ve-course-teacher-loading">悬停加载教师列表…</div>
               </span>
             </span>
-            <span>·</span>
+            <span class="ve-meta-sep">·</span>
             <span class="ve-course-num-wrap" data-course-id="${escapeHtml(String(courseId || ''))}" data-course-num="${escapeHtml(String(courseNumRaw || ''))}" data-fz-id="${escapeHtml(String(fzId || ''))}">
               <span class="ve-course-num-text">${escapeHtml(String(courseNum || ''))}</span>
               <span class="ve-course-teacher-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载同课教师…</div></span>
             </span>
-            <span>·</span>
+            <span class="ve-meta-sep">·</span>
             <span class="ve-student-wrap" data-course-id="${escapeHtml(String(courseId || ''))}">
               <span class="ve-student-count-text">学生</span>
               <span class="ve-student-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载学生列表…</div></span>
