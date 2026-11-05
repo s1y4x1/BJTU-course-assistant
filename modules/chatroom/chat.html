@@ -11,7 +11,6 @@
   <link rel="stylesheet" href="../../UI/theme.css">
   <link rel="stylesheet" href="../../UI/file-size-emphasis.css">
   <link rel="stylesheet" href="../../UI/markdown.css">
-  <link rel="stylesheet" href="../../UI/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="../../UI/toast.css">
   <link rel="stylesheet" href="options.css">
   <link rel="stylesheet" href="chat.css">
@@ -22,7 +21,17 @@
     <section class="conversation card" aria-label="聊天内容">
       <header class="conversation-header"><div class="conversation-heading"><input id="conversation-title" type="text" value="公共群聊" maxlength="80" aria-label="会话备注" title="直接修改会话备注，回车或离开输入框保存" autocomplete="off"><div id="conversation-detail" class="muted"><div id="conversation-members" class="conversation-members"></div><button id="conversation-members-toggle" class="secondary" type="button" hidden>展开成员</button></div></div><div class="actions conversation-header-actions"><button id="invite-group" class="secondary" hidden>邀请成员</button><button id="leave-group" class="secondary" hidden>退出群聊</button><button id="block-peer" class="secondary" hidden>拉黑</button><button id="delete-friend" class="secondary" hidden>删除好友</button><button id="clear-history" class="secondary" type="button">清空记录</button><label class="conversation-mute"><input id="mute-conversation" type="checkbox">免打扰</label></div></header>
       <div id="messages" class="messages" role="log" aria-label="消息记录" aria-live="polite" aria-relevant="additions"><article class="message system" data-empty-message><div class="message-text bjtu-markdown">还没有消息，打个招呼吧。</div></article></div>
-      <form id="message-form" class="composer"><textarea id="message" rows="3" maxlength="8000" aria-label="消息" placeholder="输入消息，Enter 发送，Ctrl+Enter / Shift+Enter 换行；支持 Markdown 语法"></textarea><div class="composer-footer"><div class="actions"><button id="pick-file" type="button" class="secondary">发送文件</button><input id="file-picker" type="file" multiple hidden><button id="share-screen" type="button" class="secondary">共享屏幕</button><button id="stop-screen" type="button" class="danger" hidden>停止共享</button></div><div class="actions"><select id="send-shortcut" class="bjtu-content-sized-select" aria-label="发送消息快捷键"><option value="enter">Enter</option><option value="ctrl-enter">Ctrl+Enter</option></select><button id="send" type="submit">发送</button></div></div></form>
+      <form id="message-form" class="composer">
+        <textarea id="message" rows="3" maxlength="8000" aria-label="消息" placeholder="输入消息，Enter 发送，Ctrl+Enter / Shift+Enter 换行；支持 Markdown 语法"></textarea>
+        <div class="composer-footer">
+          <div class="actions"><button id="pick-file" type="button" class="secondary">发送文件</button><input id="file-picker" type="file" multiple hidden><button id="share-screen" type="button" class="secondary">共享屏幕</button><button id="stop-screen" type="button" class="danger" hidden>停止共享</button></div>
+          <div class="actions composer-send-actions">
+            <label class="composer-toggle"><input id="share-draft" type="checkbox"><span id="share-draft-label">允许他人实时观看</span></label>
+            <label class="composer-toggle"><input id="draft-preview" type="checkbox"><span>预览</span></label>
+            <select id="send-shortcut" class="bjtu-content-sized-select" aria-label="发送消息快捷键"><option value="enter">Enter</option><option value="ctrl-enter">Ctrl+Enter</option></select><button id="send" type="submit">发送</button>
+          </div>
+        </div>
+      </form>
     </section>
   </main>
 
@@ -32,7 +41,6 @@
   <script src="settings.js"></script>
   <script src="sidebar.js"></script>
   <script src="../../UI/marked.umd.js"></script>
-  <script src="../../UI/vendor/katex/katex.min.js"></script>
   <script src="../../UI/markdown.js"></script>
   <script src="../../core/option-tips.js"></script>
   <script src="chat.js"></script>

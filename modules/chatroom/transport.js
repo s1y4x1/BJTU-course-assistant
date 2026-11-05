@@ -41,7 +41,8 @@
   const passiveOptions = !!G.location && !G.location.pathname.endsWith('/modules/chatroom/chat.html');
   const MAX = { peers: 500, rooms: 100, requests: 100, messages: 600, historyBytes: 2 * 1024 * 1024, seen: 2048, packet: 262144, members: 100 };
   const encoder = new TextEncoder(), listeners = new Set(), keyCache = new Map();
-  const domainTypes = new Set(['profile', 'message', 'message-result', 'peer-policy', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-state', 'group-leave', 'group-event']);
+  const domainTypes = new Set(['profile', 'message', 'message-result', 'peer-policy', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-state', 'group-leave', 'group-event','draft']);
+  const draftClocks = new Map();
   let data, privateKey, publicIdentity, link, queue = Promise.resolve();
   let retryTimer, flushing = false, disposed = false;
   let localIP = '';
@@ -475,6 +476,21 @@
   async function action(name, args = {}) {
     await ready;
     args = copy(args);
+    if (name === 'draft') {
+      const text = str(args.text, 8000, true), conversationId = token(args.conversationId), draftId = token(args.draftId);
+      if (!Number.isSafeInteger(args.revision) || args.revision < 1) fail('无效草稿版本。');
+      const targets = await serial(() => {
+        if (conversationId.startsWith('peer:')) {
+          const p = peer(conversationId.slice(5));
+          if (!p || privateDenial(p)) return [];
+          return p.online ? [p.id] : [];
+        }
+        const members = conversationId === 'public' ? data.peers.map(p => p.id) : room(conversationId).members;
+        return members.filter(member => member !== publicIdentity.id && peer(member)?.online && !peer(member).blockedByPeer);
+      });
+      const result = await deliver(targets.map(peerId => ({peerId,type:'draft',payload:{text,conversationId:conversationId.startsWith('peer:') ? 'peer:' + peerId : conversationId,draftId,revision:args.revision}})));
+      return {ok:true, ...result};
+    }
     const method = { scan: 'scan', connect: 'connect', 'pair-create': 'pairCreate', 'pair-accept': 'pairAccept', 'pair-complete': 'pairComplete', close: 'close' }[name];
     if (method) {
       if (!link || typeof link[method] !== 'function') fail('当前浏览器连接引擎不支持此操作。');
@@ -739,7 +755,7 @@
         if (!data.messages.some((m) => m.id === messageId)) history({ id: messageId, senderId: from, conversationId, text: payload.text, createdAt: payload.createdAt });
         data.receipts.push(messageId); data.receipts = data.receipts.slice(-MAX.seen);
         enqueue(effects, from, 'message-result', {messageId:payload.id, status:'accepted'});
-        break;
+        return {type:'message-received', peerId:from, conversationId, createdAt:payload.createdAt};
       }
       case 'signal':
         if (!allowed(from) && !sharedGroup(from)) fail('直连信令需要先添加好友或加入同一群聊。');
@@ -818,6 +834,30 @@
     let packet;
     try { packet = typeof value === 'string' ? JSON.parse(value) : copy(value); } catch { return { ok: false, error: '无效协议包。' }; }
     if (!domainTypes.has(packet?.type) || packet.from !== peerId || !await verifyPacket(packet)) return { ok: false, error: '身份、签名或协议类型校验失败。' };
+    if (packet.type === 'draft') {
+      try {
+        const event = await serial(() => {
+          const payload = packet.payload, p = peer(peerId);
+          str(payload.text,8000,true); token(payload.draftId); token(payload.conversationId);
+          if (!p || p.blocked || !Number.isSafeInteger(payload.revision) || payload.revision < 1 || Date.now()-packet.createdAt > 20000) return null;
+          let conversationId = payload.conversationId;
+          if (conversationId.startsWith('peer:')) {
+            if (conversationId !== 'peer:'+publicIdentity.id || !allowed(peerId)) return null;
+            conversationId = 'peer:'+peerId;
+          } else if (conversationId !== 'public') {
+            const r = data.rooms.find(room => room.id === conversationId);
+            if (!r?.members.includes(publicIdentity.id) || !r.members.includes(peerId)) return null;
+          }
+          const key = peerId+':'+payload.draftId, previous = draftClocks.get(key);
+          if (previous?.revision >= payload.revision) return null;
+          draftClocks.delete(key); draftClocks.set(key,{revision:payload.revision,at:Date.now()});
+          for (const [oldKey,clock] of draftClocks) if (Date.now()-clock.at > 60000 || draftClocks.size > MAX.peers) draftClocks.delete(oldKey);
+          return {type:'draft',peerId,conversationId,text:payload.text,draftId:payload.draftId,revision:payload.revision,createdAt:packet.createdAt};
+        });
+        if (event) emit(event);
+        return {ok:true};
+      } catch (error) {return {ok:false,error:error.message};}
+    }
     try {
       const { result, effects } = await commit((effects) => {
         if (packet.from === publicIdentity.id) fail('拒绝自身回环协议包。');

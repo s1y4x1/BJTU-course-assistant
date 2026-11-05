@@ -58,7 +58,33 @@
   const expandedMembers = new Set();
   let markingRead = false;
   let pendingTitle;
-  const markdown = BjtuMarkdown.createParser({preserveWhitespace:true, math:true});
+  const liveDrafts = new Map(), draftSessionId = crypto.randomUUID();
+  let draftRevision = 0, sharedDraft = null, draftSendTimer, draftRenderTimer, draftStartedAt = Date.now();
+  function clearSharedDraft() {
+    clearTimeout(draftSendTimer); draftSendTimer = null;
+    const previous = sharedDraft; sharedDraft = null;
+    if (previous && transport) void transport.action('draft', {conversationId:previous, text:'', draftId:draftSessionId, revision:++draftRevision}).catch(() => {});
+  }
+  function publishDraft() {
+    clearTimeout(draftSendTimer); draftSendTimer = null;
+    if (stopped || background || !online || !embeddedVisible || !$('share-draft').checked || !$('message').value.length || !selected) {clearSharedDraft(); return;}
+    if (sharedDraft && sharedDraft !== selected) clearSharedDraft();
+    sharedDraft = selected;
+    void transport.action('draft', {conversationId:selected, text:$('message').value, draftId:draftSessionId, revision:++draftRevision}).catch(() => {});
+  }
+  function updateDraftPreview() {
+    if (!$('message').value.length) {draftStartedAt = Date.now(); clearSharedDraft();}
+    if (!draftRenderTimer) draftRenderTimer = setTimeout(() => {draftRenderTimer = null; if (!stopped) renderMessages();}, 30);
+    if ($('share-draft').checked && !draftSendTimer && $('message').value.length) draftSendTimer = setTimeout(publishDraft, 160);
+  }
+  await BjtuMarkdown.ready;
+  const markdown = BjtuMarkdown.createParser({preserveWhitespace:true});
+  const draftHeartbeat = setInterval(() => {
+    let removed = false;
+    for (const [key,draft] of liveDrafts) if (draft.expiresAt <= Date.now()) {liveDrafts.delete(key); removed = true;}
+    if (removed && !stopped) renderMessages();
+    if (sharedDraft) publishDraft();
+  }, 5000);
   BjtuMarkdown.bindCopy($('messages'), {onError: report});
 
   function node(tag, text, cls) {
@@ -181,7 +207,23 @@
   }
   function onEvent(event) {
     if (stopped || !event) return;
-    if (event.type === 'signal') {
+    if (event.type === 'draft') {
+      if (background) return;
+      const key = event.peerId+':'+event.conversationId, previous = liveDrafts.get(key);
+      if (!event.text.length) {
+        if (previous?.draftId === event.draftId) liveDrafts.delete(key);
+      } else if (!previous || previous.draftId === event.draftId || event.createdAt >= previous.createdAt) {
+        liveDrafts.delete(key);
+        liveDrafts.set(key,{id:'draft:'+key, draft:true, senderId:event.peerId, text:event.text, conversationId:event.conversationId,
+          draftId:event.draftId, createdAt:event.createdAt, expiresAt:Date.now()+15000});
+        while (liveDrafts.size > 100) liveDrafts.delete(liveDrafts.keys().next().value);
+      }
+      renderMessages();
+    } else if (event.type === 'message-received') {
+      const key = event.peerId+':'+event.conversationId, previous = liveDrafts.get(key);
+      if (previous && previous.createdAt <= event.createdAt) liveDrafts.delete(key);
+      renderMessages();
+    } else if (event.type === 'signal') {
       // Serialize per peer: description must be applied before subsequent ICE.
       const key = String(event.peerId);
       const prev = pendingSignals.get(key);
@@ -200,6 +242,11 @@
       for (const s of [...sessions.values()]) endSession(s, '连接已断开');
     } else {
       if (event.state) mergeState(event.state);
+      for (const [key,draft] of liveDrafts) {
+        const p = state.peers.find(peer => peer.id === draft.senderId);
+        const r = state.rooms.find(room => room.id === draft.conversationId);
+        if (!p?.online || p.blocked || (draft.conversationId.startsWith('group:') && !r?.members.includes(draft.senderId))) liveDrafts.delete(key);
+      }
       scheduleState();
     }
   }
@@ -252,12 +299,14 @@
       if (interactive) { $('message').focus(); void markConversationRead({interactive:true}); }
       return;
     }
+    clearSharedDraft(); $('share-draft').checked = false;
     drafts.set(selected, $('message').value);
     scrollPositions.set(selected, $('messages').scrollTop);
     while (drafts.size > 100) drafts.delete(drafts.keys().next().value);
     while (scrollPositions.size > 100) scrollPositions.delete(scrollPositions.keys().next().value);
     selected = id;
     $('message').value = drafts.get(id) || '';
+    draftStartedAt = Date.now();
     sidebar?.render();
     updateConversation(); renderMessages();
     $('message').focus();
@@ -265,6 +314,8 @@
   }
   function updateConversation() {
     const room = currentRoom(), peerId = selected.startsWith('peer:') ? selected.slice(5) : null;
+    $('share-draft-label').textContent = peerId ? '允许对方实时观看' : '允许他人实时观看';
+    $('share-draft').disabled = !online || !selected;
     const title = $('conversation-title');
     const displayName = !selected ? '' : peerId ? nameOf(peerId)
       : state.conversations?.[selected]?.remark || (selected === 'public' ? '公共群聊' : room?.name || '群聊已结束');
@@ -338,7 +389,8 @@
     if (changed) { container.replaceChildren(); messageNodes.clear(); messageConversation = selected; }
     const items = [...state.messages.filter(message => !mediaMessages.has(message.id)).map(message => ({...message, displayName: nameOf(message.senderId)})), ...[...mediaMessages.values()].map(s => ({
       id: s.id, conversationId: s.conversationId, senderId: s.senderId, createdAt: s.createdAt, media: true
-    }))].filter((m) => m.conversationId === selected).sort((a,b) => a.createdAt - b.createdAt);
+    })), ...liveDrafts.values(), ...($('draft-preview').checked && $('message').value.length ? [{id:'draft:self',draft:true,senderId:state.self.id,text:$('message').value,conversationId:selected,createdAt:draftStartedAt}] : [])]
+      .filter((m) => m.conversationId === selected).sort((a,b) => Number(!!a.draft)-Number(!!b.draft) || a.createdAt-b.createdAt);
     container.querySelector('[data-empty-message]')?.remove();
     reconcile(container, messageNodes, items, (m) => m.id, (message) => {
       // Persisted media summaries survive reloads, but live cards do not.
@@ -346,6 +398,10 @@
       if (liveMedia) return liveMedia.card;
       const el = node('article', undefined, `message${message.senderId === state.self.id ? ' mine' : ''}`);
       el.dataset.messageId = message.id;
+      if (message.draft) {
+        el.classList.add('message-draft'); el.dataset.draft = 'true';
+        el.append(node('div',message.senderId === state.self.id ? '预览 · 未发送' : '正在输入 · 未发送','message-draft-label'));
+      }
       const content = node('div', undefined, 'message-text bjtu-markdown');
       if (message.system) {
         el.classList.remove('mine'); el.classList.add('system');
@@ -1101,12 +1157,21 @@
     event.preventDefault(); const input = $('message'), text = input.value, conversationId = selected;
     if (!text.trim() || $('send').disabled) return;
     const snapshot = input.value; $('send').disabled = true;
+    clearSharedDraft();
     try {
       await mutate('send-message', { conversationId, text });
       if (selected === conversationId && input.value === snapshot) input.value = '';
       if (drafts.get(conversationId) === snapshot) drafts.delete(conversationId);
-    } catch (error) { report(error); } finally { $('send').disabled = !online; }
+    } catch (error) { report(error); } finally { $('send').disabled = !online; updateDraftPreview(); }
   });
+  listen('message','input',updateDraftPreview);
+  listen('draft-preview','change', () => {
+    updateDraftPreview(); renderMessages(); void chrome.storage.local.set({chatroomDraftPreviewEnabled:$('draft-preview').checked});
+  });
+  listen('share-draft','change', () => {
+    if ($('share-draft').checked) publishDraft(); else clearSharedDraft();
+  });
+  $('draft-preview').checked = (await chrome.storage.local.get('chatroomDraftPreviewEnabled')).chatroomDraftPreviewEnabled === true;
   let sendShortcut = 'enter';
   const updateSendShortcut = value => {
     sendShortcut = value === 'ctrl-enter' ? value : 'enter'; $('send-shortcut').value = sendShortcut;
@@ -1133,8 +1198,8 @@
   if (embedded) window.addEventListener('message', event => {
     if (event.source !== parent || event.origin !== location.origin) return;
     if (event.data?.type !== 'BJTU_CHATROOM_WINDOW_VISIBILITY') return;
-    if (event.data.visible === false) { embeddedVisible = false; stopCapture(); }
-    else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); if (online) void action('scan').catch(report); void markConversationRead(); }
+    if (event.data.visible === false) { embeddedVisible = false; stopCapture(); clearSharedDraft(); }
+    else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); if (online) {void action('scan').catch(report); publishDraft();} void markConversationRead(); }
   }, { signal: uiAbort.signal });
   window.addEventListener('bjtu-chatroom-transport-ready', () => attachTransport().catch(report), { signal: uiAbort.signal });
   window.addEventListener('focus', () => { void markConversationRead(); }, {signal:uiAbort.signal});
@@ -1144,6 +1209,7 @@
     if (sessions.size || memoryReserved || capture) { event.preventDefault(); event.returnValue = ''; }
   }, { signal: uiAbort.signal });
   window.addEventListener('pagehide', () => {
+    clearSharedDraft(); clearInterval(draftHeartbeat); clearTimeout(draftRenderTimer); liveDrafts.clear();
     stopped = true; clearTimeout(stateTimer); uiAbort.abort(); membersObserver.disconnect();
     globalThis.BjtuChatroomLink?.close();
     try { unsubscribe?.(); } catch {}
@@ -1198,6 +1264,7 @@
     if (navigation?.tabId === tab?.id) chooseConversation(navigation.conversationId);
   };
   const onNavigation = (changes,area) => {
+    if (area==='local' && changes.chatroomDraftPreviewEnabled) {$('draft-preview').checked = changes.chatroomDraftPreviewEnabled.newValue === true; updateDraftPreview();}
     if (area==='local' && changes.chatroomSendShortcut) updateSendShortcut(changes.chatroomSendShortcut.newValue);
     if (area==='local' && changes.chatroomNavigation) void consumeNavigation(changes.chatroomNavigation.newValue).catch(report);
   };
