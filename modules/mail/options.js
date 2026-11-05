@@ -10,6 +10,7 @@
   const LIST_LIMIT_KEY = 'mailListLimit';
   const FULLSCREEN_BUTTON_KEY = 'mailFullscreenButtonEnabled';
   const FULLSCREEN_BUTTON_ICON_KEY = 'mailFullscreenButtonIcon';
+  const MARK_READ_KEY = 'mailMarkReadOnPreview';
   const LIST_LIMIT_INPUT_ID = 'mailListLimit';
   const STATUS_KEY = 'mailMonitorStatus';
 
@@ -18,6 +19,7 @@
   let mailPreviewRequestId = 0;
   let activeMailPreviewCell = null;
   let mailPreviewController = null;
+  let markReadOnPreview = true;
 
   const element = (id) => document.getElementById(id);
   const send = (type, payload) => chrome.runtime.sendMessage({ type, payload })
@@ -244,11 +246,11 @@
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
       body: new URLSearchParams({ mid }).toString()
     });
-    if (!response.ok) throw new Error(`旧接口 HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`邮件正文接口 HTTP ${response.status}`);
     const data = await response.json();
-    if (data?.code !== 'S_OK') throw new Error(`旧接口 ${data?.code || '无响应码'}${data?.message ? ` ${data.message}` : ''}`);
+    if (data?.code !== 'S_OK') throw new Error(`邮件正文接口 ${data?.code || '无响应码'}${data?.message ? ` ${data.message}` : ''}`);
     const content = data?.var?.mail?.mainPartData?.content;
-    if (typeof content !== 'string') throw new Error('旧接口响应中没有 var.mail.mainPartData.content');
+    if (typeof content !== 'string') throw new Error('邮件正文响应中没有 var.mail.mainPartData.content');
     return content;
   }
 
@@ -322,6 +324,11 @@
       let previewDocument;
       const showLegacyContent = async () => {
         const content = await fetchLegacyMailContent(row.id, controller.signal);
+        row.read = true;
+        const messageRow = cell.closest('.mail-row');
+        messageRow?.classList.remove('mail-row-unread');
+        const subject = messageRow?.querySelector('.mail-subject');
+        if (subject?.firstChild?.nodeType === Node.TEXT_NODE) subject.firstChild.textContent = row.subject || '(无主题)';
         if (controller.signal.aborted || requestId !== mailPreviewRequestId) return;
         previewDocument?.close();
         previewDocument = null;
@@ -330,6 +337,7 @@
         positionMailPreview(cell);
       };
       try {
+        if (markReadOnPreview) { await showLegacyContent(); return; }
         const response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: controller.signal });
         if (response.status === 500) {
           await response.body?.cancel();
@@ -489,8 +497,10 @@
   async function refreshContext() {
     const [context, buttonSettings] = await Promise.all([
       send('MAIL_GET_CONTEXT'),
-      chrome.storage.local.get([FULLSCREEN_BUTTON_KEY, FULLSCREEN_BUTTON_ICON_KEY])
+      chrome.storage.local.get([FULLSCREEN_BUTTON_KEY, FULLSCREEN_BUTTON_ICON_KEY, MARK_READ_KEY])
     ]);
+    markReadOnPreview = buttonSettings?.[MARK_READ_KEY] !== false;
+    if (element(MARK_READ_KEY)) element(MARK_READ_KEY).checked = markReadOnPreview;
     const fullscreenButton = element(FULLSCREEN_BUTTON_KEY);
     if (fullscreenButton instanceof HTMLInputElement) {
       fullscreenButton.checked = buttonSettings?.[FULLSCREEN_BUTTON_KEY] !== false;
@@ -568,6 +578,10 @@
   }
 
   function bindEvents() {
+    element(MARK_READ_KEY)?.addEventListener('change', async event => {
+      markReadOnPreview = event.currentTarget.checked;
+      await chrome.storage.local.set({[MARK_READ_KEY]:markReadOnPreview});
+    });
     element(FULLSCREEN_BUTTON_KEY)?.addEventListener('change', async (event) => {
       const enabled = event.currentTarget.checked === true;
       updateDisabledState();
@@ -618,6 +632,11 @@
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if (changes[MARK_READ_KEY]) {
+        markReadOnPreview = changes[MARK_READ_KEY].newValue !== false;
+        if (element(MARK_READ_KEY)) element(MARK_READ_KEY).checked = markReadOnPreview;
+        hideMailPreview();
+      }
       if (changes[ENABLED_KEY]) {
         if (element(ENABLED_KEY)) element(ENABLED_KEY).checked = changes[ENABLED_KEY].newValue === true;
         updateDisabledState();
@@ -676,12 +695,14 @@
       [INTERVAL_KEY]: DEFAULT_INTERVAL_MINUTES,
       [LIST_LIMIT_KEY]: DEFAULT_LIST_LIMIT,
       [FULLSCREEN_BUTTON_KEY]: true,
+      [MARK_READ_KEY]: true,
       [FULLSCREEN_BUTTON_ICON_KEY]: 'envelope'
     });
     await chrome.storage.local.remove([STATUS_KEY]);
     if (!initialized || functionalPage) return;
     element(ENABLED_KEY).checked = true;
     element(FULLSCREEN_BUTTON_KEY).checked = true;
+    element(MARK_READ_KEY).checked = true;
     element(FULLSCREEN_BUTTON_ICON_KEY).value = 'envelope';
     setIntervalEditor(DEFAULT_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES);
     const limitInput = element(LIST_LIMIT_INPUT_ID);
