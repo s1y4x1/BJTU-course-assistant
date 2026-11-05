@@ -58,7 +58,7 @@
   const expandedMembers = new Set();
   let markingRead = false;
   let pendingTitle;
-  const markdown = new marked.Marked({gfm: true, breaks: true, renderer: BjtuMarkdown.createRenderer()});
+  const markdown = BjtuMarkdown.createParser({preserveWhitespace:true, math:true});
   BjtuMarkdown.bindCopy($('messages'), {onError: report});
 
   function node(tag, text, cls) {
@@ -1098,8 +1098,8 @@
     scheduleState();
   }
   listen('message-form', 'submit', async (event) => {
-    event.preventDefault(); const input = $('message'), text = input.value.trim(), conversationId = selected;
-    if (!text || $('send').disabled) return;
+    event.preventDefault(); const input = $('message'), text = input.value, conversationId = selected;
+    if (!text.trim() || $('send').disabled) return;
     const snapshot = input.value; $('send').disabled = true;
     try {
       await mutate('send-message', { conversationId, text });

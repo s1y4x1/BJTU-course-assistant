@@ -46,7 +46,13 @@ html[data-color-scheme="dark"] .message-author-name { color:#e5e7eb; }
 html[data-color-scheme="dark"] .message-delivery-status.error { color:#fbbf24; }
 .message.system { margin:0 auto; padding:10px 12px; border:0; background:transparent; text-align:center; color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .message.system .message-text { margin:0; }
-.message-text { line-height:1.7; margin-top:5px; }
+.message-text { line-height:1.7; margin-top:5px; white-space:break-spaces; }
+.message-text :is(ul,ol) { padding-inline-start:1.2em; margin-block:0; }
+.message-text :is(p,li) { margin-block:0; }
+.message-text table { white-space:normal; }
+.message-text :is(th,td) { white-space:break-spaces; }
+.message-text :is(.bjtu-md-codeblock-toolbar,.katex) { white-space:normal; }
+.message-text .katex-display { margin:0; overflow-x:auto; overflow-y:hidden; }
 .message-text img { max-width:100%; max-height:380px; }
 .message-text table { display:block; max-width:100%; overflow:auto; border-collapse:collapse; }
 .message-text :is(th,td) { border:1px solid var(--chat-line); padding:4px 8px; }

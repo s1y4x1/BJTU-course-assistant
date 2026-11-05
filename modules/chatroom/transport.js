@@ -626,7 +626,7 @@
         return {};
       }
       case 'send-message': {
-        const text = str(args.text, 8000).trim(), conversationId = token(args.conversationId);
+        const text = str(args.text, 8000), conversationId = token(args.conversationId);
         let targets;
         if (conversationId === 'public') targets = data.peers.filter((p) => p.online && p.id !== publicIdentity.id && !p.blockedByPeer).map((p) => p.id);
         else if (conversationId.startsWith('peer:')) {
