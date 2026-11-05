@@ -132,7 +132,9 @@
         ...(chapter.lessons || []).flatMap((lesson) => (lesson.units || []).map((unit) => ({ test: unit, type: { 1:'video', 3:'document', 6:'discussion' }[unit.contentType] })))
       ]).filter(({ test, type }) => test?.id && types.has(type));
       return (await Promise.all(works.map(async ({ test, type }) => {
-        const done = test.userScore !== null && test.userScore !== undefined && String(test.userScore) !== '';
+        const info = type === 'hw' ? (await request('homework-info', { tid: test.id })).result : null;
+        const done = type === 'hw' ? Number(info?.submitStatus) === 2
+          : test.userScore !== null && test.userScore !== undefined && String(test.userScore) !== '';
         let detail = '';
         if (!done && type === 'quiz') detail = (await request('quiz-info', { tid: test.id })).result?.description || '';
         if (!done && type === 'hw') detail = (await request('homework-paper', { tid: test.id })).result?.tname || '';

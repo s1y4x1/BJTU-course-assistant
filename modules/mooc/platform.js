@@ -107,7 +107,9 @@ let moocLoginAssistOpening = null;
   function buildTask(test, type, chapterName) {
     const deadline = Number(test?.deadline || 0);
     const startTime = Number(test?.startTime ?? test?.start_time ?? test?.openTime ?? test?.open_time ?? test?.beginTime ?? 0) || 0;
-    const done = test?.userScore !== null && test?.userScore !== undefined && String(test.userScore) !== '';
+    const detail = taskDetailCache.get(`${type}:${test.id}`) || null;
+    const done = type === 'hw' ? Number(detail?.submitStatus ?? test?.submitStatus) === 2
+      : test?.userScore !== null && test?.userScore !== undefined && String(test.userScore) !== '';
     const task = {
       id: String(test.id),
       type,
@@ -120,7 +122,7 @@ let moocLoginAssistOpening = null;
       done,
       overdue: !done && deadline > 0 && deadline < Date.now()
     };
-    task.detail = taskDetailCache.get(`${type}:${task.id}`) || null;
+    task.detail = detail;
     return task;
   }
 
@@ -311,9 +313,10 @@ let moocLoginAssistOpening = null;
       const pendingHtml = pending.map((task) => renderTask(course, task)).join('');
       const overdueHtml = overdue.map((task) => renderTask(course, task)).join('');
       const doneHtml = done.map((task) => renderTask(course, task)).join('');
-      const taskSections = `${pendingHtml}
+      const taskSections = `
         ${overdue.length ? renderToggle(course.id, 'overdue', expanded.overdue, overdue.length, '查看逾期作业', '收起逾期作业') : ''}
         ${overdue.length ? `<div class="homework-group homework-group--overdue ${expanded.overdue ? '' : 'is-hidden'}" data-homework-group="overdue" aria-hidden="${expanded.overdue ? 'false' : 'true'}">${overdueHtml}</div>` : ''}
+        ${pendingHtml}
         ${done.length ? renderToggle(course.id, 'done', expanded.done, done.length, '查看已交作业', '收起已交作业') : ''}
         ${done.length ? `<div class="homework-group homework-group--done ${expanded.done ? '' : 'is-hidden'}" data-homework-group="done" aria-hidden="${expanded.done ? 'false' : 'true'}">${doneHtml}</div>` : ''}`;
       const typeLoadingHtml = globalThis.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels.filter((label) => [...visibleTypes].some((type) => typeText(type) === label)), { escape: env.escape });
@@ -350,8 +353,13 @@ let moocLoginAssistOpening = null;
     task.detailLoading = true;
     render();
     try {
-      const paper = await requestPaperWithRetry('homework-paper', task.id, '作业详情为空（可能受到并发限制）');
-      task.detail = { questions: buildPaperDetail(paper), tname: String(paper.tname || '') };
+      const [paper, info] = await Promise.all([
+        requestPaperWithRetry('homework-paper', task.id, '作业详情为空（可能受到并发限制）'),
+        requestPaperWithRetry('homework-info', task.id, '单元作业信息为空')
+      ]);
+      task.done = Number(info.submitStatus) === 2;
+      task.overdue = !task.done && task.deadline > 0 && task.deadline < Date.now();
+      task.detail = { questions: buildPaperDetail(paper), tname: String(paper.tname || ''), submitStatus: info.submitStatus };
       taskDetailCache.set(`${task.type}:${task.id}`, task.detail);
       return paper;
     } finally {

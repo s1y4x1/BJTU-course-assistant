@@ -293,7 +293,7 @@
         const side = '<span class="homework-toggle-side" aria-hidden="true"><span class="homework-toggle-line"></span><span class="homework-toggle-arrow"></span><span class="homework-toggle-line"></span></span>';
         return `<div class="homework-toggle-row homework-toggle-row--${groupKind}"><button type="button" class="btn homework-toggle-btn ${open ? 'is-expanded homework-toggle-btn--up' : 'homework-toggle-btn--down'}" data-citel-toggle="${escape(key)}" data-count="${tasks.length}" data-collapsed-text="${escape(labels.collapsed)}" data-expanded-text="${escape(labels.expanded)}" aria-expanded="${open}">${side}<span class="homework-toggle-label">${escape(open ? labels.expanded : labels.collapsed)} (${tasks.length})</span>${side}</button></div><div class="homework-group homework-group--${groupKind}${open ? '' : ' is-hidden'}" data-citel-group="${escape(key)}" data-expanded="${open ? '1' : '0'}" aria-hidden="${!open}">${tasks.map((task) => renderTask(task, course)).join('')}</div>`;
       };
-      const content = pending.map((task) => renderTask(task, course)).join('') + group('overdue') + group('submitted');
+      const content = group('overdue') + pending.map((task) => renderTask(task, course)).join('') + group('submitted');
       const loadingHtml = global.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels || [], { escape });
       const card = global.BjtuCourseCardUi.createCourseCard({
         courseId: `citel-${course.id}`, className: 'citel-standalone-card', order: 260000 + index,

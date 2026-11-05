@@ -1242,9 +1242,10 @@
       const overdue = course.tasks.filter((task) => task.overdue);
       const done = course.tasks.filter((task) => task.done);
       const expanded = expandedGroups.get(course.id) || { overdue: false, done: false };
-      const taskSections = `${pending.map((task) => renderTask(course, task)).join('')}
+      const taskSections = `
         ${overdue.length ? renderToggle(course.id, 'overdue', expanded.overdue, overdue.length) : ''}
         ${overdue.length ? `<div class="homework-group homework-group--overdue ${expanded.overdue ? '' : 'is-hidden'}" data-homework-group="overdue" aria-hidden="${expanded.overdue ? 'false' : 'true'}">${overdue.map((task) => renderTask(course, task)).join('')}</div>` : ''}
+        ${pending.map((task) => renderTask(course, task)).join('')}
         ${done.length ? renderToggle(course.id, 'done', expanded.done, done.length) : ''}
         ${done.length ? `<div class="homework-group homework-group--done ${expanded.done ? '' : 'is-hidden'}" data-homework-group="done" aria-hidden="${expanded.done ? 'false' : 'true'}">${done.map((task) => renderTask(course, task)).join('')}</div>` : ''}`;
       const typeLoadingHtml = global.BjtuHomeworkUi.typeLoadingHtml(course.pendingTypeLabels, { escape });

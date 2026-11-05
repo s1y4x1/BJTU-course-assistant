@@ -9,6 +9,7 @@
     quizPaper: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.getOpenQuizPaperDto.rpc`,
     quizInfo: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.getOpenQuizInfo.rpc`,
     homeworkPaper: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.getOpenHomeworkPaperDto.rpc`,
+    homeworkInfo: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.getOpenHomeworkInfo.rpc`,
     submit: `${MOOC_ORIGIN}/web/j/mocQuizRpcBean.submitAnswers.rpc`,
     answer: 'https://ginnnnnn.top/api/mooc/test/'
   };
@@ -278,6 +279,7 @@
     else if (action === 'quiz-paper') result = await postJson(MOOC_API.quizPaper, { tid: Number(payload?.tid) }, csrfKey);
     else if (action === 'quiz-info') result = await postJson(MOOC_API.quizInfo, { tid: Number(payload?.tid), targetAid: null, isDraft: false }, csrfKey);
     else if (action === 'homework-paper') result = await postJson(MOOC_API.homeworkPaper, { tid: Number(payload?.tid), withStdAnswerAndAnalyse: false }, csrfKey);
+    else if (action === 'homework-info') result = await postJson(MOOC_API.homeworkInfo, { tid: Number(payload?.tid), targetAid: null, isDraft: false }, csrfKey);
     else if (action === 'submit') result = await postJson(MOOC_API.submit, { paperDto: payload?.paperDto, preview: false }, csrfKey);
     else if (action === 'complete-task') result = await completeTask(payload, csrfKey);
     else result = { ok: false, message: '不支持的中国大学MOOC操作' };
