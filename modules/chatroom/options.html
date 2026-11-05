@@ -47,7 +47,7 @@
   <label class="chatroom-option-check" style="margin-left: 24px"><span>重试间隔</span><input id="chatroomReconnectIntervalSeconds" type="number" min="0.1" max="60" step="0.1" value="5" style="width: 6em"><span>秒</span></label>
   <label class="chatroom-option-check"><input id="chatroomNotifyNewMessages" type="checkbox" checked><span>新消息提醒</span><span class="tip">收到当前未在查看的会话消息时发送系统通知；会话开启免打扰后不发送通知。</span></label>
   <label class="chatroom-option-check"><input id="chatroomBackgroundEnabled" type="checkbox" checked><span>后台保持在线并接收消息</span><span class="tip">关闭聊天室页面后仍保持在线。打开前台时，后台等待正在接收的文件结束后交接；不申请权限或接收屏幕共享。</span></label>
-  <label class="chatroom-option-check" style="margin-left: 24px"><input id="chatroomBackgroundReceiveFiles" type="checkbox" checked><span>后台同时接收文件</span><span class="tip">仅接收符合自动保存设置且扩展目录已有读写授权的文件；否则拒绝此次传输，并通知你打开聊天室后请对方重发。关闭后台在线时此选项不生效。</span></label>
+  <label class="chatroom-option-check" style="margin-left: 24px"><input id="chatroomBackgroundReceiveFiles" type="checkbox" checked><span>后台同时接收文件</span><span class="tip">符合自动保存设置且扩展目录已有读写授权时自动接收。否则通过通知询问是否接收；未授权保存目录时，打开聊天室选择保存位置。关闭后台在线时此选项不生效。</span></label>
   <template data-chatroom-sidebar-end></template>
   <a id="chatroomOpen" class="option-action-link" href="/modules/chatroom/chat.html">打开局域网聊天室</a>
 </section>

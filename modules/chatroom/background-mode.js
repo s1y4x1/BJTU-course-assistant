@@ -25,9 +25,14 @@
   // Synchronous filtering lets other renderers decline without holding the
   // response channel open; exactly the selected renderer executes the action.
   const engineId = crypto.randomUUID();
-  let ready = false;
+  let ready = false, fileDecisionHandler;
   chrome.runtime.onMessage.addListener((message,sender,respond) => {
     if (sender.id !== chrome.runtime.id) return false;
+    if (enabled && message?.type === 'BJTU_CHATROOM_FILE_DECISION' && message.engineId === engineId && fileDecisionHandler) {
+      void Promise.resolve().then(() => fileDecisionHandler(message)).then(respond,
+        error => respond({ok:false,error:error.message}));
+      return true;
+    }
     const lease = globalThis.BjtuChatroomEngineLease, transport = globalThis.BjtuChatroomTransport;
     if (!ready || !['background','foreground'].includes(lease?.role) || lease.draining || !transport) return false;
     if (message?.type === 'BJTU_CHATROOM_ENGINE_DISCOVER') {
@@ -40,7 +45,7 @@
       result => respond({ok:true,result:{...result,discoveryStatus:globalThis.BjtuChatroomLink?.discoveryStatus || 'disconnected'}}),error => respond({ok:false,error:error.message}));
     return true;
   });
-  async function canReceiveFile(size) {
+  async function canReceiveFile(size, approved = false) {
     if (!enabled || globalThis.BjtuChatroomEngineLease?.draining) return false;
     if (!Number.isSafeInteger(size) || size < 0) return false;
     try {
@@ -48,9 +53,10 @@
         chatroomBackgroundEnabled:true,chatroomBackgroundReceiveFiles:true,
         chatroomAutoSaveEnabled:true,chatroomAutoSaveMaxBytes:100000000
       });
-      if (settings.chatroomBackgroundEnabled === false || settings.chatroomBackgroundReceiveFiles === false ||
+      if (settings.chatroomBackgroundEnabled === false) return false;
+      if (!approved && (settings.chatroomBackgroundReceiveFiles === false ||
           settings.chatroomAutoSaveEnabled === false ||
-          !(settings.chatroomAutoSaveMaxBytes === null || size < settings.chatroomAutoSaveMaxBytes)) return false;
+          !(settings.chatroomAutoSaveMaxBytes === null || size < settings.chatroomAutoSaveMaxBytes))) return false;
       // This only queries an already persisted grant. No requestPermission and
       // no picker, including when the saved handle is absent or revoked.
       const root = await directory();
@@ -72,10 +78,13 @@
       });
     } finally { db.close(); }
   }
-  async function notifyInvitation({peerId,media,name,reason,sid} = {}) {
+  async function notifyInvitation({peerId,media,name,reason,sid,size,conversationId,pending = false} = {}) {
     if (!enabled) return;
     await chrome.runtime.sendMessage({type:'BJTU_CHATROOM_BACKGROUND_INVITATION',
-      peerId,media,name,reason,sid}).catch(error => console.warn('[bjtu] background invitation:',error));
+      engineId,peerId,media,name,reason,sid,size,conversationId,pending}).catch(error => console.warn('[bjtu] background invitation:',error));
+  }
+  function closeInvitation(peerId,sid) {
+    if (enabled) void chrome.runtime.sendMessage({type:'BJTU_CHATROOM_FILE_INVITATION_CLOSED',engineId,peerId,sid}).catch(() => {});
   }
   function publishStatus(detail) {
     void chrome.runtime.sendMessage({type:'BJTU_CHATROOM_ENGINE_STATUS',detail}).catch(() => {});
@@ -121,5 +130,5 @@
     ready = true;
     publishStatus({type:globalThis.BjtuChatroomLink?.discoveryStatus === 'connected' ? 'discovery' : 'scan-closed'});
     void chrome.storage.local.get(reconnectSettings).then(settings => { reconnectSettings = settings; scheduleReconnect(); });
-  },pauseReconnect,resumeReconnect};
+  },pauseReconnect,resumeReconnect,closeInvitation,setFileDecisionHandler(fn) { fileDecisionHandler = fn; }};
 })();

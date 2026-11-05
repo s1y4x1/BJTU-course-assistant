@@ -42,8 +42,17 @@
   const savedPreviews = new Map();
   const messageNodes = new Map();
   const pendingSignals = new Map(), closedSessions = new Map();
-  globalThis.BjtuChatroomEngineLease?.setCanYield(() => !sessions.size && !pendingSignals.size && !statePromise && !stateTimer);
+  let invitationHandoff;
+  globalThis.BjtuChatroomEngineLease?.setCanYield(() => !invitationHandoff && !sessions.size && !pendingSignals.size && !statePromise && !stateTimer);
   const uiAbort = new AbortController();
+  window.addEventListener('bjtu-chatroom-engine-rolechange',event => {
+    if (!background || !event.detail?.draining || invitationHandoff) return;
+    invitationHandoff = handoffInvitations([...sessions.values()].filter(s => !s.outgoing && !s.accepted && !s.accepting && s.type === 'file'))
+      .catch(error => {
+        report(error);
+        for (const s of [...sessions.values()]) if (!s.outgoing && !s.accepted && !s.accepting) endSession(s,'无法交接邀请，请重新发送',true);
+      }).finally(() => { invitationHandoff = null; });
+  },{signal:uiAbort.signal});
   let lastToast = { text: '', at: 0 }, messageConversation = '';
   let membersSignature = '';
   const expandedMembers = new Set();
@@ -346,9 +355,7 @@
         el.append(messageHeader(message.senderId, message.createdAt), content);
       }
       if (message.file && message.fileHandleRef) {
-        addSavedFileAction(el, message);
-        const task = savedPreviews.get(message.id);
-        if (task) { task.card = el; if (task.preview) el.append(task.preview); }
+        restoreSavedFilePreview(el, message);
       }
       if (message.senderId === state.self.id && message.delivery) {
         const status = {queued:'等待连接恢复后自动重试…',sending:'正在发送…',rejected:'发送被拒绝',withdrawn:'已取消未送达的发送'}[message.status];
@@ -378,23 +385,66 @@
     else if (anchor?.el.isConnected) container.scrollTop = oldTop + anchor.el.getBoundingClientRect().top - anchorOffset;
     else container.scrollTop = Math.max(0, oldTop + container.scrollHeight - oldHeight);
   }
-  function addSavedFileAction(card, message) {
-    const view = button('查看文件', async () => {
-      if (card.querySelector(':scope > .file-preview')) return;
-      view.disabled = true;
-      const task = {name:message.file.name, conversationId:message.conversationId, card,
-        message:{id:message.id}, chunks:[]};
-      savedPreviews.set(message.id, task);
+  function restoreSavedFilePreview(card, message) {
+    if (background) return;
+    let task = savedPreviews.get(message.id);
+    if (task) {
+      task.card = card;
+      if (task.preview) card.append(task.preview);
+      if (task.status) card.append(task.status);
+      return;
+    }
+    task = {name:message.file.name, conversationId:message.conversationId, card,
+      message:{id:message.id}, chunks:[], status:node('p','正在读取文件…','muted saved-file-status')};
+    savedPreviews.set(message.id, task); card.append(task.status);
+    const load = async (requestPermission = false) => {
+      task.status.replaceChildren(document.createTextNode('正在读取文件…'));
       try {
-        const file = await globalThis.BjtuChatroomSettings.loadReceivedFile(message.fileHandleRef, true);
+        const file = await globalThis.BjtuChatroomSettings.loadReceivedFile(message.fileHandleRef, requestPermission);
         if (savedPreviews.get(message.id) !== task || stopped || selected !== task.conversationId) return;
         await previewFile(task, file);
-      } catch (error) { report(error); }
-      finally { view.disabled = false; }
-    }, 'secondary file-view');
-    card.append(view);
+        task.status.remove(); task.status = null;
+      } catch (error) {
+        if (savedPreviews.get(message.id) !== task || stopped) return;
+        task.status.textContent = error.message;
+        if (error.code === 'FILE_PERMISSION_REQUIRED') {
+          const authorize = node('a','授权读取文件'); authorize.href = '#';
+          authorize.addEventListener('click',event => { event.preventDefault(); void load(true); });
+          task.status.append(document.createTextNode(' '),authorize);
+        }
+      }
+    };
+    void load();
   }
   // Each file/screen has its own PC and unpredictable session id.
+  async function handoffInvitations(tasks) {
+    if (!tasks.length) return;
+    await navigator.locks.request('bjtuca-chatroom-pending-invitations',async () => {
+      const {chatroomPendingInvitations:stored = []} = await chrome.storage.local.get('chatroomPendingInvitations');
+      const pending = new Map(stored.filter(item => Date.now()-item.createdAt < 120000).map(item => [item.peerId+':'+item.sid,item]));
+      for (const s of tasks) if (!s.ended && !s.accepted && !s.accepting) pending.set(s.peerId+':'+s.id,{
+        peerId:s.peerId,sid:s.id,messageId:s.messageId,name:s.name,size:s.size,conversationId:s.conversationId,createdAt:s.createdAt
+      });
+      await chrome.storage.local.set({chatroomPendingInvitations:[...pending.values()].slice(-LIMIT.sessions)});
+    });
+    for (const s of tasks) if (!s.ended && !s.accepted && !s.accepting) endSession(s,'等待在聊天室中接收');
+  }
+  async function restoreInvitations() {
+    const pending = await navigator.locks.request('bjtuca-chatroom-pending-invitations',async () => {
+      const {chatroomPendingInvitations:items = []} = await chrome.storage.local.get('chatroomPendingInvitations');
+      if (items.length) await chrome.storage.local.set({chatroomPendingInvitations:[]});
+      return items;
+    });
+    for (const item of pending.slice(-LIMIT.sessions)) {
+      if (!/^[a-f0-9]{64}$/.test(item.peerId) || typeof item.sid !== 'string' || item.sid.length > 100 ||
+          typeof item.messageId !== 'string' || item.messageId.length > 100 || !Number.isSafeInteger(item.size) || item.size < 0 ||
+          !Number.isFinite(item.createdAt) || Date.now()-item.createdAt > 120000 || !permitted(item.peerId)) continue;
+      const conversationId = item.conversationId === 'public' || state.rooms.some(room => room.id === item.conversationId && room.members.includes(item.peerId))
+        ? item.conversationId : `peer:${item.peerId}`;
+      const s = makeSession(item.sid,item.peerId,'file',false,{messageId:item.messageId,name:safeName(item.name),size:item.size,conversationId,createdAt:item.createdAt});
+      touch(s,Math.max(1,120000-(Date.now()-item.createdAt))); showInvitation(s);
+    }
+  }
   function signal(s, kind, extra = {}) { return action('signal', { peerId: s.peerId, payload: { protocol: PROTOCOL, sid: s.id, kind, ...extra } }); }
   function touch(s, timeout = 120000) {
     clearTimeout(s.timer);
@@ -533,7 +583,7 @@
         } catch(error) {
           s.accepting = false;
           if (background) {
-            await backgroundMode.notifyInvitation({peerId:s.peerId,media:s.type,name:s.name,reason:error.message,sid:s.id});
+            void backgroundMode.notifyInvitation({peerId:s.peerId,media:s.type,name:s.name,reason:error.message,sid:s.id}).catch(report);
             endSession(s,'后台无法自动保存，请打开聊天室接收',true); return;
           }
           if (!s.ended) { showInvitation(s); report(error); }
@@ -631,9 +681,17 @@
       s = makeSession(sid, peerId, payload.media, false, { messageId: payload.messageId, name: safeName(payload.name), size: payload.size || 0, conversationId });
       try {
         if (background) {
+          if (globalThis.BjtuChatroomEngineLease?.draining) { endSession(s,'正在切换至前台，请重新发送',true); return; }
           if (s.type !== 'file' || !await backgroundMode.canReceiveFile(s.size)) {
-            await backgroundMode.notifyInvitation({peerId,media:s.type,name:s.name,reason:'请打开聊天室处理',sid});
-            endSession(s,'后台不接受此传输，请打开聊天室处理',true); return;
+            if (s.type === 'file') {
+              s.waitingDecision = true; showInvitation(s);
+              void backgroundMode.notifyInvitation({peerId,media:s.type,name:s.name,size:s.size,conversationId,sid,
+                pending:true,reason:'文件超过自动接收限制，或未满足后台自动保存条件'}).catch(report);
+            } else {
+              endSession(s,'后台不接受屏幕共享，请打开聊天室处理',true);
+              void backgroundMode.notifyInvitation({peerId,media:s.type,name:s.name,reason:'请打开聊天室观看',sid}).catch(report);
+            }
+            return;
           }
           await acceptInvitation(s,true); return;
         }
@@ -766,7 +824,6 @@
         const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref};
         await mutate('media-file-saved', metadata);
         Object.assign(s.message, metadata);
-        addSavedFileAction(s.card, s.message);
       } catch (error) {
         if (ref) await globalThis.BjtuChatroomSettings.removeReceivedFile(ref).catch(report);
         report(new Error('文件已保存，但保存历史引用失败：' + error.message));
@@ -819,7 +876,7 @@
       if (media instanceof HTMLMediaElement) { media.controls = true; media.preload = 'metadata'; }
       // PDF Blob has a fixed application/pdf MIME type. Chromium's native PDF
       // viewer cannot run in a sandboxed iframe (plugins are disabled there).
-      if (media instanceof HTMLIFrameElement) media.title = s.name;
+      if (media instanceof HTMLIFrameElement) { media.title = s.name; media.loading = 'lazy'; }
       preview.append(media);
       const open = node('a', '打开预览'); open.href = s.previewURL; open.target = '_blank'; open.rel = 'noopener noreferrer';
       preview.append(open);
@@ -834,7 +891,10 @@
       if (file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
     } else {
       s.previewURL = URL.createObjectURL(file.slice(0, file.size, 'application/octet-stream'));
-      const open = button('打开', () => window.open(s.previewURL, '_blank', 'noopener,noreferrer'), 'secondary file-open');
+      const open = button('打开', () => {
+        const link = node('a'); link.href = s.previewURL; link.download = s.name; link.hidden = true;
+        document.body.append(link); link.click(); link.remove();
+      }, 'secondary file-open');
       preview.append(open);
     }
     if (!previewCurrent(s, preview)) { if (s.preview === preview) releasePreview(s); return; }
@@ -894,6 +954,7 @@
     if (!s || s.ended) return;
     if (notify && online) signal(s, 'cancel').catch(() => {});
     s.ended = true; s.status = reason; clearTimeout(s.timer);
+    if (s.waitingDecision) backgroundMode?.closeInvitation(s.peerId,s.id);
     closedSessions.set(s.id, Date.now());
     while (closedSessions.size > 128) closedSessions.delete(closedSessions.keys().next().value);
     s.rejectWait?.(); s.wake = null; s.file = null; s.candidates.length = 0;
@@ -1073,6 +1134,24 @@
   await sidebar.ready;
   renderState(); connectionStatus(false);
   await attachTransport();
+  backgroundMode?.setFileDecisionHandler(async ({peerId,sid,accept}) => {
+    const s = sessions.get(sid);
+    if (!s || s.peerId !== peerId || s.ended || !s.waitingDecision || s.accepting || s.accepted)
+      return {ok:false,error:'文件邀请已失效，请让对方重新发送。'};
+    if (!accept) { endSession(s,'已拒绝',true); return {ok:true}; }
+    if (globalThis.BjtuChatroomEngineLease?.draining) return {ok:false,error:'邀请正在移交前台，请在聊天室内接收。',openChat:true,conversationId:s.conversationId};
+    if (!await backgroundMode.canReceiveFile(s.size,true)) {
+      await handoffInvitations([s]);
+      return {ok:true,openChat:true,conversationId:s.conversationId};
+    }
+    try { await acceptInvitation(s,true); }
+    catch (error) {
+      endSession(s,error.message || '接收未开始',true);
+      return {ok:false,error:error.message || '接收未开始',openChat:true,conversationId:s.conversationId};
+    }
+    return s.accepted ? {ok:true} : {ok:false,error:'后台保存失败，请打开聊天室后重新发送。',openChat:true,conversationId:s.conversationId};
+  });
+  if (!background) await restoreInvitations();
   backgroundMode?.markReady();
   if (embedded) parent.postMessage({type:'BJTU_CHATROOM_WINDOW_READY'},location.origin);
   const requestedConversation = new URLSearchParams(location.search).get('conversation');

@@ -40,11 +40,11 @@
     if (!handle) throw new Error('本地文件引用已丢失或已清除，无法查看文件。');
     let permission = await handle.queryPermission({mode: 'read'});
     if (permission !== 'granted' && requestPermission) permission = await handle.requestPermission({mode: 'read'});
-    if (permission !== 'granted') throw new Error('本地文件读取权限未授予或已撤销，请重新授权后查看。');
+    if (permission !== 'granted') throw Object.assign(new Error('本地文件读取权限未授予或已撤销，请重新授权后查看。'),{code:'FILE_PERMISSION_REQUIRED'});
     try { return await handle.getFile(); }
     catch (error) {
       if (error.name === 'NotFoundError') throw new Error('本地文件已移动或删除，无法查看文件。');
-      if (error.name === 'NotAllowedError') throw new Error('本地文件读取权限已撤销，请重新授权后查看。');
+      if (error.name === 'NotAllowedError') throw Object.assign(new Error('本地文件读取权限已撤销，请重新授权后查看。'),{code:'FILE_PERMISSION_REQUIRED'});
       throw error;
     }
   }

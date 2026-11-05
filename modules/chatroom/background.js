@@ -3,6 +3,7 @@
   if (!global.BjtuOffscreenManager) importScripts(chrome.runtime.getURL('core/offscreen-manager.js'));
   const prefix = 'bjtuca-chatroom-message:';
   const requestPrefix = 'bjtuca-chatroom-request:';
+  const filePrefix = 'bjtuca-chatroom-file:';
   const alarm = 'bjtuca-chatroom-background';
   const pending = new Map();
   let reconcilePromise;
@@ -61,10 +62,18 @@
     if (message?.type === 'BJTU_CHATROOM_FOREGROUND_RELEASED') {
       void reconcile().catch(report); return false;
     }
+    if (message?.type === 'BJTU_CHATROOM_FILE_INVITATION_CLOSED') {
+      const chatUrl = chrome.runtime.getURL('modules/chatroom/chat.html');
+      if (sender.url?.split('?')[0] !== chatUrl) return false;
+      const id = fileNotificationId(message);
+      void takeFileNotification(id).then(() => chrome.notifications.clear(id)).catch(report);
+      return false;
+    }
     if (message?.type !== 'BJTU_CHATROOM_BACKGROUND_INVITATION') return false;
     const chatUrl = chrome.runtime.getURL('modules/chatroom/chat.html');
     if (sender.url?.split('?')[0] !== chatUrl || new URL(sender.url).searchParams.get('background') !== '1') return false;
-    void notifyRejectedMedia(message).then(() => respond({ok:true}),error => { report(error); respond({ok:false,error:error.message}); });
+    void (message.pending && message.media === 'file' ? notifyFileInvitation(message) : notifyRejectedMedia(message))
+      .then(() => respond({ok:true}),error => { report(error); respond({ok:false,error:error.message}); });
     return true;
   });
   // Also run after a service-worker restart; do not rely on a visible page.
@@ -96,11 +105,55 @@
   });
   async function requestNotification(id, title, message) {
     const settings = await chrome.storage.local.get('chatroomNotifyNewMessages');
-    if (settings.chatroomNotifyNewMessages === false) return;
+    if (settings.chatroomNotifyNewMessages === false) return false;
     const create = global.BjtuSystemNotifications?.create || ((id,options) => chrome.notifications.create(id,options));
     await create(requestPrefix+id,{type:'basic',iconUrl:chrome.runtime.getURL('icons/128.png'),
       title,message:plain(message)},'chatroom-request',true);
+    return true;
   }
+  function fileNotificationId({engineId,peerId,sid}) {
+    return filePrefix + encodeURIComponent([engineId,peerId,sid].join(':'));
+  }
+  let fileNotificationsQueue = Promise.resolve();
+  function editFileNotifications(edit) {
+    const job = fileNotificationsQueue.then(async () => {
+      const {chatroomFileNotifications:stored = {}} = await chrome.storage.session.get('chatroomFileNotifications');
+      const entries = Object.fromEntries(Object.entries(stored).filter(([,value]) => Date.now()-value.createdAt < 120000));
+      const result = edit(entries);
+      await chrome.storage.session.set({chatroomFileNotifications:entries}); return result;
+    });
+    fileNotificationsQueue = job.catch(report); return job;
+  }
+  function takeFileNotification(id) {
+    return editFileNotifications(entries => { const value = entries[id]; delete entries[id]; return value; });
+  }
+  async function notifyFileInvitation(message) {
+    const {engineId,peerId,sid,size,name,conversationId} = message;
+    if (typeof engineId !== 'string' || engineId.length > 100 || !/^[a-f0-9]{64}$/.test(peerId) ||
+        typeof sid !== 'string' || sid.length > 100 || !Number.isSafeInteger(size) || size < 0) return;
+    const settings = await chrome.storage.local.get(['chatroomNotifyNewMessages','chatroomState']);
+    if (settings.chatroomNotifyNewMessages === false) return;
+    const peer = settings.chatroomState?.peers?.find(item => item.id === peerId);
+    const who = peer?.remark || peer?.nickname || peer?.ip || '对方';
+    const id = fileNotificationId(message);
+    await editFileNotifications(entries => { entries[id] = {engineId,peerId,sid,conversationId,createdAt:Date.now()}; });
+    const create = global.BjtuSystemNotifications?.create || ((id,options) => chrome.notifications.create(id,options));
+    await create(id,{type:'basic',iconUrl:chrome.runtime.getURL('icons/128.png'),title:'聊天室 · 文件接收确认',
+      message:`${who} 希望发送「${String(name || '未命名文件').slice(0,120)}」（${size.toLocaleString()} B）。未满足自动接收条件，请选择接收或拒绝。`,
+      buttons:[{title:'接收'},{title:'拒绝'}]},'chatroom-file',true);
+  }
+  chrome.notifications.onButtonClicked.addListener((id,index) => {
+    if (!id.startsWith(filePrefix) || ![0,1].includes(index)) return;
+    void (async () => {
+      const invitation = await takeFileNotification(id);
+      await chrome.notifications.clear(id);
+      if (!invitation) return;
+      const result = await chrome.runtime.sendMessage({type:'BJTU_CHATROOM_FILE_DECISION',...invitation,accept:index === 0})
+        .catch(() => ({ok:false,error:'文件邀请已失效，请让对方重新发送。',openChat:index === 0}));
+      if (result?.openChat) await openConversation(result.conversationId || invitation.conversationId);
+      if (result?.ok === false) await requestNotification(encodeURIComponent(id),'聊天室 · 文件接收未开始',result.error || '请打开聊天室后重试。');
+    })().catch(report);
+  });
   async function notifyRequest(id) {
     const {chatroomState:state} = await chrome.storage.local.get('chatroomState');
     const request = state?.requests?.find(item => item.id === id);
@@ -134,11 +187,7 @@
       type:'basic', iconUrl:chrome.runtime.getURL('icons/128.png'), title:`${title} · ${view.unread} 条新消息`, message:plain(view.lastText)
     },'chatroom-message',true);
   }
-  chrome.notifications.onClicked.addListener(id => {
-    const isRequest = id.startsWith(requestPrefix);
-    if (!id.startsWith(prefix) && !isRequest) return;
-    void (async () => {
-      const conversationId = isRequest ? null : decodeURIComponent(id.slice(prefix.length));
+  async function openConversation(conversationId) {
       const url = chrome.runtime.getURL('modules/chatroom/chat.html');
       const existing = (await chrome.tabs.query({url:url+'*'}))[0];
       const tab = existing ? await chrome.tabs.update(existing.id,{active:true})
@@ -148,6 +197,15 @@
         const win=await chrome.windows.get(tab.windowId);
         await chrome.windows.update(win.id,{focused:true,...(win.state==='minimized'?{state:'normal'}:{})});
       }
+  }
+  chrome.notifications.onClicked.addListener(id => {
+    const isRequest = id.startsWith(requestPrefix);
+    const isFile = id.startsWith(filePrefix);
+    if (!id.startsWith(prefix) && !isRequest && !isFile) return;
+    void (async () => {
+      const stored = isFile ? await chrome.storage.session.get('chatroomFileNotifications') : null;
+      const conversationId = isFile ? stored?.chatroomFileNotifications?.[id]?.conversationId : isRequest ? null : decodeURIComponent(id.slice(prefix.length));
+      await openConversation(conversationId);
       await chrome.notifications.clear(id);
     })().catch(error => console.warn('[bjtu] open chatroom:',error));
   });
