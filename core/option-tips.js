@@ -105,7 +105,13 @@
     });
   }
 
-  global.BjtuOptionTips = { setup };
+  function setText(trigger, text) {
+    if (!(trigger instanceof HTMLElement)) return;
+    trigger.dataset.tip = String(text || '');
+    trigger.setAttribute('aria-label', `提示：${trigger.dataset.tip}`);
+    if (activeTrigger === trigger) showPopover(trigger);
+  }
+  global.BjtuOptionTips = { setup, setText };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setup(), { once: true });

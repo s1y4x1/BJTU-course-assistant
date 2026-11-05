@@ -10,6 +10,14 @@
 
   const NS = 'BjtuApiOperationsUi';
   const refreshVersions = new WeakMap();
+  const docs = new Map();
+  function getDoc(name) {
+    if (!docs.has(name)) docs.set(name, send('BJTUCA_GET_DOCS',{name}).then(response => {
+      if (response?.ok !== true) docs.delete(name);
+      return response;
+    }));
+    return docs.get(name);
+  }
 
   function send(type, payload) {
     return new Promise((resolve) => {
@@ -75,7 +83,16 @@
         }
         const alwaysLabel = document.createElement('label');
         alwaysLabel.className = 'api-operation-always';
-        alwaysLabel.title = isMeta ? '接口元操作默认在所有会话中始终允许' : `在所有会话中始终允许 ${name}`;
+        alwaysLabel.title = '正在获取操作说明…';
+        const showDoc = async () => {
+          const trigger = alwaysLabel.querySelector('.option-tip-trigger');
+          if (!trigger) return;
+          const response = await getDoc(name);
+          if (alwaysLabel.isConnected) global.BjtuOptionTips.setText(trigger,
+            response?.ok === true ? response.doc : response?.message || '操作说明获取失败，请重试。');
+        };
+        alwaysLabel.addEventListener('mouseenter', showDoc);
+        alwaysLabel.addEventListener('focusin', showDoc);
         const alwaysCheckbox = document.createElement('input');
         alwaysCheckbox.type = 'checkbox';
         alwaysCheckbox.dataset.operationName = name;
@@ -200,6 +217,7 @@
   const mounted = (async () => {
     const mounts = [...document.querySelectorAll('[data-operation-ui-mount]')];
     if (!mounts.length) return [];
+    if (!global.BjtuOptionTips) await global.BjtuModuleRegistry.loadScript('core/option-tips.js');
     const html = await loadMarkup();
     const wrap = document.createElement('div');
     wrap.innerHTML = html;
@@ -243,6 +261,7 @@
         renderState(list, response?.message || response?.error || '操作加载失败');
       }
     }
+    global.BjtuOptionTips.setup();
     document.dispatchEvent(new CustomEvent('bjtuApiOperationsRefreshed', {
       detail: { ok: response?.ok === true }
     }));
