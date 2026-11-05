@@ -28,7 +28,7 @@
       <details id="settings-panel"><summary>个人设置与隐私</summary><form id="settings-form">
         <label>昵称<input id="nickname" maxlength="40" autocomplete="nickname" required></label>
         <label class="check"><input id="require-friend" type="checkbox">仅好友可以联系我</label>
-        <label>群邀请策略<select id="invite-policy"><option value="ask">每次询问</option><option value="allow">允许邀请</option><option value="deny">拒绝全部邀请</option></select></label>
+        <label>群邀请策略<select id="invite-policy"><option value="ask">每次询问</option><option value="allow">允许全部邀请</option><option value="deny">拒绝全部邀请</option></select></label>
         <div class="chatroom-auto-save-option">
           <label class="check"><input id="chatroomAutoSaveEnabled" type="checkbox" checked><span>自动保存小于</span></label>
           <input id="chatroomAutoSaveValue" type="number" min="0" step="any" placeholder="∞" aria-label="自动保存的文件大小上限，留空表示不设限制">
@@ -37,7 +37,6 @@
         </div>
         <button id="chatroomAuthorizeDownloads" type="button" class="secondary">授权扩展目录</button>
       </form><p class="muted">局域网发现不等于身份认证，请核对对方身份。直连会向对方暴露网络地址。</p></details>
-      <div class="actions"><button id="sidebar-invite-group" type="button" class="secondary" hidden>邀请成员</button><button id="sidebar-leave-group" type="button" class="secondary" hidden>退出群聊</button></div>
       <details id="sidebar-requests-panel" open><summary>邀请与确认 <span id="request-count">0</span></summary><div id="requests"></div></details>
   <dialog id="editor"><form id="editor-form"><h2 id="editor-title"></h2><div id="editor-fields"></div><div class="actions"><button id="editor-cancel" type="button" class="secondary">取消</button><button type="submit">确定</button></div></form></dialog>
   <div class="option-divider" role="separator"></div>

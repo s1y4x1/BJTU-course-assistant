@@ -57,7 +57,7 @@
   let membersSignature = '';
   const expandedMembers = new Set();
   let markingRead = false;
-  let pendingTitle, clearHold;
+  let pendingTitle;
   const markdown = new marked.Marked({gfm: true, breaks: true, renderer: BjtuMarkdown.createRenderer()});
   BjtuMarkdown.bindCopy($('messages'), {onError: report});
 
@@ -252,7 +252,6 @@
       if (interactive) { $('message').focus(); void markConversationRead({interactive:true}); }
       return;
     }
-    clearHold?.cancel();
     drafts.set(selected, $('message').value);
     scrollPositions.set(selected, $('messages').scrollTop);
     while (drafts.size > 100) drafts.delete(drafts.keys().next().value);
@@ -284,12 +283,13 @@
     $('send').disabled = !online || !selected;
     const ids = selected === 'public' ? [state.self.id, ...state.peers.filter(p => p.online && !p.blocked).map(p => p.id)]
       : peerId ? [] : room?.members || [];
-    const members = [...new Set(ids)].filter(Boolean).map(id => ({id, name: nameOf(id), ip: state.peers.find(p => p.id === id)?.ip || ''}));
+    const members = [...new Set(ids)].filter(Boolean).map(id => ({id, name: nameOf(id), ip: state.peers.find(p => p.id === id)?.ip || '', online:id === state.self.id ? online : state.peers.some(p => p.id === id && p.online), background:state.peers.some(p => p.id === id && p.background)}));
     const signature = JSON.stringify([selected, members]);
     if (signature !== membersSignature) {
       membersSignature = signature;
       $('conversation-members').replaceChildren(...members.map(member => {
         const el = button(member.name, () => sidebar.editPerson(member.id), 'conversation-member');
+        if (selected !== 'public') { const dot = node('span', undefined, `conversation-online-dot${member.online ? ' online' + (member.background ? ' background' : '') : ''}`); dot.title = member.online ? member.background ? '后台在线' : '在线' : '离线'; el.prepend(dot); }
         el.title = member.ip || member.name; el.dataset.peerId = member.id; return el;
       }));
       $('conversation-members').classList.toggle('expanded', expandedMembers.has(selected));
@@ -311,7 +311,7 @@
     const name = node('strong', nameOf(senderId), 'message-author-name');
     name.tabIndex = 0; name.setAttribute('role', 'button');
     name.title = senderId === state.self.id ? '修改昵称' : '修改备注及联系人操作';
-    el.append(name, document.createTextNode(` · ${Number.isFinite(date.getTime()) ? date.toLocaleString() : ''}`));
+    el.append(name, document.createTextNode(' · '), BjtuDateTime.set(node('span'), Number.isFinite(date.getTime()) ? date : ''));
     el.dataset.senderId = senderId;
     return el;
   }
@@ -339,7 +339,7 @@
     const items = [...state.messages.filter(message => !mediaMessages.has(message.id)).map(message => ({...message, displayName: nameOf(message.senderId)})), ...[...mediaMessages.values()].map(s => ({
       id: s.id, conversationId: s.conversationId, senderId: s.senderId, createdAt: s.createdAt, media: true
     }))].filter((m) => m.conversationId === selected).sort((a,b) => a.createdAt - b.createdAt);
-    container.querySelector('.empty')?.remove();
+    container.querySelector('[data-empty-message]')?.remove();
     reconcile(container, messageNodes, items, (m) => m.id, (message) => {
       // Persisted media summaries survive reloads, but live cards do not.
       const liveMedia = mediaMessages.get(message.id);
@@ -360,7 +360,7 @@
       }
       if (message.senderId === state.self.id && message.delivery) {
         const deliveries = Object.entries(message.delivery);
-        if (deliveries.length && deliveries.some(([, value]) => value.status !== 'delivered')) {
+        if (!message.conversationId.startsWith('peer:') && deliveries.length && deliveries.some(([, value]) => value.status !== 'delivered')) {
           const details = node('details', undefined, 'message-delivery-details');
           details.append(node('summary', `送达详情 · ${deliveries.filter(([, value]) => value.status === 'delivered').length}/${deliveries.length}`));
           const labels = {delivered:'已送达',sending:'等待送达确认',queued:'等待重试',rejected:'已拒绝',withdrawn:'已撤回'};
@@ -391,7 +391,7 @@
       }
       return el;
     });
-    if (!items.length) container.append(node('p', '还没有消息，打个招呼吧。', 'empty'));
+    if (!items.length) { const empty = node('article', undefined, 'message system'); empty.dataset.emptyMessage = ''; empty.append(node('div', '还没有消息，打个招呼吧。', 'message-text bjtu-markdown')); container.append(empty); }
     if (changed) container.scrollTop = scrollPositions.get(selected) ?? container.scrollHeight;
     else if (nearBottom) container.scrollTop = container.scrollHeight;
     else if (anchor?.el.isConnected) container.scrollTop = oldTop + anchor.el.getBoundingClientRect().top - anchorOffset;
@@ -1072,8 +1072,9 @@
     const peerId = selected.slice(5), peer = state.peers.find(item => item.id === peerId);
     void mutate(peer?.friend ? 'friend-delete' : 'friend-request', {peerId}).catch(report);
   });
-  clearHold = globalThis.BjtuChatroomSidebar.bindHold($('clear-history'),{
-    signal:uiAbort.signal,onConfirm:() => { if (selected) void mutate('conversation-clear',{conversationId:selected}).catch(report); }
+  listen('clear-history','click', () => {
+    const conversationId = selected;
+    if (conversationId) sidebar.confirmClear(() => mutate('conversation-clear',{conversationId}));
   });
   listen('mute-conversation','change', () => { if (selected) void mutate('conversation-mute',{conversationId:selected,muted:$('mute-conversation').checked}).catch(report); });
   listen('conversation-members-toggle', 'click', () => {
@@ -1106,7 +1107,23 @@
       if (drafts.get(conversationId) === snapshot) drafts.delete(conversationId);
     } catch (error) { report(error); } finally { $('send').disabled = !online; }
   });
-  listen('message', 'keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('message-form').requestSubmit(); } });
+  let sendShortcut = 'enter';
+  const updateSendShortcut = value => {
+    sendShortcut = value === 'ctrl-enter' ? value : 'enter'; $('send-shortcut').value = sendShortcut;
+    $('message').placeholder = sendShortcut === 'enter'
+      ? '输入消息，Enter 发送，Ctrl+Enter / Shift+Enter 换行；支持 Markdown 语法'
+      : '输入消息，Ctrl+Enter 发送，Enter / Shift+Enter 换行；支持 Markdown 语法';
+  };
+  updateSendShortcut((await chrome.storage.local.get('chatroomSendShortcut')).chatroomSendShortcut);
+  listen('send-shortcut','change', () => { updateSendShortcut($('send-shortcut').value); void chrome.storage.local.set({chatroomSendShortcut:sendShortcut}); });
+  listen('message', 'keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    if (!event.shiftKey && (sendShortcut === 'ctrl-enter' ? event.ctrlKey : !event.ctrlKey)) {
+      event.preventDefault(); $('message-form').requestSubmit();
+    } else if (event.ctrlKey) {
+      event.preventDefault(); const input = $('message'); input.setRangeText('\n',input.selectionStart,input.selectionEnd,'end'); input.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+  });
   listen('invite-group', 'click', () => sidebar.groupEditor(true));
   listen('leave-group', 'click', () => sidebar.leaveGroup());
   listen('pick-file', 'click', () => $('file-picker').click());
@@ -1181,6 +1198,7 @@
     if (navigation?.tabId === tab?.id) chooseConversation(navigation.conversationId);
   };
   const onNavigation = (changes,area) => {
+    if (area==='local' && changes.chatroomSendShortcut) updateSendShortcut(changes.chatroomSendShortcut.newValue);
     if (area==='local' && changes.chatroomNavigation) void consumeNavigation(changes.chatroomNavigation.newValue).catch(report);
   };
   chrome.storage.onChanged.addListener(onNavigation);

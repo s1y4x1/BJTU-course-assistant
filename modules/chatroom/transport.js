@@ -41,7 +41,7 @@
   const passiveOptions = !!G.location && !G.location.pathname.endsWith('/modules/chatroom/chat.html');
   const MAX = { peers: 500, rooms: 100, requests: 100, messages: 600, historyBytes: 2 * 1024 * 1024, seen: 2048, packet: 262144, members: 100 };
   const encoder = new TextEncoder(), listeners = new Set(), keyCache = new Map();
-  const domainTypes = new Set(['profile', 'message', 'message-result', 'peer-policy', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-invite-request', 'group-state', 'group-leave']);
+  const domainTypes = new Set(['profile', 'message', 'message-result', 'peer-policy', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-state', 'group-leave', 'group-event']);
   let data, privateKey, publicIdentity, link, queue = Promise.resolve();
   let retryTimer, flushing = false, disposed = false;
   let localIP = '';
@@ -286,16 +286,53 @@
   }
   function validRoom(value) {
     if (!value || typeof value !== 'object') fail('无效群信息。');
-    token(value.id); str(value.name, 60); id(value.ownerId);
+    token(value.id); str(value.name, 60);
     if (!/^group:[A-Za-z0-9-]{1,80}$/.test(value.id)) fail('无效群标识。');
     if (!Number.isSafeInteger(value.version) || value.version < 1 || !Array.isArray(value.members) || value.members.length > MAX.members || new Set(value.members).size !== value.members.length) fail('无效群成员版本。');
     value.members.forEach(id);
-    if (value.members.length && !value.members.includes(value.ownerId)) fail('缺少群主。');
-    return { id: value.id, name: value.name, ownerId: value.ownerId, version: value.version, members: [...value.members] };
+    const memberStates = value.memberStates || Object.fromEntries(value.members.map(member => [member, {version:value.version, actor:member, present:true}]));
+    if (!memberStates || typeof memberStates !== 'object' || Array.isArray(memberStates) || Object.keys(memberStates).length > MAX.peers) fail('群成员状态过多。');
+    for (const [member, state] of Object.entries(memberStates)) {
+      id(member); id(state.actor);
+      if (!Number.isSafeInteger(state.version) || state.version < 1 || typeof state.present !== 'boolean') fail('无效成员状态。');
+    }
+    const members = Object.keys(memberStates).filter(member => memberStates[member].present);
+    if (members.length > MAX.members || members.length !== value.members.length || members.some(member => !value.members.includes(member))) fail('群成员状态不一致。');
+    return {id:value.id, name:value.name, version:Math.max(value.version, ...Object.values(memberStates).map(state => state.version)), members, memberStates:copy(memberStates)};
+  }
+  function setMember(r, member, present) {
+    // Independent membership clocks preserve departures during concurrent joins.
+    if (present && !r.members.includes(member) && r.members.length >= MAX.members) fail('群成员数量已达到上限。');
+    r.memberStates ||= Object.fromEntries(r.members.map(member => [member, {version:r.version, actor:member, present:true}]));
+    if (!r.memberStates[member] && Object.keys(r.memberStates).length >= MAX.peers) fail('群成员历史已达上限。');
+    r.memberStates[member] = {version:++r.version, actor:publicIdentity.id, present};
+    r.members = Object.keys(r.memberStates).filter(key => r.memberStates[key].present);
+  }
+  function removeMember(effects, r, member) {
+    if (!r.members.includes(member)) return;
+    const oldMembers = [...r.members]; setMember(r, member, false);
+    data.outgoing = data.outgoing.filter(request => request.roomId !== r.id || request.to !== member);
+    for (const message of data.messages) if (message.conversationId === r.id && message.delivery?.[member] && message.delivery[member].status !== 'delivered') {
+      Object.assign(message.delivery[member], {status:'withdrawn', error:'', errorCode:'', nextRetryAt:0}); messageStatus(message);
+    }
+    groupBroadcast(effects, r, oldMembers);
+  }
+  function groupEvent(r, actor, requestId, target, targetName, actorName) {
+    const eventId = `${actor}:invite:${requestId}`;
+    if (data.messages.some(message => message.id === eventId)) return;
+    const name = who => who === publicIdentity.id ? (publicIdentity.nickname || localIP || '我') : peer(who)?.remark || peer(who)?.nickname || peer(who)?.ip || who;
+    history({id:eventId, senderId:actor, conversationId:r.id, system:true, code:'GROUP_INVITE',
+      text:`「${actorName || name(actor)}」邀请「${targetName || name(target)}」加入群聊。`, createdAt:Date.now()});
   }
   function groupBroadcast(effects, r, oldMembers = []) { fanout(effects, [...oldMembers, ...r.members], 'group-state', { room: r }); }
+  function joinRoom(value) {
+    const r = validRoom(value);
+    if (!data.rooms.some(room => room.id === r.id) && data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
+    setMember(r, publicIdentity.id, true);
+    data.rooms = data.rooms.filter(room => room.id !== r.id); data.rooms.push(r);
+    data.departedRooms = data.departedRooms.filter(room => room.roomId !== r.id);
+  }
   function invite(effects, r, peerIds) {
-    if (r.ownerId !== publicIdentity.id) fail('只有群主能签发群邀请。');
     if (!Array.isArray(peerIds) || !peerIds.length || peerIds.length > MAX.members) fail('请选择有效邀请成员。');
     for (const peerId of new Set(peerIds)) {
       id(peerId);
@@ -304,7 +341,10 @@
       if (data.outgoing.some((x) => x.type === 'group' && x.to === peerId && x.roomId === r.id)) continue;
       const requestId = crypto.randomUUID();
       pushRequest({ id: requestId, type: 'group', to: peerId, roomId: r.id, createdAt: Date.now() }, true);
-      enqueue(effects, peerId, 'group-invite', { requestId, room: r });
+      const event = {roomId:r.id, requestId, target:peerId, targetName:peer(peerId)?.nickname || peer(peerId)?.ip || peerId, actorName:publicIdentity.nickname || localIP || '我'};
+      groupEvent(r, publicIdentity.id, requestId, peerId, event.targetName, event.actorName);
+      fanout(effects, r.members, 'group-event', event);
+      enqueue(effects, peerId, 'group-invite', { requestId, room: r, event });
     }
   }
   async function initialize() {
@@ -325,6 +365,8 @@
       if (!Array.isArray(data[name])) fail('聊天室存储数据损坏，未覆盖原数据。');
       data[name] = data[name].slice(-limit);
     }
+    data.rooms = data.rooms.map(validRoom);
+    data.departedRooms ||= [];
     data.settings = { nickname: str(data.settings?.nickname || '', 40, true), requireFriend: data.settings?.requireFriend === true, invitePolicy: ['ask', 'allow', 'deny'].includes(data.settings?.invitePolicy) ? data.settings.invitePolicy : 'ask' };
     const pub = await crypto.subtle.importKey('jwk', data.identity.publicKey, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']);
     const fingerprint = hex(await crypto.subtle.digest('SHA-256', await crypto.subtle.exportKey('raw', pub)));
@@ -409,6 +451,13 @@
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
       p.online = true; p.lastSeen = Date.now();
+      p.reconnectable = value.reconnectable === true;
+      for (const r of data.rooms) if (r.members.includes(p.id)) groupBroadcast(effects, r);
+      for (const departed of data.departedRooms) if (departed.pending.includes(p.id)) {
+        enqueue(effects, p.id, 'group-leave', {roomId:departed.roomId});
+        departed.pending = departed.pending.filter(member => member !== p.id);
+      }
+      data.departedRooms = data.departedRooms.filter(item => item.pending.length);
       enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: data.settings.requireFriend && !p.friend});
       if (p.pendingFriendDelete && p.online) {
         enqueue(effects, p.id, 'friend-delete', {friendRequired:data.settings.requireFriend}); p.pendingFriendDelete = false;
@@ -417,7 +466,11 @@
     }).then(async ({ result, effects }) => { await deliver(effects); await flushOutbox(result.peerId); return result; });
   }
   async function peerOffline(peerId) {
-    return commit(() => { const p = peer(peerId); if (p) p.online = false; return { ok: true }; }).then(({ result }) => result);
+    return commit(effects => {
+      const p = peer(peerId); if (p) p.online = false;
+      if (p && !p.reconnectable) for (const r of data.rooms) removeMember(effects, r, peerId);
+      return {ok:true};
+    }).then(async ({result, effects}) => {await deliver(effects); return result;});
   }
   async function action(name, args = {}) {
     await ready;
@@ -539,9 +592,7 @@
           }
           systemMessage(request.from, args.allow ? 'FRIEND_ACCEPTED_LOCAL' : 'FRIEND_REJECTED_LOCAL', args.allow ? '你已同意好友申请，现在已成为好友。' : '你已拒绝好友申请。');
         } else if (args.allow) {
-          if (data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
-          // Pending room lacks self membership until the owner confirms admission.
-          if (!data.rooms.some((r) => r.id === request.room.id)) data.rooms.push(copy(request.room));
+          joinRoom(request.room);
         }
         enqueue(effects, request.from, name, { requestId: request.id, allow: args.allow, ...(type === 'group' ? { roomId: request.room.id } : {}) });
         data.requests = data.requests.filter((r) => r.id !== request.id);
@@ -555,24 +606,19 @@
       }
       case 'group-create': {
         if (data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
-        const r = { id: 'group:' + crypto.randomUUID(), name: str(args.name, 60).trim(), ownerId: publicIdentity.id, version: 1, members: [publicIdentity.id] };
+        const r = validRoom({id:'group:' + crypto.randomUUID(), name:str(args.name, 60).trim(), version:1, members:[publicIdentity.id]});
         data.rooms.push(r); invite(effects, r, args.peerIds); return { roomId: r.id };
       }
       case 'group-invite': {
         const r = room(args.roomId);
-        if (r.ownerId === publicIdentity.id) invite(effects, r, args.peerIds);
-        else {
-          requirePeer(r.ownerId, false);
-          if (!Array.isArray(args.peerIds) || !args.peerIds.length || args.peerIds.length > MAX.members) fail('无效邀请成员。');
-          args.peerIds.forEach((p) => requirePeer(p, false));
-          enqueue(effects, r.ownerId, 'group-invite-request', { roomId: r.id, peerIds: args.peerIds });
-        }
+        invite(effects, r, args.peerIds);
         return {};
       }
       case 'group-leave': {
         const r = room(args.roomId);
-        if (r.ownerId === publicIdentity.id) { const old = [...r.members]; r.members = []; r.version++; groupBroadcast(effects, r, old); }
-        else if (allowed(r.ownerId, false) && peer(r.ownerId).online) enqueue(effects, r.ownerId, name, { roomId: r.id });
+        fanout(effects, r.members, 'group-leave', {roomId:r.id});
+        const pending = r.members.filter(member => member !== publicIdentity.id && !peer(member)?.online);
+        if (pending.length) data.departedRooms = [...data.departedRooms.filter(item => item.roomId !== r.id), {roomId:r.id, pending}].slice(-MAX.rooms);
         data.rooms = data.rooms.filter((v) => v.id !== r.id);
         data.outgoing = data.outgoing.filter((v) => v.roomId !== r.id);
         data.requests = data.requests.filter((v) => v.room?.id !== r.id);
@@ -616,12 +662,16 @@
     if (packet.type === 'message-result') {
       token(payload.messageId);
       if (!['accepted', 'rejected'].includes(payload.status)) fail('无效消息回执。');
-      if (payload.status === 'rejected' && !['BLOCKED', 'FRIEND_REQUIRED', 'INVALID_MESSAGE'].includes(payload.code)) fail('无效拒绝原因。');
+      if (payload.status === 'rejected' && !['BLOCKED', 'FRIEND_REQUIRED', 'INVALID_MESSAGE','NOT_MEMBER'].includes(payload.code)) fail('无效拒绝原因。');
       const m = data.messages.find(m => m.senderId === publicIdentity.id && m.id === payload.messageId), d = m?.delivery?.[from];
       if (!d || d.status === 'delivered') return null;
       // A late accepted ACK is still proof of delivery after local cancellation.
       if (d.status === 'withdrawn' && payload.status !== 'accepted') return null;
       Object.assign(d, {status: payload.status === 'accepted' ? 'delivered' : 'rejected', errorCode: payload.code || '', error: rejectionText[payload.code] || '', nextRetryAt: 0});
+      if (payload.status === 'rejected' && m.conversationId.startsWith('group:') && ['INVALID_MESSAGE','NOT_MEMBER'].includes(payload.code)) {
+        const r = data.rooms.find(room => room.id === m.conversationId);
+        if (r) removeMember(effects, r, from);
+      }
       if (payload.status === 'rejected' && m.conversationId.startsWith('peer:')) {
         const p = peer(from);
         if (payload.code === 'BLOCKED' && !p.blockedByPeer) { p.blockedByPeer = true; systemMessage(from, 'BLOCKED'); }
@@ -659,6 +709,12 @@
         enqueue(effects, from, 'message-result', {messageId:payload.id, status:'accepted'}); return null;
       }
       const privateMessage = payload.conversationId.startsWith('peer:');
+      if (payload.conversationId.startsWith('group:')) {
+        const r = data.rooms.find(room => room.id === payload.conversationId);
+        if (!r?.members.includes(publicIdentity.id) || !r.members.includes(from)) {
+          enqueue(effects, from, 'message-result', {messageId:payload.id, status:'rejected', code:'NOT_MEMBER'}); return null;
+        }
+      }
       const code = peer(from).blocked ? 'BLOCKED' : privateMessage && !allowed(from) ? 'FRIEND_REQUIRED' : '';
       if (code) { enqueue(effects, from, 'message-result', {messageId:payload.id, status:'rejected', code}); return null; }
     }
@@ -706,13 +762,13 @@
       }
       case 'group-invite': {
         token(payload.requestId); const r = validRoom(payload.room);
-        if (r.ownerId !== from || !r.members.length || r.members.includes(publicIdentity.id)) fail('群邀请必须由群主签发。');
-        if (data.rooms.some((v) => v.id === r.id) || data.requests.some((v) => v.type === 'group' && v.room.id === r.id)) break;
+        if (!r.members.includes(from) || r.members.includes(publicIdentity.id)) fail('群邀请必须由现有成员签发。');
+        if (data.requests.some((v) => v.type === 'group' && v.room.id === r.id)) break;
         const policy = data.settings.invitePolicy;
+        groupEvent(r, from, payload.requestId, publicIdentity.id, payload.event?.targetName, payload.event?.actorName);
         if (policy === 'deny') enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: false });
         else if (policy === 'allow') {
-          if (data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
-          data.rooms.push(r); enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: true });
+          joinRoom(r); enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: true });
         } else pushRequest({ id: payload.requestId, from, type: 'group', room: r, createdAt: packet.createdAt });
         break;
       }
@@ -721,30 +777,38 @@
         const pending = data.outgoing.find((v) => v.type === 'group' && v.id === payload.requestId && v.to === from && v.roomId === payload.roomId);
         if (!pending) fail('不存在对应的群邀请。');
         const r = room(pending.roomId);
-        if (r.ownerId !== publicIdentity.id) fail('不是群主。');
         if (payload.allow && !r.members.includes(from)) {
           if (r.members.length >= MAX.members) fail('群成员数量已达到上限。');
-          r.members.push(from); r.version++; groupBroadcast(effects, r);
+          setMember(r, from, true); groupBroadcast(effects, r);
         }
         data.outgoing = data.outgoing.filter((v) => v !== pending); break;
       }
-      case 'group-invite-request': {
+      case 'group-event': {
         const r = room(payload.roomId);
-        if (r.ownerId !== publicIdentity.id || !r.members.includes(from)) fail('邀请申请人不是群成员。');
-        invite(effects, r, payload.peerIds); break;
+        if (!r.members.includes(from)) fail('邀请者不是群成员。');
+        token(payload.requestId); id(payload.target); str(payload.targetName, 80); str(payload.actorName,80);
+        groupEvent(r, from, payload.requestId, payload.target, payload.targetName, payload.actorName); break;
       }
       case 'group-state': {
         const r = validRoom(payload.room), old = data.rooms.find((v) => v.id === r.id);
-        if (!old || old.ownerId !== from || r.ownerId !== from) fail('未经批准的群状态更新。');
-        if (r.version <= old.version) break;
-        data.rooms = data.rooms.filter((v) => v.id !== r.id);
-        if (r.members.includes(publicIdentity.id)) data.rooms.push(r);
+        if (!old) break;
+        if (!old.members.includes(from)) fail('未经批准的群状态更新。');
+        let changed = false;
+        for (const [member, state] of Object.entries(r.memberStates)) {
+          const previous = old.memberStates[member];
+          if (!previous || state.version > previous.version || (state.version === previous.version && state.actor > previous.actor)) {old.memberStates[member] = state; changed = true;}
+        }
+        if (Object.keys(old.memberStates).length > MAX.peers) fail('群成员历史已达上限。');
+        old.version = Math.max(old.version, r.version);
+        old.members = Object.keys(old.memberStates).filter(member => old.memberStates[member].present);
+        if (old.members.length > MAX.members) fail('群成员数量已达到上限。');
+        if (!old.members.includes(publicIdentity.id)) data.rooms = data.rooms.filter(room => room !== old);
+        else if (changed) groupBroadcast(effects, old);
         break;
       }
       case 'group-leave': {
-        const r = room(payload.roomId);
-        if (r.ownerId !== publicIdentity.id || !r.members.includes(from) || from === r.ownerId) fail('无效退出请求。');
-        r.members = r.members.filter((v) => v !== from); r.version++; groupBroadcast(effects, r); break;
+        const r = data.rooms.find(room => room.id === payload.roomId);
+        if (r) removeMember(effects, r, from); break;
       }
     }
     return null;

@@ -206,7 +206,7 @@
     reconcile($('requests'), requestNodes, state.requests, (r) => r.id, (request) => {
       const el = node('article', undefined, 'request'), actions = node('div', undefined, 'actions');
       const from = typeof request.from === 'object' ? request.from.id : request.from;
-      el.append(node('p', request.type === 'friend' ? `${nameOf(from)} 请求添加好友` : `${nameOf(from)} 邀请你加入 ${request.room?.name || request.room || '群聊'}`));
+      el.append(node('p', request.type === 'friend' ? `「${nameOf(from)}」请求添加好友` : `「${nameOf(from)}」邀请你加入「${request.room?.name || request.room || '群聊'}」`));
       const respond = (allow, extra = {}) => mutate(request.type === 'friend' ? 'friend-response' : 'group-response', { requestId: request.id, allow, ...extra });
       actions.append(button('接受', () => respond(true)), button('拒绝', () => respond(false)));
       if (request.type === 'group') actions.append(button('拒绝且永不接受此人', () => respond(false, { blockSender: true })), button('拒绝全部邀请', () => respond(false, { blockAll: true })));
@@ -225,7 +225,6 @@
     }
     $('nickname').placeholder = state.self.ip || state.self.nickname || '默认使用本机 IP';
     $('request-count').textContent = String(state.requests.length);
-    $('sidebar-invite-group').hidden = $('sidebar-leave-group').hidden = !state.rooms.some(r => r.id === selected);
     for (const el of $('conversations').querySelectorAll('[data-conversation]')) {
       if (el.dataset.conversation === selected) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
     }
@@ -383,8 +382,6 @@
     for (const id of ['require-friend','invite-policy']) listen(id,'change', () => { dirty.set(id,++revision); saveSetting(id); });
     listen('settings-form','submit',event => { event.preventDefault(); for (const id of dirty.keys()) saveSetting(id); });
     listen('create-group','click', () => groupEditor(false));
-    listen('sidebar-invite-group','click', () => groupEditor(true));
-    listen('sidebar-leave-group','click', leaveGroup);
     listen('disconnect','click', () => disconnect().catch(report));
     listen('chatroomSignalingUrl','keydown', event => {
       if (event.key !== 'Enter' || event.isComposing) return;
@@ -424,7 +421,10 @@
     global.addEventListener('pagehide', destroy, {once:true,signal:uiAbort.signal});
     setReady(false); render();
     setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected');
-    const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,editPerson,destroy};
+    const confirmClear = submit => openEditor('清空记录', fields => {
+      fields.append(node('p', '确定清空当前会话的本地记录并停止文件传输？')); return submit;
+    });
+    const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,editPerson,confirmClear,destroy};
     instances.set(root,controller);
     controller.ready = (async () => {
       settings = await global.BjtuChatroomSettings.mount(root, report);

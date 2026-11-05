@@ -102,7 +102,7 @@
           if (!valid || frame.packet.type !== 'link-auth' || frame.packet.from !== s.remoteIdentity.id || frame.packet?.payload?.nonce !== s.localNonce || frame.packet?.payload?.sessionId !== s.id ||
               frame.packet.payload.senderFingerprint !== fingerprint(s.pc.remoteDescription) || frame.packet.payload.receiverFingerprint !== fingerprint(s.pc.localDescription)) throw new Error('身份验证失败。');
           s.peerId = s.remoteIdentity.id; s.authenticated = true; clearTimeout(s.timer);
-          const result = await engine().peerOnline({ identity: frame.packet.identity, authenticated: true, ip: s.ip || '' });
+          const result = await engine().peerOnline({ identity: frame.packet.identity, authenticated: true, ip: s.ip || '', reconnectable:!!s.target });
           if (result?.ok === false) throw new Error('对方已被屏蔽。');
           emit('peer-online', { peerId: s.peerId });
         } else if (frame.type === 'packet' && s.authenticated) {

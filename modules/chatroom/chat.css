@@ -29,6 +29,7 @@
 .conversation-members { white-space:nowrap; overflow:hidden; line-height:1.8; }
 .conversation-members.expanded { white-space:normal; }
 .chatroom-page .conversation-member { display:inline; min-height:0; padding:0 4px; margin:0 2px 0 0; border:0; background:transparent; color:var(--chat-accent); font:inherit; cursor:pointer; }
+.conversation-member > .conversation-online-dot { display:inline-block; position:static; margin-right:3px; vertical-align:middle; }
 .chatroom-page #conversation-members-toggle { min-height:0; padding:2px 4px; font:inherit; }
 .message-author-name { color:#172033; font-weight:600; cursor:pointer; }
 html[data-color-scheme="dark"] .message-author-name { color:#e5e7eb; }
