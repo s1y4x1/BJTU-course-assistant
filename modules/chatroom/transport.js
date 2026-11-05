@@ -186,18 +186,17 @@
       : statuses.includes('rejected') ? 'rejected' : statuses.includes('withdrawn') ? 'withdrawn' : 'delivered';
   }
   function privateDenial(p) {
-    return p.blocked ? 'LOCAL_BLOCKED' : p.blockedByPeer ? 'BLOCKED'
-      : p.friendRequiredByPeer || p.friendDeleted || (data.settings.requireFriend && !p.friend) ? 'FRIEND_REQUIRED' : '';
+    return p.blockedByPeer ? 'BLOCKED' : p.friendRequiredByPeer ? 'FRIEND_REQUIRED' : '';
   }
-  function systemMessage(peerId, code) {
+  function systemMessage(peerId, code, text) {
     history({ id: crypto.randomUUID(), senderId: peerId, conversationId: 'peer:' + peerId,
-      system: true, code, text: rejectionText[code] || '对方已取消拉黑。', createdAt: Date.now() });
+      system: true, code, text: text || rejectionText[code] || '对方已取消拉黑。', createdAt: Date.now() });
   }
   function queueMessage(m, effects, force = false, onlyPeer) {
     for (const [peerId, d] of Object.entries(m.delivery || {})) {
       if (onlyPeer && onlyPeer !== peerId) continue;
       if (d.status !== 'queued' || (!force && d.nextRetryAt > Date.now())) continue;
-      const p = peer(peerId), code = !p ? 'INVALID_MESSAGE' : m.conversationId.startsWith('peer:') ? privateDenial(p) : p.blocked ? 'LOCAL_BLOCKED' : '';
+      const p = peer(peerId), code = !p ? 'INVALID_MESSAGE' : m.conversationId.startsWith('peer:') ? privateDenial(p) : p.blockedByPeer ? 'BLOCKED' : '';
       if (code) { Object.assign(d, { status: 'rejected', errorCode: code, error: rejectionText[code], nextRetryAt: 0 }); continue; }
       if (!p.online || !link || (link.isConnected && !link.isConnected(peerId))) continue;
       Object.assign(d, {status: 'sending', attempts: d.attempts + 1, errorCode: '', error: '', nextRetryAt: Date.now() + ACK_TIMEOUT});
@@ -410,9 +409,9 @@
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
       p.online = true; p.lastSeen = Date.now();
-      enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: !!p.friendDeleted || (data.settings.requireFriend && !p.friend)});
+      enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: data.settings.requireFriend && !p.friend});
       if (p.pendingFriendDelete && p.online) {
-        enqueue(effects, p.id, 'friend-delete', {}); p.pendingFriendDelete = false;
+        enqueue(effects, p.id, 'friend-delete', {friendRequired:data.settings.requireFriend}); p.pendingFriendDelete = false;
       }
       return { ok: true, peerId: p.id };
     }).then(async ({ result, effects }) => { await deliver(effects); await flushOutbox(result.peerId); return result; });
@@ -488,7 +487,7 @@
         if (args.invitePolicy !== undefined) { if (!['ask', 'allow', 'deny'].includes(args.invitePolicy)) fail('无效邀请策略。'); data.settings.invitePolicy = args.invitePolicy; }
         publicIdentity.nickname = data.settings.nickname;
         fanout(effects, linkedPeers(), 'profile', {});
-        for (const p of data.peers.filter(p => p.online)) enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: !!p.friendDeleted || (data.settings.requireFriend && !p.friend)});
+        for (const p of data.peers.filter(p => p.online)) enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: data.settings.requireFriend && !p.friend});
         if (data.settings.invitePolicy === 'deny') data.requests = data.requests.filter((r) => r.type !== 'group');
         return {};
       }
@@ -501,7 +500,7 @@
         if (typeof args.blocked !== 'boolean') fail('无效拉黑状态。');
         p.blocked = args.blocked;
         if (typeof link?.isConnected === 'function') p.online = link.isConnected(p.id);
-        if (p.online) enqueue(effects, p.id, 'peer-policy', {blocked: p.blocked, friendRequired: !!p.friendDeleted || (data.settings.requireFriend && !p.friend)});
+        if (p.online) enqueue(effects, p.id, 'peer-policy', {blocked: p.blocked, friendRequired: data.settings.requireFriend && !p.friend});
         if (p.blocked) {
           data.requests = data.requests.filter((r) => r.from !== p.id);
           data.outgoing = data.outgoing.filter((r) => r.to !== p.id);
@@ -514,14 +513,15 @@
         if (data.outgoing.some((r) => r.type === 'friend' && r.to === p.id)) return {};
         const requestId = crypto.randomUUID();
         pushRequest({ id: requestId, type: 'friend', to: p.id, createdAt: Date.now() }, true);
+        systemMessage(p.id, 'FRIEND_REQUEST_SENT', '你已发送好友申请，等待对方确认。');
         enqueue(effects, p.id, name, { requestId }); return { requestId };
       }
       case 'friend-delete': {
         const p = peer(args.peerId); if (!p) fail('联系人不存在。');
-        p.friend = false; p.friendDeleted = true;
+        p.friend = false;
         data.outgoing = data.outgoing.filter(request => request.type !== 'friend' || request.to !== p.id);
         data.requests = data.requests.filter(request => request.type !== 'friend' || request.from !== p.id);
-        if (p.online) enqueue(effects, p.id, 'friend-delete', {}); else p.pendingFriendDelete = true;
+        if (p.online) enqueue(effects, p.id, 'friend-delete', {friendRequired:data.settings.requireFriend}); else p.pendingFriendDelete = true;
         return {};
       }
       case 'friend-response':
@@ -534,9 +534,10 @@
         if (args.allow) requirePeer(request.from, false);
         if (type === 'friend') {
           if (args.allow) {
-            const p = peer(request.from); p.friend = true; p.friendDeleted = false; p.friendRequiredByPeer = false;
+            const p = peer(request.from); p.friend = true; p.friendRequiredByPeer = false;
             enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: false});
           }
+          systemMessage(request.from, args.allow ? 'FRIEND_ACCEPTED_LOCAL' : 'FRIEND_REJECTED_LOCAL', args.allow ? '你已同意好友申请，现在已成为好友。' : '你已拒绝好友申请。');
         } else if (args.allow) {
           if (data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
           // Pending room lacks self membership until the owner confirms admission.
@@ -546,7 +547,7 @@
         data.requests = data.requests.filter((r) => r.id !== request.id);
         if (args.blockSender) {
           const p = peer(request.from); p.blocked = true;
-          enqueue(effects, p.id, 'peer-policy', {blocked:true, friendRequired:!!p.friendDeleted || (data.settings.requireFriend && !p.friend)});
+          enqueue(effects, p.id, 'peer-policy', {blocked:true, friendRequired:data.settings.requireFriend && !p.friend});
           data.requests = data.requests.filter((r) => r.from !== request.from);
         }
         if (args.blockAll) { data.settings.invitePolicy = 'deny'; data.requests = data.requests.filter((r) => r.type !== 'group'); }
@@ -581,13 +582,13 @@
       case 'send-message': {
         const text = str(args.text, 8000).trim(), conversationId = token(args.conversationId);
         let targets;
-        if (conversationId === 'public') targets = data.peers.filter((p) => p.online && p.id !== publicIdentity.id && allowed(p.id, false)).map((p) => p.id);
+        if (conversationId === 'public') targets = data.peers.filter((p) => p.online && p.id !== publicIdentity.id && !p.blockedByPeer).map((p) => p.id);
         else if (conversationId.startsWith('peer:')) {
           const p = peer(conversationId.slice(5)); if (!p) fail('联系人不存在。');
           const code = privateDenial(p); if (code) fail(rejectionText[code]);
           targets = [p.id];
         }
-        else targets = room(conversationId).members.filter((p) => p !== publicIdentity.id && allowed(p, false));
+        else targets = room(conversationId).members.filter((p) => p !== publicIdentity.id && peer(p) && !peer(p).blockedByPeer);
         const message = { id: crypto.randomUUID(), senderId: publicIdentity.id, conversationId, text, createdAt: Date.now(), delivery: {} };
         for (const target of targets) message.delivery[target] = { status: 'queued', attempts: 0, errorCode: '', error: '', nextRetryAt: 0 };
         queueMessage(message, effects);
@@ -633,12 +634,14 @@
       const p = peer(from);
       if (packet.type === 'peer-policy' && (typeof payload.blocked !== 'boolean' || typeof payload.friendRequired !== 'boolean')) fail('无效联系人策略。');
       const blocked = packet.type === 'peer-policy' ? payload.blocked : !!p.blockedByPeer;
-      const friendRequired = packet.type === 'friend-delete' || payload.friendRequired;
+      if (typeof payload.friendRequired !== 'boolean') fail('无效好友联系策略。');
+      const friendRequired = payload.friendRequired;
       if (blocked !== !!p.blockedByPeer) systemMessage(from, blocked ? 'BLOCKED' : 'UNBLOCKED');
-      if (friendRequired && (!p.friendRequiredByPeer || packet.type === 'friend-delete')) systemMessage(from, 'FRIEND_REQUIRED');
+      if (packet.type === 'friend-delete') systemMessage(from, 'FRIEND_DELETED', '对方已删除好友。');
+      else if (friendRequired && !p.friendRequiredByPeer) systemMessage(from, 'FRIEND_REQUIRED');
       p.blockedByPeer = blocked; p.friendRequiredByPeer = friendRequired;
       if (friendRequired) p.friend = false;
-      if (packet.type === 'friend-delete') { p.friend = false; p.friendDeleted = true; }
+      if (packet.type === 'friend-delete') p.friend = false;
       for (const m of data.messages) {
         const d = m.delivery?.[from];
         if (!d || !['queued', 'sending'].includes(d.status) || !m.conversationId.startsWith('peer:')) continue;
@@ -656,7 +659,7 @@
         enqueue(effects, from, 'message-result', {messageId:payload.id, status:'accepted'}); return null;
       }
       const privateMessage = payload.conversationId.startsWith('peer:');
-      const code = peer(from).blocked ? 'BLOCKED' : privateMessage && (peer(from).friendDeleted || !allowed(from)) ? 'FRIEND_REQUIRED' : '';
+      const code = peer(from).blocked ? 'BLOCKED' : privateMessage && !allowed(from) ? 'FRIEND_REQUIRED' : '';
       if (code) { enqueue(effects, from, 'message-result', {messageId:payload.id, status:'rejected', code}); return null; }
     }
     if (!allowed(from, false)) fail('接收策略拒绝此用户。');
@@ -688,13 +691,17 @@
         return { type: 'signal', peerId: from, payload: payload.signal };
       case 'friend-request':
         token(payload.requestId);
-        if (!peer(from).friend && !data.requests.some((r) => r.type === 'friend' && r.from === from)) pushRequest({ id: payload.requestId, from, type: 'friend', createdAt: packet.createdAt });
+        if (!peer(from).friend && !data.requests.some((r) => r.type === 'friend' && r.from === from)) {
+          pushRequest({ id: payload.requestId, from, type: 'friend', createdAt: packet.createdAt });
+          systemMessage(from, 'FRIEND_REQUEST_RECEIVED', '对方向你发送了好友申请，请在「邀请与确认」中处理。');
+        }
         break;
       case 'friend-response': {
         if (typeof payload.allow !== 'boolean') fail('无效好友回应。');
         const pending = data.outgoing.find((r) => r.type === 'friend' && r.id === payload.requestId && r.to === from);
         if (!pending) fail('不存在对应的好友请求。');
-        if (payload.allow) { peer(from).friend = true; peer(from).friendDeleted = false; peer(from).friendRequiredByPeer = false; }
+        if (payload.allow) { peer(from).friend = true; peer(from).friendRequiredByPeer = false; }
+        systemMessage(from, payload.allow ? 'FRIEND_ACCEPTED_REMOTE' : 'FRIEND_REJECTED_REMOTE', payload.allow ? '对方已同意你的好友申请，现在已成为好友。' : '对方已拒绝你的好友申请。');
         data.outgoing = data.outgoing.filter((r) => r !== pending); break;
       }
       case 'group-invite': {

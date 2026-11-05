@@ -43,7 +43,8 @@ html[data-color-scheme="dark"] .message-author-name { color:#e5e7eb; }
 .message-delivery-status { margin-top:5px; color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .message-delivery-status.error { color:#b45309; }
 html[data-color-scheme="dark"] .message-delivery-status.error { color:#fbbf24; }
-.message.system { margin-inline:auto; border:0; background:transparent; text-align:center; color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
+.message.system { margin:0 auto; padding:10px 12px; border:0; background:transparent; text-align:center; color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
+.message.system .message-text { margin:0; }
 .message-text { line-height:1.7; margin-top:5px; }
 .message-text img { max-width:100%; max-height:380px; }
 .message-text table { display:block; max-width:100%; overflow:auto; border-collapse:collapse; }

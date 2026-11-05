@@ -277,7 +277,8 @@
     const peer = state.peers.find(item => item.id === peerId);
     $('conversation-detail').hidden = !selected || !!peerId;
     $('block-peer').hidden = !peer; $('block-peer').textContent = peer?.blocked ? '取消拉黑' : '拉黑';
-    $('delete-friend').hidden = !peer?.friend;
+    $('delete-friend').hidden = !peer;
+    $('delete-friend').textContent = peer?.friend ? '删除好友' : '加好友';
     $('mute-conversation').checked = state.conversations?.[selected]?.muted === true;
     $('mute-conversation').disabled = $('clear-history').disabled = !selected;
     $('send').disabled = !online || !selected;
@@ -1066,7 +1067,11 @@
     const peerId = selected.slice(5), peer = state.peers.find(item => item.id === peerId);
     if (peer) void mutate('block',{peerId,blocked:!peer.blocked}).catch(report);
   });
-  listen('delete-friend','click', () => { if (selected.startsWith('peer:')) void mutate('friend-delete',{peerId:selected.slice(5)}).catch(report); });
+  listen('delete-friend','click', () => {
+    if (!selected.startsWith('peer:')) return;
+    const peerId = selected.slice(5), peer = state.peers.find(item => item.id === peerId);
+    void mutate(peer?.friend ? 'friend-delete' : 'friend-request', {peerId}).catch(report);
+  });
   clearHold = globalThis.BjtuChatroomSidebar.bindHold($('clear-history'),{
     signal:uiAbort.signal,onConfirm:() => { if (selected) void mutate('conversation-clear',{conversationId:selected}).catch(report); }
   });

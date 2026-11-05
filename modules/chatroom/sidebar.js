@@ -236,8 +236,8 @@
       input.value = initial; input.maxLength = maxLength;
       input.placeholder = placeholder;
       label.append(input); fields.append(label);
-      return () => submit(input.value.trim());
-    });
+      return value => submit(value.trim());
+    }, {autoSave:true});
   }
   function editPerson(peerId) {
     if (peerId === state.self.id) {
@@ -246,25 +246,46 @@
     }
     const peer = state.peers.find(item => item.id === peerId);
     if (!peer) return;
-    openEditor([...new Set([peer.nickname, peer.ip].filter(Boolean))].join(' · ') || peer.id, fields => {
+    openEditor(peer.remark || peer.nickname || peer.ip || peer.id, fields => {
+      if (peer.ip && (peer.remark || (peer.nickname && peer.nickname !== peer.ip))) fields.append(node('p', peer.ip, 'editor-ip'));
       const label = node('label', '备注'), input = node('input');
       input.value = peer.remark || ''; input.maxLength = 80;
       input.placeholder = peer.nickname || peer.ip || peer.id;
       label.append(input); fields.append(label);
       const actions = node('div', undefined, 'actions');
-      if (!peer.friend && !peer.blocked) actions.append(button('发送好友申请', async () => {
-        await mutate('friend-request', {peerId}); toast('好友请求已发送。', true); $('editor').close();
+      if (!peer.friend && !peer.blocked) actions.append(button('加好友', async () => {
+        await mutate('friend-request', {peerId}); $('editor').close(); chooseConversation(`peer:${peerId}`);
+      }));
+      if (!peer.blockedByPeer && !peer.friendRequiredByPeer) actions.append(button('私聊', () => {
+        $('editor').close(); chooseConversation(`peer:${peerId}`);
       }));
       if (actions.childElementCount) fields.append(actions);
-      return () => mutate('remark', {peerId, remark: input.value.trim()});
-    });
+      return value => mutate('remark', {peerId, remark: value.trim()});
+    }, {autoSave:true});
   }
-  let editorSubmit = null;
-  function openEditor(title, build) {
+  let editorSubmit = null, editorAutoSave = false;
+  function openEditor(title, build, {autoSave = false} = {}) {
     if ($('editor').open) return;
     $('editor-title').textContent = title;
     $('editor-fields').replaceChildren();
     editorSubmit = build($('editor-fields'));
+    editorAutoSave = autoSave;
+    $('editor-cancel').parentElement.hidden = autoSave;
+    if (autoSave) {
+      const submit = editorSubmit;
+      const input = $('editor-fields').querySelector('input');
+      let saved = input?.value, queue = Promise.resolve();
+      editorSubmit = () => {
+        const value = input?.value;
+        queue = queue.catch(() => {}).then(async () => {
+          if (value === saved) return;
+          // Capture each committed value, rather than a later keystroke.
+          await submit(value); saved = value;
+        });
+        return queue;
+      };
+      input?.addEventListener('blur', () => editorSubmit?.().catch(report), {signal:uiAbort.signal});
+    }
     $('editor').showModal();
   }
   function groupEditor(invite = false) {
@@ -284,7 +305,7 @@
         if (!peerIds.length) throw new Error('请选择至少一位成员。');
         await mutate(invite ? 'group-invite' : 'group-create', invite ? { roomId, peerIds } : { name: input.value.trim(), peerIds });
       };
-    });
+    }, {autoSave:false});
   }
 
 
@@ -385,11 +406,11 @@
       backdropPressed = false;
     });
     listen('editor-cancel','click', () => $('editor').close());
-    listen('editor','close', () => { editorSubmit = null; $('editor-fields').replaceChildren(); });
+    listen('editor','close', () => { if (editorAutoSave) void editorSubmit?.().catch(report); editorSubmit = null; $('editor-fields').replaceChildren(); });
     listen('editor-form','submit', async event => {
       event.preventDefault();
       const submit = $('editor-form').querySelector('[type="submit"]'); submit.disabled = true;
-      try { await editorSubmit?.(); $('editor').close(); } catch(error) { report(error); } finally { submit.disabled = false; }
+      try { await editorSubmit?.(); if (!editorAutoSave) $('editor').close(); } catch(error) { report(error); } finally { submit.disabled = false; }
     });
     global.addEventListener('bjtu-chatroom-transport-ready', () => attachTransport().catch(report), {signal:uiAbort.signal});
     function destroy() {
