@@ -1,4 +1,37 @@
 (() => {
+  const DATE_FORMAT_KEY = 'dateFormatSettings';
+  const DATE_DEFAULTS = Object.freeze({separator:'/', order:'ymd'});
+  let dateSettings = {...DATE_DEFAULTS};
+  const escapeDate = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  function normalizeDateSettings(value) {
+    return {separator:typeof value?.separator === 'string' ? value.separator.slice(0, 8) : '/',
+      order:['ymd','ydm','myd','mdy','dym','dmy'].includes(value?.order) ? value.order : 'ymd'};
+  }
+  function canonicalDate(value) {
+    if (value instanceof Date || typeof value === 'number') {
+      const date = value instanceof Date ? value : new Date(value < 1e11 ? value * 1000 : value);
+      if (!Number.isFinite(date.getTime())) return '';
+      const pad = number => String(number).padStart(2, '0');
+      return `${date.getFullYear()}/${pad(date.getMonth()+1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+    return String(value ?? '');
+  }
+  function formatDate(value) {
+    return canonicalDate(value).replace(/(\d{4})[-年/.](\d{1,2})[-月/.](\d{1,2})日?/g, (_, y, m, d) => {
+      const parts = {y,m,d}; return [...dateSettings.order].map(key => parts[key]).join(dateSettings.separator);
+    });
+  }
+  function setDate(element, value) {
+    element.dataset.bjtuDate = canonicalDate(value); element.textContent = formatDate(value); return element;
+  }
+  function applyDateSettings(value) {
+    dateSettings = normalizeDateSettings(value);
+    for (const element of document.querySelectorAll('[data-bjtu-date]')) element.textContent = formatDate(element.dataset.bjtuDate);
+    window.dispatchEvent(new CustomEvent('bjtu-date-format-change', {detail:{...dateSettings}}));
+  }
+  globalThis.BjtuDateTime = Object.freeze({storageKey:DATE_FORMAT_KEY, defaults:DATE_DEFAULTS, normalize:normalizeDateSettings,
+    format:formatDate, set:setDate, getSettings:() => ({...dateSettings}),
+    html:value => `<span data-bjtu-date="${escapeDate(canonicalDate(value))}">${escapeDate(formatDate(value))}</span>`});
   const STORAGE_KEY = 'themeMode';
   const DEFAULT_MODE = 'system';
   const BACKGROUND_DEFAULTS = Object.freeze({ light: '#f9f9f9', dark: '#0f172a' });
@@ -235,7 +268,8 @@
   applyFontSizeSettings();
 
   try {
-    chrome.storage.local.get([STORAGE_KEY, ANIMATION_STORAGE_KEY, ANIMATION_SPEED_STORAGE_KEY, FONT_SIZE_STORAGE_KEY, 'colorSettings']).then((data) => {
+    chrome.storage.local.get([STORAGE_KEY, ANIMATION_STORAGE_KEY, ANIMATION_SPEED_STORAGE_KEY, FONT_SIZE_STORAGE_KEY, 'colorSettings', DATE_FORMAT_KEY]).then((data) => {
+      applyDateSettings(data?.[DATE_FORMAT_KEY]);
       applyBackgroundColors(data?.colorSettings);
       applyTheme(data?.[STORAGE_KEY]);
       applyAnimation(data?.[ANIMATION_STORAGE_KEY], data?.[ANIMATION_SPEED_STORAGE_KEY]);
@@ -243,6 +277,7 @@
     }).catch(() => {});
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if (changes[DATE_FORMAT_KEY]) applyDateSettings(changes[DATE_FORMAT_KEY].newValue);
       if (changes.colorSettings) applyBackgroundColors(changes.colorSettings.newValue);
       if (changes[STORAGE_KEY]) applyTheme(changes[STORAGE_KEY].newValue);
       if (changes[ANIMATION_STORAGE_KEY] || changes[ANIMATION_SPEED_STORAGE_KEY]) {

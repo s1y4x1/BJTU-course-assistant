@@ -126,15 +126,15 @@
     };
     const hasDeadline = loading || isVisibleTime(deadline, formatted);
     const hasStart = isVisibleTime(startTime, startFormatted);
-    const dateText = value => String(value ?? '').replace(/(\d{4})[-年/.](\d{1,2})[-月/.](\d{1,2})日?/g, '$1/$2/$3');
+    const dateHtml = value => global.BjtuDateTime.html(value);
     const deadlineHtml = hasDeadline
-      ? `<span class="homework-time-item homework-time-deadline">${escape(label)}：<span class="homework-deadline-value">${escape(dateText(formatted || deadline))}</span>${suffixHtml}${countdown}</span>`
+      ? `<span class="homework-time-item homework-time-deadline">${escape(label)}：<span class="homework-deadline-value">${dateHtml(formatted || deadline)}</span>${suffixHtml}${countdown}</span>`
       : '';
     const startHtml = hasStart
-      ? `<span class="homework-time-item homework-time-start">开始：<span class="homework-deadline-value">${escape(dateText(startFormatted || startTime))}</span></span>`
+      ? `<span class="homework-time-item homework-time-start">开始：<span class="homework-deadline-value">${dateHtml(startFormatted || startTime)}</span></span>`
       : '';
     const extraTimeHtml = extraTimes.filter((item) => isVisibleTime(item.value, item.formatted))
-      .map((item) => `<span class="homework-time-item homework-time-extra">${escape(item.label)}：<span class="homework-deadline-value">${escape(dateText(item.formatted || item.value))}</span></span>`);
+      .map((item) => `<span class="homework-time-item homework-time-extra">${escape(item.label)}：<span class="homework-deadline-value">${dateHtml(item.formatted || item.value)}</span></span>`);
     const times = [deadlineHtml, startHtml, ...extraTimeHtml].filter(Boolean);
     const timeHtml = times.length
       ? `<span class="homework-time-group">${times.join(' ')}</span>`

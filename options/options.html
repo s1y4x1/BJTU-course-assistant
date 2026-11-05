@@ -101,6 +101,8 @@
       </label>
       <div class="tip">开启时作业、资源、回放和归档列表项从上到下渐隐并向上滚动；收起途中再次展开会反向播放。</div>
       <div class="option-divider" role="separator"></div>
+      <label>日期分隔符 <input id="dateSeparator" type="text" list="dateSeparatorChoices" maxlength="8" value="/" class="bjtu-content-sized-input" aria-label="日期分隔符，可自行输入"><datalist id="dateSeparatorChoices"><option value="/"><option value="-"><option value="."></datalist></label>
+      <label>日期顺序 <select id="dateOrder" class="bjtu-content-sized-select"><option value="ymd">年 月 日</option><option value="ydm">年 日 月</option><option value="myd">月 年 日</option><option value="mdy">月 日 年</option><option value="dym">日 年 月</option><option value="dmy">日 月 年</option></select></label>
       <details class="ui-order-editor font-size-editor" id="fontSizeEditor">
         <summary><span class="ui-order-summary-label">字号</span><span class="tip">相同默认字号的文字由同一分类统一控制。</span></summary>
         <div class="font-size-grid">

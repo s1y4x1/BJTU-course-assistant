@@ -39,7 +39,7 @@
   // and its storage namespace; never expose arbitrary Chrome API invocation.
   const chatUrl = chrome.runtime.getURL('modules/chatroom/chat.html');
   const keyAllowed = key => typeof key === 'string' && /^chatroom[A-Za-z0-9]*$/.test(key);
-  const readOnly = new Set(['themeMode','animationMode','animationSpeed','fontSizeSettings','colorSettings']);
+  const readOnly = new Set(['themeMode','animationMode','animationSpeed','fontSizeSettings','colorSettings','dateFormatSettings']);
   chrome.runtime.onMessage.addListener((message,sender,respond) => {
     if (message?.type !== 'BJTU_OFFSCREEN_STORAGE') return false;
     if (sender.id !== chrome.runtime.id || !sender.url ||

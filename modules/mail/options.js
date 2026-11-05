@@ -69,9 +69,7 @@
   function renderCheckedAt(target, value) {
     if (!(target instanceof HTMLTimeElement)) return;
     const date = new Date(Number(value || 0));
-    target.textContent = Number.isNaN(date.getTime()) || !Number(value)
-      ? ''
-      : date.toLocaleString('zh-CN', { hour12: false });
+    BjtuDateTime.set(target, Number.isNaN(date.getTime()) || !Number(value) ? '' : date);
   }
 
   function renderSummary({ total = null, unreadCount = null, checkedAt = 0 } = {}) {
@@ -466,7 +464,7 @@
       bindMailPreview(summaryCell, row);
       tr.appendChild(summaryCell);
       appendCell(tr, 'mail-from', row.from || row.sender || '-');
-      appendCell(tr, '', row.receivedDate || row.sentDate || '-');
+      BjtuDateTime.set(appendCell(tr, '', ''), row.receivedDate || row.sentDate || '-');
       body?.appendChild(tr);
     });
     element('mailLoading').style.display = 'none';

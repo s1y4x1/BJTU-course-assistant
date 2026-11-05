@@ -1654,7 +1654,8 @@
     name.textContent = `${label}：`;
     const content = document.createElement('span');
     content.className = 'academic-course-hover-value';
-    content.textContent = text;
+    if (label === '时间地点') BjtuDateTime.set(content, text);
+    else content.textContent = text;
     row.append(name, content);
     parent.appendChild(row);
   }
@@ -1794,7 +1795,7 @@
       const timeLine = document.createElement('div');
       timeLine.className = 'academic-exam-time-line';
       const timeText = document.createElement('span');
-      timeText.textContent = lines[0] || '-';
+      BjtuDateTime.set(timeText, lines[0] || '-');
       timeLine.appendChild(timeText);
       if (Number(row.startAt || 0) > Date.now()) {
         const countdown = document.createElement('span');

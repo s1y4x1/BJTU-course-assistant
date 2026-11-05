@@ -998,6 +998,17 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   setScheduleIntervalEditor('backgroundAutoUpdateInterval', backgroundAutoUpdateIntervalMinutes, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
   setScheduleIntervalEditor('homeworkBackgroundRefreshInterval', homeworkBackgroundRefreshIntervalMinutes, DEFAULT_HOMEWORK_BACKGROUND_REFRESH_INTERVAL_MINUTES);
   updateThemeModeUi(themeMode);
+  const dateSeparator = document.getElementById('dateSeparator'), dateOrder = document.getElementById('dateOrder');
+  const updateDateUi = () => {
+    const value = BjtuDateTime.getSettings();
+    if (document.activeElement !== dateSeparator) dateSeparator.value = value.separator;
+    dateOrder.value = value.order;
+  };
+  updateDateUi();
+  window.addEventListener('bjtu-date-format-change', updateDateUi);
+  for (const input of [dateSeparator, dateOrder]) input.addEventListener('change', () => {
+    void chrome.storage.local.set({dateFormatSettings:BjtuDateTime.normalize({separator:dateSeparator.value, order:dateOrder.value})});
+  });
   updateAnimationUi(animationMode, animationSpeed);
   let currentFontSizeSettings = globalThis.BjtuTypography?.normalizeSettings(fontSizeSettings)
     || { ...DEFAULT_FONT_SIZE_SETTINGS };
@@ -2600,6 +2611,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       animationMode: DEFAULT_ANIMATION_MODE,
       animationSpeed: DEFAULT_ANIMATION_SPEED,
       fontSizeSettings: { ...DEFAULT_FONT_SIZE_SETTINGS },
+      dateFormatSettings: {...BjtuDateTime.defaults},
       colorSettings: {},
       homeworkDeadlineGradientEnabled: true,
       homeworkMarqueeEnabled: true

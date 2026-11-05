@@ -5561,6 +5561,7 @@ function buildCoursewareListHtml(courseId, items, toolbarEndHtml = '') {
           <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin:0 4px 0 0;">
           <span class="resource-name">${resourceCategoryHtml}${escapeHtml(fileName || name)}</span>
           ${sizeMb ? `<span class="resource-time-inline file-size-emphasis" data-file-size-mb="${escapeHtml(String(Number(item?.sizeMbRaw ?? item?.rpSize) || 0))}" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>` : ''}
+          ${item?.inputTime ? `<span class="resource-time-inline">上传时间: ${BjtuDateTime.html(item.inputTime)}</span>` : ''}
         </div>
         <div class="resource-link-row">
           ${hasUrl

@@ -1021,7 +1021,7 @@ function renderResourceSpaceList() {
               <div class="resource-row-title">
                 <span class="resource-name">${escapeHtml(name)}</span>
                 <span class="resource-time-inline file-size-emphasis" data-file-size-mb="${escapeHtml(String(Number(it?.sizeMbRaw) || 0))}" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>
-                <span class="resource-time-inline">上传时间: ${escapeHtml(uploadTime)}</span>
+                <span class="resource-time-inline">上传时间: ${BjtuDateTime.html(uploadTime)}</span>
               </div>
               <div class="resource-link-row">
                 <a class="resource-url" data-filename="${escapeHtml(ensureResourceDownloadFileName(it, url))}" href="${escapeHtml(url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>

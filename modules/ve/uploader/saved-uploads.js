@@ -270,8 +270,7 @@ function renderSavedUploadsSection() {
     const safeHref = escapeHtml(url);
     const safeEntryId = escapeHtml(entryId);
     const safeSynthFileId = escapeHtml(synthFileId);
-    const timeText = it.savedAt ? new Date(it.savedAt).toLocaleString('zh-CN', { hour12: false }) : '';
-    const timeHtml = timeText ? ` <span class="resource-time-inline">上传时间: ${escapeHtml(timeText)}</span>` : '';
+    const timeHtml = it.savedAt ? ` <span class="resource-time-inline">上传时间: ${BjtuDateTime.html(new Date(it.savedAt))}</span>` : '';
     return `
       <div class="file-item" data-saved-upload-id="${safeEntryId}" data-resource-id="${safeSynthFileId}">
         <div class="upload-file-head-row" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
