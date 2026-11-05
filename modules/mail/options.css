@@ -6,7 +6,7 @@
 .mail-fullscreen-button-icon-option > label { margin:0; color:#475569; font-size:13px; }
 .mail-fullscreen-button-icon-option.is-disabled { opacity:.5; }
 .mail-fullscreen-button-icon-select { width:100%; min-width:0; }
-#mailMonitorIntervalEditor { padding-left:0; }
+#mailMonitorIntervalEditor { padding-left:20px; }
 .mail-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 2px; }
 #bindMailSystemBtn { background:#16a34a; }
 .mail-user-info { color:#64748b; font-size:12px; overflow-wrap:anywhere; }

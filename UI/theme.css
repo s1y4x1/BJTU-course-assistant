@@ -43,6 +43,18 @@ html input.bjtu-content-sized-input {
   max-width: 100%;
   flex: 0 0 auto;
 }
+html select.bjtu-content-sized-select {
+  field-sizing: content;
+  width: auto;
+  max-width: 100%;
+}
+html .bjtu-content-sized-controls { display:flex; align-items:center; gap:8px; }
+:where(body.options-page, .module-options-standalone, [data-options-fragment]) input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"]) {
+  box-sizing: border-box !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+}
 .schedule-interval-editor:has(> .bjtu-content-sized-input) {
   grid-template-columns: max-content max-content max-content;
   justify-content: start;

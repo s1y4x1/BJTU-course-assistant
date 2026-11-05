@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="../UI/file-size-emphasis.css" />
 </head>
 
-<body>
+<body class="options-page">
   <div class="page-header">
     <h1 style="font-size:1.5rem; margin:0;"><span id="back-home" class="back-home-link" role="link" tabindex="0">BJTU
         课程助手</span> —— 扩展选项</h1>
@@ -48,7 +48,7 @@
         <span>动画速度</span>
         <input type="range" id="animationSpeed" min="0.25" max="2" step="0.05" value="1" />
         <span class="animation-speed-value-wrap">
-          <input type="number" id="animationSpeedValue" step="0.05" value="1" aria-label="动画速度倍率" />
+          <input type="number" id="animationSpeedValue" class="bjtu-content-sized-input" step="0.05" value="1" aria-label="动画速度倍率" />
           <span>×</span>
         </span>
       </label>
@@ -86,7 +86,7 @@
       <div class="tip">开启后，仅当作业详情顶部已超出可见区域时向下收起，尽量保持按钮位置；详情完整显示时仍向上收起。关闭后总是向上收起。</div>
       <label class="homework-detail-lines-option">
         <span>作业详情默认显示</span>
-        <input id="homeworkDetailCollapsedLines" type="number" min="0" step="1" value="3" placeholder="∞" aria-label="作业详情默认显示行数，留空表示不限行数">
+        <input id="homeworkDetailCollapsedLines" class="bjtu-content-sized-input" type="number" min="0" step="1" value="3" placeholder="∞" aria-label="作业详情默认显示行数，留空表示不限行数">
         <span>行</span>
       </label>
       <div class="option-divider" role="separator"></div>
@@ -277,7 +277,7 @@
         <label><input type="checkbox" id="injectMoocPeerReviewEnabled" style="width:auto;" />注入自动互评按钮</label>
         <div class="mooc-peer-review-count-editor" id="moocPeerReviewCountEditor">
           <label for="moocPeerReviewCount">默认互评次数</label>
-          <input type="number" id="moocPeerReviewCount" min="1" step="1" value="5" />
+          <input type="number" id="moocPeerReviewCount" class="bjtu-content-sized-input" min="1" step="1" value="5" />
           <span>次</span>
         </div>
         <div class="platform-option-divider" role="separator"></div>
@@ -506,7 +506,7 @@
       <div class="option-divider" role="separator"></div>
       <label class="update-file-concurrency-option">
         文件并行处理数
-        <input id="updateFileConcurrency" type="number" min="1" step="1" placeholder="∞" title="留空表示不设限制">
+        <input id="updateFileConcurrency" class="bjtu-content-sized-input" type="number" min="1" step="1" placeholder="∞" title="留空表示不设限制">
       </label>
       <label style="display:flex; align-items:center; gap:8px; margin:0;">
         <input type="checkbox" id="backgroundAutoUpdateEnabled" style="width:auto;" />

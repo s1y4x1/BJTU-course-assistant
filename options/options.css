@@ -142,7 +142,7 @@ body.module-options-standalone label:has(input:not(:disabled), select:not(:disab
 .animation-speed-option[hidden] { display:none; }
 .animation-speed-option input[type="range"] { width:180px; margin:0; padding:0; }
 .animation-speed-value-wrap { display:inline-flex; align-items:center; gap:3px; color:#475569; font-variant-numeric:tabular-nums; }
-.animation-speed-value-wrap #animationSpeedValue { width:68px; margin:0; padding:6px; text-align:right; }
+.animation-speed-value-wrap #animationSpeedValue { margin:0; padding:6px; text-align:right; }
 .font-size-editor { margin-top:0; }
 .component-color-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:2px 14px; margin-top:7px; }
 .component-color-item { display:flex; align-items:center; gap:6px; }
@@ -200,7 +200,7 @@ html[data-color-scheme="dark"] .ui-order-item { border-color:#475569; background
 .platform-text-action-option, .inline-select-option { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
 .inline-select-option select { max-width:100%; }
 .homework-detail-lines-option { display:flex; align-items:center; gap:6px; margin:10px 0 0; }
-.homework-detail-lines-option input { width:64px; height:34px; padding:5px 8px; }
+.homework-detail-lines-option input { padding:5px 8px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .page-header h1 { min-width: 0; flex: 1 1 auto; }
 .page-header-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:0 0 auto; }
@@ -378,9 +378,9 @@ html[data-color-scheme="dark"] .option-action-link { color:#60a5fa; }
 .mrjzy-auto-login-row > label { flex:0 0 auto; margin:0; white-space:nowrap; }
 .mrjzy-auto-login-row > select { --bjtu-select-height:auto; flex:0 1 auto; width:fit-content; min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; field-sizing:content; }
 .mrjzy-auto-login-row > select option { white-space:normal; overflow-wrap:anywhere; }
-.mooc-peer-review-count-editor { display:grid; grid-template-columns:auto 84px auto; align-items:center; justify-content:start; gap:8px; margin:6px 0 4px 22px; }
+.mooc-peer-review-count-editor { display:grid; grid-template-columns:auto max-content auto; align-items:center; justify-content:start; gap:8px; margin:6px 0 4px 22px; }
 .mooc-peer-review-count-editor label { margin:0; }
-.mooc-peer-review-count-editor input { box-sizing:border-box; width:84px; height:32px; padding:5px 7px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+.mooc-peer-review-count-editor input { box-sizing:border-box; padding:5px 7px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .platform-activity-type-options { display:flex; flex-wrap:wrap; gap:0 14px; }
 .platform-activity-type-options label { white-space:nowrap; }
 .account-progress-mask { position:fixed; inset:0; z-index:10001; background:rgba(15,23,42,.45); align-items:center; justify-content:center; }
@@ -405,7 +405,7 @@ html.options-loading #options-loading-placeholder { display:flex; }
 .reminder-editor button { margin:0; height:34px; }
 .reminder-editor-actions { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
 .update-file-concurrency-option { display:flex; align-items:center; gap:8px; }
-.update-file-concurrency-option > input { width:80px; font:inherit; }
+.update-file-concurrency-option > input { font:inherit; }
 .schedule-interval-editor { display:grid; grid-template-columns:auto minmax(72px,1fr) auto; gap:8px; align-items:center; margin:8px 0; padding-left:22px; }
 .schedule-interval-editor input { box-sizing:border-box; min-width:0; height:34px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fff; }
 .schedule-interval-editor select { min-width:0; }
