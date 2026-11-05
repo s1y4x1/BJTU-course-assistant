@@ -36,6 +36,20 @@ html select:disabled {
 }
 
 /* Text fields share the options-page appearance without imposing a width. */
+html input.bjtu-content-sized-input {
+  field-sizing: content;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 0 auto;
+}
+.schedule-interval-editor:has(> .bjtu-content-sized-input) {
+  grid-template-columns: max-content max-content max-content;
+  justify-content: start;
+}
+.reminder-editor:has(> .bjtu-content-sized-input) {
+  grid-template-columns: max-content max-content max-content minmax(0, 1fr);
+}
 .bjtu-text-input,
 :where(#options-controlled-content, [data-options-fragment]) input:is([type="text"], [type="password"], [type="email"], [type="url"]) {
   box-sizing: border-box;
