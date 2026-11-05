@@ -19,11 +19,11 @@
       <div class="section-heading chatroom-conversation-heading"><h2>会话</h2><button id="create-group" type="button" class="secondary">新建群聊</button></div>
       <nav id="conversations" aria-label="群聊和私聊会话"></nav>
       <div class="section-heading"><h2>服务器与设备发现</h2></div>
-      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器 <span id="chatroomSignalingStatus" class="chatroom-server-status" data-state="disconnected" role="status">未连接</span><span class="tip" data-tip-target="#chatroomSignalingLabel">使用 BJTUCA Bridge 聊天室服务器。打开聊天室时自动连接，由服务器为设备安排直连；未连接时可在地址输入框回车重连。跨电脑时请填写同一台服务器的局域网地址，如 ws://192.168.1.2:1897/chatroom。消息、文件与屏幕通过加密直连传输。</span></label>
+      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器 <span id="chatroomSignalingStatus" class="chatroom-server-status" data-state="disconnected" role="status">未连接</span><span class="tip" data-tip-target="#chatroomSignalingLabel">使用 BJTUCA Bridge 聊天室服务器。打开聊天室时自动连接；未连接时可在地址输入框回车重连。同一局域网中的服务器通过组播自动发现并互联，扩展可继续连接各自的本机服务器，无需更改地址。也可手动连接同一台服务器，如 ws://192.168.1.2:1897/chatroom。消息、文件与屏幕通过加密直连传输。</span></label>
       <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="ws://127.0.0.1:1897/chatroom">
       <div id="chatroomServerActions" class="actions chatroom-server-actions" hidden><button id="disconnect" type="button" class="secondary">断开连接</button><button id="scan" type="button" class="secondary">刷新发现</button></div>
       <a id="chatroomStartServer" class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>
-      <p class="muted">所有参与者应使用同一个 Bridge 聊天室服务器；无需手动连接设备。跨网络直连可能受防火墙或网络隔离限制。</p>
+      <p class="muted">同一局域网的本机服务器会自动发现并互联，无需手动连接设备；请允许专用网络的 TCP 服务端口与 UDP 1898。网络隔离或防火墙可能阻止发现与直连。</p>
       <details id="pairing-panel"><summary>离线邀请 / 应答配对</summary><p class="muted">手动交换 WebRTC 连接信息，无需本地程序或信令服务器。甲复制邀请发给乙；乙粘贴邀请并复制应答发回甲；甲粘贴并提交应答。每份信息 5 分钟内有效，含本地网络候选与身份，仅分享给可信的人；网络隔离时可能无法直连。</p><div class="actions"><button id="pair-create" type="button" class="secondary" disabled>复制邀请</button></div><label>对方邀请 / 应答<textarea id="pair-input" rows="4" maxlength="262144" placeholder="粘贴对方发送的完整 JSON 信息"></textarea></label><div class="actions"><button id="pair-accept" type="button" disabled>接受邀请并复制应答</button><button id="pair-complete" type="button" class="secondary" disabled>提交对方应答</button></div><p id="pair-status" class="muted" role="status">等待连接引擎。</p></details>
       <details id="settings-panel"><summary>个人设置与隐私</summary><form id="settings-form">
         <label>昵称<input id="nickname" maxlength="40" autocomplete="nickname" required></label>

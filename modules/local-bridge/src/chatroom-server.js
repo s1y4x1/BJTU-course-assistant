@@ -2,6 +2,7 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { WebSocket, WebSocketServer } from 'ws';
+import { createChatroomFederation } from './chatroom-federation.js';
 
 export const DEFAULT_CHATROOM_PORT = 1897;
 export const CHATROOM_LIMITS = Object.freeze({
@@ -41,14 +42,16 @@ export function parseChatroomPort(args = []) {
  * No process signal handlers or bridge configuration are touched here.
  * Returns { server, wss, port, host, close }, where close() is idempotent.
  */
-export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host = '0.0.0.0', limits: overrides = {} } = {}) {
+export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host = '0.0.0.0', limits: overrides = {}, discovery = host === '0.0.0.0', discoveryOptions = {}, onWarning = message => console.warn(message) } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new RangeError('Invalid chatroom port');
   const limits = { ...CHATROOM_LIMITS, ...overrides };
   for (const value of Object.values(limits)) {
     if (!Number.isSafeInteger(value) || value < 1) throw new RangeError('Chatroom limits must be positive integers');
   }
   const peers = new Map(), sessions = new Map(), sockets = new Set(), ipCounts = new Map(), upgradeRates = new Map();
-  let closing = false, closePromise, heartbeat;
+  const serverId = randomUUID(), remotePeers = new Map();
+  const localIP = Object.values(networkInterfaces()).flat().find(entry => entry.family === 'IPv4' && !entry.internal && /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(entry.address))?.address;
+  let closing = false, closePromise, heartbeat, federation;
   const server = http.createServer({ maxHeaderSize: 16384, headersTimeout: 10000, requestTimeout: 10000 }, (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'close' });
@@ -68,6 +71,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
       if (session.from === peer.id || session.to === peer.id) sessions.delete(id);
     }
     if (!closing) broadcast({ type: 'LEFT', peerId: peer.id });
+    federation?.publish();
   }
   function disconnect(peer, code, reason) {
     remove(peer);
@@ -76,6 +80,10 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     peer.closeTimer.unref();
   }
   function send(peer, message) {
+    if (peer.remote) {
+      if (message.type === 'OFFER' || message.type === 'ANSWER') federation?.forward(peer.id, message);
+      return;
+    }
     if (!peers.has(peer.id) || peer.ws.readyState !== WebSocket.OPEN) return;
     const data = JSON.stringify(message);
     if (Buffer.byteLength(data) > limits.maxPayload || peer.ws.bufferedAmount + Buffer.byteLength(data) > limits.maxBufferedBytes) {
@@ -98,6 +106,26 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
   const fail = (peer, code) => send(peer, { type: 'ERROR', code });
   function pruneSessions(now = Date.now()) {
     for (const [id, session] of sessions) if (session.expires <= now) sessions.delete(id);
+  }
+  function relay(peer, message) {
+    const time = Date.now();
+    const { target, sessionId, sdp, type } = message;
+    if (!['OFFER', 'ANSWER'].includes(type) || typeof target !== 'string' || target.length > 160 || typeof sessionId !== 'string' || !sessionId.length || sessionId.length > 80 ||
+        typeof sdp !== 'string' || !sdp.length || !/^[A-Za-z0-9_-]+$/.test(sdp)) { fail(peer, 'INVALID_SIGNAL'); return; }
+    const recipient = peers.get(target) || remotePeers.get(target);
+    if (!recipient || recipient === peer || (peer.remote && recipient.remote)) { fail(peer, 'PEER_NOT_FOUND'); return; }
+    pruneSessions(time);
+    if (type === 'OFFER') {
+      if (sessions.has(sessionId)) { fail(peer, 'SESSION_EXISTS'); return; }
+      const involved = id => [...sessions.values()].filter(s => s.from === id || s.to === id).length;
+      if (sessions.size >= limits.maxSessions || involved(peer.id) >= limits.maxSessionsPerPeer || involved(target) >= limits.maxSessionsPerPeer) { fail(peer, 'SESSION_LIMIT'); return; }
+      sessions.set(sessionId, {from:peer.id, to:target, expires:time + limits.sessionTtlMs});
+    } else {
+      const session = sessions.get(sessionId);
+      if (!session || session.to !== peer.id || session.from !== target) { fail(peer, 'INVALID_SESSION'); return; }
+      sessions.delete(sessionId);
+    }
+    send(recipient, {type, peer:describe(peer), sessionId, sdp});
   }
   server.on('connection', socket => {
     const ip = socket.remoteAddress;
@@ -127,6 +155,11 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     let info;
     try {
       const url = new URL(req.url, 'http://localhost');
+      if (url.pathname === '/chatroom/servers') {
+        if (federation) federation.upgrade(req, socket, head);
+        else reject(socket, '404 Not Found');
+        return;
+      }
       if (url.pathname !== '/chatroom') { reject(socket, '404 Not Found'); return; }
       const data = url.searchParams.get('d');
       // LocalSend clients may use standard btoa Base64 or unpadded base64url.
@@ -136,8 +169,10 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     } catch { reject(socket, '400 Bad Request'); return; }
     wss.handleUpgrade(req, socket, head, ws => {
       socket.setTimeout(0);
-      const peer = { id: randomUUID(), info, ws, ip: String(socket.remoteAddress || '').replace(/^::ffff:/, ''), alive: true, count: 0, windowStart: now };
-      const existing = [...peers.values()].map(describe);
+      let clientIP = String(socket.remoteAddress || '').replace(/^::ffff:/, '');
+      if (discovery && clientIP.startsWith('127.') && localIP) clientIP = localIP;
+      const peer = { id: `${serverId}:${randomUUID()}`, info, ws, ip: clientIP, alive: true, count: 0, windowStart: now };
+      const existing = [...peers.values(), ...remotePeers.values()].map(describe);
       peers.set(peer.id, peer);
       ws.on('error', () => {
         remove(peer);
@@ -162,50 +197,64 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
           try { peer.info = publicInfo(message.info); }
           catch { fail(peer, 'INVALID_INFO'); return; }
           broadcast({ type: 'UPDATE', peer: describe(peer) }, peer);
+          federation?.publish();
           return;
         }
         if (message.type === 'DISCOVER') {
-          for (const other of peers.values()) arrangeConnection(peer, other);
+          for (const other of [...peers.values(), ...remotePeers.values()]) arrangeConnection(peer, other);
           return;
         }
         if (message.type !== 'OFFER' && message.type !== 'ANSWER') { fail(peer, 'INVALID_TYPE'); return; }
         // Construct a fresh envelope: client-supplied peer/from/id never reaches recipients.
-        const { target, sessionId, sdp, type } = message;
-        if (typeof target !== 'string' || target.length > 160 || typeof sessionId !== 'string' || !sessionId.length || sessionId.length > 80 ||
-            typeof sdp !== 'string' || !sdp.length || !/^[A-Za-z0-9_-]+$/.test(sdp)) { fail(peer, 'INVALID_SIGNAL'); return; }
-        const recipient = peers.get(target);
-        if (!recipient || recipient === peer) { fail(peer, 'PEER_NOT_FOUND'); return; }
-        pruneSessions(time);
-        if (type === 'OFFER') {
-          if (sessions.has(sessionId)) { fail(peer, 'SESSION_EXISTS'); return; }
-          const involved = id => [...sessions.values()].filter(s => s.from === id || s.to === id).length;
-          if (sessions.size >= limits.maxSessions || involved(peer.id) >= limits.maxSessionsPerPeer || involved(target) >= limits.maxSessionsPerPeer) {
-            fail(peer, 'SESSION_LIMIT'); return;
-          }
-          sessions.set(sessionId, { from: peer.id, to: target, expires: time + limits.sessionTtlMs });
-        } else {
-          const session = sessions.get(sessionId);
-          if (!session || session.to !== peer.id || session.from !== target) { fail(peer, 'INVALID_SESSION'); return; }
-          sessions.delete(sessionId);
-        }
-        send(recipient, { type, peer: describe(peer), sessionId, sdp });
+        relay(peer, message);
       });
       send(peer, { type: 'HELLO', service: 'bjtuca-chatroom', client: describe(peer), peers: existing });
       if (peers.has(peer.id)) broadcast({ type: 'JOIN', peer: describe(peer) }, peer);
-      for (const other of peers.values()) arrangeConnection(peer, other);
+      for (const other of [...peers.values(), ...remotePeers.values()]) arrangeConnection(peer, other);
+      federation?.publish();
     });
   });
   function close() {
     if (closePromise) return closePromise;
     closing = true; clearInterval(heartbeat);
-    closePromise = new Promise(resolve => {
-      for (const peer of peers.values()) { clearTimeout(peer.closeTimer); peer.ws.terminate(); }
-      peers.clear(); sessions.clear(); upgradeRates.clear();
-      for (const socket of sockets) socket.destroy();
-      sockets.clear(); ipCounts.clear();
-      wss.close(() => server.close(() => resolve()));
-    });
+    closePromise = (async () => {
+      await federation?.close();
+      remotePeers.clear();
+      await new Promise(resolve => {
+        for (const peer of peers.values()) { clearTimeout(peer.closeTimer); peer.ws.terminate(); }
+        peers.clear(); sessions.clear(); upgradeRates.clear();
+        for (const socket of sockets) socket.destroy();
+        sockets.clear(); ipCounts.clear();
+        wss.close(() => server.close(() => resolve()));
+      });
+    })();
     return closePromise;
+  }
+  function startFederation() {
+    if (discovery) federation = createChatroomFederation({
+      id:serverId, port:server.address().port, listPeers:() => [...peers.values()].map(describe),
+      validatePeer:publicInfo, maxPayload:limits.maxPayload, maxBufferedBytes:limits.maxBufferedBytes,
+      onWarning, ...discoveryOptions,
+      onPeers(changed, removed) {
+        if (closing) return;
+        for (const peerId of removed) {
+          remotePeers.delete(peerId);
+          for (const [sessionId, session] of sessions) if (session.from === peerId || session.to === peerId) sessions.delete(sessionId);
+          broadcast({type:'LEFT', peerId});
+        }
+        for (const value of changed) {
+          const existed = remotePeers.has(value.id);
+          const remote = {id:value.id, info:publicInfo(value), ip:value.ip, remote:true};
+          remotePeers.set(remote.id, remote);
+          broadcast({type:existed ? 'UPDATE' : 'JOIN', peer:describe(remote)});
+          if (!existed) for (const local of peers.values()) arrangeConnection(local, remote);
+        }
+      },
+      onSignal(source, message) {
+        const remote = remotePeers.get(source.id);
+        if (!closing && remote && peers.has(message.target)) relay(remote, message);
+      }
+    });
   }
   try {
     await new Promise((resolve, rejectListen) => {
@@ -220,6 +269,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     else if (error.code === 'EACCES') error.message = `无权监听聊天室端口 ${port}：请使用 --chatroom --port=1897 或检查系统端口保留设置。`;
     throw error;
   }
+  startFederation();
   heartbeat = setInterval(() => {
     pruneSessions();
     for (const peer of peers.values()) {
@@ -240,7 +290,7 @@ export async function runChatroomServer(args = process.argv.slice(2)) {
   for (const entries of Object.values(networkInterfaces())) {
     for (const item of entries || []) if (item.family === 'IPv4' && !item.internal) addresses.add(item.address);
   }
-  process.stdout.write(`聊天室 LAN 信令服务已启动（独立于 Bridge，无需扩展连接）\n${[...addresses].map(ip => `  ws://${ip}:${service.port}/chatroom`).join('\n')}\n仅用于可信局域网；不转发聊天或文件内容。按 Ctrl+C 关闭。\n`);
+  process.stdout.write(`聊天室 LAN 信令服务已启动（独立于 Bridge，无需扩展连接）\n${[...addresses].map(ip => `  ws://${ip}:${service.port}/chatroom`).join('\n')}\n已启用局域网组播发现（UDP 1898）和服务器互联；扩展无需更改地址。\n仅用于可信局域网；不转发聊天或文件内容。按 Ctrl+C 关闭。\n`);
   const shutdown = () => {
     process.off('SIGINT', shutdown); process.off('SIGTERM', shutdown);
     void service.close().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
