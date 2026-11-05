@@ -581,7 +581,7 @@
       case 'send-message': {
         const text = str(args.text, 8000).trim(), conversationId = token(args.conversationId);
         let targets;
-        if (conversationId === 'public') targets = data.peers.filter((p) => allowed(p.id, false)).map((p) => p.id);
+        if (conversationId === 'public') targets = data.peers.filter((p) => p.online && p.id !== publicIdentity.id && allowed(p.id, false)).map((p) => p.id);
         else if (conversationId.startsWith('peer:')) {
           const p = peer(conversationId.slice(5)); if (!p) fail('联系人不存在。');
           const code = privateDenial(p); if (code) fail(rejectionText[code]);

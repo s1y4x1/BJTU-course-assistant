@@ -358,6 +358,17 @@
         restoreSavedFilePreview(el, message);
       }
       if (message.senderId === state.self.id && message.delivery) {
+        const deliveries = Object.entries(message.delivery);
+        if (deliveries.length && deliveries.some(([, value]) => value.status !== 'delivered')) {
+          const details = node('details', undefined, 'message-delivery-details');
+          details.append(node('summary', `送达详情 · ${deliveries.filter(([, value]) => value.status === 'delivered').length}/${deliveries.length}`));
+          const labels = {delivered:'已送达',sending:'等待送达确认',queued:'等待重试',rejected:'已拒绝',withdrawn:'已撤回'};
+          for (const [peerId, value] of deliveries) {
+            const peer = state.peers.find(item => item.id === peerId);
+            details.append(node('div', `${peer?.remark || peer?.nickname || peer?.ip || peerId}：${labels[value.status] || value.status}${value.error ? ' · ' + value.error : ''}`));
+          }
+          el.append(details);
+        }
         const status = {queued:'等待连接恢复后自动重试…',sending:'正在发送…',rejected:'发送被拒绝',withdrawn:'已取消未送达的发送'}[message.status];
         if (status) {
           const errors = [...new Set(Object.values(message.delivery).map(value => value.error).filter(Boolean))];
@@ -1076,7 +1087,7 @@
     backgroundMode?.pauseReconnect?.();
     await globalThis.BjtuChatroomLink?.close();
     stopCapture(); for (const s of [...sessions.values()]) endSession(s, '连接已断开');
-    $('pair-output').value = ''; $('pair-input').value = '';
+    $('pair-input').value = '';
     $('pair-status').textContent = '已断开。可重新生成邀请或点击扫描。';
     scheduleState();
   }

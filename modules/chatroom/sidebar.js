@@ -49,7 +49,7 @@
     const roomNodes = new Map(), requestNodes = new Map(), dirty = new Map();
     let state = {self:{},settings:{},peers:[],rooms:[],requests:[],messages:[],conversations:{}}, selected = 'public';
     let online = false, pairingBusy = false, destroyed = false, transport, unsubscribe;
-    let refreshPromise, refreshAgain = false, nicknameTimer, saveQueue = Promise.resolve(), revision = 0, settings;
+    let refreshPromise, refreshAgain = false, saveQueue = Promise.resolve(), revision = 0, settings;
     function node(tag, text, cls) {
       const el = document.createElement(tag);
       if (text !== undefined) el.textContent = String(text);
@@ -92,18 +92,12 @@
       for (const id of ['pair-create','pair-accept','pair-complete']) $(id).disabled = !ready || pairingBusy || typeof global.BjtuChatroomLink?.pairCreate !== 'function';
       if (ready && $('pair-status').textContent === '等待连接引擎。') $('pair-status').textContent = '引擎已就绪。可生成邀请，或接收对方邀请。';
     }
-    let discoveryDeviceId = '';
     function setServerStatus(status, deviceId) {
-      if (status !== 'connected') discoveryDeviceId = '';
-      else if (deviceId !== undefined) discoveryDeviceId = deviceId;
       const label = $('chatroomSignalingStatus');
       label.dataset.state = status;
       label.textContent = {connected:'已连接',connecting:'连接中…',disconnected:'未连接'}[status];
       $('chatroomStartServer').hidden = status === 'connected';
       $('chatroomServerActions').hidden = status !== 'connected';
-      $('discovery-status').textContent = status === 'connected'
-        ? discoveryDeviceId ? `在线发现已启用 · 本机临时设备 ID：${discoveryDeviceId}` : '在线发现已连接，等待服务器分配设备 ID…'
-        : status === 'connecting' ? '正在连接在线信令服务…' : '未连接聊天室服务器。';
     }
     async function refresh() {
       if (destroyed || !transport) return;
@@ -230,7 +224,6 @@
       else $(id).value = value;
     }
     $('nickname').placeholder = state.self.ip || state.self.nickname || '默认使用本机 IP';
-    $('self-info').textContent = [state.self.nickname || state.self.ip, state.self.id ? `身份 ID ${state.self.id}` : '', state.self.fingerprint ? `身份指纹 ${state.self.fingerprint}` : ''].filter(Boolean).join(' · ');
     $('request-count').textContent = String(state.requests.length);
     $('sidebar-invite-group').hidden = $('sidebar-leave-group').hidden = !state.rooms.some(r => r.id === selected);
     for (const el of $('conversations').querySelectorAll('[data-conversation]')) {
@@ -298,17 +291,17 @@
     async function disconnect() {
       if (onDisconnect) await onDisconnect();
       else await mutate('close');
-      $('pair-output').value = ''; $('pair-input').value = '';
+      $('pair-input').value = '';
       $('pair-status').textContent = '已断开。可重新生成邀请或点击刷新发现。';
       scheduleState();
     }
   async function scan() {
-    $('scan').disabled = true; $('discovery-status').textContent = '正在连接在线信令服务…';
+    $('scan').disabled = true;
     try {
       const result = await action('scan');
       if (!destroyed) setServerStatus(result?.discoveryStatus || global.BjtuChatroomLink?.discoveryStatus || 'connected', result?.deviceId);
     } catch (error) {
-      if (!destroyed) { setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected'); $('discovery-status').textContent = error.message; report(error); }
+      if (!destroyed) { setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected'); report(error); }
     }
     finally { $('scan').disabled = !online; }
   }
@@ -324,17 +317,15 @@
     } else if (detail.type === 'peer-online') { $('pair-status').textContent = '身份验证完成，已建立直连。'; scheduleState(); }
     else if (detail.type === 'error') report(new Error(detail.message));
   }, { signal: uiAbort.signal });
-  listen('pair-copy', 'click', () => { if ($('pair-output').value) navigator.clipboard.writeText($('pair-output').value).then(() => toast('连接信息已复制，仅分享给可信的人。', true)).catch(() => toast('无法访问剪贴板，请手动选择并复制。')); });
   async function pair(name) {
     if (pairingBusy) return;
     pairingBusy = true;
     for (const id of ['pair-create', 'pair-accept', 'pair-complete']) $(id).disabled = true;
     $('pair-status').textContent = '正在收集本地候选 / 处理配对，请稍候…';
-    if (name !== 'pair-complete') $('pair-output').value = '';
     try {
       const result = await mutate(name, { code: $('pair-input').value.trim() });
-      if (typeof result?.code === 'string') $('pair-output').value = result.code;
-      $('pair-status').textContent = name === 'pair-create' ? '请复制本机邀请发给对方，收到应答后粘贴并提交。' : name === 'pair-accept' ? '请复制本机应答发回邀请方，等待对方提交。' : '应答已提交，等待直连和身份验证。';
+      if (typeof result?.code === 'string') await navigator.clipboard.writeText(result.code);
+      $('pair-status').textContent = name === 'pair-create' ? '邀请已复制，请发给对方；收到应答后粘贴并提交。' : name === 'pair-accept' ? '应答已复制，请发回邀请方并等待对方提交。' : '应答已提交，等待直连和身份验证。';
     } catch (error) { $('pair-status').textContent = error.message; report(error); }
     finally { pairingBusy = false; for (const id of ['pair-create', 'pair-accept', 'pair-complete']) $(id).disabled = !online; }
   }
@@ -349,28 +340,27 @@
       const version = dirty.get(id);
       if (!version) return;
       const value = settingsValue(id), key = {nickname:'nickname','require-friend':'requireFriend','invite-policy':'invitePolicy'}[id];
-      $('settings-status').textContent = '正在自动保存…';
       saveQueue = saveQueue.catch(() => {}).then(async () => {
         if (dirty.get(id) !== version) return;
         await mutate('settings', {[key]:value});
         if (dirty.get(id) === version) dirty.delete(id);
         if (!destroyed) {
-          $('settings-status').textContent = dirty.size ? '还有更改待保存。' : '已自动保存。';
           render();
         }
       }).catch(error => {
-        if (!destroyed) $('settings-status').textContent = '保存失败，请修改或再次离开输入框重试。';
         report(error);
       });
     }
     listen('nickname','input', () => {
-      dirty.set('nickname', ++revision); clearTimeout(nicknameTimer);
-      $('settings-status').textContent = '昵称待自动保存…';
-      nicknameTimer = setTimeout(() => saveSetting('nickname'), 350);
+      dirty.set('nickname', ++revision);
     });
-    for (const type of ['change','blur']) listen('nickname',type, () => { clearTimeout(nicknameTimer); saveSetting('nickname'); });
+    listen('nickname','blur', () => saveSetting('nickname'));
+    listen('nickname','keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault(); saveSetting('nickname');
+    });
     for (const id of ['require-friend','invite-policy']) listen(id,'change', () => { dirty.set(id,++revision); saveSetting(id); });
-    listen('settings-form','submit',event => { event.preventDefault(); clearTimeout(nicknameTimer); for (const id of dirty.keys()) saveSetting(id); });
+    listen('settings-form','submit',event => { event.preventDefault(); for (const id of dirty.keys()) saveSetting(id); });
     listen('create-group','click', () => groupEditor(false));
     listen('sidebar-invite-group','click', () => groupEditor(true));
     listen('sidebar-leave-group','click', leaveGroup);
@@ -404,7 +394,6 @@
     global.addEventListener('bjtu-chatroom-transport-ready', () => attachTransport().catch(report), {signal:uiAbort.signal});
     function destroy() {
       if (destroyed) return;
-      clearTimeout(nicknameTimer);
       for (const id of dirty.keys()) saveSetting(id);
       destroyed = true; uiAbort.abort(); unsubscribe?.();
       settings?.destroy();

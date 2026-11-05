@@ -24,8 +24,7 @@
       <div id="chatroomServerActions" class="actions chatroom-server-actions" hidden><button id="disconnect" type="button" class="secondary">断开连接</button><button id="scan" type="button" class="secondary">刷新发现</button></div>
       <a id="chatroomStartServer" class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>
       <p class="muted">所有参与者应使用同一个 Bridge 聊天室服务器；无需手动连接设备。跨网络直连可能受防火墙或网络隔离限制。</p>
-      <p id="discovery-status" class="muted" role="status">在线发现未启用。</p>
-      <details id="pairing-panel"><summary>离线邀请 / 应答配对</summary><p class="muted">无需本地程序或在线信令。甲生成邀请发给乙；乙粘贴邀请并生成应答发回甲；甲提交应答。每份信息 5 分钟内有效，含本地网络候选与身份，仅分享给可信的人。</p><div class="actions"><button id="pair-create" type="button" class="secondary" disabled>生成邀请</button><button id="pair-copy" type="button" class="secondary">复制本机连接信息</button></div><label>本机邀请 / 应答<textarea id="pair-output" rows="4" readonly placeholder="点击生成邀请，或粘贴邀请后生成应答"></textarea></label><label>对方邀请 / 应答<textarea id="pair-input" rows="4" maxlength="262144" placeholder="粘贴对方发送的完整 JSON 信息"></textarea></label><div class="actions"><button id="pair-accept" type="button" disabled>接收邀请并生成应答</button><button id="pair-complete" type="button" class="secondary" disabled>提交对方应答</button></div><p id="pair-status" class="muted" role="status">等待连接引擎。</p></details>
+      <details id="pairing-panel"><summary>离线邀请 / 应答配对</summary><p class="muted">手动交换 WebRTC 连接信息，无需本地程序或信令服务器。甲复制邀请发给乙；乙粘贴邀请并复制应答发回甲；甲粘贴并提交应答。每份信息 5 分钟内有效，含本地网络候选与身份，仅分享给可信的人；网络隔离时可能无法直连。</p><div class="actions"><button id="pair-create" type="button" class="secondary" disabled>复制邀请</button></div><label>对方邀请 / 应答<textarea id="pair-input" rows="4" maxlength="262144" placeholder="粘贴对方发送的完整 JSON 信息"></textarea></label><div class="actions"><button id="pair-accept" type="button" disabled>接受邀请并复制应答</button><button id="pair-complete" type="button" class="secondary" disabled>提交对方应答</button></div><p id="pair-status" class="muted" role="status">等待连接引擎。</p></details>
       <details id="settings-panel"><summary>个人设置与隐私</summary><form id="settings-form">
         <label>昵称<input id="nickname" maxlength="40" autocomplete="nickname" required></label>
         <label class="check"><input id="require-friend" type="checkbox">仅好友可以联系我</label>
@@ -37,8 +36,7 @@
           <span>的文件到扩展目录/downloads/</span>
         </div>
         <button id="chatroomAuthorizeDownloads" type="button" class="secondary">授权扩展目录</button>
-        <p id="settings-status" class="muted" role="status">更改后自动保存。</p>
-      </form><p id="self-info" class="muted"></p><p class="muted">局域网发现不等于身份认证，请核对对方身份。直连会向对方暴露网络地址。</p></details>
+      </form><p class="muted">局域网发现不等于身份认证，请核对对方身份。直连会向对方暴露网络地址。</p></details>
       <div class="actions"><button id="sidebar-invite-group" type="button" class="secondary" hidden>邀请成员</button><button id="sidebar-leave-group" type="button" class="secondary" hidden>退出群聊</button></div>
       <details id="sidebar-requests-panel" open><summary>邀请与确认 <span id="request-count">0</span></summary><div id="requests"></div></details>
   <dialog id="editor"><form id="editor-form"><h2 id="editor-title"></h2><div id="editor-fields"></div><div class="actions"><button id="editor-cancel" type="button" class="secondary">取消</button><button type="submit">确定</button></div></form></dialog>

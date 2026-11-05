@@ -44,7 +44,7 @@ html[data-color-scheme="dark"] .chatroom-options-card .option-action-link { colo
 :is(.chatroom-options-card,#sidebar-host) button:disabled { opacity:.5; cursor:not-allowed; }
 :is(.chatroom-options-card,#sidebar-host) :is(button,input,select,textarea,summary):focus-visible { outline:2px solid var(--chat-accent); outline-offset:3px; }
 :is(.chatroom-options-card,#sidebar-host) .secondary { background:var(--chat-soft); color:inherit; border:1px solid var(--chat-line); }
-:is(.chatroom-options-card,#sidebar-host) .actions { display:flex; flex-wrap:wrap; gap:6px; }
+:is(.chatroom-options-card,#sidebar-host) .actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 :is(.chatroom-options-card,#sidebar-host) .section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0 10px; }
 :is(.chatroom-options-card,#sidebar-host) .section-heading:not(:first-child) { margin-top:22px; }
 :is(.chatroom-options-card,#sidebar-host) #pairing-panel label { display:grid; gap:6px; margin-top:10px; }
