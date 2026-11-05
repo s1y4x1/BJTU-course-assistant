@@ -43,7 +43,7 @@
     if (preserveWhitespace) {
       // Render source whitespace, not the formatting newlines added by the
       // default HTML renderer. The host uses white-space: break-spaces.
-      renderer.space = ({raw}) => escapeHtml(raw);
+      renderer.space = ({raw, afterTable}) => escapeHtml(afterTable ? raw.replace(/^\n{1,2}/, '') : raw);
       renderer.paragraph = function({tokens, raw, text}) {
         return this.parser.parseInline(tokens) + (raw.startsWith(text) ? escapeHtml(raw.slice(text.length)) : '');
       };
@@ -65,6 +65,19 @@
       }
     }
     const parser = new global.marked.Marked({gfm:true, breaks:true, renderer});
+    if (preserveWhitespace) parser.use({hooks:{processAllTokens(tokens) {
+      function markTableSeparators(items) {
+        for (let index = 0; index < items.length; index++) {
+          const token = items[index];
+          // A table is already a block. Its required Markdown separator is not
+          // two additional visible text lines; extra and trailing blanks remain.
+          if (token.type === 'space' && items[index - 1]?.type === 'table' && items[index + 1]) token.afterTable = true;
+          if (token.tokens) markTableSeparators(token.tokens);
+          for (const item of token.items || []) if (item.tokens) markTableSeparators(item.tokens);
+        }
+      }
+      markTableSeparators(tokens); return tokens;
+    }}});
     if (math) {
       const renderMath = token => global.katex.renderToString(token.text, {
         displayMode:token.display, throwOnError:false, trust:false, strict:'ignore',
