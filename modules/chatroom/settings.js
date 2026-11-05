@@ -195,8 +195,9 @@
     $('chatroomReconnectIntervalSeconds').addEventListener('change', () => {
       const input = $('chatroomReconnectIntervalSeconds'), seconds = Number(input.value);
       if (input.validity.badInput || !Number.isFinite(seconds) || seconds < 0.1 || seconds > 60 || Math.abs(seconds * 10 - Math.round(seconds * 10)) > 1e-8) {
-        const message = '重连间隔必须为 0.1 至 60 秒，步长为 0.1 秒。';
-        input.setCustomValidity(message); report(new Error(message)); return;
+        dirty.delete('reconnect'); revisions.set('reconnect',(revisions.get('reconnect') || 0)+1);
+        input.setCustomValidity(''); input.value = values.chatroomReconnectIntervalSeconds;
+        report(new Error(`重试间隔必须为 0.1 至 60 秒，步长为 0.1 秒；已恢复为 ${input.value} 秒。`)); return;
       }
       input.setCustomValidity(''); void save({chatroomReconnectIntervalSeconds: seconds}, 'reconnect');
     }, {signal: abort.signal});
