@@ -54,7 +54,7 @@ bjtuca-bridge
 
 命令入口直接保存在 `%LOCALAPPDATA%\BJTUCourseAssistant`，不再使用 `bin` 子目录。`BJTUCA -v` 或 `BJTUCA --version` 可查看命令入口版本，不启动 Bridge。
 
-`BJTUCA uninstall` 及其简写删除整个命令入口目录、用户 PATH 项以及整个 `modules/local-bridge/` 目录，包括 Bridge 本身、依赖和 `bridge.json`。`BJTUCA unregister`、`BJTUCA unreg`、`BJTUCA u -r`、`BJTUCA uninst -r`、`BJTUCA unist -r` 和 `BJTUCA uninstall -r` 也会删除整个命令入口目录和用户 PATH 项，但保留 Bridge 文件及配置。扩展目录已经删除时，仍可解除命令注册。仅手动删除 `%LOCALAPPDATA%\BJTUCourseAssistant` 会遗留 PATH 项。旧版升级会清理原 `bin` 目录及其 PATH 项，完成后请重新打开终端。
+`BJTUCA uninstall` 及其简写删除整个命令入口目录、用户 PATH 项以及整个 `modules/local-bridge/` 目录，包括 Bridge 本身、依赖和 `bridge.json`。默认需要输入 `y` 确认；追加 `-y` 可跳过确认，例如 `BJTUCA u -y`。`BJTUCA unregister`、`BJTUCA unreg`、`BJTUCA u -r`、`BJTUCA uninst -r`、`BJTUCA unist -r` 和 `BJTUCA uninstall -r` 也会删除整个命令入口目录和用户 PATH 项，但保留 Bridge 文件及配置。扩展目录已经删除时，仍可解除命令注册。仅手动删除 `%LOCALAPPDATA%\BJTUCourseAssistant` 会遗留 PATH 项。旧版升级会清理原 `bin` 目录及其 PATH 项，完成后请重新打开终端。
 
 Bridge 配置保存在当前 `modules/local-bridge/bridge.json`。
 

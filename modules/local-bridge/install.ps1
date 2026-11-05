@@ -20,7 +20,7 @@ if ($BJTUCAEncodingReloadedPath -ne $PSCommandPath) {
   }
 }
 
-$InstallerVersion = '1.0.12'
+$InstallerVersion = '1.0.13'
 $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $PSCommandPath
 

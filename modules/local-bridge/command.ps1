@@ -32,10 +32,11 @@ if ($BridgeArguments.Count -eq 1 -and $BridgeArguments[0] -eq '') { $BridgeArgum
 $action = if ($ShowVersion) { '--version' } elseif ($BridgeArguments.Count) { $BridgeArguments[0] } else { 'start' }
 if ($action -eq '--chatroom') { $action = 'chatroom' }
 if ($action -in @('uninstall', 'uninst', 'unist', 'u')) {
-  if ($BridgeArguments.Count -gt 2 -or ($BridgeArguments.Count -eq 2 -and $BridgeArguments[1] -ne '-r')) {
-    throw "卸载命令仅接受 -r 参数（只取消注册），如 $displayCommand u -r"
+  $uninstallOptions = @($BridgeArguments | Select-Object -Skip 1)
+  if (@($uninstallOptions | Where-Object { $_ -notin @('-r', '-y') }).Count) {
+    throw '卸载命令仅支持 -r（只取消注册）和 -y（跳过确认）'
   }
-  $action = if ($BridgeArguments.Count -eq 2) { 'unregister' } else { 'uninstall' }
+  $action = if ($uninstallOptions -contains '-r') { 'unregister' } else { 'uninstall' }
 }
 
 switch ($action) {
@@ -47,6 +48,7 @@ switch ($action) {
       $displayCommand -c "ve.courseList"
       $displayCommand -c "help ve.login ykt.assignments"
       $displayCommand uninstall
+      $displayCommand uninstall -y
       $displayCommand unregister
       $displayCommand u -r
       $displayCommand --help
@@ -60,7 +62,7 @@ chatroom       启动独立聊天室服务器（默认端口 1897，不等待扩展连接）
                chatroom 仅影响该独立服务，不写入 bridge.json
 --show-token   显示 bridge.json 中的 Bearer Token，不启动服务
 -c 命令        执行一条终端命令并退出；复用正在运行的 Bridge，否则临时启动并等待扩展连接
-uninstall      删除注册的命令并从用户 PATH 移除命令目录，且删除 Bridge 本身及配置（简写 u/uninst/unist）
+uninstall      删除命令、用户 PATH 项及 Bridge 本身和配置（简写 u/uninst/unist）；输入 y 确认，-y 跳过确认
 unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 unreg，或 uninstall 及其简写加 -r）
 -v, --version  显示命令入口版本，不启动 Bridge
 "@
@@ -78,6 +80,13 @@ unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 un
     return
   }
   { $_ -in @('uninstall', 'unregister', 'unreg') } {
+    if ($action -eq 'uninstall' -and $uninstallOptions -notcontains '-y') {
+      $confirmation = Read-Host '将删除 Bridge 本身、配置和已注册的命令。输入 y 确认卸载'
+      if ($confirmation.Trim() -ine 'y') {
+        Write-Output '已取消卸载。'
+        return
+      }
+    }
     $actualBridgeDirectory = [System.IO.Path]::GetFullPath($bridgeRoot)
     if ($action -eq 'uninstall' -and (Test-Path -LiteralPath $actualBridgeDirectory)) {
       $bridgeModulePath = Join-Path $actualBridgeDirectory 'module.json'
