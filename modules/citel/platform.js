@@ -331,21 +331,24 @@
         try {
           const { doc } = await page(course.url, version);
           const tasks = parseActivities(doc, course.url, types);
-          for (let typeIndex = 0; typeIndex < selectedTypes.length; typeIndex++) {
-            const type = selectedTypes[typeIndex];
-            const typedTasks = tasks.filter((task) => task.type === type);
-            for (let taskIndex = 0; taskIndex < typedTasks.length; taskIndex++) {
-              const task = typedTasks[taskIndex];
+          const completed = new Set();
+          const typeProgress = selectedTypes.map(type => ({type, total: tasks.filter(task => task.type === type).length, completed: 0}));
+          const reportTasks = () => {
+            course.tasks = tasks.filter(task => completed.has(task));
+            course.pendingTypeLabels = typeProgress.filter(state => state.completed < state.total).map(state => TYPES[state.type]);
+            report(course, typeProgress.length ? typeProgress.reduce((sum, state) => sum + (state.total ? state.completed / state.total : 1), 0) / typeProgress.length : 1);
+            render();
+          };
+          reportTasks();
+          await pool(tasks, async (task) => {
               try { await loadTask(task, version); } catch (e) {
                 if (e.code === 'cancelled' || e.code === 'LOGIN_REQUIRED') throw e;
                 task.loadError = e.message;
               }
-              assertCurrent(version); course.tasks.push(task);
-              report(course, (typeIndex + (taskIndex + 1) / typedTasks.length) / selectedTypes.length); render();
-            }
-            course.pendingTypeLabels = course.pendingTypeLabels.filter((label) => label !== TYPES[type]);
-            report(course, (typeIndex + 1) / selectedTypes.length); render();
-          }
+              assertCurrent(version); completed.add(task);
+              typeProgress.find(state => state.type === task.type).completed++;
+              reportTasks();
+          });
           course.detailLoaded = true;
         } catch (e) {
           if (e.code === 'cancelled' || e.code === 'LOGIN_REQUIRED') throw e;
@@ -508,7 +511,7 @@
       await pool(result, async (course) => {
         const { doc } = await page(course.url, version);
         course.tasks = parseActivities(doc, course.url, types);
-        for (const task of course.tasks) await loadTask(task, version);
+        await pool(course.tasks, task => loadTask(task, version));
       });
       return result;
     },

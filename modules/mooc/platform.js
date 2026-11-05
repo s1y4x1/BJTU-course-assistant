@@ -106,7 +106,8 @@ let moocLoginAssistOpening = null;
 
   function buildTask(test, type, chapterName) {
     const deadline = Number(test?.deadline || 0);
-    const startTime = Number(test?.startTime ?? test?.start_time ?? test?.openTime ?? test?.open_time ?? test?.beginTime ?? 0) || 0;
+    const startTime = Number(test?.releaseTime ?? 0) || 0;
+    const scoreReleaseTime = Number(test?.evaluateScoreReleaseTime ?? 0) || 0;
     const detail = taskDetailCache.get(`${type}:${test.id}`) || null;
     const done = type === 'hw' ? Number(detail?.submitStatus ?? test?.submitStatus) === 2
       : test?.userScore !== null && test?.userScore !== undefined && String(test.userScore) !== '';
@@ -117,6 +118,7 @@ let moocLoginAssistOpening = null;
       chapterName: String(chapterName || ''),
       deadline,
       startTime,
+      scoreReleaseTime,
       userScore: done ? test.userScore : null,
       totalScore: test?.totalScore ?? null,
       done,
@@ -267,7 +269,7 @@ let moocLoginAssistOpening = null;
       mainClass: 'mooc-task-main',
       actionsClass: 'mooc-task-actions',
       titleHtml: globalThis.BjtuHomeworkUi.titleHtml({ typeLabel: typeText(task.type), typeHref: taskUrl(course, task), title: task.title, color: palette.foreground, href: taskUrl(course, task), escape: env.escape, className: 'mooc-task-title' }),
-      metaHtml: `<div class="mooc-task-meta">${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: formatTime(task.startTime), done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div>${env.escape(task.chapterName)}</div>` : ''}${task.type === 'hw' && task.detail?.tname ? `<div>${env.escape(task.detail.tname)}</div>` : ''}${task.type === 'quiz' && task.detail?.description ? `<div>${sanitizeDetailHtml(task.detail.description)}</div>` : ''}</div>`,
+      metaHtml: `<div class="mooc-task-meta">${globalThis.BjtuHomeworkUi.deadlineMetaHtml({ deadline: task.deadline, formatted: formatTime(task.deadline), startTime: task.startTime, startFormatted: task.startTime ? formatTime(task.startTime) : '', extraTimes: task.scoreReleaseTime ? [{label:'公布', value:task.scoreReleaseTime, formatted:formatTime(task.scoreReleaseTime)}] : [], done: task.done, overdue: task.overdue, escape: env.escape })}${task.chapterName ? `<div>${env.escape(task.chapterName)}</div>` : ''}${task.type === 'hw' && task.detail?.tname ? `<div>${env.escape(task.detail.tname)}</div>` : ''}${task.type === 'quiz' && task.detail?.description ? `<div>${sanitizeDetailHtml(task.detail.description)}</div>` : ''}</div>`,
       scoreHtml: score,
       actionsHtml: `<div class="mooc-task-button-row">
           <a class="btn mooc-go-btn" style="background:${colors[2]};" href="${env.escape(taskUrl(course, task))}" target="_blank" rel="noopener noreferrer">${env.escape(goActionText)}</a>
@@ -731,6 +733,7 @@ let moocLoginAssistOpening = null;
       type: typeText(task?.type),
       chapterName: String(task?.chapterName || ''),
       startTime: Number(task?.startTime || 0),
+      scoreReleaseTime: Number(task?.scoreReleaseTime || 0),
       deadline: Number(task?.deadline || 0),
       status: task?.done ? 'submitted' : (task?.overdue ? 'overdue' : 'pending'),
       userScore: task?.userScore ?? null,
