@@ -512,14 +512,15 @@
         message.detailsSummary = node('summary', '传输详情'); message.details.append(message.detailsSummary);
       }
       message.cancel = button('取消传输', () => { for (const task of [...message.sessions.values()]) endSession(task, '已取消', true); });
-      message.card.append(heading, message.progress, message.summary, message.cancel);
+      message.actions = node('div',undefined,'actions transfer-actions'); message.actions.append(message.cancel);
+      message.card.append(heading, message.progress, message.summary, message.actions);
       if (message.details) message.card.append(message.details);
     }
     if (!s.progress) {
       s.controls?.remove();
       if (!message.details) {
         s.progress = message.progress; s.info = message.summary;
-        s.controls = node('div', undefined, 'actions'); message.card.append(s.controls);
+        s.controls = message.actions;
       } else {
         const transfer = node('div', undefined, 'transfer');
         s.heading = node('strong'); s.sizeEl = node('span', undefined, 'file-size-emphasis');
@@ -895,7 +896,8 @@
         const link = node('a'); link.href = s.previewURL; link.download = s.name; link.hidden = true;
         document.body.append(link); link.click(); link.remove();
       }, 'secondary file-open');
-      preview.append(open);
+      s.openButton = open;
+      (s.message.actions || preview).append(open);
     }
     if (!previewCurrent(s, preview)) { if (s.preview === preview) releasePreview(s); return; }
     const nearBottom = $('messages').scrollHeight - $('messages').clientHeight - $('messages').scrollTop < 64;
@@ -913,6 +915,7 @@
     }
   }
   function releasePreview(s) {
+    s.openButton?.remove(); s.openButton = null;
     if (s.previewURL) { URL.revokeObjectURL(s.previewURL); s.previewURL = null; }
     if (s.message?.preview === s.preview) s.message.preview = null;
     s.preview?.remove(); s.preview = null;

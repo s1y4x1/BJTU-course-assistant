@@ -1,6 +1,6 @@
 /* Browser-only signed protocol engine. No Bridge, discovery server or STUN/TURN.
  * Link contract (all public async methods await ready):
- * getPublicIdentity() -> {id, fingerprint, nickname, publicKey: P-256 public JWK}.
+ * getPublicIdentity() -> {id, fingerprint, nickname, publicKey: P-256 public JWK, background}.
  * makePacket(type, payload) -> {protocol, id, type, from, identity, createdAt,
  *   payload, signature}; from === identity.id. signature is base64url ECDSA
  *   SHA-256 over UTF-8 canonical JSON of every field except signature.
@@ -330,7 +330,8 @@
     const pub = await crypto.subtle.importKey('jwk', data.identity.publicKey, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']);
     const fingerprint = hex(await crypto.subtle.digest('SHA-256', await crypto.subtle.exportKey('raw', pub)));
     if (data.settings.nickname === '设备-' + fingerprint.slice(0, 6)) data.settings.nickname = '';
-    publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey };
+    publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey,
+      background: G.BjtuChatroomBackgroundMode?.enabled === true };
     await importIdentity(publicIdentity);
     const proof = encoder.encode('bjtu-chatroom-identity-check');
     if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, proof), proof)) fail('持久身份密钥不匹配。');
@@ -404,6 +405,7 @@
         data.peers.push(p);
       }
       p.nickname = identity.nickname;
+      p.background = identity.background === true;
       if (typeof value?.ip === 'string') p.ip = str(value.ip, 64, true);
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
@@ -660,7 +662,7 @@
     if (!allowed(from, false)) fail('接收策略拒绝此用户。');
     switch (packet.type) {
       case 'friend-delete': peer(from).friend = false; break;
-      case 'profile': peer(from).nickname = packet.identity.nickname; break;
+      case 'profile': peer(from).nickname = packet.identity.nickname; peer(from).background = packet.identity.background === true; break;
       case 'message': {
         str(payload.text, 8000); token(payload.id); token(payload.conversationId);
         if (payload.senderId !== from || !Number.isSafeInteger(payload.createdAt) || payload.createdAt > packet.createdAt + 60000) fail('消息身份或时间不匹配。');

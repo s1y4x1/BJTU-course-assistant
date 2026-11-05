@@ -184,7 +184,10 @@
       link.title = '长按 2 秒删除会话及本地记录';
       const avatar = node('span', entry.kind === 'group' ? '👥' : '👤', 'conversation-avatar');
       avatar.setAttribute('aria-hidden', 'true');
-      if (entry.kind === 'private') avatar.append(node('span', undefined, `conversation-online-dot${entry.online ? ' online' : ''}`));
+      if (entry.kind === 'private') {
+        const dot = node('span',undefined,`conversation-online-dot${entry.online ? ' online' + (entry.background ? ' background' : '') : ''}`);
+        dot.title = entry.online ? entry.background ? '后台在线' : '在线' : '离线'; avatar.append(dot);
+      }
       else avatar.append(node('span', `${entry.onlineCount}/${entry.members?.length || 0}`, 'conversation-group-count'));
       const content = node('span', undefined, 'conversation-preview'), name = node('span', entry.name, 'conversation-name');
       name.title = '修改备注';
