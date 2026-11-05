@@ -184,12 +184,7 @@
     renderer.blockquote = function renderBlockquote({ tokens }) {
       return `<blockquote class="qwen-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
     };
-    qwenMarkdownParser = new markedApi.Marked({
-      gfm: true,
-      breaks: true,
-      pedantic: false,
-      renderer
-    });
+    qwenMarkdownParser = global.BjtuMarkdown.createParser({renderer});
     return qwenMarkdownParser;
   }
 
@@ -2237,7 +2232,8 @@
     return panelActivationPromise;
   }
 
-  function init() {
+  async function init() {
+    await global.BjtuMarkdown.ready;
     if (new URLSearchParams(global.location?.search || '').get('popup') === '1') {
       const fab = el(FAB_ID);
       if (fab instanceof HTMLElement) fab.style.display = 'none';

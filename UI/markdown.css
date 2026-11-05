@@ -1,3 +1,5 @@
+@import url('./vendor/katex/katex.min.css');
+
 .bjtu-markdown h1,
 .bjtu-markdown h2,
 .bjtu-markdown h3,
@@ -117,3 +119,11 @@ html[data-color-scheme="dark"] .bjtu-md-inline-code {
   color: inherit;
   white-space: pre;
 }
+.bjtu-md-codeblock .hljs-keyword, .bjtu-md-codeblock .hljs-selector-tag, .bjtu-md-codeblock .hljs-literal { color:#f47067; }
+.bjtu-md-codeblock .hljs-string, .bjtu-md-codeblock .hljs-regexp, .bjtu-md-codeblock .hljs-addition { color:#96d0ff; }
+.bjtu-md-codeblock .hljs-number, .bjtu-md-codeblock .hljs-attr, .bjtu-md-codeblock .hljs-variable { color:#6cb6ff; }
+.bjtu-md-codeblock .hljs-title, .bjtu-md-codeblock .hljs-built_in, .bjtu-md-codeblock .hljs-section { color:#dcbdfb; }
+.bjtu-md-codeblock .hljs-comment, .bjtu-md-codeblock .hljs-quote { color:#a2aab7; }
+.bjtu-md-codeblock .hljs-tag, .bjtu-md-codeblock .hljs-name, .bjtu-md-codeblock .hljs-type { color:#8ddb8c; }
+.bjtu-md-codeblock .hljs-meta, .bjtu-md-codeblock .hljs-symbol, .bjtu-md-codeblock .hljs-bullet { color:#f69d50; }
+.bjtu-markdown .katex-display { overflow-x:auto; overflow-y:hidden; }

@@ -18,6 +18,7 @@
     await global.BjtuUpdateFileSystem.ensureFileConcurrencyDefaults();
     await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
     await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
+    await global.BjtuMarkdown.ready;
     await global.BjtuModuleRegistry.loadScript('modules/updater/checker.js');
     return true;
   })().catch((error) => {

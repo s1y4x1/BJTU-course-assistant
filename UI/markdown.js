@@ -2,6 +2,20 @@
   'use strict';
 
   const boundContainers = new WeakSet();
+  const highlighted = new Map();
+  let highlightedBytes = 0;
+  const ready = typeof document === 'undefined' ? Promise.resolve() : Promise.all([
+    ['katex', 'UI/vendor/katex/katex.min.js'], ['hljs', 'UI/vendor/highlight/highlight.min.js']
+  ].map(([name, path]) => {
+    if (global[name]) return;
+    if (global.BjtuModuleRegistry?.loadScript) return global.BjtuModuleRegistry.loadScript(path);
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script'); script.src = chrome.runtime.getURL(path);
+      script.onload = resolve; script.onerror = () => reject(new Error(`Markdown 组件加载失败：${name}`));
+      document.head.append(script);
+    });
+  }));
+  ready.catch(() => {});
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -13,7 +27,25 @@
     const language = String(languageInfo || '').trim().split(/\s+/)[0];
     const label = language || '代码';
     const attribute = language ? ` data-language="${escapeHtml(language)}"` : '';
-    return `<div class="bjtu-md-codeblock-wrap"${attribute}><div class="bjtu-md-codeblock-toolbar"><span class="bjtu-md-codeblock-language">${escapeHtml(label)}</span><button type="button" class="bjtu-md-codeblock-copy" title="复制代码">复制</button></div><pre class="bjtu-md-codeblock"><code>${escapeHtml(String(text || ''))}</code></pre></div>`;
+    return `<div class="bjtu-md-codeblock-wrap"${attribute}><div class="bjtu-md-codeblock-toolbar"><span class="bjtu-md-codeblock-language">${escapeHtml(label)}</span><button type="button" class="bjtu-md-codeblock-copy" title="复制代码">复制</button></div><pre class="bjtu-md-codeblock"><code class="hljs">${highlightCode(text, language)}</code></pre></div>`;
+  }
+  function highlightCode(value, language = '') {
+    const text = String(value || ''), engine = global.hljs;
+    if (!engine || text.length > 65536) return escapeHtml(text);
+    const key = language + '\0' + text;
+    if (highlighted.has(key)) return highlighted.get(key);
+    const hint = String(language).toLowerCase(), alias = {app:'javascript',background:'javascript',sandbox:'javascript'}[hint] || hint;
+    const html = alias ? (engine.getLanguage(alias) ? engine.highlight(text, {language:alias,ignoreIllegals:true}).value : escapeHtml(text))
+      : engine.highlightAuto(text, ['javascript','python','json','xml','bash','sql']).value;
+    const size = key.length + html.length;
+    if (size <= 524288) {
+      highlighted.set(key, html); highlightedBytes += size;
+      while (highlighted.size > 64 || highlightedBytes > 524288) {
+        const [oldKey, oldHtml] = highlighted.entries().next().value;
+        highlighted.delete(oldKey); highlightedBytes -= oldKey.length + oldHtml.length;
+      }
+    }
+    return html;
   }
 
   function createRenderer(markedApi = global.marked) {
@@ -38,8 +70,7 @@
     return renderer;
   }
 
-  function createParser({preserveWhitespace = false, math = false} = {}) {
-    const renderer = createRenderer();
+  function createParser({preserveWhitespace = false, math = true, renderer = createRenderer()} = {}) {
     if (preserveWhitespace) {
       // Render source whitespace, not the formatting newlines added by the
       // default HTML renderer. The host uses white-space: break-spaces.
@@ -161,5 +192,5 @@
     });
   }
 
-  global.BjtuMarkdown = Object.freeze({ escapeHtml, renderCodeBlock, createRenderer, createParser, copyText, bindCopy });
+  global.BjtuMarkdown = Object.freeze({ ready, escapeHtml, renderCodeBlock, highlightCode, createRenderer, createParser, copyText, bindCopy });
 })(globalThis);

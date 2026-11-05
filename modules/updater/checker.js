@@ -654,11 +654,7 @@ function getVersionMarkdownParser() {
     return `<img class="version-markdown-image" src="${escapeHtml(safeSrc)}" alt="${escapeHtml(String(text || ''))}"${titleAttribute} loading="lazy">`;
   };
   renderer.codespan = ({ text }) => `<code class="version-markdown-inline-code">${escapeHtml(String(text || ''))}</code>`;
-  renderer.code = ({ text, lang }) => {
-    const language = String(lang || '').trim().split(/\s+/)[0];
-    const languageAttribute = language ? ` data-language="${escapeHtml(language)}"` : '';
-    return `<pre class="version-markdown-codeblock"${languageAttribute}><code>${escapeHtml(String(text || ''))}</code></pre>`;
-  };
+  renderer.code = ({text, lang}) => globalThis.BjtuMarkdown.renderCodeBlock(text, lang);
   renderer.blockquote = function renderBlockquote({ tokens }) {
     return `<blockquote class="version-markdown-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
   };
@@ -673,12 +669,7 @@ function getVersionMarkdownParser() {
     return `<div class="version-markdown-table-wrap">${defaultTableRenderer.call(this, token)}</div>`;
   };
 
-  versionMarkdownParser = new markedApi.Marked({
-    gfm: true,
-    breaks: true,
-    pedantic: false,
-    renderer
-  });
+  versionMarkdownParser = globalThis.BjtuMarkdown.createParser({renderer});
   versionMarkdownParser.use({
     extensions: [{
       name: 'bjtuReleaseHeader',
@@ -726,6 +717,7 @@ function ensureVersionNoticeModal() {
   if (!(modal instanceof HTMLElement)) return null;
   if (modal.dataset.bound === '1') return modal;
   modal.dataset.bound = '1';
+  globalThis.BjtuMarkdown.bindCopy(modal);
 
   const closeBtn = modal.querySelector('#version-notice-close');
   if (closeBtn instanceof HTMLButtonElement) {

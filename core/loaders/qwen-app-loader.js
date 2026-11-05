@@ -23,6 +23,7 @@
     }
     await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
     await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
+    await global.BjtuMarkdown.ready;
     await global.BjtuModuleRegistry.loadScript('modules/api/operations-ui.js');
     await global.BjtuModuleRegistry.loadScript('modules/qwen/app.js');
     return true;

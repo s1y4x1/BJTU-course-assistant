@@ -20,9 +20,7 @@
 
   function createGuideMarkdownParser(markedApi) {
     if (!markedApi?.Marked || !markedApi?.Renderer) return markedApi;
-    const renderer = new markedApi.Renderer();
-    renderer.code = ({ text, lang }) => global.BjtuMarkdown.renderCodeBlock(text, lang);
-    return new markedApi.Marked({ gfm: true, breaks: true, pedantic: false, renderer });
+    return global.BjtuMarkdown.createParser();
   }
 
   function renderGuide() {
@@ -116,6 +114,7 @@
       await global.BjtuModuleRegistry.loadStyle('UI/markdown.css');
       await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
       await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
+      await global.BjtuMarkdown.ready;
       return global.marked;
     }
     if (!document.querySelector('link[data-bjtu-markdown-style]')) {
@@ -134,6 +133,7 @@
     });
     if (!global.marked) await loadScript('UI/marked.umd.js');
     if (!global.BjtuMarkdown) await loadScript('UI/markdown.js');
+    await global.BjtuMarkdown.ready;
     return global.marked;
   }
 
