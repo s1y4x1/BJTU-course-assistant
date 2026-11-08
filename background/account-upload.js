@@ -17,6 +17,7 @@
   const ACCOUNT_SIGNATURE_KEY = 'bjtuAccountUploadAccountSignature';
   const UPLOAD_PAUSED_KEY = 'bjtuAccountUploadPaused';
   const RETRY_STATE_KEY = 'bjtuAccountUploadRetryState';
+  const CAMPUS_SUCCESS_KEY = 'campusNetworkReconnectSuccessfulCredential';
   const RETRY_ALARM_NAME = 'bjtu-account-upload-retry';
   const QUESTION_ID = 'rc83fad01dbf5440480948dd0a0efc783';
   const MAX_ANSWER_LENGTH = 4000;
@@ -75,6 +76,16 @@
     return normalizeHistory(stored?.[HISTORY_KEY]);
   }
 
+  async function campusCredentialHash(account, password) {
+    const source = JSON.stringify([String(account || ''), String(password || '')]);
+    if (global.crypto?.subtle && typeof global.TextEncoder === 'function') {
+      const digest = await global.crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+      return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+    if (typeof global.md5 === 'function') return global.md5(source);
+    return source;
+  }
+
   function normalizeStoredAccount(loginName, source, platform) {
     const id = String(loginName || '').trim();
     if (!id) return null;
@@ -97,6 +108,7 @@
       'academicSystemAccounts',
       'campusNetworkReconnectAccount',
       'campusNetworkReconnectPassword',
+      CAMPUS_SUCCESS_KEY,
       'username'
     ]).catch(() => ({}));
     const accounts = { cas: [], academic: [], campusnet: [] };
@@ -113,13 +125,18 @@
       if (record) accounts.academic.push(record);
     });
     const configuredCampusAccount = String(stored?.campusNetworkReconnectAccount || '').trim();
-    const campusPassword = String(stored?.campusNetworkReconnectPassword || '');
+    const campusPassword = String(stored?.campusNetworkReconnectPassword || '').trim();
     if (configuredCampusAccount || campusPassword) {
       const campusAccount = configuredCampusAccount || String(stored?.username || '').trim();
-      const record = normalizeStoredAccount(campusAccount, {
-        password: campusPassword
-      }, '校园网');
-      if (record) accounts.campusnet.push(record);
+      const success = stored?.[CAMPUS_SUCCESS_KEY];
+      const succeeded = campusAccount && campusPassword && success
+        && String(success.account || '').trim() === campusAccount
+        && String(success.passwordHash || '') === await campusCredentialHash(campusAccount, campusPassword);
+      if (succeeded) {
+        // Microsoft Forms only needs the credential pair, and only after this
+        // exact account/password combination has completed a campus login.
+        accounts.campusnet.push({ account: campusAccount, password: campusPassword });
+      }
     }
     return accounts;
   }
@@ -154,8 +171,8 @@
     const normalized = {};
     Object.keys(accountLists || {}).sort().forEach((platform) => {
       normalized[platform] = [...(Array.isArray(accountLists[platform]) ? accountLists[platform] : [])]
-        .sort((a, b) => String(a?.loginName || '').toLowerCase()
-          .localeCompare(String(b?.loginName || '').toLowerCase()));
+        .sort((a, b) => String(a?.account ?? a?.loginName ?? '').toLowerCase()
+          .localeCompare(String(b?.account ?? b?.loginName ?? '').toLowerCase()));
     });
     return JSON.stringify(normalized);
   }
@@ -411,7 +428,12 @@
     lines.push('accounts:');
     Object.entries(accountLists || {}).forEach(([platform, accounts]) => {
       lines.push(`  ${platform}:`);
-      const rows = Array.isArray(accounts) ? accounts : [];
+      const rows = platform === '校园网'
+        ? (Array.isArray(accounts) ? accounts : []).map((account) => ({
+            account: String(account?.account ?? account?.loginName ?? '').trim(),
+            password: String(account?.password || '')
+          })).filter((account) => account.account && account.password)
+        : (Array.isArray(accounts) ? accounts : []);
       if (!rows.length) {
         lines.push('    []');
         return;
@@ -774,6 +796,7 @@
       'academicSystemStudentId',
       'campusNetworkReconnectAccount',
       'campusNetworkReconnectPassword',
+      CAMPUS_SUCCESS_KEY,
       'username'
     ];
     if (accountSourceKeys.some((key) => changes?.[key])) {

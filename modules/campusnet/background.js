@@ -10,6 +10,7 @@
     'username'
   ];
   const STATUS_KEY = 'campusNetworkReconnectStatus';
+  const SUCCESS_KEY = 'campusNetworkReconnectSuccessfulCredential';
   const NOTIFICATION_ID = 'bjtu-campus-network-reconnected';
   const MIN_INTERVAL_SECONDS = 0.1;
   const MAX_INTERVAL_SECONDS = 3600;
@@ -38,6 +39,27 @@
     params.set('user_account', account);
     params.set('user_password', password);
     return `https://login.bjtu.edu.cn:802/eportal/portal/login?${params.toString()}`;
+  }
+
+  async function credentialHash(account, password) {
+    const source = JSON.stringify([String(account || ''), String(password || '')]);
+    if (global.crypto?.subtle && typeof global.TextEncoder === 'function') {
+      const digest = await global.crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+      return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+    if (typeof global.md5 === 'function') return global.md5(source);
+    return source;
+  }
+
+  async function rememberSuccessfulCredential(account, password) {
+    try {
+      const passwordHash = await credentialHash(account, password);
+      await chrome.storage.local.set({
+        [SUCCESS_KEY]: { account, passwordHash, at: Date.now() }
+      });
+    } catch (error) {
+      console.warn('[bjtu] campus network success state failed:', error);
+    }
   }
 
   async function notifyReconnected() {
@@ -109,6 +131,7 @@
       const result = Number(data?.result);
       const msg = String(data?.msg || '').trim();
       if (result === 1) {
+        await rememberSuccessfulCredential(account, password);
         if (lastState !== 'success') await notifyReconnected();
         lastState = 'success';
         return setStatus({ status: 'success', message: msg || 'Portal协议认证成功！', account });
