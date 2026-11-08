@@ -4,6 +4,7 @@
   const POPOVER_ID = 'option-tip-popover';
   let popover = null;
   let activeTrigger = null;
+  let hideTimer = 0;
 
   function positionPopover() {
     if (!(activeTrigger instanceof HTMLElement) || !popover || popover.hidden) return;
@@ -23,9 +24,17 @@
   }
 
   function showPopover(trigger) {
+    clearTimeout(hideTimer);
     activeTrigger = trigger;
     if (!popover) return;
-    popover.textContent = String(trigger?.dataset?.tip || '');
+    if (trigger?._tipHtml) {
+      popover.innerHTML = trigger._tipHtml;
+      popover.classList.add('is-markdown');
+      popover.setAttribute('aria-label', `提示：${trigger.dataset.tip || ''}`);
+    } else {
+      popover.textContent = String(trigger?.dataset?.tip || '');
+      popover.classList.remove('is-markdown');
+    }
     popover.hidden = false;
     positionPopover();
   }
@@ -35,6 +44,12 @@
     activeTrigger = null;
     if (!popover) return;
     popover.hidden = true;
+    popover.classList.remove('is-markdown');
+  }
+
+  function scheduleHide(trigger) {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => hidePopover(trigger), 180);
   }
 
   function ensurePopover() {
@@ -45,6 +60,8 @@
     popover.setAttribute('role', 'tooltip');
     popover.hidden = true;
     document.body.appendChild(popover);
+    popover.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+    popover.addEventListener('mouseleave', () => scheduleHide(activeTrigger));
     window.addEventListener('resize', positionPopover);
     window.addEventListener('scroll', positionPopover, true);
   }
@@ -76,7 +93,7 @@
       trigger.setAttribute('aria-label', `提示：${text}`);
       trigger.setAttribute('aria-describedby', POPOVER_ID);
       trigger.addEventListener('mouseenter', () => showPopover(trigger));
-      trigger.addEventListener('mouseleave', () => hidePopover(trigger));
+      trigger.addEventListener('mouseleave', () => scheduleHide(trigger));
       trigger.addEventListener('focus', () => showPopover(trigger));
       trigger.addEventListener('blur', () => hidePopover(trigger));
       trigger.addEventListener('click', (event) => {
@@ -97,7 +114,7 @@
       )) {
         target.appendChild(trigger);
         target.addEventListener('mouseenter', () => showPopover(trigger));
-        target.addEventListener('mouseleave', () => hidePopover(trigger));
+        target.addEventListener('mouseleave', () => scheduleHide(trigger));
         tip.remove();
       } else {
         tip.replaceWith(trigger);
@@ -107,11 +124,20 @@
 
   function setText(trigger, text) {
     if (!(trigger instanceof HTMLElement)) return;
+    trigger._tipHtml = '';
     trigger.dataset.tip = String(text || '');
     trigger.setAttribute('aria-label', `提示：${trigger.dataset.tip}`);
     if (activeTrigger === trigger) showPopover(trigger);
   }
-  global.BjtuOptionTips = { setup, setText };
+
+  function setHtml(trigger, html, plainText = '') {
+    if (!(trigger instanceof HTMLElement)) return;
+    trigger.dataset.tip = String(plainText || '');
+    trigger._tipHtml = String(html || '');
+    trigger.setAttribute('aria-label', `提示：${trigger.dataset.tip}`);
+    if (activeTrigger === trigger) showPopover(trigger);
+  }
+  global.BjtuOptionTips = { setup, setText, setHtml };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setup(), { once: true });

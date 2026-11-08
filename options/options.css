@@ -75,6 +75,58 @@ html[data-color-scheme="dark"] .module-options-page-link:focus-visible {
   white-space:normal;
   pointer-events:none;
 }
+.option-tip-popover.is-markdown {
+  width:min(460px, calc(100vw - 48px));
+  max-width:min(460px, calc(100vw - 48px));
+  max-height:min(60vh, 460px);
+  overflow:auto;
+  padding:10px 12px;
+  pointer-events:auto;
+}
+.option-tip-markdown > :first-child { margin-top:0; }
+.option-tip-markdown > :last-child { margin-bottom:0; }
+.option-tip-markdown p,
+.option-tip-markdown ul,
+.option-tip-markdown ol,
+.option-tip-markdown pre,
+.option-tip-markdown table,
+.option-tip-markdown blockquote { margin:6px 0; }
+.option-tip-markdown h1,
+.option-tip-markdown h2,
+.option-tip-markdown h3,
+.option-tip-markdown h4 { margin:8px 0 4px; font-size:13px; line-height:1.35; }
+.option-tip-markdown ul,
+.option-tip-markdown ol { padding-left:18px; }
+.option-tip-markdown li + li { margin-top:2px; }
+.option-tip-markdown code {
+  padding:1px 4px;
+  border-radius:4px;
+  background:#f1f5f9;
+  font-family:ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size:11px;
+}
+.option-tip-markdown pre {
+  padding:7px 9px;
+  border-radius:5px;
+  background:#f1f5f9;
+  overflow:auto;
+}
+.option-tip-markdown pre code { padding:0; background:transparent; }
+.option-tip-markdown a { color:#2563eb; text-decoration:underline; }
+.option-tip-markdown table { border-collapse:collapse; width:100%; }
+.option-tip-markdown th,
+.option-tip-markdown td { padding:3px 6px; border:1px solid #cbd5e1; text-align:left; }
+.option-tip-markdown blockquote {
+  padding-left:8px;
+  border-left:2px solid #cbd5e1;
+  color:#64748b;
+}
+html[data-color-scheme="dark"] .option-tip-markdown code,
+html[data-color-scheme="dark"] .option-tip-markdown pre { background:#0f172a; }
+html[data-color-scheme="dark"] .option-tip-markdown a { color:#93c5fd; }
+html[data-color-scheme="dark"] .option-tip-markdown th,
+html[data-color-scheme="dark"] .option-tip-markdown td { border-color:#475569; }
+html[data-color-scheme="dark"] .option-tip-markdown blockquote { border-left-color:#475569; color:#94a3b8; }
 .option-tip-trigger:hover,
 .option-tip-trigger:focus-visible {
   z-index:1001;

@@ -11,6 +11,27 @@
   const NS = 'BjtuApiOperationsUi';
   const refreshVersions = new WeakMap();
   const docs = new Map();
+  let markedReady = null;
+
+  function ensureMarked() {
+    if (global.marked?.parse) return Promise.resolve(global.marked);
+    if (!markedReady) {
+      markedReady = new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = chrome.runtime.getURL('UI/marked.umd.js');
+        script.onload = () => resolve(global.marked?.parse ? global.marked : null);
+        script.onerror = () => resolve(null);
+        document.head.appendChild(script);
+      });
+    }
+    return markedReady;
+  }
+
+  function markdownTip(markdown) {
+    const source = String(markdown || '');
+    const render = (marked) => `<div class="option-tip-markdown">${marked.parse(source, { gfm: true, breaks: true })}</div>`;
+    return ensureMarked().then((marked) => marked ? render(marked) : '');
+  }
   function getDoc(name) {
     if (!docs.has(name)) docs.set(name, send('BJTUCA_GET_DOCS',{name}).then(response => {
       if (response?.ok !== true) docs.delete(name);
@@ -88,8 +109,16 @@
           const trigger = alwaysLabel.querySelector('.option-tip-trigger');
           if (!trigger) return;
           const response = await getDoc(name);
-          if (alwaysLabel.isConnected) global.BjtuOptionTips.setText(trigger,
-            response?.ok === true ? response.doc : response?.message || '操作说明获取失败，请重试。');
+          if (!alwaysLabel.isConnected) return;
+          if (response?.ok === true) {
+            const doc = String(response.doc || '');
+            let html = '';
+            try { html = await markdownTip(doc); } catch { html = ''; }
+            if (html) global.BjtuOptionTips.setHtml(trigger, html, doc);
+            else global.BjtuOptionTips.setText(trigger, doc);
+          } else {
+            global.BjtuOptionTips.setText(trigger, response?.message || '操作说明获取失败，请重试。');
+          }
         };
         alwaysLabel.addEventListener('mouseenter', showDoc);
         alwaysLabel.addEventListener('focusin', showDoc);

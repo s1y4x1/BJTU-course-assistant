@@ -3,19 +3,23 @@
 
   const boundContainers = new WeakSet();
   const highlighted = new Map();
+  const vendorStatus = new Map();
   let highlightedBytes = 0;
-  const ready = typeof document === 'undefined' ? Promise.resolve() : Promise.all([
-    ['katex', 'UI/vendor/katex/katex.min.js'], ['hljs', 'UI/vendor/highlight/highlight.min.js']
-  ].map(([name, path]) => {
-    if (global[name]) return;
-    if (global.BjtuModuleRegistry?.loadScript) return global.BjtuModuleRegistry.loadScript(path);
-    return new Promise((resolve, reject) => {
+  const vendorEntries = [['katex', 'UI/vendor/katex/katex.min.js'], ['hljs', 'UI/vendor/highlight/highlight.min.js']];
+  function loadVendor(name, path) {
+    if (global[name]) { vendorStatus.set(name, true); return Promise.resolve(); }
+    const load = global.BjtuModuleRegistry?.loadScript ? global.BjtuModuleRegistry.loadScript(path) : new Promise((resolve, reject) => {
       const script = document.createElement('script'); script.src = chrome.runtime.getURL(path);
       script.onload = resolve; script.onerror = () => reject(new Error(`Markdown 组件加载失败：${name}`));
       document.head.append(script);
     });
-  }));
-  ready.catch(() => {});
+    return load.then(() => { vendorStatus.set(name, true); }).catch(() => { vendorStatus.set(name, false); });
+  }
+  const ready = typeof document === 'undefined' ? Promise.resolve()
+    : Promise.all(vendorEntries.map(([name, path]) => loadVendor(name, path)));
+  function missingVendors() {
+    return vendorEntries.filter(([name]) => vendorStatus.get(name) === false).map(([name]) => name);
+  }
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({
@@ -109,7 +113,7 @@
       }
       markTableSeparators(tokens); return tokens;
     }}});
-    if (math) {
+    if (math && global.katex) {
       const renderMath = token => global.katex.renderToString(token.text, {
         displayMode:token.display, throwOnError:false, trust:false, strict:'ignore',
         maxExpand:1000, maxSize:20, output:'htmlAndMathml'
@@ -192,5 +196,5 @@
     });
   }
 
-  global.BjtuMarkdown = Object.freeze({ ready, escapeHtml, renderCodeBlock, highlightCode, createRenderer, createParser, copyText, bindCopy });
+  global.BjtuMarkdown = Object.freeze({ ready, escapeHtml, renderCodeBlock, highlightCode, createRenderer, createParser, copyText, bindCopy, missingVendors });
 })(globalThis);
