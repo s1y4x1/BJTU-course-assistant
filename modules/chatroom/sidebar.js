@@ -73,6 +73,34 @@
       const peer = state.peers.find(p => p.id === id);
       return peer?.remark || peer?.nickname || peer?.ip || String(id || '未知用户').slice(0,80);
     }
+    function deviceText(device) {
+      if (!device) return '';
+      return [device.os, device.browser].filter(Boolean).join(' · ');
+    }
+    let localAccountPromise = null;
+    function localAccounts() {
+      if (!localAccountPromise) {
+        localAccountPromise = globalThis.chrome?.storage?.local?.get([
+          'popupFullscreenCourseCache', 'academicSystemStudentId', 'username'
+        ]).then(stored => {
+          const cache = stored?.popupFullscreenCourseCache || {};
+          const ve = String(cache.currentAccountLoginName || '').trim();
+          const veOnline = cache.platformLoginState?.ve === 'online';
+          const studentId = String(stored?.academicSystemStudentId || stored?.username || '').trim();
+          const mis = studentId;
+          return { ve, veOnline, mis };
+        }).catch(() => ({ ve: '', veOnline: false, mis: '' }));
+      }
+      return localAccountPromise;
+    }
+    function appendLocalAccounts(container) {
+      localAccounts().then(info => {
+        if (!container.isConnected) return;
+        if (!info.ve && !info.mis) { container.textContent = '本机账号：未登录'; return; }
+        if (info.ve) container.append(node('p', `智慧课程平台：${info.ve}${info.veOnline ? '（在线）' : ''}`, 'editor-info'));
+        if (info.mis) container.append(node('p', `MIS：${info.mis}`, 'editor-info'));
+      });
+    }
     async function action(name, args = {}) {
       if (!online) throw new Error('当前页连接引擎尚未就绪，请重试。');
       if (hostMutate) return hostMutate(name, args);
@@ -88,14 +116,22 @@
     function scheduleState() { if (!getState) refresh().catch(report); }
     function setReady(ready) {
       online = ready;
-      for (const id of ['scan','create-group','nickname','require-friend','invite-policy']) $(id).disabled = !ready;
+      for (const id of ['scan','create-group','nickname','require-friend','invite-policy-stranger','invite-policy-friend']) $(id).disabled = !ready;
       for (const id of ['pair-create','pair-accept','pair-complete']) $(id).disabled = !ready || pairingBusy || typeof global.BjtuChatroomLink?.pairCreate !== 'function';
       if (ready && $('pair-status').textContent === '等待连接引擎。') $('pair-status').textContent = '引擎已就绪。可生成邀请，或接收对方邀请。';
+    }
+    function setLanScanProgress(done, total, found) {
+      const label = $('chatroomLanScanProgress');
+      if (!label) return;
+      if (done == null || found) { label.hidden = true; label.textContent = ''; return; }
+      label.hidden = false;
+      label.textContent = `扫描局域网 ${done}/${total}…`;
     }
     function setServerStatus(status, deviceId) {
       const label = $('chatroomSignalingStatus');
       label.dataset.state = status;
       label.textContent = {connected:'已连接',connecting:'连接中…',disconnected:'未连接'}[status];
+      if (status !== 'connecting') setLanScanProgress(null);
       $('chatroomStartServer').hidden = status === 'connected';
       $('chatroomServerActions').hidden = status !== 'connected';
     }
@@ -217,7 +253,8 @@
     for (const [id, value] of Object.entries({
       nickname: state.settings.nickname ?? '',
       'require-friend': !!state.settings.requireFriend,
-      'invite-policy': state.settings.invitePolicy || 'ask'
+      'invite-policy-stranger': state.settings.invitePolicyStranger || 'ask',
+      'invite-policy-friend': state.settings.invitePolicyFriend || 'ask'
     })) {
       if (dirty.has(id)) continue;
       if ($(id).type === 'checkbox') $(id).checked = value;
@@ -238,15 +275,34 @@
       return value => submit(value.trim());
     }, {autoSave:true});
   }
+  function editSelf() {
+    localAccountPromise = null;
+    openEditor('个人信息', fields => {
+      if (state.self.ip) fields.append(node('p', state.self.ip, 'editor-ip'));
+      const device = deviceText(state.self.device);
+      if (device) fields.append(node('p', `设备：${device}`, 'editor-info'));
+      const accounts = node('div', undefined, 'editor-accounts');
+      fields.append(accounts); appendLocalAccounts(accounts);
+      const label = node('label', '昵称（留空恢复默认 IP）'), input = node('input');
+      input.value = state.settings.nickname || ''; input.maxLength = 40;
+      input.placeholder = state.self.ip || state.self.nickname || '默认使用本机 IP';
+      label.append(input); fields.append(label);
+      return value => mutate('settings', {nickname: value.trim()});
+    }, {autoSave:true});
+  }
   function editPerson(peerId) {
     if (peerId === state.self.id) {
-      editText('修改昵称', '昵称（留空恢复默认 IP）', state.settings.nickname || '', value => mutate('settings', {nickname: value}), 40, state.self.ip || state.self.nickname || '默认使用本机 IP');
+      editSelf();
       return;
     }
     const peer = state.peers.find(item => item.id === peerId);
     if (!peer) return;
     openEditor(peer.remark || peer.nickname || peer.ip || peer.id, fields => {
-      if (peer.ip && (peer.remark || (peer.nickname && peer.nickname !== peer.ip))) fields.append(node('p', peer.ip, 'editor-ip'));
+      const meta = node('div', undefined, 'editor-personal');
+      if (peer.ip) meta.append(node('p', peer.ip, 'editor-ip'));
+      const device = deviceText(peer.device);
+      if (device) meta.append(node('p', `设备：${device}`, 'editor-info'));
+      if (meta.childElementCount) fields.append(meta);
       const label = node('label', '备注'), input = node('input');
       input.value = peer.remark || ''; input.maxLength = 80;
       input.placeholder = peer.nickname || peer.ip || peer.id;
@@ -318,7 +374,7 @@
   async function scan() {
     $('scan').disabled = true;
     try {
-      const result = await action('scan');
+      const result = await action('scan', {force:true});
       if (!destroyed) setServerStatus(result?.discoveryStatus || global.BjtuChatroomLink?.discoveryStatus || 'connected', result?.deviceId);
     } catch (error) {
       if (!destroyed) { setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected'); report(error); }
@@ -330,6 +386,11 @@
     if (destroyed || !detail) return;
     if (detail.type === 'scan-start') {
       setServerStatus('connecting');
+    } else if (detail.type === 'lan-scan-progress') {
+      setServerStatus('connecting');
+      setLanScanProgress(detail.done, detail.total, detail.found === true);
+    } else if (detail.type === 'lan-scan-end') {
+      setLanScanProgress(null);
     } else if (detail.type === 'scanning' || detail.type === 'discovery') {
       setServerStatus('connected', detail.deviceId);
     } else if (detail.type === 'scan-closed') {
@@ -354,12 +415,14 @@
   listen('pair-complete', 'click', () => pair('pair-complete'));
 
     function settingsValue(id) {
-      return id === 'nickname' ? $('nickname').value.trim() : id === 'require-friend' ? $('require-friend').checked : $('invite-policy').value;
+      if (id === 'nickname') return $('nickname').value.trim();
+      if (id === 'require-friend') return $('require-friend').checked;
+      return $(id).value;
     }
     function saveSetting(id) {
       const version = dirty.get(id);
       if (!version) return;
-      const value = settingsValue(id), key = {nickname:'nickname','require-friend':'requireFriend','invite-policy':'invitePolicy'}[id];
+      const value = settingsValue(id), key = {nickname:'nickname','require-friend':'requireFriend','invite-policy-stranger':'invitePolicyStranger','invite-policy-friend':'invitePolicyFriend'}[id];
       saveQueue = saveQueue.catch(() => {}).then(async () => {
         if (dirty.get(id) !== version) return;
         await mutate('settings', {[key]:value});
@@ -379,7 +442,7 @@
       if (event.key !== 'Enter' || event.isComposing) return;
       event.preventDefault(); saveSetting('nickname');
     });
-    for (const id of ['require-friend','invite-policy']) listen(id,'change', () => { dirty.set(id,++revision); saveSetting(id); });
+    for (const id of ['require-friend','invite-policy-stranger','invite-policy-friend']) listen(id,'change', () => { dirty.set(id,++revision); saveSetting(id); });
     listen('settings-form','submit',event => { event.preventDefault(); for (const id of dirty.keys()) saveSetting(id); });
     listen('create-group','click', () => groupEditor(false));
     listen('disconnect','click', () => disconnect().catch(report));

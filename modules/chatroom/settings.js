@@ -8,9 +8,11 @@
     chatroomBackgroundEnabled: true,
     chatroomBackgroundReceiveFiles: true,
     chatroomAutoReconnectEnabled: true,
-    chatroomReconnectIntervalSeconds: 5
+    chatroomReconnectIntervalSeconds: 5,
+    chatroomAutoScanLanEnabled: true,
+    chatroomAutoScanLanIntervalSeconds: 300
   });
-  const preferenceKeys = ['chatroomNotifyNewMessages', 'chatroomBackgroundEnabled', 'chatroomBackgroundReceiveFiles', 'chatroomAutoReconnectEnabled'];
+  const preferenceKeys = ['chatroomNotifyNewMessages', 'chatroomBackgroundEnabled', 'chatroomBackgroundReceiveFiles', 'chatroomAutoReconnectEnabled', 'chatroomAutoScanLanEnabled'];
   const filePrefix = 'chatroom-file:';
   async function fileHandleEntry(key, operation, handle) {
     if (!key.startsWith(filePrefix)) throw new Error('无效本地文件引用。');
@@ -35,18 +37,30 @@
     await fileHandleEntry(key, 'put', handle);
     return key;
   }
+  async function saveSentHandle(messageId, handle) {
+    if (!handle || typeof handle.getFile !== 'function') throw new Error('发送的文件没有可保存的本地句柄。');
+    const key = filePrefix + messageId;
+    await fileHandleEntry(key, 'put', handle);
+    return key;
+  }
   async function loadReceivedFile(key, requestPermission = false) {
     const handle = await fileHandleEntry(key, 'get');
-    if (!handle) throw new Error('本地文件引用已丢失或已清除，无法查看文件。');
-    let permission = await handle.queryPermission({mode: 'read'});
-    if (permission !== 'granted' && requestPermission) permission = await handle.requestPermission({mode: 'read'});
-    if (permission !== 'granted') throw Object.assign(new Error('本地文件读取权限未授予或已撤销，请重新授权后查看。'),{code:'FILE_PERMISSION_REQUIRED'});
-    try { return await handle.getFile(); }
-    catch (error) {
-      if (error.name === 'NotFoundError') throw new Error('本地文件已移动或删除，无法查看文件。');
-      if (error.name === 'NotAllowedError') throw Object.assign(new Error('本地文件读取权限已撤销，请重新授权后查看。'),{code:'FILE_PERMISSION_REQUIRED'});
-      throw error;
+    if (handle) {
+      let permission = 'granted';
+      if (typeof handle.queryPermission === 'function') {
+        permission = await handle.queryPermission({mode: 'read'});
+        if (permission !== 'granted' && requestPermission && typeof handle.requestPermission === 'function')
+          permission = await handle.requestPermission({mode: 'read'});
+      }
+      if (permission !== 'granted') throw Object.assign(new Error('本地文件读取权限未授予或已撤销，请重新授权后查看。'),{code:'FILE_PERMISSION_REQUIRED'});
+      try { return await handle.getFile(); }
+      catch (error) {
+        if (error.name === 'NotFoundError') throw new Error('本地文件已移动或删除，无法查看文件。');
+        if (error.name === 'NotAllowedError') throw Object.assign(new Error('本地文件读取权限已撤销，请重新授权后查看。'),{code:'FILE_PERMISSION_REQUIRED'});
+        throw error;
+      }
     }
+    throw new Error('本地文件引用已丢失或已清除，无法查看文件。');
   }
   const units = ['B', 'KB', 'MB', 'GB'];
   function normalizeLimit(text, unit) {
@@ -140,6 +154,8 @@
       $('chatroomBackgroundReceiveFiles').disabled = values.chatroomBackgroundEnabled === false;
       $('chatroomReconnectIntervalSeconds').disabled = values.chatroomAutoReconnectEnabled === false;
       if (!dirty.has('reconnect')) $('chatroomReconnectIntervalSeconds').value = values.chatroomReconnectIntervalSeconds;
+      $('chatroomAutoScanLanIntervalSeconds').disabled = values.chatroomAutoScanLanEnabled === false;
+      if (!dirty.has('lan-interval')) $('chatroomAutoScanLanIntervalSeconds').value = values.chatroomAutoScanLanIntervalSeconds;
       if (!dirty.has('url')) $('chatroomSignalingUrl').value = values.chatroomSignalingUrl;
       $('chatroomAutoSaveEnabled').checked = values.chatroomAutoSaveEnabled !== false;
       if (!dirty.has('limit')) {
@@ -187,7 +203,20 @@
     for (const key of preferenceKeys) $(key).addEventListener('change', event => {
       if (key === 'chatroomBackgroundEnabled') $('chatroomBackgroundReceiveFiles').disabled = !event.target.checked;
       if (key === 'chatroomAutoReconnectEnabled') $('chatroomReconnectIntervalSeconds').disabled = !event.target.checked;
+      if (key === 'chatroomAutoScanLanEnabled') $('chatroomAutoScanLanIntervalSeconds').disabled = !event.target.checked;
       void save({[key]: event.target.checked});
+    }, {signal: abort.signal});
+    $('chatroomAutoScanLanIntervalSeconds').addEventListener('input', () => {
+      markDirty('lan-interval'); $('chatroomAutoScanLanIntervalSeconds').setCustomValidity('');
+    }, {signal: abort.signal});
+    $('chatroomAutoScanLanIntervalSeconds').addEventListener('change', () => {
+      const input = $('chatroomAutoScanLanIntervalSeconds'), seconds = Number(input.value);
+      if (input.validity.badInput || !Number.isFinite(seconds) || seconds < 10 || seconds > 3600 || Math.abs(seconds - Math.round(seconds)) > 1e-8) {
+        dirty.delete('lan-interval'); revisions.set('lan-interval',(revisions.get('lan-interval') || 0)+1);
+        input.setCustomValidity(''); input.value = values.chatroomAutoScanLanIntervalSeconds;
+        report(new Error(`局域网扫描间隔必须为 10 至 3600 秒的整数；已恢复为 ${input.value} 秒。`)); return;
+      }
+      input.setCustomValidity(''); void save({chatroomAutoScanLanIntervalSeconds: Math.round(seconds)}, 'lan-interval');
     }, {signal: abort.signal});
     $('chatroomReconnectIntervalSeconds').addEventListener('input', () => {
       markDirty('reconnect'); $('chatroomReconnectIntervalSeconds').setCustomValidity('');
@@ -219,5 +248,5 @@
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
   global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload,
-    saveReceivedFile, loadReceivedFile, removeReceivedFile: key => fileHandleEntry(key, 'delete')};
+    saveReceivedFile, saveSentHandle, loadReceivedFile, removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);

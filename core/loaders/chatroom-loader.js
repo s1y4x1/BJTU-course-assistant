@@ -29,5 +29,20 @@
   chrome.storage.onChanged.addListener((changes,area) => { if (area==='local' && changes.chatroomState) updateUnread(changes.chatroomState.newValue); });
   button.addEventListener('click', () => void globalThis.BjtuChatroomLauncher.open().catch(error => globalThis.showToast?.(error.message,'error')));
   button.hidden = (await chrome.storage.local.get('chatroomFullscreenButtonEnabled')).chatroomFullscreenButtonEnabled === false;
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== 'BJTU_OPEN_CHATROOM') return;
+    void (async () => {
+      await globalThis.BjtuChatroomLauncher.open();
+      const frame = document.querySelector('#chatroom-module-window iframe');
+      const navigate = () => frame?.contentWindow?.postMessage({
+        type: 'BJTU_CHATROOM_NAVIGATE',
+        conversationId: message.conversationId || ''
+      }, location.origin);
+      if (frame?.contentDocument?.readyState === 'complete') navigate();
+      else frame?.addEventListener('load', navigate, {once:true});
+      sendResponse({ok:true});
+    })().catch(error => sendResponse({ok:false, error:String(error?.message || error)}));
+    return true;
+  });
   globalThis.BjtuSyncFloatingLauncherContainer?.();
 })().catch(console.error);

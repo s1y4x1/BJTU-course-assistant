@@ -7,6 +7,7 @@ html:has(> body.chatroom-page) { height:100%; overflow:hidden; }
 .chatroom-page button, .chatroom-page input, .chatroom-page textarea { font:inherit; }
 .chatroom-page button { min-height:34px; }
 .chatroom-page button:disabled { opacity:.5; cursor:not-allowed; }
+.chatroom-page #send:disabled { opacity:1; border-color:#94a3b8; background:#94a3b8; color:#f8fafc; }
 .chatroom-page :is(button,a,input,textarea,summary):focus-visible { outline:2px solid var(--chat-accent); outline-offset:3px; }
 .chatroom-page a { color:var(--chat-accent); }
 .section-heading, .conversation-header, .composer-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -67,8 +68,12 @@ html[data-color-scheme="dark"] .message-delivery-status.error { color:#fbbf24; }
 .composer-footer { margin-top:8px; }
 .composer-footer { flex-wrap:wrap; }
 .composer-send-actions { align-items:center; justify-content:flex-end; margin-left:auto; }
+.composer-message-size { color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); white-space:nowrap; }
+.composer-message-size.over-limit { color:#b45309; }
+html[data-color-scheme="dark"] .composer-message-size.over-limit { color:#fbbf24; }
 .composer-toggle { display:inline-flex; align-items:center; gap:4px; margin:0; font:inherit; white-space:nowrap; }
 .composer-toggle input[type="checkbox"] { width:auto; margin:0; padding:0; }
+.message.mine.message-draft { border-color:var(--chat-muted); }
 .message-draft { border-style:dashed; }
 .message-draft-label { color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .media-message { width:min(100%,600px); }

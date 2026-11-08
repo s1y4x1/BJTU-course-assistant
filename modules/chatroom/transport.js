@@ -50,6 +50,29 @@
   const rejectionText = { BLOCKED: '对方已将你拉黑，无法发送私聊。', FRIEND_REQUIRED: '对方已删除好友或要求好友验证，请重新添加好友。', LOCAL_BLOCKED: '你已屏蔽对方，请先取消屏蔽。', INVALID_MESSAGE: '对方拒绝了无效消息。' };
 
   const copy = (v) => JSON.parse(JSON.stringify(v));
+  function detectDevice() {
+    const ua = String(G.navigator?.userAgent || '');
+    const os = /Windows NT 10\.0/.test(ua) ? 'Windows 10/11'
+      : /Windows NT/.test(ua) ? 'Windows'
+      : /Android/.test(ua) ? 'Android'
+      : /iPhone|iPad|iPod/.test(ua) ? 'iOS'
+      : /Mac OS X/.test(ua) ? 'macOS'
+      : /Linux/.test(ua) ? 'Linux' : '未知系统';
+    const browser = /Edg\//.test(ua) ? 'Edge'
+      : /OPR\//.test(ua) ? 'Opera'
+      : /Firefox\//.test(ua) ? 'Firefox'
+      : /Chrome\//.test(ua) ? 'Chrome'
+      : /Safari\//.test(ua) ? 'Safari' : '未知浏览器';
+    const platform = String(G.navigator?.userAgentData?.platform || G.navigator?.platform || '').slice(0, 40);
+    return { os, browser, platform };
+  }
+  function publicDevice(value) {
+    const source = value?.device;
+    if (!source || typeof source !== 'object') return null;
+    const clean = (text, max) => typeof text === 'string' ? text.slice(0, max) : '';
+    const device = { os: clean(source.os, 40), browser: clean(source.browser, 40), platform: clean(source.platform, 40) };
+    return device.os || device.browser || device.platform ? device : null;
+  }
   const fail = (message) => { throw new Error(message); };
   const str = (v, max, empty = false) => {
     if (typeof v !== 'string' || v.length > max || (!empty && !v.trim())) fail('字段格式或长度不正确。');
@@ -359,7 +382,7 @@
     } else {
       const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
       privateKey = pair.privateKey;
-      data = { schema: 1, identity: { privateKey: await crypto.subtle.exportKey('jwk', pair.privateKey), publicKey: await crypto.subtle.exportKey('jwk', pair.publicKey) }, settings: { nickname: '', requireFriend: false, invitePolicy: 'ask' }, peers: [], rooms: [], requests: [], outgoing: [], messages: [], seen: [] };
+      data = { schema: 1, identity: { privateKey: await crypto.subtle.exportKey('jwk', pair.privateKey), publicKey: await crypto.subtle.exportKey('jwk', pair.publicKey) }, settings: { nickname: '', requireFriend: false, invitePolicyStranger: 'ask', invitePolicyFriend: 'ask' }, peers: [], rooms: [], requests: [], outgoing: [], messages: [], seen: [] };
     }
     const previousMessages = Array.isArray(data.messages) ? data.messages.slice() : [];
     for (const [name, limit] of Object.entries({ peers: MAX.peers, rooms: MAX.rooms, requests: MAX.requests, outgoing: MAX.requests, messages: MAX.messages, seen: MAX.seen })) {
@@ -368,12 +391,18 @@
     }
     data.rooms = data.rooms.map(validRoom);
     data.departedRooms ||= [];
-    data.settings = { nickname: str(data.settings?.nickname || '', 40, true), requireFriend: data.settings?.requireFriend === true, invitePolicy: ['ask', 'allow', 'deny'].includes(data.settings?.invitePolicy) ? data.settings.invitePolicy : 'ask' };
+    const validInvitePolicy = (value, fallback) => ['ask', 'allow', 'deny'].includes(value) ? value : fallback;
+    data.settings = {
+      nickname: str(data.settings?.nickname || '', 40, true),
+      requireFriend: data.settings?.requireFriend === true,
+      invitePolicyStranger: validInvitePolicy(data.settings?.invitePolicyStranger, 'ask'),
+      invitePolicyFriend: validInvitePolicy(data.settings?.invitePolicyFriend, 'ask')
+    };
     const pub = await crypto.subtle.importKey('jwk', data.identity.publicKey, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']);
     const fingerprint = hex(await crypto.subtle.digest('SHA-256', await crypto.subtle.exportKey('raw', pub)));
     if (data.settings.nickname === '设备-' + fingerprint.slice(0, 6)) data.settings.nickname = '';
     publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey,
-      background: G.BjtuChatroomBackgroundMode?.enabled === true };
+      background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice() };
     await importIdentity(publicIdentity);
     const proof = encoder.encode('bjtu-chatroom-identity-check');
     if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, proof), proof)) fail('持久身份密钥不匹配。');
@@ -448,6 +477,8 @@
       }
       p.nickname = identity.nickname;
       p.background = identity.background === true;
+      const device = publicDevice(identity);
+      if (device) p.device = device; else delete p.device;
       if (typeof value?.ip === 'string') p.ip = str(value.ip, 64, true);
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
@@ -477,7 +508,7 @@
     await ready;
     args = copy(args);
     if (name === 'draft') {
-      const text = str(args.text, 8000, true), conversationId = token(args.conversationId), draftId = token(args.draftId);
+      const text = str(args.text, 16384, true), conversationId = token(args.conversationId), draftId = token(args.draftId);
       if (!Number.isSafeInteger(args.revision) || args.revision < 1) fail('无效草稿版本。');
       const targets = await serial(() => {
         if (conversationId.startsWith('peer:')) {
@@ -542,7 +573,7 @@
       }
       case 'media-file-saved': {
         const message = data.messages.find(m => m.id === str(args.id, 201));
-        if (!message?.media || message.senderId === publicIdentity.id) fail('接收文件记录已清除或无效。');
+        if (!message?.media) fail('接收文件记录已清除或无效。');
         const name = str(args.file?.name, 180), size = args.file?.size;
         if (!Number.isSafeInteger(size) || size < 0 || args.fileHandleRef !== 'chatroom-file:' + message.id) fail('无效本地文件记录。');
         message.file = {name, size}; message.fileHandleRef = args.fileHandleRef;
@@ -553,11 +584,20 @@
       case 'settings': {
         if (args.nickname !== undefined) data.settings.nickname = str(args.nickname, 40, true).trim();
         if (args.requireFriend !== undefined) { if (typeof args.requireFriend !== 'boolean') fail('无效好友策略。'); data.settings.requireFriend = args.requireFriend; }
-        if (args.invitePolicy !== undefined) { if (!['ask', 'allow', 'deny'].includes(args.invitePolicy)) fail('无效邀请策略。'); data.settings.invitePolicy = args.invitePolicy; }
+        for (const key of ['invitePolicyStranger', 'invitePolicyFriend']) {
+          if (args[key] === undefined) continue;
+          if (!['ask', 'allow', 'deny'].includes(args[key])) fail('无效邀请策略。');
+          data.settings[key] = args[key];
+        }
         publicIdentity.nickname = data.settings.nickname;
         fanout(effects, linkedPeers(), 'profile', {});
         for (const p of data.peers.filter(p => p.online)) enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: data.settings.requireFriend && !p.friend});
-        if (data.settings.invitePolicy === 'deny') data.requests = data.requests.filter((r) => r.type !== 'group');
+        if (data.settings.invitePolicyStranger === 'deny') {
+          data.requests = data.requests.filter((r) => r.type !== 'group' || peer(r.from)?.friend === true);
+        }
+        if (data.settings.invitePolicyFriend === 'deny') {
+          data.requests = data.requests.filter((r) => r.type !== 'group' || peer(r.from)?.friend !== true);
+        }
         return {};
       }
       case 'remark': {
@@ -579,6 +619,16 @@
       case 'friend-request': {
         const p = requirePeer(args.peerId, false);
         if (p.friend) return {};
+        const incoming = data.requests.find((r) => r.type === 'friend' && r.from === p.id);
+        if (incoming) {
+          p.friend = true; p.friendRequiredByPeer = false;
+          data.requests = data.requests.filter((r) => r !== incoming);
+          data.outgoing = data.outgoing.filter((r) => r.type !== 'friend' || r.to !== p.id);
+          enqueue(effects, p.id, 'friend-response', { requestId: incoming.id, allow: true });
+          enqueue(effects, p.id, 'peer-policy', { blocked: !!p.blocked, friendRequired: false });
+          systemMessage(p.id, 'FRIEND_ACCEPTED_LOCAL', '你已同意好友申请，现在已成为好友。');
+          return { requestId: incoming.id, accepted: true };
+        }
         if (data.outgoing.some((r) => r.type === 'friend' && r.to === p.id)) return {};
         const requestId = crypto.randomUUID();
         pushRequest({ id: requestId, type: 'friend', to: p.id, createdAt: Date.now() }, true);
@@ -617,7 +667,7 @@
           enqueue(effects, p.id, 'peer-policy', {blocked:true, friendRequired:data.settings.requireFriend && !p.friend});
           data.requests = data.requests.filter((r) => r.from !== request.from);
         }
-        if (args.blockAll) { data.settings.invitePolicy = 'deny'; data.requests = data.requests.filter((r) => r.type !== 'group'); }
+        if (args.blockAll) { data.settings.invitePolicyStranger = 'deny'; data.settings.invitePolicyFriend = 'deny'; data.requests = data.requests.filter((r) => r.type !== 'group'); }
         return {};
       }
       case 'group-create': {
@@ -642,7 +692,7 @@
         return {};
       }
       case 'send-message': {
-        const text = str(args.text, 8000), conversationId = token(args.conversationId);
+        const text = str(args.text, 16384), conversationId = token(args.conversationId);
         let targets;
         if (conversationId === 'public') targets = data.peers.filter((p) => p.online && p.id !== publicIdentity.id && !p.blockedByPeer).map((p) => p.id);
         else if (conversationId.startsWith('peer:')) {
@@ -780,7 +830,7 @@
         token(payload.requestId); const r = validRoom(payload.room);
         if (!r.members.includes(from) || r.members.includes(publicIdentity.id)) fail('群邀请必须由现有成员签发。');
         if (data.requests.some((v) => v.type === 'group' && v.room.id === r.id)) break;
-        const policy = data.settings.invitePolicy;
+        const policy = peer(from)?.friend ? data.settings.invitePolicyFriend : data.settings.invitePolicyStranger;
         groupEvent(r, from, payload.requestId, publicIdentity.id, payload.event?.targetName, payload.event?.actorName);
         if (policy === 'deny') enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: false });
         else if (policy === 'allow') {

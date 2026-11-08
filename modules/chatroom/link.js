@@ -143,7 +143,7 @@
   }
   async function publicInfo() {
     const info = await identity();
-    return { alias: info.nickname || localIP || '默认IP', identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', token: crypto.randomUUID() };
+    return { alias: info.nickname || localIP || '默认IP', identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', device: info.device || null, token: crypto.randomUUID() };
   }
   function signalSend(message) { if (socket?.readyState !== 1) throw new Error('请先点击扫描设备，启用在线发现。'); socket.send(JSON.stringify(message)); }
   function remember(peer) {
@@ -179,7 +179,7 @@
       }
     } else if (message.type === 'ERROR') emit('error', { message: `信令服务器拒绝请求（${message.code}）。` });
   }
-  async function scan() {
+  async function scan(options = {}) {
     if (opening) return opening;
     const epoch = generation;
     opening = (async () => {
@@ -206,17 +206,32 @@
       emit('scan-start');
       const info = await publicInfo();
       if (epoch !== generation) throw new Error('发现已取消。');
-      url.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
-      const ws = new WebSocket(url.href); socket = ws;
-      await new Promise((resolve, reject) => {
+      const attach = target => {
+        target.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
+        return target.href;
+      };
+      const openSocket = target => new Promise((resolve, reject) => {
+        const ws = new WebSocket(attach(target)); socket = ws;
         let settled = false;
         const fail = () => { if (!settled) { settled = true; clearTimeout(timer); reject(new Error('在线发现连接失败；仍可使用离线配对。')); } };
         const timer = setTimeout(() => { fail(); ws.close(); }, 15000);
-        ws.onopen = () => { settled = true; clearTimeout(timer); resolve(); };
+        ws.onopen = () => { settled = true; clearTimeout(timer); resolve(ws); };
         ws.onerror = fail;
         ws.onclose = () => { fail(); if (socket === ws) { clearInterval(ping); clearInterval(rotate); socket = null; socketId = ''; discovered.clear(); emit('scan-closed'); } };
         ws.onmessage = ({ data }) => { if (socket !== ws || typeof data !== 'string' || data.length > MAX) return; try { const m = JSON.parse(data); if (typeof m.sdp === 'string' && m.sdp.length > MAX) return; onSignal(m).catch(e => emit('error', { message: e.message })); } catch {} };
       });
+      let ws;
+      try { ws = await openSocket(new URL(url)); }
+      catch (error) {
+        const settings = await chrome.storage.local.get({chatroomAutoScanLanEnabled:true,chatroomAutoScanLanIntervalSeconds:300,chatroomLanLastScanAt:0});
+        if (settings.chatroomAutoScanLanEnabled === false || !/^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(url.hostname)) throw error;
+        const interval = Math.max(10, Number(settings.chatroomAutoScanLanIntervalSeconds) || 300) * 1000;
+        if (options?.force !== true && Date.now() - Number(settings.chatroomLanLastScanAt || 0) < interval) throw error;
+        await chrome.storage.local.set({chatroomLanLastScanAt:Date.now()});
+        const found = await findLanServer(url, info);
+        if (!found || epoch !== generation) throw error;
+        ws = await openSocket(new URL(found));
+      }
       if (epoch !== generation || socket !== ws || ws.readyState !== 1) { ws.close(); throw new Error('发现已取消。'); }
       ping = setInterval(() => { if (ws.readyState === 1) ws.send(''); }, 120000);
       rotate = setInterval(() => { publicInfo().then(next => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE', info: next })); }).catch(() => {}); }, 30 * 60 * 1000);
@@ -226,6 +241,40 @@
     try { return await opening; }
     catch (error) { if (epoch === generation && socket?.readyState !== 1) emit('scan-closed'); throw error; }
     finally { opening = null; }
+  }
+  async function probeServer(target, info) {
+    const url = new URL(target); url.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
+    let ws;
+    try { ws = new WebSocket(url.href); } catch { return false; }
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = ok => { if (settled) return; settled = true; clearTimeout(timer); try { ws.close(); } catch {} resolve(ok); };
+      const timer = setTimeout(() => finish(false), 900);
+      ws.onmessage = ({data}) => {
+        try { const message = JSON.parse(data); if (message?.type === 'HELLO' && message.service === 'bjtuca-chatroom') finish(true); } catch {}
+      };
+      ws.onerror = () => finish(false);
+      ws.onclose = () => finish(false);
+    });
+  }
+  async function findLanServer(base, info) {
+    const candidates = [];
+    for (let host = 100; host <= 200; host++) {
+      const target = new URL(base); target.hostname = `192.168.1.${host}`; candidates.push(target);
+    }
+    for (let offset = 0; offset < candidates.length; offset += 16) {
+      const batch = candidates.slice(offset, offset + 16);
+      emit('lan-scan-progress', {done: offset, total: candidates.length});
+      const results = await Promise.all(batch.map(target => probeServer(target, info)));
+      const index = results.findIndex(Boolean);
+      if (index >= 0) {
+        emit('lan-scan-progress', {done: offset + index + 1, total: candidates.length, found: true});
+        return batch[index];
+      }
+      emit('lan-scan-progress', {done: offset + batch.length, total: candidates.length});
+    }
+    emit('lan-scan-end', {found: false});
+    return null;
   }
   async function connect(input) {
     const id = typeof input === 'string' ? input : input?.peerId;

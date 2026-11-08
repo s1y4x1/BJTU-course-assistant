@@ -69,11 +69,18 @@ html[data-color-scheme="dark"] .chatroom-options-card .option-action-link { colo
 :is(.chatroom-options-card,#sidebar-host) dialog::backdrop { background:#0008; }
 :is(.chatroom-options-card,#sidebar-host) #editor-title { overflow-wrap:anywhere; }
 :is(.chatroom-options-card,#sidebar-host) .editor-ip { margin-block:0; }
+:is(.chatroom-options-card,#sidebar-host) .editor-personal { display:grid; gap:4px; }
+:is(.chatroom-options-card,#sidebar-host) .editor-info { margin:0; color:var(--chat-muted); font-size:.9em; }
+:is(.chatroom-options-card,#sidebar-host) .editor-accounts { display:grid; gap:4px; padding:8px 10px; border:1px solid var(--chat-line); border-radius:8px; color:var(--chat-muted); font-size:.9em; }
 :is(.chatroom-options-card,#sidebar-host) #editor-fields { display:grid; gap:12px; margin:10px 0; max-height:55dvh; overflow:auto; }
+#editor-fields .check { margin:0; }
 html[data-color-scheme="dark"] :is(.chatroom-options-card,#sidebar-host) { --chat-line:#334155; --chat-muted:#94a3b8; --chat-soft:#1e293b; --chat-accent:#60a5fa; color:#e5e7eb; }
 .chatroom-server-status { color:#b45309; font-size:var(--bjtu-font-size-auxiliary,11px); }
 .chatroom-server-status[data-state="connected"] { color:#15803d; }
 .chatroom-server-status[data-state="connecting"] { color:#2563eb; }
+.chatroom-lan-scan-progress { margin-left:6px; color:#2563eb; font-size:var(--bjtu-font-size-auxiliary,11px); }
+.chatroom-lan-scan-progress[hidden] { display:none; }
 html[data-color-scheme="dark"] .chatroom-server-status { color:#fbbf24; }
 html[data-color-scheme="dark"] .chatroom-server-status[data-state="connected"] { color:#4ade80; }
 html[data-color-scheme="dark"] .chatroom-server-status[data-state="connecting"] { color:#60a5fa; }
+html[data-color-scheme="dark"] .chatroom-lan-scan-progress { color:#60a5fa; }

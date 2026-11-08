@@ -60,6 +60,9 @@
   let pendingTitle;
   const liveDrafts = new Map(), draftSessionId = crypto.randomUUID();
   let draftRevision = 0, sharedDraft = null, draftSendTimer, draftRenderTimer, draftStartedAt = Date.now();
+  let sendInFlight = false;
+  const textEncoder = new TextEncoder();
+  const MESSAGE_FILE_LIMIT = 16 * 1024;
   function clearSharedDraft() {
     clearTimeout(draftSendTimer); draftSendTimer = null;
     const previous = sharedDraft; sharedDraft = null;
@@ -67,13 +70,27 @@
   }
   function publishDraft() {
     clearTimeout(draftSendTimer); draftSendTimer = null;
-    if (stopped || background || !online || !embeddedVisible || !$('share-draft').checked || !$('message').value.length || !selected) {clearSharedDraft(); return;}
+    if (stopped || background || !online || !embeddedVisible || !$('share-draft').checked || !$('message').value.length || !selected || messageBytes() > MESSAGE_FILE_LIMIT) {clearSharedDraft(); return;}
     if (sharedDraft && sharedDraft !== selected) clearSharedDraft();
     sharedDraft = selected;
     void transport.action('draft', {conversationId:selected, text:$('message').value, draftId:draftSessionId, revision:++draftRevision}).catch(() => {});
   }
+  function messageBytes() {
+    return textEncoder.encode($('message').value).length;
+  }
+  function updateSendButton() {
+    const value = $('message').value;
+    const size = textEncoder.encode(value).length;
+    const counter = $('message-size');
+    if (counter) {
+      counter.textContent = `${size} B / 16 kB`;
+      counter.classList.toggle('over-limit', size > MESSAGE_FILE_LIMIT);
+    }
+    $('send').disabled = !online || !selected || sendInFlight || !value.trim();
+  }
   function updateDraftPreview() {
     if (!$('message').value.length) {draftStartedAt = Date.now(); clearSharedDraft();}
+    updateSendButton();
     if (!draftRenderTimer) draftRenderTimer = setTimeout(() => {draftRenderTimer = null; if (!stopped) renderMessages();}, 30);
     if ($('share-draft').checked && !draftSendTimer && $('message').value.length) draftSendTimer = setTimeout(publishDraft, 160);
   }
@@ -331,8 +348,9 @@
     $('delete-friend').textContent = peer?.friend ? '删除好友' : '加好友';
     $('mute-conversation').checked = state.conversations?.[selected]?.muted === true;
     $('mute-conversation').disabled = $('clear-history').disabled = !selected;
-    $('send').disabled = !online || !selected;
-    const ids = selected === 'public' ? [state.self.id, ...state.peers.filter(p => p.online && !p.blocked).map(p => p.id)]
+    updateSendButton();
+    const ids = selected === 'public'
+      ? [...(online ? [state.self.id] : []), ...state.peers.filter(p => p.online).map(p => p.id)]
       : peerId ? [] : room?.members || [];
     const members = [...new Set(ids)].filter(Boolean).map(id => ({id, name: nameOf(id), ip: state.peers.find(p => p.id === id)?.ip || '', online:id === state.self.id ? online : state.peers.some(p => p.id === id && p.online), background:state.peers.some(p => p.id === id && p.background)}));
     const signature = JSON.stringify([selected, members]);
@@ -340,7 +358,7 @@
       membersSignature = signature;
       $('conversation-members').replaceChildren(...members.map(member => {
         const el = button(member.name, () => sidebar.editPerson(member.id), 'conversation-member');
-        if (selected !== 'public') { const dot = node('span', undefined, `conversation-online-dot${member.online ? ' online' + (member.background ? ' background' : '') : ''}`); dot.title = member.online ? member.background ? '后台在线' : '在线' : '离线'; el.prepend(dot); }
+        const dot = node('span', undefined, `conversation-online-dot${member.online ? ' online' + (member.background ? ' background' : '') : ''}`); dot.title = member.online ? member.background ? '后台在线' : '在线' : '离线'; el.prepend(dot);
         el.title = member.ip || member.name; el.dataset.peerId = member.id; return el;
       }));
       $('conversation-members').classList.toggle('expanded', expandedMembers.has(selected));
@@ -534,8 +552,15 @@
       message.card = node('article', undefined, `message media-message${s.outgoing ? ' mine' : ''}`);
       message.card.append(messageHeader(s.senderId, s.createdAt));
       mediaMessages.set(id, message);
-      void mutate('media-message', {conversationId:s.conversationId,senderId:s.senderId,messageId:s.messageId,
+      message.mediaReady = mutate('media-message', {conversationId:s.conversationId,senderId:s.senderId,messageId:s.messageId,
         text:s.type === 'file' ? `[文件] ${s.name}` : '[屏幕共享]'}).catch(report);
+      if (s.outgoing && s.type === 'file' && s.handle) {
+        message.savedPromise = message.mediaReady.then(async () => {
+          const ref = await globalThis.BjtuChatroomSettings.saveSentHandle(id, s.handle);
+          await mutate('media-file-saved', {id, file:{name:s.name, size:s.size}, fileHandleRef:ref});
+          message.file = {name:s.name, size:s.size}; message.fileHandleRef = ref;
+        }).catch(report);
+      }
     }
     if (message.type !== s.type || message.conversationId !== s.conversationId) throw new Error('传输消息不匹配。');
     s.message = message; s.card = message.card; message.sessions.set(s.id, s);
@@ -681,14 +706,27 @@
     if (s.type === 'screen') renderScreenMessage(s);
     createPC(s); await signal(s, 'accept'); touch(s);
   }
-  async function offerFiles(files) {
+  async function textFileEntry(text) {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+    const name = `消息-${stamp}-${crypto.randomUUID().slice(0, 6)}.txt`;
+    const root = await navigator.storage.getDirectory();
+    const directory = await root.getDirectoryHandle('chatroom-outbox', {create: true});
+    const handle = await directory.getFileHandle(name, {create: true});
+    const writable = await handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+    return {file: await handle.getFile(), handle};
+  }
+  async function offerFiles(items) {
+    const entries = items.map(item => item instanceof File ? {file: item, handle: null} : item);
     const conversationId = selected;
     const targets = recipients();
     if (!targets.length) throw new Error('请选择有在线成员的私聊或群聊。');
-    if (files.length * targets.length + sessions.size > LIMIT.sessions) throw new Error('一次发送最多支持 8 个接收会话，请减少文件或接收成员。');
-    for (const file of files) {
+    if (entries.length * targets.length + sessions.size > LIMIT.sessions) throw new Error('一次发送最多支持 8 个接收会话，请减少文件或接收成员。');
+    for (const {file, handle} of entries) {
+      if (!(file instanceof File)) throw new Error('无法读取要发送的文件。');
       const messageId = uuid();
-      const tasks = targets.map(peerId => makeSession(uuid(), peerId, 'file', true, {messageId, recipientsCount: targets.length, file, name: safeName(file.name), size: file.size, conversationId}));
+      const tasks = targets.map(peerId => makeSession(uuid(), peerId, 'file', true, {messageId, recipientsCount: targets.length, file, handle, name: safeName(file.name), size: file.size, conversationId}));
       tasks.forEach(renderTransfer);
       void previewFile(tasks[0], file).catch(report);
       for (const s of tasks) {
@@ -1155,14 +1193,22 @@
   }
   listen('message-form', 'submit', async (event) => {
     event.preventDefault(); const input = $('message'), text = input.value, conversationId = selected;
-    if (!text.trim() || $('send').disabled) return;
-    const snapshot = input.value; $('send').disabled = true;
+    if (!text.trim() || !online || !selected || sendInFlight) return;
+    const snapshot = text, asFile = messageBytes() > MESSAGE_FILE_LIMIT;
+    sendInFlight = true; updateSendButton();
     clearSharedDraft();
     try {
-      await mutate('send-message', { conversationId, text });
+      if (asFile) {
+        let entry;
+        try { entry = await textFileEntry(text); }
+        catch { entry = {file: new File([text], `消息-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.txt`, {type: 'text/plain;charset=utf-8'}), handle: null}; }
+        await offerFiles([entry]);
+      } else {
+        await mutate('send-message', { conversationId, text });
+      }
       if (selected === conversationId && input.value === snapshot) input.value = '';
       if (drafts.get(conversationId) === snapshot) drafts.delete(conversationId);
-    } catch (error) { report(error); } finally { $('send').disabled = !online; updateDraftPreview(); }
+    } catch (error) { report(error); } finally { sendInFlight = false; updateSendButton(); updateDraftPreview(); }
   });
   listen('message','input',updateDraftPreview);
   listen('draft-preview','change', () => {
@@ -1191,12 +1237,24 @@
   });
   listen('invite-group', 'click', () => sidebar.groupEditor(true));
   listen('leave-group', 'click', () => sidebar.leaveGroup());
-  listen('pick-file', 'click', () => $('file-picker').click());
+  listen('pick-file', 'click', () => {
+    if (typeof window.showOpenFilePicker !== 'function') { $('file-picker').click(); return; }
+    window.showOpenFilePicker({multiple: true}).then(async handles => {
+      const entries = [];
+      for (const handle of handles) entries.push({file: await handle.getFile(), handle});
+      if (entries.length) await offerFiles(entries);
+    }).catch(error => { if (error?.name !== 'AbortError') report(error); });
+  });
   listen('file-picker', 'change', () => { const files = Array.from($('file-picker').files || []); $('file-picker').value = ''; if (files.length) offerFiles(files).catch(report); });
   listen('share-screen', 'click', () => { shareScreen().catch(report); });
   listen('stop-screen', 'click', stopCapture);
   if (embedded) window.addEventListener('message', event => {
     if (event.source !== parent || event.origin !== location.origin) return;
+    if (event.data?.type === 'BJTU_CHATROOM_NAVIGATE') {
+      const conversationId = String(event.data.conversationId || '');
+      if (conversationId) { embeddedVisible = true; chooseConversation(conversationId, {interactive:true}); }
+      return;
+    }
     if (event.data?.type !== 'BJTU_CHATROOM_WINDOW_VISIBILITY') return;
     if (event.data.visible === false) { embeddedVisible = false; stopCapture(); clearSharedDraft(); }
     else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); if (online) {void action('scan').catch(report); publishDraft();} void markConversationRead(); }

@@ -95,7 +95,7 @@
       ['background','foreground'].includes(lease?.role) && !lease.draining &&
       globalThis.BjtuChatroomLink?.discoveryStatus === 'disconnected';
   }
-  function scheduleReconnect() {
+  function scheduleReconnect(immediate = false) {
     clearTimeout(reconnectTimer);
     if (!eligible()) return;
     const seconds = Number(reconnectSettings.chatroomReconnectIntervalSeconds);
@@ -105,7 +105,7 @@
       try { await globalThis.BjtuChatroomTransport.action('scan'); }
       catch(error) { console.warn('[bjtu] chatroom reconnect:',error); }
       finally { reconnecting = false; scheduleReconnect(); }
-    },(Number.isFinite(seconds) && seconds >= .1 && seconds <= 60 ? seconds : 5)*1000);
+    },immediate ? 0 : (Number.isFinite(seconds) && seconds >= .1 && seconds <= 60 ? seconds : 5)*1000);
   }
   function pauseReconnect() { paused = true; clearTimeout(reconnectTimer); }
   function resumeReconnect() { paused = false; scheduleReconnect(); }
@@ -125,10 +125,10 @@
     if (!ready) return;
     publishStatus(event.detail); scheduleReconnect();
   });
-  window.addEventListener('bjtu-chatroom-engine-rolechange',scheduleReconnect);
+  window.addEventListener('bjtu-chatroom-engine-rolechange',() => scheduleReconnect(globalThis.BjtuChatroomEngineLease?.role === 'background'));
   globalThis.BjtuChatroomBackgroundMode = {enabled,canReceiveFile,notifyInvitation,markReady() {
     ready = true;
     publishStatus({type:globalThis.BjtuChatroomLink?.discoveryStatus === 'connected' ? 'discovery' : 'scan-closed'});
-    void chrome.storage.local.get(reconnectSettings).then(settings => { reconnectSettings = settings; scheduleReconnect(); });
+    void chrome.storage.local.get(reconnectSettings).then(settings => { reconnectSettings = settings; scheduleReconnect(true); });
   },pauseReconnect,resumeReconnect,closeInvitation,setFileDecisionHandler(fn) { fileDecisionHandler = fn; }};
 })();

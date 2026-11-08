@@ -187,16 +187,42 @@
       type:'basic', iconUrl:chrome.runtime.getURL('icons/128.png'), title:`${title} · ${view.unread} 条新消息`, message:plain(view.lastText)
     },'chatroom-message',true);
   }
+  async function focusTab(tab) {
+    if (tab?.windowId == null) return;
+    const win = await chrome.windows.get(tab.windowId);
+    await chrome.windows.update(win.id, {focused:true, ...(win.state === 'minimized' ? {state:'normal'} : {})});
+  }
+  async function createChatTab(conversationId) {
+    const url = chrome.runtime.getURL('modules/chatroom/chat.html');
+    const tab = await (global.BjtuTabs || chrome.tabs).create({
+      url: url + (conversationId ? '?conversation=' + encodeURIComponent(conversationId) : ''),
+      active: true
+    });
+    if (conversationId) await chrome.storage.local.set({chatroomNavigation:{conversationId,tabId:tab.id,at:Date.now()}});
+    await focusTab(tab);
+    return tab;
+  }
   async function openConversation(conversationId) {
       const url = chrome.runtime.getURL('modules/chatroom/chat.html');
       const existing = (await chrome.tabs.query({url:url+'*'}))[0];
-      const tab = existing ? await chrome.tabs.update(existing.id,{active:true})
-        : await (global.BjtuTabs || chrome.tabs).create({url:url+(conversationId ? '?conversation='+encodeURIComponent(conversationId) : ''),active:true});
-      if (conversationId) await chrome.storage.local.set({chatroomNavigation:{conversationId,tabId:tab.id,at:Date.now()}});
-      if (tab.windowId != null) {
-        const win=await chrome.windows.get(tab.windowId);
-        await chrome.windows.update(win.id,{focused:true,...(win.state==='minimized'?{state:'normal'}:{})});
+      if (existing) {
+        const tab = await chrome.tabs.update(existing.id,{active:true});
+        if (conversationId) await chrome.storage.local.set({chatroomNavigation:{conversationId,tabId:tab.id,at:Date.now()}});
+        await focusTab(tab);
+        return;
       }
+      const fullscreenEnabled = (await chrome.storage.local.get('chatroomFullscreenButtonEnabled')).chatroomFullscreenButtonEnabled !== false;
+      const appUrl = chrome.runtime.getURL('app/app.html');
+      const appTab = fullscreenEnabled ? (await chrome.tabs.query({url:appUrl + '*'}))[0] : null;
+      if (appTab) {
+        try {
+          await chrome.tabs.sendMessage(appTab.id, {type:'BJTU_OPEN_CHATROOM', conversationId});
+          await chrome.tabs.update(appTab.id, {active:true});
+          await focusTab(appTab);
+          return;
+        } catch {}
+      }
+      await createChatTab(conversationId);
   }
   chrome.notifications.onClicked.addListener(id => {
     const isRequest = id.startsWith(requestPrefix);
