@@ -264,14 +264,19 @@
     }
     for (let offset = 0; offset < candidates.length; offset += 16) {
       const batch = candidates.slice(offset, offset + 16);
-      emit('lan-scan-progress', {done: offset, total: candidates.length});
-      const results = await Promise.all(batch.map(target => probeServer(target, info)));
-      const index = results.findIndex(Boolean);
-      if (index >= 0) {
-        emit('lan-scan-progress', {done: offset + index + 1, total: candidates.length, found: true});
-        return batch[index];
-      }
-      emit('lan-scan-progress', {done: offset + batch.length, total: candidates.length});
+      let done = offset, found = -1;
+      emit('lan-scan-progress', {done, total: candidates.length});
+      await Promise.all(batch.map(async (target, index) => {
+        const ok = await probeServer(target, info);
+        done++;
+        if (ok && found < 0) {
+          found = index;
+          emit('lan-scan-progress', {done, total: candidates.length, found: true});
+        } else if (found < 0) {
+          emit('lan-scan-progress', {done, total: candidates.length});
+        }
+      }));
+      if (found >= 0) return batch[found];
     }
     emit('lan-scan-end', {found: false});
     return null;

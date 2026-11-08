@@ -19,8 +19,12 @@
       <div class="section-heading chatroom-conversation-heading"><h2>会话</h2><button id="create-group" type="button" class="secondary">新建群聊</button></div>
       <nav id="conversations" aria-label="群聊和私聊会话"></nav>
       <div class="section-heading"><h2>服务器与设备发现</h2></div>
-      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器 <span id="chatroomSignalingStatus" class="chatroom-server-status" data-state="disconnected" role="status">未连接</span><span id="chatroomLanScanProgress" class="chatroom-lan-scan-progress" role="status" hidden></span><span class="tip" data-tip-target="#chatroomSignalingLabel">使用 BJTUCA Bridge 聊天室服务器。打开聊天室时自动连接；未连接时可在地址输入框回车重连。同一局域网中的服务器通过组播自动发现并互联，扩展可继续连接各自的本机服务器，无需更改地址。也可手动连接同一台服务器，如 ws://192.168.1.2:1897/chatroom。消息、文件与屏幕通过加密直连传输。</span></label>
+      <label id="chatroomSignalingLabel" for="chatroomSignalingUrl">在线发现服务器 <span id="chatroomSignalingStatus" class="chatroom-server-status" data-state="disconnected" role="status">未连接</span><span class="tip" data-tip-target="#chatroomSignalingLabel">使用 BJTUCA Bridge 聊天室服务器。打开聊天室时自动连接；未连接时可在地址输入框回车重连。同一局域网中的服务器通过组播自动发现并互联，扩展可继续连接各自的本机服务器，无需更改地址。也可手动连接同一台服务器，如 ws://192.168.1.2:1897/chatroom。消息、文件与屏幕通过加密直连传输。</span></label>
       <input id="chatroomSignalingUrl" type="url" spellcheck="false" placeholder="ws://127.0.0.1:1897/chatroom">
+      <div id="chatroomLanScanProgress" class="chatroom-lan-scan-progress" role="status" aria-live="polite" hidden>
+        <div class="chatroom-lan-scan-meta"><span id="chatroomLanScanText">正在扫描局域网…</span><span id="chatroomLanScanPercent">0%</span></div>
+        <progress id="chatroomLanScanBar" max="101" value="0"></progress>
+      </div>
       <div id="chatroomServerActions" class="actions chatroom-server-actions" hidden><button id="disconnect" type="button" class="secondary">断开连接</button><button id="scan" type="button" class="secondary">刷新发现</button></div>
       <a id="chatroomStartServer" class="option-action-link" href="bjtuca://chatroom?port=1897">启动本机聊天室服务器</a>
       <p class="muted">同一局域网的本机服务器会自动发现并互联，无需手动连接设备；请允许专用网络的 TCP 服务端口与 UDP 1898。网络隔离或防火墙可能阻止发现与直连。</p>

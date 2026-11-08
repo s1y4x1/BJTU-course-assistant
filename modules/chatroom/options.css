@@ -78,9 +78,18 @@ html[data-color-scheme="dark"] :is(.chatroom-options-card,#sidebar-host) { --cha
 .chatroom-server-status { color:#b45309; font-size:var(--bjtu-font-size-auxiliary,11px); }
 .chatroom-server-status[data-state="connected"] { color:#15803d; }
 .chatroom-server-status[data-state="connecting"] { color:#2563eb; }
-.chatroom-lan-scan-progress { margin-left:6px; color:#2563eb; font-size:var(--bjtu-font-size-auxiliary,11px); }
+.chatroom-lan-scan-progress { display:grid; gap:5px; margin:7px 0 2px; color:#2563eb; font-size:var(--bjtu-font-size-auxiliary,11px); }
 .chatroom-lan-scan-progress[hidden] { display:none; }
+.chatroom-lan-scan-meta { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.chatroom-lan-scan-progress progress { width:100%; height:6px; appearance:none; border:0; border-radius:999px; overflow:hidden; background:#dbeafe; color:#2563eb; }
+.chatroom-lan-scan-progress progress::-webkit-progress-bar { background:#dbeafe; border-radius:999px; }
+.chatroom-lan-scan-progress progress::-webkit-progress-value { background:#2563eb; border-radius:999px; }
+.chatroom-lan-scan-progress progress::-moz-progress-bar { background:#2563eb; border-radius:999px; }
 html[data-color-scheme="dark"] .chatroom-server-status { color:#fbbf24; }
 html[data-color-scheme="dark"] .chatroom-server-status[data-state="connected"] { color:#4ade80; }
 html[data-color-scheme="dark"] .chatroom-server-status[data-state="connecting"] { color:#60a5fa; }
 html[data-color-scheme="dark"] .chatroom-lan-scan-progress { color:#60a5fa; }
+html[data-color-scheme="dark"] .chatroom-lan-scan-progress progress { background:#1e3a5f; }
+html[data-color-scheme="dark"] .chatroom-lan-scan-progress progress::-webkit-progress-bar { background:#1e3a5f; }
+html[data-color-scheme="dark"] .chatroom-lan-scan-progress progress::-webkit-progress-value { background:#60a5fa; }
+html[data-color-scheme="dark"] .chatroom-lan-scan-progress progress::-moz-progress-bar { background:#60a5fa; }

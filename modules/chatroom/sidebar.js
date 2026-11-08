@@ -122,9 +122,14 @@
     function setLanScanProgress(done, total, found) {
       const label = $('chatroomLanScanProgress');
       if (!label) return;
-      if (done == null || found) { label.hidden = true; label.textContent = ''; return; }
+      if (done == null) { label.hidden = true; return; }
+      const bar = $('chatroomLanScanBar'), text = $('chatroomLanScanText'), percent = $('chatroomLanScanPercent');
+      const maximum = Math.max(1, Number(total) || 101);
+      const value = found ? maximum : Math.min(maximum, Math.max(0, Number(done) || 0));
       label.hidden = false;
-      label.textContent = `扫描局域网 ${done}/${total}…`;
+      if (bar) { bar.max = maximum; bar.value = value; }
+      if (text) text.textContent = found ? '已找到服务器，正在连接…' : `正在扫描局域网 ${value}/${maximum}`;
+      if (percent) percent.textContent = `${Math.round(value / maximum * 100)}%`;
     }
     function setServerStatus(status, deviceId) {
       const label = $('chatroomSignalingStatus');
