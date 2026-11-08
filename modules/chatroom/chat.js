@@ -259,6 +259,9 @@
       for (const s of [...sessions.values()]) endSession(s, '连接已断开');
     } else {
       if (event.state) mergeState(event.state);
+      for (const s of [...sessions.values()]) {
+        if (s.type === 'screen' && !state.peers.find(peer => peer.id === s.peerId)?.online) endSession(s, '对方已离线，共享已停止');
+      }
       for (const [key,draft] of liveDrafts) {
         const p = state.peers.find(peer => peer.id === draft.senderId);
         const r = state.rooms.find(room => room.id === draft.conversationId);
@@ -366,6 +369,8 @@
     }
     $('invite-group').hidden = $('leave-group').hidden = !room;
     $('pick-file').disabled = !online || !recipients().length;
+    $('share-screen').hidden = !!capture;
+    $('stop-screen').hidden = !capture;
     $('share-screen').disabled = !online || !recipients().length || !!capture || sharingPending;
   }
   function updateMembersToggle() {
@@ -426,7 +431,7 @@
         content.textContent = message.text; el.append(content);
       } else {
         if (message.file) content.append(document.createTextNode(message.file.name + ' · '), styledBytes(message.file.size));
-        else content.innerHTML = markdown.parse(String(message.text || '').slice(0, 8000));
+        else content.innerHTML = markdown.parse(String(message.text || '').slice(0, 16384));
         el.append(messageHeader(message.senderId, message.createdAt), content);
       }
       if (message.file && message.fileHandleRef) {
@@ -708,7 +713,7 @@
   }
   async function textFileEntry(text) {
     const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-    const name = `消息-${stamp}-${crypto.randomUUID().slice(0, 6)}.txt`;
+    const name = `消息-${stamp}-${crypto.randomUUID().slice(0, 6)}.md`;
     const root = await navigator.storage.getDirectory();
     const directory = await root.getDirectoryHandle('chatroom-outbox', {create: true});
     const handle = await directory.getFileHandle(name, {create: true});
@@ -1122,7 +1127,7 @@
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
       if (stopped || !online || (embedded && !embeddedVisible)) { stream.getTracks().forEach((t) => t.stop()); return; }
-      capture = stream; $('stop-screen').hidden = false;
+      capture = stream; updateConversation();
       for (const track of stream.getTracks()) track.onended = stopCapture;
       const messageId = uuid();
       const tasks = targets.map(peerId => makeSession(uuid(), peerId, 'screen', true, {conversationId, messageId, recipientsCount: targets.length}));
@@ -1201,7 +1206,7 @@
       if (asFile) {
         let entry;
         try { entry = await textFileEntry(text); }
-        catch { entry = {file: new File([text], `消息-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.txt`, {type: 'text/plain;charset=utf-8'}), handle: null}; }
+        catch { entry = {file: new File([text], `消息-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.md`, {type: 'text/markdown;charset=utf-8'}), handle: null}; }
         await offerFiles([entry]);
       } else {
         await mutate('send-message', { conversationId, text });

@@ -99,6 +99,12 @@
     if (typeof v !== 'string' || v.length > max || (!empty && !v.trim())) fail('字段格式或长度不正确。');
     return v;
   };
+  const MAX_MESSAGE_BYTES = 16 * 1024;
+  const messageText = (v, empty = false) => {
+    const value = str(v, MAX_MESSAGE_BYTES, empty);
+    if (encoder.encode(value).length > MAX_MESSAGE_BYTES) fail('字段格式或长度不正确。');
+    return value;
+  };
   const id = (v) => { if (typeof v !== 'string' || !/^[a-f0-9]{64}$/.test(v)) fail('无效身份。'); return v; };
   const token = (v) => str(v, 100);
   function canonical(v) {
@@ -539,7 +545,7 @@
     await ready;
     args = copy(args);
     if (name === 'draft') {
-      const text = str(args.text, 16384, true), conversationId = token(args.conversationId), draftId = token(args.draftId);
+      const text = messageText(args.text, true), conversationId = token(args.conversationId), draftId = token(args.draftId);
       if (!Number.isSafeInteger(args.revision) || args.revision < 1) fail('无效草稿版本。');
       const targets = await serial(() => {
         if (conversationId.startsWith('peer:')) {
@@ -723,7 +729,7 @@
         return {};
       }
       case 'send-message': {
-        const text = str(args.text, 16384), conversationId = token(args.conversationId);
+        const text = messageText(args.text), conversationId = token(args.conversationId);
         let targets;
         if (conversationId === 'public') targets = data.peers.filter((p) => p.online && p.id !== publicIdentity.id && !p.blockedByPeer).map((p) => p.id);
         else if (conversationId.startsWith('peer:')) {
@@ -798,7 +804,7 @@
       return null;
     }
     if (packet.type === 'message') {
-      str(payload.text, 8000); token(payload.id); token(payload.conversationId);
+      messageText(payload.text); token(payload.id); token(payload.conversationId);
       if (payload.senderId !== from || !Number.isSafeInteger(payload.createdAt) || payload.createdAt < 0 || payload.createdAt > packet.createdAt + 60000) fail('消息身份或时间不匹配。');
       const receiptId = from + ':' + payload.id;
       data.receipts ||= [];
@@ -826,7 +832,7 @@
         break;
       }
       case 'message': {
-        str(payload.text, 8000); token(payload.id); token(payload.conversationId);
+        messageText(payload.text); token(payload.id); token(payload.conversationId);
         if (payload.senderId !== from || !Number.isSafeInteger(payload.createdAt) || payload.createdAt > packet.createdAt + 60000) fail('消息身份或时间不匹配。');
         let conversationId = payload.conversationId;
         if (conversationId.startsWith('peer:')) {
@@ -925,7 +931,7 @@
       try {
         const event = await serial(() => {
           const payload = packet.payload, p = peer(peerId);
-          str(payload.text,8000,true); token(payload.draftId); token(payload.conversationId);
+          messageText(payload.text,true); token(payload.draftId); token(payload.conversationId);
           if (!p || p.blocked || !Number.isSafeInteger(payload.revision) || payload.revision < 1 || Date.now()-packet.createdAt > 20000) return null;
           let conversationId = payload.conversationId;
           if (conversationId.startsWith('peer:')) {

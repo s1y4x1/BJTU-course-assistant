@@ -73,8 +73,7 @@ html[data-color-scheme="dark"] .message-delivery-status.error { color:#fbbf24; }
 html[data-color-scheme="dark"] .composer-message-size.over-limit { color:#fbbf24; }
 .composer-toggle { display:inline-flex; align-items:center; gap:4px; margin:0; font:inherit; white-space:nowrap; }
 .composer-toggle input[type="checkbox"] { width:auto; margin:0; padding:0; }
-.message.mine.message-draft { border-color:var(--chat-muted); }
-.message-draft { border-style:dashed; }
+.message-draft { border-style:dashed; border-color:var(--chat-muted); border-width:2px; }
 .message-draft-label { color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .media-message { width:min(100%,600px); }
 .media-message .transfer { border:0; padding:0; }
