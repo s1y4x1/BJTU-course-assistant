@@ -223,7 +223,9 @@
       setProperty(card, '--homework-urgency', c.toFixed(4));
       setProperty(card, '--homework-marquee-opacity', (0.28 + 0.72 * c).toFixed(4));
       if (effects && !card.classList.contains('homework-marquee')) {
-        Object.values(homeworkAnimationPeriods).forEach((property) => setProperty(card, property, `${period}s`));
+        setProperty(card, '--homework-breathe-period', `${period}s`);
+        setProperty(card, '--homework-blink-period', `${period}s`);
+        setProperty(card, '--homework-marquee-period', `${period}s`);
       }
       for (const [name, enabled] of [
         ['homework-deadline-gradient', active],
