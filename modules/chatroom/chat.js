@@ -78,6 +78,32 @@
   function messageBytes() {
     return textEncoder.encode($('message').value).length;
   }
+  function truncateMessageText(value) {
+    let bytes = 0, end = 0;
+    for (const char of value) {
+      const size = textEncoder.encode(char).length;
+      if (bytes + size > MESSAGE_FILE_LIMIT) break;
+      bytes += size; end += char.length;
+    }
+    return value.slice(0, end);
+  }
+  let messageComposing = false, limitWarningShown = false;
+  function enforceMessageLimit() {
+    const input = $('message');
+    if (textEncoder.encode(input.value).length <= MESSAGE_FILE_LIMIT) {
+      limitWarningShown = false;
+      return false;
+    }
+    const caret = input.selectionStart;
+    input.value = truncateMessageText(input.value);
+    const position = Math.min(caret, input.value.length);
+    input.setSelectionRange(position, position);
+    if (!limitWarningShown) {
+      limitWarningShown = true;
+      toast('单条消息不能超过 16 KiB，请使用「粘贴为文件」发送长文本。');
+    }
+    return true;
+  }
   function updateSendButton() {
     const value = $('message').value;
     const size = textEncoder.encode(value).length;
@@ -368,7 +394,7 @@
       requestAnimationFrame(updateMembersToggle);
     }
     $('invite-group').hidden = $('leave-group').hidden = !room;
-    $('pick-file').disabled = !online || !recipients().length;
+    $('pick-file').disabled = $('paste-message-file').disabled = !online || !recipients().length;
     $('share-screen').hidden = !!capture;
     $('stop-screen').hidden = !capture;
     $('share-screen').disabled = !online || !recipients().length || !!capture || sharingPending;
@@ -721,6 +747,17 @@
     await writable.write(text);
     await writable.close();
     return {file: await handle.getFile(), handle};
+  }
+  async function offerPastedContent() {
+    const {files, text} = await globalThis.BjtuChatroomClipboard.read();
+    if (files.length) { await offerFiles(files); return; }
+    if (!text.trim()) throw new Error('剪贴板中没有可发送的文件或文本。');
+    let entry;
+    try { entry = await textFileEntry(text); }
+    catch {
+      entry = {file: new File([text], globalThis.BjtuChatroomClipboard.fileName(), {type: 'text/markdown;charset=utf-8'}), handle: null};
+    }
+    await offerFiles([entry]);
   }
   async function offerFiles(items) {
     const entries = items.map(item => item instanceof File ? {file: item, handle: null} : item);
@@ -1199,23 +1236,19 @@
   listen('message-form', 'submit', async (event) => {
     event.preventDefault(); const input = $('message'), text = input.value, conversationId = selected;
     if (!text.trim() || !online || !selected || sendInFlight) return;
-    const snapshot = text, asFile = messageBytes() > MESSAGE_FILE_LIMIT;
+    if (messageBytes() > MESSAGE_FILE_LIMIT) { enforceMessageLimit(); updateSendButton(); return; }
+    const snapshot = text;
     sendInFlight = true; updateSendButton();
     clearSharedDraft();
     try {
-      if (asFile) {
-        let entry;
-        try { entry = await textFileEntry(text); }
-        catch { entry = {file: new File([text], `消息-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.md`, {type: 'text/markdown;charset=utf-8'}), handle: null}; }
-        await offerFiles([entry]);
-      } else {
-        await mutate('send-message', { conversationId, text });
-      }
+      await mutate('send-message', { conversationId, text });
       if (selected === conversationId && input.value === snapshot) input.value = '';
       if (drafts.get(conversationId) === snapshot) drafts.delete(conversationId);
     } catch (error) { report(error); } finally { sendInFlight = false; updateSendButton(); updateDraftPreview(); }
   });
-  listen('message','input',updateDraftPreview);
+  listen('message','input', () => { if (!messageComposing) enforceMessageLimit(); updateDraftPreview(); });
+  listen('message','compositionstart', () => { messageComposing = true; });
+  listen('message','compositionend', () => { messageComposing = false; enforceMessageLimit(); updateDraftPreview(); });
   listen('draft-preview','change', () => {
     updateDraftPreview(); renderMessages(); void chrome.storage.local.set({chatroomDraftPreviewEnabled:$('draft-preview').checked});
   });
@@ -1251,6 +1284,27 @@
     }).catch(error => { if (error?.name !== 'AbortError') report(error); });
   });
   listen('file-picker', 'change', () => { const files = Array.from($('file-picker').files || []); $('file-picker').value = ''; if (files.length) offerFiles(files).catch(report); });
+  listen('paste-message-file', 'click', () => { offerPastedContent().catch(report); });
+  const composer = $('message-form');
+  const hasDraggedFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+  listen('message-form', 'dragenter', event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault(); composer.classList.add('is-dragover');
+  });
+  listen('message-form', 'dragover', event => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; composer.classList.add('is-dragover');
+  });
+  listen('message-form', 'dragleave', event => {
+    if (event.relatedTarget && composer.contains(event.relatedTarget)) return;
+    composer.classList.remove('is-dragover');
+  });
+  listen('message-form', 'drop', event => {
+    if (!event.dataTransfer?.files?.length) return;
+    event.preventDefault(); composer.classList.remove('is-dragover');
+    if (!online || !recipients().length) { toast('当前没有可发送的对象。'); return; }
+    offerFiles(Array.from(event.dataTransfer.files)).catch(report);
+  });
   listen('share-screen', 'click', () => { shareScreen().catch(report); });
   listen('stop-screen', 'click', stopCapture);
   if (embedded) window.addEventListener('message', event => {

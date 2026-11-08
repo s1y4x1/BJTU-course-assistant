@@ -24,7 +24,7 @@
       <form id="message-form" class="composer">
         <textarea id="message" rows="3" aria-label="消息" placeholder="输入消息，Enter 发送，Ctrl+Enter / Shift+Enter 换行；支持 Markdown 语法"></textarea>
         <div class="composer-footer">
-          <div class="actions"><span id="message-size" class="composer-message-size" aria-live="polite">0 B / 16 kB</span><button id="pick-file" type="button" class="secondary">发送文件</button><input id="file-picker" type="file" multiple hidden><button id="share-screen" type="button" class="secondary">共享屏幕</button><button id="stop-screen" type="button" class="danger" hidden>停止共享</button></div>
+          <div class="actions"><span id="message-size" class="composer-message-size" aria-live="polite">0 B / 16 kB</span><button id="pick-file" type="button" class="secondary">发送文件</button><button id="paste-message-file" type="button" class="secondary" title="从剪贴板粘贴文件；纯文本会转为 Markdown 文件">粘贴为文件</button><input id="file-picker" type="file" multiple hidden><button id="share-screen" type="button" class="secondary">共享屏幕</button><button id="stop-screen" type="button" class="danger" hidden>停止共享</button></div>
           <div class="actions composer-send-actions">
             <label class="composer-toggle"><input id="share-draft" type="checkbox"><span id="share-draft-label">允许他人实时观看</span></label>
             <label class="composer-toggle"><input id="draft-preview" type="checkbox"><span>预览</span></label>
@@ -43,6 +43,7 @@
   <script src="../../UI/marked.umd.js"></script>
   <script src="../../UI/markdown.js"></script>
   <script src="../../core/option-tips.js"></script>
+  <script src="clipboard.js"></script>
   <script src="chat.js"></script>
 </body>
 </html>

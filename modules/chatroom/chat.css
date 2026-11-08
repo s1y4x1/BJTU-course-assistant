@@ -63,6 +63,7 @@ html[data-color-scheme="dark"] .message-delivery-status.error { color:#fbbf24; }
 .chatroom-page .bjtu-md-codeblock-copy { min-height:0; }
 .empty { color:var(--chat-muted); text-align:center; padding:24px 8px; }
 .composer { flex-shrink:0; padding:14px 18px; border-top:1px solid var(--chat-line); }
+.composer.is-dragover { outline:2px dashed var(--chat-accent); outline-offset:-4px; }
 .composer > label { font-size:var(--bjtu-font-size-auxiliary,11px); color:var(--chat-muted); margin-bottom:5px; }
 .chatroom-page textarea { width:100%; resize:vertical; min-height:60px; max-height:200px; border:1px solid var(--chat-line); border-radius:8px; padding:10px; background:var(--bjtu-card-background,#fff); color:inherit; }
 .composer-footer { margin-top:8px; }
