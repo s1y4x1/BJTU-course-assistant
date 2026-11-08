@@ -121,6 +121,7 @@
     return value;
   }
   async function envelope(s, type) {
+    await engine().refreshAccounts?.();
     return { code: JSON.stringify({ protocol: VERSION, type, sessionId: s.id, identity: await identity(), expires: Date.now() + TTL, sdp: s.pc.localDescription.sdp }), sessionId: s.id };
   }
   async function pairCreate() {
@@ -287,6 +288,7 @@
     const existing = [...sessions.values()].find(s => s.target === id && !s.closed);
     if (existing) return {sessionId: existing.id};
     const peer = discovered.get(id);
+    await engine().refreshAccounts?.();
     const own = await identity();
     if (peer.identityId === own.id) return {};
     const pending = [...sessions.values()].find(s => s.target === id && !s.closed);

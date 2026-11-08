@@ -73,6 +73,27 @@
     const device = { os: clean(source.os, 40), browser: clean(source.browser, 40), platform: clean(source.platform, 40) };
     return device.os || device.browser || device.platform ? device : null;
   }
+  async function readLocalAccounts() {
+    const store = G.browser?.storage?.local || G.chrome?.storage?.local;
+    if (!store) return null;
+    try {
+      const stored = await store.get(['popupFullscreenCourseCache', 'academicSystemStudentId', 'username']);
+      const cache = stored?.popupFullscreenCourseCache || {};
+      const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+      const accounts = {
+        ve: clean(cache.currentAccountLoginName, 80),
+        mis: clean(stored?.academicSystemStudentId || stored?.username, 80)
+      };
+      return accounts.ve || accounts.mis ? accounts : null;
+    } catch { return null; }
+  }
+  function publicAccounts(value) {
+    const source = value?.accounts;
+    if (!source || typeof source !== 'object') return null;
+    const clean = (text, max) => typeof text === 'string' ? text.slice(0, max) : '';
+    const accounts = { ve: clean(source.ve, 80), mis: clean(source.mis, 80) };
+    return accounts.ve || accounts.mis ? accounts : null;
+  }
   const fail = (message) => { throw new Error(message); };
   const str = (v, max, empty = false) => {
     if (typeof v !== 'string' || v.length > max || (!empty && !v.trim())) fail('字段格式或长度不正确。');
@@ -402,7 +423,7 @@
     const fingerprint = hex(await crypto.subtle.digest('SHA-256', await crypto.subtle.exportKey('raw', pub)));
     if (data.settings.nickname === '设备-' + fingerprint.slice(0, 6)) data.settings.nickname = '';
     publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey,
-      background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice() };
+      background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice(), accounts: await readLocalAccounts() };
     await importIdentity(publicIdentity);
     const proof = encoder.encode('bjtu-chatroom-identity-check');
     if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, proof), proof)) fail('持久身份密钥不匹配。');
@@ -417,6 +438,14 @@
       await save();
       await evictFileHandles(previousMessages);
     }
+  }
+  function refreshAccounts() {
+    return serial(async () => {
+      const accounts = await readLocalAccounts();
+      if (accounts) publicIdentity.accounts = accounts;
+      else delete publicIdentity.accounts;
+      return accounts;
+    });
   }
   const ready = locked(initialize);
   ready.then(() => { if (!passiveOptions) { retryTimer = setInterval(() => void flushOutbox(), 1000); retryTimer.unref?.(); } }).catch(() => {});
@@ -479,6 +508,8 @@
       p.background = identity.background === true;
       const device = publicDevice(identity);
       if (device) p.device = device; else delete p.device;
+      const accounts = publicAccounts(identity);
+      if (accounts) p.accounts = accounts; else delete p.accounts;
       if (typeof value?.ip === 'string') p.ip = str(value.ip, 64, true);
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
@@ -787,7 +818,13 @@
     if (!allowed(from, false)) fail('接收策略拒绝此用户。');
     switch (packet.type) {
       case 'friend-delete': peer(from).friend = false; break;
-      case 'profile': peer(from).nickname = packet.identity.nickname; peer(from).background = packet.identity.background === true; break;
+      case 'profile': {
+        peer(from).nickname = packet.identity.nickname;
+        peer(from).background = packet.identity.background === true;
+        const accounts = publicAccounts(packet.identity);
+        if (accounts) peer(from).accounts = accounts; else delete peer(from).accounts;
+        break;
+      }
       case 'message': {
         str(payload.text, 8000); token(payload.id); token(payload.conversationId);
         if (payload.senderId !== from || !Number.isSafeInteger(payload.createdAt) || payload.createdAt > packet.createdAt + 60000) fail('消息身份或时间不匹配。');
@@ -939,6 +976,7 @@
     subscribe(fn) { if (typeof fn !== 'function') fail('订阅者必须是函数。'); listeners.add(fn); return () => listeners.delete(fn); },
     setLink(adapter) { if (!adapter || typeof adapter.sendPeer !== 'function') fail('连接 adapter 必须提供 sendPeer。'); link = adapter; return ready; },
     peerOnline, peerOffline, handlePeerPacket,
+    refreshAccounts,
     getPublicIdentity: () => serial(() => copy(publicIdentity)),
     setLocalIP(ip) { return serial(() => { localIP = str(ip, 64, true); emit({type:'state', state:snapshot()}); return {ok:true}; }); },
     makePacket, verifyPacket

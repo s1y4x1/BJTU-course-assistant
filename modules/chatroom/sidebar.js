@@ -92,12 +92,16 @@
       }
       return localAccountPromise;
     }
+    function appendAccounts(container, info) {
+      if (!info?.ve && !info?.mis) return false;
+      if (info.ve) container.append(node('p', `智慧课程平台：${info.ve}`, 'editor-info'));
+      if (info.mis) container.append(node('p', `MIS：${info.mis}`, 'editor-info'));
+      return true;
+    }
     function appendLocalAccounts(container) {
       localAccounts().then(info => {
         if (!container.isConnected) return;
-        if (!info.ve && !info.mis) { container.textContent = '本机账号：未登录'; return; }
-        if (info.ve) container.append(node('p', `智慧课程平台：${info.ve}`, 'editor-info'));
-        if (info.mis) container.append(node('p', `MIS：${info.mis}`, 'editor-info'));
+        if (!appendAccounts(container, info)) container.textContent = '本机账号：未登录';
       });
     }
     async function action(name, args = {}) {
@@ -307,6 +311,8 @@
       const device = deviceText(peer.device);
       if (device) meta.append(node('p', `设备：${device}`, 'editor-info'));
       if (meta.childElementCount) fields.append(meta);
+      const accounts = node('div', undefined, 'editor-accounts');
+      if (appendAccounts(accounts, peer.accounts)) fields.append(accounts);
       const label = node('label', '备注'), input = node('input');
       input.value = peer.remark || ''; input.maxLength = 80;
       input.placeholder = peer.nickname || peer.ip || peer.id;
