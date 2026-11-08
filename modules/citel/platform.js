@@ -248,7 +248,7 @@
           {label:'折扣时间', value:task.discountTime, formatted:formatTime(task.discountTime)}
         ] }),
       attributes: `data-citel-status="${state}"`,
-      actionsHtml: global.BjtuHomeworkUi.renderActionLink({ href: task.url, label: task.actionable ? '前往CITEL提交' : '查看', color: palette.action, className: 'btn', escape }),
+      actionsHtml: global.BjtuHomeworkUi.renderActionLink({ href: task.url, label: done ? '前往CITEL查看' : task.actionable ? '前往CITEL提交' : '查看', color: palette.action, className: 'btn', escape }),
       detailHtml: renderDetail(task, course)
     });
   }
