@@ -48,8 +48,7 @@
         fragment: 'options.html',
         style: 'options.css',
         script: 'options.js',
-        scripts: ['cache-store.js', 'score-statistics.js'],
-        wide: true
+        scripts: ['cache-store.js', 'score-statistics.js']
       }
     },
     cas: {

@@ -26,7 +26,6 @@
   const DEFAULTS = Object.freeze({
     [ACADEMIC_FULLSCREEN_BUTTON_KEY]: true,
     [ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY]: 'graduation',
-    academicOptionsWideEnabled: true,
     academicScoreMonitorEnabled: true,
     academicExamMonitorEnabled: true,
     academicClassReminderEnabled: false,
@@ -185,13 +184,9 @@
     return applyAcademicDataCache(cache, studentId);
   }
 
-  function applyWideOption(enabled) {
+  function applyWideLayout() {
     const section = element('academic-system-section');
-    section?.classList.toggle('academic-layout-wide', enabled === true);
-    const slot = section?.closest('[data-options-module="academic"]');
-    if (slot instanceof HTMLElement && slot.parentElement?.id === 'options-controlled-content') {
-      slot.classList.toggle('options-wide-card', enabled === true);
-    }
+    section?.classList.add('academic-layout-wide');
   }
 
   async function getUpdaterManager() {
@@ -2640,12 +2635,6 @@
       await chrome.storage.local.set({ [ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY]: value });
       setMessage(value === 'system' ? '已使用教务系统图标' : '已使用毕业帽图标');
     });
-    element('academicOptionsWideEnabled')?.addEventListener('change', async (event) => {
-      const enabled = event.currentTarget.checked === true;
-      applyWideOption(enabled);
-      await chrome.storage.local.set({ academicOptionsWideEnabled: enabled });
-      setMessage(enabled ? '教务系统将在宽屏时占满宽度' : '教务系统将在宽屏时按普通模块宽度显示');
-    });
     EXTERNAL_SCRIPTS.forEach((script) => {
       externalScriptElement(script, 'Download')?.addEventListener('click', () => {
         void externalScriptAction(script.id, 'download');
@@ -2956,11 +2945,6 @@
         renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
         renderCachedSharedData();
       }
-      if (changes.academicOptionsWideEnabled) {
-        const enabled = changes.academicOptionsWideEnabled.newValue !== false;
-        if (element('academicOptionsWideEnabled')) element('academicOptionsWideEnabled').checked = enabled;
-        applyWideOption(enabled);
-      }
       if (changes[ACADEMIC_FULLSCREEN_BUTTON_KEY] && element(ACADEMIC_FULLSCREEN_BUTTON_KEY)) {
         element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = changes[ACADEMIC_FULLSCREEN_BUTTON_KEY].newValue !== false;
         updateDisabledState();
@@ -3020,13 +3004,12 @@
       element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = stored[ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY] === 'system'
         ? 'system'
         : 'graduation';
-      element('academicOptionsWideEnabled').checked = stored.academicOptionsWideEnabled !== false;
       element('academicScoreMonitorEnabled').checked = stored.academicScoreMonitorEnabled !== false;
       element('academicExamMonitorEnabled').checked = stored.academicExamMonitorEnabled !== false;
       element('academicClassReminderEnabled').checked = stored.academicClassReminderEnabled === true;
       renderBbSettings(stored);
     }
-    applyWideOption(stored.academicOptionsWideEnabled !== false);
+    applyWideLayout();
     scheduleSemesterPreference = String(stored.academicScheduleSemester || '');
     scoreSemesterPreference = String(stored.academicScoreSemester || '');
     setIntervalEditor('academicScoreMonitorInterval', stored.academicScoreMonitorIntervalMinutes,
@@ -3066,8 +3049,7 @@
     element('academicScoreMonitorEnabled').checked = true;
     element(ACADEMIC_FULLSCREEN_BUTTON_KEY).checked = true;
     element(ACADEMIC_FULLSCREEN_BUTTON_ICON_KEY).value = 'graduation';
-    element('academicOptionsWideEnabled').checked = true;
-    applyWideOption(true);
+    applyWideLayout();
     element('academicExamMonitorEnabled').checked = true;
     element('academicClassReminderEnabled').checked = false;
     renderBbSettings(DEFAULTS);
