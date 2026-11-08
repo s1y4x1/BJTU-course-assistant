@@ -85,11 +85,10 @@
         ]).then(stored => {
           const cache = stored?.popupFullscreenCourseCache || {};
           const ve = String(cache.currentAccountLoginName || '').trim();
-          const veOnline = cache.platformLoginState?.ve === 'online';
           const studentId = String(stored?.academicSystemStudentId || stored?.username || '').trim();
           const mis = studentId;
-          return { ve, veOnline, mis };
-        }).catch(() => ({ ve: '', veOnline: false, mis: '' }));
+          return { ve, mis };
+        }).catch(() => ({ ve: '', mis: '' }));
       }
       return localAccountPromise;
     }
@@ -97,7 +96,7 @@
       localAccounts().then(info => {
         if (!container.isConnected) return;
         if (!info.ve && !info.mis) { container.textContent = '本机账号：未登录'; return; }
-        if (info.ve) container.append(node('p', `智慧课程平台：${info.ve}${info.veOnline ? '（在线）' : ''}`, 'editor-info'));
+        if (info.ve) container.append(node('p', `智慧课程平台：${info.ve}`, 'editor-info'));
         if (info.mis) container.append(node('p', `MIS：${info.mis}`, 'editor-info'));
       });
     }
