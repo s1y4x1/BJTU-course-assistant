@@ -260,8 +260,10 @@
   }
   async function findLanServer(base, info) {
     const candidates = [];
-    for (let host = 100; host <= 200; host++) {
-      const target = new URL(base); target.hostname = `192.168.1.${host}`; candidates.push(target);
+    for (const subnet of [0, 1]) {
+      for (let host = 100; host <= 200; host++) {
+        const target = new URL(base); target.hostname = `192.168.${subnet}.${host}`; candidates.push(target);
+      }
     }
     for (let offset = 0; offset < candidates.length; offset += 16) {
       const batch = candidates.slice(offset, offset + 16);
