@@ -107,6 +107,7 @@
   }
 
   function clipboardFiles(data) {
+    if (global.BjtuClipboardFiles) return global.BjtuClipboardFiles.clipboardFiles(data);
     const files = Array.from(data?.files || []);
     if (files.length) return files;
     return Array.from(data?.items || [])
@@ -115,50 +116,8 @@
   }
 
   async function readClipboardFiles() {
-    // 原生粘贴事件可保留文件名，并读取异步 Clipboard API 不暴露的文件列表。
-    const target = document.createElement('div');
-    target.contentEditable = 'true';
-    target.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;';
-    const previousFocus = document.activeElement;
-    let nativeFiles = [];
-    target.addEventListener('paste', (event) => {
-      nativeFiles = clipboardFiles(event.clipboardData);
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    });
-    document.body.append(target);
-    try {
-      target.focus({ preventScroll: true });
-      document.execCommand('paste');
-    } catch { /* 继续使用异步剪贴板接口 */ }
-    finally {
-      target.remove();
-      previousFocus?.focus?.({ preventScroll: true });
-    }
-    if (nativeFiles.length) return { files: nativeFiles, textCount: 0 };
-
-    const entries = await navigator.clipboard.read();
-    const files = [];
-    let textCount = 0;
-    for (const entry of entries) {
-      const types = Array.from(entry.types || []);
-      const binaryType = types.find((type) => type.startsWith('image/'))
-        || types.find((type) => !type.startsWith('text/'));
-      if (binaryType) {
-        const blob = await entry.getType(binaryType);
-        const extension = binaryType.split('/')[1]?.split(';')[0] || 'bin';
-        files.push(new File([blob], `粘贴文件.${extension}`, { type: binaryType }));
-        continue;
-      }
-      const textType = types.includes('text/html') ? 'text/html'
-        : types.includes('text/plain') ? 'text/plain' : '';
-      if (!textType) continue;
-      const blob = await entry.getType(textType);
-      if (!(await blob.text()).trim()) continue;
-      files.push(new File([blob], `粘贴内容.${textType === 'text/html' ? 'html' : 'txt'}`, { type: textType }));
-      textCount += 1;
-    }
-    return { files, textCount };
+    if (!global.BjtuClipboardFiles?.read) throw new Error('剪贴板读取组件未加载。');
+    return global.BjtuClipboardFiles.read();
   }
 
   global.BjtuVeUploadCommon = Object.freeze({

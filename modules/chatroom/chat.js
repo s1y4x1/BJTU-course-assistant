@@ -170,6 +170,12 @@
       : selected.startsWith('peer:') ? [selected.slice(5)] : (currentRoom()?.members || []);
     return [...new Set(ids)].filter((id) => id !== state.self.id && state.peers.some((p) => p.id === id && p.online && !p.blocked));
   }
+  function screenRecipients() {
+    return recipients().filter((id) => {
+      const peer = state.peers.find((item) => item.id === id);
+      return !!peer && !peer.background;
+    });
+  }
   function permitted(id) {
     const peer = state.peers.find((p) => p.id === id);
     const sharedGroup = state.rooms.some((room) => room.members?.includes(state.self.id) && room.members.includes(id));
@@ -397,7 +403,10 @@
     $('pick-file').disabled = $('paste-message-file').disabled = !online || !recipients().length;
     $('share-screen').hidden = !!capture;
     $('stop-screen').hidden = !capture;
-    $('share-screen').disabled = !online || !recipients().length || !!capture || sharingPending;
+    const screenTargets = screenRecipients();
+    $('share-screen').disabled = !online || !screenTargets.length || !!capture || sharingPending;
+    $('share-screen').title = !screenTargets.length && recipients().length
+      ? '对方当前仅后台在线，无法共享屏幕。' : '共享屏幕';
   }
   function updateMembersToggle() {
     const row = $('conversation-members'), toggle = $('conversation-members-toggle'), expanded = expandedMembers.has(selected);
@@ -737,27 +746,10 @@
     if (s.type === 'screen') renderScreenMessage(s);
     createPC(s); await signal(s, 'accept'); touch(s);
   }
-  async function textFileEntry(text) {
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-    const name = `消息-${stamp}-${crypto.randomUUID().slice(0, 6)}.md`;
-    const root = await navigator.storage.getDirectory();
-    const directory = await root.getDirectoryHandle('chatroom-outbox', {create: true});
-    const handle = await directory.getFileHandle(name, {create: true});
-    const writable = await handle.createWritable();
-    await writable.write(text);
-    await writable.close();
-    return {file: await handle.getFile(), handle};
-  }
   async function offerPastedContent() {
-    const {files, text} = await globalThis.BjtuChatroomClipboard.read();
-    if (files.length) { await offerFiles(files); return; }
-    if (!text.trim()) throw new Error('剪贴板中没有可发送的文件或文本。');
-    let entry;
-    try { entry = await textFileEntry(text); }
-    catch {
-      entry = {file: new File([text], globalThis.BjtuChatroomClipboard.fileName(), {type: 'text/markdown;charset=utf-8'}), handle: null};
-    }
-    await offerFiles([entry]);
+    const {files} = await globalThis.BjtuChatroomClipboard.read();
+    if (!files.length) throw new Error('剪贴板中没有可发送的文件或文本。');
+    await offerFiles(files);
   }
   async function offerFiles(items) {
     const entries = items.map(item => item instanceof File ? {file: item, handle: null} : item);
@@ -1155,8 +1147,9 @@
   async function shareScreen() {
     if (capture || sharingPending) return;
     const conversationId = selected;
-    const targets = recipients();
-    if (!targets.length) throw new Error('请先选择有在线成员的私聊或群聊。');
+    const targets = screenRecipients();
+    if (!targets.length) throw new Error(recipients().length
+      ? '对方当前仅后台在线，无法共享屏幕。' : '请先选择有在线成员的私聊或群聊。');
     if (sessions.size + targets.length > LIMIT.sessions) throw new Error('屏幕接收成员过多，请先结束部分会话。');
     if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('当前浏览器不支持屏幕共享。');
     // Called synchronously by the click handler; never from transport events.
