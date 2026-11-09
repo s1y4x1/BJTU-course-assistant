@@ -376,6 +376,23 @@
       text:`「${actorName || name(actor)}」邀请「${targetName || name(target)}」加入群聊。`, createdAt:Date.now()});
   }
   function groupBroadcast(effects, r, oldMembers = []) { fanout(effects, [...oldMembers, ...r.members], 'group-state', { room: r }); }
+  function announceJoin(effects, r, inviter, requestId, target) {
+    // The invitee is the authority for "I joined": broadcast the updated member
+    // list first so every recipient knows the new member before the event arrives.
+    groupBroadcast(effects, r);
+    const inviterPeer = peer(inviter);
+    const targetPeer = peer(target);
+    const event = {
+      roomId: r.id,
+      requestId,
+      actor: inviter,
+      target,
+      targetName: targetPeer?.remark || targetPeer?.nickname || targetPeer?.ip || target,
+      actorName: inviterPeer?.nickname || inviterPeer?.ip || inviter
+    };
+    groupEvent(r, inviter, requestId, target, event.targetName, event.actorName);
+    fanout(effects, r.members, 'group-event', event);
+  }
   function joinRoom(value) {
     const r = validRoom(value);
     if (!data.rooms.some(room => room.id === r.id) && data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
@@ -696,6 +713,7 @@
           joinRoom(request.room);
         }
         enqueue(effects, request.from, name, { requestId: request.id, allow: args.allow, ...(type === 'group' ? { roomId: request.room.id } : {}) });
+        if (type === 'group' && args.allow) announceJoin(effects, request.room, request.from, request.id, publicIdentity.id);
         data.requests = data.requests.filter((r) => r.id !== request.id);
         if (args.blockSender) {
           const p = peer(request.from); p.blocked = true;
@@ -874,7 +892,9 @@
         const policy = peer(from)?.friend ? data.settings.invitePolicyFriend : data.settings.invitePolicyStranger;
         if (policy === 'deny') enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: false });
         else if (policy === 'allow') {
-          joinRoom(r); enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: true });
+          joinRoom(r);
+          enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: true });
+          announceJoin(effects, r, from, payload.requestId, publicIdentity.id);
         } else pushRequest({ id: payload.requestId, from, type: 'group', room: r, createdAt: packet.createdAt });
         break;
       }
@@ -886,20 +906,16 @@
         if (payload.allow && !r.members.includes(from)) {
           if (r.members.length >= MAX.members) fail('群成员数量已达到上限。');
           setMember(r, from, true); groupBroadcast(effects, r);
-          const p = peer(from);
-          const event = {roomId:r.id, requestId:pending.id, target:from,
-            targetName:p?.remark || p?.nickname || p?.ip || from,
-            actorName:publicIdentity.nickname || localIP || '我'};
-          groupEvent(r, publicIdentity.id, pending.id, from, event.targetName, event.actorName);
-          fanout(effects, r.members, 'group-event', event);
         }
         data.outgoing = data.outgoing.filter((v) => v !== pending); break;
       }
       case 'group-event': {
         const r = room(payload.roomId);
-        if (!r.members.includes(from)) fail('邀请者不是群成员。');
-        token(payload.requestId); id(payload.target); str(payload.targetName, 80); str(payload.actorName,80);
-        groupEvent(r, from, payload.requestId, payload.target, payload.targetName, payload.actorName); break;
+        const actor = id(payload.actor);
+        const target = id(payload.target);
+        if (!r.members.includes(actor) || !r.members.includes(from) || target !== from) fail('群邀请事件无效。');
+        token(payload.requestId); str(payload.targetName, 80); str(payload.actorName,80);
+        groupEvent(r, actor, payload.requestId, target, payload.targetName, payload.actorName); break;
       }
       case 'group-state': {
         const r = validRoom(payload.room), old = data.rooms.find((v) => v.id === r.id);
