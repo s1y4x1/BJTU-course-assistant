@@ -123,7 +123,9 @@
   },{once:true});
   window.addEventListener('bjtu-chatroom-link-status',event => {
     if (!ready) return;
-    publishStatus(event.detail); scheduleReconnect();
+    publishStatus(event.detail);
+    // Let the link's `opening` promise settle before deciding whether to retry.
+    setTimeout(scheduleReconnect, 0);
   });
   window.addEventListener('bjtu-chatroom-engine-rolechange',() => scheduleReconnect(globalThis.BjtuChatroomEngineLease?.role === 'background'));
   globalThis.BjtuChatroomBackgroundMode = {enabled,canReceiveFile,notifyInvitation,markReady() {

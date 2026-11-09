@@ -45,7 +45,7 @@
       <details id="sidebar-requests-panel" open><summary>邀请与确认 <span id="request-count">0</span></summary><div id="requests"></div></details>
   <dialog id="editor"><form id="editor-form"><h2 id="editor-title"></h2><div id="editor-fields"></div><div class="actions"><button id="editor-cancel" type="button" class="secondary">取消</button><button type="submit">确定</button></div></form></dialog>
   <div class="option-divider" role="separator"></div>
-  <label class="chatroom-option-check"><input id="chatroomAutoReconnectEnabled" type="checkbox" checked><span>连接断开后自动重试</span></label>
+  <label class="chatroom-option-check"><input id="chatroomAutoReconnectEnabled" type="checkbox" checked><span>未连接时自动重试</span></label>
   <label class="chatroom-option-check" style="margin-left: 24px"><span>重试间隔</span><input id="chatroomReconnectIntervalSeconds" type="number" min="0.1" max="60" step="0.1" value="5" style="width: 6em"><span>秒</span></label>
   <label class="chatroom-option-check"><input id="chatroomAutoScanLanEnabled" type="checkbox" checked><span>未连接时自动扫描局域网服务器</span><span class="tip">本机服务器不可用时，按设定间隔分批探测 192.168.0.100~192.168.0.200、192.168.1.100~192.168.1.200、192.168.137.1 的聊天室端口；找到后自动连接。仅在地址为本机地址时启用。</span></label>
   <label class="chatroom-option-check" style="margin-left: 24px"><span>扫描间隔</span><input id="chatroomAutoScanLanIntervalSeconds" type="number" min="10" max="3600" step="10" value="300" style="width: 6em"><span>秒</span></label>
