@@ -746,10 +746,27 @@
     if (s.type === 'screen') renderScreenMessage(s);
     createPC(s); await signal(s, 'accept'); touch(s);
   }
+  async function pastedFileEntry(file) {
+    if (!file.type.startsWith('text/markdown') && !file.type.startsWith('text/plain')) return {file, handle: null};
+    try {
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+      const extension = file.type.startsWith('text/markdown') ? 'md' : 'txt';
+      const name = `粘贴内容-${stamp}-${crypto.randomUUID().slice(0, 6)}.${extension}`;
+      const root = await navigator.storage.getDirectory();
+      const directory = await root.getDirectoryHandle('chatroom-outbox', {create: true});
+      const handle = await directory.getFileHandle(name, {create: true});
+      const writable = await handle.createWritable();
+      await writable.write(file);
+      await writable.close();
+      return {file: await handle.getFile(), handle};
+    } catch {
+      return {file, handle: null};
+    }
+  }
   async function offerPastedContent() {
     const {files} = await globalThis.BjtuChatroomClipboard.read();
     if (!files.length) throw new Error('剪贴板中没有可发送的文件或文本。');
-    await offerFiles(files);
+    await offerFiles(await Promise.all(files.map(pastedFileEntry)));
   }
   async function offerFiles(items) {
     const entries = items.map(item => item instanceof File ? {file: item, handle: null} : item);
