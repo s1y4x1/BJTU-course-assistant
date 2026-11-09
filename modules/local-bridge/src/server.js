@@ -267,7 +267,9 @@ async function runSingleCommand() {
   clearTimeout(singleCommandConnectionTimer);
   let exitCode = 0;
   terminalCommandController = new AbortController();
-  try { await runTerminalCommand(singleCommand, terminalRequestOptions()); }
+  try {
+    await runTerminalCommand(singleCommand, terminalRequestOptions());
+  }
   catch (error) {
     exitCode = 1;
     if (!error?.bridgeLogged) process.stderr.write(`命令执行失败：${String(error?.message || error)}\n`);
@@ -284,21 +286,25 @@ function writeTerminalNotice(message) {
     readline.cursorTo(process.stdout, 0);
   }
   process.stdout.write(`${message}\n`);
-  if (terminal && !terminalCommandRunning) terminal.prompt(true);
+  if (terminal && process.stdin.isTTY && !terminalCommandRunning) terminal.prompt(true);
 }
 
 function startTerminal() {
   if (singleCommand) { void runSingleCommand(); return; }
-  if (terminal || !process.stdin.isTTY) return;
+  const embedded = !process.stdin.isTTY && process.env.BJTUCA_EMBEDDED === '1';
+  if (terminal || (!process.stdin.isTTY && !embedded)) return;
   terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
   const colorEnabled = !('NO_COLOR' in process.env) && process.stdout.hasColors?.(2);
   const promptColor = process.stdout.hasColors?.(1 << 24) ? '\x1b[38;2;190;35;112m' : '\x1b[35m';
-  terminal.setPrompt(colorEnabled ? `${promptColor}BJTUCA>\x1b[0m ` : 'BJTUCA> ');
-  process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，执行中按 Ctrl+C 取消命令，空闲时按 Ctrl+C 退出。\n');
+  if (process.stdin.isTTY) {
+    terminal.setPrompt(colorEnabled ? `${promptColor}BJTUCA>\x1b[0m ` : 'BJTUCA> ');
+    process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，执行中按 Ctrl+C 取消命令，空闲时按 Ctrl+C 退出。\n');
+  }
   terminal.on('line', async (input) => {
     if (terminalCommandRunning) return;
     terminalCommandRunning = true;
     terminalCommandController = new AbortController();
+    if (embedded) process.stdout.write(`BJTUCA> ${input.trim()}\n`);
     try {
       if (await runTerminalCommand(input, terminalRequestOptions())) {
         await shutdown();
@@ -309,11 +315,18 @@ function startTerminal() {
     } finally {
       terminalCommandRunning = false;
       terminalCommandController = null;
-      terminal.prompt();
+      if (process.stdin.isTTY) terminal.prompt();
+      else process.stdout.write('\x1eBJTUCA_DONE\n');
     }
   });
-  terminal.on('SIGINT', handleTerminalInterrupt);
-  terminal.prompt();
+  if (process.stdin.isTTY) {
+    terminal.on('SIGINT', handleTerminalInterrupt);
+    terminal.prompt();
+  } else {
+    terminal.on('close', () => {
+      if (embedded) void shutdown().finally(() => process.exit(0));
+    });
+  }
 }
 
 function rejectPendingExtensionCalls(message = '浏览器扩展连接已断开') {

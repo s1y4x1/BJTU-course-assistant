@@ -40,11 +40,17 @@ if ($action -in @('uninstall', 'uninst', 'unist', 'u')) {
 }
 
 switch ($action) {
+  { $_ -eq 'token' } {
+    if ($BridgeArguments.Count -ne 1) { throw 'token 命令不接受其他参数' }
+    & node (Join-Path $bridgeRoot 'src\server.js') --show-token
+    exit $LASTEXITCODE
+  }
   { $_ -in @('help', '--help', '-h', '-?', '/?') } {
     Write-Output @"
 用法：$displayCommand [start] [--port=端口]
       $displayCommand chatroom [--port=端口]
       $displayCommand --show-token
+      $displayCommand token
       $displayCommand -c "ve.courseList"
       $displayCommand -c "help ve.login ykt.assignments"
       $displayCommand uninstall
@@ -61,6 +67,7 @@ chatroom       启动独立聊天室服务器（默认端口 1897，不等待扩展连接）
 --port=N       指定端口 N（1 至 65535）：普通 Bridge 会写回 bridge.json；
                chatroom 仅影响该独立服务，不写入 bridge.json
 --show-token   显示 bridge.json 中的 Bearer Token，不启动服务
+token           同 --show-token，便于脚本直接读取
 -c 命令        执行一条终端命令并退出；复用正在运行的 Bridge，否则临时启动并等待扩展连接
 uninstall      删除命令、用户 PATH 项及 Bridge 本身和配置（简写 u/uninst/unist）；输入 y 确认，-y 跳过确认
 unregister     仅取消命令注册并移除用户 PATH 项；保留 Bridge 本身及配置（简写 unreg，或 uninstall 及其简写加 -r）
