@@ -424,6 +424,20 @@
     el.dataset.senderId = senderId;
     return el;
   }
+  function setupMessageCollapse(content) {
+    if (!content.isConnected || content.dataset.collapseReady) return;
+    content.dataset.collapseReady = '1';
+    const maxHeight = Math.max(160, Math.min(640, Math.floor(globalThis.innerHeight * 0.55)));
+    if (content.scrollHeight <= maxHeight + 8) return;
+    content.style.maxHeight = `${maxHeight}px`;
+    content.classList.add('message-text-collapsed');
+    const toggle = button('展开全文', () => {
+      const collapsed = content.classList.toggle('message-text-collapsed');
+      content.style.maxHeight = collapsed ? `${maxHeight}px` : '';
+      toggle.textContent = collapsed ? '展开全文' : '收起';
+    }, 'message-expand');
+    content.after(toggle);
+  }
   function renderMessages() {
     for (const [id, task] of savedPreviews) {
       if (task.conversationId !== selected || !state.messages.some(m => m.id === id)) {
@@ -468,6 +482,7 @@
         if (message.file) content.append(document.createTextNode(message.file.name + ' · '), styledBytes(message.file.size));
         else content.innerHTML = markdown.parse(String(message.text || '').slice(0, 16384));
         el.append(messageHeader(message.senderId, message.createdAt), content);
+        if (!message.draft && !message.file) requestAnimationFrame(() => setupMessageCollapse(content));
       }
       if (message.file && message.fileHandleRef) {
         restoreSavedFilePreview(el, message);
@@ -1044,7 +1059,14 @@
       // Plain text is never interpreted as HTML or executable code.
       const max = 256 * 1024, text = await file.slice(0, max).text();
       if (!previewCurrent(s, preview)) return;
-      if (ext === 'md') {
+      if (ext === 'html' || ext === 'htm') {
+        const frame = node('iframe', undefined, 'file-html-preview');
+        frame.title = s.name;
+        frame.setAttribute('sandbox', '');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.srcdoc = text;
+        preview.append(frame);
+      } else if (ext === 'md') {
         const content = node('div', undefined, 'message-text bjtu-markdown');
         content.innerHTML = markdown.parse(text); preview.append(content);
       } else preview.append(node('pre', text));

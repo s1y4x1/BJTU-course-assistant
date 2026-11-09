@@ -49,6 +49,9 @@ html[data-color-scheme="dark"] .message-delivery-status.error { color:#fbbf24; }
 .message.system { margin:0 auto; padding:10px 12px; border:0; background:transparent; text-align:center; color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .message.system .message-text { margin:0; }
 .message-text { line-height:1.7; margin-top:5px; white-space:break-spaces; }
+.message-text-collapsed { overflow:hidden; }
+.message-expand { display:block; margin:4px 0 0; padding:0; border:0; background:none; color:var(--chat-accent); font-size:var(--bjtu-font-size-auxiliary,12px); cursor:pointer; }
+.message-expand:hover { text-decoration:underline; }
 .message-text :is(ul,ol) { padding-inline-start:1.2em; margin-block:0; }
 .message-text :is(p,li) { margin-block:0; }
 .message-text input[type="checkbox"] { display:inline-block; width:auto; height:auto; min-width:0; min-height:0; padding:0; margin:0 .3em 0 0; vertical-align:middle; }
