@@ -128,7 +128,7 @@
       if (!label) return;
       if (done == null) { label.hidden = true; return; }
       const bar = $('chatroomLanScanBar'), text = $('chatroomLanScanText'), percent = $('chatroomLanScanPercent');
-      const maximum = Math.max(1, Number(total) || 202);
+      const maximum = Math.max(1, Number(total) || 203);
       const value = found ? maximum : Math.min(maximum, Math.max(0, Number(done) || 0));
       label.hidden = false;
       if (bar) { bar.max = maximum; bar.value = value; }
