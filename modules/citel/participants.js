@@ -194,7 +194,7 @@
       const trigger = wrap.querySelector('.citel-participants-trigger');
       const kind = wrap.dataset.citelParticipants;
       if (!pop || !trigger || !['teachers', 'students'].includes(kind)) return;
-      let active = false, attempt = 0, closeTimer;
+      let active = false, attempt = 0;
       const position = () => {
         if (!active) return;
         const rect = trigger.getBoundingClientRect();
@@ -205,13 +205,11 @@
         pop.style.left = `${left}px`; pop.style.top = `${top}px`;
       };
       const hide = () => {
-        clearTimeout(closeTimer);
         active = false; attempt++; pop.hidden = true; trigger.setAttribute('aria-expanded', 'false');
         global.removeEventListener('resize', position);
         global.removeEventListener('scroll', position, true);
       };
       const show = async () => {
-        clearTimeout(closeTimer);
         if (active) return;
         active = true;
         const token = ++attempt;
@@ -231,8 +229,7 @@
         }
         position();
       };
-      // A short grace period permits crossing from the title into a fixed popover.
-      const leave = () => { closeTimer = setTimeout(() => { if (!wrap.contains(document.activeElement)) hide(); }, 120); };
+      const leave = () => { if (!wrap.contains(document.activeElement)) hide(); };
       const focusout = (event) => { if (!wrap.contains(event.relatedTarget)) hide(); };
       const keydown = (event) => { if (event.key === 'Escape') { hide(); event.stopPropagation(); } };
       const reset = () => {
