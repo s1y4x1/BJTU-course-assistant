@@ -38,13 +38,17 @@
     if (!enabled) return '';
     let url;
     try { url = new URL(href); } catch { return ''; }
-    if (url.protocol !== 'http:' || url.hostname !== '123.121.147.7' || url.port !== '8081'
-        || !/^\/rp(?:\/|$)/i.test(url.pathname)) return '';
-    const names = [fileName, decodeURIComponent(url.pathname), url.searchParams.get('fileName') || ''];
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    const platformHost = url.hostname === '123.121.147.7' && url.port === '8081';
+    const path = url.pathname.replace(/^\/+/, '/');
+    const platformFile = /^\/rp(?:\/|$)/i.test(path);
+    if (!platformHost || !platformFile) return '';
+    const names = [fileName, decodeURIComponent(path), url.searchParams.get('fileName') || ''];
     const extension = names.map((name) => /\.([a-z0-9]+)$/i.exec(name.trim())?.[1]?.toLowerCase()).find(Boolean);
     const group = Object.keys(groups).find((key) => groups[key].extensions.includes(extension));
     if (!selectedTypes.has(group)) return '';
-    const base64 = btoa(Array.from(new TextEncoder().encode(href), (byte) => String.fromCharCode(byte)).join(''));
+    const previewTarget = new URL(url); previewTarget.pathname = path;
+    const base64 = btoa(Array.from(new TextEncoder().encode(previewTarget.href), (byte) => String.fromCharCode(byte)).join(''));
     return global.BjtuVeAddress?.replace(`http://123.121.147.7:1936/kk/onlinePreview?url=${encodeURIComponent(base64)}`)
       || `http://123.121.147.7:1936/kk/onlinePreview?url=${encodeURIComponent(base64)}`;
   }

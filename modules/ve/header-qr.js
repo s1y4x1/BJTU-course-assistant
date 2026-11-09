@@ -45,7 +45,14 @@
         node.style.removeProperty('height'); node.style.removeProperty('max-height'); node.style.removeProperty('opacity'); node.style.removeProperty('transform');
         if (node.hasAttribute('href')) {
           const url = new URL(node.getAttribute('href') || '',location.href);
-          if (['http:','https:','mailto:'].includes(url.protocol)) node.setAttribute('href',url.href); else node.removeAttribute('href');
+          if (['http:','https:','mailto:'].includes(url.protocol)) {
+            let href = url.href;
+            if (section === 'resources' && node instanceof HTMLAnchorElement) {
+              const name = node.closest('.file-item')?.querySelector('.resource-name')?.textContent || node.textContent;
+              href = globalThis.BjtuVeFilePreview?.previewUrl?.(href, name) || href;
+            }
+            node.setAttribute('href',href);
+          } else node.removeAttribute('href');
           node.setAttribute('target','_blank'); node.setAttribute('rel','noopener noreferrer');
         }
         node.removeAttribute('xlink:href');
