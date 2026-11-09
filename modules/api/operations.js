@@ -639,14 +639,13 @@
       && (type === 'all' || (item.type || 'all') === type);
   }
 
-  function buildAssignmentItem(key, courseName, title, type, status, deadline, actionUrl) {
+  function buildAssignmentItem(id, courseName, title, type, status, deadline) {
     const item = {
-      key: String(key || ''),
+      id: String(id || ''),
       courseName: String(courseName || ''),
       title: String(title || ''),
       status: String(status || 'pending'),
-      deadline: Number(deadline) || 0,
-      actionUrl: String(actionUrl || '')
+      deadline: Number(deadline) || 0
     };
     if (type && type !== 'all') item.type = String(type);
     return item;
@@ -679,14 +678,6 @@
       });
     }
     return { fileList };
-  }
-
-  function veAssignmentActionUrl(course, courseId, subType) {
-    const courseToPage = ({ 0: 10460, 1: 10461, 2: 10462 })[Number(subType ?? 0)] || 10460;
-    const courseNum = course?.course_num || course?.courseNum || course?.courseNo || course?.course_id || courseId;
-    const fzId = course?.fz_id || course?.fzId || course?.xkhId || course?.xkh_id || '';
-    const xqCode = course?.xq_code || course?.xqCode || '';
-    return `${global.BjtuVeHomeworkCore?.BASE_VE || ''}back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=${courseToPage}&courseId=${encodeURIComponent(courseNum)}&cId=${encodeURIComponent(courseId)}&xknId=${encodeURIComponent(fzId)}&xkhId=${encodeURIComponent(fzId)}&xqCode=${encodeURIComponent(xqCode)}`;
   }
 
   function yktIsHomeworkDone(hw) {
@@ -892,7 +883,7 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments_of_({courseId: "xxx", status: "pending", type: "实验"})`；也可直接按课程名组合调用：`ve.assignments_of_({ courseId: ve.courseList().find(item => item.name === "高等数学").id })`',
         '',
-        '**返回示例**：[{"id":"…","title":"作业标题","content":"作业要求","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]。content 为作业正文，attachments 为详情接口返回的附件。'
+        '**返回示例**：[{"id":"…","title":"作业标题","content":"作业要求","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]。id 为平台原始作业 id；content 为作业正文，attachments 为详情接口返回的附件。'
       ].join('\n'),
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
@@ -938,7 +929,7 @@ name: 've.accounts',
             ? detailAttachments
             : (homework?.attachments ?? homework?.attachmentList ?? homework?.files ?? []);
           return {
-            id: String(core.homeworkKey(homework) || ''),
+            id: String(homework?.id ?? ''),
             title: String(homework?.title || homework?.workTitle || homework?.courseNoteTitle || '未命名作业').trim(),
             content: String(homework?.content ?? homework?.content_clean ?? homework?.workContent ?? ''),
             type: veSubTypeLabel(homework?.subType ?? homework?.sub_type),
@@ -1056,7 +1047,7 @@ name: 've.accounts',
         if (!content.trim() && !directFileList.length) throw new Error('作业正文与附件不能同时为空');
         const core = await veHomework();
         const assignments = await core.fetchCourseHomework(courseId);
-        const homework = assignments.find((item) => String(core.homeworkKey(item) || '') === assignmentId);
+        const homework = assignments.find((item) => String(item?.id ?? '') === assignmentId);
         if (!homework) throw new Error(`作业ID无效：${assignmentId} 不在该课程作业列表中`);
         if (core.requiresNonRepeatSubmissionConfirmation(homework)) {
           const confirmed = await pageInvoke('ve', 'confirmHomeworkSubmission', {
@@ -1084,7 +1075,13 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.assignments({status: "pending", type: "作业"})`',
         '',
-        '**返回示例**：{"total":1,"items":[{"key":"…","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"…"}]}'
+        '**返回示例**：{"total":1,"items":[{"id":"…","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000}]}',
+        '',
+        '本接口不返回 actionUrl。需要打开作业页时，可用课程与学期信息按以下方式拼接（全部参数需 URL 编码）：',
+        '',
+        '`http://123.121.147.7:8081/back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=<10460|10461|10462>&courseId=<courseNum>&cId=<courseId>&xknId=<fzId>&xkhId=<fzId>&xqCode=<xqCode>`',
+        '',
+        'courseToPage：作业=10460，课程报告=10461，实验=10462；courseNum/fzId/xqCode 来自课程数据，courseId 为 ve.courseList 返回的 id。'
       ].join('\n'),
       async run(args) {
         const matches = assignmentFilter(args);
@@ -1106,9 +1103,8 @@ name: 've.accounts',
             if (!matches({ status: st, type })) continue;
             const title = String(hw?.title || hw?.workTitle || hw?.courseNoteTitle || '未命名作业').trim();
             items.push(buildAssignmentItem(
-              `ve:${courseId}:${hw?.id ?? hw?.noteId ?? hw?.upId ?? title}`,
-              core.getCourseName(course), title, type, st, deadline,
-              veAssignmentActionUrl(course, courseId, hw?.subType ?? hw?.sub_type)
+              String(hw?.id ?? ''),
+              core.getCourseName(course), title, type, st, deadline
             ));
           }
         }
