@@ -1,6 +1,8 @@
 (function initVeFilePreview(global) {
   'use strict';
 
+  if (global.BjtuVeFilePreview) return;
+
   const enabledKey = 'veOnlinePreviewEnabled';
   const typesKey = 'veOnlinePreviewTypes';
   const groups = Object.freeze({
