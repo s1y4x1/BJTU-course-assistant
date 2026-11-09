@@ -43,6 +43,7 @@
   const messageNodes = new Map();
   const pendingSignals = new Map(), closedSessions = new Map();
   let invitationHandoff;
+  let pinToBottom = false;
   globalThis.BjtuChatroomEngineLease?.setCanYield(() => !invitationHandoff && !sessions.size && !pendingSignals.size && !statePromise && !stateTimer);
   const uiAbort = new AbortController();
   window.addEventListener('bjtu-chatroom-engine-rolechange',event => {
@@ -129,6 +130,10 @@
     if (sharedDraft) publishDraft();
   }, 5000);
   BjtuMarkdown.bindCopy($('messages'), {onError: report});
+  $('messages').addEventListener('scroll', () => {
+    const list = $('messages');
+    pinToBottom = list.scrollHeight - list.clientHeight - list.scrollTop < 24;
+  }, {passive:true});
 
   function node(tag, text, cls) {
     const el = document.createElement(tag);
@@ -525,6 +530,7 @@
     else if (nearBottom) container.scrollTop = container.scrollHeight;
     else if (anchor?.el.isConnected) container.scrollTop = oldTop + anchor.el.getBoundingClientRect().top - anchorOffset;
     else container.scrollTop = Math.max(0, oldTop + container.scrollHeight - oldHeight);
+    pinToBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 24;
   }
   function restoreSavedFilePreview(card, message) {
     if (background) return;
@@ -1087,7 +1093,10 @@
     if (!previewCurrent(s, preview)) { if (s.preview === preview) releasePreview(s); return; }
     const nearBottom = $('messages').scrollHeight - $('messages').clientHeight - $('messages').scrollTop < 64;
     s.card.append(preview);
-    if (nearBottom) $('messages').scrollTop = $('messages').scrollHeight;
+    const markdownPreview = preview.querySelector('.bjtu-markdown');
+    if (markdownPreview) requestAnimationFrame(() => setupMessageCollapse(markdownPreview));
+    if (pinToBottom) $('messages').scrollTop = $('messages').scrollHeight;
+    else if (nearBottom) $('messages').scrollTop = $('messages').scrollHeight;
   }
   function previewCurrent(s, preview) {
     return !stopped && s.preview === preview && s.conversationId === selected &&

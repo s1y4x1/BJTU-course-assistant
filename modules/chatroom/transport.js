@@ -393,8 +393,6 @@
       const requestId = crypto.randomUUID();
       pushRequest({ id: requestId, type: 'group', to: peerId, roomId: r.id, createdAt: Date.now() }, true);
       const event = {roomId:r.id, requestId, target:peerId, targetName:peer(peerId)?.nickname || peer(peerId)?.ip || peerId, actorName:publicIdentity.nickname || localIP || '我'};
-      groupEvent(r, publicIdentity.id, requestId, peerId, event.targetName, event.actorName);
-      fanout(effects, r.members, 'group-event', event);
       enqueue(effects, peerId, 'group-invite', { requestId, room: r, event });
     }
   }
@@ -874,7 +872,6 @@
         if (!r.members.includes(from) || r.members.includes(publicIdentity.id)) fail('群邀请必须由现有成员签发。');
         if (data.requests.some((v) => v.type === 'group' && v.room.id === r.id)) break;
         const policy = peer(from)?.friend ? data.settings.invitePolicyFriend : data.settings.invitePolicyStranger;
-        groupEvent(r, from, payload.requestId, publicIdentity.id, payload.event?.targetName, payload.event?.actorName);
         if (policy === 'deny') enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: false });
         else if (policy === 'allow') {
           joinRoom(r); enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: true });
@@ -889,6 +886,12 @@
         if (payload.allow && !r.members.includes(from)) {
           if (r.members.length >= MAX.members) fail('群成员数量已达到上限。');
           setMember(r, from, true); groupBroadcast(effects, r);
+          const p = peer(from);
+          const event = {roomId:r.id, requestId:pending.id, target:from,
+            targetName:p?.remark || p?.nickname || p?.ip || from,
+            actorName:publicIdentity.nickname || localIP || '我'};
+          groupEvent(r, publicIdentity.id, pending.id, from, event.targetName, event.actorName);
+          fanout(effects, r.members, 'group-event', event);
         }
         data.outgoing = data.outgoing.filter((v) => v !== pending); break;
       }
