@@ -1036,8 +1036,10 @@
       // viewer cannot run in a sandboxed iframe (plugins are disabled there).
       if (media instanceof HTMLIFrameElement) { media.title = s.name; media.loading = 'lazy'; }
       preview.append(media);
-      const open = node('a', '打开预览'); open.href = s.previewURL; open.target = '_blank'; open.rel = 'noopener noreferrer';
-      preview.append(open);
+      s.openButton = button('打开', () => {
+        if (s.previewURL) globalThis.open(s.previewURL, '_blank', 'noopener,noreferrer');
+      }, 'secondary file-open');
+      preview.append(s.openButton);
     } else if (TEXT_EXTENSIONS.has(ext)) {
       // Plain text is never interpreted as HTML or executable code.
       const max = 256 * 1024, text = await file.slice(0, max).text();
@@ -1047,14 +1049,18 @@
         content.innerHTML = markdown.parse(text); preview.append(content);
       } else preview.append(node('pre', text));
       if (file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
+      s.previewURL = URL.createObjectURL(file);
+      s.openButton = button('打开', () => {
+        if (s.previewURL) globalThis.open(s.previewURL, '_blank', 'noopener,noreferrer');
+      }, 'secondary file-open');
+      preview.append(s.openButton);
     } else {
       s.previewURL = URL.createObjectURL(file.slice(0, file.size, 'application/octet-stream'));
-      const open = button('打开', () => {
+      s.openButton = button('打开', () => {
         const link = node('a'); link.href = s.previewURL; link.download = s.name; link.hidden = true;
         document.body.append(link); link.click(); link.remove();
       }, 'secondary file-open');
-      s.openButton = open;
-      (s.message.actions || preview).append(open);
+      preview.append(s.openButton);
     }
     if (!previewCurrent(s, preview)) { if (s.preview === preview) releasePreview(s); return; }
     const nearBottom = $('messages').scrollHeight - $('messages').clientHeight - $('messages').scrollTop < 64;

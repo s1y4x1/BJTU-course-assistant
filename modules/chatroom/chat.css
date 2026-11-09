@@ -82,6 +82,7 @@ html[data-color-scheme="dark"] .composer-message-size.over-limit { color:#fbbf24
 .file-preview iframe { height:360px; }
 .file-preview audio { max-width:100%; }
 .file-preview pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }
+.file-preview > .file-open { display:block; width:max-content; margin-top:8px; }
 .transfer progress { width:100%; margin:8px 0; accent-color:var(--chat-accent); }
 .transfer-total-progress { display:block; width:100%; margin:8px 0; accent-color:var(--chat-accent); }
 .chatroom-page .transfer-actions { flex-wrap:nowrap; align-items:center; }
