@@ -78,7 +78,11 @@
     if (preserveWhitespace) {
       // Render source whitespace, not the formatting newlines added by the
       // default HTML renderer. The host uses white-space: break-spaces.
-      renderer.space = ({raw, afterTable}) => escapeHtml(afterTable ? raw.replace(/^\n{1,2}/, '') : raw);
+      renderer.space = ({raw, afterTable, afterBlock}) => escapeHtml(
+        afterTable ? raw.replace(/^\n{1,2}/, '')
+          : afterBlock ? raw.replace(/^\n/, '')
+            : raw
+      );
       renderer.paragraph = function({tokens, raw, text}) {
         return this.parser.parseInline(tokens) + (raw.startsWith(text) ? escapeHtml(raw.slice(text.length)) : '');
       };
@@ -101,17 +105,22 @@
     }
     const parser = new global.marked.Marked({gfm:true, breaks:true, renderer});
     if (preserveWhitespace) parser.use({hooks:{processAllTokens(tokens) {
-      function markTableSeparators(items) {
+      const blockTypes = new Set(['heading', 'list', 'code', 'blockquote', 'table', 'hr', 'html', 'bjtuMathBlock']);
+      function markBlockSpaces(items) {
         for (let index = 0; index < items.length; index++) {
           const token = items[index];
-          // A table is already a block. Its required Markdown separator is not
-          // two additional visible text lines; extra and trailing blanks remain.
-          if (token.type === 'space' && items[index - 1]?.type === 'table' && items[index + 1]) token.afterTable = true;
-          if (token.tokens) markTableSeparators(token.tokens);
-          for (const item of token.items || []) if (item.tokens) markTableSeparators(item.tokens);
+          const previous = items[index - 1], next = items[index + 1];
+          // Block tokens already lay out their own lines. The blank lines that
+          // surround them in the source should not add another visible line.
+          if (token.type === 'space') {
+            if (previous?.type === 'table' && next) token.afterTable = true;
+            else if (blockTypes.has(previous?.type) || blockTypes.has(next?.type)) token.afterBlock = true;
+          }
+          if (token.tokens) markBlockSpaces(token.tokens);
+          for (const item of token.items || []) if (item.tokens) markBlockSpaces(item.tokens);
         }
       }
-      markTableSeparators(tokens); return tokens;
+      markBlockSpaces(tokens); return tokens;
     }}});
     if (math && global.katex) {
       const renderMath = token => global.katex.renderToString(token.text, {
