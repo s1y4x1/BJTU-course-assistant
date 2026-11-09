@@ -159,6 +159,21 @@ async function restartVePlatformForLoginExpired(reason = '登录状态已失效�
   return window.veLoginExpiredRestartPromise;
 }
 
+function normalizeVeResourceItems(result) {
+  return (Array.isArray(result) ? result : []).map((it, idx) => {
+    const rpId = String(it?.rpId || it?.id || `${idx}-${it?.rpName || ''}`).trim();
+    return {
+      id: rpId || String(idx),
+      name: String(it?.rpName || it?.name || '未命名文件').trim(),
+      extName: String(it?.extName || it?.rpPrix || '').trim(),
+      url: normalizeResourceUrl(it?.resUrl || it?.downloadUrl || ''),
+      inputTime: String(it?.inputTime || it?.createTime || '').trim(),
+      sizeMb: formatResourceSizeMb(it?.rpSize),
+      sizeMbRaw: Number(it?.rpSize)
+    };
+  }).filter((it) => !!it.url);
+}
+
 async function fetchResourceSpaceListRaw(rows = 10, searchName = '') {
   const url = `${BASE_VE}back/resourceSpace.shtml?method=resourceSpaceList`;
   const safeRows = String(Math.max(1, Number(rows) || 10));
@@ -220,20 +235,7 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
       return;
     }
 
-    const normalizeResourceItems = (result) => (Array.isArray(result) ? result : []).map((it, idx) => {
-      const rpId = String(it?.rpId || it?.id || `${idx}-${it?.rpName || ''}`).trim();
-      return {
-        id: rpId || String(idx),
-        name: String(it?.rpName || it?.name || '未命名文件').trim(),
-        extName: String(it?.extName || it?.rpPrix || '').trim(),
-        url: normalizeResourceUrl(it?.resUrl || it?.downloadUrl || ''),
-        inputTime: String(it?.inputTime || it?.createTime || '').trim(),
-        sizeMb: formatResourceSizeMb(it?.rpSize),
-        sizeMbRaw: Number(it?.rpSize)
-      };
-    }).filter((it) => !!it.url);
-
-    let normalized = normalizeResourceItems(payload.result);
+    let normalized = normalizeVeResourceItems(payload.result);
 
     if (payload.total > firstRows) {
       window.resourceSpaceItems = normalized;
@@ -246,7 +248,7 @@ async function loadResourceSpaceForCurrentAccount(searchName = resourceSpaceSear
 
       payload = await fetchResourceSpaceListRaw(payload.total, keyword);
       if (isStale()) return;
-      normalized = normalizeResourceItems(payload.result);
+      normalized = normalizeVeResourceItems(payload.result);
     }
 
     window.resourceSpaceItems = normalized;
@@ -3201,6 +3203,20 @@ async function vePageAssignmentSnapshot() {
 }
 
 globalThis.BjtuVePageApi = Object.freeze({
+  resourceSpaceList: async (args) => {
+    const keyword = normalizeResourceSearchKeyword(String(args?.searchName || ''));
+    let payload = await fetchResourceSpaceListRaw(10, keyword);
+    if (payload.loginRequired) {
+      throw Object.assign(new Error('智慧课程平台未登录，请先调用 ve.login()'), { code: 'LOGIN_REQUIRED' });
+    }
+    if (Number(payload.total) > 10) payload = await fetchResourceSpaceListRaw(payload.total, keyword);
+    const items = normalizeVeResourceItems(payload.result);
+    if (!items.length) {
+      const user = await fetchCurrentVeUserInfoOnce().catch(() => null);
+      if (user && !isVeTeacherUserInfo(user)) return { items: [], total: 0, error: '请先登录教师账号' };
+    }
+    return { items, total: items.length };
+  },
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
   replaySchedule: (args) => fetchVeReplaySchedule(String(args?.courseId || '').trim(), { forceReload: args?.forceReload === true }),

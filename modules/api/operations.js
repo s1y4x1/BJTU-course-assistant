@@ -861,6 +861,26 @@ name: 've.accounts',
     },
     {
       module: 've',
+      name: 've.resourceSpaceList',
+      summary: '获取智慧课程平台的资源空间文件列表',
+      doc: [
+        '## ve.resourceSpaceList —— 资源空间列表',
+        '',
+        '获取智慧课程平台资源空间中的文件列表。内部会自动读取总数并拉取全部结果，不需要调用方分页。',
+        '',
+        '**参数**：{"searchName":"可选，文件名搜索关键词，默认空字符串"}',
+        '',
+        '**调用示例**：`ve.resourceSpaceList()`；`ve.resourceSpaceList({ searchName: "课件" })`',
+        '',
+        '**返回示例**：{"items":[{"id":"rp-123456","name":"第一章课件.pdf","extName":"pdf","url":"http://123.121.147.7:8081/rp/2026/09/14/xxx.pdf","inputTime":"2026-09-14 17:35:12","sizeMb":"1.24 MB","sizeMbRaw":1.24}],"total":1}',
+        '成功时不返回 error 字段。当前账号为学生且列表为空时，返回 {"items":[],"total":0,"error":"请先登录教师账号"}。未登录或登录失效时抛出 LOGIN_REQUIRED 错误。'
+      ].join('\n'),
+      async run(args) {
+        return pageInvoke('ve', 'resourceSpaceList', args || {}, 120000);
+      }
+    },
+    {
+      module: 've',
       name: 've.assignments_of_',
       summary: '获取指定智慧课程平台课程的作业列表',
       doc: [
