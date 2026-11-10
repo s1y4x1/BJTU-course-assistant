@@ -185,7 +185,7 @@ function updateMoocPeerReviewState() {
   }
 }
 
-const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:cas', 'module:mail', 'module:api', 'module:qwen'];
+const FALLBACK_OPTIONS_SECTION_ORDER = ['appearance', 'platforms', 'popup', 'reminders', 'updater', 'module:campusnet', 'module:captcha', 'module:academic', 'module:sso', 'module:mail', 'module:api', 'module:qwen'];
 const FALLBACK_PLATFORM_ORDER = ['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel'];
 const PLATFORM_ORDER_LABELS = {
   ve: '智慧课程平台',

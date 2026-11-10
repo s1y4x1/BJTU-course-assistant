@@ -41,7 +41,7 @@
       api: global.BjtuApiOptions,
       campusnet: global.BjtuCampusnetOptions,
       captcha: global.BjtuCaptchaOptions,
-      cas: global.BjtuCasOptions,
+      sso: global.BjtuSsoOptions,
       chatroom: global.BjtuChatroomOptions,
       mail: global.BjtuMailOptions,
       'local-bridge': global.BjtuLocalBridgeOptions,

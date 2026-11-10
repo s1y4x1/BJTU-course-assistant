@@ -555,7 +555,7 @@
       setMessage('正在通过 MIS 登录邮箱…', true, { type: 'info', loading: true, persistent: true });
       const result = await send('MAIL_GET_USER_INFO', {
         forceNewSid: true,
-        identityPanelVisible: !!document.querySelector('.fullscreen-module-window[data-module="cas"]:not([hidden])')
+        identityPanelVisible: !!document.querySelector('.fullscreen-module-window[data-module="sso"]:not([hidden])')
       });
       if (!result?.ok) throw Object.assign(new Error(result?.message || '未知错误'), { code: String(result?.code || '') });
       setMessage('已通过 MIS 登录邮箱');

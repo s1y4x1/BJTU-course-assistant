@@ -333,6 +333,6 @@
     await refreshContext();
   }
 
-  global.BjtuCasOptions = { init, reset };
-  global.BjtuOptionsModules?.register('cas', global.BjtuCasOptions);
+  global.BjtuSsoOptions = { init, reset };
+  global.BjtuOptionsModules?.register('sso', global.BjtuSsoOptions);
 })(globalThis);

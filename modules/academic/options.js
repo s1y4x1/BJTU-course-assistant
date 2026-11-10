@@ -2727,7 +2727,7 @@
       setMessage('正在后台通过 MIS 登录教务系统…', true, { type: 'info', loading: true, persistent: true });
       try {
         const result = await send('START_ACADEMIC_MIS_LOGIN', {
-          identityPanelVisible: !!document.querySelector('.fullscreen-module-window[data-module="cas"]:not([hidden])')
+          identityPanelVisible: !!document.querySelector('.fullscreen-module-window[data-module="sso"]:not([hidden])')
         });
         if (!result?.ok) {
           setMessage(`通过 MIS 登录教务系统失败：${result?.message || '未知错误'}`, false);

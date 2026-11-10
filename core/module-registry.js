@@ -51,7 +51,7 @@
         scripts: ['cache-store.js', 'score-statistics.js']
       }
     },
-    cas: {
+    sso: {
       label: '统一身份认证',
       styles: ['options.css'],
       files: ['system.js', 'vendor/sm2.min.js', 'sso-login-capture.js', 'sso-login-capture-main.js', 'options.html', 'options.js'],

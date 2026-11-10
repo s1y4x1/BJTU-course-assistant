@@ -336,7 +336,7 @@ const academicBackgroundReady = tryImportModuleScripts(
   '../modules/academic/system.js'
 );
 if (academicBackgroundReady) void globalThis.BjtuAcademicCacheStore.readAll().catch(() => {});
-tryImportModuleScripts('../modules/cas/vendor/sm2.min.js', '../modules/cas/system.js');
+tryImportModuleScripts('../modules/sso/vendor/sm2.min.js', '../modules/sso/system.js');
 tryImportModuleScripts('../modules/mail/system.js');
 tryImportModuleScripts('../modules/campusnet/background.js');
 tryImportModuleScripts('../modules/chatroom/background.js');
@@ -363,14 +363,14 @@ tryImportModuleScripts('./account-upload.js');
 
 const OPTIONAL_CONTENT_SCRIPTS = [
   {
-    id: 'bjtu-sso-login-capture', module: 'cas',
+    id: 'bjtu-sso-login-capture', module: 'sso',
     matches: ['https://sso.bjtu.edu.cn/sso/login*', 'https://sso.bjtu.edu.cn/o/authorize*'],
-    js: ['modules/cas/sso-login-capture.js'], runAt: 'document_start'
+    js: ['modules/sso/sso-login-capture.js'], runAt: 'document_start'
   },
   {
-    id: 'bjtu-sso-login-capture-main', module: 'cas',
+    id: 'bjtu-sso-login-capture-main', module: 'sso',
     matches: ['https://sso.bjtu.edu.cn/sso/login*', 'https://sso.bjtu.edu.cn/o/authorize*'],
-    js: ['modules/cas/sso-login-capture-main.js'], runAt: 'document_idle', world: 'MAIN'
+    js: ['modules/sso/sso-login-capture-main.js'], runAt: 'document_idle', world: 'MAIN'
   },
   {
     id: 'bjtu-ve-login-response-detector',
@@ -891,13 +891,15 @@ async function bindPortalUsernameInBackground(requestedLoginName = '') {
       result = await performPortalUsernameBindAttempt();
     } catch (error) {
       if (error?.code !== 'PORTAL_BIND_AUTH_REQUIRED') throw error;
-      const cas = globalThis.BjtuCasSystemInternals;
-      if (!cas?.autoLoginSavedAccount) throw new Error('MIS 尚未登录，且没有可用的 CAS 登录模块');
-      const login = await cas.autoLoginSavedAccount().catch((reason) => ({
+      const sso = globalThis.BjtuSsoSystemInternals;
+      const platform = (await chrome.storage.local.get('casLoginPlatform').catch(() => ({})))?.casLoginPlatform === 'CAS' ? 'CAS' : 'SSO';
+      const autoLogin = platform === 'SSO' ? sso?.autoLoginSavedSsoAccount : sso?.autoLoginSavedAccount;
+      if (typeof autoLogin !== 'function') throw new Error('MIS 尚未登录，且没有可用的统一身份认证登录模块');
+      const login = await autoLogin().catch((reason) => ({
         ok: false,
         message: String(reason?.message || reason)
       }));
-      if (!login?.ok) throw new Error(`MIS 尚未登录，CAS 自动登录失败：${login?.message || '没有可用的已保存账号'}`);
+      if (!login?.ok) throw new Error(`MIS 尚未登录，${platform} 自动登录失败：${login?.message || '没有可用的已保存账号'}`);
       result = await performPortalUsernameBindAttempt();
     }
     const userId = String(result?.record?.userId || result?.record?.loginName || requestedLoginName || '').trim();

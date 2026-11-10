@@ -97,7 +97,7 @@
 
   // 按统一身份认证的平台选择恢复登录，再重新经 MIS 换取邮箱会话。
   async function loginIdentityForMail() {
-    const internals = global.BjtuCasSystemInternals;
+    const internals = global.BjtuSsoSystemInternals;
     if (!internals?.loginSelectedSavedAccount) {
       throw Object.assign(new Error('统一身份认证模块不可用，无法自动登录'), { code: 'not-logged-in' });
     }
@@ -358,7 +358,7 @@
 
   async function currentAccountKey() {
     try {
-      const context = await global.BjtuCasSystemInternals?.getContext();
+      const context = await global.BjtuSsoSystemInternals?.getContext();
       return String(context?.loginName || '').trim() || 'default';
     } catch {
       return 'default';
@@ -594,7 +594,7 @@
     ]);
     let casLoginName = '';
     try {
-      const casContext = await global.BjtuCasSystemInternals?.getContext();
+      const casContext = await global.BjtuSsoSystemInternals?.getContext();
       casLoginName = String(casContext?.loginName || '');
     } catch {
       casLoginName = '';
@@ -684,7 +684,7 @@
           .then((result) => sendResponse({ ok: true, ...result }))
           .catch(async (error) => {
             if (error?.code === 'identity-no-saved-account' && message.payload?.identityPanelVisible !== true) {
-              await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
+              await global.BjtuSsoSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
             }
             sendResponse({ ok: false, code: String(error?.code || ''), message: String(error?.message || error) });
           });

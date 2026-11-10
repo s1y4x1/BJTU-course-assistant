@@ -52,7 +52,7 @@
     if (sourceUrl && new URL(sourceUrl).pathname === '/options/options.html') return Promise.resolve();
     if (loginOptionsPromise) return loginOptionsPromise;
     loginOptionsPromise = (async () => {
-      const url = chrome.runtime.getURL('modules/cas/options.html');
+      const url = chrome.runtime.getURL('modules/sso/options.html');
       const tabs = await chrome.tabs.query({ url: `${url}*` });
       if (tabs.length) {
         await chrome.tabs.update(tabs[0].id, { active: true });
@@ -957,14 +957,17 @@
     );
   }
 
-  global.BjtuCasSystemInternals = {
+  global.BjtuSsoSystemInternals = {
     openLoginOptions,
     loginSelectedSavedAccount,
     getContext: () => buildCasContext(),
     loginWithPassword: (args) => loginWithPassword(args?.loginName, args?.password),
     loginSavedAccount: (args) => loginSavedCasAccount(args?.loginName),
     autoLoginSavedAccount: () => autoLoginSavedCasAccount(),
+    loginSso: (args) => loginSso(args?.loginName, args?.password),
+    autoLoginSavedSsoAccount: () => autoLoginSavedSsoAccount(),
     fetchProfile: () => fetchCasProfile(),
+    fetchSsoProfile: (args) => fetchSsoProfile(args?.loginName),
     extractLoginCredentials,
     parseProfilePage
   };

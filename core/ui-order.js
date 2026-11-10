@@ -10,7 +10,7 @@
     'module:campusnet',
     'module:captcha',
     'module:academic',
-    'module:cas',
+    'module:sso',
     'module:mail',
     'module:api',
     'module:qwen'

@@ -270,19 +270,41 @@
     return { overall, semesters };
   }
 
-  const CAS_DIRECT = {
+  const IDENTITY_PLATFORM_KEY = 'casLoginPlatform';
+  const IDENTITY_PLATFORMS = new Set(['CAS', 'SSO']);
+
+  function normalizeIdentityPlatform(value) {
+    const platform = String(value || '').trim().toUpperCase();
+    return IDENTITY_PLATFORMS.has(platform) ? platform : 'SSO';
+  }
+
+  async function getIdentityPlatform() {
+    const stored = await chrome.storage.local.get([IDENTITY_PLATFORM_KEY]).catch(() => ({}));
+    return normalizeIdentityPlatform(stored?.[IDENTITY_PLATFORM_KEY]);
+  }
+
+  async function setIdentityPlatform(value) {
+    const platform = normalizeIdentityPlatform(value);
+    await chrome.storage.local.set({ [IDENTITY_PLATFORM_KEY]: platform });
+    return platform;
+  }
+
+  const SSO_DIRECT = {
     currentAccount: { fn: 'getContext', type: 'CAS_GET_CONTEXT' },
     login: { fn: 'loginWithPassword', type: 'CAS_LOGIN_WITH_PASSWORD' },
     loginSaved: { fn: 'loginSavedAccount', type: 'CAS_SWITCH_ACCOUNT' },
-    autoLogin: { fn: 'autoLoginSavedAccount', type: 'CAS_AUTO_LOGIN' }
+    autoLogin: { fn: 'autoLoginSavedAccount', type: 'CAS_AUTO_LOGIN' },
+    ssoLogin: { fn: 'loginSso', type: 'SSO_LOGIN_WITH_PASSWORD' },
+    ssoAutoLogin: { fn: 'autoLoginSavedSsoAccount', type: 'SSO_AUTO_LOGIN' },
+    ssoProfile: { fn: 'fetchSsoProfile' }
   };
 
-  async function casInvoke(kind, args, timeoutMs = 120000) {
-    const direct = CAS_DIRECT[kind];
-    const internals = typeof requireGlobal === 'function' ? requireGlobal('BjtuCasSystemInternals') : null;
+  async function ssoInvoke(kind, args, timeoutMs = 120000) {
+    const direct = SSO_DIRECT[kind];
+    const internals = typeof requireGlobal === 'function' ? requireGlobal('BjtuSsoSystemInternals') : null;
     const fn = internals?.[direct?.fn];
     if (typeof fn === 'function') return fn(args);
-    if (!direct?.type) throw new Error('模块 BjtuCasSystemInternals 未安装或未就绪');
+    if (!direct?.type) throw new Error('模块 BjtuSsoSystemInternals 未安装或未就绪');
     return sendRuntimeMessage({ type: direct.type, payload: args }, timeoutMs);
   }
 
@@ -363,52 +385,56 @@
     return { loginName, userName: String(user?.userName || '') };
   }
 
-  async function casLoginServiceVe() {
+  async function ssoLoginServiceVe() {
+    const platform = await getIdentityPlatform();
     let existing = null;
     try { existing = await vePortalAccount(); } catch { existing = null; }
-    if (existing) return { ok: true, service: 've', alreadyLoggedIn: true, ...existing };
+    if (existing) return { ok: true, service: 've', platform, alreadyLoggedIn: true, ...existing };
     const tab = await globalThis.BjtuTabs.create({
       url: 'http://123.121.147.7:88/oauth/api/user/thirdLogin', active: true
     });
     const account = await waitForLoginPoll(() => vePortalAccount());
     if (tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
-    if (!account) throw new Error('等待智慧课程平台登录超时，请在打开的标签页中完成 CAS 登录后重试');
-    return { ok: true, service: 've', ...account };
+    if (!account) throw new Error('等待智慧课程平台登录超时，请在打开的标签页中完成统一身份认证登录后重试');
+    return { ok: true, service: 've', platform, ...account };
   }
 
-  async function casLoginServiceAcademic() {
+  async function ssoLoginServiceAcademic() {
+    const platform = await getIdentityPlatform();
     const internals = requireGlobal('BjtuAcademicSystemInternals');
     const probe = await internals.probeLoginState().catch(() => ({ loggedIn: false }));
-    if (probe?.loggedIn) return { ok: true, service: 'academic', alreadyLoggedIn: true };
+    if (probe?.loggedIn) return { ok: true, service: 'academic', platform, alreadyLoggedIn: true };
     await sendRuntimeMessage({ type: 'START_ACADEMIC_MIS_LOGIN', payload: {} }, 30000);
     const verified = await waitForLoginPoll(async () => {
       const state = await internals.probeLoginState();
       return state?.loggedIn === true ? true : null;
     });
-    if (!verified) throw new Error('等待教务系统登录超时，请在打开的标签页中完成 CAS 登录后重试');
+    if (!verified) throw new Error('等待教务系统登录超时，请在打开的标签页中完成统一身份认证登录后重试');
     const context = await internals.getContext().catch(() => null);
     const studentId = String(context?.studentId || '');
     const account = (Array.isArray(context?.accounts) ? context.accounts : [])
       .find((item) => item.loginName === studentId) || null;
-    return { ok: true, service: 'academic', studentId, userName: String(account?.userName || '') };
+    return { ok: true, service: 'academic', platform, studentId, userName: String(account?.userName || '') };
   }
 
-  async function resolveMailSidWithCasFallback() {
+  async function resolveMailSidWithSsoFallback() {
+    const platform = await getIdentityPlatform();
     const mailInternals = requireGlobal('BjtuMailSystemInternals');
     try {
       const sid = await mailInternals.resolveMailSid();
-      if (sid) return { sid, headless: true };
+      if (sid) return { sid, headless: true, platform };
     } catch {
-      // CAS 未登录时走下方流程
+      // 未登录时走下方流程
     }
     let headless = false;
     try {
-      const casInternals = requireGlobal('BjtuCasSystemInternals');
-      const context = await casInternals.getContext();
+      const context = await ssoInvoke('currentAccount');
       const account = (Array.isArray(context?.accounts) ? context.accounts : [])
         .find((item) => item.hasPassword);
       if (account) {
-        const result = await casInternals.loginSavedAccount({ loginName: account.loginName });
+        const result = platform === 'SSO'
+          ? await ssoInvoke('ssoLogin', { loginName: account.loginName })
+          : await ssoInvoke('loginSaved', { loginName: account.loginName });
         headless = result?.ok !== false;
       }
     } catch {
@@ -416,23 +442,31 @@
     }
     try {
       const sid = await mailInternals.resolveMailSid();
-      return { sid, headless };
+      return { sid, headless, platform };
     } catch {
       return null;
     }
   }
 
-  async function casLoginServiceMail() {
+  async function ssoLoginServiceMail() {
     const mailInternals = requireGlobal('BjtuMailSystemInternals');
-    const resolved = await resolveMailSidWithCasFallback();
-    if (resolved?.sid) return { ok: true, service: 'mail', sid: resolved.sid, viaSavedPassword: resolved.headless === true };
+    const resolved = await resolveMailSidWithSsoFallback();
+    if (resolved?.sid) {
+      return {
+        ok: true,
+        service: 'mail',
+        platform: resolved.platform,
+        sid: resolved.sid,
+        viaSavedPassword: resolved.headless === true
+      };
+    }
     const tab = await globalThis.BjtuTabs.create({
       url: 'https://mis.bjtu.edu.cn/osys_sso_email/', active: true
     });
     const sid = await waitForLoginPoll(() => mailInternals.resolveMailSid().catch(() => null));
-    if (!sid) throw new Error('等待邮箱登录超时，请在打开的标签页中完成 CAS 登录后重试');
+    if (!sid) throw new Error('等待邮箱登录超时，请在打开的标签页中完成统一身份认证登录后重试');
     if (tab?.id) chrome.tabs.remove(tab.id).catch(() => {});
-    return { ok: true, service: 'mail', sid };
+    return { ok: true, service: 'mail', platform: await getIdentityPlatform(), sid };
   }
 
   // ===== app 页面依赖（pageInvoke）守卫 =====
@@ -814,8 +848,8 @@ name: 've.accounts',
         '',
         '**调用示例**：`ve.semester()`；`ve.semester({ xqCode: "2025-2026-1" })`',
         '',
-        '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"…","endDate":"…"}],"current":"2025-2026-1","selected":"2025-2026-1"}',
-        '`current` 是平台当前学期，`selected` 是扩展选择的学期。设置时若学期不存在会报错；课程或作业加载失败也会报错。'
+        '**返回示例**：读取时：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"…","endDate":"…"}],"current":"2025-2026-1","selected":"2025-2026-1"}；设置成功时：{"selected":"2025-2026-1"}',
+        '`current` 是平台当前学期，`selected` 是扩展选择的学期。设置成功后只返回 `selected`；学期不存在会报错，课程或作业加载失败也会报错。'
       ].join('\n'),
       async run(args) {
         if (String(args?.xqCode || '').trim()) {
@@ -1626,24 +1660,53 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'cas',
-      name: 'cas.currentAccount',
-      summary: '获取 CAS 统一身份认证的当前账号与已保存账号列表',
+      module: 'sso',
+      name: 'sso.platform',
+      summary: '查看或设置统一身份认证使用的平台（旧 CAS / 新 SSO）',
       doc: [
-        '## cas.currentAccount —— 统一身份认证当前账号',
+        '## sso.platform —— 统一身份认证平台选择',
         '',
-        '获取 CAS 统一身份认证的当前偏好账号与已保存账号列表（含是否已保存密码）。',
+        '查看或设置统一身份认证使用的平台。省略 platform 时只读取当前选择；传入时写入并返回新选择。默认使用新 SSO；旧 CAS 仅用于兼容旧账号。该选择影响 `sso.currentAccount`、`sso.profile`、`sso.login` 和 `sso.loginService`。',
         '',
-        '**调用示例**：`cas.currentAccount()`',
+        '**参数**：{"platform":"CAS（旧统一身份认证）| SSO（新统一身份认证），可选；省略时只读取"}',
         '',
-        '**返回示例**：{"loginName":"24281271","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}'
+        '**调用示例**：`sso.platform()`；`sso.platform({platform: "CAS"})`；`sso.platform({platform: "SSO"})`',
+        '',
+        '**返回示例**：{"platform":"SSO"}'
+      ].join('\n'),
+      async run(args) {
+        const requested = args?.platform;
+        if (requested === undefined || requested === null || requested === '') {
+          return { platform: await getIdentityPlatform() };
+        }
+        const normalized = String(requested).trim().toUpperCase();
+        if (!IDENTITY_PLATFORMS.has(normalized)) throw new Error('platform 仅支持 CAS 或 SSO');
+        return { platform: await setIdentityPlatform(normalized) };
+      }
+    },
+    {
+      module: 'sso',
+      name: 'sso.currentAccount',
+      summary: '获取统一身份认证的当前账号、平台与已保存账号列表',
+      doc: [
+        '## sso.currentAccount —— 统一身份认证当前账号',
+        '',
+        '获取统一身份认证当前偏好账号、当前平台与已保存账号列表（含是否已保存密码）。',
+        '',
+        '**调用示例**：`sso.currentAccount()`',
+        '',
+        '**返回示例**：{"loginName":"24281271","platform":"SSO","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}'
       ].join('\n'),
       async run() {
-        const value = await casInvoke('currentAccount');
+        const [platform, value] = await Promise.all([
+          getIdentityPlatform(),
+          ssoInvoke('currentAccount')
+        ]);
         if (!value || typeof value !== 'object') return value;
         const { ok: _ok, accounts, ...rest } = value;
         return {
           ...rest,
+          platform,
           accounts: (Array.isArray(accounts) ? accounts : []).map(({
             updatedAt: _updatedAt,
             lastLoginAt: _lastLoginAt,
@@ -1653,77 +1716,93 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'cas',
-      name: 'cas.profile',
-      summary: '获取 CAS 个人信息页中的姓名与电子邮箱',
+      module: 'sso',
+      name: 'sso.profile',
+      summary: '按所选平台获取统一身份认证个人信息',
       doc: [
-        '## cas.profile —— 统一身份认证个人信息',
+        '## sso.profile —— 统一身份认证个人信息',
         '',
-        'GET https://cas.bjtu.edu.cn/profile/ 并解析其中的姓名与电子邮箱。需要 CAS 已登录；未登录时返回 LOGIN_REQUIRED。',
+        '按 `sso.platform` 当前选择读取个人信息。两平台共同返回 `userName`；旧 CAS 额外返回 `email`，新 SSO 额外返回 `loginName` 且没有 `email`。需要对应平台已登录；未登录时返回 `LOGIN_REQUIRED`。',
         '',
-        '**调用示例**：`cas.profile()`',
+        '**平台差异**：CAS 读取 `https://cas.bjtu.edu.cn/profile/`；SSO 读取 UC 用户信息接口 `https://uc.bjtu.edu.cn/api/uc/userinfo`。',
         '',
-        '**返回示例**：{"userName":"苏义新","email":"24281271@bjtu.edu.cn"}'
+        '**调用示例**：`sso.profile()`',
+        '',
+        '**返回示例**：{"platform":"CAS","userName":"苏义新","email":"24281271@bjtu.edu.cn"}；{"platform":"SSO","loginName":"24281271","userName":"苏义新"}'
       ].join('\n'),
       async run() {
-        const internals = requireGlobal('BjtuCasSystemInternals');
-        if (typeof internals?.fetchProfile !== 'function') {
-          throw Object.assign(new Error('模块 BjtuCasSystemInternals 未安装或未就绪'), { code: 'MODULE_UNAVAILABLE' });
-        }
-        const profile = await internals.fetchProfile().catch(() => null);
+        const platform = await getIdentityPlatform();
+        const internals = requireGlobal('BjtuSsoSystemInternals');
+        const profile = platform === 'SSO'
+          ? await internals?.fetchSsoProfile?.().catch(() => null)
+          : await internals?.fetchProfile?.().catch(() => null);
         if (!profile) {
-          return { ok: false, code: 'LOGIN_REQUIRED', message: 'CAS 未登录，请先调用 cas.login 完成登录后再获取个人信息' };
+          return {
+            ok: false,
+            code: 'LOGIN_REQUIRED',
+            platform,
+            message: `${platform === 'SSO' ? '新 SSO' : '旧 CAS'} 未登录，请先调用 sso.login 完成登录后再获取个人信息`
+          };
         }
-        return profile;
+        return { platform, ...profile };
       }
     },
     {
-      module: 'cas',
-      name: 'cas.login',
-      summary: '使用传入或已保存的账号密码登录 CAS',
+      module: 'sso',
+      name: 'sso.login',
+      summary: '按所选平台使用传入或已保存的账号密码登录',
       doc: [
-        '## cas.login —— 统一身份认证登录',
+        '## sso.login —— 统一身份认证登录',
         '',
-        '登录 CAS 统一身份认证。loginName 可省略，此时优先使用当前偏好账号，其次使用最近保存的可登录账号。传入 password 时使用该密码；省略时使用该账号已保存的密码。验证码由本地模型自动识别，需要先在「本地验证码识别」中安装 MIS 资源。',
+        '按 `sso.platform` 当前选择登录对应平台。loginName 可省略，此时优先使用当前偏好账号，其次使用最近保存的可登录账号；传入 password 时使用该密码，省略时使用该账号已保存的密码。验证码由本地模型自动识别，需要先在「本地验证码识别」中安装 MIS 资源。',
+        '',
+        '**平台差异**：CAS 登录 `cas.bjtu.edu.cn`；SSO 登录 `sso.bjtu.edu.cn`。两平台的账号列表与已保存密码共用。',
         '',
         '**参数**：{"loginName":"学号/账号，可选","password":"密码，可选；省略时使用已保存密码"}',
         '',
-        '**调用示例**：`cas.login()`；`cas.login({loginName: "xxx"})`；`cas.login({loginName: "xxx", password: "xxx"})`',
+        '**调用示例**：`sso.login()`；`sso.login({loginName: "xxx"})`；`sso.login({loginName: "xxx", password: "xxx"})`',
         '',
-        '**返回示例**：{"ok":true}'
+        '**返回示例**：{"ok":true,"platform":"SSO"}'
       ].join('\n'),
       async run(args) {
+        const platform = await getIdentityPlatform();
         let loginName = String(args?.loginName || '').trim();
         const password = String(args?.password ?? '');
         if (!loginName) {
-          const context = await casInvoke('currentAccount');
+          const context = await ssoInvoke('currentAccount');
           loginName = String(context?.loginName
             || context?.accounts?.find((account) => account.hasPassword)?.loginName || '').trim();
         }
-        if (!loginName) throw new Error('没有当前或已保存的 CAS 账号，请传入 loginName');
-        const result = password
-          ? await casInvoke('login', { loginName, password })
-          : await casInvoke('loginSaved', { loginName });
+        if (!loginName) throw new Error('没有当前或已保存的统一身份认证账号，请传入 loginName');
+        const result = platform === 'SSO'
+          ? (password
+            ? await ssoInvoke('ssoLogin', { loginName, password })
+            : await ssoInvoke('ssoLogin', { loginName }))
+          : (password
+            ? await ssoInvoke('login', { loginName, password })
+            : await ssoInvoke('loginSaved', { loginName }));
         if (result?.ok === false) {
-          throw Object.assign(new Error(String(result?.message || 'CAS 登录失败')), { code: String(result?.code || '') });
+          throw Object.assign(new Error(String(result?.message || `${platform} 登录失败`)), { code: String(result?.code || '') });
         }
-        return compactLoginResult(result);
+        return { ...compactLoginResult(result), platform };
       }
     },
     {
-      module: 'cas',
-      name: 'cas.loginService',
-      summary: '通过 CAS 单点登录智慧课程平台/教务系统/邮箱',
+      module: 'sso',
+      name: 'sso.loginService',
+      summary: '通过统一身份认证登录智慧课程平台/教务系统/邮箱',
       doc: [
-        '## cas.loginService —— 通过 CAS 登录服务',
+        '## sso.loginService —— 通过统一身份认证登录服务',
         '',
-        '通过 CAS 单点登录对应服务：打开该服务的 SSO 入口页，等待用户在新标签页完成 CAS 登录后返回。若会话已存在则直接返回 alreadyLoggedIn=true，不会重复打开页面；mail 服务还会先尝试用已保存的 CAS 账号密码无头登录。',
+        '通过统一身份认证登录对应服务：打开该服务的入口页，等待用户在新标签页完成登录后返回。若会话已存在则直接返回 alreadyLoggedIn=true，不会重复打开页面。返回值包含当前 `platform`。',
+        '',
+        '**平台差异**：三种服务的 ve/academic 入口本身由学校统一身份认证决定跳转平台；mail 的无头兜底严格按 `sso.platform` 选择：SSO 调用新 SSO 登录，CAS 调用旧 CAS 登录。',
         '',
         '**参数**：{"service":"ve（智慧课程平台）| academic（教务系统）| mail（邮箱），必填"}',
         '',
-        '**调用示例**：`cas.loginService({service: "ve"})`；`cas.loginService({service: "academic"})`；`cas.loginService({service: "mail"})`',
+        '**调用示例**：`sso.loginService({service: "ve"})`；`sso.loginService({service: "academic"})`；`sso.loginService({service: "mail"})`',
         '',
-        '**返回示例**：{"ok":true,"service":"ve","loginName":"z24281271","userName":"苏义新"}；{"ok":true,"service":"academic","studentId":"24281271"}；{"ok":true,"service":"mail","sid":"…","viaSavedPassword":true}'
+        '**返回示例**：{"ok":true,"service":"ve","platform":"SSO","loginName":"z24281271","userName":"苏义新"}；{"ok":true,"service":"academic","platform":"SSO","studentId":"24281271"}；{"ok":true,"service":"mail","platform":"SSO","sid":"…","viaSavedPassword":true}'
       ].join('\n'),
       async run(args) {
         const service = String(args?.service || '').trim().toLowerCase();
@@ -1734,9 +1813,9 @@ name: 've.teachers_of_',
         ]);
         const key = aliases.get(service);
         if (!key) throw new Error('service 仅支持 ve / academic / mail');
-        if (key === 've') return casLoginServiceVe();
-        if (key === 'academic') return casLoginServiceAcademic();
-        return casLoginServiceMail();
+        if (key === 've') return ssoLoginServiceVe();
+        if (key === 'academic') return ssoLoginServiceAcademic();
+        return ssoLoginServiceMail();
       }
     },
     {
@@ -2639,7 +2718,7 @@ name: 've.teachers_of_',
         '',
         '**调用示例**：`api.getDocs()`；`api.getDocs({module: "ve"})`；`api.getDocs({name: "login"})`；`api.getDocs({module: ["ve","ykt","academic"], name: ["login","assignments"]})`',
         '',
-        '**返回示例**：`"## ve.login —— 智慧课程平台登录\\n……\\n\\n---\\n\\n## ve.assignments —— 作业查询\\n……"`'
+        '**返回**：Markdown 文本。多份说明之间用 `---` 分隔；CLI 直接打印原文，不做 JSON 引号转义。'
       ].join('\n'),
       async run(args) {
         const normalizeSelectors = (value, label) => {
@@ -2916,7 +2995,7 @@ name: 've.teachers_of_',
   const OPERATION_GROUPS = [
     { id: 've', label: '智慧课程平台', operations: OPERATIONS.filter((op) => op.module === 've') },
     { id: 'academic', label: '教务系统', operations: OPERATIONS.filter((op) => op.module === 'academic') },
-    { id: 'cas', label: 'CAS 统一身份认证', operations: OPERATIONS.filter((op) => op.module === 'cas') },
+    { id: 'sso', label: '统一身份认证', operations: OPERATIONS.filter((op) => op.module === 'sso') },
     { id: 'mail', label: 'BJTU 邮件系统', operations: OPERATIONS.filter((op) => op.module === 'mail') },
     { id: 'mooc', label: '中国大学MOOC', operations: OPERATIONS.filter((op) => op.module === 'mooc') },
     { id: 'ykt', label: '雨课堂', operations: OPERATIONS.filter((op) => op.module === 'ykt') },

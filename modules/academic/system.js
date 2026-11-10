@@ -797,7 +797,7 @@
 
   async function loginIdentityForMisFallback(identityFallbackAttempted) {
     if (identityFallbackAttempted) throw misAuthenticationError('统一身份认证登录后仍未能登录 MIS');
-    const cas = global.BjtuCasSystemInternals;
+    const cas = global.BjtuSsoSystemInternals;
     if (!cas?.loginSelectedSavedAccount) {
       throw misAuthenticationError('MIS 尚未登录，且未安装统一身份认证模块');
     }
@@ -2424,7 +2424,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
           .then((result) => sendResponse(result))
           .catch(async (error) => {
             if (error?.code === 'identity-no-saved-account' && message.payload?.identityPanelVisible !== true) {
-              await global.BjtuCasSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
+              await global.BjtuSsoSystemInternals?.openLoginOptions?.(_sender.url).catch(() => {});
             }
             sendResponse({ ok: false, message: String(error?.message || error) });
           });

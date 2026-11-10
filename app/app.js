@@ -333,7 +333,7 @@ async function initFullscreenModuleButtons() {
 
   const isPortraitWindow = () => window.innerHeight > window.innerWidth;
   const syncPortraitGroup = () => {
-    const casView = moduleWindows.get('cas');
+    const casView = moduleWindows.get('sso');
     if (isPortraitWindow() && casView && hasDependentWindows()) {
       if (!portraitGroup) {
         portraitGroup = document.createElement('div');
@@ -391,13 +391,13 @@ async function initFullscreenModuleButtons() {
       && stored[config.key] !== false;
     const targetRect = shouldShowButton
       ? floatingWindowAnimations.measureVisibleButtonRect(button)
-      : (moduleId === 'cas' ? fallbackRect || casPanelSourceRect : null);
+      : (moduleId === 'sso' ? fallbackRect || casPanelSourceRect : null);
     await Promise.all([
       animateWindowFromButton(view, targetRect, false),
       shouldShowButton ? animateButton(button, true) : Promise.resolve(),
-      moduleId !== 'cas' && !hasDependentWindows() ? closeModuleWindow('cas', targetRect) : Promise.resolve()
+      moduleId !== 'sso' && !hasDependentWindows() ? closeModuleWindow('sso', targetRect) : Promise.resolve()
     ]);
-    if (moduleId === 'cas' && hasDependentWindows()) {
+    if (moduleId === 'sso' && hasDependentWindows()) {
       delete view.dataset.closing;
       return;
     }
@@ -414,14 +414,14 @@ async function initFullscreenModuleButtons() {
   window.addEventListener('bjtu-close-floating-windows', (event) => {
     const keep = event instanceof CustomEvent ? event.detail?.keep : null;
     for (const [moduleId, view] of moduleWindows) {
-      if (moduleId !== 'cas' && view !== keep) void closeModuleWindow(moduleId);
+      if (moduleId !== 'sso' && view !== keep) void closeModuleWindow(moduleId);
     }
   });
 
   const prepareWindowInteractions = (view, moduleId) => {
     const header = view.querySelector(':scope > .section-title');
     const scrollBody = view.querySelector(':scope > .fullscreen-module-window-body');
-    if (moduleId !== 'cas') {
+    if (moduleId !== 'sso') {
       const close = document.createElement('button');
       close.type = 'button';
       close.className = 'fullscreen-module-window-close';
@@ -553,7 +553,7 @@ async function initFullscreenModuleButtons() {
       for (const script of [...(options.scripts || []), options.script]) {
         await globalThis.BjtuModuleRegistry.loadScript(`modules/${moduleId}/${script}`);
       }
-      const controller = ({ mail: globalThis.BjtuMailOptions, academic: globalThis.BjtuAcademicOptions, cas: globalThis.BjtuCasOptions })[moduleId];
+      const controller = ({ mail: globalThis.BjtuMailOptions, academic: globalThis.BjtuAcademicOptions, sso: globalThis.BjtuSsoOptions })[moduleId];
       if (!controller?.init) throw new Error('模块选项控制器未加载');
       await controller.init({ setMessage: showPanelMessage });
       globalThis.BjtuOptionTips?.setup?.();
@@ -567,16 +567,16 @@ async function initFullscreenModuleButtons() {
   };
 
   const openCasPanel = (sourceRect) => {
-    if (!available.cas) return Promise.resolve(null);
+    if (!available.sso) return Promise.resolve(null);
     if (casPanelOpening) return casPanelOpening;
     casPanelOpening = (async () => {
-      const view = await loadModuleView('cas');
+      const view = await loadModuleView('sso');
       if (!hasDependentWindows()) return null;
       casPanelSourceRect = sourceRect;
-      if (moduleWindows.has('cas')) {
+      if (moduleWindows.has('sso')) {
         return { view, animation: Promise.resolve() };
       }
-      moduleWindows.set('cas', view);
+      moduleWindows.set('sso', view);
       positionCasPanel(view);
       view.hidden = false;
       clampWindow(view);
@@ -604,7 +604,7 @@ async function initFullscreenModuleButtons() {
       const usesCas = moduleId === 'mail' || moduleId === 'academic';
       const [view] = await Promise.all([
         loadModuleView(moduleId),
-        usesCas && available.cas ? loadModuleView('cas') : Promise.resolve()
+        usesCas && available.sso ? loadModuleView('sso') : Promise.resolve()
       ]);
       const sourceRect = button instanceof HTMLButtonElement ? button.getBoundingClientRect() : null;
       moduleWindows.set(moduleId, view);
@@ -628,7 +628,7 @@ async function initFullscreenModuleButtons() {
       refreshButtonContainer();
     } catch (error) {
       if (moduleWindows.get(moduleId)?.hidden) moduleWindows.delete(moduleId);
-      if (!hasDependentWindows()) await closeModuleWindow('cas');
+      if (!hasDependentWindows()) await closeModuleWindow('sso');
       showPanelMessage(`模块加载失败：${String(error?.message || error)}`, false);
     } finally {
       if (button instanceof HTMLButtonElement) {
@@ -675,7 +675,7 @@ async function initFullscreenModuleButtons() {
   let wasPortrait = isPortraitWindow();
   window.addEventListener('resize', () => {
     const portrait = isPortraitWindow();
-    const casView = moduleWindows.get('cas');
+    const casView = moduleWindows.get('sso');
     syncPortraitGroup();
     if (casView && (portrait || portrait !== wasPortrait)) {
       positionCasPanel(casView);
