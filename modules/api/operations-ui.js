@@ -61,6 +61,10 @@
     const anySelected = new Set(selectedNames || []);
     const alwaysAllowedSet = new Set((options.alwaysAllowedOperations || []).map(String));
 
+    if (options.showSummary !== false) {
+      global.BjtuOptionTips?.mountTo?.(document.querySelector('.api-operation-window') || document.body);
+    }
+    let hoveredDesc = null;
     for (const group of groups || []) {
       const names = [...(group.operations || [])].sort((left, right) => {
         const leftName = String(left?.name ?? left ?? '');
@@ -101,27 +105,32 @@
           desc.className = 'api-operation-item-desc';
           desc.textContent = summary;
           item.appendChild(desc);
+          const showDoc = async () => {
+            const response = await getDoc(name);
+            if (hoveredDesc !== desc || !desc.isConnected) return;
+            if (response?.ok === true) {
+              const doc = String(response.doc || '');
+              let html = '';
+              try { html = await markdownTip(doc); } catch { html = ''; }
+              if (html) global.BjtuOptionTips.setHtml(desc, html, doc);
+              else global.BjtuOptionTips.setText(desc, doc);
+            } else {
+              global.BjtuOptionTips.setText(desc, response?.message || '操作说明获取失败，请重试。');
+            }
+            if (hoveredDesc !== desc) return;
+            global.BjtuOptionTips.show(desc);
+          };
+          desc.addEventListener('mouseenter', () => {
+            hoveredDesc = desc;
+            void showDoc();
+          });
+          desc.addEventListener('mouseleave', () => {
+            if (hoveredDesc === desc) hoveredDesc = null;
+            global.BjtuOptionTips.hide(desc);
+          });
         }
         const alwaysLabel = document.createElement('label');
         alwaysLabel.className = 'api-operation-always';
-        alwaysLabel.title = '正在获取操作说明…';
-        const showDoc = async () => {
-          const trigger = alwaysLabel.querySelector('.option-tip-trigger');
-          if (!trigger) return;
-          const response = await getDoc(name);
-          if (!alwaysLabel.isConnected) return;
-          if (response?.ok === true) {
-            const doc = String(response.doc || '');
-            let html = '';
-            try { html = await markdownTip(doc); } catch { html = ''; }
-            if (html) global.BjtuOptionTips.setHtml(trigger, html, doc);
-            else global.BjtuOptionTips.setText(trigger, doc);
-          } else {
-            global.BjtuOptionTips.setText(trigger, response?.message || '操作说明获取失败，请重试。');
-          }
-        };
-        alwaysLabel.addEventListener('mouseenter', showDoc);
-        alwaysLabel.addEventListener('focusin', showDoc);
         const alwaysCheckbox = document.createElement('input');
         alwaysCheckbox.type = 'checkbox';
         alwaysCheckbox.dataset.operationName = name;

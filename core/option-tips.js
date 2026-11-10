@@ -137,7 +137,17 @@
     trigger.setAttribute('aria-label', `提示：${trigger.dataset.tip}`);
     if (activeTrigger === trigger) showPopover(trigger);
   }
-  global.BjtuOptionTips = { setup, setText, setHtml };
+  function mountTo(container) {
+    if (!(container instanceof HTMLElement)) return;
+    ensurePopover();
+    if (popover.parentElement !== container) container.appendChild(popover);
+  }
+  global.BjtuOptionTips = {
+    setup, setText, setHtml,
+    show(trigger) { if (trigger instanceof HTMLElement) showPopover(trigger); },
+    hide(trigger) { if (!trigger || activeTrigger === trigger) hidePopover(trigger); },
+    mountTo
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setup(), { once: true });
