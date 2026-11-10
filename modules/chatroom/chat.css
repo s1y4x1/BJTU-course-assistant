@@ -79,15 +79,29 @@ html[data-color-scheme="dark"] .composer-message-size.over-limit { color:#fbbf24
 .composer-toggle input[type="checkbox"] { width:auto; margin:0; padding:0; }
 .message-draft { border-style:dashed; border-color:var(--chat-muted); border-width:2px; }
 .chatroom-loading { display:flex; align-items:center; gap:8px; }
+.chatroom-loading .spinner {
+  display:inline-block;
+  width:12px;
+  height:12px;
+  min-width:12px;
+  min-height:12px;
+  flex:0 0 auto;
+  border:2px solid var(--chat-muted);
+  border-top-color:transparent;
+  border-radius:50%;
+  animation:chat-spin .8s linear infinite;
+}
+@keyframes chat-spin { to { transform:rotate(360deg); } }
 .message-draft-label { color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .media-message { width:min(100%,600px); }
 .media-message .transfer { border:0; padding:0; }
-.message.media-message:has(.file-preview iframe) {
+.message.media-message.media-wide-preview {
   width:calc(100% - 12px);
   max-width:calc(100% - 12px);
+  margin-right:12px;
 }
-.file-preview :is(img,video,iframe) { display:block; max-width:100%; width:100%; max-height:380px; object-fit:contain; border:0; }
-.file-preview iframe { height:min(70vh,720px); max-height:min(70vh,720px); }
+.file-preview :is(img,video) { display:block; max-width:100%; width:100%; max-height:380px; object-fit:contain; border:0; }
+.file-preview iframe { display:block; width:100%; height:min(80vh,900px); max-height:min(80vh,900px); border:0; }
 .file-preview iframe.file-html-preview { background:#fff; }
 .file-preview audio { max-width:100%; }
 .file-preview pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }

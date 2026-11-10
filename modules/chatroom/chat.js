@@ -1100,7 +1100,10 @@
       if (media instanceof HTMLMediaElement) { media.controls = true; media.preload = 'metadata'; }
       // PDF Blob has a fixed application/pdf MIME type. Chromium's native PDF
       // viewer cannot run in a sandboxed iframe (plugins are disabled there).
-      if (media instanceof HTMLIFrameElement) { media.title = s.name; media.loading = 'lazy'; }
+      if (media instanceof HTMLIFrameElement) {
+        media.title = s.name; media.loading = 'lazy';
+        s.card.classList.add('media-wide-preview');
+      }
       preview.append(media);
       s.openButton = button('打开', () => {
         if (s.previewURL) globalThis.open(s.previewURL, '_blank', 'noopener,noreferrer');
@@ -1116,6 +1119,7 @@
         frame.setAttribute('sandbox', '');
         frame.setAttribute('referrerpolicy', 'no-referrer');
         frame.srcdoc = text;
+        s.card.classList.add('media-wide-preview');
         preview.append(frame);
       } else if (ext === 'md') {
         const content = node('div', undefined, 'message-text bjtu-markdown');
@@ -1154,6 +1158,7 @@
     }
   }
   function releasePreview(s) {
+    s.card?.classList.remove('media-wide-preview');
     s.openButton?.remove(); s.openButton = null;
     s.deleteButton?.remove(); s.deleteButton = null;
     if (s.previewURL) { URL.revokeObjectURL(s.previewURL); s.previewURL = null; }
