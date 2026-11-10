@@ -75,7 +75,10 @@
       }
       let entry = clients.get(clientId);
       if (!entry) {
-        entry = {lastSeen: Date.now(), primary: clients.size === 0};
+        // A throttled tab may re-register after being pruned; restore its media
+        // role only when nobody else has been promoted in the meantime.
+        const hasPrimary = [...clients.values()].some(client => client.primary);
+        entry = {lastSeen: Date.now(), primary: clients.size === 0 || (!hasPrimary && message.primary === true)};
         clients.set(clientId, entry);
       }
       entry.lastSeen = Date.now();

@@ -77,7 +77,13 @@
       switch (message.type) {
         case `${CLIENT_PREFIX}HELLO_OK`:
           clearInterval(helloInterval);
-          helloResolve(message);
+          if (!helloDone) { helloDone = true; helloResolve(message); break; }
+          // A background tab may be throttled enough for the engine to prune
+          // this client; re-registering can change whether this page owns media.
+          if ((message.primary === true) !== primary) {
+            primary = message.primary === true; mediaOwner = primary;
+            window.dispatchEvent(new Event('bjtu-chatroom-transport-ready'));
+          }
           break;
         case `${CLIENT_PREFIX}UNAVAILABLE`:
           // The offscreen page exists but is still acquiring the engine or is
@@ -114,7 +120,8 @@
       }
     };
 
-    const helloMessage = () => send({type: `${CLIENT_PREFIX}HELLO`});
+    const helloMessage = () => send({type: `${CLIENT_PREFIX}HELLO`, primary});
+    let helloDone = false;
     helloMessage();
     helloInterval = setInterval(() => {
       if (helloAttempts >= 32) {
@@ -167,14 +174,22 @@
       pairComplete: async () => { throw new Error('配对操作请通过聊天室界面执行。'); }
     };
     attached = true;
+    const hidden = () => typeof document !== 'undefined' && document.hidden === true;
     heartbeat = setInterval(() => {
       if (closing || degraded) return;
+      // Hidden tabs get their timers throttled; re-register instead of letting
+      // the engine prune this client and silently ignore its actions.
+      if (Date.now() - lastSeen > 8000) helloMessage();
       send({type: `${CLIENT_PREFIX}PING`});
     }, 2000);
     lossTimer = setInterval(() => {
-      if (closing || degraded) return;
+      if (closing || degraded || hidden()) return;
       if (Date.now() - lastSeen > 8000) void degrade('后台聊天室引擎失去响应。');
     }, 2000);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => {
+      if (closing || degraded || document.visibilityState !== 'visible') return;
+      helloMessage();
+    });
 
     async function degrade(reason) {
       if (degraded) return;
@@ -191,7 +206,13 @@
       const lease = globalThis.BjtuChatroomEngineLease;
       if (lease) {
         try {
-          if (await lease.acquire()) {
+          // A still-live background page may keep its exclusive lock while the
+          // client channel is broken; never hang the UI waiting for the lease.
+          const acquired = await Promise.race([
+            lease.acquire(),
+            new Promise(resolve => setTimeout(() => resolve(false), 5000))
+          ]);
+          if (acquired) {
             window.dispatchEvent(new Event('bjtu-chatroom-transport-ready'));
             return;
           }
