@@ -542,7 +542,8 @@
       return;
     }
     task = {name:message.file.name, conversationId:message.conversationId, card,
-      message:{id:message.id}, chunks:[], status:node('p','正在读取文件…','muted saved-file-status')};
+      message:{id:message.id, fileHandleRef:message.fileHandleRef}, downloadPath:String(message.downloadPath || ''),
+      chunks:[], status:node('p','正在读取文件…','muted saved-file-status')};
     savedPreviews.set(message.id, task); card.append(task.status);
     const load = async (requestPermission = false) => {
       task.status.replaceChildren(document.createTextNode('正在读取文件…'));
@@ -999,8 +1000,9 @@
       // extension storage; only the local IndexedDB handle and small metadata.
       let ref;
       try {
-        ref = await globalThis.BjtuChatroomSettings.saveReceivedFile(s.message.id, s.handle);
-        const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref};
+        const downloadPath = s.autoSaved ? String(s.savedPath || '') : '';
+        ref = await globalThis.BjtuChatroomSettings.saveReceivedFile(s.message.id, s.handle, { downloadPath });
+        const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref, downloadPath};
         await mutate('media-file-saved', metadata);
         Object.assign(s.message, metadata);
       } catch (error) {
@@ -1041,6 +1043,33 @@
   };
   const TEXT_EXTENSIONS = new Set('txt md csv log json js mjs cjs ts tsx jsx css html htm xml svg yml yaml toml ini conf py ps1 sh bat c cpp h java rs go sql'.split(' '));
   function previewType(name) { return PREVIEW_TYPES[String(name).split('.').pop().toLowerCase()] || ''; }
+  function appendFileActions(s, preview) {
+    preview.append(s.openButton);
+    if (s.outgoing || !String(s.downloadPath || s.message?.downloadPath || '').startsWith('downloads/')) return;
+    s.deleteButton = button('删除', () => { void deleteReceivedFile(s); }, 'secondary file-delete');
+    preview.append(s.deleteButton);
+  }
+  async function deleteReceivedFile(s) {
+    if (!globalThis.confirm(`删除已保存的文件「${s.name}」？此操作无法撤销。`)) return;
+    s.deleteButton.disabled = true;
+    try {
+      await globalThis.BjtuChatroomSettings.deleteReceivedFile(s.message.fileHandleRef);
+      await mutate('media-file-deleted', {id:s.message.id});
+      delete s.message.file;
+      delete s.message.fileHandleRef;
+      delete s.message.downloadPath;
+      s.downloadPath = '';
+      s.savedPath = '';
+      s.autoSaved = false;
+      s.saved = false;
+      s.completionText = '文件已删除';
+      releasePreview(s);
+      updateTransfer(s, '文件已删除');
+    } catch (error) {
+      s.deleteButton.disabled = false;
+      report(error);
+    }
+  }
   async function previewFile(s, file) {
     if (background) return;
     if (!file || !s.card || s.message.preview || stopped || s.conversationId !== selected) return;
@@ -1060,7 +1089,7 @@
       s.openButton = button('打开', () => {
         if (s.previewURL) globalThis.open(s.previewURL, '_blank', 'noopener,noreferrer');
       }, 'secondary file-open');
-      preview.append(s.openButton);
+      appendFileActions(s, preview);
     } else if (TEXT_EXTENSIONS.has(ext)) {
       // Plain text is never interpreted as HTML or executable code.
       const max = 256 * 1024, text = await file.slice(0, max).text();
@@ -1081,14 +1110,14 @@
       s.openButton = button('打开', () => {
         if (s.previewURL) globalThis.open(s.previewURL, '_blank', 'noopener,noreferrer');
       }, 'secondary file-open');
-      preview.append(s.openButton);
+      appendFileActions(s, preview);
     } else {
       s.previewURL = URL.createObjectURL(file.slice(0, file.size, 'application/octet-stream'));
       s.openButton = button('打开', () => {
         const link = node('a'); link.href = s.previewURL; link.download = s.name; link.hidden = true;
         document.body.append(link); link.click(); link.remove();
       }, 'secondary file-open');
-      preview.append(s.openButton);
+      appendFileActions(s, preview);
     }
     if (!previewCurrent(s, preview)) { if (s.preview === preview) releasePreview(s); return; }
     const nearBottom = $('messages').scrollHeight - $('messages').clientHeight - $('messages').scrollTop < 64;
@@ -1110,6 +1139,7 @@
   }
   function releasePreview(s) {
     s.openButton?.remove(); s.openButton = null;
+    s.deleteButton?.remove(); s.deleteButton = null;
     if (s.previewURL) { URL.revokeObjectURL(s.previewURL); s.previewURL = null; }
     if (s.message?.preview === s.preview) s.message.preview = null;
     s.preview?.remove(); s.preview = null;

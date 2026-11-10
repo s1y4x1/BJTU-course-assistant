@@ -629,8 +629,19 @@
         const name = str(args.file?.name, 180), size = args.file?.size;
         if (!Number.isSafeInteger(size) || size < 0 || args.fileHandleRef !== 'chatroom-file:' + message.id) fail('无效本地文件记录。');
         message.file = {name, size}; message.fileHandleRef = args.fileHandleRef;
+        const downloadPath = str(args.downloadPath || '', 240);
+        if (/^downloads\/[^/]+$/i.test(downloadPath)) message.downloadPath = downloadPath;
+        else delete message.downloadPath;
         trimHistory();
         if (!data.messages.includes(message)) fail('文件记录超出历史记录上限。');
+        return {};
+      }
+      case 'media-file-deleted': {
+        const message = data.messages.find(m => m.id === str(args.id, 201));
+        if (!message?.media) fail('接收文件记录已清除或无效。');
+        delete message.file;
+        delete message.fileHandleRef;
+        delete message.downloadPath;
         return {};
       }
       case 'settings': {

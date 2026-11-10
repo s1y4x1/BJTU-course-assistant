@@ -32,9 +32,9 @@
       });
     } finally { db.close(); }
   }
-  async function saveReceivedFile(messageId, handle) {
+  async function saveReceivedFile(messageId, handle, { downloadPath = '' } = {}) {
     const key = filePrefix + messageId;
-    await fileHandleEntry(key, 'put', handle);
+    await fileHandleEntry(key, 'put', { handle, downloadPath: String(downloadPath || '') });
     return key;
   }
   async function saveSentHandle(messageId, handle) {
@@ -44,7 +44,8 @@
     return key;
   }
   async function loadReceivedFile(key, requestPermission = false) {
-    const handle = await fileHandleEntry(key, 'get');
+    const entry = await fileHandleEntry(key, 'get');
+    const handle = entry?.handle || entry;
     if (handle) {
       let permission = 'granted';
       if (typeof handle.queryPermission === 'function') {
@@ -61,6 +62,20 @@
       }
     }
     throw new Error('本地文件引用已丢失或已清除，无法查看文件。');
+  }
+  async function deleteReceivedFile(key) {
+    const entry = await fileHandleEntry(key, 'get');
+    const handle = entry?.handle || entry;
+    const downloadPath = String(entry?.downloadPath || '');
+    if (!handle || !/^downloads\/[^/]+$/i.test(downloadPath)) {
+      throw new Error('该文件不是自动保存到扩展目录 downloads/ 的文件，无法在此删除。');
+    }
+    const root = await authorizedDirectory();
+    const downloads = await root.getDirectoryHandle('downloads');
+    await downloads.removeEntry(handle.name).catch((error) => {
+      if (error?.name !== 'NotFoundError') throw error;
+    });
+    await fileHandleEntry(key, 'delete');
   }
   const units = ['B', 'KB', 'MB', 'GB'];
   function normalizeLimit(text, unit) {
@@ -248,5 +263,6 @@
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
   global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload,
-    saveReceivedFile, saveSentHandle, loadReceivedFile, removeReceivedFile: key => fileHandleEntry(key, 'delete')};
+    saveReceivedFile, saveSentHandle, loadReceivedFile, deleteReceivedFile,
+    removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);
