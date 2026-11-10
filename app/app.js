@@ -6078,8 +6078,8 @@ function renderHomeworkList(courseId) {
       ? `<span style="margin-left:10px; white-space:nowrap;">提交人数: <span style="font-weight:700; color:#111827;">${escapeHtml(String(submitCount || 0))}/${escapeHtml(String(allCount || 0))}</span></span>`
       : '';
 
-    // 教师账号：作业ID（用于批量下载）
-    const homeworkId = String(hw.snId || hw.noteId || hw.courseNoteId || hw.id || hw.upId || '').trim();
+    // 教师账号：作业 ID（用于批量下载）
+    const homeworkId = String(hw.id || '').trim();
     const batchDownloadUrl = homeworkId ? `http://123.121.147.7:88/ve/back/coursePlatform/homeWork.shtml?method=batchDownloadWorks&id=${encodeURIComponent(homeworkId)}` : '';
     const viewActionText = globalThis.BjtuHomeworkUi.actionLabel('ve', 'view', { lead: '' });
     const submitActionText = globalThis.BjtuHomeworkUi.actionLabel('ve', 'submit', { lead: '' });
