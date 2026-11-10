@@ -736,7 +736,7 @@ html[data-color-scheme="dark"] .qwen-chat-ops-toggle {
   left: auto;
   bottom: auto;
   right: auto;
-  z-index: 10004;
+  z-index: 10020;
   box-sizing: border-box;
   width: max-content;
   min-width: min(280px, calc(100vw - 16px));

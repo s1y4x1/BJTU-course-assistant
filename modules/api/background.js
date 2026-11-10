@@ -2,8 +2,11 @@
 (function initBjtuApiBackground(global) {
   'use strict';
   if (!global.BJTUCA) return;
-  const META_OPERATIONS = Object.freeze(['api.operationList', 'api.getDocs']);
-  const SETTINGS_KEYS = ['qwenEnabledOperations', 'qwenAlwaysAllowedOperations'];
+  const META_OPERATIONS = Object.freeze(['api.operationList', 'api.getDocs', 'api.operationPanel']);
+  const ALWAYS_ALLOWED_KEY = 'APIAlwaysAllowedOperations';
+  const SETTINGS_KEYS = ['qwenEnabledOperations', ALWAYS_ALLOWED_KEY];
+  // 旧键不迁移，直接清掉，避免无主数据继续存在。
+  void chrome.storage.local.remove('qwenAlwaysAllowedOperations');
 
   function withMetaOperations(values) {
     return [...new Set([...META_OPERATIONS, ...(Array.isArray(values) ? values.map(String).filter(Boolean) : [])])];
@@ -12,22 +15,22 @@
   async function getSettings() {
     const stored = await chrome.storage.local.get(SETTINGS_KEYS);
     return {
-      enabledOperations: Array.isArray(stored.qwenEnabledOperations) ? stored.qwenEnabledOperations : null,
-      alwaysAllowedOperations: withMetaOperations(stored.qwenAlwaysAllowedOperations)
+      enabledOperations: Array.isArray(stored.qwenEnabledOperations) ? withMetaOperations(stored.qwenEnabledOperations) : null,
+      alwaysAllowedOperations: withMetaOperations(stored[ALWAYS_ALLOWED_KEY])
     };
   }
 
   async function saveSettings(patch) {
     const next = {};
     if (patch.enabledOperations !== undefined) {
-      next.qwenEnabledOperations = Array.isArray(patch.enabledOperations) ? patch.enabledOperations.map(String) : null;
+      next.qwenEnabledOperations = Array.isArray(patch.enabledOperations) ? withMetaOperations(patch.enabledOperations) : null;
     }
     if (patch.alwaysAllowedOperations !== undefined) {
-      next.qwenAlwaysAllowedOperations = withMetaOperations(patch.alwaysAllowedOperations);
+      next[ALWAYS_ALLOWED_KEY] = withMetaOperations(patch.alwaysAllowedOperations);
       if (patch.enabledOperations === undefined) {
         const current = await getSettings();
         if (Array.isArray(current.enabledOperations)) {
-          next.qwenEnabledOperations = [...new Set([...current.enabledOperations, ...next.qwenAlwaysAllowedOperations])];
+          next.qwenEnabledOperations = [...new Set([...current.enabledOperations, ...next[ALWAYS_ALLOWED_KEY]])];
         }
       }
     }

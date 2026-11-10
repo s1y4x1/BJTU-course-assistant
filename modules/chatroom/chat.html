@@ -17,7 +17,7 @@
 </head>
 <body class="chatroom-page">
   <main class="chat-layout">
-    <div id="sidebar-host" aria-busy="true"><p class="muted">正在加载联系人和设置…</p></div>
+    <div id="sidebar-host" aria-busy="true"><p class="muted chatroom-loading"><span class="spinner" aria-hidden="true"></span>正在加载会话和设置…</p></div>
     <section class="conversation card" aria-label="聊天内容">
       <header class="conversation-header"><div class="conversation-heading"><input id="conversation-title" type="text" value="公共群聊" maxlength="80" aria-label="会话备注" title="直接修改会话备注，回车或离开输入框保存" autocomplete="off"><div id="conversation-detail" class="muted"><div id="conversation-members" class="conversation-members"></div><button id="conversation-members-toggle" class="secondary" type="button" hidden>展开成员</button></div></div><div class="actions conversation-header-actions"><button id="invite-group" class="secondary" hidden>邀请成员</button><button id="leave-group" class="secondary" hidden>退出群聊</button><button id="block-peer" class="secondary" hidden>拉黑</button><button id="delete-friend" class="secondary" hidden>删除好友</button><button id="clear-history" class="secondary" type="button">清空记录</button><label class="conversation-mute"><input id="mute-conversation" type="checkbox">免打扰</label></div></header>
       <div id="messages" class="messages" role="log" aria-label="消息记录" aria-live="polite" aria-relevant="additions"><article class="message system" data-empty-message><div class="message-text bjtu-markdown">还没有消息，打个招呼吧。</div></article></div>

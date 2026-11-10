@@ -16,7 +16,7 @@
     autoRetry: 'bjtuLocalBridgeAutoRetry',
     retryIntervalMs: 'bjtuLocalBridgeRetryIntervalMs'
   });
-  const META_OPERATIONS = new Set(['api.operationList', 'api.getDocs']);
+  const META_OPERATIONS = new Set(['api.operationList', 'api.getDocs', 'api.operationPanel']);
   const APPROVAL_PREFIX = 'bjtu-local-bridge-approval:';
   const approvalRequests = new Map();
   const completedRequests = new Map();

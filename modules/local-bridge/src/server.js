@@ -106,11 +106,29 @@ function extensionConnected() {
   return extensionSocket?.readyState === WebSocket.OPEN && extensionInfo?.authenticated === true;
 }
 
-function sendExtensionRequest(action, payload = {}, { printResult = true, signal } = {}) {
+function externalInvocationLabel(action, payload) {
+  if (action === 'call') return String(payload?.name || 'call');
+  if (action === 'getDocs') {
+    const operation = [payload?.module, payload?.name].filter(Boolean).join('.');
+    return operation ? `api.getDocs ${operation}` : 'api.getDocs';
+  }
+  if (action === 'executeCode') return 'executeCode';
+  return action;
+}
+
+function writeExternalInvocation(action, payload) {
+  if (!terminal || terminal.closed || !process.stdin.isTTY || terminalCommandRunning) return;
+  readline.clearLine(process.stdout, 0);
+  readline.cursorTo(process.stdout, 0);
+  process.stdout.write(`BJTUCA> ${externalInvocationLabel(action, payload)}\n`);
+}
+
+function sendExtensionRequest(action, payload = {}, { printResult = true, echoInvocation = false, signal } = {}) {
   signal?.throwIfAborted();
   if (!extensionConnected()) {
     throw Object.assign(new Error('浏览器扩展尚未连接本地 Bridge'), { code: 'EXTENSION_OFFLINE' });
   }
+  if (echoInvocation) writeExternalInvocation(action, payload);
   const id = randomUUID();
   const cancel = () => {
     const pending = pendingExtensionCalls.get(id);
@@ -126,7 +144,10 @@ function sendExtensionRequest(action, payload = {}, { printResult = true, signal
   }).finally(() => signal?.removeEventListener('abort', cancel)).then((value) => {
     const result = ['call', 'executeCode'].includes(action) && value?.ok === true ? value.result : value;
     if (printResult) {
-      const plainGetDocs = action === 'call' && String(payload?.name || '') === 'api.getDocs' && typeof result === 'string';
+      const plainGetDocs = typeof result === 'string' && (
+        (action === 'call' && String(payload?.name || '') === 'api.getDocs')
+        || action === 'getDocs'
+      );
       process.stdout.write(`${plainGetDocs ? result : jsonText(result)}\n`);
     }
     return value;
@@ -138,6 +159,8 @@ function sendExtensionRequest(action, payload = {}, { printResult = true, signal
     })}\n`);
     if (error && typeof error === 'object') error.bridgeLogged = true;
     throw error;
+  }).finally(() => {
+    if (echoInvocation && terminal && !terminal.closed && process.stdin.isTTY && !terminalCommandRunning) terminal.prompt(true);
   });
 }
 
@@ -493,7 +516,7 @@ app.get('/api/v1/operation-list', async (_req, res) => {
 
 app.post('/api/v1/get-docs', async (req, res) => {
   try {
-    res.json(await sendExtensionRequest('getDocs', req.body || {}));
+    res.json(await sendExtensionRequest('getDocs', req.body || {}, { echoInvocation: true }));
   } catch (error) {
     res.status(503).json({ ok: false, code: error.code || 'BRIDGE_ERROR', error: String(error.message || error) });
   }
@@ -508,8 +531,8 @@ app.post('/api/v1/call', async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
     const response = typeof req.body?.code === 'string'
-      ? await sendExtensionRequest('executeCode', { mode: req.body.mode || 'app', code: req.body.code }, { signal: controller.signal })
-      : await callOperation(name, req.body?.arguments, { signal: controller.signal });
+      ? await sendExtensionRequest('executeCode', { mode: req.body.mode || 'app', code: req.body.code }, { signal: controller.signal, echoInvocation: true })
+      : await callOperation(name, req.body?.arguments, { signal: controller.signal, echoInvocation: true });
     if (response?.ok === false) {
       res.status(400).json({
         ok: false,
@@ -741,7 +764,10 @@ if (singleCommand) {
         const value = await response.json();
         if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
         if (printResult) {
-          const plainGetDocs = action === 'call' && String(payload?.name || '') === 'api.getDocs' && typeof value === 'string';
+          const plainGetDocs = typeof value === 'string' && (
+            (action === 'call' && String(payload?.name || '') === 'api.getDocs')
+            || action === 'getDocs'
+          );
           process.stdout.write(`${plainGetDocs ? value : jsonText(value)}\n`);
         }
         return ['call', 'executeCode'].includes(action) ? { ok: true, result: value } : value;

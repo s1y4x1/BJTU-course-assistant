@@ -78,11 +78,17 @@ html[data-color-scheme="dark"] .composer-message-size.over-limit { color:#fbbf24
 .composer-toggle { display:inline-flex; align-items:center; gap:4px; margin:0; font:inherit; white-space:nowrap; }
 .composer-toggle input[type="checkbox"] { width:auto; margin:0; padding:0; }
 .message-draft { border-style:dashed; border-color:var(--chat-muted); border-width:2px; }
+.chatroom-loading { display:flex; align-items:center; gap:8px; }
 .message-draft-label { color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .media-message { width:min(100%,600px); }
 .media-message .transfer { border:0; padding:0; }
+.message.media-message:has(.file-preview iframe) {
+  width:calc(100% - 12px);
+  max-width:calc(100% - 12px);
+}
 .file-preview :is(img,video,iframe) { display:block; max-width:100%; width:100%; max-height:380px; object-fit:contain; border:0; }
-.file-preview iframe { height:360px; }
+.file-preview iframe { height:min(70vh,720px); max-height:min(70vh,720px); }
+.file-preview iframe.file-html-preview { background:#fff; }
 .file-preview audio { max-width:100%; }
 .file-preview pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }
 .file-preview > :is(.file-open, .file-delete) { display:inline-flex; width:max-content; margin-top:8px; margin-right:8px; }

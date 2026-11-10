@@ -649,7 +649,7 @@
       parts.push(document.createTextNode(' · '), styledBytes(rate, '/s'), document.createTextNode(seconds === null ? ' · 剩余时间估算中…' : ` · 剩余 ${Math.floor(seconds / 60)}分${seconds % 60}秒`));
     }
     message.summary.replaceChildren(...parts);
-    message.detailsSummary.textContent = `传输详情（${completed}/${items.length} 已完成）`;
+    if (message.detailsSummary) message.detailsSummary.textContent = `传输详情（${completed}/${items.length} 已完成）`;
     message.cancel.hidden = settled;
   }
   function renderTransfer(s) {
@@ -662,7 +662,7 @@
       heading.append(document.createTextNode(' · '), size);
       message.progress = node('progress'); message.progress.className = 'transfer-total-progress';
       message.summary = node('p', undefined, 'muted');
-      if (!message.conversationId.startsWith('peer:')) {
+      if (!message.conversationId.startsWith('peer:') && s.outgoing) {
         message.details = node('details', undefined, 'transfer-details');
         message.detailsSummary = node('summary', '传输详情'); message.details.append(message.detailsSummary);
       }

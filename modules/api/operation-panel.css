@@ -1,0 +1,4 @@
+html, body { margin: 0; min-height: 100%; }
+body.api-operation-window { padding: 12px; box-sizing: border-box; background: var(--bjtu-page-background, #f8fafc); color: var(--bjtu-text, #172033); }
+.api-operation-window-card { box-sizing: border-box; padding: 12px; border: 1px solid var(--bjtu-border, #dce3eb); border-radius: 10px; background: var(--bjtu-card-background, #fff); }
+.api-operation-window .api-operation-panel { max-height: calc(100vh - 48px); overflow: auto; }

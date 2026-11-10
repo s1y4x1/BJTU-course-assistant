@@ -56,10 +56,10 @@ let moocLoginAssistOpening = null;
   const typeText = (type) => taskTypes[type];
   const isPaperTask = (task) => ['hw', 'quiz', 'exam'].includes(task.type);
   const actionKind = (type) => type === 'hw' ? 'submit' : (type === 'exam' ? 'exam' : 'quiz');
-  const isLongTaskTitle = (value) => Array.from(String(value || '')).reduce(
+  const isLongTaskTitle = (value, threshold = 32) => Array.from(String(value || '')).reduce(
     (length, character) => length + (/^[\x00-\xff]$/.test(character) ? 1 : 2),
     0
-  ) >= 32;
+  ) >= threshold;
   const GINS_TASK_GAP_MS = 450;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -261,7 +261,7 @@ let moocLoginAssistOpening = null;
       done: task.done,
       overdue: task.overdue,
       deadline: task.deadline,
-      className: `mooc-task${isLongTaskTitle(task.title) ? ' mooc-task--long-title' : ''}`,
+      className: `mooc-task${isLongTaskTitle(task.title) || (isPaperTask(task) && isLongTaskTitle(task.title, 24)) ? ' mooc-task--long-title' : ''}`,
       background: palette.background,
       border: palette.border,
       headClass: 'mooc-task-head',

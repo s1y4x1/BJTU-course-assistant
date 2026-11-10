@@ -927,6 +927,35 @@ name: 've.accounts',
     },
     {
       module: 've',
+      name: 've.batchDownloadWorks',
+      summary: '批量下载教师课程的已交作业包',
+      doc: [
+        '## ve.batchDownloadWorks —— 批量下载已交作业',
+        '',
+        '将教师课程的已交作业打包下载。仅教师/助教可用；下载前会检查平台返回的状态，没有文件或权限不足时抛出错误。',
+        '',
+        '**参数**：{"assignmentId":"作业 id，必填（ve.assignments / ve.assignments_of_ 的 id）","destination":"可选，browser-downloads（默认）或 extension-downloads"}',
+        '',
+        '- `browser-downloads`：交给浏览器下载管理器保存到浏览器默认下载目录，返回浏览器记录的绝对路径；不弹另存为窗口。',
+        '- `extension-downloads`：保存到扩展已授权的保存目录下的 `downloads/`，返回相对路径 `downloads/文件名`。',
+        '',
+        '**调用示例**：`ve.batchDownloadWorks({ assignmentId: "123456" })`；`ve.batchDownloadWorks({ assignmentId: "123456", destination: "extension-downloads" })`',
+        '',
+        '**返回示例**：{"ok":true,"destination":"extension-downloads","filename":"作业包-123456.zip","path":"downloads/作业包-123456.zip","bytes":1048576}',
+        '浏览器下载还会返回 downloadId。扩展目录未授权时抛出错误，请先在聊天室设置中授权保存目录。暂不支持通过 Bridge 传输。'
+      ].join('\n'),
+      async run(args) {
+        const assignmentId = String(args?.assignmentId || '').trim();
+        if (!assignmentId) throw new Error('缺少参数 assignmentId');
+        const destination = String(args?.destination || 'browser-downloads').trim();
+        if (!['browser-downloads', 'extension-downloads'].includes(destination)) {
+          throw new Error('destination 只能是 browser-downloads 或 extension-downloads');
+        }
+        return pageInvoke('ve', 'batchDownloadWorks', { assignmentId, destination }, 300000);
+      }
+    },
+    {
+      module: 've',
       name: 've.assignments_of_',
       summary: '获取指定智慧课程平台课程的作业列表',
       doc: [
@@ -1445,18 +1474,36 @@ name: 've.teachers_of_',
       doc: [
         '## academic.currentAccount —— 教务系统当前账号',
         '',
-        '获取教务系统当前登录的学号、已保存账号与各项监控开关状态。',
+        '获取教务系统当前登录的学号与各项监控开关状态；已保存账号请调用 `academic.accounts`。',
         '',
         '**调用示例**：`academic.currentAccount()`',
         '',
-        '**返回示例**：{"studentId":"…","accounts":[{"studentId":"…","userName":"张三","hasPassword":true}],"monitorEnabled":true}'
+        '**返回示例**：{"studentId":"…","monitorEnabled":true}'
       ].join('\n'),
       async run() {
         const value = throwOperationFailure(await academicInvoke('currentAccount', {}), '教务系统账号信息获取失败');
-        const { ok: _ok, accounts, ...rest } = value && typeof value === 'object' ? value : {};
+        const { ok: _ok, accounts: _accounts, ...rest } = value && typeof value === 'object' ? value : {};
+        return rest;
+      }
+    },
+    {
+      module: 'academic',
+      name: 'academic.accounts',
+      summary: '获取教务系统已保存的账号列表',
+      doc: [
+        '## academic.accounts —— 教务系统已保存账号',
+        '',
+        '获取教务系统已保存的账号列表，包含学号、姓名与是否保存密码。',
+        '',
+        '**调用示例**：`academic.accounts()`',
+        '',
+        '**返回示例**：{"accounts":[{"studentId":"…","userName":"张三","hasPassword":true}]}'
+      ].join('\n'),
+      async run() {
+        const value = throwOperationFailure(await academicInvoke('currentAccount', {}), '教务系统账号信息获取失败');
+        const accounts = Array.isArray(value?.accounts) ? value.accounts : [];
         return {
-          ...rest,
-          accounts: (Array.isArray(accounts) ? accounts : []).map(({
+          accounts: accounts.map(({
             updatedAt: _updatedAt,
             lastLoginAt: _lastLoginAt,
             ...account
@@ -1687,15 +1734,15 @@ name: 've.teachers_of_',
     {
       module: 'sso',
       name: 'sso.currentAccount',
-      summary: '获取统一身份认证的当前账号、平台与已保存账号列表',
+      summary: '获取统一身份认证的当前账号与平台',
       doc: [
         '## sso.currentAccount —— 统一身份认证当前账号',
         '',
-        '获取统一身份认证当前偏好账号、当前平台与已保存账号列表（含是否已保存密码）。',
+        '获取统一身份认证当前偏好账号与当前平台；已保存账号请调用 `sso.accounts`。',
         '',
         '**调用示例**：`sso.currentAccount()`',
         '',
-        '**返回示例**：{"loginName":"24281271","platform":"SSO","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}'
+        '**返回示例**：{"loginName":"24281271","platform":"SSO"}'
       ].join('\n'),
       async run() {
         const [platform, value] = await Promise.all([
@@ -1703,11 +1750,32 @@ name: 've.teachers_of_',
           ssoInvoke('currentAccount')
         ]);
         if (!value || typeof value !== 'object') return value;
-        const { ok: _ok, accounts, ...rest } = value;
+        const { ok: _ok, accounts: _accounts, ...rest } = value;
+        return { ...rest, platform };
+      }
+    },
+    {
+      module: 'sso',
+      name: 'sso.accounts',
+      summary: '获取统一身份认证已保存的账号列表',
+      doc: [
+        '## sso.accounts —— 统一身份认证已保存账号',
+        '',
+        '获取统一身份认证已保存的账号列表，包含登录名、姓名与是否保存密码。',
+        '',
+        '**调用示例**：`sso.accounts()`',
+        '',
+        '**返回示例**：{"platform":"SSO","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}'
+      ].join('\n'),
+      async run() {
+        const [platform, value] = await Promise.all([
+          getIdentityPlatform(),
+          ssoInvoke('currentAccount')
+        ]);
+        const accounts = Array.isArray(value?.accounts) ? value.accounts : [];
         return {
-          ...rest,
           platform,
-          accounts: (Array.isArray(accounts) ? accounts : []).map(({
+          accounts: accounts.map(({
             updatedAt: _updatedAt,
             lastLoginAt: _lastLoginAt,
             ...account
@@ -2764,6 +2832,33 @@ name: 've.teachers_of_',
           throw new Error(`未找到匹配的操作：${[moduleText, nameText].filter(Boolean).join('，')}`);
         }
         return matches.map((operation) => operation.doc).join('\n\n---\n\n');
+      }
+    },
+    {
+      module: 'api',
+      name: 'api.operationPanel',
+      summary: '打开扩展接口操作面板窗口',
+      doc: [
+        '## api.operationPanel —— 打开操作面板',
+        '',
+        '在独立扩展窗口中打开「允许调用以下操作」面板。该操作本身总是启用、始终允许，不受操作开关限制。窗口已打开时会聚焦现有窗口。',
+        '',
+        '**调用示例**：`api.operationPanel()`',
+        '',
+        '**返回示例**：{"windowId":123}'
+      ].join('\n'),
+      async run() {
+        const windows = chrome.windows;
+        if (!windows?.create) throw new Error('当前环境不支持打开扩展窗口。');
+        const url = chrome.runtime.getURL('modules/api/operation-panel.html');
+        const existing = (await windows.getAll({ populate: true }))
+          .find((win) => (win.tabs || []).some((tab) => String(tab.url || '') === url));
+        if (existing) {
+          await windows.update(existing.id, { focused: true });
+          return { windowId: existing.id };
+        }
+        const created = await windows.create({ url, type: 'popup', width: 520, height: 680 });
+        return { windowId: created.id };
       }
     },
     {

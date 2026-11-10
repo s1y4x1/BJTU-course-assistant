@@ -3202,6 +3202,136 @@ async function vePageAssignmentSnapshot() {
   };
 }
 
+function batchDownloadWorksUrl(assignmentId) {
+  return `http://123.121.147.7:88/ve/back/coursePlatform/homeWork.shtml?method=batchDownloadWorks&id=${encodeURIComponent(assignmentId)}`;
+}
+
+function batchDownloadFilename(response, assignmentId) {
+  const disposition = String(response.headers.get('content-disposition') || '');
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (encoded) {
+    try { return decodeURIComponent(encoded[1].trim()); } catch {}
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition);
+  const raw = plain ? plain[1].trim() : `作业包-${assignmentId}.zip`;
+  return raw.replace(/[\\/:*?"<>|]/g, '_') || `作业包-${assignmentId}.zip`;
+}
+
+async function inspectBatchDownload(response) {
+  if (!response.ok) throw new Error(`批量下载失败：HTTP ${response.status}`);
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('json') || contentType.startsWith('text/plain')) {
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error(text.trim() || '批量下载失败'); }
+    const status = String(data?.STATUS ?? data?.status ?? '');
+    if (status === '2') throw new Error(data?.message || '没有要下载的文件');
+    if (status === '1') throw new Error(data?.message || '您不是该课程的教师或助教，无法下载作业');
+    throw new Error(data?.message || '批量下载失败');
+  }
+}
+
+function waitForBrowserDownload(downloadId) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, item) => {
+      if (settled) return;
+      settled = true;
+      chrome.downloads.onChanged.removeListener(onChanged);
+      if (error) reject(error); else resolve(item);
+    };
+    const read = async () => {
+      const [item] = await chrome.downloads.search({ id: downloadId });
+      if (!item) return finish(new Error('无法读取下载记录'));
+      if (item.state === 'complete') return finish(null, item);
+      if (item.state === 'interrupted') {
+        return finish(new Error(item.error === 'USER_CANCELED' ? '下载已取消' : `浏览器下载已中断：${item.error || '未知原因'}`));
+      }
+    };
+    const onChanged = (delta) => {
+      if (delta.id !== downloadId) return;
+      if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') void read().catch(finish);
+    };
+    chrome.downloads.onChanged.addListener(onChanged);
+    void read().catch(finish);
+  });
+}
+
+async function downloadToBrowser(batchUrl) {
+  if (!chrome.downloads?.download) throw new Error('浏览器下载接口不可用');
+  const url = globalThis.BjtuVeAddress?.replace(batchUrl) || batchUrl;
+  const downloadId = await chrome.downloads.download({ url, conflictAction: 'uniquify', saveAs: false });
+  const item = await waitForBrowserDownload(downloadId);
+  return {
+    ok: true,
+    destination: 'browser-downloads',
+    downloadId,
+    filename: item.filename || '',
+    path: item.filename || '',
+    bytes: Number(item.fileSize) > 0 ? Number(item.fileSize) : Number(item.bytesReceived || 0)
+  };
+}
+
+function openExtensionFileSystem() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('BJTUCA-FileSystem', 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains('handles')) request.result.createObjectStore('handles');
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('无法打开扩展目录数据库'));
+  });
+}
+
+async function extensionDownloadsRoot() {
+  const db = await openExtensionFileSystem();
+  try {
+    const handle = await new Promise((resolve, reject) => {
+      const request = db.transaction('handles', 'readonly').objectStore('handles').get('update-directory');
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+    if (!handle) throw new Error('尚未授权扩展目录，请先在聊天室设置中授权保存目录');
+    if (typeof handle.queryPermission === 'function') {
+      const permission = await handle.queryPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') throw new Error('扩展目录写入权限已失效，请重新授权保存目录');
+    }
+    return handle;
+  } finally {
+    db.close();
+  }
+}
+
+async function uniqueFileHandle(directory, filename) {
+  const dot = filename.lastIndexOf('.');
+  const base = dot > 0 ? filename.slice(0, dot) : filename;
+  const extension = dot > 0 ? filename.slice(dot) : '';
+  for (let index = 0; index < 100; index += 1) {
+    const candidate = index === 0 ? filename : `${base} (${index})${extension}`;
+    try {
+      await directory.getFileHandle(candidate);
+    } catch (error) {
+      if (error?.name === 'NotFoundError') return { name: candidate, handle: await directory.getFileHandle(candidate, { create: true }) };
+      throw error;
+    }
+  }
+  throw new Error('无法生成不重复的文件名');
+}
+
+async function downloadToExtension(response, filename) {
+  const root = await extensionDownloadsRoot();
+  const directory = await root.getDirectoryHandle('downloads', { create: true });
+  const { name, handle } = await uniqueFileHandle(directory, filename);
+  const writable = await handle.createWritable();
+  const blob = await response.blob();
+  try {
+    await writable.write(blob);
+  } finally {
+    await writable.close();
+  }
+  return { ok: true, destination: 'extension-downloads', filename: name, path: `downloads/${name}`, bytes: blob.size };
+}
+
 globalThis.BjtuVePageApi = Object.freeze({
   semester: async (args) => {
     const core = globalThis.BjtuVeHomeworkCore;
@@ -3253,6 +3383,24 @@ globalThis.BjtuVePageApi = Object.freeze({
       if (user && !isVeTeacherUserInfo(user)) return { items: [], total: 0, error: '请先登录教师账号' };
     }
     return { items, total: items.length };
+  },
+  batchDownloadWorks: async (args) => {
+    const assignmentId = String(args?.assignmentId || '').trim();
+    if (!assignmentId) throw new Error('缺少 assignmentId');
+    const destination = String(args?.destination || 'browser-downloads').trim();
+    if (!['browser-downloads', 'extension-downloads'].includes(destination)) {
+      throw new Error('destination 只能是 browser-downloads 或 extension-downloads');
+    }
+    const batchUrl = batchDownloadWorksUrl(assignmentId);
+    const response = await fetch(globalThis.BjtuVeAddress?.replace(batchUrl) || batchUrl, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    await inspectBatchDownload(response);
+    const filename = batchDownloadFilename(response, assignmentId);
+    if (destination === 'extension-downloads') return downloadToExtension(response, filename);
+    try { await response.body?.cancel(); } catch {}
+    return downloadToBrowser(batchUrl);
   },
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),
