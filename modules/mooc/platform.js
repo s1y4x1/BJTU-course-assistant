@@ -815,6 +815,7 @@ let moocLoginAssistOpening = null;
       if (!taskLayoutResizeBound) {
         taskLayoutResizeBound = true;
         window.addEventListener('resize', scheduleTaskActionLayout, { passive: true });
+        window.addEventListener('bjtu-course-helper-layout-changed', scheduleTaskActionLayout, { passive: true });
       }
     },
     load,

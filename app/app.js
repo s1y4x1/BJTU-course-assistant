@@ -2201,6 +2201,10 @@ function syncCourseHelperEvenWidthsButton() {
     || !uneven;
 }
 
+function notifyCourseHelperLayoutChanged() {
+  window.dispatchEvent(new CustomEvent('bjtu-course-helper-layout-changed'));
+}
+
 function applyCourseHelperPlatformColumnWeights() {
   if (!courseListDiv) return;
   const weights = normalizeCourseHelperPlatformColumnWeights(window.courseHelperPlatformColumnWeights);
@@ -2209,6 +2213,7 @@ function applyCourseHelperPlatformColumnWeights() {
     column.style.flex = `${weights[platform] || 1} 1 0px`;
   });
   syncCourseHelperEvenWidthsButton();
+  notifyCourseHelperLayoutChanged();
 }
 
 async function persistCourseHelperPlatformColumnWeights() {
@@ -2263,6 +2268,7 @@ function bindPlatformColumnResizer(resizer) {
       const nextLeft = Math.max(minWidth, Math.min(pairWidth - minWidth, pointerWidth));
       leftColumn.style.flex = `0 0 ${nextLeft}px`;
       rightColumn.style.flex = `0 0 ${pairWidth - nextLeft}px`;
+      notifyCourseHelperLayoutChanged();
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
@@ -2710,6 +2716,7 @@ function setupRightColumnResizer() {
     activeLandscapeRatio = Math.max(minimumRatio, Math.min(1 - minimumRatio, (e.clientX - rect.left - gap) / available));
     applyLandscapeRatio();
     scheduleResizerSync();
+    notifyCourseHelperLayoutChanged();
   };
 
   const onUp = () => {
