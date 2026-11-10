@@ -52,13 +52,14 @@
   // The transport identity lives here even while a page is open. Flip its
   // presence flag so peers see "online" instead of "background online", and
   // restore it once the last foreground client detaches.
-  let presenceAttached = null, presenceTimer = 0;
-  function syncForegroundPresence() {
+  let presenceAttached = null, presenceTimer = 0, presenceRefreshAt = 0;
+  function syncForegroundPresence(force = false) {
     if (!ready || !globalThis.BjtuChatroomTransport) return;
     const attached = clients.size > 0;
-    if (presenceAttached === attached) return;
+    if (!force && presenceAttached === attached) return;
     presenceAttached = attached;
-    void globalThis.BjtuChatroomTransport.action('set-background', { background: !attached })
+    presenceRefreshAt = Date.now();
+    void globalThis.BjtuChatroomTransport.action('set-background', { background: !attached, force })
       .catch(error => { presenceAttached = null; console.warn('[bjtu] chatroom presence:', error); });
   }
   function forward(event) {
@@ -243,7 +244,13 @@
     ready = true;
     presenceAttached = null;
     clearInterval(presenceTimer);
-    presenceTimer = setInterval(() => { pruneClients(); syncForegroundPresence(); }, 3000);
+    presenceTimer = setInterval(() => {
+      pruneClients();
+      // Handshake packets can be built just before the foreground attaches;
+      // re-send the profile periodically until the session settles.
+      const refresh = clients.size > 0 && Date.now() - presenceRefreshAt >= 5000;
+      syncForegroundPresence(refresh);
+    }, 3000);
     ensureForwarding();
     publishStatus({type:globalThis.BjtuChatroomLink?.discoveryStatus === 'connected' ? 'discovery' : 'scan-closed'});
     void chrome.storage.local.get(reconnectSettings).then(settings => { reconnectSettings = settings; scheduleReconnect(true); });

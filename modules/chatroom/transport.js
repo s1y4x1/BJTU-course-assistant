@@ -602,9 +602,14 @@
     switch (name) {
       case 'set-background': {
         const background = args.background === true;
-        if (publicIdentity.background === background) return {};
+        const changed = publicIdentity.background !== background;
         publicIdentity.background = background;
-        for (const peerId of linkedPeers()) effects.push({peerId, type:'profile', payload:{}});
+        // A peer may have captured the old identity in a handshake that was
+        // still in flight. Refresh the profile periodically while a
+        // foreground client is attached so the flag cannot stay stale.
+        if (changed || args.force === true) {
+          for (const peerId of linkedPeers()) effects.push({peerId, type:'profile', payload:{}});
+        }
         return {};
       }
       case 'conversation-read': {

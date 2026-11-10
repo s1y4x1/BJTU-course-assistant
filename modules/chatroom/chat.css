@@ -95,7 +95,7 @@ html[data-color-scheme="dark"] .composer-message-size.over-limit { color:#fbbf24
 .message-draft-label { color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); }
 .media-message { width:min(100%,600px); }
 .media-message .transfer { border:0; padding:0; }
-.message.media-message.media-wide-preview {
+.message:has(.file-preview iframe) {
   width:calc(100% - 12px);
   max-width:calc(100% - 12px);
   margin-right:12px;
