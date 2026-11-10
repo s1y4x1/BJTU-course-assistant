@@ -149,7 +149,9 @@
       const own = doc.querySelector('.ownsubmission');
       task.done = !!own?.querySelector('.submission-summary');
       if (!task.done && !/您还没有提交您的作品|添加提交/.test(text(own))) throw error('互评页面缺少明确的本人提交状态');
-      task.description = text(doc.querySelector('#intro, .generalbox .no-overflow'));
+      const description = doc.querySelector('#intro, .generalbox .no-overflow');
+      task.description = text(description);
+      task.descriptionHtml = description?.innerHTML || '';
       const dates = readDates(doc.querySelector('[data-region="activity-dates"], .activity-dates'));
       for (const field of ['startTime', 'deadline', 'assessmentEnd']) if (dates[field]) task[field] = dates[field];
     } else {
@@ -284,6 +286,10 @@
     courses.forEach((course, index) => {
       const pending = course.tasks.filter((t) => ['pending', 'unknown', 'resource'].includes(status(t)))
         .sort((a, b) => (a.deadline || Infinity) - (b.deadline || Infinity));
+      const pendingEarliestTs = pending.reduce((earliest, task) => {
+        const deadline = Number(task.deadline || 0);
+        return deadline > 0 && deadline < earliest ? deadline : earliest;
+      }, Number.MAX_SAFE_INTEGER);
       const group = (kind) => {
         const tasks = course.tasks.filter((t) => status(t) === kind);
         if (!tasks.length) return '';
@@ -304,6 +310,9 @@
         headerClass: 'citel-course-head', identityClass: 'course-card-identity', homeworkClass: 'homework-area', includeResultArea: false, wrapActions: false
       });
       env.courseList.appendChild(card);
+      if (Number.isFinite(pendingEarliestTs) && pendingEarliestTs !== Number.MAX_SAFE_INTEGER) {
+        card.dataset.pendingEarliestTs = String(pendingEarliestTs);
+      }
       global.BjtuCitelParticipants?.bind(card);
     });
     if (animations) global.BjtuColors.restoreAnimations(env.courseList, animations, animationSelector);

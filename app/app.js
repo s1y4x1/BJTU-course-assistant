@@ -4635,8 +4635,10 @@ function compareCourseCards(a, b) {
   if (ra === 0 && rb === 0) {
     const ida = String(a.id || '').startsWith('course-') ? String(a.id).slice(7) : '';
     const idb = String(b.id || '').startsWith('course-') ? String(b.id).slice(7) : '';
-    const tsa = Number(window.courseCardStateById?.[ida]?.pendingEarliestTs || 0);
-    const tsb = Number(window.courseCardStateById?.[idb]?.pendingEarliestTs || 0);
+    const stateTsA = Number(window.courseCardStateById?.[ida]?.pendingEarliestTs || 0);
+    const stateTsB = Number(window.courseCardStateById?.[idb]?.pendingEarliestTs || 0);
+    const tsa = stateTsA || Number(a.dataset.pendingEarliestTs || 0);
+    const tsb = stateTsB || Number(b.dataset.pendingEarliestTs || 0);
     const va = tsa > 0 ? tsa : Number.MAX_SAFE_INTEGER;
     const vb = tsb > 0 ? tsb : Number.MAX_SAFE_INTEGER;
     if (va !== vb) return va - vb;
