@@ -20,6 +20,93 @@
     });
     window.addEventListener('pagehide',() => listeners.clear(),{once:true});
   }
+  // Foreground chat pages borrow this engine over BroadcastChannel instead of
+  // taking the engine lease. They keep their own RTCPeerConnection for files
+  // and screens; the signed transport, discovery and peer links stay here.
+  const clientChannel = enabled ? new BroadcastChannel('bjtuca-chatroom-engine-client') : null;
+  const clients = new Map();
+  let forwarding = false;
+  function clientEligible() {
+    const lease = globalThis.BjtuChatroomEngineLease;
+    return enabled && ready && !!globalThis.BjtuChatroomTransport &&
+      lease?.role === 'background' && !lease.draining;
+  }
+  function pruneClients() {
+    const now = Date.now();
+    for (const [id, entry] of clients) if (now - entry.lastSeen > 8000) removeClient(id);
+  }
+  function removeClient(id) {
+    const entry = clients.get(id);
+    if (!entry) return;
+    clients.delete(id);
+    if (entry.primary) {
+      const next = clients.entries().next().value;
+      if (next) {
+        next[1].primary = true;
+        replyClient({type: 'BJTUC_ENGINE_CLIENT_PROMOTED', clientId: next[0]});
+      }
+    }
+  }
+  function replyClient(message) { try { clientChannel.postMessage(message); } catch {} }
+  function forward(event) {
+    if (!clients.size) return;
+    const payload = event?.type === 'error' ? {type: 'error', message: String(event.message || event.error?.message || '')} : event;
+    for (const [id, entry] of clients) {
+      if (payload?.type === 'signal' && !entry.primary) continue;
+      replyClient({type: 'BJTUC_ENGINE_CLIENT_EVENT', clientId: id, event: payload});
+    }
+  }
+  function ensureForwarding() {
+    if (forwarding || !enabled) return;
+    const transport = globalThis.BjtuChatroomTransport;
+    if (!transport || typeof transport.subscribe !== 'function') return;
+    forwarding = true;
+    transport.subscribe(forward);
+  }
+  if (clientChannel) clientChannel.onmessage = (event) => {
+    const message = event.data;
+    if (!message || typeof message.clientId !== 'string' || message.clientId.length > 80) return;
+    const clientId = message.clientId;
+    if (message.type === 'BJTUC_ENGINE_CLIENT_HELLO') {
+      pruneClients();
+      if (!clientEligible()) {
+        replyClient({type: 'BJTUC_ENGINE_CLIENT_UNAVAILABLE', clientId, reason: '后台聊天室引擎尚未就绪。'});
+        return;
+      }
+      let entry = clients.get(clientId);
+      if (!entry) {
+        entry = {lastSeen: Date.now(), primary: clients.size === 0};
+        clients.set(clientId, entry);
+      }
+      entry.lastSeen = Date.now();
+      ensureForwarding();
+      replyClient({type: 'BJTUC_ENGINE_CLIENT_HELLO_OK', clientId, engineId,
+        discoveryStatus: globalThis.BjtuChatroomLink?.discoveryStatus || 'disconnected', primary: entry.primary});
+      return;
+    }
+    const entry = clients.get(clientId);
+    if (!entry) return;
+    entry.lastSeen = Date.now();
+    if (message.type === 'BJTUC_ENGINE_CLIENT_PING') {
+      replyClient({type: 'BJTUC_ENGINE_CLIENT_PONG', clientId});
+      return;
+    }
+    if (message.type === 'BJTUC_ENGINE_CLIENT_BYE') { removeClient(clientId); return; }
+    if (message.type !== 'BJTUC_ENGINE_CLIENT_RPC') return;
+    if (!clientEligible()) {
+      replyClient({type: 'BJTUC_ENGINE_CLIENT_RPC_RESULT', clientId, id: message.id, ok: false, error: '后台聊天室引擎已断开。'});
+      return;
+    }
+    const transport = globalThis.BjtuChatroomTransport;
+    if (message.name === 'close') pauseReconnect();
+    if (message.name === 'scan') resumeReconnect();
+    const job = message.method === 'state' ? transport.state() : transport.action(message.name, message.args);
+    void Promise.resolve(job).then(result => {
+      replyClient({type: 'BJTUC_ENGINE_CLIENT_RPC_RESULT', clientId, id: message.id, ok: true, result});
+    }, error => {
+      replyClient({type: 'BJTUC_ENGINE_CLIENT_RPC_RESULT', clientId, id: message.id, ok: false, error: error?.message || '聊天室操作失败。'});
+    });
+  };
   // MessageSender.documentId is absent for some extension/offscreen frames.
   // Discover an active renderer, then address it by an in-memory instance ID.
   // Synchronous filtering lets other renderers decline without holding the
@@ -87,6 +174,7 @@
     if (enabled) void chrome.runtime.sendMessage({type:'BJTU_CHATROOM_FILE_INVITATION_CLOSED',engineId,peerId,sid}).catch(() => {});
   }
   function publishStatus(detail) {
+    if (!enabled) return;
     void chrome.runtime.sendMessage({type:'BJTU_CHATROOM_ENGINE_STATUS',detail}).catch(() => {});
   }
   function eligible() {
@@ -120,9 +208,15 @@
   chrome.storage.onChanged.addListener(onSettings);
   window.addEventListener('pagehide',() => {
     ready = false; clearTimeout(reconnectTimer); chrome.storage.onChanged.removeListener(onSettings);
+    if (clientChannel) {
+      for (const id of clients.keys()) replyClient({type:'BJTUC_ENGINE_CLIENT_DETACHED',clientId:id,reason:'后台页面已卸载。'});
+      clients.clear();
+      try { clientChannel.close(); } catch {}
+    }
   },{once:true});
   window.addEventListener('bjtu-chatroom-link-status',event => {
     if (!ready) return;
+    for (const id of clients.keys()) replyClient({type:'BJTUC_ENGINE_CLIENT_STATUS',clientId:id,detail:event.detail});
     publishStatus(event.detail);
     // Let the link's `opening` promise settle before deciding whether to retry.
     setTimeout(scheduleReconnect, 0);
@@ -130,7 +224,11 @@
   window.addEventListener('bjtu-chatroom-engine-rolechange',() => scheduleReconnect(globalThis.BjtuChatroomEngineLease?.role === 'background'));
   globalThis.BjtuChatroomBackgroundMode = {enabled,canReceiveFile,notifyInvitation,markReady() {
     ready = true;
+    ensureForwarding();
     publishStatus({type:globalThis.BjtuChatroomLink?.discoveryStatus === 'connected' ? 'discovery' : 'scan-closed'});
     void chrome.storage.local.get(reconnectSettings).then(settings => { reconnectSettings = settings; scheduleReconnect(true); });
-  },pauseReconnect,resumeReconnect,closeInvitation,setFileDecisionHandler(fn) { fileDecisionHandler = fn; }};
+  },pauseReconnect,resumeReconnect,closeInvitation,setFileDecisionHandler(fn) { fileDecisionHandler = fn; },
+    // chat.js uses this to hand media invitations to an attached foreground
+    // page instead of accepting them here.
+    get foregroundAttached() { pruneClients(); return clients.size > 0; }};
 })();

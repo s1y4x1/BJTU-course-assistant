@@ -29,6 +29,18 @@
   chrome.runtime.onInstalled.addListener(() => { void reconcile().catch(report); });
   chrome.runtime.onMessage.addListener((message,sender,respond) => {
     if (sender.id !== chrome.runtime.id) return false;
+    if (message?.type === 'BJTU_CHATROOM_ENSURE_BACKGROUND') {
+      // A foreground chat page asks for the always-on engine before borrowing
+      // it over BroadcastChannel. Never creates the document when the user
+      // turned background reception off.
+      void (async () => {
+        const stored = await chrome.storage.local.get({chatroomBackgroundEnabled:true});
+        if (stored.chatroomBackgroundEnabled === false) { respond({ok:false,reason:'disabled'}); return; }
+        await global.BjtuOffscreenManager.ensure('chatroom');
+        respond({ok:true});
+      })().catch(error => { report(error); respond({ok:false,error:error.message}); });
+      return true;
+    }
     if (message?.type === 'BJTU_CHATROOM_OPTIONS_STATUS') {
       void chrome.runtime.sendMessage({type:'BJTU_CHATROOM_ENGINE_DISCOVER'}).then(
         result => respond(result),() => respond({discoveryStatus:'disconnected'}));

@@ -9,7 +9,15 @@
   'use strict';
   const backgroundMode = globalThis.BjtuChatroomBackgroundMode;
   const background = backgroundMode?.enabled === true;
-  if (globalThis.BjtuChatroomEngineLease && !await globalThis.BjtuChatroomEngineLease.acquire()) return;
+  // When the background engine is available this page only renders its state
+  // and keeps its own media connections; closing the page no longer needs to
+  // move the transport. Otherwise fall back to owning the engine locally.
+  let engineClient = null;
+  if (!background) {
+    try { engineClient = await globalThis.BjtuChatroomEngineClient?.attach?.() || null; }
+    catch (error) { console.warn('[bjtu] chatroom foreground client:', error); }
+  }
+  if (!engineClient && globalThis.BjtuChatroomEngineLease && !await globalThis.BjtuChatroomEngineLease.acquire()) return;
   const $ = (id) => document.getElementById(id);
   const embedded = new URLSearchParams(location.search).get('embedded') === '1';
   let embeddedVisible = !embedded;
@@ -405,12 +413,16 @@
       requestAnimationFrame(updateMembersToggle);
     }
     $('invite-group').hidden = $('leave-group').hidden = !room;
-    $('pick-file').disabled = $('paste-message-file').disabled = !online || !recipients().length;
+    // Only the primary foreground window owns media connections; additional
+    // windows render the same conversation without competing for invitations.
+    const mediaAllowed = !engineClient || engineClient.mediaOwner;
+    $('pick-file').disabled = $('paste-message-file').disabled = !mediaAllowed || !online || !recipients().length;
     $('share-screen').hidden = !!capture;
     $('stop-screen').hidden = !capture;
     const screenTargets = screenRecipients();
-    $('share-screen').disabled = !online || !screenTargets.length || !!capture || sharingPending;
-    $('share-screen').title = !screenTargets.length && recipients().length
+    $('share-screen').disabled = !mediaAllowed || !online || !screenTargets.length || !!capture || sharingPending;
+    $('share-screen').title = !mediaAllowed ? '另一个聊天室窗口正在使用媒体传输。'
+      : !screenTargets.length && recipients().length
       ? '对方当前仅后台在线，无法共享屏幕。' : '共享屏幕';
   }
   function updateMembersToggle() {
@@ -791,6 +803,7 @@
     await offerFiles(await Promise.all(files.map(pastedFileEntry)));
   }
   async function offerFiles(items) {
+    if (engineClient && !engineClient.mediaOwner) throw new Error('另一个聊天室窗口正在使用媒体传输，请在该窗口发送文件。');
     const entries = items.map(item => item instanceof File ? {file: item, handle: null} : item);
     const conversationId = selected;
     const targets = recipients();
@@ -852,6 +865,9 @@
     let s = sessions.get(sid);
     if (s && s.peerId !== peerId) return;
     if (kind === 'invite') {
+      // An attached foreground page owns media invitations while it is open;
+      // the background keeps the transport and its existing sessions only.
+      if (background && backgroundMode?.foregroundAttached) return;
       if (s || closedSessions.has(sid) || !['file', 'screen'].includes(payload.media) || sessions.size >= LIMIT.sessions) return;
       if (typeof payload.messageId !== 'string' || !payload.messageId || payload.messageId.length > 80) return;
       if (mediaMessages.has(`${peerId}:${payload.messageId}`)) return;
@@ -1230,6 +1246,7 @@
   }
   async function shareScreen() {
     if (capture || sharingPending) return;
+    if (engineClient && !engineClient.mediaOwner) throw new Error('另一个聊天室窗口正在使用媒体传输，请在该窗口共享屏幕。');
     const conversationId = selected;
     const targets = screenRecipients();
     if (!targets.length) throw new Error(recipients().length
@@ -1447,7 +1464,9 @@
     }
     return s.accepted ? {ok:true} : {ok:false,error:'后台保存失败，请打开聊天室后重新发送。',openChat:true,conversationId:s.conversationId};
   });
-  if (!background) await restoreInvitations();
+  // In proxy mode the background engine keeps pending invitations itself; the
+  // handoff list is only meaningful when this page owns the engine.
+  if (!background && !engineClient) await restoreInvitations();
   backgroundMode?.markReady();
   if (embedded) parent.postMessage({type:'BJTU_CHATROOM_WINDOW_READY'},location.origin);
   const requestedConversation = new URLSearchParams(location.search).get('conversation');

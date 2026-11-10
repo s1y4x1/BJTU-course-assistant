@@ -7,12 +7,13 @@
     chatroomNotifyNewMessages: true,
     chatroomBackgroundEnabled: true,
     chatroomBackgroundReceiveFiles: true,
+    chatroomForegroundProxyEnabled: true,
     chatroomAutoReconnectEnabled: true,
     chatroomReconnectIntervalSeconds: 5,
     chatroomAutoScanLanEnabled: true,
     chatroomAutoScanLanIntervalSeconds: 300
   });
-  const preferenceKeys = ['chatroomNotifyNewMessages', 'chatroomBackgroundEnabled', 'chatroomBackgroundReceiveFiles', 'chatroomAutoReconnectEnabled', 'chatroomAutoScanLanEnabled'];
+  const preferenceKeys = ['chatroomNotifyNewMessages', 'chatroomBackgroundEnabled', 'chatroomBackgroundReceiveFiles', 'chatroomForegroundProxyEnabled', 'chatroomAutoReconnectEnabled', 'chatroomAutoScanLanEnabled'];
   const filePrefix = 'chatroom-file:';
   async function fileHandleEntry(key, operation, handle) {
     if (!key.startsWith(filePrefix)) throw new Error('无效本地文件引用。');
@@ -167,6 +168,7 @@
     function render() {
       for (const key of preferenceKeys) $(key).checked = values[key] !== false;
       $('chatroomBackgroundReceiveFiles').disabled = values.chatroomBackgroundEnabled === false;
+      $('chatroomForegroundProxyEnabled').disabled = values.chatroomBackgroundEnabled === false;
       $('chatroomReconnectIntervalSeconds').disabled = values.chatroomAutoReconnectEnabled === false;
       if (!dirty.has('reconnect')) $('chatroomReconnectIntervalSeconds').value = values.chatroomReconnectIntervalSeconds;
       $('chatroomAutoScanLanIntervalSeconds').disabled = values.chatroomAutoScanLanEnabled === false;
@@ -216,7 +218,10 @@
       void save({chatroomAutoSaveEnabled: event.target.checked});
     }, {signal: abort.signal});
     for (const key of preferenceKeys) $(key).addEventListener('change', event => {
-      if (key === 'chatroomBackgroundEnabled') $('chatroomBackgroundReceiveFiles').disabled = !event.target.checked;
+      if (key === 'chatroomBackgroundEnabled') {
+        $('chatroomBackgroundReceiveFiles').disabled = !event.target.checked;
+        $('chatroomForegroundProxyEnabled').disabled = !event.target.checked;
+      }
       if (key === 'chatroomAutoReconnectEnabled') $('chatroomReconnectIntervalSeconds').disabled = !event.target.checked;
       if (key === 'chatroomAutoScanLanEnabled') $('chatroomAutoScanLanIntervalSeconds').disabled = !event.target.checked;
       void save({[key]: event.target.checked});

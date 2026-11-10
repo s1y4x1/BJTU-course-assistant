@@ -50,8 +50,9 @@
   <label class="chatroom-option-check"><input id="chatroomAutoScanLanEnabled" type="checkbox" checked><span>未连接时自动扫描局域网服务器</span><span class="tip">本机服务器不可用时，按设定间隔分批探测 192.168.0.100~192.168.0.200、192.168.1.100~192.168.1.200、192.168.137.1 的聊天室端口；找到后自动连接。仅在地址为本机地址时启用。</span></label>
   <label class="chatroom-option-check" style="margin-left: 24px"><span>扫描间隔</span><input id="chatroomAutoScanLanIntervalSeconds" type="number" min="10" max="3600" step="10" value="300" style="width: 6em"><span>秒</span></label>
   <label class="chatroom-option-check"><input id="chatroomNotifyNewMessages" type="checkbox" checked><span>新消息提醒</span><span class="tip">收到当前未在查看的会话消息时发送系统通知；会话开启免打扰后不发送通知。</span></label>
-  <label class="chatroom-option-check"><input id="chatroomBackgroundEnabled" type="checkbox" checked><span>后台保持在线并接收消息</span><span class="tip">关闭聊天室页面后仍保持在线。打开前台时，后台等待正在接收的文件结束后交接；不申请权限或接收屏幕共享。</span></label>
+  <label class="chatroom-option-check"><input id="chatroomBackgroundEnabled" type="checkbox" checked><span>后台保持在线并接收消息</span><span class="tip">关闭聊天室页面后仍保持在线并接收文字消息。打开聊天室页面时，连接仍由后台持有；屏幕共享与发送文件需要在前台页面进行。</span></label>
   <label class="chatroom-option-check" style="margin-left: 24px"><input id="chatroomBackgroundReceiveFiles" type="checkbox" checked><span>后台同时接收文件</span><span class="tip">符合自动保存设置且扩展目录已有读写授权时自动接收。否则通过通知询问是否接收；未授权保存目录时，打开聊天室选择保存位置。关闭后台在线时此选项不生效。</span></label>
+  <label class="chatroom-option-check" style="margin-left: 24px"><input id="chatroomForegroundProxyEnabled" type="checkbox" checked><span>打开聊天室时由后台保持连接</span><span class="tip">聊天室页面只负责界面、文件和屏幕共享；文字消息与连接由后台接收，关闭页面不会中断在线状态。关闭此项可回退为页面自行连接。</span></label>
   <template data-chatroom-sidebar-end></template>
   <a id="chatroomOpen" class="option-action-link" href="/modules/chatroom/chat.html">打开局域网聊天室</a>
 </section>
