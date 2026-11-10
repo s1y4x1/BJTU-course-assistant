@@ -243,6 +243,12 @@
     history({ id: crypto.randomUUID(), senderId: peerId, conversationId: 'peer:' + peerId,
       system: true, code, text: text || rejectionText[code] || '对方已取消拉黑。', createdAt: Date.now() });
   }
+  function publicPresenceMessage(p, joined) {
+    const name = p.remark || p.nickname || p.ip || p.id;
+    history({ id: crypto.randomUUID(), senderId: p.id, conversationId: 'public', system: true,
+      code: joined ? 'PUBLIC_ONLINE' : 'PUBLIC_OFFLINE',
+      text: `${name} ${joined ? '进入了公共群聊' : '离开了公共群聊'}`, createdAt: Date.now() });
+  }
   function queueMessage(m, effects, force = false, onlyPeer) {
     for (const [peerId, d] of Object.entries(m.delivery || {})) {
       if (onlyPeer && onlyPeer !== peerId) continue;
@@ -534,7 +540,9 @@
       if (typeof value?.ip === 'string') p.ip = str(value.ip, 64, true);
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
+      const wasOnline = p.online === true;
       p.online = true; p.lastSeen = Date.now();
+      if (!wasOnline) publicPresenceMessage(p, true);
       p.reconnectable = value.reconnectable === true;
       for (const r of data.rooms) if (r.members.includes(p.id)) groupBroadcast(effects, r);
       for (const departed of data.departedRooms) if (departed.pending.includes(p.id)) {
@@ -551,7 +559,10 @@
   }
   async function peerOffline(peerId) {
     return commit(effects => {
-      const p = peer(peerId); if (p) p.online = false;
+      const p = peer(peerId);
+      const wasOnline = p?.online === true;
+      if (p) p.online = false;
+      if (p && wasOnline) publicPresenceMessage(p, false);
       if (p && !p.reconnectable) for (const r of data.rooms) removeMember(effects, r, peerId);
       return {ok:true};
     }).then(async ({result, effects}) => {await deliver(effects); return result;});
