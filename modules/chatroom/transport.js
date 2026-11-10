@@ -589,6 +589,13 @@
   }
   function localAction(name, args, effects) {
     switch (name) {
+      case 'set-background': {
+        const background = args.background === true;
+        if (publicIdentity.background === background) return {};
+        publicIdentity.background = background;
+        for (const peerId of linkedPeers()) effects.push({peerId, type:'profile', payload:{}});
+        return {};
+      }
       case 'conversation-read': {
         const view = conversationView(token(args.conversationId));
         if (view.lastMessageId === args.lastMessageId) view.unread = 0;

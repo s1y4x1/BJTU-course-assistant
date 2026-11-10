@@ -46,8 +46,21 @@
         replyClient({type: 'BJTUC_ENGINE_CLIENT_PROMOTED', clientId: next[0]});
       }
     }
+    syncForegroundPresence();
   }
   function replyClient(message) { try { clientChannel.postMessage(message); } catch {} }
+  // The transport identity lives here even while a page is open. Flip its
+  // presence flag so peers see "online" instead of "background online", and
+  // restore it once the last foreground client detaches.
+  let presenceAttached = null, presenceTimer = 0;
+  function syncForegroundPresence() {
+    if (!ready || !globalThis.BjtuChatroomTransport) return;
+    const attached = clients.size > 0;
+    if (presenceAttached === attached) return;
+    presenceAttached = attached;
+    void globalThis.BjtuChatroomTransport.action('set-background', { background: !attached })
+      .catch(error => { presenceAttached = null; console.warn('[bjtu] chatroom presence:', error); });
+  }
   function forward(event) {
     if (!clients.size) return;
     const payload = event?.type === 'error' ? {type: 'error', message: String(event.message || event.error?.message || '')} : event;
@@ -85,6 +98,7 @@
       ensureForwarding();
       replyClient({type: 'BJTUC_ENGINE_CLIENT_HELLO_OK', clientId, engineId,
         discoveryStatus: globalThis.BjtuChatroomLink?.discoveryStatus || 'disconnected', primary: entry.primary});
+      syncForegroundPresence();
       return;
     }
     const entry = clients.get(clientId);
@@ -210,7 +224,7 @@
   };
   chrome.storage.onChanged.addListener(onSettings);
   window.addEventListener('pagehide',() => {
-    ready = false; clearTimeout(reconnectTimer); chrome.storage.onChanged.removeListener(onSettings);
+    ready = false; clearTimeout(reconnectTimer); clearInterval(presenceTimer); chrome.storage.onChanged.removeListener(onSettings);
     if (clientChannel) {
       for (const id of clients.keys()) replyClient({type:'BJTUC_ENGINE_CLIENT_DETACHED',clientId:id,reason:'后台页面已卸载。'});
       clients.clear();
@@ -227,6 +241,9 @@
   window.addEventListener('bjtu-chatroom-engine-rolechange',() => scheduleReconnect(globalThis.BjtuChatroomEngineLease?.role === 'background'));
   globalThis.BjtuChatroomBackgroundMode = {enabled,canReceiveFile,notifyInvitation,markReady() {
     ready = true;
+    presenceAttached = null;
+    clearInterval(presenceTimer);
+    presenceTimer = setInterval(() => { pruneClients(); syncForegroundPresence(); }, 3000);
     ensureForwarding();
     publishStatus({type:globalThis.BjtuChatroomLink?.discoveryStatus === 'connected' ? 'discovery' : 'scan-closed'});
     void chrome.storage.local.get(reconnectSettings).then(settings => { reconnectSettings = settings; scheduleReconnect(true); });
