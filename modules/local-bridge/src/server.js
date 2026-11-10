@@ -106,6 +106,12 @@ function extensionConnected() {
   return extensionSocket?.readyState === WebSocket.OPEN && extensionInfo?.authenticated === true;
 }
 
+function terminalPrompt() {
+  const colorEnabled = !('NO_COLOR' in process.env) && process.stdout.hasColors?.(2);
+  const promptColor = process.stdout.hasColors?.(1 << 24) ? '\x1b[38;2;190;35;112m' : '\x1b[35m';
+  return colorEnabled ? `${promptColor}BJTUCA>\x1b[0m ` : 'BJTUCA> ';
+}
+
 function externalInvocationLabel(action, payload) {
   if (action === 'call') return String(payload?.name || 'call');
   if (action === 'getDocs') {
@@ -120,7 +126,7 @@ function writeExternalInvocation(action, payload) {
   if (!terminal || terminal.closed || !process.stdin.isTTY || terminalCommandRunning) return;
   readline.clearLine(process.stdout, 0);
   readline.cursorTo(process.stdout, 0);
-  process.stdout.write(`BJTUCA> ${externalInvocationLabel(action, payload)}\n`);
+  process.stdout.write(`${terminalPrompt()}${externalInvocationLabel(action, payload)}\n`);
 }
 
 function sendExtensionRequest(action, payload = {}, { printResult = true, echoInvocation = false, signal } = {}) {
@@ -320,10 +326,8 @@ function startTerminal() {
   const embedded = !process.stdin.isTTY && process.env.BJTUCA_EMBEDDED === '1';
   if (terminal || (!process.stdin.isTTY && !embedded)) return;
   terminal = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const colorEnabled = !('NO_COLOR' in process.env) && process.stdout.hasColors?.(2);
-  const promptColor = process.stdout.hasColors?.(1 << 24) ? '\x1b[38;2;190;35;112m' : '\x1b[35m';
   if (process.stdin.isTTY) {
-    terminal.setPrompt(colorEnabled ? `${promptColor}BJTUCA>\x1b[0m ` : 'BJTUCA> ');
+    terminal.setPrompt(terminalPrompt());
     process.stdout.write('可输入操作名执行；参数使用单行 JSON。输入 help 查看示例，执行中按 Ctrl+C 取消命令，空闲时按 Ctrl+C 退出。\n');
   }
   terminal.on('line', async (input) => {
