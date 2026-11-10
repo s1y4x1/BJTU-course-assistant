@@ -6082,11 +6082,11 @@ function renderHomeworkList(courseId) {
     const viewActionText = globalThis.BjtuHomeworkUi.actionLabel('ve', 'view', { lead: '' });
     const submitActionText = globalThis.BjtuHomeworkUi.actionLabel('ve', 'submit', { lead: '' });
 
-    // 按钮区域：教师账号显示"下载已交作业包"，否则显示"提交"
+    // 按钮区域：教师账号显示"批量下载已交作业"，否则显示"提交"
     const actionButtonsHtml = isTeacherMode
       ? `<div style="display:flex; align-items:center; gap:6px;">
           ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
-          ${batchDownloadUrl ? `<button type="button" class="btn" data-action="download-homework-package" data-download-url="${escapeHtml(batchDownloadUrl)}" ${browserPackageDownloads.has(batchDownloadUrl) ? 'disabled' : ''} style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; color:#fff;">下载已交作业包</button>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
+          ${batchDownloadUrl ? `<button type="button" class="btn" data-action="download-homework-package" data-download-url="${escapeHtml(batchDownloadUrl)}" ${browserPackageDownloads.has(batchDownloadUrl) ? 'disabled' : ''} style="background:${detailBtnColor}; padding: 2px 8px; font-size: 12px; color:#fff;">批量下载已交作业</button>` : '<span style="font-size:12px; color:#999;">无作业包</span>'}
         </div>`
       : `<div style="display:flex; align-items:center; gap:6px;">
           ${scoreViewUrl ? `<a class="btn" href="${scoreViewUrl}" target="_blank" rel="noopener noreferrer" style="background:${viewBtnColor}; padding: 2px 8px; font-size: 12px; text-decoration:none; color:#fff;">${viewActionText}</a>` : ''}
@@ -6623,7 +6623,7 @@ courseListDiv.addEventListener('click', async (e) => {
     try {
       await downloadBrowserPackage(actionEl.dataset.downloadUrl);
     } catch (error) {
-      showToast(`下载已交作业包失败：${error?.message || error}`, 'error');
+      showToast(`批量下载已交作业失败：${error?.message || error}`, 'error');
     } finally {
       actionEl.disabled = false;
     }
