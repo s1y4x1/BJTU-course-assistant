@@ -125,7 +125,10 @@ function sendExtensionRequest(action, payload = {}, { printResult = true, signal
     extensionSocket.send(JSON.stringify({ type: 'request', id, action, payload }));
   }).finally(() => signal?.removeEventListener('abort', cancel)).then((value) => {
     const result = ['call', 'executeCode'].includes(action) && value?.ok === true ? value.result : value;
-    if (printResult) process.stdout.write(`${jsonText(result)}\n`);
+    if (printResult) {
+      const plainGetDocs = action === 'call' && String(payload?.name || '') === 'api.getDocs' && typeof result === 'string';
+      process.stdout.write(`${plainGetDocs ? result : jsonText(result)}\n`);
+    }
     return value;
   }, (error) => {
     process.stderr.write(`${jsonText({
@@ -737,7 +740,10 @@ if (singleCommand) {
         });
         const value = await response.json();
         if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
-        if (printResult) process.stdout.write(`${jsonText(value)}\n`);
+        if (printResult) {
+          const plainGetDocs = action === 'call' && String(payload?.name || '') === 'api.getDocs' && typeof value === 'string';
+          process.stdout.write(`${plainGetDocs ? value : jsonText(value)}\n`);
+        }
         return ['call', 'executeCode'].includes(action) ? { ok: true, result: value } : value;
       };
       await runTerminalCommand(singleCommand, {
