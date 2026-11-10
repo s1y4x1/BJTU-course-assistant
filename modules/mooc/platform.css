@@ -11,6 +11,11 @@
 .mooc-task-actions { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:0 0 auto; min-width:0; max-width:100%; }
 .mooc-task-button-row { display:flex; width:fit-content; max-width:100%; margin:0; padding:0; align-self:flex-end; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
 .mooc-task-actions .btn { box-sizing:border-box; max-width:100%; height:auto; min-height:0; padding:2px 8px; font-size:12px; line-height:1.5; white-space:nowrap; overflow-wrap:normal; text-align:center; flex-shrink:0; }
+.mooc-task-head.is-measuring .mooc-task-main { flex:0 0 auto; width:max-content; max-width:none; }
+.mooc-task-head.is-measuring .mooc-task-actions { max-width:none; }
+.mooc-task-head.is-measuring .mooc-task-title { white-space:nowrap; }
+.mooc-task-head.is-measuring .mooc-task-button-row { width:max-content; max-width:none; flex-direction:row; flex-wrap:nowrap; }
+.mooc-task-head.is-measuring .mooc-task-button-row .btn { width:auto; }
 .mooc-task--long-title .mooc-task-button-row { flex-direction:column; align-items:stretch; }
 .mooc-task--long-title .mooc-task-button-row .btn { width:100%; }
 .mooc-complete-all-btn { box-sizing:border-box; max-width:100%; height:auto; min-height:26px; padding:4px 8px; font-size:var(--bjtu-font-size-body, 13px); white-space:normal; line-height:1.3; overflow-wrap:anywhere; text-align:center; }

@@ -56,11 +56,9 @@ let moocLoginAssistOpening = null;
   const typeText = (type) => taskTypes[type];
   const isPaperTask = (task) => ['hw', 'quiz', 'exam'].includes(task.type);
   const actionKind = (type) => type === 'hw' ? 'submit' : (type === 'exam' ? 'exam' : 'quiz');
-  const isLongTaskTitle = (value, threshold = 32) => Array.from(String(value || '')).reduce(
-    (length, character) => length + (/^[\x00-\xff]$/.test(character) ? 1 : 2),
-    0
-  ) >= threshold;
   const GINS_TASK_GAP_MS = 450;
+  let taskLayoutFrame = 0;
+  let taskLayoutResizeBound = false;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   function isRetryableDetailError(error) {
@@ -252,6 +250,42 @@ let moocLoginAssistOpening = null;
     env?.updateEmpty?.();
   }
 
+  function applyTaskActionLayout() {
+    const root = env?.courseList;
+    if (!root) return;
+    const tasks = [...root.querySelectorAll('.mooc-task')];
+    const measured = [];
+    for (const task of tasks) {
+      const head = task.querySelector('.mooc-task-head');
+      const main = task.querySelector('.mooc-task-main');
+      const row = task.querySelector('.mooc-task-button-row');
+      if (!head || !main || !row || !head.clientWidth) continue;
+      task.classList.remove('mooc-task--long-title');
+      head.classList.add('is-measuring');
+      measured.push({ task, head, main, row });
+    }
+    for (const { task, head, main, row } of measured) {
+      const headStyle = getComputedStyle(head);
+      const available = head.clientWidth
+        - (parseFloat(headStyle.paddingLeft) || 0)
+        - (parseFloat(headStyle.paddingRight) || 0);
+      const gap = parseFloat(headStyle.columnGap || headStyle.gap) || 0;
+      const titleWidth = main.getBoundingClientRect().width;
+      const actionsWidth = row.getBoundingClientRect().width;
+      task.classList.toggle('mooc-task--long-title', titleWidth + gap + actionsWidth > available);
+    }
+    for (const { head } of measured) head.classList.remove('is-measuring');
+  }
+
+  function scheduleTaskActionLayout() {
+    if (!env?.courseList) return;
+    if (taskLayoutFrame) cancelAnimationFrame(taskLayoutFrame);
+    taskLayoutFrame = requestAnimationFrame(() => {
+      taskLayoutFrame = 0;
+      applyTaskActionLayout();
+    });
+  }
+
   function renderTask(course, task) {
     const palette = globalThis.BjtuHomeworkUi.homeworkPalette({ done: task.done, overdue: task.overdue });
     const colors = [palette.background, palette.border, palette.foreground];
@@ -261,7 +295,7 @@ let moocLoginAssistOpening = null;
       done: task.done,
       overdue: task.overdue,
       deadline: task.deadline,
-      className: `mooc-task${isLongTaskTitle(task.title) || (isPaperTask(task) && isLongTaskTitle(task.title, 24)) ? ' mooc-task--long-title' : ''}`,
+      className: 'mooc-task',
       background: palette.background,
       border: palette.border,
       headClass: 'mooc-task-head',
@@ -341,6 +375,7 @@ let moocLoginAssistOpening = null;
       });
       env.courseList.appendChild(card);
     });
+    scheduleTaskActionLayout();
     globalThis.BjtuColors.restoreAnimations(env.courseList, animationSnapshot, '.mooc-standalone-card .hw-card-item');
     env.updateEmpty?.();
     env.sortCourseCards?.();
@@ -687,6 +722,7 @@ let moocLoginAssistOpening = null;
           env.applyExpandableAutoToggle?.(card);
           env.updateCountdowns?.();
         }
+        scheduleTaskActionLayout();
       });
       return;
     }
@@ -776,6 +812,10 @@ let moocLoginAssistOpening = null;
     init(options) {
       env = options;
       env.courseList?.addEventListener('click', handleClick);
+      if (!taskLayoutResizeBound) {
+        taskLayoutResizeBound = true;
+        window.addEventListener('resize', scheduleTaskActionLayout, { passive: true });
+      }
     },
     load,
     clear() {
