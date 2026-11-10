@@ -8,6 +8,8 @@ async function openBjtuPortalLogin() {
     && !!document.querySelector('input.loginBtn[type="submit"][value="登录"]');
   const isTimeoutPage = title.includes('会话结束')
     || (bodyText.includes('会话结束,请退出系统') && bodyText.includes('重新登录'));
+  let isTimeoutJsp = false;
+  try { isTimeoutJsp = /\/ve\/Timeout\.jsp(?:;|$)/i.test(new URL(location.href).pathname); } catch {}
   const isExtensionPage = location.href.startsWith(chrome.runtime.getURL('/'));
   if (!isExtensionPage && !isLoginPage && !isTimeoutPage) return;
   const injectionOptions = await chrome.storage.local.get([
@@ -330,6 +332,10 @@ async function openBjtuPortalLogin() {
     loginRunning = false;
     if (response?.ok) {
       close();
+      if (isTimeoutPage && !isTimeoutJsp) {
+        location.reload();
+        return;
+      }
       location.href = response.redirectUrl;
       return;
     }
