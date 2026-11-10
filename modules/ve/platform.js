@@ -3203,6 +3203,45 @@ async function vePageAssignmentSnapshot() {
 }
 
 globalThis.BjtuVePageApi = Object.freeze({
+  semester: async (args) => {
+    const core = globalThis.BjtuVeHomeworkCore;
+    if (!core?.fetchTerms || !core?.chooseTermCode) throw new Error('智慧课程平台学期接口尚未就绪');
+    const terms = await core.fetchTerms();
+    const current = core.chooseTermCode(terms);
+    const requested = String(args?.xqCode || '').trim();
+    if (requested && !terms.some((term) => String(term?.xqCode || '') === requested)) {
+      throw new Error(`学期代码无效：${requested}`);
+    }
+    if (requested) {
+      await chrome.storage.local.set({ selectedXqCode: requested });
+      if (typeof globalThis.loadCurrentXqOptions === 'function') {
+        await globalThis.loadCurrentXqOptions(true);
+      }
+      if (typeof globalThis.loadCourses === 'function') {
+        await globalThis.loadCourses();
+      }
+      if (typeof globalThis.waitForVeLoginHomeworkResult === 'function') {
+        const ready = await globalThis.waitForVeLoginHomeworkResult(115000);
+        if (!ready?.ok) throw new Error(ready?.message || '切换学期后课程和作业未全部加载完成');
+      }
+    }
+    let selected = requested;
+    if (!selected) {
+      const stored = await chrome.storage.local.get('selectedXqCode');
+      selected = String(stored?.selectedXqCode || '').trim();
+      if (!terms.some((term) => String(term?.xqCode || '') === selected)) selected = current;
+    }
+    return {
+      terms: terms.map((term) => ({
+        xqCode: String(term?.xqCode || ''),
+        xqName: String(term?.xqName || ''),
+        beginDate: String(term?.beginDate || ''),
+        endDate: String(term?.endDate || '')
+      })),
+      current,
+      selected
+    };
+  },
   resourceSpaceList: async (args) => {
     const keyword = normalizeResourceSearchKeyword(String(args?.searchName || ''));
     let payload = await fetchResourceSpaceListRaw(10, keyword);

@@ -702,10 +702,19 @@
     return false;
   }
 
+  async function preferredVeTermCode(core) {
+    const terms = await core.fetchTerms();
+    let selected = '';
+    try {
+      const stored = await chrome.storage.local.get('selectedXqCode');
+      selected = String(stored?.selectedXqCode || '').trim();
+    } catch {}
+    return core.chooseTermCode(terms, selected);
+  }
+
   async function findVeCourseById(courseId) {
     const core = await veHomework();
-    const terms = await core.fetchTerms();
-    const xqCode = core.chooseTermCode(terms);
+    const xqCode = await preferredVeTermCode(core);
     const courses = await core.fetchCourses(xqCode);
     const target = String(courseId || '').trim();
     const course = (Array.isArray(courses) ? courses : []).find((c) => String(core.getCourseId(c) || '') === target) || null;
@@ -794,29 +803,42 @@ name: 've.accounts',
     },
     {
       module: 've',
-      name: 've.terms',
-      summary: '获取智慧课程平台学期列表，并返回当前学期代码',
+      name: 've.semester',
+      summary: '读取或设置智慧课程平台要查看的学期',
       doc: [
-        '## ve.terms —— 学期列表',
+        '## ve.semester —— 学期选择',
         '',
-        '获取智慧课程平台当前的学期列表，并给出建议使用的学期代码。',
+        '读取智慧课程平台的学期列表和当前选择；传入 `xqCode` 时切换要查看的学期，并立即重新拉取课程与作业，全部加载完成后才返回。',
         '',
-        '**调用示例**：`ve.terms()`',
+        '**参数**：{"xqCode":"可选，要切换到的学期代码；省略时只读取"}',
         '',
-        '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"…","endDate":"…"}],"recommended":"2025-2026-1"}'
+        '**调用示例**：`ve.semester()`；`ve.semester({ xqCode: "2025-2026-1" })`',
+        '',
+        '**返回示例**：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"…","endDate":"…"}],"current":"2025-2026-1","selected":"2025-2026-1"}',
+        '`current` 是平台当前学期，`selected` 是扩展选择的学期。设置时若学期不存在会报错；课程或作业加载失败也会报错。'
       ].join('\n'),
-      async run() {
+      async run(args) {
+        if (String(args?.xqCode || '').trim()) {
+          return pageInvoke('ve', 'semester', args || {}, 120000);
+        }
         const core = await veHomework();
         const terms = await core.fetchTerms();
-        const recommended = core.chooseTermCode(terms);
+        const current = core.chooseTermCode(terms);
+        let selected = '';
+        try {
+          const stored = await chrome.storage.local.get('selectedXqCode');
+          selected = String(stored?.selectedXqCode || '').trim();
+        } catch {}
+        if (!terms.some((term) => String(term?.xqCode || '') === selected)) selected = current;
         return {
-          terms: (Array.isArray(terms) ? terms : []).map((term) => ({
-            xqCode: String(term?.xqCode || term?.xq_code || ''),
-            xqName: String(term?.xqName || term?.xq_name || ''),
-            beginDate: String(term?.beginDate || term?.begin_date || ''),
-            endDate: String(term?.endDate || term?.end_date || '')
+          terms: terms.map((term) => ({
+            xqCode: String(term?.xqCode || ''),
+            xqName: String(term?.xqName || ''),
+            beginDate: String(term?.beginDate || ''),
+            endDate: String(term?.endDate || '')
           })),
-          recommended
+          current,
+          selected
         };
       }
     },
@@ -827,7 +849,7 @@ name: 've.accounts',
       doc: [
         '## ve.courseList —— 课程列表',
         '',
-        '在扩展后台获取智慧课程平台的课程列表。若不传 xqCode 则自动使用当前学期。课程接口首次使用 pagesize=100；若返回 total>100，则使用 pagesize=total 重新获取完整列表，不传 page 参数。',
+        '在扩展后台获取智慧课程平台的课程列表。若不传 xqCode 则使用 ve.semester 当前选择的学期。课程接口首次使用 pagesize=100；若返回 total>100，则使用 pagesize=total 重新获取完整列表，不传 page 参数。',
         '',
         '**参数**：{"xqCode":"可选，学期代码，如 2025-2026-1"}',
         '',
@@ -840,8 +862,7 @@ name: 've.accounts',
         const core = await veHomework();
         let xqCode = String(args?.xqCode || '').trim();
         if (!xqCode) {
-          const terms = await core.fetchTerms();
-          xqCode = core.chooseTermCode(terms);
+          xqCode = await preferredVeTermCode(core);
         }
         const courses = await core.fetchCourses(xqCode);
         return (Array.isArray(courses) ? courses : []).map((course) => ({
