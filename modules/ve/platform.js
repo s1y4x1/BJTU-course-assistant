@@ -3225,12 +3225,10 @@ globalThis.BjtuVePageApi = Object.freeze({
         if (!ready?.ok) throw new Error(ready?.message || '切换学期后课程和作业未全部加载完成');
       }
     }
-    let selected = requested;
-    if (!selected) {
-      const stored = await chrome.storage.local.get('selectedXqCode');
-      selected = String(stored?.selectedXqCode || '').trim();
-      if (!terms.some((term) => String(term?.xqCode || '') === selected)) selected = current;
-    }
+    if (requested) return { selected: requested };
+    const stored = await chrome.storage.local.get('selectedXqCode');
+    let selected = String(stored?.selectedXqCode || '').trim();
+    if (!terms.some((term) => String(term?.xqCode || '') === selected)) selected = current;
     return {
       terms: terms.map((term) => ({
         xqCode: String(term?.xqCode || ''),
