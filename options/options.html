@@ -124,6 +124,20 @@
         <label class="component-color-gradient-toggle"><input type="checkbox" id="homeworkMarqueeEnabled" checked> 未交作业卡片跑马灯效果<span class="tip">同时控制跑马灯与呼吸，仅用于有截止时间的未交作业。周期为 log₂(1 + 剩余小时数) + 0.5 秒，光亮强度等仍按指数变化；关闭后保留卡片颜色，动画总开关也会控制这些效果。已交、逾期及教师作业不使用跑马灯。</span></label>
       </details>
       <div class="option-divider" role="separator"></div>
+      <details class="ui-order-editor" id="markdownVendorEditor">
+        <summary><span class="ui-order-summary-label">Markdown 渲染组件</span><span class="tip">按需从项目在 npm 发布的官方包下载；未安装时仍可查看公式源码和普通代码块。仅支持可写的本地扩展目录，重新打开相关页面后生效。</span></summary>
+        <div class="markdown-vendor-row" data-markdown-vendor="katex">
+          <label>KaTeX 公式 <select aria-label="KaTeX 版本" disabled></select></label>
+          <button type="button" data-download disabled>下载</button><button type="button" data-disable hidden>停用</button>
+          <span class="markdown-vendor-status" data-state role="status">未安装</span>
+        </div>
+        <div class="markdown-vendor-row" data-markdown-vendor="highlight">
+          <label>Highlight.js 高亮 <select aria-label="Highlight.js 版本" disabled></select></label>
+          <button type="button" data-download disabled>下载</button><button type="button" data-disable hidden>停用</button>
+          <span class="markdown-vendor-status" data-state role="status">未安装</span>
+        </div>
+      </details>
+      <div class="option-divider" role="separator"></div>
       <details class="ui-order-editor" id="uiOrderEditor">
         <summary><span class="ui-order-summary-label">排序</span><span class="tip">拖动项目或使用箭头调整顺序；更改会立即应用。</span></summary>
         <div class="ui-order-groups">
@@ -647,6 +661,7 @@
   <script src="../core/loaders/options-modules-loader.js"></script>
   <script src="../core/option-tips.js"></script>
   <script src="../UI/options-message.js"></script>
+  <script src="../UI/markdown-vendor-options.js"></script>
   <script src="options.js"></script>
 </body>
 

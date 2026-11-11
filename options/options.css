@@ -584,3 +584,8 @@ html[data-color-scheme="dark"] .extension-image-preview {
   background:#111827;
   box-shadow:0 8px 24px rgba(0,0,0,.5);
 }
+.markdown-vendor-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+.markdown-vendor-row label { display:flex; align-items:center; gap:6px; }
+.markdown-vendor-row [hidden] { display:none !important; }
+.markdown-vendor-status { font-size:var(--bjtu-font-size-auxiliary,11px); }
+.markdown-vendor-status[data-tone="error"] { color:#dc2626; }

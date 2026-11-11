@@ -5,18 +5,31 @@
   const highlighted = new Map();
   const vendorStatus = new Map();
   let highlightedBytes = 0;
-  const vendorEntries = [['katex', 'UI/vendor/katex/katex.min.js'], ['hljs', 'UI/vendor/highlight/highlight.min.js']];
-  function loadVendor(name, path) {
+  const vendorEntries = [['katex','katex','katex.min.js'], ['hljs','highlight','highlight.min.js']];
+  function loadVendor(name, directory, file, versions) {
     if (global[name]) { vendorStatus.set(name, true); return Promise.resolve(); }
+    const version = versions?.[directory];
+    if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) {
+      vendorStatus.set(name,false); return Promise.resolve();
+    }
+    const base = `UI/vendor/${directory}/${version}/`, path = base + file;
     const load = global.BjtuModuleRegistry?.loadScript ? global.BjtuModuleRegistry.loadScript(path) : new Promise((resolve, reject) => {
       const script = document.createElement('script'); script.src = chrome.runtime.getURL(path);
       script.onload = resolve; script.onerror = () => reject(new Error(`Markdown 组件加载失败：${name}`));
       document.head.append(script);
     });
-    return load.then(() => { vendorStatus.set(name, true); }).catch(() => { vendorStatus.set(name, false); });
+    const css = name !== 'katex' ? Promise.resolve() : new Promise((resolve,reject) => {
+      const link = document.createElement('link'); link.rel = 'stylesheet';
+      link.href = chrome.runtime.getURL(base + 'katex.min.css');
+      link.onload = resolve; link.onerror = reject;
+      document.head.append(link);
+    });
+    return Promise.all([load,css]).then(() => { vendorStatus.set(name,!!global[name]); })
+      .catch(() => { vendorStatus.set(name,false); });
   }
   const ready = typeof document === 'undefined' ? Promise.resolve()
-    : Promise.all(vendorEntries.map(([name, path]) => loadVendor(name, path)));
+    : Promise.resolve(global.chrome?.storage?.local?.get('markdownVendorVersions')).catch(() => ({}))
+      .then(settings => Promise.all(vendorEntries.map(([name,directory,file]) => loadVendor(name,directory,file,settings?.markdownVendorVersions))));
   function missingVendors() {
     return vendorEntries.filter(([name]) => vendorStatus.get(name) === false).map(([name]) => name);
   }
@@ -40,7 +53,7 @@
     if (highlighted.has(key)) return highlighted.get(key);
     const hint = String(language).toLowerCase(), alias = {app:'javascript',background:'javascript',sandbox:'javascript'}[hint] || hint;
     const html = alias ? (engine.getLanguage(alias) ? engine.highlight(text, {language:alias,ignoreIllegals:true}).value : escapeHtml(text))
-      : engine.highlightAuto(text, ['javascript','python','json','xml','bash','sql']).value;
+      : engine.highlightAuto(text, ['javascript','python','json','xml','bash','sql'].filter(name => engine.getLanguage(name))).value;
     const size = key.length + html.length;
     if (size <= 524288) {
       highlighted.set(key, html); highlightedBytes += size;
@@ -122,7 +135,7 @@
       }
       markBlockSpaces(tokens); return tokens;
     }}});
-    if (math && global.katex) {
+    if (math && global.katex && vendorStatus.get('katex') !== false) {
       const renderMath = token => global.katex.renderToString(token.text, {
         displayMode:token.display, throwOnError:false, trust:false, strict:'ignore',
         maxExpand:1000, maxSize:20, output:'htmlAndMathml'
