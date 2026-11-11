@@ -438,8 +438,12 @@ function initializeVersionReinstallCommand() {
 }
 
 function setupVersionDirectoryPermissionCheck() {
-  const audit = () => globalThis.BjtuDirectoryPermission.request({startup:true,audit:true})
-    .catch(error => console.warn('[bjtu] updater directory permission audit failed:', error));
+  const audit = () => {
+    if (!versionDownloadInProgress) {
+      void globalThis.BjtuDirectoryPermission.request({startup:true,audit:true})
+        .catch(error => console.warn('[bjtu] updater directory permission audit failed:', error));
+    }
+  };
   document.getElementById('checkUpdateDirectoryPermission')?.addEventListener('click', async ({currentTarget:button}) => {
     button.disabled = true;
     try {
@@ -2708,7 +2712,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
   try {
-    const writableDirectory = await globalThis.BjtuDirectoryPermission.request();
+    const writableDirectory = await globalThis.BjtuDirectoryPermission.request({audit:versionDownloadClean});
     if (!writableDirectory) return;
     versionUpdateDirectoryHandle = writableDirectory;
     versionUpdateDirectoryHandleLoaded = true;
