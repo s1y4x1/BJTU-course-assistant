@@ -777,14 +777,22 @@
     createPC(s); await signal(s, 'accept'); touch(s);
   }
   async function pastedFileEntry(file) {
-    if (!file.type.startsWith('text/markdown') && !file.type.startsWith('text/plain')) return {file, handle: null};
+    const extension = /^粘贴内容-\d{8}T\d{9}\.(md|html|txt)$/.exec(file.name)?.[1];
+    if (!extension) return {file,handle:null};
     try {
-      const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-      const extension = file.type.startsWith('text/markdown') ? 'md' : 'txt';
-      const name = `粘贴内容-${stamp}-${crypto.randomUUID().slice(0, 6)}.${extension}`;
       const root = await navigator.storage.getDirectory();
       const directory = await root.getDirectoryHandle('chatroom-outbox', {create: true});
-      const handle = await directory.getFileHandle(name, {create: true});
+      const handle = await navigator.locks.request('bjtu-chatroom-outbox-name',async () => {
+        let name = file.name;
+        for (;;) {
+          try { await directory.getFileHandle(name); }
+          catch (error) {
+            if (error.name === 'NotFoundError') return directory.getFileHandle(name,{create:true});
+            if (error.name !== 'TypeMismatchError') throw error;
+          }
+          name = globalThis.BjtuClipboardFiles.timestampedTextName(extension);
+        }
+      });
       const writable = await handle.createWritable();
       await writable.write(file);
       await writable.close();

@@ -11,8 +11,11 @@
       .map((item) => item.getAsFile()).filter(Boolean);
   }
 
-  function timestamp() {
-    return new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+  let lastTimestamp = 0;
+  function timestampedTextName(extension) {
+    lastTimestamp = Math.max(Date.now(),lastTimestamp + 1);
+    const timestamp = new Date(lastTimestamp).toISOString().replace(/[-:.Z]/g,'');
+    return `粘贴内容-${timestamp}.${extension}`;
   }
 
   function extensionFor(type) {
@@ -58,7 +61,7 @@
       const text = navigator.clipboard?.readText ? await navigator.clipboard.readText() : '';
       if (!text.trim()) return { files: [], textCount: 0 };
       return {
-        files: [new File([text], `粘贴内容.${textExtension}`, {
+        files: [new File([text], timestampedTextName(textExtension), {
           type: textExtension === 'md' ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8'
         })],
         textCount: 1
@@ -83,7 +86,7 @@
       if (!(await blob.text()).trim()) continue;
       const isPlain = textType === 'text/plain';
       const extension = isPlain ? textExtension : 'html';
-      result.push(new File([blob], `粘贴内容.${extension}`, {
+      result.push(new File([blob], timestampedTextName(extension), {
         type: isPlain
           ? (extension === 'md' ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8')
           : 'text/html;charset=utf-8'
@@ -93,5 +96,5 @@
     return { files: result, textCount };
   }
 
-  global.BjtuClipboardFiles = Object.freeze({ read, clipboardFiles });
+  global.BjtuClipboardFiles = Object.freeze({ read, clipboardFiles, timestampedTextName });
 })(globalThis);
