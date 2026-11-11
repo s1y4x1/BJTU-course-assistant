@@ -409,6 +409,7 @@ async function initFullscreenModuleButtons() {
     syncPortraitGroup();
     if (!shouldShowButton && button instanceof HTMLButtonElement) button.hidden = true;
     refreshButtonContainer();
+    if (moduleId === 'mail') void chrome.runtime.sendMessage({type:'MAIL_REFRESH_UNREAD_COUNT'}).catch(() => {});
   };
 
   window.addEventListener('bjtu-close-floating-windows', (event) => {

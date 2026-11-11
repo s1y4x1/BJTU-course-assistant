@@ -157,6 +157,32 @@
     return extractUnreadCount(data);
   }
 
+  let unreadRefresh;
+  function refreshUnreadCount() {
+    return unreadRefresh ??= (async () => {
+      await mailCheckPromise?.catch(() => {});
+      let unreadCount;
+      try {
+        const sid = await getMailSid({allowRelogin:false});
+        try { unreadCount = await fetchUnreadCount(sid); }
+        catch {
+          invalidateSid();
+          unreadCount = await fetchUnreadCount(await getMailSid({allowRelogin:false}));
+        }
+      } catch (error) {
+        if (!['not-logged-in','mis-login-required'].includes(error?.code)) throw error;
+        unreadCount = null;
+      }
+      const save = mailProcessPromise.then(async () => {
+        const stored = await chrome.storage.local.get(STATUS_KEY);
+        await chrome.storage.local.set({[STATUS_KEY]:{...stored[STATUS_KEY],unreadCount}});
+      });
+      mailProcessPromise = save.catch(() => {});
+      await save;
+      return unreadCount;
+    })().finally(() => { unreadRefresh = null; });
+  }
+
   function normalizeMailRow(row) {
     const source = row && typeof row === 'object' ? row : {};
     const id = String(source.id || '').trim();
@@ -625,6 +651,13 @@
 
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'MAIL_REFRESH_UNREAD_COUNT') {
+        refreshUnreadCount().then(
+          unreadCount => sendResponse({ok:true,unreadCount}),
+          error => sendResponse({ok:false,message:String(error?.message || error)})
+        );
+        return true;
+      }
       if (message?.type === 'MAIL_GET_CONTEXT') {
         buildMailContext()
           .then((result) => sendResponse(result))
