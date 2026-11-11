@@ -1009,7 +1009,10 @@
       Object.assign(s.message, metadata);
     } catch (error) {
       if (ref) await globalThis.BjtuChatroomSettings.removeReceivedFile(ref).catch(report);
-      if (s.privateName) await s.downloads.removeEntry(s.privateName).catch(report);
+      if (s.privateName) {
+        await s.downloads.removeEntry(s.privateName).catch(report);
+        throw new Error('无法保存聊天室文件：' + error.message);
+      }
       report(new Error('文件已写入，但保存历史引用失败：' + error.message));
     }
     file = await s.handle.getFile().catch(error => { report(error); return null; });
@@ -1094,7 +1097,7 @@
         content.innerHTML = markdown.parse(text); preview.append(content);
       } else preview.append(node('pre', text));
       if (file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
-      s.previewURL = URL.createObjectURL(file);
+      s.previewURL = URL.createObjectURL(file.slice(0, file.size, 'text/plain'));
       s.openButton = button('打开', () => {
         if (s.previewURL) globalThis.open(s.previewURL, '_blank', 'noopener,noreferrer');
       }, 'secondary file-open');

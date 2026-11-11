@@ -665,7 +665,7 @@
         const name = str(args.file?.name, 180), size = args.file?.size;
         if (!Number.isSafeInteger(size) || size < 0 || args.fileHandleRef !== 'chatroom-file:' + message.id) fail('无效本地文件记录。');
         message.file = {name, size}; message.fileHandleRef = args.fileHandleRef;
-        const downloadPath = str(args.downloadPath || '', 240);
+        const downloadPath = str(args.downloadPath || '', 240, true);
         if (/^downloads\/[^/]+$/i.test(downloadPath)) message.downloadPath = downloadPath;
         else delete message.downloadPath;
         if (args.privateFile === true && !message.downloadPath) message.privateFile = true;
