@@ -45,7 +45,6 @@
   let scoreSemesterPreference = '';
   let scoreCurrentZxjxjhh = '';
   let scheduleCurrentXnxq = '';
-  let scoreSemesterOptions = [];
   let academicSemesterOptions = [];
   let academicSemestersPromise = null;
   let scheduleSemesterPreference = '';
@@ -53,7 +52,6 @@
   const sharedTermsInFlight = new Map();
   let sharedTermWorkerRunning = false;
   const loadedScheduleTerms = new Set();
-  const verifiedScheduleTerms = new Set();
   const scheduleTermsInFlight = new Map();
   let scheduleTermWorkerRunning = false;
   let selectionSchedulePromise = null;
@@ -62,7 +60,6 @@
   let renderedAcademicCacheStudentId = '';
   let sharedAllLoading = false;
   let sharedLoadingTerm = '';
-  let academicBackgroundRefreshActive = false;
   let academicRequestBusyDepth = 0;
   let academicRequestIdleTimer = 0;
   const academicRequestPort = functionalPage ? chrome.runtime.connect({ name: ACADEMIC_OPTIONS_REQUEST_PORT }) : null;
@@ -149,28 +146,25 @@
   function applyAcademicDataCache(cache, studentId = '') {
     if (!cache || typeof cache !== 'object') return false;
     academicSemesterOptions = Array.isArray(cache.academicSemesterOptions) ? cache.academicSemesterOptions : [];
-    scoreCurrentZxjxjhh = String(cache.scoreCurrentZxjxjhh || '');
     scheduleCurrentXnxq = String(cache.scheduleCurrentXnxq || cache.scheduleCache?.currentXnxq || '');
+    scoreCurrentZxjxjhh = String(cache.scoreCurrentZxjxjhh || cache.examsCache?.currentZxjxjhh || scheduleCurrentXnxq);
     scheduleCache = cache.scheduleCache && typeof cache.scheduleCache === 'object'
       ? normalizedScheduleCache(cache.scheduleCache)
       : null;
     examsCache = cache.examsCache && typeof cache.examsCache === 'object' ? cache.examsCache : null;
     scoresCache = cache.scoresCache && typeof cache.scoresCache === 'object' ? cache.scoresCache : null;
     loadedSharedTerms.clear();
-    (Array.isArray(cache.loadedSharedTerms) ? cache.loadedSharedTerms : []).forEach((term) => loadedSharedTerms.add(String(term)));
+    const cachedExamTerms = new Set((examsCache?.results || []).map(result => String(result.zxjxjhh)));
+    if (scoresCache && Array.isArray(cache.loadedSharedTerms)) {
+      for (const term of cache.loadedSharedTerms.map(String)) {
+        if (cachedExamTerms.has(term)) loadedSharedTerms.add(term);
+      }
+    }
     loadedScheduleTerms.clear();
     (Array.isArray(cache.loadedScheduleTerms) ? cache.loadedScheduleTerms : []).forEach((term) => loadedScheduleTerms.add(String(term)));
-    for (const result of (scheduleCache?.results || [])) {
-      if (result?.type !== 'selection') continue;
-      const hasSemesterResult = (scheduleCache?.results || []).some((item) => (
-        item?.type === 'semester' && item?.xnxq === result.xnxq
-      ));
-      if (!hasSemesterResult) loadedScheduleTerms.delete(String(result.xnxq || ''));
-    }
     academicSemestersLoaded = academicSemesterOptions.length > 0;
     if (!academicSemestersLoaded) return false;
     renderedAcademicCacheStudentId = String(studentId || cache.studentId || '').trim();
-    renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
     renderAvailableSharedSemesters();
     renderCachedAcademicData();
     return true;
@@ -1453,7 +1447,7 @@
   }
 
   function renderScores(rows) {
-    const currentLabel = String((scoreSemesterOptions || [])
+    const currentLabel = String(academicSemesterOptions
       .find((item) => String(item?.zxjxjhh || '') === scoreCurrentZxjxjhh)?.label || '').trim();
     const list = (Array.isArray(rows) ? [...rows] : []).sort((left, right) => {
       const leftSemester = String(left?.academicYear || '').trim();
@@ -1556,38 +1550,30 @@
     renderAcademicScoreStatistics(filterCachedScoreRows(element('academicScoreSemester')?.value), true);
   }
 
-  function renderScoreSemesterOptions(semesters, currentZxjxjhh = '', preferredValue = '') {
+  function renderScoreSemesterOptions(semesters) {
     const select = element('academicScoreSemester');
     if (!(select instanceof HTMLSelectElement)) return;
-    scoreSemesterOptions = Array.isArray(semesters) ? semesters : [];
-    scoreCurrentZxjxjhh = String(currentZxjxjhh || '').trim();
+    const current = scoreCurrentZxjxjhh || '__current__';
     select.replaceChildren(new Option('全部', '__all__'));
-    for (const semester of scoreSemesterOptions) {
+    for (const semester of semesters) {
       const value = String(semester?.zxjxjhh || '').trim();
       const label = String(semester?.label || '').trim();
       if (!value || !label) continue;
       select.append(new Option(
-        value === scoreCurrentZxjxjhh ? `${label}(本学期)` : label,
+        value === current ? `${label}(本学期)` : label,
         value
       ));
     }
-    const preferred = String(preferredValue || '');
-    const cachedScoreLabels = new Set((scoresCache?.rows || [])
-      .map((row) => String(row?.academicYear || '').trim()).filter(Boolean));
-    const currentLabel = String(scoreSemesterOptions
-      .find((item) => String(item?.zxjxjhh || '') === scoreCurrentZxjxjhh)?.label || '').trim();
-    const latestCached = scoreSemesterOptions.find((item) => cachedScoreLabels.has(String(item?.label || '').trim()));
-    select.value = preferred && [...select.options].some((option) => option.value === preferred)
-      ? preferred
-      : (currentLabel && cachedScoreLabels.has(currentLabel)
-          ? scoreCurrentZxjxjhh
-          : String(latestCached?.zxjxjhh || scoreCurrentZxjxjhh || '__all__'));
-    scoreSemesterPreference = select.value === scoreCurrentZxjxjhh ? '' : select.value;
-    const button = element('academicScoreCurrentSemesterBtn');
-    if (button instanceof HTMLButtonElement) {
-      button.disabled = !scoreCurrentZxjxjhh;
-      button.textContent = select.value === scoreCurrentZxjxjhh ? '全部' : '本学期';
+    if (![...select.options].some((option) => option.value === current)) {
+      // The button can still open an empty current semester without adding it to the menu.
+      const emptyCurrent = new Option('本学期', current);
+      emptyCurrent.hidden = true;
+      select.append(emptyCurrent);
     }
+    select.value = scoreSemesterPreference && [...select.options].some((option) => option.value === scoreSemesterPreference)
+      ? scoreSemesterPreference : current;
+    const button = element('academicScoreCurrentSemesterBtn');
+    if (button instanceof HTMLButtonElement) button.textContent = select.value === current ? '全部' : '本学期';
   }
 
   function renderDataSemesterOptions(selectId, buttonId, semesters, currentValue, preferredValue, { all = false } = {}) {
@@ -1968,14 +1954,12 @@
     academicSemestersLoaded = false;
     academicSemestersPromise = null;
     academicSemesterOptions = [];
-    scoreSemesterOptions = [];
     scoreCurrentZxjxjhh = '';
     scheduleCurrentXnxq = '';
     loadedSharedTerms.clear();
     sharedTermsInFlight.clear();
     loadedScheduleTerms.clear();
     scheduleTermsInFlight.clear();
-    verifiedScheduleTerms.clear();
     selectionSchedulePromise = null;
     renderedAcademicCacheStudentId = '';
   }
@@ -2042,8 +2026,8 @@
             throw Object.assign(new Error(semesterResult?.message || '学期列表读取失败'), { code: String(semesterResult?.code || '') });
           }
           academicSemesterOptions = Array.isArray(semesterResult.semesters) ? semesterResult.semesters : [];
-          scoreCurrentZxjxjhh = String(semesterResult.currentZxjxjhh || '').trim();
           scheduleCurrentXnxq = String(semesterResult.currentXnxq || '').trim();
+          scoreCurrentZxjxjhh = String(semesterResult.currentZxjxjhh || scheduleCurrentXnxq).trim();
           if (scheduleCurrentXnxq) {
             scheduleCache = normalizedScheduleCache({
               ...(scheduleCache || {}),
@@ -2052,7 +2036,7 @@
             });
           }
           academicSemestersLoaded = true;
-          renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
+          renderAvailableSharedSemesters();
           await persistAcademicDataCache();
           return academicSemesterOptions;
         })
@@ -2083,8 +2067,8 @@
     const rows = scoresCache?.rows || [];
     const value = String(selected || '');
     if (!value || value === '__all__') return rows;
-    const semester = (scoreSemesterOptions || []).find((item) => item.zxjxjhh === value);
-    if (!semester) return rows;
+    const semester = academicSemesterOptions.find((item) => item.zxjxjhh === value);
+    if (!semester) return [];
     const label = String(semester.label || '').trim();
     return rows.filter((row) => String(row?.academicYear || '').trim() === label);
   }
@@ -2208,10 +2192,7 @@
     const useCachedFallback = !scheduleHasCourses(preferredSchedule) && !!latestCachedTerm;
     const renderedPreference = useCachedFallback ? latestCachedTerm : requestedPreference;
     const availableSchedules = academicSemesterOptions
-      .filter((semester) => {
-        const value = String(semester?.zxjxjhh || '');
-        return !verifiedScheduleTerms.has(value) || scheduleHasCourses(cachedByTerm.get(value));
-      })
+      .filter((semester) => scheduleHasCourses(cachedByTerm.get(String(semester?.zxjxjhh || ''))))
       .map((semester) => ({
         label: semester.label,
         xnxq: semester.zxjxjhh,
@@ -2219,7 +2200,7 @@
       }));
     for (const result of cachedResults) {
       if (availableSchedules.some((item) => item.xnxq === result.xnxq)) continue;
-      if (result?.type !== 'selection' && !scheduleHasCourses(result)) continue;
+      if (!scheduleHasCourses(result)) continue;
       availableSchedules.push(result);
     }
     const scheduleSelected = renderDataSemesterOptions(
@@ -2240,18 +2221,8 @@
       scheduleSemesterPreference = scheduleSelected === String(scheduleCache?.currentXnxq || '') ? '' : scheduleSelected;
     }
     const schedule = cachedByTerm.get(scheduleSelected);
-    const isUnverifiedEmptyCache = schedule?.type === 'semester'
-      && !scheduleHasCourses(schedule)
-      && !verifiedScheduleTerms.has(scheduleSelected);
-    const isInvalidCurrentSelection = scheduleSelected === String(scheduleCache?.currentXnxq || '')
-      && schedule?.type === 'selection';
-    if (isInvalidCurrentSelection || isUnverifiedEmptyCache) {
-      if (element('academicScheduleLoading')) element('academicScheduleLoading').style.display = 'flex';
-      if (element('academicScheduleTableWrap')) element('academicScheduleTableWrap').style.display = 'none';
-      if (element('academicScheduleEmpty')) element('academicScheduleEmpty').style.display = 'none';
-    } else if (schedule) {
-      applyScheduleView(schedule);
-    }
+    if (schedule) applyScheduleView(schedule);
+    else { scheduleData = null; renderSchedule(); }
   }
 
   function updateScheduleSemesterToggle(selectedValue = '') {
@@ -2259,7 +2230,8 @@
     if (!(button instanceof HTMLButtonElement)) return;
     const current = String(scheduleCache?.currentXnxq || '').trim();
     const selection = String(scheduleCache?.selectionSemester?.xnxq || '').trim();
-    const canToggle = !!current && !!selection && current !== selection;
+    const values = new Set(Array.from(element('academicScheduleSemester')?.options || [], option => option.value));
+    const canToggle = current !== selection && values.has(current) && values.has(selection);
     button.style.display = canToggle ? '' : 'none';
     button.disabled = !canToggle;
     button.textContent = String(selectedValue || '') === current ? '选课' : '本学期';
@@ -2271,16 +2243,12 @@
   }
 
   function renderAvailableSharedSemesters() {
-    const availableLabels = new Set([
-      ...(scoresCache?.rows || []).map((row) => String(row?.academicYear || '')),
-      ...(examsCache?.results || []).filter((item) => item?.rows?.length).map((item) => String(item?.label || ''))
-    ]);
+    const scoreLabels = new Set((scoresCache?.rows || []).map(row => String(row?.academicYear || '').trim()));
+    const examTerms = new Set((examsCache?.results || []).filter(item => item?.rows?.length).map(item => String(item.zxjxjhh)));
     const available = academicSemesterOptions.filter((item) => (
-      !loadedSharedTerms.has(String(item?.zxjxjhh || ''))
-      || availableLabels.has(String(item?.label || ''))
+      examTerms.has(String(item?.zxjxjhh || '')) || scoreLabels.has(String(item?.label || '').trim())
     ));
-    const selected = String(element('academicScoreSemester')?.value || scoreSemesterPreference || scoreCurrentZxjxjhh || '__all__');
-    renderScoreSemesterOptions(available, scoreCurrentZxjxjhh, selected);
+    renderScoreSemesterOptions(available);
   }
 
   async function requestSharedTerms(values) {
@@ -2292,7 +2260,7 @@
     };
     const scores = await sendAcademicLoadWithRetry(
       'ACADEMIC_LOAD_SCORES',
-      { semesters: terms, fresh: academicBackgroundRefreshActive },
+      { semesters: terms },
       '成绩服务'
     );
     if (!scores?.ok) throw Object.assign(new Error(scores?.message || '成绩读取失败'), { code: scores?.code });
@@ -2301,7 +2269,7 @@
     if (shouldRender()) renderScores(filterCachedScoreRows(element('academicScoreSemester')?.value));
     const exams = await sendAcademicLoadWithRetry(
       'ACADEMIC_LOAD_EXAMS',
-      { zxjxjhh: terms, fresh: academicBackgroundRefreshActive },
+      { zxjxjhh: terms },
       '考试信息服务',
       false
     );
@@ -2394,19 +2362,17 @@
     if (terms.length !== 1) throw new Error('课表每次只能加载一个学期');
     const schedule = await sendAcademicLoadWithRetry(
       'ACADEMIC_LOAD_SCHEDULE',
-      { xnxq: terms, includeSelection, fresh: academicBackgroundRefreshActive },
+      { xnxq: terms, includeSelection },
       '课表服务'
     );
     if (!schedule?.ok) throw Object.assign(new Error(schedule?.message || '课表读取失败'), { code: schedule?.code });
     mergeScheduleResult(schedule);
     terms.forEach((term) => loadedScheduleTerms.add(term));
-    terms.forEach((term) => verifiedScheduleTerms.add(term));
-    for (const result of (schedule.results || [])) loadedScheduleTerms.add(String(result?.xnxq || ''));
     await persistAcademicDataCache();
   }
 
   async function requestSelectionSchedule() {
-    if (scheduleCache?.selectionProbed === true && scheduleCache?.selectionSemester?.xnxq) return;
+    if (scheduleCache?.selectionProbed === true) return;
     if (selectionSchedulePromise) return selectionSchedulePromise;
     selectionSchedulePromise = (async () => {
       const selection = await sendAcademicLoadWithRetry(
@@ -2433,14 +2399,7 @@
   }
 
   function isScheduleTermReady(term) {
-    if (!loadedScheduleTerms.has(term)) return false;
-    const semesterResult = (scheduleCache?.results || []).find((item) => (
-      item?.xnxq === term && item?.type === 'semester'
-    ));
-    if (!scheduleHasCourses(semesterResult) && !verifiedScheduleTerms.has(term)) return false;
-    const currentTerm = String(scheduleCache?.currentXnxq || scheduleCurrentXnxq || '');
-    if (term !== currentTerm) return true;
-    return (scheduleCache?.results || []).some((item) => item.xnxq === term && item.type === 'semester');
+    return loadedScheduleTerms.has(term);
   }
 
   function enqueueScheduleTerm(term, includeSelection = false) {
@@ -2500,7 +2459,7 @@
     try {
       while (pending.length) {
         const selected = String(element('academicScheduleSemester')?.value || '');
-        if (selected && !isScheduleTermReady(selected)) {
+        if (pending.includes(selected) && !isScheduleTermReady(selected)) {
           await ensureScheduleTerms([selected]);
           renderCachedScheduleData();
         }
@@ -2515,98 +2474,67 @@
     }
   }
 
-  async function loadAll({ preserveRendered = false, refreshCached = false } = {}) {
+  function hasCompleteAcademicCache() {
+    return academicSemestersLoaded && scheduleCache?.selectionProbed === true
+      && academicSemesterOptions.every(({zxjxjhh}) => loadedSharedTerms.has(zxjxjhh) && isScheduleTermReady(zxjxjhh))
+      && (!scheduleCurrentXnxq || isScheduleTermReady(scheduleCurrentXnxq));
+  }
+
+  async function loadAll({ preserveRendered = false } = {}) {
+    if (hasCompleteAcademicCache()) {
+      renderAvailableSharedSemesters();
+      renderCachedAcademicData();
+      return {ok:true};
+    }
     beginAcademicOptionsRequest();
     try {
-    if (refreshCached) {
-      academicBackgroundRefreshActive = true;
-      loadedSharedTerms.clear();
-      loadedScheduleTerms.clear();
-      verifiedScheduleTerms.clear();
-      sharedTermsInFlight.clear();
-      scheduleTermsInFlight.clear();
-      selectionSchedulePromise = null;
-      if (scheduleCache) scheduleCache.selectionProbed = false;
-      academicSemestersLoaded = false;
-      academicSemestersPromise = null;
-    }
-    if (!preserveRendered) {
-      renderAcademicScoreStatisticsLoading();
-      for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
-        if (element(id)) element(id).style.display = 'flex';
-      }
-      for (const id of ['academicScoreTableWrap', 'academicExamTableWrap', 'academicScheduleTableWrap']) {
-        if (element(id)) element(id).style.display = 'none';
-      }
-    }
-    try {
-      const semesters = await ensureAcademicSemesterOptions({ fresh: refreshCached });
-      const allTerms = semesters.map((item) => String(item?.zxjxjhh || '')).filter(Boolean);
-      const selected = String(element('academicScoreSemester')?.value || scoreCurrentZxjxjhh || allTerms[0] || '');
-      const sharedPriority = selected === '__all__' ? (scoreCurrentZxjxjhh || allTerms[0]) : selected;
-      if (!sharedPriority || !allTerms.length) throw new Error('没有可查询的学期');
-      if (selected === '__all__') {
-        renderCachedSharedData();
-        setSharedAllLoading(allTerms.some((term) => !loadedSharedTerms.has(term)));
-      } else if (!loadedSharedTerms.has(sharedPriority)) {
+      if (!preserveRendered) {
         renderAcademicScoreStatisticsLoading();
+        for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
+          if (element(id)) element(id).style.display = 'flex';
+        }
+        for (const id of ['academicScoreTableWrap', 'academicExamTableWrap', 'academicScheduleTableWrap']) {
+          if (element(id)) element(id).style.display = 'none';
+        }
       }
-
-      const selectedScheduleTerm = String(scheduleSemesterPreference || element('academicScheduleSemester')?.value || '');
-      const selectedCachedSchedule = (scheduleCache?.results || []).find((item) => (
-        item?.xnxq === selectedScheduleTerm && item?.type === 'semester'
-      ));
-      if (selectedScheduleTerm && selectedCachedSchedule && !scheduleHasCourses(selectedCachedSchedule)) {
-        await ensureScheduleTerms([selectedScheduleTerm]);
-        renderCachedScheduleData();
+      const semesters = await ensureAcademicSemesterOptions();
+      const allTerms = semesters.map(item => String(item?.zxjxjhh || '')).filter(Boolean);
+      if (!allTerms.length) throw new Error('没有可查询的学期');
+      const current = scoreCurrentZxjxjhh || allTerms[0];
+      const sharedPriority = allTerms.includes(scoreSemesterPreference) ? scoreSemesterPreference : current;
+      if (scoreSemesterPreference === '__all__') {
+        renderCachedSharedData();
+        setSharedAllLoading(allTerms.some(term => !loadedSharedTerms.has(term)));
       }
-
-      const currentScheduleTerm = await ensureCurrentScheduleTerm(allTerms);
-
-      const schedulePriority = String(scheduleSemesterPreference || element('academicScheduleSemester')?.value || currentScheduleTerm);
-      if (!loadedScheduleTerms.has(schedulePriority)) {
-        await ensureScheduleTerms([schedulePriority]);
-        renderCachedScheduleData();
-      }
-
+      await ensureCurrentScheduleTerm(allTerms);
+      if (allTerms.includes(scheduleSemesterPreference)) await ensureScheduleTerms([scheduleSemesterPreference]);
       await ensureSharedTerms([sharedPriority]);
       renderAvailableSharedSemesters();
       renderCachedSharedData();
-
       await requestSelectionSchedule();
       renderCachedScheduleData();
       await refreshContext();
 
-      const sharedRemaining = allTerms.filter((term) => term !== sharedPriority);
-      const scheduleRemaining = allTerms.filter((term) => (
-        term !== schedulePriority && term !== currentScheduleTerm
-      ));
+      const sharedRemaining = allTerms.filter(term => !loadedSharedTerms.has(term));
+      const scheduleRemaining = allTerms.filter(term => !isScheduleTermReady(term));
       if (sharedRemaining.length || scheduleRemaining.length) {
         void (async () => {
           try {
-            try {
-              if (sharedRemaining.length) await prefetchSharedTerms(sharedRemaining);
-            } finally {
-              if (String(element('academicScoreSemester')?.value || '') === '__all__') {
-                setSharedAllLoading(false);
-                renderCachedSharedData();
-              }
-            }
-            if (scheduleRemaining.length) await prefetchScheduleTerms(scheduleRemaining);
-            renderAvailableSharedSemesters();
-            renderCachedAcademicData();
+            await prefetchSharedTerms(sharedRemaining);
           } finally {
-            academicBackgroundRefreshActive = false;
+            setSharedAllLoading(false);
+            renderCachedSharedData();
           }
-        })().catch((error) => setMessage(`其他学期数据读取失败：${error?.message || error}`, false));
+          await prefetchScheduleTerms(scheduleRemaining);
+          renderAvailableSharedSemesters();
+          renderCachedAcademicData();
+        })().catch(error => setMessage(`其他学期数据读取失败：${error?.message || error}`, false));
       } else {
-        academicBackgroundRefreshActive = false;
         setSharedAllLoading(false);
-        renderAvailableSharedSemesters();
+        renderCachedSharedData();
       }
-      return { ok: true };
+      return {ok:true};
     } catch (error) {
-      academicBackgroundRefreshActive = false;
       sharedAllLoading = false;
       renderAcademicScoreStatistics(filterCachedScoreRows(element('academicScoreSemester')?.value));
       for (const id of ['academicScoreLoading', 'academicExamLoading', 'academicScheduleLoading']) {
@@ -2615,9 +2543,8 @@
       element('academicSystemStatus').style.display = 'block';
       element('academicSystemStatus').textContent = error?.code === 'not-logged-in'
         ? '教务系统未登录，请输入账号密码或通过 MIS 登录'
-        : `教务数据读取失败：${error?.message || '未知错误'}`;
-      return { ok: false, code: error?.code || '', message: error?.message };
-    }
+        : `教务数据读取失败：${error?.message || error}`;
+      return {ok:false,code:error?.code || '',message:error?.message};
     } finally {
       endAcademicOptionsRequest();
     }
@@ -2670,7 +2597,7 @@
         invalidateAcademicCaches();
         await refreshContext();
         const restored = await restoreAcademicDataCache().catch(() => false);
-        await loadAll({ preserveRendered: restored, refreshCached: restored });
+        await loadAll({ preserveRendered: restored });
         setMessage(`教务系统账号 ${studentId} 登录成功`);
       } catch (error) {
         setMessage(`教务系统登录失败：${String(error?.message || error)}`, false);
@@ -2711,7 +2638,7 @@
         }
         await refreshContext();
         setMessage(`已切换至教务系统账号 ${studentId}`);
-        void loadAll({ preserveRendered: restored, refreshCached: restored });
+        void loadAll({ preserveRendered: restored });
       } catch (error) {
         setMessage(`切换教务系统账号失败：${String(error?.message || error)}`, false);
         invalidateAcademicCaches();
@@ -2739,7 +2666,7 @@
         context = { ...(context || {}), studentId };
         const restored = await restoreAcademicDataCache(studentId).catch(() => false);
         void refreshContext()
-          .then(() => loadAll({ preserveRendered: restored, refreshCached: restored }))
+          .then(() => loadAll({ preserveRendered: restored }))
           .catch((error) => setMessage(`教务数据后台刷新失败：${String(error?.message || error)}`, false));
       } catch (error) {
         setMessage(`通过 MIS 登录教务系统失败：${String(error?.message || error)}`, false);
@@ -2765,11 +2692,7 @@
       scheduleSemesterPreference = selected === current ? '' : selected;
       await chrome.storage.local.set({ academicScheduleSemester: scheduleSemesterPreference });
       const cached = (scheduleCache?.results || []).find((item) => item.xnxq === selected);
-      const cachedIsReady = cached && (
-        cached.type !== 'semester'
-        || scheduleHasCourses(cached)
-        || verifiedScheduleTerms.has(selected)
-      );
+      const cachedIsReady = scheduleHasCourses(cached);
       if (cachedIsReady) applyScheduleView(cached);
       else if (selected) {
         element('academicScheduleLoading').style.display = 'flex';
@@ -2808,12 +2731,13 @@
     });
     element('academicScoreSemester')?.addEventListener('change', async (event) => {
       const selected = String(event.currentTarget.value || '');
-      scoreSemesterPreference = selected === scoreCurrentZxjxjhh ? '' : selected;
+      const current = scoreCurrentZxjxjhh || '__current__';
+      scoreSemesterPreference = selected === current ? '' : selected;
       const button = element('academicScoreCurrentSemesterBtn');
-      if (button instanceof HTMLButtonElement) button.textContent = selected === scoreCurrentZxjxjhh ? '全部' : '本学期';
+      if (button instanceof HTMLButtonElement) button.textContent = selected === current ? '全部' : '本学期';
       const terms = selected === '__all__'
         ? academicSemesterOptions.map((item) => item.zxjxjhh)
-        : [selected];
+        : academicSemesterOptions.some(item => item.zxjxjhh === selected) ? [selected] : [];
       const needsLoad = terms.some((term) => !loadedSharedTerms.has(String(term || '')));
       if (selected === '__all__') {
         renderCachedSharedData();
@@ -2838,7 +2762,9 @@
     element('academicScoreCurrentSemesterBtn')?.addEventListener('click', () => {
       const select = element('academicScoreSemester');
       if (!(select instanceof HTMLSelectElement)) return;
-      select.value = select.value === scoreCurrentZxjxjhh ? '__all__' : scoreCurrentZxjxjhh;
+      const current = scoreCurrentZxjxjhh || '__current__';
+      scoreSemesterPreference = select.value === current ? '__all__' : '';
+      renderAvailableSharedSemesters();
       select.dispatchEvent(new Event('change'));
     });
     bindIntervalEditor('academicScoreMonitorInterval', 'academicScoreMonitorIntervalMinutes',
@@ -2856,7 +2782,7 @@
         if (payloadStudentId && payloadStudentId !== String(context?.studentId || '').trim()) return;
         if (payload.kind === 'score' || payload.kind === 'scores') {
           if (Array.isArray(payload.rows)) {
-            const currentLabel = String((scoreSemesterOptions || [])
+            const currentLabel = String(academicSemesterOptions
               .find((item) => item.zxjxjhh === scoreCurrentZxjxjhh)?.label
               || payload.rows[0]?.academicYear
               || '');
@@ -2942,7 +2868,7 @@
       }
       if (functionalPage && changes.academicScoreSemester) {
         scoreSemesterPreference = String(changes.academicScoreSemester.newValue || '');
-        renderScoreSemesterOptions(academicSemesterOptions, scoreCurrentZxjxjhh, scoreSemesterPreference);
+        renderAvailableSharedSemesters();
         renderCachedSharedData();
       }
       if (changes[ACADEMIC_FULLSCREEN_BUTTON_KEY] && element(ACADEMIC_FULLSCREEN_BUTTON_KEY)) {
@@ -3031,13 +2957,18 @@
     }
     void (async () => {
       await refreshContext();
-      await autoLoginIfPossible();
-      await refreshContext();
-      const activeStudentId = String(context?.studentId || '').trim();
-      const restored = activeStudentId === renderedAcademicCacheStudentId
+      let activeStudentId = String(context?.studentId || '').trim();
+      let restored = activeStudentId === renderedAcademicCacheStudentId
         ? !!renderedAcademicCacheStudentId
         : await restoreAcademicDataCache(activeStudentId).catch(() => false);
-      await loadAll({ preserveRendered: restored, refreshCached: restored });
+      if (restored && hasCompleteAcademicCache()) return;
+      await autoLoginIfPossible();
+      activeStudentId = String(context?.studentId || '').trim();
+      if (activeStudentId !== renderedAcademicCacheStudentId) {
+        invalidateAcademicCaches();
+        restored = await restoreAcademicDataCache(activeStudentId).catch(() => false);
+      }
+      await loadAll({ preserveRendered: restored });
     })().catch((error) => setMessage(`教务数据后台刷新失败：${String(error?.message || error)}`, false));
     return true;
   }

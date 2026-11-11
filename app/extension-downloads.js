@@ -80,31 +80,10 @@
     title.append(span('resource-name',name)); row.append(title);
     return title;
   }
-  const previewTypes = {
-    pdf:'application/pdf', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', bmp:'image/bmp',
-    webp:'image/webp', avif:'image/avif', mp3:'audio/mpeg', wav:'audio/wav', ogg:'audio/ogg',
-    mp4:'video/mp4', webm:'video/webm', txt:'text/plain', md:'text/plain', csv:'text/plain',
-    json:'text/plain', html:'text/plain', htm:'text/plain', svg:'text/plain', xml:'text/plain',
-    js:'text/plain', css:'text/plain', py:'text/plain', log:'text/plain'
-  };
   async function exportFile(handle,name,saveAs) {
     const url = URL.createObjectURL(await handle.getFile());
     try { await chrome.downloads.download({url,filename:name,conflictAction:'uniquify',saveAs}); }
     finally { setTimeout(() => URL.revokeObjectURL(url),60000); }
-  }
-  async function openFile(handle,name) {
-    const type = previewTypes[name.split('.').pop().toLowerCase()];
-    if (!type) return exportFile(handle,name,false);
-    const file = await handle.getFile();
-    const url = URL.createObjectURL(file.slice(0,file.size,type));
-    try {
-      const tab = await chrome.tabs.create({url});
-      const cleanup = tabId => {
-        if (tabId !== tab.id) return;
-        chrome.tabs.onRemoved.removeListener(cleanup); URL.revokeObjectURL(url);
-      };
-      chrome.tabs.onRemoved.addListener(cleanup);
-    } catch (error) { URL.revokeObjectURL(url); throw error; }
   }
   function actionButton(controls,text,className,action) {
     const button = document.createElement('button');
@@ -144,6 +123,10 @@
       syncSelection();
     };
     title.prepend(checkbox);
+    title.classList.add('extension-download-selectable-title');
+    title.onclick = event => {
+      if (!event.target.closest('input,button,a,label')) checkbox.click();
+    };
     const sizeNode = span('resource-time-inline file-size-emphasis',BjtuFileSizeEmphasis.formatBytes(size));
     BjtuFileSizeEmphasis.applyBytes(sizeNode,size);
     const time = span('resource-time-inline');
@@ -154,13 +137,9 @@
     const controls = document.createElement('div'); controls.className = 'resource-link-row extension-download-actions';
     const link = document.createElement('a');
     link.className = 'resource-url';
-    link.href = `#${encodeURIComponent(path)}`;
-    link.textContent = chrome.runtime.getURL(`downloads/${path.split('/').map(encodeURIComponent).join('/')}`);
-    const open = event => {
-      if (event.button > 1) return;
-      event.preventDefault(); void openFile(handle,name).catch(report);
-    };
-    link.onclick = link.onauxclick = open;
+    link.href = link.textContent = chrome.runtime.getURL(`downloads/${path.split('/').map(encodeURIComponent).join('/')}`);
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     controls.append(link);
     actionButton(controls,'上传','resource-copy-btn',() => uploadFiles([entry]));
     actionButton(controls,'另存','resource-download-btn',() => exportFile(handle,name,true));

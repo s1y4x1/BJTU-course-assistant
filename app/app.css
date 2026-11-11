@@ -737,6 +737,7 @@ body.platform-column-resizing {
 #extension-downloads-section [hidden] { display:none !important; }
 .extension-download-actions { justify-content:flex-end; }
 .btn.resource-select-compact { background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2; white-space:nowrap; }
+html[data-color-scheme="dark"] .btn.resource-select-compact:not(#extension-download-dedup) { background:#e2e8f0; color:#0f172a; }
 #extension-download-dedup { background:#dc2626; }
 #extension-download-dedup:hover:not(:disabled) { background:#b91c1c; }
 #extension-download-upload-selected { background:#1e3a8a; }
@@ -745,6 +746,7 @@ body.platform-column-resizing {
 #extension-download-delete-selected:hover:not(:disabled),.btn.extension-download-cancel:hover:not(:disabled) { background:#b91c1c; }
 #extension-downloads-section .btn:disabled { opacity:.5; cursor:not-allowed; }
 #extension-downloads-section .resource-row-title { cursor:default; }
+#extension-downloads-section .extension-download-selectable-title { cursor:pointer; }
 #extension-downloads-section .resource-row-title .extension-download-cancel { float:right; padding:3px 8px; font-size:11px; line-height:1.2; white-space:nowrap; }
 .btn.extension-download-cancel:disabled:hover { background:#dc2626; }
 .resource-row-title > input[type="checkbox"] { vertical-align:middle; }
@@ -2113,7 +2115,7 @@ html[data-color-scheme="dark"] .platform-status-btn.platform-text-load.unselecte
 .fullscreen-module-button[hidden] { display: none !important; }
 .fullscreen-module-unread-badge { position:absolute; top:-3px; right:-3px; min-width:18px; height:18px; box-sizing:border-box; padding:0 4px; border-radius:10px; background:#dc2626; color:#fff; font:bold 11px/18px system-ui,sans-serif; text-align:center; pointer-events:none; }
 .fullscreen-module-unread-badge[hidden] { display:none; }
-.fullscreen-module-buttons > :is(#chatroom-fullscreen-button,#mail-fullscreen-button) { overflow:visible; }
+.fullscreen-module-buttons > :is(#chatroom-fullscreen-button,#mail-fullscreen-button,#academic-fullscreen-button) { overflow:visible; }
 .fullscreen-module-button {
     position: relative;
     display: inline-flex;

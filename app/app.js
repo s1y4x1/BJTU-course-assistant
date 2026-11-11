@@ -266,7 +266,7 @@ async function initFullscreenModuleButtons() {
     return;
   }
   const available = await globalThis.BjtuModuleRegistry.ready;
-  const keys = ['qwenEnabled', 'mailMonitorStatus', ...Object.values(FULLSCREEN_MODULE_BUTTONS)
+  const keys = ['qwenEnabled', 'mailMonitorStatus', 'academicUnreadChanges', ...Object.values(FULLSCREEN_MODULE_BUTTONS)
     .flatMap((item) => [item.key, item.iconKey].filter(Boolean))];
   const stored = await chrome.storage.local.get(keys);
   const moduleViewPromises = new Map();
@@ -662,6 +662,12 @@ async function initFullscreenModuleButtons() {
       academicButton.classList.toggle('use-system-icon', useSystemIcon);
       if (graduationIcon instanceof Element) graduationIcon.toggleAttribute('hidden', useSystemIcon);
       if (systemIcon instanceof Element) systemIcon.toggleAttribute('hidden', !useSystemIcon);
+      const badge = academicButton.querySelector('.fullscreen-module-unread-badge');
+      const unread = Math.max(0, Number(values.academicUnreadChanges) || 0);
+      badge.hidden = unread === 0;
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      academicButton.title = unread ? `教务系统 · ${unread} 条未查看变动` : '教务系统';
+      academicButton.setAttribute('aria-label', `打开${academicButton.title}`);
     }
     for (const [moduleId, config] of Object.entries(FULLSCREEN_MODULE_BUTTONS)) {
       const button = document.getElementById(config.id);
@@ -673,6 +679,7 @@ async function initFullscreenModuleButtons() {
       if (button.dataset.bound !== '1') {
         button.dataset.bound = '1';
         button.addEventListener('click', () => {
+          if (moduleId === 'academic') void chrome.runtime.sendMessage({type:'ACADEMIC_CLEAR_UNREAD_CHANGES'}).catch(() => {});
           void openModulePanel(moduleId, config);
         });
       }

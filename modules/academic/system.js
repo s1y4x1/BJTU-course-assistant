@@ -28,6 +28,7 @@
   const STATUS_KEY = 'academicScoreMonitorStatus';
   const EXAM_PENDING_NOTIFICATIONS_KEY = 'academicExamPendingNotifications';
   const EXAM_STATUS_KEY = 'academicExamMonitorStatus';
+  const UNREAD_CHANGES_KEY = 'academicUnreadChanges';
   const ALARM_NAME = 'bjtu-academic-score-check';
   const NOTIFICATION_PREFIX = 'bjtu-academic-score:';
   const EXAM_NOTIFICATION_PREFIX = 'bjtu-academic-exam:';
@@ -88,9 +89,21 @@
   let academicSemesterContextPromise = null;
   let scoreProcessPromise = Promise.resolve();
   let examProcessPromise = Promise.resolve();
+  let academicUnreadQueue = Promise.resolve();
   let academicNotificationQueue = Promise.resolve();
   let academicCacheUpdatePromise = Promise.resolve();
   let accountWritePromise = Promise.resolve();
+
+  function updateAcademicUnreadChanges(delta) {
+    const update = academicUnreadQueue.then(async () => {
+      const stored = delta === null ? {} : await chrome.storage.local.get(UNREAD_CHANGES_KEY);
+      const count = delta === null ? 0 : Math.min(Number.MAX_SAFE_INTEGER, (Number(stored[UNREAD_CHANGES_KEY]) || 0) + delta);
+      await chrome.storage.local.set({[UNREAD_CHANGES_KEY]:count});
+      return count;
+    });
+    academicUnreadQueue = update.catch(() => {});
+    return update;
+  }
   const ACADEMIC_OPTIONS_REQUEST_PORT = 'bjtu-academic-options-requests';
   const ACADEMIC_REQUEST_PRIORITY = Object.freeze({
     LOGIN: 300,
@@ -1573,12 +1586,6 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
             checkedAt
           };
         }
-        if (current) {
-          cache.loadedSharedTerms = [...new Set([
-            ...(Array.isArray(cache.loadedSharedTerms) ? cache.loadedSharedTerms : []),
-            current
-          ])];
-        }
         if (!cache.scheduleCache) cache.updatedAt = checkedAt;
         delete cache.writeToken;
         return cache;
@@ -1624,6 +1631,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     });
     await updateAcademicDataCacheFromMonitor('scores', normalizedRows, id, checkedAt,
       { rows: nextRows, updatedAt: checkedAt, source });
+    if (changes.length) await updateAcademicUnreadChanges(changes.length).catch(() => {});
     broadcastAcademicData('scores', normalizedRows, id, checkedAt);
     const remainingPending = await flushPendingScoreNotifications(pending);
     return {
@@ -1757,6 +1765,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     });
     await updateAcademicDataCacheFromMonitor('exams', normalizedRows, id, checkedAt,
       { rows: nextRows, updatedAt: checkedAt, source });
+    if (changes.length) await updateAcademicUnreadChanges(changes.length).catch(() => {});
     broadcastAcademicData('exams', normalizedRows, id, checkedAt);
     const remainingPending = await flushPendingExamNotifications(pending);
     return {
@@ -2019,7 +2028,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       if (!currentLabel || !currentXnxq) throw new Error('本学期课表页面未返回当前学期及 xnxq');
       const scoreContext = await loadAcademicScoreSemesters({ fresh });
 
-      const byValue = new Map();
+      const byValue = new Map([[currentXnxq,{label:currentLabel,zxjxjhh:currentXnxq}]]);
       for (const item of [
         ...(Array.isArray(currentSchedule?.semesterOptions) ? currentSchedule.semesterOptions.map((semester) => ({
           label: String(semester?.label || '').trim(),
@@ -2033,7 +2042,7 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       }
       const context = {
         ok: true,
-        currentZxjxjhh: String(scoreContext.currentZxjxjhh || ''),
+        currentZxjxjhh: String(scoreContext.currentZxjxjhh || currentXnxq),
         currentXnxq,
         semesters: [...byValue.values()],
         currentSchedule
@@ -2072,7 +2081,8 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       }
       const currentPage = await fetchScorePage();
       const currentParsed = parseScorePage(currentPage.html);
-      if (!currentParsed.hasScoreTable) throw new Error('本学期成绩页面中未找到成绩表格');
+      const explicitlyEmpty = /暂无(?:成绩|数据)|没有(?:成绩|数据)|无成绩记录/u.test(textFromHtml(currentPage.html));
+      if (!currentParsed.hasScoreTable && !explicitlyEmpty) throw new Error('本学期成绩页面中未找到成绩表格');
       const historyPage = await fetchScorePage({ history: true });
       const historyParsed = parseScorePage(historyPage.html);
       if (!historyParsed.hasScoreTable) throw new Error('历年成绩页面中未找到成绩表格');
@@ -2361,7 +2371,10 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
       }
     }
     const source = await loadAcademicScoreSource();
-    const availableSemesters = source.availableSemesters;
+    const availableSemesters = [...new Map([
+      ...(cached?.academicSemesterOptions || []),
+      ...source.availableSemesters
+    ].map(item => [item.zxjxjhh,item])).values()];
     const currentZxjxjhh = source.currentZxjxjhh;
     const selectedValues = requested === null
       ? (currentZxjxjhh ? [currentZxjxjhh] : [])
@@ -2409,6 +2422,13 @@ async function fetchCurrentWeekContext(scheduleWeeks = [], currentXnxq = '') {
     });
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'ACADEMIC_CLEAR_UNREAD_CHANGES') {
+        updateAcademicUnreadChanges(null).then(
+          () => sendResponse({ok:true}),
+          error => sendResponse({ok:false,message:String(error?.message || error)})
+        );
+        return true;
+      }
       if (message?.type === 'ACADEMIC_LOGIN_WITH_PASSWORD') {
         enqueueAcademicRequest(ACADEMIC_REQUEST_PRIORITY.LOGIN, () => (
           loginWithPassword(message?.payload?.studentId, message?.payload?.password, { loginRequest: true })
