@@ -38,13 +38,13 @@
   }
   $('sidebar-host').replaceChildren(fragment);
   $('sidebar-host').removeAttribute('aria-busy');
-  const LIMIT = { messages: 600, peers: 500, rooms: 100, requests: 100, sessions: 8, history: 32, memory: 128 * 1024 * 1024, chunk: 32 * 1024 };
+  const LIMIT = { messages: 600, peers: 500, rooms: 100, requests: 100, sessions: 8, history: 32, chunk: 32 * 1024 };
   const PROTOCOL = 'bjtu-chatroom-rtc-v1';
   let state = { self: {}, peers: [], rooms: [], messages: [], requests: [], settings: {}, conversations: {} };
   let selected = 'public';
   let sidebar;
   let transport, unsubscribe, stopped = false, online = false, stateTimer, statePromise, stateDirty = false;
-  let capture = null, sharingPending = false, memoryReserved = 0;
+  let capture = null, sharingPending = false;
   const sessions = new Map(), transferHistory = [], drafts = new Map(), scrollPositions = new Map();
   const mediaMessages = new Map();
   const savedPreviews = new Map();
@@ -79,7 +79,7 @@
   }
   function publishDraft() {
     clearTimeout(draftSendTimer); draftSendTimer = null;
-    if (stopped || background || !online || !embeddedVisible || !$('share-draft').checked || !$('message').value.length || !selected || messageBytes() > MESSAGE_FILE_LIMIT) {clearSharedDraft(); return;}
+    if (stopped || background || !online || !embeddedVisible || !$('share-draft').checked || !screenRecipients().length || !$('message').value.length || !selected || messageBytes() > MESSAGE_FILE_LIMIT) {clearSharedDraft(); return;}
     if (sharedDraft && sharedDraft !== selected) clearSharedDraft();
     sharedDraft = selected;
     void transport.action('draft', {conversationId:selected, text:$('message').value, draftId:draftSessionId, revision:++draftRevision}).catch(() => {});
@@ -380,7 +380,11 @@
   function updateConversation() {
     const room = currentRoom(), peerId = selected.startsWith('peer:') ? selected.slice(5) : null;
     $('share-draft-label').textContent = peerId ? '允许对方实时观看' : '允许他人实时观看';
-    $('share-draft').disabled = !online || !selected;
+    $('share-draft').disabled = !online || !selected || !screenRecipients().length;
+    if ($('share-draft').disabled && $('share-draft').checked) {
+      $('share-draft').checked = false;
+      clearSharedDraft();
+    }
     const title = $('conversation-title');
     const displayName = !selected ? '' : peerId ? nameOf(peerId)
       : state.conversations?.[selected]?.remark || (selected === 'public' ? '公共群聊' : room?.name || '群聊已结束');
@@ -554,8 +558,8 @@
       return;
     }
     task = {name:message.file.name, conversationId:message.conversationId, card,
-      message:{id:message.id, fileHandleRef:message.fileHandleRef}, downloadPath:String(message.downloadPath || ''),
-      chunks:[], status:node('p','正在读取文件…','muted saved-file-status')};
+      message:{id:message.id, fileHandleRef:message.fileHandleRef, privateFile:message.privateFile}, downloadPath:String(message.downloadPath || ''),
+      status:node('p','正在读取文件…','muted saved-file-status')};
     savedPreviews.set(message.id, task); card.append(task.status);
     const load = async (requestPermission = false) => {
       task.status.replaceChildren(document.createTextNode('正在读取文件…'));
@@ -613,7 +617,7 @@
   function makeSession(id, peerId, type, outgoing, meta = {}) {
     if (sessions.has(id)) return sessions.get(id);
     if (sessions.size >= LIMIT.sessions) throw new Error('同时最多 8 个文件 / 屏幕会话，请先结束部分会话。');
-    const s = { id, peerId, type, outgoing, status: 'invited', done: 0, chunks: [], candidates: [], chain: Promise.resolve(),
+    const s = { id, peerId, type, outgoing, status: 'invited', done: 0, candidates: [], chain: Promise.resolve(),
       messageId: id, createdAt: Date.now(), conversationId: outgoing ? selected : `peer:${peerId}`, senderId: outgoing ? state.self.id : peerId, ...meta };
     sessions.set(id, s); touch(s); return s;
   }
@@ -728,8 +732,8 @@
   function showInvitation(s) {
     const card = node('article', undefined, 'request'), controls = node('div', undefined, 'actions');
     card.append(node('p', s.type === 'file' ? `${nameOf(s.peerId)} 希望发送文件「${s.name}」(${bytes(s.size)})` : `${nameOf(s.peerId)} 邀请你观看屏幕`));
-    card.append(node('p', s.type === 'file' ? '同意后才传输。优先流式保存；不支持时内存接收总额上限 128 MiB，保存前不关闭页面。文件名不代表可信内容，请谨慎打开。' : '仅观看，不授予远程控制权限。对方可能不是好友，请先核对身份。', 'muted'));
-    const accept = button(s.type === 'file' ? '选择保存位置并接收' : '同意观看', async () => {
+    card.append(node('p', s.type === 'file' ? '同意后才传输。文件名不代表可信内容，请谨慎打开。' : '仅观看，不授予远程控制权限。对方可能不是好友，请先核对身份。', 'muted'));
+    const accept = button(s.type === 'file' ? '接收' : '同意观看', async () => {
       accept.disabled = true;
       try { await acceptInvitation(s); } catch (error) { report(error); if (!s.ended) endSession(s, '接收未开始', true); }
     });
@@ -741,13 +745,10 @@
   async function acceptInvitation(s, automatic = false) {
     if (s.ended || s.accepted || s.accepting) return;
     s.accepting = true;
-    // showSaveFilePicker is reached from this button's user activation, before
-    // signalling/network awaits. Picker cancellation does not accept the file.
     if (s.type === 'file') {
       if (automatic) {
         try {
           Object.assign(s, await globalThis.BjtuChatroomSettings.createDownload(s.name));
-          s.autoSaved = true;
         } catch(error) {
           s.accepting = false;
           if (background) {
@@ -758,21 +759,9 @@
           return;
         }
         if (s.ended) { await discardPartialDownload(s); return; }
-      } else if (typeof window.showSaveFilePicker === 'function') {
-        let handle;
-        try { handle = await window.showSaveFilePicker({ suggestedName: s.name }); }
-        catch (error) {
-          if (error.name === 'AbortError') throw error;
-          throw new Error('无法打开流式保存对话框；未接收文件。可在支持文件系统访问的窗口重试。');
-        }
-        if (s.ended) return;
-        const writer = await handle.createWritable();
-        if (s.ended) { await writer.abort().catch(() => {}); return; }
-        s.writer = writer; s.handle = handle;
       } else {
-        if (s.size > LIMIT.memory || memoryReserved + s.size > LIMIT.memory) throw new Error('此浏览器只能内存接收，所有未保存文件合计不能超过 128 MiB。请先保存 / 释放文件或使用支持流式保存的窗口。');
-        s.reserved = s.size; memoryReserved += s.reserved;
-        toast('正在使用内存接收（合计上限 128 MiB）；完成后请点击保存。', true);
+        Object.assign(s, await globalThis.BjtuChatroomSettings.createManualDownload(s.name));
+        if (s.ended) { await discardPartialDownload(s); return; }
       }
       renderTransfer(s);
     }
@@ -965,7 +954,7 @@
       s.queued = (s.queued || 0) + data.byteLength;
       s.chain = s.chain.then(async () => {
         if (s.ended) return;
-        if (s.writer) await s.writer.write(data); else s.chunks.push(data);
+        await s.writer.write(data);
         if (s.ended) return;
         s.done += data.byteLength; s.queued -= data.byteLength; touch(s); updateTransfer(s);
         if (s.done === s.windowEnd && s.done < s.size) {
@@ -1010,41 +999,22 @@
     if (s.ended) return;
     if (s.done !== s.size || s.queued) throw new Error('文件不完整，已取消保存。');
     let file;
-    if (s.writer) {
-      await s.writer.close(); s.writer = null; s.saved = true; if (s.ended) return;
-      // A closed writer is the durability boundary. Never store file bytes in
-      // extension storage; only the local IndexedDB handle and small metadata.
-      let ref;
-      try {
-        const downloadPath = s.autoSaved ? String(s.savedPath || '') : '';
-        ref = await globalThis.BjtuChatroomSettings.saveReceivedFile(s.message.id, s.handle, { downloadPath });
-        const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref, downloadPath};
-        await mutate('media-file-saved', metadata);
-        Object.assign(s.message, metadata);
-      } catch (error) {
-        if (ref) await globalThis.BjtuChatroomSettings.removeReceivedFile(ref).catch(report);
-        report(new Error('文件已保存，但保存历史引用失败：' + error.message));
-      }
-      file = await s.handle.getFile().catch(error => { report(error); return null; });
+    await s.writer.close(); s.writer = null; s.saved = true; if (s.ended) return;
+    const downloadPath = String(s.savedPath || '');
+    let ref;
+    try {
+      ref = await globalThis.BjtuChatroomSettings.saveReceivedFile(s.message.id, s.handle, { downloadPath, privateName:s.privateName });
+      const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref, downloadPath, privateFile:!!s.privateName};
+      await mutate('media-file-saved', metadata);
+      Object.assign(s.message, metadata);
+    } catch (error) {
+      if (ref) await globalThis.BjtuChatroomSettings.removeReceivedFile(ref).catch(report);
+      if (s.privateName) await s.downloads.removeEntry(s.privateName).catch(report);
+      report(new Error('文件已写入，但保存历史引用失败：' + error.message));
     }
-    else {
-      const blob = new Blob(s.chunks, { type: previewType(s.name) || 'application/octet-stream' });
-      file = blob;
-      s.chunks.length = 0; s.url = URL.createObjectURL(blob);
-      const save = button('保存文件', () => {
-        const link = node('a'); link.href = s.url; link.download = s.name; link.hidden = true;
-        document.body.append(link); link.click(); link.remove();
-        save.textContent = '再次保存';
-      });
-      const release = button('释放文件', () => {
-        releaseResources(s); save.remove(); release.remove();
-        updateTransfer(s, '文件已从内存释放');
-      });
-      s.controls.append(save, release);
-    }
+    file = await s.handle.getFile().catch(error => { report(error); return null; });
     s.completed = true;
-    s.completionText = s.url ? '接收完成，请点击保存（关闭页面将丢失）'
-      : s.savedPath ? `已自动保存到 ${s.savedPath}` : '已流式保存到所选位置';
+    s.completionText = s.savedPath ? `已保存到 ${s.savedPath}` : file ? '已保存到聊天室，可打开或另存文件' : '未能保存到聊天室';
     s.status = s.completionText; updateTransfer(s);
     void previewFile(s, file).catch(report);
     try { s.channel.send(JSON.stringify({ type: 'complete' })); } catch {}
@@ -1061,7 +1031,7 @@
   function previewType(name) { return PREVIEW_TYPES[String(name).split('.').pop().toLowerCase()] || ''; }
   function appendFileActions(s, preview) {
     preview.append(s.openButton);
-    if (s.outgoing || !String(s.downloadPath || s.message?.downloadPath || '').startsWith('downloads/')) return;
+    if (s.outgoing || (!s.message?.privateFile && !String(s.downloadPath || s.message?.downloadPath || '').startsWith('downloads/'))) return;
     s.deleteButton = button('删除', () => { void deleteReceivedFile(s); }, 'secondary file-delete');
     preview.append(s.deleteButton);
   }
@@ -1074,9 +1044,9 @@
       delete s.message.file;
       delete s.message.fileHandleRef;
       delete s.message.downloadPath;
+      delete s.message.privateFile;
       s.downloadPath = '';
       s.savedPath = '';
-      s.autoSaved = false;
       s.saved = false;
       s.completionText = '文件已删除';
       releasePreview(s);
@@ -1151,7 +1121,7 @@
   }
   async function discardPartialDownload(s) {
     if (s.writer) { const writer = s.writer; s.writer = null; await writer.abort().catch(() => {}); }
-    if (s.autoSaved && !s.completed && !s.saved && s.downloads && s.filename) {
+    if (!s.completed && !s.saved && s.downloads && s.filename) {
       await s.downloads.removeEntry(s.filename).catch(() => {});
     }
   }
@@ -1164,10 +1134,7 @@
   }
   function releaseResources(s) {
     s.previewSource = null;
-    if (s.url) { URL.revokeObjectURL(s.url); s.url = null; }
     releasePreview(s);
-    if (s.reserved) { memoryReserved -= s.reserved; s.reserved = 0; }
-    s.chunks.length = 0;
   }
   function clearLocalMedia(conversationId) {
     for (const [id, task] of savedPreviews) if (task.conversationId === conversationId) { releaseResources(task); savedPreviews.delete(id); }
@@ -1419,7 +1386,7 @@
   document.addEventListener('visibilitychange', () => { void markConversationRead(); }, {signal:uiAbort.signal});
   window.addEventListener('beforeunload', (event) => {
     if (background) return;
-    if (sessions.size || memoryReserved || capture) { event.preventDefault(); event.returnValue = ''; }
+    if (sessions.size || capture) { event.preventDefault(); event.returnValue = ''; }
   }, { signal: uiAbort.signal });
   window.addEventListener('pagehide', () => {
     clearSharedDraft(); clearInterval(draftHeartbeat); clearTimeout(draftRenderTimer); liveDrafts.clear();

@@ -3,6 +3,7 @@
   const defaults = Object.freeze({
     chatroomSignalingUrl: 'ws://127.0.0.1:1897/chatroom',
     chatroomAutoSaveEnabled: true,
+    chatroomManageDownloadsEnabled: true,
     chatroomAutoSaveMaxBytes: 100000000,
     chatroomNotifyNewMessages: true,
     chatroomBackgroundEnabled: true,
@@ -13,7 +14,7 @@
     chatroomAutoScanLanEnabled: true,
     chatroomAutoScanLanIntervalSeconds: 300
   });
-  const preferenceKeys = ['chatroomNotifyNewMessages', 'chatroomBackgroundEnabled', 'chatroomBackgroundReceiveFiles', 'chatroomForegroundProxyEnabled', 'chatroomAutoReconnectEnabled', 'chatroomAutoScanLanEnabled'];
+  const preferenceKeys = ['chatroomManageDownloadsEnabled', 'chatroomNotifyNewMessages', 'chatroomBackgroundEnabled', 'chatroomBackgroundReceiveFiles', 'chatroomForegroundProxyEnabled', 'chatroomAutoReconnectEnabled', 'chatroomAutoScanLanEnabled'];
   const filePrefix = 'chatroom-file:';
   async function fileHandleEntry(key, operation, handle) {
     if (!key.startsWith(filePrefix)) throw new Error('无效本地文件引用。');
@@ -33,9 +34,10 @@
       });
     } finally { db.close(); }
   }
-  async function saveReceivedFile(messageId, handle, { downloadPath = '' } = {}) {
+  async function saveReceivedFile(messageId, handle, { downloadPath = '', privateName = '' } = {}) {
     const key = filePrefix + messageId;
-    await fileHandleEntry(key, 'put', { handle, downloadPath: String(downloadPath || '') });
+    await fileHandleEntry(key, 'put', { handle, downloadPath, privateName });
+    if (downloadPath) notifyDownloadsChanged();
     return key;
   }
   async function saveSentHandle(messageId, handle) {
@@ -68,15 +70,19 @@
     const entry = await fileHandleEntry(key, 'get');
     const handle = entry?.handle || entry;
     const downloadPath = String(entry?.downloadPath || '');
-    if (!handle || !/^downloads\/[^/]+$/i.test(downloadPath)) {
-      throw new Error('该文件不是自动保存到扩展目录 downloads/ 的文件，无法在此删除。');
-    }
-    const root = await authorizedDirectory();
-    const downloads = await root.getDirectoryHandle('downloads');
+    if (!handle || (!entry?.privateName && !/^downloads\/[^/]+$/i.test(downloadPath))) throw new Error('该文件无法在此删除。');
+    const downloads = entry.privateName
+      ? await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox')
+      : await (await authorizedDirectory()).getDirectoryHandle('downloads');
     await downloads.removeEntry(handle.name).catch((error) => {
       if (error?.name !== 'NotFoundError') throw error;
     });
     await fileHandleEntry(key, 'delete');
+    if (downloadPath) notifyDownloadsChanged();
+  }
+  function notifyDownloadsChanged() {
+    const channel = new BroadcastChannel('bjtu-extension-downloads');
+    channel.postMessage('changed'); channel.close();
   }
   const units = ['B', 'KB', 'MB', 'GB'];
   function normalizeLimit(text, unit) {
@@ -142,6 +148,18 @@
       }
     });
   }
+  async function createManualDownload(name) {
+    if (await authorizedDirectory().catch(() => null)) return createDownload(name);
+    const downloads = await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox', {create:true});
+    const filename = crypto.randomUUID();
+    const handle = await downloads.getFileHandle(filename, {create:true});
+    try {
+      return {writer:await handle.createWritable(), handle, downloads, filename, privateName:filename};
+    } catch (error) {
+      await downloads.removeEntry(filename).catch(() => {});
+      throw error;
+    }
+  }
   async function mount(root, report) {
     const $ = id => root.querySelector('#' + id);
     const abort = new AbortController();
@@ -150,7 +168,10 @@
     async function refreshAuthorization() {
       const version = ++permissionRevision;
       const granted = await authorizedDirectory().then(() => true, () => false);
-      if (!abort.signal.aborted && version === permissionRevision) $('chatroomAuthorizeDownloads').hidden = granted;
+      if (!abort.signal.aborted && version === permissionRevision) {
+        $('chatroomAuthorizeDownloads').hidden = granted;
+        $('chatroomManageDownloadsOption').hidden = !granted;
+      }
     }
     let values = await chrome.storage.local.get(defaults), saveQueue = Promise.resolve();
     if (/^wss?:\/\/public\.localsend\.org(?:[:/]|$)/i.test(values.chatroomSignalingUrl)) {
@@ -246,6 +267,7 @@
       authorize().then(async (handle) => {
         if (!handle) return;
         await refreshAuthorization();
+        notifyDownloadsChanged();
         global.BjtuOptionsMessage?.show('已授权，文件将保存到扩展目录 downloads/。', true);
       }).catch(report);
     }, {signal: abort.signal});
@@ -260,7 +282,7 @@
     await refreshAuthorization();
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
-  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload,
+  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, createManualDownload,
     saveReceivedFile, saveSentHandle, loadReceivedFile, deleteReceivedFile,
     removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);

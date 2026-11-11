@@ -179,12 +179,25 @@
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
+      const privateNames = [];
       await new Promise((resolve, reject) => {
         const tx = db.transaction('handles', 'readwrite'), store = tx.objectStore('handles');
-        for (const key of removed) store.delete(key);
+        for (const key of removed) {
+          const read = store.get(key);
+          read.onsuccess = () => {
+            if (read.result?.privateName) privateNames.push(read.result.privateName);
+            store.delete(key);
+          };
+        }
         tx.oncomplete = resolve;
         tx.onerror = tx.onabort = () => reject(tx.error);
       });
+      if (privateNames.length) {
+        const inbox = await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox');
+        await Promise.all(privateNames.map(name => inbox.removeEntry(name).catch(error => {
+          if (error?.name !== 'NotFoundError') throw error;
+        })));
+      }
     } catch (error) { emit({type:'error', error:'清理本地文件引用失败：' + (error?.message || '存储不可用')}); }
     finally { db?.close(); }
   }
@@ -577,10 +590,10 @@
         if (conversationId.startsWith('peer:')) {
           const p = peer(conversationId.slice(5));
           if (!p || privateDenial(p)) return [];
-          return p.online ? [p.id] : [];
+          return p.online && (!text || !p.background) ? [p.id] : [];
         }
         const members = conversationId === 'public' ? data.peers.map(p => p.id) : room(conversationId).members;
-        return members.filter(member => member !== publicIdentity.id && peer(member)?.online && !peer(member).blockedByPeer);
+        return members.filter(member => member !== publicIdentity.id && peer(member)?.online && !peer(member).blockedByPeer && (!text || !peer(member).background));
       });
       const result = await deliver(targets.map(peerId => ({peerId,type:'draft',payload:{text,conversationId:conversationId.startsWith('peer:') ? 'peer:' + peerId : conversationId,draftId,revision:args.revision}})));
       return {ok:true, ...result};
@@ -655,6 +668,8 @@
         const downloadPath = str(args.downloadPath || '', 240);
         if (/^downloads\/[^/]+$/i.test(downloadPath)) message.downloadPath = downloadPath;
         else delete message.downloadPath;
+        if (args.privateFile === true && !message.downloadPath) message.privateFile = true;
+        else delete message.privateFile;
         trimHistory();
         if (!data.messages.includes(message)) fail('文件记录超出历史记录上限。');
         return {};
@@ -665,6 +680,7 @@
         delete message.file;
         delete message.fileHandleRef;
         delete message.downloadPath;
+        delete message.privateFile;
         return {};
       }
       case 'settings': {

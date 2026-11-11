@@ -8,7 +8,7 @@
   const VERSION = 'bjtu-chatroom-link-v1', LABEL = 'bjtu-chatroom-control-v1';
   const MAX = 262144, MAX_LINKS = 16, TTL = 5 * 60 * 1000;
   const sessions = new Map(), discovered = new Map(), listeners = new Set();
-  let socket = null, opening = null, ping, rotate, socketId = '', generation = 0;
+  let socket = null, opening = null, ping, rotate, socketId = '', generation = 0, configuredAddress = '';
   let localIP = '';
   const engine = () => globalThis.BjtuChatroomTransport;
   function emit(type, detail = {}) {
@@ -168,6 +168,7 @@
     else if (message.type === 'LEFT') { discovered.delete(message.peerId); emit('discovery', { peers: [...discovered.values()], deviceId: socketId }); }
     else if (message.type === 'OFFER' && message.peer?.deviceModel === VERSION) {
       if (typeof message.sessionId !== 'string' || message.sessionId.length > 80 || sessions.has(message.sessionId)) return;
+      if (message.peer.identityId && isConnected(message.peer.identityId)) return;
       if ([...sessions.values()].some(s => s.target === message.peer.id && !s.closed)) return;
       const s = makeSession(message.sessionId); s.target = message.peer.id; s.ip = message.peer.ip;
       if (message.peer.identityId) s.expectedIdentity = {id: message.peer.identityId};
@@ -194,14 +195,13 @@
       if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error('信令地址必须是不含凭据的 ws:// 或 wss:// URL。');
       if (epoch !== generation) throw new Error('发现已取消。');
       if (socket?.readyState === 1) {
-        const previous = new URL(socket.url); previous.searchParams.delete('d');
-        if (previous.href === url.href) {
+        if (configuredAddress === url.href) {
           signalSend({type: 'DISCOVER'});
           return {peers: [...discovered.values()], deviceId: socketId};
         }
         const old = socket; socket = null; old.close(); clearInterval(ping); clearInterval(rotate);
         discovered.clear(); socketId = '';
-        for (const session of [...sessions.values()]) drop(session);
+        for (const session of [...sessions.values()]) if (!session.authenticated && session.target) drop(session);
         emit('scan-closed');
       }
       emit('scan-start');
@@ -216,10 +216,19 @@
         let settled = false;
         const fail = () => { if (!settled) { settled = true; clearTimeout(timer); reject(new Error('在线发现连接失败；仍可使用离线配对。')); } };
         const timer = setTimeout(() => { fail(); ws.close(); }, 15000);
-        ws.onopen = () => { settled = true; clearTimeout(timer); resolve(ws); };
         ws.onerror = fail;
         ws.onclose = () => { fail(); if (socket === ws) { clearInterval(ping); clearInterval(rotate); socket = null; socketId = ''; discovered.clear(); emit('scan-closed'); } };
-        ws.onmessage = ({ data }) => { if (socket !== ws || typeof data !== 'string' || data.length > MAX) return; try { const m = JSON.parse(data); if (typeof m.sdp === 'string' && m.sdp.length > MAX) return; onSignal(m).catch(e => emit('error', { message: e.message })); } catch {} };
+        ws.onmessage = ({ data }) => {
+          if (socket !== ws || typeof data !== 'string' || data.length > MAX) return;
+          try {
+            const m = JSON.parse(data);
+            if (!settled) {
+              if (m.type !== 'HELLO' || m.service !== 'bjtuca-chatroom') { fail(); ws.close(); return; }
+              settled = true; clearTimeout(timer); resolve(ws);
+            }
+            if (typeof m.sdp !== 'string' || m.sdp.length <= MAX) onSignal(m).catch(e => emit('error', { message: e.message }));
+          } catch {}
+        };
       });
       let ws;
       try { ws = await openSocket(new URL(url)); }
@@ -228,12 +237,14 @@
         if (settings.chatroomAutoScanLanEnabled === false || !/^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(url.hostname)) throw error;
         const interval = Math.max(10, Number(settings.chatroomAutoScanLanIntervalSeconds) || 300) * 1000;
         if (options?.force !== true && Date.now() - Number(settings.chatroomLanLastScanAt || 0) < interval) throw error;
-        await chrome.storage.local.set({chatroomLanLastScanAt:Date.now()});
-        const found = await findLanServer(url, info);
+        let found;
+        try { found = await findLanServer(url, epoch); }
+        finally { await chrome.storage.local.set({chatroomLanLastScanAt:Date.now()}); }
         if (!found || epoch !== generation) throw error;
         ws = await openSocket(new URL(found));
       }
       if (epoch !== generation || socket !== ws || ws.readyState !== 1) { ws.close(); throw new Error('发现已取消。'); }
+      configuredAddress = url.href;
       ping = setInterval(() => { if (ws.readyState === 1) ws.send(''); }, 120000);
       rotate = setInterval(() => { publicInfo().then(next => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE', info: next })); }).catch(() => {}); }, 30 * 60 * 1000);
       emit('scanning', { deviceId: socketId });
@@ -243,22 +254,19 @@
     catch (error) { if (epoch === generation && socket?.readyState !== 1) emit('scan-closed'); throw error; }
     finally { opening = null; }
   }
-  async function probeServer(target, info) {
-    const url = new URL(target); url.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
-    let ws;
-    try { ws = new WebSocket(url.href); } catch { return false; }
-    return new Promise(resolve => {
-      let settled = false;
-      const finish = ok => { if (settled) return; settled = true; clearTimeout(timer); try { ws.close(); } catch {} resolve(ok); };
-      const timer = setTimeout(() => finish(false), 900);
-      ws.onmessage = ({data}) => {
-        try { const message = JSON.parse(data); if (message?.type === 'HELLO' && message.service === 'bjtuca-chatroom') finish(true); } catch {}
-      };
-      ws.onerror = () => finish(false);
-      ws.onclose = () => finish(false);
-    });
+  async function probeServer(target) {
+    const url = new URL('/health', target);
+    const port = url.port;
+    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    if (port) url.port = port;
+    try {
+      const response = await fetch(url, {signal:AbortSignal.timeout(2500), credentials:'omit', redirect:'error', cache:'no-store'});
+      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return false;
+      const data = await response.json();
+      return data?.ok === true && data.service === 'bjtuca-chatroom';
+    } catch { return false; }
   }
-  async function findLanServer(base, info) {
+  async function findLanServer(base, epoch) {
     const candidates = [];
     for (const subnet of [0, 1]) {
       for (let host = 100; host <= 200; host++) {
@@ -266,12 +274,13 @@
       }
     }
     const hyperVHost = new URL(base); hyperVHost.hostname = '192.168.137.1'; candidates.push(hyperVHost);
-    for (let offset = 0; offset < candidates.length; offset += 16) {
+    for (let offset = 0; offset < candidates.length && epoch === generation; offset += 16) {
       const batch = candidates.slice(offset, offset + 16);
       let done = offset, found = -1;
       emit('lan-scan-progress', {done, total: candidates.length});
       await Promise.all(batch.map(async (target, index) => {
-        const ok = await probeServer(target, info);
+        const ok = await probeServer(target);
+        if (epoch !== generation) return;
         done++;
         if (ok && found < 0) {
           found = index;
@@ -291,6 +300,7 @@
     const existing = [...sessions.values()].find(s => s.target === id && !s.closed);
     if (existing) return {sessionId: existing.id};
     const peer = discovered.get(id);
+    if (peer.identityId && isConnected(peer.identityId)) return {};
     await engine().refreshAccounts?.();
     const own = await identity();
     if (peer.identityId === own.id) return {};
@@ -314,9 +324,12 @@
     }
     for (const s of [...sessions.values()]) if (!peerId || s.peerId === peerId || s.id === peerId) drop(s);
   }
+  function isConnected(peerId) {
+    return [...sessions.values()].some(s => s.authenticated && s.peerId === peerId && !s.closed);
+  }
   globalThis.BjtuChatroomLink = { scan, connect, pairCreate, pairAccept, pairComplete, sendPeer, close,
     get discoveryStatus() { return socket?.readyState === 1 ? 'connected' : opening || socket?.readyState === 0 ? 'connecting' : 'disconnected'; },
-    isConnected(peerId) { return [...sessions.values()].some(s => s.authenticated && s.peerId === peerId && !s.closed); },
+    isConnected,
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } };
   globalThis.addEventListener?.('pagehide', () => { close(); listeners.clear(); }, { once: true });
 })();
