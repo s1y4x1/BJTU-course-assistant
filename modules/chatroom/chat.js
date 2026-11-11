@@ -68,6 +68,7 @@
   let markingRead = false;
   let pendingTitle;
   const liveDrafts = new Map(), draftSessionId = crypto.randomUUID();
+  const presenceMessages = [];
   let draftRevision = 0, sharedDraft = null, draftSendTimer, draftRenderTimer, draftStartedAt = Date.now();
   let sendInFlight = false;
   const textEncoder = new TextEncoder();
@@ -210,7 +211,10 @@
   }
   async function mutate(name, args) {
     const result = await action(name, args);
-    if (name === 'conversation-clear' || name === 'conversation-delete') clearLocalMedia(args.conversationId);
+    if (name === 'conversation-clear' || name === 'conversation-delete') {
+      if (args.conversationId === 'public') presenceMessages.length = 0;
+      clearLocalMedia(args.conversationId);
+    }
     scheduleState();
     return result;
   }
@@ -269,7 +273,12 @@
   }
   function onEvent(event) {
     if (stopped || !event) return;
-    if (event.type === 'draft') {
+    if (event.type === 'public-presence') {
+      if (background) return;
+      if (presenceMessages.length >= LIMIT.peers) presenceMessages.shift();
+      presenceMessages.push(event.message);
+      if (selected === 'public') renderMessages();
+    } else if (event.type === 'draft') {
       if (background) return;
       const key = event.peerId+':'+event.conversationId, previous = liveDrafts.get(key);
       if (!event.text.length) {
@@ -482,7 +491,7 @@
     if (changed) { container.replaceChildren(); messageNodes.clear(); messageConversation = selected; }
     const items = [...state.messages.filter(message => !mediaMessages.has(message.id)).map(message => ({...message, displayName: nameOf(message.senderId)})), ...[...mediaMessages.values()].map(s => ({
       id: s.id, conversationId: s.conversationId, senderId: s.senderId, createdAt: s.createdAt, media: true
-    })), ...liveDrafts.values(), ...($('draft-preview').checked && $('message').value.length ? [{id:'draft:self',draft:true,senderId:state.self.id,text:$('message').value,conversationId:selected,createdAt:draftStartedAt}] : [])]
+    })), ...(selected === 'public' ? presenceMessages : []), ...liveDrafts.values(), ...($('draft-preview').checked && $('message').value.length ? [{id:'draft:self',draft:true,senderId:state.self.id,text:$('message').value,conversationId:selected,createdAt:draftStartedAt}] : [])]
       .filter((m) => m.conversationId === selected).sort((a,b) => Number(!!a.draft)-Number(!!b.draft) || a.createdAt-b.createdAt);
     container.querySelector('[data-empty-message]')?.remove();
     reconcile(container, messageNodes, items, (m) => m.id, (message) => {

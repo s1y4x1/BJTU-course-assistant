@@ -152,6 +152,7 @@
     if (!value || value.schema !== 1 || value.identity?.publicKey?.x !== data.identity.publicKey.x
         || value.identity?.publicKey?.y !== data.identity.publicKey.y) fail('聊天室身份存储已更改，请重新打开聊天室。');
     data = copy(value);
+    removeStoredPresenceMessages();
     publicIdentity.nickname = data.settings.nickname;
   }
   async function save() {
@@ -256,11 +257,34 @@
     history({ id: crypto.randomUUID(), senderId: peerId, conversationId: 'peer:' + peerId,
       system: true, code, text: text || rejectionText[code] || '对方已取消拉黑。', createdAt: Date.now() });
   }
-  function publicPresenceMessage(p, joined) {
+  function publicPresenceEvent(p, joined) {
     const name = p.remark || p.nickname || p.ip || p.id;
-    history({ id: crypto.randomUUID(), senderId: p.id, conversationId: 'public', system: true,
-      code: joined ? 'PUBLIC_ONLINE' : 'PUBLIC_OFFLINE',
-      text: `${name} ${joined ? '进入了公共群聊' : '离开了公共群聊'}`, createdAt: Date.now() });
+    return {type: 'public-presence', message: {
+      id: crypto.randomUUID(), senderId: p.id, conversationId: 'public', system: true,
+      text: `${name} ${joined ? '进入了公共群聊' : '离开了公共群聊'}`, createdAt: Date.now()
+    }};
+  }
+  function removeStoredPresenceMessages() {
+    const isPresence = m => m.conversationId === 'public' && m.system &&
+      (m.code === 'PUBLIC_ONLINE' || m.code === 'PUBLIC_OFFLINE');
+    if (!data.messages.some(isPresence)) return;
+    const view = data.conversations?.public;
+    if (view) {
+      let remaining = view.unread || 0;
+      // The unread counter covers the most recent incoming messages only.
+      for (let i = data.messages.length - 1; i >= 0 && remaining > 0; i--) {
+        const m = data.messages[i];
+        if (m.conversationId !== 'public' || m.senderId === publicIdentity.id) continue;
+        remaining--;
+        if (isPresence(m)) view.unread--;
+      }
+      if (data.messages.some(m => m.id === view.lastMessageId && isPresence(m))) {
+        const last = data.messages.findLast(m => m.conversationId === 'public' && !isPresence(m));
+        Object.assign(view, {lastText: last?.text || '', lastAt: last?.createdAt || 0,
+          lastMessageId: last?.id || '', lastSenderId: last?.senderId || '', lastOwn: last?.senderId === publicIdentity.id});
+      }
+    }
+    data.messages = data.messages.filter(m => !isPresence(m));
   }
   function queueMessage(m, effects, force = false, onlyPeer) {
     for (const [peerId, d] of Object.entries(m.delivery || {})) {
@@ -464,6 +488,7 @@
     if (data.settings.nickname === '设备-' + fingerprint.slice(0, 6)) data.settings.nickname = '';
     publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey,
       background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice(), accounts: await readLocalAccounts() };
+    removeStoredPresenceMessages();
     await importIdentity(publicIdentity);
     const proof = encoder.encode('bjtu-chatroom-identity-check');
     if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, proof), proof)) fail('持久身份密钥不匹配。');
@@ -555,7 +580,7 @@
       p.fingerprint = identity.id;
       const wasOnline = p.online === true;
       p.online = true; p.lastSeen = Date.now();
-      if (!wasOnline) publicPresenceMessage(p, true);
+      const event = wasOnline ? undefined : publicPresenceEvent(p, true);
       p.reconnectable = value.reconnectable === true;
       for (const r of data.rooms) if (r.members.includes(p.id)) groupBroadcast(effects, r);
       for (const departed of data.departedRooms) if (departed.pending.includes(p.id)) {
@@ -567,18 +592,18 @@
       if (p.pendingFriendDelete && p.online) {
         enqueue(effects, p.id, 'friend-delete', {friendRequired:data.settings.requireFriend}); p.pendingFriendDelete = false;
       }
-      return { ok: true, peerId: p.id };
-    }).then(async ({ result, effects }) => { await deliver(effects); await flushOutbox(result.peerId); return result; });
+      return {peerId: p.id, event};
+    }).then(async ({ result: {peerId}, effects }) => { await deliver(effects); await flushOutbox(peerId); return {ok:true, peerId}; });
   }
   async function peerOffline(peerId) {
     return commit(effects => {
       const p = peer(peerId);
       const wasOnline = p?.online === true;
       if (p) p.online = false;
-      if (p && wasOnline) publicPresenceMessage(p, false);
+      const event = wasOnline ? publicPresenceEvent(p, false) : undefined;
       if (p && !p.reconnectable) for (const r of data.rooms) removeMember(effects, r, peerId);
-      return {ok:true};
-    }).then(async ({result, effects}) => {await deliver(effects); return result;});
+      return {event};
+    }).then(async ({effects}) => {await deliver(effects); return {ok:true};});
   }
   async function action(name, args = {}) {
     await ready;
