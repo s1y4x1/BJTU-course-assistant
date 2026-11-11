@@ -266,7 +266,7 @@ async function initFullscreenModuleButtons() {
     return;
   }
   const available = await globalThis.BjtuModuleRegistry.ready;
-  const keys = ['qwenEnabled', ...Object.values(FULLSCREEN_MODULE_BUTTONS)
+  const keys = ['qwenEnabled', 'mailMonitorStatus', ...Object.values(FULLSCREEN_MODULE_BUTTONS)
     .flatMap((item) => [item.key, item.iconKey].filter(Boolean))];
   const stored = await chrome.storage.local.get(keys);
   const moduleViewPromises = new Map();
@@ -646,6 +646,12 @@ async function initFullscreenModuleButtons() {
       const systemIcon = mailButton.querySelector('.mail-fullscreen-button-icon-system');
       if (envelopeIcon instanceof Element) envelopeIcon.toggleAttribute('hidden', useSystemIcon);
       if (systemIcon instanceof Element) systemIcon.toggleAttribute('hidden', !useSystemIcon);
+      const badge = mailButton.querySelector('.fullscreen-module-unread-badge');
+      const unread = Math.max(0, Number(values.mailMonitorStatus?.unreadCount) || 0);
+      badge.hidden = unread === 0;
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      mailButton.title = unread ? `BJTU 邮件系统 · ${unread} 封未读邮件` : 'BJTU 邮件系统';
+      mailButton.setAttribute('aria-label', `打开 ${mailButton.title}`);
     }
     const academicButton = document.getElementById(FULLSCREEN_MODULE_BUTTONS.academic.id);
     if (academicButton instanceof HTMLButtonElement) {

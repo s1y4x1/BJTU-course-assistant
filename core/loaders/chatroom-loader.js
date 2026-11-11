@@ -18,7 +18,7 @@
   button.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H5l-4 3V11a9 9 0 0 1 19 0Z"/><path d="M7 10h8M7 14h5"/></svg>';
   container.append(button);
   const unreadBadge = document.createElement('span');
-  unreadBadge.className = 'chatroom-unread-badge'; unreadBadge.hidden = true;
+  unreadBadge.className = 'fullscreen-module-unread-badge'; unreadBadge.hidden = true;
   button.append(unreadBadge);
   const updateUnread = state => {
     const count = Object.values(state?.conversations || {}).reduce((total,view) => total + (Number(view.unread)||0),0);
