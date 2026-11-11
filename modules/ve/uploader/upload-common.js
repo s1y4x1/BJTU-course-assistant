@@ -21,28 +21,44 @@
     }));
     return zippedFiles.get(file);
   }
-  async function createZip(file) {
-    if (file.size > 0xffffffff) throw new Error('暂不支持压缩超过 4 GB 的单个文件。');
+  function createZip(file) {
     const name = String(file.name || 'file').replace(/\\/g,'/').split('/').pop();
-    const encodedName = new TextEncoder().encode(name);
-    if (encodedName.length > 65535) throw new Error('文件名过长，无法压缩。');
-    let crc = 0xffffffff;
-    const input = file.stream().pipeThrough(new TransformStream({transform(chunk,controller) {
-      for (const byte of chunk) crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
-      controller.enqueue(chunk);
-    }}));
-    const compressed = await new Response(input.pipeThrough(new CompressionStream('deflate-raw'))).blob();
-    if (compressed.size > 0xffffffff) throw new Error('压缩结果过大。');
-    crc = (crc ^ 0xffffffff) >>> 0;
-    const local = new Uint8Array(30 + encodedName.length), central = new Uint8Array(46 + encodedName.length), end = new Uint8Array(22);
-    const lv = new DataView(local.buffer), cv = new DataView(central.buffer), ev = new DataView(end.buffer);
-    lv.setUint32(0,0x04034b50,true); lv.setUint16(4,20,true); lv.setUint16(6,0x800,true); lv.setUint16(8,8,true);
-    // Fixed timestamps make the same file produce the same ZIP and SHA.
-    lv.setUint16(12,0x21,true); lv.setUint32(14,crc,true); lv.setUint32(18,compressed.size,true); lv.setUint32(22,file.size,true); lv.setUint16(26,encodedName.length,true); local.set(encodedName,30);
-    cv.setUint32(0,0x02014b50,true); cv.setUint16(4,20,true); cv.setUint16(6,20,true); cv.setUint16(8,0x800,true); cv.setUint16(10,8,true);
-    cv.setUint16(14,0x21,true); cv.setUint32(16,crc,true); cv.setUint32(20,compressed.size,true); cv.setUint32(24,file.size,true); cv.setUint16(28,encodedName.length,true); central.set(encodedName,46);
-    ev.setUint32(0,0x06054b50,true); ev.setUint16(8,1,true); ev.setUint16(10,1,true); ev.setUint32(12,central.length,true); ev.setUint32(16,local.length+compressed.size,true);
-    return new File([local,compressed,central,end],`${name.replace(/\.[^.]+$/,'') || name}.zip`,{type:'application/zip',lastModified:0});
+    return zipFiles([file], `${name.replace(/\.[^.]+$/,'') || name}.zip`);
+  }
+
+  async function zipFiles(files, zipName, onProgress = () => {}) {
+    const localParts = [], centralParts = [];
+    const total = files.reduce((sum,file) => sum + file.size, 0);
+    if (total > 0xffffffff || files.length > 65535) throw new Error('文件过多或超出 ZIP 大小限制。');
+    let offset = 0, centralSize = 0, processed = 0;
+    for (const file of files) {
+      const name = String(file.name || 'file').replace(/\\/g,'/').split('/').pop();
+      const encodedName = new TextEncoder().encode(name);
+      if (encodedName.length > 65535) throw new Error('文件名过长，无法压缩。');
+      let crc = 0xffffffff;
+      const input = file.stream().pipeThrough(new TransformStream({transform(chunk,controller) {
+        for (const byte of chunk) crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8);
+        processed += chunk.length;
+        onProgress(processed, total);
+        controller.enqueue(chunk);
+      }}));
+      const compressed = await new Response(input.pipeThrough(new CompressionStream('deflate-raw'))).blob();
+      if (compressed.size > 0xffffffff) throw new Error('压缩结果过大。');
+      crc = (crc ^ 0xffffffff) >>> 0;
+      const local = new Uint8Array(30 + encodedName.length), central = new Uint8Array(46 + encodedName.length);
+      const lv = new DataView(local.buffer), cv = new DataView(central.buffer);
+      lv.setUint32(0,0x04034b50,true); lv.setUint16(4,20,true); lv.setUint16(6,0x800,true); lv.setUint16(8,8,true);
+      lv.setUint16(12,0x21,true); lv.setUint32(14,crc,true); lv.setUint32(18,compressed.size,true); lv.setUint32(22,file.size,true); lv.setUint16(26,encodedName.length,true); local.set(encodedName,30);
+      cv.setUint32(0,0x02014b50,true); cv.setUint16(4,20,true); cv.setUint16(6,20,true); cv.setUint16(8,0x800,true); cv.setUint16(10,8,true);
+      cv.setUint16(14,0x21,true); cv.setUint32(16,crc,true); cv.setUint32(20,compressed.size,true); cv.setUint32(24,file.size,true); cv.setUint16(28,encodedName.length,true); cv.setUint32(42,offset,true); central.set(encodedName,46);
+      localParts.push(local, compressed); centralParts.push(central);
+      offset += local.length + compressed.size; centralSize += central.length;
+    }
+    if (offset + centralSize + 22 > 0xffffffff) throw new Error('压缩结果过大。');
+    const end = new Uint8Array(22), ev = new DataView(end.buffer);
+    ev.setUint32(0,0x06054b50,true); ev.setUint16(8,files.length,true); ev.setUint16(10,files.length,true);
+    ev.setUint32(12,centralSize,true); ev.setUint32(16,offset,true);
+    return new File([...localParts,...centralParts,end],zipName,{type:'application/zip',lastModified:0});
   }
 
   function fileHash(file) {
@@ -126,6 +142,7 @@
     fileExtension,
     fileHash,
     zipFile,
+    zipFiles,
     confirmUnsupportedFiles,
     uploadUrl,
     fileListItem,

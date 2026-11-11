@@ -186,6 +186,29 @@ async function createBjtuSystemNotification(notificationId, options, source = 'b
 globalThis.BjtuSystemNotifications = Object.freeze({ create: createBjtuSystemNotification });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'VE_PREPARE_HEADER_QR_PREVIEW') return false;
+  if (String(sender.url || '').split(/[?#]/, 1)[0] !== chrome.runtime.getURL('app/app.html')) return false;
+  void (async () => {
+    const source = String(message.zipUrl || '');
+    const zip = new URL(source);
+    const zipName = zip.pathname.split('/').pop();
+    if (zip.origin !== 'http://123.121.147.7:8081' || zip.username || zip.password
+        || !zip.pathname.startsWith('/rp/') || !/\.zip$/i.test(zipName)) {
+      throw new Error('上传接口未返回有效的智慧课程平台 ZIP 地址');
+    }
+    const base = 'http://123.121.147.7:1936/kk/';
+    const preview = new URL('onlinePreview', base);
+    const bytes = new TextEncoder().encode(source);
+    preview.searchParams.set('url', btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')));
+    const response = await fetch(preview.href, {credentials:'include', cache:'no-store'});
+    if (!response.ok) throw new Error(`在线预览失败：HTTP ${response.status}`);
+    await response.text();
+    return {ok:true, url:`${base}${zipName}_/index.html`};
+  })().then(sendResponse, error => sendResponse({ok:false, error:String(error?.message || error)}));
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'VE_UPLOAD_CONFIRMATION_FOCUS') return false;
   const page = String(sender.url || '').split('?')[0];
   if (![chrome.runtime.getURL('app/app.html'), chrome.runtime.getURL('modules/ve/uploader/index.html')].includes(page)
