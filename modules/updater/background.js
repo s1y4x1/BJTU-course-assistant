@@ -25,7 +25,7 @@
   const MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
   const MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
   const REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
-  const IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
+  const IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode', 'downloads']);
   const STALE_RELOAD_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
   const FOREGROUND_PAGE_PATHS = new Set([
     'app/app.html',
@@ -583,8 +583,9 @@
   }
 
   async function clearDirectory(root) {
+    const shouldRemove = name => name.toLowerCase() !== 'downloads';
     const names = [];
-    for await (const [name] of root.entries()) names.push(name);
+    for await (const [name] of root.entries()) if (shouldRemove(name)) names.push(name);
     for (const name of names) {
       try {
         await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true });
@@ -593,7 +594,7 @@
       }
     }
     const remaining = [];
-    for await (const [name] of root.entries()) remaining.push(name);
+    for await (const [name] of root.entries()) if (shouldRemove(name)) remaining.push(name);
     if (remaining.length) {
       throw new Error(`更新目录未完全清空，仍有：${remaining.join('、')}`);
     }

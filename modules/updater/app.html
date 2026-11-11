@@ -98,24 +98,12 @@
     </div>
     <div id="version-download-actions" class="version-download-actions">
       <button id="version-download-retry" class="btn version-download-retry-btn">重试下载</button>
-      <button id="version-download-select-directory" class="btn version-download-retry-btn" style="display:none;">选择扩展目录</button>
       <button id="version-download-open-extensions" class="btn version-download-retry-btn" style="display:none;">打开扩展管理</button>
       <button id="version-download-refresh" class="btn version-download-retry-btn" style="display:none;">刷新（2 秒）</button>
     </div>
   </div>
 </div>
 
-<div id="version-directory-permission-modal" class="version-modal-mask" role="dialog" aria-modal="true" aria-labelledby="version-directory-permission-title">
-  <div class="version-modal-card">
-    <div class="version-modal-header"><div id="version-directory-permission-title" class="version-download-title">授权扩展安装目录</div></div>
-    <div id="version-directory-permission-message" class="version-download-body">请选择 BJTU 课程助手的安装目录，并允许扩展更改该文件夹。浏览器要求通过点击按钮发起目录选择和授权。</div>
-    <div class="version-download-actions">
-      <button id="version-directory-permission-choose" type="button" class="btn version-download-retry-btn">选择扩展目录并验证</button>
-      <button id="version-directory-permission-later" type="button" class="btn version-download-retry-btn">稍后再说</button>
-      <button id="version-directory-permission-never" type="button" class="btn version-download-retry-btn">不再提醒</button>
-    </div>
-  </div>
-</div>
 
 <template id="version-module-selection-template">
   <div class="version-modal-mask show" style="z-index:10030;display:flex;" role="dialog" aria-modal="true">

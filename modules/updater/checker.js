@@ -54,7 +54,6 @@ let versionDownloadSelectedUrl = '';
 let versionUpdateDirectoryHandle = null;
 let versionUpdateDirectoryHandleLoaded = false;
 let versionUpdateDirectoryHandleLoadPromise = null;
-let versionPendingDirectoryUpdate = null;
 let versionSupplementalReloadRequired = false;
 let versionButtonLatestReload = true;
 let versionButtonLatestForce = false;
@@ -85,7 +84,7 @@ const VERSION_MODULE_SELECTION_KEY = 'updateModuleSelection';
 const VERSION_MODULE_KNOWN_IDS_KEY = 'updateModuleKnownIds';
 const VERSION_MODULE_KNOWN_IDS_INITIALIZED_KEY = 'updateModuleKnownIdsInitialized';
 const VERSION_REQUIRED_MODULE_IDS = new Set(['ve', 'updater']);
-const VERSION_IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode']);
+const VERSION_IGNORED_ARCHIVE_DIRECTORIES = new Set(['.agents', '.git', '.github', '.mimocode', 'downloads']);
 const VERSION_EXTRACTION_PROGRESS_INTERVAL_MS = 80;
 let versionButtonLatestClean = false;
 let versionRefreshCountdownTimer = null;
@@ -150,19 +149,7 @@ async function getWritableVersionUpdateDirectory() {
 }
 
 async function validateVersionUpdateDirectory(handle) {
-  if (!handle || handle.kind !== 'directory') throw new Error('请选择扩展安装目录');
-  try {
-    const manifestHandle = await handle.getFileHandle('manifest.json');
-    const manifest = JSON.parse(await (await manifestHandle.getFile()).text());
-    if (!manifest || typeof manifest !== 'object') throw new Error('manifest.json 格式无效');
-    if (manifest.name !== chrome.runtime.getManifest().name) {
-      throw new Error('所选目录不是 BJTU 课程助手的安装目录');
-    }
-  } catch (error) {
-    if (/manifest\.json|不是 BJTU 课程助手/.test(String(error?.message || ''))) throw error;
-    throw new Error('所选目录中未找到有效的 manifest.json');
-  }
-  return handle;
+  return globalThis.BjtuDirectoryPermission.validate(handle);
 }
 
 function getVersionUpdateDirectoryDisplayName() {
@@ -450,175 +437,21 @@ function initializeVersionReinstallCommand() {
   globalThis.BjtuMarkdown.bindCopy(container);
 }
 
-async function verifyVersionDirectoryWriteAccess(handle) {
-  await validateVersionUpdateDirectory(handle);
-  const updaterDirectory = await (await handle.getDirectoryHandle('modules')).getDirectoryHandle('updater');
-  const marker = await updaterDirectory.getFileHandle('directory-permission.json', { create: true });
-  const probeId = crypto.randomUUID();
-  let content = '';
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    content = JSON.stringify({ format: 'bjtu-ca-directory-permission', probeId, attempt, checkedAt: Date.now() });
-    const writer = await marker.createWritable();
-    await writer.write(content);
-    await writer.close();
-    const readBack = await (await marker.getFile()).text();
-    if (readBack !== content) throw new Error(`第 ${attempt} 次写入后读取不一致`);
-    let runtimeMatches = false;
-    for (let retry = 0; retry < 5; retry += 1) {
-      const runtimeUrl = new URL(chrome.runtime.getURL('modules/updater/directory-permission.json'));
-      runtimeUrl.searchParams.set('probe', `${probeId}-${attempt}-${retry}`);
-      const response = await fetch(runtimeUrl, { cache: 'no-store' }).catch(() => null);
-      if (response?.ok && await response.text() === content) {
-        runtimeMatches = true;
-        break;
-      }
-      if (retry < 4) await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    if (!runtimeMatches) {
-      throw new Error('所选目录的测试文件与当前扩展运行时读取到的内容不一致，请选择当前扩展的安装目录');
-    }
-  }
-  return content;
-}
-
-async function verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe) {
-  const result = await chrome.runtime.sendMessage({
-    type: 'VERIFY_UPDATER_DIRECTORY_BACKGROUND_ACCESS',
-    expectedForegroundProbe: foregroundProbe
-  });
-  if (!result?.ok || !result.probe) {
-    throw new Error(`后台目录权限验证失败：${String(result?.message || '后台未返回验证结果')}`);
-  }
-  const updaterDirectory = await (await handle.getDirectoryHandle('modules')).getDirectoryHandle('updater');
-  const marker = await updaterDirectory.getFileHandle('directory-permission-background.json');
-  if (await (await marker.getFile()).text() !== result.probe) {
-    throw new Error('前台读到的后台测试文件与后台写入内容不一致');
-  }
-  for (let retry = 0; retry < 5; retry += 1) {
-    const runtimeUrl = new URL(chrome.runtime.getURL('modules/updater/directory-permission-background.json'));
-    runtimeUrl.searchParams.set('probe', `${retry}-${Date.now()}`);
-    const response = await fetch(runtimeUrl, { cache: 'no-store' }).catch(() => null);
-    if (response?.ok && await response.text() === result.probe) return;
-    if (retry < 4) await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('后台测试文件与当前扩展运行时读取到的内容不一致');
-}
-
-function withVersionDirectoryPermissionAuditLock(operation) {
-  const locks = navigator.locks;
-  return locks?.request
-    ? locks.request('bjtu-ca-directory-permission-audit', { mode: 'exclusive' }, operation)
-    : operation();
-}
-
-async function setupVersionDirectoryPermissionCheck() {
-  const modal = document.getElementById('version-directory-permission-modal');
-  const message = document.getElementById('version-directory-permission-message');
-  const choose = document.getElementById('version-directory-permission-choose');
-  if (!(modal instanceof HTMLElement) || !(choose instanceof HTMLButtonElement)) return;
-  let savedHandle = await readVersionUpdateDirectoryHandle();
-  let dismissed = false;
-  let checking = false;
-
-  const report = (text, ok = true) => {
-    if (typeof showToast === 'function') showToast(text, ok ? 'success' : 'error');
-    else setMsg(text, ok);
-  };
-  const audit = async (manual = false) => {
-    if (checking || choose.disabled) return;
-    checking = true;
-    try {
-      const stored = await chrome.storage.local.get('updateDirectoryStartupCheckEnabled');
-      if (!manual && stored.updateDirectoryStartupCheckEnabled === false) {
-        modal.classList.remove('show');
-        return;
-      }
-      const handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
-      if (handle) {
-        try {
-          await withVersionDirectoryPermissionAuditLock(async () => {
-            const foregroundProbe = await verifyVersionDirectoryWriteAccess(handle);
-            await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
-          });
-          versionUpdateDirectoryHandle = handle;
-          versionUpdateDirectoryHandleLoaded = true;
-          savedHandle = handle;
-          modal.classList.remove('show');
-          if (manual) report('前台与后台的扩展安装目录写入权限均已验证通过');
-          return;
-        } catch {
-          if (typeof handle.queryPermission === 'function'
-              && await handle.queryPermission({ mode: 'readwrite' }).catch(() => null) === 'granted') {
-            savedHandle = null;
-          }
-        }
-      }
-      if (manual) dismissed = false;
-      if (!dismissed) modal.classList.add('show');
-    } finally {
-      checking = false;
-    }
-  };
-
-  document.getElementById('checkUpdateDirectoryPermission')?.addEventListener('click', async (event) => {
-    const button = event.currentTarget;
+function setupVersionDirectoryPermissionCheck() {
+  const audit = () => globalThis.BjtuDirectoryPermission.request({startup:true,audit:true})
+    .catch(error => console.warn('[bjtu] updater directory permission audit failed:', error));
+  document.getElementById('checkUpdateDirectoryPermission')?.addEventListener('click', async ({currentTarget:button}) => {
     button.disabled = true;
     try {
-      await audit(true);
+      if (await globalThis.BjtuDirectoryPermission.request({audit:true})) {
+        showToast('前台与后台的扩展安装目录写入权限均已验证通过', 'success');
+      }
     } catch (error) {
-      report(`目录权限检查失败：${String(error?.message || error)}`, false);
-    } finally {
-      button.disabled = false;
-    }
+      showToast(`目录权限检查失败：${error?.message || error}`, 'error');
+    } finally { button.disabled = false; }
   });
-
-  choose.addEventListener('click', async () => {
-    choose.disabled = true;
-    try {
-      let selected = savedHandle;
-      if (selected) {
-        try {
-          const permission = await selected.requestPermission({ mode: 'readwrite' });
-          if (permission !== 'granted') selected = null;
-        } catch {
-          selected = null;
-        }
-      }
-      if (!selected) {
-        if (!window.showDirectoryPicker) throw new Error('当前浏览器不支持选择目录');
-        selected = await window.showDirectoryPicker({ id: 'bjtu-update-dir', mode: 'readwrite' });
-      }
-      await withVersionDirectoryPermissionAuditLock(async () => {
-        const foregroundProbe = await verifyVersionDirectoryWriteAccess(selected);
-        await storeVersionUpdateDirectoryHandle(selected);
-        await verifyVersionBackgroundDirectoryWriteAccess(selected, foregroundProbe);
-      });
-      savedHandle = selected;
-      dismissed = false;
-      modal.classList.remove('show');
-      report('前台与后台的扩展安装目录写入权限均已验证通过');
-    } catch (error) {
-      savedHandle = null;
-      if (error?.name !== 'AbortError') {
-        message.textContent = `目录验证未通过：${String(error?.message || error)}。请重新选择扩展安装目录并允许写入。`;
-      }
-    } finally {
-      choose.disabled = false;
-    }
-  });
-  document.getElementById('version-directory-permission-later')?.addEventListener('click', () => {
-    dismissed = true;
-    modal.classList.remove('show');
-  });
-  document.getElementById('version-directory-permission-never')?.addEventListener('click', async () => {
-    await chrome.storage.local.set({ updateDirectoryStartupCheckEnabled: false });
-    dismissed = true;
-    modal.classList.remove('show');
-  });
-  await audit();
-  setInterval(() => void audit().catch((error) => {
-    console.warn('[bjtu] updater directory permission audit failed:', error);
-  }), 30000);
+  void audit();
+  setInterval(audit, 30000);
 }
 
 function normalizeVersionMarkdownUrl(rawUrl, allowedProtocols) {
@@ -1089,7 +922,6 @@ function ensureVersionDownloadModal() {
   if (closeDownloadBtn instanceof HTMLButtonElement) {
     closeDownloadBtn.addEventListener('click', () => {
       if (modal.dataset.locked === '1') return;
-      if (versionDownloadPhase === 'directory') versionPendingDirectoryUpdate = null;
       cancelVersionRefreshCountdown();
       modal.style.display = 'none';
     });
@@ -1103,14 +935,6 @@ function ensureVersionDownloadModal() {
       }
       removeAutoUpdateQueryParameter();
       location.reload();
-    });
-  }
-  const selectDirectoryBtn = document.getElementById('version-download-select-directory');
-  if (selectDirectoryBtn instanceof HTMLButtonElement) {
-    selectDirectoryBtn.addEventListener('click', () => {
-      selectVersionUpdateDirectoryAndResume().catch((error) => {
-        showToast(`无法使用更新目录：${String(error?.message || error)}`, 'error', 3200);
-      });
     });
   }
   const minBtn = document.getElementById('version-download-minimize');
@@ -1130,9 +954,6 @@ function ensureVersionDownloadModal() {
       if (modal.dataset.locked !== '1') {
         if (versionDownloadPhase === 'finished' || versionDownloadPhase === 'failed') {
           cancelVersionRefreshCountdown();
-          modal.style.display = 'none';
-        } else if (versionDownloadPhase === 'directory') {
-          versionPendingDirectoryUpdate = null;
           modal.style.display = 'none';
         } else if (versionDownloadPhase === 'downloading') {
           versionDownloadMinimized = true;
@@ -1190,7 +1011,6 @@ function setVersionDownloadProgressUi({
   const openExtensionsBtn = document.getElementById('version-download-open-extensions');
   const refreshBtn = document.getElementById('version-download-refresh');
   const closeBtn = document.getElementById('version-download-close');
-  const selectDirectoryBtn = document.getElementById('version-download-select-directory');
 
   if (phase === 'downloading' || phase === 'failed') modal.dataset.locked = '0';
 
@@ -1202,9 +1022,8 @@ function setVersionDownloadProgressUi({
     if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
     if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
   }
-  if (phase !== 'directory' && selectDirectoryBtn instanceof HTMLElement) selectDirectoryBtn.style.display = 'none';
   if (phase === 'failed' && closeBtn instanceof HTMLElement) closeBtn.style.display = '';
-  if (phase === 'finished' || phase === 'failed' || phase === 'directory') setVersionDownloadBar({ visible: false });
+  if (phase === 'finished' || phase === 'failed') setVersionDownloadBar({ visible: false });
 
   if (titleEl) titleEl.textContent = versionDownloadSelectedSource === 'history' && title === '正在下载更新压缩包'
     ? '正在下载压缩包' : String(title || '正在下载');
@@ -1399,66 +1218,6 @@ function setVersionDownloadReleaseNotes(markdownText = '') {
   body.innerHTML = notes ? renderMarkdownBasic(notes) : '';
 }
 
-function showVersionUpdateDirectoryRequired(downloadUrl, source) {
-  suppressVersionNoticeForDownload();
-  versionPendingDirectoryUpdate = { downloadUrl, source };
-  setVersionDownloadProgressUi({
-    visible: true,
-    status: '请勿选择包含其他文件的文件夹',
-    title: '选择扩展更新目录',
-    body: '请选择专门用于 BJTU 课程助手的扩展安装目录。不要选择「下载」「桌面」等根目录，也不要选择包含个人文件或其他项目的文件夹；全量更新可能清空所选目录。扩展只会写入更新包中的代码与资源，不会在该目录保存 ZIP、缓存、配置、标记或临时文件。',
-    phase: 'directory'
-  });
-  const modal = document.getElementById('version-download-modal');
-  const selectButton = document.getElementById('version-download-select-directory');
-  const closeButton = document.getElementById('version-download-close');
-  const actions = document.getElementById('version-download-actions');
-  const locked = getVersionDownloadRelease().force === true;
-  if (modal instanceof HTMLElement) modal.dataset.locked = locked ? '1' : '0';
-  if (selectButton instanceof HTMLElement) selectButton.style.display = '';
-  if (closeButton instanceof HTMLElement) closeButton.style.display = locked ? 'none' : '';
-  if (actions instanceof HTMLElement) actions.style.display = 'flex';
-}
-
-async function selectVersionUpdateDirectoryAndResume() {
-  const selectButton = document.getElementById('version-download-select-directory');
-  if (selectButton instanceof HTMLButtonElement) selectButton.disabled = true;
-  try {
-    let handle = await readVersionUpdateDirectoryHandle();
-    if (handle && typeof handle.requestPermission === 'function') {
-      const permission = await handle.requestPermission({ mode: 'readwrite' });
-      if (permission !== 'granted') {
-        await storeVersionUpdateDirectoryHandle(null);
-        showToast('目录授权未通过，请再次点击并重新选择目录', 'error', 2600);
-        return;
-      }
-    } else {
-      if (typeof window.showDirectoryPicker !== 'function') {
-        throw new Error('当前浏览器不支持目录写入 API');
-      }
-      handle = await window.showDirectoryPicker({
-        id: 'bjtu-update-dir',
-        mode: 'readwrite'
-      });
-    }
-    try {
-      await validateVersionUpdateDirectory(handle);
-    } catch (error) {
-      await storeVersionUpdateDirectoryHandle(null).catch(() => {});
-      throw error;
-    }
-    await storeVersionUpdateDirectoryHandle(handle);
-    const pending = versionPendingDirectoryUpdate;
-    versionPendingDirectoryUpdate = null;
-    if (pending) {
-      await startVersionDownloadWithFallback(pending.downloadUrl, pending.source);
-    }
-  } catch (error) {
-    if (error?.name !== 'AbortError') throw error;
-  } finally {
-    if (selectButton instanceof HTMLButtonElement) selectButton.disabled = false;
-  }
-}
 
 function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion } = {}) {
   const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
@@ -2181,15 +1940,16 @@ async function clearVersionUpdateDirectory() {
     phase: 'extracting'
   });
   try {
-    return await removeAllVersionDirectoryEntries(root);
+    return await removeAllVersionDirectoryEntries(root, {preserveDownloads:true});
   } catch (error) {
     throw markVersionUpdateError(error, 'directory');
   }
 }
 
-async function removeAllVersionDirectoryEntries(root) {
+async function removeAllVersionDirectoryEntries(root, {preserveDownloads = false} = {}) {
+  const shouldRemove = name => !preserveDownloads || name.toLowerCase() !== 'downloads';
   const names = [];
-  for await (const [name] of root.entries()) names.push(name);
+  for await (const [name] of root.entries()) if (shouldRemove(name)) names.push(name);
   for (const name of names) {
     try {
       await globalThis.BjtuUpdateFileSystem.removeEntry(root, name, { recursive: true });
@@ -2198,7 +1958,7 @@ async function removeAllVersionDirectoryEntries(root) {
     }
   }
   const remaining = [];
-  for await (const [name] of root.entries()) remaining.push(name);
+  for await (const [name] of root.entries()) if (shouldRemove(name)) remaining.push(name);
   if (remaining.length) throw new Error(`扩展目录未完全清空，仍有：${remaining.join('、')}`);
   return names.length;
 }
@@ -2948,26 +2708,24 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
   versionDownloadMinimized = false;
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
-  setVersionDownloadReleaseNotes('');
-  setVersionDownloadBar({ visible: true, indeterminate: true });
-  setVersionDownloadProgressUi({
-    visible: true,
-    status: '正在连接下载源…',
-    title: '正在下载更新压缩包',
-    body: '正在下载更新文件，下载完成后将自动覆盖解压。',
-    phase: 'downloading'
-  });
   try {
+    const writableDirectory = await globalThis.BjtuDirectoryPermission.request();
+    if (!writableDirectory) return;
+    versionUpdateDirectoryHandle = writableDirectory;
+    versionUpdateDirectoryHandleLoaded = true;
+    setVersionDownloadReleaseNotes('');
+    setVersionDownloadBar({ visible: true, indeterminate: true });
+    setVersionDownloadProgressUi({
+      visible: true,
+      status: '正在连接下载源…',
+      title: '正在下载更新压缩包',
+      body: '正在下载更新文件，下载完成后将自动覆盖解压。',
+      phase: 'downloading'
+    });
     versionDownloadRelease = resolveVersionDownloadRelease(primaryUrl, selectedSource);
     const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
       body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = versionDownloadRelease;
     setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
-    const writableDirectory = await getWritableVersionUpdateDirectory();
-    if (!writableDirectory) {
-      showVersionUpdateDirectoryRequired(downloadUrl, source);
-      return;
-    }
-    versionUpdateDirectoryHandle = writableDirectory;
     if (versionDownloadClean) {
       const response = await chrome.runtime.sendMessage({
         type: 'BACKGROUND_UPDATE_INSTALL_CLEAN',

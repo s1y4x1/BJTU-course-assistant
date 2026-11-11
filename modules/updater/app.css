@@ -811,11 +811,6 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
 .version-download-retry-btn:hover {
     background: #1e40af;
 }
-#version-download-select-directory:disabled,
-#version-download-select-directory:disabled:hover {
-    background: #94a3b8;
-    cursor: wait;
-}
 .version-notice-download-btn {
     background: #1e3a8a;
     width: 100%;

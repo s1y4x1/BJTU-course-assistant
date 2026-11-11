@@ -112,26 +112,18 @@
       throw new Error('自动保存需要扩展目录写入权限，请在聊天室设置中授权，或手动接收文件。');
     return root;
   }
+  let permissionScript;
   async function authorize() {
-    let root = await directory().catch(() => null);
-    if (root && await root.requestPermission({mode: 'readwrite'}) === 'granted') return root;
-    root = await showDirectoryPicker({mode: 'readwrite', id: 'bjtu-ca-directory'});
-    const manifest = JSON.parse(await (await root.getFileHandle('manifest.json')).getFile().then(file => file.text()));
-    if (manifest.name !== chrome.runtime.getManifest().name) throw new Error('请选择 BJTU 课程助手的扩展目录。');
-    const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('BJTUCA-FileSystem', 1);
-      request.onupgradeneeded = () => request.result.createObjectStore('handles');
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    try {
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction('handles', 'readwrite');
-        tx.objectStore('handles').put(root, 'update-directory');
-        tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
-      });
-    } finally { db.close(); }
-    return root;
+    if (!global.BjtuDirectoryPermission) {
+      await (permissionScript ??= new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = chrome.runtime.getURL('modules/updater/directory-permission.js');
+        script.onload = resolve;
+        script.onerror = () => { permissionScript = null; reject(new Error('无法加载扩展目录授权组件')); };
+        document.head.append(script);
+      }));
+    }
+    return global.BjtuDirectoryPermission.request({audit:true});
   }
   async function createDownload(name) {
     const root = await authorizedDirectory();
@@ -251,7 +243,8 @@
       input.setCustomValidity(''); void save({chatroomReconnectIntervalSeconds: seconds}, 'reconnect');
     }, {signal: abort.signal});
     $('chatroomAuthorizeDownloads').addEventListener('click', () => {
-      authorize().then(async () => {
+      authorize().then(async (handle) => {
+        if (!handle) return;
         await refreshAuthorization();
         global.BjtuOptionsMessage?.show('已授权，文件将保存到扩展目录 downloads/。', true);
       }).catch(report);

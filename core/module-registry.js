@@ -74,7 +74,7 @@
     updater: {
       label: '更新组件',
       styles: ['app.css'],
-      files: ['app.html', 'checker.js', 'background.js', 'filesystem.js']
+      files: ['app.html', 'checker.js', 'background.js', 'filesystem.js', 'directory-permission.html', 'directory-permission.js']
     },
     api: {
       label: '扩展接口',
