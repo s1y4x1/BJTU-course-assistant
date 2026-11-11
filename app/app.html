@@ -139,9 +139,15 @@
             <section id="extension-downloads-section" class="resource-space-section" hidden>
                 <div class="resource-space-header">
                     <span class="resource-space-title">扩展下载</span>
-                    <button type="button" class="btn">刷新</button>
+                </div>
+                <div class="resource-space-footer" hidden>
+                    <div class="resource-total-progress-wrap">
+                        <div class="resource-total-meta"></div>
+                        <div class="progress-bar-container"><div class="progress-bar"></div></div>
+                    </div>
                 </div>
                 <div class="resource-space-status" role="status">正在读取下载文件…</div>
+                <div class="resource-space-list extension-download-active"></div>
                 <div class="resource-space-list"></div>
             </section>
         </div>
@@ -356,6 +362,7 @@
     <script src="app.js"></script>
     <script src="../modules/ve/uploader/upload-manager.js"></script>
     <script src="../core/loaders/updater-loader.js"></script>
+    <script src="../core/download-progress.js"></script>
     <script src="extension-downloads.js"></script>
     <script src="../core/loaders/qwen-app-loader.js"></script>
     <script src="../core/loaders/chatroom-loader.js"></script>

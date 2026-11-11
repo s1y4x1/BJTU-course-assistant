@@ -3227,37 +3227,48 @@ async function inspectBatchDownload(response) {
   }
 }
 
-function waitForBrowserDownload(downloadId) {
+function waitForBrowserDownload(downloadId, progress) {
   return new Promise((resolve, reject) => {
-    let settled = false;
+    let settled = false, reading = false;
     const finish = (error, item) => {
       if (settled) return;
       settled = true;
+      clearInterval(timer);
       chrome.downloads.onChanged.removeListener(onChanged);
       if (error) reject(error); else resolve(item);
     };
     const read = async () => {
-      const [item] = await chrome.downloads.search({ id: downloadId });
-      if (!item) return finish(new Error('无法读取下载记录'));
-      if (item.state === 'complete') return finish(null, item);
-      if (item.state === 'interrupted') {
-        return finish(new Error(item.error === 'USER_CANCELED' ? '下载已取消' : `浏览器下载已中断：${item.error || '未知原因'}`));
-      }
+      if (settled || reading) return;
+      reading = true;
+      try {
+        const [item] = await chrome.downloads.search({ id: downloadId });
+        if (!item) return finish(new Error('无法读取下载记录'));
+        if (item.state === 'complete') return finish(null, item);
+        if (item.state === 'interrupted') {
+          return finish(new Error(item.error === 'USER_CANCELED' ? '下载已取消' : `浏览器下载已中断：${item.error || '未知原因'}`));
+        }
+        const name = item.filename?.split(/[\\/]/).pop();
+        progress.update(item.bytesReceived || 0,Math.max(0,item.totalBytes || 0),name ? {name} : {});
+      } finally { reading = false; }
     };
     const onChanged = (delta) => {
       if (delta.id !== downloadId) return;
       if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') void read().catch(finish);
     };
     chrome.downloads.onChanged.addListener(onChanged);
+    const timer = setInterval(() => void read().catch(finish),500);
     void read().catch(finish);
   });
 }
 
-async function downloadToBrowser(batchUrl) {
+async function downloadToBrowser(batchUrl, filename) {
   if (!chrome.downloads?.download) throw new Error('浏览器下载接口不可用');
   const url = globalThis.BjtuVeAddress?.replace(batchUrl) || batchUrl;
   const downloadId = await chrome.downloads.download({ url, conflictAction: 'uniquify', saveAs: false });
-  const item = await waitForBrowserDownload(downloadId);
+  const progress = globalThis.BjtuDownloadProgress.begin({name:filename,source:'浏览器下载作业包'});
+  let item;
+  try { item = await waitForBrowserDownload(downloadId,progress); }
+  finally { progress.finish(); }
   return {
     ok: true,
     destination: 'browser-downloads',
@@ -3345,9 +3356,10 @@ globalThis.BjtuVePageApi = Object.freeze({
     if (destination === 'extension-downloads' && !root) throw new Error('尚未授权扩展目录，请先授权后重试');
     const response = await fetchVePackage(batchUrl);
     await inspectBatchDownload(response);
-    if (root) return globalThis.BjtuExtensionDownloads.saveResponse(root, response, vePackageFilename(response, `作业包-${assignmentId}.zip`));
+    const filename = vePackageFilename(response,`作业包-${assignmentId}.zip`);
+    if (root) return globalThis.BjtuExtensionDownloads.saveResponse(root,response,filename);
     try { await response.body?.cancel(); } catch {}
-    return downloadToBrowser(batchUrl);
+    return downloadToBrowser(batchUrl,filename);
   },
   students: (args) => fetchVeCourseStudents(String(args?.courseId || '').trim()),
   coursewareItems: (args) => veCoursewareItemsWithLinks(String(args?.courseNum || '').trim(), String(args?.xkhId || '').trim()),

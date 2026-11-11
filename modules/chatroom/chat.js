@@ -712,6 +712,13 @@
   }
   function updateTransfer(s, text) {
     if (!s.progress) return;
+    if (s.type === 'file' && !s.ended) {
+      s.downloadProgress ||= globalThis.BjtuDownloadProgress.begin({
+        name:s.name, source:s.outgoing ? '聊天室发送' : '聊天室接收',
+        total:s.size, path:s.savedPath || ''
+      });
+      s.downloadProgress.update(s.done,s.size,{status:text || s.status});
+    }
     const now = performance.now();
     if (!text && !s.ended && !s.completed && s.done < s.size && now - (s.lastRenderAt || 0) < 100) return;
     s.lastRenderAt = now; s.progress.value = s.done;
@@ -1179,7 +1186,7 @@
     if (s.channel) { s.channel.onopen = s.channel.onmessage = s.channel.onclose = s.channel.onerror = null; s.channel.close(); }
     if (s.pc) { s.pc.onicecandidate = s.pc.onconnectionstatechange = s.pc.ontrack = s.pc.ondatachannel = null; s.pc.close(); }
     s.channel = s.pc = s.remoteStream = null;
-    void discardPartialDownload(s);
+    void discardPartialDownload(s).finally(() => s.downloadProgress?.finish());
     if (!s.completed) releaseResources(s);
     sessions.delete(s.id); updateTransfer(s, reason);
     if (s.card) {

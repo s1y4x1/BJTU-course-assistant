@@ -734,11 +734,8 @@ body.platform-column-resizing {
     gap: 8px;
     margin-bottom: 6px;
 }
-.extension-download-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
-.extension-download-name { min-width:0; overflow-wrap:anywhere; }
-.extension-download-actions { display:flex; gap:6px; margin-left:auto; }
-.extension-download-actions .btn { font-size:var(--bjtu-font-size-body,13px); }
-.extension-download-delete { background:#b91c1c; }
+#extension-downloads-section [hidden] { display:none !important; }
+.extension-download-actions { justify-content:flex-end; }
 .resource-space-header-right {
     display: flex;
     align-items: center;
