@@ -3265,7 +3265,9 @@ async function downloadToBrowser(batchUrl, filename) {
   if (!chrome.downloads?.download) throw new Error('浏览器下载接口不可用');
   const url = globalThis.BjtuVeAddress?.replace(batchUrl) || batchUrl;
   const downloadId = await chrome.downloads.download({ url, conflictAction: 'uniquify', saveAs: false });
-  const progress = globalThis.BjtuDownloadProgress.begin({name:filename,source:'浏览器下载作业包'});
+  const progress = globalThis.BjtuDownloadProgress.begin({
+    name:filename,source:'浏览器下载作业包',cancel:() => chrome.downloads.cancel(downloadId)
+  });
   let item;
   try { item = await waitForBrowserDownload(downloadId,progress); }
   finally { progress.finish(); }

@@ -139,11 +139,19 @@
             <section id="extension-downloads-section" class="resource-space-section" hidden>
                 <div class="resource-space-header">
                     <span class="resource-space-title">扩展下载</span>
+                    <div class="resource-space-header-right">
+                        <button type="button" id="extension-download-dedup" class="btn resource-select-compact" disabled>去重</button>
+                        <button type="button" id="extension-download-invert" class="btn resource-select-compact" disabled>反选</button>
+                    </div>
                 </div>
-                <div class="resource-space-footer" hidden>
+                <div class="resource-space-footer">
                     <div class="resource-total-progress-wrap">
                         <div class="resource-total-meta"></div>
                         <div class="progress-bar-container"><div class="progress-bar"></div></div>
+                    </div>
+                    <div class="resource-space-actions selected-file-actions">
+                        <button type="button" id="extension-download-upload-selected" class="btn" disabled>上传</button>
+                        <button type="button" id="extension-download-delete-selected" class="btn" disabled>删除</button>
                     </div>
                 </div>
                 <div class="resource-space-status" role="status">正在读取下载文件…</div>

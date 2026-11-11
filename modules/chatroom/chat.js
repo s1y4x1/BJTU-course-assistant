@@ -715,7 +715,7 @@
     if (s.type === 'file' && !s.ended) {
       s.downloadProgress ||= globalThis.BjtuDownloadProgress.begin({
         name:s.name, source:s.outgoing ? '聊天室发送' : '聊天室接收',
-        total:s.size, path:s.savedPath || ''
+        total:s.size, path:s.savedPath || '', cancel:() => endSession(s,'已取消传输',true)
       });
       s.downloadProgress.update(s.done,s.size,{status:text || s.status});
     }

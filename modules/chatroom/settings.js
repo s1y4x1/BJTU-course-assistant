@@ -71,6 +71,10 @@
     const handle = entry?.handle || entry;
     const downloadPath = String(entry?.downloadPath || '');
     if (!handle || (!entry?.privateName && !/^downloads\/[^/]+$/i.test(downloadPath))) throw new Error('该文件无法在此删除。');
+    if (entry.deduplicated) {
+      await fileHandleEntry(key,'delete');
+      return;
+    }
     const downloads = entry.privateName
       ? await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox')
       : await (await authorizedDirectory()).getDirectoryHandle('downloads');

@@ -736,6 +736,13 @@ body.platform-column-resizing {
 }
 #extension-downloads-section [hidden] { display:none !important; }
 .extension-download-actions { justify-content:flex-end; }
+.resource-select-compact { background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2; }
+#extension-download-upload-selected { background:#1e3a8a; }
+#extension-download-delete-selected,.extension-download-cancel { background:#dc2626; }
+#extension-downloads-section .resource-row-title { cursor:default; }
+#extension-downloads-section .resource-row-title .extension-download-cancel { float:right; }
+#extension-downloads-section .resource-total-meta .resource-dl-eta { margin-left:auto; }
+.resource-row-title > input[type="checkbox"] { vertical-align:middle; }
 .resource-space-header-right {
     display: flex;
     align-items: center;
@@ -847,19 +854,6 @@ body.platform-column-resizing {
 #resource-download-total-speed {
     color: #000;
     font-weight: 700;
-}
-.resource-row-main {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 6px;
-}
-.resource-row-left {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    flex: 1;
-    min-width: 0;
 }
 .resource-row-title {
     display: block;

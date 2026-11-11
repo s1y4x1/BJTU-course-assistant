@@ -1014,11 +1014,8 @@ function renderResourceSpaceList() {
     const url = String(it.url || '').trim();
     return `
       <div class="file-item" data-resource-id="${escapeHtml(id)}">
-        <div class="resource-row-main">
-          <div class="resource-row-left">
-            <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked} style="margin-top:2px;">
-            <div style="min-width:0; flex:1;">
               <div class="resource-row-title">
+                <input type="checkbox" data-action="resource-check" data-resource-id="${escapeHtml(id)}" ${checked}>
                 <span class="resource-name">${escapeHtml(name)}</span>
                 <span class="resource-time-inline file-size-emphasis" data-file-size-mb="${escapeHtml(String(Number(it?.sizeMbRaw) || 0))}" style="${sizeStyle}">${escapeHtml(sizeMb)}</span>
                 <span class="resource-time-inline">上传时间: ${BjtuDateTime.html(uploadTime)}</span>
@@ -1028,9 +1025,6 @@ function renderResourceSpaceList() {
                 <button class="btn resource-copy-btn" data-action="resource-copy" data-resource-id="${escapeHtml(id)}">复制</button>
                 <button class="btn resource-download-btn" data-action="resource-download" data-resource-id="${escapeHtml(id)}">下载</button>
               </div>
-            </div>
-          </div>
-        </div>
         <div class="resource-download-progress" style="display:none;">
           <div class="progress-bar-container"><div class="progress-bar"></div></div>
           <div class="resource-download-meta">
