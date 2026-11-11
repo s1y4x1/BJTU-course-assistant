@@ -736,12 +736,17 @@ body.platform-column-resizing {
 }
 #extension-downloads-section [hidden] { display:none !important; }
 .extension-download-actions { justify-content:flex-end; }
-.resource-select-compact { background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2; }
+.btn.resource-select-compact { background:#000; color:#fff; padding:3px 8px; font-size:11px; line-height:1.2; white-space:nowrap; }
+#extension-download-dedup { background:#dc2626; }
+#extension-download-dedup:hover:not(:disabled) { background:#b91c1c; }
 #extension-download-upload-selected { background:#1e3a8a; }
 #extension-download-delete-selected,.extension-download-cancel { background:#dc2626; }
+#extension-download-upload-selected:hover:not(:disabled) { background:#1e40af; }
+#extension-download-delete-selected:hover:not(:disabled),.btn.extension-download-cancel:hover:not(:disabled) { background:#b91c1c; }
+#extension-downloads-section .btn:disabled { opacity:.5; cursor:not-allowed; }
 #extension-downloads-section .resource-row-title { cursor:default; }
-#extension-downloads-section .resource-row-title .extension-download-cancel { float:right; }
-#extension-downloads-section .resource-total-meta .resource-dl-eta { margin-left:auto; }
+#extension-downloads-section .resource-row-title .extension-download-cancel { float:right; padding:3px 8px; font-size:11px; line-height:1.2; white-space:nowrap; }
+.btn.extension-download-cancel:disabled:hover { background:#dc2626; }
 .resource-row-title > input[type="checkbox"] { vertical-align:middle; }
 .resource-space-header-right {
     display: flex;
@@ -1185,7 +1190,8 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     font-weight: 700;
 }
 #total-size-info,
-#resource-download-total-size {
+#resource-download-total-size,
+.resource-total-size {
     font-size: 10px;
     font-weight: 500;
     color: #94a3b8;

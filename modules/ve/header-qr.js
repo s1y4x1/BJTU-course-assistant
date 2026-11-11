@@ -3,7 +3,7 @@
   if (!(await globalThis.__bjtuVeAppReady)) return;
   let enabled = (await chrome.storage.local.get('headerQrEnabled')).headerQrEnabled !== false;
   const common = globalThis.BjtuVeUploadCommon, cache = new Map(), tasks = new Map();
-  const selector = '.course-header > span:first-child,.upload-section-header > h1,.resource-space-title';
+  const selector = '.course-header > span:first-child,.upload-section-header > h1,#resource-space-section .resource-space-title';
   const shareCss = `
     body{font:var(--bjtu-font-size-body,13px)/1.6 'Segoe UI',system-ui,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px;background:var(--bjtu-page-background,#f9f9f9);color:#172033}
     html[data-color-scheme="dark"] body{color:#e2e8f0;color-scheme:dark}

@@ -153,7 +153,9 @@
     title.append(sizeNode,time);
     const controls = document.createElement('div'); controls.className = 'resource-link-row extension-download-actions';
     const link = document.createElement('a');
-    link.className = 'resource-url'; link.href = `#${encodeURIComponent(path)}`; link.textContent = path;
+    link.className = 'resource-url';
+    link.href = `#${encodeURIComponent(path)}`;
+    link.textContent = chrome.runtime.getURL(`downloads/${path.split('/').map(encodeURIComponent).join('/')}`);
     const open = event => {
       if (event.button > 1) return;
       event.preventDefault(); void openFile(handle,name).catch(report);
@@ -166,8 +168,8 @@
     row.append(controls);
     return row;
   }
-  function remaining(loaded,total,speed,idle) {
-    if (idle || (total > 0 && loaded >= total)) return '0 秒';
+  function remaining(loaded,total,speed) {
+    if (total > 0 && loaded >= total) return '0 秒';
     if (!total || !speed) return '估算中…';
     const seconds = Math.ceil((total - loaded) / speed);
     const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
@@ -177,13 +179,13 @@
     const percent = idle ? 0 : total > 0 ? Math.min(100,loaded / total * 100) : null;
     bar.classList.toggle('is-indeterminate',percent === null);
     bar.firstElementChild.style.width = percent === null ? '' : `${percent}%`;
-    const size = span('resource-dl-size');
+    const size = span(aggregate ? 'resource-total-size' : 'resource-dl-size');
     size.innerHTML = renderFileSizePair(loaded,total);
     const rate = span('resource-dl-speed file-size-emphasis',`${BjtuFileSizeEmphasis.formatBytes(speed)}/s`);
     BjtuFileSizeEmphasis.applyBytes(rate,speed);
     meta.replaceChildren(...(label ? [span('resource-dl-status',label)] : []),size,
-      ...(percent === null ? [] : [span('',`${Math.floor(percent)}%`)]),rate,
-      span('resource-dl-eta',`${aggregate ? '总剩余时间' : '剩余时间'}：${remaining(loaded,total,speed,idle)}`));
+      ...(idle || percent === null ? [] : [span('',`${Math.floor(percent)}%`)]),rate,
+      ...(idle ? [] : [span('resource-dl-eta',`${aggregate ? '总剩余' : '剩余时间'}：${remaining(loaded,total,speed)}`)]));
   }
   function syncSavedRows() {
     const paths = new Set([...transfers.values()].map(task => task.path).filter(Boolean));

@@ -179,7 +179,7 @@ function createQrDismissButton(settingKey) {
     if (!(e.target instanceof Element)) return;
     const link = e.target.closest('a.resource-url, a.url-link, .video-links a, a[href*="batchDownload"], [data-qr-url]');
     if (!link) return;
-    if (link.closest('#' + TOOLTIP_ID)) return;
+    if (link.closest('#' + TOOLTIP_ID + ', [data-no-qr]')) return;
     maybeShow(link);
   }, true);
 
