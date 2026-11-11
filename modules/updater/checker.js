@@ -3208,9 +3208,7 @@ async function loadVersionInfo(releaseOverride = null) {
 // -- 注册版本按钮点击事件 --
 
 function setupVersionButton() {
-  void setupVersionDirectoryPermissionCheck().catch((error) => {
-    console.warn('[bjtu] updater directory permission check failed:', error);
-  });
+  setupVersionDirectoryPermissionCheck();
   initializeVersionReinstallCommand();
   chrome.storage.local.get(VERSION_BACKGROUND_UPDATE_STATUS_KEY).then((stored) => {
     const status = stored?.[VERSION_BACKGROUND_UPDATE_STATUS_KEY];
