@@ -865,7 +865,7 @@ window.jlgjCourseGroupsSnapshot = []; // [{token,name,groupId,homeworks}]
 window.courseCardStateById = {}; // {courseId: {allHomeworkCount,pendingHomeworkCount,hasReplay}}
 window.videoReplayCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
 window.veReplayScheduleByCourseId = {}; // {courseId: {list,promise,loaded,error}}
-window.coursewareCacheByCourseId = {}; // {courseId: {html: string, loaded: boolean}}
+window.coursewareCacheByCourseId = {}; // {courseId: {items, loaded, typeProgress}}
 const PLATFORM_IDS = Object.freeze(['ve', 'ykt', 'mrjzy', 'jlgj', 'mooc', 'xuetangx', 'citel']);
 window.platformOrder = [...PLATFORM_IDS];
 window.platformNeedLogin = Object.fromEntries(PLATFORM_IDS.map((id) => [id, false]));
@@ -3201,10 +3201,24 @@ function syncBrowserPackageButtons(root = courseListDiv) {
   });
 }
 
-function downloadBrowserPackage(url) {
+function trackPackageDownload(url, task) {
   url = new URL(url).href;
   if (browserPackageDownloads.has(url)) return browserPackageDownloads.get(url);
-  const pending = new Promise((resolve, reject) => {
+  const pending = Promise.resolve().then(() => task(url)).finally(() => {
+    browserPackageDownloads.delete(url);
+    syncBrowserPackageButtons();
+  });
+  browserPackageDownloads.set(url, pending);
+  syncBrowserPackageButtons();
+  return pending;
+}
+
+function downloadBrowserPackage(url) {
+  return trackPackageDownload(url, startBrowserPackageDownload);
+}
+
+function startBrowserPackageDownload(url) {
+  return new Promise((resolve, reject) => {
     let downloadId;
     let settled = false;
     const finish = (error) => {
@@ -3229,13 +3243,7 @@ function downloadBrowserPackage(url) {
       })
       .then((items) => checkState(items[0]?.state, items[0]?.error))
       .catch(finish);
-  }).finally(() => {
-    browserPackageDownloads.delete(url);
-    syncBrowserPackageButtons();
   });
-  browserPackageDownloads.set(url, pending);
-  syncBrowserPackageButtons();
-  return pending;
 }
 
 function triggerHomeworkAttachmentDownload(url, fileName) {
@@ -6630,7 +6638,7 @@ courseListDiv.addEventListener('click', async (e) => {
     if (actionEl.disabled) return;
     actionEl.disabled = true;
     try {
-      await downloadBrowserPackage(actionEl.dataset.downloadUrl);
+      await downloadVeBatchFromUi(actionEl.dataset.downloadUrl);
     } catch (error) {
       showToast(`批量下载已交作业失败：${error?.message || error}`, 'error');
     } finally {

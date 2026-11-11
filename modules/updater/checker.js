@@ -2691,9 +2691,8 @@ async function downloadVersionByUrlWithProgress(url) {
 }
 
 async function startVersionDownloadWithFallback(downloadUrl, source = '', installOptions = null) {
-  suppressVersionNoticeForDownload();
   if (versionDownloadInProgress) {
-    openVersionDownloadProgressModal();
+    if (isVersionDownloadingNow()) openVersionDownloadProgressModal();
     return;
   }
   if (installOptions && typeof installOptions === 'object') {
@@ -2713,6 +2712,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
     if (!writableDirectory) return;
     versionUpdateDirectoryHandle = writableDirectory;
     versionUpdateDirectoryHandleLoaded = true;
+    suppressVersionNoticeForDownload();
     setVersionDownloadReleaseNotes('');
     setVersionDownloadBar({ visible: true, indeterminate: true });
     setVersionDownloadProgressUi({

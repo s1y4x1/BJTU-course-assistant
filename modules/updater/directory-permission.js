@@ -114,6 +114,10 @@ async function verify(handle, store = false) {
     if (store) await globalThis.BjtuUpdateFileSystem.storeDirectoryHandle(handle);
     await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
   });
+  if (store) {
+    const channel = new BroadcastChannel('bjtu-extension-downloads');
+    channel.postMessage('changed'); channel.close();
+  }
   return handle;
 }
 

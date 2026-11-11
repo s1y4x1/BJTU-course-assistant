@@ -713,6 +713,10 @@ body.platform-column-resizing {
 .course-actions .btn[data-action="videos"] {
     white-space: nowrap;
 }
+.course-actions button:is([data-action="courseware"], [data-action="videos"], [data-action="archive"]) .spinner {
+    border-color: #fff !important;
+    border-top-color: transparent !important;
+}
 
 .resource-space-section {
     margin-top: 16px;
@@ -730,6 +734,11 @@ body.platform-column-resizing {
     gap: 8px;
     margin-bottom: 6px;
 }
+.extension-download-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+.extension-download-name { min-width:0; overflow-wrap:anywhere; }
+.extension-download-actions { display:flex; gap:6px; margin-left:auto; }
+.extension-download-actions .btn { font-size:var(--bjtu-font-size-body,13px); }
+.extension-download-delete { background:#b91c1c; }
 .resource-space-header-right {
     display: flex;
     align-items: center;

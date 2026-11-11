@@ -135,16 +135,24 @@
     const root = await authorizedDirectory();
     const downloads = await root.getDirectoryHandle('downloads', {create: true});
     // Never overwrite an existing file, including simultaneous transfers.
-    return navigator.locks.request('bjtu-chatroom-download-name', async () => {
+    return navigator.locks.request('bjtu-extension-download-name', async () => {
       const dot = name.lastIndexOf('.');
       const stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
       for (let index = 0; ; index++) {
         const filename = index ? `${stem} (${index})${ext}` : name;
         try { await downloads.getFileHandle(filename); continue; }
-        catch(error) { if (error.name !== 'NotFoundError') throw error; }
+        catch(error) {
+          if (error.name === 'TypeMismatchError') continue;
+          if (error.name !== 'NotFoundError') throw error;
+        }
         const handle = await downloads.getFileHandle(filename, {create: true});
-        const writer = await handle.createWritable();
-        return {writer, handle, savedPath: `downloads/${filename}`, downloads, filename};
+        try {
+          const writer = await handle.createWritable();
+          return {writer, handle, savedPath: `downloads/${filename}`, downloads, filename};
+        } catch (error) {
+          await downloads.removeEntry(filename).catch(() => {});
+          throw error;
+        }
       }
     });
   }
