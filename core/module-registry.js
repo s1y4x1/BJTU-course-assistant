@@ -98,8 +98,8 @@
     },
     chatroom: {
       label: '局域网聊天室',
-      files: ['chat.html', 'chat.css', 'chat.js', 'settings.js', 'sidebar.js', 'transport.js', 'link.js', 'launch.js', 'background.js', 'background-mode.js', 'engine-lease.js', 'options-lease.js', 'options.html', 'options.css', 'options.js'],
-      options: { fragment: 'options.html', style: 'options.css', scripts: ['engine-lease.js', 'transport.js', 'link.js', 'options-lease.js', 'settings.js', 'sidebar.js'], script: 'options.js' }
+      files: ['chat.html', 'chat.css', 'chat.js', 'settings.js', 'conversations.js', 'sidebar.js', 'transport.js', 'link.js', 'launch.js', 'background.js', 'background-mode.js', 'engine-lease.js', 'options-lease.js', 'options.html', 'options.css', 'options.js'],
+      options: { fragment: 'options.html', style: 'options.css', scripts: ['engine-lease.js', 'transport.js', 'link.js', 'options-lease.js', 'settings.js', 'conversations.js', 'sidebar.js'], script: 'options.js' }
     },
     'local-bridge': {
       label: '本地程序桥接',

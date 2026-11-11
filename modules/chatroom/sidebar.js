@@ -209,12 +209,14 @@
     if (destroyed) return;
     state = getState ? getState() : state;
     if (getSelected) selected = getSelected();
-    const entries = [{id: 'public', name: '公共群聊', kind: 'group', members: [state.self.id, ...state.peers.filter(peer => peer.online && !peer.blocked).map(peer => peer.id)].filter(Boolean)},
-      ...state.rooms.map(room => ({...room, kind: 'group'})),
-      ...state.peers.map(peer => ({...peer, id: `peer:${peer.id}`, peerId: peer.id, name: nameOf(peer.id), kind: 'private'}))]
-      .map(entry => ({...entry, name: entry.kind === 'group' ? state.conversations?.[entry.id]?.remark || entry.name : entry.name, view: state.conversations?.[entry.id] || {},
-        onlineCount: entry.members?.filter(id => id === state.self.id || state.peers.some(peer => peer.id === id && peer.online)).length || 0}))
-      .filter(entry => !entry.view.hidden).sort((a,b) => (b.view.lastAt || 0) - (a.view.lastAt || 0));
+    const {visibleConversations, unreadCount} = global.BjtuChatroomConversations;
+    const entries = visibleConversations(state).map(entry => {
+      const isPublic = entry.id === 'public';
+      const members = isPublic ? [state.self.id, ...state.peers.filter(peer => peer.online && !peer.blocked).map(peer => peer.id)].filter(Boolean) : entry.members;
+      const name = entry.kind === 'private' ? nameOf(entry.peerId) : entry.view.remark || (isPublic ? '公共群聊' : entry.name);
+      return {...entry, name, members,
+        onlineCount: members?.filter(id => id === state.self.id || state.peers.some(peer => peer.id === id && peer.online)).length || 0};
+    }).sort((a,b) => (b.view.lastAt || 0) - (a.view.lastAt || 0));
     reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
       const el = node('div', undefined, 'conversation-entry');
       const link = button('', () => { if (performance.now() >= (link.suppressClickUntil || 0)) chooseConversation(entry.id); }, 'conversation-link');
@@ -239,7 +241,8 @@
       content.append(name, node('span', summary, 'muted conversation-kind'));
       link.append(avatar, content);
       if (entry.view.muted) link.append(node('span', '🔕', 'conversation-muted-icon'));
-      if (entry.view.unread) link.append(node('span', entry.view.unread > 99 ? '99+' : entry.view.unread, 'conversation-unread-badge'));
+      const unread = unreadCount(entry.view);
+      if (unread) link.append(node('span', unread > 99 ? '99+' : unread, 'conversation-unread-badge'));
       bindHold(link,{signal:uiAbort.signal,onConfirm:() => mutate('conversation-delete',{conversationId:entry.id}).catch(report)});
       el.append(link);
       return el;

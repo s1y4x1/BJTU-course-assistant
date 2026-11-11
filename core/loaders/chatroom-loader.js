@@ -4,6 +4,7 @@
   const available = await globalThis.BjtuModuleRegistry.ready;
   if (!available.chatroom) return;
   await globalThis.BjtuModuleRegistry.loadScript('modules/chatroom/launch.js');
+  await globalThis.BjtuModuleRegistry.loadScript('modules/chatroom/conversations.js');
   const container = document.getElementById('fullscreen-module-buttons');
   if (!container) return;
   const button = document.createElement('button');
@@ -20,13 +21,20 @@
   const unreadBadge = document.createElement('span');
   unreadBadge.className = 'fullscreen-module-unread-badge'; unreadBadge.hidden = true;
   button.append(unreadBadge);
+  const {visibleConversations, unreadCount} = globalThis.BjtuChatroomConversations;
   const updateUnread = state => {
-    const count = Object.values(state?.conversations || {}).reduce((total,view) => total + (Number(view.unread)||0),0);
+    const count = visibleConversations(state).reduce((total,{view}) => total + unreadCount(view), 0);
     unreadBadge.hidden = count === 0; unreadBadge.textContent = count > 99 ? '99+' : String(count);
     button.title = count ? `局域网聊天室 · ${count} 条未读消息` : '局域网聊天室';
   };
-  updateUnread((await chrome.storage.local.get('chatroomState')).chatroomState);
-  chrome.storage.onChanged.addListener((changes,area) => { if (area==='local' && changes.chatroomState) updateUnread(changes.chatroomState.newValue); });
+  let observedUnreadChange = false;
+  chrome.storage.onChanged.addListener((changes,area) => {
+    if (area !== 'local' || !changes.chatroomState) return;
+    observedUnreadChange = true;
+    updateUnread(changes.chatroomState.newValue);
+  });
+  const {chatroomState} = await chrome.storage.local.get('chatroomState');
+  if (!observedUnreadChange) updateUnread(chatroomState);
   button.addEventListener('click', () => void globalThis.BjtuChatroomLauncher.open().catch(error => globalThis.showToast?.(error.message,'error')));
   button.hidden = (await chrome.storage.local.get('chatroomFullscreenButtonEnabled')).chatroomFullscreenButtonEnabled === false;
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
