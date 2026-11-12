@@ -767,23 +767,24 @@
     if (s.ended || s.accepted || s.accepting) return;
     s.accepting = true;
     if (s.type === 'file') {
-      if (automatic) {
-        try {
-          Object.assign(s, await globalThis.BjtuChatroomSettings.createDownload(s.name));
-        } catch(error) {
-          s.accepting = false;
-          if (background) {
-            void backgroundMode.notifyInvitation({peerId:s.peerId,media:s.type,name:s.name,reason:error.message,sid:s.id}).catch(report);
-            endSession(s,'后台无法自动保存，请打开聊天室接收',true); return;
-          }
-          if (!s.ended) { showInvitation(s); report(error); }
-          return;
+      const settings = globalThis.BjtuChatroomSettings;
+      s.downloadSetup = (automatic ? settings.createDownload(s.name) : settings.createManualDownload(s.name))
+        .then(download => Object.assign(s,download));
+      try {
+        await s.downloadSetup;
+      } catch (error) {
+        s.accepting = false;
+        if (s.ended) return;
+        if (!automatic) throw error;
+        if (background) {
+          void backgroundMode.notifyInvitation({peerId:s.peerId,media:s.type,name:s.name,reason:error.message,sid:s.id}).catch(report);
+          endSession(s,'后台无法自动保存，请打开聊天室接收',true);
+        } else {
+          showInvitation(s); report(error);
         }
-        if (s.ended) { await discardPartialDownload(s); return; }
-      } else {
-        Object.assign(s, await globalThis.BjtuChatroomSettings.createManualDownload(s.name));
-        if (s.ended) { await discardPartialDownload(s); return; }
+        return;
       }
+      if (s.ended) return;
       renderTransfer(s);
     }
     s.accepted = true; s.status = '等待直连'; s.inviteCard?.remove();
@@ -1043,7 +1044,10 @@
     if (s.ended) return;
     if (s.done !== s.size || s.queued) throw new Error('文件不完整，已取消保存。');
     let file;
-    await s.writer.close(); s.writer = null; s.saved = true; if (s.ended) return;
+    await s.writer.close();
+    s.writer = null;
+    if (s.ended) return;
+    s.saved = true;
     const downloadPath = String(s.savedPath || '');
     let ref;
     try {
@@ -1167,9 +1171,13 @@
       (savedPreviews.get(s.message.id) === s || mediaMessages.get(s.message.id) === s.message);
   }
   async function discardPartialDownload(s) {
+    if (s.type !== 'file' || s.outgoing) return;
+    // Cancellation may arrive before the placeholder is returned, or while
+    // a write/close still holds the file open. Clean up once both have settled.
+    await Promise.allSettled([s.downloadSetup,s.chain]);
     if (s.writer) { const writer = s.writer; s.writer = null; await writer.abort().catch(() => {}); }
     if (!s.completed && !s.saved && s.downloads && s.filename) {
-      await s.downloads.removeEntry(s.filename).catch(() => {});
+      await globalThis.BjtuChatroomSettings.discardDownload(s);
     }
   }
   function releasePreview(s) {
@@ -1226,7 +1234,7 @@
     if (s.pc) { s.pc.onicecandidate = s.pc.onconnectionstatechange = s.pc.ontrack = s.pc.ondatachannel = null; s.pc.close(); }
     s.channel = s.pc = s.remoteStream = null;
     s.downloadProgress?.update(s.done,s.size);
-    void discardPartialDownload(s).finally(() => s.downloadProgress?.finish());
+    void discardPartialDownload(s).catch(report).finally(() => s.downloadProgress?.finish());
     if (!s.completed) releaseResources(s);
     sessions.delete(s.id); updateTransfer(s, reason);
     if (s.card) {

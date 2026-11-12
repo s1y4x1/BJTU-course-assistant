@@ -172,6 +172,20 @@
       throw error;
     }
   }
+  async function discardDownload({downloads,filename,handle,savedPath}) {
+    const remove = async () => {
+      try {
+        const current = await downloads.getFileHandle(filename);
+        if (!await current.isSameEntry(handle)) return;
+        await downloads.removeEntry(filename);
+      } catch (error) {
+        if (error.name !== 'NotFoundError' && error.name !== 'TypeMismatchError') throw error;
+      }
+      if (savedPath) notifyDownloadsChanged();
+    };
+    if (savedPath) await navigator.locks.request('bjtu-extension-download-name',remove);
+    else await remove();
+  }
   async function mount(root, report) {
     const $ = id => root.querySelector('#' + id);
     const abort = new AbortController();
@@ -294,7 +308,7 @@
     await refreshAuthorization();
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
-  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, createManualDownload,
+  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, createManualDownload, discardDownload,
     saveReceivedFile, saveSentHandle, loadReceivedFile, deleteReceivedFile,
     removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);
